@@ -4,21 +4,9 @@ set -euo pipefail
 PROPAI_DIR="$(cd "$(dirname "$0")" && pwd)"
 LOG_FILE="/tmp/propai.log"
 
-usage() {
-  cat <<EOF
-Usage: propai <command>
+log() { echo "[propai] $*" | tee -a "$LOG_FILE" >&2; }
 
-Commands:
-  waba    Open WhatsApp onboarding to connect your market
-  lab     Open PropAI Lab admin dashboard
-  status  Show running services
-  key     Show current API key
-  help    Show this help
-
-EOF
-}
-
-log() { echo "[propai] $*" | tee -a "$LOG_FILE"; }
+# ── Helpers ───────────────────────────────────────────────────────
 
 ensure_key() {
   local key_file="$PROPAI_DIR/.api_key"
@@ -36,126 +24,309 @@ ensure_key() {
 
 start_lab_api() {
   if curl -sf http://localhost:8000/health >/dev/null 2>&1; then
-    log "Lab API already running"
     return 0
   fi
-  log "Starting Lab API..."
+  log "Starting PropAI server..."
   cd "$PROPAI_DIR"
   setsid python3 -m uvicorn app:app --host 0.0.0.0 --port 8000 &>/tmp/lab-api.log &
   disown
   sleep 3
   if curl -sf http://localhost:8000/health >/dev/null 2>&1; then
-    log "Lab API ready at http://localhost:8000"
+    log "Server ready at http://localhost:8000"
   else
-    log "ERROR: Lab API failed to start"
-    cat /tmp/lab-api.log | tail -5
+    log "ERROR: Server failed to start"
+    tail -5 /tmp/lab-api.log >&2
     return 1
   fi
 }
 
 start_docker() {
   if docker ps --format '{{.Names}}' 2>/dev/null | grep -q "evolution"; then
-    log "Evolution API already running"
     return 0
   fi
-  log "Starting Evolution API + PostgreSQL..."
-  docker compose -f "$PROPAI_DIR/docker-compose.yml" up -d 2>&1 | tee -a "$LOG_FILE"
-  log "Waiting for Evolution API..."
+  log "Starting PropAI engine..."
+  docker compose -f "$PROPAI_DIR/docker-compose.yml" up -d 2>&1 | tee -a "$LOG_FILE" >&2
   for i in $(seq 1 30); do
     if curl -sf http://localhost:8080/manager >/dev/null 2>&1; then
-      log "Evolution API ready"
+      log "Engine ready"
       return 0
     fi
     sleep 2
   done
-  log "WARNING: Evolution API did not become ready"
+  log "WARNING: Engine did not become ready"
   return 1
 }
 
 ensure_instance() {
   local key="$AUTHENTICATION_API_KEY"
   local instance="propai-scraper"
-  local exists
-  exists=$(curl -sf "http://localhost:8080/instance/connectionState/$instance" \
+  local state
+  state=$(curl -sf "http://localhost:8080/instance/connectionState/$instance" \
     -H "apikey: $key" 2>/dev/null | python3 -c "
 import sys, json
 d = json.load(sys.stdin)
 print(d.get('instance', {}).get('state', ''))
 " 2>/dev/null || echo "")
-  if [ -z "$exists" ]; then
+  if [ -z "$state" ]; then
     log "Creating WhatsApp instance..."
     curl -sf -X POST http://localhost:8080/instance/create \
       -H "Content-Type: application/json" \
       -H "apikey: $key" \
-      -d '{"instanceName": "'"$instance"'", "integration": "WHATSAPP-BAILEYS"}' >/dev/null 2>&1 || true
-    log "Connecting instance..."
-    curl -sf "http://localhost:8080/instance/connect/$instance" \
+      -d '{"instanceName": "propai-scraper", "integration": "WHATSAPP-BAILEYS"}' >/dev/null 2>&1 || true
+    log "Generating QR code..."
+    curl -sf "http://localhost:8080/instance/connect/propai-scraper" \
       -H "apikey: $key" -o /dev/null 2>/dev/null || true
   fi
 }
 
 open_browser() {
   local url="$1"
-  log "Opening $url"
   if command -v xdg-open &>/dev/null; then
     xdg-open "$url" 2>/dev/null || true
   elif command -v open &>/dev/null; then
     open "$url" 2>/dev/null || true
   elif command -v sensible-browser &>/dev/null; then
     sensible-browser "$url" 2>/dev/null || true
-  else
-    log "No browser launcher. Open manually:"
   fi
-  echo "  \u2192 $url"
+  echo "  → $url"
 }
 
-status() {
-  echo "\u2500\u2500 PropAI Services \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500"
+# ── Commands ──────────────────────────────────────────────────────
+
+cmd_connect() {
+  echo ""
+  ensure_key
+  start_docker
+  start_lab_api
+  ensure_instance
+  echo ""
+  echo "  ┌──────────────────────────────────────────────┐"
+  echo "  │  Scan the QR code with WhatsApp on your phone.  │"
+  echo "  └──────────────────────────────────────────────┘"
+  echo ""
+  open_browser "http://localhost:8000/connect"
+  echo ""
+}
+
+cmd_dashboard() {
+  start_lab_api
+  echo ""
+  open_browser "http://localhost:8000/"
+  echo ""
+}
+
+cmd_sync() {
+  ensure_key
+  start_lab_api
+  echo ""
+  echo "  Starting historical sync..."
+  local res
+  res=$(curl -sf -X POST http://localhost:8000/api/sources/whatsapp/sync \
+    -H "Content-Type: application/json" \
+    -d '{"instance":"propai-scraper"}' 2>/dev/null || echo '{"error":"sync failed"}')
+  echo "  $res" | python3 -m json.tool 2>/dev/null || echo "  $res"
+  echo ""
+  echo "  Track progress: propai dashboard"
+  echo ""
+}
+
+cmd_doctor() {
+  echo ""
+  echo "  ── PropAI Health Check ───────────────────"
+  echo ""
+  local all_ok=true
+
+  # Docker
+  if command -v docker &>/dev/null; then
+    echo "  ✓ Docker"
+  else
+    echo "  ✗ Docker  (not installed)"
+    all_ok=false
+  fi
+
+  # Evolution API
+  if curl -sf http://localhost:8080/manager >/dev/null 2>&1; then
+    echo "  ✓ Engine"
+  else
+    echo "  ✗ Engine  (not running — run 'propai connect')"
+    all_ok=false
+  fi
+
+  # Lab API
+  if curl -sf http://localhost:8000/health >/dev/null 2>&1; then
+    echo "  ✓ PropAI server"
+  else
+    echo "  ✗ PropAI server  (not running)"
+    all_ok=false
+  fi
+
+  # API key
+  if [ -f "$PROPAI_DIR/.api_key" ]; then
+    echo "  ✓ API key"
+  else
+    echo "  ✗ API key  (will be auto-generated)"
+  fi
+
+  # WhatsApp connection
+  if curl -sf http://localhost:8000/api/sync/connection >/dev/null 2>&1; then
+    local connected
+    connected=$(curl -sf http://localhost:8000/api/sync/connection | python3 -c "import sys,json; print(json.load(sys.stdin).get('connected',False))" 2>/dev/null)
+    if [ "$connected" = "True" ]; then
+      echo "  ✓ WhatsApp connected"
+    else
+      echo "  ✗ WhatsApp disconnected  (run 'propai connect')"
+    fi
+  fi
+
+  # Python deps
+  if python3 -c "import fastapi, uvicorn, httpx" 2>/dev/null; then
+    echo "  ✓ Python dependencies"
+  else
+    echo "  ✗ Python dependencies  (run: pip install -r requirements.txt)"
+    all_ok=false
+  fi
+
+  # Registry / storage
+  if [ -f "$PROPAI_DIR/lab.db" ]; then
+    local db_size
+    db_size=$(du -h "$PROPAI_DIR/lab.db" 2>/dev/null | cut -f1)
+    echo "  ✓ Storage  ($db_size)"
+  else
+    echo "  – Storage  (not initialized)"
+  fi
+
+  # Internet
+  if curl -sf https://web.whatsapp.com >/dev/null 2>&1; then
+    echo "  ✓ Internet"
+  else
+    echo "  ✗ Internet  (check your connection)"
+    all_ok=false
+  fi
+
+  echo ""
+  if $all_ok; then
+    echo "  Everything looks good."
+  else
+    echo "  Some checks failed. Run 'propai connect' to fix."
+  fi
+  echo ""
+}
+
+cmd_status() {
+  echo ""
+  echo "  ── PropAI Status ─────────────────────"
   echo ""
   if curl -sf http://localhost:8080/manager >/dev/null 2>&1; then
-    echo "  Evolution API    \u2713  http://localhost:8080"
+    echo "  Engine       ✓  http://localhost:8080"
   else
-    echo "  Evolution API    \u2717  (not running)"
+    echo "  Engine       ✗  (not running)"
   fi
   if curl -sf http://localhost:8000/health >/dev/null 2>&1; then
-    echo "  Lab API          \u2713  http://localhost:8000"
-    echo "  Onboarding       \u2192  http://localhost:8000/connect"
+    echo "  Server       ✓  http://localhost:8000"
   else
-    echo "  Lab API          \u2717  (not running)"
+    echo "  Server       ✗  (not running)"
+  fi
+  if curl -sf http://localhost:8000/api/sync/connection >/dev/null 2>&1; then
+    local connected
+    connected=$(curl -sf http://localhost:8000/api/sync/connection | python3 -c "import sys,json; print(json.load(sys.stdin).get('connected',False))" 2>/dev/null)
+    if [ "$connected" = "True" ]; then
+      echo "  WhatsApp     ✓  Connected"
+    else
+      echo "  WhatsApp     –  Disconnected"
+    fi
   fi
   if [ -f "$PROPAI_DIR/.api_key" ]; then
-    echo "  API key          \u25cf  $(cat "$PROPAI_DIR/.api_key" | head -c 8)\u2026"
+    local key_preview
+    key_preview=$(head -c 8 "$PROPAI_DIR/.api_key")
+    echo "  API key      ●  ${key_preview}…"
   fi
   echo ""
 }
 
-case "${1:-help}" in
-  waba)
-    echo ""
-    ensure_key
-    start_docker
-    start_lab_api
-    ensure_instance
-    echo ""
-    open_browser "http://localhost:8000/connect"
-    echo ""
-    echo "  Scan the QR code with WhatsApp on your phone."
-    echo "  Once connected, you'll be taken to the dashboard."
-    echo ""
+cmd_key() {
+  ensure_key
+  echo "$AUTHENTICATION_API_KEY"
+}
+
+cmd_menu() {
+  echo ""
+  echo "  ════════════════════════════════════════"
+  echo ""
+  echo "          PropAI"
+  echo "  AI Operating System for Realtors"
+  echo ""
+  echo "  ════════════════════════════════════════"
+  echo ""
+
+  # Show live status
+  if curl -sf http://localhost:8000/api/sync/connection >/dev/null 2>&1; then
+    local connected
+    connected=$(curl -sf http://localhost:8000/api/sync/connection | python3 -c "import sys,json; print(json.load(sys.stdin).get('connected',False))" 2>/dev/null)
+    if [ "$connected" = "True" ]; then
+      echo "  ✓ WhatsApp Connected"
+    else
+      echo "  ✓ Engine running"
+      echo "  – WhatsApp disconnected"
+    fi
+  elif curl -sf http://localhost:8080/manager >/dev/null 2>&1; then
+    echo "  ✓ Engine running"
+    echo "  – Server offline  (run 'propai dashboard')"
+  else
+    echo "  – Offline  (run 'propai connect')"
+  fi
+  echo ""
+
+  # Available commands
+  echo "  1. Connect WhatsApp"
+  echo "  2. Historical Sync"
+  echo "  3. Live Market"
+  echo "  4. Dashboard"
+  echo "  5. Health Check"
+  echo "  6. Settings"
+  echo ""
+  echo "  propai <command>  or  select a number"
+  echo ""
+}
+
+usage() {
+  echo "Usage: propai <command>"
+  echo ""
+  echo "Commands:"
+  echo "  connect    Connect WhatsApp to PropAI"
+  echo "  dashboard  Open the PropAI dashboard"
+  echo "  sync       Start historical group sync"
+  echo "  doctor     Run health checks"
+  echo "  status     Show running services"
+  echo "  key        Show API key"
+  echo "  help       Show this help"
+}
+
+# ── Dispatch ──────────────────────────────────────────────────────
+
+case "${1:-}" in
+  connect|waba)
+    cmd_connect
     ;;
-  lab)
-    start_lab_api
-    open_browser "http://localhost:8000/"
+  dashboard|lab|admin)
+    cmd_dashboard
     ;;
-  key)
-    ensure_key
-    echo "$AUTHENTICATION_API_KEY"
+  sync)
+    cmd_sync
+    ;;
+  doctor|check)
+    cmd_doctor
     ;;
   status)
-    status
+    cmd_status
+    ;;
+  key)
+    cmd_key
     ;;
   help|--help|-h)
     usage
+    ;;
+  '')
+    cmd_menu
     ;;
   *)
     echo "Unknown command: $1"
