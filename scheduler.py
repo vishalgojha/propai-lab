@@ -2,8 +2,10 @@
 Sync Scheduler — manages background sync jobs across all sources.
 
 Architecture:
-    Source → discover_jobs() → SyncJob → fetch_records() → SourceRecord
-                                                              ↓
+    IngestionSource.discover_jobs() → [SourceJob]
+            ↓
+    Scheduler → SyncJob (DB row) → fetch_records() → SourceRecord
+            ↓
     Pipeline: store_raw → parse → resolve → observation (with version tracking)
 
 Worker pool runs jobs concurrently. Each job has its own checkpoint.
@@ -19,7 +21,8 @@ from queue import Queue, Empty
 from typing import Optional
 
 from lab.config import DB_PATH, EVOLUTION_INSTANCE
-from lab.sources import SourceRegistry, SourceRecord, SyncJob
+from lab.sources import SourceRegistry, SourceRecord, SourceJob
+from lab.sources.base import IngestionSource
 from lab.sources.registry import get_registry
 
 logger = logging.getLogger(__name__)
@@ -297,13 +300,16 @@ class SyncScheduler:
                 self._status["overall"] = "error"
                 self._status["error"] = str(e)
 
-    def _process_job(self, job_id: int, source: BaseSource, job: SyncJob) -> bool:
+    def _process_job(self, job_id: int, source: IngestionSource, job: SourceJob) -> bool:
         """Process one sync job: fetch records → pipeline."""
         update_job(job_id, status=JOB_STATUS_RUNNING, started_at=datetime.now(timezone.utc).isoformat())
 
         processed = 0
         failed = 0
-        last_cursor = job.meta.get("last_cursor", "0") if job.meta else "0"
+        # job.meta is always a dict for in-memory SourceJob objects.
+        # Guard against str in case a SourceJob is ever reconstructed from a DB row.
+        raw_meta = job.meta if isinstance(job.meta, dict) else (json.loads(job.meta) if job.meta else {})
+        last_cursor = raw_meta.get("last_cursor", "0") or "0"
         found = 0
 
         try:

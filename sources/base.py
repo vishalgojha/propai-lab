@@ -1,12 +1,23 @@
 """
-Base source abstraction for the Source Sync Engine.
+Ingestion source abstraction for the Source Sync Engine.
 
-Every external data source (WhatsApp, IGR, MahaRERA, etc.) implements:
+Every external data channel (WhatsApp, IGR, MahaRERA, etc.) subclasses
+IngestionSource and registers itself via SourceRegistry. The scheduler uses
+this registry to discover jobs, fetch records, and drive the pipeline.
 
-    discover_jobs()  → list[SyncJob]
+    discover_jobs()    → list[SourceJob]
     fetch_records(job) → Iterator[SourceRecord]
 
 Records flow through the pipeline: store_raw → parse → resolve → observe.
+
+Naming:
+    IngestionSource — abstract connector for one external data channel.
+                      Subclasses know *how* to reach a source (auth, API, etc.).
+    SourceJob       — lightweight descriptor for one unit of work produced by
+                      discover_jobs() (e.g. one WhatsApp group, one IGR dataset).
+                      meta is always a plain dict here.
+    SyncJob         — persisted row in source_sync_jobs (lab.storage).
+                      meta is stored as JSON string in the DB.
 """
 
 from dataclasses import dataclass, field
@@ -17,17 +28,21 @@ from datetime import datetime, timezone
 # ── Data types ────────────────────────────────────────────────────
 
 @dataclass
-class SyncJob:
+class SourceJob:
     """
-    A sync job represents one unit of work for a source.
-    For WhatsApp: one group = one job.
-    For IGR: one year/region = one job.
+    An in-memory job descriptor produced by a source plugin's discover_jobs().
+
+    For WhatsApp: one group = one SourceJob.
+    For IGR: one year/region = one SourceJob.
+
+    Note: meta is always a plain dict here. When persisted to source_sync_jobs
+    the meta column is stored as a JSON string.
     """
     source: str                # "whatsapp", "igr", "maharera", etc.
     instance: str              # e.g., "propai" for Evolution instance
     group_id: str              # e.g., WhatsApp JID, IGR dataset key
     group_name: str = ""       # human-readable label
-    meta: dict = field(default_factory=dict)  # source-specific metadata
+    meta: dict = field(default_factory=dict)  # source-specific metadata (always dict)
 
     def to_dict(self) -> dict:
         return {
@@ -84,10 +99,21 @@ class SourceRecord:
         }
 
 
-# ── Base Source ───────────────────────────────────────────────────
+# ── Ingestion Source ─────────────────────────────────────────────
 
-class BaseSource:
-    """Abstract base for all data sources."""
+class IngestionSource:
+    """
+    Abstract base class for all external data ingestion connectors.
+
+    Each subclass represents one channel (WhatsApp, IGR, MahaRERA, …) and
+    knows how to authenticate, discover work, and stream raw records. The
+    scheduler treats every channel uniformly via this interface.
+
+    Subclass responsibilities:
+        - validate_connection(): can we reach the channel right now?
+        - discover_jobs():       what units of work are available?
+        - fetch_records(job):    stream raw records for one unit of work.
+    """
 
     # Unique source identifier (used in DB and API routes)
     name: str = "unknown"
@@ -95,27 +121,31 @@ class BaseSource:
     # Source version — bump when parser/resolver logic changes for this source
     version: str = "1.0.0"
 
-    def discover_jobs(self) -> list[SyncJob]:
+    def discover_jobs(self) -> list[SourceJob]:
         """
-        Discover all available sync jobs for this source.
+        Return SourceJob descriptors for all available units of work.
 
-        For WhatsApp: enumerate all joined groups.
-        For IGR: list available datasets / years.
+        For WhatsApp: one SourceJob per joined group.
+        For IGR: one SourceJob per available dataset / year.
         """
         raise NotImplementedError
 
-    def fetch_records(self, job: SyncJob) -> Iterator[SourceRecord]:
+    def fetch_records(self, job: SourceJob) -> Iterator[SourceRecord]:
         """
-        Yield SourceRecords for a given job.
+        Yield SourceRecords for a given SourceJob, oldest-first.
 
-        Called by the scheduler. Records should be yielded oldest-first
-        to maintain chronological order.
+        Called by the scheduler for each job returned by discover_jobs().
+        Implementations should honour job.meta["last_cursor"] for resumability.
         """
         raise NotImplementedError
 
     def validate_connection(self) -> bool:
-        """Check if the source is reachable / authenticated."""
+        """Return True if the channel is reachable and authenticated."""
         return True
 
     def __repr__(self) -> str:
-        return f"<Source {self.name} v{self.version}>"
+        return f"<IngestionSource {self.name} v{self.version}>"
+
+
+# Backward-compatible alias — remove once all callsites use IngestionSource.
+BaseSource = IngestionSource

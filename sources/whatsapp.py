@@ -1,9 +1,9 @@
 """
-WhatsApp source — connects to Evolution API for group discovery
-and historical message synchronization.
+WhatsApp ingestion connector — implements IngestionSource for the Evolution API.
 
-Implements BaseSource so the scheduler can treat WhatsApp like
-any other data source.
+Connects to the Evolution API to discover joined groups (as SourceJobs) and
+stream historical messages (as SourceRecords). The scheduler drives this
+connector without knowing anything about WhatsApp internals.
 """
 
 import json
@@ -19,7 +19,7 @@ from lab.config import (
     EVOLUTION_INSTANCE,
     EVOLUTION_SYNC_DELAY_MS,
 )
-from lab.sources.base import BaseSource, SyncJob, SourceRecord
+from lab.sources.base import IngestionSource, SourceJob, SourceRecord
 
 logger = logging.getLogger(__name__)
 
@@ -27,8 +27,8 @@ SYNC_BATCH_SIZE = 100
 SYNC_DELAY_S = max(0.1, EVOLUTION_SYNC_DELAY_MS / 1000.0)
 
 
-class WhatsAppSource(BaseSource):
-    """WhatsApp groups via Evolution API."""
+class WhatsAppSource(IngestionSource):
+    """WhatsApp group connector via the Evolution API."""
 
     name = "whatsapp"
     version = "1.0.0"
@@ -57,7 +57,7 @@ class WhatsAppSource(BaseSource):
         except Exception:
             return False
 
-    def discover_jobs(self) -> list[SyncJob]:
+    def discover_jobs(self) -> list[SourceJob]:
         """Enumerate all joined groups as sync jobs."""
         try:
             data = self._get(f"group/fetchAllGroups/{self.instance}")
@@ -89,7 +89,7 @@ class WhatsAppSource(BaseSource):
                 participants = len(participants_list) if isinstance(participants_list, list) else 0
             except Exception:
                 pass
-            jobs.append(SyncJob(
+            jobs.append(SourceJob(
                 source=self.name,
                 instance=self.instance,
                 group_id=jid,
@@ -98,7 +98,7 @@ class WhatsAppSource(BaseSource):
             ))
         return jobs
 
-    def fetch_records(self, job: SyncJob) -> Iterator[SourceRecord]:
+    def fetch_records(self, job: SourceJob) -> Iterator[SourceRecord]:
         """
         Fetch all historical messages for a group, yielding oldest-first.
         Supports resumable sync via job.meta.get("last_cursor").
