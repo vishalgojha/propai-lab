@@ -684,6 +684,12 @@ def evaluate_parsed(raw_id: int, parsed: dict, expected: Optional[dict] = None):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
+    # Auto-generate API key if missing
+    key_path = Path(__file__).parent / ".api_key"
+    if not key_path.exists():
+        new_key = str(uuid.uuid4())
+        key_path.write_text(new_key)
+        print(f"  Generated API key: {new_key}")
     print(f"  Lab DB: {DB_PATH}")
     print(f"  Webhook: http://localhost:{PORT}/webhook")
     print(f"  Admin:   http://localhost:{PORT}/")
@@ -1266,6 +1272,13 @@ async def admin_ui():
 @app.get("/health")
 async def health():
     return {"status": "ok", "db": str(DB_PATH)}
+
+
+@app.get("/api/key")
+async def api_key():
+    key_path = Path(__file__).parent / ".api_key"
+    token = key_path.read_text().strip() if key_path.exists() else ""
+    return {"key": token, "path": str(key_path)}
 
 
 # ── Serve QR code via proxy to Evolution API ────────────────────
