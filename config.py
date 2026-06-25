@@ -18,8 +18,9 @@ WEBHOOK_SECRET = os.getenv("LAB_WEBHOOK_SECRET", "dev-secret-do-not-use-in-prod"
 
 # Evolution API — for historical sync and management
 EVOLUTION_API_URL = os.getenv("EVOLUTION_API_URL", "http://localhost:8080")
-EVOLUTION_API_KEY = os.getenv("EVOLUTION_API_KEY", "")
-EVOLUTION_INSTANCE = os.getenv("EVOLUTION_INSTANCE", "propai")
+_EVOLUTION_API_KEY_ENV = os.getenv("EVOLUTION_API_KEY", "")
+EVOLUTION_API_KEY = _EVOLUTION_API_KEY_ENV or (LAB_DIR / ".api_key").read_text().strip() if (LAB_DIR / ".api_key").exists() else ""
+EVOLUTION_INSTANCE = os.getenv("EVOLUTION_INSTANCE", "propai-scraper")
 EVOLUTION_SYNC_DELAY_MS = int(os.getenv("EVOLUTION_SYNC_DELAY_MS", "500"))
 
 # Evidence Engine paths (reused)

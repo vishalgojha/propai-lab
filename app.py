@@ -1585,6 +1585,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (data.connected) {
         qr.setStatus('connected');
         qr.stopAutoRefresh();
+        setTimeout(() => { window.location.href = '/'; }, 1500);
       }
     } catch(e) {}
   }, 5000);
