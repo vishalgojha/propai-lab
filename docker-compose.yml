@@ -1,0 +1,57 @@
+# Local Intelligence Lab — Docker Compose
+# Evolution API handles WhatsApp WebSocket connection and emits webhooks.
+# The lab API runs on the host (not in Docker) for fast iteration.
+name: propai-lab
+
+services:
+  evolution-api:
+    image: evoapicloud/evolution-api:v2.3.7
+    container_name: evolution-api
+    depends_on:
+      lab-db:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    environment:
+      # Server config
+      - SERVER_URL=http://localhost:8080
+      - PORT=8080
+      # API Auth
+      - AUTHENTICATION_API_KEY=${AUTHENTICATION_API_KEY:-propai-dev-key}
+      # Webhook config — points to the lab API on host
+      - WEBHOOK_URL=http://host.docker.internal:8000/webhook
+      - WEBHOOK_ENABLED=true
+      # Database (PostgreSQL)
+      - DATABASE_ENABLED=true
+      - DATABASE_PROVIDER=postgresql
+      - DATABASE_CONNECTION_URI=postgresql://propai:propai_lab_dev@lab-db:5432/evolution_db?schema=evolution_api
+      # Logging
+      - LOG_LEVEL=info
+      # Rate limits per instance
+      - DELAY_MESSAGE=1000
+      - MAX_CONNECTIONS=5
+    volumes:
+      - evolution_instances:/evolution/instances
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  lab-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: propai_lab
+      POSTGRES_USER: propai
+      POSTGRES_PASSWORD: propai_lab_dev
+    ports:
+      - "5433:5432"
+    volumes:
+      - lab_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U propai"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  evolution_instances:
+  lab_pgdata:

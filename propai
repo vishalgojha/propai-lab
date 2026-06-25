@@ -1,0 +1,153 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+PROPAI_DIR="$(cd "$(dirname "$0")" && pwd)"
+LOG_FILE="/tmp/propai.log"
+
+usage() {
+  cat <<EOF
+Usage: propai <command>
+
+Commands:
+  waba    Open WhatsApp onboarding to connect your market
+  lab     Open PropAI Lab admin dashboard
+  status  Show running services
+  help    Show this help
+
+EOF
+}
+
+log() { echo "[propai] $*" | tee -a "$LOG_FILE"; }
+
+check_docker() {
+  if ! docker ps --format '{{.Names}}' 2>/dev/null | grep -q "evolution"; then
+    log "Starting Evolution API + PostgreSQL..."
+    docker compose -f "$PROPAI_DIR/docker-compose.yml" up -d 2>&1 | tee -a "$LOG_FILE"
+    log "Waiting for Evolution API to be ready..."
+    local key
+    key=$(cat "$PROPAI_DIR/.api_key" 2>/dev/null || echo "propai-dev-key")
+    for i in $(seq 1 30); do
+      if curl -sf http://localhost:8080/instance/fetch-instances -H "apikey: $key" >/dev/null 2>&1; then
+        log "Evolution API is ready"
+        return 0
+      fi
+      sleep 2
+    done
+    log "WARNING: Evolution API did not become ready"
+    return 1
+  fi
+  log "Evolution API + PostgreSQL already running"
+}
+
+check_lab_api() {
+  if ! curl -sf http://localhost:8000/health >/dev/null 2>&1; then
+    log "Starting Lab API..."
+    cd "$PROPAI_DIR"
+    setsid python3 -m uvicorn app:app --host 0.0.0.0 --port 8000 &>/tmp/lab-api.log &
+    disown
+    sleep 3
+    if curl -sf http://localhost:8000/health >/dev/null 2>&1; then
+      log "Lab API is ready at http://localhost:8000"
+    else
+      log "ERROR: Lab API failed to start"
+      return 1
+    fi
+  else
+    log "Lab API already running at http://localhost:8000"
+  fi
+}
+
+open_browser() {
+  local url="$1"
+  log "Opening $url"
+  if command -v xdg-open &>/dev/null; then
+    xdg-open "$url" 2>/dev/null || true
+  elif command -v open &>/dev/null; then
+    open "$url" 2>/dev/null || true
+  elif command -v sensible-browser &>/dev/null; then
+    sensible-browser "$url" 2>/dev/null || true
+  else
+    log "No browser launcher found. Open manually:"
+  fi
+  echo "  \u2192 $url"
+}
+
+setup_api_key() {
+  local key_file="$PROPAI_DIR/.api_key"
+  if [ ! -f "$key_file" ]; then
+    if command -v uuidgen &>/dev/null; then
+      uuidgen > "$key_file"
+    else
+      python3 -c "import uuid; print(uuid.uuid4())" > "$key_file"
+    fi
+    log "Generated API key"
+  fi
+}
+
+ensure_instance() {
+  local key
+  key=$(cat "$PROPAI_DIR/.api_key" 2>/dev/null || echo "propai-dev-key")
+  local instance="propai-scraper"
+  # Check if instance exists
+  local exists
+  exists=$(curl -sf "http://localhost:8080/instance/fetch-instances" -H "apikey: $key" 2>/dev/null | python3 -c "import sys,json; instances=json.load(sys.stdin); print(any(i.get('instance','')=='$instance' for i in (instances if isinstance(instances,list) else instances.get('instances',[]))))" 2>/dev/null || echo "false")
+  if [ "$exists" != "True" ]; then
+    log "Creating WhatsApp instance..."
+    curl -sf -X POST http://localhost:8080/instance/create \
+      -H "Content-Type: application/json" \
+      -H "apikey: $key" \
+      -d '{"instanceName": "'"$instance"'", "integration": "WHATSAPP-BAILEYS"}' >/dev/null 2>&1 || true
+  fi
+}
+
+status() {
+  echo "\u2500\u2500 PropAI Services \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500"
+  echo ""
+  if curl -sf http://localhost:8080/manager >/dev/null 2>&1; then
+    echo "  Evolution API    \u2713  http://localhost:8080"
+  else
+    echo "  Evolution API    \u2717  (not running)"
+  fi
+  if curl -sf http://localhost:8000/health >/dev/null 2>&1; then
+    echo "  Lab API          \u2713  http://localhost:8000"
+    echo "  Onboarding       \u2192  http://localhost:8000/connect"
+  else
+    echo "  Lab API          \u2717  (not running)"
+  fi
+  if curl -sf http://localhost:8080/manager >/dev/null 2>&1; then
+    echo "  Evolution UI     \u2713  http://localhost:8080/manager"
+  fi
+  echo ""
+}
+
+case "${1:-help}" in
+  waba)
+    log "PropAI WABA \u2014 WhatsApp Onboarding"
+    echo ""
+    setup_api_key
+    check_docker
+    ensure_instance
+    check_lab_api
+    echo ""
+    open_browser "http://localhost:8000/connect"
+    echo ""
+    echo "  Scan the QR code with WhatsApp on your phone."
+    echo "  Once connected, open http://localhost:8000 to manage."
+    echo ""
+    ;;
+  lab)
+    check_lab_api
+    open_browser "http://localhost:8000/"
+    ;;
+  status)
+    status
+    ;;
+  help|--help|-h)
+    usage
+    ;;
+  *)
+    echo "Unknown command: $1"
+    usage
+    exit 1
+    ;;
+esac

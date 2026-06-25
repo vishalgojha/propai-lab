@@ -1,0 +1,621 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PropAI Intelligence Lab</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0d1117; color: #c9d1d9; font-size: 14px; line-height: 1.5; }
+.container { max-width: 1400px; margin: 0 auto; padding: 16px; }
+header { display: flex; align-items: center; gap: 16px; margin-bottom: 16px; flex-wrap: wrap; }
+header h1 { font-size: 20px; font-weight: 600; color: #f0f6fc; }
+.stats-bar { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+.stat-card { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 12px 18px; text-align: center; min-width: 100px; }
+.stat-card .val { font-size: 24px; font-weight: 700; color: #f0f6fc; }
+.stat-card .lbl { font-size: 11px; color: #8b949e; text-transform: uppercase; letter-spacing: 0.5px; }
+.stat-card.green .val { color: #3fb950; }
+.stat-card.red .val { color: #f85149; }
+.stat-card.yellow .val { color: #d29922; }
+.stat-card.blue .val { color: #58a6ff; }
+.tabs { display: flex; gap: 4px; margin-bottom: 16px; border-bottom: 1px solid #30363d; }
+.tab { padding: 8px 20px; cursor: pointer; border: 1px solid transparent; border-bottom: 2px solid transparent; color: #8b949e; font-size: 13px; font-weight: 500; border-radius: 4px 4px 0 0; }
+.tab:hover { color: #c9d1d9; background: #161b22; }
+.tab.active { color: #f0f6fc; border-color: #30363d #30363d #0d1117; background: #161b22; border-bottom-color: #f78166; }
+.panel { display: none; }
+.panel.active { display: block; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th { text-align: left; padding: 8px 10px; border-bottom: 2px solid #30363d; color: #8b949e; font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; position: sticky; top: 0; background: #0d1117; z-index: 1; }
+td { padding: 8px 10px; border-bottom: 1px solid #21262d; vertical-align: top; max-width: 300px; overflow: hidden; text-overflow: ellipsis; }
+tr:hover td { background: #161b22; }
+.badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: 600; }
+.badge.green { background: rgba(63,185,80,0.15); color: #3fb950; }
+.badge.red { background: rgba(248,81,73,0.15); color: #f85149; }
+.badge.yellow { background: rgba(210,153,34,0.15); color: #d29922; }
+.badge.blue { background: rgba(88,166,255,0.15); color: #58a6ff; }
+.badge.gray { background: rgba(139,148,158,0.15); color: #8b949e; }
+.cell-truncate { max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.clickable { cursor: pointer; color: #58a6ff; }
+.clickable:hover { text-decoration: underline; }
+.payload-box { background: #161b22; border: 1px solid #30363d; border-radius: 6px; padding: 12px; font-family: 'SF Mono', Consolas, monospace; font-size: 12px; white-space: pre-wrap; max-height: 300px; overflow: auto; margin-top: 8px; }
+
+/* Evidence Inspector */
+.inspector { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+.inspector h2 { font-size: 16px; color: #f0f6fc; margin-bottom: 8px; }
+.inspector .meta { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 16px; margin-bottom: 12px; }
+.inspector .meta .kv { display: flex; }
+.inspector .meta .k { color: #8b949e; min-width: 120px; }
+.inspector .meta .v { color: #c9d1d9; }
+.inspector h3 { font-size: 14px; color: #f0f6fc; margin: 12px 0 8px; }
+.candidate { background: #0d1117; border: 1px solid #30363d; border-radius: 6px; padding: 12px; margin-bottom: 8px; }
+.candidate.winner { border-color: #3fb950; }
+.candidate .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+.candidate .name { font-weight: 600; color: #f0f6fc; }
+.candidate .conf-score { font-size: 13px; font-weight: 600; }
+.candidate .reasons { list-style: none; padding: 0; }
+.candidate .reasons li { padding: 2px 0; font-size: 12px; }
+.candidate .reasons li::before { content: '•'; margin-right: 6px; color: #3fb950; }
+.candidate .reasons li.red::before { color: #f85149; }
+
+/* Raw message expand */
+.raw-expand { cursor: pointer; color: #8b949e; font-size: 11px; }
+.raw-expand:hover { color: #c9d1d9; }
+.raw-full { display: none; margin-top: 4px; padding: 8px; background: #0d1117; border-radius: 4px; font-size: 12px; white-space: pre-wrap; max-height: 150px; overflow: auto; }
+.raw-full.open { display: block; }
+
+.filter-bar { margin-bottom: 12px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.filter-bar select, .filter-bar input { padding: 6px 10px; background: #0d1117; border: 1px solid #30363d; border-radius: 6px; color: #c9d1d9; font-size: 13px; }
+.filter-bar button { padding: 6px 14px; background: #238636; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; }
+.filter-bar button:hover { background: #2ea043; }
+
+.loading { text-align: center; padding: 40px; color: #8b949e; }
+.loading .spinner { display: inline-block; width: 24px; height: 24px; border: 3px solid #30363d; border-top-color: #58a6ff; border-radius: 50%; animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.pagination { display: flex; gap: 8px; align-items: center; margin-top: 12px; }
+.pagination button { padding: 4px 12px; background: #21262d; border: 1px solid #30363d; border-radius: 4px; color: #c9d1d9; cursor: pointer; }
+.pagination button:disabled { opacity: 0.4; cursor: default; }
+.pagination button:hover:not(:disabled) { background: #30363d; }
+
+/* Responsive */
+@media (max-width: 800px) {
+  .inspector .meta { grid-template-columns: 1fr; }
+  .stats-bar { gap: 6px; }
+  .stat-card { min-width: 70px; padding: 8px 12px; }
+  .stat-card .val { font-size: 18px; }
+}
+</style>
+</head>
+<body>
+<div class="container">
+<header>
+  <h1>PropAI Intelligence Lab</h1>
+  <span id="status" style="color:#8b949e;font-size:12px;"></span>
+  <button onclick="runReplay()" style="margin-left:auto;padding:6px 14px;background:#21262d;border:1px solid #30363d;border-radius:6px;color:#c9d1d9;cursor:pointer;font-size:12px;">Replay All</button>
+</header>
+
+<div class="stats-bar" id="statsBar"></div>
+
+<div class="tabs" id="tabs">
+  <div class="tab active" data-tab="inbox" onclick="switchTab('inbox')">Inbox</div>
+  <div class="tab" data-tab="extraction" onclick="switchTab('extraction')">Extraction</div>
+  <div class="tab" data-tab="resolution" onclick="switchTab('resolution')">Resolution</div>
+  <div class="tab" data-tab="failures" onclick="switchTab('failures')">Failures</div>
+  <div class="tab" data-tab="evidence" onclick="switchTab('evidence')">Evidence Inspector</div>
+  <div class="tab" data-tab="groups" onclick="switchTab('groups'); loadGroups()">Groups</div>
+</div>
+
+<div class="panel active" id="panel-inbox">
+  <div class="filter-bar">
+    <input type="text" id="inboxSearch" placeholder="Search message..." oninput="loadInbox()">
+    <select id="inboxType" onchange="loadInbox()"><option value="">All types</option><option value="SELLER">SELLER</option><option value="BUYER">BUYER</option><option value="RENTAL">RENTAL</option><option value="RENTAL_SEEKER">RENTAL_SEEKER</option></select>
+    <button onclick="loadInbox()">Refresh</button>
+  </div>
+  <table><thead><tr><th>ID</th><th>Group</th><th>Sender</th><th>Message</th><th>Type</th><th>Timestamp</th><th>Source</th></tr></thead><tbody id="inboxBody"></tbody></table>
+  <div class="pagination"><button id="inboxPrev" onclick="inboxOffset=Math.max(0,inboxOffset-50);loadInbox()">Prev</button><span id="inboxRange"></span><button id="inboxNext" onclick="inboxOffset+=50;loadInbox()">Next</button></div>
+</div>
+
+<div class="panel" id="panel-extraction">
+  <div class="filter-bar"><button onclick="loadExtraction()">Refresh</button></div>
+  <table><thead><tr><th>ID</th><th>Raw ID</th><th>Type</th><th>BHK</th><th>Price</th><th>Area</th><th>Furnishing</th><th>Location</th><th>Landmark</th><th>Area</th><th>MM</th><th>Conf</th></tr></thead><tbody id="extractionBody"></tbody></table>
+  <div class="pagination"><button id="extractionPrev" onclick="extractionOffset=Math.max(0,extractionOffset-50);loadExtraction()">Prev</button><span id="extractionRange"></span><button id="extractionNext" onclick="extractionOffset+=50;loadExtraction()">Next</button></div>
+</div>
+
+<div class="panel" id="panel-resolution">
+  <div class="filter-bar">
+    <select id="resolverFilter" onchange="loadResolver()"><option value="">All methods</option><option value="resolved">Resolved</option><option value="unresolved">Unresolved</option><option value="error">Error</option></select>
+    <button onclick="loadResolver()">Refresh</button>
+  </div>
+  <table><thead><tr><th>ID</th><th>Raw</th><th>Building</th><th>Method</th><th>P-Conf</th><th>R-Conf</th><th>Final</th><th>Landmark</th><th>Failure</th><th>Actions</th></tr></thead><tbody id="resolverBody"></tbody></table>
+  <div class="pagination"><button id="resolverPrev" onclick="resolverOffset=Math.max(0,resolverOffset-50);loadResolver()">Prev</button><span id="resolverRange"></span><button id="resolverNext" onclick="resolverOffset+=50;loadResolver()">Next</button></div>
+</div>
+
+<div class="panel" id="panel-failures">
+  <div class="filter-bar">
+    <select id="failFilter" onchange="loadFailures()"><option value="">All failures</option><option value="parser_failure">Parser Failure</option><option value="unknown_landmark">Unknown Landmark</option><option value="no_nearby_buildings">No Nearby Buildings</option><option value="no_candidates">No Candidates</option><option value="multiple_candidates">Multiple Candidates</option><option value="malformed">Malformed</option><option value="resolver_error">Resolver Error</option></select>
+    <button onclick="loadFailures()">Refresh</button>
+  </div>
+  <table><thead><tr><th>ID</th><th>Message</th><th>Failure</th><th>Landmark</th><th>Detail</th><th>Actions</th></tr></thead><tbody id="failBody"></tbody></table>
+  <div class="pagination"><button id="failPrev" onclick="failOffset=Math.max(0,failOffset-50);loadFailures()">Prev</button><span id="failRange"></span><button id="failNext" onclick="failOffset+=50;loadFailures()">Next</button></div>
+</div>
+
+<div class="panel" id="panel-evidence">
+  <div class="inspector" id="evidenceInspector">
+    <p style="color:#8b949e;">Click an observation ID in any table to inspect evidence here.</p>
+  </div>
+</div>
+
+<div class="panel" id="panel-groups">
+  <div class="filter-bar">
+    <button onclick="loadGroups()">Refresh Groups</button>
+    <button onclick="startSync()" id="syncStartBtn" style="background:#238636;">Start Sync</button>
+    <button onclick="stopSync()" id="syncStopBtn" style="background:#da3633;">Stop Sync</button>
+    <button onclick="checkConnection()" style="background:#1f6feb;">Check Connection</button>
+    <span id="connStatus" style="font-size:12px;color:#8b949e;"></span>
+  </div>
+  <div id="syncOverview" style="margin-bottom:12px;"></div>
+  <table><thead><tr>
+    <th>Group Name</th><th>ID</th><th>Source</th><th>Members</th><th>Status</th><th>Processed</th><th>Found</th><th>Remaining</th><th>Started</th><th>Finished</th><th>Error</th>
+  </tr></thead><tbody id="groupsBody"></tbody></table>
+</div>
+
+</div>
+
+<script>
+// ── State ─────────────────────────────────────────────────────────
+let inboxOffset = 0, extractionOffset = 0, resolverOffset = 0, failOffset = 0;
+let currentObsId = null;
+
+// ── Init ──────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  loadStats();
+  loadInbox();
+});
+
+// ── Tab switching ─────────────────────────────────────────────────
+function switchTab(name) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.querySelector(`.tab[data-tab="${name}"]`).classList.add('active');
+  document.getElementById(`panel-${name}`).classList.add('active');
+  if (name === 'extraction') loadExtraction();
+  if (name === 'resolution') loadResolver();
+  if (name === 'failures') loadFailures();
+  if (name === 'evidence' && currentObsId) loadObservation(currentObsId);
+}
+
+// ── Stats ─────────────────────────────────────────────────────────
+async function loadStats() {
+  try {
+    const res = await fetch('/api/stats');
+    const d = await res.json();
+    // Also fetch source info
+    let sourceInfo = '';
+    try {
+      const sRes = await fetch('/api/sources');
+      const s = await sRes.json();
+      if (s.sources && s.sources.length) {
+        sourceInfo = s.sources.map(s => `${s.name} v${s.version}`).join(', ');
+      }
+    } catch(e) {}
+    document.getElementById('statsBar').innerHTML = `
+      <div class="stat-card blue"><div class="val">${d.total_raw}</div><div class="lbl">Total Messages</div></div>
+      <div class="stat-card green"><div class="val">${d.resolved}</div><div class="lbl">Resolved</div></div>
+      <div class="stat-card red"><div class="val">${d.unresolved}</div><div class="lbl">Unresolved</div></div>
+      <div class="stat-card yellow"><div class="val">${d.errors}</div><div class="lbl">Errors</div></div>
+      <div class="stat-card green"><div class="val">${(d.avg_accuracy * 100).toFixed(1)}%</div><div class="lbl">Avg Accuracy</div></div>
+      <div class="stat-card blue"><div class="val">${d.evaluated}</div><div class="lbl">Evaluated</div></div>
+      <div class="stat-card" style="min-width:200px;">
+        <div class="lbl" style="margin-bottom:4px;">Failures</div>
+        <div style="font-size:12px;color:#8b949e;">
+          ${(d.failure_categories || []).map(f => `<span class="badge red">${f.failure_category}: ${f.c}</span>`).join(' ') || '<span style="color:#8b949e;">none</span>'}
+        </div>
+      </div>
+      <div class="stat-card" style="min-width:160px;">
+        <div class="lbl" style="margin-bottom:4px;">Methods</div>
+        <div style="font-size:12px;color:#8b949e;">
+          ${(d.methods || []).map(m => `<span class="badge">${m.method}: ${m.c}</span>`).join(' ')}
+        </div>
+      </div>
+    `;
+  } catch(e) {}
+}
+
+// ── Inbox ─────────────────────────────────────────────────────────
+async function loadInbox() {
+  const search = document.getElementById('inboxSearch').value;
+  const type = document.getElementById('inboxType').value;
+  let url = `/api/raw?limit=50&offset=${inboxOffset}`;
+  const res = await fetch(url);
+  const data = await res.json();
+  document.getElementById('inboxRange').textContent = `${inboxOffset+1}–${inboxOffset+data.length}`;
+  document.getElementById('inboxPrev').disabled = inboxOffset === 0;
+  const tbody = document.getElementById('inboxBody');
+  tbody.innerHTML = data.filter(r => {
+    if (search && !r.message.toLowerCase().includes(search.toLowerCase())) return false;
+    return true;
+  }).map(r => `
+    <tr>
+      <td class="clickable" onclick="inspectObservation(${r.id})">#${r.id}</td>
+      <td class="cell-truncate">${esc(r.group_name)}</td>
+      <td class="cell-truncate">${esc(r.sender)}</td>
+      <td><span class="raw-expand" onclick="this.nextElementSibling.classList.toggle('open')">${esc(r.message.substring(0,80))}${r.message.length > 80 ? '…' : ''}</span><div class="raw-full">${esc(r.message)}</div></td>
+      <td>${r.message_type ? `<span class="badge blue">${esc(r.message_type)}</span>` : ''}</td>
+      <td class="cell-truncate">${esc(r.timestamp)}</td>
+      <td>${esc(r.source)}</td>
+    </tr>
+  `).join('');
+}
+
+// ── Extraction ────────────────────────────────────────────────────
+async function loadExtraction() {
+  const res = await fetch(`/api/parsed?limit=50&offset=${extractionOffset}`);
+  const data = await res.json();
+  document.getElementById('extractionRange').textContent = `${extractionOffset+1}–${extractionOffset+data.length}`;
+  document.getElementById('extractionPrev').disabled = extractionOffset === 0;
+  const tbody = document.getElementById('extractionBody');
+  tbody.innerHTML = data.map(r => `
+    <tr>
+      <td class="clickable" onclick="inspectObservation(${r.raw_message_id})">P${r.id}</td>
+      <td class="clickable" onclick="inspectObservation(${r.raw_message_id})">#${r.raw_message_id}</td>
+      <td>${r.message_type ? `<span class="badge blue">${esc(r.message_type)}</span>` : ''}</td>
+      <td>${esc(r.bhk || '')}</td>
+      <td>${r.price ? `${r.price.toLocaleString()} ${esc(r.price_unit||'')}` : ''}</td>
+      <td>${r.area_sqft ? `${r.area_sqft.toLocaleString()} sqft` : ''}</td>
+      <td>${esc(r.furnishing || '')}</td>
+      <td class="cell-truncate">${esc(r.location_raw || '')}</td>
+      <td class="cell-truncate">${esc(r.landmark_name || '')}</td>
+      <td class="cell-truncate">${esc(r.area || '')}</td>
+      <td class="cell-truncate">${esc(r.micro_market || '')}</td>
+      <td>${r.confidence ? (r.confidence * 100).toFixed(0) + '%' : ''}</td>
+    </tr>
+  `).join('');
+}
+
+// ── Resolver ──────────────────────────────────────────────────────
+async function loadResolver() {
+  const method = document.getElementById('resolverFilter').value;
+  let url = `/api/resolver?limit=50&offset=${resolverOffset}`;
+  if (method) url += `&method=${method}`;
+  const res = await fetch(url);
+  const data = await res.json();
+  document.getElementById('resolverRange').textContent = `${resolverOffset+1}–${resolverOffset+data.length}`;
+  document.getElementById('resolverPrev').disabled = resolverOffset === 0;
+  const tbody = document.getElementById('resolverBody');
+  tbody.innerHTML = data.map(r => `
+    <tr>
+      <td class="clickable" onclick="inspectObservation(${r.id})">R${r.id}</td>
+      <td class="clickable" onclick="inspectObservation(${r.parsed_id ? '—' : ''})">#${r.parsed_id || '?'}</td>
+      <td class="cell-truncate">${esc(r.building_name || '')}</td>
+      <td>${fmtMethod(r.method)}</td>
+      <td>${r.parser_confidence != null ? (r.parser_confidence * 100).toFixed(0) + '%' : ''}</td>
+      <td>${r.resolver_confidence != null ? (r.resolver_confidence * 100).toFixed(0) + '%' : ''}</td>
+      <td><span class="badge ${r.final_confidence > 0.7 ? 'green' : r.final_confidence > 0.3 ? 'yellow' : 'red'}">${r.final_confidence ? (r.final_confidence * 100).toFixed(0) + '%' : '0%'}</span></td>
+      <td class="cell-truncate">${esc(r.landmark_name || '')}</td>
+      <td>${r.failure_category ? `<span class="badge red">${esc(r.failure_category)}</span>` : ''}</td>
+      <td><button onclick="inspectObservation(${r.id})" style="padding:2px 8px;background:#21262d;border:1px solid #30363d;border-radius:4px;color:#58a6ff;cursor:pointer;font-size:11px;">Inspect</button></td>
+    </tr>
+  `).join('');
+}
+
+// ── Failures ──────────────────────────────────────────────────────
+async function loadFailures() {
+  const cat = document.getElementById('failFilter').value;
+  const res = await fetch(`/api/failed?limit=50`);
+  let data = await res.json();
+  if (cat) data = data.filter(r => r.failure_category === cat);
+  document.getElementById('failRange').textContent = `${failOffset+1}–${failOffset+data.length}`;
+  document.getElementById('failPrev').disabled = failOffset === 0;
+  const tbody = document.getElementById('failBody');
+  tbody.innerHTML = data.map(r => `
+    <tr>
+      <td class="clickable" onclick="inspectObservation(${r.id})">R${r.id}</td>
+      <td><span class="raw-expand" onclick="this.nextElementSibling.classList.toggle('open')">${esc((r.raw_message||'').substring(0,80))}…</span><div class="raw-full">${esc(r.raw_message||'')}</div></td>
+      <td>${r.failure_category ? `<span class="badge red">${esc(r.failure_category)}</span>` : '<span class="badge gray">unknown</span>'}</td>
+      <td class="cell-truncate">${esc(r.parsed_landmark || r.location_raw || '')}</td>
+      <td class="cell-truncate">${esc(r.method_detail || '')}</td>
+      <td><button onclick="inspectObservation(${r.id})" style="padding:2px 8px;background:#21262d;border:1px solid #30363d;border-radius:4px;color:#58a6ff;cursor:pointer;font-size:11px;">Inspect</button></td>
+    </tr>
+  `).join('');
+}
+
+// ── Evidence Inspector ────────────────────────────────────────────
+async function inspectObservation(id) {
+  currentObsId = id;
+  switchTab('evidence');
+  const el = document.getElementById('evidenceInspector');
+  el.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+  try {
+    const res = await fetch(`/api/observations/${id}`);
+    if (!res.ok) { el.innerHTML = `<p style="color:#f85149;">Observation #${id} not found</p>`; return; }
+    const obs = await res.json();
+    renderEvidence(obs);
+  } catch(e) {
+    el.innerHTML = `<p style="color:#f85149;">Error: ${e.message}</p>`;
+  }
+}
+
+function renderEvidence(obs) {
+  const raw = obs.raw || {};
+  const parsed = obs.parsed || {};
+  const resolver = obs.resolver || {};
+  const evaluation = obs.evaluation || {};
+  const cans = (resolver.candidates || []).sort((a,b) => b.confidence - a.confidence);
+  const winner = cans.length > 0 ? cans[0] : null;
+
+  let html = `<h2>Evidence Inspector — Observation #${raw.id}</h2>
+    <div class="meta">
+      <div class="kv"><span class="k">Raw Message</span><span class="v">${esc(raw.message || '')}</span></div>
+      <div class="kv"><span class="k">Sender</span><span class="v">${esc(raw.sender || '')}</span></div>
+      <div class="kv"><span class="k">Group</span><span class="v">${esc(raw.group_name || '')}</span></div>
+      <div class="kv"><span class="k">Timestamp</span><span class="v">${esc(raw.timestamp || '')}</span></div>
+      <div class="kv"><span class="k">Parser Confidence</span><span class="v">${resolver.parser_confidence != null ? (resolver.parser_confidence * 100).toFixed(0) + '%' : 'N/A'}</span></div>
+      <div class="kv"><span class="k">Resolver Confidence</span><span class="v">${resolver.resolver_confidence != null ? (resolver.resolver_confidence * 100).toFixed(1) + '%' : 'N/A'}</span></div>
+      <div class="kv"><span class="k">Final Confidence</span><span class="v"><span class="badge ${resolver.final_confidence > 0.7 ? 'green' : resolver.final_confidence > 0.3 ? 'yellow' : 'red'}">${resolver.final_confidence ? (resolver.final_confidence * 100).toFixed(1) + '%' : '0%'}</span></span></div>
+      <div class="kv"><span class="k">Method</span><span class="v">${fmtMethod(resolver.method)} ${resolver.method_detail ? '(' + esc(resolver.method_detail) + ')' : ''}</span></div>
+      <div class="kv"><span class="k">Failure Category</span><span class="v">${resolver.failure_category ? `<span class="badge red">${esc(resolver.failure_category)}</span>` : '<span class="badge green">None</span>'}</span></div>
+      ${evaluation.accuracy_overall != null ? `<div class="kv"><span class="k">Evaluation Accuracy</span><span class="v"><span class="badge ${evaluation.accuracy_overall > 0.8 ? 'green' : 'yellow'}">${(evaluation.accuracy_overall * 100).toFixed(0)}%</span></span></div>` : ''}
+    </div>`;
+
+  // Parsed output
+  html += `<h3>Extracted Fields</h3>
+    <div class="meta">
+      <div class="kv"><span class="k">Type</span><span class="v">${esc(parsed.message_type || '')}</span></div>
+      <div class="kv"><span class="k">BHK</span><span class="v">${esc(parsed.bhk || '')}</span></div>
+      <div class="kv"><span class="k">Price</span><span class="v">${parsed.price ? parsed.price.toLocaleString() + ' ' + esc(parsed.price_unit||'') : ''}</span></div>
+      <div class="kv"><span class="k">Area</span><span class="v">${parsed.area_sqft ? parsed.area_sqft.toLocaleString() + ' sqft' : ''}</span></div>
+      <div class="kv"><span class="k">Furnishing</span><span class="v">${esc(parsed.furnishing || '')}</span></div>
+      <div class="kv"><span class="k">Location</span><span class="v">${esc(parsed.location_raw || '')}</span></div>
+      <div class="kv"><span class="k">Landmark</span><span class="v">${esc(parsed.landmark_name || '')}</span></div>
+      <div class="kv"><span class="k">Area/Micro Market</span><span class="v">${esc(parsed.area || '')} / ${esc(parsed.micro_market || '')}</span></div>
+      <div class="kv"><span class="k">Developer</span><span class="v">${esc(parsed.developer || '')}</span></div>
+    </div>`;
+
+  // Candidates
+  html += `<h3>Candidates (${cans.length})</h3>`;
+  if (cans.length === 0) {
+    html += '<p style="color:#8b949e;">No candidates found.</p>';
+  } else {
+    cans.forEach((c, i) => {
+      const isWinner = i === 0 && winner;
+      html += `<div class="candidate ${isWinner ? 'winner' : ''}">
+        <div class="header">
+          <span class="name">${esc(c.building_name || 'Building #' + c.building_id)} ${isWinner ? '<span class="badge green">WINNER</span>' : ''}</span>
+          <span class="conf-score" style="color:${c.confidence > 0.7 ? '#3fb950' : c.confidence > 0.3 ? '#d29922' : '#f85149'}">${(c.confidence * 100).toFixed(0)}% confident</span>
+        </div>
+        <div style="font-size:12px;color:#8b949e;margin-bottom:4px;">
+          Method: ${c.method || 'N/A'}
+          ${c.distance_m != null ? ` | Distance: ${c.distance_m}m` : ''}
+          ${c.micro_market ? ` | Micro Market: ${esc(c.micro_market)}` : ''}
+          ${c.landmark_name ? ` | Landmark: ${esc(c.landmark_name)}` : ''}
+        </div>
+        <ul class="reasons">
+          ${(c.reasons || []).map(r => `<li>${esc(r)}</li>`).join('')}
+        </ul>
+      </div>`;
+    });
+  }
+
+  // Evaluation
+  if (evaluation.accuracy_overall != null) {
+    html += `<h3>Evaluation</h3>
+      <div class="meta">
+        <div class="kv"><span class="k">Overall Accuracy</span><span class="v"><span class="badge ${evaluation.accuracy_overall > 0.8 ? 'green' : 'yellow'}">${(evaluation.accuracy_overall * 100).toFixed(0)}%</span></span></div>
+        <div class="kv"><span class="k">Corrected Notes</span><span class="v">${esc(evaluation.correction_notes || 'none')}</span></div>
+      </div>`;
+  }
+
+  // Raw payload
+  if (raw.raw_payload && raw.raw_payload !== '{}') {
+    html += `<h3>Raw Payload</h3><div class="payload-box">${esc(JSON.stringify(JSON.parse(raw.raw_payload), null, 2))}</div>`;
+  }
+
+  el.innerHTML = html;
+}
+
+// ── Replay ────────────────────────────────────────────────────────
+async function runReplay() {
+  if (!confirm('Re-run all messages through the current resolver?')) return;
+  const btn = document.querySelector('button[onclick="runReplay()"]');
+  btn.disabled = true;
+  btn.textContent = 'Running…';
+  try {
+    const res = await fetch('/api/replay', { method: 'POST' });
+    const d = await res.json();
+    alert(`Replay complete!\nTotal: ${d.total}\nResolved: ${d.resolved}\nUnresolved: ${d.unresolved}\nErrors: ${d.errors}\nAvg Confidence: ${(d.avg_confidence * 100).toFixed(1)}%\n\nFailures:\n${Object.entries(d.failure_breakdown).map(([k,v]) => `  ${k}: ${v}`).join('\n')}`);
+    loadStats();
+  } catch(e) {
+    alert('Replay failed: ' + e.message);
+  }
+  btn.disabled = false;
+  btn.textContent = 'Replay All';
+}
+
+// ── Helpers ───────────────────────────────────────────────────────
+function esc(s) { if (s == null) return ''; return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function fmtMethod(m) {
+  if (!m) return '<span class="badge gray">unknown</span>';
+  if (m === 'resolved') return '<span class="badge green">resolved</span>';
+  if (m === 'unresolved') return '<span class="badge red">unresolved</span>';
+  if (m === 'error') return '<span class="badge red">error</span>';
+  return `<span class="badge blue">${esc(m)}</span>`;
+}
+
+// ── Group Dashboard ──────────────────────────────────────────────
+async function loadGroups() {
+  try {
+    const [statusRes, jobsRes] = await Promise.all([
+      fetch('/api/sources/status'),
+      fetch('/api/sources/jobs?limit=200'),
+    ]);
+    const status = await statusRes.json();
+    const jobs = await jobsRes.json();
+
+    // Source badges
+    let sourceHtml = '';
+    if (status.source_summary) {
+      sourceHtml = Object.entries(status.source_summary).map(([name, s]) =>
+        `<span class="badge" style="font-size:12px;padding:4px 12px;">${esc(name)}: ${s.total} jobs, ${s.records} records</span>`
+      ).join(' ');
+    }
+
+    // Overview bar
+    const overview = document.getElementById('syncOverview');
+    const totalFound = Object.values(status.source_summary || {}).reduce((a, s) => a + s.records, 0) || status.total_messages_found || 0;
+    const progress = status.synced_messages || 0;
+    const pct = totalFound > 0 ? ((progress / totalFound) * 100).toFixed(1) : 0;
+    overview.innerHTML = `
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
+        <div class="stat-card ${status.overall === 'complete' ? 'green' : status.overall === 'running' ? 'blue' : status.overall === 'error' ? 'red' : ''}">
+          <div class="val">${esc(status.overall)}</div><div class="lbl">Status</div>
+        </div>
+        <div class="stat-card"><div class="val">${Object.keys(status.source_summary || {}).length}</div><div class="lbl">Sources</div></div>
+        <div class="stat-card"><div class="val">${status.total_jobs || 0}</div><div class="lbl">Total Jobs</div></div>
+        <div class="stat-card green"><div class="val">${status.completed_jobs || 0}</div><div class="lbl">Completed</div></div>
+        <div class="stat-card red"><div class="val">${status.failed_jobs || 0}</div><div class="lbl">Failed</div></div>
+        <div class="stat-card"><div class="val">${progress}</div><div class="lbl">Processed</div></div>
+        <div class="stat-card"><div class="val">${totalFound}</div><div class="lbl">Found</div></div>
+        <div class="stat-card blue"><div class="val">${pct}%</div><div class="lbl">Progress</div></div>
+        <div class="stat-card"><div class="val">${status.total_messages_stored || status.historical_messages_stored || 0}</div><div class="lbl">Stored</div></div>
+      </div>
+      ${sourceHtml ? `<div style="margin-bottom:8px;font-size:12px;color:#8b949e;">Sources: ${sourceHtml}</div>` : ''}
+      <div style="height:6px;background:#21262d;border-radius:3px;overflow:hidden;">
+        <div style="height:100%;width:${pct}%;background:#238636;border-radius:3px;transition:width 0.3s;"></div>
+      </div>
+    `;
+
+    // Connection status
+    const cEl = document.getElementById('connStatus');
+    if (status.current_group) {
+      cEl.textContent = `Current: ${status.current_group_name || status.current_group}`;
+    } else {
+      // Check WhatsApp connection
+      try {
+        const cRes = await fetch('/api/sync/connection');
+        const c = await cRes.json();
+        cEl.innerHTML = c.connected
+          ? '<span style="color:#3fb950;">WhatsApp ✓</span>'
+          : '<span style="color:#8b949e;">WhatsApp ✗</span>';
+      } catch(e) { cEl.textContent = ''; }
+    }
+
+    // Button states
+    document.getElementById('syncStartBtn').disabled = (status.overall === 'running' || status.overall === 'discovering');
+    document.getElementById('syncStopBtn').disabled = (status.overall !== 'running' && status.overall !== 'discovering');
+
+    // Table
+    const tbody = document.getElementById('groupsBody');
+    if (!jobs.length) {
+      tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;color:#8b949e;">No sync jobs yet. Start a sync to discover sources.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = jobs.map(j => {
+      const remaining = Math.max(0, (j.records_found || 0) - (j.records_processed || 0));
+      const started = j.started_at ? new Date(j.started_at + 'Z').toLocaleString() : '';
+      const finished = j.finished_at ? new Date(j.finished_at + 'Z').toLocaleString() : '';
+      const meta = (typeof j.meta === 'string') ? safeJsonParse(j.meta) : (j.meta || {});
+      const members = meta.participants || '';
+      const colSpan = j.source === 'whatsapp' ? '11' : '9';
+      if (j.source === 'whatsapp') {
+        return `<tr>
+          <td><strong>${esc(j.group_name || j.group_id)}</strong></td>
+          <td style="font-size:11px;color:#8b949e;max-width:160px;overflow:hidden;text-overflow:ellipsis;">${esc(j.group_id)}</td>
+          <td><span class="badge blue">${esc(j.source)}</span></td>
+          <td>${members}</td>
+          <td>${fmtSyncStatus(j.status)}</td>
+          <td>${j.records_processed || 0}</td>
+          <td>${j.records_found || 0}</td>
+          <td>${remaining > 0 ? '<span class="badge yellow">' + remaining + '</span>' : '<span class="badge green">0</span>'}</td>
+          <td style="font-size:11px;">${started}</td>
+          <td style="font-size:11px;">${finished}</td>
+          <td>${j.error ? `<span class="badge red">${esc(j.error)}</span>` : ''}</td>
+        </tr>`;
+      } else {
+        return `<tr>
+          <td><strong>${esc(j.group_name || j.group_id)}</strong></td>
+          <td style="font-size:11px;color:#8b949e;max-width:160px;">${esc(j.group_id)}</td>
+          <td><span class="badge blue">${esc(j.source)}</span></td>
+          <td>—</td>
+          <td>${fmtSyncStatus(j.status)}</td>
+          <td>${j.records_processed || 0}</td>
+          <td>${j.records_found || 0}</td>
+          <td>${remaining > 0 ? '<span class="badge yellow">' + remaining + '</span>' : '<span class="badge green">0</span>'}</td>
+          <td style="font-size:11px;">${started}</td>
+          <td style="font-size:11px;">${finished}</td>
+          <td>${j.error ? `<span class="badge red">${esc(j.error)}</span>` : ''}</td>
+        </tr>`;
+      }
+    }).join('');
+  } catch(e) {
+    document.getElementById('groupsBody').innerHTML = `<tr><td colspan="11" style="color:#f85149;">Error: ${e.message}</td></tr>`;
+  }
+}
+
+function safeJsonParse(s) { try { return JSON.parse(s); } catch(e) { return {}; } }
+
+function fmtSyncStatus(s) {
+  const m = {
+    'pending': 'gray', 'running': 'blue', 'complete': 'green', 'failed': 'red', 'cancelled': 'yellow',
+  };
+  return `<span class="badge ${m[s] || 'gray'}">${esc(s || 'unknown')}</span>`;
+}
+
+async function startSync() {
+  document.getElementById('syncStartBtn').disabled = true;
+  document.getElementById('connStatus').textContent = 'Starting sync...';
+  try {
+    const res = await fetch('/api/sources/whatsapp/sync', { method: 'POST' });
+    const d = await res.json();
+    document.getElementById('connStatus').textContent = res.ok ? (d.message || 'Started') : (d.detail || 'Error');
+  } catch(e) {
+    document.getElementById('connStatus').textContent = 'Error: ' + e.message;
+  }
+  setTimeout(loadGroups, 1500);
+}
+
+async function stopSync() {
+  document.getElementById('syncStopBtn').disabled = true;
+  document.getElementById('connStatus').textContent = 'Stopping...';
+  try {
+    await fetch('/api/sources/stop', { method: 'POST' });
+    document.getElementById('connStatus').textContent = 'Stop requested';
+  } catch(e) {
+    document.getElementById('connStatus').textContent = 'Error: ' + e.message;
+  }
+  setTimeout(loadGroups, 1500);
+}
+
+async function checkConnection() {
+  document.getElementById('connStatus').textContent = 'Checking...';
+  try {
+    const [srcRes, connRes] = await Promise.all([
+      fetch('/api/sources'),
+      fetch('/api/sync/connection'),
+    ]);
+    const src = await srcRes.json();
+    const conn = await connRes.json();
+    const sources = (src.sources || []).map(s =>
+      `${s.name} (v${s.version}): ${s.connected ? '✓' : '✗'}`
+    ).join(' | ');
+    document.getElementById('connStatus').innerHTML = `
+      <span style="color:${conn.connected ? '#3fb950' : '#f85149'};">WhatsApp ${conn.connected ? '✓' : '✗'}</span>
+      <span style="color:#8b949e;margin-left:12px;">${sources}</span>
+    `;
+  } catch(e) {
+    document.getElementById('connStatus').textContent = 'Connection error: ' + e.message;
+  }
+}
+
+// Auto-refresh sync status every 5s when on Groups tab
+let syncRefreshInterval = null;
+const origSwitchTab = switchTab;
+switchTab = function(name) {
+  origSwitchTab(name);
+  if (syncRefreshInterval) { clearInterval(syncRefreshInterval); syncRefreshInterval = null; }
+  if (name === 'groups') {
+    syncRefreshInterval = setInterval(loadGroups, 5000);
+  }
+};
+</script>
+</body>
+</html>
