@@ -2,10 +2,8 @@
 Sync Scheduler — manages background sync jobs across all sources.
 
 Architecture:
-    IngestionSource.discover_jobs() → [SourceJob]
-            ↓
-    Scheduler → SyncJob (DB row) → fetch_records() → SourceRecord
-            ↓
+    Source → discover_jobs() → SyncJob → fetch_records() → SourceRecord
+                                                              ↓
     Pipeline: store_raw → parse → resolve → observation (with version tracking)
 
 Worker pool runs jobs concurrently. Each job has its own checkpoint.
@@ -14,16 +12,16 @@ The scheduler is resumable, rate-limited, and never blocks live ingestion.
 
 import json
 import logging
-import sqlite3
 import threading
 from datetime import datetime, timezone
 from queue import Queue, Empty
 from typing import Optional
 
-from lab.config import DB_PATH, EVOLUTION_INSTANCE
-from lab.sources import SourceRegistry, SourceRecord, SourceJob
-from lab.sources.base import IngestionSource
-from lab.sources.registry import get_registry
+from app import storage
+from config import DB_PATH, EVOLUTION_INSTANCE
+from sources import SourceRegistry, SourceRecord, SyncJob
+from sources.registry import get_registry
+from storage import SyncJob as StorageSyncJob
 
 logger = logging.getLogger(__name__)
 
@@ -32,16 +30,6 @@ PIPELINE_VERSION = "1.0.0"
 
 # Max concurrent sync jobs
 MAX_WORKERS = 3
-
-
-# ── Database helpers (internal to scheduler) ──────────────────────
-
-def _db() -> sqlite3.Connection:
-    db = sqlite3.connect(str(DB_PATH))
-    db.row_factory = sqlite3.Row
-    db.execute("PRAGMA journal_mode=WAL")
-    db.execute("PRAGMA foreign_keys=ON")
-    return db
 
 
 # ── Sync Job Lifecycle ────────────────────────────────────────────
@@ -55,52 +43,25 @@ JOB_STATUS_CANCELLED = "cancelled"
 
 def create_job_in_db(source: str, instance: str, group_id: str,
                      group_name: str = "", meta: str = "{}") -> int:
-    db = _db()
-    cur = db.execute(
-        """INSERT INTO source_sync_jobs
-           (source, instance, group_id, group_name, meta, status)
-           VALUES (?, ?, ?, ?, ?, ?)""",
-        (source, instance, group_id, group_name, meta, JOB_STATUS_PENDING),
-    )
-    db.commit()
-    job_id = cur.lastrowid
-    db.close()
-    return job_id
+    job = StorageSyncJob(source=source, instance=instance, group_id=group_id,
+                         group_name=group_name, meta=meta, status=JOB_STATUS_PENDING)
+    return storage.create_sync_job(job)
 
 
 def update_job(job_id: int, **kwargs):
-    sets = ", ".join(f"{k} = ?" for k in kwargs)
-    vals = list(kwargs.values())
-    db = _db()
-    db.execute(f"UPDATE source_sync_jobs SET {sets} WHERE id = ?", vals + [job_id])
-    db.commit()
-    db.close()
+    storage.update_sync_job(job_id, **kwargs)
 
 
 def get_job(job_id: int) -> Optional[dict]:
-    db = _db()
-    row = db.execute("SELECT * FROM source_sync_jobs WHERE id = ?", (job_id,)).fetchone()
-    db.close()
-    return dict(row) if row else None
+    job = storage.get_sync_job(job_id)
+    if job:
+        return {f.name: getattr(job, f.name) for f in job.__dataclass_fields__.values()}
+    return None
 
 
 def get_jobs(source: str = "", status: str = "", limit: int = 50) -> list[dict]:
-    db = _db()
-    where = []
-    params = []
-    if source:
-        where.append("source = ?")
-        params.append(source)
-    if status:
-        where.append("status = ?")
-        params.append(status)
-    clause = ("WHERE " + " AND ".join(where)) if where else ""
-    rows = db.execute(
-        f"SELECT * FROM source_sync_jobs {clause} ORDER BY id DESC LIMIT ?",
-        params + [limit],
-    ).fetchall()
-    db.close()
-    return [dict(r) for r in rows]
+    jobs = storage.get_sync_jobs(limit=limit, source=source, status=status)
+    return [{f.name: getattr(j, f.name) for f in j.__dataclass_fields__.values()} for j in jobs]
 
 
 # ── Pipeline ──────────────────────────────────────────────────────
@@ -117,31 +78,75 @@ def process_record(record: SourceRecord, pipeline_version: str = PIPELINE_VERSIO
 
     Returns dict with raw_id, parsed_id, resolver result.
     """
-    from lab.app import save_raw_message, parse_message, save_parsed, resolve_parsed, save_resolver_decision
+    from app import storage, parse_message, resolve_parsed
+    from storage import RawMessage, ParsedObservation, ResolverDecision
+    import json
 
     # Stage 1: Store raw (idempotent via message_uid)
-    raw_id = save_raw_message(
-        group=record.group_id,
+    raw_msg = RawMessage(
+        group_name=record.group_id,
         sender=record.sender,
         message=record.text,
-        msg_type="text",
+        message_type="text",
         timestamp=record.timestamp_iso,
         source=record.source.upper(),
-        raw_payload=record.raw,
+        raw_payload=json.dumps(record.raw),
         message_uid=record.message_uid,
     )
+    raw_id = storage.save_raw_message(raw_msg)
 
     # Stage 2: Parse
     parsed = parse_message(record.text)
     parsed["pipeline_version"] = pipeline_version
     parsed["source"] = record.source
-    parsed_id = save_parsed(raw_id, parsed)
+    obs = ParsedObservation(
+        raw_message_id=raw_id,
+        message_type=parsed.get("message_type"),
+        bhk=parsed.get("bhk"),
+        price=parsed.get("price"),
+        price_unit=parsed.get("price_unit"),
+        area_sqft=parsed.get("area_sqft"),
+        furnishing=parsed.get("furnishing"),
+        location_raw=parsed.get("location_raw"),
+        building_name=parsed.get("building_name"),
+        landmark_name=parsed.get("landmark_name"),
+        street_name=parsed.get("street_name"),
+        area=parsed.get("area"),
+        micro_market=parsed.get("micro_market"),
+        developer=parsed.get("developer"),
+        broker_name=parsed.get("broker_name"),
+        broker_phone=parsed.get("broker_phone"),
+        confidence=parsed.get("confidence", 0.0),
+        raw_payload=json.dumps(parsed.get("raw_payload", {})),
+    )
+    parsed_id = storage.save_parsed(obs)
 
     # Stage 3: Resolve
     resolver_result = resolve_parsed(parsed, record.text)
     resolver_result["pipeline_version"] = pipeline_version
     resolver_result["source"] = record.source
-    save_resolver_decision(parsed_id, resolver_result)
+    dec = ResolverDecision(
+        parsed_id=parsed_id,
+        building_id=resolver_result.get("building_id"),
+        building_name=resolver_result.get("building_name"),
+        landmark_id=resolver_result.get("landmark_id"),
+        landmark_name=resolver_result.get("landmark_name"),
+        street_id=resolver_result.get("street_id"),
+        street_name=resolver_result.get("street_name"),
+        project_id=resolver_result.get("project_id"),
+        project_name=resolver_result.get("project_name"),
+        developer_name=resolver_result.get("developer_name"),
+        parser_confidence=resolver_result.get("parser_confidence", 0.0),
+        resolver_confidence=resolver_result.get("resolver_confidence", 0.0),
+        final_confidence=resolver_result.get("final_confidence", 0.0),
+        method=resolver_result.get("method", "unresolved"),
+        method_detail=resolver_result.get("method_detail"),
+        candidates=json.dumps(resolver_result.get("candidates", [])),
+        failure_category=resolver_result.get("failure_category"),
+        error=resolver_result.get("error"),
+        raw_message_id=raw_id,
+    )
+    storage.save_resolver_decision(dec)
 
     return {
         "raw_id": raw_id,
@@ -300,16 +305,13 @@ class SyncScheduler:
                 self._status["overall"] = "error"
                 self._status["error"] = str(e)
 
-    def _process_job(self, job_id: int, source: IngestionSource, job: SourceJob) -> bool:
+    def _process_job(self, job_id: int, source: BaseSource, job: SyncJob) -> bool:
         """Process one sync job: fetch records → pipeline."""
         update_job(job_id, status=JOB_STATUS_RUNNING, started_at=datetime.now(timezone.utc).isoformat())
 
         processed = 0
         failed = 0
-        # job.meta is always a dict for in-memory SourceJob objects.
-        # Guard against str in case a SourceJob is ever reconstructed from a DB row.
-        raw_meta = job.meta if isinstance(job.meta, dict) else (json.loads(job.meta) if job.meta else {})
-        last_cursor = raw_meta.get("last_cursor", "0") or "0"
+        last_cursor = job.meta.get("last_cursor", "0") if job.meta else "0"
         found = 0
 
         try:

@@ -7,7 +7,6 @@ Flow:
 import json
 import os
 import sys
-import sqlite3
 import uuid
 import re
 import base64
@@ -16,6 +15,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 from contextlib import asynccontextmanager
+from dataclasses import asdict
 
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import Response
@@ -23,13 +23,18 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+from storage import SqliteStorage, RawMessage, ParsedObservation, ResolverDecision, Evaluation
+
 # ── Bootstrap path to reuse evidence engine ─────────────────────
 PROJECT_DIR = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_DIR))
 
-from lab.config import DB_PATH, WEBHOOK_SECRET, HOST, PORT, EVOLUTION_INSTANCE, EVOLUTION_API_URL
+from config import DB_PATH, WEBHOOK_SECRET, HOST, PORT, EVOLUTION_INSTANCE, EVOLUTION_API_URL
 from evidence.resolver import resolve, resolve_by_landmark, resolve_by_street
 from evidence.parsers import parse as broker_parse
+
+# ── Global storage (lazy-initialized, wired in lifespan) ────────
+storage: SqliteStorage | None = None
 
 # ── Global scheduler (lazy-initialized, wired in lifespan) ────────
 _scheduler = None
@@ -37,151 +42,10 @@ _scheduler = None
 def get_scheduler():
     global _scheduler
     if _scheduler is None:
-        from lab.scheduler import SyncScheduler
+        from scheduler import SyncScheduler
         _scheduler = SyncScheduler()
     return _scheduler
     return _sync_worker
-
-
-# ═══════════════════════════════════════════════════════════════
-# Database helpers
-# ═══════════════════════════════════════════════════════════════
-
-def get_db() -> sqlite3.Connection:
-    db = sqlite3.connect(str(DB_PATH))
-    db.row_factory = sqlite3.Row
-    db.execute("PRAGMA journal_mode=WAL")
-    db.execute("PRAGMA foreign_keys=ON")
-    return db
-
-
-def init_db():
-    """Create schema if not exists and run migrations."""
-    schema_path = Path(__file__).parent / "schema.sql"
-    db = get_db()
-    # Step 1: Create tables (IF NOT EXISTS)
-    db.executescript(schema_path.read_text())
-    # Step 2: Migrate — add new columns if missing (must happen before indexes on them)
-    migs = [
-        ("ALTER TABLE resolver_decisions ADD COLUMN candidates TEXT DEFAULT '[]'", "candidates"),
-        ("ALTER TABLE resolver_decisions ADD COLUMN failure_category TEXT DEFAULT NULL", "failure_category"),
-        ("ALTER TABLE resolver_decisions ADD COLUMN parser_confidence REAL DEFAULT 0.0", "parser_confidence"),
-        ("ALTER TABLE resolver_decisions ADD COLUMN resolver_confidence REAL DEFAULT 0.0", "resolver_confidence"),
-        ("ALTER TABLE resolver_decisions ADD COLUMN final_confidence REAL DEFAULT 0.0", "final_confidence"),
-        ("ALTER TABLE raw_messages ADD COLUMN message_uid TEXT DEFAULT NULL", "message_uid"),
-        ("ALTER TABLE raw_messages ADD COLUMN pipeline_version TEXT DEFAULT NULL", "pipeline_version"),
-        ("ALTER TABLE raw_messages ADD COLUMN synced_at TEXT DEFAULT NULL", "synced_at"),
-    ]
-    for sql, _ in migs:
-        try:
-            db.execute(sql)
-        except sqlite3.OperationalError:
-            pass
-    # Step 3: Create indexes (partial unique on message_uid, failure_category)
-    for idx_sql in [
-        "CREATE UNIQUE INDEX IF NOT EXISTS idx_raw_msg_uid ON raw_messages(message_uid)",
-        "CREATE INDEX IF NOT EXISTS idx_resolver_failure ON resolver_decisions(failure_category)",
-    ]:
-        try:
-            db.execute(idx_sql)
-        except sqlite3.OperationalError:
-            pass
-    db.commit()
-    db.close()
-
-
-def save_raw_message(group: str, sender: str, message: str, msg_type: str,
-                     timestamp: str, source: str, raw_payload: dict,
-                     message_uid: str = None,
-                     pipeline_version: str = None,
-                     synced_at: str = None) -> int:
-    db = get_db()
-    if message_uid:
-        existing = db.execute(
-            "SELECT id FROM raw_messages WHERE message_uid = ?", (message_uid,)
-        ).fetchone()
-        if existing:
-            db.close()
-            return existing["id"]
-    cur = db.execute(
-        "INSERT INTO raw_messages (group_name, sender, message, message_type, timestamp, source, raw_payload, message_uid, pipeline_version, synced_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        (group, sender, message, msg_type, timestamp, source, json.dumps(raw_payload),
-         message_uid, pipeline_version, synced_at or timestamp),
-    )
-    db.commit()
-    mid = cur.lastrowid
-    db.close()
-    return mid
-
-
-def save_parsed(raw_id: int, data: dict) -> int:
-    db = get_db()
-    cur = db.execute(
-        """INSERT INTO parsed_output
-           (raw_message_id, message_type, bhk, price, price_unit, area_sqft,
-            furnishing, location_raw, building_name, landmark_name, street_name,
-            area, micro_market, developer, broker_name, broker_phone, confidence, raw_payload)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-        (
-            raw_id,
-            data.get("message_type"),
-            data.get("bhk"),
-            data.get("price"),
-            data.get("price_unit"),
-            data.get("area_sqft"),
-            data.get("furnishing"),
-            data.get("location_raw"),
-            data.get("building_name"),
-            data.get("landmark_name"),
-            data.get("street_name"),
-            data.get("area"),
-            data.get("micro_market"),
-            data.get("developer"),
-            data.get("broker_name"),
-            data.get("broker_phone"),
-            data.get("confidence", 0.0),
-            json.dumps(data.get("raw_payload", {})),
-        ),
-    )
-    db.commit()
-    pid = cur.lastrowid
-    db.close()
-    return pid
-
-
-def save_resolver_decision(parsed_id: int, result: dict):
-    db = get_db()
-    db.execute(
-        """INSERT INTO resolver_decisions
-           (parsed_id, building_id, building_name, landmark_id, landmark_name,
-            street_id, street_name, project_id, project_name, developer_name,
-            parser_confidence, resolver_confidence, final_confidence,
-            method, method_detail, candidates, failure_category, error)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-        (
-            parsed_id,
-            result.get("building_id"),
-            result.get("building_name"),
-            result.get("landmark_id"),
-            result.get("landmark_name"),
-            result.get("street_id"),
-            result.get("street_name"),
-            result.get("project_id"),
-            result.get("project_name"),
-            result.get("developer_name"),
-            result.get("parser_confidence", 0.0),
-            result.get("resolver_confidence", 0.0),
-            result.get("final_confidence", 0.0),
-            result.get("method", "unresolved"),
-            result.get("method_detail"),
-            json.dumps(result.get("candidates", [])),
-            result.get("failure_category"),
-            result.get("error"),
-        ),
-    )
-    db.commit()
-    db.close()
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -601,38 +465,8 @@ def evaluate_parsed(raw_id: int, parsed: dict, expected: Optional[dict] = None):
     Compare extracted fields against expected values.
     If no expected values are provided, stores extracted fields without scoring.
     """
-    db = get_db()
-    # Check if evaluation already exists
-    existing = db.execute(
-        "SELECT id FROM evaluations WHERE raw_message_id = ?", (raw_id,)
-    ).fetchone()
-    if existing:
-        db.close()
-        return existing["id"]
+    ev = Evaluation(raw_message_id=raw_id)
 
-    fields = {
-        "message_type": "expected_message_type",
-        "bhk": "expected_bhk",
-        "price": "expected_price",
-        "price_unit": "expected_price_unit",
-        "area_sqft": "expected_area_sqft",
-        "furnishing": "expected_furnishing",
-        "building_name": "expected_building",
-        "landmark_name": "expected_landmark",
-        "street_name": "expected_street",
-        "area": "expected_area",
-        "micro_market": "expected_micro_market",
-        "developer": "expected_developer",
-        "broker_name": "expected_broker",
-    }
-
-    values = {}
-    for extract_key, db_col in fields.items():
-        extracted_val = parsed.get(extract_key)
-        expected_val = (expected or {}).get(extract_key)
-        values[db_col] = expected_val
-
-    # Also store extracted values
     extract_map = {
         "message_type": "extracted_message_type",
         "bhk": "extracted_bhk",
@@ -648,33 +482,43 @@ def evaluate_parsed(raw_id: int, parsed: dict, expected: Optional[dict] = None):
         "developer": "extracted_developer",
         "broker_name": "extracted_broker",
     }
-    for extract_key, db_col in extract_map.items():
-        values[db_col] = parsed.get(extract_key)
+    for extract_key, field_name in extract_map.items():
+        setattr(ev, field_name, parsed.get(extract_key))
+
+    expected_map = {
+        "message_type": "expected_message_type",
+        "bhk": "expected_bhk",
+        "price": "expected_price",
+        "price_unit": "expected_price_unit",
+        "area_sqft": "expected_area_sqft",
+        "furnishing": "expected_furnishing",
+        "building_name": "expected_building",
+        "landmark_name": "expected_landmark",
+        "street_name": "expected_street",
+        "area": "expected_area",
+        "micro_market": "expected_micro_market",
+        "developer": "expected_developer",
+        "broker_name": "expected_broker",
+    }
+    for extract_key, field_name in expected_map.items():
+        exp_val = (expected or {}).get(extract_key)
+        setattr(ev, field_name, exp_val)
 
     # Compute overall accuracy if expected values exist
     if expected:
         correct = 0
         total = 0
-        for extract_key, _ in fields.items():
+        for extract_key in expected_map:
             exp = expected.get(extract_key)
             ext = parsed.get(extract_key)
             if exp is not None:
                 total += 1
                 if str(exp).strip().lower() == str(ext).strip().lower():
                     correct += 1
-        values["accuracy_overall"] = round(correct / max(total, 1), 4) if total > 0 else None
-        values["evaluated_at"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        ev.accuracy_overall = round(correct / max(total, 1), 4) if total > 0 else None
+        ev.evaluated_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
-    cols = ", ".join(values.keys())
-    placeholders = ", ".join(["?" for _ in values])
-    db.execute(
-        f"INSERT OR IGNORE INTO evaluations (raw_message_id, {cols}) VALUES (?, {placeholders})",
-        [raw_id] + list(values.values()),
-    )
-    db.commit()
-    eid = cur.lastrowid if (cur := db.execute("SELECT last_insert_rowid()")) else None
-    db.close()
-    return eid
+    return storage.save_evaluation(ev)
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -683,7 +527,9 @@ def evaluate_parsed(raw_id: int, parsed: dict, expected: Optional[dict] = None):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    init_db()
+    global storage
+    storage = SqliteStorage(DB_PATH)
+    storage.init_schema()
     # Auto-generate API key if missing
     key_path = Path(__file__).parent / ".api_key"
     if not key_path.exists():
@@ -746,39 +592,75 @@ async def webhook(request: Request):
     remote_jid = key.get("remoteJid", group)
     message_uid = f"evolution::{instance}::{remote_jid}::{message_id}" if message_id else None
 
-    from lab.scheduler import PIPELINE_VERSION
-    raw_id = save_raw_message(
-        group=group,
+    from scheduler import PIPELINE_VERSION
+    raw_id = storage.save_raw_message(RawMessage(
+        group_name=group,
         sender=sender,
         message=msg_text,
-        msg_type="text",
+        message_type="text",
         timestamp=timestamp,
         source="WHATSAPP",
-        raw_payload=data,
+        raw_payload=json.dumps(data),
         message_uid=message_uid,
         pipeline_version=PIPELINE_VERSION,
         synced_at=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-    )
+    ))
 
     # Check if this was a duplicate (existing raw_id returned)
     existing_parsed = None
     if message_uid:
-        db = get_db()
-        existing_parsed = db.execute(
-            "SELECT id FROM parsed_output WHERE raw_message_id = ?", (raw_id,)
-        ).fetchone()
-        db.close()
+        existing_parsed = storage.get_parsed_by_raw(raw_id)
 
     if existing_parsed:
-        return {"status": "duplicate", "raw_id": raw_id, "parsed_id": existing_parsed["id"]}
+        return {"status": "duplicate", "raw_id": raw_id, "parsed_id": existing_parsed.id}
 
     # Parse and resolve
     parsed = parse_message(msg_text)
-    parsed_id = save_parsed(raw_id, parsed)
+    obs = ParsedObservation(
+        raw_message_id=raw_id,
+        message_type=parsed.get("message_type"),
+        bhk=parsed.get("bhk"),
+        price=parsed.get("price"),
+        price_unit=parsed.get("price_unit"),
+        area_sqft=parsed.get("area_sqft"),
+        furnishing=parsed.get("furnishing"),
+        location_raw=parsed.get("location_raw"),
+        building_name=parsed.get("building_name"),
+        landmark_name=parsed.get("landmark_name"),
+        street_name=parsed.get("street_name"),
+        area=parsed.get("area"),
+        micro_market=parsed.get("micro_market"),
+        developer=parsed.get("developer"),
+        broker_name=parsed.get("broker_name"),
+        broker_phone=parsed.get("broker_phone"),
+        confidence=parsed.get("confidence", 0.0),
+        raw_payload=json.dumps(parsed.get("raw_payload", {})),
+    )
+    parsed_id = storage.save_parsed(obs)
 
     resolver_result = resolve_parsed(parsed, msg_text)
     resolver_result["parsed_id"] = parsed_id
-    save_resolver_decision(parsed_id, resolver_result)
+    dec = ResolverDecision(
+        parsed_id=parsed_id,
+        building_id=resolver_result.get("building_id"),
+        building_name=resolver_result.get("building_name"),
+        landmark_id=resolver_result.get("landmark_id"),
+        landmark_name=resolver_result.get("landmark_name"),
+        street_id=resolver_result.get("street_id"),
+        street_name=resolver_result.get("street_name"),
+        project_id=resolver_result.get("project_id"),
+        project_name=resolver_result.get("project_name"),
+        developer_name=resolver_result.get("developer_name"),
+        parser_confidence=resolver_result.get("parser_confidence", 0.0),
+        resolver_confidence=resolver_result.get("resolver_confidence", 0.0),
+        final_confidence=resolver_result.get("final_confidence", 0.0),
+        method=resolver_result.get("method", "unresolved"),
+        method_detail=resolver_result.get("method_detail"),
+        candidates=json.dumps(resolver_result.get("candidates", [])),
+        failure_category=resolver_result.get("failure_category"),
+        error=resolver_result.get("error"),
+    )
+    storage.save_resolver_decision(dec)
 
     return {"status": "ok", "raw_id": raw_id, "parsed_id": parsed_id}
 
@@ -795,25 +677,65 @@ class IngestRequest(BaseModel):
 @app.post("/ingest")
 async def ingest(req: IngestRequest):
     """Manually ingest a message for testing."""
-    from lab.scheduler import PIPELINE_VERSION
+    from scheduler import PIPELINE_VERSION
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    raw_id = save_raw_message(
-        group=req.group,
+    raw_id = storage.save_raw_message(RawMessage(
+        group_name=req.group,
         sender=req.sender,
         message=req.message,
-        msg_type="text",
+        message_type="text",
         timestamp=now,
         source="MANUAL",
-        raw_payload={"manual": True},
+        raw_payload=json.dumps({"manual": True}),
         pipeline_version=PIPELINE_VERSION,
         synced_at=now,
-    )
+    ))
 
     parsed = parse_message(req.message)
-    parsed_id = save_parsed(raw_id, parsed)
+    obs = ParsedObservation(
+        raw_message_id=raw_id,
+        message_type=parsed.get("message_type"),
+        bhk=parsed.get("bhk"),
+        price=parsed.get("price"),
+        price_unit=parsed.get("price_unit"),
+        area_sqft=parsed.get("area_sqft"),
+        furnishing=parsed.get("furnishing"),
+        location_raw=parsed.get("location_raw"),
+        building_name=parsed.get("building_name"),
+        landmark_name=parsed.get("landmark_name"),
+        street_name=parsed.get("street_name"),
+        area=parsed.get("area"),
+        micro_market=parsed.get("micro_market"),
+        developer=parsed.get("developer"),
+        broker_name=parsed.get("broker_name"),
+        broker_phone=parsed.get("broker_phone"),
+        confidence=parsed.get("confidence", 0.0),
+        raw_payload=json.dumps(parsed.get("raw_payload", {})),
+    )
+    parsed_id = storage.save_parsed(obs)
 
     resolver_result = resolve_parsed(parsed, req.message)
-    save_resolver_decision(parsed_id, resolver_result)
+    dec = ResolverDecision(
+        parsed_id=parsed_id,
+        building_id=resolver_result.get("building_id"),
+        building_name=resolver_result.get("building_name"),
+        landmark_id=resolver_result.get("landmark_id"),
+        landmark_name=resolver_result.get("landmark_name"),
+        street_id=resolver_result.get("street_id"),
+        street_name=resolver_result.get("street_name"),
+        project_id=resolver_result.get("project_id"),
+        project_name=resolver_result.get("project_name"),
+        developer_name=resolver_result.get("developer_name"),
+        parser_confidence=resolver_result.get("parser_confidence", 0.0),
+        resolver_confidence=resolver_result.get("resolver_confidence", 0.0),
+        final_confidence=resolver_result.get("final_confidence", 0.0),
+        method=resolver_result.get("method", "unresolved"),
+        method_detail=resolver_result.get("method_detail"),
+        candidates=json.dumps(resolver_result.get("candidates", [])),
+        failure_category=resolver_result.get("failure_category"),
+        error=resolver_result.get("error"),
+    )
+    storage.save_resolver_decision(dec)
 
     # Evaluate if expected provided
     if req.expected:
@@ -854,175 +776,44 @@ async def ingest_batch(req: BatchIngestRequest):
 
 @app.get("/api/raw")
 async def get_raw_messages(limit: int = 50, offset: int = 0):
-    db = get_db()
-    rows = db.execute(
-        "SELECT * FROM raw_messages ORDER BY id DESC LIMIT ? OFFSET ?",
-        (limit, offset),
-    ).fetchall()
-    db.close()
-    return [dict(r) for r in rows]
+    rows = storage.get_raw_messages(limit, offset)
+    return [asdict(r) for r in rows]
 
 
 @app.get("/api/raw/{raw_id}")
 async def get_raw_message(raw_id: int):
-    db = get_db()
-    row = db.execute("SELECT * FROM raw_messages WHERE id = ?", (raw_id,)).fetchone()
-    db.close()
+    row = storage.get_raw_message(raw_id)
     if not row:
         raise HTTPException(404)
-    return dict(row)
+    return asdict(row)
 
 
 @app.get("/api/parsed")
 async def get_parsed(limit: int = 50, offset: int = 0):
-    db = get_db()
-    rows = db.execute(
-        """SELECT p.*, r.message as raw_message
-           FROM parsed_output p
-           JOIN raw_messages r ON p.raw_message_id = r.id
-           ORDER BY p.id DESC LIMIT ? OFFSET ?""",
-        (limit, offset),
-    ).fetchall()
-    db.close()
-    return [dict(r) for r in rows]
+    return storage.get_parsed(limit, offset)
 
 
 @app.get("/api/resolver")
 async def get_resolver_decisions(limit: int = 50, offset: int = 0, method: str = ""):
-    db = get_db()
-    if method:
-        rows = db.execute(
-            """SELECT rd.*, p.message_type, p.building_name as parsed_building,
-                      p.location_raw, p.landmark_name as parsed_landmark,
-                      r.message as raw_message
-               FROM resolver_decisions rd
-               JOIN parsed_output p ON rd.parsed_id = p.id
-               JOIN raw_messages r ON p.raw_message_id = r.id
-               WHERE rd.method = ?
-               ORDER BY rd.id DESC LIMIT ? OFFSET ?""",
-            (method, limit, offset),
-        ).fetchall()
-    else:
-        rows = db.execute(
-            """SELECT rd.*, p.message_type, p.building_name as parsed_building,
-                      p.location_raw, p.landmark_name as parsed_landmark,
-                      r.message as raw_message
-               FROM resolver_decisions rd
-               JOIN parsed_output p ON rd.parsed_id = p.id
-               JOIN raw_messages r ON p.raw_message_id = r.id
-               ORDER BY rd.id DESC LIMIT ? OFFSET ?""",
-            (limit, offset),
-        ).fetchall()
-    result = []
-    for r in rows:
-        d = dict(r)
-        if isinstance(d.get("candidates"), str):
-            try:
-                d["candidates"] = json.loads(d["candidates"])
-            except (json.JSONDecodeError, TypeError):
-                d["candidates"] = []
-        result.append(d)
-    db.close()
-    return result
+    return storage.get_resolver_decisions(limit, offset, method)
 
 
 @app.get("/api/failed")
 async def get_failed(limit: int = 50):
-    db = get_db()
-    rows = db.execute(
-        """SELECT rd.*, p.message_type, p.location_raw, p.landmark_name,
-                  r.message as raw_message, r.sender, r.timestamp
-           FROM resolver_decisions rd
-           JOIN parsed_output p ON rd.parsed_id = p.id
-           JOIN raw_messages r ON p.raw_message_id = r.id
-           WHERE rd.method IN ('unresolved', 'error')
-           ORDER BY rd.id DESC LIMIT ?""",
-        (limit,),
-    ).fetchall()
-    result = []
-    for r in rows:
-        d = dict(r)
-        if isinstance(d.get("candidates"), str):
-            try:
-                d["candidates"] = json.loads(d["candidates"])
-            except (json.JSONDecodeError, TypeError):
-                d["candidates"] = []
-        result.append(d)
-    db.close()
-    return result
+    return storage.get_failed(limit)
 
 
 @app.get("/api/stats")
 async def get_stats():
-    db = get_db()
-    total_raw = db.execute("SELECT COUNT(*) as c FROM raw_messages").fetchone()["c"]
-    total_parsed = db.execute("SELECT COUNT(*) as c FROM parsed_output").fetchone()["c"]
-    resolved = db.execute(
-        "SELECT COUNT(*) as c FROM resolver_decisions WHERE method = 'resolved'"
-    ).fetchone()["c"]
-    unresolved = db.execute(
-        "SELECT COUNT(*) as c FROM resolver_decisions WHERE method = 'unresolved'"
-    ).fetchone()["c"]
-    errors = db.execute(
-        "SELECT COUNT(*) as c FROM resolver_decisions WHERE method = 'error'"
-    ).fetchone()["c"]
-    evaluated = db.execute(
-        "SELECT COUNT(*) as c FROM evaluations WHERE accuracy_overall IS NOT NULL"
-    ).fetchone()["c"]
-
-    # Average accuracy
-    avg_acc = db.execute(
-        "SELECT AVG(accuracy_overall) as a FROM evaluations WHERE accuracy_overall IS NOT NULL"
-    ).fetchone()["a"] or 0.0
-
-    # Message type distribution
-    types = db.execute(
-        "SELECT message_type, COUNT(*) as c FROM parsed_output WHERE message_type IS NOT NULL GROUP BY message_type ORDER BY c DESC"
-    ).fetchall()
-
-    # Message type distribution
-    types = db.execute(
-        "SELECT message_type, COUNT(*) as c FROM parsed_output WHERE message_type IS NOT NULL GROUP BY message_type ORDER BY c DESC"
-    ).fetchall()
-
-    # Failure category breakdown
-    failures = db.execute(
-        "SELECT failure_category, COUNT(*) as c FROM resolver_decisions WHERE failure_category IS NOT NULL GROUP BY failure_category ORDER BY c DESC"
-    ).fetchall()
-
-    # Method breakdown
-    methods = db.execute(
-        "SELECT method, COUNT(*) as c FROM resolver_decisions GROUP BY method ORDER BY c DESC"
-    ).fetchall()
-
-    db.close()
-    return {
-        "total_raw": total_raw,
-        "total_parsed": total_parsed,
-        "resolved": resolved,
-        "unresolved": unresolved,
-        "errors": errors,
-        "evaluated": evaluated,
-        "avg_accuracy": round(avg_acc, 4),
-        "message_types": [dict(t) for t in types],
-        "failure_categories": [dict(f) for f in failures],
-        "methods": [dict(m) for m in methods],
-    }
+    return storage.get_stats()
 
 
 @app.get("/api/evaluations")
 async def get_evaluations(limit: int = 50, min_accuracy: float = 0.0):
-    db = get_db()
-    rows = db.execute(
-        """SELECT e.*, r.message as raw_message
-           FROM evaluations e
-           JOIN raw_messages r ON e.raw_message_id = r.id
-           WHERE (e.accuracy_overall IS NULL OR e.accuracy_overall >= ?)
-           ORDER BY e.id DESC LIMIT ?""",
-        (min_accuracy, limit),
-    ).fetchall()
-    db.close()
-    return [dict(r) for r in rows]
+    rows = storage.get_evaluations(limit)
+    if min_accuracy > 0.0:
+        rows = [r for r in rows if r.get("accuracy_overall") is None or r["accuracy_overall"] >= min_accuracy]
+    return rows
 
 
 # ── Evidence Inspector ──────────────────────────────────────────
@@ -1030,43 +821,10 @@ async def get_evaluations(limit: int = 50, min_accuracy: float = 0.0):
 @app.get("/api/observations/{obs_id}")
 async def get_observation(obs_id: int):
     """Return full pipeline for a single observation: raw → parsed → resolver → evaluation."""
-    db = get_db()
-    raw = db.execute("SELECT * FROM raw_messages WHERE id = ?", (obs_id,)).fetchone()
-    if not raw:
-        db.close()
+    result = storage.get_observation_detail(obs_id)
+    if not result.get("raw"):
         raise HTTPException(404, "Observation not found")
-
-    parsed = db.execute(
-        "SELECT * FROM parsed_output WHERE raw_message_id = ? ORDER BY id DESC LIMIT 1",
-        (obs_id,),
-    ).fetchone()
-
-    resolver = None
-    if parsed:
-        r = db.execute(
-            "SELECT * FROM resolver_decisions WHERE parsed_id = ? ORDER BY id DESC LIMIT 1",
-            (parsed["id"],),
-        ).fetchone()
-        if r:
-            resolver = dict(r)
-            if isinstance(resolver.get("candidates"), str):
-                try:
-                    resolver["candidates"] = json.loads(resolver["candidates"])
-                except (json.JSONDecodeError, TypeError):
-                    resolver["candidates"] = []
-
-    evaluation = db.execute(
-        "SELECT * FROM evaluations WHERE raw_message_id = ? ORDER BY id DESC LIMIT 1",
-        (obs_id,),
-    ).fetchone()
-
-    db.close()
-    return {
-        "raw": dict(raw),
-        "parsed": dict(parsed) if parsed else None,
-        "resolver": resolver,
-        "evaluation": dict(evaluation) if evaluation else None,
-    }
+    return result
 
 
 # ── Replay ──────────────────────────────────────────────────────
@@ -1083,24 +841,15 @@ class ReplayStats(BaseModel):
 @app.post("/api/replay")
 async def replay_all():
     """Re-run all stored messages through the current resolver and return accuracy stats."""
-    db = get_db()
-    raws = db.execute(
-        "SELECT r.*, p.id as parsed_id, p.* FROM raw_messages r "
-        "LEFT JOIN parsed_output p ON r.id = p.raw_message_id "
-        "ORDER BY r.id"
-    ).fetchall()
-    db.close()
+    raws = storage.get_all_raw_for_replay()
 
     stats = ReplayStats()
     stats.total = len(raws)
     failure_counts = {}
 
-    for row in raws:
-        raw_text = row["message"]
-        parsed = dict(row)
-        # Re-parse
+    for msg in raws:
+        raw_text = msg.message
         parsed_result = parse_message(raw_text)
-        # Re-resolve
         resolver_result = resolve_parsed(parsed_result, raw_text)
 
         if resolver_result["method"] == "resolved":
@@ -1128,7 +877,7 @@ async def replay_all():
 @app.get("/api/sources")
 async def list_sources():
     """List all registered sources."""
-    from lab.sources.registry import get_registry
+    from sources.registry import get_registry
     reg = get_registry()
     sources = []
     for s in reg.all():
@@ -1145,24 +894,19 @@ async def scheduler_status():
     """Return scheduler status and per-source summary."""
     scheduler = get_scheduler()
     st = scheduler.status()
-    db = get_db()
-    total_hist = db.execute(
-        "SELECT COUNT(*) as c FROM raw_messages WHERE source = 'WHATSAPP_HISTORY'"
-    ).fetchone()["c"]
-    total_raw = db.execute("SELECT COUNT(*) as c FROM raw_messages").fetchone()["c"]
-    db.close()
-    st["historical_messages_stored"] = total_hist
-    st["total_messages_stored"] = total_raw
-    from lab.scheduler import get_jobs
-    all_jobs = get_jobs(limit=500)
+    src_counts = storage.source_summary()
+    st["historical_messages_stored"] = src_counts.get("WHATSAPP_HISTORY", 0)
+    st["total_messages_stored"] = sum(src_counts.values())
+    all_jobs = storage.get_sync_jobs(limit=500)
     source_summary = {}
     for j in all_jobs:
-        s = j["source"]
+        s = j.source
         if s not in source_summary:
             source_summary[s] = {"total": 0, "complete": 0, "running": 0, "failed": 0, "records": 0}
         source_summary[s]["total"] += 1
-        source_summary[s][j.get("status", "pending")] = source_summary[s].get(j.get("status", "pending"), 0) + 1
-        source_summary[s]["records"] += j.get("records_processed", 0)
+        status_key = j.status or "pending"
+        source_summary[s][status_key] = source_summary[s].get(status_key, 0) + 1
+        source_summary[s]["records"] += j.records_processed or 0
     st["source_summary"] = source_summary
     return st
 
@@ -1170,18 +914,17 @@ async def scheduler_status():
 @app.get("/api/sources/jobs")
 async def list_jobs(source: str = "", status: str = "", limit: int = 50):
     """List sync jobs, optionally filtered by source and/or status."""
-    from lab.scheduler import get_jobs
-    return get_jobs(source=source, status=status, limit=limit)
+    jobs = storage.get_sync_jobs(limit=limit, source=source, status=status)
+    return [asdict(j) for j in jobs]
 
 
 @app.get("/api/sources/jobs/{job_id}")
 async def get_job_detail(job_id: int):
     """Get details for a specific sync job."""
-    from lab.scheduler import get_job
-    job = get_job(job_id)
+    job = storage.get_sync_job(job_id)
     if not job:
         raise HTTPException(404, f"Job {job_id} not found")
-    return job
+    return asdict(job)
 
 
 @app.post("/api/sources/stop")
@@ -1198,7 +941,7 @@ async def source_sync(source_name: str):
     scheduler = get_scheduler()
     if scheduler.is_running:
         raise HTTPException(409, "Scheduler already running")
-    from lab.sources.registry import get_registry
+    from sources.registry import get_registry
     if not get_registry().get(source_name):
         raise HTTPException(404, f"Unknown source: {source_name}")
     started = scheduler.start(source=source_name)
@@ -1210,7 +953,7 @@ async def source_sync(source_name: str):
 @app.get("/api/sources/{source_name}")
 async def get_source(source_name: str):
     """Get details for a specific source."""
-    from lab.sources.registry import get_registry
+    from sources.registry import get_registry
     s = get_registry().get(source_name)
     if not s:
         raise HTTPException(404, f"Unknown source: {source_name}")
@@ -1242,14 +985,14 @@ async def sync_status_legacy():
 @app.get("/api/sync/groups")
 async def sync_groups_legacy():
     """Legacy: list WhatsApp sync jobs as groups."""
-    from lab.scheduler import get_jobs
+    from scheduler import get_jobs
     return get_jobs(source="whatsapp")
 
 
 @app.get("/api/sync/connection")
 async def sync_connection():
     """Check WhatsApp (Evolution API) connection status."""
-    from lab.sources.whatsapp import WhatsAppSource
+    from sources.whatsapp import WhatsAppSource
     src = WhatsAppSource()
     connected = src.validate_connection()
     return {
@@ -1401,7 +1144,7 @@ body{font-family:var(--font);background:#f8fafc;color:var(--foreground);-webkit-
       <span class="badge">v1.0.0</span>
       <div class="conn-status" id="connStatus">
         <span class="conn-dot" id="connDot"></span>
-        <span id="connLabel">Waiting for connection…</span>
+        <span id="connLabel">Waiting for connection...</span>
       </div>
     </div>
   </header>
@@ -1411,10 +1154,10 @@ body{font-family:var(--font);background:#f8fafc;color:var(--foreground);-webkit-
       <div class="hero">
         <div class="tagline">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-          WhatsApp → Organized Properties
+          WhatsApp &rarr; Organized Properties
         </div>
         <h1>Connect Your Market</h1>
-        <p>Scan your WhatsApp to let PropAI build your local market memory from your broker groups — so you never miss a listing, price shift, or opportunity.</p>
+        <p>Scan your WhatsApp to let PropAI build your local market memory from your broker groups &mdash; so you never miss a listing, price shift, or opportunity.</p>
       </div>
 
       <div class="onboard-card">
@@ -1423,7 +1166,7 @@ body{font-family:var(--font);background:#f8fafc;color:var(--foreground);-webkit-
             <img id="qrImage" class="loading" src="/qr/image?t=" alt="QR Code">
             <div class="qr-placeholder" id="qrPlaceholder">
               <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><line x1="3" y1="10" x2="3" y2="14"/><line x1="10" y1="3" x2="14" y2="3"/><line x1="10" y1="21" x2="14" y2="21"/><line x1="21" y1="10" x2="21" y2="14"/><line x1="10" y1="14" x2="14" y2="14"/></svg>
-              Loading QR…
+              Loading QR...
             </div>
           </div>
           <div class="qr-timer" id="qrTimer">
@@ -1432,7 +1175,7 @@ body{font-family:var(--font);background:#f8fafc;color:var(--foreground);-webkit-
           </div>
           <div class="qr-status">
             <span class="pulse" id="pulseDot"></span>
-            <span id="statusLabel">Waiting for scan…</span>
+            <span id="statusLabel">Waiting for scan...</span>
           </div>
           <div class="qr-note">The QR refreshes automatically if it expires.</div>
         </div>
@@ -1644,5 +1387,5 @@ async def connect_page():
 
 if __name__ == "__main__":
     import uvicorn
-    from lab.config import HOST, PORT
+    from config import HOST, PORT
     uvicorn.run("lab.app:app", host=HOST, port=PORT, reload=True)

@@ -18,7 +18,6 @@ via the raw_messages.message_uid unique index.
 import json
 import time
 import logging
-import sqlite3
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
@@ -26,13 +25,14 @@ from typing import Optional
 
 import httpx
 
-from lab.config import (
+from config import (
     EVOLUTION_API_URL,
     EVOLUTION_API_KEY,
     EVOLUTION_INSTANCE,
     EVOLUTION_SYNC_DELAY_MS,
-    DB_PATH,
 )
+from storage import SyncCheckpoint
+from app import storage
 
 logger = logging.getLogger(__name__)
 
@@ -220,64 +220,30 @@ class HistoricalSyncWorker:
 
     def groups(self) -> list[dict]:
         """Return checkpoint data for all known groups (dashboard)."""
-        db = self._get_db()
-        rows = db.execute(
-            "SELECT * FROM sync_checkpoints WHERE instance_name = ? ORDER BY group_name",
-            (EVOLUTION_INSTANCE,),
-        ).fetchall()
-        db.close()
-        return [dict(r) for r in rows]
+        checkpoints = storage.get_checkpoints(EVOLUTION_INSTANCE)
+        return [{f.name: getattr(cp, f.name) for f in cp.__dataclass_fields__.values()} for cp in checkpoints]
 
     def update_checkpoint(self, group_jid: str, **kwargs):
-        """Thread-safe checkpoint upsert."""
-        db = self._get_db()
-        db.execute(
-            """INSERT INTO sync_checkpoints
-               (instance_name, group_jid, group_name, group_owner, participants,
-                last_message_id, last_message_ts, first_message_ts,
-                last_synced_ts, total_available, synced_count, status, error)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-               ON CONFLICT(instance_name, group_jid) DO UPDATE SET
-                group_name          = COALESCE(excluded.group_name, sync_checkpoints.group_name),
-                group_owner         = COALESCE(excluded.group_owner, sync_checkpoints.group_owner),
-                participants        = COALESCE(excluded.participants, sync_checkpoints.participants),
-                last_message_id     = COALESCE(excluded.last_message_id, sync_checkpoints.last_message_id),
-                last_message_ts     = COALESCE(excluded.last_message_ts, sync_checkpoints.last_message_ts),
-                first_message_ts    = COALESCE(excluded.first_message_ts, sync_checkpoints.first_message_ts),
-                last_synced_ts      = COALESCE(excluded.last_synced_ts, sync_checkpoints.last_synced_ts),
-                total_available     = COALESCE(excluded.total_available, sync_checkpoints.total_available),
-                synced_count        = COALESCE(excluded.synced_count, sync_checkpoints.synced_count),
-                status              = COALESCE(excluded.status, sync_checkpoints.status),
-                error               = COALESCE(excluded.error, sync_checkpoints.error),
-                updated_at          = ?""",
-            (
-                EVOLUTION_INSTANCE,
-                group_jid,
-                kwargs.get("group_name", ""),
-                kwargs.get("group_owner", ""),
-                kwargs.get("participants", 0),
-                kwargs.get("last_message_id"),
-                kwargs.get("last_message_ts"),
-                kwargs.get("first_message_ts"),
-                kwargs.get("last_synced_ts"),
-                kwargs.get("total_available", 0),
-                kwargs.get("synced_count", 0),
-                kwargs.get("status", "pending"),
-                kwargs.get("error"),
-                datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-            ),
+        """Thread-safe checkpoint upsert via storage layer."""
+        existing = storage.get_checkpoint(EVOLUTION_INSTANCE, group_jid)
+        cp = SyncCheckpoint(
+            instance_name=EVOLUTION_INSTANCE,
+            group_jid=group_jid,
+            group_name=kwargs.get("group_name", existing.group_name if existing else ""),
+            group_owner=kwargs.get("group_owner", existing.group_owner if existing else ""),
+            participants=kwargs.get("participants", existing.participants if existing else 0),
+            last_message_id=kwargs.get("last_message_id", existing.last_message_id if existing else None),
+            last_message_ts=kwargs.get("last_message_ts", existing.last_message_ts if existing else None),
+            first_message_ts=kwargs.get("first_message_ts", existing.first_message_ts if existing else None),
+            last_synced_ts=kwargs.get("last_synced_ts", existing.last_synced_ts if existing else None),
+            total_available=kwargs.get("total_available", existing.total_available if existing else 0),
+            synced_count=kwargs.get("synced_count", existing.synced_count if existing else 0),
+            status=kwargs.get("status", existing.status if existing else "pending"),
+            error=kwargs.get("error", existing.error if existing else None),
         )
-        db.commit()
-        db.close()
+        storage.save_checkpoint(cp)
 
     # ── Internal ─────────────────────────────────────────────
-
-    def _get_db(self) -> sqlite3.Connection:
-        db = sqlite3.connect(str(DB_PATH))
-        db.row_factory = sqlite3.Row
-        db.execute("PRAGMA journal_mode=WAL")
-        db.execute("PRAGMA foreign_keys=ON")
-        return db
 
     def _reset_status(self):
         self._status["overall"] = "discovering"
@@ -483,7 +449,7 @@ class HistoricalSyncWorker:
         message_uid = f"{EVOLUTION_INSTANCE}::{remote_jid}::{message_id}" if message_id else None
 
         # Save raw message (deduplicated by message_uid)
-        from lab.app import save_raw_message, parse_message, save_parsed, resolve_parsed, save_resolver_decision
+        from app import save_raw_message, parse_message, save_parsed, resolve_parsed, save_resolver_decision
         raw_id = save_raw_message(
             group=remote_jid,
             sender=participant,
@@ -497,11 +463,7 @@ class HistoricalSyncWorker:
 
         # Check if already parsed (dedup)
         if message_uid:
-            db = self._get_db()
-            existing = db.execute(
-                "SELECT id FROM parsed_output WHERE raw_message_id = ?", (raw_id,)
-            ).fetchone()
-            db.close()
+            existing = storage.get_parsed_by_raw(raw_id)
             if existing:
                 return
 
@@ -514,14 +476,9 @@ class HistoricalSyncWorker:
 
     def _get_checkpoint(self, group_jid: str) -> dict:
         """Read existing checkpoint for a group, or return defaults."""
-        db = self._get_db()
-        row = db.execute(
-            "SELECT * FROM sync_checkpoints WHERE instance_name = ? AND group_jid = ?",
-            (EVOLUTION_INSTANCE, group_jid),
-        ).fetchone()
-        db.close()
-        if row:
-            return dict(row)
+        cp = storage.get_checkpoint(EVOLUTION_INSTANCE, group_jid)
+        if cp:
+            return {f.name: getattr(cp, f.name) for f in cp.__dataclass_fields__.values()}
         return {
             "synced_count": 0,
             "last_message_id": None,

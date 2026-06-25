@@ -6,7 +6,7 @@ use the registry to enumerate and access sources.
 """
 
 from typing import Optional
-from lab.sources.base import BaseSource
+from sources.base import BaseSource
 
 
 class SourceRegistry:
@@ -49,6 +49,6 @@ def get_registry() -> SourceRegistry:
     if _registry is None:
         _registry = SourceRegistry()
         # Auto-register built-in sources
-        from lab.sources.whatsapp import WhatsAppSource
+        from sources.whatsapp import WhatsAppSource
         _registry.register(WhatsAppSource())
     return _registry
