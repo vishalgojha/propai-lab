@@ -53,7 +53,7 @@ class WhatsAppSource(BaseSource):
         try:
             data = self._get(f"instance/connectionState/{self.instance}")
             state = data.get("instance", {}).get("state", "")
-            return state.lower() in ("open", "connected", "syncing")
+            return state.lower() in ("open", "connected", "syncing", "connecting")
         except Exception:
             return False
 

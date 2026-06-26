@@ -23,13 +23,13 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from storage import SqliteStorage, RawMessage, ParsedObservation, ResolverDecision, Evaluation
+from lab.storage import SqliteStorage, RawMessage, ParsedObservation, ResolverDecision, Evaluation
 
 # ── Bootstrap path to reuse evidence engine ─────────────────────
 PROJECT_DIR = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_DIR))
 
-from config import DB_PATH, WEBHOOK_SECRET, HOST, PORT, EVOLUTION_INSTANCE, EVOLUTION_API_URL
+from lab.config import DB_PATH, WEBHOOK_SECRET, HOST, PORT, EVOLUTION_INSTANCE, EVOLUTION_API_URL
 from evidence.resolver import resolve, resolve_by_landmark, resolve_by_street
 from evidence.parsers import parse as broker_parse
 
@@ -42,7 +42,7 @@ _scheduler = None
 def get_scheduler():
     global _scheduler
     if _scheduler is None:
-        from scheduler import SyncScheduler
+        from lab.scheduler import SyncScheduler
         _scheduler = SyncScheduler()
     return _scheduler
     return _sync_worker
@@ -107,14 +107,14 @@ def parse_message(raw_text: str) -> dict:
     elif re.search(r'\b(1\s*\.\s*5)\s*bhk', lower):
         result["bhk"] = "1.5 BHK"
 
-    # 3. Extract price
+    # 3. Extract price — two-pass: with unit first, then absolute
     price_match = re.search(
-        r'(?:rs\.?\s*|inr\s*|₹)?\s*([\d,]+(?:\.\d+)?)\s*(cr|crore|lac|lakh|l|k|thousand|k)?',
+        r'(?:rs\.?\s*|inr\s*|₹)?\s*([\d,]+(?:\.\d+)?)\s*(cr|crore|lac|lakh|l|k|thousand)\b',
         lower,
     )
     if price_match:
         amount = float(price_match.group(1).replace(",", ""))
-        unit_raw = (price_match.group(2) or "").lower()
+        unit_raw = price_match.group(2).lower()
         if unit_raw in ("cr", "crore"):
             result["price"] = amount * 10000000
             result["price_unit"] = "Cr"
@@ -124,7 +124,14 @@ def parse_message(raw_text: str) -> dict:
         elif unit_raw in ("k", "thousand"):
             result["price"] = amount * 1000
             result["price_unit"] = "K"
-        else:
+    else:
+        # Fallback: absolute price only if preceded by currency symbol
+        abs_match = re.search(
+            r'(?:rs\.?\s*|inr\s*|₹)\s*([\d,]+(?:\.\d+)?)',
+            lower,
+        )
+        if abs_match:
+            amount = float(abs_match.group(1).replace(",", ""))
             result["price"] = amount
             result["price_unit"] = "abs"
 
@@ -592,7 +599,7 @@ async def webhook(request: Request):
     remote_jid = key.get("remoteJid", group)
     message_uid = f"evolution::{instance}::{remote_jid}::{message_id}" if message_id else None
 
-    from scheduler import PIPELINE_VERSION
+    from lab.scheduler import PIPELINE_VERSION
     raw_id = storage.save_raw_message(RawMessage(
         group_name=group,
         sender=sender,
@@ -677,7 +684,7 @@ class IngestRequest(BaseModel):
 @app.post("/ingest")
 async def ingest(req: IngestRequest):
     """Manually ingest a message for testing."""
-    from scheduler import PIPELINE_VERSION
+    from lab.scheduler import PIPELINE_VERSION
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     raw_id = storage.save_raw_message(RawMessage(
         group_name=req.group,
@@ -877,7 +884,7 @@ async def replay_all():
 @app.get("/api/sources")
 async def list_sources():
     """List all registered sources."""
-    from sources.registry import get_registry
+    from lab.sources.registry import get_registry
     reg = get_registry()
     sources = []
     for s in reg.all():
@@ -941,7 +948,7 @@ async def source_sync(source_name: str):
     scheduler = get_scheduler()
     if scheduler.is_running:
         raise HTTPException(409, "Scheduler already running")
-    from sources.registry import get_registry
+    from lab.sources.registry import get_registry
     if not get_registry().get(source_name):
         raise HTTPException(404, f"Unknown source: {source_name}")
     started = scheduler.start(source=source_name)
@@ -953,7 +960,7 @@ async def source_sync(source_name: str):
 @app.get("/api/sources/{source_name}")
 async def get_source(source_name: str):
     """Get details for a specific source."""
-    from sources.registry import get_registry
+    from lab.sources.registry import get_registry
     s = get_registry().get(source_name)
     if not s:
         raise HTTPException(404, f"Unknown source: {source_name}")
@@ -985,14 +992,14 @@ async def sync_status_legacy():
 @app.get("/api/sync/groups")
 async def sync_groups_legacy():
     """Legacy: list WhatsApp sync jobs as groups."""
-    from scheduler import get_jobs
+    from lab.scheduler import get_jobs
     return get_jobs(source="whatsapp")
 
 
 @app.get("/api/sync/connection")
 async def sync_connection():
     """Check WhatsApp (Evolution API) connection status."""
-    from sources.whatsapp import WhatsAppSource
+    from lab.sources.whatsapp import WhatsAppSource
     src = WhatsAppSource()
     connected = src.validate_connection()
     return {
@@ -1256,6 +1263,18 @@ class QRController {
       const ts = Date.now();
       const res = await fetch(this.url + '?t=' + ts);
       if (res.ok) {
+        const contentType = res.headers.get('content-type') || '';
+        if (contentType.includes('application/json')) {
+          const data = await res.json();
+          if (data.error === 'already_connected') {
+            this.imageEl.classList.remove('loading');
+            this.placeholderEl.classList.add('hidden');
+            this.setStatus('connected');
+            this.stopAutoRefresh();
+            setTimeout(() => { window.location.href = '/'; }, 1500);
+            return;
+          }
+        }
         this.imageEl.src = this.url + '?t=' + ts;
         this.imageEl.onload = () => {
           this.imageEl.classList.remove('loading');
@@ -1365,6 +1384,9 @@ async def qr_image():
                 headers={"apikey": api_key}
             )
             data = r.json()
+            # Evolution API returns {"count":0} when instance already connected
+            if data.get("count") == 0:
+                return {"error": "already_connected"}
             b64 = data.get("base64", "")
             if not b64:
                 return {"error": "no qr code"}
@@ -1387,5 +1409,5 @@ async def connect_page():
 
 if __name__ == "__main__":
     import uvicorn
-    from config import HOST, PORT
+    from lab.config import HOST, PORT
     uvicorn.run("lab.app:app", host=HOST, port=PORT, reload=True)

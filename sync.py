@@ -146,7 +146,7 @@ class EvolutionAPIClient:
         try:
             st = self.instance_status()
             state = st.get("instance", {}).get("state", "")
-            return state.lower() in ("open", "connected", "syncing")
+            return state.lower() in ("open", "connected", "syncing", "connecting")
         except Exception:
             return False
 
