@@ -10,6 +10,7 @@ import sys
 import uuid
 import re
 import base64
+import time
 import httpx
 from datetime import datetime, timezone
 from pathlib import Path
@@ -1557,6 +1558,7 @@ async def api_key():
 # ── Serve QR code via proxy to Evolution API ────────────────────
 
 QR_PAGE = None
+QR_IMAGE_CACHE = {"base64": "", "fetched_at": 0.0}
 
 def _get_qr_page():
     global QR_PAGE
@@ -1902,19 +1904,47 @@ async def qr_image():
         api_key = "propai-dev-key"
     try:
         async with httpx.AsyncClient() as client:
+            state_res = await client.get(
+                f"http://localhost:8080/instance/connectionState/{EVOLUTION_INSTANCE}",
+                headers={"apikey": api_key},
+            )
+            state_data = state_res.json()
+            state = (
+                state_data.get("instance", {}).get("state")
+                or state_data.get("state")
+                or state_data.get("connectionStatus")
+                or ""
+            ).lower()
+            if state in {"open", "connected", "syncing", "connecting"}:
+                QR_IMAGE_CACHE["base64"] = ""
+                QR_IMAGE_CACHE["fetched_at"] = 0.0
+                return {"error": "already_connected"}
+
+            now = time.time()
+            cached = QR_IMAGE_CACHE.get("base64", "")
+            if cached and now - float(QR_IMAGE_CACHE.get("fetched_at", 0.0)) < 20:
+                return Response(
+                    content=base64.b64decode(cached),
+                    media_type="image/png"
+                )
+
             r = await client.get(
-                "http://localhost:8080/instance/connect/propai-scraper",
+                f"http://localhost:8080/instance/connect/{EVOLUTION_INSTANCE}",
                 headers={"apikey": api_key}
             )
             data = r.json()
             # Evolution API returns {"count":0} when instance already connected
             if data.get("count") == 0:
+                QR_IMAGE_CACHE["base64"] = ""
+                QR_IMAGE_CACHE["fetched_at"] = 0.0
                 return {"error": "already_connected"}
             b64 = data.get("base64", "")
             if not b64:
                 return {"error": "no qr code"}
             if "," in b64:
                 b64 = b64.split(",")[1]
+            QR_IMAGE_CACHE["base64"] = b64
+            QR_IMAGE_CACHE["fetched_at"] = now
             return Response(
                 content=base64.b64decode(b64),
                 media_type="image/png"
