@@ -5,5 +5,8 @@ __pycache__/
 lab.db
 lab.db-*
 *.log
+*.db-shm
+*.db-wal
+propai.db
 /tmp/
 .DS_Store

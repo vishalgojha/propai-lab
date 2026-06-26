@@ -1,0 +1,92 @@
+@import "tailwindcss";
+
+@theme {
+  --color-propai-green: #3EE88A;
+  --color-propai-green-dark: #2DC96E;
+  --color-bg-base: #090d12;
+  --color-bg-surface: #0d1117;
+  --color-bg-elevated: #111820;
+  --color-bg-hover: #141c26;
+  --color-border: rgba(255, 255, 255, 0.06);
+  --color-border-strong: rgba(255, 255, 255, 0.10);
+  --color-text-primary: #e2e8f0;
+  --color-text-secondary: #94a3b8;
+  --color-text-muted: #64748b;
+}
+
+body {
+  background: var(--color-bg-base);
+  color: var(--color-text-primary);
+  font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+.sidebar-link {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  color: #94a3b8;
+  font-size: 14px;
+  font-weight: 500;
+  transition: all 0.15s;
+}
+.sidebar-link:hover {
+  background: rgba(255,255,255,0.04);
+  color: #e2e8f0;
+}
+.sidebar-link.active {
+  background: rgba(62,232,138,0.08);
+  color: #3EE88A;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+}
+.badge-green { background: rgba(62,232,138,0.14); color: #3EE88A; }
+.badge-red { background: rgba(239,68,68,0.14); color: #ef4444; }
+.badge-yellow { background: rgba(245,158,11,0.14); color: #f59e0b; }
+.badge-blue { background: rgba(59,130,246,0.14); color: #3b82f6; }
+.badge-gray { background: rgba(148,163,184,0.14); color: #94a3b8; }
+.badge-purple { background: rgba(168,85,247,0.14); color: #a855f7; }
+.badge-orange { background: rgba(245,158,11,0.14); color: #f59e0b; }
+
+.prov { font-size: 9px; display: inline-block; margin-left: 4px; padding: 0 4px; border: 1px solid var(--color-border); border-radius: 3px; background: var(--color-bg-surface); white-space: nowrap; }
+.prov-verified { border-color: #3fb950; color: #3fb950; }
+.prov-parsed { border-color: #d29922; color: #d29922; }
+.prov-enriched { border-color: #58a6ff; color: #58a6ff; }
+
+.loc-token { display: inline-block; background: rgba(88,166,255,0.1); border: 1px solid rgba(88,166,255,0.25); border-radius: 4px; padding: 1px 6px; font-size: 11px; margin: 1px; white-space: nowrap; }
+
+.stat-card { background: #0d1117; border: 1px solid rgba(255,255,255,0.06); border-radius: 16px; padding: 14px 18px; text-align: center; min-width: 110px; flex: 1; }
+.stat-card .val { font-size: 26px; font-weight: 700; color: #e2e8f0; font-variant-numeric: tabular-nums; }
+.stat-card .lbl { font-size: 10px; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 2px; }
+.stat-card.green .val { color: #3EE88A; }
+.stat-card.red .val { color: #ef4444; }
+.stat-card.yellow .val { color: #f59e0b; }
+.stat-card.blue .val { color: #3b82f6; }
+.stat-card.purple .val { color: #a855f7; }
+.stat-card.orange .val { color: #f59e0b; }
+
+.heat-row { display: flex; align-items: center; gap: 10px; padding: 6px 0; font-size: 13px; }
+.heat-row .heat-name { min-width: 130px; color: #e2e8f0; font-weight: 500; }
+.heat-row .heat-bar { flex: 1; height: 18px; background: #141c26; border-radius: 999px; overflow: hidden; position: relative; }
+.heat-row .heat-fill { height: 100%; background: linear-gradient(90deg, #2DC96E, #3EE88A); border-radius: 999px; transition: width 0.5s; }
+.heat-row .heat-count { min-width: 40px; text-align: right; color: #64748b; font-variant-numeric: tabular-nums; }
+
+.feed-item { padding: 10px 0; border-bottom: 1px solid rgba(255,255,255,0.06); font-size: 13px; }
+.feed-item:last-child { border-bottom: none; }
+.feed-item .feed-header { display: flex; gap: 8px; align-items: center; margin-bottom: 4px; flex-wrap: wrap; }
+.feed-item .feed-time { font-size: 11px; color: #64748b; font-variant-numeric: tabular-nums; }
+.feed-item .feed-group { font-size: 11px; color: #64748b; }
+.feed-item .feed-msg { color: #e2e8f0; line-height: 1.5; margin-top: 2px; }
+.feed-item .feed-detail { font-size: 11px; color: #64748b; margin-top: 2px; display: flex; gap: 8px; flex-wrap: wrap; }
+
+.connection-card { background: #0d1117; border: 1px solid rgba(255,255,255,0.06); border-radius: 20px; padding: 20px; margin-bottom: 12px; }
+
+.inspector { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 16px; margin-bottom: 16px; }

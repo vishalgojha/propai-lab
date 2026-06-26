@@ -19,7 +19,7 @@ from dataclasses import asdict
 
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import Response
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -1549,14 +1549,65 @@ def _top_message_groups(jobs, limit: int = 5) -> list[dict]:
     ]
 
 
-# ── Admin UI (single HTML page) ─────────────────────────────────
+# ── Listing endpoints for frontend ───────────────────────────────
 
-@app.get("/", response_class=HTMLResponse)
-async def admin_ui():
-    ui_path = Path(__file__).parent / "admin" / "index.html"
-    if ui_path.exists():
-        return HTMLResponse(ui_path.read_text())
-    return HTMLResponse("<h1>Admin UI not found</h1><p>Run from lab/ directory</p>")
+@app.get("/api/brokers")
+async def list_brokers():
+    rows = storage.db.execute("""
+        SELECT DISTINCT p.broker_name AS name, p.broker_phone AS phone,
+               COUNT(*) AS message_count, COUNT(DISTINCT r.group_name) AS group_count
+        FROM parsed_output p
+        JOIN raw_messages r ON r.id = p.raw_message_id
+        WHERE p.broker_name IS NOT NULL AND p.broker_name != ''
+        GROUP BY p.broker_name
+        ORDER BY message_count DESC
+    """).fetchall()
+    return [dict(r) for r in rows]
+
+
+@app.get("/api/buildings")
+async def list_buildings():
+    rows = storage.db.execute("""
+        SELECT DISTINCT rd.building_name, p.micro_market, COUNT(*) AS occurrences
+        FROM resolver_decisions rd
+        LEFT JOIN parsed_output p ON p.id = rd.parsed_id
+        WHERE rd.building_name IS NOT NULL AND rd.building_name != ''
+        GROUP BY rd.building_name
+        ORDER BY occurrences DESC
+        LIMIT 100
+    """).fetchall()
+    return [dict(r) for r in rows]
+
+
+@app.get("/api/groups")
+async def list_groups():
+    jobs = storage.get_sync_jobs(limit=500, source="whatsapp")
+    return [asdict(j) for j in jobs]
+
+
+@app.get("/api/search")
+async def search_messages(q: str = ""):
+    if not q:
+        return []
+    results = storage.db.execute("""
+        SELECT p.id, p.intent, p.broker_name, p.broker_phone,
+               p.bhk, p.price, p.price_unit, p.area_sqft, p.furnishing,
+               p.location_raw, p.landmark_name, p.building_name, p.micro_market,
+               p.confidence, r.message, r.group_name, r.timestamp
+        FROM parsed_output p
+        JOIN raw_messages r ON r.id = p.raw_message_id
+        WHERE r.message LIKE ? OR p.broker_name LIKE ? OR p.micro_market LIKE ?
+           OR p.building_name LIKE ? OR p.landmark_name LIKE ?
+        LIMIT 50
+    """, [f"%{q}%"] * 5)
+    return [dict(r) for r in results]
+
+
+# ── Root redirect to Next.js frontend ────────────────────────────
+
+@app.get("/")
+async def root():
+    return {"status": "ok", "frontend": "http://localhost:3000", "message": "PropAI API is running. Use the Next.js frontend at http://localhost:3000"}
 
 
 @app.get("/health")
@@ -1940,9 +1991,9 @@ async def qr_image():
         return {"error": str(e)}
 
 
-@app.get("/connect", response_class=HTMLResponse)
+@app.get("/connect")
 async def connect_page():
-    return _get_qr_page()
+    return {"status": "ok", "frontend": "http://localhost:3000/settings", "message": "Use the settings page at http://localhost:3000/settings to connect WhatsApp"}
 
 
 # ── Entrypoint ──────────────────────────────────────────────────
