@@ -37,6 +37,7 @@ class ParsedObservation:
     area_sqft: Optional[float] = None
     furnishing: Optional[str] = None
     location_raw: Optional[str] = None
+    location: Optional[str] = None       # JSON: structured location from parse_location()
     building_name: Optional[str] = None
     landmark_name: Optional[str] = None
     street_name: Optional[str] = None

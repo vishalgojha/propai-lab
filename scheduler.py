@@ -17,11 +17,11 @@ from datetime import datetime, timezone
 from queue import Queue, Empty
 from typing import Optional
 
-from app import storage
-from config import DB_PATH, EVOLUTION_INSTANCE
-from sources import SourceRegistry, SourceRecord, SyncJob
-from sources.registry import get_registry
-from storage import SyncJob as StorageSyncJob
+from lab.app import storage
+from lab.config import DB_PATH, EVOLUTION_INSTANCE
+from lab.ingestion import SourceRegistry, SourceRecord, SyncJob
+from lab.ingestion.registry import get_registry
+from lab.storage import SyncJob as StorageSyncJob
 
 logger = logging.getLogger(__name__)
 
@@ -78,8 +78,8 @@ def process_record(record: SourceRecord, pipeline_version: str = PIPELINE_VERSIO
 
     Returns dict with raw_id, parsed_id, resolver result.
     """
-    from app import storage, parse_message, resolve_parsed
-    from storage import RawMessage, ParsedObservation, ResolverDecision
+    from lab.app import storage, parse_message, resolve_parsed
+    from lab.storage import RawMessage, ParsedObservation, ResolverDecision
     import json
 
     # Stage 1: Store raw (idempotent via message_uid)
@@ -108,6 +108,7 @@ def process_record(record: SourceRecord, pipeline_version: str = PIPELINE_VERSIO
         area_sqft=parsed.get("area_sqft"),
         furnishing=parsed.get("furnishing"),
         location_raw=parsed.get("location_raw"),
+        location=json.dumps(parsed.get("location")) if parsed.get("location") else None,
         building_name=parsed.get("building_name"),
         landmark_name=parsed.get("landmark_name"),
         street_name=parsed.get("street_name"),

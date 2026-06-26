@@ -122,6 +122,17 @@ tr:hover td { background: var(--bg-surface); }
 .cell-truncate { max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .clickable { cursor: pointer; color: #58a6ff; }
 .clickable:hover { text-decoration: underline; }
+.loc-token { display: inline-block; background: rgba(88,166,255,0.1); border: 1px solid rgba(88,166,255,0.25); border-radius: 4px; padding: 1px 6px; font-size: 11px; margin: 1px; white-space: nowrap; }
+.prov { font-size: 9px; color: var(--text-muted); display: inline-block; margin-left: 4px; padding: 0 4px; border: 1px solid var(--border); border-radius: 3px; background: var(--bg-surface); white-space: nowrap; }
+.prov-verified { border-color: #3fb950; color: #3fb950; }
+.prov-parsed { border-color: #d29922; color: #d29922; }
+.prov-enriched { border-color: #58a6ff; color: #58a6ff; }
+.modal { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); display: flex; align-items: center; justify-content: center; z-index: 999; }
+.modal-content { background: var(--bg-surface); border: 1px solid var(--border-strong); border-radius: 12px; padding: 24px; position: relative; }
+.modal-close { position: absolute; top: 12px; right: 16px; font-size: 24px; cursor: pointer; color: var(--text-muted); }
+.modal-close:hover { color: var(--text-primary); }
+button.green { background: #238636; color: #fff; }
+button.green:hover { background: #2ea043; }
 
 /* Evidence Inspector */
 .inspector { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 16px; margin-bottom: 16px; }
@@ -343,6 +354,8 @@ tr:hover td { background: var(--bg-surface); }
     <button onclick="loadSync()">Refresh</button>
     <button onclick="startSync()" id="syncStartBtn2">Start Sync</button>
     <button onclick="stopSync()" id="syncStopBtn2" class="red">Stop Sync</button>
+    <button onclick="showLoginModal()" id="loginBtn2" class="green">Login</button>
+    <button onclick="confirmLogout()" id="logoutBtn2" class="red" style="display:none;">Logout</button>
     <button onclick="checkConnection()" class="gray">Check Connection</button>
     <span id="connStatus2" class="muted" style="font-size:12px;"></span>
   </div>
@@ -351,6 +364,28 @@ tr:hover td { background: var(--bg-surface); }
   <table><thead><tr>
     <th>Group Name</th><th>ID</th><th>Members</th><th>Status</th><th>Processed</th><th>Found</th><th>Remaining</th><th>Started</th><th>Finished</th><th>Error</th>
   </tr></thead><tbody id="syncBody2"></tbody></table>
+</div>
+
+<!-- QR Login Modal -->
+<div id="qrModal" class="modal" style="display:none;">
+  <div class="modal-content" style="max-width:420px;text-align:center;">
+    <span class="modal-close" onclick="closeQRModal()">&times;</span>
+    <h3 style="margin-bottom:12px;">Scan QR with WhatsApp</h3>
+    <div id="qrContainer" style="background:#fff;border-radius:8px;padding:16px;margin:12px 0;min-height:280px;display:flex;align-items:center;justify-content:center;">
+      <div id="qrSpinner" style="color:#8b949e;">Requesting QR code...</div>
+      <img id="qrImage" style="max-width:300px;display:none;" alt="QR Code"/>
+    </div>
+    <div id="qrStatus" style="font-size:12px;color:#8b949e;margin-bottom:8px;"></div>
+    <div style="display:flex;gap:8px;justify-content:center;">
+      <button onclick="refreshQR()" class="gray">Refresh QR</button>
+      <button onclick="closeQRModal()">Close</button>
+    </div>
+    <div style="margin-top:12px;font-size:11px;color:#8b949e;">
+      1. Open WhatsApp on your phone &middot;
+      2. Settings &rarr; Linked Devices &middot;
+      3. Tap "Link a Device"
+    </div>
+  </div>
 </div>
 
 </div>
@@ -649,16 +684,21 @@ async function loadExtraction() {
     return `<tr>
       <td style="white-space:nowrap;"><span class="clickable" onclick="inspectObservation(${r.raw_message_id})" style="font-weight:600;">P${r.id}</span><br><span style="font-size:10px;color:#8b949e;">${esc(r.raw_group || '')}</span></td>
       <td style="font-weight:600;">${brokerDisplay}<br>${waLink ? `<a href="${waLink}" target="_blank" style="font-size:10px;color:#3b82f6;text-decoration:none;">wa.me/${phoneClean}</a>` : ''}</td>
-      <td>${r.intent ? fmtIntent(r.intent) : ''}</td>
-      <td><span style="font-size:11px;color:#8b949e;">${esc(r.principal || '')}</span></td>
-      <td>${r.forwarded ? '<span class="badge yellow">Forwarded</span>' : '—'}</td>
-      <td>${esc(r.bhk || '')}</td>
-      <td>${r.price ? `${r.price.toLocaleString()} ${esc(r.price_unit||'')}` : ''}</td>
-      <td>${r.area_sqft ? `${r.area_sqft.toLocaleString()} sqft` : ''}</td>
-      <td>${esc(r.furnishing || '')}</td>
-      <td class="cell-truncate">${esc(r.location_raw || '')}</td>
-      <td class="cell-truncate">${esc(r.landmark_name || '')}</td>
-      <td class="cell-truncate">${esc(r.micro_market || '')}</td>
+      <td>${r.intent ? fmtIntent(r.intent) + '<span class="prov prov-parsed">Parsed</span>' : ''}</td>
+      <td><span style="font-size:11px;color:#8b949e;">${esc(r.principal || '')}</span>${r.principal ? '<span class="prov prov-parsed">Parsed</span>' : ''}</td>
+      <td>${r.forwarded ? '<span class="badge yellow">Forwarded</span><span class="prov prov-verified">Source</span>' : '—'}</td>
+      <td>${esc(r.bhk || '')}${r.bhk ? '<span class="prov prov-parsed">Parsed</span>' : ''}</td>
+      <td>${r.price ? `${r.price.toLocaleString()} ${esc(r.price_unit||'')}<span class="prov prov-parsed">Parsed</span>` : ''}</td>
+      <td>${r.area_sqft ? `${r.area_sqft.toLocaleString()} sqft<span class="prov prov-parsed">Parsed</span>` : ''}</td>
+      <td>${esc(r.furnishing || '')}${r.furnishing ? '<span class="prov prov-parsed">Parsed</span>' : ''}</td>
+      <td class="cell-truncate">${esc(r.location_raw || '')}
+        ${r.location && r.location.tokens ? '<div style="font-size:10px;color:#58a6ff;margin-top:2px;">' +
+          r.location.tokens.map(t => `<span class="loc-token">${esc(t.text)} <small style="color:#8b949e;">${t.kind}</small></span>`).join(' ') +
+          '</div>' : ''}
+        ${r.location_raw ? '<span class="prov prov-parsed">Parsed</span>' : ''}
+      </td>
+      <td class="cell-truncate">${esc(r.landmark_name || '')}${r.landmark_name ? '<span class="prov prov-enriched">Enriched</span>' : ''}</td>
+      <td class="cell-truncate">${esc(r.micro_market || '')}${r.micro_market ? '<span class="prov prov-enriched">Enriched</span>' : ''}</td>
       <td>${confLabel}</td>
     </tr>`;
   }).join('');
@@ -815,20 +855,36 @@ function renderEvidence(obs) {
   <div style="background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:12px;margin-bottom:16px;">
     <div class="meta" style="grid-template-columns:1fr 1fr 1fr;">
       <div class="kv"><span class="k">Broker</span><span class="v" style="font-weight:600;">${esc(parsed.broker_name || '—')} ${parsed.profile_name ? '<span style="font-weight:400;color:#8b949e;font-size:11px;">(' + esc(parsed.profile_name) + ')</span>' : ''}</span></div>
-      <div class="kv"><span class="k">Intent</span><span class="v">${parsed.intent ? fmtIntent(parsed.intent) : '<span class="badge gray">—</span>'}</span></div>
-      <div class="kv"><span class="k">Principal</span><span class="v">${esc(parsed.principal || '—')}</span></div>
-      <div class="kv"><span class="k">BHK</span><span class="v">${esc(parsed.bhk || '—')}</span></div>
-      <div class="kv"><span class="k">Price</span><span class="v">${parsed.price ? parsed.price.toLocaleString() + ' ' + esc(parsed.price_unit||'') : '—'}</span></div>
-      <div class="kv"><span class="k">Area</span><span class="v">${parsed.area_sqft ? parsed.area_sqft.toLocaleString() + ' sqft' : '—'}</span></div>
-      <div class="kv"><span class="k">Furnishing</span><span class="v">${esc(parsed.furnishing || '—')}</span></div>
-      <div class="kv"><span class="k">Forwarded</span><span class="v">${parsed.forwarded ? '<span class="badge yellow">Yes</span>' : '—'}</span></div>
+      <div class="kv"><span class="k">Intent</span><span class="v">${parsed.intent ? fmtIntent(parsed.intent) + '<span class="prov prov-parsed">Parsed</span>' : '<span class="badge gray">—</span>'}</span></div>
+      <div class="kv"><span class="k">Principal</span><span class="v">${esc(parsed.principal || '—')}${parsed.principal ? '<span class="prov prov-parsed">Parsed</span>' : ''}</span></div>
+      <div class="kv"><span class="k">BHK</span><span class="v">${esc(parsed.bhk || '—')}${parsed.bhk ? '<span class="prov prov-parsed">Parsed</span>' : ''}</span></div>
+      <div class="kv"><span class="k">Price</span><span class="v">${parsed.price ? parsed.price.toLocaleString() + ' ' + esc(parsed.price_unit||'') + '<span class="prov prov-parsed">Parsed</span>' : '—'}</span></div>
+      <div class="kv"><span class="k">Area</span><span class="v">${parsed.area_sqft ? parsed.area_sqft.toLocaleString() + ' sqft<span class="prov prov-parsed">Parsed</span>' : '—'}</span></div>
+      <div class="kv"><span class="k">Furnishing</span><span class="v">${esc(parsed.furnishing || '—')}${parsed.furnishing ? '<span class="prov prov-parsed">Parsed</span>' : ''}</span></div>
+      <div class="kv"><span class="k">Forwarded</span><span class="v">${parsed.forwarded ? '<span class="badge yellow">Yes</span><span class="prov prov-verified">Source</span>' : '—'}</span></div>
       <div class="kv"><span class="k">Broker Phone</span><span class="v">${esc(parsed.broker_phone || '—')}</span></div>
-      <div class="kv"><span class="k">Location</span><span class="v">${esc(parsed.location_raw || '—')}</span></div>
-      <div class="kv"><span class="k">Landmark</span><span class="v">${esc(parsed.landmark_name || '—')}</span></div>
-      <div class="kv"><span class="k">Street</span><span class="v">${esc(parsed.street_name || '—')}</span></div>
-      <div class="kv"><span class="k">Area</span><span class="v">${esc(parsed.area || '—')}</span></div>
-      <div class="kv"><span class="k">Micro Market</span><span class="v">${esc(parsed.micro_market || '—')}</span></div>
-      <div class="kv"><span class="k">Developer</span><span class="v">${esc(parsed.developer || '—')}</span></div>
+      <div class="kv"><span class="k">Location Raw</span><span class="v">${esc(parsed.location_raw || '—')}<span class="prov prov-parsed">Parsed</span></span></div>
+      ${parsed.location && parsed.location.tokens ? `
+      <div class="kv" style="grid-column:span 2;"><span class="k">Structured Location<span class="prov prov-parsed">Parsed</span></span>
+        <span class="v" style="display:flex;flex-wrap:wrap;gap:4px;">
+          ${parsed.location.tokens.map(t =>
+            `<span class="loc-token">${esc(t.text)} <small style="color:#8b949e;">${t.kind}</small></span>`
+          ).join('')}
+        </span>
+      </div>
+      <div class="kv"><span class="k">City</span><span class="v">${esc(parsed.location.city || '—')}${parsed.location.city ? '<span class="prov prov-enriched">Enriched</span>' : ''}</span></div>
+      <div class="kv"><span class="k">Micro Market</span><span class="v">${esc(parsed.location.micro_market || '—')}${parsed.location.micro_market ? '<span class="prov prov-enriched">Enriched</span>' : ''}</span></div>
+      <div class="kv"><span class="k">Locality</span><span class="v">${esc(parsed.location.locality || '—')}${parsed.location.locality ? '<span class="prov prov-parsed">Parsed</span>' : ''}</span></div>
+      <div class="kv"><span class="k">Landmark</span><span class="v">${esc(parsed.location.landmark || '—')}${parsed.location.landmark ? '<span class="prov prov-enriched">Enriched</span>' : ''}</span></div>
+      <div class="kv"><span class="k">Building</span><span class="v">${esc(parsed.location.building || '—')}${parsed.location.building ? '<span class="prov prov-enriched">Enriched</span>' : ''}</span></div>
+      <div class="kv"><span class="k">Spatial Relation</span><span class="v">${esc(parsed.location.spatial_relation || '—')}${parsed.location.spatial_relation ? '<span class="prov prov-parsed">Parsed</span>' : ''}</span></div>
+      <div class="kv"><span class="k">Distance</span><span class="v">${parsed.location.distance_text ? esc(parsed.location.distance_text) : parsed.location.distance_m ? parsed.location.distance_m + 'm' : '—'}${parsed.location.distance_m || parsed.location.distance_text ? '<span class="prov prov-parsed">Parsed</span>' : ''}</span></div>
+      <div class="kv"><span class="k">Transit Landmark</span><span class="v">${esc(parsed.location.transit_landmark || '—')}${parsed.location.transit_landmark ? '<span class="prov prov-enriched">Enriched</span>' : ''}</span></div>` : `
+      <div class="kv"><span class="k">Landmark</span><span class="v">${esc(parsed.landmark_name || '—')}${parsed.landmark_name ? '<span class="prov prov-enriched">Enriched</span>' : ''}</span></div>
+      <div class="kv"><span class="k">Street</span><span class="v">${esc(parsed.street_name || '—')}${parsed.street_name ? '<span class="prov prov-parsed">Parsed</span>' : ''}</span></div>
+      <div class="kv"><span class="k">Area</span><span class="v">${esc(parsed.area || '—')}${parsed.area ? '<span class="prov prov-parsed">Parsed</span>' : ''}</span></div>
+      <div class="kv"><span class="k">Micro Market</span><span class="v">${esc(parsed.micro_market || '—')}${parsed.micro_market ? '<span class="prov prov-enriched">Enriched</span>' : ''}</span></div>
+      <div class="kv"><span class="k">Developer</span><span class="v">${esc(parsed.developer || '—')}${parsed.developer ? '<span class="prov prov-enriched">Enriched</span>' : ''}</span></div>`}
     </div>
     ${parsed.raw_payload && parsed.raw_payload !== '{}' ? `
     <div class="raw-expand" onclick="this.nextElementSibling.classList.toggle('open')" style="margin-top:8px;">▶ Show extraction details</div>
@@ -1004,10 +1060,11 @@ async function loadSync() {
       const finished = fmtJobDate(j.finished_at, 'Waiting');
       const meta = safeJsonParse(j.meta);
       const members = meta.participants || '—';
+      const provBadge = members !== '—' ? '<span class="prov prov-verified">WhatsApp</span>' : '';
       return `<tr>
         <td><strong>${esc(j.group_name || j.group_id)}</strong></td>
         <td style="font-size:11px;color:#8b949e;max-width:160px;overflow:hidden;text-overflow:ellipsis;">${esc(j.group_id)}</td>
-        <td>${members}</td>
+        <td>${members} ${provBadge}</td>
         <td>${fmtSyncStatus(j)}</td>
         <td>${formatNumber(j.records_processed || 0)}</td>
         <td>${formatNumber(j.records_found || 0)}</td>
@@ -1021,9 +1078,112 @@ async function loadSync() {
     const tbody = document.getElementById('syncBody2');
     if (tbody) tbody.innerHTML = `<tr><td colspan="10" style="color:#f85149;">Error: ${e.message}</td></tr>`;
   }
+  updateLoginButtons();
 }
 
 function safeJsonParse(s) { try { return JSON.parse(s); } catch(e) { return {}; } }
+
+// ── Login / Logout / QR ──────────────────────────────────────────
+
+let qrPollTimer = null;
+
+function showLoginModal() {
+  document.getElementById('qrModal').style.display = 'flex';
+  document.getElementById('qrImage').style.display = 'none';
+  document.getElementById('qrSpinner').textContent = 'Requesting QR code...';
+  document.getElementById('qrSpinner').style.display = 'block';
+  document.getElementById('qrStatus').textContent = '';
+  fetchQR();
+}
+
+function closeQRModal() {
+  document.getElementById('qrModal').style.display = 'none';
+  if (qrPollTimer) { clearTimeout(qrPollTimer); qrPollTimer = null; }
+}
+
+async function fetchQR() {
+  try {
+    const res = await fetch('/api/sync/qr');
+    const data = await res.json();
+    if (data.error) {
+      document.getElementById('qrSpinner').textContent = 'Error: ' + data.error;
+      document.getElementById('qrStatus').textContent = 'Is Evolution API running?';
+      return;
+    }
+    if (data.count === 0) {
+      document.getElementById('qrSpinner').textContent = 'Already connected!';
+      document.getElementById('qrStatus').textContent = '';
+      updateLoginButtons();
+      setTimeout(closeQRModal, 1500);
+      return;
+    }
+    const base64 = data.base64 || '';
+    if (!base64) {
+      document.getElementById('qrSpinner').textContent = 'No QR yet, retrying...';
+      document.getElementById('qrStatus').textContent = 'Refreshing in 3s';
+      qrPollTimer = setTimeout(fetchQR, 3000);
+      return;
+    }
+    document.getElementById('qrSpinner').style.display = 'none';
+    const img = document.getElementById('qrImage');
+    img.src = 'data:image/png;base64,' + base64;
+    img.style.display = 'block';
+    document.getElementById('qrStatus').textContent = 'Scan with WhatsApp → Linked Devices';
+    // Poll for connection
+    pollConnection();
+  } catch(e) {
+    document.getElementById('qrSpinner').textContent = 'Failed: ' + e.message;
+  }
+}
+
+async function refreshQR() {
+  if (qrPollTimer) { clearTimeout(qrPollTimer); qrPollTimer = null; }
+  document.getElementById('qrImage').style.display = 'none';
+  document.getElementById('qrSpinner').style.display = 'block';
+  document.getElementById('qrSpinner').textContent = 'Refreshing QR...';
+  document.getElementById('qrStatus').textContent = '';
+  fetchQR();
+}
+
+async function pollConnection() {
+  try {
+    const res = await fetch('/api/sync/connection-state');
+    const data = await res.json();
+    if (data.connected) {
+      document.getElementById('qrStatus').textContent = '✓ Connected!';
+      updateLoginButtons();
+      setTimeout(closeQRModal, 1000);
+      return;
+    }
+    qrPollTimer = setTimeout(pollConnection, 2000);
+  } catch(e) {
+    qrPollTimer = setTimeout(pollConnection, 3000);
+  }
+}
+
+async function confirmLogout() {
+  if (!confirm('Disconnect WhatsApp? You will need to scan a QR code to reconnect.')) return;
+  try {
+    const res = await fetch('/api/sync/logout', { method: 'POST' });
+    const data = await res.json();
+    updateLoginButtons();
+    loadSync();
+  } catch(e) {
+    alert('Logout failed: ' + e.message);
+  }
+}
+
+async function updateLoginButtons() {
+  try {
+    const res = await fetch('/api/sync/connection-state');
+    const data = await res.json();
+    const connected = data.connected;
+    document.getElementById('loginBtn2').style.display = connected ? 'none' : 'inline-block';
+    document.getElementById('logoutBtn2').style.display = connected ? 'inline-block' : 'none';
+  } catch(e) {
+    // leave as-is
+  }
+}
 
 function updatePager(prefix, offset, count) {
   const range = document.getElementById(`${prefix}Range`);

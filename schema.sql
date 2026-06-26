@@ -30,6 +30,7 @@ CREATE TABLE IF NOT EXISTS parsed_output (
     area_sqft       REAL DEFAULT NULL,
     furnishing      TEXT DEFAULT NULL,
     location_raw    TEXT DEFAULT NULL,
+    location        TEXT DEFAULT NULL,
     building_name   TEXT DEFAULT NULL,
     landmark_name   TEXT DEFAULT NULL,
     street_name     TEXT DEFAULT NULL,

@@ -106,6 +106,38 @@ class WhatsAppSource(BaseSource):
             "raw_state": state_payload,
         }
 
+    def qr_code(self) -> dict:
+        """Fetch QR code base64 from Evolution API. Returns {'base64': '...'} or {'error': '...'}."""
+        try:
+            data = self._get(f"instance/connect/{self.instance}", timeout=10)
+            return data
+        except httpx.TimeoutException:
+            return {"error": "Timed out waiting for QR from Evolution API"}
+        except Exception as e:
+            return {"error": str(e)}
+
+    def logout(self) -> dict:
+        """Log out the WhatsApp instance. Returns {'success': true} or {'error': '...'}."""
+        import httpx
+        try:
+            data = self._get(f"instance/logout/{self.instance}", timeout=15)
+            return {"success": True, "data": data}
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 404:
+                return {"error": "Logout endpoint not available. You may need to delete the session manually.", "hint": "Restart the Evolution API container or use instance/delete"}
+            return {"error": str(e)}
+        except Exception as e:
+            return {"error": str(e)}
+
+    def connection_status(self) -> dict:
+        """Get current connection state of the instance."""
+        try:
+            data = self._get(f"instance/connectionState/{self.instance}")
+            state = self._extract_state(data)
+            return {"state": state, "connected": (state or "").lower() in ("open", "connected")}
+        except Exception as e:
+            return {"state": "error", "error": str(e), "connected": False}
+
     def _safe_get(self, path: str, params: dict = None, timeout: int = 3):
         try:
             return self._get(path, params=params, timeout=timeout)

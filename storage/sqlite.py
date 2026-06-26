@@ -74,6 +74,7 @@ class SqliteStorage(Storage):
             "ALTER TABLE evaluations ADD COLUMN extracted_intent TEXT DEFAULT NULL",
             "ALTER TABLE evaluations ADD COLUMN extracted_principal TEXT DEFAULT NULL",
             "ALTER TABLE parsed_output ADD COLUMN embedding BLOB DEFAULT NULL",
+            "ALTER TABLE parsed_output ADD COLUMN location TEXT DEFAULT NULL",
         ]
         for sql in migs:
             try:
@@ -149,12 +150,13 @@ class SqliteStorage(Storage):
         cur = self.db.execute(
             """INSERT INTO parsed_output
                (raw_message_id, intent, principal, bhk, price, price_unit, area_sqft,
-                furnishing, location_raw, building_name, landmark_name, street_name,
+                furnishing, location_raw, location, building_name, landmark_name, street_name,
                 area, micro_market, developer, broker_name, broker_phone,
                 profile_name, forwarded, confidence, raw_payload, event_id, embedding)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (obs.raw_message_id, obs.intent, obs.principal, obs.bhk, obs.price,
              obs.price_unit, obs.area_sqft, obs.furnishing, obs.location_raw,
+             obs.location,
              obs.building_name, obs.landmark_name, obs.street_name,
              obs.area, obs.micro_market, obs.developer,
              obs.broker_name, obs.broker_phone,
@@ -176,7 +178,7 @@ class SqliteStorage(Storage):
         rows = self.db.execute(
             """SELECT p.id, p.raw_message_id, p.intent, p.principal, p.bhk,
                       p.price, p.price_unit, p.area_sqft, p.furnishing,
-                      p.location_raw, p.building_name, p.landmark_name,
+                      p.location_raw, p.location, p.building_name, p.landmark_name,
                       p.street_name, p.area, p.micro_market, p.developer,
                       p.broker_name, p.broker_phone, p.profile_name,
                       p.forwarded, p.confidence, p.raw_payload, p.event_id,
@@ -193,6 +195,11 @@ class SqliteStorage(Storage):
         result = []
         for r in rows:
             d = dict(r)
+            if d.get("location") and isinstance(d["location"], str):
+                try:
+                    d["location"] = json.loads(d["location"])
+                except (json.JSONDecodeError, TypeError):
+                    pass
             if not d.get("broker_name") and d.get("raw_sender"):
                 d["broker_name"] = d["raw_sender"]
             result.append(d)
@@ -319,7 +326,7 @@ class SqliteStorage(Storage):
         rows = self.db.execute(
             """SELECT p.id, p.raw_message_id, p.intent, p.principal, p.bhk,
                       p.price, p.price_unit, p.area_sqft, p.furnishing,
-                      p.location_raw, p.building_name, p.landmark_name,
+                      p.location_raw, p.location, p.building_name, p.landmark_name,
                       p.street_name, p.area, p.micro_market, p.developer,
                       p.broker_name, p.broker_phone, p.profile_name,
                       p.forwarded, p.confidence, p.raw_payload, p.event_id,
@@ -330,13 +337,22 @@ class SqliteStorage(Storage):
                WHERE p.broker_name = ? ORDER BY p.id DESC""",
             (broker_name,)
         ).fetchall()
-        return [dict(r) for r in rows]
+        result = []
+        for r in rows:
+            d = dict(r)
+            if d.get("location") and isinstance(d["location"], str):
+                try:
+                    d["location"] = json.loads(d["location"])
+                except (json.JSONDecodeError, TypeError):
+                    pass
+            result.append(d)
+        return result
 
     def get_observations_by_building(self, building_name: str) -> list[dict]:
         rows = self.db.execute(
             """SELECT p.id, p.raw_message_id, p.intent, p.principal, p.bhk,
                       p.price, p.price_unit, p.area_sqft, p.furnishing,
-                      p.location_raw, p.building_name, p.landmark_name,
+                      p.location_raw, p.location, p.building_name, p.landmark_name,
                       p.street_name, p.area, p.micro_market, p.developer,
                       p.broker_name, p.broker_phone, p.profile_name,
                       p.forwarded, p.confidence, p.raw_payload, p.event_id,
@@ -347,7 +363,16 @@ class SqliteStorage(Storage):
                WHERE LOWER(p.building_name) = LOWER(?) ORDER BY p.id DESC""",
             (building_name,)
         ).fetchall()
-        return [dict(r) for r in rows]
+        result = []
+        for r in rows:
+            d = dict(r)
+            if d.get("location") and isinstance(d["location"], str):
+                try:
+                    d["location"] = json.loads(d["location"])
+                except (json.JSONDecodeError, TypeError):
+                    pass
+            result.append(d)
+        return result
 
     def get_top_brokers_today(self, today_prefix: str, limit: int = 10) -> list[dict]:
         rows = self.db.execute(
@@ -583,6 +608,11 @@ class SqliteStorage(Storage):
         ).fetchone()
         parsed_dict = dict(parsed_row) if parsed_row else {}
         parsed_dict.pop("embedding", None)
+        if parsed_dict.get("location") and isinstance(parsed_dict["location"], str):
+            try:
+                parsed_dict["location"] = json.loads(parsed_dict["location"])
+            except (json.JSONDecodeError, TypeError):
+                pass
         resolver_dict = {}
         if parsed_dict:
             r_row = db.execute(

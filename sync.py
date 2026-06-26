@@ -25,14 +25,14 @@ from typing import Optional
 
 import httpx
 
-from config import (
+from lab.config import (
     EVOLUTION_API_URL,
     EVOLUTION_API_KEY,
     EVOLUTION_INSTANCE,
     EVOLUTION_SYNC_DELAY_MS,
 )
-from storage import SyncCheckpoint
-from app import storage
+from lab.storage import SyncCheckpoint
+from lab.app import storage
 
 logger = logging.getLogger(__name__)
 
@@ -144,9 +144,17 @@ class EvolutionAPIClient:
     def check_connection(self) -> bool:
         """Verify the instance is connected to WhatsApp."""
         try:
+            # Try connectionState endpoint first
             st = self.instance_status()
             state = st.get("instance", {}).get("state", "")
-            return state.lower() in ("open", "connected", "syncing", "connecting")
+            if state.lower() in ("open", "connected", "syncing", "connecting"):
+                return True
+            # Fallback: check fetchInstances which is more reliable
+            instances = self.fetch_groups()
+            for inst in instances:
+                if inst.get("name") == self.instance:
+                    return inst.get("connectionStatus", "").lower() == "open"
+            return False
         except Exception:
             return False
 
@@ -449,7 +457,7 @@ class HistoricalSyncWorker:
         message_uid = f"{EVOLUTION_INSTANCE}::{remote_jid}::{message_id}" if message_id else None
 
         # Save raw message (deduplicated by message_uid)
-        from app import save_raw_message, parse_message, save_parsed, resolve_parsed, save_resolver_decision
+        from lab.app import save_raw_message, parse_message, save_parsed, resolve_parsed, save_resolver_decision
         raw_id = save_raw_message(
             group=remote_jid,
             sender=participant,
