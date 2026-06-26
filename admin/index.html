@@ -306,7 +306,7 @@ tr:hover td { background: var(--bg-surface); }
 <!-- EXTRACTION PANEL (unchanged) -->
 <div class="panel" id="panel-extraction">
   <div class="filter-bar"><button onclick="loadExtraction()">Refresh</button></div>
-  <table><thead><tr><th>ID</th><th>Raw ID</th><th>Broker</th><th>Intent</th><th>Principal</th><th>Fwd</th><th>BHK</th><th>Price</th><th>Area</th><th>Furnishing</th><th>Location</th><th>Landmark</th><th>MM</th><th>Conf</th></tr></thead><tbody id="extractionBody"></tbody></table>
+  <table><thead><tr><th>ID</th><th>Broker</th><th>Message Type</th><th>Principal</th><th>Forwarded</th><th>BHK</th><th>Price</th><th>Area</th><th>Furnishing</th><th>Location</th><th>Landmark</th><th>Micro Market</th><th>Confidence</th></tr></thead><tbody id="extractionBody"></tbody></table>
   <div class="pagination"><button id="extractionPrev" onclick="pageBack('extraction')">Prev</button><span id="extractionRange"></span><button id="extractionNext" onclick="pageNext('extraction')">Next</button></div>
 </div>
 
@@ -316,7 +316,7 @@ tr:hover td { background: var(--bg-surface); }
     <select id="resolverFilter" onchange="loadResolver()"><option value="">All methods</option><option value="resolved">Resolved</option><option value="unresolved">Unresolved</option><option value="error">Error</option></select>
     <button onclick="loadResolver()">Refresh</button>
   </div>
-  <table><thead><tr><th>ID</th><th>Raw</th><th>Building</th><th>Method</th><th>P-Conf</th><th>R-Conf</th><th>Final</th><th>Landmark</th><th>Failure</th><th>Actions</th></tr></thead><tbody id="resolverBody"></tbody></table>
+  <table><thead><tr><th>ID</th><th>Raw</th><th>Building</th><th>Method</th><th>Parser</th><th>Resolver</th><th>Final</th><th>Landmark</th><th>Failure</th><th>Actions</th></tr></thead><tbody id="resolverBody"></tbody></table>
   <div class="pagination"><button id="resolverPrev" onclick="pageBack('resolver')">Prev</button><span id="resolverRange"></span><button id="resolverNext" onclick="pageNext('resolver')">Next</button></div>
 </div>
 
@@ -635,17 +635,23 @@ async function loadExtraction() {
   updatePager('extraction', extractionOffset, data.length);
   const tbody = document.getElementById('extractionBody');
   if (!data.length) {
-    tbody.innerHTML = '<tr><td colspan="14" style="text-align:center;color:#8b949e;">No observations have been parsed yet.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="13" style="text-align:center;color:#8b949e;">No observations have been parsed yet.</td></tr>';
     return;
   }
-  tbody.innerHTML = data.map(r => `
-    <tr>
-      <td class="clickable" onclick="inspectObservation(${r.raw_message_id})">P${r.id}</td>
-      <td class="clickable" onclick="inspectObservation(${r.raw_message_id})">#${r.raw_message_id}</td>
-      <td style="font-weight:600;">${esc(r.broker_name || '')}</td>
+  tbody.innerHTML = data.map(r => {
+    const confPct = r.confidence ? (r.confidence * 100) : 0;
+    const confBadge = confPct >= 70 ? 'green' : confPct >= 40 ? 'yellow' : 'red';
+    const confLabel = r.confidence !== null && r.confidence !== undefined ? `<span class="badge ${confBadge}">${confPct.toFixed(0)}%</span>` : '';
+    const phone = r.broker_phone || '';
+    const phoneClean = phone.replace(/[^0-9]/g, '').slice(-10);
+    const waLink = phoneClean.length === 10 ? `https://wa.me/91${phoneClean}` : '';
+    const brokerDisplay = esc(r.broker_name || '—');
+    return `<tr>
+      <td style="white-space:nowrap;"><span class="clickable" onclick="inspectObservation(${r.raw_message_id})" style="font-weight:600;">P${r.id}</span><br><span style="font-size:10px;color:#8b949e;">${esc(r.raw_group || '')}</span></td>
+      <td style="font-weight:600;">${brokerDisplay}<br>${waLink ? `<a href="${waLink}" target="_blank" style="font-size:10px;color:#3b82f6;text-decoration:none;">wa.me/${phoneClean}</a>` : ''}</td>
       <td>${r.intent ? fmtIntent(r.intent) : ''}</td>
       <td><span style="font-size:11px;color:#8b949e;">${esc(r.principal || '')}</span></td>
-      <td>${r.forwarded ? '<span class="badge yellow">FWD</span>' : ''}</td>
+      <td>${r.forwarded ? '<span class="badge yellow">Forwarded</span>' : '—'}</td>
       <td>${esc(r.bhk || '')}</td>
       <td>${r.price ? `${r.price.toLocaleString()} ${esc(r.price_unit||'')}` : ''}</td>
       <td>${r.area_sqft ? `${r.area_sqft.toLocaleString()} sqft` : ''}</td>
@@ -653,9 +659,9 @@ async function loadExtraction() {
       <td class="cell-truncate">${esc(r.location_raw || '')}</td>
       <td class="cell-truncate">${esc(r.landmark_name || '')}</td>
       <td class="cell-truncate">${esc(r.micro_market || '')}</td>
-      <td>${r.confidence ? (r.confidence * 100).toFixed(0) + '%' : ''}</td>
-    </tr>
-  `).join('');
+      <td>${confLabel}</td>
+    </tr>`;
+  }).join('');
 }
 
 async function loadResolver() {
@@ -804,7 +810,7 @@ function renderEvidence(obs) {
   </div>`;
   html += `<h3 style="display:flex;align-items:center;gap:6px;">
     <span style="color:#d29922;">🔍</span> Extraction
-    <span style="font-size:11px;font-weight:400;color:#8b949e;margin-left:auto;">Parsed #${parsed.id} | Conf: ${parsed.confidence ? (parsed.confidence * 100).toFixed(0) + '%' : 'N/A'}</span>
+    <span style="font-size:11px;font-weight:400;color:#8b949e;margin-left:auto;">Parsed #${parsed.id} | Confidence: ${parsed.confidence ? (parsed.confidence * 100).toFixed(0) + '%' : 'N/A'}</span>
   </h3>
   <div style="background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:12px;margin-bottom:16px;">
     <div class="meta" style="grid-template-columns:1fr 1fr 1fr;">

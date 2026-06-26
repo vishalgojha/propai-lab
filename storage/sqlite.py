@@ -181,13 +181,22 @@ class SqliteStorage(Storage):
                       p.broker_name, p.broker_phone, p.profile_name,
                       p.forwarded, p.confidence, p.raw_payload, p.event_id,
                       p.created_at,
-                      r.message as raw_message
+                      r.message as raw_message,
+                      r.sender as raw_sender,
+                      r.group_name as raw_group,
+                      r.timestamp as raw_timestamp
                FROM parsed_output p
                JOIN raw_messages r ON r.id = p.raw_message_id
                ORDER BY p.id DESC LIMIT ? OFFSET ?""",
             (limit, offset)
         ).fetchall()
-        return [dict(r) for r in rows]
+        result = []
+        for r in rows:
+            d = dict(r)
+            if not d.get("broker_name") and d.get("raw_sender"):
+                d["broker_name"] = d["raw_sender"]
+            result.append(d)
+        return result
 
     # ── Resolver decisions ─────────────────────────────────────
 
