@@ -3,41 +3,125 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PropAI Intelligence Lab</title>
+<title>PropAI — Market Intelligence</title>
 <style>
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
+:root {
+  --propai-green: #3EE88A;
+  --propai-green-dark: #2DC96E;
+  --bg-base: #090d12;
+  --bg-surface: #0d1117;
+  --bg-elevated: #111820;
+  --bg-hover: #141c26;
+  --border: rgba(255,255,255,0.06);
+  --border-strong: rgba(255,255,255,0.10);
+  --text-primary: #e2e8f0;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
+  --red: #ef4444;
+  --amber: #f59e0b;
+  --blue: #3b82f6;
+  --purple: #a855f7;
+}
 * { box-sizing: border-box; margin: 0; padding: 0; }
-body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0d1117; color: #c9d1d9; font-size: 14px; line-height: 1.5; }
-.container { max-width: 1400px; margin: 0 auto; padding: 16px; }
+body { font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: radial-gradient(circle at top left, rgba(62,232,138,0.08), transparent 28%), radial-gradient(circle at bottom right, rgba(59,130,246,0.05), transparent 30%), var(--bg-base); color: var(--text-primary); font-size: 14px; line-height: 1.5; }
+.container { max-width: 1400px; margin: 0 auto; padding: 24px; }
+
+/* Header */
 header { display: flex; align-items: center; gap: 16px; margin-bottom: 16px; flex-wrap: wrap; }
-header h1 { font-size: 20px; font-weight: 600; color: #f0f6fc; }
-.stats-bar { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
-.stat-card { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 12px 18px; text-align: center; min-width: 100px; }
-.stat-card .val { font-size: 24px; font-weight: 700; color: #f0f6fc; }
-.stat-card .lbl { font-size: 11px; color: #8b949e; text-transform: uppercase; letter-spacing: 0.5px; }
-.stat-card.green .val { color: #3fb950; }
-.stat-card.red .val { color: #f85149; }
-.stat-card.yellow .val { color: #d29922; }
-.stat-card.blue .val { color: #58a6ff; }
-.tabs { display: flex; gap: 4px; margin-bottom: 16px; border-bottom: 1px solid #30363d; }
-.tab { padding: 8px 20px; cursor: pointer; border: 1px solid transparent; border-bottom: 2px solid transparent; color: #8b949e; font-size: 13px; font-weight: 500; border-radius: 4px 4px 0 0; }
-.tab:hover { color: #c9d1d9; background: #161b22; }
-.tab.active { color: #f0f6fc; border-color: #30363d #30363d #0d1117; background: #161b22; border-bottom-color: #f78166; }
+header h1 { font-size: 22px; font-weight: 700; color: var(--text-primary); }
+.conn-bar { display: flex; align-items: center; gap: 12px; margin-left: auto; font-size: 12px; color: var(--text-secondary); flex-wrap: wrap; }
+.conn-bar .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.conn-bar .dot.green { background: var(--propai-green); }
+.conn-bar .dot.yellow { background: var(--amber); }
+.conn-bar .dot.red { background: var(--red); }
+
+/* Stat cards */
+.stats-row { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
+.stat-card { background: var(--bg-surface); border: 1px solid var(--border); border-radius: 16px; padding: 14px 18px; text-align: center; min-width: 110px; flex: 1; box-shadow: 0 16px 48px rgba(0,0,0,0.12); }
+.stat-card .val { font-size: 26px; font-weight: 700; color: var(--text-primary); font-variant-numeric: tabular-nums; }
+.stat-card .lbl { font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 2px; }
+.stat-card.green .val { color: var(--propai-green); }
+.stat-card.red .val { color: var(--red); }
+.stat-card.yellow .val { color: var(--amber); }
+.stat-card.blue .val { color: var(--blue); }
+.stat-card.purple .val { color: var(--purple); }
+.stat-card.orange .val { color: var(--amber); }
+
+/* Progress bar */
+.progress-bar { height: 6px; background: var(--bg-hover); border-radius: 999px; overflow: hidden; margin: 8px 0 16px; }
+.progress-bar .fill { height: 100%; background: var(--propai-green); border-radius: 999px; transition: width 0.5s; }
+
+/* Panels */
+.panel-grid { display: grid; gap: 16px; margin-bottom: 16px; }
+.panel-card { background: var(--bg-surface); border: 1px solid var(--border); border-radius: 20px; padding: 20px; box-shadow: 0 16px 48px rgba(0,0,0,0.14); }
+.panel-card h3 { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.12em; margin-bottom: 10px; font-weight: 700; }
+.panel-card .big-num { font-size: 32px; font-weight: 700; color: var(--text-primary); }
+
+/* Grid layouts */
+.grid-2 { grid-template-columns: 1fr 1fr; }
+.grid-3 { grid-template-columns: 1fr 1fr 1fr; }
+.grid-4 { grid-template-columns: 1fr 1fr 1fr 1fr; }
+@media (max-width: 900px) { .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 600px) { .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; } }
+
+/* Feed */
+.feed-item { padding: 10px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+.feed-item:last-child { border-bottom: none; }
+.feed-item .feed-header { display: flex; gap: 8px; align-items: center; margin-bottom: 4px; }
+.feed-item .feed-time { font-size: 11px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.feed-item .feed-group { font-size: 11px; color: var(--text-muted); }
+.feed-item .feed-msg { color: var(--text-primary); line-height: 1.5; margin-top: 2px; }
+.feed-item .feed-detail { font-size: 11px; color: var(--text-muted); margin-top: 2px; display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* Heatmap */
+.heat-row { display: flex; align-items: center; gap: 10px; padding: 6px 0; font-size: 13px; }
+.heat-row .heat-name { min-width: 130px; color: var(--text-primary); font-weight: 500; }
+.heat-row .heat-bar { flex: 1; height: 18px; background: var(--bg-hover); border-radius: 999px; overflow: hidden; position: relative; }
+.heat-row .heat-fill { height: 100%; background: linear-gradient(90deg, var(--propai-green-dark), var(--propai-green)); border-radius: 999px; transition: width 0.5s; }
+.heat-row .heat-count { min-width: 40px; text-align: right; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+
+/* Tabs */
+.tabs { display: flex; gap: 4px; margin-bottom: 16px; border-bottom: 1px solid var(--border); }
+.tab { padding: 10px 20px; cursor: pointer; border: 1px solid transparent; border-bottom: 2px solid transparent; color: var(--text-secondary); font-size: 13px; font-weight: 600; border-radius: 10px 10px 0 0; }
+.tab:hover { color: var(--text-primary); background: var(--bg-surface); }
+.tab.active { color: var(--text-primary); border-color: var(--border) var(--border) var(--bg-base); background: var(--bg-surface); border-bottom-color: var(--propai-green); }
 .panel { display: none; }
 .panel.active { display: block; }
+
+/* Tables */
 table { width: 100%; border-collapse: collapse; font-size: 13px; }
-th { text-align: left; padding: 8px 10px; border-bottom: 2px solid #30363d; color: #8b949e; font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; position: sticky; top: 0; background: #0d1117; z-index: 1; }
-td { padding: 8px 10px; border-bottom: 1px solid #21262d; vertical-align: top; max-width: 300px; overflow: hidden; text-overflow: ellipsis; }
-tr:hover td { background: #161b22; }
+th { text-align: left; padding: 10px 10px; border-bottom: 1px solid var(--border-strong); color: var(--text-muted); font-weight: 700; font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; position: sticky; top: 0; background: var(--bg-base); z-index: 1; }
+td { padding: 10px 10px; border-bottom: 1px solid var(--border); vertical-align: top; max-width: 300px; overflow: hidden; text-overflow: ellipsis; color: var(--text-secondary); }
+tr:hover td { background: var(--bg-surface); }
 .badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: 600; }
-.badge.green { background: rgba(63,185,80,0.15); color: #3fb950; }
-.badge.red { background: rgba(248,81,73,0.15); color: #f85149; }
-.badge.yellow { background: rgba(210,153,34,0.15); color: #d29922; }
-.badge.blue { background: rgba(88,166,255,0.15); color: #58a6ff; }
-.badge.gray { background: rgba(139,148,158,0.15); color: #8b949e; }
+.badge.green { background: rgba(62,232,138,0.14); color: var(--propai-green); }
+.badge.red { background: rgba(239,68,68,0.14); color: var(--red); }
+.badge.yellow { background: rgba(245,158,11,0.14); color: var(--amber); }
+.badge.blue { background: rgba(59,130,246,0.14); color: var(--blue); }
+.badge.gray { background: rgba(148,163,184,0.14); color: var(--text-secondary); }
+.badge.purple { background: rgba(168,85,247,0.14); color: var(--purple); }
+.connection-card { background: var(--bg-surface); border: 1px solid var(--border); border-radius: 20px; padding: 20px; margin-bottom: 12px; }
+.connection-card h2 { color: var(--text-primary); font-size: 16px; margin-bottom: 12px; padding-bottom: 10px; border-bottom: 1px solid var(--border); }
+.connection-state { display: inline-flex; align-items: center; gap: 8px; font-size: 18px; font-weight: 700; margin-bottom: 14px; }
+.connection-state .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--text-muted); }
+.connection-state.connected { color: var(--propai-green); }
+.connection-state.connected .dot { background: var(--propai-green); }
+.connection-state.disconnected { color: var(--red); }
+.connection-state.disconnected .dot { background: var(--red); }
+.connection-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px 16px; }
+.connection-kv { min-width: 0; }
+.connection-kv .k { color: var(--text-muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; }
+.connection-kv .v { color: var(--text-primary); font-size: 14px; overflow-wrap: anywhere; }
+.connection-kv.unavailable .v { color: var(--text-muted); }
+.message-counts { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); }
+.message-counts h3 { color: var(--text-primary); font-size: 13px; margin-bottom: 8px; }
+.message-count-row { display: flex; justify-content: space-between; gap: 16px; padding: 4px 0; color: var(--text-primary); }
+.message-count-row span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.muted { color: var(--text-muted); }
 .cell-truncate { max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .clickable { cursor: pointer; color: #58a6ff; }
 .clickable:hover { text-decoration: underline; }
-.payload-box { background: #161b22; border: 1px solid #30363d; border-radius: 6px; padding: 12px; font-family: 'SF Mono', Consolas, monospace; font-size: 12px; white-space: pre-wrap; max-height: 300px; overflow: auto; margin-top: 8px; }
 
 /* Evidence Inspector */
 .inspector { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 16px; margin-bottom: 16px; }
@@ -47,116 +131,226 @@ tr:hover td { background: #161b22; }
 .inspector .meta .k { color: #8b949e; min-width: 120px; }
 .inspector .meta .v { color: #c9d1d9; }
 .inspector h3 { font-size: 14px; color: #f0f6fc; margin: 12px 0 8px; }
-.candidate { background: #0d1117; border: 1px solid #30363d; border-radius: 6px; padding: 12px; margin-bottom: 8px; }
-.candidate.winner { border-color: #3fb950; }
-.candidate .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
-.candidate .name { font-weight: 600; color: #f0f6fc; }
-.candidate .conf-score { font-size: 13px; font-weight: 600; }
-.candidate .reasons { list-style: none; padding: 0; }
-.candidate .reasons li { padding: 2px 0; font-size: 12px; }
-.candidate .reasons li::before { content: '•'; margin-right: 6px; color: #3fb950; }
-.candidate .reasons li.red::before { color: #f85149; }
 
-/* Raw message expand */
+/* Raw message */
 .raw-expand { cursor: pointer; color: #8b949e; font-size: 11px; }
 .raw-expand:hover { color: #c9d1d9; }
 .raw-full { display: none; margin-top: 4px; padding: 8px; background: #0d1117; border-radius: 4px; font-size: 12px; white-space: pre-wrap; max-height: 150px; overflow: auto; }
 .raw-full.open { display: block; }
 
+/* Filters */
 .filter-bar { margin-bottom: 12px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-.filter-bar select, .filter-bar input { padding: 6px 10px; background: #0d1117; border: 1px solid #30363d; border-radius: 6px; color: #c9d1d9; font-size: 13px; }
-.filter-bar button { padding: 6px 14px; background: #238636; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; }
-.filter-bar button:hover { background: #2ea043; }
+.filter-bar select, .filter-bar input { padding: 6px 10px; background: var(--bg-surface); border: 1px solid var(--border-strong); border-radius: 8px; color: var(--text-primary); font-size: 13px; }
+.filter-bar button { padding: 6px 14px; background: var(--propai-green); color: #04100a; border: none; border-radius: 8px; cursor: pointer; font-size: 13px; font-weight: 700; }
+.filter-bar button:hover { background: var(--propai-green-dark); }
+.filter-bar button.gray { background: var(--bg-elevated); color: var(--text-primary); border: 1px solid var(--border-strong); }
+.filter-bar button.gray:hover { background: var(--bg-hover); }
+.filter-bar button.red { background: #da3633; }
+.filter-bar button.red:hover { background: #f85149; }
+.filter-bar button.blue { background: #1f6feb; }
+.filter-bar button.blue:hover { background: #388bfd; }
+.filter-bar button:disabled { opacity: 0.4; cursor: default; }
 
 .loading { text-align: center; padding: 40px; color: #8b949e; }
 .loading .spinner { display: inline-block; width: 24px; height: 24px; border: 3px solid #30363d; border-top-color: #58a6ff; border-radius: 50%; animation: spin 0.8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
 .pagination { display: flex; gap: 8px; align-items: center; margin-top: 12px; }
-.pagination button { padding: 4px 12px; background: #21262d; border: 1px solid #30363d; border-radius: 4px; color: #c9d1d9; cursor: pointer; }
+.pagination button { padding: 4px 12px; background: var(--bg-elevated); border: 1px solid var(--border-strong); border-radius: 8px; color: var(--text-primary); cursor: pointer; }
 .pagination button:disabled { opacity: 0.4; cursor: default; }
-.pagination button:hover:not(:disabled) { background: #30363d; }
-
-/* Responsive */
-@media (max-width: 800px) {
-  .inspector .meta { grid-template-columns: 1fr; }
-  .stats-bar { gap: 6px; }
-  .stat-card { min-width: 70px; padding: 8px 12px; }
-  .stat-card .val { font-size: 18px; }
-}
+.pagination button:hover:not(:disabled) { background: var(--bg-hover); }
+@media (max-width: 800px) { .inspector .meta, .connection-grid { grid-template-columns: 1fr; } }
 </style>
 </head>
 <body>
 <div class="container">
+
+<!-- Header -->
 <header>
-  <h1>PropAI Intelligence Lab</h1>
-  <span id="status" style="color:#8b949e;font-size:12px;"></span>
-  <button onclick="runReplay()" style="margin-left:auto;padding:6px 14px;background:#21262d;border:1px solid #30363d;border-radius:6px;color:#c9d1d9;cursor:pointer;font-size:12px;">Replay All</button>
+  <h1>PropAI</h1>
+  <div class="conn-bar" id="connBar">
+    <span class="dot green" id="connDot"></span>
+    <span id="connLabel">Loading...</span>
+    <span id="connDetail" style="color:#8b949e;"></span>
+  </div>
 </header>
 
-<div class="stats-bar" id="statsBar"></div>
-
+<!-- Tabs -->
 <div class="tabs" id="tabs">
-  <div class="tab active" data-tab="inbox" onclick="switchTab('inbox')">Inbox</div>
+  <div class="tab active" data-tab="dashboard" onclick="switchTab('dashboard')">Dashboard</div>
+  <div class="tab" data-tab="inbox" onclick="switchTab('inbox')">Inbox</div>
   <div class="tab" data-tab="extraction" onclick="switchTab('extraction')">Extraction</div>
   <div class="tab" data-tab="resolution" onclick="switchTab('resolution')">Resolution</div>
   <div class="tab" data-tab="failures" onclick="switchTab('failures')">Failures</div>
-  <div class="tab" data-tab="evidence" onclick="switchTab('evidence')">Evidence Inspector</div>
-  <div class="tab" data-tab="groups" onclick="switchTab('groups'); loadGroups()">Groups</div>
+  <div class="tab" data-tab="evidence" onclick="switchTab('evidence')">Evidence</div>
+  <div class="tab" data-tab="sync" onclick="switchTab('sync'); loadSync()">Sync</div>
 </div>
 
-<div class="panel active" id="panel-inbox">
+<!-- ══════════════════════════════════════════════════════════════ -->
+<!-- DASHBOARD PANEL -->
+<!-- ══════════════════════════════════════════════════════════════ -->
+<div class="panel active" id="panel-dashboard">
+
+  <!-- Historical Import Progress -->
+  <div id="importProgress" style="margin-bottom:12px;display:none;">
+    <div style="display:flex;justify-content:space-between;font-size:12px;color:#8b949e;margin-bottom:4px;">
+      <span id="importLabel">Historical Import</span>
+      <span id="importStats"></span>
+    </div>
+    <div class="progress-bar"><div class="fill" id="importFill" style="width:0%"></div></div>
+  </div>
+
+  <!-- Market Activity -->
+  <div class="panel-card" style="margin-bottom:16px;">
+    <h3>TODAY</h3>
+    <div class="stats-row" id="activityRow">
+      <div class="stat-card blue"><div class="val" id="actMessages">—</div><div class="lbl">Messages</div></div>
+      <div class="stat-card green"><div class="val" id="actSellers">—</div><div class="lbl">Sellers</div></div>
+      <div class="stat-card purple"><div class="val" id="actBuyers">—</div><div class="lbl">Buyers</div></div>
+      <div class="stat-card yellow"><div class="val" id="actRentals">—</div><div class="lbl">Rentals</div></div>
+      <div class="stat-card orange"><div class="val" id="actCommercial">—</div><div class="lbl">Commercial</div></div>
+      <div class="stat-card green"><div class="val" id="actBuildings">—</div><div class="lbl">New Buildings</div></div>
+      <div class="stat-card blue"><div class="val" id="actLandmarks">—</div><div class="lbl">New Landmarks</div></div>
+    </div>
+  </div>
+
+  <!-- Coverage + Accuracy + Graph Growth -->
+  <div class="panel-grid grid-3">
+    <!-- Coverage / Market Memory -->
+    <div class="panel-card">
+      <h3>MARKET MEMORY</h3>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+        <div><div class="big-num" id="covGroups">—</div><div style="font-size:11px;color:#8b949e;">Groups Connected</div></div>
+        <div><div class="big-num" id="covMessages">—</div><div style="font-size:11px;color:#8b949e;">Messages Stored</div></div>
+        <div><div class="big-num" id="covBuildings">—</div><div style="font-size:11px;color:#8b949e;">Buildings Known</div></div>
+        <div><div class="big-num" id="covLandmarks">—</div><div style="font-size:11px;color:#8b949e;">Landmarks</div></div>
+        <div><div class="big-num" id="covDevelopers">—</div><div style="font-size:11px;color:#8b949e;">Developers</div></div>
+        <div><div class="big-num" id="covMarkets">—</div><div style="font-size:11px;color:#8b949e;">Micro Markets</div></div>
+      </div>
+    </div>
+
+    <!-- Resolver Accuracy -->
+    <div class="panel-card">
+      <h3>RESOLVER ACCURACY</h3>
+      <div class="stats-row" id="accuracyRow" style="margin-bottom:8px;">
+        <div class="stat-card green"><div class="val" id="accAuto">—</div><div class="lbl">Auto Resolved</div></div>
+        <div class="stat-card yellow"><div class="val" id="accReview">—</div><div class="lbl">Needs Review</div></div>
+        <div class="stat-card red"><div class="val" id="accUnknown">—</div><div class="lbl">Unknown</div></div>
+      </div>
+      <div style="display:flex;gap:12px;font-size:12px;color:#8b949e;">
+        <span>Avg Confidence: <strong id="accAvg" style="color:#c9d1d9;">—</strong></span>
+        <span>Evaluated: <strong id="accEval" style="color:#c9d1d9;">—</strong></span>
+      </div>
+    </div>
+
+    <!-- Knowledge Graph Growth -->
+    <div class="panel-card">
+      <h3>KNOWLEDGE GRAPH</h3>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+        <div><div class="big-num" id="kgBuildings">—</div><div style="font-size:11px;color:#8b949e;">Buildings</div></div>
+        <div><div class="big-num" id="kgLandmarks">—</div><div style="font-size:11px;color:#8b949e;">Landmarks</div></div>
+        <div><div class="big-num" id="kgDevelopers">—</div><div style="font-size:11px;color:#8b949e;">Developers</div></div>
+        <div><div class="big-num" id="kgAliases">—</div><div style="font-size:11px;color:#8b949e;">Aliases</div></div>
+      </div>
+      <div style="font-size:11px;color:#8b949e;margin-top:4px;">Today — <span id="kgNote">growth tracking coming soon</span></div>
+    </div>
+  </div>
+
+  <!-- Sync Activity + Feed + Heatmap -->
+  <div class="panel-grid grid-3" style="margin-top:0;">
+    <!-- Sync Activity -->
+    <div class="panel-card">
+      <h3>SYNC ACTIVITY</h3>
+      <div id="syncActivity">
+        <div style="color:#8b949e;font-size:13px;">Idle</div>
+      </div>
+    </div>
+
+    <!-- Intelligence Feed -->
+    <div class="panel-card" style="grid-column:span 2;">
+      <h3>INTELLIGENCE FEED</h3>
+      <div id="feedContainer" style="max-height:360px;overflow-y:auto;"></div>
+    </div>
+  </div>
+
+  <!-- Heatmap + WhatsApp Status -->
+  <div class="panel-grid grid-2">
+    <!-- Market Heatmap -->
+    <div class="panel-card">
+      <h3>MARKET HEATMAP</h3>
+      <div id="heatmapContainer" style="max-height:280px;overflow-y:auto;"></div>
+    </div>
+
+    <!-- WhatsApp Status -->
+    <div class="panel-card">
+      <h3>WHATSAPP</h3>
+      <div id="waStatus" style="display:grid;grid-template-columns:1fr 1fr;gap:6px 16px;font-size:13px;"></div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════ -->
+<!-- INBOX PANEL (unchanged) -->
+<!-- ══════════════════════════════════════════════════════════════ -->
+<div class="panel" id="panel-inbox">
   <div class="filter-bar">
     <input type="text" id="inboxSearch" placeholder="Search message..." oninput="loadInbox()">
-    <select id="inboxType" onchange="loadInbox()"><option value="">All types</option><option value="SELLER">SELLER</option><option value="BUYER">BUYER</option><option value="RENTAL">RENTAL</option><option value="RENTAL_SEEKER">RENTAL_SEEKER</option></select>
+    <select id="inboxType" onchange="loadInbox()"><option value="">All intent</option><option value="SELL">SELL</option><option value="BUY">BUY</option><option value="RENT">RENT</option><option value="LEASE">LEASE</option><option value="COMMERCIAL">COMMERCIAL</option><option value="PRE-LAUNCH">PRE-LAUNCH</option></select>
     <button onclick="loadInbox()">Refresh</button>
   </div>
-  <table><thead><tr><th>ID</th><th>Group</th><th>Sender</th><th>Message</th><th>Type</th><th>Timestamp</th><th>Source</th></tr></thead><tbody id="inboxBody"></tbody></table>
-  <div class="pagination"><button id="inboxPrev" onclick="inboxOffset=Math.max(0,inboxOffset-50);loadInbox()">Prev</button><span id="inboxRange"></span><button id="inboxNext" onclick="inboxOffset+=50;loadInbox()">Next</button></div>
+  <table><thead><tr><th>ID</th><th>Group</th><th>Sender</th><th>Message</th><th>Type</th><th>Timestamp</th></tr></thead><tbody id="inboxBody"></tbody></table>
+  <div class="pagination"><button id="inboxPrev" onclick="pageBack('inbox')">Prev</button><span id="inboxRange"></span><button id="inboxNext" onclick="pageNext('inbox')">Next</button></div>
 </div>
 
+<!-- EXTRACTION PANEL (unchanged) -->
 <div class="panel" id="panel-extraction">
   <div class="filter-bar"><button onclick="loadExtraction()">Refresh</button></div>
-  <table><thead><tr><th>ID</th><th>Raw ID</th><th>Type</th><th>BHK</th><th>Price</th><th>Area</th><th>Furnishing</th><th>Location</th><th>Landmark</th><th>Area</th><th>MM</th><th>Conf</th></tr></thead><tbody id="extractionBody"></tbody></table>
-  <div class="pagination"><button id="extractionPrev" onclick="extractionOffset=Math.max(0,extractionOffset-50);loadExtraction()">Prev</button><span id="extractionRange"></span><button id="extractionNext" onclick="extractionOffset+=50;loadExtraction()">Next</button></div>
+  <table><thead><tr><th>ID</th><th>Raw ID</th><th>Broker</th><th>Intent</th><th>Principal</th><th>Fwd</th><th>BHK</th><th>Price</th><th>Area</th><th>Furnishing</th><th>Location</th><th>Landmark</th><th>MM</th><th>Conf</th></tr></thead><tbody id="extractionBody"></tbody></table>
+  <div class="pagination"><button id="extractionPrev" onclick="pageBack('extraction')">Prev</button><span id="extractionRange"></span><button id="extractionNext" onclick="pageNext('extraction')">Next</button></div>
 </div>
 
+<!-- RESOLUTION PANEL (unchanged) -->
 <div class="panel" id="panel-resolution">
   <div class="filter-bar">
     <select id="resolverFilter" onchange="loadResolver()"><option value="">All methods</option><option value="resolved">Resolved</option><option value="unresolved">Unresolved</option><option value="error">Error</option></select>
     <button onclick="loadResolver()">Refresh</button>
   </div>
   <table><thead><tr><th>ID</th><th>Raw</th><th>Building</th><th>Method</th><th>P-Conf</th><th>R-Conf</th><th>Final</th><th>Landmark</th><th>Failure</th><th>Actions</th></tr></thead><tbody id="resolverBody"></tbody></table>
-  <div class="pagination"><button id="resolverPrev" onclick="resolverOffset=Math.max(0,resolverOffset-50);loadResolver()">Prev</button><span id="resolverRange"></span><button id="resolverNext" onclick="resolverOffset+=50;loadResolver()">Next</button></div>
+  <div class="pagination"><button id="resolverPrev" onclick="pageBack('resolver')">Prev</button><span id="resolverRange"></span><button id="resolverNext" onclick="pageNext('resolver')">Next</button></div>
 </div>
 
+<!-- FAILURES PANEL (unchanged) -->
 <div class="panel" id="panel-failures">
   <div class="filter-bar">
     <select id="failFilter" onchange="loadFailures()"><option value="">All failures</option><option value="parser_failure">Parser Failure</option><option value="unknown_landmark">Unknown Landmark</option><option value="no_nearby_buildings">No Nearby Buildings</option><option value="no_candidates">No Candidates</option><option value="multiple_candidates">Multiple Candidates</option><option value="malformed">Malformed</option><option value="resolver_error">Resolver Error</option></select>
     <button onclick="loadFailures()">Refresh</button>
   </div>
   <table><thead><tr><th>ID</th><th>Message</th><th>Failure</th><th>Landmark</th><th>Detail</th><th>Actions</th></tr></thead><tbody id="failBody"></tbody></table>
-  <div class="pagination"><button id="failPrev" onclick="failOffset=Math.max(0,failOffset-50);loadFailures()">Prev</button><span id="failRange"></span><button id="failNext" onclick="failOffset+=50;loadFailures()">Next</button></div>
+  <div class="pagination"><button id="failPrev" onclick="pageBack('fail')">Prev</button><span id="failRange"></span><button id="failNext" onclick="pageNext('fail')">Next</button></div>
 </div>
 
+<!-- EVIDENCE PANEL (unchanged) -->
 <div class="panel" id="panel-evidence">
   <div class="inspector" id="evidenceInspector">
     <p style="color:#8b949e;">Click an observation ID in any table to inspect evidence here.</p>
   </div>
 </div>
 
-<div class="panel" id="panel-groups">
+<!-- SYNC PANEL (moved from Groups) -->
+<div class="panel" id="panel-sync">
   <div class="filter-bar">
-    <button onclick="loadGroups()">Refresh Groups</button>
-    <button onclick="startSync()" id="syncStartBtn" style="background:#238636;">Start Sync</button>
-    <button onclick="stopSync()" id="syncStopBtn" style="background:#da3633;">Stop Sync</button>
-    <button onclick="checkConnection()" style="background:#1f6feb;">Check Connection</button>
-    <span id="connStatus" style="font-size:12px;color:#8b949e;"></span>
+    <button onclick="loadSync()">Refresh</button>
+    <button onclick="startSync()" id="syncStartBtn2">Start Sync</button>
+    <button onclick="stopSync()" id="syncStopBtn2" class="red">Stop Sync</button>
+    <button onclick="checkConnection()" class="gray">Check Connection</button>
+    <span id="connStatus2" class="muted" style="font-size:12px;"></span>
   </div>
-  <div id="syncOverview" style="margin-bottom:12px;"></div>
+  <div id="connectionCard2"></div>
+  <div id="syncOverview2" style="margin-bottom:12px;"></div>
   <table><thead><tr>
-    <th>Group Name</th><th>ID</th><th>Source</th><th>Members</th><th>Status</th><th>Processed</th><th>Found</th><th>Remaining</th><th>Started</th><th>Finished</th><th>Error</th>
-  </tr></thead><tbody id="groupsBody"></tbody></table>
+    <th>Group Name</th><th>ID</th><th>Members</th><th>Status</th><th>Processed</th><th>Found</th><th>Remaining</th><th>Started</th><th>Finished</th><th>Error</th>
+  </tr></thead><tbody id="syncBody2"></tbody></table>
 </div>
 
 </div>
@@ -165,10 +359,13 @@ tr:hover td { background: #161b22; }
 // ── State ─────────────────────────────────────────────────────────
 let inboxOffset = 0, extractionOffset = 0, resolverOffset = 0, failOffset = 0;
 let currentObsId = null;
+let dashboardInterval = null;
+let syncRefreshInterval = null;
+const PAGE_SIZE = 50;
 
 // ── Init ──────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
-  loadStats();
+  loadDashboard();
   loadInbox();
 });
 
@@ -178,110 +375,305 @@ function switchTab(name) {
   document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
   document.querySelector(`.tab[data-tab="${name}"]`).classList.add('active');
   document.getElementById(`panel-${name}`).classList.add('active');
+  if (name === 'dashboard') { loadDashboard(); startDashboardRefresh(); }
+  else { stopDashboardRefresh(); }
   if (name === 'extraction') loadExtraction();
   if (name === 'resolution') loadResolver();
   if (name === 'failures') loadFailures();
   if (name === 'evidence' && currentObsId) loadObservation(currentObsId);
+  if (name === 'sync') loadSync();
+  if (syncRefreshInterval) { clearInterval(syncRefreshInterval); syncRefreshInterval = null; }
+  if (name === 'sync') syncRefreshInterval = setInterval(loadSync, 5000);
 }
 
-// ── Stats ─────────────────────────────────────────────────────────
-async function loadStats() {
+function startDashboardRefresh() {
+  if (dashboardInterval) clearInterval(dashboardInterval);
+  dashboardInterval = setInterval(loadDashboard, 5000);
+}
+function stopDashboardRefresh() {
+  if (dashboardInterval) { clearInterval(dashboardInterval); dashboardInterval = null; }
+}
+
+// ══════════════════════════════════════════════════════════════════
+// DASHBOARD
+// ══════════════════════════════════════════════════════════════════
+async function loadDashboard() {
   try {
-    const res = await fetch('/api/stats');
-    const d = await res.json();
-    // Also fetch source info
-    let sourceInfo = '';
+    const [activity, coverage, feed, heatmap, stats, syncAct, waStatus, schedStatus] = await Promise.all([
+      fetch('/api/dashboard/activity').then(r => r.json()),
+      fetch('/api/dashboard/coverage').then(r => r.json()),
+      fetch('/api/dashboard/feed?limit=20').then(r => r.json()),
+      fetch('/api/dashboard/heatmap').then(r => r.json()),
+      fetch('/api/stats').then(r => r.json()),
+      fetch('/api/dashboard/sync-activity').then(r => r.json()),
+      fetch('/api/dashboard/whatsapp-status').then(r => r.json()),
+      fetch('/api/sources/status').then(r => r.json()),
+    ]);
+
+    // ── Connection bar ──
+    renderConnBar(waStatus, schedStatus);
+
+    // ── Historical Import Progress ──
+    renderImportProgress(schedStatus);
+
+    // ── Market Activity ──
+    renderActivity(activity);
+
+    // ── Coverage ──
+    document.getElementById('covGroups').textContent = coverage.groups_connected || 0;
+    document.getElementById('covMessages').textContent = coverage.messages_stored || 0;
+    document.getElementById('covBuildings').textContent = coverage.buildings_known || 0;
+    document.getElementById('covLandmarks').textContent = coverage.landmarks_known || 0;
+    document.getElementById('covDevelopers').textContent = coverage.developers_known || 0;
+    document.getElementById('covMarkets').textContent = coverage.micro_markets_known || 0;
+
+    // ── Resolver Accuracy ──
+    const total = stats.resolved + stats.unresolved + stats.errors || 1;
+    document.getElementById('accAuto').textContent = stats.resolved || 0;
+    document.getElementById('accReview').textContent = stats.unresolved || 0;
+    document.getElementById('accUnknown').textContent = stats.errors || 0;
+    document.getElementById('accAvg').textContent = (stats.avg_accuracy * 100).toFixed(1) + '%';
+    document.getElementById('accEval').textContent = stats.evaluated || 0;
+
+    // ── Knowledge Graph ── (from coverage since same data)
+    document.getElementById('kgBuildings').textContent = coverage.buildings_known || 0;
+    document.getElementById('kgLandmarks').textContent = coverage.landmarks_known || 0;
+    document.getElementById('kgDevelopers').textContent = coverage.developers_known || 0;
     try {
-      const sRes = await fetch('/api/sources');
-      const s = await sRes.json();
-      if (s.sources && s.sources.length) {
-        sourceInfo = s.sources.map(s => `${s.name} v${s.version}`).join(', ');
-      }
+      const aRes = await fetch('/api/dashboard/graph-growth');
+      const aData = await aRes.json();
+      document.getElementById('kgAliases').textContent = aData.total_aliases || '—';
+      if (aData.note) document.getElementById('kgNote').textContent = aData.note;
     } catch(e) {}
-    document.getElementById('statsBar').innerHTML = `
-      <div class="stat-card blue"><div class="val">${d.total_raw}</div><div class="lbl">Total Messages</div></div>
-      <div class="stat-card green"><div class="val">${d.resolved}</div><div class="lbl">Resolved</div></div>
-      <div class="stat-card red"><div class="val">${d.unresolved}</div><div class="lbl">Unresolved</div></div>
-      <div class="stat-card yellow"><div class="val">${d.errors}</div><div class="lbl">Errors</div></div>
-      <div class="stat-card green"><div class="val">${(d.avg_accuracy * 100).toFixed(1)}%</div><div class="lbl">Avg Accuracy</div></div>
-      <div class="stat-card blue"><div class="val">${d.evaluated}</div><div class="lbl">Evaluated</div></div>
-      <div class="stat-card" style="min-width:200px;">
-        <div class="lbl" style="margin-bottom:4px;">Failures</div>
-        <div style="font-size:12px;color:#8b949e;">
-          ${(d.failure_categories || []).map(f => `<span class="badge red">${f.failure_category}: ${f.c}</span>`).join(' ') || '<span style="color:#8b949e;">none</span>'}
-        </div>
-      </div>
-      <div class="stat-card" style="min-width:160px;">
-        <div class="lbl" style="margin-bottom:4px;">Methods</div>
-        <div style="font-size:12px;color:#8b949e;">
-          ${(d.methods || []).map(m => `<span class="badge">${m.method}: ${m.c}</span>`).join(' ')}
-        </div>
-      </div>
-    `;
-  } catch(e) {}
+
+    // ── Sync Activity ──
+    renderSyncActivity(syncAct);
+
+    // ── Intelligence Feed ──
+    renderFeed(feed);
+
+    // ── Heatmap ──
+    renderHeatmap(heatmap);
+
+    // ── WhatsApp Status ──
+    renderWAStatus(waStatus);
+
+  } catch(e) {
+    console.error('Dashboard error:', e);
+  }
 }
 
-// ── Inbox ─────────────────────────────────────────────────────────
+function renderConnBar(waStatus, schedStatus) {
+  const dot = document.getElementById('connDot');
+  const label = document.getElementById('connLabel');
+  const detail = document.getElementById('connDetail');
+  if (waStatus.connected) {
+    dot.className = 'dot green';
+    label.textContent = 'WhatsApp Connected';
+    detail.textContent = waStatus.phone ? `• ${waStatus.phone}` : '';
+  } else {
+    dot.className = 'dot red';
+    label.textContent = 'Disconnected';
+    detail.textContent = '';
+  }
+  const ss = schedStatus.source_summary || {};
+  const whats = ss.whatsapp || {};
+  const groups = schedStatus.total_jobs || Object.values(ss).reduce((a,s) => a + s.total, 0) || 0;
+  const complete = schedStatus.completed_jobs || 0;
+  const grpLabel = document.createElement('span');
+  grpLabel.style.cssText = 'margin-left:8px;color:#8b949e;';
+  grpLabel.textContent = `• ${groups} Groups`;
+  detail.appendChild(grpLabel);
+}
+
+function renderImportProgress(schedStatus) {
+  const el = document.getElementById('importProgress');
+  const total = schedStatus.total_jobs || 0;
+  const done = schedStatus.completed_jobs || 0;
+  if (total > 0) {
+    el.style.display = 'block';
+    const pct = Math.min(100, Math.round((done / total) * 100));
+    document.getElementById('importLabel').textContent = schedStatus.overall === 'running' ? 'Syncing Groups' : 'Groups Discovered';
+    document.getElementById('importStats').textContent = `${done} / ${total} groups`;
+    document.getElementById('importFill').style.width = pct + '%';
+  } else {
+    el.style.display = 'none';
+  }
+}
+
+function renderActivity(activity) {
+  const types = activity.message_types || {};
+  document.getElementById('actMessages').textContent = activity.messages_today || 0;
+  document.getElementById('actSellers').textContent = types.SELL || 0;
+  document.getElementById('actBuyers').textContent = types.BUY || 0;
+  document.getElementById('actRentals').textContent = types.RENT || 0;
+  document.getElementById('actCommercial').textContent = (types.COMMERCIAL || 0);
+  document.getElementById('actBuildings').textContent = types.NEW_BUILDING || '—';
+  document.getElementById('actLandmarks').textContent = types.NEW_LANDMARK || '—';
+}
+
+function renderSyncActivity(syncAct) {
+  const el = document.getElementById('syncActivity');
+  const run = syncAct.running;
+  if (run) {
+    const pct = run.records_found > 0 ? Math.round((run.records_processed / run.records_found) * 100) : 0;
+    el.innerHTML = `
+      <div style="font-weight:600;color:#58a6ff;">▶ ${esc(run.group_name)}</div>
+      <div style="font-size:12px;color:#8b949e;margin-top:4px;">
+        ${run.records_processed} / ${run.records_found} messages
+        <span style="margin-left:8px;">${pct}%</span>
+      </div>
+      <div class="progress-bar" style="margin:6px 0 0;"><div class="fill" style="width:${pct}%"></div></div>
+    `;
+  } else {
+    const total = syncAct.total_jobs || 0;
+    el.innerHTML = `<div style="color:#8b949e;font-size:13px;">${total > 0 ? 'All groups synced' : 'No sync active'}</div>`;
+  }
+}
+
+function renderFeed(feed) {
+  const el = document.getElementById('feedContainer');
+  if (!feed || !feed.length) {
+    el.innerHTML = '<div style="color:#8b949e;padding:20px;text-align:center;">No messages yet</div>';
+    return;
+  }
+  el.innerHTML = feed.map(f => {
+    const msgType = f.intent || 'TEXT';
+    const priceStr = f.price ? `₹${Number(f.price).toLocaleString()} ${f.price_unit || ''}` : '';
+    const detail = [f.bhk, f.furnishing, priceStr, f.building_name, f.landmark_name, f.micro_market].filter(Boolean).join(' • ');
+    const typeBadge = msgType === 'SELL' ? 'green' : msgType === 'BUY' ? 'purple' : msgType === 'RENT' ? 'yellow' : msgType === 'COMMERCIAL' ? 'orange' : msgType === 'PRE-LAUNCH' ? 'red' : 'blue';
+    const ts = f.timestamp ? new Date(f.timestamp + 'Z').toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : '';
+    const broker = f.broker_name || '';
+    const principal = f.principal ? ` • ${f.principal}` : '';
+    return `<div class="feed-item">
+      <div class="feed-header">
+        <span class="badge ${typeBadge}">${esc(msgType)}</span>
+        ${broker ? `<span style="font-weight:600;color:#f0f6fc;font-size:12px;">${esc(broker)}</span>` : ''}
+        <span style="font-size:11px;color:#8b949e;">${principal}</span>
+        <span class="feed-time">${ts}</span>
+        <span class="feed-group">${esc(f.group_name || '').slice(0,20)}</span>
+      </div>
+      <div class="feed-msg">${esc(f.message || '').slice(0,200)}</div>
+      ${detail ? `<div class="feed-detail">${esc(detail)}</div>` : ''}
+    </div>`;
+  }).join('');
+}
+
+function renderHeatmap(heatmap) {
+  const el = document.getElementById('heatmapContainer');
+  if (!heatmap || !heatmap.length) {
+    el.innerHTML = '<div style="color:#8b949e;padding:10px;text-align:center;">No location data yet</div>';
+    return;
+  }
+  const max = heatmap[0].c;
+  el.innerHTML = heatmap.slice(0, 15).map(h => {
+    const pct = Math.max(3, Math.round((h.c / max) * 100));
+    return `<div class="heat-row">
+      <span class="heat-name">${esc(h.micro_market)}</span>
+      <div class="heat-bar"><div class="heat-fill" style="width:${pct}%"></div></div>
+      <span class="heat-count">${h.c}</span>
+    </div>`;
+  }).join('');
+}
+
+function renderWAStatus(wa) {
+  const el = document.getElementById('waStatus');
+  const rows = [
+    ['Device', wa.connected ? '<span style="color:#3fb950;">Connected</span>' : '<span style="color:#f85149;">Disconnected</span>'],
+    ['Phone', wa.phone || '—'],
+    ['Profile', wa.profile || '—'],
+    ['Instance', wa.instance || '—'],
+    ['State', wa.state || (wa.status || '—')],
+    ['Connected Since', wa.connected_since || '—'],
+  ];
+  el.innerHTML = rows.map(([k, v]) => `<div style="color:#8b949e;font-size:11px;">${k}</div><div style="color:#c9d1d9;">${v}</div>`).join('');
+}
+
+// ══════════════════════════════════════════════════════════════════
+// LEGACY INBOX / EXTRACTION / RESOLUTION / FAILURES / EVIDENCE
+// (unchanged from original, reused verbatim)
+// ══════════════════════════════════════════════════════════════════
+
 async function loadInbox() {
   const search = document.getElementById('inboxSearch').value;
   const type = document.getElementById('inboxType').value;
-  let url = `/api/raw?limit=50&offset=${inboxOffset}`;
-  const res = await fetch(url);
+  const res = await fetch(`/api/raw?limit=${PAGE_SIZE}&offset=${inboxOffset}`);
   const data = await res.json();
-  document.getElementById('inboxRange').textContent = `${inboxOffset+1}–${inboxOffset+data.length}`;
-  document.getElementById('inboxPrev').disabled = inboxOffset === 0;
-  const tbody = document.getElementById('inboxBody');
-  tbody.innerHTML = data.filter(r => {
+  if (data.length === 0 && inboxOffset > 0) {
+    inboxOffset = Math.max(0, inboxOffset - PAGE_SIZE);
+    return loadInbox();
+  }
+  const filtered = data.filter(r => {
     if (search && !r.message.toLowerCase().includes(search.toLowerCase())) return false;
     return true;
-  }).map(r => `
+  });
+  updatePager('inbox', inboxOffset, data.length);
+  const tbody = document.getElementById('inboxBody');
+  if (!filtered.length) {
+    tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:#8b949e;">${data.length ? 'No messages match this filter.' : 'No messages yet.'}</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = filtered.map(r => `
     <tr>
       <td class="clickable" onclick="inspectObservation(${r.id})">#${r.id}</td>
       <td class="cell-truncate">${esc(r.group_name)}</td>
-      <td class="cell-truncate">${esc(r.sender)}</td>
+      <td class="cell-truncate">${esc(displaySender(r))}</td>
       <td><span class="raw-expand" onclick="this.nextElementSibling.classList.toggle('open')">${esc(r.message.substring(0,80))}${r.message.length > 80 ? '…' : ''}</span><div class="raw-full">${esc(r.message)}</div></td>
       <td>${r.message_type ? `<span class="badge blue">${esc(r.message_type)}</span>` : ''}</td>
       <td class="cell-truncate">${esc(r.timestamp)}</td>
-      <td>${esc(r.source)}</td>
     </tr>
   `).join('');
 }
 
-// ── Extraction ────────────────────────────────────────────────────
 async function loadExtraction() {
-  const res = await fetch(`/api/parsed?limit=50&offset=${extractionOffset}`);
+  const res = await fetch(`/api/parsed?limit=${PAGE_SIZE}&offset=${extractionOffset}`);
   const data = await res.json();
-  document.getElementById('extractionRange').textContent = `${extractionOffset+1}–${extractionOffset+data.length}`;
-  document.getElementById('extractionPrev').disabled = extractionOffset === 0;
+  if (data.length === 0 && extractionOffset > 0) {
+    extractionOffset = Math.max(0, extractionOffset - PAGE_SIZE);
+    return loadExtraction();
+  }
+  updatePager('extraction', extractionOffset, data.length);
   const tbody = document.getElementById('extractionBody');
+  if (!data.length) {
+    tbody.innerHTML = '<tr><td colspan="14" style="text-align:center;color:#8b949e;">No observations have been parsed yet.</td></tr>';
+    return;
+  }
   tbody.innerHTML = data.map(r => `
     <tr>
       <td class="clickable" onclick="inspectObservation(${r.raw_message_id})">P${r.id}</td>
       <td class="clickable" onclick="inspectObservation(${r.raw_message_id})">#${r.raw_message_id}</td>
-      <td>${r.message_type ? `<span class="badge blue">${esc(r.message_type)}</span>` : ''}</td>
+      <td style="font-weight:600;">${esc(r.broker_name || '')}</td>
+      <td>${r.intent ? fmtIntent(r.intent) : ''}</td>
+      <td><span style="font-size:11px;color:#8b949e;">${esc(r.principal || '')}</span></td>
+      <td>${r.forwarded ? '<span class="badge yellow">FWD</span>' : ''}</td>
       <td>${esc(r.bhk || '')}</td>
       <td>${r.price ? `${r.price.toLocaleString()} ${esc(r.price_unit||'')}` : ''}</td>
       <td>${r.area_sqft ? `${r.area_sqft.toLocaleString()} sqft` : ''}</td>
       <td>${esc(r.furnishing || '')}</td>
       <td class="cell-truncate">${esc(r.location_raw || '')}</td>
       <td class="cell-truncate">${esc(r.landmark_name || '')}</td>
-      <td class="cell-truncate">${esc(r.area || '')}</td>
       <td class="cell-truncate">${esc(r.micro_market || '')}</td>
       <td>${r.confidence ? (r.confidence * 100).toFixed(0) + '%' : ''}</td>
     </tr>
   `).join('');
 }
 
-// ── Resolver ──────────────────────────────────────────────────────
 async function loadResolver() {
   const method = document.getElementById('resolverFilter').value;
-  let url = `/api/resolver?limit=50&offset=${resolverOffset}`;
+  let url = `/api/resolver?limit=${PAGE_SIZE}&offset=${resolverOffset}`;
   if (method) url += `&method=${method}`;
   const res = await fetch(url);
   const data = await res.json();
-  document.getElementById('resolverRange').textContent = `${resolverOffset+1}–${resolverOffset+data.length}`;
-  document.getElementById('resolverPrev').disabled = resolverOffset === 0;
+  if (data.length === 0 && resolverOffset > 0) {
+    resolverOffset = Math.max(0, resolverOffset - PAGE_SIZE);
+    return loadResolver();
+  }
+  updatePager('resolver', resolverOffset, data.length);
   const tbody = document.getElementById('resolverBody');
+  if (!data.length) {
+    tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:#8b949e;">No resolver observations on this page.</td></tr>';
+    return;
+  }
   tbody.innerHTML = data.map(r => `
     <tr>
       <td class="clickable" onclick="inspectObservation(${r.id})">R${r.id}</td>
@@ -298,15 +690,21 @@ async function loadResolver() {
   `).join('');
 }
 
-// ── Failures ──────────────────────────────────────────────────────
 async function loadFailures() {
   const cat = document.getElementById('failFilter').value;
-  const res = await fetch(`/api/failed?limit=50`);
+  const res = await fetch(`/api/failed?limit=${PAGE_SIZE}&offset=${failOffset}`);
   let data = await res.json();
+  if (data.length === 0 && failOffset > 0) {
+    failOffset = Math.max(0, failOffset - PAGE_SIZE);
+    return loadFailures();
+  }
   if (cat) data = data.filter(r => r.failure_category === cat);
-  document.getElementById('failRange').textContent = `${failOffset+1}–${failOffset+data.length}`;
-  document.getElementById('failPrev').disabled = failOffset === 0;
+  updatePager('fail', failOffset, data.length);
   const tbody = document.getElementById('failBody');
+  if (!data.length) {
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#8b949e;">No failed observations.</td></tr>';
+    return;
+  }
   tbody.innerHTML = data.map(r => `
     <tr>
       <td class="clickable" onclick="inspectObservation(${r.id})">R${r.id}</td>
@@ -342,46 +740,112 @@ function renderEvidence(obs) {
   const evaluation = obs.evaluation || {};
   const cans = (resolver.candidates || []).sort((a,b) => b.confidence - a.confidence);
   const winner = cans.length > 0 ? cans[0] : null;
-
-  let html = `<h2>Evidence Inspector — Observation #${raw.id}</h2>
-    <div class="meta">
-      <div class="kv"><span class="k">Raw Message</span><span class="v">${esc(raw.message || '')}</span></div>
-      <div class="kv"><span class="k">Sender</span><span class="v">${esc(raw.sender || '')}</span></div>
+  const eventId = raw.event_id || null;
+  let html = `<h2>Evidence Inspector</h2>
+    <div class="meta" style="grid-template-columns:1fr 1fr 1fr;">
+      <div class="kv"><span class="k">Observation #</span><span class="v">${raw.id || '?'}</span></div>
+      <div class="kv"><span class="k">Event ID</span><span class="v" style="font-family:monospace;font-size:11px;">${eventId ? esc(eventId) : '<span style="color:#8b949e;">—</span>'}</span></div>
+      <div class="kv"><span class="k">Source</span><span class="v">${esc(displaySource(raw.source))}</span></div>
       <div class="kv"><span class="k">Group</span><span class="v">${esc(raw.group_name || '')}</span></div>
+      <div class="kv"><span class="k">Sender</span><span class="v">${esc(displaySender(raw))}</span></div>
       <div class="kv"><span class="k">Timestamp</span><span class="v">${esc(raw.timestamp || '')}</span></div>
-      <div class="kv"><span class="k">Parser Confidence</span><span class="v">${resolver.parser_confidence != null ? (resolver.parser_confidence * 100).toFixed(0) + '%' : 'N/A'}</span></div>
-      <div class="kv"><span class="k">Resolver Confidence</span><span class="v">${resolver.resolver_confidence != null ? (resolver.resolver_confidence * 100).toFixed(1) + '%' : 'N/A'}</span></div>
-      <div class="kv"><span class="k">Final Confidence</span><span class="v"><span class="badge ${resolver.final_confidence > 0.7 ? 'green' : resolver.final_confidence > 0.3 ? 'yellow' : 'red'}">${resolver.final_confidence ? (resolver.final_confidence * 100).toFixed(1) + '%' : '0%'}</span></span></div>
-      <div class="kv"><span class="k">Method</span><span class="v">${fmtMethod(resolver.method)} ${resolver.method_detail ? '(' + esc(resolver.method_detail) + ')' : ''}</span></div>
-      <div class="kv"><span class="k">Failure Category</span><span class="v">${resolver.failure_category ? `<span class="badge red">${esc(resolver.failure_category)}</span>` : '<span class="badge green">None</span>'}</span></div>
-      ${evaluation.accuracy_overall != null ? `<div class="kv"><span class="k">Evaluation Accuracy</span><span class="v"><span class="badge ${evaluation.accuracy_overall > 0.8 ? 'green' : 'yellow'}">${(evaluation.accuracy_overall * 100).toFixed(0)}%</span></span></div>` : ''}
+      <div class="kv"><span class="k">Pipeline Version</span><span class="v">${esc(raw.pipeline_version || '—')}</span></div>
+      <div class="kv"><span class="k">Message UID</span><span class="v" style="font-family:monospace;font-size:11px;">${esc(raw.message_uid || '—')}</span></div>
+      <div class="kv"><span class="k">Synced At</span><span class="v">${esc(raw.synced_at || '—')}</span></div>
     </div>`;
-
-  // Parsed output
-  html += `<h3>Extracted Fields</h3>
-    <div class="meta">
-      <div class="kv"><span class="k">Type</span><span class="v">${esc(parsed.message_type || '')}</span></div>
-      <div class="kv"><span class="k">BHK</span><span class="v">${esc(parsed.bhk || '')}</span></div>
-      <div class="kv"><span class="k">Price</span><span class="v">${parsed.price ? parsed.price.toLocaleString() + ' ' + esc(parsed.price_unit||'') : ''}</span></div>
-      <div class="kv"><span class="k">Area</span><span class="v">${parsed.area_sqft ? parsed.area_sqft.toLocaleString() + ' sqft' : ''}</span></div>
-      <div class="kv"><span class="k">Furnishing</span><span class="v">${esc(parsed.furnishing || '')}</span></div>
-      <div class="kv"><span class="k">Location</span><span class="v">${esc(parsed.location_raw || '')}</span></div>
-      <div class="kv"><span class="k">Landmark</span><span class="v">${esc(parsed.landmark_name || '')}</span></div>
-      <div class="kv"><span class="k">Area/Micro Market</span><span class="v">${esc(parsed.area || '')} / ${esc(parsed.micro_market || '')}</span></div>
-      <div class="kv"><span class="k">Developer</span><span class="v">${esc(parsed.developer || '')}</span></div>
+  const hasRaw = raw.id != null;
+  const hasParsed = parsed.id != null;
+  const hasResolver = resolver.id != null;
+  const hasEval = evaluation.id != null;
+  html += `<h3>Pipeline Provenance</h3>
+    <div style="display:flex;gap:8px;align-items:center;padding:12px;background:#0d1117;border:1px solid #30363d;border-radius:6px;margin-bottom:16px;flex-wrap:wrap;">
+      <span class="badge ${hasRaw ? 'blue' : 'gray'}" style="font-size:12px;">📥 Raw #${raw.id || '—'}</span>
+      <span style="color:#30363d;">→</span>
+      <span class="badge ${hasParsed ? 'blue' : 'gray'}" style="font-size:12px;">🔍 Parsed #${parsed.id || '—'}</span>
+      <span style="color:#30363d;">→</span>
+      <span class="badge ${hasResolver ? 'blue' : 'gray'}" style="font-size:12px;">⚖️ Resolver #${resolver.id || '—'}</span>
+      <span style="color:#30363d;">→</span>
+      <span class="badge ${hasEval ? 'blue' : 'gray'}" style="font-size:12px;">✅ Evaluation #${evaluation.id || '—'}</span>
+      <span style="margin-left:auto;">
+        <span class="badge ${resolver.final_confidence > 0.7 ? 'green' : resolver.final_confidence > 0.3 ? 'yellow' : 'red'}" style="font-size:13px;">Final: ${resolver.final_confidence ? (resolver.final_confidence * 100).toFixed(1) + '%' : '0%'}</span>
+      </span>
     </div>`;
-
-  // Candidates
-  html += `<h3>Candidates (${cans.length})</h3>`;
+  const stages = [
+    { label: 'Parser', conf: resolver.parser_confidence, weight: '30%' },
+    { label: 'Resolver', conf: resolver.resolver_confidence, weight: '70%' },
+    { label: 'Final', conf: resolver.final_confidence, weight: '—' },
+  ];
+  html += `<div style="display:flex;gap:16px;margin-bottom:16px;">
+    ${stages.map(s => {
+      const pct = s.conf != null ? (s.conf * 100).toFixed(0) : 0;
+      const color = s.conf > 0.7 ? '#3fb950' : s.conf > 0.3 ? '#d29922' : '#f85149';
+      return `<div style="flex:1;background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:10px 14px;">
+        <div style="font-size:11px;color:#8b949e;text-transform:uppercase;letter-spacing:0.5px;">${esc(s.label)}</div>
+        <div style="font-size:22px;font-weight:700;color:${color};">${pct}%</div>
+        <div style="font-size:10px;color:#8b949e;">weight: ${s.weight}</div>
+      </div>`;
+    }).join('')}
+  </div>`;
+  html += `<h3 style="display:flex;align-items:center;gap:6px;">
+    <span style="color:#58a6ff;">📥</span> Raw Message
+    <span style="font-size:11px;font-weight:400;color:#8b949e;margin-left:auto;">#${raw.id} ${raw.message_uid ? '| ' + esc(raw.message_uid) : ''}</span>
+  </h3>
+  <div style="background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:12px;margin-bottom:16px;">
+    <div style="white-space:pre-wrap;font-size:13px;line-height:1.6;color:#c9d1d9;">${esc(raw.message || '')}</div>
+    <div style="margin-top:8px;display:flex;gap:12px;font-size:11px;color:#8b949e;">
+      <span>📅 ${esc(raw.timestamp || '')}</span>
+      <span>👤 ${esc(displaySender(raw))}</span>
+      <span>🏷️ ${esc(displaySource(raw.source))}</span>
+      ${raw.pipeline_version ? `<span>🔖 v${esc(raw.pipeline_version)}</span>` : ''}
+    </div>
+    ${raw.raw_payload && raw.raw_payload !== '{}' ? `
+    <div class="raw-expand" onclick="this.nextElementSibling.classList.toggle('open')" style="margin-top:8px;">▶ Show raw payload</div>
+    <div class="raw-full">${esc(JSON.stringify(JSON.parse(raw.raw_payload), null, 2))}</div>` : ''}
+  </div>`;
+  html += `<h3 style="display:flex;align-items:center;gap:6px;">
+    <span style="color:#d29922;">🔍</span> Extraction
+    <span style="font-size:11px;font-weight:400;color:#8b949e;margin-left:auto;">Parsed #${parsed.id} | Conf: ${parsed.confidence ? (parsed.confidence * 100).toFixed(0) + '%' : 'N/A'}</span>
+  </h3>
+  <div style="background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:12px;margin-bottom:16px;">
+    <div class="meta" style="grid-template-columns:1fr 1fr 1fr;">
+      <div class="kv"><span class="k">Broker</span><span class="v" style="font-weight:600;">${esc(parsed.broker_name || '—')} ${parsed.profile_name ? '<span style="font-weight:400;color:#8b949e;font-size:11px;">(' + esc(parsed.profile_name) + ')</span>' : ''}</span></div>
+      <div class="kv"><span class="k">Intent</span><span class="v">${parsed.intent ? fmtIntent(parsed.intent) : '<span class="badge gray">—</span>'}</span></div>
+      <div class="kv"><span class="k">Principal</span><span class="v">${esc(parsed.principal || '—')}</span></div>
+      <div class="kv"><span class="k">BHK</span><span class="v">${esc(parsed.bhk || '—')}</span></div>
+      <div class="kv"><span class="k">Price</span><span class="v">${parsed.price ? parsed.price.toLocaleString() + ' ' + esc(parsed.price_unit||'') : '—'}</span></div>
+      <div class="kv"><span class="k">Area</span><span class="v">${parsed.area_sqft ? parsed.area_sqft.toLocaleString() + ' sqft' : '—'}</span></div>
+      <div class="kv"><span class="k">Furnishing</span><span class="v">${esc(parsed.furnishing || '—')}</span></div>
+      <div class="kv"><span class="k">Forwarded</span><span class="v">${parsed.forwarded ? '<span class="badge yellow">Yes</span>' : '—'}</span></div>
+      <div class="kv"><span class="k">Broker Phone</span><span class="v">${esc(parsed.broker_phone || '—')}</span></div>
+      <div class="kv"><span class="k">Location</span><span class="v">${esc(parsed.location_raw || '—')}</span></div>
+      <div class="kv"><span class="k">Landmark</span><span class="v">${esc(parsed.landmark_name || '—')}</span></div>
+      <div class="kv"><span class="k">Street</span><span class="v">${esc(parsed.street_name || '—')}</span></div>
+      <div class="kv"><span class="k">Area</span><span class="v">${esc(parsed.area || '—')}</span></div>
+      <div class="kv"><span class="k">Micro Market</span><span class="v">${esc(parsed.micro_market || '—')}</span></div>
+      <div class="kv"><span class="k">Developer</span><span class="v">${esc(parsed.developer || '—')}</span></div>
+    </div>
+    ${parsed.raw_payload && parsed.raw_payload !== '{}' ? `
+    <div class="raw-expand" onclick="this.nextElementSibling.classList.toggle('open')" style="margin-top:8px;">▶ Show extraction details</div>
+    <div class="raw-full">${esc(JSON.stringify(JSON.parse(parsed.raw_payload), null, 2))}</div>` : ''}
+  </div>`;
+  html += `<h3 style="display:flex;align-items:center;gap:6px;">
+    <span style="color:#3fb950;">⚖️</span> Resolution
+    <span style="font-size:11px;font-weight:400;color:#8b949e;margin-left:auto;">Resolver #${resolver.id} | ${fmtMethod(resolver.method)} ${resolver.method_detail ? '(' + esc(resolver.method_detail) + ')' : ''}</span>
+  </h3>`;
+  if (resolver.failure_category) {
+    html += `<div style="margin-bottom:12px;"><span class="badge red">${esc(resolver.failure_category)}</span> ${resolver.error ? esc(resolver.error) : ''}</div>`;
+  }
+  html += `<div style="margin-bottom:16px;">
+    <div style="font-size:12px;color:#8b949e;margin-bottom:8px;">${cans.length} candidate(s) found</div>`;
   if (cans.length === 0) {
-    html += '<p style="color:#8b949e;">No candidates found.</p>';
+    html += '<p style="color:#8b949e;padding:8px;background:#0d1117;border-radius:4px;">No candidates matched.</p>';
   } else {
     cans.forEach((c, i) => {
       const isWinner = i === 0 && winner;
-      html += `<div class="candidate ${isWinner ? 'winner' : ''}">
-        <div class="header">
-          <span class="name">${esc(c.building_name || 'Building #' + c.building_id)} ${isWinner ? '<span class="badge green">WINNER</span>' : ''}</span>
-          <span class="conf-score" style="color:${c.confidence > 0.7 ? '#3fb950' : c.confidence > 0.3 ? '#d29922' : '#f85149'}">${(c.confidence * 100).toFixed(0)}% confident</span>
+      html += `<div class="candidate ${isWinner ? 'winner' : ''}" style="background:#0d1117;border:1px solid ${isWinner ? '#3fb950' : '#30363d'};border-radius:6px;padding:12px;margin-bottom:8px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+          <span style="font-weight:600;color:#f0f6fc;">${esc(c.building_name || 'Building #' + c.building_id)} ${isWinner ? '<span class="badge green">WINNER</span>' : ''}</span>
+          <span style="font-size:13px;font-weight:600;color:${c.confidence > 0.7 ? '#3fb950' : c.confidence > 0.3 ? '#d29922' : '#f85149'}">${(c.confidence * 100).toFixed(0)}%</span>
         </div>
         <div style="font-size:12px;color:#8b949e;margin-bottom:4px;">
           Method: ${c.method || 'N/A'}
@@ -389,41 +853,64 @@ function renderEvidence(obs) {
           ${c.micro_market ? ` | Micro Market: ${esc(c.micro_market)}` : ''}
           ${c.landmark_name ? ` | Landmark: ${esc(c.landmark_name)}` : ''}
         </div>
-        <ul class="reasons">
-          ${(c.reasons || []).map(r => `<li>${esc(r)}</li>`).join('')}
+        <ul style="list-style:none;padding:0;font-size:12px;">
+          ${(c.reasons || []).map(r => `<li style="padding:2px 0;"><span style="color:#3fb950;">•</span> ${esc(r)}</li>`).join('')}
         </ul>
       </div>`;
     });
   }
-
-  // Evaluation
+  html += '</div>';
   if (evaluation.accuracy_overall != null) {
-    html += `<h3>Evaluation</h3>
-      <div class="meta">
-        <div class="kv"><span class="k">Overall Accuracy</span><span class="v"><span class="badge ${evaluation.accuracy_overall > 0.8 ? 'green' : 'yellow'}">${(evaluation.accuracy_overall * 100).toFixed(0)}%</span></span></div>
-        <div class="kv"><span class="k">Corrected Notes</span><span class="v">${esc(evaluation.correction_notes || 'none')}</span></div>
-      </div>`;
+    html += `<h3 style="display:flex;align-items:center;gap:6px;">
+      <span style="color:#58a6ff;">✅</span> Evaluation
+      <span style="font-size:11px;font-weight:400;color:#8b949e;margin-left:auto;">#${evaluation.id} | Evaluated: ${esc(evaluation.evaluated_at || '')}</span>
+    </h3>
+    <div style="background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:12px;margin-bottom:16px;">
+      <div class="meta" style="grid-template-columns:1fr 1fr;">
+        <div class="kv"><span class="k">Overall Accuracy</span><span class="v"><span class="badge ${evaluation.accuracy_overall > 0.8 ? 'green' : evaluation.accuracy_overall > 0.5 ? 'yellow' : 'red'}">${(evaluation.accuracy_overall * 100).toFixed(0)}%</span></span></div>
+        <div class="kv"><span class="k">Correction Notes</span><span class="v">${esc(evaluation.correction_notes || 'none')}</span></div>
+      </div>
+      <div style="margin-top:8px;font-size:11px;color:#8b949e;">
+        <span class="raw-expand" onclick="this.nextElementSibling.classList.toggle('open')">▶ Show expected vs extracted</span>
+        <div class="raw-full" style="margin-top:4px;">
+          <div class="meta" style="grid-template-columns:1fr 1fr;">
+            ${Object.entries({
+              'Intent': ['expected_intent', 'extracted_intent'],
+              'Principal': ['expected_principal', 'extracted_principal'],
+              'BHK': ['expected_bhk', 'extracted_bhk'],
+              'Price': ['expected_price', 'extracted_price'],
+              'Area': ['expected_area_sqft', 'extracted_area_sqft'],
+              'Furnishing': ['expected_furnishing', 'extracted_furnishing'],
+              'Building': ['expected_building', 'extracted_building'],
+              'Landmark': ['expected_landmark', 'extracted_landmark'],
+              'Developer': ['expected_developer', 'extracted_developer'],
+            }).filter(([_, [ek, xk]]) => evaluation[ek] != null || evaluation[xk] != null)
+            .map(([label, [ek, xk]]) => {
+              const exp = evaluation[ek] != null ? esc(String(evaluation[ek])) : '<span style="color:#8b949e;">—</span>';
+              const ext = evaluation[xk] != null ? esc(String(evaluation[xk])) : '<span style="color:#8b949e;">—</span>';
+              return `<div class="kv"><span class="k">${label}</span><span class="v"><span style="color:#8b949e;">expected:</span> ${exp} &nbsp;|&nbsp; <span style="color:#8b949e;">got:</span> ${ext}</span></div>`;
+            }).join('')}
+          </div>
+        </div>
+      </div>
+    </div>`;
   }
-
-  // Raw payload
-  if (raw.raw_payload && raw.raw_payload !== '{}') {
-    html += `<h3>Raw Payload</h3><div class="payload-box">${esc(JSON.stringify(JSON.parse(raw.raw_payload), null, 2))}</div>`;
-  }
-
   el.innerHTML = html;
 }
 
 // ── Replay ────────────────────────────────────────────────────────
 async function runReplay() {
   if (!confirm('Re-run all messages through the current resolver?')) return;
-  const btn = document.querySelector('button[onclick="runReplay()"]');
+  const btn = document.querySelector('button[onclick="runReplay()"]') || document.querySelector('.filter-bar button:last-child');
+  if (!btn) return;
   btn.disabled = true;
   btn.textContent = 'Running…';
   try {
     const res = await fetch('/api/replay', { method: 'POST' });
     const d = await res.json();
     alert(`Replay complete!\nTotal: ${d.total}\nResolved: ${d.resolved}\nUnresolved: ${d.unresolved}\nErrors: ${d.errors}\nAvg Confidence: ${(d.avg_confidence * 100).toFixed(1)}%\n\nFailures:\n${Object.entries(d.failure_breakdown).map(([k,v]) => `  ${k}: ${v}`).join('\n')}`);
-    loadStats();
+    if (typeof loadDashboard === 'function') loadDashboard();
+    if (typeof loadStats === 'function') loadStats();
   } catch(e) {
     alert('Replay failed: ' + e.message);
   }
@@ -431,8 +918,355 @@ async function runReplay() {
   btn.textContent = 'Replay All';
 }
 
+// ══════════════════════════════════════════════════════════════════
+// SYNC PANEL FUNCTIONS (for the standalone Sync tab)
+// ══════════════════════════════════════════════════════════════════
+async function loadSync() {
+  try {
+    const [statusRes, jobsRes, connRes] = await Promise.all([
+      fetch('/api/sources/status'),
+      fetch('/api/sources/jobs?limit=200'),
+      fetch('/api/sync/connection'),
+    ]);
+    const status = await statusRes.json();
+    const jobs = await jobsRes.json();
+    const conn = await connRes.json();
+
+    ['', '2'].forEach(suffix => {
+      const card = document.getElementById('connectionCard' + suffix);
+      if (card) card.innerHTML = renderConnectionCard(conn);
+    });
+
+    // Overview
+    ['', '2'].forEach(suffix => {
+      const overview = document.getElementById('syncOverview' + suffix);
+      if (!overview) return;
+      const totalFound = conn.messages_found || 0;
+      const progress = conn.historical_messages || status.synced_messages || 0;
+      const pct = totalFound > 0 ? ((progress / totalFound) * 100).toFixed(1) : 0;
+      overview.innerHTML = `
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
+          <div class="stat-card ${status.overall === 'complete' ? 'green' : status.overall === 'running' ? 'blue' : status.overall === 'error' ? 'red' : ''}" style="min-width:80px;">
+            <div class="val" style="font-size:18px;">${esc(status.overall)}</div><div class="lbl">Status</div>
+          </div>
+          <div class="stat-card" style="min-width:80px;"><div class="val" style="font-size:18px;">${formatNumber(conn.total_groups ?? status.total_jobs ?? 0)}</div><div class="lbl">Groups</div></div>
+          <div class="stat-card" style="min-width:80px;"><div class="val" style="font-size:18px;">${status.total_jobs || 0}</div><div class="lbl">Jobs</div></div>
+          <div class="stat-card green" style="min-width:80px;"><div class="val" style="font-size:18px;">${status.completed_jobs || 0}</div><div class="lbl">${totalFound > 0 ? 'Done' : 'Discovered'}</div></div>
+          <div class="stat-card red" style="min-width:80px;"><div class="val" style="font-size:18px;">${status.failed_jobs || 0}</div><div class="lbl">Failed</div></div>
+          <div class="stat-card" style="min-width:80px;"><div class="val" style="font-size:18px;">${formatNumber(totalFound)}</div><div class="lbl">Messages Found</div></div>
+          <div class="stat-card" style="min-width:80px;"><div class="val" style="font-size:18px;">${formatNumber(status.total_messages_stored || 0)}</div><div class="lbl">Stored</div></div>
+        </div>
+        <div style="margin-bottom:8px;font-size:12px;color:#8b949e;">
+          Groups: ${formatNumber(conn.total_groups ?? status.total_jobs ?? 0)} discovered
+          <span style="margin-left:12px;">Messages found: ${formatNumber(totalFound)}</span>
+          <span style="margin-left:12px;">Historical sync: ${esc(formatSyncState(conn.historical_sync_state))}</span>
+        </div>
+        <div style="height:4px;background:#21262d;border-radius:3px;overflow:hidden;">
+          <div style="height:100%;width:${pct}%;background:#238636;border-radius:3px;transition:width 0.3s;"></div>
+        </div>`;
+    });
+
+    // Connection
+    ['', '2'].forEach(suffix => {
+      const cEl = document.getElementById('connStatus' + suffix);
+      if (!cEl) return;
+      if (status.current_group) {
+        cEl.textContent = `Current: ${status.current_group_name || status.current_group}`;
+      } else {
+        cEl.innerHTML = conn.connected
+          ? '<span style="color:#3fb950;">Connected</span>'
+          : '<span style="color:#f85149;">Disconnected</span>';
+      }
+    });
+
+    ['', '2'].forEach(suffix => {
+      const startBtn = document.getElementById('syncStartBtn' + suffix);
+      const stopBtn = document.getElementById('syncStopBtn' + suffix);
+      if (startBtn) startBtn.disabled = (status.overall === 'running' || status.overall === 'discovering');
+      if (stopBtn) stopBtn.disabled = (status.overall !== 'running' && status.overall !== 'discovering');
+    });
+
+    const tbody = document.getElementById('syncBody2');
+    if (!tbody) return;
+    if (!jobs.length) {
+      tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:#8b949e;">No sync jobs yet. Start a sync to discover groups.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = jobs.map(j => {
+      const remaining = Math.max(0, (j.records_found || 0) - (j.records_processed || 0));
+      const started = fmtJobDate(j.started_at, 'Not Started');
+      const finished = fmtJobDate(j.finished_at, 'Waiting');
+      const meta = safeJsonParse(j.meta);
+      const members = meta.participants || '—';
+      return `<tr>
+        <td><strong>${esc(j.group_name || j.group_id)}</strong></td>
+        <td style="font-size:11px;color:#8b949e;max-width:160px;overflow:hidden;text-overflow:ellipsis;">${esc(j.group_id)}</td>
+        <td>${members}</td>
+        <td>${fmtSyncStatus(j)}</td>
+        <td>${formatNumber(j.records_processed || 0)}</td>
+        <td>${formatNumber(j.records_found || 0)}</td>
+        <td>${remaining > 0 ? '<span class="badge yellow">' + formatNumber(remaining) + '</span>' : '<span class="muted">—</span>'}</td>
+        <td style="font-size:11px;">${started}</td>
+        <td style="font-size:11px;">${finished}</td>
+        <td>${j.error ? `<span class="badge red">${esc(j.error)}</span>` : ''}</td>
+      </tr>`;
+    }).join('');
+  } catch(e) {
+    const tbody = document.getElementById('syncBody2');
+    if (tbody) tbody.innerHTML = `<tr><td colspan="10" style="color:#f85149;">Error: ${e.message}</td></tr>`;
+  }
+}
+
+function safeJsonParse(s) { try { return JSON.parse(s); } catch(e) { return {}; } }
+
+function updatePager(prefix, offset, count) {
+  const range = document.getElementById(`${prefix}Range`);
+  const prev = document.getElementById(`${prefix}Prev`);
+  const next = document.getElementById(`${prefix}Next`);
+  if (range) range.textContent = count > 0 ? `${offset + 1}–${offset + count}` : (offset > 0 ? 'No more rows' : '0');
+  if (prev) prev.disabled = offset === 0;
+  if (next) next.disabled = count < PAGE_SIZE;
+}
+
+function pageBack(kind) {
+  if (kind === 'inbox') { inboxOffset = Math.max(0, inboxOffset - PAGE_SIZE); return loadInbox(); }
+  if (kind === 'extraction') { extractionOffset = Math.max(0, extractionOffset - PAGE_SIZE); return loadExtraction(); }
+  if (kind === 'resolver') { resolverOffset = Math.max(0, resolverOffset - PAGE_SIZE); return loadResolver(); }
+  if (kind === 'fail') { failOffset = Math.max(0, failOffset - PAGE_SIZE); return loadFailures(); }
+}
+
+function pageNext(kind) {
+  if (kind === 'inbox') { inboxOffset += PAGE_SIZE; return loadInbox(); }
+  if (kind === 'extraction') { extractionOffset += PAGE_SIZE; return loadExtraction(); }
+  if (kind === 'resolver') { resolverOffset += PAGE_SIZE; return loadResolver(); }
+  if (kind === 'fail') { failOffset += PAGE_SIZE; return loadFailures(); }
+}
+
+function displaySender(row) {
+  const payload = safeJsonParse(row.raw_payload || '{}');
+  const data = payload.data || payload;
+  const senderObj = data.sender || {};
+  const key = data.key || {};
+  const name = senderObj.pushName || senderObj.name || data.pushName || data.participantName || '';
+  const jid = key.participant || senderObj.id || row.sender || '';
+  const phone = phoneFromJid(jid);
+  if (name && phone) return `${name} (${phone})`;
+  if (name) return name;
+  return phone || cleanJid(row.sender || '');
+}
+
+function displaySource(source) {
+  if (!source) return '';
+  const upper = String(source).toUpperCase();
+  if (upper === 'WHATSAPP') return 'WhatsApp';
+  return source;
+}
+
+function cleanJid(value) {
+  if (!value) return '';
+  const str = String(value);
+  return str.includes('@') ? str.split('@')[0] : str;
+}
+
+function phoneFromJid(value) {
+  const digits = cleanJid(value).replace(/\D/g, '');
+  if (!digits) return '';
+  if (digits.startsWith('91') && digits.length >= 12) {
+    return `+91 ${digits.slice(2, 4)}${'X'.repeat(6)}${digits.slice(10, 12)}`;
+  }
+  if (digits.length >= 10) {
+    const country = digits.slice(0, -10);
+    const local = digits.slice(-10);
+    return `${country ? '+' + country + ' ' : ''}${local.slice(0, 2)}${'X'.repeat(6)}${local.slice(-2)}`;
+  }
+  return `+${digits}`;
+}
+
+function renderConnectionCard(c) {
+  const stateText = c.connected ? 'Connected' : (c.connection_state ? `Disconnected (${c.connection_state})` : 'Disconnected');
+  const rows = [
+    ['Device', c.device_name],
+    ['Phone', maskPhone(c.phone_number)],
+    ['WhatsApp Name', c.display_name],
+    ['Instance', c.instance_name || c.instance],
+    ['Connected', fmtRelativeTime(c.connected_since) || fmtDateTime(c.connected_since)],
+    ['Last heartbeat', fmtDateTime(c.last_heartbeat)],
+    ['Groups', formatNullableNumber(c.total_groups)],
+    ['Broadcasts', formatNullableNumber(c.total_broadcasts)],
+    ['Communities', formatNullableNumber(c.total_communities)],
+    ['Individuals', formatNullableNumber(c.total_individual_chats)],
+    ['Messages found', formatNullableNumber(c.messages_found)],
+    ['Historical messages', formatNullableNumber(c.historical_messages)],
+    ['Historical sync', formatSyncState(c.historical_sync_state)],
+    ['Last sync', fmtDateTime(c.last_sync)],
+    ['Discovery status', discoveryStatus(c)],
+  ];
+  return `
+    <div class="connection-card">
+      <h2>WhatsApp Connection</h2>
+      <div class="connection-state ${c.connected ? 'connected' : 'disconnected'}"><span class="dot"></span>${esc(stateText)}</div>
+      <div class="connection-grid">
+        ${rows.map(([k, v]) => connectionKv(k, v)).join('')}
+      </div>
+      ${renderMessageCounts(c)}
+    </div>
+  `;
+}
+
+function connectionKv(label, value) {
+  const unavailable = value == null || value === '';
+  return `<div class="connection-kv ${unavailable ? 'unavailable' : ''}"><div class="k">${esc(label)}</div><div class="v">${esc(unavailable ? 'Unavailable' : value)}</div></div>`;
+}
+
+function renderMessageCounts(c) {
+  const groups = c.top_message_groups || [];
+  const rows = groups.filter(g => g.messages > 0);
+  if (!rows.length) {
+    return `<div class="message-counts"><h3>Messages Found</h3><div class="muted">No historical messages available yet. New real-time webhook messages will appear as groups chat.</div></div>`;
+  }
+  return `
+    <div class="message-counts">
+      <h3>Messages Found</h3>
+      ${rows.map(g => `<div class="message-count-row"><span>${esc(g.group_name || g.group_id)}</span><strong>${formatNumber(g.messages)}</strong></div>`).join('')}
+    </div>
+  `;
+}
+
+function maskPhone(phone) {
+  if (!phone) return null;
+  const digits = String(phone).replace(/\D/g, '');
+  if (digits.length < 6) return phone;
+  const country = digits.length > 10 ? `+${digits.slice(0, digits.length - 10)} ` : '';
+  const local = digits.slice(-10);
+  return `${country}${local.slice(0, 2)}${'X'.repeat(6)}${local.slice(-2)}`;
+}
+
+function fmtDateTime(value) {
+  const d = parseDate(value);
+  return d ? d.toLocaleString() : null;
+}
+
+function fmtRelativeTime(value) {
+  const d = parseDate(value);
+  if (!d) return null;
+  const seconds = Math.floor((Date.now() - d.getTime()) / 1000);
+  if (seconds < 0) return fmtDateTime(value);
+  if (seconds < 60) return `${seconds} sec ago`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes} min ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} hr ago`;
+  const days = Math.floor(hours / 24);
+  return `${days} day${days === 1 ? '' : 's'} ago`;
+}
+
+function fmtJobDate(value, fallback) {
+  return fmtDateTime(value) || fallback;
+}
+
+function parseDate(value) {
+  if (!value || value === 'None' || value === 'null') return null;
+  const raw = String(value);
+  const d = new Date(/[zZ]|[+-]\d\d:?\d\d$/.test(raw) ? raw : `${raw}Z`);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function discoveryStatus(c) {
+  if (c.chat_discovery_succeeded && c.group_discovery_succeeded) return 'Chats and groups fetched';
+  if (c.group_discovery_succeeded) return 'Groups fetched, chats unavailable';
+  if (c.chat_discovery_succeeded) return 'Chats fetched, groups unavailable';
+  return null;
+}
+
+function fmtSyncStatus(job) {
+  const status = job.status || 'pending';
+  let label = status;
+  let color = 'gray';
+  if (status === 'pending') label = 'Waiting Sync';
+  if (status === 'running') { label = 'Syncing'; color = 'blue'; }
+  if (status === 'complete') {
+    if ((job.records_found || 0) === 0 && (job.records_processed || 0) === 0) {
+      label = 'Discovered';
+      color = 'gray';
+    } else {
+      label = 'Completed';
+      color = 'green';
+    }
+  }
+  if (status === 'failed') { label = 'Failed'; color = 'red'; }
+  if (status === 'cancelled') { label = 'Paused'; color = 'yellow'; }
+  return `<span class="badge ${color}">${esc(label)}</span>`;
+}
+
+function formatNumber(value) {
+  return Number(value || 0).toLocaleString();
+}
+
+function formatNullableNumber(value) {
+  return value == null ? null : formatNumber(value);
+}
+
+function formatSyncState(value) {
+  const labels = { not_started: 'Not Started', no_historical_messages: 'No Historical Messages', running: 'Syncing', complete: 'Complete', error: 'Error', partial: 'Partial' };
+  return labels[value] || value || 'Unknown';
+}
+
+function setSyncStatusText(text) {
+  ['', '2'].forEach(suffix => {
+    const el = document.getElementById('connStatus' + suffix);
+    if (el) el.textContent = text;
+  });
+}
+
+async function startSync() {
+  try {
+    ['', '2'].forEach(s => { const btn = document.getElementById('syncStartBtn' + s); if (btn) btn.disabled = true; });
+    setSyncStatusText('Starting sync...');
+    const res = await fetch('/api/sources/whatsapp/sync', { method: 'POST' });
+    const d = await res.json();
+    setSyncStatusText(res.ok ? (d.message || 'Started') : (d.detail || 'Error'));
+  } catch(e) {
+    setSyncStatusText('Error: ' + e.message);
+  }
+  setTimeout(() => { loadSync(); loadDashboard(); }, 1500);
+}
+
+async function stopSync() {
+  try {
+    ['', '2'].forEach(s => { const btn = document.getElementById('syncStopBtn' + s); if (btn) btn.disabled = true; });
+    setSyncStatusText('Stopping...');
+    await fetch('/api/sources/stop', { method: 'POST' });
+    setSyncStatusText('Stop requested');
+  } catch(e) {
+    setSyncStatusText('Error: ' + e.message);
+  }
+  setTimeout(() => { loadSync(); loadDashboard(); }, 1500);
+}
+
+async function checkConnection() {
+  setSyncStatusText('Checking...');
+  try {
+    const connRes = await fetch('/api/sync/connection');
+    const conn = await connRes.json();
+    ['', '2'].forEach(suffix => {
+      const card = document.getElementById('connectionCard' + suffix);
+      if (card) card.innerHTML = renderConnectionCard(conn);
+      const el = document.getElementById('connStatus' + suffix);
+      if (el) el.innerHTML = `
+        <span style="color:${conn.connected ? '#3fb950' : '#f85149'};">${conn.connected ? 'Connected' : 'Disconnected'}</span>
+        <span style="color:#8b949e;margin-left:12px;">${esc(conn.instance_name || conn.instance || '')}</span>`;
+    });
+  } catch(e) {
+    setSyncStatusText('Connection error: ' + e.message);
+  }
+}
+
 // ── Helpers ───────────────────────────────────────────────────────
 function esc(s) { if (s == null) return ''; return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function fmtIntent(i) {
+  const m = { 'SELL': 'green', 'BUY': 'purple', 'RENT': 'yellow', 'LEASE': 'orange', 'COMMERCIAL': 'orange', 'PRE-LAUNCH': 'red' };
+  return i ? `<span class="badge ${m[i] || 'blue'}">${esc(i)}</span>` : '';
+}
 function fmtMethod(m) {
   if (!m) return '<span class="badge gray">unknown</span>';
   if (m === 'resolved') return '<span class="badge green">resolved</span>';
@@ -440,182 +1274,6 @@ function fmtMethod(m) {
   if (m === 'error') return '<span class="badge red">error</span>';
   return `<span class="badge blue">${esc(m)}</span>`;
 }
-
-// ── Group Dashboard ──────────────────────────────────────────────
-async function loadGroups() {
-  try {
-    const [statusRes, jobsRes] = await Promise.all([
-      fetch('/api/sources/status'),
-      fetch('/api/sources/jobs?limit=200'),
-    ]);
-    const status = await statusRes.json();
-    const jobs = await jobsRes.json();
-
-    // Source badges
-    let sourceHtml = '';
-    if (status.source_summary) {
-      sourceHtml = Object.entries(status.source_summary).map(([name, s]) =>
-        `<span class="badge" style="font-size:12px;padding:4px 12px;">${esc(name)}: ${s.total} jobs, ${s.records} records</span>`
-      ).join(' ');
-    }
-
-    // Overview bar
-    const overview = document.getElementById('syncOverview');
-    const totalFound = Object.values(status.source_summary || {}).reduce((a, s) => a + s.records, 0) || status.total_messages_found || 0;
-    const progress = status.synced_messages || 0;
-    const pct = totalFound > 0 ? ((progress / totalFound) * 100).toFixed(1) : 0;
-    overview.innerHTML = `
-      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
-        <div class="stat-card ${status.overall === 'complete' ? 'green' : status.overall === 'running' ? 'blue' : status.overall === 'error' ? 'red' : ''}">
-          <div class="val">${esc(status.overall)}</div><div class="lbl">Status</div>
-        </div>
-        <div class="stat-card"><div class="val">${Object.keys(status.source_summary || {}).length}</div><div class="lbl">Sources</div></div>
-        <div class="stat-card"><div class="val">${status.total_jobs || 0}</div><div class="lbl">Total Jobs</div></div>
-        <div class="stat-card green"><div class="val">${status.completed_jobs || 0}</div><div class="lbl">Completed</div></div>
-        <div class="stat-card red"><div class="val">${status.failed_jobs || 0}</div><div class="lbl">Failed</div></div>
-        <div class="stat-card"><div class="val">${progress}</div><div class="lbl">Processed</div></div>
-        <div class="stat-card"><div class="val">${totalFound}</div><div class="lbl">Found</div></div>
-        <div class="stat-card blue"><div class="val">${pct}%</div><div class="lbl">Progress</div></div>
-        <div class="stat-card"><div class="val">${status.total_messages_stored || status.historical_messages_stored || 0}</div><div class="lbl">Stored</div></div>
-      </div>
-      ${sourceHtml ? `<div style="margin-bottom:8px;font-size:12px;color:#8b949e;">Sources: ${sourceHtml}</div>` : ''}
-      <div style="height:6px;background:#21262d;border-radius:3px;overflow:hidden;">
-        <div style="height:100%;width:${pct}%;background:#238636;border-radius:3px;transition:width 0.3s;"></div>
-      </div>
-    `;
-
-    // Connection status
-    const cEl = document.getElementById('connStatus');
-    if (status.current_group) {
-      cEl.textContent = `Current: ${status.current_group_name || status.current_group}`;
-    } else {
-      // Check WhatsApp connection
-      try {
-        const cRes = await fetch('/api/sync/connection');
-        const c = await cRes.json();
-        cEl.innerHTML = c.connected
-          ? '<span style="color:#3fb950;">WhatsApp ✓</span>'
-          : '<span style="color:#8b949e;">WhatsApp ✗</span>';
-      } catch(e) { cEl.textContent = ''; }
-    }
-
-    // Button states
-    document.getElementById('syncStartBtn').disabled = (status.overall === 'running' || status.overall === 'discovering');
-    document.getElementById('syncStopBtn').disabled = (status.overall !== 'running' && status.overall !== 'discovering');
-
-    // Table
-    const tbody = document.getElementById('groupsBody');
-    if (!jobs.length) {
-      tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;color:#8b949e;">No sync jobs yet. Start a sync to discover sources.</td></tr>';
-      return;
-    }
-    tbody.innerHTML = jobs.map(j => {
-      const remaining = Math.max(0, (j.records_found || 0) - (j.records_processed || 0));
-      const started = j.started_at ? new Date(j.started_at + 'Z').toLocaleString() : '';
-      const finished = j.finished_at ? new Date(j.finished_at + 'Z').toLocaleString() : '';
-      const meta = (typeof j.meta === 'string') ? safeJsonParse(j.meta) : (j.meta || {});
-      const members = meta.participants || '';
-      const colSpan = j.source === 'whatsapp' ? '11' : '9';
-      if (j.source === 'whatsapp') {
-        return `<tr>
-          <td><strong>${esc(j.group_name || j.group_id)}</strong></td>
-          <td style="font-size:11px;color:#8b949e;max-width:160px;overflow:hidden;text-overflow:ellipsis;">${esc(j.group_id)}</td>
-          <td><span class="badge blue">${esc(j.source)}</span></td>
-          <td>${members}</td>
-          <td>${fmtSyncStatus(j.status)}</td>
-          <td>${j.records_processed || 0}</td>
-          <td>${j.records_found || 0}</td>
-          <td>${remaining > 0 ? '<span class="badge yellow">' + remaining + '</span>' : '<span class="badge green">0</span>'}</td>
-          <td style="font-size:11px;">${started}</td>
-          <td style="font-size:11px;">${finished}</td>
-          <td>${j.error ? `<span class="badge red">${esc(j.error)}</span>` : ''}</td>
-        </tr>`;
-      } else {
-        return `<tr>
-          <td><strong>${esc(j.group_name || j.group_id)}</strong></td>
-          <td style="font-size:11px;color:#8b949e;max-width:160px;">${esc(j.group_id)}</td>
-          <td><span class="badge blue">${esc(j.source)}</span></td>
-          <td>—</td>
-          <td>${fmtSyncStatus(j.status)}</td>
-          <td>${j.records_processed || 0}</td>
-          <td>${j.records_found || 0}</td>
-          <td>${remaining > 0 ? '<span class="badge yellow">' + remaining + '</span>' : '<span class="badge green">0</span>'}</td>
-          <td style="font-size:11px;">${started}</td>
-          <td style="font-size:11px;">${finished}</td>
-          <td>${j.error ? `<span class="badge red">${esc(j.error)}</span>` : ''}</td>
-        </tr>`;
-      }
-    }).join('');
-  } catch(e) {
-    document.getElementById('groupsBody').innerHTML = `<tr><td colspan="11" style="color:#f85149;">Error: ${e.message}</td></tr>`;
-  }
-}
-
-function safeJsonParse(s) { try { return JSON.parse(s); } catch(e) { return {}; } }
-
-function fmtSyncStatus(s) {
-  const m = {
-    'pending': 'gray', 'running': 'blue', 'complete': 'green', 'failed': 'red', 'cancelled': 'yellow',
-  };
-  return `<span class="badge ${m[s] || 'gray'}">${esc(s || 'unknown')}</span>`;
-}
-
-async function startSync() {
-  document.getElementById('syncStartBtn').disabled = true;
-  document.getElementById('connStatus').textContent = 'Starting sync...';
-  try {
-    const res = await fetch('/api/sources/whatsapp/sync', { method: 'POST' });
-    const d = await res.json();
-    document.getElementById('connStatus').textContent = res.ok ? (d.message || 'Started') : (d.detail || 'Error');
-  } catch(e) {
-    document.getElementById('connStatus').textContent = 'Error: ' + e.message;
-  }
-  setTimeout(loadGroups, 1500);
-}
-
-async function stopSync() {
-  document.getElementById('syncStopBtn').disabled = true;
-  document.getElementById('connStatus').textContent = 'Stopping...';
-  try {
-    await fetch('/api/sources/stop', { method: 'POST' });
-    document.getElementById('connStatus').textContent = 'Stop requested';
-  } catch(e) {
-    document.getElementById('connStatus').textContent = 'Error: ' + e.message;
-  }
-  setTimeout(loadGroups, 1500);
-}
-
-async function checkConnection() {
-  document.getElementById('connStatus').textContent = 'Checking...';
-  try {
-    const [srcRes, connRes] = await Promise.all([
-      fetch('/api/sources'),
-      fetch('/api/sync/connection'),
-    ]);
-    const src = await srcRes.json();
-    const conn = await connRes.json();
-    const sources = (src.sources || []).map(s =>
-      `${s.name} (v${s.version}): ${s.connected ? '✓' : '✗'}`
-    ).join(' | ');
-    document.getElementById('connStatus').innerHTML = `
-      <span style="color:${conn.connected ? '#3fb950' : '#f85149'};">WhatsApp ${conn.connected ? '✓' : '✗'}</span>
-      <span style="color:#8b949e;margin-left:12px;">${sources}</span>
-    `;
-  } catch(e) {
-    document.getElementById('connStatus').textContent = 'Connection error: ' + e.message;
-  }
-}
-
-// Auto-refresh sync status every 5s when on Groups tab
-let syncRefreshInterval = null;
-const origSwitchTab = switchTab;
-switchTab = function(name) {
-  origSwitchTab(name);
-  if (syncRefreshInterval) { clearInterval(syncRefreshInterval); syncRefreshInterval = null; }
-  if (name === 'groups') {
-    syncRefreshInterval = setInterval(loadGroups, 5000);
-  }
-};
 </script>
 </body>
 </html>

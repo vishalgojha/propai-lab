@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS raw_messages (
     message_uid     TEXT DEFAULT NULL,
     pipeline_version TEXT DEFAULT NULL,
     synced_at       TEXT DEFAULT NULL,
+    event_id        TEXT DEFAULT NULL,
     created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );
 
@@ -21,7 +22,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_raw_msg_uid ON raw_messages(message_uid);
 CREATE TABLE IF NOT EXISTS parsed_output (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     raw_message_id  INTEGER NOT NULL REFERENCES raw_messages(id),
-    message_type    TEXT DEFAULT NULL,
+    intent          TEXT DEFAULT NULL,
+    principal       TEXT DEFAULT NULL,
     bhk             TEXT DEFAULT NULL,
     price           REAL DEFAULT NULL,
     price_unit      TEXT DEFAULT NULL,
@@ -36,8 +38,12 @@ CREATE TABLE IF NOT EXISTS parsed_output (
     developer       TEXT DEFAULT NULL,
     broker_name     TEXT DEFAULT NULL,
     broker_phone    TEXT DEFAULT NULL,
+    profile_name    TEXT DEFAULT NULL,
+    forwarded       INTEGER DEFAULT 0,
     confidence      REAL DEFAULT 0.0,
     raw_payload     TEXT DEFAULT '{}',
+    event_id        TEXT DEFAULT NULL,
+    embedding       BLOB DEFAULT NULL,
     created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );
 
@@ -65,6 +71,7 @@ CREATE TABLE IF NOT EXISTS resolver_decisions (
     -- Failure category for unresolved messages
     failure_category TEXT DEFAULT NULL,
     error           TEXT DEFAULT NULL,
+    event_id        TEXT DEFAULT NULL,
     created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );
 
@@ -72,7 +79,8 @@ CREATE TABLE IF NOT EXISTS resolver_decisions (
 CREATE TABLE IF NOT EXISTS evaluations (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     raw_message_id  INTEGER NOT NULL REFERENCES raw_messages(id),
-    expected_message_type TEXT DEFAULT NULL,
+    expected_intent       TEXT DEFAULT NULL,
+    expected_principal    TEXT DEFAULT NULL,
     expected_bhk         TEXT DEFAULT NULL,
     expected_price       REAL DEFAULT NULL,
     expected_price_unit  TEXT DEFAULT NULL,
@@ -85,7 +93,8 @@ CREATE TABLE IF NOT EXISTS evaluations (
     expected_micro_market TEXT DEFAULT NULL,
     expected_developer   TEXT DEFAULT NULL,
     expected_broker      TEXT DEFAULT NULL,
-    extracted_message_type TEXT DEFAULT NULL,
+    extracted_intent      TEXT DEFAULT NULL,
+    extracted_principal   TEXT DEFAULT NULL,
     extracted_bhk         TEXT DEFAULT NULL,
     extracted_price       REAL DEFAULT NULL,
     extracted_price_unit  TEXT DEFAULT NULL,
@@ -101,6 +110,7 @@ CREATE TABLE IF NOT EXISTS evaluations (
     accuracy_overall   REAL DEFAULT NULL,
     correction_notes   TEXT DEFAULT NULL,
     evaluated_at       TEXT DEFAULT NULL,
+    event_id           TEXT DEFAULT NULL,
     created_at         TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );
 
@@ -154,7 +164,7 @@ CREATE INDEX IF NOT EXISTS idx_raw_group ON raw_messages(group_name);
 CREATE INDEX IF NOT EXISTS idx_raw_source ON raw_messages(source);
 CREATE INDEX IF NOT EXISTS idx_raw_version ON raw_messages(pipeline_version);
 CREATE INDEX IF NOT EXISTS idx_parsed_raw ON parsed_output(raw_message_id);
-CREATE INDEX IF NOT EXISTS idx_parsed_type ON parsed_output(message_type);
+-- idx_parsed_intent moved to migration (table may not have intent column yet)
 CREATE INDEX IF NOT EXISTS idx_resolver_parsed ON resolver_decisions(parsed_id);
 CREATE INDEX IF NOT EXISTS idx_resolver_bid ON resolver_decisions(building_id);
 CREATE INDEX IF NOT EXISTS idx_resolver_method ON resolver_decisions(method);

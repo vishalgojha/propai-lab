@@ -21,6 +21,7 @@ class RawMessage:
     message_uid: Optional[str] = None
     pipeline_version: Optional[str] = None
     synced_at: Optional[str] = None
+    event_id: Optional[str] = None
     created_at: str = ""
 
 
@@ -28,7 +29,8 @@ class RawMessage:
 class ParsedObservation:
     id: int = 0
     raw_message_id: int = 0
-    message_type: Optional[str] = None
+    intent: Optional[str] = None
+    principal: Optional[str] = None
     bhk: Optional[str] = None
     price: Optional[float] = None
     price_unit: Optional[str] = None
@@ -43,9 +45,13 @@ class ParsedObservation:
     developer: Optional[str] = None
     broker_name: Optional[str] = None
     broker_phone: Optional[str] = None
+    profile_name: Optional[str] = None
+    forwarded: int = 0
     confidence: float = 0.0
     raw_payload: str = "{}"
+    event_id: Optional[str] = None
     created_at: str = ""
+    embedding: Optional[bytes] = None  # float32 numpy array packed via pack_embedding
 
 
 @dataclass
@@ -69,6 +75,7 @@ class ResolverDecision:
     candidates: str = "[]"
     failure_category: Optional[str] = None
     error: Optional[str] = None
+    event_id: Optional[str] = None
     created_at: str = ""
 
 
@@ -76,7 +83,8 @@ class ResolverDecision:
 class Evaluation:
     id: int = 0
     raw_message_id: int = 0
-    expected_message_type: Optional[str] = None
+    expected_intent: Optional[str] = None
+    expected_principal: Optional[str] = None
     expected_bhk: Optional[str] = None
     expected_price: Optional[float] = None
     expected_price_unit: Optional[str] = None
@@ -89,7 +97,8 @@ class Evaluation:
     expected_micro_market: Optional[str] = None
     expected_developer: Optional[str] = None
     expected_broker: Optional[str] = None
-    extracted_message_type: Optional[str] = None
+    extracted_intent: Optional[str] = None
+    extracted_principal: Optional[str] = None
     extracted_bhk: Optional[str] = None
     extracted_price: Optional[float] = None
     extracted_price_unit: Optional[str] = None
@@ -105,6 +114,7 @@ class Evaluation:
     accuracy_overall: Optional[float] = None
     correction_notes: Optional[str] = None
     evaluated_at: Optional[str] = None
+    event_id: Optional[str] = None
     created_at: str = ""
 
 
@@ -208,7 +218,7 @@ class Storage(ABC):
                                method: str = "") -> list[dict]: ...
 
     @abstractmethod
-    def get_failed(self, limit: int = 50) -> list[dict]: ...
+    def get_failed(self, limit: int = 50, offset: int = 0) -> list[dict]: ...
 
     # ── Evaluations ────────────────────────────────────────────
 
@@ -262,3 +272,37 @@ class Storage(ABC):
 
     @abstractmethod
     def source_summary(self) -> dict: ...
+
+    # ── AI layer (read-only) ───────────────────────────────────
+
+    @abstractmethod
+    def get_all_parsed_with_embeddings(self) -> list[dict]: ...
+
+    @abstractmethod
+    def knn_search(self, query_embedding: bytes, k: int = 10) -> list[dict]: ...
+
+    @abstractmethod
+    def get_observations_by_broker(self, broker_name: str) -> list[dict]: ...
+
+    @abstractmethod
+    def get_observations_by_building(self, building_name: str) -> list[dict]: ...
+
+    @abstractmethod
+    def get_top_brokers_today(self, today_prefix: str, limit: int = 10) -> list[dict]: ...
+
+    # ── Dashboard ──────────────────────────────────────────────
+
+    @abstractmethod
+    def dashboard_activity(self, today_prefix: str) -> dict: ...
+
+    @abstractmethod
+    def dashboard_feed(self, limit: int = 20) -> list[dict]: ...
+
+    @abstractmethod
+    def dashboard_heatmap(self) -> list[dict]: ...
+
+    @abstractmethod
+    def dashboard_message_types_today(self, today_prefix: str) -> list[dict]: ...
+
+    @abstractmethod
+    def dashboard_growth(self, today_prefix: str) -> dict: ...

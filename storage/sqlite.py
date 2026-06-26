@@ -2,10 +2,11 @@
 
 import json
 import sqlite3
+import uuid
 from pathlib import Path
 from typing import Optional
 
-from storage.base import (
+from lab.storage.base import (
     Storage,
     RawMessage, ParsedObservation, ResolverDecision,
     Evaluation, SyncJob, SyncCheckpoint,
@@ -25,7 +26,7 @@ class SqliteStorage(Storage):
     @property
     def db(self) -> sqlite3.Connection:
         if self._db is None:
-            self._db = sqlite3.connect(str(self.db_path))
+            self._db = sqlite3.connect(str(self.db_path), check_same_thread=False)
             self._db.row_factory = sqlite3.Row
             self._db.execute("PRAGMA journal_mode=WAL")
             self._db.execute("PRAGMA foreign_keys=ON")
@@ -54,6 +55,25 @@ class SqliteStorage(Storage):
             "ALTER TABLE raw_messages ADD COLUMN pipeline_version TEXT DEFAULT NULL",
             "ALTER TABLE raw_messages ADD COLUMN synced_at TEXT DEFAULT NULL",
             "ALTER TABLE parsed_output ADD COLUMN developer TEXT DEFAULT ''",
+            "ALTER TABLE raw_messages ADD COLUMN event_id TEXT DEFAULT NULL",
+            "ALTER TABLE parsed_output ADD COLUMN event_id TEXT DEFAULT NULL",
+            "ALTER TABLE resolver_decisions ADD COLUMN event_id TEXT DEFAULT NULL",
+            "ALTER TABLE evaluations ADD COLUMN event_id TEXT DEFAULT NULL",
+            "CREATE INDEX IF NOT EXISTS idx_raw_event_id ON raw_messages(event_id)",
+            "CREATE INDEX IF NOT EXISTS idx_parsed_event_id ON parsed_output(event_id)",
+            "CREATE INDEX IF NOT EXISTS idx_resolver_event_id ON resolver_decisions(event_id)",
+            "CREATE INDEX IF NOT EXISTS idx_eval_event_id ON evaluations(event_id)",
+            "ALTER TABLE parsed_output ADD COLUMN intent TEXT DEFAULT NULL",
+            "ALTER TABLE parsed_output ADD COLUMN principal TEXT DEFAULT NULL",
+            "ALTER TABLE parsed_output ADD COLUMN forwarded INTEGER DEFAULT 0",
+            "ALTER TABLE parsed_output ADD COLUMN profile_name TEXT DEFAULT NULL",
+            "DROP INDEX IF EXISTS idx_parsed_type",
+            "CREATE INDEX IF NOT EXISTS idx_parsed_intent ON parsed_output(intent)",
+            "ALTER TABLE evaluations ADD COLUMN expected_intent TEXT DEFAULT NULL",
+            "ALTER TABLE evaluations ADD COLUMN expected_principal TEXT DEFAULT NULL",
+            "ALTER TABLE evaluations ADD COLUMN extracted_intent TEXT DEFAULT NULL",
+            "ALTER TABLE evaluations ADD COLUMN extracted_principal TEXT DEFAULT NULL",
+            "ALTER TABLE parsed_output ADD COLUMN embedding BLOB DEFAULT NULL",
         ]
         for sql in migs:
             try:
@@ -77,14 +97,16 @@ class SqliteStorage(Storage):
             ).fetchone()
             if existing:
                 return existing["id"]
+        if not msg.event_id:
+            msg.event_id = str(uuid.uuid4())
         cur = self.db.execute(
             """INSERT INTO raw_messages
                (group_name, sender, message, message_type, timestamp, source,
-                raw_payload, message_uid, pipeline_version, synced_at)
-               VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                raw_payload, message_uid, pipeline_version, synced_at, event_id)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
             (msg.group_name, msg.sender, msg.message, msg.message_type,
              msg.timestamp, msg.source, msg.raw_payload, msg.message_uid,
-             msg.pipeline_version, msg.synced_at)
+             msg.pipeline_version, msg.synced_at, msg.event_id)
         )
         self._commit()
         return cur.lastrowid
@@ -120,19 +142,25 @@ class SqliteStorage(Storage):
     # ── Parsed observations ────────────────────────────────────
 
     def save_parsed(self, obs: ParsedObservation) -> int:
+        if not obs.event_id:
+            raw = self.get_raw_message(obs.raw_message_id)
+            if raw:
+                obs.event_id = raw.event_id
         cur = self.db.execute(
             """INSERT INTO parsed_output
-               (raw_message_id, message_type, bhk, price, price_unit, area_sqft,
+               (raw_message_id, intent, principal, bhk, price, price_unit, area_sqft,
                 furnishing, location_raw, building_name, landmark_name, street_name,
                 area, micro_market, developer, broker_name, broker_phone,
-                confidence, raw_payload)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-            (obs.raw_message_id, obs.message_type, obs.bhk, obs.price,
+                profile_name, forwarded, confidence, raw_payload, event_id, embedding)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (obs.raw_message_id, obs.intent, obs.principal, obs.bhk, obs.price,
              obs.price_unit, obs.area_sqft, obs.furnishing, obs.location_raw,
              obs.building_name, obs.landmark_name, obs.street_name,
              obs.area, obs.micro_market, obs.developer,
              obs.broker_name, obs.broker_phone,
-             obs.confidence, obs.raw_payload)
+             obs.profile_name, obs.forwarded,
+             obs.confidence, obs.raw_payload, obs.event_id,
+             obs.embedding)
         )
         self._commit()
         return cur.lastrowid
@@ -157,20 +185,27 @@ class SqliteStorage(Storage):
     # ── Resolver decisions ─────────────────────────────────────
 
     def save_resolver_decision(self, dec: ResolverDecision) -> int:
+        if not dec.event_id:
+            parsed = self.db.execute(
+                "SELECT event_id FROM parsed_output WHERE id = ?", (dec.parsed_id,)
+            ).fetchone()
+            if parsed and parsed["event_id"]:
+                dec.event_id = parsed["event_id"]
         cur = self.db.execute(
             """INSERT INTO resolver_decisions
                (parsed_id, building_id, building_name,
                 landmark_id, landmark_name, street_id, street_name,
                 project_id, project_name, developer_name,
                 parser_confidence, resolver_confidence, final_confidence,
-                method, method_detail, candidates, failure_category, error)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                method, method_detail, candidates, failure_category, error,
+                event_id)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (dec.parsed_id, dec.building_id, dec.building_name,
              dec.landmark_id, dec.landmark_name, dec.street_id, dec.street_name,
              dec.project_id, dec.project_name, dec.developer_name,
              dec.parser_confidence, dec.resolver_confidence, dec.final_confidence,
              dec.method, dec.method_detail, dec.candidates,
-             dec.failure_category, dec.error)
+             dec.failure_category, dec.error, dec.event_id)
         )
         self._commit()
         return cur.lastrowid
@@ -191,7 +226,7 @@ class SqliteStorage(Storage):
             clause = ""
             params = [limit, offset]
         rows = self.db.execute(
-            f"""SELECT rd.*, p.message_type, p.building_name as parsed_building,
+            f"""SELECT rd.*, p.intent, p.principal, p.broker_name, p.building_name as parsed_building,
                        p.location_raw, p.landmark_name as parsed_landmark,
                        r.message as raw_message
                 FROM resolver_decisions rd
@@ -212,16 +247,16 @@ class SqliteStorage(Storage):
             result.append(d)
         return result
 
-    def get_failed(self, limit: int = 50) -> list[dict]:
+    def get_failed(self, limit: int = 50, offset: int = 0) -> list[dict]:
         rows = self.db.execute(
-            """SELECT rd.*, p.message_type, p.location_raw, p.landmark_name,
+            """SELECT rd.*, p.intent, p.principal, p.broker_name, p.location_raw, p.landmark_name,
                       r.message as raw_message, r.sender, r.timestamp
                FROM resolver_decisions rd
                JOIN parsed_output p ON p.id = rd.parsed_id
                JOIN raw_messages r ON p.raw_message_id = r.id
                WHERE rd.method IN ('unresolved', 'error')
-               ORDER BY rd.id DESC LIMIT ?""",
-            (limit,)
+               ORDER BY rd.id DESC LIMIT ? OFFSET ?""",
+            (limit, offset)
         ).fetchall()
         result = []
         for r in rows:
@@ -234,26 +269,92 @@ class SqliteStorage(Storage):
             result.append(d)
         return result
 
+    # ── AI layer (read-only) ───────────────────────────────────
+
+    def get_all_parsed_with_embeddings(self) -> list[dict]:
+        rows = self.db.execute(
+            "SELECT * FROM parsed_output WHERE embedding IS NOT NULL ORDER BY id DESC"
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def knn_search(self, query_embedding: bytes, k: int = 10) -> list[dict]:
+        from lab.embedding import unpack_embedding, cosine_similarity
+        q_vec = unpack_embedding(query_embedding)
+        rows = self.db.execute(
+            "SELECT id, embedding, raw_message_id, intent, principal, bhk, price, "
+            "price_unit, area_sqft, furnishing, building_name, landmark_name, "
+            "micro_market, broker_name, forwarded, confidence, created_at "
+            "FROM parsed_output WHERE embedding IS NOT NULL"
+        ).fetchall()
+        scored = []
+        for r in rows:
+            d = dict(r)
+            emb = d.pop("embedding", None)
+            if emb:
+                vec = unpack_embedding(emb)
+                sim = cosine_similarity(q_vec, vec)
+                scored.append((sim, d))
+        scored.sort(key=lambda x: -x[0])
+        for sim, d in scored[:k]:
+            d["similarity"] = round(sim, 4)
+        return [d for _, d in scored[:k]]
+
+    def get_observations_by_broker(self, broker_name: str) -> list[dict]:
+        rows = self.db.execute(
+            """SELECT p.*, r.message as raw_message
+               FROM parsed_output p
+               JOIN raw_messages r ON r.id = p.raw_message_id
+               WHERE p.broker_name = ? ORDER BY p.id DESC""",
+            (broker_name,)
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_observations_by_building(self, building_name: str) -> list[dict]:
+        rows = self.db.execute(
+            """SELECT p.*, r.message as raw_message
+               FROM parsed_output p
+               JOIN raw_messages r ON r.id = p.raw_message_id
+               WHERE LOWER(p.building_name) = LOWER(?) ORDER BY p.id DESC""",
+            (building_name,)
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_top_brokers_today(self, today_prefix: str, limit: int = 10) -> list[dict]:
+        rows = self.db.execute(
+            """SELECT p.broker_name, COUNT(*) as c
+               FROM parsed_output p
+               JOIN raw_messages r ON r.id = p.raw_message_id
+               WHERE r.timestamp LIKE ? AND p.broker_name IS NOT NULL AND p.broker_name != ''
+               GROUP BY p.broker_name ORDER BY c DESC LIMIT ?""",
+            (f"{today_prefix}%", limit)
+        ).fetchall()
+        return [dict(r) for r in rows]
+
     # ── Evaluations ────────────────────────────────────────────
 
     def save_evaluation(self, ev: Evaluation) -> int:
+        if not ev.event_id:
+            raw = self.get_raw_message(ev.raw_message_id)
+            if raw:
+                ev.event_id = raw.event_id
         existing = self.db.execute(
             "SELECT id FROM evaluations WHERE raw_message_id = ?",
             (ev.raw_message_id,)
         ).fetchone()
         if existing:
             cols = [
-                "expected_message_type", "expected_bhk", "expected_price",
+                "expected_intent", "expected_principal", "expected_bhk", "expected_price",
                 "expected_price_unit", "expected_area_sqft", "expected_furnishing",
                 "expected_building", "expected_landmark", "expected_street",
                 "expected_area", "expected_micro_market", "expected_developer",
                 "expected_broker",
-                "extracted_message_type", "extracted_bhk", "extracted_price",
+                "extracted_intent", "extracted_principal", "extracted_bhk", "extracted_price",
                 "extracted_price_unit", "extracted_area_sqft", "extracted_furnishing",
                 "extracted_building", "extracted_landmark", "extracted_street",
                 "extracted_area", "extracted_micro_market", "extracted_developer",
                 "extracted_broker",
                 "accuracy_overall", "correction_notes", "evaluated_at",
+                "event_id",
             ]
             sets = ", ".join(f"{c} = ?" for c in cols)
             vals = [getattr(ev, c, None) for c in cols] + [ev.raw_message_id]
@@ -263,30 +364,30 @@ class SqliteStorage(Storage):
         cur = self.db.execute(
             """INSERT INTO evaluations
                (raw_message_id,
-                expected_message_type, expected_bhk, expected_price,
+                expected_intent, expected_principal, expected_bhk, expected_price,
                 expected_price_unit, expected_area_sqft, expected_furnishing,
                 expected_building, expected_landmark, expected_street,
                 expected_area, expected_micro_market, expected_developer,
                 expected_broker,
-                extracted_message_type, extracted_bhk, extracted_price,
+                extracted_intent, extracted_principal, extracted_bhk, extracted_price,
                 extracted_price_unit, extracted_area_sqft, extracted_furnishing,
                 extracted_building, extracted_landmark, extracted_street,
                 extracted_area, extracted_micro_market, extracted_developer,
                 extracted_broker,
-                accuracy_overall, correction_notes, evaluated_at)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                accuracy_overall, correction_notes, evaluated_at, event_id)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (ev.raw_message_id,
-             ev.expected_message_type, ev.expected_bhk, ev.expected_price,
+             ev.expected_intent, ev.expected_principal, ev.expected_bhk, ev.expected_price,
              ev.expected_price_unit, ev.expected_area_sqft, ev.expected_furnishing,
              ev.expected_building, ev.expected_landmark, ev.expected_street,
              ev.expected_area, ev.expected_micro_market, ev.expected_developer,
              ev.expected_broker,
-             ev.extracted_message_type, ev.extracted_bhk, ev.extracted_price,
+             ev.extracted_intent, ev.extracted_principal, ev.extracted_bhk, ev.extracted_price,
              ev.extracted_price_unit, ev.extracted_area_sqft, ev.extracted_furnishing,
              ev.extracted_building, ev.extracted_landmark, ev.extracted_street,
              ev.extracted_area, ev.extracted_micro_market, ev.extracted_developer,
              ev.extracted_broker,
-             ev.accuracy_overall, ev.correction_notes, ev.evaluated_at)
+             ev.accuracy_overall, ev.correction_notes, ev.evaluated_at, ev.event_id)
         )
         self._commit()
         return cur.lastrowid
@@ -483,3 +584,127 @@ class SqliteStorage(Storage):
             "SELECT source, COUNT(*) as cnt FROM raw_messages GROUP BY source"
         ).fetchall()
         return {r["source"]: r["cnt"] for r in rows}
+
+    # ── Dashboard ──────────────────────────────────────────────
+
+    def dashboard_activity(self, today_prefix: str) -> dict:
+        db = self.db
+        total = db.execute(
+            "SELECT COUNT(*) as c FROM raw_messages WHERE timestamp LIKE ?",
+            (f"{today_prefix}%",)
+        ).fetchone()["c"]
+        return {"messages_today": total}
+
+    def dashboard_message_types_today(self, today_prefix: str) -> list[dict]:
+        rows = self.db.execute(
+            "SELECT p.intent, COUNT(*) as c FROM parsed_output p "
+            "JOIN raw_messages r ON r.id = p.raw_message_id "
+            "WHERE r.timestamp LIKE ? AND p.intent IS NOT NULL "
+            "GROUP BY p.intent ORDER BY c DESC",
+            (f"{today_prefix}%",)
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def dashboard_feed(self, limit: int = 20) -> list[dict]:
+        rows = self.db.execute(
+            "SELECT r.id, r.message, r.timestamp, r.group_name, r.sender, "
+            "p.intent, p.principal, p.broker_name, "
+            "p.bhk, p.price, p.price_unit, "
+            "p.building_name, p.landmark_name, p.micro_market, p.furnishing, "
+            "p.forwarded, p.profile_name, "
+            "d.final_confidence, d.method "
+            "FROM raw_messages r "
+            "LEFT JOIN parsed_output p ON p.raw_message_id = r.id "
+            "LEFT JOIN resolver_decisions d ON d.parsed_id = p.id "
+            "ORDER BY r.id DESC LIMIT ?",
+            (limit,)
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def dashboard_heatmap(self) -> list[dict]:
+        rows = self.db.execute(
+            "SELECT micro_market, COUNT(*) as c FROM parsed_output "
+            "WHERE micro_market IS NOT NULL AND micro_market != '' "
+            "GROUP BY micro_market ORDER BY c DESC"
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def dashboard_growth(self, today_prefix: str) -> dict:
+        rows = self.db.execute(
+            "SELECT DATE(created_at) as day, "
+            "building_name, landmark_name, developer "
+            "FROM parsed_output "
+            "WHERE building_name IS NOT NULL "
+            "   OR landmark_name IS NOT NULL "
+            "   OR developer IS NOT NULL "
+            "ORDER BY created_at"
+        ).fetchall()
+        daily = {}
+        seen_buildings = set()
+        seen_landmarks = set()
+        seen_developers = set()
+        all_buildings = set()
+        all_landmarks = set()
+        all_developers = set()
+        for r in rows:
+            day = r["day"]
+            if day not in daily:
+                daily[day] = {"buildings": set(), "landmarks": set(), "developers": set()}
+            b = r["building_name"]
+            l = r["landmark_name"]
+            d = r["developer"]
+            if b:
+                daily[day]["buildings"].add(b.lower().strip())
+                all_buildings.add(b.lower().strip())
+            if l:
+                daily[day]["landmarks"].add(l.lower().strip())
+                all_landmarks.add(l.lower().strip())
+            if d:
+                daily[day]["developers"].add(d.lower().strip())
+                all_developers.add(d.lower().strip())
+        cumulative = {"buildings": 0, "landmarks": 0, "developers": 0}
+        timeline = []
+        for day in sorted(daily):
+            day_data = daily[day]
+            new_b = 0
+            new_l = 0
+            new_d = 0
+            today_buildings = set()
+            for b in day_data["buildings"]:
+                if b not in seen_buildings:
+                    new_b += 1
+                    seen_buildings.add(b)
+                    today_buildings.add(b)
+            today_landmarks = set()
+            for l in day_data["landmarks"]:
+                if l not in seen_landmarks:
+                    new_l += 1
+                    seen_landmarks.add(l)
+                    today_landmarks.add(l)
+            today_developers = set()
+            for d in day_data["developers"]:
+                if d not in seen_developers:
+                    new_d += 1
+                    seen_developers.add(d)
+                    today_developers.add(d)
+            cumulative["buildings"] += new_b
+            cumulative["landmarks"] += new_l
+            cumulative["developers"] += new_d
+            timeline.append({
+                "day": day,
+                "new_buildings": new_b,
+                "new_landmarks": new_l,
+                "new_developers": new_d,
+                "cumulative_buildings": cumulative["buildings"],
+                "cumulative_landmarks": cumulative["landmarks"],
+                "cumulative_developers": cumulative["developers"],
+                "buildings": list(today_buildings),
+                "landmarks": list(today_landmarks),
+                "developers": list(today_developers),
+            })
+        return {
+            "timeline": timeline,
+            "total_buildings": len(all_buildings),
+            "total_landmarks": len(all_landmarks),
+            "total_developers": len(all_developers),
+        }

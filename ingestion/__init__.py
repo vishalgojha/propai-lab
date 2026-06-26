@@ -6,7 +6,7 @@ and registers itself via SourceRegistry. The scheduler uses this registry to
 discover jobs, fetch records, and run them through the pipeline.
 
 Usage:
-    from sources import SourceRegistry
+    from lab.ingestion import SourceRegistry
     registry = SourceRegistry()
     whatsapp = registry.get("whatsapp")
     jobs = whatsapp.discover_jobs()
@@ -14,9 +14,9 @@ Usage:
         ...
 """
 
-from sources.base import BaseSource, SourceRecord, SyncJob
-from sources.registry import SourceRegistry
+from lab.ingestion.base import BaseSource, SourceRecord, SyncJob
+from lab.ingestion.registry import SourceRegistry
 
-from sources.whatsapp import WhatsAppSource
+from lab.ingestion.whatsapp import WhatsAppSource
 
 __all__ = ["BaseSource", "SourceRecord", "SyncJob", "SourceRegistry", "WhatsAppSource"]

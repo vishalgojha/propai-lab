@@ -3,6 +3,7 @@ __pycache__/
 .env
 .api_key
 lab.db
+lab.db-*
 *.log
 /tmp/
 .DS_Store

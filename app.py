@@ -24,6 +24,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from lab.storage import SqliteStorage, RawMessage, ParsedObservation, ResolverDecision, Evaluation
+from lab.embedding import create_engine, observation_text, pack_embedding, EmbeddingEngine
 
 # ── Bootstrap path to reuse evidence engine ─────────────────────
 PROJECT_DIR = Path(__file__).parent.parent
@@ -35,6 +36,24 @@ from evidence.parsers import parse as broker_parse
 
 # ── Global storage (lazy-initialized, wired in lifespan) ────────
 storage: SqliteStorage | None = None
+
+# ── Global embedding engine ─────────────────────────────────────
+_embedder: EmbeddingEngine | None = None
+
+def get_embedder() -> EmbeddingEngine:
+    global _embedder
+    if _embedder is None:
+        _embedder = create_engine(prefer_fastembed=False)
+    return _embedder
+
+def compute_embedding(parsed: dict) -> bytes | None:
+    text = observation_text(parsed)
+    if text:
+        eng = get_embedder()
+        eng.partial_fit([text])
+        emb = eng.embed(text)
+        return pack_embedding(emb)
+    return None
 
 # ── Global scheduler (lazy-initialized, wired in lifespan) ────────
 _scheduler = None
@@ -52,14 +71,42 @@ def get_scheduler():
 # Parser — wraps existing evidence engine
 # ═══════════════════════════════════════════════════════════════
 
-def parse_message(raw_text: str) -> dict:
+_RE = __import__("re")
+
+
+def _extract_broker_from_signature(text: str) -> tuple[str | None, str | None]:
+    """Extract broker name + phone from signature block (end of message)."""
+    lines = [l.strip() for l in text.strip().split("\n") if l.strip()]
+    if len(lines) < 2:
+        return None, None
+    # Scan from bottom for signature patterns
+    name = None
+    phone = None
+    for i in range(len(lines) - 1, -1, -1):
+        line = lines[i]
+        # Phone line
+        phone_match = _RE.search(r'(\d{10})', line)
+        if phone_match and not phone:
+            phone = phone_match.group(1)
+            continue
+        # Name line — starts with uppercase word, not a phone/email/URL
+        if not name and _RE.match(r'^[A-Z][a-z]', line) and not _RE.search(r'\d{10}|@|http|\.com|www', line):
+            # Skip if it looks like a company name (ends with realty, prop, estate, etc.)
+            if not any(kw in line.lower() for kw in ["realty", "property", "estate", "realtors", "consultancy", "enterprises", "ventures"]):
+                name = line.strip()
+    return name, phone
+
+
+def parse_message(raw_text: str, profile_name: str | None = None) -> dict:
     """
     Parse a WhatsApp message into structured fields.
-    Uses existing broker parser + heuristics.
+    Broker-first extraction with intent/principal separation.
     """
     text = raw_text.strip()
+    lower = text.lower()
     result = {
-        "message_type": None,
+        "intent": None,
+        "principal": None,
         "bhk": None,
         "price": None,
         "price_unit": None,
@@ -74,41 +121,75 @@ def parse_message(raw_text: str) -> dict:
         "developer": None,
         "broker_name": None,
         "broker_phone": None,
+        "forwarded": 0,
         "confidence": 0.0,
         "raw_payload": {},
     }
 
-    # 1. Classify message type
-    lower = text.lower()
-    if any(x in lower for x in ["wanted", "require", "need ", "looking for", "buyer"]):
-        result["message_type"] = "BUYER"
-    elif any(x in lower for x in ["rent", "rental", "lease", "on lease", "for lease"]):
-        if any(x in lower for x in ["wanted", "require", "need "]):
-            result["message_type"] = "RENTAL_SEEKER"
-        else:
-            result["message_type"] = "RENTAL"
-    elif any(x in lower for x in ["sell", "owner", "direct", "available for"]):
-        result["message_type"] = "SELLER"
-    elif any(x in lower for x in ["commercial", "office", "shop", "showroom", "warehouse"]):
-        if any(x in lower for x in ["wanted", "require", "need "]):
-            result["message_type"] = "COMMERCIAL_SALE"
-        else:
-            result["message_type"] = "COMMERCIAL_RENTAL"
+    # ── 1. Principal (who is behind the message) ──────────────────
+    if _RE.search(r'\b(owner\s*(sale|direct|selling)?|direct\s*owner|owner\s*property)\b', lower):
+        result["principal"] = "Owner"
+    elif _RE.search(r'\b(client\s*(requirement|need|looking|want)|buyer\s*(requirement|need)|requirement)\b', lower):
+        result["principal"] = "Buyer Client"
     else:
-        result["message_type"] = "SELLER"
+        result["principal"] = "Unknown"
 
-    # 2. Extract BHK
-    import re
-    bhk_match = re.search(r'(\d+)\s*(bhk|rk|bedroom|b ed|b e d)', lower)
+    # ── 2. Intent (market action) ────────────────────────────────
+    is_need = bool(_RE.search(r'\b(wanted|require|need|looking for|seeking|want to|in need of)\b', lower))
+    is_pre_launch = bool(_RE.search(r'\b(pre.?launch|pre.?launching|upcoming project|new launch)\b', lower))
+    is_rent = bool(_RE.search(r'\b(rent|rental|on rent|for rent|lease|on lease|for lease|tenant)\b', lower))
+    is_commercial = bool(_RE.search(r'\b(commercial|office|shop|showroom|warehouse|godown|retail)\b', lower))
+    is_sell = bool(_RE.search(r'\b(sale|sell|selling|available|ready to move|resale|for sale)\b', lower))
+    is_buy = bool(_RE.search(r'\b(buy|buyer|purchase|wanted|require|need|looking for|seeking|requirement)\b', lower))
+
+    if is_pre_launch:
+        result["intent"] = "PRE-LAUNCH"
+    elif is_commercial and is_rent:
+        result["intent"] = "COMMERCIAL"
+    elif is_commercial:
+        result["intent"] = "COMMERCIAL"
+    elif is_rent and is_need:
+        result["intent"] = "RENT"
+    elif is_rent:
+        result["intent"] = "RENT"
+    elif is_sell:
+        result["intent"] = "SELL"
+    elif is_buy:
+        result["intent"] = "BUY"
+    else:
+        result["intent"] = "SELL"
+
+    # ── 3. Broker identity (highest confidence: profile_name > signature) ──
+    if profile_name and profile_name.lower() not in ("unknown", ""):
+        result["broker_name"] = profile_name.strip()
+    sig_name, sig_phone = _extract_broker_from_signature(text)
+    if sig_name:
+        # Signature is authoritative if no profile_name
+        if not result.get("broker_name"):
+            result["broker_name"] = sig_name
+    # Phone from signature
+    result["broker_phone"] = sig_phone
+    # Phone fallback from body
+    if not result["broker_phone"]:
+        phone_match = _RE.search(r'(\d{10})', text)
+        if phone_match:
+            result["broker_phone"] = phone_match.group(1)
+
+    # ── 4. Forwarded ─────────────────────────────────────────────
+    if _RE.search(r'\b(forwarded|fw[d]?[:.]?|from:|shared by|sent by)\b', lower):
+        result["forwarded"] = 1
+
+    # ── 5. Extract BHK ──────────────────────────────────────────
+    bhk_match = _RE.search(r'(\d+)\s*(bhk|rk|bedroom|b ed|b e d)', lower)
     if bhk_match:
         result["bhk"] = bhk_match.group(1) + " BHK"
-    elif re.search(r'\b(studio)\b', lower):
+    elif _RE.search(r'\b(studio)\b', lower):
         result["bhk"] = "Studio"
-    elif re.search(r'\b(1\s*\.\s*5)\s*bhk', lower):
+    elif _RE.search(r'\b(1\s*\.\s*5)\s*bhk', lower):
         result["bhk"] = "1.5 BHK"
 
-    # 3. Extract price — two-pass: with unit first, then absolute
-    price_match = re.search(
+    # ── 6. Extract price — two-pass: with unit first, then absolute ──
+    price_match = _RE.search(
         r'(?:rs\.?\s*|inr\s*|₹)?\s*([\d,]+(?:\.\d+)?)\s*(cr|crore|lac|lakh|l|k|thousand)\b',
         lower,
     )
@@ -125,8 +206,7 @@ def parse_message(raw_text: str) -> dict:
             result["price"] = amount * 1000
             result["price_unit"] = "K"
     else:
-        # Fallback: absolute price only if preceded by currency symbol
-        abs_match = re.search(
+        abs_match = _RE.search(
             r'(?:rs\.?\s*|inr\s*|₹)\s*([\d,]+(?:\.\d+)?)',
             lower,
         )
@@ -135,12 +215,12 @@ def parse_message(raw_text: str) -> dict:
             result["price"] = amount
             result["price_unit"] = "abs"
 
-    # 4. Extract area sqft
-    area_match = re.search(r'(\d+[\d,]*)\s*(sq\.?\s*ft|sqft|sft|sq\s*feet)', lower)
+    # ── 7. Extract area sqft ────────────────────────────────────
+    area_match = _RE.search(r'(\d+[\d,]*)\s*(sq\.?\s*ft|sqft|sft|sq\s*feet)', lower)
     if area_match:
         result["area_sqft"] = float(area_match.group(1).replace(",", ""))
 
-    # 5. Furnishing
+    # ── 8. Furnishing ───────────────────────────────────────────
     if any(x in lower for x in ["fully furnished", "fully fur", "ff"]):
         result["furnishing"] = "Fully Furnished"
     elif any(x in lower for x in ["semi furnished", "semi fur", "sf"]):
@@ -148,15 +228,7 @@ def parse_message(raw_text: str) -> dict:
     elif any(x in lower for x in ["unfurnished", "un furn", "uf", "un-furnished"]):
         result["furnishing"] = "Unfurnished"
 
-    # 6. Broker contacts
-    phone_match = re.search(r'(\d{10})', text)
-    if phone_match:
-        result["broker_phone"] = phone_match.group(1)
-    name_match = re.search(r'(?:name\s*[:.]?\s*)?([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)', text)
-    if name_match:
-        result["broker_name"] = name_match.group(1).strip()
-
-    # 7. Location — try to extract building/landmark/area
+    # ── 9. Location — extract building/landmark/area ────────────
     loc_keywords = [
         "at ", "in ", "near ", "opposite ", "opp. ", "behind ", "off ",
         "walkable ", "walking ", "walk ", "at ", "location ", "area ",
@@ -168,7 +240,6 @@ def parse_message(raw_text: str) -> dict:
         if idx >= 0:
             start = idx + len(kw)
             rest = text[start:].strip()
-            # Truncate at price/amount, contact, punctuation, or newline
             for sep in [
                 "\n", ". ", ", ", "contact", "call ", "whatsapp",
                 "price", "₹", "rs ", "budget", "for sale", "for rent",
@@ -178,9 +249,7 @@ def parse_message(raw_text: str) -> dict:
                 sep_idx = rest.lower().find(sep)
                 if sep_idx >= 0:
                     rest = rest[:sep_idx].strip()
-            # Also truncate at standalone numbers (prices)
-            rest = re.sub(r'\s+\d[\d,.]*(?:\s*(?:cr|crore|lac|lakh|k|thousand))?.*', '', rest, count=1).strip()
-            # Strip remaining spatial relation words (e.g. "distance from X" → "X")
+            rest = _RE.sub(r'\s+\d[\d,.]*(?:\s*(?:cr|crore|lac|lakh|k|thousand))?.*', '', rest, count=1).strip()
             for noise in ["distance from ", "distance to ", "walking distance from ", "walking distance to "]:
                 if rest.lower().startswith(noise):
                     rest = rest[len(noise):].strip()
@@ -190,16 +259,13 @@ def parse_message(raw_text: str) -> dict:
 
     if loc_match:
         result["location_raw"] = loc_match
-        # Don't pre-parse location text — let the resolver handle broker vocabulary.
-        # The resolver's built-in broker parser already handles station/road/circle
-        # suffix patterns and prefix relations (near, opposite, etc.).
         lm_tmp = loc_match.strip().lower().rstrip(".")
         if lm_tmp:
             result["landmark_name"] = lm_tmp
     elif len(text) < 200:
         result["location_raw"] = text
 
-    # 8. Developer mention
+    # ── 10. Developer mention ───────────────────────────────────
     dev_keywords = ["by ", "developer ", "builder ", "promoted by "]
     for kw in dev_keywords:
         idx = lower.find(kw)
@@ -475,7 +541,8 @@ def evaluate_parsed(raw_id: int, parsed: dict, expected: Optional[dict] = None):
     ev = Evaluation(raw_message_id=raw_id)
 
     extract_map = {
-        "message_type": "extracted_message_type",
+        "intent": "extracted_intent",
+        "principal": "extracted_principal",
         "bhk": "extracted_bhk",
         "price": "extracted_price",
         "price_unit": "extracted_price_unit",
@@ -493,7 +560,8 @@ def evaluate_parsed(raw_id: int, parsed: dict, expected: Optional[dict] = None):
         setattr(ev, field_name, parsed.get(extract_key))
 
     expected_map = {
-        "message_type": "expected_message_type",
+        "intent": "expected_intent",
+        "principal": "expected_principal",
         "bhk": "expected_bhk",
         "price": "expected_price",
         "price_unit": "expected_price_unit",
@@ -574,6 +642,8 @@ async def webhook(request: Request):
 
     # Try common Evolution API payload structures
     msg_data = data.get("data", data)
+    profile_name = None
+    push_name = None
     if isinstance(msg_data, dict):
         key = msg_data.get("key", {})
         msg_text = (
@@ -582,7 +652,10 @@ async def webhook(request: Request):
             or msg_data.get("text", "")
             or json.dumps(msg_data)
         )
-        sender = key.get("participant", "unknown") or msg_data.get("sender", {}).get("pushName", "unknown")
+        push_name = msg_data.get("sender", {}).get("pushName", "")
+        profile_name = msg_data.get("sender", {}).get("name", "") or push_name or ""
+        sender_jid = key.get("participant", "") or msg_data.get("sender", {}).get("id", "")
+        sender = _format_whatsapp_sender(push_name or profile_name, sender_jid)
         group = key.get("remoteJid", "unknown") or msg_data.get("from", "unknown")
         timestamp = msg_data.get("messageTimestamp", datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"))
         if isinstance(timestamp, (int, float)):
@@ -622,10 +695,12 @@ async def webhook(request: Request):
         return {"status": "duplicate", "raw_id": raw_id, "parsed_id": existing_parsed.id}
 
     # Parse and resolve
-    parsed = parse_message(msg_text)
+    parsed = parse_message(msg_text, profile_name=profile_name)
+    embedding_blob = compute_embedding(parsed)
     obs = ParsedObservation(
         raw_message_id=raw_id,
-        message_type=parsed.get("message_type"),
+        intent=parsed.get("intent"),
+        principal=parsed.get("principal"),
         bhk=parsed.get("bhk"),
         price=parsed.get("price"),
         price_unit=parsed.get("price_unit"),
@@ -640,8 +715,11 @@ async def webhook(request: Request):
         developer=parsed.get("developer"),
         broker_name=parsed.get("broker_name"),
         broker_phone=parsed.get("broker_phone"),
+        profile_name=profile_name,
+        forwarded=parsed.get("forwarded", 0),
         confidence=parsed.get("confidence", 0.0),
         raw_payload=json.dumps(parsed.get("raw_payload", {})),
+        embedding=embedding_blob,
     )
     parsed_id = storage.save_parsed(obs)
 
@@ -672,6 +750,27 @@ async def webhook(request: Request):
     return {"status": "ok", "raw_id": raw_id, "parsed_id": parsed_id}
 
 
+def _format_whatsapp_sender(name: str = "", jid: str = "") -> str:
+    clean_name = (name or "").strip()
+    phone = _phone_from_jid(jid)
+    if clean_name and phone:
+        return f"{clean_name} ({phone})"
+    return clean_name or phone or "unknown"
+
+
+def _phone_from_jid(jid: str = "") -> str:
+    digits = "".join(ch for ch in str(jid).split("@")[0] if ch.isdigit())
+    if not digits:
+        return ""
+    if digits.startswith("91") and len(digits) >= 12:
+        return f"+91 {digits[2:4]}{'X' * 6}{digits[10:12]}"
+    if len(digits) >= 10:
+        country = digits[:-10]
+        local = digits[-10:]
+        return f"+{country} {local[:2]}{'X' * 6}{local[-2:]}" if country else f"{local[:2]}{'X' * 6}{local[-2:]}"
+    return f"+{digits}"
+
+
 # ── Manual ingest endpoint (for testing) ────────────────────────
 
 class IngestRequest(BaseModel):
@@ -699,9 +798,11 @@ async def ingest(req: IngestRequest):
     ))
 
     parsed = parse_message(req.message)
+    embedding_blob = compute_embedding(parsed)
     obs = ParsedObservation(
         raw_message_id=raw_id,
-        message_type=parsed.get("message_type"),
+        intent=parsed.get("intent"),
+        principal=parsed.get("principal"),
         bhk=parsed.get("bhk"),
         price=parsed.get("price"),
         price_unit=parsed.get("price_unit"),
@@ -716,8 +817,10 @@ async def ingest(req: IngestRequest):
         developer=parsed.get("developer"),
         broker_name=parsed.get("broker_name"),
         broker_phone=parsed.get("broker_phone"),
+        forwarded=parsed.get("forwarded", 0),
         confidence=parsed.get("confidence", 0.0),
         raw_payload=json.dumps(parsed.get("raw_payload", {})),
+        embedding=embedding_blob,
     )
     parsed_id = storage.save_parsed(obs)
 
@@ -806,13 +909,392 @@ async def get_resolver_decisions(limit: int = 50, offset: int = 0, method: str =
 
 
 @app.get("/api/failed")
-async def get_failed(limit: int = 50):
-    return storage.get_failed(limit)
+async def get_failed(limit: int = 50, offset: int = 0):
+    return storage.get_failed(limit, offset)
 
 
 @app.get("/api/stats")
 async def get_stats():
     return storage.get_stats()
+
+
+# ── Market Intelligence Dashboard ────────────────────────────────
+
+def _today_prefix():
+    from datetime import timezone
+    return datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+
+def _load_evidence_cache():
+    """Lazy-load evidence cache for dashboard counts."""
+    try:
+        from evidence.resolver import _load_registry, _load_landmarks, CACHE
+        _load_registry()
+        _load_landmarks()
+        return CACHE
+    except Exception:
+        return {}
+
+
+@app.get("/api/dashboard/activity")
+async def dashboard_activity():
+    """Today's market activity: messages, new sellers, buyers, rentals, etc."""
+    today = _today_prefix()
+    activity = storage.dashboard_activity(today)
+    types = storage.dashboard_message_types_today(today)
+    type_map = {}
+    for t in types:
+        type_map[t["intent"]] = t["c"]
+    activity["message_types"] = type_map
+    return activity
+
+
+@app.get("/api/dashboard/coverage")
+async def dashboard_coverage():
+    """Market memory: groups, messages stored, buildings, landmarks etc."""
+    stats = storage.get_stats()
+    cache = _load_evidence_cache()
+    buildings = cache.get("buildings", {})
+    landmarks = cache.get("landmarks_by_name", {})
+    dev_buildings = cache.get("dev_buildings", {})
+    micro_markets = set()
+    for lm in cache.get("landmarks_list", []):
+        mm = lm.get("micro_market")
+        if mm:
+            micro_markets.add(mm)
+    jobs = storage.get_sync_jobs(limit=500)
+    group_ids = set(j.group_id for j in jobs)
+    synced_jobs = [j for j in jobs if j.records_processed and j.records_processed > 0]
+    messages_from_groups = sum(j.records_processed or 0 for j in jobs)
+    return {
+        "groups_connected": len(group_ids),
+        "messages_stored": stats["total_raw"],
+        "messages_from_groups": messages_from_groups,
+        "buildings_known": len(buildings),
+        "landmarks_known": len(landmarks),
+        "developers_known": len(dev_buildings),
+        "micro_markets_known": len(micro_markets),
+    }
+
+
+@app.get("/api/dashboard/feed")
+async def dashboard_feed(limit: int = 20):
+    """Live intelligence feed of latest messages."""
+    return storage.dashboard_feed(limit)
+
+
+@app.get("/api/dashboard/heatmap")
+async def dashboard_heatmap():
+    """Listings per micro market."""
+    return storage.dashboard_heatmap()
+
+
+@app.get("/api/dashboard/sync-activity")
+async def dashboard_sync_activity():
+    """Currently reading group and sync progress."""
+    scheduler = get_scheduler()
+    st = scheduler.status()
+    from lab.scheduler import get_jobs
+    jobs = get_jobs(source="whatsapp", status="running")
+    running = None
+    if jobs:
+        j = jobs[0]
+        running = {
+            "group_name": j.get("group_name", j.get("group_id", "")),
+            "group_id": j.get("group_id", ""),
+            "records_found": j.get("records_found", 0),
+            "records_processed": j.get("records_processed", 0),
+        }
+    overall = st.get("overall", "idle")
+    return {
+        "overall": overall,
+        "total_jobs": len(get_jobs(source="whatsapp")),
+        "running": running,
+    }
+
+
+@app.get("/api/dashboard/graph-growth")
+async def dashboard_graph_growth():
+    """Today's knowledge graph growth: new buildings, landmarks, etc."""
+    today = _today_prefix()
+    growth = storage.dashboard_growth(today)
+    cache = _load_evidence_cache()
+    known_buildings = set(k.lower() for k in cache.get("buildings", {}))
+    known_landmarks = set(k.lower() for k in cache.get("landmarks_by_name", {}))
+    today_timeline = growth["timeline"][-1] if growth["timeline"] else None
+    today_new = {
+        "buildings": [],
+        "landmarks": [],
+        "developers": [],
+    }
+    if today_timeline and today_timeline["day"] == today:
+        for b in today_timeline.get("buildings", []):
+            today_new["buildings"].append({
+                "name": b,
+                "known_in_evidence": b in known_buildings,
+            })
+        for l in today_timeline.get("landmarks", []):
+            today_new["landmarks"].append({
+                "name": l,
+                "known_in_evidence": l in known_landmarks,
+            })
+        for d in today_timeline.get("developers", []):
+            today_new["developers"].append({
+                "name": d,
+                "known_in_evidence": False,
+            })
+    return {
+        "timeline": growth["timeline"],
+        "totals": {
+            "buildings": growth["total_buildings"],
+            "landmarks": growth["total_landmarks"],
+            "developers": growth["total_developers"],
+        },
+        "today_new": today_new,
+    }
+
+
+@app.get("/api/dashboard/whatsapp-status")
+async def dashboard_whatsapp_status():
+    """Detailed WhatsApp connection status."""
+    from lab.ingestion.whatsapp import WhatsAppSource
+    import httpx
+    src = WhatsAppSource()
+    connected = src.validate_connection()
+    detail = {"connected": connected, "instance": EVOLUTION_INSTANCE}
+    if connected:
+        try:
+            data = src._get(f"instance/fetchInstances", timeout=10)
+            instances = data if isinstance(data, list) else []
+            for inst in instances:
+                if inst.get("name") == EVOLUTION_INSTANCE:
+                    detail["phone"] = inst.get("ownerJid", "").split("@")[0]
+                    detail["profile"] = inst.get("profileName", "")
+                    detail["status"] = inst.get("connectionStatus", "")
+                    break
+            state_data = src._get(f"instance/connectionState/{EVOLUTION_INSTANCE}", timeout=10)
+            detail["state"] = state_data.get("instance", {}).get("state", "")
+        except Exception:
+            pass
+    return detail
+
+
+# ═══════════════════════════════════════════════════════════════
+# AI Layer — read-only intelligence endpoints
+# ═══════════════════════════════════════════════════════════════
+
+class QueryRequest(BaseModel):
+    query: str
+    k: int = 10
+
+
+@app.post("/api/ai/query")
+async def ai_query(req: QueryRequest):
+    """Natural language query over observations using semantic search.
+    Embeds the query text, finds nearest neighbours via cosine similarity.
+    Returns matching observations with similarity scores.
+    """
+    eng = get_embedder()
+    eng.partial_fit([req.query])
+    emb = eng.embed(req.query)
+    blob = pack_embedding(emb)
+    results = storage.knn_search(blob, k=req.k)
+    return {"query": req.query, "count": len(results), "results": results}
+
+
+@app.get("/api/ai/similar/{observation_id}")
+async def ai_similar(observation_id: int, k: int = 10):
+    """Find observations semantically similar to a given observation."""
+    detail = storage.get_observation_detail(observation_id)
+    parsed = detail.get("parsed", {})
+    emb = parsed.get("embedding")
+    if not emb:
+        raise HTTPException(404, "Observation has no embedding")
+    results = storage.knn_search(emb, k=k + 1)
+    filtered = [r for r in results if r.get("id") != parsed.get("id")][:k]
+    return {"observation_id": observation_id, "count": len(filtered), "results": filtered}
+
+
+@app.get("/api/ai/explain/{observation_id}")
+async def ai_explain(observation_id: int):
+    """Deterministic explanation of why the parser classified an observation as it did."""
+    detail = storage.get_observation_detail(observation_id)
+    parsed = detail.get("parsed", {})
+    raw = detail.get("raw", {})
+    if not parsed:
+        raise HTTPException(404, "Observation not found")
+
+    raw_text = raw.get("message", "")
+    lower = raw_text.lower()
+
+    rules = []
+
+    # ── Intent rules ──
+    if parsed.get("intent") == "PRE-LAUNCH":
+        rules.append("intent=PRE-LAUNCH: matched pre-launch/new-launch keywords")
+    elif parsed.get("intent") == "COMMERCIAL":
+        rules.append("intent=COMMERCIAL: matched commercial keywords (office/shop/warehouse)")
+    elif parsed.get("intent") == "RENT":
+        rules.append("intent=RENT: matched rental keywords (rent/lease)")
+    elif parsed.get("intent") == "SELL":
+        if any(x in lower for x in ["sale", "sell", "selling", "available", "ready to move", "resale", "for sale"]):
+            rules.append("intent=SELL: matched sale keywords")
+        else:
+            rules.append("intent=SELL: default (no buy/rent/pre-launch keywords detected)")
+    elif parsed.get("intent") == "BUY":
+        rules.append("intent=BUY: matched buy/requirement keywords")
+
+    # ── Principal rules ──
+    if parsed.get("principal") == "Owner":
+        rules.append("principal=Owner: matched owner-sale/direct-owner pattern")
+    elif parsed.get("principal") == "Buyer Client":
+        rules.append("principal=Buyer Client: matched client-requirement/buyer-need pattern")
+    else:
+        rules.append("principal=Unknown: no owner or buyer-client pattern detected")
+
+    # ── Broker rules ──
+    broker = parsed.get("broker_name")
+    profile = parsed.get("profile_name")
+    if profile:
+        rules.append(f"broker_name='{broker}' from WhatsApp profile name")
+    elif broker:
+        rules.append(f"broker_name='{broker}' from signature block (bottom-up extraction)")
+
+    # ── Forwarded ──
+    if parsed.get("forwarded"):
+        rules.append("forwarded=1: message contains forwarded indicator")
+
+    # ── Field extraction ──
+    if parsed.get("bhk"):
+        rules.append(f"bhk='{parsed['bhk']}': matched BHK pattern")
+    if parsed.get("price"):
+        rules.append(f"price={parsed['price']} {parsed.get('price_unit','')}: matched price pattern")
+    if parsed.get("area_sqft"):
+        rules.append(f"area_sqft={parsed['area_sqft']}: matched area pattern")
+    if parsed.get("furnishing"):
+        rules.append(f"furnishing='{parsed['furnishing']}': matched furnishing keyword")
+    if parsed.get("building_name"):
+        rules.append(f"building_name='{parsed['building_name']}': extracted from location")
+    if parsed.get("landmark_name"):
+        rules.append(f"landmark_name='{parsed['landmark_name']}': extracted from location")
+    if parsed.get("micro_market"):
+        rules.append(f"micro_market='{parsed['micro_market']}': extracted from location")
+
+    # ── Resolver ──
+    resolver = detail.get("resolver", {})
+    if resolver.get("method") == "resolved":
+        rules.append(f"resolver={resolver['method']}: matched building #{resolver.get('building_id')} "
+                      f"({resolver.get('building_name', 'unknown')}) with confidence {resolver.get('resolver_confidence', 0)}")
+    elif resolver.get("failure_category"):
+        rules.append(f"resolver={resolver['method']}: {resolver['failure_category']}")
+
+    return {
+        "observation_id": observation_id,
+        "parsed": {k: v for k, v in parsed.items() if v is not None and k != "embedding"},
+        "rules": rules,
+    }
+
+
+@app.get("/api/ai/summary")
+async def ai_summary():
+    """Daily market summary: what happened today across all observations."""
+    today = _today_prefix()
+    activity = storage.dashboard_activity(today)
+    types = storage.dashboard_message_types_today(today)
+    type_map = {t["intent"]: t["c"] for t in types}
+
+    growth = storage.dashboard_growth(today)
+    today_timeline = growth["timeline"][-1] if growth["timeline"] else None
+
+    top_brokers = storage.get_top_brokers_today(today)
+    heat = storage.dashboard_heatmap()
+    top_markets = [h for h in heat if h.get("c", 0) > 0][:10]
+
+    return {
+        "date": today,
+        "messages_today": activity.get("messages_today", 0),
+        "message_types": type_map,
+        "growth": {
+            "new_buildings": today_timeline.get("new_buildings", 0) if today_timeline else 0,
+            "new_landmarks": today_timeline.get("new_landmarks", 0) if today_timeline else 0,
+            "new_developers": today_timeline.get("new_developers", 0) if today_timeline else 0,
+        },
+        "top_brokers": top_brokers,
+        "hot_markets": top_markets,
+    }
+
+
+@app.get("/api/ai/broker/{broker_name:path}")
+async def ai_broker(broker_name: str):
+    """Broker intelligence from aggregated observations."""
+    observations = storage.get_observations_by_broker(broker_name)
+    if not observations:
+        raise HTTPException(404, f"No observations for broker: {broker_name}")
+    total = len(observations)
+    intents = {}
+    buildings = set()
+    markets = set()
+    prices = []
+    for o in observations:
+        i = o.get("intent")
+        if i:
+            intents[i] = intents.get(i, 0) + 1
+        b = o.get("building_name")
+        if b:
+            buildings.add(b)
+        m = o.get("micro_market")
+        if m:
+            markets.add(m)
+        p = o.get("price")
+        if p:
+            prices.append(p)
+    avg_price = round(sum(prices) / len(prices), 2) if prices else None
+    last_5 = observations[:5]
+    for o in last_5:
+        o.pop("embedding", None)
+    return {
+        "broker_name": broker_name,
+        "total_observations": total,
+        "intent_breakdown": intents,
+        "unique_buildings": list(buildings),
+        "unique_markets": list(markets),
+        "avg_price": avg_price,
+        "last_observations": last_5,
+    }
+
+
+@app.get("/api/ai/building/{building_name:path}")
+async def ai_building(building_name: str):
+    """Building memory from observations mentioning this building."""
+    observations = storage.get_observations_by_building(building_name)
+    if not observations:
+        raise HTTPException(404, f"No observations for building: {building_name}")
+    total = len(observations)
+    intents = {}
+    prices = []
+    brokers = set()
+    for o in observations:
+        i = o.get("intent")
+        if i:
+            intents[i] = intents.get(i, 0) + 1
+        p = o.get("price")
+        if p:
+            prices.append(p)
+        b = o.get("broker_name")
+        if b:
+            brokers.add(b)
+    avg_price = round(sum(prices) / len(prices), 2) if prices else None
+    last_5 = observations[:5]
+    for o in last_5:
+        o.pop("embedding", None)
+    return {
+        "building_name": building_name,
+        "total_observations": total,
+        "intent_breakdown": intents,
+        "unique_brokers": list(brokers),
+        "avg_price": avg_price,
+        "last_observations": last_5,
+    }
 
 
 @app.get("/api/evaluations")
@@ -884,7 +1366,7 @@ async def replay_all():
 @app.get("/api/sources")
 async def list_sources():
     """List all registered sources."""
-    from lab.sources.registry import get_registry
+    from lab.ingestion.registry import get_registry
     reg = get_registry()
     sources = []
     for s in reg.all():
@@ -948,7 +1430,7 @@ async def source_sync(source_name: str):
     scheduler = get_scheduler()
     if scheduler.is_running:
         raise HTTPException(409, "Scheduler already running")
-    from lab.sources.registry import get_registry
+    from lab.ingestion.registry import get_registry
     if not get_registry().get(source_name):
         raise HTTPException(404, f"Unknown source: {source_name}")
     started = scheduler.start(source=source_name)
@@ -960,7 +1442,7 @@ async def source_sync(source_name: str):
 @app.get("/api/sources/{source_name}")
 async def get_source(source_name: str):
     """Get details for a specific source."""
-    from lab.sources.registry import get_registry
+    from lab.ingestion.registry import get_registry
     s = get_registry().get(source_name)
     if not s:
         raise HTTPException(404, f"Unknown source: {source_name}")
@@ -999,14 +1481,55 @@ async def sync_groups_legacy():
 @app.get("/api/sync/connection")
 async def sync_connection():
     """Check WhatsApp (Evolution API) connection status."""
-    from lab.sources.whatsapp import WhatsAppSource
+    from lab.ingestion.whatsapp import WhatsAppSource
     src = WhatsAppSource()
-    connected = src.validate_connection()
-    return {
-        "connected": connected,
-        "instance": EVOLUTION_INSTANCE,
+    details = src.connection_details()
+    jobs = storage.get_sync_jobs(limit=500, source="whatsapp") if storage else []
+    last_finished = max((j.finished_at for j in jobs if j.finished_at), default=None)
+    discovered_groups = len(jobs)
+    if details.get("total_groups") is None or discovered_groups > details.get("total_groups", 0):
+        details["total_groups"] = discovered_groups
+    details.update({
         "api_url": EVOLUTION_API_URL,
-    }
+        "historical_sync_state": _historical_sync_state(jobs),
+        "last_sync": last_finished,
+        "discovered_jobs": discovered_groups,
+        "historical_messages": sum(j.records_processed or 0 for j in jobs),
+        "messages_found": sum(j.records_found or 0 for j in jobs),
+        "top_message_groups": _top_message_groups(jobs),
+    })
+    return details
+
+
+def _historical_sync_state(jobs) -> str:
+    if not jobs:
+        return "not_started"
+    if all((j.records_found or 0) == 0 and (j.records_processed or 0) == 0 for j in jobs):
+        return "no_historical_messages"
+    statuses = {j.status for j in jobs}
+    if "running" in statuses:
+        return "running"
+    if "failed" in statuses:
+        return "error"
+    if statuses and statuses <= {"complete"}:
+        return "complete"
+    return "partial"
+
+
+def _top_message_groups(jobs, limit: int = 5) -> list[dict]:
+    ranked = sorted(
+        jobs,
+        key=lambda j: max(j.records_found or 0, j.records_processed or 0),
+        reverse=True,
+    )
+    return [
+        {
+            "group_name": j.group_name or j.group_id,
+            "group_id": j.group_id,
+            "messages": max(j.records_found or 0, j.records_processed or 0),
+        }
+        for j in ranked[:limit]
+    ]
 
 
 # ── Admin UI (single HTML page) ─────────────────────────────────
