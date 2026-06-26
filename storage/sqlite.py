@@ -174,7 +174,14 @@ class SqliteStorage(Storage):
 
     def get_parsed(self, limit: int = 50, offset: int = 0) -> list[dict]:
         rows = self.db.execute(
-            """SELECT p.*, r.message as raw_message
+            """SELECT p.id, p.raw_message_id, p.intent, p.principal, p.bhk,
+                      p.price, p.price_unit, p.area_sqft, p.furnishing,
+                      p.location_raw, p.building_name, p.landmark_name,
+                      p.street_name, p.area, p.micro_market, p.developer,
+                      p.broker_name, p.broker_phone, p.profile_name,
+                      p.forwarded, p.confidence, p.raw_payload, p.event_id,
+                      p.created_at,
+                      r.message as raw_message
                FROM parsed_output p
                JOIN raw_messages r ON r.id = p.raw_message_id
                ORDER BY p.id DESC LIMIT ? OFFSET ?""",
@@ -301,7 +308,14 @@ class SqliteStorage(Storage):
 
     def get_observations_by_broker(self, broker_name: str) -> list[dict]:
         rows = self.db.execute(
-            """SELECT p.*, r.message as raw_message
+            """SELECT p.id, p.raw_message_id, p.intent, p.principal, p.bhk,
+                      p.price, p.price_unit, p.area_sqft, p.furnishing,
+                      p.location_raw, p.building_name, p.landmark_name,
+                      p.street_name, p.area, p.micro_market, p.developer,
+                      p.broker_name, p.broker_phone, p.profile_name,
+                      p.forwarded, p.confidence, p.raw_payload, p.event_id,
+                      p.created_at,
+                      r.message as raw_message
                FROM parsed_output p
                JOIN raw_messages r ON r.id = p.raw_message_id
                WHERE p.broker_name = ? ORDER BY p.id DESC""",
@@ -311,7 +325,14 @@ class SqliteStorage(Storage):
 
     def get_observations_by_building(self, building_name: str) -> list[dict]:
         rows = self.db.execute(
-            """SELECT p.*, r.message as raw_message
+            """SELECT p.id, p.raw_message_id, p.intent, p.principal, p.bhk,
+                      p.price, p.price_unit, p.area_sqft, p.furnishing,
+                      p.location_raw, p.building_name, p.landmark_name,
+                      p.street_name, p.area, p.micro_market, p.developer,
+                      p.broker_name, p.broker_phone, p.profile_name,
+                      p.forwarded, p.confidence, p.raw_payload, p.event_id,
+                      p.created_at,
+                      r.message as raw_message
                FROM parsed_output p
                JOIN raw_messages r ON r.id = p.raw_message_id
                WHERE LOWER(p.building_name) = LOWER(?) ORDER BY p.id DESC""",
@@ -552,6 +573,7 @@ class SqliteStorage(Storage):
             (obs_id,)
         ).fetchone()
         parsed_dict = dict(parsed_row) if parsed_row else {}
+        parsed_dict.pop("embedding", None)
         resolver_dict = {}
         if parsed_dict:
             r_row = db.execute(
