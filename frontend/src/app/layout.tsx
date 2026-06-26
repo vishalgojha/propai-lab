@@ -10,7 +10,7 @@ const navItems = [
   { href: "/extractions", label: "Properties", icon: "🏢" },
   { href: "/brokers", label: "Brokers", icon: "👤" },
   { href: "/market", label: "Markets", icon: "📍" },
-  { href: "/intelligence", label: "Intelligence", icon: "📈" },
+  { href: "/search", label: "Search", icon: "🔍" },
   { href: "/settings", label: "Settings", icon: "⚙" },
 ];
 

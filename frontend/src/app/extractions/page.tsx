@@ -42,10 +42,10 @@ export default function ExtractionsPage() {
               const waLink = phone.length === 10 ? `https://wa.me/91${phone}` : "";
               return (
                 <tr key={r.id} className="hover:bg-[#0d1117]">
-                  <td className="px-2.5 py-2 border-b border-[rgba(255,255,255,0.06)]">
-                    <span className="text-[#58a6ff] font-semibold">P{r.id}</span>
-                    <div className="text-[10px] text-[#64748b]">{r.raw_group}</div>
-                  </td>
+                <td className="px-2.5 py-2 border-b border-[rgba(255,255,255,0.06)]">
+                  <a href={`/observations/${r.raw_message_id}`} className="text-[#58a6ff] font-semibold no-underline hover:underline">P{r.id}</a>
+                  <div className="text-[10px] text-[#64748b]">{r.raw_group}</div>
+                </td>
                   <td className="px-2.5 py-2 border-b border-[rgba(255,255,255,0.06)] font-semibold">
                     {r.broker_name || "—"}
                     {waLink && <div><a href={waLink} target="_blank" className="text-[10px] text-[#3b82f6] no-underline">wa.me/{phone}</a></div>}

@@ -328,6 +328,16 @@ class SyncScheduler:
                     processed += 1
                     with self._lock:
                         self._status["records_processed"] += 1
+                    # Publish sync progress event (lazy import to avoid circular)
+                    try:
+                        from lab.events import get_bus
+                        get_bus().publish("sync.progress", {
+                            "job_id": job_id, "group": job.group_name,
+                            "processed": processed, "found": found,
+                            "total_processed": self._status.get("records_processed", 0),
+                        })
+                    except Exception:
+                        pass
                 except Exception as e:
                     failed += 1
                     with self._lock:
@@ -343,6 +353,14 @@ class SyncScheduler:
             update_job(job_id, status=status, records_found=found, records_processed=processed,
                        records_failed=failed, last_cursor=str(found),
                        finished_at=datetime.now(timezone.utc).isoformat())
+            try:
+                from lab.events import get_bus
+                get_bus().publish("sync.completed", {
+                    "job_id": job_id, "group": job.group_name,
+                    "status": status, "processed": processed, "found": found, "failed": failed,
+                })
+            except Exception:
+                pass
             return status == JOB_STATUS_COMPLETE
 
         except Exception as e:

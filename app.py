@@ -7,6 +7,7 @@ Flow:
 import json
 import os
 import sys
+import asyncio
 import uuid
 import re
 import base64
@@ -18,7 +19,7 @@ from contextlib import asynccontextmanager
 from dataclasses import asdict
 
 from fastapi import FastAPI, Request, HTTPException
-from fastapi.responses import Response
+from fastapi.responses import Response, StreamingResponse
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -26,6 +27,7 @@ from pydantic import BaseModel
 from lab.storage import SqliteStorage, RawMessage, ParsedObservation, ResolverDecision, Evaluation
 from lab.embedding import create_engine, observation_text, pack_embedding, EmbeddingEngine
 from lab.location import parse_location
+from lab.events import get_bus
 
 # ── Bootstrap path to reuse evidence engine ─────────────────────
 PROJECT_DIR = Path(__file__).parent.parent
@@ -669,6 +671,9 @@ async def webhook(request: Request):
         pipeline_version=PIPELINE_VERSION,
         synced_at=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     ))
+    get_bus().publish("message.received", {
+        "raw_id": raw_id, "group": group, "sender": sender, "message": msg_text[:200],
+    })
 
     # Check if this was a duplicate (existing raw_id returned)
     existing_parsed = None
@@ -707,6 +712,10 @@ async def webhook(request: Request):
         embedding=embedding_blob,
     )
     parsed_id = storage.save_parsed(obs)
+    get_bus().publish("extraction.completed", {
+        "parsed_id": parsed_id, "raw_id": raw_id,
+        "intent": parsed.get("intent"), "broker": parsed.get("broker_name"),
+    })
 
     resolver_result = resolve_parsed(parsed, msg_text)
     resolver_result["parsed_id"] = parsed_id
@@ -731,6 +740,12 @@ async def webhook(request: Request):
         error=resolver_result.get("error"),
     )
     storage.save_resolver_decision(dec)
+    get_bus().publish("resolution.completed", {
+        "parsed_id": parsed_id, "raw_id": raw_id,
+        "building": resolver_result.get("building_name"),
+        "method": resolver_result.get("method", "unresolved"),
+        "confidence": resolver_result.get("final_confidence", 0),
+    })
 
     return {"status": "ok", "raw_id": raw_id, "parsed_id": parsed_id}
 
@@ -1601,6 +1616,30 @@ async def search_messages(q: str = ""):
         LIMIT 50
     """, [f"%{q}%"] * 5)
     return [dict(r) for r in results]
+
+
+# ── SSE Event Stream ──────────────────────────────────────────────
+
+@app.get("/api/events")
+async def event_stream(request: Request):
+    """Server-Sent Events endpoint. Subscribe to pipeline events."""
+    bus = get_bus()
+    queue = bus.sse_queue()
+
+    async def generate():
+        try:
+            while True:
+                if await request.is_disconnected():
+                    break
+                try:
+                    event = await asyncio.wait_for(queue.get(), timeout=15)
+                    yield f"event: {event['type']}\ndata: {json.dumps(event)}\n\n"
+                except asyncio.TimeoutError:
+                    yield ": keepalive\n\n"
+        finally:
+            bus.remove_queue(queue)
+
+    return StreamingResponse(generate(), media_type="text/event-stream")
 
 
 # ── Root redirect to Next.js frontend ────────────────────────────

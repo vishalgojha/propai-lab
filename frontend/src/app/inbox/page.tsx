@@ -38,12 +38,15 @@ export default function InboxPage() {
               <th className="text-left px-2.5 py-2 border-b border-[rgba(255,255,255,0.1)] text-[11px] text-[#64748b] uppercase tracking-wider">Message</th>
               <th className="text-left px-2.5 py-2 border-b border-[rgba(255,255,255,0.1)] text-[11px] text-[#64748b] uppercase tracking-wider">Type</th>
               <th className="text-left px-2.5 py-2 border-b border-[rgba(255,255,255,0.1)] text-[11px] text-[#64748b] uppercase tracking-wider">Timestamp</th>
+              <th className="text-left px-2.5 py-2 border-b border-[rgba(255,255,255,0.1)] text-[11px] text-[#64748b] uppercase tracking-wider"></th>
             </tr>
           </thead>
           <tbody>
             {filtered.map(m => (
               <tr key={m.id} className="hover:bg-[#0d1117]">
-                <td className="px-2.5 py-2 border-b border-[rgba(255,255,255,0.06)] text-[#58a6ff] cursor-pointer">#{m.id}</td>
+                <td className="px-2.5 py-2 border-b border-[rgba(255,255,255,0.06)]">
+                  <a href={`/observations/${m.id}`} className="text-[#58a6ff] no-underline hover:underline">#{m.id}</a>
+                </td>
                 <td className="px-2.5 py-2 border-b border-[rgba(255,255,255,0.06)] max-w-[200px] truncate">{m.group_name}</td>
                 <td className="px-2.5 py-2 border-b border-[rgba(255,255,255,0.06)] max-w-[200px] truncate">{m.sender}</td>
                 <td className="px-2.5 py-2 border-b border-[rgba(255,255,255,0.06)] max-w-[300px] truncate">{m.message}</td>

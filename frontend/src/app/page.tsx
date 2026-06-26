@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import * as api from "@/lib/api";
+import { useEventStream } from "@/lib/useEventStream";
 
 export default function DashboardPage() {
   const [activity, setActivity] = useState<api.DashboardActivity | null>(null);
@@ -11,29 +12,35 @@ export default function DashboardPage() {
   const [stats, setStats] = useState<any>({});
   const [wa, setWA] = useState<api.WhatsAppStatus | null>(null);
 
-  useEffect(() => {
-    async function load() {
-      try {
-        const [a, c, f, h, s, w] = await Promise.all([
-          api.getDashboardActivity(),
-          api.getDashboardCoverage(),
-          api.getDashboardFeed(),
-          api.getDashboardHeatmap(),
-          api.getStats(),
-          api.getWhatsAppStatus(),
-        ]);
-        setActivity(a);
-        setCoverage(c);
-        setFeed(f);
-        setHeatmap(h);
-        setStats(s);
-        setWA(w);
-      } catch (e) { console.error(e); }
-    }
-    load();
-    const id = setInterval(load, 10000);
-    return () => clearInterval(id);
+  const loadAll = useCallback(async () => {
+    try {
+      const [a, c, f, h, s, w] = await Promise.all([
+        api.getDashboardActivity(),
+        api.getDashboardCoverage(),
+        api.getDashboardFeed(),
+        api.getDashboardHeatmap(),
+        api.getStats(),
+        api.getWhatsAppStatus(),
+      ]);
+      setActivity(a);
+      setCoverage(c);
+      setFeed(f);
+      setHeatmap(h);
+      setStats(s);
+      setWA(w);
+    } catch (e) { console.error(e); }
   }, []);
+
+  useEffect(() => { loadAll(); }, [loadAll]);
+
+  // Subscribe to SSE events — reload data on changes
+  useEventStream({
+    "message.received": loadAll,
+    "extraction.completed": loadAll,
+    "resolution.completed": loadAll,
+    "sync.completed": loadAll,
+    "connection.changed": loadAll,
+  });
 
   const types = activity?.message_types || {};
   const maxHeat = heatmap.length > 0 ? heatmap[0].c : 1;
