@@ -6,13 +6,13 @@ import "./globals.css";
 import { getConnectionState, getWhatsAppStatus, ConnectionState, WhatsAppStatus } from "@/lib/api";
 
 const navItems = [
-  { href: "/", label: "Dashboard", icon: "🏠" },
+  { href: "/", label: "Dashboard", icon: "📊" },
   { href: "/inbox", label: "Messages", icon: "💬" },
-  { href: "/extractions", label: "Properties", icon: "🏢" },
+  { href: "/extractions", label: "Inventory", icon: "🏗️" },
   { href: "/requirements", label: "Requirements", icon: "📋" },
-  { href: "/brokers", label: "Brokers", icon: "👤" },
+  { href: "/brokers", label: "Brokers", icon: "🤝" },
   { href: "/groups", label: "Groups", icon: "👥" },
-  { href: "/market", label: "Markets", icon: "📍" },
+  { href: "/market", label: "Markets", icon: "🗺️" },
   { href: "/search", label: "Search", icon: "🔍" },
   { href: "/chat", label: "AI Chat", icon: "🤖" },
   { href: "/settings", label: "Settings", icon: "⚙" },

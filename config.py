@@ -23,6 +23,10 @@ EVOLUTION_API_KEY = _EVOLUTION_API_KEY_ENV or (LAB_DIR / ".api_key").read_text()
 EVOLUTION_INSTANCE = os.getenv("EVOLUTION_INSTANCE", "propai-scraper")
 EVOLUTION_SYNC_DELAY_MS = int(os.getenv("EVOLUTION_SYNC_DELAY_MS", "500"))
 
+# PropAI webhook URL that Evolution API sends events to
+# Set this if the auto-detected URL (host.docker.internal:PORT) is wrong
+PROPAI_WEBHOOK_URL = os.getenv("PROPAI_WEBHOOK_URL", "")
+
 # Evidence Engine paths (reused)
 EVIDENCE_DIR = PROJECT_DIR / "evidence"
 REGISTRY_DIR = PROJECT_DIR / "registry"
@@ -44,8 +48,33 @@ if not DOUBLEWORD_API_KEY and _DW_KEY_FILE.exists():
     except (json.JSONDecodeError, OSError):
         pass
 
+# Group allowlist — only track these WhatsApp groups
+# File: config.py's directory /group_allowlist.json — array of group JIDs or name substrings
+# If empty or missing, ALL groups are tracked.
+GROUP_ALLOWLIST_PATH = LAB_DIR / "group_allowlist.json"
+
+def load_group_allowlist() -> list[str]:
+    if not GROUP_ALLOWLIST_PATH.exists():
+        return []
+    import json
+    try:
+        raw = json.loads(GROUP_ALLOWLIST_PATH.read_text())
+        if isinstance(raw, list):
+            return [str(x).strip() for x in raw if x]
+        return []
+    except (json.JSONDecodeError, OSError):
+        return []
+
+def save_group_allowlist(entries: list[str]):
+    import json
+    GROUP_ALLOWLIST_PATH.write_text(json.dumps(entries, indent=2))
+
+# Feature flags
+ENABLE_AI_PROMO = os.getenv("ENABLE_AI_PROMO", "false").lower() == "true"
+ENABLE_META_PUBLISHING = os.getenv("ENABLE_META_PUBLISHING", "false").lower() == "true"
+
 # Observation types
 OBS_TYPES = [
-    "SELLER", "BUYER", "RENTAL", "RENTAL_SEEKER",
-    "COMMERCIAL_SALE", "COMMERCIAL_RENTAL",
+    "SELLER", "BUYER", "REQUIREMENT", "RENTAL", "RENTAL_SEEKER",
+    "COMMERCIAL_SALE", "COMMERCIAL_RENTAL", "PRE_LAUNCH",
 ]

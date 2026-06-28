@@ -11,6 +11,9 @@ import asyncio
 import uuid
 import re
 import base64
+import ast
+import subprocess
+from fnmatch import fnmatch
 import httpx
 from datetime import datetime, timezone
 from pathlib import Path
@@ -26,6 +29,8 @@ from pydantic import BaseModel
 
 from lab.storage import SqliteStorage, RawMessage, ParsedObservation, ResolverDecision, Evaluation
 from lab.embedding import create_engine, observation_text, pack_embedding, EmbeddingEngine
+from lab import ai_chat_engine as chat_engine
+from lab import multi_listing
 from lab.location import parse_location
 from lab.events import get_bus
 
@@ -33,14 +38,7 @@ from lab.events import get_bus
 PROJECT_DIR = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_DIR))
 
-from lab.config import DB_PATH, WEBHOOK_SECRET, HOST, PORT, EVOLUTION_INSTANCE, EVOLUTION_API_URL, DOUBLEWORD_API_KEY
-
-# ── Bootstrap scraper AI chat engine ──────────────────────────
-SCRAPER_DIR = Path("/home/vishal/scraper")
-_SCRAPER_ENGINE = None
-if SCRAPER_DIR.exists():
-    sys.path.insert(0, str(SCRAPER_DIR))
-    import engine as _scraper_engine
+from lab.config import DB_PATH, WEBHOOK_SECRET, HOST, PORT, EVOLUTION_INSTANCE, EVOLUTION_API_URL, DOUBLEWORD_API_KEY, load_group_allowlist, save_group_allowlist, PROPAI_WEBHOOK_URL
 from evidence.resolver import resolve, resolve_by_landmark, resolve_by_street
 from evidence.parsers import parse as broker_parse
 
@@ -335,7 +333,7 @@ def parse_message(raw_text: str, profile_name: str | None = None) -> dict:
         r'(?:rs\.?\s*|inr\s*|₹)?\s*([\d,]+(?:\.\d+)?)\s*(cr|crore|lac|lakh|l|k|thousand)\b',
         lower,
     )
-    if price_match:
+    if price_match and price_match.group(1).strip():
         amount = float(price_match.group(1).replace(",", ""))
         unit_raw = price_match.group(2).lower()
         if unit_raw in ("cr", "crore"):
@@ -352,14 +350,14 @@ def parse_message(raw_text: str, profile_name: str | None = None) -> dict:
             r'(?:rs\.?\s*|inr\s*|₹)\s*([\d,]+(?:\.\d+)?)',
             lower,
         )
-        if abs_match:
+        if abs_match and abs_match.group(1).strip():
             amount = float(abs_match.group(1).replace(",", ""))
             result["price"] = amount
             result["price_unit"] = "abs"
 
     # ── 7. Extract area sqft ────────────────────────────────────
     area_match = _RE.search(r'(\d+[\d,]*)\s*(sq\.?\s*ft|sqft|sft|sq\s*feet)', lower)
-    if area_match:
+    if area_match and area_match.group(1).strip():
         result["area_sqft"] = float(area_match.group(1).replace(",", ""))
 
     # ── 8. Furnishing ───────────────────────────────────────────
@@ -733,6 +731,11 @@ async def lifespan(app: FastAPI):
     global storage
     storage = SqliteStorage(DB_PATH)
     storage.init_schema()
+    try:
+        if storage.db.execute("SELECT COUNT(*) AS c FROM listings").fetchone()["c"] == 0:
+            storage.rebuild_listings()
+    except Exception as exc:
+        print(f"  Listings rebuild skipped: {exc}")
     # Auto-generate API key if missing
     key_path = Path(__file__).parent / ".api_key"
     if not key_path.exists():
@@ -749,6 +752,78 @@ app = FastAPI(title="PropAI Local Intelligence Lab", version="0.1.0", lifespan=l
 
 # ── Webhook (Evolution API) ─────────────────────────────────────
 
+def _register_webhook():
+    """Register this server as a webhook target in Evolution API."""
+    import httpx
+
+    webhook_url = PROPAI_WEBHOOK_URL or f"http://host.docker.internal:{PORT}/webhook"
+
+    payload = {
+        "enabled": True,
+        "url": webhook_url,
+        "webhook_by_events": False,
+        "webhook_base64": False,
+        "events": [
+            "QRCODE_UPDATED",
+            "MESSAGES_UPSERT",
+            "MESSAGES_UPDATE",
+            "MESSAGES_DELETE",
+            "CONNECTION_UPDATE",
+            "GROUPS_UPSERT",
+            "GROUPS_UPDATE",
+            "GROUPS_PARTICIPANTS_UPDATE",
+            "SEND_MESSAGE",
+        ],
+    }
+    resp = httpx.post(
+        f"{EVOLUTION_API_URL}/webhook/set/{EVOLUTION_INSTANCE}",
+        json=payload,
+        headers={"apikey": EVOLUTION_API_KEY},
+        timeout=10,
+    )
+    result = resp.json()
+    if result.get("success"):
+        print(f"  Webhook registered: {webhook_url}")
+    else:
+        print(f"  [!] Webhook registration response: {result}")
+
+_EVENT_CLASS = {
+    "messages.upsert": "message",
+    "messages.update": "message",
+    "messages.delete": "system",
+    "connection.update": "connection",
+    "qrupdated": "qr",
+    "QR_UPDATED": "qr",
+    "groups.upsert": "group",
+    "groups.update": "group",
+    "groups.participants.update": "group",
+    "presence.update": "presence",
+    "call": "call",
+}
+
+def _classify_webhook_event(event: str, data: dict) -> str:
+    """Classify an Evolution API webhook event into a pipeline category."""
+    base = _EVENT_CLASS.get(event, "system")
+    if base == "message":
+        msg_data = data.get("data", data)
+        if not isinstance(msg_data, dict):
+            return "system"
+        msg = msg_data.get("message", {})
+        has_text = bool(
+            msg.get("conversation")
+            or (msg.get("extendedTextMessage") or {}).get("text")
+            or msg.get("imageMessage")
+            or msg.get("videoMessage")
+            or msg.get("audioMessage")
+            or msg.get("documentMessage")
+        )
+        if not has_text and not msg:
+            return "system"
+        if msg and not msg.get("conversation") and not msg.get("extendedTextMessage"):
+            return "media"
+    return base
+
+
 class EvolutionWebhook(BaseModel):
     event: str = "message"
     instance: str = "default"
@@ -757,52 +832,56 @@ class EvolutionWebhook(BaseModel):
 
 @app.post("/webhook")
 async def webhook(request: Request):
-    """Receive webhook from Evolution API."""
+    """Receive webhook from Evolution API. Route by event type before any processing."""
     try:
         body = await request.json()
     except Exception:
         raise HTTPException(400, "Invalid JSON")
 
-    # Extract message fields (Evolution API format)
     data = body if isinstance(body, dict) else {}
-    event = data.get("event", "message")
+    event = data.get("event", "")
     instance = data.get("instance", "unknown")
 
-    # Try common Evolution API payload structures
-    msg_data = data.get("data", data)
-    profile_name = None
-    push_name = None
-    sender_jid = ""
-    if isinstance(msg_data, dict):
-        key = msg_data.get("key", {})
-        msg_obj = msg_data.get("message", {})
-        msg_text = (
-            msg_obj.get("conversation", "")
-            or msg_obj.get("extendedTextMessage", {}).get("text", "")
-            or msg_data.get("text", "")
-        )
-        if not msg_text:
-            return {"status": "ignored", "reason": "no text message"}
-        push_name = msg_data.get("sender", {}).get("pushName", "")
-        profile_name = msg_data.get("sender", {}).get("name", "") or push_name or ""
-        sender_jid = key.get("participant", "") or msg_data.get("sender", {}).get("id", "")
-        sender = _format_whatsapp_sender(push_name or profile_name, sender_jid)
-        group = key.get("remoteJid", "unknown") or msg_data.get("from", "unknown")
-        timestamp = msg_data.get("messageTimestamp", datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"))
-        if isinstance(timestamp, (int, float)):
-            timestamp = datetime.fromtimestamp(timestamp, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    else:
-        return {"status": "ignored", "reason": "unsupported webhook payload"}
+    # ── Classify and route event ──────────────────────────────────
+    event_class = _classify_webhook_event(event, data)
 
-    # Save raw message with dedup key
+    if event_class != "message":
+        _handle_system_event(event_class, event, data, instance)
+        return {"status": "event_handled", "event": event, "class": event_class}
+
+    # ── Human message ─────────────────────────────────────────────
+    msg_data = data.get("data", data)
     key = msg_data.get("key", {})
+    msg = msg_data.get("message", {})
+    msg_text = (
+        msg.get("conversation", "")
+        or msg.get("extendedTextMessage", {}).get("text", "")
+        or msg.get("imageMessage", {}).get("caption", "")
+        or msg.get("videoMessage", {}).get("caption", "")
+        or ""
+    )
+    if not msg_text.strip():
+        return {"status": "ignored", "reason": "empty_message"}
+
+    push_name = msg_data.get("pushName", "") or ""
+    sender_name = msg_data.get("sender", {}).get("name", "") or push_name
+    sender_jid = key.get("participant", "") or msg_data.get("sender", {}).get("id", "")
+    sender = _format_whatsapp_sender(sender_name, sender_jid)
+    group = key.get("remoteJid", "") or msg_data.get("from", "")
+    group_name = _resolve_group_name(group)
+    timestamp = msg_data.get("messageTimestamp", int(datetime.now(timezone.utc).timestamp()))
+    if isinstance(timestamp, (int, float)):
+        timestamp = datetime.fromtimestamp(timestamp, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    # Dedup key
     message_id = key.get("id", "")
     remote_jid = key.get("remoteJid", group)
-    message_uid = f"evolution::{instance}::{remote_jid}::{message_id}" if message_id else None
+    message_uid = f"evolution::{instance}::{remote_jid}::{message_id}" if message_id and remote_jid else None
 
+    # Save raw message
     from lab.scheduler import PIPELINE_VERSION
     raw_id = storage.save_raw_message(RawMessage(
-        group_name=group,
+        group_name=group_name,
         sender=sender,
         message=msg_text,
         message_type="text",
@@ -817,106 +896,179 @@ async def webhook(request: Request):
         "raw_id": raw_id, "group": group, "sender": sender, "message": msg_text[:200],
     })
 
-    # Check if this was a duplicate (existing raw_id returned)
-    existing_parsed = None
-    if message_uid:
-        existing_parsed = storage.get_parsed_by_raw(raw_id)
+    # Parse — single or multi-listing
+    msg_class = multi_listing.classify_message(msg_text)
+    if msg_class == "multi":
+        parsed_listings = multi_listing.parse_multi_message(
+            msg_text, profile_name=sender_name or push_name
+        )
+    else:
+        single = parse_message(msg_text, profile_name=sender_name or push_name)
+        parsed_listings = [single] if single else []
 
-    if existing_parsed:
-        return {"status": "duplicate", "raw_id": raw_id, "parsed_id": existing_parsed.id}
+    if not parsed_listings:
+        return {"status": "ignored", "reason": "parse_failed"}
 
-    # Parse and resolve
-    parsed = parse_message(msg_text, profile_name=profile_name)
-    if not parsed.get("broker_phone"):
-        parsed["broker_phone"] = _phone_digits_from_jid(sender_jid)
-    embedding_blob = compute_embedding(parsed)
-    obs = ParsedObservation(
-        raw_message_id=raw_id,
-        intent=parsed.get("intent"),
-        principal=parsed.get("principal"),
-        bhk=parsed.get("bhk"),
-        price=parsed.get("price"),
-        price_unit=parsed.get("price_unit"),
-        area_sqft=parsed.get("area_sqft"),
-        furnishing=parsed.get("furnishing"),
-        location_raw=parsed.get("location_raw"),
-        location=json.dumps(parsed.get("location")) if parsed.get("location") else None,
-        building_name=parsed.get("building_name"),
-        landmark_name=parsed.get("landmark_name"),
-        street_name=parsed.get("street_name"),
-        area=parsed.get("area"),
-        micro_market=parsed.get("micro_market"),
-        developer=parsed.get("developer"),
-        broker_name=parsed.get("broker_name"),
-        broker_phone=parsed.get("broker_phone"),
-        profile_name=profile_name,
-        forwarded=parsed.get("forwarded", 0),
-        confidence=parsed.get("confidence", 0.0),
-        raw_payload=json.dumps(parsed.get("raw_payload", {})),
-        embedding=embedding_blob,
-    )
-    parsed_id = storage.save_parsed(obs)
+    # Fallback broker identity from sender JID when not found in message
+    phone_digits = "".join(ch for ch in str(sender_jid).split("@")[0] if ch.isdigit())
+    for pl in parsed_listings:
+        if not pl.get("broker_name") or not pl.get("broker_phone"):
+            if not pl.get("broker_name"):
+                if len(phone_digits) >= 10:
+                    pl["broker_name"] = f"+91 {phone_digits[-10:]}"
+                elif phone_digits:
+                    pl["broker_name"] = f"+{phone_digits}"
+            if not pl.get("broker_phone"):
+                if len(phone_digits) >= 10:
+                    pl["broker_phone"] = phone_digits[-10:]
+
+    parsed_ids: list[int] = []
+    for idx, parsed in enumerate(parsed_listings):
+        embedding_blob = compute_embedding(parsed) if idx == 0 else None
+        obs = ParsedObservation(
+            raw_message_id=raw_id,
+            listing_index=idx,
+            message_type=parsed.get("message_type"),
+            intent=parsed.get("intent"),
+            principal=parsed.get("principal"),
+            bhk=parsed.get("bhk"),
+            price=parsed.get("price"),
+            price_unit=parsed.get("price_unit"),
+            area_sqft=parsed.get("area_sqft"),
+            furnishing=parsed.get("furnishing"),
+            location_raw=parsed.get("location_raw"),
+            location=json.dumps(parsed.get("location")) if parsed.get("location") else None,
+            building_name=parsed.get("building_name"),
+            landmark_name=parsed.get("landmark_name"),
+            street_name=parsed.get("street_name"),
+            area=parsed.get("area"),
+            micro_market=parsed.get("micro_market"),
+            developer=parsed.get("developer"),
+            broker_name=parsed.get("broker_name"),
+            broker_phone=parsed.get("broker_phone"),
+            profile_name=sender_name or push_name,
+            forwarded=parsed.get("forwarded", 0),
+            confidence=parsed.get("confidence", 0.0),
+            raw_payload=json.dumps(parsed.get("raw_payload", {})),
+            embedding=embedding_blob,
+        )
+        parsed_id = storage.save_parsed(obs)
+        parsed_ids.append(parsed_id)
+
+        # Resolve (run once, reuse for all listings in a multi)
+        if idx == 0 or msg_class != "multi":
+            resolver_result = resolve_parsed(parsed, msg_text)
+        resolver_result["parsed_id"] = parsed_id
+        dec = ResolverDecision(
+            parsed_id=parsed_id,
+            building_id=resolver_result.get("building_id"),
+            building_name=resolver_result.get("building_name"),
+            landmark_id=resolver_result.get("landmark_id"),
+            landmark_name=resolver_result.get("landmark_name"),
+            street_id=resolver_result.get("street_id"),
+            street_name=resolver_result.get("street_name"),
+            project_id=resolver_result.get("project_id"),
+            project_name=resolver_result.get("project_name"),
+            developer_name=resolver_result.get("developer_name"),
+            parser_confidence=resolver_result.get("parser_confidence", 0.0),
+            resolver_confidence=resolver_result.get("resolver_confidence", 0.0),
+            final_confidence=resolver_result.get("final_confidence", 0.0),
+            method=resolver_result.get("method", "unresolved"),
+            method_detail=resolver_result.get("method_detail"),
+            candidates=json.dumps(resolver_result.get("candidates", [])),
+            failure_category=resolver_result.get("failure_category"),
+            error=resolver_result.get("error"),
+        )
+        storage.save_resolver_decision(dec)
+
     get_bus().publish("extraction.completed", {
-        "parsed_id": parsed_id, "raw_id": raw_id,
-        "intent": parsed.get("intent"), "broker": parsed.get("broker_name"),
+        "parsed_ids": parsed_ids, "raw_id": raw_id, "count": len(parsed_ids),
+        "intent": parsed_listings[0].get("intent"), "broker": parsed_listings[0].get("broker_name"),
     })
-
-    resolver_result = resolve_parsed(parsed, msg_text)
-    resolver_result["parsed_id"] = parsed_id
-    dec = ResolverDecision(
-        parsed_id=parsed_id,
-        building_id=resolver_result.get("building_id"),
-        building_name=resolver_result.get("building_name"),
-        landmark_id=resolver_result.get("landmark_id"),
-        landmark_name=resolver_result.get("landmark_name"),
-        street_id=resolver_result.get("street_id"),
-        street_name=resolver_result.get("street_name"),
-        project_id=resolver_result.get("project_id"),
-        project_name=resolver_result.get("project_name"),
-        developer_name=resolver_result.get("developer_name"),
-        parser_confidence=resolver_result.get("parser_confidence", 0.0),
-        resolver_confidence=resolver_result.get("resolver_confidence", 0.0),
-        final_confidence=resolver_result.get("final_confidence", 0.0),
-        method=resolver_result.get("method", "unresolved"),
-        method_detail=resolver_result.get("method_detail"),
-        candidates=json.dumps(resolver_result.get("candidates", [])),
-        failure_category=resolver_result.get("failure_category"),
-        error=resolver_result.get("error"),
-    )
-    storage.save_resolver_decision(dec)
     get_bus().publish("resolution.completed", {
-        "parsed_id": parsed_id, "raw_id": raw_id,
+        "parsed_ids": parsed_ids, "raw_id": raw_id,
         "building": resolver_result.get("building_name"),
         "method": resolver_result.get("method", "unresolved"),
         "confidence": resolver_result.get("final_confidence", 0),
     })
 
-    return {"status": "ok", "raw_id": raw_id, "parsed_id": parsed_id}
+    return {"status": "ok", "raw_id": raw_id, "parsed_ids": parsed_ids, "count": len(parsed_ids)}
+
+
+def _handle_system_event(event_class: str, event: str, data: dict, instance: str):
+    """Handle non-message webhook events (connection, QR, system, etc.)."""
+    msg_data = data.get("data", data)
+    if event_class == "qr":
+        qr_code = msg_data if isinstance(msg_data, dict) else {}
+        if not isinstance(msg_data, dict):
+            try:
+                qr_code = json.loads(msg_data) if isinstance(msg_data, str) else {}
+            except (json.JSONDecodeError, TypeError):
+                qr_code = {}
+        get_bus().publish("qr.updated", {
+            "instance": instance,
+            "qrcode": qr_code.get("qrcode") or msg_data.get("qrcode", ""),
+            "pairingCode": qr_code.get("pairingCode") or msg_data.get("pairingCode"),
+        })
+    elif event_class == "connection":
+        state = ""
+        if isinstance(msg_data, dict):
+            state = msg_data.get("state", "")
+        get_bus().publish("connection.changed", {
+            "instance": instance,
+            "state": state,
+        })
+    elif event_class == "group":
+        groups_list = msg_data if isinstance(msg_data, list) else [msg_data]
+        for g in groups_list:
+            if not isinstance(g, dict):
+                continue
+            jid = g.get("id") or g.get("remoteJid") or ""
+            if not jid:
+                continue
+            name = g.get("name") or g.get("subject") or jid
+            participants = len(g.get("participants", [])) if isinstance(g.get("participants"), list) else g.get("size", 0)
+            try:
+                storage.upsert_sync_job(
+                    source="whatsapp", instance=instance,
+                    group_id=jid, group_name=name,
+                    participants=participants,
+                )
+            except Exception:
+                pass
+            get_bus().publish("group.updated", {
+                "instance": instance,
+                "jid": jid,
+                "name": name,
+                "participants": participants,
+            })
+    else:
+        get_bus().publish("system.event", {
+            "event": event,
+            "instance": instance,
+            "class": event_class,
+        })
 
 
 def _format_whatsapp_sender(name: str = "", jid: str = "") -> str:
-    clean_name = _clean_person_name(name)
+    clean_name = (name or "").strip()
     phone = _phone_from_jid(jid)
+    if clean_name and phone:
+        return f"{clean_name} ({phone})"
     return clean_name or phone or "unknown"
 
 
-def _clean_person_name(name: str = "") -> str:
-    clean = (name or "").strip()
-    if re.fullmatch(r"\+?[\dXx\s().-]{7,}", clean):
-        return ""
-    clean = re.sub(r"\s*\([^)]*(?:\+?\d|X{2,})[^)]*\)\s*", " ", clean, flags=re.I)
-    clean = re.sub(r"\s*\+?[\dXx][\dXx\s().-]{7,}\s*", " ", clean)
-    clean = re.sub(r"\s{2,}", " ", clean).strip(" -")
-    if re.fullmatch(r"\+?[\dXx\s().-]{7,}", clean):
-        return ""
-    return clean
-
-
-def _phone_digits_from_jid(jid: str = "") -> str:
-    digits = "".join(ch for ch in str(jid).split("@")[0] if ch.isdigit())
-    if digits.startswith("91") and len(digits) >= 12:
-        return digits[-10:]
-    return digits[-10:] if len(digits) >= 10 else ""
+def _resolve_group_name(jid: str) -> str:
+    """Resolve a group JID to the human-readable name from sync_jobs."""
+    if not jid or not jid.endswith("@g.us"):
+        return jid
+    try:
+        job = storage.get_job_by_group_jid(jid)
+        if job and job.group_name and job.group_name != jid:
+            return job.group_name
+    except Exception:
+        pass
+    return jid
 
 
 def _phone_from_jid(jid: str = "") -> str:
@@ -930,6 +1082,18 @@ def _phone_from_jid(jid: str = "") -> str:
         local = digits[-10:]
         return f"+{country} {local[:2]}{'X' * 6}{local[-2:]}" if country else f"{local[:2]}{'X' * 6}{local[-2:]}"
     return f"+{digits}"
+
+
+def _clean_person_name(name: str = "") -> str:
+    clean = (name or "").strip()
+    if re.fullmatch(r"\+?[\dXx\s().-]{7,}", clean):
+        return ""
+    clean = re.sub(r"\s*\([^)]*(?:\+?\d|X{2,})[^)]*\)\s*", " ", clean, flags=re.I)
+    clean = re.sub(r"\s*\+?[\dXx][\dXx\s().-]{7,}\s*", " ", clean)
+    clean = re.sub(r"\s{2,}", " ", clean).strip(" -")
+    if re.fullmatch(r"\+?[\dXx\s().-]{7,}", clean):
+        return ""
+    return clean
 
 
 # ── Manual ingest endpoint (for testing) ────────────────────────
@@ -1061,8 +1225,8 @@ async def get_raw_message(raw_id: int):
 
 
 @app.get("/api/parsed")
-async def get_parsed(limit: int = 50, offset: int = 0):
-    return storage.get_parsed(limit, offset)
+async def get_parsed(limit: int = 50, offset: int = 0, intent: str = ""):
+    return storage.get_parsed(limit, offset, intent=intent)
 
 
 @app.get("/api/resolver")
@@ -1108,7 +1272,30 @@ async def dashboard_activity():
     for t in types:
         type_map[t["intent"]] = t["c"]
     activity["message_types"] = type_map
+    obs_types = storage.dashboard_obs_types_today(today)
+    obs_map = {}
+    for t in obs_types:
+        obs_map[t["message_type"]] = t["c"]
+    activity["observation_types"] = obs_map
     return activity
+
+
+@app.get("/api/dashboard/listings")
+async def dashboard_listings(limit: int = 20):
+    """Recent listings (SELL/RENT/PRE-LAUNCH/COMMERCIAL)."""
+    return storage.dashboard_listings(limit)
+
+
+@app.get("/api/dashboard/requirements")
+async def dashboard_requirements(limit: int = 20):
+    """Recent requirements (BUY/RENTAL_SEEKER)."""
+    return storage.dashboard_requirements(limit)
+
+
+@app.get("/api/dashboard/signals")
+async def dashboard_signals():
+    """Market signals and trends."""
+    return storage.dashboard_signals()
 
 
 @app.get("/api/dashboard/coverage")
@@ -1128,9 +1315,11 @@ async def dashboard_coverage():
     group_ids = set(j.group_id for j in jobs)
     synced_jobs = [j for j in jobs if j.records_processed and j.records_processed > 0]
     messages_from_groups = sum(j.records_processed or 0 for j in jobs)
+    listings_known = storage.db.execute("SELECT COUNT(*) AS c FROM listings").fetchone()["c"]
     return {
         "groups_connected": len(group_ids),
         "messages_stored": stats["total_raw"],
+        "listings_known": listings_known,
         "messages_from_groups": 0,
         "capture_mode": "live_webhook_only",
         "business_window": business_window_status(),
@@ -1456,6 +1645,200 @@ async def ai_building(building_name: str):
     }
 
 
+# ═══════════════════════════════════════════════════════════════
+# Promote Listing — ad copy generation
+# ═══════════════════════════════════════════════════════════════
+
+class PromoteRequest(BaseModel):
+    observation_id: int
+    channel: str = "whatsapp"
+    use_ai: bool = False
+
+
+def _promote_highlights(parsed: dict) -> list[str]:
+    highlights = []
+    if parsed.get("bhk"):
+        highlights.append(f"{parsed['bhk']} configuration")
+    if parsed.get("area_sqft"):
+        highlights.append(f"{parsed['area_sqft']:,} sqft built-up area")
+    if parsed.get("furnishing"):
+        highlights.append(f"{parsed['furnishing']}")
+    if parsed.get("building_name"):
+        highlights.append(f"Located at {parsed['building_name']}")
+    if parsed.get("landmark_name"):
+        highlights.append(f"Near {parsed['landmark_name']}")
+    if parsed.get("micro_market"):
+        highlights.append(f"Prime location: {parsed['micro_market']}")
+    if parsed.get("location_raw") and parsed["location_raw"] not in (parsed.get("micro_market") or "", parsed.get("building_name") or ""):
+        highlights.append(f"Area: {parsed['location_raw']}")
+    return highlights[:5]
+
+
+def _promote_price(parsed: dict) -> str:
+    price = parsed.get("price")
+    unit = parsed.get("price_unit")
+    if price and unit == "Cr":
+        return f"₹{(price / 1_00_00_000):.2f} Cr"
+    if price and unit == "L":
+        return f"₹{(price / 1_00_000):.1f} L"
+    if price and unit == "lakh":
+        return f"₹{(price / 1_00_000):.1f} Lakh"
+    if price:
+        return f"₹{price:,.0f}"
+    return ""
+
+
+def _promote_headline(parsed: dict, channel: str) -> str:
+    bhk = parsed.get("bhk", "Property")
+    building = parsed.get("building_name", "")
+    market = parsed.get("micro_market", "")
+    price = _promote_price(parsed)
+    location = market or parsed.get("location_raw", "")
+    if channel == "whatsapp":
+        parts = [f"🏗️ {bhk}"]
+        if building:
+            parts.append(f"at {building}")
+        if location:
+            parts.append(f"in {location}")
+        if price:
+            parts.append(f"| {price}")
+        return " ".join(parts)
+    if channel in ("facebook", "instagram"):
+        parts = [f"{bhk}"]
+        if building:
+            parts.append(f"at {building}")
+        if location:
+            parts.append(f"in {location}")
+        if price:
+            parts.append(f"— {price}")
+        return " ".join(parts)
+    return ""
+
+
+def _promote_whatsapp(parsed: dict, highlights: list[str]) -> str:
+    bhk = parsed.get("bhk", "")
+    building = parsed.get("building_name", "")
+    market = parsed.get("micro_market", "")
+    price = _promote_price(parsed)
+    area = f"{parsed['area_sqft']:,} sqft" if parsed.get("area_sqft") else ""
+    furnish = parsed.get("furnishing", "")
+    broker = parsed.get("broker_name", "")
+    phone = re.sub(r"[^0-9]", "", parsed.get("broker_phone") or "")[-10:]
+    lines = ["🏗️ *" + _promote_headline(parsed, "whatsapp") + "*", ""]
+    if building:
+        lines.append(f"📍 {building}")
+    if market:
+        lines.append(f"📍 {market}")
+    detail_parts = [p for p in [bhk, area, furnish] if p]
+    if detail_parts:
+        lines.append(" | ".join(detail_parts))
+    if price:
+        lines.append(f"💰 {price}")
+    lines.append("")
+    lines.append("✨ Highlights:")
+    for h in highlights[:4]:
+        lines.append(f"  ✅ {h}")
+    lines.append("")
+    if broker:
+        lines.append(f"📞 {broker}")
+    if phone and len(phone) == 10:
+        lines.append(f"   wa.me/91{phone}")
+    return "\n".join(lines)
+
+
+def _promote_instagram(parsed: dict, highlights: list[str]) -> str:
+    bhk = parsed.get("bhk", "")
+    building = parsed.get("building_name", "")
+    market = parsed.get("micro_market", "")
+    price = _promote_price(parsed)
+    area = f"{parsed['area_sqft']:,} sqft" if parsed.get("area_sqft") else ""
+    furnish = parsed.get("furnishing", "")
+    lines = [f"✨ {bhk}" + (f" at {building}" if building else "")]
+    if market:
+        lines.append(f"📍 {market}")
+    if price:
+        lines.append(f"💰 {price}")
+    lines.append("")
+    if area or furnish:
+        detail_parts = [p for p in [area, furnish] if p]
+        lines.append(" | ".join(detail_parts))
+    lines.append("")
+    lines.append("What you get:")
+    for h in highlights[:4]:
+        lines.append(f"✅ {h}")
+    lines.append("")
+    lines.append("📲 DM for more details or site visit!")
+    return "\n".join(lines)
+
+
+def _promote_facebook(parsed: dict, highlights: list[str]) -> str:
+    insta = _promote_instagram(parsed, highlights)
+    return insta + "\n\nAvailable for sale/rent. Serious inquiries only."
+
+
+def _identify_channel_emoji(channel: str) -> str:
+    return {"whatsapp": "💬", "facebook": "👍", "instagram": "📸"}.get(channel, "📢")
+
+
+def _ai_promote(system: str, prompt: str) -> str | None:
+    try:
+        from openai import OpenAI
+        client = OpenAI(api_key=DOUBLEWORD_API_KEY, base_url="https://api.doubleword.ai/v1")
+        resp = client.chat.completions.create(
+            model="Qwen/Qwen3.6-35B-A3B-FP8",
+            messages=[{"role": "system", "content": system}, {"role": "user", "content": prompt}],
+            extra_body={"chat_template_kwargs": {"enable_thinking": False}},
+            max_tokens=300,
+        )
+        return resp.choices[0].message.content
+    except Exception:
+        return None
+
+
+@app.post("/api/promote/generate")
+async def promote_generate(req: PromoteRequest):
+    detail = storage.get_observation_detail(req.observation_id)
+    if not detail.get("parsed"):
+        raise HTTPException(404, "Observation not found")
+    parsed = detail["parsed"]
+    highlights = _promote_highlights(parsed)
+    headline = _promote_headline(parsed, req.channel)
+
+    if req.channel == "whatsapp":
+        body = _promote_whatsapp(parsed, highlights)
+    elif req.channel == "instagram":
+        body = _promote_instagram(parsed, highlights)
+    elif req.channel == "facebook":
+        body = _promote_facebook(parsed, highlights)
+    else:
+        raise HTTPException(400, f"Unknown channel: {req.channel}")
+
+    result = {
+        "channel": req.channel,
+        "emoji": _identify_channel_emoji(req.channel),
+        "headline": headline,
+        "body": body,
+        "highlights": highlights,
+        "ai_enhanced": False,
+    }
+
+    if req.use_ai and DOUBLEWORD_API_KEY:
+        try:
+            system = "You are a Mumbai real estate marketing assistant. Given property details, write a short promotional ad for the specified channel. Keep it under 120 words. Return only the ad body, no preamble."
+            price_str = _promote_price(parsed)
+            detail_parts = [v for v in [parsed.get("bhk"), parsed.get("furnishing"), f"{parsed.get('area_sqft', '')} sqft" if parsed.get('area_sqft') else ""] if v]
+            prompt = f"Channel: {req.channel}\nBuilding: {parsed.get('building_name', 'N/A')}\nLocation: {parsed.get('micro_market', parsed.get('location_raw', 'N/A'))}\nDetails: {' | '.join(detail_parts)}\nPrice: {price_str}\nBroker: {parsed.get('broker_name', 'N/A')}"
+            loop = asyncio.get_running_loop()
+            ai_body = await loop.run_in_executor(None, lambda: _ai_promote(system, prompt))
+            if ai_body:
+                result["body"] = ai_body
+                result["ai_enhanced"] = True
+        except Exception:
+            pass
+
+    return result
+
+
 @app.get("/api/evaluations")
 async def get_evaluations(limit: int = 50, min_accuracy: float = 0.0):
     rows = storage.get_evaluations(limit)
@@ -1475,23 +1858,20 @@ class ChatRequest(BaseModel):
 
 @app.post("/api/ai/chat")
 async def ai_chat(req: ChatRequest):
-    if _scraper_engine is None:
-        raise HTTPException(503, "Scraper data not available")
-
     api_key = req.api_key or DOUBLEWORD_API_KEY
     if not api_key:
         return {"error": "api_key_required", "message": "Set your Doubleword API key in Chat settings"}
 
-    sources = _scraper_engine.load_data()
+    sources = chat_engine.load_data()
     if not sources:
         return {"error": "no_data", "message": "No scraped CSVs found. Run scrape_all.py first."}
 
     loop = asyncio.get_running_loop()
 
     def _call():
-        system_prompt = _scraper_engine.build_system_prompt(sources)
+        system_prompt = chat_engine.build_system_prompt(sources)
         msgs = [{"role": "system", "content": system_prompt}] + req.messages[-20:]
-        reply = _scraper_engine.get_model_reply(msgs, sources, api_key=api_key)
+        reply = chat_engine.get_model_reply(msgs, sources, api_key=api_key)
         return reply.content or ""
 
     content = await loop.run_in_executor(None, _call)
@@ -1500,12 +1880,10 @@ async def ai_chat(req: ChatRequest):
 
 @app.get("/api/ai/chat/overview")
 async def ai_chat_overview():
-    if _scraper_engine is None:
-        raise HTTPException(503, "Scraper data not available")
-    sources = _scraper_engine.load_data()
+    sources = chat_engine.load_data()
     if not sources:
         return {"error": "no_data"}
-    return {"overview": _scraper_engine.build_overview(sources), "sources": list(sources.keys())}
+    return {"overview": chat_engine.build_overview(sources), "sources": list(sources.keys())}
 
 
 # ── Evidence Inspector ──────────────────────────────────────────
@@ -1817,16 +2195,94 @@ def _top_message_groups(jobs, limit: int = 5) -> list[dict]:
 
 @app.get("/api/brokers")
 async def list_brokers():
+    storage.rebuild_broker_graph()
     rows = storage.db.execute("""
-        SELECT DISTINCT p.broker_name AS name, p.broker_phone AS phone,
-               COUNT(*) AS message_count, COUNT(DISTINCT r.group_name) AS group_count
-        FROM parsed_output p
-        JOIN raw_messages r ON r.id = p.raw_message_id
-        WHERE p.broker_name IS NOT NULL AND p.broker_name != ''
-        GROUP BY p.broker_name
-        ORDER BY message_count DESC
+        SELECT id, canonical_name AS name, primary_phone AS phone,
+               observation_count, listing_count, requirement_count,
+               rental_count, commercial_count, group_count, market_count,
+               avg_ticket, first_seen_at, last_seen_at
+        FROM brokers
+        ORDER BY observation_count DESC, last_seen_at DESC
     """).fetchall()
-    return [dict(r) for r in rows]
+    brokers = []
+    for row in rows:
+        broker = dict(row)
+        broker["markets"] = [
+            dict(r) for r in storage.db.execute("""
+                SELECT micro_market, observation_count, listing_count, requirement_count
+                FROM broker_market_stats
+                WHERE broker_id = ?
+                ORDER BY observation_count DESC, last_seen_at DESC
+                LIMIT 5
+            """, (broker["id"],)).fetchall()
+        ]
+        broker["buildings"] = [
+            dict(r) for r in storage.db.execute("""
+                SELECT building_name, observation_count, listing_count, requirement_count
+                FROM broker_building_stats
+                WHERE broker_id = ?
+                ORDER BY observation_count DESC, last_seen_at DESC
+                LIMIT 5
+            """, (broker["id"],)).fetchall()
+        ]
+        brokers.append(broker)
+    return brokers
+
+
+@app.get("/api/brokers/{broker_id}")
+async def get_broker_profile(broker_id: int):
+    storage.rebuild_broker_graph()
+    row = storage.db.execute("""
+        SELECT id, canonical_name AS name, primary_phone AS phone,
+               observation_count, listing_count, requirement_count,
+               rental_count, commercial_count, group_count, market_count,
+               avg_ticket, first_seen_at, last_seen_at
+        FROM brokers
+        WHERE id = ?
+    """, (broker_id,)).fetchone()
+    if not row:
+        raise HTTPException(404, "Broker not found")
+    broker = dict(row)
+    broker["aliases"] = [dict(r) for r in storage.db.execute("""
+        SELECT alias, observation_count, first_seen_at, last_seen_at
+        FROM broker_aliases
+        WHERE broker_id = ?
+        ORDER BY observation_count DESC
+        LIMIT 20
+    """, (broker_id,)).fetchall()]
+    broker["phones"] = [dict(r) for r in storage.db.execute("""
+        SELECT phone, observation_count, first_seen_at, last_seen_at
+        FROM broker_phones
+        WHERE broker_id = ?
+        ORDER BY observation_count DESC
+        LIMIT 10
+    """, (broker_id,)).fetchall()]
+    broker["markets"] = [dict(r) for r in storage.db.execute("""
+        SELECT micro_market, observation_count, listing_count, requirement_count
+        FROM broker_market_stats
+        WHERE broker_id = ?
+        ORDER BY observation_count DESC
+        LIMIT 20
+    """, (broker_id,)).fetchall()]
+    broker["buildings"] = [dict(r) for r in storage.db.execute("""
+        SELECT b.building_name, b.observation_count, b.listing_count, b.requirement_count,
+               b.first_seen_at, b.last_seen_at
+        FROM broker_building_stats b
+        WHERE b.broker_id = ?
+        ORDER BY b.observation_count DESC
+        LIMIT 50
+    """, (broker_id,)).fetchall()]
+    broker["observations"] = [dict(r) for r in storage.db.execute("""
+        SELECT p.id AS parsed_id, p.intent, p.message_type, p.bhk, p.price, p.price_unit,
+               p.furnishing, p.building_name, p.micro_market, p.broker_name,
+               p.confidence, p.created_at
+        FROM broker_observations bo
+        JOIN parsed_output p ON p.id = bo.parsed_id
+        WHERE bo.broker_id = ?
+        ORDER BY bo.last_seen_at DESC
+        LIMIT 100
+    """, (broker_id,)).fetchall()]
+    return broker
 
 
 @app.get("/api/buildings")
@@ -1846,12 +2302,17 @@ async def list_buildings():
 @app.get("/api/groups")
 async def list_groups():
     jobs = storage.get_sync_jobs(limit=500, source="whatsapp")
+    allowlist = load_group_allowlist()
     groups = []
     for j in jobs:
         try:
             meta = json.loads(j.meta) if isinstance(j.meta, str) else (j.meta or {})
         except (json.JSONDecodeError, TypeError):
             meta = {}
+        allowed = any(
+            entry.lower() in j.group_name.lower()
+            for entry in allowlist
+        ) if allowlist else True
         groups.append({
             "jid": j.group_id,
             "name": j.group_name,
@@ -1861,9 +2322,41 @@ async def list_groups():
             "records_processed": j.records_processed or 0,
             "status": j.status,
             "error": j.error,
-            "allowed": True,
+            "allowed": allowed,
         })
     return sorted(groups, key=lambda g: g["name"].lower())
+
+
+@app.get("/api/groups/allowlist")
+async def get_allowlist():
+    """Return the current group allowlist."""
+    return load_group_allowlist()
+
+
+@app.post("/api/groups/allowlist")
+async def set_allowlist(request: Request):
+    """Set the group allowlist (JSON array of group JIDs or name substrings)."""
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(400, "Invalid JSON")
+    if not isinstance(body, list):
+        raise HTTPException(400, "Expected a JSON array of strings")
+    entries = [str(x).strip() for x in body if x and str(x).strip()]
+    save_group_allowlist(entries)
+    return {"status": "ok", "count": len(entries)}
+
+
+@app.delete("/api/groups/allowlist")
+async def clear_allowlist():
+    """Clear the group allowlist (track all groups)."""
+    save_group_allowlist([])
+    return {"status": "ok"}
+
+
+@app.get("/api/listings")
+async def list_listings(limit: int = 50, offset: int = 0):
+    return storage.get_listings(limit, offset)
 
 
 @app.get("/api/search")

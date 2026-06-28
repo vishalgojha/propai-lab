@@ -48,6 +48,41 @@ CREATE TABLE IF NOT EXISTS parsed_output (
     created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );
 
+CREATE TABLE IF NOT EXISTS listings (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    fingerprint     TEXT NOT NULL UNIQUE,
+    intent          TEXT DEFAULT NULL,
+    bhk             TEXT DEFAULT NULL,
+    price           REAL DEFAULT NULL,
+    price_unit      TEXT DEFAULT NULL,
+    area_sqft       REAL DEFAULT NULL,
+    furnishing      TEXT DEFAULT NULL,
+    location_label  TEXT DEFAULT NULL,
+    building_name   TEXT DEFAULT NULL,
+    landmark_name   TEXT DEFAULT NULL,
+    micro_market    TEXT DEFAULT NULL,
+    broker_name     TEXT DEFAULT NULL,
+    broker_phone    TEXT DEFAULT NULL,
+    first_seen      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+    last_seen       TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+    observation_count INTEGER NOT NULL DEFAULT 0,
+    group_count     INTEGER NOT NULL DEFAULT 0,
+    latest_raw_message_id INTEGER DEFAULT NULL REFERENCES raw_messages(id),
+    representative_raw_message_id INTEGER DEFAULT NULL REFERENCES raw_messages(id),
+    created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+    updated_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+);
+
+CREATE TABLE IF NOT EXISTS listing_observations (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    listing_id      INTEGER NOT NULL REFERENCES listings(id) ON DELETE CASCADE,
+    raw_message_id  INTEGER NOT NULL REFERENCES raw_messages(id) ON DELETE CASCADE,
+    parsed_id       INTEGER NOT NULL REFERENCES parsed_output(id) ON DELETE CASCADE,
+    group_name      TEXT DEFAULT '',
+    seen_at         TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+    UNIQUE(raw_message_id)
+);
+
 CREATE TABLE IF NOT EXISTS resolver_decisions (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     parsed_id       INTEGER NOT NULL REFERENCES parsed_output(id),
@@ -165,9 +200,12 @@ CREATE INDEX IF NOT EXISTS idx_raw_group ON raw_messages(group_name);
 CREATE INDEX IF NOT EXISTS idx_raw_source ON raw_messages(source);
 CREATE INDEX IF NOT EXISTS idx_raw_version ON raw_messages(pipeline_version);
 CREATE INDEX IF NOT EXISTS idx_parsed_raw ON parsed_output(raw_message_id);
+CREATE INDEX IF NOT EXISTS idx_listings_fingerprint ON listings(fingerprint);
+CREATE INDEX IF NOT EXISTS idx_listings_last_seen ON listings(last_seen DESC);
+CREATE INDEX IF NOT EXISTS idx_listing_obs_listing ON listing_observations(listing_id);
+CREATE INDEX IF NOT EXISTS idx_listing_obs_raw ON listing_observations(raw_message_id);
 -- idx_parsed_intent moved to migration (table may not have intent column yet)
 CREATE INDEX IF NOT EXISTS idx_resolver_parsed ON resolver_decisions(parsed_id);
 CREATE INDEX IF NOT EXISTS idx_resolver_bid ON resolver_decisions(building_id);
 CREATE INDEX IF NOT EXISTS idx_resolver_method ON resolver_decisions(method);
 CREATE INDEX IF NOT EXISTS idx_eval_raw ON evaluations(raw_message_id);
-

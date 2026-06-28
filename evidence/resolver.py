@@ -24,6 +24,10 @@ from typing import Optional
 from collections import defaultdict
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# Resolver data lives alongside propai-lab, not inside it
+_ALT = os.path.join(os.path.dirname(BASE_DIR), "propai")
+if os.path.isdir(os.path.join(_ALT, "data")):
+    BASE_DIR = _ALT
 CACHE = {}
 
 # Landmark proximity radius for resolution (metres)

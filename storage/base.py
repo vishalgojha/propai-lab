@@ -29,6 +29,7 @@ class RawMessage:
 class ParsedObservation:
     id: int = 0
     raw_message_id: int = 0
+    message_type: Optional[str] = None
     intent: Optional[str] = None
     principal: Optional[str] = None
     bhk: Optional[str] = None
@@ -47,12 +48,39 @@ class ParsedObservation:
     broker_name: Optional[str] = None
     broker_phone: Optional[str] = None
     profile_name: Optional[str] = None
+    listing_index: int = 0
     forwarded: int = 0
     confidence: float = 0.0
     raw_payload: str = "{}"
     event_id: Optional[str] = None
     created_at: str = ""
     embedding: Optional[bytes] = None  # float32 numpy array packed via pack_embedding
+
+
+@dataclass
+class Listing:
+    id: int = 0
+    fingerprint: str = ""
+    intent: Optional[str] = None
+    bhk: Optional[str] = None
+    price: Optional[float] = None
+    price_unit: Optional[str] = None
+    area_sqft: Optional[float] = None
+    furnishing: Optional[str] = None
+    location_label: Optional[str] = None
+    building_name: Optional[str] = None
+    landmark_name: Optional[str] = None
+    micro_market: Optional[str] = None
+    broker_name: Optional[str] = None
+    broker_phone: Optional[str] = None
+    first_seen: str = ""
+    last_seen: str = ""
+    observation_count: int = 0
+    group_count: int = 0
+    latest_raw_message_id: Optional[int] = None
+    representative_raw_message_id: Optional[int] = None
+    created_at: str = ""
+    updated_at: str = ""
 
 
 @dataclass
@@ -204,7 +232,13 @@ class Storage(ABC):
     def get_parsed_by_raw(self, raw_id: int) -> Optional[ParsedObservation]: ...
 
     @abstractmethod
-    def get_parsed(self, limit: int = 50, offset: int = 0) -> list[dict]: ...
+    def get_parsed(self, limit: int = 50, offset: int = 0, intent: str = "") -> list[dict]: ...
+
+    @abstractmethod
+    def get_listings(self, limit: int = 50, offset: int = 0) -> list[dict]: ...
+
+    @abstractmethod
+    def rebuild_listings(self): ...
 
     # ── Resolver decisions ─────────────────────────────────────
 
@@ -303,7 +337,19 @@ class Storage(ABC):
     def dashboard_heatmap(self) -> list[dict]: ...
 
     @abstractmethod
+    def dashboard_listings(self, limit: int = 20) -> list[dict]: ...
+
+    @abstractmethod
+    def dashboard_requirements(self, limit: int = 20) -> list[dict]: ...
+
+    @abstractmethod
+    def dashboard_signals(self) -> list[dict]: ...
+
+    @abstractmethod
     def dashboard_message_types_today(self, today_prefix: str) -> list[dict]: ...
+
+    @abstractmethod
+    def dashboard_obs_types_today(self, today_prefix: str) -> list[dict]: ...
 
     @abstractmethod
     def dashboard_growth(self, today_prefix: str) -> dict: ...

@@ -53,8 +53,8 @@ export default function DashboardPage() {
         <div className="flex gap-2.5 flex-wrap">
           {[
             { label: "Messages", val: activity?.messages_today ?? "—", color: "blue" },
-            { label: "Sellers", val: types.SELL ?? 0, color: "green" },
-            { label: "Buyers", val: types.BUY ?? 0, color: "purple" },
+            { label: "Supply", val: types.SELL ?? 0, color: "green" },
+            { label: "Demand", val: types.BUY ?? 0, color: "purple" },
             { label: "Rentals", val: types.RENT ?? 0, color: "yellow" },
             { label: "Commercial", val: types.COMMERCIAL ?? 0, color: "orange" },
           ].map(s => (
@@ -74,6 +74,7 @@ export default function DashboardPage() {
             {[
               ["Groups", coverage?.groups_connected],
               ["Messages", coverage?.messages_stored],
+              ["Listings", coverage?.listings_known],
               ["Buildings", coverage?.buildings_known],
               ["Landmarks", coverage?.landmarks_known],
               ["Developers", coverage?.developers_known],
