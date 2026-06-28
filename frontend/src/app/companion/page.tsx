@@ -41,7 +41,6 @@ function emptyMember(): api.CompanionTeamMemberInput {
 
 export default function CompanionPage() {
   const [overview, setOverview] = useState<api.CompanionOverview | null>(null);
-  const [config, setConfig] = useState<api.CompanionConfig | null>(null);
   const [team, setTeam] = useState<api.CompanionTeamMember[]>([]);
   const [roles, setRoles] = useState<Record<string, { label: string; permissions: string[] }>>({});
   const [tools, setTools] = useState<string[]>([]);
@@ -51,19 +50,10 @@ export default function CompanionPage() {
   const [marketsText, setMarketsText] = useState("");
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState("");
-  const [configStatus, setConfigStatus] = useState("");
-  const [configSaving, setConfigSaving] = useState(false);
-  const [configForm, setConfigForm] = useState({
-    whatsapp_business_number: "",
-    phone_number_id: "",
-    access_token: "",
-    verify_token: "",
-  });
 
   const load = useCallback(async () => {
-    const [nextOverview, nextConfig, nextTeam, nextRoles, nextTools, nextConversations, nextAudit] = await Promise.all([
+    const [nextOverview, nextTeam, nextRoles, nextTools, nextConversations, nextAudit] = await Promise.all([
       api.getCompanionOverview(),
-      api.getCompanionConfig(),
       api.getCompanionTeam(),
       api.getCompanionRoles(),
       api.getCompanionTools(),
@@ -71,14 +61,6 @@ export default function CompanionPage() {
       api.getCompanionAudit(),
     ]);
     setOverview(nextOverview);
-    setConfig(nextConfig);
-    setConfigForm((prev) => ({
-      ...prev,
-      whatsapp_business_number: nextConfig.whatsapp_business_number || "",
-      phone_number_id: nextConfig.phone_number_id || "",
-      access_token: "",
-      verify_token: "",
-    }));
     setTeam(nextTeam);
     setRoles(nextRoles);
     setTools(nextTools.tools);
@@ -125,45 +107,6 @@ export default function CompanionPage() {
     }
   }
 
-  async function saveWabaConfig() {
-    setConfigSaving(true);
-    setConfigStatus("");
-    try {
-      const nextConfig = await api.saveCompanionConfig({
-        whatsapp_business_number: configForm.whatsapp_business_number.trim(),
-        phone_number_id: configForm.phone_number_id.trim(),
-        access_token: configForm.access_token.trim(),
-        verify_token: configForm.verify_token.trim(),
-      });
-      setConfig(nextConfig);
-      setConfigForm((prev) => ({ ...prev, access_token: "", verify_token: "" }));
-      setConfigStatus("WABA credentials saved.");
-      await load();
-    } catch (error) {
-      setConfigStatus(error instanceof Error ? error.message : "Could not save WABA credentials.");
-    } finally {
-      setConfigSaving(false);
-    }
-  }
-
-  async function clearSecret(kind: "access_token" | "verify_token") {
-    setConfigSaving(true);
-    setConfigStatus("");
-    try {
-      const nextConfig = await api.saveCompanionConfig({
-        clear_access_token: kind === "access_token",
-        clear_verify_token: kind === "verify_token",
-      });
-      setConfig(nextConfig);
-      setConfigStatus(kind === "access_token" ? "Access token cleared." : "Verify token cleared.");
-      await load();
-    } catch (error) {
-      setConfigStatus(error instanceof Error ? error.message : "Could not update WABA credentials.");
-    } finally {
-      setConfigSaving(false);
-    }
-  }
-
   async function toggleMember(member: api.CompanionTeamMember) {
     await api.updateCompanionTeamMember(member.id, {
       name: member.name,
@@ -202,86 +145,28 @@ export default function CompanionPage() {
       <section className="bg-[#0d1117] border border-[rgba(255,255,255,0.06)] rounded-2xl p-5">
         <div className="flex items-start justify-between gap-3 mb-4">
           <div>
-            <h3 className="text-sm font-bold text-[#e2e8f0]">WhatsApp Business Setup</h3>
+            <h3 className="text-sm font-bold text-[#e2e8f0]">Connection Center</h3>
             <div className="text-xs text-[#64748b] mt-1">
-              Connect the official WhatsApp Business number your team will message.
+              Configure WhatsApp Business credentials in one place.
             </div>
           </div>
           <div className="flex gap-2">
-            <span className={`badge ${config?.has_access_token ? "badge-green" : "badge-yellow"}`}>
-              Token {config?.has_access_token ? "Saved" : "Missing"}
+            <span className={`badge ${overview?.waba?.has_access_token ? "badge-green" : "badge-yellow"}`}>
+              Token {overview?.waba?.has_access_token ? "Saved" : "Missing"}
             </span>
-            <span className={`badge ${config?.has_verify_token ? "badge-green" : "badge-yellow"}`}>
-              Webhook {config?.has_verify_token ? "Ready" : "Not Ready"}
+            <span className={`badge ${overview?.waba?.has_verify_token ? "badge-green" : "badge-yellow"}`}>
+              Webhook {overview?.waba?.has_verify_token ? "Ready" : "Not Ready"}
             </span>
           </div>
         </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <label className="block">
-            <span className="mb-1 block text-[10px] text-[#64748b] uppercase tracking-wider">WhatsApp Business Number</span>
-            <input
-              value={configForm.whatsapp_business_number}
-              onChange={(event) => setConfigForm((prev) => ({ ...prev, whatsapp_business_number: event.target.value }))}
-              placeholder="+91..."
-              className="w-full rounded-lg border border-[rgba(255,255,255,0.1)] bg-[#111820] px-3 py-2 text-sm text-[#e2e8f0] outline-none focus:border-[#3EE88A]"
-            />
-          </label>
-          <label className="block">
-            <span className="mb-1 block text-[10px] text-[#64748b] uppercase tracking-wider">Phone Number ID</span>
-            <input
-              value={configForm.phone_number_id}
-              onChange={(event) => setConfigForm((prev) => ({ ...prev, phone_number_id: event.target.value }))}
-              placeholder="Meta phone number ID"
-              className="w-full rounded-lg border border-[rgba(255,255,255,0.1)] bg-[#111820] px-3 py-2 text-sm text-[#e2e8f0] outline-none focus:border-[#3EE88A]"
-            />
-          </label>
-          <label className="block">
-            <span className="mb-1 block text-[10px] text-[#64748b] uppercase tracking-wider">
-              Access Token {config?.access_token_preview ? `(${config.access_token_preview})` : ""}
-            </span>
-            <input
-              type="password"
-              value={configForm.access_token}
-              onChange={(event) => setConfigForm((prev) => ({ ...prev, access_token: event.target.value }))}
-              placeholder={config?.has_access_token ? "Paste a new token to replace" : "Paste Meta access token"}
-              className="w-full rounded-lg border border-[rgba(255,255,255,0.1)] bg-[#111820] px-3 py-2 text-sm text-[#e2e8f0] outline-none focus:border-[#3EE88A]"
-            />
-          </label>
-          <label className="block">
-            <span className="mb-1 block text-[10px] text-[#64748b] uppercase tracking-wider">
-              Verify Token {config?.verify_token_preview ? `(${config.verify_token_preview})` : ""}
-            </span>
-            <input
-              type="password"
-              value={configForm.verify_token}
-              onChange={(event) => setConfigForm((prev) => ({ ...prev, verify_token: event.target.value }))}
-              placeholder={config?.has_verify_token ? "Paste a new token to replace" : "Create a webhook verify token"}
-              className="w-full rounded-lg border border-[rgba(255,255,255,0.1)] bg-[#111820] px-3 py-2 text-sm text-[#e2e8f0] outline-none focus:border-[#3EE88A]"
-            />
-          </label>
+        <div className="flex flex-wrap gap-2">
+          <a href="/connections" className="rounded-lg bg-[#3EE88A] px-4 py-2 text-sm font-bold text-[#04100a] no-underline">
+            Open Connection Center
+          </a>
+          <a href="/connections" className="rounded-lg border border-[rgba(255,255,255,0.1)] px-4 py-2 text-sm text-[#e2e8f0] no-underline hover:bg-[#111820]">
+            Copy webhook URL and tokens
+          </a>
         </div>
-
-        <div className="mt-4 flex flex-wrap gap-2">
-          <button
-            onClick={saveWabaConfig}
-            disabled={configSaving}
-            className="rounded-lg bg-[#3EE88A] px-4 py-2 text-sm font-bold text-[#04100a] disabled:opacity-50"
-          >
-            {configSaving ? "Saving..." : "Save WABA Credentials"}
-          </button>
-          {config?.has_access_token && (
-            <button onClick={() => clearSecret("access_token")} className="rounded-lg border border-[rgba(255,255,255,0.1)] px-4 py-2 text-sm text-[#e2e8f0] hover:bg-[#111820]">
-              Clear Access Token
-            </button>
-          )}
-          {config?.has_verify_token && (
-            <button onClick={() => clearSecret("verify_token")} className="rounded-lg border border-[rgba(255,255,255,0.1)] px-4 py-2 text-sm text-[#e2e8f0] hover:bg-[#111820]">
-              Clear Verify Token
-            </button>
-          )}
-        </div>
-        {configStatus && <div className="mt-3 text-xs text-[#94a3b8]">{configStatus}</div>}
       </section>
 
       <div className="grid grid-cols-1 xl:grid-cols-[1.2fr_0.8fr] gap-5">

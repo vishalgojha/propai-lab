@@ -1,4 +1,6 @@
 import "dotenv/config";
+import fs from "fs";
+import path from "path";
 
 import makeWASocket, {
   Browsers,
@@ -16,6 +18,7 @@ import qrcode from "qrcode-terminal";
 const WEBHOOK_URL = process.env.PROPAI_WEBHOOK_URL || "http://localhost:8000/webhook";
 const INSTANCE_NAME = process.env.PROPAI_INSTANCE_NAME || "propai-baileys";
 const AUTH_DIR = process.env.BAILEYS_AUTH_DIR || "auth";
+const STATUS_FILE = process.env.BAILEYS_STATUS_FILE || path.resolve(AUTH_DIR, "status.json");
 const INGEST_PRIVATE_CHATS = parseBool(process.env.PROPAI_INGEST_PRIVATE_CHATS, false);
 const CAPTURE_HISTORY_SYNC = parseBool(process.env.PROPAI_CAPTURE_HISTORY_SYNC, false);
 const GROUP_ALLOWLIST = parseList(process.env.PROPAI_GROUP_ALLOWLIST);
@@ -78,6 +81,27 @@ function groupAllowed(jid: string) {
   }
 
   return GROUP_ALLOWLIST.some((item) => searchable.includes(normalizeMatch(item)));
+}
+
+function writeStatus(partial: Record<string, unknown>) {
+  try {
+    fs.mkdirSync(path.dirname(STATUS_FILE), { recursive: true });
+    fs.writeFileSync(
+      STATUS_FILE,
+      JSON.stringify(
+        {
+          instance: INSTANCE_NAME,
+          source: "baileys",
+          updated_at: new Date().toISOString(),
+          ...partial,
+        },
+        null,
+        2
+      )
+    );
+  } catch (error) {
+    logger.warn({ error }, "failed to write baileys status");
+  }
 }
 
 function messageTimestampSeconds(message: WAMessage) {
@@ -182,6 +206,7 @@ async function refreshGroups(sock: ReturnType<typeof makeWASocket>) {
 async function connect() {
   const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
   const { version } = await fetchLatestBaileysVersion();
+  writeStatus({ connected: false, connection_state: "connecting" });
   const sock = makeWASocket({
     version,
     auth: {
@@ -202,17 +227,30 @@ async function connect() {
     if (qr) {
       logger.info("scan this QR with WhatsApp");
       qrcode.generate(qr, { small: true });
+      writeStatus({ connected: false, connection_state: "qr", qr_available: true });
     }
 
     if (connection === "open") {
       logger.info("whatsapp connection open");
       await refreshGroups(sock);
+      writeStatus({
+        connected: true,
+        connection_state: "open",
+        phone_number: sock.user?.id || "",
+        display_name: sock.user?.name || "",
+        instance_name: INSTANCE_NAME,
+      });
     }
 
     if (connection === "close") {
       const statusCode = (lastDisconnect?.error as { output?: { statusCode?: number } } | undefined)?.output?.statusCode;
       const loggedOut = statusCode === DisconnectReason.loggedOut;
       logger.warn({ statusCode, loggedOut }, "whatsapp connection closed");
+      writeStatus({
+        connected: false,
+        connection_state: loggedOut ? "logged_out" : "closed",
+        disconnect_reason: statusCode || null,
+      });
       if (!loggedOut) {
         setTimeout(() => void connect(), 2000);
       }
@@ -238,6 +276,7 @@ async function connect() {
   sock.ev.on("messaging-history.set", async ({ messages }) => {
     if (!CAPTURE_HISTORY_SYNC) return;
     logger.info({ messages: messages.length }, "received history sync batch");
+    writeStatus({ history_sync: true });
     for (const message of messages) {
       try {
         await forwardMessage(message, "MESSAGES_SET");

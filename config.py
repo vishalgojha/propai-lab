@@ -8,6 +8,8 @@ LAB_DIR = Path(__file__).parent
 PROJECT_DIR = LAB_DIR.parent
 DATA_DIR = PROJECT_DIR / "data"
 DB_PATH = LAB_DIR / "lab.db"
+BAILEYS_AUTH_DIR = PROJECT_DIR / "services" / "baileys-ingestor" / "auth"
+BAILEYS_STATUS_FILE = Path(os.getenv("BAILEYS_STATUS_FILE", str(BAILEYS_AUTH_DIR / "status.json")))
 
 # Server
 HOST = os.getenv("LAB_HOST", "0.0.0.0")

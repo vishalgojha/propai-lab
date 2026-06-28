@@ -38,7 +38,7 @@ from lab.events import get_bus
 PROJECT_DIR = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_DIR))
 
-from lab.config import DB_PATH, WEBHOOK_SECRET, HOST, PORT, EVOLUTION_INSTANCE, EVOLUTION_API_URL, DOUBLEWORD_API_KEY, ENABLE_AI_PROMO, ENABLE_META_PUBLISHING, load_group_allowlist, save_group_allowlist, PROPAI_WEBHOOK_URL
+from lab.config import DB_PATH, WEBHOOK_SECRET, HOST, PORT, EVOLUTION_INSTANCE, EVOLUTION_API_URL, EVOLUTION_API_KEY, DOUBLEWORD_API_KEY, ENABLE_AI_PROMO, ENABLE_META_PUBLISHING, BAILEYS_STATUS_FILE, load_group_allowlist, save_group_allowlist, PROPAI_WEBHOOK_URL
 from evidence.resolver import resolve, resolve_by_landmark, resolve_by_street
 from evidence.parsers import parse as broker_parse
 
@@ -2444,6 +2444,62 @@ def _mask_secret(value: str = "") -> str:
     return f"{value[:4]}••••{value[-4:]}"
 
 
+def _evolution_headers() -> dict[str, str]:
+    key = EVOLUTION_API_KEY or "propai-dev-key"
+    return {"apikey": key}
+
+
+def _evolution_instance_state() -> dict:
+    try:
+        with httpx.Client(timeout=10.0) as client:
+            response = client.get(
+                f"{EVOLUTION_API_URL}/instance/connectionState/{EVOLUTION_INSTANCE}",
+                headers=_evolution_headers(),
+            )
+            response.raise_for_status()
+            payload = response.json()
+    except Exception:
+        return {}
+
+    instance = payload.get("instance") if isinstance(payload, dict) else {}
+    return instance if isinstance(instance, dict) else {}
+
+
+def _evolution_instance_info() -> dict:
+    try:
+        with httpx.Client(timeout=10.0) as client:
+            response = client.get(f"{EVOLUTION_API_URL}/instance/fetchInstances", headers=_evolution_headers())
+            response.raise_for_status()
+            payload = response.json()
+    except Exception:
+        return {}
+
+    if not isinstance(payload, list):
+        return {}
+    for inst in payload:
+        if isinstance(inst, dict) and inst.get("name") == EVOLUTION_INSTANCE:
+            return inst
+    return {}
+
+
+def _baileys_status_file() -> dict:
+    candidates = [BAILEYS_STATUS_FILE, PROJECT_DIR / "services" / "baileys-ingestor" / "auth" / "status.json"]
+    seen: set[str] = set()
+    for path in candidates:
+        key = str(path)
+        if key in seen:
+            continue
+        seen.add(key)
+        try:
+            if path.exists():
+                data = json.loads(path.read_text())
+                if isinstance(data, dict):
+                    return data
+        except Exception:
+            continue
+    return {}
+
+
 def _today_count(table: str, column: str = "created_at", where: str = "1=1") -> int:
     try:
         return storage.db.execute(
@@ -2572,6 +2628,41 @@ async def companion_save_config(req: CompanionConfigRequest):
     )
     storage._commit()
     return await companion_config()
+
+
+@app.get("/api/companion/webhook")
+async def companion_webhook_verify(request: Request):
+    mode = request.query_params.get("hub.mode", "")
+    token = request.query_params.get("hub.verify_token", "")
+    challenge = request.query_params.get("hub.challenge", "")
+    expected = _companion_get_config_value("verify_token", "WABA_VERIFY_TOKEN")
+    if mode == "subscribe" and expected and token == expected:
+        return Response(content=challenge, media_type="text/plain")
+    raise HTTPException(403, "Webhook verify token does not match")
+
+
+@app.post("/api/companion/webhook")
+async def companion_webhook_receive(request: Request):
+    body = await request.json()
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    storage.db.execute(
+        """INSERT INTO companion_audit_log
+           (action, target_type, target_id, status, details, created_at)
+           VALUES (?,?,?,?,?,?)""",
+        (
+            "waba_webhook_received",
+            "companion_webhook",
+            "meta",
+            "logged",
+            json.dumps({
+                "object": body.get("object"),
+                "entries": len(body.get("entry", [])) if isinstance(body.get("entry"), list) else 0,
+            }),
+            now,
+        ),
+    )
+    storage._commit()
+    return {"status": "received"}
 
 
 @app.get("/api/companion/team")
@@ -2749,7 +2840,7 @@ async def sync_qr():
     """Get QR code for WhatsApp login."""
     return {
         "error": "terminal_qr",
-        "message": "Baileys QR is displayed in the terminal. Run './propai connect'.",
+        "message": "Baileys QR is displayed in the terminal. Run 'propai connect' or 'cd services/baileys-ingestor && npm run dev'.",
     }
 
 
@@ -2770,6 +2861,48 @@ async def sync_connection_state():
 
 
 def _baileys_connection_details() -> dict:
+    status = _baileys_status_file()
+    if status:
+        connected = bool(status.get("connected"))
+        connection_state = str(status.get("connection_state") or ("open" if connected else "unknown")).lower()
+        return {
+            "connected": connected,
+            "connection_state": connection_state,
+            "instance_name": status.get("instance") or status.get("instance_name") or EVOLUTION_INSTANCE,
+            "device_name": status.get("device_name") or "Baileys terminal ingestor",
+            "phone_number": status.get("phone_number") or "",
+            "display_name": status.get("display_name") or "",
+            "connected_since": status.get("connected_since") or None,
+            "last_message_at": status.get("last_message_at") or None,
+            "total_groups": status.get("total_groups"),
+            "messages_captured": status.get("messages_captured"),
+        }
+
+    live_state = _evolution_instance_state()
+    live_info = _evolution_instance_info()
+
+    live_connection = str(live_state.get("state") or live_info.get("connectionStatus") or "").lower()
+    live_connected = live_connection in {"open", "connected", "syncing"}
+    live_phone = live_info.get("ownerJid", "")
+    live_number = live_phone.split("@")[0] if live_phone else ""
+    live_profile = live_info.get("profileName", "") or live_info.get("name", "")
+    live_created = live_info.get("createdAt", "")
+
+    if live_connected or live_phone or live_profile:
+        formatted_phone = f"+{live_number[:2]} {live_number[2:7]} {live_number[7:]}" if live_number else ""
+        return {
+            "connected": live_connected or bool(live_phone),
+            "connection_state": live_connection or ("open" if live_connected else "unknown"),
+            "instance_name": live_info.get("name", EVOLUTION_INSTANCE),
+            "device_name": live_info.get("connectionStatus", "Baileys terminal ingestor"),
+            "phone_number": formatted_phone or live_number,
+            "display_name": live_profile,
+            "connected_since": live_created or None,
+            "last_message_at": None,
+            "total_groups": 0,
+            "messages_captured": 0,
+        }
+
     if not storage:
         return {
             "connected": False,
@@ -3320,6 +3453,228 @@ async def search_messages(q: str = ""):
     # Remove empty groups
     result = {k: v for k, v in result.items() if v}
     return result
+
+
+@app.get("/api/search/listings")
+async def search_listings(
+    intent: str = "", bhk: str = "", building: str = "", micro_market: str = "",
+    price_max: float = 0, price_min: float = 0, furnishing: str = "", broker: str = "",
+    sort_by: str = "last_seen", limit: int = 10, offset: int = 0,
+    group_by_building: bool = True,
+):
+    """Structured listing search with building grouping and pagination."""
+    import math
+    from datetime import datetime, timezone, timedelta
+
+    where_clauses = []
+    params = []
+
+    if intent and intent != "any":
+        where_clauses.append("l.intent = ?")
+        params.append(intent.upper())
+
+    if bhk and bhk != "any":
+        where_clauses.append("l.bhk = ?")
+        params.append(bhk)
+
+    if building:
+        where_clauses.append("""(
+            l.building_name LIKE ? OR
+            l.building_name IN (SELECT canonical FROM building_aliases WHERE alias LIKE ?) OR
+            l.building_name IN (SELECT alias FROM building_aliases WHERE canonical LIKE ?) OR
+            l.building_name IN (SELECT canonical FROM building_aliases WHERE alias LIKE ?)
+        )""")
+        bpattern = f"%{building}%"
+        params.extend([bpattern, bpattern, bpattern, bpattern])
+
+    if micro_market:
+        where_clauses.append("l.micro_market LIKE ?")
+        params.append(f"%{micro_market}%")
+
+    if price_max:
+        where_clauses.append("l.price <= ?")
+        params.append(float(price_max))
+
+    if price_min:
+        where_clauses.append("l.price >= ?")
+        params.append(float(price_min))
+
+    if furnishing and furnishing != "any":
+        where_clauses.append("l.furnishing = ?")
+        params.append(furnishing)
+
+    if broker:
+        where_clauses.append("l.broker_name LIKE ?")
+        params.append(f"%{broker}%")
+
+    where_sql = " AND ".join(where_clauses) if where_clauses else "1=1"
+
+    sort_map = {
+        "price": "l.price",
+        "last_seen": "l.last_seen",
+        "observation_count": "l.observation_count",
+    }
+    order_sql = sort_map.get(sort_by, "l.last_seen")
+
+    total_count = storage.db.execute(
+        f"SELECT COUNT(*) FROM listings l WHERE {where_sql}", params
+    ).fetchone()[0]
+
+    listing_params = params.copy()
+    listing_params.extend([limit + 50, offset])
+    rows = storage.db.execute(f"""
+        SELECT l.fingerprint, l.intent, l.bhk, l.price, l.price_unit, l.area_sqft,
+               l.furnishing, l.location_label, l.building_name, l.landmark_name,
+               l.micro_market, l.broker_name, l.broker_phone,
+               l.first_seen, l.last_seen, l.observation_count, l.group_count,
+               l.latest_raw_message_id
+        FROM listings l
+        WHERE {where_sql}
+        ORDER BY {order_sql} DESC
+        LIMIT ? OFFSET ?
+    """, listing_params).fetchall()
+
+    if not rows:
+        return {
+            "type": "listing_results",
+            "total": total_count,
+            "results": [],
+            "grouped": {},
+            "showing": 0,
+            "offset": offset,
+            "has_more": False,
+            "remaining": 0,
+            "search_summary": {"total": 0, "brokers": 0, "buildings": 0, "groups": 0},
+            "suggestion": "No exact matches found. Try: Nearby markets | Similar buildings | Different budget | Different BHK | Latest listings",
+        }
+
+    now = datetime.now(timezone.utc)
+    results = []
+    for r in rows:
+        d = dict(r)
+        match_reasons = []
+        if bhk and bhk != "any" and d.get("bhk"):
+            match_reasons.append(f"✓ {d['bhk']} BHK")
+        if intent and d.get("intent"):
+            match_reasons.append(f"✓ {d['intent']}")
+        if micro_market and d.get("micro_market"):
+            match_reasons.append(f"✓ {d['micro_market']}")
+        if building and d.get("building_name"):
+            match_reasons.append(f"✓ Building match: {d['building_name']}")
+        if furnishing and d.get("furnishing"):
+            match_reasons.append(f"✓ {d['furnishing']}")
+
+        last_seen = d.get("last_seen")
+        age = ""
+        if last_seen:
+            try:
+                last_dt = datetime.fromisoformat(last_seen.replace("Z", "+00:00"))
+                diff = now - last_dt
+                if diff.days == 0:
+                    hours = diff.seconds // 3600
+                    age = f"Seen {hours}h ago" if hours > 0 else "Seen just now"
+                elif diff.days == 1:
+                    age = "Seen yesterday"
+                elif diff.days < 7:
+                    age = f"Seen {diff.days}d ago"
+                else:
+                    age = f"Seen {diff.days // 7}w ago"
+            except:
+                age = ""
+
+        first_seen = d.get("first_seen")
+        first_age = ""
+        if first_seen:
+            try:
+                first_dt = datetime.fromisoformat(first_seen.replace("Z", "+00:00"))
+                diff = now - first_dt
+                if diff.days == 0:
+                    first_age = "First seen today"
+                elif diff.days == 1:
+                    first_age = "First seen yesterday"
+                elif diff.days < 7:
+                    first_age = f"First seen {diff.days}d ago"
+                else:
+                    first_age = f"First seen {diff.days // 7}w ago"
+            except:
+                first_age = ""
+
+        price_val = d.get("price") or 0
+        price_formatted = ""
+        if price_val >= 1_00_00_000:
+            price_formatted = f"₹{price_val / 1_00_00_000:.2f} Cr"
+        elif price_val >= 1_00_000:
+            price_formatted = f"₹{price_val / 1_00_000:.1f} L"
+        elif price_val > 0:
+            price_formatted = f"₹{price_val:,.0f}"
+        if d.get("price_unit") and d.get("price_unit") != "/sale" and d.get("intent") == "RENT":
+            price_formatted += "/month"
+
+        confidence_pct = 0
+
+        latest_msg = ""
+
+        results.append({
+            "fingerprint": d.get("fingerprint"),
+            "intent": d.get("intent"),
+            "bhk": d.get("bhk"),
+            "price": d.get("price"),
+            "price_formatted": price_formatted,
+            "area_sqft": d.get("area_sqft"),
+            "furnishing": d.get("furnishing"),
+            "location_label": d.get("location_label"),
+            "building_name": d.get("building_name") or "Unknown Building",
+            "landmark_name": d.get("landmark_name"),
+            "micro_market": d.get("micro_market"),
+            "broker_name": d.get("broker_name"),
+            "broker_phone": d.get("broker_phone"),
+            "first_seen": d.get("first_seen"),
+            "first_seen_text": first_age,
+            "last_seen": d.get("last_seen"),
+            "last_seen_text": age,
+            "observation_count": d.get("observation_count", 0),
+            "group_count": d.get("group_count", 0),
+            "confidence": confidence_pct,
+            "latest_message": latest_msg,
+            "latest_group": "",
+            "latest_timestamp": "",
+            "latest_sender": "",
+            "raw_message_id": d.get("latest_raw_message_id"),
+            "match_reasons": match_reasons,
+        })
+
+    grouped = {}
+    if group_by_building:
+        for r in results:
+            bname = r["building_name"] or "Unknown Building"
+            if bname not in grouped:
+                grouped[bname] = {"rentals": 0, "sales": 0, "listings": []}
+            if r["intent"] == "RENT":
+                grouped[bname]["rentals"] += 1
+            elif r["intent"] == "SELL":
+                grouped[bname]["sales"] += 1
+            grouped[bname]["listings"].append(r)
+
+    brokers_found = len(set(r["broker_name"] for r in results if r["broker_name"]))
+    buildings_found = len(set(r["building_name"] for r in results if r["building_name"]))
+    groups_found = len(set(r["latest_group"] for r in results if r["latest_group"]))
+
+    return {
+        "type": "listing_results",
+        "total": total_count,
+        "results": results[:limit],
+        "grouped": grouped,
+        "showing": len(results[:limit]),
+        "offset": offset,
+        "has_more": total_count > offset + limit,
+        "remaining": max(0, total_count - offset - limit),
+        "search_summary": {
+            "total": total_count,
+            "brokers": brokers_found,
+            "buildings": buildings_found,
+            "groups": groups_found,
+        },
+    }
 
 
 # ── WhatsApp Audit ────────────────────────────────────────────────
@@ -4025,373 +4380,45 @@ async def api_key():
     return {"key": token, "path": str(key_path)}
 
 
-# ── Serve QR code via proxy to Evolution API ────────────────────
+# ── Legacy QR routes ─────────────────────────────────────────────
 
-QR_PAGE = None
-
-def _get_qr_page():
-    global QR_PAGE
-    if QR_PAGE is not None:
-        return QR_PAGE
-    QR_PAGE = HTMLResponse("""<!DOCTYPE html>
+@app.get("/qr")
+async def qr_page():
+    return HTMLResponse(
+        """<!doctype html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Connect Your Market — PropAI</title>
-<style>
-/* ── PropAI Design System (matches app.propai.live) ── */
-:root{
-  --background:#ffffff;--foreground:#0a0a0a;
-  --card:#ffffff;--card-foreground:#0a0a0a;
-  --primary:#171717;--primary-foreground:#fafafa;
-  --secondary:#f5f5f5;--secondary-foreground:#171717;
-  --muted:#f5f5f5;--muted-foreground:#737373;
-  --accent:#f5f5f5;--accent-foreground:#171717;
-  --blue:#2563eb;--blue-hover:#1d4ed8;
-  --destructive:#ef4444;
-  --border:#e5e5e5;
-  --input:#e5e5e5;
-  --ring:#0a0a0a;
-  --radius:0.5rem;
-  --radius-xl:0.75rem;
-  --shadow:0 1px 2px 0 rgba(0,0,0,0.05);
-  --shadow-md:0 4px 6px -1px rgba(0,0,0,0.1),0 2px 4px -2px rgba(0,0,0,0.1);
-  --font:ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica Neue,Arial,sans-serif;
-}
-*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-html{font-size:14px}
-body{font-family:var(--font);background:#f8fafc;color:var(--foreground);-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
-::selection{background:var(--blue);color:#fff}
-
-/* ── Header ── */
-.header{position:sticky;top:0;z-index:50;display:flex;align-items:center;justify-content:space-between;height:64px;padding:0 40px;background:rgba(255,255,255,0.95);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border-bottom:1px solid var(--border);box-shadow:var(--shadow);flex-shrink:0}
-.header-left{display:flex;align-items:center;gap:12px}
-.logo{display:flex;align-items:center;gap:10px;text-decoration:none}
-.logo-icon{width:40px;height:40px;border-radius:var(--radius-xl);background:var(--primary);display:flex;align-items:center;justify-content:center;color:#fff;font-size:18px;box-shadow:var(--shadow-md)}
-.logo-text{font-size:18px;font-weight:700;color:var(--foreground);letter-spacing:-0.02em}
-.header-right{display:flex;align-items:center;gap:16px}
-.badge{display:inline-flex;align-items:center;padding:2px 10px;border-radius:9999px;font-size:12px;font-weight:500;border:1px solid var(--border);color:var(--muted-foreground);background:var(--card)}
-.conn-status{display:flex;align-items:center;gap:6px;font-size:13px;font-weight:500;color:var(--muted-foreground)}
-.conn-dot{width:8px;height:8px;border-radius:50%;background:#fbbf24;flex-shrink:0}
-.conn-dot.connected{background:#22c55e}
-.conn-dot.error{background:var(--destructive)}
-
-/* ── Layout ── */
-.app{display:flex;flex-direction:column;min-height:100vh}
-.main{flex:1;display:flex;align-items:center;justify-content:center;padding:32px 40px}
-.main-inner{width:100%;max-width:900px;display:flex;flex-direction:column;align-items:center;gap:32px;animation:onboardFade 0.5s ease-out}
-
-/* ── Hero ── */
-.hero{text-align:center;max-width:540px}
-.hero h1{font-size:30px;font-weight:800;letter-spacing:-0.03em;line-height:1.15;color:var(--foreground)}
-.hero p{font-size:15px;color:var(--muted-foreground);margin-top:8px;line-height:1.6}
-.hero .tagline{display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:500;color:var(--blue);margin-bottom:12px}
-
-/* ── Onboarding Card ── */
-.onboard-card{display:flex;gap:40px;background:var(--card);border:1px solid var(--border);border-radius:var(--radius-xl);padding:40px 48px;box-shadow:var(--shadow);width:100%;animation:onboardCard 0.4s ease-out}
-.qr-zone{display:flex;flex-direction:column;align-items:center;gap:16px;flex-shrink:0;min-width:280px}
-.qr-frame{position:relative;width:232px;height:232px;border-radius:var(--radius);background:var(--muted);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;overflow:hidden}
-.qr-frame img{width:216px;height:216px;border-radius:6px;display:block;transition:opacity 0.3s}
-.qr-frame img.loading{opacity:0}
-.qr-frame .qr-placeholder{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:8px;color:var(--muted-foreground);font-size:13px;background:var(--muted);transition:opacity 0.3s}
-.qr-frame .qr-placeholder.hidden{opacity:0;pointer-events:none}
-.qr-timer{font-size:12px;font-weight:500;color:var(--muted-foreground);font-variant-numeric:tabular-nums;display:flex;align-items:center;gap:4px}
-.qr-status{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:500;color:var(--muted-foreground)}
-.qr-status .pulse{width:8px;height:8px;border-radius:50%;background:var(--blue);animation:qrPulse 1.8s ease-in-out infinite}
-.qr-note{font-size:11px;color:var(--muted-foreground);text-align:center;line-height:1.4}
-
-/* ── Steps ── */
-.steps-zone{flex:1;display:flex;flex-direction:column;justify-content:center;gap:4px}
-.steps-title{font-size:11px;font-weight:600;color:var(--muted-foreground);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:8px}
-.step-item{display:flex;align-items:center;gap:12px;padding:8px 0}
-.step-num{width:24px;height:24px;border-radius:6px;background:var(--secondary);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--muted-foreground);flex-shrink:0}
-.step-icon{width:18px;height:18px;color:var(--muted-foreground);flex-shrink:0;display:flex;align-items:center;justify-content:center}
-.step-icon svg{width:16px;height:16px}
-.step-label{font-size:13px;font-weight:500;color:var(--foreground)}
-.step-label.active{color:var(--blue);font-weight:600}
-.step-connector{height:14px;margin-left:36px;border-left:1.5px dashed var(--border)}
-
-/* ── Info Bar ── */
-.info-bar{display:flex;gap:16px 24px;flex-wrap:wrap;justify-content:center;padding:16px 32px;background:var(--card);border:1px solid var(--border);border-radius:var(--radius);width:100%;animation:onboardCard 0.4s ease-out 0.1s both}
-.info-item{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted-foreground)}
-.info-item .check{width:16px;height:16px;border-radius:50%;background:rgba(34,197,94,0.12);display:flex;align-items:center;justify-content:center;flex-shrink:0}
-.info-item .check svg{width:9px;height:9px;color:#22c55e}
-
-/* ── Footer ── */
-.footer{text-align:center;padding:20px 40px;border-top:1px solid var(--border);background:var(--card)}
-.footer-brand{font-size:12px;font-weight:500;color:var(--muted-foreground)}
-.footer-disclaimer{font-size:11px;color:var(--muted-foreground);margin-top:4px;max-width:520px;margin-left:auto;margin-right:auto;line-height:1.5;opacity:0.7}
-
-/* ── Animations ── */
-@keyframes onboardFade{from{opacity:0}to{opacity:1}}
-@keyframes onboardCard{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
-@keyframes qrPulse{0%,100%{opacity:0.5;transform:scale(1)}50%{opacity:1;transform:scale(1.4)}}
-
-/* ── Responsive ── */
-@media(max-width:820px){.onboard-card{flex-direction:column;align-items:center;padding:32px 24px}.qr-zone{min-width:auto}.steps-zone{width:100%}.header{padding:0 20px}.main{padding:24px 20px}.footer{padding:16px 20px}}
-</style>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PropAI Connect</title>
+  <style>
+    body{margin:0;font-family:ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#0b0f14;color:#e2e8f0;display:grid;place-items:center;min-height:100vh;padding:24px}
+    .card{max-width:640px;width:100%;border:1px solid rgba(255,255,255,.08);background:#0d1117;border-radius:18px;padding:24px}
+    .muted{color:#94a3b8;line-height:1.6}
+    a{color:#3ee88a;text-decoration:none;font-weight:600}
+    .row{display:flex;gap:12px;flex-wrap:wrap;margin-top:20px}
+    .btn{display:inline-block;padding:10px 14px;border-radius:10px;border:1px solid rgba(255,255,255,.1);color:#e2e8f0;text-decoration:none}
+    .primary{background:#3ee88a;color:#04100a;border-color:#3ee88a}
+  </style>
 </head>
 <body>
-<div class="app">
-  <header class="header">
-    <div class="header-left">
-      <a class="logo" href="/">
-        <div class="logo-icon">⚡</div>
-        <span class="logo-text">PropAI</span>
-      </a>
-    </div>
-    <div class="header-right">
-      <span class="badge">v1.0.0</span>
-      <div class="conn-status" id="connStatus">
-        <span class="conn-dot" id="connDot"></span>
-        <span id="connLabel">Waiting for connection...</span>
-      </div>
-    </div>
-  </header>
-
-  <div class="main">
-    <div class="main-inner">
-      <div class="hero">
-        <div class="tagline">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-          WhatsApp &rarr; Organized Properties
-        </div>
-        <h1>Connect Your Market</h1>
-        <p>Scan your WhatsApp to let PropAI build your local market memory from your broker groups &mdash; so you never miss a listing, price shift, or opportunity.</p>
-      </div>
-
-      <div class="onboard-card">
-        <div class="qr-zone">
-          <div class="qr-frame" id="qrFrame">
-            <img id="qrImage" class="loading" src="/qr/image?t=" alt="QR Code">
-            <div class="qr-placeholder" id="qrPlaceholder">
-              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><line x1="3" y1="10" x2="3" y2="14"/><line x1="10" y1="3" x2="14" y2="3"/><line x1="10" y1="21" x2="14" y2="21"/><line x1="21" y1="10" x2="21" y2="14"/><line x1="10" y1="14" x2="14" y2="14"/></svg>
-              Loading QR...
-            </div>
-          </div>
-          <div class="qr-timer" id="qrTimer">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-            Refreshes in <span id="timerCount">30</span>s
-          </div>
-          <div class="qr-status">
-            <span class="pulse" id="pulseDot"></span>
-            <span id="statusLabel">Waiting for scan...</span>
-          </div>
-          <div class="qr-note">The QR refreshes automatically if it expires.</div>
-        </div>
-
-        <div class="steps-zone">
-          <div class="steps-title">How to connect</div>
-          <div class="step-item">
-            <div class="step-num">1</div>
-            <span class="step-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span>
-            <span class="step-label">Open WhatsApp on your phone</span>
-          </div>
-          <div class="step-connector"></div>
-          <div class="step-item">
-            <div class="step-num">2</div>
-            <span class="step-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span>
-            <span class="step-label">Go to Settings</span>
-          </div>
-          <div class="step-connector"></div>
-          <div class="step-item">
-            <div class="step-num">3</div>
-            <span class="step-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"/><rect x="2" y="14" width="20" height="8" rx="2" ry="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg></span>
-            <span class="step-label">Tap Linked Devices</span>
-          </div>
-          <div class="step-connector"></div>
-          <div class="step-item">
-            <div class="step-num">4</div>
-            <span class="step-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg></span>
-            <span class="step-label">Tap Link a Device</span>
-          </div>
-          <div class="step-connector"></div>
-          <div class="step-item">
-            <div class="step-num" style="background:rgba(37,99,235,0.1);border-color:var(--blue);color:var(--blue)">5</div>
-            <span class="step-icon" style="color:var(--blue)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><rect x="7" y="7" width="10" height="10"/><line x1="3" y1="3" x2="7" y2="7"/><line x1="21" y1="3" x2="17" y2="7"/><line x1="3" y1="21" x2="7" y2="17"/><line x1="21" y1="21" x2="17" y2="17"/></svg></span>
-            <span class="step-label active">Scan this QR code</span>
-          </div>
-        </div>
-      </div>
-
-      <div class="info-bar">
-        <div class="info-item"><span class="check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>End-to-end encrypted</div>
-        <div class="info-item"><span class="check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>Read-only historical import</div>
-        <div class="info-item"><span class="check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>No messages modified</div>
-        <div class="info-item"><span class="check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>Disconnect anytime</div>
-      </div>
+  <div class="card">
+    <h1>Connect WhatsApp from the terminal</h1>
+    <p class="muted">PropAI now uses Baileys for the live WhatsApp session. The browser does not generate QR codes anymore.</p>
+    <p class="muted">Run <code>propai connect</code> in the project terminal, scan the QR there, then return to <a href="/connections">Connection Center</a>.</p>
+    <div class="row">
+      <a class="btn primary" href="/connections">Open Connection Center</a>
+      <a class="btn" href="/">Go to App</a>
     </div>
   </div>
-
-  <footer class="footer">
-    <div class="footer-brand">Powered by <strong>Chaos Craft Labs</strong></div>
-    <div class="footer-disclaimer">Your WhatsApp credentials are never stored. Authentication is handled directly through the official WhatsApp Web session.</div>
-  </footer>
-</div>
-
-<script>
-class QRController {
-  constructor(opts = {}) {
-    this.imageEl = document.getElementById('qrImage');
-    this.placeholderEl = document.getElementById('qrPlaceholder');
-    this.statusLabel = document.getElementById('statusLabel');
-    this.connDot = document.getElementById('connDot');
-    this.connLabel = document.getElementById('connLabel');
-    this.pulseDot = document.getElementById('pulseDot');
-    this.timerEl = document.getElementById('timerCount');
-    this.refreshInterval = opts.refreshInterval || 30000;
-    this.url = opts.url || '/qr/image';
-    this.timer = null;
-    this.countdown = null;
-    this.secondsLeft = this.refreshInterval / 1000;
-    this.initialLoad();
-    this.startAutoRefresh();
-    this.startCountdown();
-  }
-
-  async initialLoad() {
-    this.imageEl.classList.add('loading');
-    this.placeholderEl.classList.remove('hidden');
-    try {
-      const ts = Date.now();
-      const res = await fetch(this.url + '?t=' + ts);
-      if (res.ok) {
-        const contentType = res.headers.get('content-type') || '';
-        if (contentType.includes('application/json')) {
-          const data = await res.json();
-          if (data.error === 'already_connected') {
-            this.imageEl.classList.remove('loading');
-            this.placeholderEl.classList.add('hidden');
-            this.setStatus('connected');
-            this.stopAutoRefresh();
-            setTimeout(() => { window.location.href = '/'; }, 1500);
-            return;
-          }
-        }
-        this.imageEl.src = this.url + '?t=' + ts;
-        this.imageEl.onload = () => {
-          this.imageEl.classList.remove('loading');
-          this.placeholderEl.classList.add('hidden');
-          this.setStatus('waiting');
-          this.secondsLeft = this.refreshInterval / 1000;
-          this.updateTimerDisplay();
-        };
-        this.imageEl.onerror = () => {
-          this.imageEl.classList.remove('loading');
-          this.setStatus('error');
-        };
-      } else {
-        this.imageEl.classList.remove('loading');
-        this.setStatus('error');
-      }
-    } catch(e) {
-      this.imageEl.classList.remove('loading');
-      this.setStatus('error');
-    }
-  }
-
-  refresh() {
-    this.initialLoad();
-  }
-
-  startCountdown() {
-    this.countdown = setInterval(() => {
-      this.secondsLeft--;
-      this.updateTimerDisplay();
-      if (this.secondsLeft <= 0) {
-        this.secondsLeft = this.refreshInterval / 1000;
-      }
-    }, 1000);
-  }
-
-  updateTimerDisplay() {
-    this.timerEl.textContent = Math.max(0, this.secondsLeft);
-  }
-
-  setStatus(state) {
-    switch(state) {
-      case 'waiting':
-        this.statusLabel.textContent = 'Waiting for scan\u2026';
-        this.pulseDot.style.animation = 'qrPulse 1.8s ease-in-out infinite';
-        this.pulseDot.style.background = 'var(--blue)';
-        break;
-      case 'connected':
-        this.statusLabel.textContent = 'Connected';
-        this.pulseDot.style.background = '#22c55e';
-        this.pulseDot.style.animation = 'none';
-        this.connDot.className = 'conn-dot connected';
-        this.connLabel.textContent = 'Connected';
-        if (this.timer) { clearInterval(this.timer); this.timer = null; }
-        if (this.countdown) { clearInterval(this.countdown); this.countdown = null; }
-        break;
-      case 'error':
-        this.statusLabel.textContent = 'Connection error \u2014 retrying\u2026';
-        this.pulseDot.style.background = 'var(--destructive)';
-        this.pulseDot.style.animation = 'qrPulse 1.8s ease-in-out infinite';
-        this.connDot.className = 'conn-dot error';
-        this.connLabel.textContent = 'Error';
-        break;
-    }
-  }
-
-  startAutoRefresh() {
-    this.timer = setInterval(() => this.refresh(), this.refreshInterval);
-  }
-
-  stopAutoRefresh() {
-    if (this.timer) { clearInterval(this.timer); this.timer = null; }
-    if (this.countdown) { clearInterval(this.countdown); this.countdown = null; }
-  }
-}
-
-document.addEventListener('DOMContentLoaded', () => {
-  const qr = new QRController();
-  setInterval(async () => {
-    try {
-      const res = await fetch('/api/sync/connection');
-      const data = await res.json();
-      if (data.connected) {
-        qr.setStatus('connected');
-        qr.stopAutoRefresh();
-        setTimeout(() => { window.location.href = '/'; }, 1500);
-      }
-    } catch(e) {}
-  }, 5000);
-});
-</script>
 </body>
-</html>""")
-    return QR_PAGE
+</html>"""
+    )
 
 
 @app.get("/qr/image")
 async def qr_image():
-    try:
-        api_key = Path(".api_key").read_text().strip()
-    except FileNotFoundError:
-        api_key = "propai-dev-key"
-    try:
-        async with httpx.AsyncClient() as client:
-            r = await client.get(
-                "http://localhost:8080/instance/connect/propai-scraper",
-                headers={"apikey": api_key}
-            )
-            data = r.json()
-            # Evolution API returns {"count":0} when instance already connected
-            if data.get("count") == 0:
-                return {"error": "already_connected"}
-            b64 = data.get("base64", "")
-            if not b64:
-                return {"error": "no qr code"}
-            if "," in b64:
-                b64 = b64.split(",")[1]
-            return Response(
-                content=base64.b64decode(b64),
-                media_type="image/png"
-            )
-    except Exception as e:
-        return {"error": str(e)}
+    return {"error": "terminal_qr", "message": "Baileys QR is displayed in the terminal. Run 'propai connect'."}
 
 
 @app.get("/connect")

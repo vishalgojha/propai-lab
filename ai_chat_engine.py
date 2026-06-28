@@ -180,18 +180,59 @@ def build_overview(sources):
 
 def build_system_prompt(sources):
     overview = build_overview(sources)
-    return f"""You are a Mumbai real estate data assistant helping brokers. Answer questions about properties, brokers, and market activity.
+    return f"""You are PropAI's Market Intelligence Terminal - a broker work assistant that queries PropAI's structured market database. You are NOT a chatbot. You are a Bloomberg-style terminal for Mumbai real estate.
 
 AVAILABLE DATA:
 {overview}
 
+CORE PRINCIPLES:
+- Every answer must help the broker take immediate action.
+- You query PropAI's database — NOT internet knowledge.
+- Always show counts: "47 listings found across 12 brokers and 8 buildings"
+- Always show traceability: "Observed from WhatsApp group X, message at Y time"
+- Always explain WHY a result matches: "Matched because: 3 BHK, Rental, Bandra East, Building alias matched 'Kanakia Paris'"
+- Never dump listings in prose — use structured cards with all details.
+- If more results exist, say: "+37 more listings available" with "Load More" option.
+- Offer intelligent follow-ups: "Filter below ₹2 Cr", "Only furnished", "Newest first", "Compare prices".
+
+SEARCH BEHAVIOR:
+- When user asks for listings, query ALL matching records, not just a few.
+- Search buildings by aliases: "X BKC" = "X One BKC", "TEN BKC" = "Ten BKC", etc.
+- Always report: total count, brokers found, buildings found, WhatsApp groups, last update time.
+- Group by building when appropriate: "Kanakia Paris — 8 active rentals, 3 active sales".
+
+LISTING CARD FORMAT (when showing listings):
+Building Name
+₹Price / month (or sale)
+BHK | Area | Furnishing
+Micro Market | Building | Broker
+First Seen | Last Seen | Observed (count messages)
+Confidence: XX%
+Actions: View | Open Inventory | Open Original Messages | Promote | Save | Connect Broker
+Why this result: ✓ 3 BHK ✓ Rental ✓ Bandra East ✓ Building alias matched ✓ Seen in 14 messages ✓ Active within 24h
+
+TRACEABILITY:
+Every listing must show:
+- WhatsApp group name
+- Original message (truncated)
+- Timestamp (IST)
+- Broker name and phone
+- Extraction confidence
+
+EMPTY STATES:
+Instead of "No results", say:
+"No exact matches found. Try: Nearby markets | Similar buildings | Different budget | Different BHK | Latest listings"
+
+EXPORTS:
+Always offer: Export CSV | Export Excel | Export PDF | Copy WhatsApp Summary | Copy Email Summary
+
 RULES:
-- Answer in plain English. Never use technical terms like "observation", "entity", "resolve", "dataset" — say "message", "property", "match", "data".
-- Use Indian Rupee (₹) format for prices (e.g. ₹1.2 Cr, ₹85 L).
-- Use the query_data tool to look up information.
-- Use create_suggestion when the user asks you to make changes (create buildings, merge profiles, add aliases, flag issues).
-- Do NOT make up data. If you don't know, say so plainly.
-- When the user asks you to DO something (create, merge, flag, add), call create_suggestion. Tell the user what you suggested."""
+- Use Indian Rupee (₹) format: ₹1.2 Cr, ₹85 L, ₹2.5L/month
+- Use IST timestamps
+- Never use technical terms: say "property" not "listing", "message" not "observation"
+- Use query_data tool to search database
+- Use create_suggestion when user asks to make changes
+- Do NOT make up data. If you don't know, say so plainly."""
 
 
 def _suggestion_tool():
@@ -239,6 +280,7 @@ def _build_tools(sources):
     source_keys = sorted(sources.keys())
     tools = [
         _suggestion_tool(),
+        _search_listings_tool(),
         {
             "type": "function",
             "function": {
@@ -346,6 +388,73 @@ def _prepare_listings(df):
 
 
 _PRICE_COLS = {"price", "price_numeric"}
+
+
+def _search_listings_tool():
+    return {
+        "type": "function",
+        "function": {
+            "name": "search_listings",
+            "description": "Search PropAI's database for property listings. Returns structured results with building grouping, traceability, match reasons, and pagination info. Use this for ALL listing searches — never use query_data for listings.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "intent": {
+                        "type": "string",
+                        "enum": ["RENT", "SELL", "BUY", "RENTAL_SEEKER"],
+                        "description": "Filter by intent: RENT, SELL, BUY, RENTAL_SEEKER",
+                    },
+                    "bhk": {
+                        "type": "string",
+                        "description": "BHK filter: 1, 1.5, 2, 2.5, 3, 4, 5, or 'any'",
+                    },
+                    "building": {
+                        "type": "string",
+                        "description": "Building name or alias (supports partial match, aliases like 'X BKC' = 'X One BKC')",
+                    },
+                    "micro_market": {
+                        "type": "string",
+                        "description": "Micro market / locality name (e.g. 'Bandra East', 'BKC', 'Andheri West')",
+                    },
+                    "price_max": {
+                        "type": "number",
+                        "description": "Maximum price filter (in rupees, e.g. 20000000 for ₹2 Cr)",
+                    },
+                    "price_min": {
+                        "type": "number",
+                        "description": "Minimum price filter (in rupees)",
+                    },
+                    "furnishing": {
+                        "type": "string",
+                        "enum": ["Furnished", "Semi Furnished", "Unfurnished", "any"],
+                        "description": "Furnishing filter",
+                    },
+                    "broker": {
+                        "type": "string",
+                        "description": "Broker name (partial match)",
+                    },
+                    "sort_by": {
+                        "type": "string",
+                        "enum": ["price", "last_seen", "observation_count", "confidence"],
+                        "description": "Sort results by field (default: last_seen)",
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Max results per page (default 10)",
+                    },
+                    "offset": {
+                        "type": "integer",
+                        "description": "Pagination offset (default 0)",
+                    },
+                    "group_by_building": {
+                        "type": "boolean",
+                        "description": "Group results by building name (default true)",
+                    },
+                },
+                "required": [],
+            },
+        },
+    }
 
 
 def apply_filters(df, filters):
@@ -543,6 +652,236 @@ def execute_tool(name, args, sources, db_path=None):
                         lines.append(f"• {r['building_name'] or '?'} | {r['bhk'] or '?'} | ₹{r['price'] or '?'} | {r['broker_name'] or '?'} — seen {r['observation_count']}x")
                     return "\n".join(lines)
                 return "No duplicate listings found."
+        finally:
+            con.close()
+
+    if name == "search_listings":
+        con = _open_db()
+        if not con:
+            return "Database not available"
+        try:
+            import math
+            from datetime import datetime, timezone, timedelta
+
+            intent = args.get("intent")
+            bhk = args.get("bhk")
+            building = args.get("building")
+            micro_market = args.get("micro_market")
+            price_max = args.get("price_max")
+            price_min = args.get("price_min")
+            furnishing = args.get("furnishing")
+            broker = args.get("broker")
+            sort_by = args.get("sort_by", "last_seen")
+            limit = args.get("limit", 10)
+            offset = args.get("offset", 0)
+            group_by_building = args.get("group_by_building", True)
+
+            where_clauses = []
+            params = []
+
+            if intent and intent != "any":
+                where_clauses.append("l.intent = ?")
+                params.append(intent.upper())
+
+            if bhk and bhk != "any":
+                where_clauses.append("l.bhk = ?")
+                params.append(bhk)
+
+            if building:
+                where_clauses.append("""(
+                    l.building_name LIKE ? OR
+                    l.building_name IN (SELECT canonical FROM building_aliases WHERE alias LIKE ?) OR
+                    l.building_name IN (SELECT alias FROM building_aliases WHERE canonical LIKE ?) OR
+                    l.building_name IN (SELECT canonical FROM building_aliases WHERE alias LIKE ?)
+                )""")
+                bpattern = f"%{building}%"
+                params.extend([bpattern, bpattern, bpattern, bpattern])
+
+            if micro_market:
+                where_clauses.append("l.micro_market LIKE ?")
+                params.append(f"%{micro_market}%")
+
+            if price_max:
+                where_clauses.append("l.price <= ?")
+                params.append(float(price_max))
+
+            if price_min:
+                where_clauses.append("l.price >= ?")
+                params.append(float(price_min))
+
+            if furnishing and furnishing != "any":
+                where_clauses.append("l.furnishing = ?")
+                params.append(furnishing)
+
+            if broker:
+                where_clauses.append("l.broker_name LIKE ?")
+                params.append(f"%{broker}%")
+
+            where_sql = " AND ".join(where_clauses) if where_clauses else "1=1"
+
+            sort_map = {
+                "price": "l.price",
+                "last_seen": "l.last_seen",
+                "observation_count": "l.observation_count",
+                "confidence": "l.confidence",
+            }
+            order_sql = sort_map.get(sort_by, "l.last_seen")
+            if sort_by == "price":
+                order_sql += " DESC"
+
+            total_query = f"SELECT COUNT(*) FROM listings l WHERE {where_sql}"
+            total_count = con.execute(total_query, params).fetchone()[0]
+
+            listing_query = f"""
+                SELECT l.fingerprint, l.intent, l.bhk, l.price, l.price_unit, l.area_sqft,
+                       l.furnishing, l.location_label, l.building_name, l.landmark_name,
+                       l.micro_market, l.developer, l.broker_name, l.broker_phone,
+                       l.first_seen, l.last_seen, l.observation_count, l.group_count,
+                       l.latest_raw_message_id, l.latest_message, l.latest_group,
+                       l.latest_timestamp, l.latest_sender
+                FROM listings l
+                WHERE {where_sql}
+                ORDER BY {order_sql} DESC
+                LIMIT ? OFFSET ?
+            """
+            params.extend([limit + 50, offset])
+            rows = con.execute(listing_query, params).fetchall()
+
+            if not rows:
+                return json.dumps({
+                    "type": "listing_results",
+                    "total": total_count,
+                    "results": [],
+                    "grouped": {},
+                    "showing": 0,
+                    "offset": offset,
+                    "has_more": False,
+                    "suggestion": "No exact matches found. Try: Nearby markets | Similar buildings | Different budget | Different BHK | Latest listings",
+                })
+
+            now = datetime.now(timezone.utc)
+            results = []
+            for r in rows:
+                d = dict(r)
+                match_reasons = []
+                if bhk and bhk != "any" and d.get("bhk"):
+                    match_reasons.append(f"✓ {d['bhk']} BHK")
+                if intent and d.get("intent"):
+                    match_reasons.append(f"✓ {d['intent']}")
+                if micro_market and d.get("micro_market"):
+                    match_reasons.append(f"✓ {d['micro_market']}")
+                if building and d.get("building_name"):
+                    match_reasons.append(f"✓ Building match: {d['building_name']}")
+                if furnishing and d.get("furnishing"):
+                    match_reasons.append(f"✓ {d['furnishing']}")
+
+                last_seen = d.get("last_seen")
+                age = ""
+                if last_seen:
+                    try:
+                        last_dt = datetime.fromisoformat(last_seen.replace("Z", "+00:00"))
+                        diff = now - last_dt
+                        if diff.days == 0:
+                            hours = diff.seconds // 3600
+                            age = f"Seen {hours}h ago" if hours > 0 else "Seen just now"
+                        elif diff.days == 1:
+                            age = "Seen yesterday"
+                        elif diff.days < 7:
+                            age = f"Seen {diff.days}d ago"
+                        else:
+                            age = f"Seen {diff.days // 7}w ago"
+                    except:
+                        age = ""
+
+                first_seen = d.get("first_seen")
+                first_age = ""
+                if first_seen:
+                    try:
+                        first_dt = datetime.fromisoformat(first_seen.replace("Z", "+00:00"))
+                        diff = now - first_dt
+                        if diff.days == 0:
+                            first_age = "First seen today"
+                        elif diff.days == 1:
+                            first_age = "First seen yesterday"
+                        elif diff.days < 7:
+                            first_age = f"First seen {diff.days}d ago"
+                        else:
+                            first_age = f"First seen {diff.days // 7}w ago"
+                    except:
+                        first_age = ""
+
+                price_formatted = fmt_price(d.get("price")) if d.get("price") else ""
+                if d.get("price_unit") and d.get("price_unit") != "/sale" and d.get("intent") == "RENT":
+                    price_formatted += "/month"
+
+                confidence_pct = round((d.get("confidence") or 0) * 100) if d.get("confidence") else 0
+
+                latest_msg = ""
+                if d.get("latest_message"):
+                    latest_msg = d["latest_message"][:120]
+
+                results.append({
+                    "fingerprint": d.get("fingerprint"),
+                    "intent": d.get("intent"),
+                    "bhk": d.get("bhk"),
+                    "price": d.get("price"),
+                    "price_formatted": price_formatted,
+                    "area_sqft": d.get("area_sqft"),
+                    "furnishing": d.get("furnishing"),
+                    "location_label": d.get("location_label"),
+                    "building_name": d.get("building_name") or "Unknown Building",
+                    "landmark_name": d.get("landmark_name"),
+                    "micro_market": d.get("micro_market"),
+                    "developer": d.get("developer"),
+                    "broker_name": d.get("broker_name"),
+                    "broker_phone": d.get("broker_phone"),
+                    "first_seen": d.get("first_seen"),
+                    "first_seen_text": first_age,
+                    "last_seen": d.get("last_seen"),
+                    "last_seen_text": age,
+                    "observation_count": d.get("observation_count", 0),
+                    "group_count": d.get("group_count", 0),
+                    "confidence": confidence_pct,
+                    "latest_message": latest_msg,
+                    "latest_group": d.get("latest_group"),
+                    "latest_timestamp": d.get("latest_timestamp"),
+                    "latest_sender": d.get("latest_sender"),
+                    "raw_message_id": d.get("latest_raw_message_id"),
+                    "match_reasons": match_reasons,
+                })
+
+            grouped = {}
+            if group_by_building:
+                for r in results:
+                    bname = r["building_name"] or "Unknown Building"
+                    if bname not in grouped:
+                        grouped[bname] = {"rentals": 0, "sales": 0, "listings": []}
+                    if r["intent"] == "RENT":
+                        grouped[bname]["rentals"] += 1
+                    elif r["intent"] == "SELL":
+                        grouped[bname]["sales"] += 1
+                    grouped[bname]["listings"].append(r)
+
+            brokers_found = len(set(r["broker_name"] for r in results if r["broker_name"]))
+            buildings_found = len(set(r["building_name"] for r in results if r["building_name"]))
+            groups_found = len(set(r["latest_group"] for r in results if r["latest_group"]))
+
+            return json.dumps({
+                "type": "listing_results",
+                "total": total_count,
+                "results": results[:limit],
+                "grouped": grouped,
+                "showing": len(results[:limit]),
+                "offset": offset,
+                "has_more": total_count > offset + limit,
+                "remaining": max(0, total_count - offset - limit),
+                "search_summary": {
+                    "total": total_count,
+                    "brokers": brokers_found,
+                    "buildings": buildings_found,
+                    "groups": groups_found,
+                },
+            }, default=str)
         finally:
             con.close()
 

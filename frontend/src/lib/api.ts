@@ -286,6 +286,29 @@ export function chatAIChat(
   });
 }
 
+export function searchListings(params: {
+  intent?: string;
+  bhk?: string;
+  building?: string;
+  micro_market?: string;
+  price_max?: number;
+  price_min?: number;
+  furnishing?: string;
+  broker?: string;
+  sort_by?: string;
+  limit?: number;
+  offset?: number;
+  group_by_building?: boolean;
+}): Promise<any> {
+  const searchParams = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) {
+    if (v !== undefined && v !== "" && v !== null) {
+      searchParams.set(k, String(v));
+    }
+  }
+  return fetchJSON<any>(`/search/listings?${searchParams}`);
+}
+
 export function getDashboardListings(limit = 20) {
   return fetchJSON<any[]>(`/dashboard/listings?limit=${limit}`);
 }

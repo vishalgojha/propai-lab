@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import type { FormEvent, ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 import {
   getCompanionConfig,
@@ -68,12 +68,16 @@ export default function ConnectionCenterPage() {
   const [verifyToken, setVerifyToken] = useState("");
   const [savingWaba, setSavingWaba] = useState(false);
   const [wabaStatus, setWabaStatus] = useState("");
+  const [callbackUrl, setCallbackUrl] = useState("");
 
   useEffect(() => {
     getCompanionConfig().then(setWaba).catch(() => setWaba(null));
     getCompanionOverview().then(setOverview).catch(() => setOverview(null));
     getConnectionState().then(setConnection).catch(() => setConnection(null));
     getConnectionDetail().then(setDetail).catch(() => setDetail(null));
+    if (typeof window !== "undefined") {
+      setCallbackUrl(`${window.location.origin}/api/companion/webhook`);
+    }
   }, []);
 
   useEffect(() => {
@@ -91,21 +95,39 @@ export default function ConnectionCenterPage() {
     if (nextOverview) setOverview(nextOverview);
   }
 
-  async function handleSaveWaba() {
+  async function handleSaveWaba(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
     setSavingWaba(true);
     setWabaStatus("");
+    const form = new FormData(event.currentTarget);
+    const nextBusinessNumber = String(form.get("whatsapp_business_number") || "").trim();
+    const nextPhoneNumberId = String(form.get("phone_number_id") || "").trim();
+    const nextAccessToken = String(form.get("access_token") || "").trim();
+    const nextVerifyToken = String(form.get("verify_token") || "").trim();
+    const missing = [
+      !nextBusinessNumber ? "WhatsApp Business Number" : "",
+      !nextPhoneNumberId ? "Phone Number ID" : "",
+      !nextAccessToken && !waba?.has_access_token ? "Access Token" : "",
+      !nextVerifyToken && !waba?.has_verify_token ? "Webhook Verify Token" : "",
+    ].filter(Boolean);
+    if (missing.length) {
+      setWabaStatus(`Missing: ${missing.join(", ")}`);
+      setSavingWaba(false);
+      return;
+    }
+
     try {
       const next = await saveCompanionConfig({
-        whatsapp_business_number: businessNumber.trim(),
-        phone_number_id: phoneNumberId.trim(),
-        access_token: accessToken.trim(),
-        verify_token: verifyToken.trim(),
+        whatsapp_business_number: nextBusinessNumber,
+        phone_number_id: nextPhoneNumberId,
+        access_token: nextAccessToken,
+        verify_token: nextVerifyToken,
       });
       setWaba(next);
       setAccessToken("");
       setVerifyToken("");
-      setWabaStatus("WhatsApp Business API details saved.");
       await refreshWaba();
+      setWabaStatus(next.has_access_token ? "Saved. Copy the Callback URL and Verify Token into Meta Webhooks to finish connecting." : "Saved, but access token is still missing.");
     } catch (error) {
       setWabaStatus(error instanceof Error ? error.message : "Could not save WhatsApp Business API details.");
     } finally {
@@ -155,10 +177,34 @@ export default function ConnectionCenterPage() {
             <Metric label="Phone number ID" value={waba?.phone_number_id || "—"} />
             <Metric label="Token status" value={overview?.token_status || (waba?.has_access_token ? "Configured" : "Missing")} />
           </div>
-          <div className="mt-5 grid gap-3 md:grid-cols-2">
+          <form onSubmit={handleSaveWaba} className="mt-5">
+          <div className="mb-3">
+            <span className="mb-1 block text-[10px] uppercase tracking-wider text-[#64748b]">Callback URL for Meta Webhooks</span>
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <input
+                readOnly
+                value={callbackUrl}
+                className="w-full rounded-lg border border-[rgba(255,255,255,0.1)] bg-[#090d13] px-3 py-2 text-sm text-[#e2e8f0] outline-none"
+              />
+              <button
+                type="button"
+                onClick={() => callbackUrl && navigator.clipboard?.writeText(callbackUrl)}
+                className="rounded-lg border border-[rgba(255,255,255,0.1)] px-4 py-2 text-sm text-[#e2e8f0] hover:bg-[#111820]"
+              >
+                Copy
+              </button>
+            </div>
+            {callbackUrl.includes("localhost") && (
+              <span className="mt-1 block text-xs text-[#fbbf24]">
+                Meta needs a public HTTPS URL. Localhost works only for local testing through a tunnel or deployed domain.
+              </span>
+            )}
+          </div>
+          <div className="grid gap-3 md:grid-cols-2">
             <label>
               <span className="mb-1 block text-[10px] uppercase tracking-wider text-[#64748b]">WhatsApp Business Number</span>
               <input
+                name="whatsapp_business_number"
                 value={businessNumber}
                 onChange={(event) => setBusinessNumber(event.target.value)}
                 placeholder="+91..."
@@ -168,6 +214,7 @@ export default function ConnectionCenterPage() {
             <label>
               <span className="mb-1 block text-[10px] uppercase tracking-wider text-[#64748b]">Phone Number ID</span>
               <input
+                name="phone_number_id"
                 value={phoneNumberId}
                 onChange={(event) => setPhoneNumberId(event.target.value)}
                 placeholder="Meta phone number ID"
@@ -177,6 +224,7 @@ export default function ConnectionCenterPage() {
             <label>
               <span className="mb-1 block text-[10px] uppercase tracking-wider text-[#64748b]">Access Token</span>
               <input
+                name="access_token"
                 type="password"
                 value={accessToken}
                 onChange={(event) => setAccessToken(event.target.value)}
@@ -187,17 +235,63 @@ export default function ConnectionCenterPage() {
             <label>
               <span className="mb-1 block text-[10px] uppercase tracking-wider text-[#64748b]">Webhook Verify Token</span>
               <input
+                name="verify_token"
                 type="password"
                 value={verifyToken}
                 onChange={(event) => setVerifyToken(event.target.value)}
                 placeholder={waba?.has_verify_token ? `Saved (${waba.verify_token_preview})` : "Create or paste verify token"}
                 className="w-full rounded-lg border border-[rgba(255,255,255,0.1)] bg-[#111820] px-3 py-2 text-sm text-[#e2e8f0] outline-none focus:border-[#3EE88A]"
               />
+              <span className="mt-1 block text-xs text-[#64748b]">
+                You create this secret yourself. Example: propai_webhook_2026_9xK42m. Use the same value in Meta webhook setup.
+              </span>
             </label>
+          </div>
+          <div className="mt-3 rounded-xl border border-[rgba(62,232,138,0.16)] bg-[#3EE88A]/[0.04] px-4 py-3 text-sm text-[#94a3b8]">
+            Need a permanent token? Create a Meta System User token in{" "}
+            <a
+              href="https://business.facebook.com/settings/system-users"
+              target="_blank"
+              rel="noreferrer"
+              className="font-semibold text-[#3EE88A] hover:underline"
+            >
+              Business Settings
+            </a>
+            {" "}and grant WhatsApp permissions. Meta&apos;s{" "}
+            <a
+              href="https://developers.facebook.com/docs/whatsapp/business-management-api/get-started"
+              target="_blank"
+              rel="noreferrer"
+              className="font-semibold text-[#3EE88A] hover:underline"
+            >
+              setup guide
+            </a>
+            {" "}has the full steps.
+          </div>
+          <div className="mt-3 rounded-xl border border-[rgba(255,255,255,0.08)] bg-[#090d13] px-4 py-3 text-sm text-[#94a3b8]">
+            Webhook verify token: a private phrase Meta sends once when connecting the webhook. PropAI checks that it matches, then accepts WhatsApp events. It is not given by Meta; create a strong random value here. In Meta, paste the Callback URL above and the same Verify Token value. Open{" "}
+            <a
+              href="https://developers.facebook.com/apps/"
+              target="_blank"
+              rel="noreferrer"
+              className="font-semibold text-[#3EE88A] hover:underline"
+            >
+              Meta Apps
+            </a>
+            , choose your app, then go to WhatsApp / Webhooks setup. Use Meta&apos;s{" "}
+            <a
+              href="https://developers.facebook.com/docs/whatsapp/cloud-api/guides/set-up-webhooks"
+              target="_blank"
+              rel="noreferrer"
+              className="font-semibold text-[#3EE88A] hover:underline"
+            >
+              webhook setup guide
+            </a>
+            {" "}if you need the exact steps.
           </div>
           <div className="mt-4 flex flex-wrap items-center gap-3">
             <button
-              onClick={handleSaveWaba}
+              type="submit"
               disabled={savingWaba}
               className="rounded-lg bg-[#3EE88A] px-4 py-2 text-sm font-bold text-[#04100a] disabled:opacity-50"
             >
@@ -206,8 +300,9 @@ export default function ConnectionCenterPage() {
             <a href="/companion" className="rounded-lg border border-[rgba(255,255,255,0.1)] px-4 py-2 text-sm text-[#e2e8f0] no-underline hover:bg-[#111820]">
               Open Companion
             </a>
-            {wabaStatus && <span className="text-xs text-[#94a3b8]">{wabaStatus}</span>}
+            {wabaStatus && <span className={`text-xs ${wabaStatus.startsWith("Missing") || wabaStatus.includes("Could not") ? "text-[#f87171]" : "text-[#3EE88A]"}`}>{wabaStatus}</span>}
           </div>
+          </form>
         </IntegrationSection>
 
         <IntegrationSection
