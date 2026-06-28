@@ -736,6 +736,21 @@ async def lifespan(app: FastAPI):
             storage.rebuild_listings()
     except Exception as exc:
         print(f"  Listings rebuild skipped: {exc}")
+    # Backfill sender_phone from sender_jid for existing rows
+    try:
+        storage.db.execute(
+            "UPDATE raw_messages SET sender_phone = TRIM(REPLACE(SUBSTR(sender_jid, 1, INSTR(sender_jid, '@') - 1), ' ', '')) "
+            "WHERE sender_jid IS NOT NULL AND sender_jid != '' AND (sender_phone IS NULL OR sender_phone = '')"
+        )
+        storage._commit()
+    except Exception:
+        pass
+    # Rebuild broker graph from existing observations
+    try:
+        result = storage.rebuild_broker_graph()
+        print(f"  Broker graph: {result['brokers']} brokers, {result['observations']} observations")
+    except Exception as exc:
+        print(f"  Broker graph rebuild skipped: {exc}")
     # Auto-generate API key if missing
     key_path = Path(__file__).parent / ".api_key"
     if not key_path.exists():
@@ -866,6 +881,7 @@ async def webhook(request: Request):
     push_name = msg_data.get("pushName", "") or ""
     sender_name = msg_data.get("sender", {}).get("name", "") or push_name
     sender_jid = key.get("participant", "") or msg_data.get("sender", {}).get("id", "")
+    sender_phone = "".join(ch for ch in str(sender_jid).split("@")[0] if ch.isdigit())
     sender = _format_whatsapp_sender(sender_name, sender_jid)
     group = key.get("remoteJid", "") or msg_data.get("from", "")
     group_name = _resolve_group_name(group)
@@ -883,6 +899,8 @@ async def webhook(request: Request):
     raw_id = storage.save_raw_message(RawMessage(
         group_name=group_name,
         sender=sender,
+        sender_jid=sender_jid,
+        sender_phone=sender_phone,
         message=msg_text,
         message_type="text",
         timestamp=timestamp,
@@ -910,17 +928,16 @@ async def webhook(request: Request):
         return {"status": "ignored", "reason": "parse_failed"}
 
     # Fallback broker identity from sender JID when not found in message
-    phone_digits = "".join(ch for ch in str(sender_jid).split("@")[0] if ch.isdigit())
     for pl in parsed_listings:
         if not pl.get("broker_name") or not pl.get("broker_phone"):
             if not pl.get("broker_name"):
-                if len(phone_digits) >= 10:
-                    pl["broker_name"] = f"+91 {phone_digits[-10:]}"
-                elif phone_digits:
-                    pl["broker_name"] = f"+{phone_digits}"
+                if len(sender_phone) >= 10:
+                    pl["broker_name"] = f"+91 {sender_phone[-10:]}"
+                elif sender_phone:
+                    pl["broker_name"] = f"+{sender_phone}"
             if not pl.get("broker_phone"):
-                if len(phone_digits) >= 10:
-                    pl["broker_phone"] = phone_digits[-10:]
+                if len(sender_phone) >= 10:
+                    pl["broker_phone"] = sender_phone[-10:]
 
     parsed_ids: list[int] = []
     for idx, parsed in enumerate(parsed_listings):
@@ -2193,6 +2210,12 @@ def _top_message_groups(jobs, limit: int = 5) -> list[dict]:
 
 # ── Listing endpoints for frontend ───────────────────────────────
 
+@app.post("/api/rebuild-broker-graph")
+async def rebuild_broker_graph():
+    result = storage.rebuild_broker_graph()
+    return result
+
+
 @app.get("/api/brokers")
 async def list_brokers():
     storage.rebuild_broker_graph()
@@ -2266,7 +2289,7 @@ async def get_broker_profile(broker_id: int):
     """, (broker_id,)).fetchall()]
     broker["buildings"] = [dict(r) for r in storage.db.execute("""
         SELECT b.building_name, b.observation_count, b.listing_count, b.requirement_count,
-               b.first_seen_at, b.last_seen_at
+               b.last_seen_at
         FROM broker_building_stats b
         WHERE b.broker_id = ?
         ORDER BY b.observation_count DESC
@@ -2279,7 +2302,7 @@ async def get_broker_profile(broker_id: int):
         FROM broker_observations bo
         JOIN parsed_output p ON p.id = bo.parsed_id
         WHERE bo.broker_id = ?
-        ORDER BY bo.last_seen_at DESC
+        ORDER BY bo.seen_at DESC
         LIMIT 100
     """, (broker_id,)).fetchall()]
     return broker

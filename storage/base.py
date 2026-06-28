@@ -13,6 +13,8 @@ class RawMessage:
     id: int = 0
     group_name: str = ""
     sender: str = ""
+    sender_jid: Optional[str] = None
+    sender_phone: Optional[str] = None
     message: str = ""
     message_type: str = "text"
     timestamp: str = ""

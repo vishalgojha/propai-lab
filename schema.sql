@@ -5,6 +5,8 @@ CREATE TABLE IF NOT EXISTS raw_messages (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     group_name      TEXT NOT NULL DEFAULT '',
     sender          TEXT NOT NULL DEFAULT '',
+    sender_jid      TEXT DEFAULT '',
+    sender_phone    TEXT DEFAULT '',
     message         TEXT NOT NULL,
     message_type    TEXT NOT NULL DEFAULT 'text',
     timestamp       TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
@@ -209,3 +211,90 @@ CREATE INDEX IF NOT EXISTS idx_resolver_parsed ON resolver_decisions(parsed_id);
 CREATE INDEX IF NOT EXISTS idx_resolver_bid ON resolver_decisions(building_id);
 CREATE INDEX IF NOT EXISTS idx_resolver_method ON resolver_decisions(method);
 CREATE INDEX IF NOT EXISTS idx_eval_raw ON evaluations(raw_message_id);
+
+-- Broker entity graph
+CREATE TABLE IF NOT EXISTS brokers (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    identity_key    TEXT NOT NULL UNIQUE,
+    canonical_name  TEXT NOT NULL DEFAULT '',
+    primary_phone   TEXT DEFAULT NULL,
+    first_seen_at   TEXT DEFAULT NULL,
+    last_seen_at    TEXT DEFAULT NULL,
+    observation_count INTEGER NOT NULL DEFAULT 0,
+    listing_count   INTEGER NOT NULL DEFAULT 0,
+    requirement_count INTEGER NOT NULL DEFAULT 0,
+    rental_count    INTEGER NOT NULL DEFAULT 0,
+    commercial_count INTEGER NOT NULL DEFAULT 0,
+    group_count     INTEGER NOT NULL DEFAULT 0,
+    market_count    INTEGER NOT NULL DEFAULT 0,
+    avg_ticket      REAL DEFAULT NULL,
+    updated_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+    created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+);
+
+CREATE TABLE IF NOT EXISTS broker_phones (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    broker_id       INTEGER NOT NULL REFERENCES brokers(id) ON DELETE CASCADE,
+    phone           TEXT NOT NULL,
+    observation_count INTEGER NOT NULL DEFAULT 0,
+    first_seen_at   TEXT DEFAULT NULL,
+    last_seen_at    TEXT DEFAULT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_bp_broker ON broker_phones(broker_id);
+
+CREATE TABLE IF NOT EXISTS broker_aliases (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    broker_id       INTEGER NOT NULL REFERENCES brokers(id) ON DELETE CASCADE,
+    alias           TEXT NOT NULL,
+    observation_count INTEGER NOT NULL DEFAULT 0,
+    first_seen_at   TEXT DEFAULT NULL,
+    last_seen_at    TEXT DEFAULT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_ba_broker ON broker_aliases(broker_id);
+
+CREATE TABLE IF NOT EXISTS broker_observations (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    broker_id       INTEGER NOT NULL REFERENCES brokers(id) ON DELETE CASCADE,
+    parsed_id       INTEGER NOT NULL REFERENCES parsed_output(id) ON DELETE CASCADE,
+    raw_message_id  INTEGER NOT NULL REFERENCES raw_messages(id) ON DELETE CASCADE,
+    role            TEXT NOT NULL DEFAULT 'unknown',
+    message_type    TEXT DEFAULT NULL,
+    group_name      TEXT DEFAULT '',
+    micro_market    TEXT DEFAULT NULL,
+    building_name   TEXT DEFAULT NULL,
+    landmark_name   TEXT DEFAULT NULL,
+    price           REAL DEFAULT NULL,
+    bhk             TEXT DEFAULT NULL,
+    seen_at         TEXT DEFAULT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_bo_broker ON broker_observations(broker_id);
+CREATE INDEX IF NOT EXISTS idx_bo_parsed ON broker_observations(parsed_id);
+
+CREATE TABLE IF NOT EXISTS broker_market_stats (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    broker_id       INTEGER NOT NULL REFERENCES brokers(id) ON DELETE CASCADE,
+    micro_market    TEXT NOT NULL,
+    observation_count INTEGER NOT NULL DEFAULT 0,
+    listing_count   INTEGER NOT NULL DEFAULT 0,
+    requirement_count INTEGER NOT NULL DEFAULT 0,
+    avg_ticket      REAL DEFAULT NULL,
+    last_seen_at    TEXT DEFAULT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_bms_broker ON broker_market_stats(broker_id);
+
+CREATE TABLE IF NOT EXISTS broker_building_stats (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    broker_id       INTEGER NOT NULL REFERENCES brokers(id) ON DELETE CASCADE,
+    building_name   TEXT NOT NULL,
+    observation_count INTEGER NOT NULL DEFAULT 0,
+    listing_count   INTEGER NOT NULL DEFAULT 0,
+    requirement_count INTEGER NOT NULL DEFAULT 0,
+    avg_ticket      REAL DEFAULT NULL,
+    last_seen_at    TEXT DEFAULT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_bbs_broker ON broker_building_stats(broker_id);

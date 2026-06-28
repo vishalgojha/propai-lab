@@ -97,12 +97,23 @@ class SqliteStorage(Storage):
             "ALTER TABLE listings ADD COLUMN group_count INTEGER DEFAULT 0",
             "ALTER TABLE listings ADD COLUMN first_seen TEXT DEFAULT NULL",
             "ALTER TABLE listings ADD COLUMN last_seen TEXT DEFAULT NULL",
+            "ALTER TABLE raw_messages ADD COLUMN sender_jid TEXT DEFAULT ''",
+            "ALTER TABLE raw_messages ADD COLUMN sender_phone TEXT DEFAULT ''",
         ]
         for sql in migs:
             try:
                 self.db.execute(sql)
             except sqlite3.OperationalError:
                 pass
+        # Backfill sender_jid from raw_payload for existing rows
+        try:
+            self.db.execute("""
+                UPDATE raw_messages
+                SET sender_jid = json_extract(raw_payload, '$.data.key.participant')
+                WHERE sender_jid IS NULL OR sender_jid = ''
+            """)
+        except Exception:
+            pass
         self._commit()
 
     # ── Broker graph ───────────────────────────────────────────
@@ -118,7 +129,11 @@ class SqliteStorage(Storage):
         return None
 
     @staticmethod
-    def _broker_role(message_type: str | None) -> str:
+    def _broker_role(message_type: str | None, intent: str | None = None) -> str:
+        if intent in {"SELL", "RENT", "COMMERCIAL", "PRE-LAUNCH"}:
+            return "listing"
+        if intent in {"BUY", "RENTAL_SEEKER"}:
+            return "requirement"
         if message_type in {"SELLER", "RENTAL", "COMMERCIAL_SALE", "COMMERCIAL_RENTAL", "PRE_LAUNCH"}:
             return "listing"
         if message_type in {"REQUIREMENT", "RENTAL_SEEKER"}:
@@ -127,7 +142,7 @@ class SqliteStorage(Storage):
 
     def rebuild_broker_graph(self) -> dict:
         rows = self.db.execute(
-            """SELECT p.id AS parsed_id, p.raw_message_id, p.message_type,
+            """SELECT p.id AS parsed_id, p.raw_message_id, p.message_type, p.intent,
                       p.broker_name, p.broker_phone, p.profile_name,
                       p.micro_market,
                       COALESCE(rd.building_name, p.building_name) AS building_name,
@@ -185,14 +200,14 @@ class SqliteStorage(Storage):
                     markets.add(item["micro_market"])
                 if item.get("price") is not None:
                     prices.append(float(item["price"]))
-                role = self._broker_role(item.get("message_type"))
+                role = self._broker_role(item.get("message_type"), item.get("intent"))
                 if role == "listing":
                     listing_count += 1
                 elif role == "requirement":
                     requirement_count += 1
-                if item.get("message_type") in {"RENTAL", "RENTAL_SEEKER"}:
+                if item.get("intent") in {"RENT", "RENTAL_SEEKER"} or item.get("message_type") in {"RENTAL", "RENTAL_SEEKER"}:
                     rental_count += 1
-                if item.get("message_type") in {"COMMERCIAL_SALE", "COMMERCIAL_RENTAL"}:
+                if item.get("intent") == "COMMERCIAL" or item.get("message_type") in {"COMMERCIAL_SALE", "COMMERCIAL_RENTAL"}:
                     commercial_count += 1
                 seen_times.append(item.get("timestamp") or item.get("created_at") or "")
 
@@ -268,7 +283,7 @@ class SqliteStorage(Storage):
             building_stats: dict[str, dict] = defaultdict(lambda: {"obs": 0, "listing": 0, "req": 0, "prices": [], "last": ""})
 
             for item in items:
-                role = self._broker_role(item.get("message_type"))
+                role = self._broker_role(item.get("message_type"), item.get("intent"))
                 seen_at = item.get("timestamp") or item.get("created_at")
                 self.db.execute(
                     """INSERT INTO broker_observations
@@ -350,10 +365,11 @@ class SqliteStorage(Storage):
             msg.event_id = str(uuid.uuid4())
         cur = self.db.execute(
             """INSERT INTO raw_messages
-               (group_name, sender, message, message_type, timestamp, source,
+               (group_name, sender, sender_jid, sender_phone, message, message_type, timestamp, source,
                 raw_payload, message_uid, pipeline_version, synced_at, event_id)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
-            (msg.group_name, msg.sender, msg.message, msg.message_type,
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (msg.group_name, msg.sender, msg.sender_jid, msg.sender_phone,
+             msg.message, msg.message_type,
              msg.timestamp, msg.source, msg.raw_payload, msg.message_uid,
              msg.pipeline_version, msg.synced_at, msg.event_id)
         )
@@ -416,7 +432,10 @@ class SqliteStorage(Storage):
         parsed_id = cur.lastrowid
         self._commit()
         self.upsert_listing_from_parsed(obs, parsed_id=parsed_id)
-        self.rebuild_broker_graph()
+        try:
+            self.rebuild_broker_graph()
+        except Exception:
+            pass
         return parsed_id
 
     def _listing_summary_fields(self, obs: ParsedObservation, raw: RawMessage | None = None) -> dict:
