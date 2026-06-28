@@ -5,21 +5,22 @@ Turn WhatsApp broker groups into structured property intelligence.
 ## Quick Start
 
 ```bash
-# Prerequisites: Docker Desktop + Python 3.10+
-pip install -r lab/requirements.txt
+# Prerequisites: Python 3.10+ and Node.js 20+
+pip install -r requirements.txt
+cd services/baileys-ingestor && npm install && cd ../..
 
-# Launch everything — containers, API, and onboarding page
-propai waba
+# Launch API, frontend, and WhatsApp ingestor
+./propai connect
 ```
 
-Opens `http://localhost:8000/connect` — scan the QR code with WhatsApp to connect.
+Starts the PropAI API, starts the frontend, then prints a Baileys QR code in the terminal. Scan it with WhatsApp to connect.
 
 ### Already set up?
 
 ```bash
-propai waba        # start + open onboarding
-propai lab         # open admin dashboard
-propai status      # check what's running
+./propai connect   # start API/frontend and connect WhatsApp via Baileys
+./propai dashboard # open PropAI dashboard
+./propai status    # check what's running
 ```
 
 The `propai` CLI auto-detects running services and starts whatever's missing.
@@ -28,53 +29,50 @@ The `propai` CLI auto-detects running services and starts whatever's missing.
 
 ```
 WhatsApp broker groups →
-  Evolution API (Docker container) →
+  Baileys ingestor →
     Webhook → Lab API → SQLite
                              ↓
-                       Admin UI + Onboarding
+                       PropAI frontend
 ```
 
 ## URLs
 
 | URL | What |
 |-----|------|
-| `http://localhost:8000/connect` | WhatsApp QR onboarding |
-| `http://localhost:8000/` | Admin dashboard |
+| `http://localhost:3000/` | PropAI dashboard |
+| `http://localhost:3000/settings` | WhatsApp status/settings |
 | `http://localhost:8000/health` | Health check |
-| `http://localhost:8080/manager` | Evolution API manager |
 
 ## File layout
 
 ```
-lab/
-├── app.py              FastAPI server (webhook, admin API, onboarding)
-├── config.py           Environment config
-├── docker-compose.yml  Evolution API + PostgreSQL
-├── requirements.txt    Python dependencies
-├── start.sh            Legacy shell entry point
-├── schema.sql          SQLite schema
-├── seed.py             Test messages with ground truth
-├── admin/index.html    Admin UI (zero-dependency SPA)
-├── sources/            Source sync engine (WhatsApp, etc.)
-└── README.md           This file
+app.py                         FastAPI server (webhook, parser, admin API)
+frontend/                      Next.js PropAI UI
+services/baileys-ingestor/     WhatsApp connection + live ingestion
+config.py                      Environment config
+requirements.txt               Python dependencies
+schema.sql                     SQLite schema
+seed.py                        Test messages with ground truth
+admin/index.html               Legacy admin UI
+README.md                      This file
 ```
 
 ## How it works
 
-1. **PropAI connects** to your WhatsApp via QR code (Evolution API + Baileys)
+1. **PropAI connects** to your WhatsApp via QR code (custom Baileys ingestor)
 2. **Messages flow** from your broker groups into the lab via webhooks
 3. **Pipeline parses** each message: extracts type, BHK, price, location
 4. **Resolver matches** to known buildings using the evidence engine
-5. **Results store** in SQLite — inspectable via the admin UI
+5. **Results store** in SQLite — inspectable via the PropAI frontend
 
 ## API
 
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
-| `/webhook` | POST | Evolution API forwards WhatsApp messages here |
+| `/webhook` | POST | Baileys ingestor forwards WhatsApp messages here |
 | `/ingest` | POST | Manual message ingest |
 | `/ingest/batch` | POST | Batch seed for evaluation |
-| `/api/sources/whatsapp/sync` | POST | Trigger historical sync for a group |
+| `/api/sources/whatsapp/sync` | POST | Disabled; use chat export import for deterministic history |
 | `/api/sources/status` | GET | Sync progress |
 | `/api/sync/connection` | GET | WhatsApp connection status |
 
@@ -86,5 +84,4 @@ All configurable via env vars — see `lab/config.py`. Key ones:
 |----------|---------|---------|
 | `LAB_HOST` | `0.0.0.0` | Lab API bind |
 | `LAB_PORT` | `8000` | Lab API port |
-| `EVOLUTION_API_URL` | `http://localhost:8080` | Evolution API address |
-| `AUTHENTICATION_API_KEY` | auto-generated | API key for Evolution API |
+| `PROPAI_WEBHOOK_URL` | `http://localhost:8000/webhook` | Baileys ingestor target |

@@ -8,15 +8,19 @@ const navItems = [
   { href: "/", label: "Dashboard", icon: "🏠" },
   { href: "/inbox", label: "Messages", icon: "💬" },
   { href: "/extractions", label: "Properties", icon: "🏢" },
+  { href: "/requirements", label: "Requirements", icon: "📋" },
   { href: "/brokers", label: "Brokers", icon: "👤" },
+  { href: "/groups", label: "Groups", icon: "👥" },
   { href: "/market", label: "Markets", icon: "📍" },
   { href: "/search", label: "Search", icon: "🔍" },
+  { href: "/chat", label: "AI Chat", icon: "🤖" },
   { href: "/settings", label: "Settings", icon: "⚙" },
 ];
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   const [conn, setConn] = useState<ConnectionState | null>(null);
   const [wa, setWA] = useState<WhatsAppStatus | null>(null);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
 
   useEffect(() => {
     async function poll() {
@@ -44,17 +48,26 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <title>PropAI</title>
       </head>
       <body className="flex min-h-screen">
-        <aside className="w-56 border-r border-[rgba(255,255,255,0.06)] p-4 flex flex-col gap-1 shrink-0 bg-[#0a0e14]">
-          <div className="text-lg font-bold mb-6 px-3 text-[#e2e8f0]">PropAI</div>
-          {navItems.map((item) => (
-            <a key={item.href} href={item.href} className="sidebar-link">
-              <span>{item.icon}</span>
-              <span>{item.label}</span>
-            </a>
-          ))}
-        </aside>
+        {sidebarOpen && (
+          <aside className="w-56 border-r border-[rgba(255,255,255,0.06)] p-4 flex flex-col gap-1 shrink-0 bg-[#0a0e14]">
+            <div className="text-lg font-bold mb-6 px-3 text-[#e2e8f0]">PropAI</div>
+            {navItems.map((item) => (
+              <a key={item.href} href={item.href} className="sidebar-link">
+                <span>{item.icon}</span>
+                <span>{item.label}</span>
+              </a>
+            ))}
+          </aside>
+        )}
         <div className="flex-1 flex flex-col min-w-0">
           <header className="flex items-center gap-3 px-6 py-3 border-b border-[rgba(255,255,255,0.06)]">
+            <button
+              onClick={() => setSidebarOpen(!sidebarOpen)}
+              className="text-[#94a3b8] hover:text-white text-lg leading-none mr-1"
+              title={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
+            >
+              {sidebarOpen ? "◀" : "▶"}
+            </button>
             <span className={`w-2 h-2 rounded-full ${dotColor}`} />
             <span className="text-sm text-[#94a3b8]">{label}</span>
           </header>

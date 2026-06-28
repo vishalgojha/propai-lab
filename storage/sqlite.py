@@ -1,6 +1,7 @@
 """SQLite implementation of the Storage interface."""
 
 import json
+import re
 import sqlite3
 import uuid
 from pathlib import Path
@@ -12,6 +13,14 @@ from lab.storage.base import (
     Evaluation, SyncJob, SyncCheckpoint,
     dict_to_dataclass,
 )
+
+
+def _clean_person_name(name: str = "") -> str:
+    clean = (name or "").strip()
+    clean = re.sub(r"\s*\([^)]*(?:\+?\d|X{2,})[^)]*\)\s*", " ", clean, flags=re.I)
+    clean = re.sub(r"\s*\+?\d[\d\s().-]{7,}\s*", " ", clean)
+    clean = re.sub(r"\s{2,}", " ", clean).strip(" -")
+    return clean
 
 
 class SqliteStorage(Storage):
@@ -200,8 +209,10 @@ class SqliteStorage(Storage):
                     d["location"] = json.loads(d["location"])
                 except (json.JSONDecodeError, TypeError):
                     pass
-            if not d.get("broker_name") and d.get("raw_sender"):
-                d["broker_name"] = d["raw_sender"]
+            if d.get("broker_name"):
+                d["broker_name"] = _clean_person_name(d["broker_name"])
+            elif d.get("raw_sender"):
+                d["broker_name"] = _clean_person_name(d["raw_sender"])
             result.append(d)
         return result
 

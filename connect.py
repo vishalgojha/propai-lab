@@ -93,7 +93,10 @@ def render_qr(text: str) -> str:
 def check_connected() -> bool:
     data = api_get(f"instance/connectionState/{EVOLUTION_INSTANCE}")
     state = data.get("instance", {}).get("state", "")
-    return state.lower() in ("open", "connected")
+    if state.lower() in ("open", "connected", "syncing"):
+        return True
+    info = get_connection_info()
+    return str(info.get("status", "")).lower() in ("open", "connected", "syncing")
 
 
 def get_connection_info() -> dict:
@@ -203,11 +206,14 @@ def show_qr_flow():
             continue
 
         if data.get("count") == 0:
-            # Already connected during QR flow
-            os.system("cls" if os.name == "nt" else "clear")
-            banner()
-            show_connected()
-            return
+            if check_connected():
+                os.system("cls" if os.name == "nt" else "clear")
+                banner()
+                show_connected()
+                return
+            box("Waiting", [f"  {C['yellow']}Instance is starting. Retrying...{C['reset']}"], "yellow")
+            time.sleep(3)
+            continue
 
         base64_png = data.get("base64", "")
         if not base64_png:

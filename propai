@@ -40,43 +40,38 @@ start_lab_api() {
   fi
 }
 
-start_docker() {
-  if docker ps --format '{{.Names}}' 2>/dev/null | grep -q "evolution"; then
+start_frontend() {
+  if curl -sf http://localhost:3000/ >/dev/null 2>&1; then
     return 0
   fi
-  log "Starting PropAI engine..."
-  docker compose -f "$PROPAI_DIR/docker-compose.yml" up -d 2>&1 | tee -a "$LOG_FILE" >&2
-  for i in $(seq 1 30); do
-    if curl -sf http://localhost:8080/manager >/dev/null 2>&1; then
-      log "Engine ready"
+  log "Starting PropAI frontend..."
+  cd "$PROPAI_DIR/frontend"
+  setsid npm run dev -- --webpack --hostname 0.0.0.0 --port 3000 &>/tmp/propai-frontend.log &
+  disown
+  for i in $(seq 1 20); do
+    if curl -sf http://localhost:3000/ >/dev/null 2>&1; then
+      log "Frontend ready at http://localhost:3000"
       return 0
     fi
-    sleep 2
+    sleep 1
   done
-  log "WARNING: Engine did not become ready"
+  log "WARNING: Frontend did not become ready"
+  tail -5 /tmp/propai-frontend.log >&2 || true
   return 1
 }
 
-ensure_instance() {
-  local key="$AUTHENTICATION_API_KEY"
-  local instance="propai-scraper"
-  local state
-  state=$(curl -sf "http://localhost:8080/instance/connectionState/$instance" \
-    -H "apikey: $key" 2>/dev/null | python3 -c "
-import sys, json
-d = json.load(sys.stdin)
-print(d.get('instance', {}).get('state', ''))
-" 2>/dev/null || echo "")
-  if [ -z "$state" ]; then
-    log "Creating WhatsApp instance..."
-    curl -sf -X POST http://localhost:8080/instance/create \
-      -H "Content-Type: application/json" \
-      -H "apikey: $key" \
-      -d '{"instanceName": "propai-scraper", "integration": "WHATSAPP-BAILEYS"}' >/dev/null 2>&1 || true
-    log "Generating QR code..."
-    curl -sf "http://localhost:8080/instance/connect/propai-scraper" \
-      -H "apikey: $key" -o /dev/null 2>/dev/null || true
+run_baileys() {
+  local dir="$PROPAI_DIR/services/baileys-ingestor"
+  if [ ! -d "$dir/node_modules" ]; then
+    log "Installing Baileys ingestor dependencies..."
+    (cd "$dir" && npm install)
   fi
+  if [ ! -f "$dir/.env" ]; then
+    cp "$dir/.env.example" "$dir/.env"
+  fi
+  log "Starting Baileys WhatsApp ingestor..."
+  cd "$dir"
+  npm run dev
 }
 
 open_browser() {
@@ -96,37 +91,32 @@ open_browser() {
 cmd_connect() {
   echo ""
   ensure_key
-  start_docker
   start_lab_api
-  ensure_instance
+  start_frontend
   echo ""
   echo "  ┌──────────────────────────────────────────────┐"
-  echo "  │  Scan the QR code with WhatsApp on your phone.  │"
+  echo "  │  Scan the Baileys QR code with WhatsApp.      │"
   echo "  └──────────────────────────────────────────────┘"
   echo ""
-  open_browser "http://localhost:8000/connect"
+  echo "  Dashboard: http://localhost:3000"
   echo ""
+  run_baileys
 }
 
 cmd_dashboard() {
   start_lab_api
+  start_frontend
   echo ""
-  open_browser "http://localhost:8000/"
+  open_browser "http://localhost:3000/"
   echo ""
 }
 
 cmd_sync() {
-  ensure_key
-  start_lab_api
   echo ""
-  echo "  Starting historical sync..."
-  local res
-  res=$(curl -sf -X POST http://localhost:8000/api/sources/whatsapp/sync \
-    -H "Content-Type: application/json" \
-    -d '{"instance":"propai-scraper"}' 2>/dev/null || echo '{"error":"sync failed"}')
-  echo "  $res" | python3 -m json.tool 2>/dev/null || echo "  $res"
-  echo ""
-  echo "  Track progress: propai dashboard"
+  echo "  Historical sync is not enabled by default."
+  echo "  For deterministic backfill, import WhatsApp chat exports."
+  echo "  For opportunistic Baileys history capture, set PROPAI_CAPTURE_HISTORY_SYNC=true"
+  echo "  in services/baileys-ingestor/.env before running 'propai connect'."
   echo ""
 }
 
@@ -136,27 +126,27 @@ cmd_doctor() {
   echo ""
   local all_ok=true
 
-  # Docker
-  if command -v docker &>/dev/null; then
-    echo "  ✓ Docker"
-  else
-    echo "  ✗ Docker  (not installed)"
-    all_ok=false
-  fi
-
-  # Evolution API
-  if curl -sf http://localhost:8080/manager >/dev/null 2>&1; then
-    echo "  ✓ Engine"
-  else
-    echo "  ✗ Engine  (not running — run 'propai connect')"
-    all_ok=false
-  fi
-
   # Lab API
   if curl -sf http://localhost:8000/health >/dev/null 2>&1; then
     echo "  ✓ PropAI server"
   else
     echo "  ✗ PropAI server  (not running)"
+    all_ok=false
+  fi
+
+  # Frontend
+  if curl -sf http://localhost:3000/ >/dev/null 2>&1; then
+    echo "  ✓ PropAI frontend"
+  else
+    echo "  ✗ PropAI frontend  (run 'propai dashboard')"
+    all_ok=false
+  fi
+
+  # Baileys ingestor
+  if [ -d "$PROPAI_DIR/services/baileys-ingestor/node_modules" ]; then
+    echo "  ✓ Baileys dependencies"
+  else
+    echo "  ✗ Baileys dependencies  (run: cd services/baileys-ingestor && npm install)"
     all_ok=false
   fi
 
@@ -207,7 +197,7 @@ cmd_doctor() {
   if $all_ok; then
     echo "  Everything looks good."
   else
-    echo "  Some checks failed. Run 'propai connect' to fix."
+    echo "  Some checks failed. Run 'propai connect' or 'propai dashboard' to fix."
   fi
   echo ""
 }
@@ -216,15 +206,15 @@ cmd_status() {
   echo ""
   echo "  ── PropAI Status ─────────────────────"
   echo ""
-  if curl -sf http://localhost:8080/manager >/dev/null 2>&1; then
-    echo "  Engine       ✓  http://localhost:8080"
-  else
-    echo "  Engine       ✗  (not running)"
-  fi
   if curl -sf http://localhost:8000/health >/dev/null 2>&1; then
     echo "  Server       ✓  http://localhost:8000"
   else
     echo "  Server       ✗  (not running)"
+  fi
+  if curl -sf http://localhost:3000/ >/dev/null 2>&1; then
+    echo "  Frontend     ✓  http://localhost:3000"
+  else
+    echo "  Frontend     ✗  (not running)"
   fi
   if curl -sf http://localhost:8000/api/sync/connection >/dev/null 2>&1; then
     local connected
@@ -268,9 +258,6 @@ cmd_menu() {
       echo "  ✓ Engine running"
       echo "  – WhatsApp disconnected"
     fi
-  elif curl -sf http://localhost:8080/manager >/dev/null 2>&1; then
-    echo "  ✓ Engine running"
-    echo "  – Server offline  (run 'propai dashboard')"
   else
     echo "  – Offline  (run 'propai connect')"
   fi
@@ -292,7 +279,7 @@ usage() {
   echo "Usage: propai <command>"
   echo ""
   echo "Commands:"
-  echo "  connect    Connect WhatsApp to PropAI"
+  echo "  connect    Connect WhatsApp to PropAI with Baileys"
   echo "  dashboard  Open the PropAI dashboard"
   echo "  sync       Start historical group sync"
   echo "  doctor     Run health checks"

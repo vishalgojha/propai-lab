@@ -175,3 +175,18 @@ export function getFailed(limit = 50, offset = 0) {
 export function getGraphGrowth() {
   return fetchJSON<any>("/dashboard/graph-growth");
 }
+
+export interface ChatResponse {
+  content: string;
+  sources: string[];
+}
+
+export function chatAIChat(
+  messages: { role: string; content: string }[],
+  apiKey = ""
+): Promise<ChatResponse> {
+  return fetchJSON<ChatResponse>("/ai/chat", {
+    method: "POST",
+    body: JSON.stringify({ messages, api_key: apiKey }),
+  });
+}

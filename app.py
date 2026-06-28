@@ -33,7 +33,14 @@ from lab.events import get_bus
 PROJECT_DIR = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_DIR))
 
-from lab.config import DB_PATH, WEBHOOK_SECRET, HOST, PORT, EVOLUTION_INSTANCE, EVOLUTION_API_URL
+from lab.config import DB_PATH, WEBHOOK_SECRET, HOST, PORT, EVOLUTION_INSTANCE, EVOLUTION_API_URL, DOUBLEWORD_API_KEY
+
+# ── Bootstrap scraper AI chat engine ──────────────────────────
+SCRAPER_DIR = Path("/home/vishal/scraper")
+_SCRAPER_ENGINE = None
+if SCRAPER_DIR.exists():
+    sys.path.insert(0, str(SCRAPER_DIR))
+    import engine as _scraper_engine
 from evidence.resolver import resolve, resolve_by_landmark, resolve_by_street
 from evidence.parsers import parse as broker_parse
 
@@ -60,6 +67,69 @@ def compute_embedding(parsed: dict) -> bytes | None:
 
 # ── Global scheduler (lazy-initialized, wired in lifespan) ────────
 _scheduler = None
+BUSINESS_TIMEZONE = "Asia/Kolkata"
+BUSINESS_START_HOUR = 10
+BUSINESS_END_HOUR = 19
+
+GROUP_MARKET_KEYWORDS = {
+    "Bandra": ["bandra", "bkc", "bks"],
+    "Khar": ["khar"],
+    "Santacruz": ["santacruz", "scruz", "s cruz"],
+    "Juhu": ["juhu"],
+    "Andheri": ["andheri"],
+    "Worli": ["worli"],
+    "Colaba": ["colaba"],
+    "Chembur": ["chembur"],
+    "Wadala": ["wadala"],
+    "Malad": ["malad"],
+    "Goregaon": ["goregaon"],
+    "Thane": ["thane"],
+    "SOBO": ["sobo", "south mumbai"],
+}
+
+GROUP_SEGMENT_KEYWORDS = {
+    "Commercial": ["commercial", "office", "retail", "shop", "showroom"],
+    "Rental": ["rent", "rental", "lease"],
+    "Requirement": ["requirement", "requirements", "req"],
+    "Inventory": ["inventory", "availability", "availabilty", "listing", "listings"],
+    "Broadcast": ["broadcast", "brodcast"],
+    "Auction": ["auction", "distress"],
+}
+
+
+def parse_group_name(name: str) -> dict:
+    lower = (name or "").lower()
+    markets = [
+        market
+        for market, words in GROUP_MARKET_KEYWORDS.items()
+        if any(word in lower for word in words)
+    ]
+    segments = [
+        segment
+        for segment, words in GROUP_SEGMENT_KEYWORDS.items()
+        if any(word in lower for word in words)
+    ]
+    return {
+        "markets": markets,
+        "segments": segments,
+        "is_real_estate": bool(markets or segments or any(word in lower for word in ["realty", "realtor", "property", "properties", "estate", "broker"])),
+    }
+
+
+def business_window_status() -> dict:
+    from zoneinfo import ZoneInfo
+    now = datetime.now(ZoneInfo(BUSINESS_TIMEZONE))
+    start = now.replace(hour=BUSINESS_START_HOUR, minute=0, second=0, microsecond=0)
+    end = now.replace(hour=BUSINESS_END_HOUR, minute=0, second=0, microsecond=0)
+    return {
+        "mode": "live_webhook_only",
+        "timezone": BUSINESS_TIMEZONE,
+        "start": "10:00",
+        "end": "19:00",
+        "active": start <= now < end,
+        "now": now.isoformat(),
+        "label": "10 AM - 7 PM IST",
+    }
 
 def get_scheduler():
     global _scheduler
@@ -98,6 +168,53 @@ def _extract_broker_from_signature(text: str) -> tuple[str | None, str | None]:
             if not any(kw in line.lower() for kw in ["realty", "property", "estate", "realtors", "consultancy", "enterprises", "ventures"]):
                 name = line.strip()
     return name, phone
+
+
+def _compute_parser_confidence(parsed: dict) -> float:
+    """Score extraction confidence from independent, parseable signals."""
+    weights = {
+        "intent": 0.15,
+        "principal": 0.08,
+        "bhk": 0.14,
+        "price": 0.16,
+        "location_raw": 0.16,
+        "micro_market": 0.10,
+        "building_name": 0.08,
+        "landmark_name": 0.08,
+        "broker_name": 0.08,
+        "broker_phone": 0.07,
+        "furnishing": 0.05,
+        "area_sqft": 0.05,
+    }
+    score = 0.0
+    for field, weight in weights.items():
+        value = parsed.get(field)
+        if value and value != "Unknown":
+            score += weight
+    return round(min(score, 1.0), 2)
+
+
+def _infer_micro_market(text: str | None) -> str | None:
+    """Infer a practical micro-market from common short locality mentions."""
+    if not text:
+        return None
+    value = text.lower()
+    mappings = [
+        (r'\bbkc\b|\bbandra\s+kurla\b', "Bandra BKC"),
+        (r'\blilavati\b|\bbandra\b', "Bandra West"),
+        (r'\bandheri\s+west\b|\bandheri\b', "Andheri West"),
+        (r'\bmalad\b', "Malad West"),
+        (r'\bgoregaon\b', "Goregaon"),
+        (r'\bsantacruz\b|\bsanta\s+cruz\b', "Santacruz"),
+        (r'\bkhar\b', "Khar"),
+        (r'\bjuhu\b', "Juhu"),
+        (r'\bpowai\b', "Powai"),
+        (r'\bworli\b', "Worli"),
+    ]
+    for pattern, market in mappings:
+        if _RE.search(pattern, value):
+            return market
+    return None
 
 
 def parse_message(raw_text: str, profile_name: str | None = None) -> dict:
@@ -163,8 +280,9 @@ def parse_message(raw_text: str, profile_name: str | None = None) -> dict:
         result["intent"] = "SELL"
 
     # ── 3. Broker identity (highest confidence: profile_name > signature) ──
-    if profile_name and profile_name.lower() not in ("unknown", ""):
-        result["broker_name"] = profile_name.strip()
+    clean_profile_name = _clean_person_name(profile_name or "")
+    if clean_profile_name and clean_profile_name.lower() not in ("unknown", ""):
+        result["broker_name"] = clean_profile_name
     sig_name, sig_phone = _extract_broker_from_signature(text)
     if sig_name:
         # Signature is authoritative if no profile_name
@@ -248,6 +366,8 @@ def parse_message(raw_text: str, profile_name: str | None = None) -> dict:
             result["building_name"] = loc.building
         if loc.micro_market:
             result["micro_market"] = loc.micro_market
+        else:
+            result["micro_market"] = _infer_micro_market(loc.raw)
         if loc.street:
             result["street_name"] = loc.street
 
@@ -263,6 +383,7 @@ def parse_message(raw_text: str, profile_name: str | None = None) -> dict:
             result["developer"] = after
             break
 
+    result["confidence"] = _compute_parser_confidence(result)
     result["raw_payload"]["full_text"] = text
     return result
 
@@ -630,14 +751,17 @@ async def webhook(request: Request):
     msg_data = data.get("data", data)
     profile_name = None
     push_name = None
+    sender_jid = ""
     if isinstance(msg_data, dict):
         key = msg_data.get("key", {})
+        msg_obj = msg_data.get("message", {})
         msg_text = (
-            msg_data.get("message", {}).get("conversation", "")
-            or msg_data.get("message", {}).get("extendedTextMessage", {}).get("text", "")
+            msg_obj.get("conversation", "")
+            or msg_obj.get("extendedTextMessage", {}).get("text", "")
             or msg_data.get("text", "")
-            or json.dumps(msg_data)
         )
+        if not msg_text:
+            return {"status": "ignored", "reason": "no text message"}
         push_name = msg_data.get("sender", {}).get("pushName", "")
         profile_name = msg_data.get("sender", {}).get("name", "") or push_name or ""
         sender_jid = key.get("participant", "") or msg_data.get("sender", {}).get("id", "")
@@ -647,10 +771,7 @@ async def webhook(request: Request):
         if isinstance(timestamp, (int, float)):
             timestamp = datetime.fromtimestamp(timestamp, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     else:
-        msg_text = str(msg_data)
-        sender = "unknown"
-        group = "unknown"
-        timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        return {"status": "ignored", "reason": "unsupported webhook payload"}
 
     # Save raw message with dedup key
     key = msg_data.get("key", {})
@@ -685,6 +806,8 @@ async def webhook(request: Request):
 
     # Parse and resolve
     parsed = parse_message(msg_text, profile_name=profile_name)
+    if not parsed.get("broker_phone"):
+        parsed["broker_phone"] = _phone_digits_from_jid(sender_jid)
     embedding_blob = compute_embedding(parsed)
     obs = ParsedObservation(
         raw_message_id=raw_id,
@@ -751,11 +874,24 @@ async def webhook(request: Request):
 
 
 def _format_whatsapp_sender(name: str = "", jid: str = "") -> str:
-    clean_name = (name or "").strip()
+    clean_name = _clean_person_name(name)
     phone = _phone_from_jid(jid)
-    if clean_name and phone:
-        return f"{clean_name} ({phone})"
     return clean_name or phone or "unknown"
+
+
+def _clean_person_name(name: str = "") -> str:
+    clean = (name or "").strip()
+    clean = re.sub(r"\s*\([^)]*(?:\+?\d|X{2,})[^)]*\)\s*", " ", clean, flags=re.I)
+    clean = re.sub(r"\s*\+?\d[\d\s().-]{7,}\s*", " ", clean)
+    clean = re.sub(r"\s{2,}", " ", clean).strip(" -")
+    return clean
+
+
+def _phone_digits_from_jid(jid: str = "") -> str:
+    digits = "".join(ch for ch in str(jid).split("@")[0] if ch.isdigit())
+    if digits.startswith("91") and len(digits) >= 12:
+        return digits[-10:]
+    return digits[-10:] if len(digits) >= 10 else ""
 
 
 def _phone_from_jid(jid: str = "") -> str:
@@ -970,12 +1106,19 @@ async def dashboard_coverage():
     return {
         "groups_connected": len(group_ids),
         "messages_stored": stats["total_raw"],
-        "messages_from_groups": messages_from_groups,
+        "messages_from_groups": 0,
+        "capture_mode": "live_webhook_only",
+        "business_window": business_window_status(),
         "buildings_known": len(buildings),
         "landmarks_known": len(landmarks),
         "developers_known": len(dev_buildings),
         "micro_markets_known": len(micro_markets),
     }
+
+
+@app.get("/api/dashboard/live-window")
+async def dashboard_live_window():
+    return business_window_status()
 
 
 @app.get("/api/dashboard/feed")
@@ -1058,26 +1201,16 @@ async def dashboard_graph_growth():
 @app.get("/api/dashboard/whatsapp-status")
 async def dashboard_whatsapp_status():
     """Detailed WhatsApp connection status."""
-    from lab.ingestion.whatsapp import WhatsAppSource
-    import httpx
-    src = WhatsAppSource()
-    connected = src.validate_connection()
-    detail = {"connected": connected, "instance": EVOLUTION_INSTANCE}
-    if connected:
-        try:
-            data = src._get(f"instance/fetchInstances", timeout=10)
-            instances = data if isinstance(data, list) else []
-            for inst in instances:
-                if inst.get("name") == EVOLUTION_INSTANCE:
-                    detail["phone"] = inst.get("ownerJid", "").split("@")[0]
-                    detail["profile"] = inst.get("profileName", "")
-                    detail["status"] = inst.get("connectionStatus", "")
-                    break
-            state_data = src._get(f"instance/connectionState/{EVOLUTION_INSTANCE}", timeout=10)
-            detail["state"] = state_data.get("instance", {}).get("state", "")
-        except Exception:
-            pass
-    return detail
+    details = _baileys_connection_details()
+    phone = (details.get("phone_number") or "").replace("+", "")
+    return {
+        "connected": details.get("connected", False),
+        "instance": details.get("instance_name", "propai-baileys"),
+        "phone": phone,
+        "profile": details.get("display_name") or "",
+        "status": details.get("connection_state") or "",
+        "state": details.get("connection_state") or "",
+    }
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -1306,6 +1439,50 @@ async def get_evaluations(limit: int = 50, min_accuracy: float = 0.0):
     return rows
 
 
+# ═══════════════════════════════════════════════════════════════
+# Scraper Data Chat — conversational AI over scraped CSVs
+# ═══════════════════════════════════════════════════════════════
+
+class ChatRequest(BaseModel):
+    messages: list[dict]
+    api_key: str = ""
+
+
+@app.post("/api/ai/chat")
+async def ai_chat(req: ChatRequest):
+    if _scraper_engine is None:
+        raise HTTPException(503, "Scraper data not available")
+
+    api_key = req.api_key or DOUBLEWORD_API_KEY
+    if not api_key:
+        return {"error": "api_key_required", "message": "Set your Doubleword API key in Chat settings"}
+
+    sources = _scraper_engine.load_data()
+    if not sources:
+        return {"error": "no_data", "message": "No scraped CSVs found. Run scrape_all.py first."}
+
+    loop = asyncio.get_running_loop()
+
+    def _call():
+        system_prompt = _scraper_engine.build_system_prompt(sources)
+        msgs = [{"role": "system", "content": system_prompt}] + req.messages[-20:]
+        reply = _scraper_engine.get_model_reply(msgs, sources, api_key=api_key)
+        return reply.content or ""
+
+    content = await loop.run_in_executor(None, _call)
+    return {"content": content, "sources": list(sources.keys())}
+
+
+@app.get("/api/ai/chat/overview")
+async def ai_chat_overview():
+    if _scraper_engine is None:
+        raise HTTPException(503, "Scraper data not available")
+    sources = _scraper_engine.load_data()
+    if not sources:
+        return {"error": "no_data"}
+    return {"overview": _scraper_engine.build_overview(sources), "sources": list(sources.keys())}
+
+
 # ── Evidence Inspector ──────────────────────────────────────────
 
 @app.get("/api/observations/{obs_id}")
@@ -1385,7 +1562,9 @@ async def scheduler_status():
     scheduler = get_scheduler()
     st = scheduler.status()
     src_counts = storage.source_summary()
-    st["historical_messages_stored"] = src_counts.get("WHATSAPP_HISTORY", 0)
+    st["capture_mode"] = "live_webhook_only"
+    st["business_window"] = business_window_status()
+    st["historical_messages_stored"] = 0
     st["total_messages_stored"] = sum(src_counts.values())
     all_jobs = storage.get_sync_jobs(limit=500)
     source_summary = {}
@@ -1428,6 +1607,11 @@ async def scheduler_stop():
 @app.post("/api/sources/{source_name}/sync")
 async def source_sync(source_name: str):
     """Start sync for a specific source."""
+    if source_name == "whatsapp":
+        raise HTTPException(
+            410,
+            "Historical WhatsApp sync is disabled. PropAI captures live webhook messages during 10 AM - 7 PM IST.",
+        )
     scheduler = get_scheduler()
     if scheduler.is_running:
         raise HTTPException(409, "Scheduler already running")
@@ -1481,22 +1665,23 @@ async def sync_groups_legacy():
 
 @app.get("/api/sync/connection")
 async def sync_connection():
-    """Check WhatsApp (Evolution API) connection status."""
-    from lab.ingestion.whatsapp import WhatsAppSource
-    src = WhatsAppSource()
-    details = src.connection_details()
+    """Check WhatsApp connection status."""
+    details = _baileys_connection_details()
     jobs = storage.get_sync_jobs(limit=500, source="whatsapp") if storage else []
     last_finished = max((j.finished_at for j in jobs if j.finished_at), default=None)
     discovered_groups = len(jobs)
     if details.get("total_groups") is None or discovered_groups > details.get("total_groups", 0):
         details["total_groups"] = discovered_groups
     details.update({
-        "api_url": EVOLUTION_API_URL,
-        "historical_sync_state": _historical_sync_state(jobs),
+        "api_url": None,
+        "ingestor": "baileys",
+        "capture_mode": "live_webhook_only",
+        "business_window": business_window_status(),
+        "historical_sync_state": "disabled",
         "last_sync": last_finished,
         "discovered_jobs": discovered_groups,
-        "historical_messages": sum(j.records_processed or 0 for j in jobs),
-        "messages_found": sum(j.records_found or 0 for j in jobs),
+        "historical_messages": 0,
+        "messages_found": 0,
         "top_message_groups": _top_message_groups(jobs),
     })
     return details
@@ -1505,32 +1690,71 @@ async def sync_connection():
 @app.get("/api/sync/qr")
 async def sync_qr():
     """Get QR code for WhatsApp login."""
-    from lab.ingestion.whatsapp import WhatsAppSource
-    import asyncio
-    src = WhatsAppSource()
-    try:
-        result = await asyncio.to_thread(src.qr_code)
-        return result
-    except Exception as e:
-        return {"error": str(e)}
+    return {
+        "error": "terminal_qr",
+        "message": "Baileys QR is displayed in the terminal. Run './propai connect'.",
+    }
 
 
 @app.post("/api/sync/logout")
 async def sync_logout():
     """Log out the WhatsApp instance."""
-    from lab.ingestion.whatsapp import WhatsAppSource
-    import asyncio
-    src = WhatsAppSource()
-    return await asyncio.to_thread(src.logout)
+    return {
+        "status": "manual",
+        "message": "Stop the Baileys process and remove services/baileys-ingestor/auth to log out.",
+    }
 
 
 @app.get("/api/sync/connection-state")
 async def sync_connection_state():
     """Get current connection state (open/connecting/closed)."""
-    from lab.ingestion.whatsapp import WhatsAppSource
-    import asyncio
-    src = WhatsAppSource()
-    return await asyncio.to_thread(src.connection_status)
+    details = _baileys_connection_details()
+    return {"state": details["connection_state"], "connected": details["connected"]}
+
+
+def _baileys_connection_details() -> dict:
+    if not storage:
+        return {
+            "connected": False,
+            "connection_state": "unknown",
+            "instance_name": "propai-baileys",
+            "device_name": "Baileys",
+        }
+
+    row = storage.db.execute(
+        """SELECT sender, raw_payload, timestamp, synced_at, created_at
+           FROM raw_messages
+           WHERE raw_payload LIKE '%"instance": "propai-baileys"%'
+              OR raw_payload LIKE '%"instance":"propai-baileys"%'
+           ORDER BY id DESC LIMIT 1"""
+    ).fetchone()
+    total = storage.db.execute(
+        """SELECT COUNT(*) AS c
+           FROM raw_messages
+           WHERE raw_payload LIKE '%"instance": "propai-baileys"%'
+              OR raw_payload LIKE '%"instance":"propai-baileys"%'"""
+    ).fetchone()["c"]
+    group_total = storage.db.execute(
+        """SELECT COUNT(DISTINCT group_name) AS c
+           FROM raw_messages
+           WHERE group_name LIKE '%@g.us'
+             AND (raw_payload LIKE '%"instance": "propai-baileys"%'
+              OR raw_payload LIKE '%"instance":"propai-baileys"%')"""
+    ).fetchone()["c"]
+
+    connected = total > 0
+    return {
+        "connected": connected,
+        "connection_state": "open" if connected else "unknown",
+        "instance_name": "propai-baileys",
+        "device_name": "Baileys terminal ingestor",
+        "phone_number": "",
+        "display_name": "",
+        "connected_since": row["created_at"] if row else None,
+        "last_message_at": row["timestamp"] if row else None,
+        "total_groups": group_total,
+        "messages_captured": total,
+    }
 
 
 def _historical_sync_state(jobs) -> str:
@@ -1597,7 +1821,24 @@ async def list_buildings():
 @app.get("/api/groups")
 async def list_groups():
     jobs = storage.get_sync_jobs(limit=500, source="whatsapp")
-    return [asdict(j) for j in jobs]
+    groups = []
+    for j in jobs:
+        try:
+            meta = json.loads(j.meta) if isinstance(j.meta, str) else (j.meta or {})
+        except (json.JSONDecodeError, TypeError):
+            meta = {}
+        groups.append({
+            "jid": j.group_id,
+            "name": j.group_name,
+            "participants": meta.get("participants", 0),
+            "parsed": parse_group_name(j.group_name),
+            "records_found": j.records_found or 0,
+            "records_processed": j.records_processed or 0,
+            "status": j.status,
+            "error": j.error,
+            "allowed": True,
+        })
+    return sorted(groups, key=lambda g: g["name"].lower())
 
 
 @app.get("/api/search")
@@ -1646,7 +1887,7 @@ async def event_stream(request: Request):
 
 @app.get("/")
 async def root():
-    return {"status": "ok", "frontend": "http://localhost:3000", "message": "PropAI API is running. Use the Next.js frontend at http://localhost:3000"}
+    return RedirectResponse("http://localhost:3000")
 
 
 @app.get("/health")

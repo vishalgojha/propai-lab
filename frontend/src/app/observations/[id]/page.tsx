@@ -4,6 +4,37 @@ import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import * as api from "@/lib/api";
 
+function formatPrice(value?: number | null) {
+  if (!value) return "";
+  if (value >= 10000000) {
+    return `${(value / 10000000).toLocaleString("en-IN", { maximumFractionDigits: 2 })} Cr`;
+  }
+  if (value >= 100000) {
+    return `${(value / 100000).toLocaleString("en-IN", { maximumFractionDigits: 2 })} Lac`;
+  }
+  if (value >= 1000) {
+    return `${(value / 1000).toLocaleString("en-IN", { maximumFractionDigits: 2 })} K`;
+  }
+  return value.toLocaleString("en-IN");
+}
+
+function intentClass(intent: string) {
+  return ({
+    SELL: "badge-green",
+    SELLER: "badge-green",
+    BUY: "badge-purple",
+    BUYER: "badge-purple",
+    REQUIREMENT: "badge-purple",
+    RENT: "badge-yellow",
+    RENTAL: "badge-yellow",
+    RENTAL_SEEKER: "badge-yellow",
+    COMMERCIAL: "badge-orange",
+    COMMERCIAL_SALE: "badge-orange",
+    COMMERCIAL_RENTAL: "badge-orange",
+    "PRE-LAUNCH": "badge-red",
+  } as Record<string, string>)[intent] || "badge-blue";
+}
+
 export default function ObservationPage() {
   const params = useParams();
   const id = params.id as string;
@@ -41,7 +72,7 @@ export default function ObservationPage() {
   const parsed = obs.parsed || {};
   const resolver = obs.resolver || {};
   const cans = (resolver.candidates || []).sort((a: any, b: any) => b.confidence - a.confidence);
-  const intentColor = ({ SELL: "badge-green", BUY: "badge-purple", RENT: "badge-yellow", COMMERCIAL: "badge-orange", "PRE-LAUNCH": "badge-red" } as Record<string, string>)[parsed.intent] || "badge-blue";
+  const intentColor = intentClass(parsed.intent);
   const phoneClean = (parsed.broker_phone || "").replace(/[^0-9]/g, "").slice(-10);
   const waLink = phoneClean.length === 10 ? `https://wa.me/91${phoneClean}` : "";
   const confPct = resolver.final_confidence ?? parsed.confidence ?? 0;
@@ -81,7 +112,7 @@ export default function ObservationPage() {
           <KV label="Phone" value={parsed.broker_phone ? <>{parsed.broker_phone}<span className="prov prov-parsed ml-1">Parsed</span></> : "—"} />
           <KV label="Building" value={parsed.building_name ? <>{parsed.building_name}<span className="prov prov-parsed ml-1">Parsed</span></> : "—"} />
           <KV label="BHK" value={parsed.bhk ? <>{parsed.bhk}<span className="prov prov-parsed ml-1">Parsed</span></> : "—"} />
-          <KV label="Price" value={parsed.price ? <>{`₹${Number(parsed.price).toLocaleString()} ${parsed.price_unit || ""}`}<span className="prov prov-parsed ml-1">Parsed</span></> : "—"} />
+          <KV label="Price" value={parsed.price ? <>{formatPrice(Number(parsed.price))}<span className="prov prov-parsed ml-1">Parsed</span></> : "—"} />
           <KV label="Area" value={parsed.area_sqft ? <>{`${parsed.area_sqft.toLocaleString()} sqft`}<span className="prov prov-parsed ml-1">Parsed</span></> : "—"} />
           <KV label="Furnishing" value={parsed.furnishing ? <>{parsed.furnishing}<span className="prov prov-parsed ml-1">Parsed</span></> : "—"} />
           <KV label="Location" value={parsed.location_raw ? <>{parsed.location_raw}<span className="prov prov-parsed ml-1">Parsed</span></> : "—"} />

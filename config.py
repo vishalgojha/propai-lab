@@ -32,6 +32,18 @@ SOURCE_WHATSAPP = "WHATSAPP"
 SOURCE_WHATSAPP_HISTORY = "WHATSAPP_HISTORY"
 SOURCE_MANUAL = "MANUAL"
 
+# Doubleword AI (optional chat layer over scraped data)
+_DW_KEY_ENV = os.getenv("DOUBLEWORD_API_KEY", "")
+_DW_KEY_FILE = Path.home() / ".propai" / "config.json"
+DOUBLEWORD_API_KEY = _DW_KEY_ENV
+if not DOUBLEWORD_API_KEY and _DW_KEY_FILE.exists():
+    import json
+    try:
+        cfg = json.loads(_DW_KEY_FILE.read_text())
+        DOUBLEWORD_API_KEY = cfg.get("doubleword_api_key", "")
+    except (json.JSONDecodeError, OSError):
+        pass
+
 # Observation types
 OBS_TYPES = [
     "SELLER", "BUYER", "RENTAL", "RENTAL_SEEKER",

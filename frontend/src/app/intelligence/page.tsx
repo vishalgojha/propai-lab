@@ -3,6 +3,20 @@
 import { useState } from "react";
 import * as api from "@/lib/api";
 
+function formatPrice(value?: number | null) {
+  if (!value) return "";
+  if (value >= 10000000) {
+    return `${(value / 10000000).toLocaleString("en-IN", { maximumFractionDigits: 2 })} Cr`;
+  }
+  if (value >= 100000) {
+    return `${(value / 100000).toLocaleString("en-IN", { maximumFractionDigits: 2 })} Lac`;
+  }
+  if (value >= 1000) {
+    return `${(value / 1000).toLocaleString("en-IN", { maximumFractionDigits: 2 })} K`;
+  }
+  return value.toLocaleString("en-IN");
+}
+
 export default function IntelligencePage() {
   const [obsId, setObsId] = useState("");
   const [obs, setObs] = useState<any>(null);
@@ -86,7 +100,7 @@ function EvidenceInspector({ obs }: { obs: any }) {
               ["Intent", parsed.intent],
               ["Principal", parsed.principal],
               ["BHK", parsed.bhk],
-              ["Price", parsed.price ? `${parsed.price} ${parsed.price_unit || ""}` : ""],
+              ["Price", formatPrice(parsed.price)],
               ["Area", parsed.area_sqft ? `${parsed.area_sqft} sqft` : ""],
               ["Furnishing", parsed.furnishing],
               ["Location", parsed.location_raw],

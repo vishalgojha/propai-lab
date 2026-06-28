@@ -84,7 +84,7 @@ def process_record(record: SourceRecord, pipeline_version: str = PIPELINE_VERSIO
 
     # Stage 1: Store raw (idempotent via message_uid)
     raw_msg = RawMessage(
-        group_name=record.group_id,
+        group_name=record.meta.get("group_name") or record.group_id,
         sender=record.sender,
         message=record.text,
         message_type="text",

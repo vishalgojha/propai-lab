@@ -57,9 +57,12 @@ class WhatsAppSource(BaseSource):
 
     def validate_connection(self) -> bool:
         try:
-            data = self._get(f"instance/connectionState/{self.instance}")
+            data = self._get(f"instance/connectionState/{self.instance}", timeout=3)
             state = data.get("instance", {}).get("state", "")
-            return state.lower() in ("open", "connected", "syncing", "connecting")
+            if state.lower() in ("open", "connected", "syncing"):
+                return True
+            info_state = self._extract_state(self._fetch_instance_info())
+            return (info_state or "").lower() in ("open", "connected", "syncing")
         except Exception:
             return False
 
@@ -68,6 +71,9 @@ class WhatsAppSource(BaseSource):
         state_payload = self._safe_get(f"instance/connectionState/{self.instance}") or {}
         state = self._extract_state(state_payload)
         instance_info = self._fetch_instance_info()
+        instance_state = self._extract_state(instance_info)
+        if (instance_state or "").lower() in ("open", "connected", "syncing"):
+            state = instance_state
         chats = self._fetch_chats()
         groups = self._fetch_groups()
 
@@ -86,7 +92,7 @@ class WhatsAppSource(BaseSource):
         phone = self._phone_from_jid(owner_jid)
 
         return {
-            "connected": (state or "").lower() in ("open", "connected", "syncing", "connecting"),
+            "connected": (state or "").lower() in ("open", "connected", "syncing"),
             "connection_state": state,
             "instance": self.instance,
             "instance_name": self._first_value(instance_info, "name", "instanceName", "instance_name") or self.instance,
@@ -132,10 +138,17 @@ class WhatsAppSource(BaseSource):
     def connection_status(self) -> dict:
         """Get current connection state of the instance."""
         try:
-            data = self._get(f"instance/connectionState/{self.instance}")
+            data = self._get(f"instance/connectionState/{self.instance}", timeout=3)
             state = self._extract_state(data)
-            return {"state": state, "connected": (state or "").lower() in ("open", "connected")}
+            if (state or "").lower() not in ("open", "connected", "syncing"):
+                info_state = self._extract_state(self._fetch_instance_info())
+                if (info_state or "").lower() in ("open", "connected", "syncing"):
+                    state = info_state
+            return {"state": state, "connected": (state or "").lower() in ("open", "connected", "syncing")}
         except Exception as e:
+            info_state = self._extract_state(self._fetch_instance_info())
+            if (info_state or "").lower() in ("open", "connected", "syncing"):
+                return {"state": info_state, "connected": True}
             return {"state": "error", "error": str(e), "connected": False}
 
     def _safe_get(self, path: str, params: dict = None, timeout: int = 3):
@@ -247,12 +260,12 @@ class WhatsAppSource(BaseSource):
         try:
             data = self._get(
                 f"group/fetchAllGroups/{self.instance}",
-                params={"getParticipants": "true"},
-                timeout=120,
+                params={"getParticipants": "false"},
+                timeout=30,
             )
         except Exception as e:
             logger.warning(f"Cannot fetch WhatsApp groups: {e}")
-            return []
+            return self._cached_group_jobs()
 
         raw_groups = data if isinstance(data, list) else (
             data.get("data") or data.get("groups") or data.get("result") or []
@@ -266,7 +279,7 @@ class WhatsAppSource(BaseSource):
             name = g.get("name") or g.get("subject") or jid
             if not jid:
                 continue
-            participants = g.get("size", 0) or len(g.get("participants", []))
+            participants = g.get("size", 0) or len(g.get("participants", [])) or g.get("_count", {}).get("participants", 0)
             jobs.append(SyncJob(
                 source=self.name,
                 instance=self.instance,
@@ -275,6 +288,32 @@ class WhatsAppSource(BaseSource):
                 meta={"participants": participants},
             ))
         return jobs
+
+    def _cached_group_jobs(self) -> list[SyncJob]:
+        """Fallback to groups already discovered in PropAI when Evolution rate-limits discovery."""
+        try:
+            from lab.app import storage
+            if not storage:
+                return []
+            jobs = []
+            for row in storage.get_sync_jobs(limit=500, source=self.name):
+                try:
+                    meta = json.loads(row.meta) if isinstance(row.meta, str) else (row.meta or {})
+                except (TypeError, json.JSONDecodeError):
+                    meta = {}
+                if not row.group_id:
+                    continue
+                jobs.append(SyncJob(
+                    source=self.name,
+                    instance=self.instance,
+                    group_id=row.group_id,
+                    group_name=row.group_name or row.group_id,
+                    meta=meta,
+                ))
+            return jobs
+        except Exception as e:
+            logger.warning(f"Cannot load cached WhatsApp groups: {e}")
+            return []
 
     def fetch_records(self, job: SyncJob) -> Iterator[SourceRecord]:
         """
@@ -296,7 +335,7 @@ class WhatsAppSource(BaseSource):
             consecutive_empty = 0
             # Reverse to yield oldest-first
             for msg in reversed(batch):
-                record = self._msg_to_record(msg, group_jid)
+                record = self._msg_to_record(msg, group_jid, job.group_name)
                 if record:
                     yield record
             batch_offset += len(batch)
@@ -319,6 +358,7 @@ class WhatsAppSource(BaseSource):
                 f"chat/findMessages/{self.instance}",
                 json_body={
                     "where": {"key": {"remoteJid": group_jid}},
+                    "limit": count,
                     "offset": count,
                     "page": page,
                 },
@@ -332,7 +372,7 @@ class WhatsAppSource(BaseSource):
             return []
         return records
 
-    def _msg_to_record(self, msg: dict, group_jid: str) -> Optional[SourceRecord]:
+    def _msg_to_record(self, msg: dict, group_jid: str, group_name: str = "") -> Optional[SourceRecord]:
         """Convert an Evolution API message to a generic SourceRecord."""
         key = msg.get("key", {})
         message_id = key.get("id", "")
@@ -367,6 +407,7 @@ class WhatsAppSource(BaseSource):
             raw=msg,
             meta={
                 "key": key,
+                "group_name": group_name,
                 "message_type": list(msg_obj.keys()) if isinstance(msg_obj, dict) else [],
             },
         )

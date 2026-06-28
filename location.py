@@ -218,46 +218,108 @@ def extract_location_text(raw_text: str) -> str | None:
     """
     text = raw_text.strip()
     lower = text.lower()
+
+    def clean_candidate(candidate: str) -> str:
+        rest = candidate.strip(" \t:-")
+        boundaries = []
+        boundary_patterns = [
+            r'\n',
+            r'\bcontact\b',
+            r'\bcall\b',
+            r'\bwhatsapp\b',
+            r'\bprice\b',
+            r'\bstarting\b',
+            r'\bstarts?\b',
+            r'\bmax\b',
+            r'₹',
+            r'\brs\.?\b',
+            r'\bbudget\b',
+            r'\bfor\s+sale\b',
+            r'\bfor\s+rent\b',
+            r'\bcr(?:ore)?\b',
+            r'\bl(?:ac|akh|acs)?\b',
+            r'/-',
+            r'\bonly\b',
+            r'\bbroker\b',
+        ]
+        for pat in boundary_patterns:
+            m = re.search(pat, rest, re.IGNORECASE)
+            if m:
+                boundaries.append(m.start())
+        # Keep comma-separated distance phrases, but stop before the next clause.
+        for ci in [m.start() for m in re.finditer(',', rest)]:
+            before = rest[:ci].strip()
+            if re.search(r'\d+\s*(?:km|kms|m|mtr|min)\s*$', before, re.IGNORECASE):
+                continue
+            boundaries.append(ci)
+
+        if boundaries:
+            rest = rest[:min(boundaries)].strip()
+        rest = re.sub(
+            r'\s+\d[\d,.]*(?:\s*(?:cr|crore|lac|lakh|k|thousand))?.*',
+            '', rest, count=1, flags=re.IGNORECASE
+        ).strip(" \t,.-")
+        for noise in ["distance from ", "distance to ",
+                      "walking distance from ", "walking distance to "]:
+            if rest.lower().startswith(noise):
+                rest = rest[len(noise):].strip()
+        rest = re.sub(r'^(?:in|at|near)\s+', '', rest, flags=re.IGNORECASE).strip()
+        return rest
+
+    # Requirement shorthand should prefer the desired area after BHK over
+    # secondary landmarks like "near Metro".
+    if re.search(r'\b(?:need|require|requirement|tenant|client|wanted|looking\s+for)\b', lower):
+        bhk_loc = re.search(
+            r'\b(?:need|require|want|wanted|looking\s+for|client\s+requirement|tenant\s+need)?\s*'
+            r'(?:\d+(?:\.\d+)?\s*(?:bhk|rk|bedroom)|studio)\s+(.+)$',
+            text,
+            re.IGNORECASE | re.DOTALL,
+        )
+        if bhk_loc:
+            rest = clean_candidate(bhk_loc.group(1))
+            if (
+                rest
+                and len(rest) >= 3
+                and not re.match(r'^(?:starting|start(?:s)?|price|budget|from|max)\b', rest, re.IGNORECASE)
+            ):
+                return rest
+
     loc_keywords = [
-        "at ", "in ", "near ", "opposite ", "opp. ", "behind ", "off ",
-        "walkable ", "walking ", "walk ", "location ", "area ",
-        "distance from ", "distance to ",
+        r'at', r'in', r'near', r'opposite', r'opp\.?', r'behind', r'off',
+        r'walkable', r'walking', r'walk', r'location', r'area',
+        r'distance\s+from', r'distance\s+to',
     ]
     for kw in loc_keywords:
-        idx = lower.find(kw)
-        if idx >= 0:
-            start = idx + len(kw)
-            rest = text[start:].strip()
-            # Find the earliest price/broker/contact boundary
-            boundaries = []
-            for pat in ["\n", "contact", "call ", "whatsapp",
-                        "price", "₹", "rs ", "budget",
-                        " for sale", " for rent",
-                        " cr ", " crore", " lac ", " lakh ", " lacs",
-                        "/-", "only", "broker"]:
-                bi = rest.lower().find(pat)
-                if bi >= 0:
-                    boundaries.append(bi)
-            # Keep comma-separated distance phrases — only cut at comma
-            # if NOT preceded by a digit+distance pattern
-            for ci in [m.start() for m in re.finditer(',', rest)]:
-                before = rest[:ci].strip()
-                if re.search(r'\d+\s*(?:km|kms|m|mtr|min)\s*$', before, re.IGNORECASE):
-                    continue
-                boundaries.append(ci)
-
-            if boundaries:
-                rest = rest[:min(boundaries)].strip()
-            rest = re.sub(
-                r'\s+\d[\d,.]*(?:\s*(?:cr|crore|lac|lakh|k|thousand))?.*',
-                '', rest, count=1
-            ).strip()
-            for noise in ["distance from ", "distance to ",
-                          "walking distance from ", "walking distance to "]:
-                if rest.lower().startswith(noise):
-                    rest = rest[len(noise):].strip()
+        m = re.search(rf'(?<![A-Za-z]){kw}\s+', lower)
+        if m:
+            rest = clean_candidate(text[m.end():])
             if rest and len(rest) >= 3:
                 return rest
+
+    # Common requirement shorthand: "Need 2 BHK Bandra Budget 3 Cr".
+    bhk_loc = re.search(
+        r'\b(?:need|require|want|wanted|looking\s+for|client\s+requirement)?\s*'
+        r'(?:\d+(?:\.\d+)?\s*(?:bhk|rk|bedroom)|studio)\s+(.+)$',
+        text,
+        re.IGNORECASE | re.DOTALL,
+    )
+    if bhk_loc:
+        rest = clean_candidate(bhk_loc.group(1))
+        if (
+            rest
+            and len(rest) >= 3
+            and not re.match(r'^(?:starting|start(?:s)?|price|budget|from|max)\b', rest, re.IGNORECASE)
+        ):
+            return rest
+
+    # Launch/listing cards often put the project and market on their own line.
+    for line in [l.strip() for l in text.splitlines() if l.strip()]:
+        if re.search(r'\b(?:bhk|cr|crore|lac|lakh|budget|contact|call)\b|\d{10}', line, re.IGNORECASE):
+            continue
+        if re.search(r'\b(?:launch|booking|owner|sale|rent|requirement|forwarded)\b', line, re.IGNORECASE):
+            continue
+        if len(line) >= 3:
+            return clean_candidate(line)
     return None
 
 

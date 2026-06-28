@@ -13,11 +13,23 @@ export default function SettingsPage() {
   const timerRef = useRef<ReturnType<typeof setInterval>>();
 
   useEffect(() => {
-    api.getConnectionState().then(setConnState);
-    api.getConnectionDetail().then(setConnDetail).catch(() => {});
+    refreshConnection();
   }, []);
 
-  const connected = connState?.connected ?? false;
+  const connected = connDetail?.connected ?? connState?.connected ?? false;
+
+  async function refreshConnection() {
+    const detail = await api.getConnectionDetail().catch(() => null);
+    if (detail) {
+      setConnDetail(detail);
+      setConnState({
+        state: detail.connection_state || detail.state || "unknown",
+        connected: Boolean(detail.connected),
+      });
+      return;
+    }
+    api.getConnectionState().then(setConnState).catch(() => {});
+  }
 
   async function handleLogin() {
     setShowQR(true);
@@ -27,7 +39,7 @@ export default function SettingsPage() {
     setQRTimer(30);
     if (data?.count === 0) {
       setShowQR(false);
-      api.getConnectionState().then(setConnState);
+      refreshConnection();
       return;
     }
     pollingRef.current = true;
@@ -43,7 +55,7 @@ export default function SettingsPage() {
       if (c.connected) {
         pollingRef.current = false;
         setShowQR(false);
-        api.getConnectionDetail().then(setConnDetail).catch(() => {});
+        refreshConnection();
         clearInterval(timerRef.current);
         return;
       }
@@ -69,23 +81,13 @@ export default function SettingsPage() {
     setQRData(data);
     if (data?.count === 0) {
       setShowQR(false);
-      api.getConnectionState().then(setConnState);
+      refreshConnection();
     }
   }
 
   async function handleLogout() {
     await api.logout();
-    api.getConnectionState().then(setConnState);
-    api.getConnectionDetail().then(setConnDetail).catch(() => {});
-  }
-
-  async function handleSync() {
-    await api.startSync();
-    setTimeout(() => api.getConnectionDetail().then(setConnDetail).catch(() => {}), 2000);
-  }
-
-  async function handleStopSync() {
-    await api.stopSync();
+    refreshConnection();
   }
 
   return (
@@ -107,7 +109,7 @@ export default function SettingsPage() {
           ) : (
             <button onClick={handleLogout} className="px-4 py-2 bg-[#da3633] text-white rounded-lg text-sm font-bold">Logout</button>
           )}
-          <button onClick={() => api.getConnectionDetail().then(setConnDetail).catch(() => {})} className="px-4 py-2 bg-[#111820] border border-[rgba(255,255,255,0.1)] rounded-lg text-sm">Refresh</button>
+          <button onClick={refreshConnection} className="px-4 py-2 bg-[#111820] border border-[rgba(255,255,255,0.1)] rounded-lg text-sm">Refresh</button>
         </div>
 
         {/* QR Modal */}
@@ -141,7 +143,8 @@ export default function SettingsPage() {
               ["Instance", connDetail.instance_name || connDetail.instance],
               ["Connected Since", connDetail.connected_since],
               ["Groups", connDetail.total_groups],
-              ["Messages", connDetail.messages_found],
+              ["Capture", connDetail.business_window?.label || "10 AM - 7 PM IST"],
+              ["Mode", "Live webhook only"],
             ].map(([k, v]) => (
               <div key={k as string}>
                 <div className="text-[10px] text-[#64748b] uppercase tracking-wider">{k as string}</div>
@@ -152,12 +155,20 @@ export default function SettingsPage() {
         )}
       </div>
 
-      {/* Sync */}
+      {/* Live Capture */}
       <div className="bg-[#0d1117] border border-[rgba(255,255,255,0.06)] rounded-2xl p-5">
-        <h3 className="text-sm font-bold text-[#e2e8f0] mb-4">Sync</h3>
-        <div className="flex gap-2">
-          <button onClick={handleSync} className="px-4 py-2 bg-[#238636] text-white rounded-lg text-sm font-bold">Start Sync</button>
-          <button onClick={handleStopSync} className="px-4 py-2 bg-[#da3633] text-white rounded-lg text-sm">Stop</button>
+        <h3 className="text-sm font-bold text-[#e2e8f0] mb-4">Live Capture</h3>
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-sm">
+          {[
+            ["Window", "10 AM - 7 PM IST"],
+            ["Mode", "Webhook only"],
+            ["Backfill", "Disabled"],
+          ].map(([k, v]) => (
+            <div key={k}>
+              <div className="text-[10px] text-[#64748b] uppercase tracking-wider">{k}</div>
+              <div className="text-[#e2e8f0]">{v}</div>
+            </div>
+          ))}
         </div>
       </div>
     </div>
