@@ -16,6 +16,7 @@ from lab.storage.base import (
     dict_to_dataclass,
 )
 from lab.inventory import listing_fingerprint, listing_label
+from agents.duplicate_detector import check_for_duplicates
 
 
 def _clean_person_name(name: str = "") -> str:
@@ -431,7 +432,12 @@ class SqliteStorage(Storage):
         )
         parsed_id = cur.lastrowid
         self._commit()
-        self.upsert_listing_from_parsed(obs, parsed_id=parsed_id)
+        listing_id = self.upsert_listing_from_parsed(obs, parsed_id=parsed_id)
+        if listing_id:
+            try:
+                check_for_duplicates(self, listing_id, parsed_id)
+            except Exception:
+                pass
         try:
             self.rebuild_broker_graph()
         except Exception:
