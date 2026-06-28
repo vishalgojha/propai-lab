@@ -12,7 +12,7 @@ from typing import Optional
 from lab.storage.base import (
     Storage,
     RawMessage, ParsedObservation, ResolverDecision,
-    Evaluation, SyncJob, SyncCheckpoint,
+    Evaluation, SyncJob, SyncCheckpoint, AISuggestion,
     dict_to_dataclass,
 )
 from lab.inventory import listing_fingerprint, listing_label
@@ -910,6 +910,58 @@ class SqliteStorage(Storage):
             (limit, offset)
         ).fetchall()
         return [dict(r) for r in rows]
+
+    # ── AI Suggestions ─────────────────────────────────────────
+
+    def create_suggestion(self, sug: AISuggestion) -> int:
+        cur = self.db.execute(
+            """INSERT INTO ai_suggestions
+               (agent, suggestion_type, title, description, source_data, proposal_data, confidence, status)
+               VALUES (?,?,?,?,?,?,?,?)""",
+            (sug.agent, sug.suggestion_type, sug.title, sug.description,
+             sug.source_data, sug.proposal_data, sug.confidence, sug.status)
+        )
+        self._commit()
+        return cur.lastrowid
+
+    def get_suggestions(self, status: str = "pending", limit: int = 50, offset: int = 0) -> list[dict]:
+        if status == "all":
+            rows = self.db.execute(
+                "SELECT * FROM ai_suggestions ORDER BY created_at DESC LIMIT ? OFFSET ?",
+                (limit, offset)
+            ).fetchall()
+        else:
+            rows = self.db.execute(
+                "SELECT * FROM ai_suggestions WHERE status = ? ORDER BY created_at DESC LIMIT ? OFFSET ?",
+                (status, limit, offset)
+            ).fetchall()
+        result = []
+        for r in rows:
+            d = dict(r)
+            for col in ("source_data", "proposal_data"):
+                if isinstance(d.get(col), str):
+                    try:
+                        d[col] = json.loads(d[col])
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+            result.append(d)
+        return result
+
+    def get_suggestion_counts(self) -> dict:
+        rows = self.db.execute(
+            "SELECT status, COUNT(*) as c FROM ai_suggestions GROUP BY status"
+        ).fetchall()
+        counts = {"pending": 0, "approved": 0, "rejected": 0, "ignored": 0}
+        for r in rows:
+            counts[r["status"]] = r["c"]
+        return counts
+
+    def update_suggestion_status(self, sug_id: int, status: str):
+        self.db.execute(
+            "UPDATE ai_suggestions SET status = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?",
+            (status, sug_id)
+        )
+        self._commit()
 
     # ── Sync jobs ──────────────────────────────────────────────
 

@@ -250,6 +250,20 @@ export function clearAllowlist() {
   return fetchJSON<any>("/groups/allowlist", { method: "DELETE" });
 }
 
+// ── AI Suggestions ──────────────────────────────────────────────
+
+export function getSuggestions(status = "pending", limit = 50, offset = 0) {
+  return fetchJSON<any[]>(`/suggestions?status=${status}&limit=${limit}&offset=${offset}`);
+}
+
+export function getSuggestionCounts() {
+  return fetchJSON<Record<string, number>>("/suggestions/counts");
+}
+
+export function actOnSuggestion(id: number, action: string) {
+  return fetchJSON<any>(`/suggestions/${id}/${action}`, { method: "POST" });
+}
+
 export interface PromoteRequest {
   observation_id: number;
   channel: string;

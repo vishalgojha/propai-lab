@@ -2312,6 +2312,31 @@ async def get_broker_profile(broker_id: int):
     return broker
 
 
+# ── AI Suggestions Queue ─────────────────────────────────────────
+
+class SuggestionAction(BaseModel):
+    status: str = "approved"
+
+
+@app.get("/api/suggestions")
+async def list_suggestions(status: str = "pending", limit: int = 50, offset: int = 0):
+    return storage.get_suggestions(status=status, limit=limit, offset=offset)
+
+
+@app.get("/api/suggestions/counts")
+async def suggestion_counts():
+    return storage.get_suggestion_counts()
+
+
+@app.post("/api/suggestions/{sug_id}/{action}")
+async def act_on_suggestion(sug_id: int, action: str):
+    if action not in ("approve", "reject", "ignore"):
+        raise HTTPException(400, "action must be approve, reject, or ignore")
+    status_map = {"approve": "approved", "reject": "rejected", "ignore": "ignored"}
+    storage.update_suggestion_status(sug_id, status_map[action])
+    return {"status": "ok"}
+
+
 @app.get("/api/buildings")
 async def list_buildings():
     rows = storage.db.execute("""

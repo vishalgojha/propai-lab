@@ -14,7 +14,7 @@ const navItems = [
   { href: "/groups", label: "Groups", icon: "👥" },
   { href: "/market", label: "Markets", icon: "🗺️" },
   { href: "/search", label: "Search", icon: "🔍" },
-  { href: "/chat", label: "AI Chat", icon: "🤖" },
+  { href: "/chat", label: "AI Review", icon: "🤖" },
   { href: "/settings", label: "Settings", icon: "⚙" },
 ];
 

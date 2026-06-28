@@ -170,6 +170,21 @@ class SyncJob:
 
 
 @dataclass
+class AISuggestion:
+    id: int = 0
+    agent: str = ""
+    suggestion_type: str = ""
+    title: str = ""
+    description: str = ""
+    source_data: str = "{}"
+    proposal_data: str = "{}"
+    confidence: float = 0.0
+    status: str = "pending"
+    created_at: str = ""
+    updated_at: str = ""
+
+
+@dataclass
 class SyncCheckpoint:
     id: int = 0
     instance_name: str = ""

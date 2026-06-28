@@ -298,3 +298,21 @@ CREATE TABLE IF NOT EXISTS broker_building_stats (
 );
 
 CREATE INDEX IF NOT EXISTS idx_bbs_broker ON broker_building_stats(broker_id);
+
+-- AI suggestion queue — agents propose changes, humans approve/reject
+CREATE TABLE IF NOT EXISTS ai_suggestions (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    agent           TEXT NOT NULL,
+    suggestion_type TEXT NOT NULL,
+    title           TEXT NOT NULL,
+    description     TEXT NOT NULL DEFAULT '',
+    source_data     TEXT DEFAULT '{}',
+    proposal_data   TEXT DEFAULT '{}',
+    confidence      REAL DEFAULT 0.0,
+    status          TEXT NOT NULL DEFAULT 'pending',
+    created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+    updated_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_ais_status ON ai_suggestions(status);
+CREATE INDEX IF NOT EXISTS idx_ais_agent ON ai_suggestions(agent);
