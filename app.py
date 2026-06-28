@@ -35,7 +35,7 @@ from lab.location import parse_location
 from lab.events import get_bus
 
 # ── Bootstrap path to reuse evidence engine ─────────────────────
-PROJECT_DIR = Path(__file__).parent.parent
+PROJECT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(PROJECT_DIR))
 
 from lab.config import DB_PATH, WEBHOOK_SECRET, HOST, PORT, EVOLUTION_INSTANCE, EVOLUTION_API_URL, EVOLUTION_API_KEY, DOUBLEWORD_API_KEY, ENABLE_AI_PROMO, ENABLE_META_PUBLISHING, BAILEYS_STATUS_FILE, load_group_allowlist, save_group_allowlist, PROPAI_WEBHOOK_URL

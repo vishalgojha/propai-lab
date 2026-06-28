@@ -5,7 +5,7 @@ from pathlib import Path
 
 # Paths
 LAB_DIR = Path(__file__).parent
-PROJECT_DIR = LAB_DIR.parent
+PROJECT_DIR = LAB_DIR
 DATA_DIR = PROJECT_DIR / "data"
 DB_PATH = LAB_DIR / "lab.db"
 BAILEYS_AUTH_DIR = PROJECT_DIR / "services" / "baileys-ingestor" / "auth"
