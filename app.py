@@ -751,6 +751,12 @@ async def lifespan(app: FastAPI):
         print(f"  Broker graph: {result['brokers']} brokers, {result['observations']} observations")
     except Exception as exc:
         print(f"  Broker graph rebuild skipped: {exc}")
+    # Run alias learner on startup
+    try:
+        from agents.alias_learner import check_for_aliases
+        check_for_aliases(storage)
+    except Exception as exc:
+        print(f"  Alias learner skipped: {exc}")
     # Auto-generate API key if missing
     key_path = Path(__file__).parent / ".api_key"
     if not key_path.exists():
