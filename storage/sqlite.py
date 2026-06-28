@@ -444,7 +444,6 @@ class SqliteStorage(Storage):
         except Exception:
             pass
         try:
-            # Find the broker affected by this parsed message
             name = obs.broker_name or obs.profile_name
             if name:
                 key = SqliteStorage._broker_identity_key(name, obs.broker_phone)
@@ -454,6 +453,12 @@ class SqliteStorage(Storage):
                     ).fetchone()
                     if row:
                         check_for_broker_merge(self, broker_id=row["id"])
+        except Exception:
+            pass
+        try:
+            from datetime import datetime, timedelta, timezone
+            later = (datetime.now(timezone.utc) + timedelta(minutes=30)).strftime("%Y-%m-%dT%H:%M:%SZ")
+            self.create_enrichment_job(parsed_id, obs.raw_message_id, later)
         except Exception:
             pass
         return parsed_id
@@ -933,17 +938,6 @@ class SqliteStorage(Storage):
 
     # ── AI Suggestions ─────────────────────────────────────────
 
-    def create_suggestion(self, sug: AISuggestion) -> int:
-        cur = self.db.execute(
-            """INSERT INTO ai_suggestions
-               (agent, suggestion_type, title, description, source_data, proposal_data, confidence, status)
-               VALUES (?,?,?,?,?,?,?,?)""",
-            (sug.agent, sug.suggestion_type, sug.title, sug.description,
-             sug.source_data, sug.proposal_data, sug.confidence, sug.status)
-        )
-        self._commit()
-        return cur.lastrowid
-
     def get_suggestions(self, status: str = "pending", limit: int = 50, offset: int = 0) -> list[dict]:
         if status == "all":
             rows = self.db.execute(
@@ -982,6 +976,236 @@ class SqliteStorage(Storage):
             (status, sug_id)
         )
         self._commit()
+        if status == "approved":
+            self.apply_suggestion(sug_id)
+
+    def create_suggestion(self, sug: AISuggestion) -> int:
+        if sug.confidence < 0.80:
+            return 0
+        sug.status = "approved" if sug.confidence >= 0.95 else "pending"
+        cur = self.db.execute(
+            """INSERT INTO ai_suggestions
+               (agent, suggestion_type, title, description, source_data, proposal_data, confidence, status)
+               VALUES (?,?,?,?,?,?,?,?)""",
+            (sug.agent, sug.suggestion_type, sug.title, sug.description,
+             sug.source_data, sug.proposal_data, sug.confidence, sug.status)
+        )
+        sug_id = cur.lastrowid
+        self._commit()
+        if sug.status == "approved":
+            self.apply_suggestion(sug_id)
+        return sug_id
+
+    def apply_suggestion(self, sug_id: int) -> bool:
+        row = self.db.execute("SELECT * FROM ai_suggestions WHERE id = ?", (sug_id,)).fetchone()
+        if not row:
+            return False
+        d = dict(row)
+        try:
+            proposal = json.loads(d["proposal_data"]) if isinstance(d["proposal_data"], str) else d["proposal_data"]
+        except (json.JSONDecodeError, TypeError):
+            proposal = {}
+        action = proposal.get("action", "")
+        ok = False
+        if action == "merge_listings":
+            keep_id = proposal.get("keep_id")
+            merge_id = proposal.get("merge_id")
+            if keep_id and merge_id and keep_id != merge_id:
+                self.db.execute(
+                    "UPDATE listing_observations SET listing_id = ? WHERE listing_id = ?",
+                    (keep_id, merge_id)
+                )
+                self.db.execute("DELETE FROM listings WHERE id = ?", (merge_id,))
+                self._commit()
+                ok = True
+        elif action == "merge_brokers":
+            keep_id = proposal.get("keep_id")
+            merge_id = proposal.get("merge_id")
+            if keep_id and merge_id and keep_id != merge_id:
+                for table in ("broker_observations", "broker_phones", "broker_aliases",
+                              "broker_market_stats", "broker_building_stats"):
+                    self.db.execute(
+                        f"UPDATE {table} SET broker_id = ? WHERE broker_id = ?",
+                        (keep_id, merge_id)
+                    )
+                self.db.execute("DELETE FROM brokers WHERE id = ?", (merge_id,))
+                self._commit()
+                ok = True
+        elif action == "create_alias":
+            alias = proposal.get("alias", "")
+            canonical = proposal.get("canonical", "")
+            if alias and canonical:
+                try:
+                    self.db.execute(
+                        "INSERT OR IGNORE INTO location_aliases (alias, canonical, confidence) VALUES (?,?,?)",
+                        (alias, canonical, d.get("confidence", 0.85))
+                    )
+                    self._commit()
+                    ok = True
+                except Exception:
+                    pass
+        if ok:
+            self.db.execute(
+                "UPDATE ai_suggestions SET status = 'approved', updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?",
+                (sug_id,)
+            )
+            self._commit()
+        return ok
+
+    # ── Enrichment jobs ────────────────────────────────────────
+
+    def create_enrichment_job(self, parsed_id: int, raw_message_id: int,
+                              scheduled_after: str) -> int:
+        cur = self.db.execute(
+            """INSERT OR IGNORE INTO enrichment_jobs
+               (parsed_id, raw_message_id, scheduled_after)
+               VALUES (?,?,?)""",
+            (parsed_id, raw_message_id, scheduled_after)
+        )
+        self._commit()
+        return cur.lastrowid
+
+    def get_pending_enrichment_jobs(self, limit: int = 50) -> list[dict]:
+        rows = self.db.execute(
+            """SELECT * FROM enrichment_jobs
+               WHERE status = 'pending'
+                 AND scheduled_after <= strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
+               ORDER BY scheduled_after ASC
+               LIMIT ?""",
+            (limit,)
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def claim_enrichment_job(self, job_id: int) -> bool:
+        cur = self.db.execute(
+            """UPDATE enrichment_jobs
+               SET status = 'running', started_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now'),
+                   attempts = attempts + 1
+               WHERE id = ? AND status = 'pending'""",
+            (job_id,)
+        )
+        self._commit()
+        return cur.rowcount > 0
+
+    def complete_enrichment_job(self, job_id: int, error: str = ""):
+        if error:
+            self.db.execute(
+                """UPDATE enrichment_jobs
+                   SET status = 'failed', last_error = ?, completed_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
+                   WHERE id = ?""",
+                (error, job_id)
+            )
+        else:
+            self.db.execute(
+                """UPDATE enrichment_jobs
+                   SET status = 'completed', completed_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
+                   WHERE id = ?""",
+                (job_id,)
+            )
+        self._commit()
+
+    def get_enrichment_job_by_parsed(self, parsed_id: int) -> dict | None:
+        row = self.db.execute(
+            "SELECT * FROM enrichment_jobs WHERE parsed_id = ?", (parsed_id,)
+        ).fetchone()
+        return dict(row) if row else None
+
+    # ── Knowledge graph aliases ─────────────────────────────────
+
+    def create_location_alias(self, alias: str, canonical: str,
+                              confidence: float = 0.0, source: str = "ai") -> bool:
+        try:
+            self.db.execute(
+                "INSERT OR IGNORE INTO location_aliases (alias, canonical, confidence, source) VALUES (?,?,?,?)",
+                (alias, canonical, confidence, source)
+            )
+            self._commit()
+            return True
+        except Exception:
+            return False
+
+    def create_building_alias(self, alias: str, canonical: str,
+                              confidence: float = 0.0, source: str = "ai") -> bool:
+        try:
+            self.db.execute(
+                "INSERT OR IGNORE INTO building_aliases (alias, canonical, confidence, source) VALUES (?,?,?,?)",
+                (alias, canonical, confidence, source)
+            )
+            self._commit()
+            return True
+        except Exception:
+            return False
+
+    def resolve_location(self, text: str) -> str | None:
+        if not text:
+            return None
+        row = self.db.execute(
+            "SELECT canonical FROM location_aliases WHERE alias = ?", (text.strip(),)
+        ).fetchone()
+        if row:
+            return row["canonical"]
+        row = self.db.execute(
+            "SELECT canonical FROM location_aliases WHERE ? LIKE '%' || alias || '%' ORDER BY LENGTH(alias) DESC LIMIT 1",
+            (text.strip(),)
+        ).fetchone()
+        return row["canonical"] if row else None
+
+    def resolve_building(self, text: str) -> str | None:
+        if not text:
+            return None
+        row = self.db.execute(
+            "SELECT canonical FROM building_aliases WHERE alias = ?", (text.strip(),)
+        ).fetchone()
+        if row:
+            return row["canonical"]
+        row = self.db.execute(
+            "SELECT canonical FROM building_aliases WHERE ? LIKE '%' || alias || '%' ORDER BY LENGTH(alias) DESC LIMIT 1",
+            (text.strip(),)
+        ).fetchone()
+        return row["canonical"] if row else None
+
+    # ── Price stats ────────────────────────────────────────────
+
+    def recompute_price_stats(self):
+        self.db.execute("DELETE FROM price_stats")
+        rows = self.db.execute(
+            """SELECT micro_market, bhk, intent, price
+               FROM parsed_output
+               WHERE price IS NOT NULL AND price > 0
+                 AND micro_market IS NOT NULL AND micro_market != ''
+                 AND bhk IS NOT NULL AND bhk != ''"""
+        ).fetchall()
+        buckets: dict[tuple, list[float]] = {}
+        for r in rows:
+            key = (r["micro_market"], r["bhk"], r["intent"] or "listing")
+            buckets.setdefault(key, []).append(float(r["price"]))
+        now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        for (market, bhk, intent), prices in buckets.items():
+            if len(prices) < 3:
+                continue
+            prices.sort()
+            n = len(prices)
+            median = prices[n // 2]
+            mean = sum(prices) / n
+            p5 = prices[int(n * 0.05)]
+            p25 = prices[int(n * 0.25)]
+            p75 = prices[int(n * 0.75)]
+            p95 = prices[int(n * 0.95)]
+            self.db.execute(
+                """INSERT INTO price_stats
+                   (micro_market, bhk, intent, median, mean, p5, p25, p75, p95, count, computed_at)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+                (market, bhk, intent, median, mean, p5, p25, p75, p95, n, now)
+            )
+        self._commit()
+
+    def get_price_stats(self, micro_market: str, bhk: str,
+                        intent: str = "listing") -> dict | None:
+        row = self.db.execute(
+            "SELECT * FROM price_stats WHERE micro_market = ? AND bhk = ? AND intent = ?",
+            (micro_market, bhk, intent)
+        ).fetchone()
+        return dict(row) if row else None
 
     # ── Sync jobs ──────────────────────────────────────────────
 

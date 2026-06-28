@@ -2343,6 +2343,41 @@ async def act_on_suggestion(sug_id: int, action: str):
     return {"status": "ok"}
 
 
+@app.get("/api/price-stats")
+async def price_stats_endpoint(market: str = "", bhk: str = "", intent: str = "listing"):
+    if market and bhk:
+        result = storage.get_price_stats(market, bhk, intent)
+        return result or {"error": "not found"}
+    rows = storage.db.execute(
+        "SELECT * FROM price_stats ORDER BY count DESC LIMIT 100"
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+@app.get("/api/enrichment-jobs/counts")
+async def enrichment_counts():
+    counts = {}
+    for status in ("pending", "running", "completed", "failed"):
+        r = storage.db.execute(
+            "SELECT COUNT(*) FROM enrichment_jobs WHERE status = ?", (status,)
+        ).fetchone()
+        counts[status] = r[0]
+    return counts
+
+
+@app.post("/api/aliases/scan")
+async def scan_aliases():
+    from agents.alias_learner import check_for_aliases
+    check_for_aliases(storage)
+    return {"status": "ok"}
+
+
+@app.post("/api/price-stats/recompute")
+async def recompute_price_stats():
+    storage.recompute_price_stats()
+    return {"status": "ok"}
+
+
 @app.get("/api/buildings")
 async def list_buildings():
     rows = storage.db.execute("""

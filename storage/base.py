@@ -185,6 +185,40 @@ class AISuggestion:
 
 
 @dataclass
+class LocationAlias:
+    id: int = 0
+    alias: str = ""
+    canonical: str = ""
+    confidence: float = 0.0
+    source: str = "ai"
+    created_at: str = ""
+
+
+@dataclass
+class BuildingAlias:
+    id: int = 0
+    alias: str = ""
+    canonical: str = ""
+    confidence: float = 0.0
+    source: str = "ai"
+    created_at: str = ""
+
+
+@dataclass
+class EnrichmentJob:
+    id: int = 0
+    parsed_id: int = 0
+    raw_message_id: int = 0
+    status: str = "pending"
+    scheduled_after: str = ""
+    attempts: int = 0
+    last_error: Optional[str] = None
+    started_at: Optional[str] = None
+    completed_at: Optional[str] = None
+    created_at: str = ""
+
+
+@dataclass
 class SyncCheckpoint:
     id: int = 0
     instance_name: str = ""
@@ -370,3 +404,54 @@ class Storage(ABC):
 
     @abstractmethod
     def dashboard_growth(self, today_prefix: str) -> dict: ...
+
+    # ── Enrichment jobs ────────────────────────────────────────
+
+    @abstractmethod
+    def create_enrichment_job(self, parsed_id: int, raw_message_id: int,
+                              scheduled_after: str) -> int: ...
+
+    @abstractmethod
+    def get_pending_enrichment_jobs(self, limit: int = 50) -> list[dict]: ...
+
+    @abstractmethod
+    def claim_enrichment_job(self, job_id: int) -> bool: ...
+
+    @abstractmethod
+    def complete_enrichment_job(self, job_id: int, error: str = ""): ...
+
+    @abstractmethod
+    def get_enrichment_job_by_parsed(self, parsed_id: int) -> Optional[dict]: ...
+
+    # ── Knowledge graph aliases ─────────────────────────────────
+
+    @abstractmethod
+    def create_location_alias(self, alias: str, canonical: str,
+                              confidence: float = 0.0, source: str = "ai") -> bool: ...
+
+    @abstractmethod
+    def create_building_alias(self, alias: str, canonical: str,
+                              confidence: float = 0.0, source: str = "ai") -> bool: ...
+
+    @abstractmethod
+    def resolve_location(self, text: str) -> Optional[str]: ...
+
+    @abstractmethod
+    def resolve_building(self, text: str) -> Optional[str]: ...
+
+    # ── Price stats ────────────────────────────────────────────
+
+    @abstractmethod
+    def recompute_price_stats(self): ...
+
+    @abstractmethod
+    def get_price_stats(self, micro_market: str, bhk: str,
+                        intent: str = "listing") -> Optional[dict]: ...
+
+    # ── Suggestion lifecycle ───────────────────────────────────
+
+    @abstractmethod
+    def create_suggestion(self, sug: AISuggestion) -> int: ...
+
+    @abstractmethod
+    def apply_suggestion(self, sug_id: int) -> bool: ...

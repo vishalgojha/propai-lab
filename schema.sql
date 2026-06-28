@@ -316,3 +316,66 @@ CREATE TABLE IF NOT EXISTS ai_suggestions (
 
 CREATE INDEX IF NOT EXISTS idx_ais_status ON ai_suggestions(status);
 CREATE INDEX IF NOT EXISTS idx_ais_agent ON ai_suggestions(agent);
+
+-- Enrichment job queue — one per parsed observation, processed after a delay
+CREATE TABLE IF NOT EXISTS enrichment_jobs (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    parsed_id       INTEGER NOT NULL REFERENCES parsed_output(id),
+    raw_message_id  INTEGER NOT NULL REFERENCES raw_messages(id),
+    status          TEXT NOT NULL DEFAULT 'pending',
+    scheduled_after TEXT NOT NULL,
+    attempts        INTEGER NOT NULL DEFAULT 0,
+    last_error      TEXT,
+    started_at      TEXT,
+    completed_at    TEXT,
+    created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+    UNIQUE(parsed_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_ej_status ON enrichment_jobs(status);
+CREATE INDEX IF NOT EXISTS idx_ej_scheduled ON enrichment_jobs(scheduled_after);
+
+-- Knowledge graph aliases — learned by AI, applied to future resolutions
+CREATE TABLE IF NOT EXISTS location_aliases (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    alias           TEXT NOT NULL UNIQUE,
+    canonical       TEXT NOT NULL,
+    confidence      REAL DEFAULT 0.0,
+    source          TEXT DEFAULT 'ai',
+    created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+);
+
+CREATE TABLE IF NOT EXISTS building_aliases (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    alias           TEXT NOT NULL UNIQUE,
+    canonical       TEXT NOT NULL,
+    confidence      REAL DEFAULT 0.0,
+    source          TEXT DEFAULT 'ai',
+    created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+);
+
+CREATE TABLE IF NOT EXISTS broker_aliases_global (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    alias           TEXT NOT NULL UNIQUE,
+    canonical       TEXT NOT NULL,
+    confidence      REAL DEFAULT 0.0,
+    source          TEXT DEFAULT 'ai',
+    created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+);
+
+-- Price statistics per market + BHK — recomputed periodically
+CREATE TABLE IF NOT EXISTS price_stats (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    micro_market    TEXT NOT NULL,
+    bhk             TEXT NOT NULL,
+    intent          TEXT NOT NULL DEFAULT 'listing',
+    median          REAL,
+    mean            REAL,
+    p5              REAL,
+    p25             REAL,
+    p75             REAL,
+    p95             REAL,
+    count           INTEGER NOT NULL DEFAULT 0,
+    computed_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+    UNIQUE(micro_market, bhk, intent)
+);
