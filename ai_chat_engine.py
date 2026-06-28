@@ -1,5 +1,6 @@
 import os
 import json
+import sqlite3
 import pandas as pd
 from openai import OpenAI
 
@@ -44,6 +45,78 @@ def load_data():
     return sources
 
 
+def load_live_data(db_path):
+    """Load live SQLite tables (observations, brokers, listings) as additional sources."""
+    if not os.path.exists(db_path):
+        return {}
+    con = sqlite3.connect(db_path)
+    con.row_factory = sqlite3.Row
+    sources = {}
+
+    raw_cnt = con.execute("SELECT COUNT(*) FROM raw_messages").fetchone()[0]
+    parsed_cnt = con.execute("SELECT COUNT(*) FROM parsed_output").fetchone()[0]
+    sources["db_stats"] = {
+        "df": pd.DataFrame([{
+            "raw_messages": raw_cnt,
+            "parsed_observations": parsed_cnt,
+            "brokers": con.execute("SELECT COUNT(*) FROM brokers").fetchone()[0],
+            "deduplicated_listings": con.execute("SELECT COUNT(*) FROM listings").fetchone()[0],
+            "resolver_decisions": con.execute("SELECT COUNT(*) FROM resolver_decisions").fetchone()[0],
+        }]),
+        "description": "Live database overview (broker messages, entities, listings)",
+    }
+
+    brokers = con.execute(
+        "SELECT canonical_name, primary_phone, observation_count, listing_count, "
+        "requirement_count, rental_count, commercial_count, group_count, market_count, "
+        "avg_ticket, first_seen_at, last_seen_at FROM brokers "
+        "ORDER BY observation_count DESC LIMIT 2000"
+    ).fetchall()
+    if brokers:
+        df = pd.DataFrame([dict(r) for r in brokers])
+        if "avg_ticket" in df.columns:
+            df["avg_ticket"] = pd.to_numeric(df["avg_ticket"], errors="coerce")
+        sources["brokers"] = {"df": df, "description": "Broker profiles with stats"}
+
+    listings = con.execute(
+        "SELECT fingerprint, intent, bhk, price, price_unit, area_sqft, furnishing, "
+        "location_label, building_name, landmark_name, micro_market, "
+        "broker_name, broker_phone, observation_count, group_count, "
+        "first_seen, last_seen FROM listings ORDER BY last_seen DESC LIMIT 5000"
+    ).fetchall()
+    if listings:
+        sources["listings_dedup"] = {"df": pd.DataFrame([dict(r) for r in listings]),
+                                      "description": "Deduplicated listing fingerprints from broker messages"}
+
+    obs = con.execute(
+        "SELECT p.intent, p.principal, p.bhk, p.price, p.price_unit, p.area_sqft, "
+        "p.furnishing, p.building_name, p.micro_market, p.broker_name, p.broker_phone, "
+        "p.forwarded, p.confidence, p.created_at, "
+        "r.group_name, r.sender, r.timestamp "
+        "FROM parsed_output p JOIN raw_messages r ON r.id = p.raw_message_id "
+        "ORDER BY p.id DESC LIMIT 10000"
+    ).fetchall()
+    if obs:
+        df = pd.DataFrame([dict(r) for r in obs])
+        for c in ["price", "area_sqft", "confidence"]:
+            if c in df.columns:
+                df[c] = pd.to_numeric(df[c], errors="coerce")
+        sources["observations"] = {"df": df, "description": "Parsed WhatsApp broker messages with intent, price, location"}
+
+    resolved = con.execute(
+        "SELECT rd.building_name, rd.landmark_name, p.intent, p.micro_market, "
+        "rd.method, rd.final_confidence, rd.failure_category, rd.created_at "
+        "FROM resolver_decisions rd JOIN parsed_output p ON p.id = rd.parsed_id "
+        "ORDER BY rd.id DESC LIMIT 10000"
+    ).fetchall()
+    if resolved:
+        sources["resolver_results"] = {"df": pd.DataFrame([dict(r) for r in resolved]),
+                                        "description": "Entity resolution results (building/landmark matching)"}
+
+    con.close()
+    return sources
+
+
 def build_overview(sources):
     lines = []
     for key, src in sources.items():
@@ -81,52 +154,54 @@ RULES:
 - Do NOT make up data. If the data doesn't have an answer, say so plainly."""
 
 
-TOOLS = [
-    {
-        "type": "function",
-        "function": {
-            "name": "query_data",
-            "description": "Filter, aggregate, or list records from a dataset",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "source": {
-                        "type": "string",
-                        "enum": ["listings", "buildings"],
-                        "description": "Which dataset to query: listings (properties for sale/rent) or buildings (address records)",
+def _build_tools(sources):
+    source_keys = sorted(sources.keys())
+    return [
+        {
+            "type": "function",
+            "function": {
+                "name": "query_data",
+                "description": "Search, filter, aggregate, or list records from any dataset",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "source": {
+                            "type": "string",
+                            "enum": source_keys,
+                            "description": f"Which dataset to query. Available: {', '.join(source_keys)}",
+                        },
+                        "filters": {
+                            "type": "object",
+                            "description": "Column->value filters (exact match, case-insensitive)."
+                            "For partial text match use {{'col__contains': 'text'}}."
+                            "For numeric ranges use {{'col__lt': N, 'col__gt': N, 'col__lte': N, 'col__gte': N}}.",
+                        },
+                        "aggregate": {
+                            "type": "string",
+                            "enum": ["count", "list", "avg", "min", "max", "none"],
+                            "description": "What to do with matching rows (default: list)",
+                        },
+                        "group_by": {
+                            "type": "string",
+                            "description": "Column to group by when using count/avg/min/max aggregate",
+                        },
+                        "sort_by": {"type": "string", "description": "Column to sort results by"},
+                        "ascending": {"type": "boolean", "description": "Sort ascending (default: true)"},
+                        "limit": {"type": "integer", "description": "Max rows to return (default 20)"},
                     },
-                    "filters": {
-                        "type": "object",
-                        "description": "Column->value filters (exact match, case-insensitive)."
-                        "For partial text match use {{'col__contains': 'text'}}."
-                        "For numeric ranges use {{'col__lt': N, 'col__gt': N, 'col__lte': N, 'col__gte': N}}.",
-                    },
-                    "aggregate": {
-                        "type": "string",
-                        "enum": ["count", "list", "avg", "min", "max", "none"],
-                        "description": "What to do with matching rows (default: list)",
-                    },
-                    "group_by": {
-                        "type": "string",
-                        "description": "Column to group by when using count/avg/min/max aggregate",
-                    },
-                    "sort_by": {"type": "string", "description": "Column to sort results by"},
-                    "ascending": {"type": "boolean", "description": "Sort ascending (default: true)"},
-                    "limit": {"type": "integer", "description": "Max rows to return (default 20)"},
+                    "required": ["source"],
                 },
-                "required": ["source"],
-            },
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "get_overview",
-            "description": "Get an overview of all available datasets (schema, row counts, sample values)",
-            "parameters": {"type": "object", "properties": {}},
+            }
         },
-    },
-]
+        {
+            "type": "function",
+            "function": {
+                "name": "get_overview",
+                "description": "Get an overview of all available datasets (schema, row counts, sample values)",
+                "parameters": {"type": "object", "properties": {}},
+            },
+        },
+    ]
 
 
 def _parse_price(val):
@@ -252,10 +327,11 @@ def execute_tool(name, args, sources):
 
 def get_model_reply(messages, sources, api_key=None):
     client = get_client(api_key=api_key)
+    tools = _build_tools(sources)
     resp = client.chat.completions.create(
         model=MODEL,
         messages=messages,
-        tools=TOOLS,
+        tools=tools,
         tool_choice="auto",
         extra_body={"chat_template_kwargs": {"enable_thinking": False}},
     )

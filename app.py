@@ -1880,8 +1880,10 @@ async def ai_chat(req: ChatRequest):
         return {"error": "api_key_required", "message": "Set your Doubleword API key in Chat settings"}
 
     sources = chat_engine.load_data()
+    live = chat_engine.load_live_data(str(DB_PATH))
+    sources.update(live)
     if not sources:
-        return {"error": "no_data", "message": "No scraped CSVs found. Run scrape_all.py first."}
+        return {"error": "no_data", "message": "No data found. Check CSV files and database."}
 
     loop = asyncio.get_running_loop()
 
@@ -1898,6 +1900,8 @@ async def ai_chat(req: ChatRequest):
 @app.get("/api/ai/chat/overview")
 async def ai_chat_overview():
     sources = chat_engine.load_data()
+    live = chat_engine.load_live_data(str(DB_PATH))
+    sources.update(live)
     if not sources:
         return {"error": "no_data"}
     return {"overview": chat_engine.build_overview(sources), "sources": list(sources.keys())}
