@@ -2,12 +2,12 @@
 
 Polls pending enrichment_jobs where scheduled_after has passed.
 For each job:
-  - Loads the parsed observation + related context
-  - Runs deterministic enrichments (duplicate, alias, price)
+  - Runs deterministic enrichments (alias resolution, price check)
+  - Runs database/cross-reference lookups (building, location)
   - Calls LLM as last resort for building/location
   - Creates ai_suggestions with findings
 
-Runs as: python3 -m worker
+Runs as: python3 worker.py
 """
 
 import json
@@ -17,7 +17,7 @@ from pathlib import Path
 
 from storage.sqlite import SqliteStorage
 
-POLL_INTERVAL = 30  # seconds
+POLL_INTERVAL = 30
 JOB_BATCH = 20
 
 
@@ -50,19 +50,25 @@ def enrich_observation(storage: SqliteStorage, job: dict):
 
     d = dict(row)
 
-    # 1. Resolve aliases from knowledge graph
-    if not d.get("micro_market"):
-        resolved = storage.resolve_location(d.get("location_raw") or "")
-        if resolved:
-            pass
+    # 1. Building name detection
+    try:
+        from agents.building_detector import enrich_building
+        enrich_building(storage, d)
+    except Exception as e:
+        pass
 
-    if not d.get("building_name"):
-        resolved = storage.resolve_building(d.get("location_raw") or "")
-        if resolved:
-            pass
+    # 2. Location resolution
+    try:
+        from agents.location_resolver import enrich_location
+        enrich_location(storage, d)
+    except Exception as e:
+        pass
 
-    # 2. Price outlier check
-    _check_price_outlier(storage, d)
+    # 3. Price outlier check
+    try:
+        _check_price_outlier(storage, d)
+    except Exception:
+        pass
 
 
 def _check_price_outlier(storage: SqliteStorage, d: dict):
@@ -88,7 +94,6 @@ def _check_price_outlier(storage: SqliteStorage, d: dict):
         f"{bhk} in {micro_market}: price ₹{price_f:,.0f} is {outlier_type} "
         f"the normal range (₹{stats['p5']:,.0f}–₹{stats['p95']:,.0f}). "
         f"Median: ₹{stats['median']:,.0f} ({stats['count']} samples). "
-        f"Likely a parser error."
     )
 
     from lab.storage.base import AISuggestion
