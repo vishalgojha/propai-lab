@@ -24,8 +24,8 @@ def get_client(api_key=None):
 def load_data():
     sources = {}
     files = {
-        "listings": ("Property listings for sale/rent in Mumbai", ["propi_listings.csv", "listings.csv"]),
-        "buildings": ("Building and address records", ["propi_buildings.csv", "buildings.csv"]),
+        "portal_listings": ("Property listings collected from online portals", ["propi_listings.csv", "listings.csv"]),
+        "buildings": ("Building and address directory", ["propi_buildings.csv", "buildings.csv"]),
     }
     for key, (desc, candidates) in files.items():
         path = None
@@ -39,14 +39,14 @@ def load_data():
         if os.path.exists(path):
             df = pd.read_csv(path)
             if not df.empty:
-                if key == "listings":
+                if key == "portal_listings":
                     df = _prepare_listings(df)
                 sources[key] = {"df": df, "description": desc}
     return sources
 
 
 def load_live_data(db_path):
-    """Load live SQLite tables (observations, brokers, listings) as additional sources."""
+    """Load live SQLite tables as additional sources with broker-friendly names."""
     if not os.path.exists(db_path):
         return {}
     con = sqlite3.connect(db_path)
@@ -55,63 +55,70 @@ def load_live_data(db_path):
 
     raw_cnt = con.execute("SELECT COUNT(*) FROM raw_messages").fetchone()[0]
     parsed_cnt = con.execute("SELECT COUNT(*) FROM parsed_output").fetchone()[0]
-    sources["db_stats"] = {
+    sources["overview"] = {
         "df": pd.DataFrame([{
-            "raw_messages": raw_cnt,
-            "parsed_observations": parsed_cnt,
-            "brokers": con.execute("SELECT COUNT(*) FROM brokers").fetchone()[0],
-            "deduplicated_listings": con.execute("SELECT COUNT(*) FROM listings").fetchone()[0],
-            "resolver_decisions": con.execute("SELECT COUNT(*) FROM resolver_decisions").fetchone()[0],
+            "total_messages": raw_cnt,
+            "total_properties_posted": parsed_cnt,
+            "total_brokers": con.execute("SELECT COUNT(*) FROM brokers").fetchone()[0],
+            "unique_properties": con.execute("SELECT COUNT(*) FROM listings").fetchone()[0],
+            "building_matches_found": con.execute("SELECT COUNT(*) FROM resolver_decisions WHERE method='resolved'").fetchone()[0],
         }]),
-        "description": "Live database overview (broker messages, entities, listings)",
+        "description": "Platform overview with total counts of messages, properties, brokers, and matched buildings",
     }
 
     brokers = con.execute(
-        "SELECT canonical_name, primary_phone, observation_count, listing_count, "
-        "requirement_count, rental_count, commercial_count, group_count, market_count, "
-        "avg_ticket, first_seen_at, last_seen_at FROM brokers "
-        "ORDER BY observation_count DESC LIMIT 2000"
+        "SELECT canonical_name AS name, primary_phone AS phone, "
+        "observation_count AS total_posts, listing_count AS properties_posted, "
+        "requirement_count AS requirements_posted, rental_count AS rentals_posted, "
+        "commercial_count AS commercial_posted, group_count AS groups_active, "
+        "market_count AS markets_served, "
+        "avg_ticket AS average_price, first_seen_at AS first_active, last_seen_at AS last_active "
+        "FROM brokers ORDER BY observation_count DESC LIMIT 2000"
     ).fetchall()
     if brokers:
         df = pd.DataFrame([dict(r) for r in brokers])
-        if "avg_ticket" in df.columns:
-            df["avg_ticket"] = pd.to_numeric(df["avg_ticket"], errors="coerce")
-        sources["brokers"] = {"df": df, "description": "Broker profiles with stats"}
+        if "average_price" in df.columns:
+            df["average_price"] = pd.to_numeric(df["average_price"], errors="coerce")
+        sources["brokers"] = {"df": df, "description": "Brokers with their activity, markets, and average prices"}
 
     listings = con.execute(
         "SELECT fingerprint, intent, bhk, price, price_unit, area_sqft, furnishing, "
-        "location_label, building_name, landmark_name, micro_market, "
-        "broker_name, broker_phone, observation_count, group_count, "
+        "location_label AS area, building_name, landmark_name, micro_market, "
+        "broker_name, broker_phone, "
+        "observation_count AS times_seen, group_count AS groups_seen_in, "
         "first_seen, last_seen FROM listings ORDER BY last_seen DESC LIMIT 5000"
     ).fetchall()
     if listings:
-        sources["listings_dedup"] = {"df": pd.DataFrame([dict(r) for r in listings]),
-                                      "description": "Deduplicated listing fingerprints from broker messages"}
+        sources["unique_listings"] = {"df": pd.DataFrame([dict(r) for r in listings]),
+                                       "description": "Unique properties posted in WhatsApp groups"}
 
     obs = con.execute(
-        "SELECT p.intent, p.principal, p.bhk, p.price, p.price_unit, p.area_sqft, "
-        "p.furnishing, p.building_name, p.micro_market, p.broker_name, p.broker_phone, "
-        "p.forwarded, p.confidence, p.created_at, "
-        "r.group_name, r.sender, r.timestamp "
+        "SELECT p.intent AS purpose, p.bhk, p.price, p.price_unit, p.area_sqft, "
+        "p.furnishing, p.building_name, p.micro_market AS locality, "
+        "p.broker_name, p.broker_phone, "
+        "p.forwarded, p.created_at AS posted_at, "
+        "r.group_name AS group_name, r.sender AS posted_by, r.timestamp "
         "FROM parsed_output p JOIN raw_messages r ON r.id = p.raw_message_id "
         "ORDER BY p.id DESC LIMIT 10000"
     ).fetchall()
     if obs:
         df = pd.DataFrame([dict(r) for r in obs])
-        for c in ["price", "area_sqft", "confidence"]:
+        for c in ["price", "area_sqft"]:
             if c in df.columns:
                 df[c] = pd.to_numeric(df[c], errors="coerce")
-        sources["observations"] = {"df": df, "description": "Parsed WhatsApp broker messages with intent, price, location"}
+        sources["market_feed"] = {"df": df, "description": "Recent property posts and requirements posted in WhatsApp groups"}
 
     resolved = con.execute(
-        "SELECT rd.building_name, rd.landmark_name, p.intent, p.micro_market, "
-        "rd.method, rd.final_confidence, rd.failure_category, rd.created_at "
+        "SELECT rd.building_name AS matched_building, rd.landmark_name AS matched_landmark, "
+        "p.intent AS purpose, p.micro_market AS locality, "
+        "rd.method AS match_status, rd.final_confidence AS match_confidence, "
+        "rd.failure_category, rd.created_at "
         "FROM resolver_decisions rd JOIN parsed_output p ON p.id = rd.parsed_id "
         "ORDER BY rd.id DESC LIMIT 10000"
     ).fetchall()
     if resolved:
-        sources["resolver_results"] = {"df": pd.DataFrame([dict(r) for r in resolved]),
-                                        "description": "Entity resolution results (building/landmark matching)"}
+        sources["building_matches"] = {"df": pd.DataFrame([dict(r) for r in resolved]),
+                                        "description": "Which properties were matched to known buildings and landmarks"}
 
     con.close()
     return sources
@@ -143,15 +150,16 @@ def build_overview(sources):
 
 def build_system_prompt(sources):
     overview = build_overview(sources)
-    return f"""You are a Mumbai real estate data assistant. You answer questions about these datasets:
+    return f"""You are a Mumbai real estate data assistant helping brokers. Answer questions about properties, brokers, and market activity.
 
+AVAILABLE DATA:
 {overview}
 
 RULES:
-- Answer directly. Greet once per conversation but don't list off datasets.
+- Answer in plain English. Never use technical terms like "observation", "entity", "resolve", "dataset" — say "message", "property", "match", "data".
 - Use Indian Rupee (₹) format for prices (e.g. ₹1.2 Cr, ₹85 L).
-- Use the query_data tool to look up data.
-- Do NOT make up data. If the data doesn't have an answer, say so plainly."""
+- Use the query_data tool to look up information.
+- Do NOT make up data. If you don't know, say so plainly."""
 
 
 def _build_tools(sources):
