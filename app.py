@@ -810,6 +810,8 @@ def _register_webhook():
 
 _EVENT_CLASS = {
     "messages.upsert": "message",
+    "MESSAGES_UPSERT": "message",
+    "MESSAGES_SET": "message",
     "messages.update": "message",
     "messages.delete": "system",
     "connection.update": "connection",
@@ -884,9 +886,10 @@ async def webhook(request: Request):
     if not msg_text.strip():
         return {"status": "ignored", "reason": "empty_message"}
 
-    push_name = msg_data.get("pushName", "") or ""
-    sender_name = msg_data.get("sender", {}).get("name", "") or push_name
-    sender_jid = key.get("participant", "") or msg_data.get("sender", {}).get("id", "")
+    baileys_sender = msg_data.get("sender", {}) or {}
+    push_name = msg_data.get("pushName", "") or baileys_sender.get("pushName", "") or ""
+    sender_name = baileys_sender.get("name", "") or push_name
+    sender_jid = key.get("participant", "") or baileys_sender.get("id", "")
     sender_phone = "".join(ch for ch in str(sender_jid).split("@")[0] if ch.isdigit())
     sender = _format_whatsapp_sender(sender_name, sender_jid)
     group = key.get("remoteJid", "") or msg_data.get("from", "")
@@ -898,7 +901,7 @@ async def webhook(request: Request):
     # Dedup key
     message_id = key.get("id", "")
     remote_jid = key.get("remoteJid", group)
-    message_uid = f"evolution::{instance}::{remote_jid}::{message_id}" if message_id and remote_jid else None
+    message_uid = f"baileys::{instance}::{remote_jid}::{message_id}" if message_id and remote_jid else None
 
     # Save raw message
     from lab.scheduler import PIPELINE_VERSION

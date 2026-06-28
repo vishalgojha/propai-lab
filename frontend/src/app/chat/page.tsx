@@ -79,7 +79,7 @@ export default function AIReviewPage() {
     <div className="max-w-4xl mx-auto">
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-lg font-semibold">AI Review</h1>
+          <h1 className="text-lg font-semibold">Review Center</h1>
           <p className="text-xs text-[#94a3b8]">
             {counts.pending || 0} pending suggestion{(counts.pending || 0) !== 1 ? "s" : ""}
           </p>
