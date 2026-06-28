@@ -17,6 +17,7 @@ from lab.storage.base import (
 )
 from lab.inventory import listing_fingerprint, listing_label
 from agents.duplicate_detector import check_for_duplicates
+from agents.broker_merger import check_for_broker_merge
 
 
 def _clean_person_name(name: str = "") -> str:
@@ -440,6 +441,19 @@ class SqliteStorage(Storage):
                 pass
         try:
             self.rebuild_broker_graph()
+        except Exception:
+            pass
+        try:
+            # Find the broker affected by this parsed message
+            name = obs.broker_name or obs.profile_name
+            if name:
+                key = SqliteStorage._broker_identity_key(name, obs.broker_phone)
+                if key:
+                    row = self.db.execute(
+                        "SELECT id FROM brokers WHERE identity_key = ?", (key,)
+                    ).fetchone()
+                    if row:
+                        check_for_broker_merge(self, broker_id=row["id"])
         except Exception:
             pass
         return parsed_id
