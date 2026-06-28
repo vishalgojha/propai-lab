@@ -48,6 +48,16 @@ function haystack(row: api.ParsedObservation) {
   ].filter(Boolean).join(" ").toLowerCase();
 }
 
+function whatsappLink(row: api.ParsedObservation): string {
+  const phone = (row.broker_phone || "").replace(/[^0-9]/g, "").slice(-10);
+  if (phone.length !== 10) return "";
+  const need = [row.bhk, row.location_raw || row.micro_market, row.price ? formatPrice(row.price) : ""]
+    .filter(Boolean)
+    .join(" ");
+  const text = `Hi, checking your requirement${need ? ` for ${need}` : ""}. Is it still active?`;
+  return `https://wa.me/91${phone}?text=${encodeURIComponent(text)}`;
+}
+
 export default function RequirementsPage() {
   const [rows, setRows] = useState<api.ParsedObservation[]>([]);
   const [offset, setOffset] = useState(0);
@@ -80,7 +90,7 @@ export default function RequirementsPage() {
       </div>
 
       <div className="overflow-x-auto">
-        <table className="w-full text-sm">
+        <table className="data-table text-sm">
           <thead>
             <tr>
               <th className="text-left px-2.5 py-2 border-b border-[rgba(255,255,255,0.1)] text-[11px] text-[#64748b] uppercase tracking-wider">ID</th>
@@ -94,8 +104,7 @@ export default function RequirementsPage() {
           </thead>
           <tbody>
             {filtered.map((row) => {
-              const phone = (row.broker_phone || "").replace(/[^0-9]/g, "").slice(-10);
-              const waLink = phone.length === 10 ? `https://wa.me/91${phone}` : "";
+              const waLink = whatsappLink(row);
               const matchQuery = [row.bhk, row.location_raw, row.landmark_name, row.micro_market, formatPrice(row.price)]
                 .filter(Boolean)
                 .join(" ");
@@ -107,18 +116,22 @@ export default function RequirementsPage() {
                     <div className="text-[10px] text-[#64748b]">{row.raw_group}</div>
                   </td>
                   <td className="px-2.5 py-2 border-b border-[rgba(255,255,255,0.06)] font-semibold">
-                    {row.broker_name || "-"}
-                    {waLink && <div><a href={waLink} target="_blank" className="text-[10px] text-[#3b82f6] no-underline">wa.me/{phone}</a></div>}
+                    <div className="broker-cell">
+                      <span>{row.broker_name || "-"}</span>
+                      {waLink && <a href={waLink} target="_blank" rel="noreferrer" className="wa-icon" title="Message on WhatsApp" aria-label="Message on WhatsApp">WA</a>}
+                    </div>
                   </td>
                   <td className="px-2.5 py-2 border-b border-[rgba(255,255,255,0.06)]">
                     <span className="badge badge-purple">{row.intent || "Requirement"}</span>
                     {row.bhk && <span className="ml-2">{row.bhk}</span>}
                   </td>
                   <td className="px-2.5 py-2 border-b border-[rgba(255,255,255,0.06)]">{formatPrice(row.price) || "-"}</td>
-                  <td className="px-2.5 py-2 border-b border-[rgba(255,255,255,0.06)] max-w-[220px] truncate">
+                  <td className="px-2.5 py-2 border-b border-[rgba(255,255,255,0.06)] min-w-[240px] max-w-[420px] break-words">
                     {row.location_raw || row.landmark_name || row.micro_market || "-"}
                   </td>
-                  <td className="px-2.5 py-2 border-b border-[rgba(255,255,255,0.06)] max-w-[360px] truncate">{row.raw_message}</td>
+                  <td className="px-2.5 py-2 border-b border-[rgba(255,255,255,0.06)] min-w-[480px]">
+                    <div className="message-preview">{row.raw_message}</div>
+                  </td>
                   <td className="px-2.5 py-2 border-b border-[rgba(255,255,255,0.06)] min-w-[150px]">
                     <div className="flex flex-wrap gap-2">
                       <a href={`/observations/${row.raw_message_id}`} className="text-xs font-semibold text-[#58a6ff] hover:underline">View</a>

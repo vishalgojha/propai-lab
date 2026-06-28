@@ -86,6 +86,23 @@ _STOP = frozenset({
     "have", "been", "being", "from", "by",
 })
 
+_GENERIC_LOCATION_PHRASES = frozenset({
+    "rent", "rental", "on rent", "for rent", "lease", "on lease",
+    "sale", "sell", "for sale", "available", "available on rent",
+    "available for rent", "available on sale", "available for sale",
+    "direct inventory", "inventory", "urgent", "urgently",
+})
+
+_COMMON_MUMBAI_LOCALITIES = frozenset({
+    "andheri", "andheri west", "andheri east", "bandra", "bandra west",
+    "bandra east", "bkc", "santacruz", "santacruz west", "santacruz east",
+    "khar", "khar west", "juhu", "malad", "malad west", "goregaon",
+    "goregaon west", "worli", "parel", "lower parel", "dadar", "powai",
+    "versova", "vile parle", "chembur", "mahalaxmi", "prabhadevi",
+    "oshiwara", "lokhandwala", "mount mary", "pali hill", "turner road",
+    "carter road", "hill road", "linking road",
+})
+
 
 # ── Token match result ──
 
@@ -199,8 +216,10 @@ def _load_evidence():
                     _localities.add(p.lower())
         # Also add micro markets themselves as potential localities
         _localities.update(_micro_markets)
+        _localities.update(_COMMON_MUMBAI_LOCALITIES)
         _evidence_loaded = True
     except Exception:
+        _localities.update(_COMMON_MUMBAI_LOCALITIES)
         pass
 
 
@@ -218,9 +237,23 @@ def extract_location_text(raw_text: str) -> str | None:
     """
     text = raw_text.strip()
     lower = text.lower()
+    _load_evidence()
+
+    def usable_candidate(candidate: str | None) -> bool:
+        if not candidate:
+            return False
+        normalized = re.sub(r'[*_`~]', '', candidate).strip(" \t,.-:").lower()
+        normalized = re.sub(r'\s+', ' ', normalized)
+        if len(normalized) < 3 or normalized in _GENERIC_LOCATION_PHRASES:
+            return False
+        if re.fullmatch(r'(?:on|for)?\s*(?:rent|sale|lease|sell|buy|requirement)s?', normalized):
+            return False
+        if re.fullmatch(r'(?:rent|sale|lease|available|direct|inventory|urgent|urgently)[\s\W]*', normalized):
+            return False
+        return True
 
     def clean_candidate(candidate: str) -> str:
-        rest = candidate.strip(" \t:-")
+        rest = re.sub(r'[*_`~]', '', candidate).strip(" \t:-")
         boundaries = []
         boundary_patterns = [
             r'\n',
@@ -263,8 +296,47 @@ def extract_location_text(raw_text: str) -> str | None:
                       "walking distance from ", "walking distance to "]:
             if rest.lower().startswith(noise):
                 rest = rest[len(noise):].strip()
+        rest = re.sub(
+            r'^(?:available|direct inventory|inventory|urgent|urgently|sale|sell|rent|rental|'
+            r'on\s+rent|for\s+rent|on\s+lease|for\s+lease|on\s+sale|for\s+sale|'
+            r'apt|flat|office|space|property)\b\s*',
+            '',
+            rest,
+            flags=re.IGNORECASE,
+        ).strip(" \t,.-:")
         rest = re.sub(r'^(?:in|at|near)\s+', '', rest, flags=re.IGNORECASE).strip()
         return rest
+
+    def known_location_candidate() -> str | None:
+        candidates = sorted(
+            {x for x in (_localities | _micro_markets) if len(x) >= 4},
+            key=len,
+            reverse=True,
+        )
+        for name in candidates:
+            m = re.search(rf'\b{re.escape(name)}\b', lower)
+            if not m:
+                continue
+            start = max(0, m.start() - 45)
+            end = min(len(text), m.end() + 90)
+            prefix = text[start:m.start()]
+            cut = max(prefix.rfind("\n"), prefix.rfind(","), prefix.rfind("*"))
+            if cut >= 0:
+                start = start + cut + 1
+            suffix = text[m.end():end]
+            next_breaks = [idx for idx in (suffix.find("\n"), suffix.find(",")) if idx >= 0]
+            if next_breaks:
+                end = m.end() + min(next_breaks)
+            candidate = clean_candidate(text[start:end])
+            candidate = re.sub(
+                r'^(?:available|direct inventory|inventory|urgent|urgently|sale|sell|rent|rental|on rent|for rent|on sale|for sale|apt|flat|office|space)\b\s*',
+                '',
+                candidate,
+                flags=re.IGNORECASE,
+            ).strip(" \t,.-:")
+            if usable_candidate(candidate):
+                return candidate
+        return None
 
     # Requirement shorthand should prefer the desired area after BHK over
     # secondary landmarks like "near Metro".
@@ -278,11 +350,14 @@ def extract_location_text(raw_text: str) -> str | None:
         if bhk_loc:
             rest = clean_candidate(bhk_loc.group(1))
             if (
-                rest
-                and len(rest) >= 3
+                usable_candidate(rest)
                 and not re.match(r'^(?:starting|start(?:s)?|price|budget|from|max)\b', rest, re.IGNORECASE)
             ):
                 return rest
+
+    known = known_location_candidate()
+    if known:
+        return known
 
     loc_keywords = [
         r'at', r'in', r'near', r'opposite', r'opp\.?', r'behind', r'off',
@@ -293,7 +368,7 @@ def extract_location_text(raw_text: str) -> str | None:
         m = re.search(rf'(?<![A-Za-z]){kw}\s+', lower)
         if m:
             rest = clean_candidate(text[m.end():])
-            if rest and len(rest) >= 3:
+            if usable_candidate(rest):
                 return rest
 
     # Common requirement shorthand: "Need 2 BHK Bandra Budget 3 Cr".
@@ -306,8 +381,7 @@ def extract_location_text(raw_text: str) -> str | None:
     if bhk_loc:
         rest = clean_candidate(bhk_loc.group(1))
         if (
-            rest
-            and len(rest) >= 3
+            usable_candidate(rest)
             and not re.match(r'^(?:starting|start(?:s)?|price|budget|from|max)\b', rest, re.IGNORECASE)
         ):
             return rest
@@ -318,7 +392,7 @@ def extract_location_text(raw_text: str) -> str | None:
             continue
         if re.search(r'\b(?:launch|booking|owner|sale|rent|requirement|forwarded)\b', line, re.IGNORECASE):
             continue
-        if len(line) >= 3:
+        if usable_candidate(line):
             return clean_candidate(line)
     return None
 

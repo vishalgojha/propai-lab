@@ -152,6 +152,27 @@ def _extract_broker_from_signature(text: str) -> tuple[str | None, str | None]:
     lines = [l.strip() for l in text.strip().split("\n") if l.strip()]
     if len(lines) < 2:
         return None, None
+    bad_name_terms = (
+        "location", "inspection", "carpet", "config", "configuration", "building",
+        "available", "rent", "rental", "sale", "sell", "lease", "price", "budget",
+        "deposit", "possession", "notice", "parking", "furnished", "unfurnished",
+        "semi", "call", "contact", "whatsapp", "site visit", "client", "requirement",
+        "direct inventory", "mandate", "note", "landmark", "road", "sqft", "floor",
+    )
+
+    def valid_signature_name(line: str) -> bool:
+        cleaned = re.sub(r'[*_`~]', '', line).strip(" -:")
+        if len(cleaned) < 3 or len(cleaned) > 45:
+            return False
+        low = cleaned.lower()
+        if any(term in low for term in bad_name_terms):
+            return False
+        if re.search(r'\d{3,}|@|http|\.com|www|₹|\b(?:bhk|rk|cr|lac|lakh|sqft|sft)\b', low):
+            return False
+        if cleaned.count(",") or cleaned.count(":"):
+            return False
+        return bool(_RE.match(r'^[A-Z][A-Za-z .&-]{2,}$', cleaned))
+
     # Scan from bottom for signature patterns
     name = None
     phone = None
@@ -163,10 +184,10 @@ def _extract_broker_from_signature(text: str) -> tuple[str | None, str | None]:
             phone = phone_match.group(1)
             continue
         # Name line — starts with uppercase word, not a phone/email/URL
-        if not name and _RE.match(r'^[A-Z][a-z]', line) and not _RE.search(r'\d{10}|@|http|\.com|www', line):
+        if not name and valid_signature_name(line):
             # Skip if it looks like a company name (ends with realty, prop, estate, etc.)
             if not any(kw in line.lower() for kw in ["realty", "property", "estate", "realtors", "consultancy", "enterprises", "ventures"]):
-                name = line.strip()
+                name = re.sub(r'[*_`~]', '', line).strip(" -:")
     return name, phone
 
 
@@ -881,9 +902,13 @@ def _format_whatsapp_sender(name: str = "", jid: str = "") -> str:
 
 def _clean_person_name(name: str = "") -> str:
     clean = (name or "").strip()
+    if re.fullmatch(r"\+?[\dXx\s().-]{7,}", clean):
+        return ""
     clean = re.sub(r"\s*\([^)]*(?:\+?\d|X{2,})[^)]*\)\s*", " ", clean, flags=re.I)
-    clean = re.sub(r"\s*\+?\d[\d\s().-]{7,}\s*", " ", clean)
+    clean = re.sub(r"\s*\+?[\dXx][\dXx\s().-]{7,}\s*", " ", clean)
     clean = re.sub(r"\s{2,}", " ", clean).strip(" -")
+    if re.fullmatch(r"\+?[\dXx\s().-]{7,}", clean):
+        return ""
     return clean
 
 

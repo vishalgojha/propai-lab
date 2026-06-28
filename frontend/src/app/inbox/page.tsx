@@ -29,7 +29,7 @@ export default function InboxPage() {
         <button onClick={() => api.getRaw(PAGE_SIZE, offset).then(setMessages)} className="px-3 py-1.5 bg-[#3EE88A] text-[#04100a] rounded-lg text-sm font-bold">Refresh</button>
       </div>
       <div className="overflow-x-auto">
-        <table className="w-full text-sm">
+        <table className="data-table text-sm">
           <thead>
             <tr>
               <th className="text-left px-2.5 py-2 border-b border-[rgba(255,255,255,0.1)] text-[11px] text-[#64748b] uppercase tracking-wider">ID</th>
@@ -47,9 +47,11 @@ export default function InboxPage() {
                 <td className="px-2.5 py-2 border-b border-[rgba(255,255,255,0.06)]">
                   <a href={`/observations/${m.id}`} className="text-[#58a6ff] no-underline hover:underline">#{m.id}</a>
                 </td>
-                <td className="px-2.5 py-2 border-b border-[rgba(255,255,255,0.06)] max-w-[200px] truncate">{m.group_name}</td>
-                <td className="px-2.5 py-2 border-b border-[rgba(255,255,255,0.06)] max-w-[200px] truncate">{m.sender}</td>
-                <td className="px-2.5 py-2 border-b border-[rgba(255,255,255,0.06)] max-w-[300px] truncate">{m.message}</td>
+                <td className="px-2.5 py-2 border-b border-[rgba(255,255,255,0.06)] min-w-[220px] max-w-[320px] break-words">{m.group_name}</td>
+                <td className="px-2.5 py-2 border-b border-[rgba(255,255,255,0.06)] min-w-[180px] max-w-[280px] break-words">{m.sender}</td>
+                <td className="px-2.5 py-2 border-b border-[rgba(255,255,255,0.06)] min-w-[560px]">
+                  <div className="message-preview">{m.message}</div>
+                </td>
                 <td className="px-2.5 py-2 border-b border-[rgba(255,255,255,0.06)]">{m.message_type ? <span className="badge badge-blue">{m.message_type}</span> : ""}</td>
                 <td className="px-2.5 py-2 border-b border-[rgba(255,255,255,0.06)] text-[#64748b]">{m.timestamp}</td>
               </tr>

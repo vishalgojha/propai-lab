@@ -63,6 +63,52 @@ body {
 
 .loc-token { display: inline-block; background: rgba(88,166,255,0.1); border: 1px solid rgba(88,166,255,0.25); border-radius: 4px; padding: 1px 6px; font-size: 11px; margin: 1px; white-space: nowrap; }
 
+.data-table {
+  width: 100%;
+  min-width: 1180px;
+  border-collapse: collapse;
+}
+
+.message-preview {
+  max-width: 760px;
+  max-height: 96px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.45;
+}
+
+.broker-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 180px;
+}
+
+.broker-cell > span {
+  overflow-wrap: anywhere;
+}
+
+.wa-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  border-radius: 999px;
+  background: #25d366;
+  color: #04100a;
+  font-size: 9px;
+  font-weight: 800;
+  text-decoration: none;
+  letter-spacing: 0;
+}
+
+.wa-icon:hover {
+  background: #3EE88A;
+}
+
 .stat-card { background: #0d1117; border: 1px solid rgba(255,255,255,0.06); border-radius: 16px; padding: 14px 18px; text-align: center; min-width: 110px; flex: 1; }
 .stat-card .val { font-size: 26px; font-weight: 700; color: #e2e8f0; font-variant-numeric: tabular-nums; }
 .stat-card .lbl { font-size: 10px; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 2px; }

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
 import "./globals.css";
 import { getConnectionState, getWhatsAppStatus, ConnectionState, WhatsAppStatus } from "@/lib/api";
 
@@ -18,9 +19,13 @@ const navItems = [
 ];
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname();
   const [conn, setConn] = useState<ConnectionState | null>(null);
   const [wa, setWA] = useState<WhatsAppStatus | null>(null);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarOverride, setSidebarOverride] = useState<boolean | null>(null);
+  const denseRoutes = ["/inbox", "/extractions", "/requirements", "/groups", "/search"];
+  const defaultSidebarOpen = !denseRoutes.some((route) => pathname.startsWith(route));
+  const sidebarOpen = sidebarOverride ?? defaultSidebarOpen;
 
   useEffect(() => {
     async function poll() {
@@ -62,7 +67,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <div className="flex-1 flex flex-col min-w-0">
           <header className="flex items-center gap-3 px-6 py-3 border-b border-[rgba(255,255,255,0.06)]">
             <button
-              onClick={() => setSidebarOpen(!sidebarOpen)}
+              onClick={() => setSidebarOverride(!sidebarOpen)}
               className="text-[#94a3b8] hover:text-white text-lg leading-none mr-1"
               title={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
             >

@@ -54,6 +54,19 @@ function brokerQuery(r: api.ParsedObservation): string {
   return r.broker_phone || r.broker_name || "";
 }
 
+function whatsappLink(r: api.ParsedObservation): string {
+  const phone = (r.broker_phone || "").replace(/[^0-9]/g, "").slice(-10);
+  if (phone.length !== 10) return "";
+  const intro = [
+    r.bhk,
+    r.intent ? r.intent.toLowerCase() : "property",
+    r.micro_market || r.location_raw,
+    r.price ? formatPrice(r.price) : "",
+  ].filter(Boolean).join(" ");
+  const text = `Hi, I saw your ${intro || "property"} update. Is it still available?`;
+  return `https://wa.me/91${phone}?text=${encodeURIComponent(text)}`;
+}
+
 export default function ExtractionsPage() {
   const [data, setData] = useState<api.ParsedObservation[]>([]);
   const [offset, setOffset] = useState(0);
@@ -68,7 +81,7 @@ export default function ExtractionsPage() {
         <button onClick={() => api.getParsed(PAGE_SIZE, offset).then(setData)} className="px-3 py-1.5 bg-[#3EE88A] text-[#04100a] rounded-lg text-sm font-bold">Refresh</button>
       </div>
       <div className="overflow-x-auto">
-        <table className="w-full text-sm">
+        <table className="data-table text-sm">
           <thead>
             <tr>
               <th className="text-left px-2.5 py-2 border-b border-[rgba(255,255,255,0.1)] text-[11px] text-[#64748b] uppercase tracking-wider">ID</th>
@@ -88,8 +101,7 @@ export default function ExtractionsPage() {
             {data.map(r => {
               const pct = r.confidence ? (r.confidence * 100) : 0;
               const cColor = pct >= 70 ? "green" : pct >= 40 ? "yellow" : "red";
-              const phone = (r.broker_phone || "").replace(/[^0-9]/g, "").slice(-10);
-              const waLink = phone.length === 10 ? `https://wa.me/91${phone}` : "";
+              const waLink = whatsappLink(r);
               return (
                 <tr key={r.id} className="hover:bg-[#0d1117]">
                 <td className="px-2.5 py-2 border-b border-[rgba(255,255,255,0.06)]">
@@ -97,17 +109,18 @@ export default function ExtractionsPage() {
                   <div className="text-[10px] text-[#64748b]">{r.raw_group}</div>
                 </td>
                   <td className="px-2.5 py-2 border-b border-[rgba(255,255,255,0.06)] font-semibold">
-                    {r.broker_name || "—"}
-                    {waLink && <div><a href={waLink} target="_blank" className="text-[10px] text-[#3b82f6] no-underline">wa.me/{phone}</a></div>}
+                    <div className="broker-cell">
+                      <span>{r.broker_name || "-"}</span>
+                      {waLink && <a href={waLink} target="_blank" rel="noreferrer" className="wa-icon" title="Message on WhatsApp" aria-label="Message on WhatsApp">WA</a>}
+                    </div>
                   </td>
                   <td className="px-2.5 py-2 border-b border-[rgba(255,255,255,0.06)]">
                     {r.intent && <span className={`badge ${intentClass(r.intent)}`}>{r.intent}</span>}
-                    {r.intent && <span className="prov prov-parsed">Parsed</span>}
                   </td>
-                  <td className="px-2.5 py-2 border-b border-[rgba(255,255,255,0.06)]">{r.bhk}{r.bhk && <span className="prov prov-parsed">Parsed</span>}</td>
-                  <td className="px-2.5 py-2 border-b border-[rgba(255,255,255,0.06)]">{formatPrice(r.price)}{r.price ? <span className="prov prov-parsed">Parsed</span> : ""}</td>
-                  <td className="px-2.5 py-2 border-b border-[rgba(255,255,255,0.06)]">{r.area_sqft ? `${r.area_sqft.toLocaleString()} sqft` : ""}{r.area_sqft ? <span className="prov prov-parsed">Parsed</span> : ""}</td>
-                  <td className="px-2.5 py-2 border-b border-[rgba(255,255,255,0.06)] max-w-[200px] truncate">
+                  <td className="px-2.5 py-2 border-b border-[rgba(255,255,255,0.06)]">{r.bhk}</td>
+                  <td className="px-2.5 py-2 border-b border-[rgba(255,255,255,0.06)]">{formatPrice(r.price)}</td>
+                  <td className="px-2.5 py-2 border-b border-[rgba(255,255,255,0.06)]">{r.area_sqft ? `${r.area_sqft.toLocaleString()} sqft` : ""}</td>
+                  <td className="px-2.5 py-2 border-b border-[rgba(255,255,255,0.06)] min-w-[260px] max-w-[420px] break-words">
                     {r.location_raw}
                     {r.location?.tokens && (
                       <div className="text-[10px] text-[#58a6ff] mt-0.5">
@@ -116,10 +129,9 @@ export default function ExtractionsPage() {
                         ))}
                       </div>
                     )}
-                    {r.location_raw && <span className="prov prov-parsed">Parsed</span>}
                   </td>
-                  <td className="px-2.5 py-2 border-b border-[rgba(255,255,255,0.06)] max-w-[120px] truncate">{r.landmark_name}{r.landmark_name && <span className="prov prov-enriched">Enriched</span>}</td>
-                  <td className="px-2.5 py-2 border-b border-[rgba(255,255,255,0.06)]">{r.micro_market}{r.micro_market && <span className="prov prov-enriched">Enriched</span>}</td>
+                  <td className="px-2.5 py-2 border-b border-[rgba(255,255,255,0.06)] min-w-[180px] max-w-[300px] break-words">{r.landmark_name}</td>
+                  <td className="px-2.5 py-2 border-b border-[rgba(255,255,255,0.06)] min-w-[140px]">{r.micro_market}</td>
                   <td className="px-2.5 py-2 border-b border-[rgba(255,255,255,0.06)]"><span className={`badge badge-${cColor}`}>{pct.toFixed(0)}%</span></td>
                   <td className="px-2.5 py-2 border-b border-[rgba(255,255,255,0.06)] min-w-[190px]">
                     <div className="flex flex-wrap gap-2">
