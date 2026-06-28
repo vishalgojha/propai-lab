@@ -5,7 +5,7 @@ import datetime
 import pandas as pd
 from openai import OpenAI
 
-MODEL = "Qwen/Qwen3.6-35B-A3B-FP8"
+MODEL = os.getenv("DOUBLEWORD_MODEL", "Qwen/Qwen3.6-35B-A3B-FP8")
 BASE_URL = "https://api.doubleword.ai/v1"
 _lab_dir = os.path.realpath(os.path.dirname(os.path.abspath(__file__)))
 _propai_data = os.path.realpath(os.path.join(_lab_dir, "..", "propai", "data"))
@@ -607,12 +607,12 @@ def _default_db_path():
     return os.path.join(lab_dir, "lab.db")
 
 
-def get_model_reply(messages, sources, api_key=None, db_path=None):
+def get_model_reply(messages, sources, api_key=None, db_path=None, model=None):
     client = get_client(api_key=api_key)
     tools = _build_tools(sources)
     db_path = db_path or _default_db_path()
     resp = client.chat.completions.create(
-        model=MODEL,
+        model=model or MODEL,
         messages=messages,
         tools=tools,
         tool_choice="auto",
@@ -635,6 +635,6 @@ def get_model_reply(messages, sources, api_key=None, db_path=None):
                 "tool_call_id": tc.id,
                 "content": result_str,
             })
-        return get_model_reply(messages, sources, api_key=api_key, db_path=db_path)
+        return get_model_reply(messages, sources, api_key=api_key, db_path=db_path, model=model)
 
     return msg

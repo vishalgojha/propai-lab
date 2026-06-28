@@ -396,3 +396,67 @@ CREATE TABLE IF NOT EXISTS price_stats (
     computed_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
     UNIQUE(micro_market, bhk, intent)
 );
+
+-- PropAI Companion — official WhatsApp Business mobile interface
+CREATE TABLE IF NOT EXISTS companion_team_members (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    name            TEXT NOT NULL,
+    mobile_number   TEXT NOT NULL UNIQUE,
+    role            TEXT NOT NULL DEFAULT 'sales_agent',
+    assigned_markets TEXT DEFAULT '[]',
+    active          INTEGER NOT NULL DEFAULT 1,
+    waba_identity   TEXT DEFAULT '',
+    created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+    updated_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_companion_team_mobile ON companion_team_members(mobile_number);
+CREATE INDEX IF NOT EXISTS idx_companion_team_active ON companion_team_members(active);
+
+CREATE TABLE IF NOT EXISTS companion_conversations (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    team_member_id  INTEGER REFERENCES companion_team_members(id) ON DELETE SET NULL,
+    mobile_number   TEXT NOT NULL,
+    status          TEXT NOT NULL DEFAULT 'ai_active',
+    context         TEXT DEFAULT '{}',
+    last_message_at TEXT DEFAULT NULL,
+    pending_reason  TEXT DEFAULT '',
+    created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+    updated_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_companion_conv_mobile ON companion_conversations(mobile_number);
+CREATE INDEX IF NOT EXISTS idx_companion_conv_status ON companion_conversations(status);
+
+CREATE TABLE IF NOT EXISTS companion_messages (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    conversation_id INTEGER REFERENCES companion_conversations(id) ON DELETE CASCADE,
+    direction       TEXT NOT NULL,
+    message         TEXT NOT NULL DEFAULT '',
+    intent          TEXT DEFAULT '',
+    status          TEXT NOT NULL DEFAULT 'received',
+    created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_companion_msg_created ON companion_messages(created_at);
+CREATE INDEX IF NOT EXISTS idx_companion_msg_direction ON companion_messages(direction);
+
+CREATE TABLE IF NOT EXISTS companion_audit_log (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    team_member_id  INTEGER REFERENCES companion_team_members(id) ON DELETE SET NULL,
+    action          TEXT NOT NULL,
+    target_type     TEXT DEFAULT '',
+    target_id       TEXT DEFAULT '',
+    status          TEXT NOT NULL DEFAULT 'logged',
+    details         TEXT DEFAULT '{}',
+    created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_companion_audit_created ON companion_audit_log(created_at);
+CREATE INDEX IF NOT EXISTS idx_companion_audit_member ON companion_audit_log(team_member_id);
+
+CREATE TABLE IF NOT EXISTS companion_config (
+    key             TEXT PRIMARY KEY,
+    value           TEXT NOT NULL DEFAULT '',
+    updated_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+);

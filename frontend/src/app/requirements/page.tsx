@@ -78,10 +78,14 @@ export default function RequirementsPage() {
 
   return (
     <div>
+      <div className="mb-4">
+        <h2 className="text-lg font-bold text-[#e2e8f0]">Market Buyers</h2>
+        <div className="text-sm text-[#64748b] mt-1">Buyer needs currently circulating in broker groups.</div>
+      </div>
       <div className="flex gap-2 mb-4 items-center flex-wrap">
         <input
           type="text"
-          placeholder="Search requirements..."
+          placeholder="Search market buyers..."
           value={search}
           onChange={(event) => setSearch(event.target.value)}
           className="px-2.5 py-1.5 bg-[#0d1117] border border-[rgba(255,255,255,0.1)] rounded-lg text-sm text-[#e2e8f0]"
@@ -122,7 +126,7 @@ export default function RequirementsPage() {
                     </div>
                   </td>
                   <td className="px-2.5 py-2 border-b border-[rgba(255,255,255,0.06)]">
-                    <span className="badge badge-purple">{row.intent || "Requirement"}</span>
+                    <span className="badge badge-purple">{row.intent || "Buyer"}</span>
                     {row.bhk && <span className="ml-2">{row.bhk}</span>}
                   </td>
                   <td className="px-2.5 py-2 border-b border-[rgba(255,255,255,0.06)]">{formatPrice(row.price) || "-"}</td>

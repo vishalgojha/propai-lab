@@ -71,7 +71,7 @@ export default function GroupDetailPage() {
           <div className="text-lg font-bold">{group.messages.toLocaleString()}</div>
         </div>
         <div className="bg-[#0d1117] border border-[rgba(255,255,255,0.06)] rounded-xl p-3">
-          <div className="text-[10px] text-[#64748b]">Observations</div>
+          <div className="text-[10px] text-[#64748b]">Posts</div>
           <div className="text-lg font-bold">{group.observations}</div>
         </div>
         <div className="bg-[#0d1117] border border-[rgba(255,255,255,0.06)] rounded-xl p-3">
@@ -164,7 +164,7 @@ export default function GroupDetailPage() {
                 <span className="text-white">{timeAgo(group.last_seen)}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-[#64748b]">Requirements</span>
+                <span className="text-[#64748b]">Buyers</span>
                 <span className="text-white">{group.requirements}</span>
               </div>
               <div className="flex justify-between">
@@ -210,7 +210,7 @@ export default function GroupDetailPage() {
       {/* Brokers */}
       {activeSection === "brokers" && (
         <div className="bg-[#0d1117] border border-[rgba(255,255,255,0.06)] rounded-xl p-6 text-center">
-          <div className="text-sm text-[#64748b]">{group.brokers} unique brokers observed in this group</div>
+          <div className="text-sm text-[#64748b]">{group.brokers} unique brokers active in this group</div>
           <div className="text-xs text-[#64748b] mt-1">View broker details in the Brokers section</div>
           <a href="/brokers" className="inline-block mt-3 text-xs text-blue-400 hover:text-blue-300">Go to Brokers →</a>
         </div>

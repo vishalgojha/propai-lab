@@ -1839,6 +1839,7 @@ class PromoteRequest(BaseModel):
     channel: str = "whatsapp"
     use_ai: bool = False
     fields: dict | None = None
+    api_key: str = ""
 
 
 @app.get("/api/promote/config")
@@ -1994,6 +1995,21 @@ def _ai_promote(system: str, prompt: str) -> str | None:
         return None
 
 
+def _ai_promote_with_key(system: str, prompt: str, api_key: str) -> str | None:
+    try:
+        from openai import OpenAI
+        client = OpenAI(api_key=api_key, base_url="https://api.doubleword.ai/v1")
+        resp = client.chat.completions.create(
+            model="Qwen/Qwen3.6-35B-A3B-FP8",
+            messages=[{"role": "system", "content": system}, {"role": "user", "content": prompt}],
+            extra_body={"chat_template_kwargs": {"enable_thinking": False}},
+            max_tokens=300,
+        )
+        return resp.choices[0].message.content
+    except Exception:
+        return None
+
+
 @app.post("/api/promote/generate")
 async def promote_generate(req: PromoteRequest):
     detail = storage.get_observation_detail(req.observation_id)
@@ -2029,14 +2045,15 @@ async def promote_generate(req: PromoteRequest):
         "ai_enhanced": False,
     }
 
-    if req.use_ai and ENABLE_AI_PROMO and DOUBLEWORD_API_KEY:
+    promo_api_key = req.api_key or DOUBLEWORD_API_KEY
+    if req.use_ai and ENABLE_AI_PROMO and promo_api_key:
         try:
             system = "You are a Mumbai real estate marketing assistant. Given property details, write a short promotional ad for the specified channel. Keep it under 120 words. Return only the ad body, no preamble."
             price_str = _promote_price(parsed)
             detail_parts = [v for v in [parsed.get("bhk"), parsed.get("furnishing"), f"{parsed.get('area_sqft', '')} sqft" if parsed.get('area_sqft') else ""] if v]
             prompt = f"Channel: {req.channel}\nBuilding: {parsed.get('building_name', 'N/A')}\nLocation: {parsed.get('micro_market', parsed.get('location_raw', 'N/A'))}\nDetails: {' | '.join(detail_parts)}\nPrice: {price_str}\nBroker: {parsed.get('broker_name', 'N/A')}"
             loop = asyncio.get_running_loop()
-            ai_body = await loop.run_in_executor(None, lambda: _ai_promote(system, prompt))
+            ai_body = await loop.run_in_executor(None, lambda: _ai_promote_with_key(system, prompt, promo_api_key))
             if ai_body:
                 result["body"] = ai_body
                 result["ai_enhanced"] = True
@@ -2061,6 +2078,51 @@ async def get_evaluations(limit: int = 50, min_accuracy: float = 0.0):
 class ChatRequest(BaseModel):
     messages: list[dict]
     api_key: str = ""
+    model: str = ""
+
+
+def _doubleword_error_response(exc: Exception) -> JSONResponse:
+    status_code = getattr(exc, "status_code", None)
+    body = getattr(exc, "body", None)
+    message = str(exc)
+    if isinstance(body, dict):
+        nested = body.get("error")
+        if isinstance(nested, dict):
+            message = nested.get("message") or nested.get("code") or message
+        else:
+            message = body.get("message") or message
+
+    if status_code in (401, 403):
+        return JSONResponse(
+            status_code=status_code,
+            content={
+                "error": "doubleword_auth_failed" if status_code == 401 else "doubleword_forbidden",
+                "message": (
+                    "Doubleword rejected this API key. Paste a valid key in Settings."
+                    if status_code == 401
+                    else "Doubleword accepted the key but denied access. Check that the key has access to the selected model."
+                ),
+                "detail": message,
+            },
+        )
+
+    return JSONResponse(
+        status_code=502,
+        content={
+            "error": "doubleword_request_failed",
+            "message": "Doubleword AI request failed. Check the API key, model, and Doubleword service status.",
+            "detail": message,
+        },
+    )
+
+
+@app.get("/api/ai/config")
+async def ai_config():
+    return {
+        "has_server_key": bool(DOUBLEWORD_API_KEY),
+        "base_url": chat_engine.BASE_URL,
+        "model": chat_engine.MODEL,
+    }
 
 
 @app.post("/api/ai/chat")
@@ -2080,11 +2142,20 @@ async def ai_chat(req: ChatRequest):
     def _call():
         system_prompt = chat_engine.build_system_prompt(sources)
         msgs = [{"role": "system", "content": system_prompt}] + req.messages[-20:]
-        reply = chat_engine.get_model_reply(msgs, sources, api_key=api_key, db_path=str(DB_PATH))
+        reply = chat_engine.get_model_reply(
+            msgs,
+            sources,
+            api_key=api_key,
+            db_path=str(DB_PATH),
+            model=req.model.strip() or None,
+        )
         return reply.content or ""
 
-    content = await loop.run_in_executor(None, _call)
-    return {"content": content, "sources": list(sources.keys())}
+    try:
+        content = await loop.run_in_executor(None, _call)
+        return {"content": content, "sources": list(sources.keys())}
+    except Exception as exc:
+        return _doubleword_error_response(exc)
 
 
 @app.get("/api/ai/chat/overview")
@@ -2250,6 +2321,378 @@ async def get_source(source_name: str):
         "version": s.version,
         "connected": s.validate_connection(),
     }
+
+
+# ═══════════════════════════════════════════════════════════════
+# PropAI Companion — official WhatsApp Business mobile interface
+# ═══════════════════════════════════════════════════════════════
+
+COMPANION_ROLES = {
+    "administrator": {
+        "label": "Administrator",
+        "permissions": ["full_access", "configure_ai", "configure_waba", "approve_users"],
+    },
+    "manager": {
+        "label": "Manager",
+        "permissions": ["read_all", "update_listings", "manage_buyers", "use_ai"],
+    },
+    "sales_agent": {
+        "label": "Sales Agent",
+        "permissions": ["view_assigned_inventory", "query_ai", "create_requirements", "promote_listings"],
+    },
+    "read_only": {
+        "label": "Read-only",
+        "permissions": ["search_only"],
+    },
+}
+
+COMPANION_TOOLS = [
+    "My Inventory",
+    "My Buyers",
+    "Market Listings",
+    "Market Buyers",
+    "Buildings",
+    "Brokers",
+    "Groups",
+    "Markets",
+    "Knowledge Graph",
+    "Review Center",
+    "Promotions",
+    "Search",
+]
+
+
+class CompanionTeamMemberRequest(BaseModel):
+    name: str
+    mobile_number: str
+    role: str = "sales_agent"
+    assigned_markets: list[str] = []
+    active: bool = True
+    waba_identity: str = ""
+
+
+class CompanionConfigRequest(BaseModel):
+    whatsapp_business_number: str = ""
+    phone_number_id: str = ""
+    access_token: str = ""
+    verify_token: str = ""
+    clear_access_token: bool = False
+    clear_verify_token: bool = False
+
+
+def _mobile_digits(value: str = "") -> str:
+    digits = re.sub(r"\D+", "", value or "")
+    if len(digits) > 10 and digits.startswith("91"):
+        return digits[-10:]
+    return digits
+
+
+def _json_list(value: str | None) -> list[str]:
+    if not value:
+        return []
+    try:
+        raw = json.loads(value)
+        if isinstance(raw, list):
+            return [str(item) for item in raw if item]
+    except Exception:
+        return []
+    return []
+
+
+def _companion_member(row) -> dict:
+    data = dict(row)
+    data["assigned_markets"] = _json_list(data.get("assigned_markets"))
+    data["active"] = bool(data.get("active"))
+    data["role_label"] = COMPANION_ROLES.get(data.get("role"), {}).get("label", data.get("role"))
+    return data
+
+
+def _count_table(table: str) -> int:
+    try:
+        return storage.db.execute(f"SELECT COUNT(*) AS c FROM {table}").fetchone()["c"]
+    except Exception:
+        return 0
+
+
+def _companion_get_config_value(key: str, env_key: str = "") -> str:
+    try:
+        row = storage.db.execute(
+            "SELECT value FROM companion_config WHERE key = ?", (key,)
+        ).fetchone()
+        if row and row["value"]:
+            return row["value"]
+    except Exception:
+        pass
+    return os.getenv(env_key or key, "")
+
+
+def _companion_set_config_value(key: str, value: str):
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    storage.db.execute(
+        """INSERT INTO companion_config (key, value, updated_at)
+           VALUES (?,?,?)
+           ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at""",
+        (key, value, now),
+    )
+
+
+def _mask_secret(value: str = "") -> str:
+    if not value:
+        return ""
+    if len(value) <= 8:
+        return "••••"
+    return f"{value[:4]}••••{value[-4:]}"
+
+
+def _today_count(table: str, column: str = "created_at", where: str = "1=1") -> int:
+    try:
+        return storage.db.execute(
+            f"SELECT COUNT(*) AS c FROM {table} WHERE DATE({column}) = DATE('now') AND {where}"
+        ).fetchone()["c"]
+    except Exception:
+        return 0
+
+
+@app.get("/api/companion/overview")
+async def companion_overview():
+    team_count = _count_table("companion_team_members")
+    active_team = storage.db.execute(
+        "SELECT COUNT(*) AS c FROM companion_team_members WHERE active = 1"
+    ).fetchone()["c"]
+    pending_conversations = storage.db.execute(
+        "SELECT COUNT(*) AS c FROM companion_conversations WHERE status IN ('needs_human', 'pending_approval')"
+    ).fetchone()["c"]
+    last_sync_row = storage.db.execute(
+        "SELECT MAX(timestamp) AS ts FROM raw_messages"
+    ).fetchone()
+    last_sync = last_sync_row["ts"] if last_sync_row else None
+    inbound_today = _today_count("companion_messages", where="direction = 'inbound'")
+    outbound_today = _today_count("companion_messages", where="direction = 'outbound'")
+    ai_today = _today_count("ai_usage_log")
+    messages_today = _today_count("raw_messages", "timestamp")
+    waba_number = (
+        _companion_get_config_value("whatsapp_business_number", "WABA_PHONE_NUMBER")
+        or _companion_get_config_value("whatsapp_business_number", "WABA_BUSINESS_NUMBER")
+    )
+    waba_phone_number_id = _companion_get_config_value("phone_number_id", "WABA_PHONE_NUMBER_ID")
+    waba_access_token = _companion_get_config_value("access_token", "WABA_ACCESS_TOKEN")
+    waba_verify_token = _companion_get_config_value("verify_token", "WABA_VERIFY_TOKEN")
+    webhook_health = "ready" if waba_verify_token else "not_configured"
+    token_status = "configured" if waba_access_token else "missing"
+
+    knowledge_base_size = {
+        "my_inventory": _count_table("listings"),
+        "market_listings": _count_table("listings"),
+        "market_buyers": storage.db.execute(
+            "SELECT COUNT(*) AS c FROM parsed_output WHERE intent IN ('BUY','BUYER','REQUIREMENT','RENTAL_SEEKER')"
+        ).fetchone()["c"],
+        "brokers": _count_table("brokers"),
+        "groups": _count_table("source_sync_jobs"),
+        "markets": storage.db.execute(
+            "SELECT COUNT(DISTINCT micro_market) AS c FROM parsed_output WHERE micro_market IS NOT NULL AND micro_market != ''"
+        ).fetchone()["c"],
+    }
+
+    return {
+        "connection_status": "connected" if waba_number and token_status == "configured" else "not_connected",
+        "whatsapp_business_number": waba_number,
+        "connected_team_members": active_team,
+        "total_team_members": team_count,
+        "last_sync": last_sync,
+        "messages_today": messages_today,
+        "ai_requests_today": ai_today,
+        "pending_conversations": pending_conversations,
+        "outbound_messages": outbound_today,
+        "inbound_messages": inbound_today,
+        "webhook_health": webhook_health,
+        "token_status": token_status,
+        "knowledge_base_size": knowledge_base_size,
+        "waba": {
+            "phone_number_id": waba_phone_number_id,
+            "has_verify_token": bool(waba_verify_token),
+            "has_access_token": bool(waba_access_token),
+        },
+    }
+
+
+@app.get("/api/companion/config")
+async def companion_config():
+    waba_number = (
+        _companion_get_config_value("whatsapp_business_number", "WABA_PHONE_NUMBER")
+        or _companion_get_config_value("whatsapp_business_number", "WABA_BUSINESS_NUMBER")
+    )
+    phone_number_id = _companion_get_config_value("phone_number_id", "WABA_PHONE_NUMBER_ID")
+    access_token = _companion_get_config_value("access_token", "WABA_ACCESS_TOKEN")
+    verify_token = _companion_get_config_value("verify_token", "WABA_VERIFY_TOKEN")
+    return {
+        "whatsapp_business_number": waba_number,
+        "phone_number_id": phone_number_id,
+        "has_access_token": bool(access_token),
+        "access_token_preview": _mask_secret(access_token),
+        "has_verify_token": bool(verify_token),
+        "verify_token_preview": _mask_secret(verify_token),
+    }
+
+
+@app.post("/api/companion/config")
+async def companion_save_config(req: CompanionConfigRequest):
+    if req.whatsapp_business_number.strip():
+        _companion_set_config_value("whatsapp_business_number", req.whatsapp_business_number.strip())
+    if req.phone_number_id.strip():
+        _companion_set_config_value("phone_number_id", req.phone_number_id.strip())
+
+    if req.clear_access_token:
+        _companion_set_config_value("access_token", "")
+    elif req.access_token.strip():
+        _companion_set_config_value("access_token", req.access_token.strip())
+
+    if req.clear_verify_token:
+        _companion_set_config_value("verify_token", "")
+    elif req.verify_token.strip():
+        _companion_set_config_value("verify_token", req.verify_token.strip())
+
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    storage.db.execute(
+        """INSERT INTO companion_audit_log
+           (action, target_type, target_id, status, details, created_at)
+           VALUES (?,?,?,?,?,?)""",
+        (
+            "waba_config_updated",
+            "companion_config",
+            "waba",
+            "logged",
+            json.dumps({
+                "business_number_set": bool(req.whatsapp_business_number.strip()),
+                "phone_number_id_set": bool(req.phone_number_id.strip()),
+                "access_token_changed": bool(req.access_token.strip() or req.clear_access_token),
+                "verify_token_changed": bool(req.verify_token.strip() or req.clear_verify_token),
+            }),
+            now,
+        ),
+    )
+    storage._commit()
+    return await companion_config()
+
+
+@app.get("/api/companion/team")
+async def companion_team():
+    rows = storage.db.execute(
+        "SELECT * FROM companion_team_members ORDER BY active DESC, name COLLATE NOCASE"
+    ).fetchall()
+    return [_companion_member(row) for row in rows]
+
+
+@app.post("/api/companion/team")
+async def companion_add_team_member(req: CompanionTeamMemberRequest):
+    name = req.name.strip()
+    mobile = _mobile_digits(req.mobile_number)
+    if not name:
+        raise HTTPException(400, "Name is required")
+    if len(mobile) < 10:
+        raise HTTPException(400, "Valid mobile number is required")
+    if req.role not in COMPANION_ROLES:
+        raise HTTPException(400, "Invalid role")
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    try:
+        cur = storage.db.execute(
+            """INSERT INTO companion_team_members
+               (name, mobile_number, role, assigned_markets, active, waba_identity, created_at, updated_at)
+               VALUES (?,?,?,?,?,?,?,?)""",
+            (
+                name,
+                mobile,
+                req.role,
+                json.dumps(req.assigned_markets),
+                1 if req.active else 0,
+                req.waba_identity.strip(),
+                now,
+                now,
+            ),
+        )
+        storage.db.execute(
+            """INSERT INTO companion_audit_log
+               (team_member_id, action, target_type, target_id, status, details, created_at)
+               VALUES (?,?,?,?,?,?,?)""",
+            (cur.lastrowid, "team_member_registered", "team_member", str(cur.lastrowid), "logged", "{}", now),
+        )
+        storage._commit()
+    except Exception as exc:
+        raise HTTPException(400, f"Could not add team member: {exc}")
+    row = storage.db.execute("SELECT * FROM companion_team_members WHERE id = ?", (cur.lastrowid,)).fetchone()
+    return _companion_member(row)
+
+
+@app.patch("/api/companion/team/{member_id}")
+async def companion_update_team_member(member_id: int, req: CompanionTeamMemberRequest):
+    if req.role not in COMPANION_ROLES:
+        raise HTTPException(400, "Invalid role")
+    mobile = _mobile_digits(req.mobile_number)
+    if len(mobile) < 10:
+        raise HTTPException(400, "Valid mobile number is required")
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    storage.db.execute(
+        """UPDATE companion_team_members
+           SET name = ?, mobile_number = ?, role = ?, assigned_markets = ?,
+               active = ?, waba_identity = ?, updated_at = ?
+           WHERE id = ?""",
+        (
+            req.name.strip(),
+            mobile,
+            req.role,
+            json.dumps(req.assigned_markets),
+            1 if req.active else 0,
+            req.waba_identity.strip(),
+            now,
+            member_id,
+        ),
+    )
+    storage.db.execute(
+        """INSERT INTO companion_audit_log
+           (team_member_id, action, target_type, target_id, status, details, created_at)
+           VALUES (?,?,?,?,?,?,?)""",
+        (member_id, "team_member_updated", "team_member", str(member_id), "logged", "{}", now),
+    )
+    storage._commit()
+    row = storage.db.execute("SELECT * FROM companion_team_members WHERE id = ?", (member_id,)).fetchone()
+    if not row:
+        raise HTTPException(404, "Team member not found")
+    return _companion_member(row)
+
+
+@app.get("/api/companion/roles")
+async def companion_roles():
+    return COMPANION_ROLES
+
+
+@app.get("/api/companion/tools")
+async def companion_tools():
+    return {"tools": COMPANION_TOOLS}
+
+
+@app.get("/api/companion/conversations")
+async def companion_conversations(limit: int = 20):
+    rows = storage.db.execute(
+        """SELECT c.*, t.name AS team_member_name, t.role AS team_member_role
+           FROM companion_conversations c
+           LEFT JOIN companion_team_members t ON t.id = c.team_member_id
+           ORDER BY COALESCE(c.last_message_at, c.created_at) DESC
+           LIMIT ?""",
+        (limit,),
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+@app.get("/api/companion/audit")
+async def companion_audit(limit: int = 30):
+    rows = storage.db.execute(
+        """SELECT a.*, t.name AS team_member_name
+           FROM companion_audit_log a
+           LEFT JOIN companion_team_members t ON t.id = a.team_member_id
+           ORDER BY a.created_at DESC
+           LIMIT ?""",
+        (limit,),
+    ).fetchall()
+    return [dict(row) for row in rows]
 
 
 # ── Backward-compatible aliases (old /api/sync/* routes) ─────────
@@ -2941,10 +3384,31 @@ async def audit_dashboard():
             )
         )
     """, (day_ago,)).fetchone()[0]
-    attention_required = error_groups + inactive_count
 
-    # Capture health
+    # Unnamed groups (no display name in source_sync_jobs)
+    unnamed_count = storage.db.execute("""
+        SELECT COUNT(*) FROM source_sync_jobs
+        WHERE (group_name IS NULL OR group_name = '')
+    """).fetchone()[0]
+
+    attention_required = error_groups + inactive_count
+    attention_breakdown = {
+        "inactive": inactive_count,
+        "duplicate": duplicate_groups,
+        "unnamed": unnamed_count,
+        "error": error_groups,
+    }
+
+    # Groups discovered (source_sync_jobs) vs monitored (have messages)
+    groups_discovered = storage.db.execute(
+        "SELECT COUNT(*) FROM source_sync_jobs WHERE group_id IS NOT NULL"
+    ).fetchone()[0]
+    groups_monitored = total_groups
+
+    # Webhook healthy
     webhook_ok = last_msg is not None and last_msg >= five_min_ago
+
+    # Capture health metrics
     failed_events = storage.db.execute(
         "SELECT COUNT(*) FROM enrichment_jobs WHERE status = 'failed'"
     ).fetchone()[0]
@@ -2955,7 +3419,7 @@ async def audit_dashboard():
         "SELECT COUNT(*) FROM ai_suggestions WHERE status = 'pending'"
     ).fetchone()[0]
 
-    # Average processing time: time between raw_message created_at and parsed_output created_at
+    # Average processing time
     avg_process = storage.db.execute("""
         SELECT AVG(
             strftime('%s', p.created_at) - strftime('%s', r.created_at)
@@ -2964,7 +3428,22 @@ async def audit_dashboard():
         WHERE p.created_at >= ?
     """, (day_ago,)).fetchone()[0]
 
+    # Messages per minute today
+    msgs_per_min = msgs_today / max(1, (datetime.utcnow().hour * 60 + datetime.utcnow().minute))
+
+    # Parser success rate
+    total_parsed_today = storage.db.execute(
+        "SELECT COUNT(*) FROM parsed_output WHERE created_at >= ?", (today_start,)
+    ).fetchone()[0]
+    parser_success_rate = round((total_parsed_today / max(1, msgs_today)) * 100, 1) if msgs_today > 0 else 0
+
     return {
+        # New header structure
+        "whatsapp_session": "connected",  # would need actual session check
+        "webhook_status": "live" if webhook_ok else "offline",
+        "groups_discovered": groups_discovered,
+        "groups_monitored": groups_monitored,
+        # Legacy fields for compatibility
         "total_groups": total_groups,
         "live_groups": live_groups,
         "msgs_today": msgs_today,
@@ -2973,28 +3452,92 @@ async def audit_dashboard():
         "error_groups": error_groups,
         "duplicate_groups": duplicate_groups,
         "attention_required": attention_required,
+        "attention_breakdown": attention_breakdown,
         "inactive_groups": inactive_count,
+        "unnamed_groups": unnamed_count,
         "failed_events": failed_events,
         "pending_enrichment": pending_enrichment,
         "pending_ai_suggestions": pending_ai,
         "avg_process_secs": round(avg_process, 1) if avg_process else None,
+        # New capture health metrics
+        "msgs_per_min": round(msgs_per_min, 1),
+        "parser_success_rate": parser_success_rate,
+        "queue_backlog": pending_enrichment,
     }
 
 
 @app.get("/api/audit/timeline")
-async def audit_timeline(limit: int = 30):
-    """Recent operational events across the pipeline."""
+async def audit_timeline(limit: int = 50):
+    """Mixed operational events across the WhatsApp pipeline."""
     events = []
+    day_ago = (datetime.utcnow() - timedelta(hours=24)).strftime("%Y-%m-%dT%H:%M:%SZ")
 
-    # Recent webhook events
+    # Recent webhook messages (sample, not every message)
     raw_rows = storage.db.execute("""
-        SELECT 'webhook' as source, created_at as ts, message_type as subtype,
-               CASE WHEN message_type = 'text' THEN 'Webhook received'
-                    ELSE 'Webhook: ' || message_type END as label,
-               group_name as group_jid, sender
-        FROM raw_messages ORDER BY created_at DESC LIMIT ?
-    """, (limit,)).fetchall()
+        SELECT 'webhook' as source, created_at as ts, 'message' as subtype,
+               group_name as group_jid, sender,
+               'Message from ' || sender as label
+        FROM raw_messages
+        WHERE created_at >= ?
+        ORDER BY created_at DESC
+        LIMIT 20
+    """, (day_ago,)).fetchall()
     for r in raw_rows:
+        d = dict(r)
+        d["ts"] = d.pop("ts")
+        d["group_name"] = _group_jid_to_name(d.pop("group_jid"))
+        events.append(d)
+
+    # New groups discovered (first message from a new JID)
+    new_group_rows = storage.db.execute("""
+        SELECT 'group' as source, MIN(created_at) as ts, 'discovered' as subtype,
+               group_name as group_jid, sender,
+               'New group discovered' as label
+        FROM raw_messages
+        WHERE created_at >= ?
+        GROUP BY group_name
+        ORDER BY MIN(created_at) DESC
+        LIMIT 10
+    """, (day_ago,)).fetchall()
+    for r in new_group_rows:
+        d = dict(r)
+        d["ts"] = d.pop("ts")
+        d["group_name"] = _group_jid_to_name(d.pop("group_jid"))
+        events.append(d)
+
+    # Group renamed (groups with multiple display names)
+    renamed_rows = storage.db.execute("""
+        SELECT 'group' as source, MAX(updated_at) as ts, 'renamed' as subtype,
+               group_id as group_jid, group_name,
+               'Group renamed: ' || group_name as label
+        FROM source_sync_jobs
+        WHERE group_name != '' AND group_id IS NOT NULL
+        GROUP BY group_id
+        HAVING COUNT(DISTINCT group_name) > 1
+        ORDER BY MAX(updated_at) DESC
+        LIMIT 5
+    """).fetchall()
+    for r in renamed_rows:
+        d = dict(r)
+        d["ts"] = d.pop("ts")
+        d["group_name"] = d.pop("group_name")
+        events.append(d)
+
+    # Duplicate group detected
+    dupe_rows = storage.db.execute("""
+        SELECT 'duplicate' as source, sj.updated_at as ts, 'detected' as subtype,
+               sj.group_id as group_jid, sj.group_name,
+               'Duplicate group detected: ' || sj.group_name as label
+        FROM source_sync_jobs sj
+        WHERE sj.group_name IN (
+            SELECT group_name FROM source_sync_jobs
+            WHERE group_name != '' AND group_name IS NOT NULL
+            GROUP BY group_name HAVING COUNT(*) > 1
+        )
+        ORDER BY sj.updated_at DESC
+        LIMIT 5
+    """).fetchall()
+    for r in dupe_rows:
         d = dict(r)
         d["ts"] = d.pop("ts")
         d["group_name"] = _group_jid_to_name(d.pop("group_jid"))
@@ -3007,8 +3550,8 @@ async def audit_timeline(limit: int = 30):
                     WHEN ej.status = 'failed' THEN 'Enrichment failed: ' || ej.last_error
                     ELSE 'Enrichment job created' END as label,
                ej.parsed_id as ref
-        FROM enrichment_jobs ej ORDER BY ej.created_at DESC LIMIT ?
-    """, (limit,)).fetchall()
+        FROM enrichment_jobs ej ORDER BY ej.created_at DESC LIMIT 15
+    """, (15,)).fetchall()
     for r in enrich_rows:
         events.append(dict(r))
 
@@ -3016,8 +3559,8 @@ async def audit_timeline(limit: int = 30):
     sug_rows = storage.db.execute("""
         SELECT 'suggestion' as source, created_at as ts, status as subtype,
                agent, title
-        FROM ai_suggestions ORDER BY created_at DESC LIMIT ?
-    """, (limit,)).fetchall()
+        FROM ai_suggestions ORDER BY created_at DESC LIMIT 10
+    """, (10,)).fetchall()
     for r in sug_rows:
         d = dict(r)
         agent = d.pop("agent", "")
@@ -3034,28 +3577,53 @@ async def audit_timeline(limit: int = 30):
             d["label"] = "AI " + agent + ": " + title
         events.append(d)
 
-    # AI usage events
-    usage_rows = storage.db.execute("""
-        SELECT 'usage' as source, created_at as ts, agent as subtype,
-               tokens_input, tokens_output
-        FROM ai_usage_log ORDER BY created_at DESC LIMIT ?
-    """, (limit,)).fetchall()
-    for r in usage_rows:
-        d = dict(r)
-        ti = d.pop("tokens_input", 0)
-        to = d.pop("tokens_output", 0)
-        d["label"] = "AI call: " + d.get("subtype", "") + " (" + str(ti) + " in / " + str(to) + " out)"
-        events.append(d)
+    # Parser restarts (enrichment worker cycles)
+    restart_rows = storage.db.execute("""
+        SELECT 'system' as source, created_at as ts, 'restart' as subtype,
+               'Parser/enrichment worker restarted' as label
+        FROM enrichment_jobs
+        WHERE status = 'pending' AND attempts = 0
+        ORDER BY created_at DESC LIMIT 3
+    """).fetchall()
+    for r in restart_rows:
+        events.append(dict(r))
 
+    # Live capture status changes (approximate from message gaps)
     # Sort by time descending, take top N
     events.sort(key=lambda e: e.get("ts", ""), reverse=True)
     return events[:limit]
+
+
+@app.get("/api/audit/top-contributors")
+async def audit_top_contributors(limit: int = 10):
+    """Top WhatsApp groups by message volume today."""
+    today_start = datetime.utcnow().strftime("%Y-%m-%dT00:00:00Z")
+
+    rows = storage.db.execute("""
+        SELECT group_name, COUNT(*) as msg_count,
+               COUNT(DISTINCT sender) as unique_senders,
+               MAX(created_at) as last_msg
+        FROM raw_messages
+        WHERE created_at >= ?
+        GROUP BY group_name
+        ORDER BY msg_count DESC
+        LIMIT ?
+    """, (today_start, limit)).fetchall()
+
+    result = []
+    for r in rows:
+        d = dict(r)
+        d["group_name"] = _group_jid_to_name(d["group_name"])
+        d["last_msg"] = d["last_msg"] or "never"
+        result.append(d)
+    return result
 
 
 @app.get("/api/audit/groups")
 async def audit_groups(q: str = "", status: str = ""):
     """Group explorer with stats per group."""
     day_ago = (datetime.utcnow() - timedelta(hours=24)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    week_ago = (datetime.utcnow() - timedelta(days=7)).strftime("%Y-%m-%dT%H:%M:%SZ")
 
     # Base: all groups from source_sync_jobs
     jobs = storage.get_sync_jobs(limit=1000, source="whatsapp")
@@ -3108,30 +3676,64 @@ async def audit_groups(q: str = "", status: str = ""):
             WHERE r.group_name = ? AND rd.method = 'unresolved'
         """, (jid,)).fetchone()[0]
 
-        # Coverage: obs with any resolution / total obs
-        total_obs = obs_info["obs_count"] if obs_info else 0
-        resolved_obs = max(0, total_obs - unknown_locs)
-        coverage = round(resolved_obs / total_obs * 100, 1) if total_obs > 0 else 0
+        # Active brokers (with parsed observations in last 7 days)
+        active_brokers = storage.db.execute("""
+            SELECT COUNT(DISTINCT p.broker_name) FROM parsed_output p
+            JOIN raw_messages r ON r.id = p.raw_message_id
+            WHERE r.group_name = ?
+              AND p.broker_name IS NOT NULL AND p.broker_name != ''
+              AND r.created_at >= ?
+        """, (jid, week_ago)).fetchone()[0] or 0
 
-        # Determine status
+        # Duplicate %: observations that are likely duplicates (same broker, bhk, price, micro_market seen elsewhere)
+        dup_obs = storage.db.execute("""
+            SELECT COUNT(*) FROM parsed_output p
+            JOIN raw_messages r ON r.id = p.raw_message_id
+            WHERE r.group_name = ?
+              AND p.broker_name IS NOT NULL AND p.broker_name != ''
+              AND p.bhk IS NOT NULL AND p.bhk != ''
+              AND p.micro_market IS NOT NULL AND p.micro_market != ''
+              AND EXISTS (
+                  SELECT 1 FROM parsed_output p2
+                  JOIN raw_messages r2 ON r2.id = p2.raw_message_id
+                  WHERE r2.group_name != ?
+                    AND p2.broker_name = p.broker_name
+                    AND p2.bhk = p.bhk
+                    AND p2.micro_market = p.micro_market
+                    AND (p2.price IS NULL OR p2.price = p.price OR p.price IS NULL)
+              )
+        """, (jid, jid)).fetchone()[0] or 0
+        dup_pct = round(dup_obs / max(1, (obs_info["obs_count"] if obs_info else 0)) * 100, 1)
+
+        # Health score: live + has listings + low unknown locations
         is_live = last_ts and last_ts >= day_ago
         has_error = bool(j.error)
         if has_error:
             group_status = "error"
+            health = "unhealthy"
+        elif is_live and listing_count > 0 and unknown_locs == 0:
+            group_status = "live"
+            health = "healthy"
         elif is_live:
             group_status = "live"
+            health = "degraded"
         else:
             group_status = "inactive"
+            health = "stale"
 
-        # Markets
+        # Coverage
+        total_obs = obs_info["obs_count"] if obs_info else 0
+        resolved_obs = max(0, total_obs - unknown_locs)
+        coverage = round(resolved_obs / total_obs * 100, 1) if total_obs > 0 else 0
+
         markets_str = obs_info["markets"] if obs_info and obs_info["markets"] else 0
-
         group_name = j.group_name or _group_jid_to_name(jid)
 
         g = {
             "jid": jid,
             "name": group_name,
             "status": group_status,
+            "health": health,
             "error": j.error or "",
             "messages": msg_count,
             "last_activity": last_ts or "",
@@ -3141,6 +3743,8 @@ async def audit_groups(q: str = "", status: str = ""):
             "markets_count": markets_str,
             "unknown_locations": unknown_locs,
             "coverage": coverage,
+            "active_brokers": active_brokers,
+            "duplicate_pct": dup_pct,
             "parsed": parse_group_name(group_name),
         }
 
@@ -3334,25 +3938,12 @@ async def audit_capture_health():
     last_msg = storage.db.execute("SELECT MAX(created_at) FROM raw_messages").fetchone()[0]
     webhook_ok = last_msg is not None and last_msg >= five_min_ago
 
-    # Msgs by hour
-    msgs_last_hour = storage.db.execute(
-        "SELECT COUNT(*) FROM raw_messages WHERE created_at >= ?", (hour_ago,)
+    # Messages per minute (today)
+    total_msgs_today = storage.db.execute(
+        "SELECT COUNT(*) FROM raw_messages WHERE created_at >= ?", (today_start,)
     ).fetchone()[0]
-
-    # Failed enrichment
-    failed_enrichment = storage.db.execute(
-        "SELECT COUNT(*) FROM enrichment_jobs WHERE status = 'failed'"
-    ).fetchone()[0]
-
-    # Pending enrichment
-    pending_enrich = storage.db.execute(
-        "SELECT COUNT(*) FROM enrichment_jobs WHERE status = 'pending'"
-    ).fetchone()[0]
-
-    # Enrichment attempts distribution
-    retry_count = storage.db.execute(
-        "SELECT SUM(attempts) FROM enrichment_jobs WHERE attempts > 0"
-    ).fetchone()[0] or 0
+    mins_today = max(1, datetime.utcnow().hour * 60 + datetime.utcnow().minute)
+    msgs_per_min = round(total_msgs_today / mins_today, 1)
 
     # Avg processing time
     avg_process = storage.db.execute("""
@@ -3363,25 +3954,30 @@ async def audit_capture_health():
     """, (today_start,)).fetchone()[0]
 
     # Parser success rate today
-    total_msgs = storage.db.execute(
-        "SELECT COUNT(*) FROM raw_messages WHERE created_at >= ?", (today_start,)
-    ).fetchone()[0]
     total_parsed = storage.db.execute(
         "SELECT COUNT(*) FROM parsed_output p JOIN raw_messages r ON r.id = p.raw_message_id WHERE r.created_at >= ?",
         (today_start,)
     ).fetchone()[0]
-    parser_rate = round(total_parsed / total_msgs * 100, 1) if total_msgs > 0 else 0
+    parser_success_rate = round(total_parsed / max(1, total_msgs_today) * 100, 1) if total_msgs_today > 0 else 0
+
+    # Queue backlog (pending enrichment + pending AI suggestions)
+    pending_enrich = storage.db.execute(
+        "SELECT COUNT(*) FROM enrichment_jobs WHERE status = 'pending'"
+    ).fetchone()[0]
+    pending_ai = storage.db.execute(
+        "SELECT COUNT(*) FROM ai_suggestions WHERE status = 'pending'"
+    ).fetchone()[0]
+    queue_backlog = pending_enrich + pending_ai
 
     return {
-        "webhook_healthy": webhook_ok,
-        "last_message": last_msg or "never",
-        "msgs_last_hour": msgs_last_hour,
+        "msgs_per_min": msgs_per_min,
         "avg_process_secs": round(avg_process, 1) if avg_process else None,
+        "parser_success_rate": parser_success_rate,
+        "last_webhook": last_msg or "never",
+        "queue_backlog": queue_backlog,
         "pending_enrichment": pending_enrich,
-        "failed_enrichment": failed_enrichment,
-        "retry_count": retry_count,
-        "parser_success_rate": parser_rate,
-        "total_msgs_today": total_msgs,
+        "pending_ai_suggestions": pending_ai,
+        "total_msgs_today": total_msgs_today,
         "total_parsed_today": total_parsed,
     }
 

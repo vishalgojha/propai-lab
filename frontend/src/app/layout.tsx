@@ -5,26 +5,46 @@ import { usePathname, useRouter } from "next/navigation";
 import "./globals.css";
 import { getConnectionState, getWhatsAppStatus, ConnectionState, WhatsAppStatus, searchMessages } from "@/lib/api";
 
-const navItems = [
-  { href: "/", label: "Dashboard", icon: "📊" },
-  { href: "/extractions", label: "Inventory", icon: "🏗️" },
-  { href: "/requirements", label: "Requirements", icon: "📋" },
-  { href: "/brokers", label: "Brokers", icon: "🤝" },
-  { href: "/inbox", label: "Messages", icon: "💬" },
-  { href: "/groups", label: "Groups", icon: "👥" },
-  { href: "/market", label: "Markets", icon: "🗺️" },
-  { href: "/chat", label: "AI Chat", icon: "🤖" },
-  { href: "/audit", label: "WhatsApp Audit", icon: "🔬" },
-  { href: "/settings", label: "Settings", icon: "⚙" },
+const navSections = [
+  {
+    title: "My Business",
+    items: [
+      { href: "/connections", label: "Connection Center", icon: "🔌" },
+      { href: "/my/inventory", label: "My Inventory", icon: "🏠" },
+      { href: "/my/buyers", label: "My Buyers", icon: "🙋" },
+      { href: "/promotions", label: "Promotions", icon: "📣" },
+      { href: "/people", label: "People", icon: "📇" },
+    ],
+  },
+  {
+    title: "Market",
+    items: [
+      { href: "/extractions", label: "Market Listings", icon: "🏗️" },
+      { href: "/requirements", label: "Market Buyers", icon: "📋" },
+      { href: "/brokers", label: "Brokers", icon: "🤝" },
+      { href: "/groups", label: "Groups", icon: "👥" },
+      { href: "/market", label: "Markets", icon: "🗺️" },
+    ],
+  },
+  {
+    title: "Intelligence",
+    items: [
+      { href: "/", label: "Dashboard", icon: "📊" },
+      { href: "/chat?tab=review", label: "Review Center", icon: "✅" },
+      { href: "/chat", label: "AI Chat", icon: "🤖" },
+      { href: "/audit", label: "WhatsApp Audit", icon: "🔬" },
+      { href: "/settings", label: "Settings", icon: "⚙" },
+    ],
+  },
 ];
 
 const QUICK_ACTIONS = [
   { label: "2 BHK under 2 Cr", icon: "🏠", query: "2 bhk" },
   { label: "1 BHK rental", icon: "🔑", query: "1 bhk" },
-  { label: "Bandra listings", icon: "📍", query: "bandra" },
+  { label: "Bandra market listings", icon: "📍", query: "bandra" },
   { label: "Commercial offices", icon: "🏢", query: "commercial" },
   { label: "Active brokers", icon: "🤝", query: "" },
-  { label: "Recent requirements", icon: "📋", query: "" },
+  { label: "Recent market buyers", icon: "📋", query: "" },
 ];
 
 function PaletteModal({ open, onClose }: { open: boolean; onClose: () => void }) {
@@ -84,26 +104,26 @@ function PaletteModal({ open, onClose }: { open: boolean; onClose: () => void })
     listings: "🏗️", requirements: "📋", brokers: "🤝", buildings: "🏢", markets: "🗺️", messages: "💬",
   };
   const GROUP_LABELS: Record<string, string> = {
-    listings: "Listings", requirements: "Requirements", brokers: "Brokers", buildings: "Buildings", markets: "Markets", messages: "Messages",
+    listings: "Market Listings", requirements: "Market Buyers", brokers: "Brokers", buildings: "Buildings", markets: "Markets", messages: "Messages",
   };
 
   function renderGroupItem(group: string, item: any, i: number, globalIdx: number) {
     let title = "", subtitle = "";
     if (group === "listings") {
       title = [item.bhk, item.building_name, item.micro_market].filter(Boolean).join(" · ");
-      subtitle = `₹${Number(item.price || 0).toLocaleString()} · ${item.broker_name || ""} · ${item.observation_count || 1} observations`;
+      subtitle = `₹${Number(item.price || 0).toLocaleString()} · ${item.broker_name || ""} · ${item.observation_count || 1} posts`;
     } else if (group === "requirements") {
       title = [item.bhk, item.micro_market].filter(Boolean).join(" · ");
       subtitle = `${item.broker_name || ""} · wants ${item.intent?.toLowerCase()}`;
     } else if (group === "brokers") {
       title = item.name;
-      subtitle = `${item.listing_count || 0} listings · ${item.requirement_count || 0} reqs · ${item.market_count || 0} markets`;
+      subtitle = `${item.listing_count || 0} listings · ${item.requirement_count || 0} buyers · ${item.market_count || 0} markets`;
     } else if (group === "buildings") {
       title = item.name;
       subtitle = `${item.occurrence_count || 0} messages · ${item.broker_count || 0} brokers${item.micro_market ? ` · ${item.micro_market}` : ""}`;
     } else if (group === "markets") {
       title = item.micro_market;
-      subtitle = `${item.observation_count || 0} messages · ${item.building_count || 0} buildings · ${item.broker_count || 0} brokers`;
+      subtitle = `${item.observation_count || 0} posts · ${item.building_count || 0} buildings · ${item.broker_count || 0} brokers`;
     } else if (group === "messages") {
       title = (item.message || "").slice(0, 80);
       subtitle = `${item.group_name || ""} · ${item.sender || ""}`;
@@ -181,7 +201,7 @@ function PaletteModal({ open, onClose }: { open: boolean; onClose: () => void })
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={onKeyDown}
-            placeholder="Search listings, brokers, buildings, markets, messages..."
+            placeholder="Search market listings, buyers, brokers, buildings, markets..."
             className="flex-1 bg-transparent text-sm text-white placeholder-[#64748b] outline-none"
           />
           <kbd className="text-[10px] text-[#64748b] border border-[rgba(255,255,255,0.08)] px-1.5 py-0.5 rounded">ESC</kbd>
@@ -193,10 +213,10 @@ function PaletteModal({ open, onClose }: { open: boolean; onClose: () => void })
             <div className="text-[10px] font-semibold text-[#64748b] uppercase tracking-wider mb-2 px-1">Quick Actions</div>
             <div className="grid grid-cols-2 gap-1.5">
               <button onClick={() => navigate("/extractions")} className="flex items-center gap-2 text-xs text-[#94a3b8] hover:text-white hover:bg-[rgba(255,255,255,0.04)] rounded-lg px-2.5 py-2 transition-colors text-left">
-                <span>🏗️</span> All Inventory
+                <span>🏗️</span> Market Listings
               </button>
               <button onClick={() => navigate("/requirements")} className="flex items-center gap-2 text-xs text-[#94a3b8] hover:text-white hover:bg-[rgba(255,255,255,0.04)] rounded-lg px-2.5 py-2 transition-colors text-left">
-                <span>📋</span> Requirements
+                <span>📋</span> Market Buyers
               </button>
               <button onClick={() => navigate("/brokers")} className="flex items-center gap-2 text-xs text-[#94a3b8] hover:text-white hover:bg-[rgba(255,255,255,0.04)] rounded-lg px-2.5 py-2 transition-colors text-left">
                 <span>🤝</span> Active Brokers
@@ -296,13 +316,24 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="flex min-h-screen">
         <PaletteModal open={paletteOpen} onClose={() => setPaletteOpen(false)} />
         {sidebarOpen && (
-          <aside className="w-56 border-r border-[rgba(255,255,255,0.06)] p-4 flex flex-col gap-1 shrink-0 bg-[#0a0e14]">
+          <aside className="w-64 border-r border-[rgba(255,255,255,0.06)] p-4 flex flex-col gap-1 shrink-0 bg-[#0a0e14]">
             <div className="text-lg font-bold mb-6 px-3 text-[#e2e8f0]">PropAI</div>
-            {navItems.map((item) => (
-              <a key={item.href} href={item.href} className="sidebar-link">
-                <span>{item.icon}</span>
-                <span>{item.label}</span>
-              </a>
+            <a href="/companion" className="sidebar-link mb-3 bg-[rgba(62,232,138,0.08)] text-[#3EE88A]">
+              <span>📱</span>
+              <span>PropAI Companion</span>
+            </a>
+            {navSections.map((section) => (
+              <div key={section.title} className="mb-3">
+                <div className="px-3 pb-1.5 pt-1 text-[10px] font-bold uppercase tracking-wider text-[#64748b]">
+                  {section.title}
+                </div>
+                {section.items.map((item) => (
+                  <a key={item.href} href={item.href} className="sidebar-link">
+                    <span>{item.icon}</span>
+                    <span>{item.label}</span>
+                  </a>
+                ))}
+              </div>
             ))}
             <button
               onClick={() => setPaletteOpen(true)}

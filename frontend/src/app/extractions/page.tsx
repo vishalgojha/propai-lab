@@ -63,9 +63,12 @@ export default function ExtractionsPage() {
 
   return (
     <div>
+      <div className="mb-4">
+        <h2 className="text-lg font-bold text-[#e2e8f0]">Market Listings</h2>
+        <div className="text-sm text-[#64748b] mt-1">Listings currently circulating across broker WhatsApp groups.</div>
+      </div>
       <div className="flex gap-2 mb-4 items-center flex-wrap">
         <button onClick={() => api.getListings(PAGE_SIZE, offset).then(setData)} className="px-3 py-1.5 bg-[#3EE88A] text-[#04100a] rounded-lg text-sm font-bold">Refresh</button>
-        <div className="text-sm text-[#64748b]">One row per listing fingerprint. Raw observations stay under the inventory row.</div>
       </div>
       <div className="overflow-x-auto">
         <table className="data-table text-sm">
@@ -114,7 +117,7 @@ export default function ExtractionsPage() {
                   </td>
                   <td className="px-2.5 py-2 border-b border-[rgba(255,255,255,0.06)]">
                     <div className="flex flex-wrap gap-2">
-                      <span className="badge badge-blue">{r.observation_count} obs</span>
+                      <span className="badge badge-blue">{r.observation_count} posts</span>
                       <span className="badge badge-purple">{r.group_count} groups</span>
                     </div>
                   </td>

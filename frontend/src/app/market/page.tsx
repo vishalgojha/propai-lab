@@ -62,7 +62,7 @@ function MarketsContent() {
         <div className="md:col-span-2 bg-[#0d1117] border border-[rgba(255,255,255,0.06)] rounded-2xl p-5">
           <div className="text-[11px] text-[#64748b] uppercase tracking-widest font-bold mb-3">
             MARKETS ({heatmap.length})
-            <span className="text-[10px] font-normal lowercase ml-2">— observed from WhatsApp activity</span>
+            <span className="text-[10px] font-normal lowercase ml-2">— active across broker groups</span>
           </div>
           <div className="max-h-[500px] overflow-y-auto space-y-0.5">
             {topMarkets.map((h, i) => (
@@ -96,7 +96,7 @@ function MarketsContent() {
             <div className="bg-[#0d1117] border border-[rgba(255,255,255,0.06)] rounded-2xl p-5 text-center text-[#64748b]">
               <div className="text-2xl mb-2">🗺️</div>
               <div className="text-sm">Select a market to explore</div>
-              <div className="text-xs mt-1">Buildings, brokers, activity and listings observed in that area</div>
+              <div className="text-xs mt-1">Buildings, brokers, buyer activity and listings in that area</div>
             </div>
           )}
 
@@ -112,7 +112,7 @@ function MarketsContent() {
                 <div className="flex items-center justify-between mb-3">
                   <div>
                     <div className="text-sm font-bold text-[#e2e8f0]">{marketDetail.name}</div>
-                    <div className="text-[10px] text-[#64748b]">observed from WhatsApp activity</div>
+                    <div className="text-[10px] text-[#64748b]">Activity from broker groups</div>
                   </div>
                   <div className="flex gap-3">
                     <div className="text-center">
@@ -168,7 +168,7 @@ function MarketsContent() {
                           className="w-full flex items-center justify-between px-2 py-1.5 rounded-lg hover:bg-[rgba(255,255,255,0.03)] text-left transition-colors cursor-pointer"
                         >
                           <span className="text-xs text-[#e2e8f0]">{b.name}</span>
-                          <span className="text-[10px] text-[#64748b]">{b.listing_count} listings / {b.requirement_count} reqs</span>
+                          <span className="text-[10px] text-[#64748b]">{b.listing_count} listings / {b.requirement_count} buyers</span>
                         </button>
                       ))}
                     </div>

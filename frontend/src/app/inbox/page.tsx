@@ -304,7 +304,7 @@ export default function BrokerWorkspacePage() {
       signals.push({
         type: "warning",
         title: "Missing Building Mapping",
-        desc: `Parser extracted building "${parsed.building_name}", but the resolver was unable to map it to a canonical building. Needs manual resolution.`
+        desc: `Building "${parsed.building_name}" needs confirmation before it can be used reliably.`
       });
     }
 
@@ -319,7 +319,7 @@ export default function BrokerWorkspacePage() {
         signals.push({
           type: "alert",
           title: "Price Unusually Low",
-          desc: `${formatCurrency(listingPrice)} is ${percentBelow}% lower than the market median (${formatCurrency(median)}) for a ${parsed.bhk || ""} in ${parsed.micro_market || ""}. Potential distress sale or parsing error.`
+          desc: `${formatCurrency(listingPrice)} is ${percentBelow}% lower than the market median (${formatCurrency(median)}) for a ${parsed.bhk || ""} in ${parsed.micro_market || ""}. Could be a genuine deal or a detail that needs checking.`
         });
       }
     }
@@ -779,10 +779,10 @@ export default function BrokerWorkspacePage() {
                       </p>
                     </div>
 
-                    {/* Parsed Output Panel */}
+                    {/* Structured Details Panel */}
                     <div className="bg-[#0d1117] rounded-xl p-3.5 border border-[rgba(255,255,255,0.04)] space-y-3">
                       <div className="text-[10px] text-[#64748b] uppercase tracking-wider font-bold">
-                        Structured Extraction
+                        Property Details
                       </div>
                       
                       {selectedMsgDetails.parsed && Object.keys(selectedMsgDetails.parsed).length > 0 ? (
@@ -812,21 +812,21 @@ export default function BrokerWorkspacePage() {
                             </span>
                           </div>
                           <div className="col-span-2">
-                            <span className="text-[10px] text-[#64748b] block uppercase">Extracted Location</span>
+                            <span className="text-[10px] text-[#64748b] block uppercase">Location Mentioned</span>
                             <span className="text-white mt-0.5 block leading-normal">
                               {selectedMsgDetails.parsed.location_raw || "—"}
                             </span>
                           </div>
                         </div>
                       ) : (
-                        <div className="text-xs text-[#64748b] italic py-2">No structured data parsed.</div>
+                        <div className="text-xs text-[#64748b] italic py-2">No property details found.</div>
                       )}
                     </div>
 
-                    {/* Resolver Decisions Panel */}
+                    {/* Location Match Panel */}
                     <div className="bg-[#0d1117] rounded-xl p-3.5 border border-[rgba(255,255,255,0.04)] space-y-3">
                       <div className="text-[10px] text-[#64748b] uppercase tracking-wider font-bold">
-                        Location Resolver Decision
+                        Location Match
                       </div>
 
                       {selectedMsgDetails.resolver ? (
@@ -840,7 +840,7 @@ export default function BrokerWorkspacePage() {
                             </span>
                           </div>
                           <div>
-                            <span className="text-[10px] text-[#64748b] block uppercase">Canonical Building</span>
+                            <span className="text-[10px] text-[#64748b] block uppercase">Building</span>
                             <span className="font-bold text-white block mt-0.5">
                               {selectedMsgDetails.resolver.building_name || "—"}
                             </span>
@@ -861,7 +861,7 @@ export default function BrokerWorkspacePage() {
                           </div>
                           {selectedMsgDetails.resolver.method_detail && (
                             <div>
-                              <span className="text-[10px] text-[#64748b] block uppercase">Resolution Logic</span>
+                              <span className="text-[10px] text-[#64748b] block uppercase">Match Notes</span>
                               <span className="text-[#cbd5e1] block mt-0.5 leading-relaxed text-[11px]">
                                 {selectedMsgDetails.resolver.method_detail}
                               </span>
@@ -869,7 +869,7 @@ export default function BrokerWorkspacePage() {
                           )}
                         </div>
                       ) : (
-                        <div className="text-xs text-[#64748b] italic py-2">No resolution details recorded.</div>
+                        <div className="text-xs text-[#64748b] italic py-2">No location match recorded.</div>
                       )}
                     </div>
 
@@ -900,7 +900,7 @@ export default function BrokerWorkspacePage() {
                             <span className="text-[#cbd5e1]">{formatCurrency(priceStats.p75)}</span>
                           </div>
                           <div className="text-[10px] text-[#64748b] pt-1.5 italic text-center">
-                            Based on {priceStats.count} parsed observation listings in the database
+                            Based on {priceStats.count} market listings
                           </div>
                         </div>
                       </div>
@@ -913,10 +913,10 @@ export default function BrokerWorkspacePage() {
                 {activeRightTab === "broker" && (
                   <div className="space-y-4 animate-fadeIn">
                     {loadingBroker ? (
-                      <div className="text-center text-xs text-[#64748b] py-8">Resolving broker graph profile...</div>
+                      <div className="text-center text-xs text-[#64748b] py-8">Loading broker profile...</div>
                     ) : !selectedBroker ? (
                       <div className="text-center text-xs text-[#64748b] py-8">
-                        No canonical broker record resolved for this contact.
+                        No broker profile found for this contact.
                       </div>
                     ) : (
                       <div className="space-y-4 text-xs">
@@ -942,7 +942,7 @@ export default function BrokerWorkspacePage() {
 
                           {selectedBroker.first_seen_at && (
                             <div className="flex justify-between text-[11px]">
-                              <span className="text-[#64748b]">First Observed</span>
+                              <span className="text-[#64748b]">First Seen</span>
                               <span className="text-[#cbd5e1]">
                                 {new Date(selectedBroker.first_seen_at).toLocaleDateString("en-IN", {
                                   day: "numeric",
@@ -985,7 +985,7 @@ export default function BrokerWorkspacePage() {
                           {[
                             { label: "Total Posts", value: selectedBroker.observation_count },
                             { label: "Listings", value: selectedBroker.listing_count },
-                            { label: "Requirements", value: selectedBroker.requirement_count },
+                            { label: "Buyers", value: selectedBroker.requirement_count },
                             { label: "Avg Ticket", value: selectedBroker.avg_ticket ? formatCurrency(selectedBroker.avg_ticket) : "—" },
                           ].map((stat) => (
                             <div key={stat.label} className="bg-[#0d1117] rounded-xl p-2.5 border border-[rgba(255,255,255,0.04)]">
@@ -1022,7 +1022,7 @@ export default function BrokerWorkspacePage() {
                                 <div key={idx} className="flex justify-between items-center">
                                   <span className="font-semibold text-[#cbd5e1]">{m.micro_market}</span>
                                   <span className="text-[10px] text-[#64748b]">
-                                    {m.listing_count} listings · {m.requirement_count} reqs
+                                    {m.listing_count} listings · {m.requirement_count} buyers
                                   </span>
                                 </div>
                               ))}
@@ -1041,7 +1041,7 @@ export default function BrokerWorkspacePage() {
                                 <div key={idx} className="flex justify-between items-center">
                                   <span className="font-semibold text-[#cbd5e1]">{b.building_name}</span>
                                   <span className="text-[10px] text-[#64748b]">
-                                    {b.listing_count} listings · {b.requirement_count} reqs
+                                    {b.listing_count} listings · {b.requirement_count} buyers
                                   </span>
                                 </div>
                               ))}
@@ -1061,7 +1061,7 @@ export default function BrokerWorkspacePage() {
                       <div className="text-center text-xs text-[#64748b] py-8">Resolving building metrics...</div>
                     ) : !selectedBuilding ? (
                       <div className="text-center text-xs text-[#64748b] py-8">
-                        No canonical building profile resolved for this message.
+                        No building profile matched for this message.
                       </div>
                     ) : (
                       <div className="space-y-4 text-xs">

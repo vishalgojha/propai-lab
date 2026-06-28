@@ -7,7 +7,14 @@ async function fetchJSON<T>(url: string, init?: RequestInit): Promise<T> {
   });
   if (!res.ok) {
     const body = await res.text();
-    throw new Error(`${res.status} ${res.statusText}: ${body}`);
+    let message = body;
+    try {
+      const parsed = JSON.parse(body);
+      message = parsed.message || parsed.detail || body;
+    } catch {
+      message = body;
+    }
+    throw new Error(`${res.status} ${res.statusText}: ${message}`);
   }
   return res.json();
 }
@@ -258,13 +265,24 @@ export interface ChatResponse {
   sources: string[];
 }
 
+export interface AIConfig {
+  has_server_key: boolean;
+  base_url: string;
+  model: string;
+}
+
+export function getAIConfig() {
+  return fetchJSON<AIConfig>("/ai/config");
+}
+
 export function chatAIChat(
   messages: { role: string; content: string }[],
-  apiKey = ""
+  apiKey = "",
+  model = ""
 ): Promise<ChatResponse> {
   return fetchJSON<ChatResponse>("/ai/chat", {
     method: "POST",
-    body: JSON.stringify({ messages, api_key: apiKey }),
+    body: JSON.stringify({ messages, api_key: apiKey, model }),
   });
 }
 
@@ -332,6 +350,7 @@ export interface PromoteRequest {
   channel: string;
   use_ai?: boolean;
   fields?: Record<string, unknown>;
+  api_key?: string;
 }
 
 export interface PromoteResponse {
@@ -360,21 +379,210 @@ export function getPromoteConfig() {
   return fetchJSON<PromoteConfig>("/promote/config");
 }
 
-// ── WhatsApp Audit ──────────────────────────────────────────────
+// ── PropAI Companion ───────────────────────────────────────────
 
-export function getAuditDashboard() {
-  return fetchJSON<any>("/audit/dashboard");
+export interface CompanionTeamMember {
+  id: number;
+  name: string;
+  mobile_number: string;
+  role: string;
+  role_label: string;
+  assigned_markets: string[];
+  active: boolean;
+  waba_identity: string;
+  created_at: string;
+  updated_at: string;
 }
 
-export function getAuditTimeline(limit = 30) {
-  return fetchJSON<any[]>(`/audit/timeline?limit=${limit}`);
+export interface CompanionTeamMemberInput {
+  name: string;
+  mobile_number: string;
+  role: string;
+  assigned_markets: string[];
+  active: boolean;
+  waba_identity: string;
+}
+
+export interface CompanionOverview {
+  connection_status: string;
+  whatsapp_business_number: string;
+  connected_team_members: number;
+  total_team_members: number;
+  last_sync: string;
+  messages_today: number;
+  ai_requests_today: number;
+  pending_conversations: number;
+  outbound_messages: number;
+  inbound_messages: number;
+  webhook_health: string;
+  token_status: string;
+  knowledge_base_size: Record<string, number>;
+  waba: {
+    phone_number_id: string;
+    has_verify_token: boolean;
+    has_access_token: boolean;
+  };
+}
+
+export interface CompanionConfig {
+  whatsapp_business_number: string;
+  phone_number_id: string;
+  has_access_token: boolean;
+  access_token_preview: string;
+  has_verify_token: boolean;
+  verify_token_preview: string;
+}
+
+export interface CompanionConfigInput {
+  whatsapp_business_number?: string;
+  phone_number_id?: string;
+  access_token?: string;
+  verify_token?: string;
+  clear_access_token?: boolean;
+  clear_verify_token?: boolean;
+}
+
+export function getCompanionOverview() {
+  return fetchJSON<CompanionOverview>("/companion/overview");
+}
+
+export function getCompanionConfig() {
+  return fetchJSON<CompanionConfig>("/companion/config");
+}
+
+export function saveCompanionConfig(config: CompanionConfigInput) {
+  return fetchJSON<CompanionConfig>("/companion/config", {
+    method: "POST",
+    body: JSON.stringify(config),
+  });
+}
+
+export function getCompanionTeam() {
+  return fetchJSON<CompanionTeamMember[]>("/companion/team");
+}
+
+export function addCompanionTeamMember(member: CompanionTeamMemberInput) {
+  return fetchJSON<CompanionTeamMember>("/companion/team", {
+    method: "POST",
+    body: JSON.stringify(member),
+  });
+}
+
+export function updateCompanionTeamMember(id: number, member: CompanionTeamMemberInput) {
+  return fetchJSON<CompanionTeamMember>(`/companion/team/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(member),
+  });
+}
+
+export function getCompanionRoles() {
+  return fetchJSON<Record<string, { label: string; permissions: string[] }>>("/companion/roles");
+}
+
+export function getCompanionTools() {
+  return fetchJSON<{ tools: string[] }>("/companion/tools");
+}
+
+export function getCompanionConversations() {
+  return fetchJSON<any[]>("/companion/conversations");
+}
+
+export function getCompanionAudit() {
+  return fetchJSON<any[]>("/companion/audit");
+}
+
+// ── WhatsApp Audit ──────────────────────────────────────────────
+
+export interface AuditDashboard {
+  whatsapp_session: string;
+  webhook_status: string;
+  groups_discovered: number;
+  groups_monitored: number;
+  total_groups: number;
+  live_groups: number;
+  msgs_today: number;
+  last_webhook: string;
+  webhook_healthy: boolean;
+  error_groups: number;
+  duplicate_groups: number;
+  attention_required: number;
+  attention_breakdown: {
+    inactive: number;
+    duplicate: number;
+    unnamed: number;
+    error: number;
+  };
+  inactive_groups: number;
+  unnamed_groups: number;
+  failed_events: number;
+  pending_enrichment: number;
+  pending_ai_suggestions: number;
+  avg_process_secs: number | null;
+  msgs_per_min: number;
+  parser_success_rate: number;
+  queue_backlog: number;
+}
+
+export interface AuditTimelineEvent {
+  source: string;
+  ts: string;
+  subtype: string;
+  label: string;
+  group_name?: string;
+  ref?: number;
+}
+
+export interface AuditGroupCard {
+  jid: string;
+  name: string;
+  status: string;
+  health: string;
+  error: string;
+  messages: number;
+  last_activity: string;
+  observations: number;
+  listings: number;
+  requirements: number;
+  markets_count: number;
+  unknown_locations: number;
+  coverage: number;
+  active_brokers: number;
+  duplicate_pct: number;
+  parsed: { city?: string; area?: string };
+}
+
+export interface AuditCaptureHealth {
+  msgs_per_min: number;
+  avg_process_secs: number | null;
+  parser_success_rate: number;
+  last_webhook: string;
+  queue_backlog: number;
+  pending_enrichment: number;
+  pending_ai_suggestions: number;
+  total_msgs_today: number;
+  total_parsed_today: number;
+}
+
+export interface AuditTopContributor {
+  group_name: string;
+  msg_count: number;
+  unique_senders: number;
+  last_msg: string;
+}
+
+export function getAuditDashboard() {
+  return fetchJSON<AuditDashboard>("/audit/dashboard");
+}
+
+export function getAuditTimeline(limit = 50) {
+  return fetchJSON<AuditTimelineEvent[]>(`/audit/timeline?limit=${limit}`);
 }
 
 export function getAuditGroups(q = "", status = "") {
   const params = new URLSearchParams();
   if (q) params.set("q", q);
   if (status) params.set("status", status);
-  return fetchJSON<any[]>(`/audit/groups?${params}`);
+  return fetchJSON<AuditGroupCard[]>(`/audit/groups?${params}`);
 }
 
 export function getAuditGroupDetail(jid: string) {
@@ -390,5 +598,9 @@ export function getAuditDuplicates() {
 }
 
 export function getAuditCaptureHealth() {
-  return fetchJSON<any>("/audit/capture-health");
+  return fetchJSON<AuditCaptureHealth>("/audit/capture-health");
+}
+
+export function getAuditTopContributors(limit = 10) {
+  return fetchJSON<AuditTopContributor[]>(`/audit/top-contributors?limit=${limit}`);
 }

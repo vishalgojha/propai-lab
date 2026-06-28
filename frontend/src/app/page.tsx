@@ -49,13 +49,13 @@ export default function DashboardPage() {
   });
 
   const actionCards: ActionCard[] = [
-    { label: "Pending Review", count: actions?.pending_review_unresolved ?? 0, icon: "📋", color: "yellow", href: "/resolver?method=unresolved", detail: "Messages needing location resolution" },
+    { label: "Pending Review", count: actions?.pending_review_unresolved ?? 0, icon: "📋", color: "yellow", href: "/chat?tab=review", detail: "Items that need a quick check" },
     { label: "AI Suggestions", count: actions?.pending_ai_suggestions ?? 0, icon: "🤖", color: "blue", href: "/chat?tab=review", detail: "Awaiting your approval" },
-    { label: "New Buildings Today", count: actions?.new_buildings_today ?? 0, icon: "🏗️", color: "green", href: "/buildings", detail: "Discovered from WhatsApp" },
+    { label: "New Buildings Today", count: actions?.new_buildings_today ?? 0, icon: "🏗️", color: "green", href: "/buildings", detail: "Found in broker groups" },
     { label: "Duplicate Brokers", count: actions?.duplicate_brokers_detected ?? 0, icon: "🤝", color: "purple", href: "/chat?tab=review", detail: "Merge candidates" },
     { label: "Duplicate Listings", count: actions?.duplicate_listings_detected ?? 0, icon: "🏠", color: "orange", href: "/chat?tab=review", detail: "Potential merges" },
-    { label: "Low Confidence", count: actions?.low_confidence_parses ?? 0, icon: "⚠️", color: "red", href: "/resolver?method=unresolved", detail: "Parser confidence < 50%" },
-    { label: "Unknown Locations", count: actions?.unknown_locations ?? 0, icon: "🗺️", color: "yellow", href: "/resolver?method=unresolved", detail: "Not yet mapped" },
+    { label: "Needs Review", count: actions?.low_confidence_parses ?? 0, icon: "⚠️", color: "red", href: "/chat?tab=review", detail: "Details need confirmation" },
+    { label: "Unknown Locations", count: actions?.unknown_locations ?? 0, icon: "🗺️", color: "yellow", href: "/chat?tab=review", detail: "Needs a market or building" },
     { label: "Buildings Pending", count: actions?.buildings_pending_approval ?? 0, icon: "🏢", color: "blue", href: "/chat?tab=review", detail: "AI suggestions for buildings" },
   ];
 
@@ -107,10 +107,10 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* Parser Failure Breakdown */}
+      {/* Review Breakdown */}
       {actions?.top_parser_failures && actions.top_parser_failures.length > 0 && (
         <div className="bg-[#0d1117] border border-[rgba(255,255,255,0.06)] rounded-2xl p-5">
-          <div className="text-[11px] text-[#64748b] uppercase tracking-widest font-bold mb-3">TOP PARSER FAILURES</div>
+          <div className="text-[11px] text-[#64748b] uppercase tracking-widest font-bold mb-3">NEEDS ATTENTION</div>
           <div className="space-y-2">
             {actions.top_parser_failures.map((f: any, i: number) => {
               const maxCount = actions.top_parser_failures[0]?.c || 1;

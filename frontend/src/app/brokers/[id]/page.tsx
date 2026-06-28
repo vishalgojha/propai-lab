@@ -81,7 +81,7 @@ export default function BrokerProfilePage() {
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
         {[
           { label: "Listings", value: broker.listing_count },
-          { label: "Requirements", value: broker.requirement_count },
+          { label: "Buyers", value: broker.requirement_count },
           { label: "Groups", value: broker.group_count },
           { label: "Markets", value: broker.market_count },
           { label: "Avg Ticket", value: broker.avg_ticket ? `₹${Math.round(broker.avg_ticket).toLocaleString("en-IN")}` : "—" },
@@ -113,7 +113,7 @@ export default function BrokerProfilePage() {
             {broker.phones.map((p: any, i: number) => (
               <div key={i} className="text-sm flex items-center gap-2">
                 <span className="text-[#e2e8f0]">{maskPhone(p.phone)}</span>
-                <span className="text-[10px] text-[#64748b]">{p.observation_count} messages</span>
+                <span className="text-[10px] text-[#64748b]">{p.observation_count} posts</span>
               </div>
             ))}
           </div>

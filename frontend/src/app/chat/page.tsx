@@ -86,11 +86,11 @@ function evidenceLines(s: Suggestion): string[] {
     if (src.match_count) lines.push(`✓ ${src.match_count} matching references`);
     if (src.canonical) lines.push(`✓ Maps to: ${src.canonical}`);
   } else if (agent === "building") {
-    if (src.parsed_id) lines.push(`✓ Extracted from observation #${src.parsed_id}`);
+    if (src.parsed_id) lines.push(`✓ From message #${src.parsed_id}`);
     if (src.building_name) lines.push(`✓ Building: ${src.building_name}`);
     if (src.micro_market) lines.push(`✓ Market: ${src.micro_market}`);
   } else if (agent === "location") {
-    if (src.parsed_id) lines.push(`✓ Extracted from observation #${src.parsed_id}`);
+    if (src.parsed_id) lines.push(`✓ From message #${src.parsed_id}`);
     if (src.micro_market) lines.push(`✓ Location: ${src.micro_market}`);
   } else if (agent === "price") {
     if (src.micro_market) lines.push(`✓ Market: ${src.micro_market}`);
@@ -108,17 +108,17 @@ function impactLines(s: Suggestion): string[] {
   const action = prop.action || "";
   if (action === "merge_listings") {
     lines.push(`Will merge 2 duplicate listings into 1`);
-    if (s.source_data?.observation_count) lines.push(`Links ${s.source_data.observation_count} total observations`);
+    if (s.source_data?.observation_count) lines.push(`Links ${s.source_data.observation_count} total posts`);
   } else if (action === "merge_brokers") {
     lines.push("Will merge 2 broker profiles into 1");
-    if (s.source_data?.obs_count) lines.push(`Links ${s.source_data.obs_count} observations`);
+    if (s.source_data?.obs_count) lines.push(`Links ${s.source_data.obs_count} posts`);
   } else if (action === "create_alias") {
-    lines.push(`Makes "${prop.alias}" → "${prop.canonical}" free to resolve`);
+    lines.push(`Keeps "${prop.alias}" connected to "${prop.canonical}"`);
     lines.push("~3 AI calls avoided per future match");
   } else if (s.agent === "building") {
-    lines.push("New building entity → makes future observations linkable");
+    lines.push("New building profile for future matches");
   } else if (s.agent === "location") {
-    lines.push("New location mapping → makes future observations resolvable");
+    lines.push("New location profile for future matches");
   } else if (s.agent === "price") {
     lines.push("Price outlier — may indicate parse error or genuine deal");
   }
@@ -143,6 +143,12 @@ export default function AIReviewPage() {
   const [actionId, setActionId] = useState<number | null>(null);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [memory, setMemory] = useState<MemoryStats | null>(null);
+
+  useEffect(() => {
+    if (typeof window !== "undefined" && new URLSearchParams(window.location.search).get("tab") === "review") {
+      setTab("review");
+    }
+  }, []);
   const [usage, setUsage] = useState<UsageStats | null>(null);
   const [rejectModal, setRejectModal] = useState<{ id: number; fromBatch: boolean } | null>(null);
   const [rejectReason, setRejectReason] = useState("");
@@ -191,10 +197,12 @@ export default function AIReviewPage() {
     setChatLoading(true);
     try {
       const key = typeof window !== "undefined" ? localStorage.getItem("doubleword_key") || "" : "";
-      const res = await api.chatAIChat([...chatMessages, { role: "user", content: userMsg }], key);
+      const model = typeof window !== "undefined" ? localStorage.getItem("doubleword_model") || "" : "";
+      const res = await api.chatAIChat([...chatMessages, { role: "user", content: userMsg }], key, model);
       setChatMessages((prev) => [...prev, { role: "assistant", content: res.content }]);
-    } catch {
-      setChatMessages((prev) => [...prev, { role: "assistant", content: "Sorry, I couldn't process that. Check your API key in Settings." }]);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown AI error";
+      setChatMessages((prev) => [...prev, { role: "assistant", content: `Sorry, I couldn't process that. ${message}` }]);
     } finally {
       setChatLoading(false);
     }
@@ -279,7 +287,7 @@ export default function AIReviewPage() {
         <button onClick={() => setTab("review")}
           className={`px-3 py-1.5 rounded-lg text-xs font-medium ${tab === "review" ? "bg-blue-600 text-white" : "text-[#94a3b8] hover:text-white"}`}
         >
-          📋 Review {counts.pending ? `(${counts.pending})` : ""}
+          📋 Review Center {counts.pending ? `(${counts.pending})` : ""}
         </button>
       </div>
 
@@ -292,10 +300,10 @@ export default function AIReviewPage() {
                 <div className="text-3xl mb-3">🤖</div>
                 <h2 className="text-sm font-semibold text-white mb-2">Ask PropAI anything</h2>
                 <p className="text-xs text-[#64748b] mb-6 max-w-md mx-auto">
-                  Natural-language search across listings, requirements, brokers, buildings, and markets.
+                  Natural-language search across market listings, market buyers, brokers, buildings, and markets.
                 </p>
                 <div className="flex flex-wrap gap-2 justify-center max-w-lg mx-auto">
-                  {["Owner listings in Bandra under 3 Cr", "Requirements for 3 BHK in Andheri", "Who deals in Kalina offices?", "Show all Chandak Unicorn listings", "Brokers active in Juhu rentals", "Duplicate brokers in database", "Which brokers post Chandak Unicorn most?", "Show me this week's price trends"].map((q) => (
+                  {["Owner listings in Bandra under 3 Cr", "Market buyers for 3 BHK in Andheri", "Who deals in Kalina offices?", "Show all Chandak Unicorn listings", "Brokers active in Juhu rentals", "Duplicate brokers in database", "Which brokers post Chandak Unicorn most?", "Show me this week's price trends"].map((q) => (
                     <button key={q} onClick={() => exampleQuery(q)}
                       className="text-xs text-[#94a3b8] border border-[rgba(255,255,255,0.08)] hover:border-blue-500/30 hover:text-white rounded-lg px-3 py-2 transition-colors"
                     >
@@ -380,7 +388,7 @@ export default function AIReviewPage() {
           {/* ─── Filter Tabs ─── */}
           <div className="flex items-center justify-between mb-4">
             <div>
-              <h2 className="text-base font-semibold">Review Queue</h2>
+              <h2 className="text-base font-semibold">Review Center</h2>
               <p className="text-xs text-[#94a3b8]">
                 {counts.pending || 0} pending suggestion{(counts.pending || 0) !== 1 ? "s" : ""}
               </p>

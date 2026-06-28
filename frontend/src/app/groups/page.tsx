@@ -16,8 +16,8 @@ export default function GroupsPage() {
       <h2 className="text-lg font-bold mb-4">Groups</h2>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
         {[
-          ["Discovered", groups.length],
-          ["Name Parsed", parsedGroupCount],
+          ["Groups", groups.length],
+          ["Tagged", parsedGroupCount],
           ["Capture", "Live"],
           ["Window", "10-7"],
         ].map(([label, value]) => (
@@ -29,18 +29,18 @@ export default function GroupsPage() {
       </div>
       {groups.length > 0 && (
         <div className="mb-4 border border-[rgba(255,255,255,0.06)] bg-[#0d1117] text-[#94a3b8] rounded-xl px-4 py-3 text-sm">
-          PropAI does not backfill old WhatsApp messages. Groups are parsed as routing context; messages are captured live from webhooks during 10 AM - 7 PM IST.
+          PropAI tracks new WhatsApp group activity during 10 AM - 7 PM IST.
         </div>
       )}
       {groups.length === 0 ? (
-        <div className="text-[#64748b]">No groups discovered yet</div>
+        <div className="text-[#64748b]">No groups connected yet</div>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr>
                 <th className="text-left px-2.5 py-2 border-b border-[rgba(255,255,255,0.1)] text-[11px] text-[#64748b] uppercase">Name</th>
-                <th className="text-left px-2.5 py-2 border-b border-[rgba(255,255,255,0.1)] text-[11px] text-[#64748b] uppercase">Parsed</th>
+                <th className="text-left px-2.5 py-2 border-b border-[rgba(255,255,255,0.1)] text-[11px] text-[#64748b] uppercase">Tags</th>
                 <th className="text-left px-2.5 py-2 border-b border-[rgba(255,255,255,0.1)] text-[11px] text-[#64748b] uppercase">Members</th>
                 <th className="text-left px-2.5 py-2 border-b border-[rgba(255,255,255,0.1)] text-[11px] text-[#64748b] uppercase">Mode</th>
               </tr>

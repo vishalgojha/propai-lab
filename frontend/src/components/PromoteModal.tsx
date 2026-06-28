@@ -205,12 +205,14 @@ export default function PromoteModal({ observationId, listing, parsed, onClose }
     const next = buildDraft(fields);
     if (config?.enable_ai_promo && observationId) {
       const overrides = backendFields(fields, source);
+      const apiKey = typeof window !== "undefined" ? localStorage.getItem("doubleword_key") || "" : "";
       const [whatsapp, facebook, instagram] = await Promise.all(
         channels.map((channel) => api.promoteGenerate({
           observation_id: observationId,
           channel: channel.id,
           use_ai: true,
           fields: overrides,
+          api_key: apiKey,
         }).catch(() => null))
       );
       if (whatsapp?.body) next.whatsapp.message = whatsapp.body;
