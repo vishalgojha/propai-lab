@@ -5,7 +5,9 @@ from openai import OpenAI
 
 MODEL = "Qwen/Qwen3.6-35B-A3B-FP8"
 BASE_URL = "https://api.doubleword.ai/v1"
-DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
+_lab_dir = os.path.realpath(os.path.dirname(os.path.abspath(__file__)))
+_propai_data = os.path.realpath(os.path.join(_lab_dir, "..", "propai", "data"))
+DATA_DIR = _propai_data if os.path.isdir(_propai_data) else os.path.join(_lab_dir, "data")
 
 _client = None
 
@@ -21,11 +23,18 @@ def get_client(api_key=None):
 def load_data():
     sources = {}
     files = {
-        "listings": ("propi_listings.csv", "Property listings for sale/rent in Mumbai"),
-        "buildings": ("propi_buildings.csv", "Building and address records"),
+        "listings": ("Property listings for sale/rent in Mumbai", ["propi_listings.csv", "listings.csv"]),
+        "buildings": ("Building and address records", ["propi_buildings.csv", "buildings.csv"]),
     }
-    for key, (filename, desc) in files.items():
-        path = os.path.join(DATA_DIR, filename)
+    for key, (desc, candidates) in files.items():
+        path = None
+        for fn in candidates:
+            p = os.path.join(DATA_DIR, fn)
+            if os.path.exists(p):
+                path = p
+                break
+        if path is None:
+            continue
         if os.path.exists(path):
             df = pd.read_csv(path)
             if not df.empty:

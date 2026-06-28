@@ -258,15 +258,15 @@ EXAMPLES["99acres_sale"] = {
     },
 }
 
-# ── PROPi — SALE_LISTING (legacy format from v1 scrape) ─────────
-EXAMPLES["propi_sale"] = {
+# ── PORTAL — SALE_LISTING (legacy format from v1 scrape) ─────────
+EXAMPLES["portal_sale"] = {
     "building_name": "Omkar Alta Monte",
     "area": "Malabar Hill",
     "developer": "Omkar Realtors",
     "observation_type": "SALE_LISTING",
-    "source": "PROPi",
+    "source": "PORTAL",
     "observed_at": "2026-03-10",
-    "source_reference": "https://www.propi.in/property/omkar-alta-monte-malabar-hill",
+    "source_reference": "",
     "payload": {
         "bedrooms": 4,
         "bathrooms": 5,

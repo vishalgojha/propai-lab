@@ -32,7 +32,7 @@ OBSERVATION_TYPES = {
 
 # ── Source identifiers ─────────────────────────────────────────
 SOURCES = {
-    "PROPi": "https://www.propi.in",
+    "PORTAL": "Scraped property portal data",
     "HOUSING": "https://www.housing.com",
     "MAGICBRICKS": "https://www.magicbricks.com",
     "99ACRES": "https://www.99acres.com",

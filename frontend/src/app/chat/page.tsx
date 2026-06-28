@@ -83,8 +83,7 @@ export default function ChatPage() {
         <div className="bg-[#0d1117] border border-[rgba(255,255,255,0.06)] rounded-2xl p-6">
           <h2 className="text-lg font-semibold mb-2">🤖 AI Chat — Setup</h2>
           <p className="text-sm text-[#94a3b8] mb-4">
-            This chat lets you ask questions about your scraped real estate data
-            (MahaRERA, PROPi listings, etc.) using{" "}
+            Ask questions about your scraped real estate data using{" "}
             <strong>Qwen3.6 35B</strong> via Doubleword.
           </p>
           {error && (
@@ -116,7 +115,7 @@ export default function ChatPage() {
         <div>
           <h1 className="text-lg font-semibold">🤖 AI Chat</h1>
           <p className="text-xs text-[#94a3b8]">
-            Ask about your scraped MahaRERA, PROPi, and IGR data
+            Ask about your scraped real estate and property data
           </p>
         </div>
         <button
