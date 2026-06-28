@@ -180,8 +180,22 @@ class AISuggestion:
     proposal_data: str = "{}"
     confidence: float = 0.0
     status: str = "pending"
+    rejection_reason: Optional[str] = None
     created_at: str = ""
     updated_at: str = ""
+
+
+@dataclass
+class AIUsageLog:
+    id: int = 0
+    agent: str = ""
+    model: str = "gpt-4o-mini"
+    tokens_input: int = 0
+    tokens_output: int = 0
+    cost_usd: float = 0.0
+    source: str = "enrichment"
+    source_id: Optional[int] = None
+    created_at: str = ""
 
 
 @dataclass
@@ -455,3 +469,15 @@ class Storage(ABC):
 
     @abstractmethod
     def apply_suggestion(self, sug_id: int) -> bool: ...
+
+    @abstractmethod
+    def update_suggestion_status(self, sug_id: int, status: str, rejection_reason: str = ""): ...
+
+    @abstractmethod
+    def batch_update_suggestions(self, ids: list[int], status: str, rejection_reason: str = ""): ...
+
+    @abstractmethod
+    def get_ai_memory_stats(self) -> dict: ...
+
+    @abstractmethod
+    def get_ai_usage_stats(self, days: int = 1) -> dict: ...

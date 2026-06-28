@@ -264,8 +264,26 @@ export function getSuggestionCounts() {
   return fetchJSON<Record<string, number>>("/suggestions/counts");
 }
 
-export function actOnSuggestion(id: number, action: string) {
-  return fetchJSON<any>(`/suggestions/${id}/${action}`, { method: "POST" });
+export function actOnSuggestion(id: number, action: string, rejection_reason = "") {
+  return fetchJSON<any>(`/suggestions/${id}/${action}`, {
+    method: "POST",
+    body: JSON.stringify({ rejection_reason }),
+  });
+}
+
+export function batchActOnSuggestions(ids: number[], action: string, rejection_reason = "") {
+  return fetchJSON<any>(`/suggestions/batch`, {
+    method: "POST",
+    body: JSON.stringify({ ids, action, rejection_reason }),
+  });
+}
+
+export function getSuggestionMemory() {
+  return fetchJSON<any>("/suggestions/memory");
+}
+
+export function getSuggestionUsage(days = 1) {
+  return fetchJSON<any>(`/suggestions/usage?days=${days}`);
 }
 
 export interface PromoteRequest {

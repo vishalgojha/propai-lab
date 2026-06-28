@@ -21,7 +21,7 @@ from typing import Optional
 from contextlib import asynccontextmanager
 from dataclasses import asdict
 
-from fastapi import FastAPI, Request, HTTPException
+from fastapi import FastAPI, Request, HTTPException, Body
 from fastapi.responses import Response, StreamingResponse
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
@@ -2338,12 +2338,41 @@ async def suggestion_counts():
 
 
 @app.post("/api/suggestions/{sug_id}/{action}")
-async def act_on_suggestion(sug_id: int, action: str):
+async def act_on_suggestion(sug_id: int, action: str, request: Request):
     if action not in ("approve", "reject", "ignore"):
         raise HTTPException(400, "action must be approve, reject, or ignore")
     status_map = {"approve": "approved", "reject": "rejected", "ignore": "ignored"}
-    storage.update_suggestion_status(sug_id, status_map[action])
+    rejection_reason = ""
+    try:
+        body = await request.json()
+        rejection_reason = body.get("rejection_reason", "") if isinstance(body, dict) else ""
+    except Exception:
+        pass
+    storage.update_suggestion_status(sug_id, status_map[action], rejection_reason=rejection_reason)
     return {"status": "ok"}
+
+
+@app.post("/api/suggestions/batch")
+async def batch_suggestions(request: Request):
+    body = await request.json()
+    ids = body.get("ids", [])
+    action = body.get("action", "approve")
+    if action not in ("approve", "reject", "ignore"):
+        raise HTTPException(400, "action must be approve, reject, or ignore")
+    status_map = {"approve": "approved", "reject": "rejected", "ignore": "ignored"}
+    rejection_reason = body.get("rejection_reason", "")
+    storage.batch_update_suggestions(ids, status_map[action], rejection_reason=rejection_reason)
+    return {"status": "ok", "count": len(ids)}
+
+
+@app.get("/api/suggestions/memory")
+async def suggestion_memory():
+    return storage.get_ai_memory_stats()
+
+
+@app.get("/api/suggestions/usage")
+async def suggestion_usage(days: int = 1):
+    return storage.get_ai_usage_stats(days=days)
 
 
 @app.get("/api/price-stats")

@@ -299,6 +299,22 @@ CREATE TABLE IF NOT EXISTS broker_building_stats (
 
 CREATE INDEX IF NOT EXISTS idx_bbs_broker ON broker_building_stats(broker_id);
 
+-- Token usage log for AI operations
+CREATE TABLE IF NOT EXISTS ai_usage_log (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    agent           TEXT NOT NULL,
+    model           TEXT DEFAULT 'gpt-4o-mini',
+    tokens_input    INTEGER DEFAULT 0,
+    tokens_output   INTEGER DEFAULT 0,
+    cost_usd        REAL DEFAULT 0.0,
+    source          TEXT DEFAULT 'enrichment',
+    source_id       INTEGER DEFAULT NULL,
+    created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_aul_agent ON ai_usage_log(agent);
+CREATE INDEX IF NOT EXISTS idx_aul_created ON ai_usage_log(created_at);
+
 -- AI suggestion queue — agents propose changes, humans approve/reject
 CREATE TABLE IF NOT EXISTS ai_suggestions (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -310,6 +326,7 @@ CREATE TABLE IF NOT EXISTS ai_suggestions (
     proposal_data   TEXT DEFAULT '{}',
     confidence      REAL DEFAULT 0.0,
     status          TEXT NOT NULL DEFAULT 'pending',
+    rejection_reason TEXT DEFAULT NULL,
     created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
     updated_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );

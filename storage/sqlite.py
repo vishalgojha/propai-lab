@@ -5,7 +5,7 @@ import re
 import sqlite3
 import uuid
 from collections import defaultdict
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -101,6 +101,7 @@ class SqliteStorage(Storage):
             "ALTER TABLE listings ADD COLUMN last_seen TEXT DEFAULT NULL",
             "ALTER TABLE raw_messages ADD COLUMN sender_jid TEXT DEFAULT ''",
             "ALTER TABLE raw_messages ADD COLUMN sender_phone TEXT DEFAULT ''",
+            "ALTER TABLE ai_suggestions ADD COLUMN rejection_reason TEXT DEFAULT NULL",
         ]
         for sql in migs:
             try:
@@ -970,14 +971,122 @@ class SqliteStorage(Storage):
             counts[r["status"]] = r["c"]
         return counts
 
-    def update_suggestion_status(self, sug_id: int, status: str):
-        self.db.execute(
-            "UPDATE ai_suggestions SET status = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?",
-            (status, sug_id)
-        )
+    def update_suggestion_status(self, sug_id: int, status: str, rejection_reason: str = ""):
+        if rejection_reason:
+            self.db.execute(
+                "UPDATE ai_suggestions SET status = ?, rejection_reason = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?",
+                (status, rejection_reason, sug_id)
+            )
+        else:
+            self.db.execute(
+                "UPDATE ai_suggestions SET status = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?",
+                (status, sug_id)
+            )
         self._commit()
         if status == "approved":
             self.apply_suggestion(sug_id)
+
+    def batch_update_suggestions(self, ids: list[int], status: str, rejection_reason: str = ""):
+        if not ids:
+            return
+        placeholders = ",".join("?" for _ in ids)
+        now = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+        if rejection_reason:
+            self.db.execute(
+                f"UPDATE ai_suggestions SET status = ?, rejection_reason = ?, updated_at = ? WHERE id IN ({placeholders})",
+                (status, rejection_reason, now, *ids)
+            )
+        else:
+            self.db.execute(
+                f"UPDATE ai_suggestions SET status = ?, updated_at = ? WHERE id IN ({placeholders})",
+                (status, now, *ids)
+            )
+        self._commit()
+        if status == "approved":
+            for sug_id in ids:
+                try:
+                    self.apply_suggestion(sug_id)
+                except Exception:
+                    pass
+
+    def get_ai_memory_stats(self) -> dict:
+        alias_count = self.db.execute(
+            "SELECT COUNT(*) FROM location_aliases"
+        ).fetchone()[0]
+        building_alias_count = self.db.execute(
+            "SELECT COUNT(*) FROM building_aliases"
+        ).fetchone()[0]
+        broker_alias_count = self.db.execute(
+            "SELECT COUNT(*) FROM broker_aliases_global"
+        ).fetchone()[0]
+        merged_brokers = self.db.execute(
+            "SELECT COUNT(*) FROM suggestions_merged_brokers"
+        ).fetchone()[0] if self.db.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='suggestions_merged_brokers'"
+        ).fetchone() else 0
+        buildings_taught = self.db.execute(
+            "SELECT COUNT(DISTINCT building_name) FROM resolver_decisions WHERE building_name IS NOT NULL AND method LIKE '%ai%'"
+        ).fetchone()[0]
+        locations_taught = self.db.execute(
+            "SELECT COUNT(DISTINCT micro_market) FROM parsed_output WHERE micro_market IS NOT NULL AND micro_market != ''"
+        ).fetchone()[0]
+        total_approved = self.db.execute(
+            "SELECT COUNT(*) FROM ai_suggestions WHERE status = 'approved'"
+        ).fetchone()[0]
+        total_rejected = self.db.execute(
+            "SELECT COUNT(*) FROM ai_suggestions WHERE status = 'rejected'"
+        ).fetchone()[0]
+        total_suggestions = self.db.execute(
+            "SELECT COUNT(*) FROM ai_suggestions"
+        ).fetchone()[0]
+        total_ai_calls = self.db.execute(
+            "SELECT COUNT(*) FROM ai_usage_log"
+        ).fetchone()[0]
+        estimated_avoided = alias_count * 3 + building_alias_count * 3 + buildings_taught * 2 + merged_brokers * 5
+        return {
+            "aliases_learned": alias_count,
+            "building_aliases": building_alias_count,
+            "broker_aliases": broker_alias_count,
+            "brokers_merged": merged_brokers,
+            "buildings_discovered": buildings_taught,
+            "locations_mapped": locations_taught,
+            "total_approved": total_approved,
+            "total_rejected": total_rejected,
+            "total_suggestions": total_suggestions,
+            "total_ai_calls": total_ai_calls,
+            "estimated_ai_calls_avoided": estimated_avoided,
+        }
+
+    def get_ai_usage_stats(self, days: int = 1) -> dict:
+        cutoff = (datetime.utcnow() - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        row = self.db.execute(
+            """SELECT COUNT(*) as calls,
+                      COALESCE(SUM(tokens_input), 0) as tokens_in,
+                      COALESCE(SUM(tokens_output), 0) as tokens_out,
+                      COALESCE(SUM(cost_usd), 0) as cost
+               FROM ai_usage_log WHERE created_at >= ?""",
+            (cutoff,)
+        ).fetchone()
+        today_cutoff = datetime.utcnow().strftime("%Y-%m-%dT00:00:00Z")
+        today_row = self.db.execute(
+            """SELECT COUNT(*) as calls,
+                      COALESCE(SUM(tokens_input), 0) as tokens_in,
+                      COALESCE(SUM(tokens_output), 0) as tokens_out,
+                      COALESCE(SUM(cost_usd), 0) as cost
+               FROM ai_usage_log WHERE created_at >= ?""",
+            (today_cutoff,)
+        ).fetchone()
+        return {
+            "period_days": days,
+            "calls": row[0],
+            "tokens_input": row[1],
+            "tokens_output": row[2],
+            "cost_usd": round(row[3], 6),
+            "today_calls": today_row[0],
+            "today_tokens_input": today_row[1],
+            "today_tokens_output": today_row[2],
+            "today_cost_usd": round(today_row[3], 6),
+        }
 
     def create_suggestion(self, sug: AISuggestion) -> int:
         if sug.confidence < 0.80:
