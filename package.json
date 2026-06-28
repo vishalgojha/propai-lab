@@ -1,0 +1,48 @@
+{
+  "name": "propai-lab",
+  "version": "0.1.0",
+  "description": "Local PropAI WhatsApp intelligence lab",
+  "license": "UNLICENSED",
+  "bin": {
+    "propai": "./propai"
+  },
+  "files": [
+    "admin",
+    "evidence",
+    "frontend",
+    "ingestion",
+    "lab",
+    "registry",
+    "services",
+    "storage",
+    "app.py",
+    "config.py",
+    "connect.py",
+    "embedding.py",
+    "events.py",
+    "location.py",
+    "propai",
+    "requirements.txt",
+    "scheduler.py",
+    "schema.sql",
+    "seed.py",
+    "sync.py",
+    "README.md",
+    "!**/__pycache__",
+    "!**/*.pyc",
+    "!**/.env",
+    "!**/.next",
+    "!**/node_modules",
+    "!*.db",
+    "!*.db-shm",
+    "!*.db-wal"
+  ],
+  "scripts": {
+    "start": "propai connect",
+    "dashboard": "propai dashboard",
+    "doctor": "propai doctor"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

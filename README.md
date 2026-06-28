@@ -4,10 +4,20 @@ Turn WhatsApp broker groups into structured property intelligence.
 
 ## Quick Start
 
+### Install with npm
+
+```bash
+# Prerequisites: Python 3.10+, Node.js 20+, npm
+npm install -g github:vishalgojha/propai-lab
+propai install
+propai connect
+```
+
+### Run from this checkout
+
 ```bash
 # Prerequisites: Python 3.10+ and Node.js 20+
-pip install -r requirements.txt
-cd services/baileys-ingestor && npm install && cd ../..
+./propai install
 
 # Launch API, frontend, and WhatsApp ingestor
 ./propai connect

@@ -44,6 +44,10 @@ start_frontend() {
   if curl -sf http://localhost:3000/ >/dev/null 2>&1; then
     return 0
   fi
+  if [ ! -d "$PROPAI_DIR/frontend/node_modules" ]; then
+    log "Frontend dependencies missing. Run: propai install"
+    return 1
+  fi
   log "Starting PropAI frontend..."
   cd "$PROPAI_DIR/frontend"
   setsid npm run dev -- --webpack --hostname 0.0.0.0 --port 3000 &>/tmp/propai-frontend.log &
@@ -63,8 +67,8 @@ start_frontend() {
 run_baileys() {
   local dir="$PROPAI_DIR/services/baileys-ingestor"
   if [ ! -d "$dir/node_modules" ]; then
-    log "Installing Baileys ingestor dependencies..."
-    (cd "$dir" && npm install)
+    log "Baileys dependencies missing. Run: propai install"
+    return 1
   fi
   if [ ! -f "$dir/.env" ]; then
     cp "$dir/.env.example" "$dir/.env"
@@ -72,6 +76,44 @@ run_baileys() {
   log "Starting Baileys WhatsApp ingestor..."
   cd "$dir"
   npm run dev
+}
+
+cmd_install() {
+  echo ""
+  echo "  ── PropAI Installer ───────────────────"
+  echo ""
+
+  if ! command -v python3 >/dev/null 2>&1; then
+    echo "  ✗ python3 is required"
+    return 1
+  fi
+  if ! command -v npm >/dev/null 2>&1; then
+    echo "  ✗ npm is required"
+    return 1
+  fi
+
+  echo "  Installing Python dependencies..."
+  python3 -m pip install -r "$PROPAI_DIR/requirements.txt"
+
+  echo ""
+  echo "  Installing frontend dependencies..."
+  npm --prefix "$PROPAI_DIR/frontend" install
+
+  echo ""
+  echo "  Installing Baileys ingestor dependencies..."
+  npm --prefix "$PROPAI_DIR/services/baileys-ingestor" install
+
+  if [ ! -f "$PROPAI_DIR/services/baileys-ingestor/.env" ]; then
+    cp "$PROPAI_DIR/services/baileys-ingestor/.env.example" "$PROPAI_DIR/services/baileys-ingestor/.env"
+  fi
+  ensure_key
+
+  echo ""
+  echo "  ✓ PropAI installed"
+  echo ""
+  echo "  Next:"
+  echo "    propai connect"
+  echo ""
 }
 
 open_browser() {
@@ -279,6 +321,7 @@ usage() {
   echo "Usage: propai <command>"
   echo ""
   echo "Commands:"
+  echo "  install    Install Python, frontend, and Baileys dependencies"
   echo "  connect    Connect WhatsApp to PropAI with Baileys"
   echo "  dashboard  Open the PropAI dashboard"
   echo "  sync       Start historical group sync"
@@ -291,6 +334,9 @@ usage() {
 # ── Dispatch ──────────────────────────────────────────────────────
 
 case "${1:-}" in
+  install|setup)
+    cmd_install
+    ;;
   connect|waba)
     cmd_connect
     ;;
