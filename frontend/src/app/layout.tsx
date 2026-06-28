@@ -15,6 +15,7 @@ const navItems = [
   { href: "/market", label: "Markets", icon: "🗺️" },
   { href: "/search", label: "Search", icon: "🔍" },
   { href: "/chat", label: "Review Center", icon: "📋" },
+  { href: "/audit", label: "WhatsApp Audit", icon: "🔬" },
   { href: "/settings", label: "Settings", icon: "⚙" },
 ];
 

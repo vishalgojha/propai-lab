@@ -15,7 +15,7 @@ import ast
 import subprocess
 from fnmatch import fnmatch
 import httpx
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 from contextlib import asynccontextmanager
@@ -2500,6 +2500,513 @@ async def search_messages(q: str = ""):
         LIMIT 50
     """, [f"%{q}%"] * 5)
     return [dict(r) for r in results]
+
+
+# ── WhatsApp Audit ────────────────────────────────────────────────
+
+def _group_jid_to_name(jid: str) -> str:
+    """Resolve a JID to its human-readable name from sync_jobs."""
+    row = storage.db.execute(
+        "SELECT group_name FROM source_sync_jobs WHERE group_id = ? AND group_name != '' LIMIT 1",
+        (jid,)
+    ).fetchone()
+    if row:
+        return row[0]
+    return jid.split("@")[0][-8:]  # fallback: last 8 chars of JID
+
+@app.get("/api/audit/dashboard")
+async def audit_dashboard():
+    now = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+    today_start = datetime.utcnow().strftime("%Y-%m-%dT00:00:00Z")
+    five_min_ago = (datetime.utcnow() - timedelta(minutes=5)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    day_ago = (datetime.utcnow() - timedelta(hours=24)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    # Total groups with messages
+    total_groups = storage.db.execute(
+        "SELECT COUNT(DISTINCT group_name) FROM raw_messages"
+    ).fetchone()[0]
+
+    # Live groups (messages in last 5 min)
+    live_groups = storage.db.execute(
+        "SELECT COUNT(DISTINCT group_name) FROM raw_messages WHERE created_at >= ?",
+        (five_min_ago,)
+    ).fetchone()[0]
+
+    # Messages today
+    msgs_today = storage.db.execute(
+        "SELECT COUNT(*) FROM raw_messages WHERE created_at >= ?", (today_start,)
+    ).fetchone()[0]
+
+    # Last webhook
+    last_msg = storage.db.execute(
+        "SELECT MAX(created_at) FROM raw_messages"
+    ).fetchone()[0]
+
+    # Groups with errors
+    error_groups = storage.db.execute(
+        "SELECT COUNT(*) FROM source_sync_jobs WHERE error IS NOT NULL AND error != ''"
+    ).fetchone()[0]
+
+    # Duplicate names (multiple groups with same display name)
+    dupes = storage.db.execute("""
+        SELECT group_name, COUNT(*) as c FROM source_sync_jobs
+        WHERE group_name != '' AND group_name IS NOT NULL
+        GROUP BY group_name HAVING c > 1
+    """).fetchall()
+    duplicate_groups = len(dupes)
+
+    # Groups needing attention: errors + no activity in 24h
+    inactive_count = storage.db.execute("""
+        SELECT COUNT(*) FROM (
+            SELECT sj.group_id FROM source_sync_jobs sj
+            WHERE sj.group_id NOT IN (
+                SELECT DISTINCT group_name FROM raw_messages WHERE created_at >= ?
+            )
+        )
+    """, (day_ago,)).fetchone()[0]
+    attention_required = error_groups + inactive_count
+
+    # Capture health
+    webhook_ok = last_msg is not None and last_msg >= five_min_ago
+    failed_events = storage.db.execute(
+        "SELECT COUNT(*) FROM enrichment_jobs WHERE status = 'failed'"
+    ).fetchone()[0]
+    pending_enrichment = storage.db.execute(
+        "SELECT COUNT(*) FROM enrichment_jobs WHERE status = 'pending'"
+    ).fetchone()[0]
+    pending_ai = storage.db.execute(
+        "SELECT COUNT(*) FROM ai_suggestions WHERE status = 'pending'"
+    ).fetchone()[0]
+
+    # Average processing time: time between raw_message created_at and parsed_output created_at
+    avg_process = storage.db.execute("""
+        SELECT AVG(
+            strftime('%s', p.created_at) - strftime('%s', r.created_at)
+        ) FROM parsed_output p
+        JOIN raw_messages r ON r.id = p.raw_message_id
+        WHERE p.created_at >= ?
+    """, (day_ago,)).fetchone()[0]
+
+    return {
+        "total_groups": total_groups,
+        "live_groups": live_groups,
+        "msgs_today": msgs_today,
+        "last_webhook": last_msg or "never",
+        "webhook_healthy": webhook_ok,
+        "error_groups": error_groups,
+        "duplicate_groups": duplicate_groups,
+        "attention_required": attention_required,
+        "inactive_groups": inactive_count,
+        "failed_events": failed_events,
+        "pending_enrichment": pending_enrichment,
+        "pending_ai_suggestions": pending_ai,
+        "avg_process_secs": round(avg_process, 1) if avg_process else None,
+    }
+
+
+@app.get("/api/audit/timeline")
+async def audit_timeline(limit: int = 30):
+    """Recent operational events across the pipeline."""
+    events = []
+
+    # Recent webhook events
+    raw_rows = storage.db.execute("""
+        SELECT 'webhook' as source, created_at as ts, message_type as subtype,
+               CASE WHEN message_type = 'text' THEN 'Webhook received'
+                    ELSE 'Webhook: ' || message_type END as label,
+               group_name as group_jid, sender
+        FROM raw_messages ORDER BY created_at DESC LIMIT ?
+    """, (limit,)).fetchall()
+    for r in raw_rows:
+        d = dict(r)
+        d["ts"] = d.pop("ts")
+        d["group_name"] = _group_jid_to_name(d.pop("group_jid"))
+        events.append(d)
+
+    # Enrichment events
+    enrich_rows = storage.db.execute("""
+        SELECT 'enrichment' as source, ej.created_at as ts, ej.status as subtype,
+               CASE WHEN ej.status = 'completed' THEN 'Building/location enrichment completed'
+                    WHEN ej.status = 'failed' THEN 'Enrichment failed: ' || ej.last_error
+                    ELSE 'Enrichment job created' END as label,
+               ej.parsed_id as ref
+        FROM enrichment_jobs ej ORDER BY ej.created_at DESC LIMIT ?
+    """, (limit,)).fetchall()
+    for r in enrich_rows:
+        events.append(dict(r))
+
+    # AI suggestion events
+    sug_rows = storage.db.execute("""
+        SELECT 'suggestion' as source, created_at as ts, status as subtype,
+               agent, title
+        FROM ai_suggestions ORDER BY created_at DESC LIMIT ?
+    """, (limit,)).fetchall()
+    for r in sug_rows:
+        d = dict(r)
+        agent = d.pop("agent", "")
+        title = d.pop("title", "")
+        if agent == "building":
+            d["label"] = "AI suggested building: " + title
+        elif agent == "location":
+            d["label"] = "AI suggested location: " + title
+        elif agent == "alias":
+            d["label"] = "AI learned alias: " + title
+        elif agent == "duplicate_listing":
+            d["label"] = "Duplicate listing detected: " + title
+        else:
+            d["label"] = "AI " + agent + ": " + title
+        events.append(d)
+
+    # AI usage events
+    usage_rows = storage.db.execute("""
+        SELECT 'usage' as source, created_at as ts, agent as subtype,
+               tokens_input, tokens_output
+        FROM ai_usage_log ORDER BY created_at DESC LIMIT ?
+    """, (limit,)).fetchall()
+    for r in usage_rows:
+        d = dict(r)
+        ti = d.pop("tokens_input", 0)
+        to = d.pop("tokens_output", 0)
+        d["label"] = "AI call: " + d.get("subtype", "") + " (" + str(ti) + " in / " + str(to) + " out)"
+        events.append(d)
+
+    # Sort by time descending, take top N
+    events.sort(key=lambda e: e.get("ts", ""), reverse=True)
+    return events[:limit]
+
+
+@app.get("/api/audit/groups")
+async def audit_groups(q: str = "", status: str = ""):
+    """Group explorer with stats per group."""
+    day_ago = (datetime.utcnow() - timedelta(hours=24)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    # Base: all groups from source_sync_jobs
+    jobs = storage.get_sync_jobs(limit=1000, source="whatsapp")
+    groups = []
+    seen_jids = set()
+
+    for j in jobs:
+        jid = j.group_id
+        if not jid or jid in seen_jids:
+            continue
+        seen_jids.add(jid)
+
+        # Stats from raw_messages
+        msg_info = storage.db.execute("""
+            SELECT COUNT(*) as msg_count,
+                   MAX(created_at) as last_ts
+            FROM raw_messages WHERE group_name = ?
+        """, (jid,)).fetchone()
+        msg_count = msg_info["msg_count"] if msg_info else 0
+        last_ts = msg_info["last_ts"] if msg_info else j.updated_at
+
+        # Parsed observations stats
+        obs_info = storage.db.execute("""
+            SELECT COUNT(*) as obs_count,
+                   COUNT(DISTINCT micro_market) as markets
+            FROM parsed_output p
+            JOIN raw_messages r ON r.id = p.raw_message_id
+            WHERE r.group_name = ?
+        """, (jid,)).fetchone()
+
+        # Listings from this group
+        listing_count = storage.db.execute("""
+            SELECT COUNT(*) FROM listings l
+            JOIN raw_messages r ON r.id = l.latest_raw_message_id
+            WHERE r.group_name = ?
+        """, (jid,)).fetchone()[0]
+
+        # Requirements
+        req_count = storage.db.execute("""
+            SELECT COUNT(*) FROM parsed_output p
+            JOIN raw_messages r ON r.id = p.raw_message_id
+            WHERE r.group_name = ? AND p.intent IN ('BUY', 'RENTAL_SEEKER')
+        """, (jid,)).fetchone()[0]
+
+        # Unknown locations
+        unknown_locs = storage.db.execute("""
+            SELECT COUNT(*) FROM resolver_decisions rd
+            JOIN parsed_output p ON p.id = rd.parsed_id
+            JOIN raw_messages r ON r.id = p.raw_message_id
+            WHERE r.group_name = ? AND rd.method = 'unresolved'
+        """, (jid,)).fetchone()[0]
+
+        # Coverage: obs with any resolution / total obs
+        total_obs = obs_info["obs_count"] if obs_info else 0
+        resolved_obs = max(0, total_obs - unknown_locs)
+        coverage = round(resolved_obs / total_obs * 100, 1) if total_obs > 0 else 0
+
+        # Determine status
+        is_live = last_ts and last_ts >= day_ago
+        has_error = bool(j.error)
+        if has_error:
+            group_status = "error"
+        elif is_live:
+            group_status = "live"
+        else:
+            group_status = "inactive"
+
+        # Markets
+        markets_str = obs_info["markets"] if obs_info and obs_info["markets"] else 0
+
+        group_name = j.group_name or _group_jid_to_name(jid)
+
+        g = {
+            "jid": jid,
+            "name": group_name,
+            "status": group_status,
+            "error": j.error or "",
+            "messages": msg_count,
+            "last_activity": last_ts or "",
+            "observations": total_obs,
+            "listings": listing_count,
+            "requirements": req_count,
+            "markets_count": markets_str,
+            "unknown_locations": unknown_locs,
+            "coverage": coverage,
+            "parsed": parse_group_name(group_name),
+        }
+
+        # Apply filters
+        if q and q.lower() not in group_name.lower() and q not in jid:
+            continue
+        if status == "live" and group_status != "live":
+            continue
+        if status == "inactive" and group_status != "inactive":
+            continue
+        if status == "error" and group_status != "error":
+            continue
+
+        groups.append(g)
+
+    groups.sort(key=lambda g: g["messages"], reverse=True)
+    return groups
+
+
+@app.get("/api/audit/groups/{jid}")
+async def audit_group_detail(jid: str):
+    group_name = _group_jid_to_name(jid)
+
+    # Raw stats
+    raw_info = storage.db.execute("""
+        SELECT COUNT(*) as msg_count, MIN(created_at) as first_seen,
+               MAX(created_at) as last_seen
+        FROM raw_messages WHERE group_name = ?
+    """, (jid,)).fetchone()
+
+    # Observation stats
+    obs_rows = storage.db.execute("""
+        SELECT p.id, p.intent, p.broker_name, p.building_name, p.micro_market,
+               p.bhk, p.price, p.price_unit, p.confidence, r.message, r.timestamp
+        FROM parsed_output p
+        JOIN raw_messages r ON r.id = p.raw_message_id
+        WHERE r.group_name = ?
+        ORDER BY r.created_at DESC LIMIT 50
+    """, (jid,)).fetchall()
+
+    # Brokers seen
+    broker_count = storage.db.execute("""
+        SELECT COUNT(DISTINCT p.broker_name) FROM parsed_output p
+        JOIN raw_messages r ON r.id = p.raw_message_id
+        WHERE r.group_name = ? AND p.broker_name IS NOT NULL AND p.broker_name != ''
+    """, (jid,)).fetchone()[0]
+
+    # Markets seen
+    markets = storage.db.execute("""
+        SELECT DISTINCT p.micro_market FROM parsed_output p
+        JOIN raw_messages r ON r.id = p.raw_message_id
+        WHERE r.group_name = ? AND p.micro_market IS NOT NULL AND p.micro_market != ''
+        ORDER BY p.micro_market
+    """, (jid,)).fetchall()
+
+    # Buildings mentioned
+    buildings = storage.db.execute("""
+        SELECT DISTINCT p.building_name, COUNT(*) as occurrences FROM parsed_output p
+        JOIN raw_messages r ON r.id = p.raw_message_id
+        WHERE r.group_name = ? AND p.building_name IS NOT NULL AND p.building_name != ''
+        GROUP BY p.building_name ORDER BY occurrences DESC LIMIT 20
+    """, (jid,)).fetchall()
+
+    # AI suggestions for this group
+    suggestions = storage.db.execute("""
+        SELECT s.id, s.agent, s.title, s.description, s.status, s.confidence, s.created_at
+        FROM ai_suggestions s
+        ORDER BY s.created_at DESC LIMIT 20
+    """).fetchall()
+
+    # Resolver quality
+    resolved = storage.db.execute("""
+        SELECT COUNT(*) FROM resolver_decisions rd
+        JOIN parsed_output p ON p.id = rd.parsed_id
+        JOIN raw_messages r ON r.id = p.raw_message_id
+        WHERE r.group_name = ? AND rd.method != 'unresolved'
+    """, (jid,)).fetchone()[0]
+
+    unresolved = storage.db.execute("""
+        SELECT COUNT(*) FROM resolver_decisions rd
+        JOIN parsed_output p ON p.id = rd.parsed_id
+        JOIN raw_messages r ON r.id = p.raw_message_id
+        WHERE r.group_name = ? AND rd.method = 'unresolved'
+    """, (jid,)).fetchone()[0]
+
+    total_resolved = resolved + unresolved
+    quality_score = round(resolved / total_resolved * 100, 1) if total_resolved > 0 else 0
+
+    # Sync job info
+    sync_job = storage.db.execute("""
+        SELECT * FROM source_sync_jobs WHERE group_id = ? LIMIT 1
+    """, (jid,)).fetchone()
+
+    return {
+        "jid": jid,
+        "name": group_name,
+        "first_seen": raw_info["first_seen"] if raw_info else "",
+        "last_seen": raw_info["last_seen"] if raw_info else "",
+        "messages": raw_info["msg_count"] if raw_info else 0,
+        "observations": len(obs_rows),
+        "brokers": broker_count,
+        "markets": [dict(m)["micro_market"] for m in markets],
+        "buildings": [dict(b) for b in buildings],
+        "listings": sum(1 for r in obs_rows if r["intent"] in ("SELL", "RENT", "COMMERCIAL", "PRE-LAUNCH")),
+        "requirements": sum(1 for r in obs_rows if r["intent"] in ("BUY", "RENTAL_SEEKER")),
+        "quality_score": quality_score,
+        "resolved": resolved,
+        "unresolved": unresolved,
+        "recent_observations": [dict(r) for r in obs_rows[:20]],
+        "suggestions": [dict(s) for s in suggestions[:10]],
+        "sync_status": dict(sync_job) if sync_job else None,
+    }
+
+
+@app.get("/api/audit/groups/{jid}/timeline")
+async def audit_group_timeline(jid: str):
+    """Per-group event timeline."""
+    events = []
+
+    # Messages
+    raw_rows = storage.db.execute("""
+        SELECT created_at as ts, message_type, SUBSTR(message, 1, 60) as msg_preview
+        FROM raw_messages WHERE group_name = ? ORDER BY created_at DESC LIMIT 30
+    """, (jid,)).fetchall()
+    for r in raw_rows:
+        events.append({"ts": r["ts"], "label": "Message received (" + (r["msg_preview"] or "") + ")", "type": "message"})
+
+    # Resolver decisions
+    res_rows = storage.db.execute("""
+        SELECT rd.created_at as ts, rd.method,
+               COALESCE(rd.building_name, rd.landmark_name, rd.street_name, 'location') as resolved_to
+        FROM resolver_decisions rd
+        JOIN parsed_output p ON p.id = rd.parsed_id
+        JOIN raw_messages r ON r.id = p.raw_message_id
+        WHERE r.group_name = ? AND rd.method != 'unresolved'
+        ORDER BY rd.created_at DESC LIMIT 20
+    """, (jid,)).fetchall()
+    for r in res_rows:
+        events.append({"ts": r["ts"], "label": "Resolved: " + (r["resolved_to"] or "location"), "type": "resolve"})
+
+    events.sort(key=lambda e: e.get("ts", ""), reverse=True)
+    return events[:50]
+
+
+@app.get("/api/audit/duplicates")
+async def audit_duplicates():
+    """Find potential duplicate groups (same or very similar name)."""
+    jobs = storage.db.execute("""
+        SELECT group_id, group_name, error, status FROM source_sync_jobs
+        WHERE group_name != '' AND group_name IS NOT NULL
+        ORDER BY group_name
+    """).fetchall()
+
+    from collections import defaultdict
+    by_name = defaultdict(list)
+    for j in jobs:
+        by_name[j["group_name"]].append(dict(j))
+
+    dupes = []
+    seen_pairs = set()
+    names = list(by_name.keys())
+    for i, name_a in enumerate(names):
+        for name_b in names[i+1:]:
+            # Simple similarity: one name contains the other or very similar
+            a_lower = name_a.lower()
+            b_lower = name_b.lower()
+            if a_lower in b_lower or b_lower in a_lower:
+                for ga in by_name[name_a]:
+                    for gb in by_name[name_b]:
+                        pair_key = tuple(sorted([ga["group_id"], gb["group_id"]]))
+                        if pair_key not in seen_pairs:
+                            seen_pairs.add(pair_key)
+                            dupes.append({
+                                "group_a": {"jid": ga["group_id"], "name": ga["group_name"]},
+                                "group_b": {"jid": gb["group_id"], "name": gb["group_name"]},
+                                "match_type": "name_similarity",
+                            })
+
+    # Also detect same-JID groups (shouldn't happen but guard)
+    return dupes
+
+
+@app.get("/api/audit/capture-health")
+async def audit_capture_health():
+    """Operational diagnostics for the ingestion pipeline."""
+    now = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+    five_min_ago = (datetime.utcnow() - timedelta(minutes=5)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    hour_ago = (datetime.utcnow() - timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    today_start = datetime.utcnow().strftime("%Y-%m-%dT00:00:00Z")
+
+    last_msg = storage.db.execute("SELECT MAX(created_at) FROM raw_messages").fetchone()[0]
+    webhook_ok = last_msg is not None and last_msg >= five_min_ago
+
+    # Msgs by hour
+    msgs_last_hour = storage.db.execute(
+        "SELECT COUNT(*) FROM raw_messages WHERE created_at >= ?", (hour_ago,)
+    ).fetchone()[0]
+
+    # Failed enrichment
+    failed_enrichment = storage.db.execute(
+        "SELECT COUNT(*) FROM enrichment_jobs WHERE status = 'failed'"
+    ).fetchone()[0]
+
+    # Pending enrichment
+    pending_enrich = storage.db.execute(
+        "SELECT COUNT(*) FROM enrichment_jobs WHERE status = 'pending'"
+    ).fetchone()[0]
+
+    # Enrichment attempts distribution
+    retry_count = storage.db.execute(
+        "SELECT SUM(attempts) FROM enrichment_jobs WHERE attempts > 0"
+    ).fetchone()[0] or 0
+
+    # Avg processing time
+    avg_process = storage.db.execute("""
+        SELECT AVG(strftime('%s', p.created_at) - strftime('%s', r.created_at))
+        FROM parsed_output p
+        JOIN raw_messages r ON r.id = p.raw_message_id
+        WHERE p.created_at >= ?
+    """, (today_start,)).fetchone()[0]
+
+    # Parser success rate today
+    total_msgs = storage.db.execute(
+        "SELECT COUNT(*) FROM raw_messages WHERE created_at >= ?", (today_start,)
+    ).fetchone()[0]
+    total_parsed = storage.db.execute(
+        "SELECT COUNT(*) FROM parsed_output p JOIN raw_messages r ON r.id = p.raw_message_id WHERE r.created_at >= ?",
+        (today_start,)
+    ).fetchone()[0]
+    parser_rate = round(total_parsed / total_msgs * 100, 1) if total_msgs > 0 else 0
+
+    return {
+        "webhook_healthy": webhook_ok,
+        "last_message": last_msg or "never",
+        "msgs_last_hour": msgs_last_hour,
+        "avg_process_secs": round(avg_process, 1) if avg_process else None,
+        "pending_enrichment": pending_enrich,
+        "failed_enrichment": failed_enrichment,
+        "retry_count": retry_count,
+        "parser_success_rate": parser_rate,
+        "total_msgs_today": total_msgs,
+        "total_parsed_today": total_parsed,
+    }
 
 
 # ── SSE Event Stream ──────────────────────────────────────────────

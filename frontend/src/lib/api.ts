@@ -307,3 +307,36 @@ export function promoteGenerate(req: PromoteRequest) {
     body: JSON.stringify(req),
   });
 }
+
+// ── WhatsApp Audit ──────────────────────────────────────────────
+
+export function getAuditDashboard() {
+  return fetchJSON<any>("/audit/dashboard");
+}
+
+export function getAuditTimeline(limit = 30) {
+  return fetchJSON<any[]>(`/audit/timeline?limit=${limit}`);
+}
+
+export function getAuditGroups(q = "", status = "") {
+  const params = new URLSearchParams();
+  if (q) params.set("q", q);
+  if (status) params.set("status", status);
+  return fetchJSON<any[]>(`/audit/groups?${params}`);
+}
+
+export function getAuditGroupDetail(jid: string) {
+  return fetchJSON<any>(`/audit/groups/${encodeURIComponent(jid)}`);
+}
+
+export function getAuditGroupTimeline(jid: string) {
+  return fetchJSON<any[]>(`/audit/groups/${encodeURIComponent(jid)}/timeline`);
+}
+
+export function getAuditDuplicates() {
+  return fetchJSON<any[]>("/audit/duplicates");
+}
+
+export function getAuditCaptureHealth() {
+  return fetchJSON<any>("/audit/capture-health");
+}
