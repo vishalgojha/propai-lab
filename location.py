@@ -93,6 +93,38 @@ _GENERIC_LOCATION_PHRASES = frozenset({
     "direct inventory", "inventory", "urgent", "urgently",
 })
 
+# ── Property-related noise patterns — never valid locations ──
+
+_FURNISHING_TERMS = frozenset({
+    "semi furnished", "semi-furnished", "semi fur", "sf", "fully furnished",
+    "fully-furnished", "fully fur", "ff", "unfurnished", "un furn", "uf",
+    "partly furnished", "partly furn", "part furn", "furnished",
+    "furnish", "furnishing", "newly furnished",
+})
+
+_FEATURE_NOISE = frozenset({
+    "terrace", "balcony", "washroom", "washrooms", "powder room",
+    "carpet", "carpet area", "carpet-", "parking", "car parking",
+    "middle floor", "higher floor", "lower floor", "top floor",
+    "ground floor", "upper floor", "high floor", "low floor",
+    "premium", "luxury", "brand new", "prestigious", "exclusive",
+    "sole mandate", "done up", "newly done", "renovated",
+    "newly painted", "good location", "prime location",
+})
+
+_PROPERTY_TYPE_NOISE = frozenset({
+    "apartment", "flat", "villa", "bungalow", "office", "shop",
+    "showroom", "space", "property", "unit", "residence",
+    "penthouse", "duplex", "studio", "room", "rooms",
+})
+
+_LISTING_HEADER_NOISE = frozenset({
+    "hot listing", "hot lease", "exclusive listing", "urgent listing",
+    "special listing", "direct listing", "fresh listing",
+    "residential flat", "commercial space", "open house",
+    "location", "area", "sector", "only", "require", "requirement",
+})
+
 _COMMON_MUMBAI_LOCALITIES = frozenset({
     "andheri", "andheri west", "andheri east", "bandra", "bandra west",
     "bandra east", "bkc", "santacruz", "santacruz west", "santacruz east",
@@ -239,6 +271,25 @@ def extract_location_text(raw_text: str) -> str | None:
     lower = text.lower()
     _load_evidence()
 
+    def _is_noise_only(text: str) -> bool:
+        """Check if text consists entirely of property noise terms."""
+        lower = re.sub(r'[*_`~\U0001F000-\U0001FFFF\s\U0000FE0F]', '', text).strip(" \t,.-:+#").lower()
+        lower = re.sub(r'\s+', ' ', lower).strip()
+        if not lower or len(lower) < 3:
+            return True
+        for noise_set in (_FURNISHING_TERMS, _FEATURE_NOISE, _PROPERTY_TYPE_NOISE,
+                          _LISTING_HEADER_NOISE, _GENERIC_LOCATION_PHRASES):
+            if lower in noise_set or lower.replace("-", " ") in noise_set:
+                return True
+        # Check if text is a leftover fragment (starts with digit, "no.", "+")
+        if re.match(r'^[\d+#]\s*', lower):
+            return True
+        # Check pure emoji / punctuation
+        stripped = re.sub(r'[\w]', '', lower).strip()
+        if stripped and not re.search(r'[a-z]', lower):
+            return True
+        return False
+
     def usable_candidate(candidate: str | None) -> bool:
         if not candidate:
             return False
@@ -249,6 +300,8 @@ def extract_location_text(raw_text: str) -> str | None:
         if re.fullmatch(r'(?:on|for)?\s*(?:rent|sale|lease|sell|buy|requirement)s?', normalized):
             return False
         if re.fullmatch(r'(?:rent|sale|lease|available|direct|inventory|urgent|urgently)[\s\W]*', normalized):
+            return False
+        if _is_noise_only(normalized):
             return False
         return True
 
@@ -272,7 +325,6 @@ def extract_location_text(raw_text: str) -> str | None:
             r'\bcr(?:ore)?\b',
             r'\bl(?:ac|akh|acs)?\b',
             r'/-',
-            r'\bonly\b',
             r'\bbroker\b',
         ]
         for pat in boundary_patterns:
@@ -305,6 +357,26 @@ def extract_location_text(raw_text: str) -> str | None:
             flags=re.IGNORECASE,
         ).strip(" \t,.-:")
         rest = re.sub(r'^(?:in|at|near)\s+', '', rest, flags=re.IGNORECASE).strip()
+        # Strip furnishing/feature noise from both ends
+        for _ in range(3):
+            rest_lower = rest.lower()
+            for noise_set in (_FURNISHING_TERMS, _FEATURE_NOISE, _PROPERTY_TYPE_NOISE,
+                              _LISTING_HEADER_NOISE):
+                for noise in sorted(noise_set, key=len, reverse=True):
+                    if rest_lower.startswith(noise):
+                        rest = rest[len(noise):].strip(" \t,.-")
+                        break
+                    if rest_lower.endswith(noise):
+                        rest = rest[:-len(noise)].strip(" \t,.-")
+                        break
+            rest_lower = rest.lower()
+            # Also strip known location noise prefixes like "location-", "area-", "location:", "area:"
+            rest = re.sub(r'^(?:location|area)\s*[-:]\s*', '', rest, flags=re.IGNORECASE).strip().lstrip(" \t,.-:")
+        # Strip standalone numbers at end (like "741" from "Carpet- 741")
+        rest = re.sub(r'\s*[\d.,]+\s*$', '', rest).strip()
+        # If nothing remains, return None so caller treats as missing
+        if len(rest) < 2 or _is_noise_only(rest):
+            return None
         return rest
 
     def known_location_candidate() -> str | None:
@@ -328,6 +400,8 @@ def extract_location_text(raw_text: str) -> str | None:
             if next_breaks:
                 end = m.end() + min(next_breaks)
             candidate = clean_candidate(text[start:end])
+            if not candidate:
+                continue
             candidate = re.sub(
                 r'^(?:available|direct inventory|inventory|urgent|urgently|sale|sell|rent|rental|on rent|for rent|on sale|for sale|apt|flat|office|space)\b\s*',
                 '',
@@ -390,7 +464,11 @@ def extract_location_text(raw_text: str) -> str | None:
     for line in [l.strip() for l in text.splitlines() if l.strip()]:
         if re.search(r'\b(?:bhk|cr|crore|lac|lakh|budget|contact|call)\b|\d{10}', line, re.IGNORECASE):
             continue
-        if re.search(r'\b(?:launch|booking|owner|sale|rent|requirement|forwarded)\b', line, re.IGNORECASE):
+        if re.search(r'\b(?:launch|booking|owner|sale|rent|require(?:ment)?|forwarded)\b', line, re.IGNORECASE):
+            continue
+        # Skip lines that are purely furnishing/feature/property noise
+        line_clean = re.sub(r'[*_`~\U0001F000-\U0001FFFF\U0000FE0F]', '', line).strip().lower()
+        if _is_noise_only(line_clean):
             continue
         if usable_candidate(line):
             return clean_candidate(line)

@@ -72,10 +72,20 @@ def enrich_building(storage: "SqliteStorage", d: dict) -> None:
         return
 
     # Pre-check 2: canonical buildings
-    _check_canonical_buildings(storage, raw_text, parsed_id)
+    if _check_canonical_buildings(storage, raw_text, parsed_id):
+        return
 
     # Pre-check 3: cross-reference — other observations in same group, last hour
-    _check_group_context(storage, parsed_id, group_name, sender, raw_text)
+    if _check_group_context(storage, parsed_id, group_name, sender, raw_text):
+        return
+
+    # Last resort: LLM call
+    result = _call_llm(raw_message, location_raw, micro_market)
+    if result:
+        sug = _make_suggestion(parsed_id, result["building_name"],
+                               result["confidence"],
+                               f"LLM extraction: {result.get('reasoning', '')}")
+        storage.create_suggestion(sug)
 
 
 def _check_canonical_buildings(storage: "SqliteStorage", raw_text: str, parsed_id: int) -> bool:

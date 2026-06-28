@@ -386,17 +386,31 @@ class SqliteStorage(Storage):
         return dict_to_dataclass(RawMessage, row) if row else None
 
     def get_raw_messages(self, limit: int = 50, offset: int = 0,
-                         source: str = "") -> list[RawMessage]:
+                         source: str = "", group_name: str = "",
+                         sender: str = "", sender_phone: str = "",
+                         sender_jid: str = "") -> list[RawMessage]:
+        query = "SELECT * FROM raw_messages WHERE 1=1"
+        params = []
         if source:
-            rows = self.db.execute(
-                "SELECT * FROM raw_messages WHERE source = ? ORDER BY id DESC LIMIT ? OFFSET ?",
-                (source, limit, offset)
-            ).fetchall()
-        else:
-            rows = self.db.execute(
-                "SELECT * FROM raw_messages ORDER BY id DESC LIMIT ? OFFSET ?",
-                (limit, offset)
-            ).fetchall()
+            query += " AND source = ?"
+            params.append(source)
+        if group_name:
+            query += " AND group_name = ?"
+            params.append(group_name)
+        if sender:
+            query += " AND sender = ?"
+            params.append(sender)
+        if sender_phone:
+            query += " AND sender_phone = ?"
+            params.append(sender_phone)
+        if sender_jid:
+            query += " AND sender_jid = ?"
+            params.append(sender_jid)
+        
+        query += " ORDER BY id DESC LIMIT ? OFFSET ?"
+        params.extend([limit, offset])
+        
+        rows = self.db.execute(query, tuple(params)).fetchall()
         return [dict_to_dataclass(RawMessage, r) for r in rows]
 
     def get_all_raw_for_replay(self) -> list[RawMessage]:

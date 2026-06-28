@@ -1,6 +1,7 @@
 import os
 import json
 import sqlite3
+import datetime
 import pandas as pd
 from openai import OpenAI
 
@@ -120,6 +121,35 @@ def load_live_data(db_path):
         sources["building_matches"] = {"df": pd.DataFrame([dict(r) for r in resolved]),
                                         "description": "Which properties were matched to known buildings and landmarks"}
 
+    # Unresolved messages (parser gaps)
+    unresolved = con.execute("""
+        SELECT p.id, p.intent, p.bhk, p.price, p.micro_market,
+               p.broker_name, p.confidence, p.created_at,
+               r.message, r.group_name, r.timestamp,
+               d.method, d.failure_category
+        FROM parsed_output p
+        JOIN raw_messages r ON r.id = p.raw_message_id
+        LEFT JOIN resolver_decisions d ON d.parsed_id = p.id
+        WHERE d.method = 'unresolved' OR p.confidence < 0.5
+        ORDER BY p.id DESC
+        LIMIT 500
+    """).fetchall()
+    if unresolved:
+        sources["unresolved_messages"] = {"df": pd.DataFrame([dict(r) for r in unresolved]),
+                                           "description": "Messages the parser couldn't fully understand or resolve — needs human review"}
+
+    # Pending AI suggestions
+    suggestions = con.execute("""
+        SELECT id, agent, suggestion_type, title, description, confidence, status, created_at
+        FROM ai_suggestions
+        WHERE status = 'pending'
+        ORDER BY created_at DESC
+        LIMIT 200
+    """).fetchall()
+    if suggestions:
+        sources["pending_suggestions"] = {"df": pd.DataFrame([dict(r) for r in suggestions]),
+                                           "description": "AI suggestions waiting for human review and approval"}
+
     con.close()
     return sources
 
@@ -159,12 +189,56 @@ RULES:
 - Answer in plain English. Never use technical terms like "observation", "entity", "resolve", "dataset" — say "message", "property", "match", "data".
 - Use Indian Rupee (₹) format for prices (e.g. ₹1.2 Cr, ₹85 L).
 - Use the query_data tool to look up information.
-- Do NOT make up data. If you don't know, say so plainly."""
+- Use create_suggestion when the user asks you to make changes (create buildings, merge profiles, add aliases, flag issues).
+- Do NOT make up data. If you don't know, say so plainly.
+- When the user asks you to DO something (create, merge, flag, add), call create_suggestion. Tell the user what you suggested."""
+
+
+def _suggestion_tool():
+    return {
+        "type": "function",
+        "function": {
+            "name": "create_suggestion",
+            "description": "Create a Review Center suggestion that needs human approval. Use this when the user asks you to make changes — like creating a building, merging brokers, adding aliases, flagging data issues. The suggestion will appear in the Review Center for approval.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "agent": {
+                        "type": "string",
+                        "enum": ["building", "location", "merge_broker", "duplicate_listing", "alias", "quality", "user_request"],
+                        "description": "Which agent category this suggestion belongs to",
+                    },
+                    "suggestion_type": {
+                        "type": "string",
+                        "description": "Type of action — e.g. 'create_alias', 'merge', 'flag', 'add_building', 'review'",
+                    },
+                    "title": {
+                        "type": "string",
+                        "description": "Short title for the suggestion card (e.g. 'Create building: Chandak Unicorn')",
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "Detailed description explaining what needs to be done and why",
+                    },
+                    "proposal_data": {
+                        "type": "object",
+                        "description": "Structured data with the proposed action details",
+                    },
+                    "confidence": {
+                        "type": "number",
+                        "description": "Confidence in this suggestion (0.0 to 1.0). Use 0.85 for AI-generated, 0.95 for clear deterministic matches.",
+                    },
+                },
+                "required": ["agent", "suggestion_type", "title", "description", "proposal_data", "confidence"],
+            },
+        },
+    }
 
 
 def _build_tools(sources):
     source_keys = sorted(sources.keys())
-    return [
+    tools = [
+        _suggestion_tool(),
         {
             "type": "function",
             "function": {
@@ -209,7 +283,46 @@ def _build_tools(sources):
                 "parameters": {"type": "object", "properties": {}},
             },
         },
+        {
+            "type": "function",
+            "function": {
+                "name": "find_parser_gaps",
+                "description": "Find messages the parser couldn't understand — unresolved locations, low confidence parses, missing fields. Helps identify what knowledge the system is missing.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "category": {
+                            "type": "string",
+                            "enum": ["unresolved_location", "low_confidence", "missing_bhk", "missing_price", "no_intent", "all"],
+                            "description": "Category of parser gaps to find",
+                        },
+                        "limit": {"type": "integer", "description": "Max results (default 10)"},
+                    },
+                    "required": ["category"],
+                },
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "find_duplicates",
+                "description": "Find potential duplicate listings, brokers, or buildings that may need merging",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "entity_type": {
+                            "type": "string",
+                            "enum": ["listings", "brokers", "buildings"],
+                            "description": "Type of entity to check for duplicates",
+                        },
+                        "limit": {"type": "integer", "description": "Max results (default 10)"},
+                    },
+                    "required": ["entity_type"],
+                },
+            }
+        },
     ]
+    return tools
 
 
 def _parse_price(val):
@@ -273,9 +386,165 @@ def fmt_price(val):
         return str(val)
 
 
-def execute_tool(name, args, sources):
+def _open_db():
+    """Open a connection to lab.db for operational queries."""
+    lab_dir = os.path.realpath(os.path.dirname(os.path.abspath(__file__)))
+    db_path = os.path.join(lab_dir, "lab.db")
+    if not os.path.exists(db_path):
+        return None
+    con = sqlite3.connect(db_path)
+    con.row_factory = sqlite3.Row
+    return con
+
+
+def execute_tool(name, args, sources, db_path=None):
     if name == "get_overview":
         return build_overview(sources)
+
+    if name == "create_suggestion":
+        try:
+            con = sqlite3.connect(db_path or "")
+            agent = args.get("agent", "user_request")
+            sug_type = args.get("suggestion_type", "review")
+            title = args.get("title", "")
+            description = args.get("description", "")
+            proposal = json.dumps(args.get("proposal_data", {}))
+            confidence = args.get("confidence", 0.85)
+            con.execute("""
+                INSERT INTO ai_suggestions
+                    (agent, suggestion_type, title, description, source_data, proposal_data, confidence, status, created_at, updated_at)
+                VALUES (?, ?, ?, ?, '{}', ?, ?, 'pending', datetime('now'), datetime('now'))
+            """, (agent, sug_type, title, description, proposal, confidence))
+            con.commit()
+            sug_id = con.execute("SELECT last_insert_rowid()").fetchone()[0]
+            con.close()
+            return f"✅ Suggestion created (ID {sug_id}): \"{title}\". It's now in the Review Center waiting for approval."
+        except Exception as e:
+            return f"❌ Failed to create suggestion: {e}"
+
+    if name == "find_parser_gaps":
+        con = _open_db()
+        if not con:
+            return "Database not available"
+        try:
+            category = args.get("category", "all")
+            limit = args.get("limit", 10)
+            if category == "unresolved_location":
+                rows = con.execute("""
+                    SELECT p.id, p.intent, p.micro_market, p.broker_name, p.confidence,
+                           p.location_raw, r.message, r.group_name
+                    FROM parsed_output p
+                    JOIN raw_messages r ON r.id = p.raw_message_id
+                    LEFT JOIN resolver_decisions d ON d.parsed_id = p.id
+                    WHERE d.method = 'unresolved'
+                    ORDER BY p.id DESC LIMIT ?
+                """, (limit,)).fetchall()
+            elif category == "low_confidence":
+                rows = con.execute("""
+                    SELECT p.id, p.intent, p.micro_market, p.broker_name, p.confidence,
+                           p.location_raw, r.message, r.group_name
+                    FROM parsed_output p
+                    JOIN raw_messages r ON r.id = p.raw_message_id
+                    WHERE p.confidence < 0.5 AND p.confidence > 0
+                    ORDER BY p.confidence ASC LIMIT ?
+                """, (limit,)).fetchall()
+            elif category == "missing_bhk":
+                rows = con.execute("""
+                    SELECT p.id, p.intent, p.price, p.micro_market, p.broker_name,
+                           r.message, r.group_name
+                    FROM parsed_output p
+                    JOIN raw_messages r ON r.id = p.raw_message_id
+                    WHERE (p.bhk IS NULL OR p.bhk = '') AND p.intent IN ('SELL','RENT')
+                    ORDER BY p.id DESC LIMIT ?
+                """, (limit,)).fetchall()
+            elif category == "missing_price":
+                rows = con.execute("""
+                    SELECT p.id, p.intent, p.bhk, p.micro_market, p.broker_name,
+                           r.message, r.group_name
+                    FROM parsed_output p
+                    JOIN raw_messages r ON r.id = p.raw_message_id
+                    WHERE (p.price IS NULL OR p.price = 0) AND p.intent IN ('SELL','RENT')
+                    ORDER BY p.id DESC LIMIT ?
+                """, (limit,)).fetchall()
+            else:
+                rows = con.execute("""
+                    SELECT p.id, p.intent, p.confidence, p.micro_market, p.broker_name,
+                           d.method, d.failure_category,
+                           r.message, r.group_name
+                    FROM parsed_output p
+                    JOIN raw_messages r ON r.id = p.raw_message_id
+                    LEFT JOIN resolver_decisions d ON d.parsed_id = p.id
+                    WHERE d.method = 'unresolved' OR p.confidence < 0.5
+                    ORDER BY p.id DESC LIMIT ?
+                """, (limit,)).fetchall()
+            if not rows:
+                return f"No {category} issues found. The parser is doing well!"
+            lines = [f"Found {len(rows)} {'parser gap' if len(rows)==1 else 'parser gaps'}:"]
+            for r in rows:
+                d = dict(r)
+                msg = (d.get("message") or "")[:80]
+                lines.append(f"• [ID {d['id']}] {d.get('intent','?')} | {d.get('broker_name','?')} | {d.get('micro_market','?')} | conf={d.get('confidence',0)}")
+                lines.append(f"  {msg}")
+            return "\n".join(lines)
+        finally:
+            con.close()
+
+    if name == "find_duplicates":
+        con = _open_db()
+        if not con:
+            return "Database not available"
+        try:
+            entity_type = args.get("entity_type", "listings")
+            limit = args.get("limit", 10)
+            if entity_type == "brokers":
+                rows = con.execute("""
+                    SELECT a.id AS keep_id, b.id AS merge_id,
+                           a.canonical_name AS keep_name, b.canonical_name AS merge_name,
+                           a.primary_phone, a.observation_count
+                    FROM brokers a
+                    JOIN brokers b ON b.id > a.id
+                    WHERE a.primary_phone IS NOT NULL AND a.primary_phone != ''
+                      AND a.primary_phone = b.primary_phone
+                    ORDER BY a.observation_count DESC
+                    LIMIT ?
+                """, (limit,)).fetchall()
+                if rows:
+                    lines = [f"Found {len(rows)} potential broker merge:"]
+                    for r in rows:
+                        lines.append(f"• Keep '{r['keep_name']}' (ID {r['keep_id']}) ← Merge '{r['merge_name']}' (ID {r['merge_id']}) — Phone: {r['primary_phone']}")
+                    return "\n".join(lines)
+                return "No duplicate brokers found."
+            elif entity_type == "buildings":
+                rows = con.execute("""
+                    SELECT a.alias AS name_a, b.alias AS name_b,
+                           a.canonical AS canonical
+                    FROM building_aliases a
+                    JOIN building_aliases b ON b.canonical = a.canonical AND b.alias < a.alias
+                    LIMIT ?
+                """, (limit,)).fetchall()
+                if rows:
+                    lines = [f"Found {len(rows)} building alias groups:"]
+                    for r in rows:
+                        lines.append(f"• '{r['name_a']}' and '{r['name_b']}' → canonical: '{r['canonical']}'")
+                    return "\n".join(lines)
+                return "No building alias groups found."
+            else:
+                rows = con.execute("""
+                    SELECT fingerprint, intent, bhk, price, building_name,
+                           broker_name, location_label, observation_count
+                    FROM listings
+                    WHERE observation_count > 1
+                    ORDER BY observation_count DESC
+                    LIMIT ?
+                """, (limit,)).fetchall()
+                if rows:
+                    lines = [f"Found {len(rows)} listings with multiple observations (potential duplicates):"]
+                    for r in rows:
+                        lines.append(f"• {r['building_name'] or '?'} | {r['bhk'] or '?'} | ₹{r['price'] or '?'} | {r['broker_name'] or '?'} — seen {r['observation_count']}x")
+                    return "\n".join(lines)
+                return "No duplicate listings found."
+        finally:
+            con.close()
 
     if name == "query_data":
         source = args.get("source")
@@ -333,9 +602,15 @@ def execute_tool(name, args, sources):
     return f"Unknown tool: {name}"
 
 
-def get_model_reply(messages, sources, api_key=None):
+def _default_db_path():
+    lab_dir = os.path.realpath(os.path.dirname(os.path.abspath(__file__)))
+    return os.path.join(lab_dir, "lab.db")
+
+
+def get_model_reply(messages, sources, api_key=None, db_path=None):
     client = get_client(api_key=api_key)
     tools = _build_tools(sources)
+    db_path = db_path or _default_db_path()
     resp = client.chat.completions.create(
         model=MODEL,
         messages=messages,
@@ -353,13 +628,13 @@ def get_model_reply(messages, sources, api_key=None):
                 fn_args = json.loads(tc.function.arguments)
             except json.JSONDecodeError:
                 fn_args = {}
-            result = execute_tool(fn_name, fn_args, sources)
+            result = execute_tool(fn_name, fn_args, sources, db_path=db_path)
             result_str = str(result) if not isinstance(result, str) else result
             messages.append({
                 "role": "tool",
                 "tool_call_id": tc.id,
                 "content": result_str,
             })
-        return get_model_reply(messages, sources, api_key=api_key)
+        return get_model_reply(messages, sources, api_key=api_key, db_path=db_path)
 
     return msg

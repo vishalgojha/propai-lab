@@ -120,7 +120,15 @@ export default function ObservationPage() {
             <span className="text-[10px] text-[var(--text-muted)] font-mono">{listings.length} listing{listings.length !== 1 ? "s" : ""}</span>
           )}
           <span className="text-xs text-[var(--text-muted)]">{raw.group_name || raw.source || ""}</span>
-          <span className="text-xs text-[var(--text-muted)] ml-auto">{istDate(raw.timestamp)}</span>
+          {listings.length > 0 && (
+            <button
+              onClick={() => setShowPromote(true)}
+              className="ml-auto bg-[#3EE88A] hover:bg-[#2DC96E] text-[#04100a] text-xs font-bold px-3 py-1.5 rounded-lg cursor-pointer"
+            >
+              Promote
+            </button>
+          )}
+          <span className={`text-xs text-[var(--text-muted)] ${listings.length > 0 ? "" : "ml-auto"}`}>{istDate(raw.timestamp)}</span>
         </div>
 
         {(buildingName || landmark) && (
@@ -147,12 +155,6 @@ export default function ObservationPage() {
               {displayPhone && <div className="text-xs text-[var(--text-secondary)]">{displayPhone}</div>}
             </div>
             <div className="flex items-center gap-2 shrink-0">
-              <button
-                onClick={() => setShowPromote(true)}
-                className="bg-[var(--bg-elevated)] border border-[var(--border-strong)] hover:bg-[var(--bg-hover)] text-xs font-semibold px-3 py-1.5 rounded-lg cursor-pointer"
-              >
-                📣 Promote
-              </button>
               {waLink && (
                 <a href={waLink} target="_blank" rel="noopener noreferrer" className="bg-green-600 hover:bg-green-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg no-underline">Chat on WhatsApp</a>
               )}
@@ -175,6 +177,7 @@ export default function ObservationPage() {
       {showPromote && (
         <PromoteModal
           observationId={parseInt(id.replace(/^P/, ""))}
+          listing={listings[0]}
           parsed={parsed}
           onClose={() => setShowPromote(false)}
         />

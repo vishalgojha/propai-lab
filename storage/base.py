@@ -283,7 +283,9 @@ class Storage(ABC):
 
     @abstractmethod
     def get_raw_messages(self, limit: int = 50, offset: int = 0,
-                         source: str = "") -> list[RawMessage]: ...
+                         source: str = "", group_name: str = "",
+                         sender: str = "", sender_phone: str = "",
+                         sender_jid: str = "") -> list[RawMessage]: ...
 
     @abstractmethod
     def get_all_raw_for_replay(self) -> list[RawMessage]: ...

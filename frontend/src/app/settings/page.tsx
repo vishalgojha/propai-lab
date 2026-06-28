@@ -10,7 +10,7 @@ export default function SettingsPage() {
   const [qrTimer, setQRTimer] = useState(0);
   const [showQR, setShowQR] = useState(false);
   const pollingRef = useRef(false);
-  const timerRef = useRef<ReturnType<typeof setInterval>>();
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     refreshConnection();
@@ -56,7 +56,7 @@ export default function SettingsPage() {
         pollingRef.current = false;
         setShowQR(false);
         refreshConnection();
-        clearInterval(timerRef.current);
+        if (timerRef.current) clearInterval(timerRef.current);
         return;
       }
     } catch {}
@@ -64,7 +64,7 @@ export default function SettingsPage() {
   }
 
   function startTimer() {
-    clearInterval(timerRef.current);
+    if (timerRef.current) clearInterval(timerRef.current);
     timerRef.current = setInterval(() => {
       setQRTimer(prev => {
         if (prev <= 1) {

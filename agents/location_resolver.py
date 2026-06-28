@@ -119,7 +119,16 @@ def enrich_location(storage: "SqliteStorage", d: dict) -> None:
         return
 
     # Pre-check 4: location_aliases on substrings of raw text
-    _check_substring_aliases(storage, raw_text, parsed_id)
+    if _check_substring_aliases(storage, raw_text, parsed_id):
+        return
+
+    # Last resort: LLM call
+    result = _call_llm(raw_message, location_raw)
+    if result:
+        sug = _make_location_suggestion(parsed_id, result["micro_market"],
+                                        result["confidence"],
+                                        f"LLM resolution: {result.get('reasoning', '')}")
+        storage.create_suggestion(sug)
 
 
 def _check_canonical_locations(raw_text: str) -> str | None:

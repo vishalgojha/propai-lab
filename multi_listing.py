@@ -282,6 +282,32 @@ def _lines_to_listings(
     return results
 
 
+def _extract_location_from_text(text: str) -> dict:
+    """Run the location parser on text and return location fields."""
+    from lab.location import parse_location
+    loc = parse_location(text)
+    result = {
+        "location_raw": loc.raw,
+        "location": loc.to_dict(),
+    }
+    if loc.raw and len(loc.raw) >= 3:
+        if loc.landmark:
+            result["landmark_name"] = loc.landmark
+        elif loc.micro_market:
+            result["landmark_name"] = loc.micro_market
+        elif loc.building:
+            result["landmark_name"] = loc.building
+        elif loc.locality:
+            result["landmark_name"] = loc.locality
+        if loc.building:
+            result["building_name"] = loc.building
+        if loc.micro_market:
+            result["micro_market"] = loc.micro_market
+        if loc.street:
+            result["street_name"] = loc.street
+    return result
+
+
 def parse_multi_message(
     text: str,
     profile_name: str | None = None,
@@ -297,6 +323,9 @@ def parse_multi_message(
     if not sections:
         return []
 
+    # Extract shared location context from the full message
+    shared_location = _extract_location_from_text(text)
+
     all_listings: list[dict] = []
 
     for sec in sections:
@@ -304,10 +333,21 @@ def parse_multi_message(
         listings = _lines_to_listings(
             sec_text,
             sec["intent"],
-            sec["furnishing"],
+            sec["furnish"],
             building,
             profile_name,
         )
+        # Merge shared location context into each listing
+        for listing in listings:
+            # Prefer extracted building over shared_building
+            if shared_location.get("building_name") and not listing.get("building_name"):
+                listing["building_name"] = shared_location["building_name"]
+            if shared_location.get("landmark_name") and not listing.get("landmark_name"):
+                listing["landmark_name"] = shared_location["landmark_name"]
+            if shared_location.get("micro_market") and not listing.get("micro_market"):
+                listing["micro_market"] = shared_location["micro_market"]
+            if shared_location.get("location_raw") and not listing.get("location_raw"):
+                listing["location_raw"] = shared_location["location_raw"]
         all_listings.extend(listings)
 
     if not all_listings:

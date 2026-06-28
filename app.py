@@ -38,7 +38,7 @@ from lab.events import get_bus
 PROJECT_DIR = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_DIR))
 
-from lab.config import DB_PATH, WEBHOOK_SECRET, HOST, PORT, EVOLUTION_INSTANCE, EVOLUTION_API_URL, DOUBLEWORD_API_KEY, load_group_allowlist, save_group_allowlist, PROPAI_WEBHOOK_URL
+from lab.config import DB_PATH, WEBHOOK_SECRET, HOST, PORT, EVOLUTION_INSTANCE, EVOLUTION_API_URL, DOUBLEWORD_API_KEY, ENABLE_AI_PROMO, ENABLE_META_PUBLISHING, load_group_allowlist, save_group_allowlist, PROPAI_WEBHOOK_URL
 from evidence.resolver import resolve, resolve_by_landmark, resolve_by_street
 from evidence.parsers import parse as broker_parse
 
@@ -1237,8 +1237,12 @@ async def ingest_batch(req: BatchIngestRequest):
 # ── Admin API endpoints ─────────────────────────────────────────
 
 @app.get("/api/raw")
-async def get_raw_messages(limit: int = 50, offset: int = 0):
-    rows = storage.get_raw_messages(limit, offset)
+async def get_raw_messages(limit: int = 50, offset: int = 0,
+                           group_name: str = "", sender: str = "",
+                           sender_phone: str = "", sender_jid: str = ""):
+    rows = storage.get_raw_messages(limit, offset, group_name=group_name,
+                                    sender=sender, sender_phone=sender_phone,
+                                    sender_jid=sender_jid)
     return [asdict(r) for r in rows]
 
 
@@ -1356,6 +1360,88 @@ async def dashboard_coverage():
     }
 
 
+@app.get("/api/action/dashboard")
+async def action_dashboard():
+    """Actionable dashboard — every metric answers 'so what?'"""
+    stats = storage.get_stats()
+    today = datetime.utcnow().strftime("%Y-%m-%d")
+
+    # Messages pending review (unresolved)
+    unresolved_count = stats.get("unresolved", 0)
+    suggestions_pending = storage.db.execute(
+        "SELECT COUNT(*) AS c FROM ai_suggestions WHERE status = 'pending'"
+    ).fetchone()["c"]
+
+    # New buildings today
+    new_buildings_today = storage.db.execute("""
+        SELECT COUNT(*) AS c FROM (
+            SELECT DISTINCT rd.building_name
+            FROM resolver_decisions rd
+            JOIN parsed_output p ON p.id = rd.parsed_id
+            WHERE DATE(p.created_at) = ? AND rd.building_name IS NOT NULL
+        )
+    """, (today,)).fetchone()["c"]
+
+    # Duplicate brokers detected
+    dup_brokers = storage.db.execute("""
+        SELECT COUNT(*) AS c FROM ai_suggestions
+        WHERE agent = 'merge_broker' AND status IN ('pending', 'approved')
+    """).fetchone()["c"]
+
+    # Duplicate listings detected
+    dup_listings = storage.db.execute("""
+        SELECT COUNT(*) AS c FROM ai_suggestions
+        WHERE suggestion_type = 'duplicate' AND status IN ('pending', 'approved')
+    """).fetchone()["c"]
+
+    # Parser confidence dropped (below 50%)
+    low_confidence = storage.db.execute("""
+        SELECT COUNT(*) AS c FROM parsed_output
+        WHERE confidence < 0.5
+    """).fetchone()["c"]
+
+    # Groups disconnected/inactive
+    disconnected_groups = storage.db.execute("""
+        SELECT COUNT(*) AS c FROM sync_checkpoints
+        WHERE status IN ('error', 'disconnected')
+    """).fetchone()["c"]
+
+    # Unknown locations discovered
+    unknown_locations = storage.db.execute("""
+        SELECT COUNT(*) AS c FROM resolver_decisions
+        WHERE method = 'unresolved'
+    """).fetchone()["c"]
+
+    # Buildings pending approval
+    pending_buildings = storage.db.execute("""
+        SELECT COUNT(*) AS c FROM ai_suggestions
+        WHERE agent = 'building' AND status = 'pending'
+    """).fetchone()["c"]
+
+    # Top parser failures
+    top_failures = [dict(r) for r in storage.db.execute("""
+        SELECT failure_category, COUNT(*) AS c
+        FROM resolver_decisions
+        WHERE failure_category IS NOT NULL AND failure_category != ''
+        GROUP BY failure_category
+        ORDER BY c DESC
+        LIMIT 5
+    """).fetchall()]
+
+    return {
+        "pending_review_unresolved": unresolved_count,
+        "pending_ai_suggestions": suggestions_pending,
+        "new_buildings_today": new_buildings_today,
+        "duplicate_brokers_detected": dup_brokers,
+        "duplicate_listings_detected": dup_listings,
+        "low_confidence_parses": low_confidence,
+        "disconnected_groups": disconnected_groups,
+        "unknown_locations": unknown_locations,
+        "buildings_pending_approval": pending_buildings,
+        "top_parser_failures": top_failures,
+    }
+
+
 @app.get("/api/dashboard/live-window")
 async def dashboard_live_window():
     return business_window_status()
@@ -1371,6 +1457,79 @@ async def dashboard_feed(limit: int = 20):
 async def dashboard_heatmap():
     """Listings per micro market."""
     return storage.dashboard_heatmap()
+
+
+@app.get("/api/markets/{market_name:path}")
+async def get_market_detail(market_name: str):
+    name = market_name.strip()
+    if not name:
+        raise HTTPException(400, "Market name is required")
+    like_q = f"%{name}%"
+
+    # Buildings in this market
+    buildings = [dict(r) for r in storage.db.execute("""
+        SELECT building_name, COUNT(*) AS observation_count,
+               COUNT(DISTINCT broker_name) AS broker_count
+        FROM parsed_output
+        WHERE micro_market LIKE ? AND building_name IS NOT NULL AND building_name != ''
+        GROUP BY building_name
+        ORDER BY observation_count DESC
+        LIMIT 20
+    """, (like_q,)).fetchall()]
+
+    # Brokers active in this market
+    brokers = [dict(r) for r in storage.db.execute("""
+        SELECT b.id, b.canonical_name AS name, b.primary_phone,
+               bms.observation_count, bms.listing_count, bms.requirement_count
+        FROM broker_market_stats bms
+        JOIN brokers b ON b.id = bms.broker_id
+        WHERE bms.micro_market LIKE ?
+        ORDER BY bms.observation_count DESC
+        LIMIT 20
+    """, (like_q,)).fetchall()]
+
+    # Intent breakdown
+    intents = [dict(r) for r in storage.db.execute("""
+        SELECT intent, COUNT(*) AS c
+        FROM parsed_output
+        WHERE micro_market LIKE ? AND intent IS NOT NULL
+        GROUP BY intent
+        ORDER BY c DESC
+    """, (like_q,)).fetchall()]
+
+    # Recently active groups in this market
+    groups = [dict(r) for r in storage.db.execute("""
+        SELECT r.group_name, COUNT(*) AS observation_count, MAX(r.timestamp) AS last_seen
+        FROM parsed_output p
+        JOIN raw_messages r ON r.id = p.raw_message_id
+        WHERE p.micro_market LIKE ? AND r.group_name IS NOT NULL
+        GROUP BY r.group_name
+        ORDER BY last_seen DESC
+        LIMIT 10
+    """, (like_q,)).fetchall()]
+
+    # Price range summary per BHK
+    price_ranges = [dict(r) for r in storage.db.execute("""
+        SELECT bhk, COUNT(*) AS sample_count,
+               ROUND(AVG(price), 0) AS avg_price,
+               MIN(price) AS min_price, MAX(price) AS max_price
+        FROM parsed_output
+        WHERE micro_market LIKE ? AND price IS NOT NULL AND price > 0 AND bhk IS NOT NULL
+        GROUP BY bhk
+        ORDER BY sample_count DESC
+    """, (like_q,)).fetchall()]
+
+    return {
+        "name": name,
+        "building_count": len(buildings),
+        "broker_count": len(brokers),
+        "observation_count": sum(b.get("observation_count", 0) for b in buildings) if buildings else 0,
+        "buildings": buildings,
+        "brokers": brokers,
+        "intents": intents,
+        "groups": groups,
+        "price_ranges": price_ranges,
+    }
 
 
 @app.get("/api/dashboard/sync-activity")
@@ -1679,6 +1838,20 @@ class PromoteRequest(BaseModel):
     observation_id: int
     channel: str = "whatsapp"
     use_ai: bool = False
+    fields: dict | None = None
+
+
+@app.get("/api/promote/config")
+async def promote_config():
+    has_meta_credentials = bool(
+        os.getenv("META_ACCESS_TOKEN")
+        and (os.getenv("META_PAGE_ID") or os.getenv("META_INSTAGRAM_BUSINESS_ID"))
+    )
+    return {
+        "enable_ai_promo": ENABLE_AI_PROMO,
+        "enable_meta_publishing": ENABLE_META_PUBLISHING,
+        "meta_publish_available": ENABLE_META_PUBLISHING and has_meta_credentials,
+    }
 
 
 def _promote_highlights(parsed: dict) -> list[str]:
@@ -1826,7 +1999,15 @@ async def promote_generate(req: PromoteRequest):
     detail = storage.get_observation_detail(req.observation_id)
     if not detail.get("parsed"):
         raise HTTPException(404, "Observation not found")
-    parsed = detail["parsed"]
+    parsed = dict(detail["parsed"])
+    if req.fields:
+        allowed_fields = {
+            "bhk", "price", "price_unit", "area_sqft", "furnishing", "location_raw",
+            "building_name", "landmark_name", "micro_market", "broker_name", "broker_phone",
+        }
+        for key, value in req.fields.items():
+            if key in allowed_fields and value not in (None, ""):
+                parsed[key] = value
     highlights = _promote_highlights(parsed)
     headline = _promote_headline(parsed, req.channel)
 
@@ -1848,7 +2029,7 @@ async def promote_generate(req: PromoteRequest):
         "ai_enhanced": False,
     }
 
-    if req.use_ai and DOUBLEWORD_API_KEY:
+    if req.use_ai and ENABLE_AI_PROMO and DOUBLEWORD_API_KEY:
         try:
             system = "You are a Mumbai real estate marketing assistant. Given property details, write a short promotional ad for the specified channel. Keep it under 120 words. Return only the ad body, no preamble."
             price_str = _promote_price(parsed)
@@ -1899,7 +2080,7 @@ async def ai_chat(req: ChatRequest):
     def _call():
         system_prompt = chat_engine.build_system_prompt(sources)
         msgs = [{"role": "system", "content": system_prompt}] + req.messages[-20:]
-        reply = chat_engine.get_model_reply(msgs, sources, api_key=api_key)
+        reply = chat_engine.get_model_reply(msgs, sources, api_key=api_key, db_path=str(DB_PATH))
         return reply.content or ""
 
     content = await loop.run_in_executor(None, _call)
@@ -2265,6 +2446,22 @@ async def list_brokers():
     return brokers
 
 
+@app.get("/api/brokers/find")
+async def find_broker(name: str = "", phone: str = ""):
+    if not name and not phone:
+        raise HTTPException(400, "name or phone is required")
+    from lab.storage.sqlite import SqliteStorage
+    key = SqliteStorage._broker_identity_key(name, phone)
+    if not key:
+        raise HTTPException(404, "Broker identity key could not be resolved")
+    row = storage.db.execute(
+        "SELECT id FROM brokers WHERE identity_key = ?", (key,)
+    ).fetchone()
+    if not row:
+        raise HTTPException(404, "Broker not found")
+    return {"broker_id": row["id"]}
+
+
 @app.get("/api/brokers/{broker_id}")
 async def get_broker_profile(broker_id: int):
     storage.rebuild_broker_graph()
@@ -2424,6 +2621,115 @@ async def list_buildings():
     return [dict(r) for r in rows]
 
 
+@app.get("/api/buildings/{building_name:path}")
+async def get_building_profile(building_name: str):
+    name = building_name.strip()
+    if not name:
+        raise HTTPException(400, "Building name is required")
+
+    # Canonical name from aliases
+    alias_row = storage.db.execute(
+        "SELECT canonical FROM building_aliases WHERE alias = ?", (name,)
+    ).fetchone()
+    canonical = alias_row["canonical"] if alias_row else name
+
+    # All aliases
+    aliases = [dict(r) for r in storage.db.execute(
+        "SELECT alias, confidence FROM building_aliases WHERE canonical = ? ORDER BY confidence DESC",
+        (canonical,)
+    ).fetchall()]
+
+    # Observations mentioning this building
+    observations = [dict(r) for r in storage.db.execute("""
+        SELECT p.id, p.intent, p.bhk, p.price, p.price_unit, p.furnishing,
+               p.micro_market, p.broker_name, p.broker_phone, p.confidence,
+               p.created_at, r.message, r.group_name, r.timestamp
+        FROM parsed_output p
+        JOIN raw_messages r ON r.id = p.raw_message_id
+        WHERE p.building_name LIKE ?
+        ORDER BY p.id DESC
+        LIMIT 50
+    """, (f"%{canonical}%",)).fetchall()]
+
+    # Brokers who post this building
+    brokers = [dict(r) for r in storage.db.execute("""
+        SELECT b.id, b.canonical_name AS name, b.primary_phone AS phone,
+               bbs.observation_count, bbs.listing_count, bbs.requirement_count, bbs.last_seen_at
+        FROM broker_building_stats bbs
+        JOIN brokers b ON b.id = bbs.broker_id
+        WHERE bbs.building_name LIKE ?
+        ORDER BY bbs.observation_count DESC
+        LIMIT 20
+    """, (f"%{canonical}%",)).fetchall()]
+
+    # Markets this building appears in
+    markets = [dict(r) for r in storage.db.execute("""
+        SELECT micro_market, COUNT(*) AS occurrence_count
+        FROM parsed_output
+        WHERE building_name LIKE ? AND micro_market IS NOT NULL AND micro_market != ''
+        GROUP BY micro_market
+        ORDER BY occurrence_count DESC
+    """, (f"%{canonical}%",)).fetchall()]
+
+    # Price stats
+    price_stats = [dict(r) for r in storage.db.execute("""
+        SELECT intent, bhk, COUNT(*) AS sample_count,
+               ROUND(AVG(price), 0) AS avg_price,
+               MIN(price) AS min_price, MAX(price) AS max_price
+        FROM parsed_output
+        WHERE building_name LIKE ? AND price IS NOT NULL AND price > 0
+        GROUP BY intent, bhk
+        ORDER BY sample_count DESC
+    """, (f"%{canonical}%",)).fetchall()]
+
+    # Timeline of discovery
+    timeline = [dict(r) for r in storage.db.execute("""
+        SELECT DATE(created_at) AS day, COUNT(*) AS observations
+        FROM parsed_output
+        WHERE building_name LIKE ?
+        GROUP BY DATE(created_at)
+        ORDER BY day DESC
+        LIMIT 30
+    """, (f"%{canonical}%",)).fetchall()]
+
+    # Nearby landmarks (from same messages)
+    landmarks = [dict(r) for r in storage.db.execute("""
+        SELECT p2.landmark_name, COUNT(*) AS co_occurrence
+        FROM parsed_output p1
+        JOIN parsed_output p2 ON p1.raw_message_id = p2.raw_message_id
+        WHERE p1.building_name LIKE ?
+          AND p2.landmark_name IS NOT NULL AND p2.landmark_name != ''
+          AND p2.id != p1.id
+        GROUP BY p2.landmark_name
+        ORDER BY co_occurrence DESC
+        LIMIT 10
+    """, (f"%{canonical}%",)).fetchall()]
+
+    # AI suggestions for this building
+    suggestions = [dict(r) for r in storage.db.execute("""
+        SELECT id, agent, suggestion_type, title, description, confidence, status, created_at
+        FROM ai_suggestions
+        WHERE building_name LIKE ? OR expected_building LIKE ? OR extracted_building LIKE ?
+        ORDER BY created_at DESC
+        LIMIT 10
+    """, (f"%{canonical}%", f"%{canonical}%", f"%{canonical}%")).fetchall()]
+
+    return {
+        "name": canonical,
+        "aliases": aliases,
+        "observation_count": len(observations),
+        "broker_count": len(brokers),
+        "market_count": len(markets),
+        "observations": observations,
+        "brokers": brokers,
+        "markets": markets,
+        "price_stats": price_stats,
+        "timeline": timeline,
+        "landmarks": landmarks,
+        "suggestions": suggestions,
+    }
+
+
 @app.get("/api/groups")
 async def list_groups():
     jobs = storage.get_sync_jobs(limit=500, source="whatsapp")
@@ -2488,18 +2794,89 @@ async def list_listings(limit: int = 50, offset: int = 0):
 async def search_messages(q: str = ""):
     if not q:
         return []
-    results = storage.db.execute("""
-        SELECT p.id, p.intent, p.broker_name, p.broker_phone,
-               p.bhk, p.price, p.price_unit, p.area_sqft, p.furnishing,
-               p.location_raw, p.landmark_name, p.building_name, p.micro_market,
-               p.confidence, r.message, r.group_name, r.timestamp
+    q = q.strip()
+    like_q = f"%{q}%"
+    before_q = f"%{q}"
+    after_q = f"{q}%"
+
+    # Build search results grouped by entity type
+    result = {"listings": [], "requirements": [], "brokers": [], "buildings": [], "markets": [], "messages": []}
+
+    # Priority: listings first (most useful)
+    result["listings"] = [dict(r) for r in storage.db.execute("""
+        SELECT fingerprint, intent, bhk, price, price_unit, area_sqft, furnishing,
+               location_label, building_name, landmark_name, micro_market,
+               broker_name, broker_phone, observation_count, last_seen
+        FROM listings
+        WHERE broker_name LIKE ? OR building_name LIKE ? OR micro_market LIKE ?
+           OR bhk LIKE ? OR location_label LIKE ? OR landmark_name LIKE ?
+        ORDER BY observation_count DESC
+        LIMIT 8
+    """, [like_q] * 6).fetchall()]
+
+    # Requirements
+    result["requirements"] = [dict(r) for r in storage.db.execute("""
+        SELECT p.id, p.intent, p.bhk, p.price, p.price_unit, p.broker_name, p.broker_phone,
+               p.micro_market, p.location_raw, p.created_at, r.message, r.group_name
         FROM parsed_output p
         JOIN raw_messages r ON r.id = p.raw_message_id
-        WHERE r.message LIKE ? OR p.broker_name LIKE ? OR p.micro_market LIKE ?
-           OR p.building_name LIKE ? OR p.landmark_name LIKE ?
-        LIMIT 50
-    """, [f"%{q}%"] * 5)
-    return [dict(r) for r in results]
+        WHERE p.intent IN ('BUY','RENTAL_SEEKER')
+          AND (r.message LIKE ? OR p.broker_name LIKE ? OR p.micro_market LIKE ?
+               OR p.bhk LIKE ? OR p.location_raw LIKE ?)
+        ORDER BY p.id DESC
+        LIMIT 6
+    """, [like_q] * 5).fetchall()]
+
+    # Brokers
+    result["brokers"] = [dict(r) for r in storage.db.execute("""
+        SELECT id, canonical_name AS name, primary_phone AS phone,
+               observation_count, listing_count, requirement_count,
+               group_count, market_count, avg_ticket
+        FROM brokers
+        WHERE canonical_name LIKE ? OR primary_phone LIKE ?
+        ORDER BY observation_count DESC
+        LIMIT 6
+    """, [like_q, like_q]).fetchall()]
+
+    # Buildings
+    result["buildings"] = [dict(r) for r in storage.db.execute("""
+        SELECT DISTINCT rd.building_name AS name, p.micro_market,
+               COUNT(*) AS occurrence_count,
+               COUNT(DISTINCT p.broker_name) AS broker_count
+        FROM resolver_decisions rd
+        LEFT JOIN parsed_output p ON p.id = rd.parsed_id
+        WHERE rd.building_name IS NOT NULL AND rd.building_name != ''
+          AND rd.building_name LIKE ?
+        GROUP BY rd.building_name
+        ORDER BY occurrence_count DESC
+        LIMIT 6
+    """, [like_q]).fetchall()]
+
+    # Markets
+    result["markets"] = [dict(r) for r in storage.db.execute("""
+        SELECT micro_market, COUNT(*) AS observation_count,
+               COUNT(DISTINCT building_name) AS building_count,
+               COUNT(DISTINCT broker_name) AS broker_count
+        FROM parsed_output
+        WHERE micro_market IS NOT NULL AND micro_market != ''
+          AND micro_market LIKE ?
+        GROUP BY micro_market
+        ORDER BY observation_count DESC
+        LIMIT 6
+    """, [like_q]).fetchall()]
+
+    # Raw messages (for full-text search of messages)
+    result["messages"] = [dict(r) for r in storage.db.execute("""
+        SELECT id, message, group_name, sender, timestamp
+        FROM raw_messages
+        WHERE message LIKE ?
+        ORDER BY id DESC
+        LIMIT 6
+    """, [like_q]).fetchall()]
+
+    # Remove empty groups
+    result = {k: v for k, v in result.items() if v}
+    return result
 
 
 # ── WhatsApp Audit ────────────────────────────────────────────────

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import * as api from "@/lib/api";
+import PromoteModal from "@/components/PromoteModal";
 
 const PAGE_SIZE = 50;
 
@@ -54,6 +55,7 @@ function whatsappLink(r: api.ListingRow): string {
 export default function ExtractionsPage() {
   const [data, setData] = useState<api.ListingRow[]>([]);
   const [offset, setOffset] = useState(0);
+  const [promoteListing, setPromoteListing] = useState<api.ListingRow | null>(null);
 
   useEffect(() => {
     api.getListings(PAGE_SIZE, offset).then(setData);
@@ -121,6 +123,7 @@ export default function ExtractionsPage() {
                   </td>
                   <td className="px-2.5 py-2 border-b border-[rgba(255,255,255,0.06)] min-w-[180px]">
                     <div className="flex flex-wrap gap-2">
+                      <button onClick={() => setPromoteListing(r)} className="text-xs font-semibold text-[#04100a] bg-[#3EE88A] hover:bg-[#2DC96E] rounded-lg px-2.5 py-1">Promote</button>
                       {latestView && <a href={latestView} className="text-xs font-semibold text-[#58a6ff] hover:underline">View latest</a>}
                       {r.location_label && <a href={`/search?q=${encodeURIComponent(r.location_label)}`} className="text-xs font-semibold text-white bg-purple-600 hover:bg-purple-700 rounded-lg px-2.5 py-1">Search</a>}
                     </div>
@@ -136,6 +139,13 @@ export default function ExtractionsPage() {
         <span className="text-sm text-[#64748b]">{data.length > 0 ? `${offset + 1}–${offset + data.length}` : "0"}</span>
         <button disabled={data.length < PAGE_SIZE} onClick={() => setOffset(offset + PAGE_SIZE)} className="px-3 py-1 bg-[#111820] border border-[rgba(255,255,255,0.1)] rounded-lg text-sm disabled:opacity-40">Next</button>
       </div>
+      {promoteListing && (
+        <PromoteModal
+          observationId={promoteListing.representative_raw_message_id || promoteListing.latest_raw_message_id}
+          listing={promoteListing}
+          onClose={() => setPromoteListing(null)}
+        />
+      )}
     </div>
   );
 }

@@ -16,6 +16,8 @@ export interface RawMessage {
   id: number;
   group_name: string;
   sender: string;
+  sender_jid?: string;
+  sender_phone?: string;
   message: string;
   message_type: string;
   timestamp: string;
@@ -30,7 +32,10 @@ export interface RawMessage {
 export interface ParsedObservation {
   id: number;
   raw_message_id: number;
+  raw_message: string;
   raw_group: string;
+  raw_sender: string;
+  raw_timestamp: string;
   broker_name: string;
   broker_phone: string;
   intent: string;
@@ -106,8 +111,13 @@ export interface WhatsAppStatus {
   connected_since: string;
 }
 
-export function getRaw(limit = 50, offset = 0) {
-  return fetchJSON<RawMessage[]>(`/raw?limit=${limit}&offset=${offset}`);
+export function getRaw(limit = 50, offset = 0, group_name?: string, sender?: string, sender_phone?: string, sender_jid?: string) {
+  const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+  if (group_name) params.set("group_name", group_name);
+  if (sender) params.set("sender", sender);
+  if (sender_phone) params.set("sender_phone", sender_phone);
+  if (sender_jid) params.set("sender_jid", sender_jid);
+  return fetchJSON<RawMessage[]>(`/raw?${params.toString()}`);
 }
 
 export function getParsed(limit = 50, offset = 0) {
@@ -194,8 +204,39 @@ export function getBroker(id: number) {
   return fetchJSON<any>(`/brokers/${id}`);
 }
 
+export function findBroker(name: string, phone: string) {
+  const params = new URLSearchParams();
+  if (name) params.set("name", name);
+  if (phone) params.set("phone", phone);
+  return fetchJSON<{ broker_id: number }>(`/brokers/find?${params.toString()}`);
+}
+
+export function getPriceStats(market = "", bhk = "", intent = "listing") {
+  const params = new URLSearchParams();
+  if (market) params.set("market", market);
+  if (bhk) params.set("bhk", bhk);
+  params.set("intent", intent);
+  return fetchJSON<any>(`/price-stats?${params.toString()}`);
+}
+
 export function searchMessages(q: string) {
-  return fetchJSON<any[]>(`/search?q=${encodeURIComponent(q)}`);
+  return fetchJSON<any>(`/search?q=${encodeURIComponent(q)}`);
+}
+
+export function getBuildingProfile(name: string) {
+  return fetchJSON<any>(`/buildings/${encodeURIComponent(name)}`);
+}
+
+export function getMarketDetail(name: string) {
+  return fetchJSON<any>(`/markets/${encodeURIComponent(name)}`);
+}
+
+export function getActionDashboard() {
+  return fetchJSON<any>("/action/dashboard");
+}
+
+export function getChatSuggestions() {
+  return fetchJSON<any>("/suggestions/counts");
 }
 
 export function getResolver(limit = 50, offset = 0, method?: string) {
@@ -290,6 +331,7 @@ export interface PromoteRequest {
   observation_id: number;
   channel: string;
   use_ai?: boolean;
+  fields?: Record<string, unknown>;
 }
 
 export interface PromoteResponse {
@@ -306,6 +348,16 @@ export function promoteGenerate(req: PromoteRequest) {
     method: "POST",
     body: JSON.stringify(req),
   });
+}
+
+export interface PromoteConfig {
+  enable_ai_promo: boolean;
+  enable_meta_publishing: boolean;
+  meta_publish_available: boolean;
+}
+
+export function getPromoteConfig() {
+  return fetchJSON<PromoteConfig>("/promote/config");
 }
 
 // ── WhatsApp Audit ──────────────────────────────────────────────
