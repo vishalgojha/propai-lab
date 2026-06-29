@@ -3790,6 +3790,63 @@ class SqliteStorage(Storage):
             for r in rows
         ]
 
+    def get_unit_aliases(self) -> dict[str, str]:
+        """Get all price unit aliases as {alias: canonical_unit}."""
+        rows = self.db.execute("SELECT alias, canonical_unit FROM price_unit_aliases").fetchall()
+        return {r[0]: r[1] for r in rows}
+
+    def add_unit_alias(self, alias: str, canonical_unit: str) -> bool:
+        """Add a price unit alias."""
+        try:
+            self.db.execute(
+                "INSERT OR IGNORE INTO price_unit_aliases (alias, canonical_unit) VALUES (?, ?)",
+                (alias.lower().strip(), canonical_unit)
+            )
+            self.db.commit()
+            return True
+        except Exception:
+            return False
+
+    def resolve_unit_alias(self, unit: str) -> str:
+        """Resolve a unit alias to its canonical form."""
+        if not unit:
+            return "abs"
+        alias = unit.lower().strip()
+        # Check database first
+        row = self.db.execute(
+            "SELECT canonical_unit FROM price_unit_aliases WHERE alias = ?", (alias,)
+        ).fetchone()
+        if row:
+            return row[0]
+        # Fallback to hardcoded
+        normalized = _normalize_price(1, unit)
+        if normalized == 1_00_000:
+            return "L"
+        elif normalized == 1_00_00_000:
+            return "Cr"
+        elif normalized == 1_000:
+            return "K"
+        return "abs"
+
+    def seed_unit_aliases(self):
+        """Seed common price unit aliases."""
+        aliases = {
+            # Lakhs
+            "l": "L", "lac": "L", "lacs": "L", "lakh": "L", "lakhs": "L",
+            "lac": "L", "lk": "L", "lac": "L", "lac": "L",
+            # Crores
+            "cr": "Cr", "crore": "Cr", "crores": "Cr", "karod": "Cr",
+            "karods": "Cr", "kror": "Cr", "cror": "Cr",
+            # Thousands
+            "k": "K", "thousand": "K", "thousands": "K", "hazaar": "K",
+            "000": "K",
+            # Absolute
+            "abs": "abs", "absolute": "abs", "rs": "abs", "rupees": "abs",
+            "inr": "abs", "₹": "abs",
+        }
+        for alias, canonical in aliases.items():
+            self.add_unit_alias(alias, canonical)
+
     def search_knowledge_with_embeddings(self, query: str, limit: int = 10) -> list[dict]:
         """Search knowledge records using embeddings for semantic similarity."""
         try:

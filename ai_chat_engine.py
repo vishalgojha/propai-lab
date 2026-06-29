@@ -249,7 +249,27 @@ RULES:
 - Prefer retrieval tools over perfect parsing: use search_jid_memory for people/JID history and search_listings for structured property filters
 - Use query_data only for direct table aggregation
 - Use create_suggestion when user asks to make changes
-- Do NOT make up data. If you don't know, say so plainly."""
+- Do NOT make up data. If you don't know, say so plainly.
+
+PRICE UNIT NORMALIZATION (IMPORTANT):
+When user mentions prices, normalize to standard units:
+- L = Lac = Lakh = Lakhs (same thing, just different spellings)
+- Cr = Crore = Karod = Crores = Karods (same thing)
+- K = Thousand = Hazaar (same thing)
+- ₹ or Rs or Rupees = Absolute rupees (e.g., ₹450000 = 4.5 Lakhs)
+
+When you see a price like "3L" or "3 Lac" or "3 Lakh", treat it as ₹3,00,000 (3 Lakhs).
+When you see "1.5Cr" or "1.5 Crore" or "1.5 Karod", treat it as ₹1,50,00,000 (1.5 Crores).
+When user says "3 to 4.5 lakh budget", they mean ₹3,00,000 to ₹4,50,000.
+
+If you're unsure about a unit, use ask_clarification to ask the user.
+When user teaches you a new unit mapping, use save_unit_alias to remember it.
+
+You can also learn from context: if user says "5L rent", it's ₹5,00,000/month.
+Common patterns:
+- "3/4 BHK for rent in Bandra 3-4.5 lakh" = 3 BHK or 4 BHK, rent ₹3,00,000-4,50,000/month
+- "2 Cr flat" = ₹2,00,00,000 purchase price
+- "15000 monthly" = ₹15,000/month (absolute rupees)"""
 
 
 WORKSPACE_BLOCK_TYPES = {
@@ -605,6 +625,50 @@ def _build_tools(sources):
                         },
                     },
                     "required": ["query"],
+                },
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "ask_clarification",
+                "description": "Ask the user for clarification when you're confused about units, terms, or ambiguous input. Use this when you don't understand what the user means (e.g., '5L' could be 5 Lakhs or 5 Lakh rupees).",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "question": {
+                            "type": "string",
+                            "description": "The clarification question to ask the user",
+                        },
+                        "options": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Possible interpretation options (optional)",
+                        },
+                    },
+                    "required": ["question"],
+                },
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "save_unit_alias",
+                "description": "Save a learned unit alias. Use when the user teaches you that a term means a specific unit (e.g., 'L means Lakhs'). This helps PropAI learn and remember.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "alias": {
+                            "type": "string",
+                            "description": "The term/alias to remember (e.g., 'L', 'lakh', 'karod')",
+                        },
+                        "canonical_unit": {
+                            "type": "string",
+                            "enum": ["L", "Cr", "K", "abs"],
+                            "description": "What unit this maps to: L=Lakhs, Cr=Crores, K=Thousands, abs=Absolute rupees",
+                        },
+                    },
+                    "required": ["alias", "canonical_unit"],
                 },
             }
         },
@@ -1547,6 +1611,31 @@ def execute_tool(name, args, sources, db_path=None):
         except Exception as e:
             return f"Semantic search error: {str(e)}"
 
+    if name == "ask_clarification":
+        question = args.get("question", "")
+        options = args.get("options", [])
+        if options:
+            return f"CLARIFICATION_NEEDED: {question}\nOptions: {', '.join(options)}"
+        return f"CLARIFICATION_NEEDED: {question}"
+
+    if name == "save_unit_alias":
+        alias = (args.get("alias") or "").strip()
+        canonical = (args.get("canonical_unit") or "").strip()
+        if not alias or not canonical:
+            return "Please provide both alias and canonical_unit."
+        try:
+            con = _open_db()
+            if con:
+                con.execute(
+                    "INSERT OR REPLACE INTO price_unit_aliases (alias, canonical_unit) VALUES (?, ?)",
+                    (alias.lower(), canonical)
+                )
+                con.commit()
+                return f"Learned: '{alias}' = {canonical} unit. I'll remember this."
+        except Exception as e:
+            return f"Error saving alias: {str(e)}"
+        return f"Learned: '{alias}' = {canonical} unit. I'll remember this."
+
     return f"Unknown tool: {name}"
 
 
@@ -1581,12 +1670,23 @@ def get_model_reply(messages, sources, api_key=None, db_path=None, model=None, m
     msg = resp.choices[0].message
 
     # Append as dict, not as raw object
-    msg_dict = {"role": "assistant", "content": msg.content}
+    msg_dict = {"role": "assistant", "content": msg.content or ""}
     if msg.tool_calls:
-        msg_dict["tool_calls"] = [
-            {"id": tc.id, "type": "function", "function": {"name": tc.function.name, "arguments": tc.function.arguments}}
-            for tc in msg.tool_calls
-        ]
+        cleaned_calls = []
+        for tc in msg.tool_calls:
+            args = tc.function.arguments
+            # Fix common JSON issues: double closing braces, trailing commas
+            args = args.rstrip()
+            while args.endswith("}}"):
+                args = args[:-1]
+            if args.endswith(",}"):
+                args = args[:-2] + "}"
+            cleaned_calls.append({
+                "id": tc.id, "type": "function",
+                "function": {"name": tc.function.name, "arguments": args}
+            })
+            tc.function.arguments = args  # Update for execute_tool
+        msg_dict["tool_calls"] = cleaned_calls
     messages.append(msg_dict)
 
     if msg.tool_calls:
@@ -1595,7 +1695,12 @@ def get_model_reply(messages, sources, api_key=None, db_path=None, model=None, m
             try:
                 fn_args = json.loads(tc.function.arguments)
             except json.JSONDecodeError:
-                fn_args = {}
+                # Try to extract first complete JSON object from truncated output
+                try:
+                    decoder = json.JSONDecoder()
+                    fn_args, _ = decoder.raw_decode(tc.function.arguments)
+                except (json.JSONDecodeError, ValueError):
+                    fn_args = {}
             result = execute_tool(fn_name, fn_args, sources, db_path=db_path)
             result_str = str(result) if not isinstance(result, str) else result
             messages.append({

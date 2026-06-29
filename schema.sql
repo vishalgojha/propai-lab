@@ -661,5 +661,17 @@ CREATE INDEX IF NOT EXISTS idx_rm_requirement ON requirement_matches(requirement
 CREATE INDEX IF NOT EXISTS idx_rm_listing ON requirement_matches(listing_id);
 CREATE INDEX IF NOT EXISTS idx_rm_score ON requirement_matches(match_score DESC);
 
--- Link resolver_decisions to building_id
--- (ALTER TABLE not supported in SQLite, but we can add the column via Python)
+-- Price unit aliases for normalization
+-- L = Lac = Lakh = Lacs = Lakhs
+-- Cr = Crore = Karod = Cror = Crores = Karods
+-- K = Thousand = Hazaar = 000
+
+CREATE TABLE IF NOT EXISTS price_unit_aliases (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    alias TEXT NOT NULL UNIQUE,
+    canonical_unit TEXT NOT NULL,  -- 'L', 'Cr', 'K', 'abs'
+    created_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_price_unit_aliases_alias ON price_unit_aliases(alias);
+CREATE INDEX IF NOT EXISTS idx_price_unit_aliases_canonical ON price_unit_aliases(canonical_unit);

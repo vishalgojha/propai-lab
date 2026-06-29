@@ -13,6 +13,7 @@ import re
 import base64
 import ast
 import subprocess
+import sqlite3
 from fnmatch import fnmatch
 import httpx
 from datetime import datetime, timedelta, timezone
@@ -5634,7 +5635,7 @@ async def audit_intelligence():
 
 
 @app.get("/api/audit/search-evidence")
-async def audit_search_evidence(q: str = ""):
+def audit_search_evidence(q: str = ""):
     """Exact evidence summary for a term in captured WhatsApp knowledge."""
     term = (q or "").strip()
     if not term:
@@ -5663,69 +5664,79 @@ async def audit_search_evidence(q: str = ""):
         }
 
     fts_query = " ".join(tokens)
-    if _table_exists("raw_messages_fts"):
-        match_cte = """
-            WITH matches AS (
-                SELECT rowid AS id
-                FROM raw_messages_fts
-                WHERE raw_messages_fts MATCH ?
-            )
-        """
-        summary = storage.db.execute(match_cte + """
-            SELECT COUNT(*) AS count,
-                   MIN(rm.timestamp) AS first_seen,
-                   MAX(rm.timestamp) AS last_seen,
-                   COUNT(DISTINCT rm.group_name) AS groups,
-                   COUNT(DISTINCT COALESCE(NULLIF(rm.sender_phone, ''), NULLIF(rm.sender_jid, ''), rm.sender)) AS unique_senders
-            FROM matches m
-            JOIN raw_messages rm ON rm.id = m.id
-        """, (fts_query,)).fetchone()
+    db = sqlite3.connect(f"file:{DB_PATH}?mode=ro&immutable=1", uri=True, timeout=1.0)
+    db.row_factory = sqlite3.Row
+    try:
+        has_fts = db.execute("""
+            SELECT 1 FROM sqlite_master
+            WHERE type = 'table' AND name = 'raw_messages_fts'
+        """).fetchone() is not None
 
-        top_groups = storage.db.execute(match_cte + """
-            SELECT rm.group_name, COUNT(*) AS count
-            FROM matches m
-            JOIN raw_messages rm ON rm.id = m.id
-            GROUP BY rm.group_name
-            ORDER BY count DESC
-            LIMIT 6
-        """, (fts_query,)).fetchall()
+        if has_fts:
+            match_cte = """
+                WITH matches AS (
+                    SELECT rowid AS id
+                    FROM raw_messages_fts
+                    WHERE raw_messages_fts MATCH ?
+                )
+            """
+            summary = db.execute(match_cte + """
+                SELECT COUNT(*) AS count,
+                       MIN(rm.timestamp) AS first_seen,
+                       MAX(rm.timestamp) AS last_seen,
+                       COUNT(DISTINCT rm.group_name) AS groups,
+                       COUNT(DISTINCT COALESCE(NULLIF(rm.sender_phone, ''), NULLIF(rm.sender_jid, ''), rm.sender)) AS unique_senders
+                FROM matches m
+                JOIN raw_messages rm ON rm.id = m.id
+            """, (fts_query,)).fetchone()
 
-        recent = storage.db.execute(match_cte + """
-            SELECT rm.id, rm.timestamp, rm.group_name, rm.sender, rm.message
-            FROM matches m
-            JOIN raw_messages rm ON rm.id = m.id
-            ORDER BY rm.timestamp DESC
-            LIMIT 6
-        """, (fts_query,)).fetchall()
-    else:
-        filters = " AND ".join(["(message LIKE ? OR sender LIKE ? OR group_name LIKE ?)"] * len(tokens))
-        params = tuple(value for token in tokens for value in (f"%{token}%", f"%{token}%", f"%{token}%"))
-        summary = storage.db.execute(f"""
-            SELECT COUNT(*) AS count,
-                   MIN(timestamp) AS first_seen,
-                   MAX(timestamp) AS last_seen,
-                   COUNT(DISTINCT group_name) AS groups,
-                   COUNT(DISTINCT COALESCE(NULLIF(sender_phone, ''), NULLIF(sender_jid, ''), sender)) AS unique_senders
-            FROM raw_messages
-            WHERE {filters}
-        """, params).fetchone()
+            top_groups = db.execute(match_cte + """
+                SELECT rm.group_name, COUNT(*) AS count
+                FROM matches m
+                JOIN raw_messages rm ON rm.id = m.id
+                GROUP BY rm.group_name
+                ORDER BY count DESC
+                LIMIT 6
+            """, (fts_query,)).fetchall()
 
-        top_groups = storage.db.execute(f"""
-            SELECT group_name, COUNT(*) AS count
-            FROM raw_messages
-            WHERE {filters}
-            GROUP BY group_name
-            ORDER BY count DESC
-            LIMIT 6
-        """, params).fetchall()
+            recent = db.execute(match_cte + """
+                SELECT rm.id, rm.timestamp, rm.group_name, rm.sender, rm.message
+                FROM matches m
+                JOIN raw_messages rm ON rm.id = m.id
+                ORDER BY rm.timestamp DESC
+                LIMIT 6
+            """, (fts_query,)).fetchall()
+        else:
+            filters = " AND ".join(["(message LIKE ? OR sender LIKE ? OR group_name LIKE ?)"] * len(tokens))
+            params = tuple(value for token in tokens for value in (f"%{token}%", f"%{token}%", f"%{token}%"))
+            summary = db.execute(f"""
+                SELECT COUNT(*) AS count,
+                       MIN(timestamp) AS first_seen,
+                       MAX(timestamp) AS last_seen,
+                       COUNT(DISTINCT group_name) AS groups,
+                       COUNT(DISTINCT COALESCE(NULLIF(sender_phone, ''), NULLIF(sender_jid, ''), sender)) AS unique_senders
+                FROM raw_messages
+                WHERE {filters}
+            """, params).fetchone()
 
-        recent = storage.db.execute(f"""
-            SELECT id, timestamp, group_name, sender, message
-            FROM raw_messages
-            WHERE {filters}
-            ORDER BY timestamp DESC
-            LIMIT 6
-        """, params).fetchall()
+            top_groups = db.execute(f"""
+                SELECT group_name, COUNT(*) AS count
+                FROM raw_messages
+                WHERE {filters}
+                GROUP BY group_name
+                ORDER BY count DESC
+                LIMIT 6
+            """, params).fetchall()
+
+            recent = db.execute(f"""
+                SELECT id, timestamp, group_name, sender, message
+                FROM raw_messages
+                WHERE {filters}
+                ORDER BY timestamp DESC
+                LIMIT 6
+            """, params).fetchall()
+    finally:
+        db.close()
 
     return {
         "query": term,
