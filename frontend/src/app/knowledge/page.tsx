@@ -9,7 +9,8 @@ interface KnowledgeRecord {
   sender_name: string;
   sender_phone: string;
   conversation_name: string;
-  message_timestamp: string;
+  message_timestamp?: string;
+  timestamp?: string;
   content_type: string;
   intent: string;
   confidence: number;
@@ -31,6 +32,14 @@ export default function KnowledgePage() {
   const [filter, setFilter] = useState<string>("all");
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<KnowledgeRecord | null>(null);
+  const safeStats: Stats = {
+    total_records: stats?.total_records ?? 0,
+    unique_senders: stats?.unique_senders ?? 0,
+    unique_conversations: stats?.unique_conversations ?? 0,
+    listings: stats?.listings ?? 0,
+    requirements: stats?.requirements ?? 0,
+    unclassified: stats?.unclassified ?? 0,
+  };
 
   useEffect(() => {
     Promise.all([
@@ -96,7 +105,7 @@ export default function KnowledgePage() {
       <div className="mb-6">
         <h1 className="text-2xl font-bold">Knowledge Base</h1>
         <p className="text-sm text-zinc-500 mt-1">
-          {stats?.total_records.toLocaleString()} records from WhatsApp messages
+          {safeStats.total_records.toLocaleString()} records from WhatsApp messages
         </p>
       </div>
 
@@ -104,12 +113,12 @@ export default function KnowledgePage() {
       {stats && (
         <div className="grid grid-cols-6 gap-3 mb-6">
           {[
-            { label: "Total", value: stats.total_records, color: "bg-zinc-100 text-zinc-700" },
-            { label: "Listings", value: stats.listings, color: "bg-blue-100 text-blue-700" },
-            { label: "Requirements", value: stats.requirements, color: "bg-green-100 text-green-700" },
-            { label: "Senders", value: stats.unique_senders, color: "bg-purple-100 text-purple-700" },
-            { label: "Conversations", value: stats.unique_conversations, color: "bg-amber-100 text-amber-700" },
-            { label: "Unclassified", value: stats.unclassified, color: "bg-red-100 text-red-700" },
+            { label: "Total", value: safeStats.total_records, color: "bg-zinc-100 text-zinc-700" },
+            { label: "Listings", value: safeStats.listings, color: "bg-blue-100 text-blue-700" },
+            { label: "Requirements", value: safeStats.requirements, color: "bg-green-100 text-green-700" },
+            { label: "Senders", value: safeStats.unique_senders, color: "bg-purple-100 text-purple-700" },
+            { label: "Conversations", value: safeStats.unique_conversations, color: "bg-amber-100 text-amber-700" },
+            { label: "Unclassified", value: safeStats.unclassified, color: "bg-red-100 text-red-700" },
           ].map((s) => (
             <div key={s.label} className={`rounded-lg p-3 ${s.color}`}>
               <div className="text-2xl font-bold">{s.value.toLocaleString()}</div>
@@ -177,7 +186,7 @@ export default function KnowledgePage() {
                   <div className="flex items-center gap-3 mt-2 text-xs text-zinc-400">
                     <span>{record.sender_name || "Unknown"}</span>
                     <span>{record.conversation_name}</span>
-                    <span>{record.message_timestamp?.split("T")[0]}</span>
+                    <span>{(record.message_timestamp || record.timestamp)?.split("T")[0]}</span>
                   </div>
                 </div>
                 <div className="text-right text-xs text-zinc-500">
@@ -240,7 +249,7 @@ export default function KnowledgePage() {
                 </div>
                 <div>
                   <div className="text-xs text-zinc-400 mb-1">Timestamp</div>
-                  <div className="text-sm">{selected.message_timestamp}</div>
+                  <div className="text-sm">{selected.message_timestamp || selected.timestamp}</div>
                 </div>
               </div>
             </div>

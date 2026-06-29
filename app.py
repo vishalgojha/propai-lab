@@ -3190,6 +3190,27 @@ async def list_brokers():
                 LIMIT 5
             """, (broker["id"],)).fetchall()
         ]
+        broker["groups"] = [
+            {
+                "group_name": _group_jid_to_name(r["group_name"]),
+                "observation_count": r["observation_count"],
+                "listing_count": r["listing_count"],
+                "requirement_count": r["requirement_count"],
+                "last_seen_at": r["last_seen_at"],
+            }
+            for r in storage.db.execute("""
+                SELECT group_name,
+                       COUNT(*) AS observation_count,
+                       SUM(CASE WHEN role = 'listing' THEN 1 ELSE 0 END) AS listing_count,
+                       SUM(CASE WHEN role = 'requirement' THEN 1 ELSE 0 END) AS requirement_count,
+                       MAX(seen_at) AS last_seen_at
+                FROM broker_observations
+                WHERE broker_id = ? AND group_name IS NOT NULL AND group_name != ''
+                GROUP BY group_name
+                ORDER BY observation_count DESC, last_seen_at DESC
+                LIMIT 5
+            """, (broker["id"],)).fetchall()
+        ]
         brokers.append(broker)
     return brokers
 
@@ -3253,10 +3274,31 @@ async def get_broker_profile(broker_id: int):
         ORDER BY b.observation_count DESC
         LIMIT 50
     """, (broker_id,)).fetchall()]
+    broker["groups"] = [
+        {
+            "group_name": _group_jid_to_name(r["group_name"]),
+            "observation_count": r["observation_count"],
+            "listing_count": r["listing_count"],
+            "requirement_count": r["requirement_count"],
+            "last_seen_at": r["last_seen_at"],
+        }
+        for r in storage.db.execute("""
+            SELECT group_name,
+                   COUNT(*) AS observation_count,
+                   SUM(CASE WHEN role = 'listing' THEN 1 ELSE 0 END) AS listing_count,
+                   SUM(CASE WHEN role = 'requirement' THEN 1 ELSE 0 END) AS requirement_count,
+                   MAX(seen_at) AS last_seen_at
+            FROM broker_observations
+            WHERE broker_id = ? AND group_name IS NOT NULL AND group_name != ''
+            GROUP BY group_name
+            ORDER BY observation_count DESC, last_seen_at DESC
+            LIMIT 30
+        """, (broker_id,)).fetchall()
+    ]
     broker["observations"] = [dict(r) for r in storage.db.execute("""
         SELECT p.id AS parsed_id, p.intent, p.message_type, p.bhk, p.price, p.price_unit,
                p.furnishing, p.building_name, p.micro_market, p.broker_name,
-               p.confidence, p.created_at
+               p.confidence, p.created_at, bo.role, bo.group_name, bo.seen_at
         FROM broker_observations bo
         JOIN parsed_output p ON p.id = bo.parsed_id
         WHERE bo.broker_id = ?
@@ -5185,9 +5227,10 @@ async def audit_intelligence():
 
     latest_records = db.execute("""
         SELECT rm.created_at, rm.group_name, rm.sender, rm.message, rm.id,
-               CASE WHEN kr.id IS NULL THEN 0 ELSE 1 END AS stored
+               MAX(CASE WHEN kr.id IS NULL THEN 0 ELSE 1 END) AS stored
         FROM raw_messages rm
         LEFT JOIN knowledge_records kr ON kr.source_id = rm.message_uid
+        GROUP BY rm.id
         ORDER BY rm.created_at DESC
         LIMIT 12
     """).fetchall() if _table_exists("knowledge_records") else db.execute("""
@@ -5201,6 +5244,64 @@ async def audit_intelligence():
     parser_success = db.execute(
         "SELECT ROUND(CAST(COUNT(CASE WHEN confidence > 0.5 THEN 1 END) AS FLOAT) / COUNT(*) * 100, 1) FROM parsed_output"
     ).fetchone()[0]
+
+    return {
+        "network": {
+            "total_groups": total_groups,
+            "active_groups_24h": active_groups_24h,
+            "total_messages": total_raw,
+            "knowledge_records": knowledge_records,
+            "attachments": attachment_count,
+            "communities": communities_count,
+            "broadcasts": broadcast_count,
+            "direct_messages": direct_message_count,
+            "messages_today": msgs_today,
+            "parsed_today": parsed_today,
+            "parser_success": parser_success or 0,
+            "last_message": last_msg or "never",
+            "webhook_healthy": webhook_ok,
+        },
+        "capture": {
+            "status": "connected" if webhook_ok else "stale",
+            "last_message": last_msg or "never",
+            "messages_captured": total_raw,
+            "knowledge_records": knowledge_records,
+            "attachments": attachment_count,
+            "communities": communities_count,
+            "groups": total_groups,
+            "broadcasts": broadcast_count,
+            "direct_messages": direct_message_count,
+            "latest_records": [
+                {
+                    "id": r[4],
+                    "time": r[0],
+                    "conversation": _group_jid_to_name(r[1]),
+                    "sender": r[2],
+                    "preview": (r[3] or "")[:180],
+                    "stored": bool(r[5]),
+                }
+                for r in latest_records
+            ],
+        },
+        "search_coverage": {
+            "messages": total_raw,
+            "indexed": indexed_records,
+            "searchable": searchable_records,
+            "embeddings": embeddings_count,
+            "recall_ready": recall_ready_pct,
+        },
+        "learning": {
+            "unknown_terms": learning_unknown,
+            "needs_review": learning_needs_review,
+            "recently_learned": [
+                {
+                    "term": r[0],
+                    "learned_as": r[1],
+                }
+                for r in learned_rows
+            ],
+        },
+    }
 
     # ── Broker Network ──
     total_brokers = db.execute("SELECT COUNT(*) FROM brokers").fetchone()[0]

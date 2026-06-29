@@ -20,8 +20,8 @@ const navSections = [
     title: "Market",
     items: [
       { href: "/knowledge", label: "Knowledge Base", icon: "📚" },
-      { href: "/extractions", label: "Market Listings", icon: "🏗️" },
-      { href: "/requirements", label: "Market Requirements", icon: "📋" },
+      { href: "/extractions", label: "Extracted Listings", icon: "🏗️" },
+      { href: "/requirements", label: "Extracted Requirements", icon: "📋" },
       { href: "/brokers", label: "Brokers", icon: "🤝" },
       { href: "/groups", label: "Groups", icon: "👥" },
       { href: "/market", label: "Markets", icon: "🗺️" },
@@ -31,7 +31,7 @@ const navSections = [
     title: "Intelligence",
     items: [
       { href: "/", label: "Dashboard", icon: "📊" },
-      { href: "/intelligence", label: "Market Intelligence", icon: "🧠" },
+      { href: "/intelligence", label: "Market Actions", icon: "🧠" },
       { href: "/chat?tab=review", label: "Review Center", icon: "✅" },
       { href: "/chat", label: "AI Chat", icon: "🤖" },
       { href: "/audit", label: "WhatsApp Audit", icon: "🔬" },
@@ -47,7 +47,7 @@ const QUICK_ACTIONS = [
   { label: "Bandra market listings", icon: "📍", query: "bandra" },
   { label: "Commercial offices", icon: "🏢", query: "commercial" },
   { label: "Active brokers", icon: "🤝", query: "" },
-  { label: "Recent requirements", icon: "📋", query: "" },
+  { label: "Recent extracted requirements", icon: "📋", query: "" },
 ];
 
 function PaletteModal({ open, onClose }: { open: boolean; onClose: () => void }) {
@@ -107,7 +107,7 @@ function PaletteModal({ open, onClose }: { open: boolean; onClose: () => void })
     listings: "🏗️", requirements: "📋", brokers: "🤝", buildings: "🏢", markets: "🗺️", messages: "💬",
   };
   const GROUP_LABELS: Record<string, string> = {
-    listings: "Market Listings", requirements: "Market Requirements", brokers: "Brokers", buildings: "Buildings", markets: "Markets", messages: "Messages",
+    listings: "Extracted Listings", requirements: "Extracted Requirements", brokers: "Brokers", buildings: "Buildings", markets: "Markets", messages: "Messages",
   };
 
   function renderGroupItem(group: string, item: any, i: number, globalIdx: number) {
@@ -204,7 +204,7 @@ function PaletteModal({ open, onClose }: { open: boolean; onClose: () => void })
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={onKeyDown}
-            placeholder="Search market listings, requirements, brokers, buildings, markets..."
+            placeholder="Search extracted listings, requirements, brokers, buildings, markets..."
             className="flex-1 bg-transparent text-sm text-white placeholder-[#64748b] outline-none"
           />
           <kbd className="text-[10px] text-[#64748b] border border-[rgba(255,255,255,0.08)] px-1.5 py-0.5 rounded">ESC</kbd>
@@ -216,10 +216,10 @@ function PaletteModal({ open, onClose }: { open: boolean; onClose: () => void })
             <div className="text-[10px] font-semibold text-[#64748b] uppercase tracking-wider mb-2 px-1">Quick Actions</div>
             <div className="grid grid-cols-2 gap-1.5">
               <button onClick={() => navigate("/extractions")} className="flex items-center gap-2 text-xs text-[#94a3b8] hover:text-white hover:bg-[rgba(255,255,255,0.04)] rounded-lg px-2.5 py-2 transition-colors text-left">
-                <span>🏗️</span> Market Listings
+                <span>🏗️</span> Extracted Listings
               </button>
               <button onClick={() => navigate("/requirements")} className="flex items-center gap-2 text-xs text-[#94a3b8] hover:text-white hover:bg-[rgba(255,255,255,0.04)] rounded-lg px-2.5 py-2 transition-colors text-left">
-                <span>📋</span> Market Requirements
+                <span>📋</span> Extracted Requirements
               </button>
               <button onClick={() => navigate("/brokers")} className="flex items-center gap-2 text-xs text-[#94a3b8] hover:text-white hover:bg-[rgba(255,255,255,0.04)] rounded-lg px-2.5 py-2 transition-colors text-left">
                 <span>🤝</span> Active Brokers

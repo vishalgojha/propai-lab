@@ -115,6 +115,7 @@ function whatsappLink(r: api.ListingRow): string {
     `I came across your ${propertyType} listing through PropAI.`,
     ``,
     propertySummary && `Property: ${propertySummary}`,
+    sourceLine,
     seenLine,
     timeLine,
     ``,
@@ -235,8 +236,10 @@ export default function ExtractionsPage() {
   return (
     <div>
       <div className="mb-4">
-        <h2 className="text-lg font-bold text-[#e2e8f0]">Market Listings</h2>
-        <div className="text-sm text-[#64748b] mt-1">Listings currently circulating across broker WhatsApp groups.</div>
+        <h2 className="text-lg font-bold text-[#e2e8f0]">Extracted Listings</h2>
+        <div className="text-sm text-[#64748b] mt-1">
+          Parser-generated inventory candidates from captured WhatsApp knowledge. Use this as a work queue; open Sources to verify the original message.
+        </div>
       </div>
       <div className="flex gap-2 mb-4 items-center flex-wrap">
         <button onClick={() => api.getListings(PAGE_SIZE, offset).then(setData)} className="px-3 py-1.5 bg-[#3EE88A] text-[#04100a] rounded-lg text-sm font-bold">Refresh</button>
@@ -245,8 +248,8 @@ export default function ExtractionsPage() {
         <section>
           <div className="flex items-center justify-between gap-3 mb-3">
             <div>
-              <h3 className="text-base font-bold text-[#e2e8f0]">Residential Listings</h3>
-              <div className="text-xs text-[#64748b]">Homes and requirements with BHK structure.</div>
+              <h3 className="text-base font-bold text-[#e2e8f0]">Extracted Residential Listings</h3>
+              <div className="text-xs text-[#64748b]">Homes inferred from WhatsApp messages with BHK structure.</div>
             </div>
             <div className="text-xs text-[#64748b]">{residential.length} rows</div>
           </div>
@@ -256,8 +259,8 @@ export default function ExtractionsPage() {
         <section>
           <div className="flex items-center justify-between gap-3 mb-3">
             <div>
-              <h3 className="text-base font-bold text-[#e2e8f0]">Commercial Listings</h3>
-              <div className="text-xs text-[#64748b]">Offices, shops, showrooms, warehouses and other commercial spaces.</div>
+              <h3 className="text-base font-bold text-[#e2e8f0]">Extracted Commercial Listings</h3>
+              <div className="text-xs text-[#64748b]">Offices, shops, showrooms, warehouses and other commercial spaces inferred from WhatsApp messages.</div>
             </div>
             <div className="text-xs text-[#64748b]">{commercial.length} rows</div>
           </div>

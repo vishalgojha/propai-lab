@@ -130,7 +130,7 @@ function RecordRow({ item }: { item: LatestRecord }) {
 
 export default function AuditPage() {
   const [data, setData] = useState<AuditData | null>(null);
-  const [query, setQuery] = useState("Parijat");
+  const [query, setQuery] = useState("");
   const [evidence, setEvidence] = useState<SearchEvidence | null>(null);
   const [loading, setLoading] = useState(true);
   const [searching, setSearching] = useState(false);
@@ -240,7 +240,7 @@ export default function AuditPage() {
         </div>
 
         <div className="space-y-3">
-          <SectionTitle title="Search Evidence" sub="Type any building, broker, phrase, or locality." />
+          <SectionTitle title="Search Captured Knowledge" sub="Check whether PropAI remembers a building, broker, locality, client, or phrase." />
           <Card className="p-4">
             <input
               value={query}
@@ -252,9 +252,11 @@ export default function AuditPage() {
               placeholder="Search WhatsApp memory..."
             />
             <div className="mt-4 rounded-lg bg-[#111820] p-4">
-              <Label>{searching ? "Searching" : evidence?.count ? "Found" : "Result"}</Label>
-              <div className="mt-1 text-3xl font-semibold tabular-nums text-[#e2e8f0]">{num(evidence?.count || 0)}</div>
-              <div className="mt-1 text-xs text-[#64748b]">Knowledge records matching {query.trim() || "-"}</div>
+              <Label>{searching ? "Searching" : evidence?.count ? "Remembered" : "Result"}</Label>
+              <div className="mt-1 text-3xl font-semibold tabular-nums text-[#e2e8f0]">{num(evidence?.count || 0)} times</div>
+              <div className="mt-1 text-xs text-[#64748b]">
+                Across {num(evidence?.groups || 0)} groups and {num(evidence?.unique_senders || 0)} senders
+              </div>
             </div>
             <div className="mt-4 grid grid-cols-2 gap-3">
               <Metric label="First Seen" value={<span className="text-base">{dateLabel(evidence?.first_seen || "")}</span>} />

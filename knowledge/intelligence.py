@@ -318,26 +318,6 @@ class IntelligenceEngine:
                 "priority": "medium",
             })
 
-        # 3. Inactive top brokers
-        inactive = self.db.execute("""
-            SELECT sender_name, MAX(message_timestamp) as last_active
-            FROM knowledge_records
-            WHERE is_valid = 1 AND sender_name IS NOT NULL
-            GROUP BY sender_name
-            HAVING last_active < datetime('now', '-7 days')
-            ORDER BY COUNT(*) DESC
-            LIMIT 3
-        """).fetchall()
-
-        for r in inactive:
-            insights.append({
-                "type": "relationship",
-                "title": f"{r[0]} hasn't posted in 7+ days",
-                "description": "A previously active broker has gone quiet. Consider reaching out.",
-                "action": f"View {r[0]}'s profile",
-                "priority": "low",
-            })
-
         return insights
 
     def generate_full_report(self) -> dict:

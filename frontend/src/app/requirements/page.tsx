@@ -129,8 +129,10 @@ export default function RequirementsPage() {
   return (
     <div>
       <div className="mb-4">
-        <h2 className="text-lg font-bold text-[#e2e8f0]">Market Requirements</h2>
-        <div className="text-sm text-[#64748b] mt-1">Buyer requirements extracted from broker WhatsApp groups.</div>
+        <h2 className="text-lg font-bold text-[#e2e8f0]">Extracted Requirements</h2>
+        <div className="text-sm text-[#64748b] mt-1">
+          Parser-generated buyer and tenant needs from captured WhatsApp knowledge. Use this as a work queue; open Sources to verify the original message.
+        </div>
       </div>
       <div className="flex gap-2 mb-4 items-center flex-wrap">
         <input
@@ -150,7 +152,7 @@ export default function RequirementsPage() {
         >
           Re-match
         </button>
-        <span className="text-xs text-[#64748b]">{filtered.length} requirements</span>
+        <span className="text-xs text-[#64748b]">{filtered.length} extracted requirements</span>
       </div>
 
       <div className="overflow-x-auto">
@@ -163,8 +165,8 @@ export default function RequirementsPage() {
               <th className="text-left px-2.5 py-2 border-b border-[rgba(255,255,255,0.1)] text-[11px] text-[#64748b] uppercase tracking-wider">Buildings</th>
               <th className="text-left px-2.5 py-2 border-b border-[rgba(255,255,255,0.1)] text-[11px] text-[#64748b] uppercase tracking-wider">Details</th>
               <th className="text-left px-2.5 py-2 border-b border-[rgba(255,255,255,0.1)] text-[11px] text-[#64748b] uppercase tracking-wider">Broker</th>
-              <th className="text-right px-2.5 py-2 border-b border-[rgba(255,255,255,0.1)] text-[11px] text-[#64748b] uppercase tracking-wider">Matches</th>
               <th className="text-left px-2.5 py-2 border-b border-[rgba(255,255,255,0.1)] text-[11px] text-[#64748b] uppercase tracking-wider">Seen</th>
+              <th className="text-right px-2.5 py-2 border-b border-[rgba(255,255,255,0.1)] text-[11px] text-[#64748b] uppercase tracking-wider">Matches</th>
               <th className="text-left px-2.5 py-2 border-b border-[rgba(255,255,255,0.1)] text-[11px] text-[#64748b] uppercase tracking-wider">Actions</th>
             </tr>
           </thead>
@@ -173,7 +175,6 @@ export default function RequirementsPage() {
               const waLink = whatsappLink(row);
               const matchQuery = [row.bhk, row.location_raw || row.micro_market, row.building_name, formatPrice(row.price)]
                 .filter(Boolean).join(" ");
-              const needs = [row.bhk, intentLabel(row.intent)].filter(Boolean).join(" ");
               const markets = [row.micro_market, row.location_raw].filter(Boolean);
               const details = [row.furnishing, row.developer, row.area_sqft ? `${row.area_sqft} sqft` : ""].filter(Boolean);
 

@@ -1085,14 +1085,12 @@ def execute_tool(name, args, sources, db_path=None):
             where_sql = " AND ".join(where_clauses) if where_clauses else "1=1"
 
             sort_map = {
-                "price": "l.price",
-                "last_seen": "l.last_seen",
-                "observation_count": "l.observation_count",
-                "confidence": "l.confidence",
+                "price": "l.price DESC",
+                "last_seen": "l.last_seen DESC",
+                "observation_count": "l.observation_count DESC",
+                "confidence": "l.confidence DESC",
             }
-            order_sql = sort_map.get(sort_by, "l.last_seen")
-            if sort_by == "price":
-                order_sql += " DESC"
+            order_sql = sort_map.get(sort_by, "l.last_seen DESC")
 
             total_query = f"SELECT COUNT(*) FROM listings l WHERE {where_sql}"
             total_count = con.execute(total_query, params).fetchone()[0]
@@ -1100,13 +1098,12 @@ def execute_tool(name, args, sources, db_path=None):
             listing_query = f"""
                 SELECT l.fingerprint, l.intent, l.bhk, l.price, l.price_unit, l.area_sqft,
                        l.furnishing, l.location_label, l.building_name, l.landmark_name,
-                       l.micro_market, l.developer, l.broker_name, l.broker_phone,
+                       l.micro_market, l.broker_name, l.broker_phone,
                        l.first_seen, l.last_seen, l.observation_count, l.group_count,
-                       l.latest_raw_message_id, l.latest_message, l.latest_group,
-                       l.latest_timestamp, l.latest_sender
+                       l.latest_raw_message_id
                 FROM listings l
                 WHERE {where_sql}
-                ORDER BY {order_sql} DESC
+                ORDER BY {order_sql}
                 LIMIT ? OFFSET ?
             """
             params.extend([limit + 50, offset])
@@ -1181,10 +1178,6 @@ def execute_tool(name, args, sources, db_path=None):
 
                 confidence_pct = round((d.get("confidence") or 0) * 100) if d.get("confidence") else 0
 
-                latest_msg = ""
-                if d.get("latest_message"):
-                    latest_msg = d["latest_message"][:120]
-
                 results.append({
                     "fingerprint": d.get("fingerprint"),
                     "intent": d.get("intent"),
@@ -1197,7 +1190,6 @@ def execute_tool(name, args, sources, db_path=None):
                     "building_name": d.get("building_name") or "Unknown Building",
                     "landmark_name": d.get("landmark_name"),
                     "micro_market": d.get("micro_market"),
-                    "developer": d.get("developer"),
                     "broker_name": d.get("broker_name"),
                     "broker_phone": d.get("broker_phone"),
                     "first_seen": d.get("first_seen"),
@@ -1207,10 +1199,6 @@ def execute_tool(name, args, sources, db_path=None):
                     "observation_count": d.get("observation_count", 0),
                     "group_count": d.get("group_count", 0),
                     "confidence": confidence_pct,
-                    "latest_message": latest_msg,
-                    "latest_group": d.get("latest_group"),
-                    "latest_timestamp": d.get("latest_timestamp"),
-                    "latest_sender": d.get("latest_sender"),
                     "raw_message_id": d.get("latest_raw_message_id"),
                     "match_reasons": match_reasons,
                 })
@@ -1229,7 +1217,6 @@ def execute_tool(name, args, sources, db_path=None):
 
             brokers_found = len(set(r["broker_name"] for r in results if r["broker_name"]))
             buildings_found = len(set(r["building_name"] for r in results if r["building_name"]))
-            groups_found = len(set(r["latest_group"] for r in results if r["latest_group"]))
 
             return json.dumps({
                 "type": "listing_results",
@@ -1244,7 +1231,6 @@ def execute_tool(name, args, sources, db_path=None):
                     "total": total_count,
                     "brokers": brokers_found,
                     "buildings": buildings_found,
-                    "groups": groups_found,
                 },
             }, default=str)
         finally:
@@ -1554,10 +1540,22 @@ def _default_db_path():
     return os.path.join(lab_dir, "lab.db")
 
 
-def get_model_reply(messages, sources, api_key=None, db_path=None, model=None):
+def get_model_reply(messages, sources, api_key=None, db_path=None, model=None, _depth=0):
     client = get_client(api_key=api_key)
     tools = _build_tools(sources)
     db_path = db_path or _default_db_path()
+
+    # Limit recursion depth
+    if _depth > 5:
+        # Force a text-only response
+        resp = client.chat.completions.create(
+            model=model or MODEL,
+            messages=messages,
+            max_tokens=2000,
+            extra_body={"chat_template_kwargs": {"enable_thinking": False}},
+        )
+        return resp.choices[0].message
+
     resp = client.chat.completions.create(
         model=model or MODEL,
         messages=messages,
@@ -1566,7 +1564,15 @@ def get_model_reply(messages, sources, api_key=None, db_path=None, model=None):
         extra_body={"chat_template_kwargs": {"enable_thinking": False}},
     )
     msg = resp.choices[0].message
-    messages.append(msg)
+
+    # Append as dict, not as raw object
+    msg_dict = {"role": "assistant", "content": msg.content}
+    if msg.tool_calls:
+        msg_dict["tool_calls"] = [
+            {"id": tc.id, "type": "function", "function": {"name": tc.function.name, "arguments": tc.function.arguments}}
+            for tc in msg.tool_calls
+        ]
+    messages.append(msg_dict)
 
     if msg.tool_calls:
         for tc in msg.tool_calls:
@@ -1582,6 +1588,6 @@ def get_model_reply(messages, sources, api_key=None, db_path=None, model=None):
                 "tool_call_id": tc.id,
                 "content": result_str,
             })
-        return get_model_reply(messages, sources, api_key=api_key, db_path=db_path, model=model)
+        return get_model_reply(messages, sources, api_key=api_key, db_path=db_path, model=model, _depth=_depth + 1)
 
     return msg

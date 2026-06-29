@@ -1,98 +1,214 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import * as api from "@/lib/api";
 
-function maskPhone(phone: string): string {
-  const digits = phone?.replace(/\D/g, "") || "";
-  if (digits.length < 4) return phone || "—";
-  return `••••••${digits.slice(-4)}`;
+type BrokerMarket = {
+  micro_market: string;
+  observation_count: number;
+  listing_count: number;
+  requirement_count: number;
+};
+
+type BrokerGroup = {
+  group_name: string;
+  observation_count: number;
+  listing_count: number;
+  requirement_count: number;
+  last_seen_at: string;
+};
+
+type BrokerRow = {
+  id: number;
+  name: string;
+  phone?: string;
+  observation_count: number;
+  listing_count: number;
+  requirement_count: number;
+  group_count: number;
+  market_count: number;
+  last_seen_at?: string;
+  markets?: BrokerMarket[];
+  groups?: BrokerGroup[];
+};
+
+function digits(value?: string) {
+  return (value || "").replace(/\D/g, "");
 }
 
-function waLink(phone: string): string {
-  const digits = phone?.replace(/\D/g, "") || "";
-  if (digits.length < 10) return "";
-  return `https://wa.me/${digits.startsWith("91") ? digits : "91" + digits}`;
+function validPhone(phone?: string) {
+  return digits(phone).slice(-10).length === 10;
+}
+
+function waLink(phone?: string) {
+  const local = digits(phone).slice(-10);
+  if (local.length !== 10) return "";
+  return `https://wa.me/91${local}`;
+}
+
+function displayPhone(phone?: string) {
+  const local = digits(phone).slice(-10);
+  if (local.length !== 10) return "";
+  return `+91 ${local.slice(0, 5)} ${local.slice(5)}`;
+}
+
+function isMaskedName(name?: string) {
+  return /^\+\d/.test(name || "") || /X{3,}/i.test(name || "");
+}
+
+function sourceLabel(broker: BrokerRow) {
+  if (broker.name && !isMaskedName(broker.name)) return broker.name;
+  if (validPhone(broker.phone)) return displayPhone(broker.phone);
+  return "Unknown WhatsApp source";
+}
+
+function sourceSubtext(broker: BrokerRow) {
+  if (broker.name && isMaskedName(broker.name)) return "Masked WhatsApp display identity";
+  if (!validPhone(broker.phone)) return "No usable phone captured yet";
+  return displayPhone(broker.phone);
+}
+
+function activityMix(broker: BrokerRow) {
+  const supply = broker.listing_count || 0;
+  const demand = broker.requirement_count || 0;
+  if (supply === 0 && demand === 0) return { label: "Unclassified", tone: "bg-zinc-700 text-zinc-200" };
+  if (supply >= demand * 3) return { label: "Supply source", tone: "bg-blue-900/40 text-blue-200" };
+  if (demand >= supply * 2) return { label: "Demand source", tone: "bg-amber-900/40 text-amber-200" };
+  return { label: "Balanced source", tone: "bg-green-900/40 text-green-200" };
+}
+
+function dateLabel(ts?: string) {
+  if (!ts) return "-";
+  const d = new Date(ts);
+  if (Number.isNaN(d.getTime())) return "-";
+  return d.toLocaleDateString("en-IN", { day: "numeric", month: "short" });
+}
+
+function marketSummary(markets: BrokerMarket[] = []) {
+  return markets.slice(0, 3).map((m) => m.micro_market).filter(Boolean);
+}
+
+function groupSummary(groups: BrokerGroup[] = []) {
+  return groups.slice(0, 2).map((g) => g.group_name).filter(Boolean);
 }
 
 export default function BrokersPage() {
-  const [brokers, setBrokers] = useState<any[]>([]);
-  const [revealed, setRevealed] = useState<Record<number, boolean>>({});
+  const [brokers, setBrokers] = useState<BrokerRow[]>([]);
+  const [query, setQuery] = useState("");
 
   useEffect(() => {
     api.getBrokers().then(setBrokers);
   }, []);
 
-  function toggleReveal(id: number) {
-    setRevealed((prev) => ({ ...prev, [id]: !prev[id] }));
-  }
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return brokers;
+    return brokers.filter((broker) => {
+      const text = [
+        broker.name,
+        broker.phone,
+        ...(broker.markets || []).map((m) => m.micro_market),
+        ...(broker.groups || []).map((g) => g.group_name),
+      ].join(" ").toLowerCase();
+      return text.includes(q);
+    });
+  }, [brokers, query]);
 
   return (
-    <div>
-      <h2 className="text-lg font-bold mb-4">Brokers</h2>
-      {brokers.length === 0 ? (
-        <div className="text-[#64748b]">No broker data yet</div>
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-bold text-[#e2e8f0]">Broker Sources</h2>
+          <div className="text-sm text-[#64748b] mt-1">
+            WhatsApp sources with extracted supply, demand, operating areas, groups, and recent activity.
+          </div>
+        </div>
+        <input
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="Search broker, market, group..."
+          className="px-2.5 py-1.5 bg-[#0d1117] border border-[rgba(255,255,255,0.1)] rounded-lg text-sm text-[#e2e8f0] min-w-[280px]"
+        />
+      </div>
+
+      {filtered.length === 0 ? (
+        <div className="text-[#64748b]">No broker source data yet</div>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr>
-                <th className="text-left px-2.5 py-2 border-b border-[rgba(255,255,255,0.1)] text-[11px] text-[#64748b] uppercase">Name</th>
-                <th className="text-left px-2.5 py-2 border-b border-[rgba(255,255,255,0.1)] text-[11px] text-[#64748b] uppercase">Contact</th>
-                <th className="text-left px-2.5 py-2 border-b border-[rgba(255,255,255,0.1)] text-[11px] text-[#64748b] uppercase">Listings</th>
-                <th className="text-left px-2.5 py-2 border-b border-[rgba(255,255,255,0.1)] text-[11px] text-[#64748b] uppercase">Buyers</th>
+                <th className="text-left px-2.5 py-2 border-b border-[rgba(255,255,255,0.1)] text-[11px] text-[#64748b] uppercase">Source</th>
+                <th className="text-left px-2.5 py-2 border-b border-[rgba(255,255,255,0.1)] text-[11px] text-[#64748b] uppercase">Mix</th>
+                <th className="text-left px-2.5 py-2 border-b border-[rgba(255,255,255,0.1)] text-[11px] text-[#64748b] uppercase">Operating Areas</th>
                 <th className="text-left px-2.5 py-2 border-b border-[rgba(255,255,255,0.1)] text-[11px] text-[#64748b] uppercase">Groups</th>
-                <th className="text-left px-2.5 py-2 border-b border-[rgba(255,255,255,0.1)] text-[11px] text-[#64748b] uppercase">Markets</th>
-                <th className="text-left px-2.5 py-2 border-b border-[rgba(255,255,255,0.1)] text-[11px] text-[#64748b] uppercase">Avg Ticket</th>
-                <th className="text-left px-2.5 py-2 border-b border-[rgba(255,255,255,0.1)] text-[11px] text-[#64748b] uppercase">Last Seen</th>
+                <th className="text-right px-2.5 py-2 border-b border-[rgba(255,255,255,0.1)] text-[11px] text-[#64748b] uppercase">Supply</th>
+                <th className="text-right px-2.5 py-2 border-b border-[rgba(255,255,255,0.1)] text-[11px] text-[#64748b] uppercase">Demand</th>
+                <th className="text-left px-2.5 py-2 border-b border-[rgba(255,255,255,0.1)] text-[11px] text-[#64748b] uppercase">Last Active</th>
+                <th className="text-left px-2.5 py-2 border-b border-[rgba(255,255,255,0.1)] text-[11px] text-[#64748b] uppercase">Actions</th>
               </tr>
             </thead>
             <tbody>
-              {brokers.map((b: any, i: number) => (
-                <tr key={b.id || i} className="hover:bg-[#0d1117]">
-                  <td className="px-2.5 py-2 border-b border-[rgba(255,255,255,0.06)] font-semibold">
-                    <Link href={`/brokers/${b.id}`} className="hover:text-blue-400 transition-colors">{b.name}</Link>
-                  </td>
-                  <td className="px-2.5 py-2 border-b border-[rgba(255,255,255,0.06)]">
-                    {revealed[b.id] ? (
-                      <span className="flex items-center gap-2">
-                        <span className="text-[#e2e8f0]">{b.phone}</span>
-                        <a
-                          href={waLink(b.phone)}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-[10px] text-green-400 hover:text-green-300 font-medium"
-                        >
-                          Connect
-                        </a>
-                        <button
-                          onClick={() => toggleReveal(b.id)}
-                          className="text-[10px] text-[#64748b] hover:text-white"
-                        >
-                          Hide
-                        </button>
-                      </span>
-                    ) : (
-                      <span className="flex items-center gap-2">
-                        <span className="text-[#64748b]">{maskPhone(b.phone)}</span>
-                        <button
-                          onClick={() => toggleReveal(b.id)}
-                          className="text-[10px] text-blue-400 hover:text-blue-300 font-medium"
-                        >
-                          Reveal
-                        </button>
-                      </span>
-                    )}
-                  </td>
-                  <td className="px-2.5 py-2 border-b border-[rgba(255,255,255,0.06)]">{b.listing_count}</td>
-                  <td className="px-2.5 py-2 border-b border-[rgba(255,255,255,0.06)]">{b.requirement_count}</td>
-                  <td className="px-2.5 py-2 border-b border-[rgba(255,255,255,0.06)]">{b.group_count}</td>
-                  <td className="px-2.5 py-2 border-b border-[rgba(255,255,255,0.06)]">{b.market_count}</td>
-                  <td className="px-2.5 py-2 border-b border-[rgba(255,255,255,0.06)]">{b.avg_ticket ? `₹${Math.round(b.avg_ticket).toLocaleString("en-IN")}` : "—"}</td>
-                  <td className="px-2.5 py-2 border-b border-[rgba(255,255,255,0.06)] text-[#64748b] text-xs">{b.last_seen_at ? new Date(b.last_seen_at).toLocaleDateString("en-IN", { day: "numeric", month: "short" }) : "—"}</td>
-                </tr>
-              ))}
+              {filtered.map((broker) => {
+                const mix = activityMix(broker);
+                const markets = marketSummary(broker.markets);
+                const groups = groupSummary(broker.groups);
+                const whatsapp = waLink(broker.phone);
+
+                return (
+                  <tr key={broker.id} className="hover:bg-[#0d1117]">
+                    <td className="px-2.5 py-2 border-b border-[rgba(255,255,255,0.06)]">
+                      <Link href={`/brokers/${broker.id}`} className="font-semibold text-[#e2e8f0] hover:text-blue-400 transition-colors">
+                        {sourceLabel(broker)}
+                      </Link>
+                      <div className="text-[10px] text-[#64748b] mt-0.5">{sourceSubtext(broker)}</div>
+                    </td>
+                    <td className="px-2.5 py-2 border-b border-[rgba(255,255,255,0.06)]">
+                      <span className={`text-[10px] px-2 py-1 rounded-full font-semibold ${mix.tone}`}>{mix.label}</span>
+                    </td>
+                    <td className="px-2.5 py-2 border-b border-[rgba(255,255,255,0.06)] min-w-[220px]">
+                      {markets.length ? (
+                        <div className="flex flex-wrap gap-1">
+                          {markets.map((market) => (
+                            <span key={market} className="text-[10px] bg-[#111820] border border-[rgba(255,255,255,0.08)] rounded px-1.5 py-0.5 text-[#94a3b8]">{market}</span>
+                          ))}
+                          {broker.market_count > markets.length && <span className="text-[10px] text-[#64748b]">+{broker.market_count - markets.length}</span>}
+                        </div>
+                      ) : (
+                        <span className="text-[#475569]">No area extracted</span>
+                      )}
+                    </td>
+                    <td className="px-2.5 py-2 border-b border-[rgba(255,255,255,0.06)] min-w-[220px]">
+                      {groups.length ? (
+                        <div className="space-y-0.5">
+                          {groups.map((group) => <div key={group} className="text-xs text-[#94a3b8] truncate max-w-[260px]">{group}</div>)}
+                          {broker.group_count > groups.length && <div className="text-[10px] text-[#64748b]">+{broker.group_count - groups.length} more groups</div>}
+                        </div>
+                      ) : (
+                        <span className="text-[#475569]">-</span>
+                      )}
+                    </td>
+                    <td className="px-2.5 py-2 border-b border-[rgba(255,255,255,0.06)] text-right font-mono">{broker.listing_count}</td>
+                    <td className="px-2.5 py-2 border-b border-[rgba(255,255,255,0.06)] text-right font-mono">{broker.requirement_count}</td>
+                    <td className="px-2.5 py-2 border-b border-[rgba(255,255,255,0.06)] text-[#64748b] text-xs">{dateLabel(broker.last_seen_at)}</td>
+                    <td className="px-2.5 py-2 border-b border-[rgba(255,255,255,0.06)]">
+                      <div className="flex flex-wrap gap-1.5">
+                        <Link href={`/brokers/${broker.id}`} className="text-[10px] font-semibold text-white bg-[#58a6ff] hover:bg-[#4090e0] rounded px-2 py-1">
+                          Profile
+                        </Link>
+                        {whatsapp ? (
+                          <a href={whatsapp} target="_blank" rel="noreferrer" className="text-[10px] font-semibold text-[#04100a] bg-[#3EE88A] hover:bg-[#2DC96E] rounded px-2 py-1">
+                            WhatsApp
+                          </a>
+                        ) : (
+                          <span className="text-[10px] text-[#64748b]">No WA</span>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
