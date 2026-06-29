@@ -141,7 +141,12 @@ export default function AuditPage() {
     setLoading(true);
     setError("");
     try {
-      setData(await api.getAuditIntelligence());
+      try {
+        setData(await api.getAuditIntelligence());
+      } catch {
+        await new Promise((resolve) => setTimeout(resolve, 600));
+        setData(await api.getAuditIntelligence());
+      }
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Failed to load audit data");
     } finally {

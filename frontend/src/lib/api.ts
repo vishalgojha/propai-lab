@@ -1,9 +1,9 @@
 const BASE = "/api";
 const API_TIMEOUT_MS = 8000;
 
-async function fetchJSON<T>(url: string, init?: RequestInit): Promise<T> {
+async function fetchJSON<T>(url: string, init?: RequestInit, timeoutMs = API_TIMEOUT_MS): Promise<T> {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const res = await fetch(`${BASE}${url}`, {
       ...init,
@@ -882,7 +882,7 @@ export interface AuditSearchEvidence {
 }
 
 export function getAuditIntelligence() {
-  return fetchJSON<AuditIntelligence>("/audit/intelligence");
+  return fetchJSON<AuditIntelligence>("/audit/intelligence", undefined, 20000);
 }
 
 export function getAuditSearchEvidence(q: string) {
