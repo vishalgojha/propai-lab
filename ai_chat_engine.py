@@ -1049,8 +1049,12 @@ def execute_tool(name, args, sources, db_path=None):
                 params.append(intent.upper())
 
             if bhk and bhk != "any":
+                # DB stores "3 BHK", AI may send "3" or "3 BHK"
+                bhk_str = str(bhk).strip()
+                if not bhk_str.upper().endswith("BHK") and not bhk_str.upper().endswith("STUDIO"):
+                    bhk_str = f"{bhk_str} BHK"
                 where_clauses.append("l.bhk = ?")
-                params.append(bhk)
+                params.append(bhk_str)
 
             if building:
                 where_clauses.append("""(
@@ -1067,11 +1071,22 @@ def execute_tool(name, args, sources, db_path=None):
                 params.append(f"%{micro_market}%")
 
             if price_max:
-                where_clauses.append("l.price <= ?")
+                # Normalize price to raw rupees for comparison
+                # AI sends prices in raw rupees (e.g. 450000 = ₹4.5L)
+                # DB stores: abs=raw, Lac=value*100000, K=value*1000, Cr=value*10000000
+                where_clauses.append("""(CASE 
+                    WHEN l.price_unit = 'Lac' OR l.price_unit = 'Lac' THEN l.price * 100000
+                    WHEN l.price_unit = 'Cr' THEN l.price * 10000000
+                    WHEN l.price_unit = 'K' THEN l.price * 1000
+                    ELSE l.price END) <= ?""")
                 params.append(float(price_max))
 
             if price_min:
-                where_clauses.append("l.price >= ?")
+                where_clauses.append("""(CASE 
+                    WHEN l.price_unit = 'Lac' OR l.price_unit = 'Lac' THEN l.price * 100000
+                    WHEN l.price_unit = 'Cr' THEN l.price * 10000000
+                    WHEN l.price_unit = 'K' THEN l.price * 1000
+                    ELSE l.price END) >= ?""")
                 params.append(float(price_min))
 
             if furnishing and furnishing != "any":
@@ -1540,13 +1555,13 @@ def _default_db_path():
     return os.path.join(lab_dir, "lab.db")
 
 
-def get_model_reply(messages, sources, api_key=None, db_path=None, model=None, _depth=0):
+def get_model_reply(messages, sources, api_key=None, db_path=None, model=None, max_tool_rounds=5, _depth=0):
     client = get_client(api_key=api_key)
     tools = _build_tools(sources)
     db_path = db_path or _default_db_path()
 
     # Limit recursion depth
-    if _depth > 5:
+    if _depth > max_tool_rounds:
         # Force a text-only response
         resp = client.chat.completions.create(
             model=model or MODEL,
@@ -1588,6 +1603,6 @@ def get_model_reply(messages, sources, api_key=None, db_path=None, model=None, _
                 "tool_call_id": tc.id,
                 "content": result_str,
             })
-        return get_model_reply(messages, sources, api_key=api_key, db_path=db_path, model=model, _depth=_depth + 1)
+        return get_model_reply(messages, sources, api_key=api_key, db_path=db_path, model=model, max_tool_rounds=max_tool_rounds, _depth=_depth + 1)
 
     return msg

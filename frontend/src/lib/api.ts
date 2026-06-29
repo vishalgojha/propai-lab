@@ -878,6 +878,7 @@ export interface AuditSearchEvidence {
   groups: number;
   unique_senders: number;
   top_groups: { name: string; count: number }[];
+  recent?: AuditLatestRecord[];
 }
 
 export function getAuditIntelligence() {

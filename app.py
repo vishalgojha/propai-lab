@@ -2311,12 +2311,18 @@ async def ai_chat(req: ChatRequest):
             api_key=api_key,
             db_path=str(DB_PATH),
             model=req.model.strip() or None,
+            max_tool_rounds=2,
         )
         return chat_engine.normalize_workspace_response(reply.content or "", sources)
 
     try:
-        response = await loop.run_in_executor(None, _call)
+        response = await asyncio.wait_for(loop.run_in_executor(None, _call), timeout=90)
         return response
+    except asyncio.TimeoutError:
+        return JSONResponse(
+            status_code=504,
+            content={"error": "timeout", "message": "Request timed out. Try a simpler query."},
+        )
     except Exception as exc:
         return _doubleword_error_response(exc)
 
@@ -5643,33 +5649,83 @@ async def audit_search_evidence(q: str = ""):
             "recent": [],
         }
 
-    like_q = f"%{term}%"
-    summary = storage.db.execute("""
-        SELECT COUNT(*) AS count,
-               MIN(timestamp) AS first_seen,
-               MAX(timestamp) AS last_seen,
-               COUNT(DISTINCT group_name) AS groups,
-               COUNT(DISTINCT COALESCE(NULLIF(sender_phone, ''), NULLIF(sender_jid, ''), sender)) AS unique_senders
-        FROM raw_messages
-        WHERE message LIKE ? OR sender LIKE ? OR group_name LIKE ?
-    """, (like_q, like_q, like_q)).fetchone()
+    tokens = re.findall(r"[\w]+", term.lower(), flags=re.UNICODE)
+    if not tokens:
+        return {
+            "query": term,
+            "count": 0,
+            "first_seen": "",
+            "last_seen": "",
+            "groups": 0,
+            "unique_senders": 0,
+            "top_groups": [],
+            "recent": [],
+        }
 
-    top_groups = storage.db.execute("""
-        SELECT group_name, COUNT(*) AS count
-        FROM raw_messages
-        WHERE message LIKE ? OR sender LIKE ? OR group_name LIKE ?
-        GROUP BY group_name
-        ORDER BY count DESC
-        LIMIT 6
-    """, (like_q, like_q, like_q)).fetchall()
+    fts_query = " ".join(tokens)
+    if _table_exists("raw_messages_fts"):
+        match_cte = """
+            WITH matches AS (
+                SELECT rowid AS id
+                FROM raw_messages_fts
+                WHERE raw_messages_fts MATCH ?
+            )
+        """
+        summary = storage.db.execute(match_cte + """
+            SELECT COUNT(*) AS count,
+                   MIN(rm.timestamp) AS first_seen,
+                   MAX(rm.timestamp) AS last_seen,
+                   COUNT(DISTINCT rm.group_name) AS groups,
+                   COUNT(DISTINCT COALESCE(NULLIF(rm.sender_phone, ''), NULLIF(rm.sender_jid, ''), rm.sender)) AS unique_senders
+            FROM matches m
+            JOIN raw_messages rm ON rm.id = m.id
+        """, (fts_query,)).fetchone()
 
-    recent = storage.db.execute("""
-        SELECT id, timestamp, group_name, sender, message
-        FROM raw_messages
-        WHERE message LIKE ? OR sender LIKE ? OR group_name LIKE ?
-        ORDER BY timestamp DESC
-        LIMIT 6
-    """, (like_q, like_q, like_q)).fetchall()
+        top_groups = storage.db.execute(match_cte + """
+            SELECT rm.group_name, COUNT(*) AS count
+            FROM matches m
+            JOIN raw_messages rm ON rm.id = m.id
+            GROUP BY rm.group_name
+            ORDER BY count DESC
+            LIMIT 6
+        """, (fts_query,)).fetchall()
+
+        recent = storage.db.execute(match_cte + """
+            SELECT rm.id, rm.timestamp, rm.group_name, rm.sender, rm.message
+            FROM matches m
+            JOIN raw_messages rm ON rm.id = m.id
+            ORDER BY rm.timestamp DESC
+            LIMIT 6
+        """, (fts_query,)).fetchall()
+    else:
+        filters = " AND ".join(["(message LIKE ? OR sender LIKE ? OR group_name LIKE ?)"] * len(tokens))
+        params = tuple(value for token in tokens for value in (f"%{token}%", f"%{token}%", f"%{token}%"))
+        summary = storage.db.execute(f"""
+            SELECT COUNT(*) AS count,
+                   MIN(timestamp) AS first_seen,
+                   MAX(timestamp) AS last_seen,
+                   COUNT(DISTINCT group_name) AS groups,
+                   COUNT(DISTINCT COALESCE(NULLIF(sender_phone, ''), NULLIF(sender_jid, ''), sender)) AS unique_senders
+            FROM raw_messages
+            WHERE {filters}
+        """, params).fetchone()
+
+        top_groups = storage.db.execute(f"""
+            SELECT group_name, COUNT(*) AS count
+            FROM raw_messages
+            WHERE {filters}
+            GROUP BY group_name
+            ORDER BY count DESC
+            LIMIT 6
+        """, params).fetchall()
+
+        recent = storage.db.execute(f"""
+            SELECT id, timestamp, group_name, sender, message
+            FROM raw_messages
+            WHERE {filters}
+            ORDER BY timestamp DESC
+            LIMIT 6
+        """, params).fetchall()
 
     return {
         "query": term,

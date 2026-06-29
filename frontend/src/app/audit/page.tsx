@@ -36,6 +36,7 @@ type SearchEvidence = {
   groups: number;
   unique_senders: number;
   top_groups: EvidenceGroup[];
+  recent?: LatestRecord[];
 };
 
 function num(value: number | string | null | undefined) {
@@ -266,10 +267,25 @@ export default function AuditPage() {
             </div>
             {evidence?.top_groups?.length ? (
               <div className="mt-4 space-y-2">
+                <Label>Top Conversations</Label>
                 {evidence.top_groups.map((group) => (
                   <div key={group.name} className="flex items-center justify-between gap-3 text-xs">
                     <span className="truncate text-[#94a3b8]">{group.name}</span>
                     <span className="font-mono text-[#e2e8f0]">{num(group.count)}</span>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+            {evidence?.recent?.length ? (
+              <div className="mt-4 space-y-2">
+                <Label>Recent Evidence</Label>
+                {evidence.recent.slice(0, 3).map((item) => (
+                  <div key={item.id} className="rounded-lg bg-[#090d12] px-3 py-2 text-xs">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="truncate font-semibold text-[#e2e8f0]">{item.conversation || "WhatsApp"}</span>
+                      <span className="shrink-0 font-mono text-[#64748b]">{clockLabel(item.time)}</span>
+                    </div>
+                    <div className="mt-1 line-clamp-2 text-[#94a3b8]">{item.preview}</div>
                   </div>
                 ))}
               </div>
