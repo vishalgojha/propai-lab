@@ -489,10 +489,14 @@ export function chatAIChat(
   apiKey = "",
   model = ""
 ): Promise<ChatResponse> {
-  return fetchJSON<ChatResponse>("/ai/chat", {
-    method: "POST",
-    body: JSON.stringify({ messages, api_key: apiKey, model }),
-  });
+  return fetchJSON<ChatResponse>(
+    "/ai/chat",
+    {
+      method: "POST",
+      body: JSON.stringify({ messages, api_key: apiKey, model }),
+    },
+    120000,
+  );
 }
 
 export function searchListings(params: {

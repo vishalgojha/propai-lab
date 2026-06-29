@@ -340,26 +340,37 @@ def parse_message(raw_text: str, profile_name: str | None = None) -> dict:
         lower,
     )
     if price_match and price_match.group(1).strip():
-        amount = float(price_match.group(1).replace(",", ""))
-        unit_raw = price_match.group(2).lower()
-        if unit_raw in ("cr", "crore"):
-            result["price"] = amount * 10000000
-            result["price_unit"] = "Cr"
-        elif unit_raw in ("lac", "lakh", "l"):
-            result["price"] = amount * 100000
-            result["price_unit"] = "Lac"
-        elif unit_raw in ("k", "thousand"):
-            result["price"] = amount * 1000
-            result["price_unit"] = "K"
+        try:
+            amount = float(price_match.group(1).replace(",", ""))
+        except ValueError:
+            amount = None
+        if amount and amount > 0:
+            unit_raw = price_match.group(2).lower()
+            # Store RAW amount + unit. Display code normalizes to absolute rupees.
+            # e.g. "85K" → price=85, price_unit=K (meaning ₹85,000)
+            # e.g. "1.1L" → price=1.1, price_unit=Lac (meaning ₹1,10,000)
+            if unit_raw in ("cr", "crore"):
+                result["price"] = amount
+                result["price_unit"] = "Cr"
+            elif unit_raw in ("lac", "lakh", "l"):
+                result["price"] = amount
+                result["price_unit"] = "Lac"
+            elif unit_raw in ("k", "thousand"):
+                result["price"] = amount
+                result["price_unit"] = "K"
     else:
         abs_match = _RE.search(
             r'(?:rs\.?\s*|inr\s*|₹)\s*([\d,]+(?:\.\d+)?)',
             lower,
         )
         if abs_match and abs_match.group(1).strip():
-            amount = float(abs_match.group(1).replace(",", ""))
-            result["price"] = amount
-            result["price_unit"] = "abs"
+            try:
+                amount = float(abs_match.group(1).replace(",", ""))
+            except ValueError:
+                amount = None
+            if amount and amount > 0:
+                result["price"] = amount
+                result["price_unit"] = "abs"
 
     # ── 7. Extract area sqft ────────────────────────────────────
     area_match = _RE.search(r'(\d+[\d,]*)\s*(sq\.?\s*ft|sqft|sft|sq\s*feet)', lower)
@@ -2151,7 +2162,6 @@ def _ai_promote(system: str, prompt: str) -> str | None:
         resp = client.chat.completions.create(
             model="Qwen/Qwen3.6-35B-A3B-FP8",
             messages=[{"role": "system", "content": system}, {"role": "user", "content": prompt}],
-            extra_body={"chat_template_kwargs": {"enable_thinking": False}},
             max_tokens=300,
         )
         return resp.choices[0].message.content
@@ -2166,7 +2176,6 @@ def _ai_promote_with_key(system: str, prompt: str, api_key: str) -> str | None:
         resp = client.chat.completions.create(
             model="Qwen/Qwen3.6-35B-A3B-FP8",
             messages=[{"role": "system", "content": system}, {"role": "user", "content": prompt}],
-            extra_body={"chat_template_kwargs": {"enable_thinking": False}},
             max_tokens=300,
         )
         return resp.choices[0].message.content

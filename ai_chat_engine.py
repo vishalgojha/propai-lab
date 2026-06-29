@@ -1656,7 +1656,6 @@ def get_model_reply(messages, sources, api_key=None, db_path=None, model=None, m
             model=model or MODEL,
             messages=messages,
             max_tokens=2000,
-            extra_body={"chat_template_kwargs": {"enable_thinking": False}},
         )
         return resp.choices[0].message
 
@@ -1665,7 +1664,6 @@ def get_model_reply(messages, sources, api_key=None, db_path=None, model=None, m
         messages=messages,
         tools=tools,
         tool_choice="auto",
-        extra_body={"chat_template_kwargs": {"enable_thinking": False}},
     )
     msg = resp.choices[0].message
 

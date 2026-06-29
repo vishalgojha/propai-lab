@@ -88,9 +88,7 @@ function whatsappLink(row: api.ParsedObservation): string {
     .filter(Boolean)
     .join(" \u2022 ");
 
-  const sourceLine = row.raw_group
-    ? `Found via PropAI \u2014 shared in "${row.raw_group}"`
-    : "Found via PropAI";
+  const sourceLine = "Found via PropAI";
   const timeLine = row.raw_timestamp
     ? `Posted: ${formatRelativeTime(row.raw_timestamp)}`
     : "";

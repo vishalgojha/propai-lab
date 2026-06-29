@@ -20,7 +20,6 @@ const navSections = [
     title: "Market",
     items: [
       { href: "/knowledge", label: "Knowledge Base", icon: "📚" },
-      { href: "/extractions", label: "Extracted Listings", icon: "🏗️" },
       { href: "/requirements", label: "Extracted Requirements", icon: "📋" },
       { href: "/brokers", label: "Brokers", icon: "🤝" },
       { href: "/groups", label: "Groups", icon: "👥" },
@@ -93,10 +92,10 @@ function PaletteModal({ open, onClose }: { open: boolean; onClose: () => void })
     else if (e.key === "Enter") {
       const r = flatItems[selectedIdx];
       if (!r) return;
-      if (r.name && r.occurrence_count !== undefined) navigate(`/extractions?q=${encodeURIComponent(r.name)}`);
+      if (r.name && r.occurrence_count !== undefined) navigate(`/search?q=${encodeURIComponent(r.name)}`);
       else if (r.name && r.observation_count !== undefined) navigate(`/brokers?q=${encodeURIComponent(r.name)}`);
       else if (r.micro_market && !r.broker_name) navigate(`/market?q=${encodeURIComponent(r.micro_market)}`);
-      else if (r.building_name) navigate(`/extractions?q=${encodeURIComponent(r.building_name)}`);
+      else if (r.building_name) navigate(`/search?q=${encodeURIComponent(r.building_name)}`);
       else if (r.broker_name) navigate(`/brokers?q=${encodeURIComponent(r.broker_name)}`);
       else navigate(`/chat?q=${encodeURIComponent(query)}`);
     }
@@ -107,7 +106,7 @@ function PaletteModal({ open, onClose }: { open: boolean; onClose: () => void })
     listings: "🏗️", requirements: "📋", brokers: "🤝", buildings: "🏢", markets: "🗺️", messages: "💬",
   };
   const GROUP_LABELS: Record<string, string> = {
-    listings: "Extracted Listings", requirements: "Extracted Requirements", brokers: "Brokers", buildings: "Buildings", markets: "Markets", messages: "Messages",
+    listings: "Parser Candidates", requirements: "Extracted Requirements", brokers: "Brokers", buildings: "Buildings", markets: "Markets", messages: "Messages",
   };
 
   function renderGroupItem(group: string, item: any, i: number, globalIdx: number) {
@@ -136,10 +135,10 @@ function PaletteModal({ open, onClose }: { open: boolean; onClose: () => void })
       <button
         key={`${group}-${i}`}
         onClick={() => {
-          if (group === "listings") navigate(`/extractions?q=${encodeURIComponent(item.building_name || item.micro_market || query)}`);
+          if (group === "listings") navigate(`/search?q=${encodeURIComponent(item.building_name || item.micro_market || query)}`);
           else if (group === "requirements") navigate(`/requirements?q=${encodeURIComponent(item.micro_market || query)}`);
           else if (group === "brokers") navigate(`/brokers/${item.id || `?q=${encodeURIComponent(item.name)}`}`);
-          else if (group === "buildings") navigate(`/extractions?q=${encodeURIComponent(item.name)}`);
+          else if (group === "buildings") navigate(`/search?q=${encodeURIComponent(item.name)}`);
           else if (group === "markets") navigate(`/market?q=${encodeURIComponent(item.micro_market)}`);
           else if (group === "messages") navigate(`/inbox?highlight=${item.id}`);
         }}
@@ -215,8 +214,8 @@ function PaletteModal({ open, onClose }: { open: boolean; onClose: () => void })
           <div className="p-3">
             <div className="text-[10px] font-semibold text-[#64748b] uppercase tracking-wider mb-2 px-1">Quick Actions</div>
             <div className="grid grid-cols-2 gap-1.5">
-              <button onClick={() => navigate("/extractions")} className="flex items-center gap-2 text-xs text-[#94a3b8] hover:text-white hover:bg-[rgba(255,255,255,0.04)] rounded-lg px-2.5 py-2 transition-colors text-left">
-                <span>🏗️</span> Extracted Listings
+              <button onClick={() => navigate("/knowledge")} className="flex items-center gap-2 text-xs text-[#94a3b8] hover:text-white hover:bg-[rgba(255,255,255,0.04)] rounded-lg px-2.5 py-2 transition-colors text-left">
+                <span>📚</span> Knowledge Base
               </button>
               <button onClick={() => navigate("/requirements")} className="flex items-center gap-2 text-xs text-[#94a3b8] hover:text-white hover:bg-[rgba(255,255,255,0.04)] rounded-lg px-2.5 py-2 transition-colors text-left">
                 <span>📋</span> Extracted Requirements

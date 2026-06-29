@@ -145,7 +145,7 @@ function MarketsContent() {
                       {marketDetail.buildings.map((b: any, i: number) => (
                         <button
                           key={i}
-                          onClick={() => router.push(`/extractions?q=${encodeURIComponent(b.building_name)}`)}
+                          onClick={() => router.push(`/search?q=${encodeURIComponent(b.building_name)}`)}
                           className="w-full flex items-center justify-between px-2 py-1.5 rounded-lg hover:bg-[rgba(255,255,255,0.03)] text-left transition-colors cursor-pointer"
                         >
                           <span className="text-xs text-[#e2e8f0] truncate">{b.building_name}</span>
