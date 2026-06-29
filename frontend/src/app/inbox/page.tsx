@@ -1022,7 +1022,7 @@ export default function BrokerWorkspacePage() {
                                 <div key={idx} className="flex justify-between items-center">
                                   <span className="font-semibold text-[#cbd5e1]">{m.micro_market}</span>
                                   <span className="text-[10px] text-[#64748b]">
-                                    {m.listing_count} listings · {m.requirement_count} buyers
+                                    {m.listing_count} listings · {m.requirement_count} requirements
                                   </span>
                                 </div>
                               ))}
@@ -1041,7 +1041,7 @@ export default function BrokerWorkspacePage() {
                                 <div key={idx} className="flex justify-between items-center">
                                   <span className="font-semibold text-[#cbd5e1]">{b.building_name}</span>
                                   <span className="text-[10px] text-[#64748b]">
-                                    {b.listing_count} listings · {b.requirement_count} buyers
+                                    {b.listing_count} listings · {b.requirement_count} requirements
                                   </span>
                                 </div>
                               ))}

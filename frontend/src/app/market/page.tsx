@@ -168,7 +168,7 @@ function MarketsContent() {
                           className="w-full flex items-center justify-between px-2 py-1.5 rounded-lg hover:bg-[rgba(255,255,255,0.03)] text-left transition-colors cursor-pointer"
                         >
                           <span className="text-xs text-[#e2e8f0]">{b.name}</span>
-                          <span className="text-[10px] text-[#64748b]">{b.listing_count} listings / {b.requirement_count} buyers</span>
+                          <span className="text-[10px] text-[#64748b]">{b.listing_count} listings / {b.requirement_count} requirements</span>
                         </button>
                       ))}
                     </div>

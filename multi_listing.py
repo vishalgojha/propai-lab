@@ -44,6 +44,7 @@ def classify_message(text: str) -> str:
     area_price_pairs = 0
     section_headers = 0
     bhk_price_pairs = 0
+    numbered_listing_headers = 0
 
     for line in lines:
         if _MULTI_INDICATORS[0][1].search(line):
@@ -52,6 +53,11 @@ def classify_message(text: str) -> str:
             section_headers += 1
         if _MULTI_INDICATORS[4][1].search(line):
             bhk_price_pairs += 1
+        if _NUMBERED_LISTING_RE.match(line):
+            numbered_listing_headers += 1
+
+    if numbered_listing_headers >= 2:
+        return "multi"
 
     if area_price_pairs >= 2 or bhk_price_pairs >= 2:
         return "multi"
@@ -125,12 +131,25 @@ _PRICE_ONLY_RE = re.compile(
     r'(?:rs\.?\s*|inr\s*|₹)?\s*([\d,.]+)\s*(cr|crore|lac|lakh|l|k|thousand)\b',
     re.I,
 )
+_PRICE_RANGE_RE = re.compile(
+    r'(?:rs\.?\s*|inr\s*|₹)?\s*([\d,.]+)\s*(?:cr|crore|lac|lakh|l|k|thousand)?\s*'
+    r'[-–—]\s*(?:rs\.?\s*|inr\s*|₹)?\s*([\d,.]+)\s*'
+    r'(cr|crore|lac|lakh|l|k|thousand)\b',
+    re.I,
+)
 
 _BUILDING_HEADER_RE = re.compile(
     r'^\s*(?:project|building|property|complex|tower|wing)\s*[-–—:]\s*(.+)',
     re.I,
 )
 _BUILDING_NAME_RE = re.compile(r'^\s*(building|project|name)\s*[-–—:]\s*(.+)', re.I)
+_NUMBERED_LISTING_RE = re.compile(
+    r'^\s*(?:[⭐*•-]\s*)?(?:\d{1,3})\s*[\).:-]\s*(?=.*(?:bhk|rk|studio))(.+)',
+    re.I,
+)
+_NUMBERED_ANY_RE = re.compile(r'^\s*(?:[⭐*•-]\s*)?(?:\d{1,3})\s*[\).:-]\s*(.+)', re.I)
+_LOCATION_LINE_RE = re.compile(r'^\s*(?:📍|location\s*[:\-])\s*(.+)', re.I)
+_SIGNATURE_HINT_RE = re.compile(r'\b(?:for inspection|for details|contact|housen realtors|realtors|realty)\b', re.I)
 
 
 def _extract_building(text: str) -> str | None:
@@ -191,10 +210,129 @@ def _split_sections(text: str) -> list[dict]:
     return sections
 
 
+def _strip_numbered_prefix(line: str) -> str:
+    m = _NUMBERED_ANY_RE.match(line)
+    return m.group(1).strip() if m else line.strip()
+
+
+def _split_numbered_blocks(text: str) -> list[str]:
+    """Split numbered WhatsApp lists like '1) 3 BHK || Building' into blocks."""
+    lines = [line.strip() for line in text.strip().split("\n") if line.strip()]
+    blocks: list[list[str]] = []
+    current: list[str] | None = None
+
+    for line in lines:
+        if _NUMBERED_LISTING_RE.match(line):
+            if current:
+                blocks.append(current)
+            current = [line]
+            continue
+
+        if current is not None:
+            if _SIGNATURE_HINT_RE.search(line):
+                blocks.append(current)
+                current = None
+                continue
+            current.append(line)
+
+    if current:
+        blocks.append(current)
+
+    return ["\n".join(block) for block in blocks]
+
+
+def _extract_title_parts(block: str) -> tuple[str | None, str | None]:
+    first_line = _strip_numbered_prefix(block.split("\n", 1)[0])
+    bhk = _parse_bhk_from_text(first_line)
+    title = first_line
+
+    if "||" in first_line:
+        title = first_line.split("||", 1)[1]
+    elif "–" in first_line:
+        title = first_line.split("–", 1)[1]
+    elif " - " in first_line:
+        title = first_line.split(" - ", 1)[1]
+    elif bhk:
+        title = re.sub(r'^\s*\d+\s*bhk\s*', '', first_line, flags=re.I)
+    elif re.search(r'^\s*studio\b', first_line, re.I):
+        title = re.sub(r'^\s*studio\s*', '', first_line, flags=re.I)
+
+    title = re.sub(r'\s+', ' ', title).strip(" -*|:")
+    if not title or title.lower() in {"option", "options"} or re.search(r'\boptions?\b', title, re.I):
+        title = None
+    return bhk, title
+
+
+def _extract_location_line(block: str) -> str | None:
+    for line in block.split("\n"):
+        m = _LOCATION_LINE_RE.match(line)
+        if m:
+            return m.group(1).strip()
+    return None
+
+
+def _infer_intent_from_text(text: str) -> str:
+    lower = text.lower()
+    if re.search(r'\b(commercial|office|shop|showroom|warehouse|godown|retail)\b', lower):
+        return "COMMERCIAL"
+    if re.search(r'\b(rent|rental|lease|tenant)\b', lower):
+        return "RENT"
+    if re.search(r'\b(outright|sale|sell|resale|ready to move)\b', lower):
+        return "SELL"
+    return "SELL"
+
+
+def _parse_numbered_block(block: str, profile_name: str | None) -> dict | None:
+    bhk, building = _extract_title_parts(block)
+    area = _parse_area_from_text(block)
+    price, unit = _parse_price_from_text(block)
+    location_line = _extract_location_line(block)
+    location_context = "\n".join([v for v in [building, location_line] if v]) or block
+    loc = _extract_location_from_text(location_context)
+
+    if not any([bhk, building, area, price, location_line]):
+        return None
+
+    result: dict = {
+        "intent": _infer_intent_from_text(block),
+        "principal": None,
+        "bhk": bhk,
+        "price": price,
+        "price_unit": unit,
+        "area_sqft": area,
+        "furnishing": _parse_furnishing_from_text(block),
+        "location_raw": location_line or loc.get("location_raw"),
+        "building_name": building or loc.get("building_name"),
+        "landmark_name": loc.get("landmark_name"),
+        "street_name": loc.get("street_name"),
+        "area": None,
+        "micro_market": loc.get("micro_market"),
+        "developer": None,
+        "broker_name": None,
+        "broker_phone": None,
+        "forwarded": 0,
+        "confidence": 0.88,
+        "raw_payload": {"full_text": block},
+        "location": loc.get("location") or {},
+    }
+    return result
+
+
 # ── Multi-listing parser ────────────────────────────────────────────
 
 def _parse_price_from_text(text: str) -> tuple[float | None, str | None]:
     """Extract (price_in_raw, unit) from a line."""
+    range_match = _PRICE_RANGE_RE.search(text)
+    if range_match:
+        amount = float(range_match.group(1).replace(",", ""))
+        unit_raw = range_match.group(3).lower()
+        if unit_raw in ("cr", "crore"):
+            return amount * 10000000, "Cr"
+        elif unit_raw in ("lac", "lakh", "l"):
+            return amount * 100000, "Lac"
+        elif unit_raw in ("k", "thousand"):
+            return amount * 1000, "K"
+
     m = _PRICE_ONLY_RE.search(text)
     if m:
         amount = float(m.group(1).replace(",", ""))
@@ -227,6 +365,9 @@ def _parse_furnishing_from_text(text: str) -> str | None:
 
 
 def _parse_bhk_from_text(text: str) -> str | None:
+    range_match = re.search(r'(\d+\s*/\s*\d+)\s*bhk', text, re.I)
+    if range_match:
+        return re.sub(r'\s+', '', range_match.group(1)) + " BHK"
     m = re.search(r'(\d+)\s*(bhk|rk|bedroom|b ed|b e d)', text, re.I)
     if m:
         return m.group(1) + " BHK"
@@ -317,6 +458,16 @@ def parse_multi_message(
     Each entry has the same structure as parse_message() output.
     Returns empty list if the message doesn't look multi-listing.
     """
+    numbered_blocks = _split_numbered_blocks(text)
+    if len(numbered_blocks) >= 2:
+        listings = [
+            parsed
+            for block in numbered_blocks
+            if (parsed := _parse_numbered_block(block, profile_name))
+        ]
+        if listings:
+            return listings
+
     building = _extract_building(text)
     sections = _split_sections(text)
 
@@ -333,7 +484,7 @@ def parse_multi_message(
         listings = _lines_to_listings(
             sec_text,
             sec["intent"],
-            sec["furnish"],
+            sec["furnishing"],
             building,
             profile_name,
         )

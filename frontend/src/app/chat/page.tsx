@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import * as api from "@/lib/api";
+import AIWorkspace from "@/components/AIWorkspace";
 
 interface Suggestion {
   id: number;
@@ -41,54 +42,6 @@ interface UsageStats {
   today_tokens_input: number;
   today_tokens_output: number;
   today_cost_usd: number;
-}
-
-interface ListingResult {
-  fingerprint: string;
-  intent: string;
-  bhk: string;
-  price: number;
-  price_formatted: string;
-  area_sqft: number;
-  furnishing: string;
-  location_label: string;
-  building_name: string;
-  landmark_name: string;
-  micro_market: string;
-  developer: string;
-  broker_name: string;
-  broker_phone: string;
-  first_seen: string;
-  first_seen_text: string;
-  last_seen: string;
-  last_seen_text: string;
-  observation_count: number;
-  group_count: number;
-  confidence: number;
-  latest_message: string;
-  latest_group: string;
-  latest_timestamp: string;
-  latest_sender: string;
-  raw_message_id: number;
-  match_reasons: string[];
-}
-
-interface ListingSearchResults {
-  type: "listing_results";
-  total: number;
-  results: ListingResult[];
-  grouped: Record<string, { rentals: number; sales: number; listings: ListingResult[] }>;
-  showing: number;
-  offset: number;
-  has_more: boolean;
-  remaining: number;
-  search_summary: {
-    total: number;
-    brokers: number;
-    buildings: number;
-    groups: number;
-  };
-  suggestion?: string;
 }
 
 const AGENT_ICONS: Record<string, string> = {
@@ -178,175 +131,11 @@ function formatTokens(n: number): string {
   return String(n);
 }
 
-function ListingCard({ listing }: { listing: ListingResult }) {
-  const [expanded, setExpanded] = useState(false);
-
-  const intentColor = listing.intent === "RENT" ? "text-blue-400" : listing.intent === "SELL" ? "text-green-400" : "text-yellow-400";
-  const intentBg = listing.intent === "RENT" ? "bg-blue-500/10" : listing.intent === "SELL" ? "bg-green-500/10" : "bg-yellow-500/10";
-
-  return (
-    <div className="bg-[#0d1117] border border-[rgba(255,255,255,0.06)] rounded-xl p-4 hover:border-blue-500/30 transition-all">
-      {/* Header: Building + Price */}
-      <div className="flex items-start justify-between mb-2">
-        <div>
-          <h3 className="text-sm font-semibold text-white">{listing.building_name}</h3>
-          <div className="text-[10px] text-[#64748b]">{listing.micro_market}</div>
-        </div>
-        <div className="text-right">
-          <div className="text-sm font-bold text-white">{listing.price_formatted}</div>
-          {listing.area_sqft && <div className="text-[10px] text-[#64748b]">{listing.area_sqft} sqft</div>}
-        </div>
-      </div>
-
-      {/* Details Grid */}
-      <div className="grid grid-cols-3 gap-2 mb-2 text-[11px]">
-        <div>
-          <span className="text-[#64748b]">BHK</span>
-          <span className="ml-1 text-white font-medium">{listing.bhk || "—"}</span>
-        </div>
-        <div>
-          <span className="text-[#64748b]">Furnishing</span>
-          <span className="ml-1 text-white font-medium">{listing.furnishing || "—"}</span>
-        </div>
-        <div>
-          <span className={`font-semibold px-1.5 py-0.5 rounded ${intentColor} ${intentBg}`}>
-            {listing.intent}
-          </span>
-        </div>
-      </div>
-
-      {/* Broker + Confidence */}
-      <div className="flex items-center justify-between text-[10px] text-[#94a3b8] mb-2">
-        <span>Broker: <span className="text-white font-medium">{listing.broker_name || "—"}</span></span>
-        <span>Confidence: <span className={`font-medium ${listing.confidence >= 80 ? "text-green-400" : listing.confidence >= 50 ? "text-yellow-400" : "text-red-400"}`}>{listing.confidence}%</span></span>
-      </div>
-
-      {/* Timestamps */}
-      <div className="flex items-center justify-between text-[10px] text-[#64748b] mb-2">
-        <span>{listing.last_seen_text || "Last seen unknown"}</span>
-        <span>{listing.first_seen_text || ""}</span>
-        <span>Seen {listing.observation_count}x in {listing.group_count} groups</span>
-      </div>
-
-      {/* Match Reasons */}
-      {listing.match_reasons.length > 0 && (
-        <div className="mb-2 p-2 bg-[#161b22] rounded-lg">
-          <div className="text-[10px] font-semibold text-[#64748b] uppercase tracking-wider mb-1">Why this result?</div>
-          <div className="space-y-0.5">
-            {listing.match_reasons.map((reason, i) => (
-              <div key={i} className="text-[11px] text-green-400/80">{reason}</div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Traceability */}
-      {listing.latest_message && (
-        <div className="mb-2 p-2 bg-[#161b22] rounded-lg">
-          <div className="text-[10px] font-semibold text-[#64748b] uppercase tracking-wider mb-1">Observed from</div>
-          <div className="text-[11px] text-[#94a3b8]">
-            WhatsApp: <span className="text-white">{listing.latest_group || "—"}</span>
-          </div>
-          <div className="text-[11px] text-[#94a3b8]">
-            Message: <span className="text-white">&quot;{listing.latest_message}&quot;</span>
-          </div>
-          <div className="text-[10px] text-[#64748b]">
-            {listing.latest_timestamp ? new Date(listing.latest_timestamp).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" }) : "—"}
-          </div>
-        </div>
-      )}
-
-      {/* Actions */}
-      <div className="flex gap-1.5 flex-wrap">
-        <button className="text-[10px] px-2 py-1 rounded bg-blue-600/20 text-blue-400 hover:bg-blue-600/30">View</button>
-        <button className="text-[10px] px-2 py-1 rounded bg-purple-600/20 text-purple-400 hover:bg-purple-600/30">Open Inventory</button>
-        {listing.raw_message_id && (
-          <a href={`/observations/${listing.raw_message_id}`} className="text-[10px] px-2 py-1 rounded bg-emerald-600/20 text-emerald-400 hover:bg-emerald-600/30">Original Message</a>
-        )}
-        <button className="text-[10px] px-2 py-1 rounded bg-amber-600/20 text-amber-400 hover:bg-amber-600/30">Promote</button>
-        <button className="text-[10px] px-2 py-1 rounded bg-cyan-600/20 text-cyan-400 hover:bg-cyan-600/30">Connect Broker</button>
-      </div>
-    </div>
-  );
-}
-
-function SearchSummary({ results }: { results: ListingSearchResults }) {
-  const { search_summary, total, showing, offset, has_more, remaining } = results;
-  return (
-    <div className="bg-[#0d1117] border border-[rgba(255,255,255,0.06)] rounded-xl p-3 mb-3">
-      <div className="flex items-center justify-between mb-2">
-        <div className="text-sm font-semibold text-white">
-          {total} listing{total !== 1 ? "s" : ""} found
-        </div>
-        <div className="text-[10px] text-[#64748b]">
-          Showing {showing} of {total}
-        </div>
-      </div>
-      <div className="flex flex-wrap gap-3 text-[10px] text-[#94a3b8]">
-        <span>{search_summary.brokers} broker{search_summary.brokers !== 1 ? "s" : ""}</span>
-        <span>{search_summary.buildings} building{search_summary.buildings !== 1 ? "s" : ""}</span>
-        <span>Across {search_summary.groups} WhatsApp group{search_summary.groups !== 1 ? "s" : ""}</span>
-      </div>
-      {has_more && (
-        <div className="mt-2 text-[10px] text-blue-400">
-          +{remaining} more listings available
-        </div>
-      )}
-    </div>
-  );
-}
-
-function EmptyState({ suggestion }: { suggestion?: string }) {
-  return (
-    <div className="bg-[#0d1117] border border-[rgba(255,255,255,0.06)] rounded-xl p-8 text-center">
-      <div className="text-2xl mb-2">🔍</div>
-      <div className="text-sm font-semibold text-white mb-2">No exact matches found</div>
-      <div className="text-xs text-[#64748b] mb-4">
-        {suggestion || "Try different search terms or filters"}
-      </div>
-      <div className="flex flex-wrap gap-2 justify-center">
-        <button className="text-[10px] px-2.5 py-1 rounded border border-[rgba(255,255,255,0.08)] text-[#94a3b8] hover:text-white">Nearby markets</button>
-        <button className="text-[10px] px-2.5 py-1 rounded border border-[rgba(255,255,255,0.08)] text-[#94a3b8] hover:text-white">Similar buildings</button>
-        <button className="text-[10px] px-2.5 py-1 rounded border border-[rgba(255,255,255,0.08)] text-[#94a3b8] hover:text-white">Different budget</button>
-        <button className="text-[10px] px-2.5 py-1 rounded border border-[rgba(255,255,255,0.08)] text-[#94a3b8] hover:text-white">Different BHK</button>
-        <button className="text-[10px] px-2.5 py-1 rounded border border-[rgba(255,255,255,0.08)] text-[#94a3b8] hover:text-white">Latest listings</button>
-      </div>
-    </div>
-  );
-}
-
-function FollowUpActions({ results, onFilter }: { results: ListingSearchResults; onFilter: (q: string) => void }) {
-  const filters = [
-    "Filter below ₹2 Cr",
-    "Only furnished",
-    "Only owners",
-    "Newest first",
-    "Oldest first",
-    "Only verified",
-    "Show nearby buildings",
-    "Compare prices",
-    "Promote listing",
-    "Find matching buyers",
-  ];
-
-  return (
-    <div className="flex flex-wrap gap-1.5 mt-3">
-      {filters.map((f) => (
-        <button
-          key={f}
-          onClick={() => onFilter(f)}
-          className="text-[10px] px-2.5 py-1 rounded border border-[rgba(255,255,255,0.08)] text-[#94a3b8] hover:text-white hover:border-blue-500/30 transition-colors"
-        >
-          {f}
-        </button>
-      ))}
-    </div>
-  );
-}
-
 export default function AIReviewPage() {
   const [tab, setTab] = useState<"chat" | "review">("chat");
-  const [chatMessages, setChatMessages] = useState<{ role: string; content: string }[]>([]);
+  const [chatMessages, setChatMessages] = useState<
+    ({ role: "user"; content: string } | ({ role: "assistant"; content: string } & api.ChatResponse))[]
+  >([]);
   const [chatInput, setChatInput] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
@@ -354,13 +143,10 @@ export default function AIReviewPage() {
   const [counts, setCounts] = useState<Record<string, number>>({});
   const [filter, setFilter] = useState("pending");
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
   const [actionId, setActionId] = useState<number | null>(null);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [memory, setMemory] = useState<MemoryStats | null>(null);
-  const [searchResults, setSearchResults] = useState<ListingSearchResults | null>(null);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [searchLoading, setSearchLoading] = useState(false);
-  const [searchPage, setSearchPage] = useState(0);
 
   useEffect(() => {
     if (typeof window !== "undefined" && new URLSearchParams(window.location.search).get("tab") === "review") {
@@ -374,21 +160,25 @@ export default function AIReviewPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    try {
-      const [sugs, c, mem, usg] = await Promise.all([
-        api.getSuggestions(filter),
-        api.getSuggestionCounts(),
-        api.getSuggestionMemory(),
-        api.getSuggestionUsage(),
-      ]);
-      setSuggestions(sugs);
-      setCounts(c);
-      setMemory(mem);
-      setUsage(usg);
-    } catch {
-    } finally {
-      setLoading(false);
+    setLoadError("");
+    const [sugs, c, mem, usg] = await Promise.allSettled([
+      api.getSuggestions(filter),
+      api.getSuggestionCounts(),
+      api.getSuggestionMemory(),
+      api.getSuggestionUsage(),
+    ]);
+
+    if (sugs.status === "fulfilled") setSuggestions(sugs.value);
+    if (c.status === "fulfilled") setCounts(c.value);
+    if (mem.status === "fulfilled") setMemory(mem.value);
+    if (usg.status === "fulfilled") setUsage(usg.value);
+
+    const failed = [sugs, c, mem, usg].filter((result) => result.status === "rejected");
+    if (failed.length) {
+      console.error("AI workspace metadata partially failed", failed);
+      setLoadError("Some review data is temporarily unavailable.");
     }
+    setLoading(false);
   }, [filter]);
 
   useEffect(() => { load(); }, [load]);
@@ -405,7 +195,7 @@ export default function AIReviewPage() {
     }
   }
 
-  useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [chatMessages, searchResults]);
+  useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [chatMessages]);
 
   async function sendChat() {
     if (!chatInput.trim() || chatLoading) return;
@@ -417,17 +207,22 @@ export default function AIReviewPage() {
       const key = typeof window !== "undefined" ? localStorage.getItem("doubleword_key") || "" : "";
       const model = typeof window !== "undefined" ? localStorage.getItem("doubleword_model") || "" : "";
       const res = await api.chatAIChat([...chatMessages, { role: "user", content: userMsg }], key, model);
-      setChatMessages((prev) => [...prev, { role: "assistant", content: res.content }]);
+      setChatMessages((prev) => [...prev, { role: "assistant", ...res }]);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown AI error";
-      setChatMessages((prev) => [...prev, { role: "assistant", content: `Sorry, I couldn't process that. ${message}` }]);
+      setChatMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content: `Sorry, I couldn't process that. ${message}`,
+          blocks: [{ type: "error_state", title: "AI request failed", body: message }],
+          sources: [],
+          status_steps: [],
+        },
+      ]);
     } finally {
       setChatLoading(false);
     }
-  }
-
-  function exampleQuery(q: string) {
-    setChatInput(q);
   }
 
   async function batchAct(action: string, reason = "") {
@@ -512,16 +307,16 @@ export default function AIReviewPage() {
       {tab === "chat" && (
         <div className="flex flex-col h-[calc(100vh-160px)]">
           <div className="flex-1 overflow-y-auto space-y-3 mb-4 pr-2">
-            {chatMessages.length === 0 && !searchResults ? (
+              {chatMessages.length === 0 ? (
               <div className="text-center py-12">
                 <div className="text-3xl mb-3">🤖</div>
                 <h2 className="text-sm font-semibold text-white mb-2">Ask PropAI anything</h2>
                 <p className="text-xs text-[#64748b] mb-6 max-w-md mx-auto">
-                  Natural-language search across market listings, buyers, brokers, buildings, and markets.
+                  Natural-language search across market listings, requirements, brokers, buildings, and markets.
                 </p>
                 <div className="flex flex-wrap gap-2 justify-center max-w-lg mx-auto">
-                  {["Owner listings in Bandra under 3 Cr", "Market buyers for 3 BHK in Andheri", "Who deals in Kalina offices?", "Show all Chandak Unicorn listings", "Brokers active in Juhu rentals", "Duplicate brokers in database", "Which brokers post Chandak Unicorn most?", "Show me this week's price trends"].map((q) => (
-                    <button key={q} onClick={() => exampleQuery(q)}
+                  {["Owner listings in Bandra under 3 Cr", "Requirements for 3 BHK in Andheri", "Who deals in Kalina offices?", "Show all Chandak Unicorn listings", "Brokers active in Juhu rentals", "Duplicate brokers in database", "Which brokers post Chandak Unicorn most?", "Show me this week's price trends"].map((q) => (
+                    <button key={q} onClick={() => setChatInput(q)}
                       className="text-xs text-[#94a3b8] border border-[rgba(255,255,255,0.08)] hover:border-blue-500/30 hover:text-white rounded-lg px-3 py-2 transition-colors"
                     >
                       {q}
@@ -534,45 +329,18 @@ export default function AIReviewPage() {
                 {chatMessages.map((m, i) => (
                   <div key={i} className={`flex gap-3 ${m.role === "user" ? "justify-end" : ""}`}>
                     {m.role === "assistant" && <span className="text-lg mt-1">🤖</span>}
-                    <div className={`max-w-[80%] rounded-xl px-4 py-2.5 text-sm ${
-                      m.role === "user"
-                        ? "bg-blue-600 text-white"
-                        : "bg-[#0d1117] border border-[rgba(255,255,255,0.06)] text-[#e2e8f0]"
-                    }`}>
-                      {m.content}
-                    </div>
+                    {m.role === "user" ? (
+                      <div className="max-w-[80%] rounded-xl px-4 py-2.5 text-sm bg-blue-600 text-white whitespace-pre-wrap">
+                        {m.content}
+                      </div>
+                    ) : (
+                      <div className="max-w-[90%] w-full">
+                        <AIWorkspace response={m} onPromptSelect={(value) => setChatInput(value)} />
+                      </div>
+                    )}
                     {m.role === "user" && <span className="text-lg mt-1">👤</span>}
                   </div>
                 ))}
-
-                {/* Structured Search Results */}
-                {searchResults && (
-                  <div className="mt-3">
-                    <SearchSummary results={searchResults} />
-                    {searchResults.results.length > 0 ? (
-                      <div className="space-y-3">
-                        {searchResults.results.map((listing) => (
-                          <ListingCard key={listing.fingerprint} listing={listing} />
-                        ))}
-                      </div>
-                    ) : (
-                      <EmptyState suggestion={searchResults.suggestion} />
-                    )}
-                    {searchResults.results.length > 0 && (
-                      <FollowUpActions results={searchResults} onFilter={(q) => setChatInput(q)} />
-                    )}
-                    {searchResults.has_more && (
-                      <div className="mt-3 text-center">
-                        <button
-                          onClick={() => setSearchPage((p) => p + 1)}
-                          className="text-xs px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white"
-                        >
-                          Load More ({searchResults.remaining} remaining)
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                )}
               </>
             )}
             {chatLoading && (
@@ -747,6 +515,11 @@ export default function AIReviewPage() {
           )}
 
           {/* ─── Review Cards ─── */}
+          {loadError && (
+            <div className="mb-3 rounded-xl border border-yellow-500/20 bg-yellow-500/10 px-4 py-3 text-sm text-yellow-200">
+              {loadError} AI Chat remains available.
+            </div>
+          )}
           {loading ? (
             <div className="text-center text-[#64748b] py-16">Loading...</div>
           ) : suggestions.length === 0 ? (

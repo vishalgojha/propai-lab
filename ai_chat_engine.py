@@ -2,6 +2,7 @@ import os
 import json
 import sqlite3
 import datetime
+import re
 import pandas as pd
 from openai import OpenAI
 
@@ -180,7 +181,7 @@ def build_overview(sources):
 
 def build_system_prompt(sources):
     overview = build_overview(sources)
-    return f"""You are PropAI's Market Intelligence Terminal - a broker work assistant that queries PropAI's structured market database. You are NOT a chatbot. You are a Bloomberg-style terminal for Mumbai real estate.
+    return f"""You are PropAI's Dynamic AI Workspace - a broker work assistant that queries PropAI's structured market database. You are NOT a chatbot. You are a Bloomberg-style terminal for Mumbai real estate.
 
 AVAILABLE DATA:
 {overview}
@@ -191,7 +192,7 @@ CORE PRINCIPLES:
 - Always show counts: "47 listings found across 12 brokers and 8 buildings"
 - Always show traceability: "Observed from WhatsApp group X, message at Y time"
 - Always explain WHY a result matches: "Matched because: 3 BHK, Rental, Bandra East, Building alias matched 'Kanakia Paris'"
-- Never dump listings in prose — use structured cards with all details.
+- Never dump listings in prose — use structured UI blocks.
 - If more results exist, say: "+37 more listings available" with "Load More" option.
 - Offer intelligent follow-ups: "Filter below ₹2 Cr", "Only furnished", "Newest first", "Compare prices".
 
@@ -226,13 +227,167 @@ Instead of "No results", say:
 EXPORTS:
 Always offer: Export CSV | Export Excel | Export PDF | Copy WhatsApp Summary | Copy Email Summary
 
+FINAL RESPONSE CONTRACT:
+- Return JSON only. No markdown fences, no prose outside JSON.
+- Shape:
+  {{
+    "content": "Short plain-language summary",
+    "blocks": [{{"type": "summary", ...}}],
+    "sources": ["overview", "portal_listings"],
+    "status_steps": ["Searching listings", "Ranking results", "Rendering"],
+    "trace": {{"sources": ["WhatsApp groups", "buildings"], "last_updated": "IST timestamp"}}
+  }}
+- Use only these block types:
+  summary, listing_cards, buyer_cards, broker_cards, building_card, market_card, table, timeline, map, comparison, original_messages, ai_suggestions, charts, export_panel, promotion_preview, property_gallery, related_listings, matching_buyers, suggested_questions, error_state, empty_state, loading
+- Never invent property details. If a fact is missing, surface it as missing.
+- Keep content short. The UI will render the blocks.
+
 RULES:
 - Use Indian Rupee (₹) format: ₹1.2 Cr, ₹85 L, ₹2.5L/month
 - Use IST timestamps
 - Never use technical terms: say "property" not "listing", "message" not "observation"
-- Use query_data tool to search database
+- Prefer retrieval tools over perfect parsing: use search_jid_memory for people/JID history and search_listings for structured property filters
+- Use query_data only for direct table aggregation
 - Use create_suggestion when user asks to make changes
 - Do NOT make up data. If you don't know, say so plainly."""
+
+
+WORKSPACE_BLOCK_TYPES = {
+    "summary",
+    "listing_cards",
+    "buyer_cards",
+    "broker_cards",
+    "building_card",
+    "market_card",
+    "table",
+    "timeline",
+    "map",
+    "comparison",
+    "original_messages",
+    "ai_suggestions",
+    "charts",
+    "export_panel",
+    "promotion_preview",
+    "property_gallery",
+    "related_listings",
+    "matching_buyers",
+    "suggested_questions",
+    "error_state",
+    "empty_state",
+    "loading",
+}
+
+
+def _strip_json_fences(text: str) -> str:
+    cleaned = (text or "").strip()
+    if cleaned.startswith("```"):
+        cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r"\s*```$", "", cleaned)
+    return cleaned.strip()
+
+
+def _load_json_payload(text: str):
+    cleaned = _strip_json_fences(text)
+    try:
+        return json.loads(cleaned)
+    except Exception:
+        start = cleaned.find("{")
+        end = cleaned.rfind("}")
+        if start != -1 and end > start:
+            try:
+                return json.loads(cleaned[start : end + 1])
+            except Exception:
+                return None
+    return None
+
+
+def _normalize_block(block):
+    if not isinstance(block, dict):
+        return None
+    block_type = str(block.get("type", "")).strip()
+    if block_type not in WORKSPACE_BLOCK_TYPES:
+        return None
+    normalized = {"type": block_type}
+    for key in (
+        "title",
+        "subtitle",
+        "body",
+        "summary",
+        "description",
+        "note",
+        "items",
+        "results",
+        "rows",
+        "columns",
+        "metrics",
+        "bullets",
+        "actions",
+        "cards",
+        "events",
+        "questions",
+        "trace",
+        "sources",
+        "status",
+        "status_steps",
+        "content",
+        "prompt",
+        "channels",
+        "steps",
+        "highlights",
+        "hashtags",
+        "cta",
+        "headline",
+    ):
+        if key in block:
+            normalized[key] = block[key]
+    return normalized
+
+
+def normalize_workspace_response(content: str | None, sources: dict):
+    raw_text = (content or "").strip()
+    parsed = _load_json_payload(raw_text) if raw_text else None
+    source_names = list(sources.keys())
+
+    if isinstance(parsed, dict):
+        blocks = []
+        for block in parsed.get("blocks", []) or []:
+            normalized = _normalize_block(block)
+            if normalized:
+                blocks.append(normalized)
+        response = {
+            "content": str(parsed.get("content") or parsed.get("summary") or raw_text).strip(),
+            "blocks": blocks,
+            "sources": parsed.get("sources") if isinstance(parsed.get("sources"), list) and parsed.get("sources") else source_names,
+            "status_steps": parsed.get("status_steps") if isinstance(parsed.get("status_steps"), list) else [],
+            "trace": parsed.get("trace") if isinstance(parsed.get("trace"), dict) else {"sources": source_names},
+        }
+        if not response["blocks"]:
+            response["blocks"] = [
+                {
+                    "type": "summary",
+                    "title": "Answer",
+                    "body": response["content"] or "The assistant returned no blocks.",
+                }
+            ]
+        if not response["content"]:
+            first = response["blocks"][0]
+            response["content"] = str(first.get("body") or first.get("summary") or first.get("title") or "").strip()
+        return response
+
+    fallback_text = raw_text or "The assistant returned no response."
+    return {
+        "content": fallback_text,
+        "blocks": [
+            {
+                "type": "summary",
+                "title": "Answer",
+                "body": fallback_text,
+            }
+        ],
+        "sources": source_names,
+        "status_steps": [],
+        "trace": {"sources": source_names},
+    }
 
 
 def _suggestion_tool():
@@ -281,6 +436,7 @@ def _build_tools(sources):
     tools = [
         _suggestion_tool(),
         _search_listings_tool(),
+        _search_jid_memory_tool(),
         {
             "type": "function",
             "function": {
@@ -360,6 +516,95 @@ def _build_tools(sources):
                         "limit": {"type": "integer", "description": "Max results (default 10)"},
                     },
                     "required": ["entity_type"],
+                },
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "search_raw_messages",
+                "description": "Search across all raw WhatsApp messages (groups and DMs). Returns matching messages with sender, group, timestamp. Use for finding specific conversations, mentions of buildings/brokers, or any text content.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": "Search query (supports natural language)",
+                        },
+                        "limit": {
+                            "type": "integer",
+                            "description": "Max results (default 10)",
+                        },
+                    },
+                    "required": ["query"],
+                },
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "get_sender_history",
+                "description": "Get message history and profile for a specific sender. Shows their buildings, markets, BHK configs, and recent messages.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "sender": {
+                            "type": "string",
+                            "description": "Sender name or phone number to look up",
+                        },
+                        "limit": {
+                            "type": "integer",
+                            "description": "Max messages to return (default 20)",
+                        },
+                    },
+                    "required": ["sender"],
+                },
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "search_knowledge",
+                "description": "Search across all knowledge records (unified store of all messages, listings, requirements). Use this for comprehensive searches across all data sources.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": "Search query (supports natural language)",
+                        },
+                        "content_type": {
+                            "type": "string",
+                            "enum": ["listing", "requirement", "inquiry", "notification", "social", "unknown"],
+                            "description": "Filter by content type (optional)",
+                        },
+                        "limit": {
+                            "type": "integer",
+                            "description": "Max results (default 10)",
+                        },
+                    },
+                    "required": ["query"],
+                },
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "search_semantic",
+                "description": "Search knowledge records using semantic similarity. Best for finding conceptually similar content even if exact words don't match.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": "Search query (natural language)",
+                        },
+                        "limit": {
+                            "type": "integer",
+                            "description": "Max results (default 10)",
+                        },
+                    },
+                    "required": ["query"],
                 },
             }
         },
@@ -452,6 +697,34 @@ def _search_listings_tool():
                     },
                 },
                 "required": [],
+            },
+        },
+    }
+
+
+def _search_jid_memory_tool():
+    return {
+        "type": "function",
+        "function": {
+            "name": "search_jid_memory",
+            "description": "Search PropAI's WhatsApp JID memory. Use this for broker/person history, aliases, frequent localities/buildings, requirements posted, listings posted, and raw message retrieval.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Name, phone, locality, building, or natural language text to search in JID memory and raw messages.",
+                    },
+                    "message_kind": {
+                        "type": "string",
+                        "enum": ["listing", "requirement", "any"],
+                        "description": "Filter by remembered message kind.",
+                    },
+                    "locality": {"type": "string", "description": "Locality / micro-market filter."},
+                    "building": {"type": "string", "description": "Building name filter."},
+                    "bhk": {"type": "string", "description": "BHK filter, e.g. 3 BHK."},
+                    "limit": {"type": "integer", "description": "Max profiles/messages to return."},
+                },
             },
         },
     }
@@ -652,6 +925,98 @@ def execute_tool(name, args, sources, db_path=None):
                         lines.append(f"• {r['building_name'] or '?'} | {r['bhk'] or '?'} | ₹{r['price'] or '?'} | {r['broker_name'] or '?'} — seen {r['observation_count']}x")
                     return "\n".join(lines)
                 return "No duplicate listings found."
+        finally:
+            con.close()
+
+    if name == "search_jid_memory":
+        con = _open_db()
+        if not con:
+            return "Database not available"
+        try:
+            query = (args.get("query") or "").strip()
+            message_kind = args.get("message_kind") or "any"
+            locality = (args.get("locality") or "").strip()
+            building = (args.get("building") or "").strip()
+            bhk = (args.get("bhk") or "").strip()
+            limit = int(args.get("limit") or 10)
+
+            where = []
+            params = []
+            if query:
+                like = f"%{query}%"
+                where.append("""(
+                    jp.display_name LIKE ? OR jp.phone LIKE ? OR jp.jid LIKE ?
+                    OR jp.top_localities LIKE ? OR jp.top_buildings LIKE ?
+                    OR EXISTS (
+                        SELECT 1 FROM jid_aliases ja
+                        WHERE ja.jid_key = jp.jid_key AND ja.alias LIKE ?
+                    )
+                    OR EXISTS (
+                        SELECT 1 FROM jid_message_index jmi
+                        JOIN raw_messages r ON r.id = jmi.raw_message_id
+                        WHERE jmi.jid_key = jp.jid_key AND r.message LIKE ?
+                    )
+                )""")
+                params.extend([like, like, like, like, like, like, like])
+            if locality:
+                where.append("jp.top_localities LIKE ?")
+                params.append(f"%{locality}%")
+            if building:
+                where.append("jp.top_buildings LIKE ?")
+                params.append(f"%{building}%")
+            where_sql = " AND ".join(where) if where else "1=1"
+
+            profiles = [dict(r) for r in con.execute(f"""
+                SELECT jp.*, GROUP_CONCAT(ja.alias, ' | ') AS aliases
+                FROM jid_profiles jp
+                LEFT JOIN jid_aliases ja ON ja.jid_key = jp.jid_key
+                WHERE {where_sql}
+                GROUP BY jp.id
+                ORDER BY jp.message_count DESC, jp.last_seen_at DESC
+                LIMIT ?
+            """, params + [limit]).fetchall()]
+
+            messages_where = []
+            message_params = []
+            if query:
+                messages_where.append("(r.message LIKE ? OR r.sender LIKE ? OR r.sender_phone LIKE ?)")
+                message_params.extend([f"%{query}%", f"%{query}%", f"%{query}%"])
+            if message_kind and message_kind != "any":
+                messages_where.append("jmi.message_kind = ?")
+                message_params.append(message_kind)
+            if locality:
+                messages_where.append("jmi.locality LIKE ?")
+                message_params.append(f"%{locality}%")
+            if building:
+                messages_where.append("jmi.building_name LIKE ?")
+                message_params.append(f"%{building}%")
+            if bhk:
+                messages_where.append("jmi.bhk LIKE ?")
+                message_params.append(f"%{bhk}%")
+            message_sql = " AND ".join(messages_where) if messages_where else "1=1"
+            messages = [dict(r) for r in con.execute(f"""
+                SELECT jmi.jid_key, jmi.message_kind, jmi.residential_commercial,
+                       jmi.transaction_type, jmi.bhk, jmi.budget, jmi.budget_unit,
+                       jmi.locality, jmi.building_name, jmi.confidence,
+                       r.id AS raw_message_id, r.sender, r.sender_phone, r.group_name,
+                       r.timestamp, r.message
+                FROM jid_message_index jmi
+                JOIN raw_messages r ON r.id = jmi.raw_message_id
+                WHERE {message_sql}
+                ORDER BY r.timestamp DESC, r.id DESC
+                LIMIT ?
+            """, message_params + [limit]).fetchall()]
+
+            return json.dumps({
+                "type": "jid_memory_results",
+                "profiles": profiles,
+                "messages": messages,
+                "traceability": {
+                    "source": "raw_messages + jid_message_index",
+                    "raw_messages_returned": len(messages),
+                    "profiles_returned": len(profiles),
+                },
+            }, default=str)
         finally:
             con.close()
 
@@ -937,6 +1302,249 @@ def execute_tool(name, args, sources, db_path=None):
                 parts.append(f"{col}={val}")
             lines.append(f"{i}. {' | '.join(parts)}")
         return "\n".join(lines)
+
+    if name == "search_raw_messages":
+        con = _open_db()
+        if not con:
+            return "Database not available"
+        try:
+            query = (args.get("query") or "").strip()
+            limit = int(args.get("limit") or 10)
+
+            if not query:
+                return "Please provide a search query."
+
+            # Try FTS5 first
+            try:
+                rows = con.execute("""
+                    SELECT rm.id, rm.group_name, rm.sender, rm.sender_phone,
+                           rm.message, rm.timestamp,
+                           snippet(raw_messages_fts, 0, '<mark>', '</mark>', '...', 40) as snippet
+                    FROM raw_messages_fts fts
+                    JOIN raw_messages rm ON rm.id = fts.rowid
+                    WHERE raw_messages_fts MATCH ?
+                    ORDER BY rank
+                    LIMIT ?
+                """, (query, limit)).fetchall()
+
+                if rows:
+                    lines = [f"Found {len(rows)} raw messages matching '{query}':"]
+                    for r in rows:
+                        group = r[1] or "Direct Message"
+                        if '@g.us' in group:
+                            resolved = con.execute(
+                                "SELECT group_name FROM source_sync_jobs WHERE group_id = ? LIMIT 1",
+                                (group,)
+                            ).fetchone()
+                            if resolved:
+                                group = resolved[0]
+                        lines.append(f"• [{group}] {r[2]}: {r[4][:100]}...")
+                    return "\n".join(lines)
+            except Exception:
+                pass
+
+            # Fallback to LIKE
+            like_q = f"%{query}%"
+            rows = con.execute("""
+                SELECT id, group_name, sender, message, timestamp
+                FROM raw_messages
+                WHERE message LIKE ? OR sender LIKE ?
+                ORDER BY id DESC
+                LIMIT ?
+            """, (like_q, like_q, limit)).fetchall()
+
+            if rows:
+                lines = [f"Found {len(rows)} raw messages matching '{query}':"]
+                for r in rows:
+                    group = r[1] or "Direct Message"
+                    if '@g.us' in group:
+                        resolved = con.execute(
+                            "SELECT group_name FROM source_sync_jobs WHERE group_id = ? LIMIT 1",
+                            (group,)
+                        ).fetchone()
+                        if resolved:
+                            group = resolved[0]
+                    lines.append(f"• [{group}] {r[2]}: {(r[3] or '')[:100]}...")
+                return "\n".join(lines)
+
+            return f"No raw messages found matching '{query}'."
+        finally:
+            con.close()
+
+    if name == "get_sender_history":
+        con = _open_db()
+        if not con:
+            return "Database not available"
+        try:
+            sender = (args.get("sender") or "").strip()
+            limit = int(args.get("limit") or 20)
+
+            if not sender:
+                return "Please provide a sender name or phone number."
+
+            # Find sender
+            like_q = f"%{sender}%"
+            senders = con.execute("""
+                SELECT DISTINCT sender FROM raw_messages
+                WHERE sender LIKE ? OR sender_phone LIKE ?
+                LIMIT 5
+            """, (like_q, like_q)).fetchall()
+
+            if not senders:
+                return f"No sender found matching '{sender}'."
+
+            results = []
+            for s in senders:
+                sender_name = s[0]
+                messages = con.execute("""
+                    SELECT id, message, group_name, timestamp
+                    FROM raw_messages
+                    WHERE sender = ?
+                    ORDER BY timestamp DESC
+                    LIMIT ?
+                """, (sender_name, limit)).fetchall()
+
+                if messages:
+                    # Extract knowledge
+                    import re
+                    buildings = set()
+                    bhk_configs = set()
+                    markets = set()
+                    groups = set()
+
+                    building_pattern = re.compile(r'\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\s+(?:Bil|Bldg|Building|Apt|Complex|Tower|Heights|Park|Residency|Enclave|Villa|Society)\b', re.IGNORECASE)
+                    bhk_pattern = re.compile(r'(\d+)\s*(?:BHK|bhk|Bhk|RK|rk)', re.IGNORECASE)
+                    market_keywords = {'Bandra', 'Andheri', 'Santacruz', 'Khar', 'Juhu', 'Goregaon', 'Malad', 'Worli', 'Powai', 'BKC', 'Lokhandwala', 'Versova'}
+
+                    for msg in messages:
+                        text = msg[1] or ""
+                        groups.add(msg[2])
+                        for match in building_pattern.finditer(text):
+                            buildings.add(match.group(1))
+                        for match in bhk_pattern.finditer(text):
+                            bhk_configs.add(f"{match.group(1)} BHK")
+                        for market in market_keywords:
+                            if market.lower() in text.lower():
+                                markets.add(market)
+
+                    results.append({
+                        "sender": sender_name,
+                        "message_count": len(messages),
+                        "groups": list(groups),
+                        "buildings": list(buildings)[:10],
+                        "bhk_configs": list(bhk_configs),
+                        "markets": list(markets),
+                        "recent_messages": [(m[0], (m[1] or "")[:100], m[3]) for m in messages[:5]],
+                    })
+
+            return json.dumps({"senders": results}, default=str)
+        finally:
+            con.close()
+
+    if name == "search_knowledge":
+        con = _open_db()
+        if not con:
+            return "Database not available"
+        try:
+            query = (args.get("query") or "").strip()
+            limit = int(args.get("limit") or 10)
+            content_type = args.get("content_type")
+
+            if not query:
+                return "Please provide a search query."
+
+            # Try FTS5 first
+            try:
+                where_clauses = ["kr.is_valid = 1"]
+                params = [query]
+
+                if content_type:
+                    where_clauses.append("kr.content_type = ?")
+                    params.append(content_type)
+
+                where_sql = " AND ".join(where_clauses)
+
+                rows = con.execute(f"""
+                    SELECT kr.id, kr.source_type, kr.raw_content, kr.sender_name,
+                           kr.conversation_name, kr.message_timestamp, kr.content_type,
+                           snippet(knowledge_records_fts, 0, '<mark>', '</mark>', '...', 40) as snippet
+                    FROM knowledge_records_fts fts
+                    JOIN knowledge_records kr ON kr.id = fts.rowid
+                    WHERE knowledge_records_fts MATCH ? AND {where_sql}
+                    ORDER BY rank
+                    LIMIT ?
+                """, [query] + params[1:] + [limit]).fetchall()
+
+                if rows:
+                    lines = [f"Found {len(rows)} knowledge records matching '{query}':"]
+                    for r in rows:
+                        source = r[1]
+                        sender = r[3] or "Unknown"
+                        conv = r[4] or "Unknown"
+                        timestamp = r[5] or ""
+                        content_type = r[6] or "unknown"
+                        snippet = r[7] or r[2][:100]
+                        lines.append(f"• [{source}] {sender} in {conv} ({content_type}, {timestamp}): {snippet}")
+                    return "\n".join(lines)
+            except Exception:
+                pass
+
+            # Fallback to LIKE
+            like_q = f"%{query}%"
+            where_clauses = ["is_valid = 1", "raw_content LIKE ?"]
+            params = [like_q]
+
+            if content_type:
+                where_clauses.append("content_type = ?")
+                params.append(content_type)
+
+            where_sql = " AND ".join(where_clauses)
+
+            rows = con.execute(f"""
+                SELECT id, source_type, raw_content, sender_name, conversation_name,
+                       message_timestamp, content_type
+                FROM knowledge_records
+                WHERE {where_sql}
+                ORDER BY message_timestamp DESC
+                LIMIT ?
+            """, params + [limit]).fetchall()
+
+            if rows:
+                lines = [f"Found {len(rows)} knowledge records matching '{query}':"]
+                for r in rows:
+                    lines.append(f"• [{r[1]}] {r[3]} in {r[4]} ({r[6]}, {r[5]}): {(r[2] or '')[:80]}...")
+                return "\n".join(lines)
+
+            return f"No knowledge records found matching '{query}'."
+        finally:
+            con.close()
+
+    if name == "search_semantic":
+        try:
+            from knowledge.embedder import get_embedder
+            embedder = get_embedder()
+
+            query = (args.get("query") or "").strip()
+            limit = int(args.get("limit") or 10)
+
+            if not query:
+                return "Please provide a search query."
+
+            results = embedder.search_similar(query, limit=limit)
+
+            if results:
+                lines = [f"Found {len(results)} semantically similar records for '{query}':"]
+                for r in results:
+                    sim = r.get("similarity", 0)
+                    content = r.get("raw_content", "")[:80]
+                    sender = r.get("sender_name", "Unknown")
+                    conv = r.get("conversation_name", "Unknown")
+                    lines.append(f"• (similarity: {sim:.3f}) {sender} in {conv}: {content}...")
+                return "\n".join(lines)
+
+            return f"No similar records found for '{query}'."
+        except Exception as e:
+            return f"Semantic search error: {str(e)}"
 
     return f"Unknown tool: {name}"
 

@@ -19,8 +19,9 @@ const navSections = [
   {
     title: "Market",
     items: [
+      { href: "/knowledge", label: "Knowledge Base", icon: "📚" },
       { href: "/extractions", label: "Market Listings", icon: "🏗️" },
-      { href: "/requirements", label: "Market Buyers", icon: "📋" },
+      { href: "/requirements", label: "Market Requirements", icon: "📋" },
       { href: "/brokers", label: "Brokers", icon: "🤝" },
       { href: "/groups", label: "Groups", icon: "👥" },
       { href: "/market", label: "Markets", icon: "🗺️" },
@@ -30,9 +31,11 @@ const navSections = [
     title: "Intelligence",
     items: [
       { href: "/", label: "Dashboard", icon: "📊" },
+      { href: "/intelligence", label: "Market Intelligence", icon: "🧠" },
       { href: "/chat?tab=review", label: "Review Center", icon: "✅" },
       { href: "/chat", label: "AI Chat", icon: "🤖" },
       { href: "/audit", label: "WhatsApp Audit", icon: "🔬" },
+      { href: "/trainer", label: "Knowledge Trainer", icon: "🎓" },
       { href: "/settings", label: "Settings", icon: "⚙" },
     ],
   },
@@ -44,7 +47,7 @@ const QUICK_ACTIONS = [
   { label: "Bandra market listings", icon: "📍", query: "bandra" },
   { label: "Commercial offices", icon: "🏢", query: "commercial" },
   { label: "Active brokers", icon: "🤝", query: "" },
-  { label: "Recent market buyers", icon: "📋", query: "" },
+  { label: "Recent requirements", icon: "📋", query: "" },
 ];
 
 function PaletteModal({ open, onClose }: { open: boolean; onClose: () => void }) {
@@ -104,7 +107,7 @@ function PaletteModal({ open, onClose }: { open: boolean; onClose: () => void })
     listings: "🏗️", requirements: "📋", brokers: "🤝", buildings: "🏢", markets: "🗺️", messages: "💬",
   };
   const GROUP_LABELS: Record<string, string> = {
-    listings: "Market Listings", requirements: "Market Buyers", brokers: "Brokers", buildings: "Buildings", markets: "Markets", messages: "Messages",
+    listings: "Market Listings", requirements: "Market Requirements", brokers: "Brokers", buildings: "Buildings", markets: "Markets", messages: "Messages",
   };
 
   function renderGroupItem(group: string, item: any, i: number, globalIdx: number) {
@@ -117,7 +120,7 @@ function PaletteModal({ open, onClose }: { open: boolean; onClose: () => void })
       subtitle = `${item.broker_name || ""} · wants ${item.intent?.toLowerCase()}`;
     } else if (group === "brokers") {
       title = item.name;
-      subtitle = `${item.listing_count || 0} listings · ${item.requirement_count || 0} buyers · ${item.market_count || 0} markets`;
+      subtitle = `${item.listing_count || 0} listings · ${item.requirement_count || 0} requirements · ${item.market_count || 0} markets`;
     } else if (group === "buildings") {
       title = item.name;
       subtitle = `${item.occurrence_count || 0} messages · ${item.broker_count || 0} brokers${item.micro_market ? ` · ${item.micro_market}` : ""}`;
@@ -201,7 +204,7 @@ function PaletteModal({ open, onClose }: { open: boolean; onClose: () => void })
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={onKeyDown}
-            placeholder="Search market listings, buyers, brokers, buildings, markets..."
+            placeholder="Search market listings, requirements, brokers, buildings, markets..."
             className="flex-1 bg-transparent text-sm text-white placeholder-[#64748b] outline-none"
           />
           <kbd className="text-[10px] text-[#64748b] border border-[rgba(255,255,255,0.08)] px-1.5 py-0.5 rounded">ESC</kbd>
@@ -216,7 +219,7 @@ function PaletteModal({ open, onClose }: { open: boolean; onClose: () => void })
                 <span>🏗️</span> Market Listings
               </button>
               <button onClick={() => navigate("/requirements")} className="flex items-center gap-2 text-xs text-[#94a3b8] hover:text-white hover:bg-[rgba(255,255,255,0.04)] rounded-lg px-2.5 py-2 transition-colors text-left">
-                <span>📋</span> Market Buyers
+                <span>📋</span> Market Requirements
               </button>
               <button onClick={() => navigate("/brokers")} className="flex items-center gap-2 text-xs text-[#94a3b8] hover:text-white hover:bg-[rgba(255,255,255,0.04)] rounded-lg px-2.5 py-2 transition-colors text-left">
                 <span>🤝</span> Active Brokers
@@ -311,13 +314,22 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <head>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+        <link rel="icon" href="/favicon.ico" sizes="any" />
+        <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+        <link rel="apple-touch-icon" href="/icon.png" />
         <title>PropAI</title>
       </head>
       <body className="flex min-h-screen">
         <PaletteModal open={paletteOpen} onClose={() => setPaletteOpen(false)} />
         {sidebarOpen && (
           <aside className="w-64 border-r border-[rgba(255,255,255,0.06)] p-4 flex flex-col gap-1 shrink-0 bg-[#0a0e14]">
-            <div className="text-lg font-bold mb-6 px-3 text-[#e2e8f0]">PropAI</div>
+            <a href="/" className="mb-5 flex items-center gap-3 rounded-xl border border-[rgba(255,255,255,0.06)] bg-[rgba(255,255,255,0.02)] px-3 py-3 no-underline hover:border-[rgba(62,232,138,0.35)] hover:bg-[rgba(62,232,138,0.06)]">
+              <img src="/icon.png" alt="PropAI" className="h-9 w-9 shrink-0 rounded-lg" />
+              <div className="min-w-0">
+                <div className="text-[15px] font-bold leading-none text-[#e2e8f0]">PropAI</div>
+                <div className="mt-1 text-[10px] uppercase tracking-[0.18em] text-[#64748b]">Broker OS</div>
+              </div>
+            </a>
             <a href="/companion" className="sidebar-link mb-3 bg-[rgba(62,232,138,0.08)] text-[#3EE88A]">
               <span>📱</span>
               <span>PropAI Companion</span>

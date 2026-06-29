@@ -9,6 +9,8 @@ CREATE TABLE IF NOT EXISTS raw_messages (
     sender_phone    TEXT DEFAULT '',
     message         TEXT NOT NULL,
     message_type    TEXT NOT NULL DEFAULT 'text',
+    attachments     TEXT DEFAULT '[]',
+    reply_context   TEXT DEFAULT '{}',
     timestamp       TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
     source          TEXT NOT NULL DEFAULT 'WHATSAPP',
     raw_payload     TEXT DEFAULT '{}',
@@ -201,6 +203,8 @@ CREATE INDEX IF NOT EXISTS idx_raw_timestamp ON raw_messages(timestamp DESC);
 CREATE INDEX IF NOT EXISTS idx_raw_group ON raw_messages(group_name);
 CREATE INDEX IF NOT EXISTS idx_raw_source ON raw_messages(source);
 CREATE INDEX IF NOT EXISTS idx_raw_version ON raw_messages(pipeline_version);
+CREATE INDEX IF NOT EXISTS idx_raw_sender_jid ON raw_messages(sender_jid);
+CREATE INDEX IF NOT EXISTS idx_raw_sender_phone ON raw_messages(sender_phone);
 CREATE INDEX IF NOT EXISTS idx_parsed_raw ON parsed_output(raw_message_id);
 CREATE INDEX IF NOT EXISTS idx_listings_fingerprint ON listings(fingerprint);
 CREATE INDEX IF NOT EXISTS idx_listings_last_seen ON listings(last_seen DESC);
@@ -298,6 +302,73 @@ CREATE TABLE IF NOT EXISTS broker_building_stats (
 );
 
 CREATE INDEX IF NOT EXISTS idx_bbs_broker ON broker_building_stats(broker_id);
+
+-- JID Memory Engine
+-- Raw WhatsApp messages remain source of truth. These profiles are derived and rebuildable.
+CREATE TABLE IF NOT EXISTS jid_profiles (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    jid_key             TEXT NOT NULL UNIQUE,
+    jid                 TEXT DEFAULT '',
+    phone               TEXT DEFAULT '',
+    display_name        TEXT DEFAULT '',
+    message_count       INTEGER NOT NULL DEFAULT 0,
+    group_count         INTEGER NOT NULL DEFAULT 0,
+    listing_count       INTEGER NOT NULL DEFAULT 0,
+    requirement_count   INTEGER NOT NULL DEFAULT 0,
+    residential_count   INTEGER NOT NULL DEFAULT 0,
+    commercial_count    INTEGER NOT NULL DEFAULT 0,
+    sale_count          INTEGER NOT NULL DEFAULT 0,
+    rental_count        INTEGER NOT NULL DEFAULT 0,
+    first_seen_at       TEXT DEFAULT NULL,
+    last_seen_at        TEXT DEFAULT NULL,
+    last_message_id     INTEGER DEFAULT NULL REFERENCES raw_messages(id),
+    top_localities      TEXT DEFAULT '[]',
+    top_buildings       TEXT DEFAULT '[]',
+    top_groups          TEXT DEFAULT '[]',
+    profile_json        TEXT DEFAULT '{}',
+    updated_at          TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+    created_at          TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_jid_profiles_phone ON jid_profiles(phone);
+CREATE INDEX IF NOT EXISTS idx_jid_profiles_last_seen ON jid_profiles(last_seen_at DESC);
+
+CREATE TABLE IF NOT EXISTS jid_aliases (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    jid_key             TEXT NOT NULL REFERENCES jid_profiles(jid_key) ON DELETE CASCADE,
+    alias               TEXT NOT NULL,
+    observation_count   INTEGER NOT NULL DEFAULT 0,
+    first_seen_at       TEXT DEFAULT NULL,
+    last_seen_at        TEXT DEFAULT NULL,
+    UNIQUE(jid_key, alias)
+);
+
+CREATE INDEX IF NOT EXISTS idx_jid_aliases_key ON jid_aliases(jid_key);
+
+CREATE TABLE IF NOT EXISTS jid_message_index (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    jid_key             TEXT NOT NULL REFERENCES jid_profiles(jid_key) ON DELETE CASCADE,
+    raw_message_id      INTEGER NOT NULL REFERENCES raw_messages(id) ON DELETE CASCADE,
+    group_name          TEXT DEFAULT '',
+    timestamp           TEXT DEFAULT NULL,
+    message_kind        TEXT DEFAULT NULL,
+    residential_commercial TEXT DEFAULT NULL,
+    transaction_type    TEXT DEFAULT NULL,
+    bhk                 TEXT DEFAULT NULL,
+    budget              REAL DEFAULT NULL,
+    budget_unit         TEXT DEFAULT NULL,
+    locality            TEXT DEFAULT NULL,
+    building_name       TEXT DEFAULT NULL,
+    confidence          REAL DEFAULT 0.0,
+    metadata_json       TEXT DEFAULT '{}',
+    UNIQUE(jid_key, raw_message_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_jmi_jid ON jid_message_index(jid_key);
+CREATE INDEX IF NOT EXISTS idx_jmi_raw ON jid_message_index(raw_message_id);
+CREATE INDEX IF NOT EXISTS idx_jmi_kind ON jid_message_index(message_kind);
+CREATE INDEX IF NOT EXISTS idx_jmi_locality ON jid_message_index(locality);
+CREATE INDEX IF NOT EXISTS idx_jmi_building ON jid_message_index(building_name);
 
 -- Token usage log for AI operations
 CREATE TABLE IF NOT EXISTS ai_usage_log (
@@ -460,3 +531,135 @@ CREATE TABLE IF NOT EXISTS companion_config (
     value           TEXT NOT NULL DEFAULT '',
     updated_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );
+
+-- ════════════════════════════════════════════════════════════════════
+-- BUILDING ENRICHMENT PIPELINE
+-- ════════════════════════════════════════════════════════════════════
+
+-- Canonical building entities with permanent internal ID
+CREATE TABLE IF NOT EXISTS buildings (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    building_id     TEXT NOT NULL UNIQUE,  -- BLD-XXXXXXX permanent internal ID
+    canonical_name  TEXT NOT NULL,
+    micro_market    TEXT,
+    address         TEXT,
+    developer       TEXT,
+    pincode         TEXT,
+    latitude        REAL,
+    longitude       REAL,
+    google_place_id TEXT,
+    cts_number      TEXT,
+    survey_number   TEXT,
+    building_age    TEXT,
+    nearby_metro    TEXT,
+    nearby_landmarks TEXT,
+    nearby_roads    TEXT,
+    nearby_buildings TEXT,
+    -- Aggregated stats from WhatsApp
+    observed_listings   INTEGER DEFAULT 0,
+    observed_brokers    INTEGER DEFAULT 0,
+    observed_requirements INTEGER DEFAULT 0,
+    -- Enrichment metadata
+    last_enriched   TEXT,
+    enrichment_confidence REAL DEFAULT 0.0,
+    enrichment_sources TEXT DEFAULT '[]',  -- JSON array of source names
+    -- Status
+    status          TEXT NOT NULL DEFAULT 'discovered',  -- discovered, enriching, enriched, failed
+    created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+    updated_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_buildings_canonical ON buildings(canonical_name);
+CREATE INDEX IF NOT EXISTS idx_buildings_micro_market ON buildings(micro_market);
+CREATE INDEX IF NOT EXISTS idx_buildings_status ON buildings(status);
+CREATE INDEX IF NOT EXISTS idx_buildings_building_id ON buildings(building_id);
+
+-- Building aliases (variant names → canonical building)
+CREATE TABLE IF NOT EXISTS building_name_aliases (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    building_id     INTEGER REFERENCES buildings(id) ON DELETE CASCADE,
+    alias           TEXT NOT NULL UNIQUE,
+    canonical_name  TEXT NOT NULL,
+    confidence      REAL DEFAULT 0.0,
+    source          TEXT DEFAULT 'whatsapp',  -- whatsapp, manual, ai, enrichment
+    created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_building_aliases_alias ON building_name_aliases(alias);
+CREATE INDEX IF NOT EXISTS idx_building_aliases_building ON building_name_aliases(building_id);
+
+-- Building enrichment jobs queue
+CREATE TABLE IF NOT EXISTS building_enrichment_jobs (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    building_id     INTEGER REFERENCES buildings(id) ON DELETE CASCADE,
+    status          TEXT NOT NULL DEFAULT 'pending',  -- pending, running, completed, failed, skipped
+    provider        TEXT NOT NULL,  -- igr, rera, google_places, openstreetmap, manual
+    priority        INTEGER DEFAULT 0,  -- higher = processed first
+    attempts        INTEGER DEFAULT 0,
+    max_attempts    INTEGER DEFAULT 3,
+    last_error      TEXT,
+    scheduled_after TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+    started_at      TEXT,
+    completed_at    TEXT,
+    created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_building_ej_status ON building_enrichment_jobs(status);
+CREATE INDEX IF NOT EXISTS idx_building_ej_building ON building_enrichment_jobs(building_id);
+CREATE INDEX IF NOT EXISTS idx_building_ej_scheduled ON building_enrichment_jobs(scheduled_after);
+CREATE INDEX IF NOT EXISTS idx_building_ej_provider ON building_enrichment_jobs(provider);
+
+-- Building enrichment source tracking (what data came from where)
+CREATE TABLE IF NOT EXISTS building_enrichment_sources (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    building_id     INTEGER REFERENCES buildings(id) ON DELETE CASCADE,
+    provider        TEXT NOT NULL,  -- igr, rera, google_places, openstreetmap, manual
+    field_name      TEXT NOT NULL,  -- address, developer, latitude, etc.
+    field_value     TEXT,
+    confidence      REAL DEFAULT 0.0,
+    source_url      TEXT,
+    source_record_id TEXT,
+    enriched_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+    UNIQUE(building_id, provider, field_name)
+);
+
+CREATE INDEX IF NOT EXISTS idx_building_es_building ON building_enrichment_sources(building_id);
+CREATE INDEX IF NOT EXISTS idx_building_es_provider ON building_enrichment_sources(provider);
+
+-- Building enrichment history (audit trail)
+CREATE TABLE IF NOT EXISTS building_enrichment_history (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    building_id     INTEGER REFERENCES buildings(id) ON DELETE CASCADE,
+    job_id          INTEGER REFERENCES building_enrichment_jobs(id) ON DELETE SET NULL,
+    provider        TEXT NOT NULL,
+    action          TEXT NOT NULL,  -- discovered, enriched, updated, failed, skipped
+    fields_updated  TEXT DEFAULT '[]',  -- JSON array of field names
+    confidence      REAL DEFAULT 0.0,
+    details         TEXT DEFAULT '{}',
+    created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_building_eh_building ON building_enrichment_history(building_id);
+CREATE INDEX IF NOT EXISTS idx_building_eh_created ON building_enrichment_history(created_at);
+
+-- Requirement-Listing matches (pre-computed for fast retrieval)
+CREATE TABLE IF NOT EXISTS requirement_matches (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    requirement_id  INTEGER NOT NULL REFERENCES parsed_output(id) ON DELETE CASCADE,
+    listing_id      INTEGER NOT NULL REFERENCES listings(id) ON DELETE CASCADE,
+    match_score     REAL NOT NULL DEFAULT 0.0,  -- 0-100 fit score
+    bhk_match       INTEGER DEFAULT 0,  -- 1=exact, 0.5=±1, 0=mismatch
+    market_match    INTEGER DEFAULT 0,  -- 1=exact, 0=no match
+    price_match     REAL DEFAULT 0.0,   -- 0-1 how close price fits
+    building_match  INTEGER DEFAULT 0,  -- 1=same building, 0=different
+    intent_match    INTEGER DEFAULT 0,  -- 1=matching intent, 0=mismatch
+    matched_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+    UNIQUE(requirement_id, listing_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_rm_requirement ON requirement_matches(requirement_id);
+CREATE INDEX IF NOT EXISTS idx_rm_listing ON requirement_matches(listing_id);
+CREATE INDEX IF NOT EXISTS idx_rm_score ON requirement_matches(match_score DESC);
+
+-- Link resolver_decisions to building_id
+-- (ALTER TABLE not supported in SQLite, but we can add the column via Python)

@@ -52,10 +52,57 @@ What happens:
 ./propai dashboard  # Open the PropAI dashboard
 ./propai status     # Check what is running
 ./propai doctor     # Run health checks
+./propai reindex    # Dry-run parser reindex for old raw messages
 ```
 
 `propai qr` is the command you want when pairing WhatsApp.  
 `propai connect` is the service launcher and remains available for compatibility.
+
+## Reindex Old Data
+
+When parser rules improve, old rows in `parsed_output` and `listings` do not change automatically. Reindexing reparses `raw_messages`, replaces the derived parsed rows, and rebuilds listing summaries.
+
+Dry-run the next batch of numbered multi-listing messages:
+
+```bash
+./propai reindex --pattern numbered --limit 100
+```
+
+Apply the same batch:
+
+```bash
+./propai reindex --pattern numbered --limit 100 --apply
+```
+
+Reindex one known raw message:
+
+```bash
+./propai reindex --raw-id 44574 --apply
+```
+
+Reindexing creates a SQLite backup by default before writes. Use small batches first; full historical reindexing can take time on large WhatsApp datasets.
+
+## JID Memory Engine
+
+PropAI keeps every original WhatsApp message in `raw_messages`. The JID memory layer is derived from that source of truth and can be rebuilt at any time.
+
+Rebuild JID profiles from historical WhatsApp messages:
+
+```bash
+./propai memory
+```
+
+What gets derived:
+
+- Long-lived JID profile keyed by WhatsApp JID, phone, or sender name fallback
+- Aliases used by the same sender
+- Frequent localities, buildings, and groups
+- Listing vs requirement tendency
+- Residential vs commercial tendency
+- Sale vs rental tendency
+- Lightweight searchable message metadata
+
+The broker-facing product should retrieve from this memory and original messages first. Parsed listings are useful derived views, not the source of truth.
 
 ## What It Does
 

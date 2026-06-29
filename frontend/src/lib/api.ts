@@ -1,22 +1,35 @@
 const BASE = "/api";
+const API_TIMEOUT_MS = 8000;
 
 async function fetchJSON<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${BASE}${url}`, {
-    headers: { "Content-Type": "application/json", ...init?.headers },
-    ...init,
-  });
-  if (!res.ok) {
-    const body = await res.text();
-    let message = body;
-    try {
-      const parsed = JSON.parse(body);
-      message = parsed.message || parsed.detail || body;
-    } catch {
-      message = body;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
+  try {
+    const res = await fetch(`${BASE}${url}`, {
+      ...init,
+      signal: init?.signal || controller.signal,
+      headers: { "Content-Type": "application/json", ...init?.headers },
+    });
+    if (!res.ok) {
+      const body = await res.text();
+      let message = body;
+      try {
+        const parsed = JSON.parse(body);
+        message = parsed.message || parsed.detail || body;
+      } catch {
+        message = body;
+      }
+      throw new Error(`${res.status} ${res.statusText}: ${message}`);
     }
-    throw new Error(`${res.status} ${res.statusText}: ${message}`);
+    return res.json();
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw new Error(`Request timed out: ${url}`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
   }
-  return res.json();
 }
 
 export interface RawMessage {
@@ -39,9 +52,7 @@ export interface RawMessage {
 export interface ParsedObservation {
   id: number;
   raw_message_id: number;
-  raw_message: string;
   raw_group: string;
-  raw_sender: string;
   raw_timestamp: string;
   broker_name: string;
   broker_phone: string;
@@ -59,7 +70,9 @@ export interface ParsedObservation {
   building_name: string;
   micro_market: string;
   street_name: string;
+  developer: string;
   confidence: number;
+  created_at: string;
 }
 
 export interface DashboardActivity {
@@ -98,10 +111,8 @@ export interface ListingRow {
   group_count: number;
   latest_raw_message_id: number;
   representative_raw_message_id: number;
-  latest_message: string;
-  latest_group: string;
   latest_timestamp: string;
-  latest_sender: string;
+  latest_group: string;
 }
 
 export interface ConnectionState {
@@ -199,8 +210,38 @@ export function getGroups() {
   return fetchJSON<any[]>("/groups");
 }
 
-export function getBuildings() {
-  return fetchJSON<any[]>("/buildings");
+export function getBuildings(limit = 100, offset = 0) {
+  return fetchJSON<any>(`/buildings?limit=${limit}&offset=${offset}`);
+}
+
+export function discoverBuildingAliases(minConfidence = 0.7) {
+  return fetchJSON<{ discovered: number; saved: number; suggestions: any[] }>(
+    `/buildings/aliases/discover?min_confidence=${minConfidence}`,
+    { method: "POST" }
+  );
+}
+
+export function getAliasSuggestions(status = "pending", limit = 50) {
+  return fetchJSON<{ suggestions: any[]; count: number }>(
+    `/buildings/aliases/suggestions?status=${status}&limit=${limit}`
+  );
+}
+
+export function reviewAliasSuggestion(suggestionId: number, approved: boolean) {
+  return fetchJSON<{ success: boolean }>(
+    `/buildings/aliases/${suggestionId}/review?approved=${approved}`,
+    { method: "POST" }
+  );
+}
+
+export function getAliasStats() {
+  return fetchJSON<{
+    total_suggestions: number;
+    pending: number;
+    approved: number;
+    rejected: number;
+    aliases_in_kb: number;
+  }>("/buildings/aliases/stats");
 }
 
 export function getBrokers() {
@@ -230,8 +271,102 @@ export function searchMessages(q: string) {
   return fetchJSON<any>(`/search?q=${encodeURIComponent(q)}`);
 }
 
-export function getBuildingProfile(name: string) {
-  return fetchJSON<any>(`/buildings/${encodeURIComponent(name)}`);
+export interface RawSearchResult {
+  id: number;
+  group_name: string;
+  sender: string;
+  sender_phone: string;
+  message: string;
+  timestamp: string;
+  source: string;
+  snippet: string;
+}
+
+export function searchRawMessages(q: string, limit = 20, offset = 0) {
+  return fetchJSON<{ results: RawSearchResult[]; count: number; query: string }>(
+    `/search/raw?q=${encodeURIComponent(q)}&limit=${limit}&offset=${offset}`
+  );
+}
+
+export function searchRawBySender(sender: string, limit = 50) {
+  return fetchJSON<{ results: RawSearchResult[]; count: number; query: string }>(
+    `/search/raw/sender?sender=${encodeURIComponent(sender)}&limit=${limit}`
+  );
+}
+
+export function searchRawByGroup(groupJid: string, limit = 50) {
+  return fetchJSON<{ results: RawSearchResult[]; count: number; query: string }>(
+    `/search/raw/group?group_jid=${encodeURIComponent(groupJid)}&limit=${limit}`
+  );
+}
+
+export function getBuildingProfile(buildingId: string) {
+  return fetchJSON<any>(`/buildings/${encodeURIComponent(buildingId)}`);
+}
+
+export function getBuildingAliases(buildingId: string) {
+  return fetchJSON<any[]>(`/buildings/${encodeURIComponent(buildingId)}/aliases`);
+}
+
+export function refreshBuilding(buildingId: string, provider?: string) {
+  const params = provider ? `?provider=${provider}` : "";
+  return fetchJSON<any>(`/buildings/${encodeURIComponent(buildingId)}/refresh${params}`, {
+    method: "POST",
+  });
+}
+
+export function discoverBuildings() {
+  return fetchJSON<any>("/buildings/discover", { method: "POST" });
+}
+
+export function refreshBuildingCounts() {
+  return fetchJSON<any>("/buildings/refresh-counts", { method: "POST" });
+}
+
+export function getBuildingEnrichmentDashboard() {
+  return fetchJSON<any>("/buildings/enrichment/dashboard");
+}
+
+export function getBuildingEnrichmentJobs(status?: string, limit = 50) {
+  const params = new URLSearchParams();
+  if (status) params.set("status", status);
+  params.set("limit", String(limit));
+  return fetchJSON<any[]>(`/buildings/enrichment/jobs?${params.toString()}`);
+}
+
+export function getBuildingEnrichmentHistory(buildingId?: string, limit = 50) {
+  const params = new URLSearchParams();
+  if (buildingId) params.set("building_id", buildingId);
+  params.set("limit", String(limit));
+  return fetchJSON<any[]>(`/buildings/enrichment/history?${params.toString()}`);
+}
+
+export function getIGRDistricts(restOfMaharashtra = true) {
+  return fetchJSON<any[]>(`/igr/districts?rest_of_maharashtra=${restOfMaharashtra}`);
+}
+
+export function getIGRTahsils(districtCode: string) {
+  return fetchJSON<any[]>(`/igr/tahsils?district_code=${districtCode}`);
+}
+
+export function getIGRVillages(districtCode: string, tahsilCode: string) {
+  return fetchJSON<any[]>(`/igr/villages?district_code=${districtCode}&tahsil_code=${encodeURIComponent(tahsilCode)}`);
+}
+
+export function searchIGR(params: {
+  district_code?: string;
+  tahsil_code?: string;
+  village?: string;
+  property_no?: string;
+  year?: number;
+}) {
+  const sp = new URLSearchParams();
+  if (params.district_code) sp.set("district_code", params.district_code);
+  if (params.tahsil_code) sp.set("tahsil_code", params.tahsil_code);
+  if (params.village) sp.set("village", params.village);
+  if (params.property_no) sp.set("property_no", params.property_no);
+  if (params.year) sp.set("year", String(params.year));
+  return fetchJSON<any>(`/igr/search?${sp.toString()}`);
 }
 
 export function getMarketDetail(name: string) {
@@ -262,7 +397,81 @@ export function getGraphGrowth() {
 
 export interface ChatResponse {
   content: string;
+  blocks: WorkspaceBlock[];
   sources: string[];
+  status_steps?: string[];
+  trace?: {
+    sources?: string[];
+    last_updated?: string;
+    notes?: string[];
+  };
+}
+
+export interface WorkspaceBlockAction {
+  label: string;
+  value?: string;
+  href?: string;
+  kind?: string;
+}
+
+export interface WorkspaceBlockMetric {
+  label: string;
+  value: string;
+  tone?: "neutral" | "good" | "warn" | "bad" | "accent";
+}
+
+export interface WorkspaceBlock {
+  type:
+    | "summary"
+    | "listing_cards"
+    | "buyer_cards"
+    | "broker_cards"
+    | "building_card"
+    | "market_card"
+    | "table"
+    | "timeline"
+    | "map"
+    | "comparison"
+    | "original_messages"
+    | "ai_suggestions"
+    | "charts"
+    | "export_panel"
+    | "promotion_preview"
+    | "property_gallery"
+    | "related_listings"
+    | "matching_buyers"
+    | "suggested_questions"
+    | "error_state"
+    | "empty_state"
+    | "loading"
+    | string;
+  title?: string;
+  subtitle?: string;
+  body?: string;
+  summary?: string;
+  description?: string;
+  note?: string;
+  items?: any[];
+  results?: any[];
+  rows?: any[];
+  columns?: string[];
+  metrics?: WorkspaceBlockMetric[];
+  bullets?: string[];
+  actions?: WorkspaceBlockAction[];
+  cards?: any[];
+  events?: any[];
+  questions?: string[];
+  sources?: string[];
+  status_steps?: string[];
+  status?: string;
+  content?: string;
+  prompt?: string;
+  channels?: any[];
+  steps?: string[];
+  highlights?: string[] | string;
+  hashtags?: string[] | string;
+  cta?: string;
+  headline?: string;
 }
 
 export interface AIConfig {
@@ -309,12 +518,34 @@ export function searchListings(params: {
   return fetchJSON<any>(`/search/listings?${searchParams}`);
 }
 
+export function getListingSources(listingId: number) {
+  return fetchJSON<any[]>(`/listings/${listingId}/sources`);
+}
+
+export function getParsedSources(parsedId: number) {
+  return fetchJSON<any[]>(`/parsed/${parsedId}/sources`);
+}
+
 export function getDashboardListings(limit = 20) {
   return fetchJSON<any[]>(`/dashboard/listings?limit=${limit}`);
 }
 
 export function getDashboardRequirements(limit = 20) {
   return fetchJSON<any[]>(`/dashboard/requirements?limit=${limit}`);
+}
+
+export function matchRequirements() {
+  return fetchJSON<{ matched: number }>("/requirements/match", { method: "POST" });
+}
+
+export function getRequirementMatchesSummary() {
+  return fetchJSON<Record<string, { count: number; best: number }>>("/requirements/matches/summary");
+}
+
+export function getRequirementMatches(reqId: number, limit = 20) {
+  return fetchJSON<{ requirement_id: number; matches: any[]; count: number }>(
+    `/requirements/${reqId}/matches?limit=${limit}`
+  );
 }
 
 export function getDashboardSignals() {
@@ -622,6 +853,39 @@ export function getAuditDuplicates() {
 
 export function getAuditCaptureHealth() {
   return fetchJSON<AuditCaptureHealth>("/audit/capture-health");
+}
+
+export interface AuditLatestRecord {
+  id: number | string;
+  time: string;
+  conversation: string;
+  sender: string;
+  preview: string;
+  stored: boolean;
+}
+
+export interface AuditIntelligence {
+  network?: Record<string, number | string | boolean>;
+  capture?: Record<string, number | string | boolean | AuditLatestRecord[]>;
+  search_coverage?: Record<string, number | string>;
+  learning?: Record<string, number | string | { term: string; learned_as: string }[]>;
+}
+
+export interface AuditSearchEvidence {
+  count: number;
+  first_seen: string;
+  last_seen: string;
+  groups: number;
+  unique_senders: number;
+  top_groups: { name: string; count: number }[];
+}
+
+export function getAuditIntelligence() {
+  return fetchJSON<AuditIntelligence>("/audit/intelligence");
+}
+
+export function getAuditSearchEvidence(q: string) {
+  return fetchJSON<AuditSearchEvidence>(`/audit/search-evidence?q=${encodeURIComponent(q)}`);
 }
 
 export function getAuditTopContributors(limit = 10) {

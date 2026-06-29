@@ -84,14 +84,10 @@ def listing_fingerprint(parsed: Any, raw_sender: str = "", group_name: str = "")
 
 def listing_label(parsed: Any) -> str:
     data = _mapping(parsed)
-    parts = [
-        _text(data.get("bhk")).upper(),
-        _text(data.get("price_unit")).upper(),
-        _first_text(
-            data.get("micro_market"),
-            data.get("location_raw"),
-            data.get("building_name"),
-            data.get("landmark_name"),
-        ).title(),
-    ]
-    return " ".join(part for part in parts if part)
+    location = _first_text(
+        data.get("micro_market"),
+        data.get("location_raw"),
+        data.get("building_name"),
+        data.get("landmark_name"),
+    ).title()
+    return location

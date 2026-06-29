@@ -328,6 +328,11 @@ def parse_message(raw_text: str, profile_name: str | None = None) -> dict:
     elif _RE.search(r'\b(1\s*\.\s*5)\s*bhk', lower):
         result["bhk"] = "1.5 BHK"
 
+    if result["intent"] == "COMMERCIAL":
+        # Commercial ads often contain words like "Studio" as part of branding.
+        # Don't present those as residential unit types.
+        result["bhk"] = None
+
     # ── 6. Extract price — two-pass: with unit first, then absolute ──
     price_match = _RE.search(
         r'(?:rs\.?\s*|inr\s*|₹)?\s*([\d,]+(?:\.\d+)?)\s*(cr|crore|lac|lakh|l|k|thousand)\b',
@@ -757,6 +762,15 @@ async def lifespan(app: FastAPI):
         check_for_aliases(storage)
     except Exception as exc:
         print(f"  Alias learner skipped: {exc}")
+    # Start building enrichment worker
+    enrichment_worker = None
+    try:
+        from agents.building_enrichment.worker import BuildingEnrichmentWorker
+        enrichment_worker = BuildingEnrichmentWorker(storage, {"poll_interval": 60})
+        enrichment_worker.start()
+        print("  Building enrichment worker started")
+    except Exception as exc:
+        print(f"  Building enrichment worker skipped: {exc}")
     # Auto-generate API key if missing
     key_path = Path(__file__).parent / ".api_key"
     if not key_path.exists():
@@ -767,6 +781,12 @@ async def lifespan(app: FastAPI):
     print(f"  Webhook: http://localhost:{PORT}/webhook")
     print(f"  Admin:   http://localhost:{PORT}/")
     yield
+    # Shutdown enrichment worker
+    if enrichment_worker:
+        try:
+            enrichment_worker.stop()
+        except Exception:
+            pass
 
 app = FastAPI(title="PropAI Local Intelligence Lab", version="0.1.0", lifespan=lifespan)
 
@@ -890,7 +910,9 @@ async def webhook(request: Request):
     push_name = msg_data.get("pushName", "") or baileys_sender.get("pushName", "") or ""
     sender_name = baileys_sender.get("name", "") or push_name
     sender_jid = key.get("participant", "") or baileys_sender.get("id", "")
-    sender_phone = "".join(ch for ch in str(sender_jid).split("@")[0] if ch.isdigit())
+    participant_phone_jid = key.get("participantAlt", "") or key.get("participant_pn", "") or baileys_sender.get("phone", "")
+    phone_source = participant_phone_jid if str(participant_phone_jid).endswith("@s.whatsapp.net") else sender_jid
+    sender_phone = _phone_from_jid(phone_source) if str(phone_source).endswith("@s.whatsapp.net") else ""
     sender = _format_whatsapp_sender(sender_name, sender_jid)
     group = key.get("remoteJid", "") or msg_data.get("from", "")
     group_name = _resolve_group_name(group)
@@ -912,6 +934,17 @@ async def webhook(request: Request):
         sender_phone=sender_phone,
         message=msg_text,
         message_type="text",
+        attachments=json.dumps({
+            "image": bool(msg.get("imageMessage")),
+            "video": bool(msg.get("videoMessage")),
+            "document": bool(msg.get("documentMessage")),
+        }),
+        reply_context=json.dumps(
+            msg.get("extendedTextMessage", {}).get("contextInfo", {})
+            or msg.get("imageMessage", {}).get("contextInfo", {})
+            or msg.get("videoMessage", {}).get("contextInfo", {})
+            or {}
+        ),
         timestamp=timestamp,
         source="WHATSAPP",
         raw_payload=json.dumps(data),
@@ -921,6 +954,33 @@ async def webhook(request: Request):
     ))
     get_bus().publish("message.received", {
         "raw_id": raw_id, "group": group, "sender": sender, "message": msg_text[:200],
+    })
+
+    # ── Knowledge Record (new architecture) ────────────────────────
+    # Save to knowledge_records regardless of parse success
+    is_dm = str(group).endswith("@s.whatsapp.net") or str(group).endswith("@lid")
+    kr_source_type = "dm" if is_dm else "whatsapp"
+    kr_conversation_name = "DM" if is_dm else group_name
+
+    knowledge_record_id = storage.create_knowledge_record({
+        "source_type": kr_source_type,
+        "source_id": message_uid,
+        "raw_content": msg_text,
+        "sender_jid": sender_jid,
+        "sender_name": sender_name,
+        "sender_phone": sender_phone,
+        "conversation_id": group,
+        "conversation_name": kr_conversation_name,
+        "message_timestamp": timestamp,
+        "content_type": "unknown",  # Will be classified by AI later
+        "metadata": json.dumps({
+            "raw_id": raw_id,
+            "message_id": message_id,
+            "instance": instance,
+            "has_image": bool(msg.get("imageMessage")),
+            "has_video": bool(msg.get("videoMessage")),
+            "has_document": bool(msg.get("documentMessage")),
+        }),
     })
 
     # Parse — single or multi-listing
@@ -933,8 +993,28 @@ async def webhook(request: Request):
         single = parse_message(msg_text, profile_name=sender_name or push_name)
         parsed_listings = [single] if single else []
 
+    # If parsing failed, create a minimal record — raw message is still searchable
     if not parsed_listings:
-        return {"status": "ignored", "reason": "parse_failed"}
+        parsed_listings = [{
+            "intent": None,
+            "bhk": None,
+            "price": None,
+            "price_unit": None,
+            "area_sqft": None,
+            "furnishing": None,
+            "location_raw": None,
+            "building_name": None,
+            "landmark_name": None,
+            "street_name": None,
+            "area": None,
+            "micro_market": None,
+            "developer": None,
+            "broker_name": None,
+            "broker_phone": None,
+            "profile_name": sender_name or push_name,
+            "forwarded": 0,
+            "confidence": 0.0,
+        }]
 
     # Fallback broker identity from sender JID when not found in message
     for pl in parsed_listings:
@@ -980,6 +1060,31 @@ async def webhook(request: Request):
         )
         parsed_id = storage.save_parsed(obs)
         parsed_ids.append(parsed_id)
+
+        # ── Add tags to knowledge record ──────────────────────────────
+        if knowledge_record_id:
+            tags = {}
+            if parsed.get("intent"):
+                tags["intent"] = [parsed["intent"]]
+            if parsed.get("bhk"):
+                tags["bhk"] = [f"{parsed['bhk']} BHK" if parsed['bhk'] != 0.5 else "1 RK"]
+            if parsed.get("building_name"):
+                tags["building"] = [parsed["building_name"]]
+            if parsed.get("micro_market"):
+                tags["market"] = [parsed["micro_market"]]
+            if parsed.get("furnishing"):
+                tags["furnishing"] = [parsed["furnishing"]]
+            if parsed.get("price"):
+                tags["price"] = [str(parsed["price"])]
+            if tags:
+                storage.bulk_add_knowledge_tags(knowledge_record_id, tags, source="parser")
+
+            # Update content_type based on intent
+            intent = parsed.get("intent")
+            if intent in ("SELL", "RENT"):
+                storage.update_knowledge_record(knowledge_record_id, {"content_type": "listing", "intent": intent})
+            elif intent in ("BUY", "BUYER", "RENTAL_SEEKER"):
+                storage.update_knowledge_record(knowledge_record_id, {"content_type": "requirement", "intent": intent})
 
         # Resolve (run once, reuse for all listings in a multi)
         if idx == 0 or msg_class != "multi":
@@ -1085,20 +1190,55 @@ def _format_whatsapp_sender(name: str = "", jid: str = "") -> str:
 
 
 def _resolve_group_name(jid: str) -> str:
-    """Resolve a group JID to the human-readable name from sync_jobs."""
-    if not jid or not jid.endswith("@g.us"):
+    """Resolve a group JID to the human-readable name from sync_jobs.
+    For DMs (person JIDs), return a formatted name."""
+    if not jid:
         return jid
-    try:
-        job = storage.get_job_by_group_jid(jid)
-        if job and job.group_name and job.group_name != jid:
-            return job.group_name
-    except Exception:
-        pass
+    
+    # Group JIDs
+    if jid.endswith("@g.us"):
+        try:
+            job = storage.get_job_by_group_jid(jid)
+            if job and job.group_name and job.group_name != jid:
+                return job.group_name
+        except Exception:
+            pass
+        return jid
+    
+    # DM JIDs (person JIDs)
+    if jid.endswith("@s.whatsapp.net"):
+        phone = _phone_from_jid(jid)
+        if phone:
+            return f"DM: {phone}"
+        return f"DM: {jid}"
+    
+    # LID JIDs (individual chat)
+    if jid.endswith("@lid"):
+        # Try to find in jid_profiles
+        try:
+            profile = storage.db.execute(
+                "SELECT display_name, phone FROM jid_profiles WHERE jid = ?",
+                (jid,)
+            ).fetchone()
+            if profile:
+                name = profile[0] or ""
+                phone = profile[1] or ""
+                if name and phone:
+                    return f"DM: {name} ({phone})"
+                elif name:
+                    return f"DM: {name}"
+                elif phone:
+                    return f"DM: {phone}"
+        except Exception:
+            pass
+        return f"DM: {jid}"
+    
+    return jid
     return jid
 
 
 def _phone_from_jid(jid: str = "") -> str:
-    digits = "".join(ch for ch in str(jid).split("@")[0] if ch.isdigit())
+    digits = _digits_from_whatsapp_id(jid)
     if not digits:
         return ""
     if digits.startswith("91") and len(digits) >= 12:
@@ -1107,6 +1247,29 @@ def _phone_from_jid(jid: str = "") -> str:
         country = digits[:-10]
         local = digits[-10:]
         return f"+{country} {local[:2]}{'X' * 6}{local[-2:]}" if country else f"{local[:2]}{'X' * 6}{local[-2:]}"
+    return f"+{digits}"
+
+
+def _digits_from_whatsapp_id(value: str = "") -> str:
+    # Baileys owner IDs can look like 919820056180:26@s.whatsapp.net.
+    # The part after ":" is the linked-device suffix, not the phone number.
+    local_part = str(value or "").split("@")[0].split(":")[0]
+    return "".join(ch for ch in local_part if ch.isdigit())
+
+
+def _display_phone_from_whatsapp_id(value: str = "") -> str:
+    digits = _digits_from_whatsapp_id(value)
+    if not digits:
+        return ""
+    if digits.startswith("91") and len(digits) >= 12:
+        local = digits[2:12]
+        return f"+91 {local[:5]} {local[5:]}"
+    if len(digits) > 10:
+        country = digits[:-10]
+        local = digits[-10:]
+        return f"+{country} {local[:5]} {local[5:]}"
+    if len(digits) == 10:
+        return f"{digits[:5]} {digits[5:]}"
     return f"+{digits}"
 
 
@@ -1601,7 +1764,7 @@ async def dashboard_graph_growth():
 async def dashboard_whatsapp_status():
     """Detailed WhatsApp connection status."""
     details = _baileys_connection_details()
-    phone = (details.get("phone_number") or "").replace("+", "")
+    phone = details.get("phone_number") or ""
     return {
         "connected": details.get("connected", False),
         "instance": details.get("instance_name", "propai-baileys"),
@@ -2149,11 +2312,11 @@ async def ai_chat(req: ChatRequest):
             db_path=str(DB_PATH),
             model=req.model.strip() or None,
         )
-        return reply.content or ""
+        return chat_engine.normalize_workspace_response(reply.content or "", sources)
 
     try:
-        content = await loop.run_in_executor(None, _call)
-        return {"content": content, "sources": list(sources.keys())}
+        response = await loop.run_in_executor(None, _call)
+        return response
     except Exception as exc:
         return _doubleword_error_response(exc)
 
@@ -2412,6 +2575,16 @@ def _count_table(table: str) -> int:
         return storage.db.execute(f"SELECT COUNT(*) AS c FROM {table}").fetchone()["c"]
     except Exception:
         return 0
+
+
+def _table_exists(table: str) -> bool:
+    try:
+        return storage.db.execute(
+            "SELECT 1 FROM sqlite_master WHERE type IN ('table', 'view') AND name = ?",
+            (table,),
+        ).fetchone() is not None
+    except Exception:
+        return False
 
 
 def _companion_get_config_value(key: str, env_key: str = "") -> str:
@@ -2870,7 +3043,7 @@ def _baileys_connection_details() -> dict:
             "connection_state": connection_state,
             "instance_name": status.get("instance") or status.get("instance_name") or EVOLUTION_INSTANCE,
             "device_name": status.get("device_name") or "Baileys terminal ingestor",
-            "phone_number": status.get("phone_number") or "",
+            "phone_number": _display_phone_from_whatsapp_id(status.get("phone_number") or ""),
             "display_name": status.get("display_name") or "",
             "connected_since": status.get("connected_since") or None,
             "last_message_at": status.get("last_message_at") or None,
@@ -2884,18 +3057,17 @@ def _baileys_connection_details() -> dict:
     live_connection = str(live_state.get("state") or live_info.get("connectionStatus") or "").lower()
     live_connected = live_connection in {"open", "connected", "syncing"}
     live_phone = live_info.get("ownerJid", "")
-    live_number = live_phone.split("@")[0] if live_phone else ""
     live_profile = live_info.get("profileName", "") or live_info.get("name", "")
     live_created = live_info.get("createdAt", "")
 
     if live_connected or live_phone or live_profile:
-        formatted_phone = f"+{live_number[:2]} {live_number[2:7]} {live_number[7:]}" if live_number else ""
+        formatted_phone = _display_phone_from_whatsapp_id(live_phone)
         return {
             "connected": live_connected or bool(live_phone),
             "connection_state": live_connection or ("open" if live_connected else "unknown"),
             "instance_name": live_info.get("name", EVOLUTION_INSTANCE),
             "device_name": live_info.get("connectionStatus", "Baileys terminal ingestor"),
-            "phone_number": formatted_phone or live_number,
+            "phone_number": formatted_phone,
             "display_name": live_profile,
             "connected_since": live_created or None,
             "last_message_at": None,
@@ -3184,125 +3356,262 @@ async def recompute_price_stats():
 
 
 @app.get("/api/buildings")
-async def list_buildings():
-    rows = storage.db.execute("""
-        SELECT DISTINCT rd.building_name, p.micro_market, COUNT(*) AS occurrences
-        FROM resolver_decisions rd
-        LEFT JOIN parsed_output p ON p.id = rd.parsed_id
-        WHERE rd.building_name IS NOT NULL AND rd.building_name != ''
-        GROUP BY rd.building_name
-        ORDER BY occurrences DESC
-        LIMIT 100
-    """).fetchall()
+async def list_buildings(limit: int = 100, offset: int = 0, status: str = ""):
+    """List buildings from the knowledge graph."""
+    where = ""
+    params = []
+    if status:
+        where = "WHERE b.status = ?"
+        params.append(status)
+
+    rows = storage.db.execute(f"""
+        SELECT b.id, b.building_id, b.canonical_name, b.micro_market, b.developer,
+               b.address, b.pincode, b.latitude, b.longitude,
+               b.observed_listings, b.observed_brokers, b.observed_requirements,
+               b.last_enriched, b.enrichment_confidence, b.status,
+               b.created_at, b.updated_at,
+               (SELECT COUNT(*) FROM building_name_aliases WHERE building_id = b.id) as alias_count
+        FROM buildings b
+        {where}
+        ORDER BY b.observed_listings DESC, b.canonical_name ASC
+        LIMIT ? OFFSET ?
+    """, params + [limit, offset]).fetchall()
+
+    total = storage.db.execute(f"SELECT COUNT(*) FROM buildings b {where}", params).fetchone()[0]
+    return {"buildings": [dict(r) for r in rows], "total": total, "limit": limit, "offset": offset}
+
+
+@app.get("/api/buildings/{building_id:path}")
+async def get_building_profile(building_id: str):
+    """Get full building profile by building_id (BLD-XXXXXXX) or canonical name."""
+    # Try to find by building_id first
+    if building_id.startswith("BLD-"):
+        building = storage.get_building(building_id=building_id)
+    else:
+        # Try by canonical name
+        building = storage.get_building(canonical_name=building_id)
+
+    if not building:
+        raise HTTPException(404, f"Building '{building_id}' not found")
+
+    profile = storage.get_building_profile(building["id"])
+    if not profile:
+        raise HTTPException(404, f"Building profile not found")
+
+    return profile
+
+
+@app.post("/api/buildings/{building_id}/refresh")
+async def refresh_building(building_id: str, provider: str = ""):
+    """Trigger enrichment refresh for a building."""
+    if building_id.startswith("BLD-"):
+        building = storage.get_building(building_id=building_id)
+    else:
+        building = storage.get_building(canonical_name=building_id)
+
+    if not building:
+        raise HTTPException(404, f"Building '{building_id}' not found")
+
+    if provider:
+        storage.create_building_enrichment_job(building["id"], provider, priority=10)
+    else:
+        from agents.building_enrichment.providers import get_all_providers
+        for p in get_all_providers():
+            storage.create_building_enrichment_job(building["id"], p.name, priority=10)
+
+    return {"status": "ok", "message": f"Enrichment jobs created for {building['canonical_name']}"}
+
+
+@app.get("/api/buildings/{building_id}/aliases")
+async def get_building_aliases(building_id: str):
+    """Get all aliases for a building."""
+    if building_id.startswith("BLD-"):
+        building = storage.get_building(building_id=building_id)
+    else:
+        building = storage.get_building(canonical_name=building_id)
+
+    if not building:
+        raise HTTPException(404, f"Building '{building_id}' not found")
+
+    aliases = storage.get_building_aliases(building["id"])
+    return aliases
+
+
+@app.post("/api/buildings/discover")
+async def discover_buildings():
+    """Discover canonical buildings from parsed observations."""
+    from agents.building_enrichment.discovery import BuildingDiscovery
+    discovery = BuildingDiscovery(storage)
+    discovered = discovery.discover_from_observations(min_observations=2)
+    return {
+        "discovered": len(discovered),
+        "new": len([d for d in discovered if not d.get("already_existed")]),
+        "existing": len([d for d in discovered if d.get("already_existed")]),
+        "buildings": discovered[:20],
+    }
+
+
+@app.post("/api/buildings/refresh-counts")
+async def refresh_building_counts():
+    """Recalculate observed_listings, observed_brokers, observed_requirements for all buildings."""
+    storage.refresh_building_counts()
+    total = storage.db.execute("SELECT COUNT(*) FROM buildings").fetchone()[0]
+    with_listings = storage.db.execute("SELECT COUNT(*) FROM buildings WHERE observed_listings > 0").fetchone()[0]
+    return {"status": "ok", "total_buildings": total, "with_listings": with_listings}
+
+
+@app.get("/api/buildings/enrichment/dashboard")
+async def building_enrichment_dashboard():
+    """Get building enrichment dashboard stats."""
+    stats = storage.get_building_enrichment_stats()
+    return stats
+
+
+@app.get("/api/buildings/enrichment/jobs")
+async def building_enrichment_jobs(status: str = "", limit: int = 50):
+    """List building enrichment jobs."""
+    if status:
+        rows = storage.db.execute("""
+            SELECT j.*, b.building_id as building_code, b.canonical_name
+            FROM building_enrichment_jobs j
+            JOIN buildings b ON b.id = j.building_id
+            WHERE j.status = ?
+            ORDER BY j.created_at DESC
+            LIMIT ?
+        """, (status, limit)).fetchall()
+    else:
+        rows = storage.db.execute("""
+            SELECT j.*, b.building_id as building_code, b.canonical_name
+            FROM building_enrichment_jobs j
+            JOIN buildings b ON b.id = j.building_id
+            ORDER BY j.created_at DESC
+            LIMIT ?
+        """, (limit,)).fetchall()
+
     return [dict(r) for r in rows]
 
 
-@app.get("/api/buildings/{building_name:path}")
-async def get_building_profile(building_name: str):
-    name = building_name.strip()
-    if not name:
-        raise HTTPException(400, "Building name is required")
+@app.get("/api/buildings/enrichment/history")
+async def building_enrichment_history(building_id: str = "", limit: int = 50):
+    """Get enrichment history."""
+    if building_id:
+        if building_id.startswith("BLD-"):
+            building = storage.get_building(building_id=building_id)
+        else:
+            building = storage.get_building(canonical_name=building_id)
 
-    # Canonical name from aliases
-    alias_row = storage.db.execute(
-        "SELECT canonical FROM building_aliases WHERE alias = ?", (name,)
-    ).fetchone()
-    canonical = alias_row["canonical"] if alias_row else name
+        if not building:
+            raise HTTPException(404, f"Building '{building_id}' not found")
 
-    # All aliases
-    aliases = [dict(r) for r in storage.db.execute(
-        "SELECT alias, confidence FROM building_aliases WHERE canonical = ? ORDER BY confidence DESC",
-        (canonical,)
-    ).fetchall()]
+        rows = storage.db.execute("""
+            SELECT * FROM building_enrichment_history
+            WHERE building_id = ?
+            ORDER BY created_at DESC
+            LIMIT ?
+        """, (building["id"], limit)).fetchall()
+    else:
+        rows = storage.db.execute("""
+            SELECT h.*, b.canonical_name, b.building_id as building_code
+            FROM building_enrichment_history h
+            JOIN buildings b ON b.id = h.building_id
+            ORDER BY h.created_at DESC
+            LIMIT ?
+        """, (limit,)).fetchall()
 
-    # Observations mentioning this building
-    observations = [dict(r) for r in storage.db.execute("""
-        SELECT p.id, p.intent, p.bhk, p.price, p.price_unit, p.furnishing,
-               p.micro_market, p.broker_name, p.broker_phone, p.confidence,
-               p.created_at, r.message, r.group_name, r.timestamp
-        FROM parsed_output p
-        JOIN raw_messages r ON r.id = p.raw_message_id
-        WHERE p.building_name LIKE ?
-        ORDER BY p.id DESC
-        LIMIT 50
-    """, (f"%{canonical}%",)).fetchall()]
+    return [dict(r) for r in rows]
 
-    # Brokers who post this building
-    brokers = [dict(r) for r in storage.db.execute("""
-        SELECT b.id, b.canonical_name AS name, b.primary_phone AS phone,
-               bbs.observation_count, bbs.listing_count, bbs.requirement_count, bbs.last_seen_at
-        FROM broker_building_stats bbs
-        JOIN brokers b ON b.id = bbs.broker_id
-        WHERE bbs.building_name LIKE ?
-        ORDER BY bbs.observation_count DESC
-        LIMIT 20
-    """, (f"%{canonical}%",)).fetchall()]
 
-    # Markets this building appears in
-    markets = [dict(r) for r in storage.db.execute("""
-        SELECT micro_market, COUNT(*) AS occurrence_count
-        FROM parsed_output
-        WHERE building_name LIKE ? AND micro_market IS NOT NULL AND micro_market != ''
-        GROUP BY micro_market
-        ORDER BY occurrence_count DESC
-    """, (f"%{canonical}%",)).fetchall()]
+@app.get("/api/igr/districts")
+async def igr_districts(rest_of_maharashtra: bool = True):
+    """Get available IGR districts."""
+    from agents.igr_scraper import IGRScraper
+    scraper = IGRScraper()
+    return scraper.get_districts(rest_of_maharashtra=rest_of_maharashtra)
 
-    # Price stats
-    price_stats = [dict(r) for r in storage.db.execute("""
-        SELECT intent, bhk, COUNT(*) AS sample_count,
-               ROUND(AVG(price), 0) AS avg_price,
-               MIN(price) AS min_price, MAX(price) AS max_price
-        FROM parsed_output
-        WHERE building_name LIKE ? AND price IS NOT NULL AND price > 0
-        GROUP BY intent, bhk
-        ORDER BY sample_count DESC
-    """, (f"%{canonical}%",)).fetchall()]
 
-    # Timeline of discovery
-    timeline = [dict(r) for r in storage.db.execute("""
-        SELECT DATE(created_at) AS day, COUNT(*) AS observations
-        FROM parsed_output
-        WHERE building_name LIKE ?
-        GROUP BY DATE(created_at)
-        ORDER BY day DESC
-        LIMIT 30
-    """, (f"%{canonical}%",)).fetchall()]
+@app.get("/api/igr/tahsils")
+async def igr_tahsils(district_code: str):
+    """Get tahsils for a district."""
+    from agents.igr_scraper import IGRScraper
+    scraper = IGRScraper()
+    return scraper.get_tahsils(district_code)
 
-    # Nearby landmarks (from same messages)
-    landmarks = [dict(r) for r in storage.db.execute("""
-        SELECT p2.landmark_name, COUNT(*) AS co_occurrence
-        FROM parsed_output p1
-        JOIN parsed_output p2 ON p1.raw_message_id = p2.raw_message_id
-        WHERE p1.building_name LIKE ?
-          AND p2.landmark_name IS NOT NULL AND p2.landmark_name != ''
-          AND p2.id != p1.id
-        GROUP BY p2.landmark_name
-        ORDER BY co_occurrence DESC
-        LIMIT 10
-    """, (f"%{canonical}%",)).fetchall()]
 
-    # AI suggestions for this building
-    suggestions = [dict(r) for r in storage.db.execute("""
-        SELECT id, agent, suggestion_type, title, description, confidence, status, created_at
-        FROM ai_suggestions
-        WHERE building_name LIKE ? OR expected_building LIKE ? OR extracted_building LIKE ?
-        ORDER BY created_at DESC
-        LIMIT 10
-    """, (f"%{canonical}%", f"%{canonical}%", f"%{canonical}%")).fetchall()]
+@app.get("/api/igr/villages")
+async def igr_villages(district_code: str, tahsil_code: str):
+    """Get villages for a tahsil."""
+    from agents.igr_scraper import IGRScraper
+    scraper = IGRScraper()
+    return scraper.get_villages(district_code, tahsil_code)
+
+
+@app.get("/api/igr/search")
+async def igr_search(
+    district_code: str = "6",
+    tahsil_code: str = "9 ",
+    village: str = "",
+    property_no: str = "",
+    year: int = 2025,
+    building_id: str = "",
+):
+    """
+    Search IGR Maharashtra for property registrations.
+
+    Note: IGR requires exact CTS/Survey/Milkat numbers.
+    Searching by building name is NOT supported by IGR.
+    """
+    from agents.igr_scraper import IGRScraper
+
+    if not village:
+        raise HTTPException(400, "Village name is required")
+
+    scraper = IGRScraper()
+    results = scraper.search_property_details(
+        district_code=district_code,
+        tahsil_code=tahsil_code,
+        village=village,
+        property_no=property_no,
+        year=year,
+    )
+
+    results_list = [
+        {
+            "index_no": r.index_no,
+            "document_type": r.document_type,
+            "registration_date": r.registration_date,
+            "deed_date": r.deed_date,
+            "property_description": r.property_description,
+            "building_name": r.building_name,
+            "area": r.area,
+            "consideration_amount": r.consideration_amount,
+            "stamp_duty_paid": r.stamp_duty_paid,
+            "sro": r.sro,
+        }
+        for r in results
+    ]
+
+    saved = 0
+    if building_id and results_list:
+        building = storage.get_building(building_id=building_id)
+        if building:
+            saved = storage.save_igr_results(
+                building_db_id=building["id"],
+                results=results_list,
+                district=district_code,
+                village=village,
+                property_no=property_no,
+            )
 
     return {
-        "name": canonical,
-        "aliases": aliases,
-        "observation_count": len(observations),
-        "broker_count": len(brokers),
-        "market_count": len(markets),
-        "observations": observations,
-        "brokers": brokers,
-        "markets": markets,
-        "price_stats": price_stats,
-        "timeline": timeline,
-        "landmarks": landmarks,
-        "suggestions": suggestions,
+        "district": district_code,
+        "tahsil": tahsil_code,
+        "village": village,
+        "property_no": property_no,
+        "year": year,
+        "results": results_list,
+        "total": len(results_list),
+        "saved_to_history": saved,
+        "note": "IGR requires exact CTS/Survey numbers. Building name search is not supported.",
     }
 
 
@@ -3364,6 +3673,18 @@ async def clear_allowlist():
 @app.get("/api/listings")
 async def list_listings(limit: int = 50, offset: int = 0):
     return storage.get_listings(limit, offset)
+
+
+@app.get("/api/listings/{listing_id}/sources")
+async def get_listing_sources(listing_id: int):
+    """Get source observations that contributed to a listing."""
+    return storage.get_listing_sources(listing_id)
+
+
+@app.get("/api/parsed/{parsed_id}/sources")
+async def get_parsed_sources(parsed_id: int):
+    """Get source observations that contributed to a parsed output."""
+    return storage.get_parsed_sources(parsed_id)
 
 
 @app.get("/api/search")
@@ -3453,6 +3774,196 @@ async def search_messages(q: str = ""):
     # Remove empty groups
     result = {k: v for k, v in result.items() if v}
     return result
+
+
+@app.get("/api/search/raw")
+async def search_raw_messages(q: str = "", limit: int = 20, offset: int = 0):
+    """Full-text search over raw messages using FTS5. Primary search path for knowledge OS."""
+    if not q:
+        return {"results": [], "count": 0}
+
+    q = q.strip()
+
+    # FTS5 search
+    try:
+        rows = storage.db.execute("""
+            SELECT rm.id, rm.group_name, rm.sender, rm.sender_phone,
+                   rm.message, rm.timestamp, rm.source,
+                   snippet(raw_messages_fts, 0, '<mark>', '</mark>', '...', 40) as snippet
+            FROM raw_messages_fts fts
+            JOIN raw_messages rm ON rm.id = fts.rowid
+            WHERE raw_messages_fts MATCH ?
+            ORDER BY rank
+            LIMIT ? OFFSET ?
+        """, (q, limit, offset)).fetchall()
+
+        # Get total count
+        count_row = storage.db.execute("""
+            SELECT COUNT(*) FROM raw_messages_fts WHERE raw_messages_fts MATCH ?
+        """, (q,)).fetchone()
+        total = count_row[0] if count_row else 0
+
+        results = []
+        for r in rows:
+            # Resolve group name
+            group_name = r[1]
+            if group_name and '@g.us' in group_name:
+                resolved = storage.db.execute(
+                    "SELECT group_name FROM source_sync_jobs WHERE group_id = ? LIMIT 1",
+                    (group_name,)
+                ).fetchone()
+                if resolved:
+                    group_name = resolved[0]
+
+            results.append({
+                "id": r[0],
+                "group_name": group_name,
+                "sender": r[2],
+                "sender_phone": r[3],
+                "message": r[4],
+                "timestamp": r[5],
+                "source": r[6],
+                "snippet": r[7],
+            })
+
+        return {"results": results, "count": total, "query": q}
+
+    except Exception as e:
+        # Fallback to LIKE search if FTS fails
+        like_q = f"%{q}%"
+        rows = storage.db.execute("""
+            SELECT id, group_name, sender, sender_phone, message, timestamp, source
+            FROM raw_messages
+            WHERE message LIKE ? OR group_name LIKE ? OR sender LIKE ?
+            ORDER BY id DESC
+            LIMIT ? OFFSET ?
+        """, (like_q, like_q, like_q, limit, offset)).fetchall()
+
+        count_row = storage.db.execute("""
+            SELECT COUNT(*) FROM raw_messages
+            WHERE message LIKE ? OR group_name LIKE ? OR sender LIKE ?
+        """, (like_q, like_q, like_q)).fetchone()
+        total = count_row[0] if count_row else 0
+
+        results = []
+        for r in rows:
+            group_name = r[1]
+            if group_name and '@g.us' in group_name:
+                resolved = storage.db.execute(
+                    "SELECT group_name FROM source_sync_jobs WHERE group_id = ? LIMIT 1",
+                    (group_name,)
+                ).fetchone()
+                if resolved:
+                    group_name = resolved[0]
+
+            results.append({
+                "id": r[0],
+                "group_name": group_name,
+                "sender": r[2],
+                "sender_phone": r[3],
+                "message": r[4],
+                "timestamp": r[5],
+                "source": r[6],
+                "snippet": r[4][:200] if r[4] else "",
+            })
+
+        return {"results": results, "count": total, "query": q}
+
+
+@app.get("/api/search/raw/sender")
+async def search_raw_by_sender(sender: str = "", limit: int = 50):
+    """Search raw messages by sender name or phone."""
+    if not sender:
+        return {"results": [], "count": 0}
+
+    like_q = f"%{sender}%"
+    rows = storage.db.execute("""
+        SELECT id, group_name, sender, sender_phone, message, timestamp, source
+        FROM raw_messages
+        WHERE sender LIKE ? OR sender_phone LIKE ?
+        ORDER BY id DESC
+        LIMIT ?
+    """, (like_q, like_q, limit)).fetchall()
+
+    results = []
+    for r in rows:
+        group_name = r[1]
+        if group_name and '@g.us' in group_name:
+            resolved = storage.db.execute(
+                "SELECT group_name FROM source_sync_jobs WHERE group_id = ? LIMIT 1",
+                (group_name,)
+            ).fetchone()
+            if resolved:
+                group_name = resolved[0]
+
+        results.append({
+            "id": r[0],
+            "group_name": group_name,
+            "sender": r[2],
+            "sender_phone": r[3],
+            "message": r[4],
+            "timestamp": r[5],
+            "source": r[6],
+        })
+
+    return {"results": results, "count": len(results), "query": sender}
+
+
+@app.get("/api/search/raw/group")
+async def search_raw_by_group(group_jid: str = "", limit: int = 50):
+    """Search raw messages by group JID or name."""
+    if not group_jid:
+        return {"results": [], "count": 0}
+
+    # Try to find by JID or name
+    rows = storage.db.execute("""
+        SELECT id, group_name, sender, sender_phone, message, timestamp, source
+        FROM raw_messages
+        WHERE group_name = ? OR group_name LIKE ?
+        ORDER BY id DESC
+        LIMIT ?
+    """, (group_jid, f"%{group_jid}%", limit)).fetchall()
+
+    results = []
+    for r in rows:
+        group_name = r[1]
+        if group_name and '@g.us' in group_name:
+            resolved = storage.db.execute(
+                "SELECT group_name FROM source_sync_jobs WHERE group_id = ? LIMIT 1",
+                (group_name,)
+            ).fetchone()
+            if resolved:
+                group_name = resolved[0]
+
+        results.append({
+            "id": r[0],
+            "group_name": group_name,
+            "sender": r[2],
+            "sender_phone": r[3],
+            "message": r[4],
+            "timestamp": r[5],
+            "source": r[6],
+        })
+
+    return {"results": results, "count": len(results), "query": group_jid}
+
+
+@app.get("/api/memory/jids")
+async def search_jid_memory(q: str = "", limit: int = 20):
+    return storage.search_jid_memory(q, limit)
+
+
+@app.get("/api/memory/jids/{jid_key:path}")
+async def get_jid_memory_profile(jid_key: str):
+    profile = storage.get_jid_profile(jid_key)
+    if not profile:
+        raise HTTPException(404, "JID profile not found")
+    return profile
+
+
+@app.post("/api/memory/rebuild")
+async def rebuild_jid_memory(limit: int = 0):
+    return storage.rebuild_jid_memory(limit)
 
 
 @app.get("/api/search/listings")
@@ -3675,6 +4186,255 @@ async def search_listings(
             "groups": groups_found,
         },
     }
+
+
+# ── Knowledge Trainer ──────────────────────────────────────────────
+
+@app.get("/api/trainer/terms")
+async def get_trainer_terms(status: str | None = None, limit: int = 100):
+    return storage.get_trainer_terms(status=status, limit=limit)
+
+@app.get("/api/trainer/stats")
+async def get_trainer_stats():
+    return storage.get_trainer_stats()
+
+@app.get("/api/trainer/discover")
+async def discover_unknown_terms(limit: int = 50):
+    return storage.find_unknown_terms(limit=limit)
+
+@app.post("/api/trainer/resolve")
+async def resolve_trainer_term(request: Request):
+    body = await request.json()
+    term_id = body.get("term_id")
+    status = body.get("status")
+    if not term_id or not status:
+        raise HTTPException(400, "term_id and status required")
+    if status not in ("building", "society", "landmark", "locality", "other", "ignored"):
+        raise HTTPException(400, "Invalid status")
+    ok = storage.resolve_trainer_term(term_id, status, "user")
+    return {"status": "ok" if ok else "error"}
+
+@app.post("/api/trainer/batch")
+async def batch_trainer(request: Request):
+    body = await request.json()
+    items = body.get("items", [])
+    for item in items:
+        term_id = item.get("term_id")
+        status = item.get("status")
+        if term_id and status:
+            storage.resolve_trainer_term(term_id, status, "user")
+    return {"status": "ok", "count": len(items)}
+
+@app.post("/api/trainer/scan")
+async def scan_for_unknown():
+    """Scan raw messages for unknown terms and add to trainer queue."""
+    import re
+    unknowns = storage.find_unknown_terms(limit=100)
+    added = 0
+    for u in unknowns:
+        if not u.get("already_in_trainer"):
+            context = u.get("contexts", [""])[0] if u.get("contexts") else ""
+            storage.add_trainer_term(u["term"], context=context)
+            added += 1
+    return {"status": "ok", "discovered": len(unknowns), "added": added}
+
+
+# ── Knowledge Records API ────────────────────────────────────────
+
+@app.get("/api/knowledge/records")
+async def get_knowledge_records(limit: int = 100, content_type: str | None = None):
+    """Get knowledge records with optional filtering."""
+    if content_type:
+        rows = storage.db.execute("""
+            SELECT id, source_type, raw_content, sender_name, conversation_name,
+                   message_timestamp, content_type, intent, confidence
+            FROM knowledge_records
+            WHERE content_type = ? AND is_valid = 1
+            ORDER BY message_timestamp DESC
+            LIMIT ?
+        """, (content_type, limit)).fetchall()
+    else:
+        rows = storage.db.execute("""
+            SELECT id, source_type, raw_content, sender_name, conversation_name,
+                   message_timestamp, content_type, intent, confidence
+            FROM knowledge_records
+            WHERE is_valid = 1
+            ORDER BY message_timestamp DESC
+            LIMIT ?
+        """, (limit,)).fetchall()
+
+    return [
+        {
+            "id": r[0], "source_type": r[1], "raw_content": r[2][:200],
+            "sender_name": r[3], "conversation_name": r[4],
+            "timestamp": r[5], "content_type": r[6], "intent": r[7],
+            "confidence": r[8],
+        }
+        for r in rows
+    ]
+
+@app.get("/api/knowledge/search")
+async def search_knowledge(q: str, limit: int = 20, content_type: str | None = None):
+    """Search knowledge records using FTS5."""
+    return storage.search_knowledge_records(q, limit=limit, content_type=content_type)
+
+@app.get("/api/knowledge/{record_id}")
+async def get_knowledge_record(record_id: int):
+    """Get a single knowledge record."""
+    record = storage.get_knowledge_record(record_id)
+    if not record:
+        raise HTTPException(404, "Record not found")
+    return record
+
+@app.patch("/api/knowledge/{record_id}")
+async def update_knowledge_record(record_id: int, request: Request):
+    """Update a knowledge record."""
+    body = await request.json()
+    ok = storage.update_knowledge_record(record_id, body)
+    return {"status": "ok" if ok else "error"}
+
+@app.get("/api/knowledge/stats")
+async def get_knowledge_stats():
+    """Get knowledge records statistics."""
+    return storage.get_knowledge_stats()
+
+@app.get("/api/knowledge/embeddings/stats")
+async def get_embedding_stats():
+    """Get embedding statistics."""
+    return storage.get_embedding_stats()
+
+@app.post("/api/knowledge/embeddings/embed-all")
+async def embed_all_records():
+    """Generate embeddings for all knowledge records."""
+    from knowledge.embedder import get_embedder
+    embedder = get_embedder(Path("lab.db"))
+    count = embedder.embed_all_records()
+    return {"status": "ok", "embedded": count}
+
+@app.get("/api/knowledge/search/semantic")
+async def semantic_search(q: str, limit: int = 10):
+    """Search knowledge records using semantic similarity."""
+    return storage.search_knowledge_with_embeddings(q, limit=limit)
+
+@app.post("/api/knowledge/classify")
+async def classify_records(request: Request):
+    """Classify unclassified knowledge records using AI."""
+    from knowledge.classifier import classify_and_store
+    body = await request.json() if request.headers.get("content-type") == "application/json" else {}
+    limit = body.get("limit", 50)
+    result = classify_and_store(Path("lab.db"), limit=limit)
+    return {"status": "ok", **result}
+
+@app.post("/api/knowledge/classify/single")
+async def classify_single(request: Request):
+    """Classify a single message."""
+    from knowledge.classifier import classify
+    body = await request.json()
+    message = body.get("message", "")
+    if not message:
+        raise HTTPException(400, "message required")
+    return classify(message)
+
+@app.get("/api/knowledge/intelligence")
+async def get_intelligence_report():
+    """Generate a full intelligence report."""
+    from knowledge.intelligence import get_engine
+    engine = get_engine(Path("lab.db"))
+    return engine.generate_full_report()
+
+@app.get("/api/knowledge/intelligence/digest")
+async def get_daily_digest(days: int = 7):
+    """Get daily digest of market activity."""
+    from knowledge.intelligence import get_engine
+    engine = get_engine(Path("lab.db"))
+    return engine.get_daily_digest(days=days)
+
+@app.get("/api/knowledge/intelligence/prices")
+async def get_price_insights():
+    """Get price insights and patterns."""
+    from knowledge.intelligence import get_engine
+    engine = get_engine(Path("lab.db"))
+    return engine.get_price_insights()
+
+@app.get("/api/knowledge/intelligence/coverage")
+async def get_market_coverage():
+    """Get market coverage analysis."""
+    from knowledge.intelligence import get_engine
+    engine = get_engine(Path("lab.db"))
+    return engine.get_market_coverage()
+
+@app.get("/api/knowledge/intelligence/brokers")
+async def get_broker_insights():
+    """Get broker activity insights."""
+    from knowledge.intelligence import get_engine
+    engine = get_engine(Path("lab.db"))
+    return engine.get_broker_insights()
+
+@app.get("/api/knowledge/intelligence/anomalies")
+async def get_anomalies():
+    """Detect anomalies in the data."""
+    from knowledge.intelligence import get_engine
+    engine = get_engine(Path("lab.db"))
+    return engine.get_anomalies()
+
+@app.get("/api/knowledge/intelligence/actionable")
+async def get_actionable_insights():
+    """Get actionable insights for the broker."""
+    from knowledge.intelligence import get_engine
+    engine = get_engine(Path("lab.db"))
+    return engine.get_actionable_insights()
+
+@app.get("/api/knowledge/aliases")
+async def get_knowledge_aliases(entity_type: str | None = None, limit: int = 100):
+    """Get knowledge aliases."""
+    if entity_type:
+        rows = storage.db.execute("""
+            SELECT alias, canonical, entity_type, confidence, source
+            FROM knowledge_aliases
+            WHERE entity_type = ?
+            ORDER BY confidence DESC
+            LIMIT ?
+        """, (entity_type, limit)).fetchall()
+    else:
+        rows = storage.db.execute("""
+            SELECT alias, canonical, entity_type, confidence, source
+            FROM knowledge_aliases
+            ORDER BY confidence DESC
+            LIMIT ?
+        """, (limit,)).fetchall()
+
+    return [
+        {"alias": r[0], "canonical": r[1], "entity_type": r[2], "confidence": r[3], "source": r[4]}
+        for r in rows
+    ]
+
+@app.post("/api/knowledge/aliases")
+async def add_knowledge_alias(request: Request):
+    """Add a knowledge alias."""
+    body = await request.json()
+    alias = body.get("alias")
+    canonical = body.get("canonical")
+    entity_type = body.get("entity_type")
+    if not alias or not canonical or not entity_type:
+        raise HTTPException(400, "alias, canonical, and entity_type required")
+    ok = storage.add_knowledge_alias(alias, canonical, entity_type, source="user")
+    return {"status": "ok" if ok else "error"}
+
+@app.get("/api/knowledge/learning-cards")
+async def get_learning_cards(status: str = "pending", limit: int = 100):
+    """Get learning cards."""
+    return storage.get_learning_cards(status=status, limit=limit)
+
+@app.post("/api/knowledge/learning-cards/{card_id}/resolve")
+async def resolve_learning_card(card_id: int, request: Request):
+    """Resolve a learning card."""
+    body = await request.json()
+    resolved_type = body.get("resolved_type")
+    resolved_value = body.get("resolved_value")
+    if not resolved_type or not resolved_value:
+        raise HTTPException(400, "resolved_type and resolved_value required")
+    ok = storage.resolve_learning_card(card_id, resolved_type, resolved_value, "user")
+    return {"status": "ok" if ok else "error"}
 
 
 # ── WhatsApp Audit ────────────────────────────────────────────────
@@ -3906,7 +4666,7 @@ async def audit_timeline(limit: int = 50):
                     ELSE 'Enrichment job created' END as label,
                ej.parsed_id as ref
         FROM enrichment_jobs ej ORDER BY ej.created_at DESC LIMIT 15
-    """, (15,)).fetchall()
+    """).fetchall()
     for r in enrich_rows:
         events.append(dict(r))
 
@@ -3915,7 +4675,7 @@ async def audit_timeline(limit: int = 50):
         SELECT 'suggestion' as source, created_at as ts, status as subtype,
                agent, title
         FROM ai_suggestions ORDER BY created_at DESC LIMIT 10
-    """, (10,)).fetchall()
+    """).fetchall()
     for r in sug_rows:
         d = dict(r)
         agent = d.pop("agent", "")
@@ -3980,89 +4740,100 @@ async def audit_groups(q: str = "", status: str = ""):
     day_ago = (datetime.utcnow() - timedelta(hours=24)).strftime("%Y-%m-%dT%H:%M:%SZ")
     week_ago = (datetime.utcnow() - timedelta(days=7)).strftime("%Y-%m-%dT%H:%M:%SZ")
 
-    # Base: all groups from source_sync_jobs
-    jobs = storage.get_sync_jobs(limit=1000, source="whatsapp")
-    groups = []
-    seen_jids = set()
-
-    for j in jobs:
-        jid = j.group_id
-        if not jid or jid in seen_jids:
-            continue
-        seen_jids.add(jid)
-
-        # Stats from raw_messages
-        msg_info = storage.db.execute("""
-            SELECT COUNT(*) as msg_count,
-                   MAX(created_at) as last_ts
-            FROM raw_messages WHERE group_name = ?
-        """, (jid,)).fetchone()
-        msg_count = msg_info["msg_count"] if msg_info else 0
-        last_ts = msg_info["last_ts"] if msg_info else j.updated_at
-
-        # Parsed observations stats
-        obs_info = storage.db.execute("""
-            SELECT COUNT(*) as obs_count,
-                   COUNT(DISTINCT micro_market) as markets
+    rows = storage.db.execute("""
+        WITH jobs AS (
+            SELECT group_id AS jid,
+                   MAX(group_name) AS group_name,
+                   MAX(error) AS error,
+                   MAX(updated_at) AS updated_at
+            FROM source_sync_jobs
+            WHERE source = 'whatsapp' AND group_id IS NOT NULL AND group_id != ''
+            GROUP BY group_id
+        ),
+        raw_stats AS (
+            SELECT group_name AS jid,
+                   COUNT(*) AS msg_count,
+                   MAX(created_at) AS last_ts
+            FROM raw_messages
+            GROUP BY group_name
+        ),
+        obs_stats AS (
+            SELECT r.group_name AS jid,
+                   COUNT(*) AS obs_count,
+                   COUNT(DISTINCT NULLIF(p.micro_market, '')) AS markets
             FROM parsed_output p
             JOIN raw_messages r ON r.id = p.raw_message_id
-            WHERE r.group_name = ?
-        """, (jid,)).fetchone()
-
-        # Listings from this group
-        listing_count = storage.db.execute("""
-            SELECT COUNT(*) FROM listings l
+            GROUP BY r.group_name
+        ),
+        listing_stats AS (
+            SELECT r.group_name AS jid,
+                   COUNT(*) AS listing_count
+            FROM listings l
             JOIN raw_messages r ON r.id = l.latest_raw_message_id
-            WHERE r.group_name = ?
-        """, (jid,)).fetchone()[0]
-
-        # Requirements
-        req_count = storage.db.execute("""
-            SELECT COUNT(*) FROM parsed_output p
+            GROUP BY r.group_name
+        ),
+        requirement_stats AS (
+            SELECT r.group_name AS jid,
+                   COUNT(*) AS req_count
+            FROM parsed_output p
             JOIN raw_messages r ON r.id = p.raw_message_id
-            WHERE r.group_name = ? AND p.intent IN ('BUY', 'RENTAL_SEEKER')
-        """, (jid,)).fetchone()[0]
-
-        # Unknown locations
-        unknown_locs = storage.db.execute("""
-            SELECT COUNT(*) FROM resolver_decisions rd
+            WHERE p.intent IN ('BUY', 'RENTAL_SEEKER')
+            GROUP BY r.group_name
+        ),
+        unknown_stats AS (
+            SELECT r.group_name AS jid,
+                   COUNT(*) AS unknown_locs
+            FROM resolver_decisions rd
             JOIN parsed_output p ON p.id = rd.parsed_id
             JOIN raw_messages r ON r.id = p.raw_message_id
-            WHERE r.group_name = ? AND rd.method = 'unresolved'
-        """, (jid,)).fetchone()[0]
-
-        # Active brokers (with parsed observations in last 7 days)
-        active_brokers = storage.db.execute("""
-            SELECT COUNT(DISTINCT p.broker_name) FROM parsed_output p
+            WHERE rd.method = 'unresolved'
+            GROUP BY r.group_name
+        ),
+        broker_stats AS (
+            SELECT r.group_name AS jid,
+                   COUNT(DISTINCT p.broker_name) AS active_brokers
+            FROM parsed_output p
             JOIN raw_messages r ON r.id = p.raw_message_id
-            WHERE r.group_name = ?
-              AND p.broker_name IS NOT NULL AND p.broker_name != ''
+            WHERE p.broker_name IS NOT NULL
+              AND p.broker_name != ''
               AND r.created_at >= ?
-        """, (jid, week_ago)).fetchone()[0] or 0
+            GROUP BY r.group_name
+        )
+        SELECT j.jid,
+               COALESCE(NULLIF(j.group_name, ''), j.jid) AS group_name,
+               j.error,
+               j.updated_at,
+               COALESCE(rs.msg_count, 0) AS msg_count,
+               COALESCE(rs.last_ts, j.updated_at) AS last_ts,
+               COALESCE(os.obs_count, 0) AS obs_count,
+               COALESCE(os.markets, 0) AS markets,
+               COALESCE(ls.listing_count, 0) AS listing_count,
+               COALESCE(rqs.req_count, 0) AS req_count,
+               COALESCE(us.unknown_locs, 0) AS unknown_locs,
+               COALESCE(bs.active_brokers, 0) AS active_brokers
+        FROM jobs j
+        LEFT JOIN raw_stats rs ON rs.jid = j.jid
+        LEFT JOIN obs_stats os ON os.jid = j.jid
+        LEFT JOIN listing_stats ls ON ls.jid = j.jid
+        LEFT JOIN requirement_stats rqs ON rqs.jid = j.jid
+        LEFT JOIN unknown_stats us ON us.jid = j.jid
+        LEFT JOIN broker_stats bs ON bs.jid = j.jid
+        ORDER BY msg_count DESC
+        LIMIT 1000
+    """, (week_ago,)).fetchall()
 
-        # Duplicate %: observations that are likely duplicates (same broker, bhk, price, micro_market seen elsewhere)
-        dup_obs = storage.db.execute("""
-            SELECT COUNT(*) FROM parsed_output p
-            JOIN raw_messages r ON r.id = p.raw_message_id
-            WHERE r.group_name = ?
-              AND p.broker_name IS NOT NULL AND p.broker_name != ''
-              AND p.bhk IS NOT NULL AND p.bhk != ''
-              AND p.micro_market IS NOT NULL AND p.micro_market != ''
-              AND EXISTS (
-                  SELECT 1 FROM parsed_output p2
-                  JOIN raw_messages r2 ON r2.id = p2.raw_message_id
-                  WHERE r2.group_name != ?
-                    AND p2.broker_name = p.broker_name
-                    AND p2.bhk = p.bhk
-                    AND p2.micro_market = p.micro_market
-                    AND (p2.price IS NULL OR p2.price = p.price OR p.price IS NULL)
-              )
-        """, (jid, jid)).fetchone()[0] or 0
-        dup_pct = round(dup_obs / max(1, (obs_info["obs_count"] if obs_info else 0)) * 100, 1)
+    groups = []
+    for row in rows:
+        jid = row["jid"]
+        msg_count = row["msg_count"] or 0
+        last_ts = row["last_ts"] or row["updated_at"]
+        listing_count = row["listing_count"] or 0
+        unknown_locs = row["unknown_locs"] or 0
+        total_obs = row["obs_count"] or 0
 
         # Health score: live + has listings + low unknown locations
         is_live = last_ts and last_ts >= day_ago
-        has_error = bool(j.error)
+        has_error = bool(row["error"])
         if has_error:
             group_status = "error"
             health = "unhealthy"
@@ -4077,29 +4848,27 @@ async def audit_groups(q: str = "", status: str = ""):
             health = "stale"
 
         # Coverage
-        total_obs = obs_info["obs_count"] if obs_info else 0
         resolved_obs = max(0, total_obs - unknown_locs)
         coverage = round(resolved_obs / total_obs * 100, 1) if total_obs > 0 else 0
 
-        markets_str = obs_info["markets"] if obs_info and obs_info["markets"] else 0
-        group_name = j.group_name or _group_jid_to_name(jid)
+        group_name = row["group_name"] or _group_jid_to_name(jid)
 
         g = {
             "jid": jid,
             "name": group_name,
             "status": group_status,
             "health": health,
-            "error": j.error or "",
+            "error": row["error"] or "",
             "messages": msg_count,
             "last_activity": last_ts or "",
             "observations": total_obs,
             "listings": listing_count,
-            "requirements": req_count,
-            "markets_count": markets_str,
+            "requirements": row["req_count"] or 0,
+            "markets_count": row["markets"] or 0,
             "unknown_locations": unknown_locs,
             "coverage": coverage,
-            "active_brokers": active_brokers,
-            "duplicate_pct": dup_pct,
+            "active_brokers": row["active_brokers"] or 0,
+            "duplicate_pct": 0,
             "parsed": parse_group_name(group_name),
         }
 
@@ -4337,7 +5106,492 @@ async def audit_capture_health():
     }
 
 
-# ── SSE Event Stream ──────────────────────────────────────────────
+@app.get("/api/audit/intelligence")
+async def audit_intelligence():
+    """Network Intelligence Center — comprehensive broker network data."""
+    db = storage.db
+    today = datetime.utcnow().strftime("%Y-%m-%d")
+    today_start = f"{today}T00:00:00Z"
+    five_min_ago = (datetime.utcnow() - timedelta(minutes=5)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    day_ago = (datetime.utcnow() - timedelta(hours=24)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    week_ago = (datetime.utcnow() - timedelta(days=7)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    # ── Network Overview ──
+    total_groups = db.execute("SELECT COUNT(DISTINCT group_name) FROM raw_messages").fetchone()[0]
+    total_raw = db.execute("SELECT COUNT(*) FROM raw_messages").fetchone()[0]
+    total_parsed = db.execute("SELECT COUNT(*) FROM parsed_output").fetchone()[0]
+    msgs_today = db.execute("SELECT COUNT(*) FROM raw_messages WHERE created_at >= ?", (today_start,)).fetchone()[0]
+    parsed_today = db.execute("SELECT COUNT(*) FROM parsed_output WHERE created_at >= ?", (today_start,)).fetchone()[0]
+    active_groups_24h = db.execute("SELECT COUNT(DISTINCT group_name) FROM raw_messages WHERE created_at >= ?", (day_ago,)).fetchone()[0]
+    last_msg = db.execute("SELECT MAX(created_at) FROM raw_messages").fetchone()[0]
+    webhook_ok = last_msg is not None and last_msg >= five_min_ago
+
+    knowledge_records = _count_table("knowledge_records") if _table_exists("knowledge_records") else total_raw
+    searchable_records = _count_table("knowledge_records_fts") if _table_exists("knowledge_records_fts") else total_raw
+    embeddings_count = _count_table("embeddings") if _table_exists("embeddings") else db.execute(
+        "SELECT COUNT(*) FROM parsed_output WHERE embedding IS NOT NULL"
+    ).fetchone()[0]
+    indexed_records = searchable_records if searchable_records else knowledge_records
+    recall_ready_pct = round(
+        min(indexed_records, searchable_records) / max(1, knowledge_records) * 100,
+        1,
+    ) if knowledge_records else 0
+
+    attachment_count = db.execute("""
+        SELECT COUNT(*) FROM raw_messages
+        WHERE message_type != 'text'
+           OR lower(attachments) LIKE '%true%'
+    """).fetchone()[0]
+    communities_count = db.execute("""
+        SELECT COUNT(DISTINCT group_name) FROM raw_messages
+        WHERE lower(group_name) LIKE '%community%'
+    """).fetchone()[0]
+    broadcast_count = db.execute("""
+        SELECT COUNT(DISTINCT group_name) FROM raw_messages
+        WHERE group_name LIKE '%@broadcast'
+           OR group_name = 'status@broadcast'
+           OR lower(group_name) LIKE '%broadcast%'
+    """).fetchone()[0]
+    direct_message_count = db.execute("""
+        SELECT COUNT(*) FROM raw_messages
+        WHERE group_name LIKE '%@s.whatsapp.net'
+           OR group_name LIKE '%@lid'
+    """).fetchone()[0]
+
+    if _table_exists("learning_cards"):
+        learning_unknown = db.execute("SELECT COUNT(*) FROM learning_cards WHERE status = 'pending'").fetchone()[0]
+        learning_needs_review = db.execute("""
+            SELECT COUNT(*) FROM learning_cards WHERE status = 'pending' AND frequency >= 2
+        """).fetchone()[0]
+        learned_rows = db.execute("""
+            SELECT term, COALESCE(resolved_value, resolved_type, 'Learned') AS learned_as
+            FROM learning_cards
+            WHERE status = 'resolved'
+            ORDER BY COALESCE(resolved_at, last_seen, created_at) DESC
+            LIMIT 5
+        """).fetchall()
+    else:
+        learning_unknown = 0
+        learning_needs_review = 0
+        learned_rows = []
+
+    if not learned_rows and _table_exists("knowledge_aliases"):
+        learned_rows = db.execute("""
+            SELECT alias AS term, canonical || ' -> ' || entity_type AS learned_as
+            FROM knowledge_aliases
+            ORDER BY created_at DESC
+            LIMIT 5
+        """).fetchall()
+
+    latest_records = db.execute("""
+        SELECT rm.created_at, rm.group_name, rm.sender, rm.message, rm.id,
+               CASE WHEN kr.id IS NULL THEN 0 ELSE 1 END AS stored
+        FROM raw_messages rm
+        LEFT JOIN knowledge_records kr ON kr.source_id = rm.message_uid
+        ORDER BY rm.created_at DESC
+        LIMIT 12
+    """).fetchall() if _table_exists("knowledge_records") else db.execute("""
+        SELECT created_at, group_name, sender, message, id, 1 AS stored
+        FROM raw_messages
+        ORDER BY created_at DESC
+        LIMIT 12
+    """).fetchall()
+
+    # Parser success
+    parser_success = db.execute(
+        "SELECT ROUND(CAST(COUNT(CASE WHEN confidence > 0.5 THEN 1 END) AS FLOAT) / COUNT(*) * 100, 1) FROM parsed_output"
+    ).fetchone()[0]
+
+    # ── Broker Network ──
+    total_brokers = db.execute("SELECT COUNT(*) FROM brokers").fetchone()[0]
+    total_jids = db.execute("SELECT COUNT(*) FROM jid_profiles").fetchone()[0]
+    unique_phones = db.execute("SELECT COUNT(DISTINCT phone) FROM jid_profiles WHERE phone IS NOT NULL AND phone != ''").fetchone()[0]
+    named_contacts = db.execute("SELECT COUNT(*) FROM jid_profiles WHERE display_name != 'Unknown'").fetchone()[0]
+    unnamed_contacts = db.execute("SELECT COUNT(*) FROM jid_profiles WHERE display_name = 'Unknown'").fetchone()[0]
+
+    # New brokers discovered
+    new_brokers_today = db.execute("SELECT COUNT(*) FROM brokers WHERE date(first_seen_at) = date('now')").fetchone()[0]
+    new_brokers_week = db.execute("SELECT COUNT(*) FROM brokers WHERE first_seen_at >= ?", (week_ago,)).fetchone()[0]
+    recently_active = db.execute("SELECT COUNT(*) FROM brokers WHERE last_seen_at >= ?", (week_ago,)).fetchone()[0]
+
+    # JIDs without phone
+    jids_no_phone = db.execute("SELECT COUNT(*) FROM jid_profiles WHERE phone IS NULL OR phone = ''").fetchone()[0]
+
+    # ── Contact Cleanup ──
+    # Phones with multiple JIDs (possible duplicates)
+    dup_phones = db.execute("""
+        SELECT phone, COUNT(*) as cnt FROM jid_profiles 
+        WHERE phone IS NOT NULL AND phone != ''
+        GROUP BY phone HAVING cnt > 1
+    """).fetchall()
+
+    # Broker names with multiple phones (possible merge candidates)
+    dup_names = db.execute("""
+        SELECT canonical_name, COUNT(DISTINCT primary_phone) as phone_cnt,
+               GROUP_CONCAT(DISTINCT primary_phone) as phones
+        FROM brokers 
+        GROUP BY canonical_name HAVING phone_cnt > 1
+    """).fetchall()
+
+    # Brokers with no market coverage
+    brokers_no_market = db.execute("""
+        SELECT COUNT(*) FROM brokers b
+        LEFT JOIN (
+            SELECT broker_name, COUNT(DISTINCT micro_market) as markets
+            FROM listings 
+            WHERE broker_name IS NOT NULL AND micro_market IS NOT NULL AND micro_market != ''
+            GROUP BY broker_name
+        ) bm ON b.canonical_name = bm.broker_name
+        WHERE bm.markets IS NULL OR bm.markets = 0
+    """).fetchone()[0]
+
+    # ── Listings & Requirements ──
+    total_listings = db.execute("SELECT COUNT(*) FROM listings").fetchone()[0]
+    sell_count = db.execute("SELECT COUNT(*) FROM listings WHERE intent IN ('SELL','SELLER')").fetchone()[0]
+    rent_count = db.execute("SELECT COUNT(*) FROM listings WHERE intent IN ('RENT','RENTAL')").fetchone()[0]
+    commercial_count = db.execute("SELECT COUNT(*) FROM listings WHERE intent IN ('COMMERCIAL','COMMERCIAL_SALE','COMMERCIAL_RENTAL')").fetchone()[0]
+    total_requirements = db.execute("SELECT COUNT(*) FROM parsed_output WHERE intent IN ('BUY','BUYER','RENTAL_SEEKER')").fetchone()[0]
+
+    # ── Market Coverage ──
+    markets_observed = db.execute("SELECT COUNT(DISTINCT micro_market) FROM parsed_output WHERE micro_market IS NOT NULL AND micro_market != ''").fetchone()[0]
+    buildings_observed = db.execute("SELECT COUNT(*) FROM buildings").fetchone()[0]
+    buildings_with_data = db.execute("SELECT COUNT(*) FROM buildings WHERE observed_listings > 0").fetchone()[0]
+    developers_observed = db.execute("SELECT COUNT(DISTINCT developer) FROM parsed_output WHERE developer IS NOT NULL AND developer != ''").fetchone()[0]
+    localities_observed = db.execute("SELECT COUNT(DISTINCT area) FROM parsed_output WHERE area IS NOT NULL AND area != ''").fetchone()[0]
+    landmarks_observed = db.execute("SELECT COUNT(DISTINCT landmark_name) FROM parsed_output WHERE landmark_name IS NOT NULL AND landmark_name != ''").fetchone()[0]
+
+    # Market breakdown
+    market_stats = db.execute("""
+        SELECT micro_market, 
+               COUNT(*) as total,
+               SUM(CASE WHEN intent IN ('SELL','RENT') THEN 1 ELSE 0 END) as residential,
+               SUM(CASE WHEN intent = 'COMMERCIAL' THEN 1 ELSE 0 END) as commercial,
+               COUNT(DISTINCT broker_name) as brokers
+        FROM parsed_output 
+        WHERE micro_market IS NOT NULL AND micro_market != ''
+        GROUP BY micro_market ORDER BY total DESC
+    """).fetchall()
+
+    # Top markets by broker coverage
+    top_markets = db.execute("""
+        SELECT micro_market, COUNT(DISTINCT broker_name) as brokers
+        FROM listings 
+        WHERE micro_market IS NOT NULL AND micro_market != ''
+        GROUP BY micro_market ORDER BY brokers DESC LIMIT 10
+    """).fetchall()
+
+    # Markets with few brokers (coverage gaps)
+    coverage_gaps = db.execute("""
+        SELECT micro_market, COUNT(DISTINCT broker_name) as brokers
+        FROM listings 
+        WHERE micro_market IS NOT NULL AND micro_market != ''
+        GROUP BY micro_market ORDER BY brokers ASC LIMIT 5
+    """).fetchall()
+
+    # ── Group Intelligence ──
+    # Get group names from source_sync_jobs
+    group_name_map = dict(db.execute("SELECT group_id, group_name FROM source_sync_jobs").fetchall())
+
+    group_stats = db.execute("""
+        SELECT rm.group_name,
+               COUNT(*) as messages,
+               COUNT(DISTINCT rm.sender) as unique_senders,
+               MIN(rm.created_at) as first_seen,
+               MAX(rm.created_at) as last_seen
+        FROM raw_messages rm
+        GROUP BY rm.group_name
+        ORDER BY messages DESC
+    """).fetchall()
+
+    # Enrich group stats with parsed data
+    group_intelligence = []
+    for g in group_stats:
+        gname = g[0]
+        # Count listings and requirements in this group
+        lr = db.execute("""
+            SELECT 
+                SUM(CASE WHEN po.intent IN ('SELL','RENT','COMMERCIAL') THEN 1 ELSE 0 END) as listings,
+                SUM(CASE WHEN po.intent IN ('BUY','BUYER','RENTAL_SEEKER') THEN 1 ELSE 0 END) as requirements,
+                COUNT(CASE WHEN po.confidence > 0.5 THEN 1 END) as parsed_ok
+            FROM parsed_output po
+            JOIN raw_messages rm ON po.raw_message_id = rm.id
+            WHERE rm.group_name = ?
+        """, (gname,)).fetchone()
+
+        # Markets in this group
+        markets_in_group = db.execute("""
+            SELECT COUNT(DISTINCT po.micro_market)
+            FROM parsed_output po
+            JOIN raw_messages rm ON po.raw_message_id = rm.id
+            WHERE rm.group_name = ? AND po.micro_market IS NOT NULL AND po.micro_market != ''
+        """, (gname,)).fetchone()[0]
+
+        # Buildings in this group
+        buildings_in_group = db.execute("""
+            SELECT COUNT(DISTINCT po.building_name)
+            FROM parsed_output po
+            JOIN raw_messages rm ON po.raw_message_id = rm.id
+            WHERE rm.group_name = ? AND po.building_name IS NOT NULL AND po.building_name != ''
+        """, (gname,)).fetchone()[0]
+
+        messages = g[1]
+        parsed_ok = lr[2] if lr else 0
+        signal_ratio = round(parsed_ok / max(1, messages) * 100, 1)
+
+        group_intelligence.append({
+            "name": group_name_map.get(gname, gname[:50]),
+            "jid": gname,
+            "messages": messages,
+            "unique_senders": g[2],
+            "listings": lr[0] if lr else 0,
+            "requirements": lr[1] if lr else 0,
+            "markets": markets_in_group,
+            "buildings": buildings_in_group,
+            "signal_ratio": signal_ratio,
+            "first_seen": g[3],
+            "last_seen": g[4],
+        })
+
+    # ── Broker Discovery (top brokers by activity) ──
+    top_brokers = db.execute("""
+        SELECT canonical_name, primary_phone, observation_count, listing_count, 
+               requirement_count, group_count, first_seen_at, last_seen_at
+        FROM brokers ORDER BY observation_count DESC LIMIT 15
+    """).fetchall()
+
+    # ── Broker Reach (brokers in most groups) ──
+    broker_reach = db.execute("""
+        SELECT broker_name, 
+               COUNT(DISTINCT rm.group_name) as groups,
+               COUNT(*) as observations,
+               MIN(rm.created_at) as first_seen,
+               MAX(rm.created_at) as last_seen
+        FROM parsed_output po
+        JOIN raw_messages rm ON po.raw_message_id = rm.id
+        WHERE broker_name IS NOT NULL AND broker_name != ''
+        GROUP BY broker_name 
+        ORDER BY groups DESC
+        LIMIT 10
+    """).fetchall()
+
+    # ── Network Suggestions ──
+    suggestions = []
+
+    if unnamed_contacts > 0:
+        suggestions.append({
+            "type": "contact_cleanup",
+            "message": f"{unnamed_contacts} contacts have no name. Review and add names to improve your network.",
+            "action": "review_unnamed",
+            "count": unnamed_contacts,
+        })
+
+    if len(dup_names) > 0:
+        suggestions.append({
+            "type": "merge_candidates",
+            "message": f"{len(dup_names)} broker names appear under multiple phone numbers. Review possible merges.",
+            "action": "review_merges",
+            "count": len(dup_names),
+        })
+
+    if len(dup_phones) > 0:
+        suggestions.append({
+            "type": "duplicate_phones",
+            "message": f"{len(dup_phones)} phone numbers have multiple JID profiles. These may be the same person.",
+            "action": "review_duplicates",
+            "count": len(dup_phones),
+        })
+
+    if brokers_no_market > 0:
+        suggestions.append({
+            "type": "no_coverage",
+            "message": f"{brokers_no_market} brokers have no market coverage. Add market tags to organize your network.",
+            "action": "tag_brokers",
+            "count": brokers_no_market,
+        })
+
+    # Coverage gaps
+    if coverage_gaps:
+        gap_names = [g[0] for g in coverage_gaps if g[1] <= 2]
+        if gap_names:
+            suggestions.append({
+                "type": "coverage_gap",
+                "message": f"Low coverage in: {', '.join(gap_names[:3])}. Consider joining groups in these markets.",
+                "action": "find_groups",
+                "count": len(gap_names),
+            })
+
+    # New brokers this week
+    if new_brokers_week > 10:
+        suggestions.append({
+            "type": "new_brokers",
+            "message": f"{new_brokers_week} new brokers appeared this week. Add them to your contacts?",
+            "action": "review_new",
+            "count": new_brokers_week,
+        })
+
+    return {
+        "network": {
+            "total_groups": total_groups,
+            "active_groups_24h": active_groups_24h,
+            "total_messages": total_raw,
+            "knowledge_records": knowledge_records,
+            "attachments": attachment_count,
+            "communities": communities_count,
+            "broadcasts": broadcast_count,
+            "direct_messages": direct_message_count,
+            "messages_today": msgs_today,
+            "parsed_today": parsed_today,
+            "parser_success": parser_success,
+            "last_message": last_msg or "never",
+            "webhook_healthy": webhook_ok,
+        },
+        "brokers": {
+            "total": total_brokers,
+            "total_jids": total_jids,
+            "unique_phones": unique_phones,
+            "named_contacts": named_contacts,
+            "unnamed_contacts": unnamed_contacts,
+            "new_today": new_brokers_today,
+            "new_this_week": new_brokers_week,
+            "recently_active": recently_active,
+            "jids_no_phone": jids_no_phone,
+            "top": [{"name": r[0], "phone": r[1], "observations": r[2], "listings": r[3], "requirements": r[4], "groups": r[5], "first_seen": r[6], "last_seen": r[7]} for r in top_brokers],
+        },
+        "cleanup": {
+            "duplicate_phones": [{"phone": r[0], "count": r[1]} for r in dup_phones],
+            "duplicate_names": [{"name": r[0], "phone_count": r[1], "phones": r[2]} for r in dup_names],
+            "brokers_no_market": brokers_no_market,
+        },
+        "listings": {
+            "total": total_listings,
+            "sell": sell_count,
+            "rent": rent_count,
+            "commercial": commercial_count,
+            "requirements": total_requirements,
+        },
+        "coverage": {
+            "markets": markets_observed,
+            "buildings": buildings_observed,
+            "buildings_with_data": buildings_with_data,
+            "developers": developers_observed,
+            "localities": localities_observed,
+            "landmarks": landmarks_observed,
+            "market_stats": [{"name": r[0], "total": r[1], "residential": r[2], "commercial": r[3], "brokers": r[4]} for r in market_stats],
+            "top_markets": [{"name": r[0], "brokers": r[1]} for r in top_markets],
+            "coverage_gaps": [{"name": r[0], "brokers": r[1]} for r in coverage_gaps],
+        },
+        "capture": {
+            "status": "connected" if webhook_ok else "stale",
+            "last_message": last_msg or "never",
+            "messages_captured": total_raw,
+            "knowledge_records": knowledge_records,
+            "attachments": attachment_count,
+            "communities": communities_count,
+            "groups": total_groups,
+            "broadcasts": broadcast_count,
+            "direct_messages": direct_message_count,
+            "latest_records": [
+                {
+                    "id": r[4],
+                    "time": r[0],
+                    "conversation": _group_jid_to_name(r[1]),
+                    "sender": r[2],
+                    "preview": (r[3] or "")[:180],
+                    "stored": bool(r[5]),
+                }
+                for r in latest_records
+            ],
+        },
+        "search_coverage": {
+            "messages": total_raw,
+            "indexed": indexed_records,
+            "searchable": searchable_records,
+            "embeddings": embeddings_count,
+            "recall_ready": recall_ready_pct,
+        },
+        "learning": {
+            "unknown_terms": learning_unknown,
+            "needs_review": learning_needs_review,
+            "recently_learned": [
+                {
+                    "term": r[0],
+                    "learned_as": r[1],
+                }
+                for r in learned_rows
+            ],
+        },
+        "groups": group_intelligence[:20],
+        "broker_reach": [{"name": r[0], "groups": r[1], "observations": r[2], "first_seen": r[3], "last_seen": r[4]} for r in broker_reach],
+        "suggestions": suggestions,
+    }
+
+
+@app.get("/api/audit/search-evidence")
+async def audit_search_evidence(q: str = ""):
+    """Exact evidence summary for a term in captured WhatsApp knowledge."""
+    term = (q or "").strip()
+    if not term:
+        return {
+            "query": "",
+            "count": 0,
+            "first_seen": "",
+            "last_seen": "",
+            "groups": 0,
+            "unique_senders": 0,
+            "top_groups": [],
+            "recent": [],
+        }
+
+    like_q = f"%{term}%"
+    summary = storage.db.execute("""
+        SELECT COUNT(*) AS count,
+               MIN(timestamp) AS first_seen,
+               MAX(timestamp) AS last_seen,
+               COUNT(DISTINCT group_name) AS groups,
+               COUNT(DISTINCT COALESCE(NULLIF(sender_phone, ''), NULLIF(sender_jid, ''), sender)) AS unique_senders
+        FROM raw_messages
+        WHERE message LIKE ? OR sender LIKE ? OR group_name LIKE ?
+    """, (like_q, like_q, like_q)).fetchone()
+
+    top_groups = storage.db.execute("""
+        SELECT group_name, COUNT(*) AS count
+        FROM raw_messages
+        WHERE message LIKE ? OR sender LIKE ? OR group_name LIKE ?
+        GROUP BY group_name
+        ORDER BY count DESC
+        LIMIT 6
+    """, (like_q, like_q, like_q)).fetchall()
+
+    recent = storage.db.execute("""
+        SELECT id, timestamp, group_name, sender, message
+        FROM raw_messages
+        WHERE message LIKE ? OR sender LIKE ? OR group_name LIKE ?
+        ORDER BY timestamp DESC
+        LIMIT 6
+    """, (like_q, like_q, like_q)).fetchall()
+
+    return {
+        "query": term,
+        "count": summary["count"] if summary else 0,
+        "first_seen": summary["first_seen"] if summary else "",
+        "last_seen": summary["last_seen"] if summary else "",
+        "groups": summary["groups"] if summary else 0,
+        "unique_senders": summary["unique_senders"] if summary else 0,
+        "top_groups": [
+            {"name": _group_jid_to_name(r["group_name"]), "count": r["count"]}
+            for r in top_groups
+        ],
+        "recent": [
+            {
+                "id": r["id"],
+                "time": r["timestamp"],
+                "conversation": _group_jid_to_name(r["group_name"]),
+                "sender": r["sender"],
+                "preview": (r["message"] or "")[:180],
+            }
+            for r in recent
+        ],
+    }
 
 @app.get("/api/events")
 async def event_stream(request: Request):
@@ -4424,6 +5678,69 @@ async def qr_image():
 @app.get("/connect")
 async def connect_page():
     return {"status": "ok", "frontend": "http://localhost:3000/settings", "message": "Use the settings page at http://localhost:3000/settings to connect WhatsApp"}
+
+
+# ── Requirement-Listing Matching ──────────────────────────────────
+
+@app.post("/api/requirements/match")
+async def match_requirements():
+    """Run the matcher to compute requirement-listing matches."""
+    total = storage.match_requirements()
+    return {"matched": total}
+
+
+@app.get("/api/requirements/matches/summary")
+async def requirement_matches_summary():
+    """Get match counts for all requirements (for table display)."""
+    summary = storage.get_match_summary()
+    # Build a lookup dict
+    return {str(m["requirement_id"]): {"count": m["match_count"], "best": m["best_score"]} for m in summary}
+
+
+@app.get("/api/requirements/{req_id}/matches")
+async def requirement_matches(req_id: int, limit: int = 20):
+    """Get matching listings for a specific requirement."""
+    matches = storage.get_requirement_matches(req_id, limit=limit)
+    return {"requirement_id": req_id, "matches": matches, "count": len(matches)}
+
+
+# ── Building Alias Engine ────────────────────────────────────────
+
+@app.post("/api/buildings/aliases/discover")
+async def discover_building_aliases(min_confidence: float = 0.7):
+    """Discover new building alias candidates."""
+    suggestions = storage.discover_alias_candidates(min_confidence=min_confidence)
+    saved = storage.save_alias_suggestions(suggestions)
+    return {"discovered": len(suggestions), "saved": saved, "suggestions": suggestions[:20]}
+
+
+@app.get("/api/buildings/aliases/suggestions")
+async def get_alias_suggestions(status: str = "pending", limit: int = 50):
+    """Get alias suggestions for review."""
+    suggestions = storage.get_alias_suggestions(status=status, limit=limit)
+    return {"suggestions": suggestions, "count": len(suggestions)}
+
+
+@app.post("/api/buildings/aliases/{suggestion_id}/review")
+async def review_alias_suggestion(suggestion_id: int, approved: bool):
+    """Approve or reject an alias suggestion."""
+    success = storage.review_alias_suggestion(suggestion_id, approved)
+    if not success:
+        return {"error": "Suggestion not found"}, 404
+    return {"success": True, "approved": approved}
+
+
+@app.get("/api/buildings/aliases/stats")
+async def alias_stats():
+    """Get alias engine statistics."""
+    return storage.get_alias_stats()
+
+
+@app.post("/api/buildings/aliases/normalize")
+async def normalize_building_name(name: str):
+    """Normalize a building name using learned aliases."""
+    normalized = storage.normalize_building_name(name)
+    return {"original": name, "normalized": normalized, "changed": name != normalized}
 
 
 # ── Entrypoint ──────────────────────────────────────────────────

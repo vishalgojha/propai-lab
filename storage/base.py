@@ -17,6 +17,8 @@ class RawMessage:
     sender_phone: Optional[str] = None
     message: str = ""
     message_type: str = "text"
+    attachments: str = "[]"
+    reply_context: str = "{}"
     timestamp: str = ""
     source: str = "WHATSAPP"
     raw_payload: str = "{}"

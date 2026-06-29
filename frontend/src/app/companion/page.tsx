@@ -265,7 +265,7 @@ export default function CompanionPage() {
             <div className="mt-3 grid grid-cols-1 gap-2">
               {[
                 "Show me 2 BHK Bandra under 3 Cr",
-                "Any buyers for Chandak Unicorn?",
+                "Any requirements for Chandak Unicorn?",
                 "Find today's new listings",
                 "Promote my latest listing",
                 "Create a buyer requirement",

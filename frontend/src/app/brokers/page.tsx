@@ -11,8 +11,9 @@ function maskPhone(phone: string): string {
 }
 
 function waLink(phone: string): string {
-  const digits = phone?.replace(/\D/g, "");
-  return digits ? `https://wa.me/${digits.startsWith("91") ? digits : "91" + digits}` : "#";
+  const digits = phone?.replace(/\D/g, "") || "";
+  if (digits.length < 10) return "";
+  return `https://wa.me/${digits.startsWith("91") ? digits : "91" + digits}`;
 }
 
 export default function BrokersPage() {

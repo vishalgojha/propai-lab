@@ -7,6 +7,7 @@ Usage:
 Requires: qrcode, pyzbar, httpx, Pillow
 """
 import base64
+import json
 import io
 import os
 import time
@@ -15,7 +16,10 @@ from pathlib import Path
 import httpx
 from PIL import Image
 
-from lab.config import EVOLUTION_API_URL, EVOLUTION_API_KEY, EVOLUTION_INSTANCE
+from lab.config import BAILEYS_STATUS_FILE, EVOLUTION_API_URL, EVOLUTION_API_KEY, EVOLUTION_INSTANCE
+
+PROJECT_DIR = Path(__file__).resolve().parent
+LOCAL_STATUS_FILE = BAILEYS_STATUS_FILE if BAILEYS_STATUS_FILE.is_absolute() else PROJECT_DIR / BAILEYS_STATUS_FILE
 
 
 C = {
@@ -71,6 +75,29 @@ def fetch_qr() -> dict:
     return api_get(f"instance/connect/{EVOLUTION_INSTANCE}")
 
 
+def read_baileys_status() -> dict:
+    try:
+        if LOCAL_STATUS_FILE.exists():
+            data = json.loads(LOCAL_STATUS_FILE.read_text())
+            if isinstance(data, dict):
+                return data
+    except Exception:
+        pass
+    return {}
+
+
+def fetch_backend_connection() -> dict:
+    try:
+        r = httpx.get("http://localhost:8000/api/sync/connection", timeout=5)
+        if r.status_code == 200:
+            data = r.json()
+            if isinstance(data, dict):
+                return data
+    except Exception:
+        pass
+    return {}
+
+
 def decode_qr_content(base64_png: str) -> str:
     if "," in base64_png:
         base64_png = base64_png.split(",")[1]
@@ -91,6 +118,12 @@ def render_qr(text: str) -> str:
 
 
 def check_connected() -> bool:
+    status = read_baileys_status()
+    if status:
+        return bool(status.get("connected")) or str(status.get("connection_state", "")).lower() in ("open", "connected", "syncing")
+    backend = fetch_backend_connection()
+    if backend:
+        return bool(backend.get("connected")) or str(backend.get("connection_state", "")).lower() in ("open", "connected", "syncing")
     data = api_get(f"instance/connectionState/{EVOLUTION_INSTANCE}")
     state = data.get("instance", {}).get("state", "")
     if state.lower() in ("open", "connected", "syncing"):
@@ -100,6 +133,31 @@ def check_connected() -> bool:
 
 
 def get_connection_info() -> dict:
+    status = read_baileys_status()
+    if status:
+        phone = status.get("phone_number", "")
+        if phone and not str(phone).startswith("+"):
+            phone = f"+{phone}" if str(phone).isdigit() else phone
+        return {
+            "phone": phone or "—",
+            "name": status.get("display_name") or status.get("profile_name") or "—",
+            "status": status.get("connection_state", "unknown"),
+            "jid": status.get("phone_number", ""),
+            "created": status.get("connected_since", ""),
+        }
+
+    backend = fetch_backend_connection()
+    if backend:
+        phone = backend.get("phone_number", "") or backend.get("phone", "")
+        profile = backend.get("display_name", "") or backend.get("profile", "")
+        return {
+            "phone": phone or "—",
+            "name": profile or "—",
+            "status": backend.get("connection_state", backend.get("state", "unknown")),
+            "jid": backend.get("phone_number", "") or "",
+            "created": backend.get("connected_since", ""),
+        }
+
     data = api_get("instance/fetchInstances")
     instances = data if isinstance(data, list) else []
     for inst in instances:
@@ -157,6 +215,8 @@ def hr():
 
 def show_connected():
     info = get_connection_info()
+    status = str(info.get("status", "unknown")).lower()
+    status_color = "green" if status in ("open", "connected", "syncing") else "yellow"
 
     boxes = [
         f"{C['green']}●{C['reset']}  {C['bold']}WhatsApp Connected{C['reset']}  {C['green']}✓{C['reset']}",
@@ -164,7 +224,7 @@ def show_connected():
         f"  {C['dim']}Phone:{C['reset']}     {C['bold']}{info['phone']}{C['reset']}",
         f"  {C['dim']}Profile:{C['reset']}    {info['name']}",
         f"  {C['dim']}Instance:{C['reset']}   {EVOLUTION_INSTANCE}",
-        f"  {C['dim']}Status:{C['reset']}     {C['green']}{info['status']}{C['reset']}",
+        f"  {C['dim']}Status:{C['reset']}     {C[status_color]}{info['status']}{C['reset']}",
         "",
         f"  {C['cyan']}→{C['reset']}  {C['bold']}http://localhost:8000{C['reset']}  {C['dim']}(dashboard){C['reset']}",
         f"  {C['cyan']}→{C['reset']}  propai sync  {C['dim']}(sync broker groups){C['reset']}",
@@ -256,32 +316,14 @@ def show_qr_flow():
     ], "yellow")
 
 
-def show_disconnect():
-    """Offer to disconnect and show fresh QR."""
-    show_connected()
-
-    print()
-    choice = input(f"  {C['dim']}[R]econnect  |  [Q]uit  |  [Enter] dashboard → {C['reset']}").lower()
-    if choice == "r":
-        api_get(f"instance/logout/{EVOLUTION_INSTANCE}")
-        print(f"  {C['yellow']}Disconnected. Starting fresh QR...{C['reset']}")
-        time.sleep(2)
-        api_get(f"instance/connect/{EVOLUTION_INSTANCE}")
-        show_qr_flow()
-    elif choice == "q":
-        print(f"  {C['grey']}Bye!{C['reset']}")
-        return
-    else:
-        print(f"  →  {C['bold']}http://localhost:8000{C['reset']}")
-        return
-
-
 def main():
     os.system("cls" if os.name == "nt" else "clear")
     banner()
 
     if check_connected():
-        show_disconnect()
+        show_connected()
+        print()
+        print(f"  {C['grey']}Already connected. Run {C['bold']}propai status{C['reset']}{C['grey']} or open {C['bold']}http://localhost:8000{C['reset']}{C['grey']}.{C['reset']}")
     else:
         show_qr_flow()
 

@@ -10,3 +10,5 @@ lab.db-*
 propai.db
 /tmp/
 .DS_Store
+lab.db.backup-*
+lab.db

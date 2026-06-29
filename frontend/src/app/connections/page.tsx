@@ -164,7 +164,7 @@ export default function ConnectionCenterPage() {
           connected={wabaConnected}
           action={null}
         >
-          <p className="max-w-2xl text-sm text-[#64748b]">Automatically sync contacts, listings, buyers, conversations and AI Companion access.</p>
+          <p className="max-w-2xl text-sm text-[#64748b]">Automatically sync contacts, listings, requirements, conversations and AI Companion access.</p>
           <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
             {["Contacts", "Listings", "Buyers", "Conversations", "AI Companion"].map((item) => (
               <div key={item} className="rounded-lg border border-[rgba(255,255,255,0.06)] px-3 py-2 text-xs text-[#94a3b8]">

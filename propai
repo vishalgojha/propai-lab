@@ -1,12 +1,28 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-PROPAI_DIR="$(cd "$(dirname "$0")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+if [ -f "$PWD/requirements.txt" ] && [ -f "$PWD/app.py" ] && [ -d "$PWD/frontend" ]; then
+  PROPAI_DIR="$PWD"
+else
+  PROPAI_DIR="$SCRIPT_DIR"
+fi
 LOG_FILE="/tmp/propai.log"
+PROPAI_VENV="$PROPAI_DIR/.venv"
 
 log() { echo "[propai] $*" | tee -a "$LOG_FILE" >&2; }
+http_ok() { curl --max-time 2 -sf "$1" >/dev/null 2>&1; }
+http_get() { curl --max-time 2 -sf "$1"; }
 
 # ── Helpers ───────────────────────────────────────────────────────
+
+python_cmd() {
+  if [ -x "$PROPAI_VENV/bin/python" ]; then
+    echo "$PROPAI_VENV/bin/python"
+  else
+    echo "python3"
+  fi
+}
 
 ensure_key() {
   local key_file="$PROPAI_DIR/.api_key"
@@ -23,15 +39,17 @@ ensure_key() {
 }
 
 start_lab_api() {
-  if curl -sf http://localhost:8000/health >/dev/null 2>&1; then
+  if http_ok http://localhost:8000/health; then
     return 0
   fi
   log "Starting PropAI server..."
   cd "$PROPAI_DIR"
-  setsid python3 -m uvicorn app:app --host 0.0.0.0 --port 8000 &>/tmp/lab-api.log &
+  local py
+  py="$(python_cmd)"
+  setsid "$py" -m uvicorn app:app --host 0.0.0.0 --port 8000 &>/tmp/lab-api.log &
   disown
   sleep 3
-  if curl -sf http://localhost:8000/health >/dev/null 2>&1; then
+  if http_ok http://localhost:8000/health; then
     log "Server ready at http://localhost:8000"
   else
     log "ERROR: Server failed to start"
@@ -41,7 +59,7 @@ start_lab_api() {
 }
 
 start_frontend() {
-  if curl -sf http://localhost:3000/ >/dev/null 2>&1; then
+  if http_ok http://localhost:3000/; then
     return 0
   fi
   if [ ! -d "$PROPAI_DIR/frontend/node_modules" ]; then
@@ -53,7 +71,7 @@ start_frontend() {
   setsid npm run dev -- --webpack --hostname 0.0.0.0 --port 3000 &>/tmp/propai-frontend.log &
   disown
   for i in $(seq 1 20); do
-    if curl -sf http://localhost:3000/ >/dev/null 2>&1; then
+    if http_ok http://localhost:3000/; then
       log "Frontend ready at http://localhost:3000"
       return 0
     fi
@@ -78,6 +96,51 @@ run_baileys() {
   npm run dev
 }
 
+baileys_running() {
+  pgrep -af "services/baileys-ingestor|tsx src/index.ts|node.*baileys" >/dev/null 2>&1
+}
+
+start_baileys_background() {
+  local dir="$PROPAI_DIR/services/baileys-ingestor"
+  if [ ! -d "$dir/node_modules" ]; then
+    log "Baileys dependencies missing. Run: propai install"
+    return 1
+  fi
+  if [ ! -f "$dir/.env" ]; then
+    cp "$dir/.env.example" "$dir/.env"
+  fi
+  if baileys_running; then
+    log "Baileys ingestor already running"
+    return 0
+  fi
+  log "Starting Baileys ingestor in background..."
+  cd "$dir"
+  setsid npm run dev &>/tmp/propai-baileys.log &
+  disown
+  sleep 2
+  if baileys_running; then
+    log "Baileys log: /tmp/propai-baileys.log"
+    return 0
+  fi
+  log "ERROR: Baileys failed to start"
+  tail -20 /tmp/propai-baileys.log >&2 || true
+  return 1
+}
+
+cmd_qr() {
+  ensure_key
+  cmd_connect
+}
+
+whatsapp_connected() {
+  if ! http_ok http://localhost:8000/api/sync/connection; then
+    return 1
+  fi
+  local connected
+  connected=$(http_get http://localhost:8000/api/sync/connection | python3 -c "import sys,json; print(json.load(sys.stdin).get('connected',False))" 2>/dev/null || true)
+  [ "$connected" = "True" ] || [ "$connected" = "true" ]
+}
+
 cmd_install() {
   echo ""
   echo "  ── PropAI Installer ───────────────────"
@@ -92,8 +155,18 @@ cmd_install() {
     return 1
   fi
 
+  echo "  Creating local Python environment..."
+  if ! python3 -m venv "$PROPAI_VENV" >/dev/null 2>&1; then
+    echo "  ✗ python3-venv is required"
+    echo "    Install it with: sudo apt install python3-venv"
+    return 1
+  fi
+  local py
+  py="$PROPAI_VENV/bin/python"
+
   echo "  Installing Python dependencies..."
-  python3 -m pip install -r "$PROPAI_DIR/requirements.txt"
+  "$py" -m pip install --upgrade pip setuptools wheel >/dev/null
+  "$py" -m pip install -r "$PROPAI_DIR/requirements.txt"
 
   echo ""
   echo "  Installing frontend dependencies..."
@@ -112,7 +185,7 @@ cmd_install() {
   echo "  ✓ PropAI installed"
   echo ""
   echo "  Next:"
-  echo "    propai connect"
+  echo "    propai qr"
   echo ""
 }
 
@@ -135,6 +208,18 @@ cmd_connect() {
   ensure_key
   start_lab_api
   start_frontend
+  if whatsapp_connected; then
+    start_baileys_background || true
+    echo ""
+    echo "  ┌──────────────────────────────────────────────┐"
+    echo "  │  WhatsApp is already connected.             │"
+    echo "  └──────────────────────────────────────────────┘"
+    echo ""
+    echo "  Dashboard: http://localhost:3000"
+    echo "  Connection Center: http://localhost:3000/connections"
+    echo ""
+    return 0
+  fi
   echo ""
   echo "  ┌──────────────────────────────────────────────┐"
   echo "  │  Scan the Baileys QR code with WhatsApp.      │"
@@ -153,6 +238,18 @@ cmd_dashboard() {
   echo ""
 }
 
+cmd_start() {
+  ensure_key
+  start_lab_api
+  start_frontend
+  start_baileys_background
+  echo ""
+  echo "  PropAI running:"
+  echo "  → http://localhost:3000"
+  echo "  → Baileys log: /tmp/propai-baileys.log"
+  echo ""
+}
+
 cmd_sync() {
   echo ""
   echo "  Historical sync is not enabled by default."
@@ -162,6 +259,26 @@ cmd_sync() {
   echo ""
 }
 
+cmd_reindex() {
+  local py
+  py="$(python_cmd)"
+  cd "$PROPAI_DIR"
+  "$py" "$PROPAI_DIR/scripts/reindex_raw_messages.py" "$@"
+}
+
+cmd_memory() {
+  local py
+  py="$(python_cmd)"
+  cd "$PROPAI_DIR"
+  "$py" - <<'PY'
+from config import DB_PATH
+from lab.storage import SqliteStorage
+storage = SqliteStorage(DB_PATH)
+storage.init_schema()
+print(storage.rebuild_jid_memory())
+PY
+}
+
 cmd_doctor() {
   echo ""
   echo "  ── PropAI Health Check ───────────────────"
@@ -169,7 +286,7 @@ cmd_doctor() {
   local all_ok=true
 
   # Lab API
-  if curl -sf http://localhost:8000/health >/dev/null 2>&1; then
+  if http_ok http://localhost:8000/health; then
     echo "  ✓ PropAI server"
   else
     echo "  ✗ PropAI server  (not running)"
@@ -177,7 +294,7 @@ cmd_doctor() {
   fi
 
   # Frontend
-  if curl -sf http://localhost:3000/ >/dev/null 2>&1; then
+  if http_ok http://localhost:3000/; then
     echo "  ✓ PropAI frontend"
   else
     echo "  ✗ PropAI frontend  (run 'propai dashboard')"
@@ -200,9 +317,9 @@ cmd_doctor() {
   fi
 
   # WhatsApp connection
-  if curl -sf http://localhost:8000/api/sync/connection >/dev/null 2>&1; then
+  if http_ok http://localhost:8000/api/sync/connection; then
     local connected
-    connected=$(curl -sf http://localhost:8000/api/sync/connection | python3 -c "import sys,json; print(json.load(sys.stdin).get('connected',False))" 2>/dev/null)
+    connected=$(http_get http://localhost:8000/api/sync/connection | python3 -c "import sys,json; print(json.load(sys.stdin).get('connected',False))" 2>/dev/null || true)
     if [ "$connected" = "True" ]; then
       echo "  ✓ WhatsApp connected"
     else
@@ -211,10 +328,12 @@ cmd_doctor() {
   fi
 
   # Python deps
-  if python3 -c "import fastapi, uvicorn, httpx" 2>/dev/null; then
+  local py
+  py="$(python_cmd)"
+  if "$py" -c "import fastapi, uvicorn, httpx" 2>/dev/null; then
     echo "  ✓ Python dependencies"
   else
-    echo "  ✗ Python dependencies  (run: pip install -r requirements.txt)"
+    echo "  ✗ Python dependencies  (run 'propai install')"
     all_ok=false
   fi
 
@@ -228,7 +347,7 @@ cmd_doctor() {
   fi
 
   # Internet
-  if curl -sf https://web.whatsapp.com >/dev/null 2>&1; then
+  if http_ok https://web.whatsapp.com; then
     echo "  ✓ Internet"
   else
     echo "  ✗ Internet  (check your connection)"
@@ -239,7 +358,7 @@ cmd_doctor() {
   if $all_ok; then
     echo "  Everything looks good."
   else
-    echo "  Some checks failed. Run 'propai connect' or 'propai dashboard' to fix."
+    echo "  Some checks failed. Run 'propai qr' or 'propai dashboard' to fix."
   fi
   echo ""
 }
@@ -248,24 +367,43 @@ cmd_status() {
   echo ""
   echo "  ── PropAI Status ─────────────────────"
   echo ""
-  if curl -sf http://localhost:8000/health >/dev/null 2>&1; then
+  local baileys_live=false
+  if baileys_running; then
+    baileys_live=true
+  fi
+  if http_ok http://localhost:8000/health; then
     echo "  Server       ✓  http://localhost:8000"
   else
     echo "  Server       ✗  (not running)"
   fi
-  if curl -sf http://localhost:3000/ >/dev/null 2>&1; then
+  if http_ok http://localhost:3000/; then
     echo "  Frontend     ✓  http://localhost:3000"
   else
     echo "  Frontend     ✗  (not running)"
   fi
-  if curl -sf http://localhost:8000/api/sync/connection >/dev/null 2>&1; then
+  if http_ok http://localhost:8000/api/sync/connection; then
     local connected
-    connected=$(curl -sf http://localhost:8000/api/sync/connection | python3 -c "import sys,json; print(json.load(sys.stdin).get('connected',False))" 2>/dev/null)
+    connected=$(http_get http://localhost:8000/api/sync/connection | python3 -c "import sys,json; print(json.load(sys.stdin).get('connected',False))" 2>/dev/null || true)
     if [ "$connected" = "True" ]; then
       echo "  WhatsApp     ✓  Connected"
     else
       echo "  WhatsApp     –  Disconnected"
     fi
+  elif [ -f "$PROPAI_DIR/services/baileys-ingestor/auth/status.json" ]; then
+    local connected
+    connected=$("$(python_cmd)" -c "import json; print(json.load(open('$PROPAI_DIR/services/baileys-ingestor/auth/status.json')).get('connected', False))" 2>/dev/null || true)
+    if { [ "$connected" = "True" ] || [ "$connected" = "true" ]; } && $baileys_live; then
+      echo "  WhatsApp     ✓  Connected (Baileys status file)"
+    elif [ "$connected" = "True" ] || [ "$connected" = "true" ]; then
+      echo "  WhatsApp     –  Last known connected, ingestor not running"
+    else
+      echo "  WhatsApp     –  Disconnected"
+    fi
+  fi
+  if $baileys_live; then
+    echo "  Baileys      ✓  Running"
+  else
+    echo "  Baileys      –  Not running"
   fi
   if [ -f "$PROPAI_DIR/.api_key" ]; then
     local key_preview
@@ -291,9 +429,9 @@ cmd_menu() {
   echo ""
 
   # Show live status
-  if curl -sf http://localhost:8000/api/sync/connection >/dev/null 2>&1; then
+  if http_ok http://localhost:8000/api/sync/connection; then
     local connected
-    connected=$(curl -sf http://localhost:8000/api/sync/connection | python3 -c "import sys,json; print(json.load(sys.stdin).get('connected',False))" 2>/dev/null)
+    connected=$(http_get http://localhost:8000/api/sync/connection | python3 -c "import sys,json; print(json.load(sys.stdin).get('connected',False))" 2>/dev/null || true)
     if [ "$connected" = "True" ]; then
       echo "  ✓ WhatsApp Connected"
     else
@@ -301,7 +439,7 @@ cmd_menu() {
       echo "  – WhatsApp disconnected"
     fi
   else
-    echo "  – Offline  (run 'propai connect')"
+    echo "  – Offline  (run 'propai qr')"
   fi
   echo ""
 
@@ -322,9 +460,13 @@ usage() {
   echo ""
   echo "Commands:"
   echo "  install    Install Python, frontend, and Baileys dependencies"
+  echo "  qr         Open the terminal QR / connection view"
   echo "  connect    Connect WhatsApp to PropAI with Baileys"
+  echo "  start      Start API, frontend, and Baileys in background"
   echo "  dashboard  Open the PropAI dashboard"
   echo "  sync       Start historical group sync"
+  echo "  reindex    Reparse old raw messages and rebuild listings"
+  echo "  memory     Rebuild JID memory profiles from raw messages"
   echo "  doctor     Run health checks"
   echo "  status     Show running services"
   echo "  key        Show API key"
@@ -337,14 +479,30 @@ case "${1:-}" in
   install|setup)
     cmd_install
     ;;
-  connect|waba)
+  qr)
+    cmd_qr
+    ;;
+  connect)
     cmd_connect
+    ;;
+  start)
+    cmd_start
+    ;;
+  waba)
+    cmd_qr
     ;;
   dashboard|lab|admin)
     cmd_dashboard
     ;;
   sync)
     cmd_sync
+    ;;
+  reindex)
+    shift
+    cmd_reindex "$@"
+    ;;
+  memory)
+    cmd_memory
     ;;
   doctor|check)
     cmd_doctor

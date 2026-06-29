@@ -1,140 +1,221 @@
 "use client";
 
-import { useState } from "react";
-import * as api from "@/lib/api";
+import { useEffect, useState } from "react";
 
-function formatPrice(value?: number | null) {
-  if (!value) return "";
-  if (value >= 10000000) {
-    return `${(value / 10000000).toLocaleString("en-IN", { maximumFractionDigits: 2 })} Cr`;
-  }
-  if (value >= 100000) {
-    return `${(value / 100000).toLocaleString("en-IN", { maximumFractionDigits: 2 })} Lac`;
-  }
-  if (value >= 1000) {
-    return `${(value / 1000).toLocaleString("en-IN", { maximumFractionDigits: 2 })} K`;
-  }
-  return value.toLocaleString("en-IN");
+interface Digest {
+  period: string;
+  total_messages: number;
+  new_listings: number;
+  new_requirements: number;
+  top_markets: { market: string; count: number }[];
+  top_buildings: { building: string; count: number }[];
+  top_senders: { sender: string; phone: string; count: number }[];
+}
+
+interface Insight {
+  type: string;
+  title: string;
+  description: string;
+  action: string;
+  priority: string;
+}
+
+interface Coverage {
+  total_markets: number;
+  balanced_markets: number;
+  supply_heavy: number;
+  demand_heavy: number;
+  markets: { market: string; mentions: number; status: string }[];
 }
 
 export default function IntelligencePage() {
-  const [obsId, setObsId] = useState("");
-  const [obs, setObs] = useState<any>(null);
-  const [error, setError] = useState("");
+  const [digest, setDigest] = useState<Digest | null>(null);
+  const [insights, setInsights] = useState<Insight[]>([]);
+  const [coverage, setCoverage] = useState<Coverage | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  async function inspect() {
-    const id = parseInt(obsId);
-    if (!id) return;
-    setError("");
-    setObs(null);
-    try {
-      const data = await api.getObservation(id);
-      setObs(data);
-    } catch (e: any) {
-      setError(e.message);
-    }
+  useEffect(() => {
+    Promise.all([
+      fetch("/api/knowledge/intelligence/digest?days=7").then((r) => r.json()),
+      fetch("/api/knowledge/intelligence/actionable").then((r) => r.json()),
+      fetch("/api/knowledge/intelligence/coverage").then((r) => r.json()),
+    ]).then(([d, i, c]) => {
+      setDigest(d);
+      setInsights(i);
+      setCoverage(c);
+      setLoading(false);
+    });
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="max-w-6xl mx-auto p-6">
+        <div className="text-center py-12 text-zinc-500">Loading intelligence...</div>
+      </div>
+    );
   }
 
   return (
-    <div className="space-y-4">
-      <h2 className="text-lg font-bold">Intelligence</h2>
-
-      <div className="flex gap-2 items-center">
-        <input
-          type="number"
-          placeholder="Message ID..."
-          value={obsId}
-          onChange={e => setObsId(e.target.value)}
-          onKeyDown={e => e.key === "Enter" && inspect()}
-          className="px-2.5 py-1.5 bg-[#0d1117] border border-[rgba(255,255,255,0.1)] rounded-lg text-sm text-[#e2e8f0] w-40"
-        />
-        <button onClick={inspect} className="px-3 py-1.5 bg-[#3EE88A] text-[#04100a] rounded-lg text-sm font-bold">Inspect</button>
+    <div className="max-w-6xl mx-auto p-6">
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold">Market Intelligence</h1>
+        <p className="text-sm text-zinc-500 mt-1">
+          Proactive insights from your knowledge base
+        </p>
       </div>
 
-      {error && <div className="text-red-500 text-sm">{error}</div>}
-
-      {obs && <EvidenceInspector obs={obs} />}
-
-      {!obs && !error && (
-        <div className="text-[#64748b] text-center py-10">Enter a message ID to inspect details.</div>
-      )}
-    </div>
-  );
-}
-
-function EvidenceInspector({ obs }: { obs: any }) {
-  const raw = obs.raw || {};
-  const parsed = obs.parsed || {};
-  const resolver = obs.resolver || {};
-
-  return (
-    <div className="inspector space-y-4">
-      <h3 className="text-base font-bold text-[#f0f6fc]">Message Inspector</h3>
-
-      <div className="grid grid-cols-3 gap-2 text-sm">
-        {[
-          ["Message #", raw.id],
-          ["Group", raw.group_name],
-          ["Sender", raw.sender],
-          ["Timestamp", raw.timestamp],
-          ["Source", raw.source],
-        ].map(([k, v]) => (
-          <div key={k as string} className="flex">
-            <span className="text-[#8b949e] min-w-[100px]">{k as string}</span>
-            <span className="text-[#c9d1d9]">{v || "—"}</span>
+      {/* Digest */}
+      {digest && (
+        <div className="grid grid-cols-4 gap-4 mb-6">
+          <div className="bg-zinc-900 rounded-xl p-4">
+            <div className="text-3xl font-bold text-white">{digest.total_messages}</div>
+            <div className="text-sm text-zinc-400">Messages (7 days)</div>
           </div>
-        ))}
-      </div>
-
-      <div>
-        <h4 className="text-sm font-semibold text-[#f0f6fc] mb-2">Raw Message</h4>
-        <div className="bg-[#0d1117] border border-[#30363d] rounded-md p-3 text-sm whitespace-pre-wrap">{raw.message || ""}</div>
-      </div>
-
-      {parsed.id && (
-        <div>
-          <h4 className="text-sm font-semibold text-[#f0f6fc] mb-2">Property Details</h4>
-          <div className="grid grid-cols-2 gap-2 text-sm">
-            {[
-              ["Intent", parsed.intent],
-              ["Principal", parsed.principal],
-              ["BHK", parsed.bhk],
-              ["Price", formatPrice(parsed.price)],
-              ["Area", parsed.area_sqft ? `${parsed.area_sqft} sqft` : ""],
-              ["Furnishing", parsed.furnishing],
-              ["Location", parsed.location_raw],
-              ["Landmark", parsed.landmark_name],
-              ["Building", parsed.building_name],
-              ["Market", parsed.micro_market],
-              ["Confidence", parsed.confidence ? `${(parsed.confidence * 100).toFixed(0)}%` : ""],
-            ].map(([k, v]) => v ? (
-              <div key={k as string} className="flex">
-                <span className="text-[#8b949e] min-w-[100px]">{k as string}</span>
-                <span className="text-[#c9d1d9]">{v}</span>
-              </div>
-            ) : null)}
+          <div className="bg-blue-900/30 rounded-xl p-4 border border-blue-800/50">
+            <div className="text-3xl font-bold text-blue-400">{digest.new_listings}</div>
+            <div className="text-sm text-zinc-400">New Listings</div>
+          </div>
+          <div className="bg-green-900/30 rounded-xl p-4 border border-green-800/50">
+            <div className="text-3xl font-bold text-green-400">{digest.new_requirements}</div>
+            <div className="text-sm text-zinc-400">New Requirements</div>
+          </div>
+          <div className="bg-purple-900/30 rounded-xl p-4 border border-purple-800/50">
+            <div className="text-3xl font-bold text-purple-400">{coverage?.total_markets || 0}</div>
+            <div className="text-sm text-zinc-400">Active Markets</div>
           </div>
         </div>
       )}
 
-      {resolver.id && (
-        <div>
-          <h4 className="text-sm font-semibold text-[#f0f6fc] mb-2">Location Match</h4>
-          <div className="grid grid-cols-2 gap-2 text-sm">
-            {[
-              ["Building", resolver.building_name],
-              ["Landmark", resolver.landmark_name],
-              ["Method", resolver.method],
-              ["Input Match", resolver.parser_confidence ? `${(resolver.parser_confidence * 100).toFixed(0)}%` : ""],
-              ["Location Match", resolver.resolver_confidence ? `${(resolver.resolver_confidence * 100).toFixed(0)}%` : ""],
-              ["Final", resolver.final_confidence ? `${(resolver.final_confidence * 100).toFixed(0)}%` : ""],
-              ["Issue", resolver.failure_category],
-            ].map(([k, v]) => v ? (
-              <div key={k as string} className="flex">
-                <span className="text-[#8b949e] min-w-[100px]">{k as string}</span>
-                <span className="text-[#c9d1d9]">{v}</span>
+      {/* Actionable Insights */}
+      {insights.length > 0 && (
+        <div className="mb-6">
+          <h2 className="text-lg font-semibold mb-3">Actionable Insights</h2>
+          <div className="space-y-3">
+            {insights.map((insight, i) => (
+              <div
+                key={i}
+                className={`rounded-xl p-4 border ${
+                  insight.priority === "high"
+                    ? "bg-amber-900/20 border-amber-800/50"
+                    : insight.priority === "medium"
+                    ? "bg-blue-900/20 border-blue-800/50"
+                    : "bg-zinc-800/50 border-zinc-700/50"
+                }`}
+              >
+                <div className="flex items-start justify-between">
+                  <div>
+                    <div className="font-medium">{insight.title}</div>
+                    <div className="text-sm text-zinc-400 mt-1">{insight.description}</div>
+                  </div>
+                  <span
+                    className={`text-xs px-2 py-1 rounded ${
+                      insight.priority === "high"
+                        ? "bg-amber-800 text-amber-200"
+                        : insight.priority === "medium"
+                        ? "bg-blue-800 text-blue-200"
+                        : "bg-zinc-700 text-zinc-300"
+                    }`}
+                  >
+                    {insight.priority}
+                  </span>
+                </div>
               </div>
-            ) : null)}
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Market Coverage */}
+      {coverage && (
+        <div className="mb-6">
+          <h2 className="text-lg font-semibold mb-3">Market Coverage</h2>
+          <div className="grid grid-cols-3 gap-3 mb-4">
+            <div className="bg-green-900/20 rounded-lg p-3 text-center">
+              <div className="text-2xl font-bold text-green-400">{coverage.balanced_markets}</div>
+              <div className="text-xs text-zinc-400">Balanced</div>
+            </div>
+            <div className="bg-blue-900/20 rounded-lg p-3 text-center">
+              <div className="text-2xl font-bold text-blue-400">{coverage.supply_heavy}</div>
+              <div className="text-xs text-zinc-400">Supply Heavy</div>
+            </div>
+            <div className="bg-amber-900/20 rounded-lg p-3 text-center">
+              <div className="text-2xl font-bold text-amber-400">{coverage.demand_heavy}</div>
+              <div className="text-xs text-zinc-400">Demand Heavy</div>
+            </div>
+          </div>
+          <div className="bg-zinc-900 rounded-xl overflow-hidden">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-zinc-800">
+                  <th className="text-left px-4 py-2 text-zinc-400">Market</th>
+                  <th className="text-left px-4 py-2 text-zinc-400">Mentions</th>
+                  <th className="text-left px-4 py-2 text-zinc-400">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {coverage.markets.slice(0, 10).map((m, i) => (
+                  <tr key={i} className="border-b border-zinc-800/50">
+                    <td className="px-4 py-2">{m.market}</td>
+                    <td className="px-4 py-2 text-zinc-400">{m.mentions}</td>
+                    <td className="px-4 py-2">
+                      <span
+                        className={`text-xs px-2 py-0.5 rounded ${
+                          m.status === "balanced"
+                            ? "bg-green-800 text-green-200"
+                            : m.status === "supply_heavy"
+                            ? "bg-blue-800 text-blue-200"
+                            : m.status === "demand_heavy"
+                            ? "bg-amber-800 text-amber-200"
+                            : "bg-zinc-700 text-zinc-300"
+                        }`}
+                      >
+                        {m.status.replace("_", " ")}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Top Activity */}
+      {digest && (
+        <div className="grid grid-cols-2 gap-6">
+          <div>
+            <h2 className="text-lg font-semibold mb-3">Top Markets</h2>
+            <div className="bg-zinc-900 rounded-xl p-4">
+              {digest.top_markets.length === 0 ? (
+                <div className="text-zinc-500 text-sm">No market data yet</div>
+              ) : (
+                <div className="space-y-2">
+                  {digest.top_markets.map((m, i) => (
+                    <div key={i} className="flex items-center justify-between">
+                      <span>{m.market}</span>
+                      <span className="text-zinc-400 text-sm">{m.count} mentions</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+          <div>
+            <h2 className="text-lg font-semibold mb-3">Top Senders</h2>
+            <div className="bg-zinc-900 rounded-xl p-4">
+              {digest.top_senders.length === 0 ? (
+                <div className="text-zinc-500 text-sm">No sender data yet</div>
+              ) : (
+                <div className="space-y-2">
+                  {digest.top_senders.map((s, i) => (
+                    <div key={i} className="flex items-center justify-between">
+                      <span>{s.sender}</span>
+                      <span className="text-zinc-400 text-sm">{s.count} messages</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}
