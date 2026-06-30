@@ -685,9 +685,21 @@ export default function BrokerWorkspacePage() {
                       >
                         <div className="flex items-center justify-between">
                           <span className="text-[10px] text-[#64748b] font-mono">#{m.id}</span>
-                          <span className="text-[10px] text-[#64748b]">
-                            {new Date(m.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                          </span>
+                          <div className="flex items-center gap-1.5">
+                            {m.lag_seconds != null && (
+                              <span
+                                className={`w-1.5 h-1.5 rounded-full ${
+                                  m.lag_seconds < 30 ? "bg-emerald-500" :
+                                  m.lag_seconds < 300 ? "bg-yellow-500" :
+                                  m.lag_seconds < 3600 ? "bg-orange-500" : "bg-red-500"
+                                }`}
+                                title={`Lag: ${m.lag_seconds < 60 ? `${m.lag_seconds}s` : `${Math.round(m.lag_seconds / 60)}m`}`}
+                              />
+                            )}
+                            <span className="text-[10px] text-[#64748b]">
+                              {new Date(m.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                            </span>
+                          </div>
                         </div>
                         <div className="text-xs font-semibold text-[#f0f6fc] truncate">
                           {displayGroupName(m.group_name) ? (
@@ -726,9 +738,21 @@ export default function BrokerWorkspacePage() {
                           <span className="text-[11px] font-bold text-[#e2e8f0] truncate max-w-[180px]">
                             <Users className="w-3 h-3 text-[#64748b]" strokeWidth={1.5} /> {g.title}
                           </span>
-                          <span className="text-[9px] bg-[#111820] text-[#64748b] px-1.5 py-0.5 rounded-full">
-                            {g.count} msg
-                          </span>
+                          <div className="flex items-center gap-1.5">
+                            {g.latest.lag_seconds != null && (
+                              <span
+                                className={`w-1.5 h-1.5 rounded-full ${
+                                  g.latest.lag_seconds < 30 ? "bg-emerald-500" :
+                                  g.latest.lag_seconds < 300 ? "bg-yellow-500" :
+                                  g.latest.lag_seconds < 3600 ? "bg-orange-500" : "bg-red-500"
+                                }`}
+                                title={`Lag: ${g.latest.lag_seconds < 60 ? `${g.latest.lag_seconds}s` : `${Math.round(g.latest.lag_seconds / 60)}m`}`}
+                              />
+                            )}
+                            <span className="text-[9px] bg-[#111820] text-[#64748b] px-1.5 py-0.5 rounded-full">
+                              {g.count} msg
+                            </span>
+                          </div>
                         </div>
                         <div className="text-[10px] text-[#64748b] truncate mt-1">
                           Last: {g.latest.sender}

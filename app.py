@@ -1465,7 +1465,7 @@ async def inbox_threads(limit: int = 500, offset: int = 0):
                             WHEN rm.group_name IS NOT NULL AND TRIM(rm.group_name) != '' AND rm.group_name NOT IN ('seed', 'seed-bot') THEN rm.group_name
                             ELSE COALESCE(NULLIF(TRIM(rm.sender_phone), ''), NULLIF(TRIM(rm.sender_jid), ''), NULLIF(TRIM(rm.sender), ''), 'unknown')
                         END
-                    ORDER BY datetime(rm.created_at) DESC, rm.id DESC
+                    ORDER BY COALESCE(datetime(rm.timestamp), datetime(rm.created_at)) DESC, rm.id DESC
                 ) AS rn,
                 COUNT(*) OVER (
                     PARTITION BY
@@ -1487,10 +1487,12 @@ async def inbox_threads(limit: int = 500, offset: int = 0):
             id, group_name, sender, sender_jid, sender_phone, message, message_type,
             timestamp, source, event_id, message_uid, raw_payload, synced_at, pipeline_version,
             conversation_type, conversation_key, message_count,
-            display_name AS conversation_name
+            display_name AS conversation_name,
+            timestamp AS latest_message_at,
+            ROUND((julianday('now') - julianday(COALESCE(timestamp, '1970-01-01'))) * 86400) AS lag_seconds
         FROM ranked
         WHERE rn = 1
-        ORDER BY datetime(timestamp) DESC, id DESC
+        ORDER BY COALESCE(datetime(timestamp), '1970-01-01') DESC, id DESC
         LIMIT ? OFFSET ?
         """,
         (limit, offset),

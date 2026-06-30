@@ -54,6 +54,8 @@ export interface InboxThread extends RawMessage {
   conversation_key: string;
   message_count: number;
   conversation_name: string;
+  latest_message_at?: string;
+  lag_seconds?: number;
 }
 
 export interface ParsedObservation {
