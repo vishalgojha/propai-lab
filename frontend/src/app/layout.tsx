@@ -298,7 +298,37 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 
           {/* ═══════ Main Content ═══════ */}
           <main className="flex-1 overflow-hidden">
-            {children}
+            {/* ═══ Persistent Connection Bar ═══ */}
+            <div className="flex items-center gap-2.5 px-5 py-1.5 border-b border-[rgba(255,255,255,0.04)] bg-[#0a0e14]">
+              <div className="flex items-center gap-1.5">
+                {waConnected ? (
+                  <span className="flex items-center gap-1 text-[11px] text-emerald-400 font-medium">
+                    <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse" />
+                    Connected
+                  </span>
+                ) : (
+                  <a href="/connections" className="flex items-center gap-1.5 text-[11px] text-amber-400 font-medium hover:text-amber-300 transition-colors">
+                    <span className="w-1.5 h-1.5 bg-amber-400 rounded-full" />
+                    Disconnected — Tap to reconnect
+                  </a>
+                )}
+              </div>
+              {waConnected && whatsapp?.phone && (
+                <span className="text-[11px] text-[#64748b] font-mono">{whatsapp.phone}</span>
+              )}
+              {waConnected && whatsapp?.connected_since && (
+                <span className="text-[10px] text-[#4a5568]">
+                  Since {new Date(whatsapp.connected_since).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                </span>
+              )}
+              <div className="flex-1" />
+              <a href="/connections" className="text-[9px] text-[#4a5568] hover:text-[#94a3b8] uppercase tracking-wider transition-colors">
+                Settings
+              </a>
+            </div>
+            <div className="p-5 h-[calc(100%-36px)] overflow-y-auto">
+              {children}
+            </div>
           </main>
         </div>
       </body>
