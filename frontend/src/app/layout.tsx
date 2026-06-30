@@ -4,50 +4,63 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import "./globals.css";
 import { getConnectionState, getWhatsAppStatus, ConnectionState, WhatsAppStatus, searchMessages } from "@/lib/api";
+import {
+  MessageSquare,
+  Users,
+  BarChart3,
+  BookOpen,
+  Search,
+  Settings,
+  Zap,
+  Building2,
+  Briefcase,
+  Brain,
+  ClipboardCheck,
+  GraduationCap,
+  Radar,
+  MapPin,
+  Hash,
+  ChevronRight,
+  Wifi,
+  WifiOff,
+  X,
+} from "lucide-react";
 
 const navSections = [
   {
-    title: "My Business",
+    title: "Conversations",
     items: [
-      { href: "/connections", label: "Connection Center", icon: "🔌" },
-      { href: "/inbox", label: "Market Inbox", icon: "💬" },
-      { href: "/my/inventory", label: "My Inventory", icon: "🏠" },
-      { href: "/my/buyers", label: "My Buyers", icon: "🙋" },
-      { href: "/promotions", label: "Promotions", icon: "📣" },
-      { href: "/people", label: "People", icon: "📇" },
+      { href: "/inbox", label: "Market Inbox", icon: MessageSquare },
+      { href: "/audit", label: "Network Intel", icon: Radar },
     ],
   },
   {
-    title: "Market",
+    title: "Clients",
     items: [
-      { href: "/knowledge", label: "Knowledge Base", icon: "📚" },
-      { href: "/requirements", label: "Extracted Requirements", icon: "📋" },
-      { href: "/brokers", label: "Brokers", icon: "🤝" },
-      { href: "/groups", label: "Groups", icon: "👥" },
-      { href: "/market", label: "Markets", icon: "🗺️" },
+      { href: "/my/buyers", label: "Buyers", icon: Users },
+      { href: "/my/inventory", label: "Inventory", icon: Building2 },
+      { href: "/brokers", label: "Brokers", icon: Briefcase },
+      { href: "/requirements", label: "Requirements", icon: ClipboardCheck },
     ],
   },
   {
     title: "Intelligence",
     items: [
-      { href: "/", label: "Dashboard", icon: "📊" },
-      { href: "/intelligence", label: "Market Actions", icon: "🧠" },
-      { href: "/chat?tab=review", label: "Review Center", icon: "✅" },
-      { href: "/chat", label: "AI Chat", icon: "🤖" },
-      { href: "/audit", label: "WhatsApp Audit", icon: "🔬" },
-      { href: "/trainer", label: "Knowledge Trainer", icon: "🎓" },
-      { href: "/settings", label: "Settings", icon: "⚙" },
+      { href: "/", label: "Dashboard", icon: BarChart3 },
+      { href: "/chat", label: "AI Chat", icon: Brain },
+      { href: "/knowledge", label: "Knowledge Base", icon: BookOpen },
+      { href: "/market", label: "Markets", icon: MapPin },
+      { href: "/groups", label: "Groups", icon: Users },
     ],
   },
-];
-
-const QUICK_ACTIONS = [
-  { label: "2 BHK under 2 Cr", icon: "🏠", query: "2 bhk" },
-  { label: "1 BHK rental", icon: "🔑", query: "1 bhk" },
-  { label: "Bandra market listings", icon: "📍", query: "bandra" },
-  { label: "Commercial offices", icon: "🏢", query: "commercial" },
-  { label: "Active brokers", icon: "🤝", query: "" },
-  { label: "Recent extracted requirements", icon: "📋", query: "" },
+  {
+    title: "Workspace",
+    items: [
+      { href: "/connections", label: "Connection", icon: Wifi },
+      { href: "/trainer", label: "Trainer", icon: GraduationCap },
+      { href: "/settings", label: "Settings", icon: Settings },
+    ],
+  },
 ];
 
 function PaletteModal({ open, onClose }: { open: boolean; onClose: () => void }) {
@@ -57,7 +70,6 @@ function PaletteModal({ open, onClose }: { open: boolean; onClose: () => void })
   const inputRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
 
-  // Flatten grouped results for keyboard navigation
   const flatItems = results ? Object.values(results).flat() : [];
 
   useEffect(() => {
@@ -98,173 +110,58 @@ function PaletteModal({ open, onClose }: { open: boolean; onClose: () => void })
       else if (r.micro_market && !r.broker_name) navigate(`/market?q=${encodeURIComponent(r.micro_market)}`);
       else if (r.building_name) navigate(`/search?q=${encodeURIComponent(r.building_name)}`);
       else if (r.broker_name) navigate(`/brokers?q=${encodeURIComponent(r.broker_name)}`);
-      else navigate(`/chat?q=${encodeURIComponent(query)}`);
     }
     else if (e.key === "Escape") onClose();
-  }
-
-  const GROUP_ICONS: Record<string, string> = {
-    listings: "🏗️", requirements: "📋", brokers: "🤝", buildings: "🏢", markets: "🗺️", messages: "💬",
-  };
-  const GROUP_LABELS: Record<string, string> = {
-    listings: "Parser Candidates", requirements: "Extracted Requirements", brokers: "Brokers", buildings: "Buildings", markets: "Markets", messages: "Messages",
-  };
-
-  function renderGroupItem(group: string, item: any, i: number, globalIdx: number) {
-    let title = "", subtitle = "";
-    if (group === "listings") {
-      title = [item.bhk, item.building_name, item.micro_market].filter(Boolean).join(" · ");
-      subtitle = `₹${Number(item.price || 0).toLocaleString()} · ${item.broker_name || ""} · ${item.observation_count || 1} posts`;
-    } else if (group === "requirements") {
-      title = [item.bhk, item.micro_market].filter(Boolean).join(" · ");
-      subtitle = `${item.broker_name || ""} · wants ${item.intent?.toLowerCase()}`;
-    } else if (group === "brokers") {
-      title = item.name;
-      subtitle = `${item.listing_count || 0} listings · ${item.requirement_count || 0} requirements · ${item.market_count || 0} markets`;
-    } else if (group === "buildings") {
-      title = item.name;
-      subtitle = `${item.occurrence_count || 0} messages · ${item.broker_count || 0} brokers${item.micro_market ? ` · ${item.micro_market}` : ""}`;
-    } else if (group === "markets") {
-      title = item.micro_market;
-      subtitle = `${item.observation_count || 0} posts · ${item.building_count || 0} buildings · ${item.broker_count || 0} brokers`;
-    } else if (group === "messages") {
-      title = (item.message || "").slice(0, 80);
-      subtitle = `${item.group_name || ""} · ${item.sender || ""}`;
-    }
-
-    return (
-      <button
-        key={`${group}-${i}`}
-        onClick={() => {
-          if (group === "listings") navigate(`/search?q=${encodeURIComponent(item.building_name || item.micro_market || query)}`);
-          else if (group === "requirements") navigate(`/requirements?q=${encodeURIComponent(item.micro_market || query)}`);
-          else if (group === "brokers") navigate(`/brokers/${item.id || `?q=${encodeURIComponent(item.name)}`}`);
-          else if (group === "buildings") navigate(`/search?q=${encodeURIComponent(item.name)}`);
-          else if (group === "markets") navigate(`/market?q=${encodeURIComponent(item.micro_market)}`);
-          else if (group === "messages") navigate(`/inbox?highlight=${item.id}`);
-        }}
-        className={`w-full flex items-start gap-3 px-3 py-2 rounded-lg text-left transition-colors ${
-          globalIdx === selectedIdx ? "bg-blue-600/20 border border-blue-500/30" : "hover:bg-[rgba(255,255,255,0.03)]"
-        }`}
-      >
-        <span className="text-sm mt-0.5 shrink-0">{GROUP_ICONS[group] || "📄"}</span>
-        <div className="flex-1 min-w-0">
-          <div className="text-xs font-medium text-white truncate">{title || "—"}</div>
-          {subtitle && <div className="text-[10px] text-[#64748b] truncate mt-0.5">{subtitle}</div>}
-        </div>
-      </button>
-    );
-  }
-
-  function renderResultGroups() {
-    if (!results) return null;
-    let globalIdx = -1;
-    const groups = Object.entries(results).filter(([, items]) => items.length > 0);
-    if (groups.length === 0) {
-      return (
-        <div className="text-center text-[#64748b] text-xs py-6">
-          No results.{" "}
-          <button onClick={() => navigate(`/chat?q=${encodeURIComponent(query)}`)} className="text-blue-400 hover:underline">
-            Ask AI Chat instead →
-          </button>
-        </div>
-      );
-    }
-    return groups.map(([group, items]) => {
-      const icon = GROUP_ICONS[group] || "📄";
-      const label = GROUP_LABELS[group] || group;
-      return (
-        <div key={group} className="mb-2">
-          <div className="text-[10px] font-semibold text-[#64748b] uppercase tracking-wider mb-1 px-2 flex items-center gap-1.5">
-            <span>{icon}</span> {label} <span className="font-normal">({items.length})</span>
-          </div>
-          {items.slice(0, 4).map((item: any, i: number) => {
-            globalIdx++;
-            return renderGroupItem(group, item, i, globalIdx);
-          })}
-        </div>
-      );
-    });
   }
 
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center pt-[15vh]" onClick={onClose}>
-      <div className="fixed inset-0 bg-black/60" />
-      <div
-        className="relative bg-[#0d1117] border border-[rgba(255,255,255,0.1)] rounded-xl w-full max-w-2xl shadow-2xl overflow-hidden"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center gap-2 px-4 py-3 border-b border-[rgba(255,255,255,0.06)]">
-          <span className="text-[#64748b] text-sm">🔍</span>
+    <div className="fixed inset-0 z-[1000] flex items-start justify-center pt-[15vh] bg-black/50 backdrop-blur-sm" onClick={onClose}>
+      <div className="w-full max-w-lg bg-[#0d1117] border border-[rgba(255,255,255,0.08)] rounded-2xl shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center gap-3 px-4 py-3 border-b border-[rgba(255,255,255,0.06)]">
+          <Search className="w-4 h-4 text-[#64748b]" />
           <input
             ref={inputRef}
-            type="text"
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            onChange={e => setQuery(e.target.value)}
             onKeyDown={onKeyDown}
-            placeholder="Search extracted listings, requirements, brokers, buildings, markets..."
-            className="flex-1 bg-transparent text-sm text-white placeholder-[#64748b] outline-none"
+            placeholder="Search properties, brokers, buildings..."
+            className="flex-1 bg-transparent text-sm text-white placeholder-[#4a5568] outline-none"
           />
-          <kbd className="text-[10px] text-[#64748b] border border-[rgba(255,255,255,0.08)] px-1.5 py-0.5 rounded">ESC</kbd>
+          <kbd className="text-[10px] text-[#4a5568] bg-[rgba(255,255,255,0.05)] px-1.5 py-0.5 rounded">ESC</kbd>
         </div>
-
-        {/* Quick actions (shown when no query) */}
-        {!query.trim() && (
-          <div className="p-3">
-            <div className="text-[10px] font-semibold text-[#64748b] uppercase tracking-wider mb-2 px-1">Quick Actions</div>
-            <div className="grid grid-cols-2 gap-1.5">
-              <button onClick={() => navigate("/knowledge")} className="flex items-center gap-2 text-xs text-[#94a3b8] hover:text-white hover:bg-[rgba(255,255,255,0.04)] rounded-lg px-2.5 py-2 transition-colors text-left">
-                <span>📚</span> Knowledge Base
-              </button>
-              <button onClick={() => navigate("/inbox")} className="flex items-center gap-2 text-xs text-[#94a3b8] hover:text-white hover:bg-[rgba(255,255,255,0.04)] rounded-lg px-2.5 py-2 transition-colors text-left">
-                <span>💬</span> Market Inbox
-              </button>
-              <button onClick={() => navigate("/requirements")} className="flex items-center gap-2 text-xs text-[#94a3b8] hover:text-white hover:bg-[rgba(255,255,255,0.04)] rounded-lg px-2.5 py-2 transition-colors text-left">
-                <span>📋</span> Extracted Requirements
-              </button>
-              <button onClick={() => navigate("/brokers")} className="flex items-center gap-2 text-xs text-[#94a3b8] hover:text-white hover:bg-[rgba(255,255,255,0.04)] rounded-lg px-2.5 py-2 transition-colors text-left">
-                <span>🤝</span> Active Brokers
-              </button>
-              <button onClick={() => navigate("/market")} className="flex items-center gap-2 text-xs text-[#94a3b8] hover:text-white hover:bg-[rgba(255,255,255,0.04)] rounded-lg px-2.5 py-2 transition-colors text-left">
-                <span>🗺️</span> Markets
-              </button>
-              <button onClick={() => navigate("/chat")} className="flex items-center gap-2 text-xs text-[#94a3b8] hover:text-white hover:bg-[rgba(255,255,255,0.04)] rounded-lg px-2.5 py-2 transition-colors text-left">
-                <span>🤖</span> Ask AI Chat
-              </button>
-              <button onClick={() => navigate("/audit")} className="flex items-center gap-2 text-xs text-[#94a3b8] hover:text-white hover:bg-[rgba(255,255,255,0.04)] rounded-lg px-2.5 py-2 transition-colors text-left">
-                <span>🔬</span> WhatsApp Audit
-              </button>
-            </div>
-            <div className="grid grid-cols-2 gap-1.5 mt-1.5">
-              {QUICK_ACTIONS.map((a) => (
-                <button key={a.label} onClick={() => setQuery(a.query)}
-                  className="flex items-center gap-2 text-xs text-[#94a3b8] hover:text-white hover:bg-[rgba(255,255,255,0.04)] rounded-lg px-2.5 py-2 transition-colors text-left"
-                >
-                  <span>{a.icon}</span> {a.label}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Search results — grouped by entity type */}
-        {query.trim() && (
-          <div className="max-h-96 overflow-y-auto p-2">
-            {results === null ? (
-              <div className="text-center text-[#64748b] text-xs py-6">Searching...</div>
-            ) : (
-              renderResultGroups()
+        {results && (
+          <div className="max-h-80 overflow-y-auto py-2">
+            {Object.entries(results).map(([group, items]) => (
+              <div key={group}>
+                <div className="px-4 py-1.5 text-[10px] font-bold text-[#4a5568] uppercase tracking-wider">{group}</div>
+                {items.map((item: any, i: number) => {
+                  const globalIdx = flatItems.indexOf(item);
+                  const isSelected = globalIdx === selectedIdx;
+                  return (
+                    <button
+                      key={i}
+                      onClick={() => {
+                        if (item.name && item.occurrence_count !== undefined) navigate(`/search?q=${encodeURIComponent(item.name)}`);
+                        else if (item.micro_market) navigate(`/market?q=${encodeURIComponent(item.micro_market)}`);
+                        else if (item.building_name) navigate(`/search?q=${encodeURIComponent(item.building_name)}`);
+                        else if (item.broker_name) navigate(`/brokers?q=${encodeURIComponent(item.broker_name)}`);
+                      }}
+                      className={`w-full text-left px-4 py-2 text-sm flex items-center gap-3 ${isSelected ? "bg-blue-500/10 text-white" : "text-[#94a3b8] hover:bg-[rgba(255,255,255,0.03)]"}`}
+                    >
+                      <span className="text-xs text-[#4a5568] w-4 text-right">{globalIdx + 1}</span>
+                      <span className="truncate">{item.name || item.micro_market || item.building_name || item.broker_name}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            ))}
+            {flatItems.length === 0 && (
+              <div className="px-4 py-8 text-center text-sm text-[#4a5568]">No results found</div>
             )}
           </div>
         )}
-
-        <div className="px-4 py-2 border-t border-[rgba(255,255,255,0.06)] flex gap-3 text-[10px] text-[#64748b]">
-          <span>↑↓ Navigate</span>
-          <span>↵ Open</span>
-          <span>Esc Close</span>
-        </div>
       </div>
     </div>
   );
@@ -274,113 +171,111 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   const pathname = usePathname();
   const router = useRouter();
   const [conn, setConn] = useState<ConnectionState | null>(null);
-  const [wa, setWA] = useState<WhatsAppStatus | null>(null);
-  const [sidebarOverride, setSidebarOverride] = useState<boolean | null>(null);
+  const [whatsapp, setWhatsapp] = useState<WhatsAppStatus | null>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
-  const denseRoutes = ["/inbox", "/extractions", "/requirements", "/groups"];
-  const defaultSidebarOpen = !denseRoutes.some((route) => pathname.startsWith(route));
-  const sidebarOpen = sidebarOverride ?? defaultSidebarOpen;
 
-  // Global Ctrl+K / Cmd+K
   useEffect(() => {
-    function handler(e: KeyboardEvent) {
+    const load = async () => {
+      try {
+        const [c, w] = await Promise.all([getConnectionState(), getWhatsAppStatus()]);
+        setConn(c);
+        setWhatsapp(w);
+      } catch {}
+    };
+    load();
+    const t = setInterval(load, 15000);
+    return () => clearInterval(t);
+  }, []);
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === "k") {
         e.preventDefault();
-        setPaletteOpen((p) => !p);
+        setPaletteOpen(p => !p);
       }
-      if (e.key === "Escape") setPaletteOpen(false);
-    }
+    };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, []);
 
-  useEffect(() => {
-    async function poll() {
-      try {
-        const c = await getConnectionState();
-        setConn(c);
-        const w = await getWhatsAppStatus();
-        setWA(w);
-      } catch { /* ignore */ }
-    }
-    poll();
-    const id = setInterval(poll, 5000);
-    return () => clearInterval(id);
-  }, []);
-
-  const connected = conn?.connected ?? false;
-  const dotColor = connected ? "bg-green-500" : "bg-red-500";
-  const label = connected ? `WhatsApp Connected${wa?.phone ? ` • ${wa.phone}` : ""}` : "Disconnected";
+  const waConnected = whatsapp?.connected;
 
   return (
     <html lang="en">
-      <head>
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
-        <link rel="icon" href="/favicon.ico" sizes="any" />
-        <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-        <link rel="apple-touch-icon" href="/icon.png" />
-        <title>PropAI</title>
-      </head>
-      <body className="flex min-h-screen">
+      <body>
         <PaletteModal open={paletteOpen} onClose={() => setPaletteOpen(false)} />
-        {sidebarOpen && (
-          <aside className="w-64 border-r border-[rgba(255,255,255,0.06)] p-4 flex flex-col gap-1 shrink-0 bg-[#0a0e14]">
-            <a href="/" className="mb-5 flex items-center gap-3 rounded-xl border border-[rgba(255,255,255,0.06)] bg-[rgba(255,255,255,0.02)] px-3 py-3 no-underline hover:border-[rgba(62,232,138,0.35)] hover:bg-[rgba(62,232,138,0.06)]">
-              <img src="/icon.png" alt="PropAI" className="h-9 w-9 shrink-0 rounded-lg" />
-              <div className="min-w-0">
-                <div className="text-[15px] font-bold leading-none text-[#e2e8f0]">PropAI</div>
-                <div className="mt-1 text-[10px] uppercase tracking-[0.18em] text-[#64748b]">Broker OS</div>
-              </div>
-            </a>
-            <a href="/companion" className="sidebar-link mb-3 bg-[rgba(62,232,138,0.08)] text-[#3EE88A]">
-              <span>📱</span>
-              <span>PropAI Companion</span>
-            </a>
-            {navSections.map((section) => (
-              <div key={section.title} className="mb-3">
-                <div className="px-3 pb-1.5 pt-1 text-[10px] font-bold uppercase tracking-wider text-[#64748b]">
-                  {section.title}
+
+        <div className="flex h-screen overflow-hidden">
+          {/* ═══════ Sidebar ═══════ */}
+          <aside className="w-56 flex flex-col bg-[#090d12] border-r border-[rgba(255,255,255,0.04)]">
+            {/* Logo */}
+            <div className="px-5 pt-6 pb-5">
+              <div className="flex items-center gap-2.5">
+                <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
+                  <Zap className="w-3.5 h-3.5 text-white" />
                 </div>
-                {section.items.map((item) => (
-                  <a key={item.href} href={item.href} className="sidebar-link">
-                    <span>{item.icon}</span>
-                    <span>{item.label}</span>
-                  </a>
-                ))}
+                <div>
+                  <div className="text-[13px] font-bold text-white tracking-tight leading-none">PropAI</div>
+                  <div className="text-[9px] text-[#4a5568] uppercase tracking-[0.15em] font-medium mt-0.5">Broker OS</div>
+                </div>
               </div>
-            ))}
-            <button
-              onClick={() => setPaletteOpen(true)}
-              className="sidebar-link text-[#64748b] mt-2 border-t border-[rgba(255,255,255,0.06)] pt-3"
-            >
-              <span>🔍</span>
-              <span className="flex-1 text-left">Search</span>
-              <kbd className="text-[10px] text-[#64748b] border border-[rgba(255,255,255,0.08)] px-1 rounded">⌘K</kbd>
-            </button>
+            </div>
+
+            {/* Navigation */}
+            <nav className="flex-1 overflow-y-auto px-3 pb-4">
+              {navSections.map((section) => (
+                <div key={section.title} className="mb-4">
+                  <div className="px-2 mb-1.5 text-[9px] font-bold text-[#4a5568] uppercase tracking-[0.15em]">
+                    {section.title}
+                  </div>
+                  {section.items.map((item) => {
+                    const active = pathname === item.href || (item.href !== "/" && pathname.startsWith(item.href));
+                    const Icon = item.icon;
+                    return (
+                      <button
+                        key={item.href}
+                        onClick={() => router.push(item.href)}
+                        className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-[12px] font-medium transition-all duration-100 mb-0.5 ${
+                          active
+                            ? "bg-[rgba(59,130,246,0.08)] text-white"
+                            : "text-[#64748b] hover:text-[#94a3b8] hover:bg-[rgba(255,255,255,0.02)]"
+                        }`}
+                      >
+                        <Icon className={`w-3.5 h-3.5 ${active ? "text-blue-400" : ""}`} strokeWidth={1.5} />
+                        <span>{item.label}</span>
+                        {active && <div className="ml-auto w-1 h-1 rounded-full bg-blue-400" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              ))}
+            </nav>
+
+            {/* Bottom Status */}
+            <div className="px-4 py-3 border-t border-[rgba(255,255,255,0.04)]">
+              <button
+                onClick={() => setPaletteOpen(true)}
+                className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[11px] text-[#4a5568] hover:text-[#94a3b8] hover:bg-[rgba(255,255,255,0.02)] transition-colors"
+              >
+                <Search className="w-3.5 h-3.5" strokeWidth={1.5} />
+                <span>Search</span>
+                <kbd className="ml-auto text-[9px] bg-[rgba(255,255,255,0.04)] px-1.5 py-0.5 rounded text-[#4a5568]">⌘K</kbd>
+              </button>
+              <div className="flex items-center gap-2 px-2.5 py-1.5 mt-1">
+                {waConnected ? (
+                  <Wifi className="w-3 h-3 text-emerald-500" strokeWidth={1.5} />
+                ) : (
+                  <WifiOff className="w-3 h-3 text-red-500" strokeWidth={1.5} />
+                )}
+                <span className="text-[10px] text-[#4a5568]">
+                  {waConnected ? "WhatsApp Connected" : "WhatsApp Disconnected"}
+                </span>
+              </div>
+            </div>
           </aside>
-        )}
-        <div className="flex-1 flex flex-col min-w-0">
-          <header className="flex items-center gap-3 px-6 py-3 border-b border-[rgba(255,255,255,0.06)]">
-            <button
-              onClick={() => setSidebarOverride(!sidebarOpen)}
-              className="text-[#94a3b8] hover:text-white text-lg leading-none mr-1"
-              title={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
-            >
-              {sidebarOpen ? "◀" : "▶"}
-            </button>
-            <span className={`w-2 h-2 rounded-full ${dotColor}`} />
-            <span className="text-sm text-[#94a3b8]">{label}</span>
-            <button
-              onClick={() => setPaletteOpen(true)}
-              className="ml-auto flex items-center gap-2 text-xs text-[#64748b] hover:text-white border border-[rgba(255,255,255,0.06)] rounded-lg px-3 py-1.5"
-            >
-              <span>🔍</span>
-              Quick search...
-              <kbd className="text-[10px] text-[#64748b] border border-[rgba(255,255,255,0.08)] px-1 rounded">⌘K</kbd>
-            </button>
-          </header>
-          <main className="flex-1 p-6 overflow-auto">
+
+          {/* ═══════ Main Content ═══════ */}
+          <main className="flex-1 overflow-hidden">
             {children}
           </main>
         </div>

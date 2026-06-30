@@ -5,6 +5,25 @@ import * as api from "@/lib/api";
 import WhatsAppMessage from "@/components/WhatsAppMessage";
 import TextSelectionMenu from "@/components/TextSelectionMenu";
 import AddToClientBucket from "@/components/AddToClientBucket";
+import {
+  Users,
+  User,
+  Phone,
+  Search,
+  Video,
+  Info,
+  Sparkles,
+  Building2,
+  MapPin,
+  DollarSign,
+  BedDouble,
+  Ruler,
+  Armchair,
+  Send,
+  Calendar,
+  MessageSquare,
+  ClipboardList,
+} from "lucide-react";
 
 const PAGE_SIZE = 100;
 
@@ -180,7 +199,7 @@ export default function BrokerWorkspacePage() {
     { id: "resolve-building", label: "Resolve Building", icon: "🏢", handler: (t: string) => handleTextAction(t, "resolve-building") },
     { id: "forward-to-client", label: "Forward to Client", icon: "📤", handler: (t: string) => handleTextAction(t, "forward-to-client") },
     { id: "create-follow-up", label: "Create Follow-up", icon: "📅", handler: (t: string) => handleTextAction(t, "create-follow-up") },
-    { id: "summarize", label: "Summarize Selection", icon: "📝", handler: (t: string) => handleTextAction(t, "summarize") },
+    { id: "summarize", label: "Summarize", icon: "📝", handler: (t: string) => handleTextAction(t, "summarize") },
     { id: "ask-propai", label: "Ask PropAI", icon: "✨", handler: (t: string) => handleTextAction(t, "ask-propai") },
   ];
 
@@ -594,7 +613,11 @@ export default function BrokerWorkspacePage() {
                           </span>
                         </div>
                         <div className="text-xs font-semibold text-[#f0f6fc] truncate">
-                          {displayGroupName(m.group_name) ? `👥 ${displayGroupName(m.group_name)}` : `👤 ${displayChatTitle(m)}`}
+                          {displayGroupName(m.group_name) ? (
+                            <span className="flex items-center gap-1"><Users className="w-3 h-3 text-[#64748b]" strokeWidth={1.5} /> {displayGroupName(m.group_name)}</span>
+                          ) : (
+                            <span className="flex items-center gap-1"><User className="w-3 h-3 text-[#64748b]" strokeWidth={1.5} /> {displayChatTitle(m)}</span>
+                          )}
                         </div>
                         <div className="text-[11px] text-[#94a3b8] line-clamp-2 leading-relaxed">
                           <WhatsAppMessage text={m.message || ""} truncate maxLines={2} />
@@ -624,7 +647,7 @@ export default function BrokerWorkspacePage() {
                       >
                         <div className="flex items-center justify-between">
                           <span className="text-[11px] font-bold text-[#e2e8f0] truncate max-w-[180px]">
-                            👥 {g.title}
+                            <Users className="w-3 h-3 text-[#64748b]" strokeWidth={1.5} /> {g.title}
                           </span>
                           <span className="text-[9px] bg-[#111820] text-[#64748b] px-1.5 py-0.5 rounded-full">
                             {g.count} msg
@@ -654,7 +677,7 @@ export default function BrokerWorkspacePage() {
                       >
                         <div className="flex items-center justify-between">
                           <span className="text-[11px] font-bold text-[#e2e8f0] truncate max-w-[180px]">
-                            👤 {d.name}
+                            <User className="w-3 h-3 text-[#64748b]" strokeWidth={1.5} /> {d.name}
                           </span>
                           <span className="text-[9px] bg-[#111820] text-[#64748b] px-1.5 py-0.5 rounded-full">
                             {d.count} msg
@@ -705,7 +728,11 @@ export default function BrokerWorkspacePage() {
               <div className="px-5 py-4 border-b border-[rgba(255,255,255,0.06)] flex items-center justify-between bg-[#0a0e14]">
                 <div className="flex items-center gap-3">
                   <div className="w-9 h-9 rounded-full bg-blue-600/20 text-[#3b82f6] flex items-center justify-center font-bold text-sm shadow-inner">
-                    {selectedMsg.group_name && selectedMsg.group_name !== "seed" ? "👥" : "👤"}
+                    {selectedMsg.group_name && selectedMsg.group_name !== "seed" ? (
+                      <Users className="w-4 h-4 text-[#64748b]" strokeWidth={1.5} />
+                    ) : (
+                      <User className="w-4 h-4 text-[#64748b]" strokeWidth={1.5} />
+                    )}
                   </div>
                   <div className="min-w-0">
                     <h3 className="text-sm font-bold text-[#e2e8f0] truncate max-w-[340px]">
@@ -723,18 +750,18 @@ export default function BrokerWorkspacePage() {
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2">
-                  <button className="h-8 w-8 rounded-md border border-[rgba(255,255,255,0.08)] bg-[#111820] text-[#94a3b8] hover:text-white transition-colors flex items-center justify-center text-xs">
-                    🔍
+                <div className="flex items-center gap-1">
+                  <button className="h-7 w-7 rounded-md border border-[rgba(255,255,255,0.06)] bg-[#111820] text-[#64748b] hover:text-white transition-colors flex items-center justify-center">
+                    <Search className="w-3.5 h-3.5" strokeWidth={1.5} />
                   </button>
-                  <button className="h-8 w-8 rounded-md border border-[rgba(255,255,255,0.08)] bg-[#111820] text-[#94a3b8] hover:text-white transition-colors flex items-center justify-center text-xs">
-                    📞
+                  <button className="h-7 w-7 rounded-md border border-[rgba(255,255,255,0.06)] bg-[#111820] text-[#64748b] hover:text-white transition-colors flex items-center justify-center">
+                    <Phone className="w-3.5 h-3.5" strokeWidth={1.5} />
                   </button>
-                  <button className="h-8 w-8 rounded-md border border-[rgba(255,255,255,0.08)] bg-[#111820] text-[#94a3b8] hover:text-white transition-colors flex items-center justify-center text-xs">
-                    📹
+                  <button className="h-7 w-7 rounded-md border border-[rgba(255,255,255,0.06)] bg-[#111820] text-[#64748b] hover:text-white transition-colors flex items-center justify-center">
+                    <Video className="w-3.5 h-3.5" strokeWidth={1.5} />
                   </button>
-                  <button className="h-8 w-8 rounded-md border border-[rgba(255,255,255,0.08)] bg-[#111820] text-[#94a3b8] hover:text-white transition-colors flex items-center justify-center text-xs">
-                    ℹ️
+                  <button className="h-7 w-7 rounded-md border border-[rgba(255,255,255,0.06)] bg-[#111820] text-[#64748b] hover:text-white transition-colors flex items-center justify-center">
+                    <Info className="w-3.5 h-3.5" strokeWidth={1.5} />
                   </button>
                   {selectedMsg.sender_phone && (
                     <a
