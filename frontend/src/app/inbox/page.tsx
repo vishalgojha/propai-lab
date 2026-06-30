@@ -169,6 +169,28 @@ export default function BrokerWorkspacePage() {
       ? directChats.length === 0
       : uniqueThreads.length === 0;
 
+  const groupedConversationMessages = (() => {
+    const grouped: Record<string, api.RawMessage[]> = {};
+    conversationMessages.forEach((message) => {
+      const rawDate = message.timestamp || "";
+      const date = rawDate ? new Date(rawDate.endsWith("Z") ? rawDate : `${rawDate}Z`) : new Date();
+      const label = Number.isNaN(date.getTime())
+        ? "Unknown date"
+        : date.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
+      if (!grouped[label]) grouped[label] = [];
+      grouped[label].push(message);
+    });
+    return Object.entries(grouped);
+  })();
+
+  const selectedTitle = selectedMsg ? displayChatTitle(selectedMsg) : "";
+  const selectedSubtitle =
+    selectedMsg?.sender_phone && displayPhoneString(selectedMsg.sender_phone) !== selectedMsg.sender_phone
+      ? displayPhoneString(selectedMsg.sender_phone)
+      : selectedMsg?.sender || "";
+  const selectedCount =
+    selectedMsg && "message_count" in selectedMsg ? selectedMsg.message_count : conversationMessages.length;
+
   // 3. Load Conversation Thread (Center Panel)
   const selectConversation = async (msg: api.RawMessage) => {
     setSelectedMsg(msg);
@@ -592,28 +614,40 @@ export default function BrokerWorkspacePage() {
           {selectedMsg ? (
             <>
               {/* Chat Thread Header */}
-              <div className="px-6 py-4 border-b border-[rgba(255,255,255,0.06)] flex items-center justify-between bg-[#0a0e14]">
+              <div className="px-5 py-4 border-b border-[rgba(255,255,255,0.06)] flex items-center justify-between bg-[#0a0e14]">
                 <div className="flex items-center gap-3">
                   <div className="w-9 h-9 rounded-full bg-blue-600/20 text-[#3b82f6] flex items-center justify-center font-bold text-sm shadow-inner">
                     {selectedMsg.group_name && selectedMsg.group_name !== "seed" ? "👥" : "👤"}
                   </div>
-                  <div>
-                    <h3 className="text-sm font-bold text-[#e2e8f0]">
-                      {displayChatTitle(selectedMsg)}
+                  <div className="min-w-0">
+                    <h3 className="text-sm font-bold text-[#e2e8f0] truncate max-w-[340px]">
+                      {selectedTitle}
                     </h3>
-                    <div className="text-[10px] text-[#64748b] flex items-center gap-2 mt-0.5">
-                          <span>{selectedMsg.sender}</span>
-                          {selectedMsg.sender_phone && (
-                            <>
-                              <span>•</span>
-                              <span className="font-mono">{displayPhoneString(selectedMsg.sender_phone)}</span>
-                            </>
-                          )}
+                    <div className="text-[10px] text-[#64748b] flex items-center gap-2 mt-0.5 flex-wrap">
+                      {selectedSubtitle && <span className="truncate">{selectedSubtitle}</span>}
+                      {selectedCount ? (
+                        <>
+                          <span>•</span>
+                          <span>{selectedCount.toLocaleString()} messages</span>
+                        </>
+                      ) : null}
                     </div>
                   </div>
                 </div>
 
-                <div className="flex gap-2">
+                <div className="flex items-center gap-2">
+                  <button className="h-8 w-8 rounded-md border border-[rgba(255,255,255,0.08)] bg-[#111820] text-[#94a3b8] hover:text-white transition-colors flex items-center justify-center text-xs">
+                    🔍
+                  </button>
+                  <button className="h-8 w-8 rounded-md border border-[rgba(255,255,255,0.08)] bg-[#111820] text-[#94a3b8] hover:text-white transition-colors flex items-center justify-center text-xs">
+                    📞
+                  </button>
+                  <button className="h-8 w-8 rounded-md border border-[rgba(255,255,255,0.08)] bg-[#111820] text-[#94a3b8] hover:text-white transition-colors flex items-center justify-center text-xs">
+                    📹
+                  </button>
+                  <button className="h-8 w-8 rounded-md border border-[rgba(255,255,255,0.08)] bg-[#111820] text-[#94a3b8] hover:text-white transition-colors flex items-center justify-center text-xs">
+                    ℹ️
+                  </button>
                   {selectedMsg.sender_phone && (
                     <a
                       href={getWaLink(selectedMsg.sender_phone)}
@@ -636,83 +670,80 @@ export default function BrokerWorkspacePage() {
               </div>
 
               {/* Chat Thread Message Area */}
-              <div className="flex-1 overflow-y-auto p-6 space-y-4">
+              <div className="flex-1 overflow-y-auto px-5 py-4">
                 {loadingConv ? (
                   <div className="h-full flex items-center justify-center text-xs text-[#64748b]">
                     Loading message thread...
                   </div>
                 ) : (
-                  <>
-                    {conversationMessages.map((m) => {
-                      const isMainMsg = m.id === selectedMsg.id;
-                      // Outgoing check or seed parser bot check
-                      const isSelf = m.sender === "seed-bot" || m.sender === "system" || m.sender === "owner";
-                      const bubbleBg = isMainMsg
-                        ? "bg-[#1d4ed8]/30 border border-[#3b82f6]"
-                        : isSelf
-                        ? "bg-emerald-950/40 border border-emerald-800/30 ml-auto"
-                        : "bg-[#0d1117] border border-[rgba(255,255,255,0.06)]";
-                      
-                      const intentBadgeColor =
-                        ({ SELL: "green", BUY: "purple", RENT: "yellow" } as Record<string, string>)[m.message_type?.toUpperCase()] || "blue";
-
-                      return (
-                        <div
-                          key={m.id}
-                          className={`max-w-[70%] rounded-2xl p-4 space-y-2 relative transition-all group ${
-                            isSelf ? "text-right ml-auto" : ""
-                          } ${bubbleBg}`}
-                        >
-                          <div className={`flex items-center gap-2 text-[10px] text-[#64748b] ${
-                            isSelf ? "justify-end" : "justify-between"
-                          }`}>
-                            <span className="font-semibold text-[#cbd5e1]">{m.sender}</span>
-                            <span>
-                              {new Date(m.timestamp).toLocaleDateString([], {
-                                day: "numeric",
-                                month: "short",
-                              })}{" "}
-                              {new Date(m.timestamp).toLocaleTimeString([], {
-                                hour: "2-digit",
-                                minute: "2-digit",
-                              })}
-                            </span>
-                          </div>
-                          <div className="text-xs text-[#e2e8f0] whitespace-pre-wrap leading-relaxed text-left">
-                            <WhatsAppMessage text={m.message || ""} />
-                          </div>
-                          
-                          <div className="flex items-center justify-between pt-1 border-t border-[rgba(255,255,255,0.04)]">
-                            <div>
-                              {m.message_type && (
-                                <span className={`badge badge-${intentBadgeColor} text-[8px] px-1 py-0`}>
-                                  {m.message_type}
-                                </span>
-                              )}
-                            </div>
-                            
-                            <button
-                              onClick={() => {
-                                setSelectedMsg(m);
-                                loadMessageDetails(m.id);
-                              }}
-                              className="text-[9px] text-[#3EE88A] hover:underline opacity-0 group-hover:opacity-100 transition-opacity"
-                            >
-                              Analyze details →
-                            </button>
-                          </div>
-
-                          {isMainMsg && (
-                            <span className="absolute -top-1.5 -left-1.5 flex h-3 w-3">
-                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
-                              <span className="relative inline-flex rounded-full h-3 w-3 bg-blue-500"></span>
-                            </span>
-                          )}
+                  <div className="space-y-5">
+                    {groupedConversationMessages.map(([dateLabel, dayMessages]) => (
+                      <div key={dateLabel} className="space-y-3">
+                        <div className="flex items-center gap-3">
+                          <div className="h-px flex-1 bg-[rgba(255,255,255,0.06)]" />
+                          <span className="text-[10px] uppercase tracking-[0.3em] text-[#64748b]">{dateLabel}</span>
+                          <div className="h-px flex-1 bg-[rgba(255,255,255,0.06)]" />
                         </div>
-                      );
-                    })}
+                        <div className="space-y-3">
+                          {dayMessages.map((m, idx) => {
+                            const isLatestMsg = idx === dayMessages.length - 1 && dayMessages === groupedConversationMessages[groupedConversationMessages.length - 1]?.[1];
+                            const isSelf = m.sender === "seed-bot" || m.sender === "system" || m.sender === "owner";
+                            const bubbleBg = isLatestMsg
+                              ? "bg-[#1d4ed8]/15 border border-[#3b82f6]/40"
+                              : isSelf
+                              ? "bg-emerald-950/40 border border-emerald-800/30 ml-auto"
+                              : "bg-[#0d1117] border border-[rgba(255,255,255,0.06)]";
+
+                            const intentBadgeColor =
+                              ({ SELL: "green", BUY: "purple", RENT: "yellow" } as Record<string, string>)[m.message_type?.toUpperCase()] || "blue";
+
+                            return (
+                              <div
+                                key={m.id}
+                                className={`max-w-[72%] rounded-2xl p-4 space-y-2 relative transition-all group ${
+                                  isSelf ? "text-right ml-auto" : ""
+                                } ${bubbleBg}`}
+                              >
+                                <div className={`flex items-center gap-2 text-[10px] text-[#64748b] ${isSelf ? "justify-end" : "justify-between"}`}>
+                                  <span className="font-semibold text-[#cbd5e1] truncate max-w-[220px]">{m.sender}</span>
+                                  <span>
+                                    {new Date(m.timestamp).toLocaleTimeString([], {
+                                      hour: "2-digit",
+                                      minute: "2-digit",
+                                    })}
+                                  </span>
+                                </div>
+                                <div className="text-xs text-[#e2e8f0] whitespace-pre-wrap leading-relaxed text-left">
+                                  <WhatsAppMessage text={m.message || ""} />
+                                </div>
+
+                                <div className="flex items-center justify-between pt-1 border-t border-[rgba(255,255,255,0.04)]">
+                                  <div>
+                                    {m.message_type && (
+                                      <span className={`badge badge-${intentBadgeColor} text-[8px] px-1 py-0`}>
+                                        {m.message_type}
+                                      </span>
+                                    )}
+                                  </div>
+
+                                  <button
+                                    onClick={() => {
+                                      setSelectedMsg(m);
+                                      loadMessageDetails(m.id);
+                                    }}
+                                    className="text-[9px] text-[#3EE88A] hover:underline opacity-0 group-hover:opacity-100 transition-opacity"
+                                  >
+                                    Analyze details →
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ))}
                     <div ref={threadEndRef} />
-                  </>
+                  </div>
                 )}
               </div>
             </>
