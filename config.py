@@ -15,20 +15,6 @@ BAILEYS_STATUS_FILE = Path(os.getenv("BAILEYS_STATUS_FILE", str(BAILEYS_AUTH_DIR
 HOST = os.getenv("LAB_HOST", "0.0.0.0")
 PORT = int(os.getenv("LAB_PORT", "8000"))
 
-# Evolution API webhook expects this
-WEBHOOK_SECRET = os.getenv("LAB_WEBHOOK_SECRET", "dev-secret-do-not-use-in-prod")
-
-# Evolution API — for historical sync and management
-EVOLUTION_API_URL = os.getenv("EVOLUTION_API_URL", "http://localhost:8080")
-_EVOLUTION_API_KEY_ENV = os.getenv("EVOLUTION_API_KEY", "")
-EVOLUTION_API_KEY = _EVOLUTION_API_KEY_ENV or (LAB_DIR / ".api_key").read_text().strip() if (LAB_DIR / ".api_key").exists() else ""
-EVOLUTION_INSTANCE = os.getenv("EVOLUTION_INSTANCE", "propai-scraper")
-EVOLUTION_SYNC_DELAY_MS = int(os.getenv("EVOLUTION_SYNC_DELAY_MS", "500"))
-
-# PropAI webhook URL that Evolution API sends events to
-# Set this if the auto-detected URL (host.docker.internal:PORT) is wrong
-PROPAI_WEBHOOK_URL = os.getenv("PROPAI_WEBHOOK_URL", "")
-
 # Evidence Engine paths (reused)
 EVIDENCE_DIR = PROJECT_DIR / "evidence"
 REGISTRY_DIR = PROJECT_DIR / "registry"

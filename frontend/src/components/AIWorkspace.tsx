@@ -24,6 +24,41 @@ function toText(value: unknown): string {
   return typeof value === "string" ? value : value == null ? "" : String(value);
 }
 
+function displayText(value: unknown): string {
+  return toText(value)
+    .replace(/\*\*([^*]+)\*\*/g, "$1")
+    .replace(/__([^_]+)__/g, "$1")
+    .replace(/\*([^*\n]+)\*/g, "$1")
+    .replace(/_([^_\n]+)_/g, "$1")
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/^#{1,6}\s+/gm, "")
+    .replace(/^\s*[-*]\s+/gm, "")
+    .trim();
+}
+
+function sanitizeWorkspaceValue(value: unknown, key = ""): unknown {
+  if (typeof value === "string") {
+    if (["href", "url", "source", "source_name", "source_type", "origin", "origin_source", "dataset", "table"].includes(key)) {
+      return value;
+    }
+    return displayText(value);
+  }
+  if (Array.isArray(value)) return value.map((item) => sanitizeWorkspaceValue(item));
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>).map(([entryKey, entryValue]) => [
+        entryKey,
+        sanitizeWorkspaceValue(entryValue, entryKey),
+      ]),
+    );
+  }
+  return value;
+}
+
+function sanitizeWorkspaceBlock(block: WorkspaceBlock): WorkspaceBlock {
+  return sanitizeWorkspaceValue(block) as WorkspaceBlock;
+}
+
 function sourceToken(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
 }
@@ -589,10 +624,10 @@ function renderBlock(block: WorkspaceBlock, onPromptSelect?: (value: string) => 
 export default function AIWorkspace({ response, onPromptSelect }: Props) {
   const [selectedSource, setSelectedSource] = useState<string | null>(null);
   const rawBlocks = useMemo(() => response.blocks && response.blocks.length > 0
-    ? response.blocks
+    ? response.blocks.map(sanitizeWorkspaceBlock)
     : (() => {
-        const summary = summarizeContent(response.content || "No response.");
-        return [{ type: "summary", title: "Workspace", ...summary }];
+        const summary = summarizeContent(displayText(response.content || "No response."));
+        return [{ type: "summary", title: "Workspace", ...summary }].map(sanitizeWorkspaceBlock);
       })(), [response.blocks, response.content]);
   const statusSteps = response.status_steps || [];
   const sources = useMemo(

@@ -24,7 +24,7 @@ class SyncJob:
     For IGR: one year/region = one job.
     """
     source: str                # "whatsapp", "igr", "maharera", etc.
-    instance: str              # e.g., "propai" for Evolution instance
+    instance: str              # e.g., "propai-baileys" for WhatsApp instance
     group_id: str              # e.g., WhatsApp JID, IGR dataset key
     group_name: str = ""       # human-readable label
     meta: dict = field(default_factory=dict)  # source-specific metadata
@@ -44,8 +44,7 @@ class SourceRecord:
     """
     One raw record from a source, before any parsing.
 
-    Fields mirror the Evolution API message structure but are generic
-    enough for any source.
+    Fields are generic enough for any source.
     """
     source: str                # "whatsapp", "igr", etc.
     instance: str              # source instance identifier

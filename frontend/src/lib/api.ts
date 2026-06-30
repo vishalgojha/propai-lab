@@ -12,16 +12,24 @@ async function fetchJSON<T>(url: string, init?: RequestInit, timeoutMs = API_TIM
     });
     if (!res.ok) {
       const body = await res.text();
-      let message = body;
+      let message = body.trim();
       try {
         const parsed = JSON.parse(body);
         message = parsed.message || parsed.detail || body;
       } catch {
-        message = body;
+        if (!message) {
+          message = "Backend API did not return a response. Check that http://localhost:8000 is running.";
+        }
       }
       throw new Error(`${res.status} ${res.statusText}: ${message}`);
     }
-    return res.json();
+    const body = await res.text();
+    if (!body) return undefined as T;
+    try {
+      return JSON.parse(body) as T;
+    } catch {
+      throw new Error(`Expected JSON from ${url}, got: ${body.slice(0, 200)}`);
+    }
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError") {
       throw new Error(`Request timed out: ${url}`);
@@ -38,6 +46,8 @@ export interface RawMessage {
   sender: string;
   sender_jid?: string;
   sender_phone?: string;
+  broker_name?: string;
+  broker_phone?: string;
   message: string;
   message_type: string;
   timestamp: string;
@@ -573,6 +583,16 @@ export function getDashboardRequirements(limit = 20) {
   return fetchJSON<any[]>(`/dashboard/requirements?limit=${limit}`);
 }
 
+export function getMyRequirements(limit = 200) {
+  return fetchJSON<any[]>(`/my/requirements?limit=${limit}`);
+}
+
+export function getMyInventory(limit = 200, status = "") {
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (status) params.set("status", status);
+  return fetchJSON<any[]>(`/my/inventory?${params.toString()}`);
+}
+
 export function matchRequirements() {
   return fetchJSON<{ matched: number }>("/requirements/match", { method: "POST" });
 }
@@ -1072,6 +1092,13 @@ export function askPropAI(text: string, messageId?: number, context?: any) {
     method: "POST",
     body: JSON.stringify({ text, message_id: messageId, context }),
   }, 30000);
+}
+
+export function inlineResolveTrainerTerm(text: string, rawMessageId: number | undefined, status: string, notes = "") {
+  return fetchJSON<{ status: string; term: string }>("/trainer/inline-resolve", {
+    method: "POST",
+    body: JSON.stringify({ text, raw_message_id: rawMessageId, status, notes }),
+  });
 }
 
 export function createFollowUp(data: {

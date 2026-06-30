@@ -37,6 +37,9 @@ Copy `.env.example` to `.env` if you want to override defaults.
 
 ```text
 PROPAI_WEBHOOK_URL=http://localhost:8000/webhook
+PROPAI_API_URL=http://localhost:8000
+PROPAI_ENABLE_SELF_CHAT_AGENT=true
+PROPAI_SELF_CHAT_URL=http://localhost:8000/api/baileys/self-chat
 PROPAI_INSTANCE_NAME=propai-baileys
 BAILEYS_AUTH_DIR=auth
 PROPAI_INGEST_PRIVATE_CHATS=false
@@ -46,6 +49,8 @@ PROPAI_CAPTURE_HISTORY_SYNC=false
 ```
 
 `PROPAI_GROUP_ALLOWLIST` and `PROPAI_GROUP_DENYLIST` accept comma-separated group JIDs or case-insensitive name fragments.
+
+`PROPAI_ENABLE_SELF_CHAT_AGENT=true` enables replies in your WhatsApp "Message yourself" chat. It does not enable all private-chat ingestion. Agent replies are sent back to the self chat with the prefix `PropAI agent:` so they are visually separate from your own sent messages.
 
 ## History
 

@@ -106,6 +106,8 @@ class SqliteStorage(Storage):
             "CREATE INDEX IF NOT EXISTS idx_raw_sender_jid ON raw_messages(sender_jid)",
             "CREATE INDEX IF NOT EXISTS idx_raw_sender_phone ON raw_messages(sender_phone)",
             "ALTER TABLE ai_suggestions ADD COLUMN rejection_reason TEXT DEFAULT NULL",
+            "ALTER TABLE knowledge_trainer ADD COLUMN raw_message_id INTEGER DEFAULT NULL",
+            "ALTER TABLE knowledge_trainer ADD COLUMN resolver_decision_id INTEGER DEFAULT NULL",
         ]
         for sql in migs:
             try:
@@ -1925,9 +1927,9 @@ class SqliteStorage(Storage):
         if existing:
             self.db.execute(
                 """UPDATE source_sync_jobs
-                   SET group_name = ?, meta = ?, status = ?, updated_at = ?
+                   SET instance = ?, group_name = ?, meta = ?, status = ?, updated_at = ?
                    WHERE id = ?""",
-                (group_name, meta, status, now, existing["id"])
+                (instance, group_name, meta, status, now, existing["id"])
             )
             self._commit()
             return existing["id"]
@@ -1939,6 +1941,20 @@ class SqliteStorage(Storage):
         )
         self._commit()
         return cur.lastrowid
+
+    def prune_sync_jobs(self, source: str, instance: str,
+                         keep_jids: set) -> int:
+        if not keep_jids:
+            return 0
+        placeholders = ",".join("?" for _ in keep_jids)
+        cur = self.db.execute(
+            f"""DELETE FROM source_sync_jobs
+               WHERE source = ?
+               AND group_id NOT IN ({placeholders})""",
+            [source] + list(keep_jids)
+        )
+        self._commit()
+        return cur.rowcount
 
     def update_sync_job(self, job_id: int, **updates):
         sets = ", ".join(f"{k} = ?" for k in updates)
@@ -3347,17 +3363,18 @@ class SqliteStorage(Storage):
 
     # ── Knowledge Trainer ───────────────────────────────────────────
 
-    def add_trainer_term(self, term: str, context: str = "", status: str = "pending") -> dict | None:
+    def add_trainer_term(self, term: str, context: str = "", status: str = "pending", raw_message_id: int | None = None) -> dict | None:
         """Add a term to the knowledge trainer queue."""
         try:
             self.db.execute("""
-                INSERT INTO knowledge_trainer (term, context, status)
-                VALUES (?, ?, ?)
+                INSERT INTO knowledge_trainer (term, context, status, raw_message_id)
+                VALUES (?, ?, ?, ?)
                 ON CONFLICT(term) DO UPDATE SET
                     frequency = frequency + 1,
                     last_seen = strftime('%Y-%m-%dT%H:%M:%SZ', 'now'),
-                    context = ?
-            """, (term.strip(), context, status, context))
+                    context = ?,
+                    raw_message_id = COALESCE(?, raw_message_id)
+            """, (term.strip(), context, status, raw_message_id, context, raw_message_id))
             self.db.commit()
             return {"term": term.strip(), "status": status}
         except Exception as e:
@@ -3367,17 +3384,25 @@ class SqliteStorage(Storage):
         """Get terms from the knowledge trainer queue."""
         if status:
             rows = self.db.execute("""
-                SELECT id, term, context, frequency, first_seen, last_seen, status, resolved_by, resolved_at
-                FROM knowledge_trainer
-                WHERE status = ?
-                ORDER BY frequency DESC, last_seen DESC
+                SELECT kt.id, kt.term, kt.context, kt.frequency,
+                       kt.first_seen, kt.last_seen, kt.status,
+                       kt.resolved_by, kt.resolved_at, kt.raw_message_id,
+                       rm.message AS raw_message, kt.notes
+                FROM knowledge_trainer kt
+                LEFT JOIN raw_messages rm ON rm.id = kt.raw_message_id
+                WHERE kt.status = ?
+                ORDER BY kt.frequency DESC, kt.last_seen DESC
                 LIMIT ?
             """, (status, limit)).fetchall()
         else:
             rows = self.db.execute("""
-                SELECT id, term, context, frequency, first_seen, last_seen, status, resolved_by, resolved_at
-                FROM knowledge_trainer
-                ORDER BY frequency DESC, last_seen DESC
+                SELECT kt.id, kt.term, kt.context, kt.frequency,
+                       kt.first_seen, kt.last_seen, kt.status,
+                       kt.resolved_by, kt.resolved_at, kt.raw_message_id,
+                       rm.message AS raw_message, kt.notes
+                FROM knowledge_trainer kt
+                LEFT JOIN raw_messages rm ON rm.id = kt.raw_message_id
+                ORDER BY kt.frequency DESC, kt.last_seen DESC
                 LIMIT ?
             """, (limit,)).fetchall()
 
@@ -3386,19 +3411,81 @@ class SqliteStorage(Storage):
                 "id": r[0], "term": r[1], "context": r[2],
                 "frequency": r[3], "first_seen": r[4], "last_seen": r[5],
                 "status": r[6], "resolved_by": r[7], "resolved_at": r[8],
+                "raw_message_id": r[9], "raw_message": r[10] or "",
+                "notes": r[11] or "",
             }
             for r in rows
         ]
 
-    def resolve_trainer_term(self, term_id: int, status: str, resolved_by: str = "user") -> bool:
+    def resolve_trainer_term(self, term_id: int, status: str, resolved_by: str = "user", notes: str = "") -> bool:
         """Resolve a trainer term (mark as building, society, landmark, locality, etc.)."""
         try:
+            row = self.db.execute(
+                "SELECT term, raw_message_id FROM knowledge_trainer WHERE id = ?", (term_id,)
+            ).fetchone()
+            if not row:
+                return False
+            term = row[0]
+            raw_msg_id = row[1]
             self.db.execute("""
                 UPDATE knowledge_trainer
-                SET status = ?, resolved_by = ?, resolved_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
+                SET status = ?, resolved_by = ?, resolved_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now'),
+                    notes = ?
                 WHERE id = ?
-            """, (status, resolved_by, term_id))
-            self.db.commit()
+            """, (status, resolved_by, notes, term_id))
+
+            # Create knowledge alias for entity types so future parses recognize them
+            if status in ("building", "society", "landmark", "locality"):
+                entity_type_map = {
+                    "building": "building",
+                    "society": "building",
+                    "landmark": "landmark",
+                    "locality": "market",
+                }
+                canonical = term.strip()
+
+                # Extract locality and price from the source message
+                locality = ""
+                price_min = 0.0
+                price_max = 0.0
+                if raw_msg_id:
+                    msg_row = self.db.execute(
+                        "SELECT message FROM raw_messages WHERE id = ?", (raw_msg_id,)
+                    ).fetchone()
+                    if msg_row:
+                        msg = msg_row[0] or ""
+                        price_pattern = re.compile(r'(\d+(?:\.\d+)?)\s*(cr|lac|lakh|k)\b', re.IGNORECASE)
+                        price_matches = price_pattern.findall(msg)
+                        if price_matches:
+                            vals = []
+                            for amt, unit in price_matches:
+                                val = float(amt)
+                                if unit.lower() in ("cr", "crore"):
+                                    val *= 10000000
+                                elif unit.lower() in ("lac", "lakh"):
+                                    val *= 100000
+                                elif unit.lower() == "k":
+                                    val *= 1000
+                                vals.append(val)
+                            if vals:
+                                price_min = min(vals)
+                                price_max = max(vals)
+                        known_localities = {"bandra", "andheri", "santacruz", "khar", "juhu", "goregaon", "malad", "worli", "powai", "bkc", "lokhandwala", "versova", "vile parle", "kurla", "ghatkopar", "mulund", "thane", "vashi", "nerul", "belapur", "kharghar", "wadala", "prabhadevi", "lower parel", "dadar", "mahim", "matunga", "sion", "kings circle", "byculla", "marine lines", "churchgate", "colaba", "cuffe parade", "walkeshwar", "malabar hill", "peddar road", "altamount road", "nepean sea road", "breach candy", "tardeo", "grant road", "mumbai central", "mahim", "pali hill", "mount mary", "bandstand", "chapel road", "turner road", "waterfield road", "linking road", "sv road", "marve road", "new link road", "oshiwara", "jogeshwari", "kandivali", "borivali", "dahisar", "mira road", "bhayandar", "vasai", "virar", "panvel", "kamothe", "new panvel", "ulwe", "ghansoli", "rabale", "airoli", "koparkhairane", "ghodbunder road", "kolshet road", "pokhran road", "hiranandani", "kasarvadavali", "manpada", "dombivili", "kalyan", "ambarnath", "badlapur", "karjat", "neral"}
+                        msg_lower = msg.lower()
+                        for loc in known_localities:
+                            if loc in msg_lower:
+                                locality = loc.title()
+                                break
+
+                try:
+                    self.db.execute("""
+                        INSERT OR IGNORE INTO knowledge_aliases (alias, canonical, entity_type, confidence, source, created_at, locality, price_min, price_max)
+                        VALUES (?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), ?, ?, ?)
+                    """, (canonical.lower(), canonical, entity_type_map.get(status, "building"), 0.85, f"trainer:{resolved_by}", locality, price_min, price_max))
+                    self.db.commit()
+                except Exception:
+                    pass
+
             return True
         except Exception:
             return False
@@ -3461,62 +3548,95 @@ class SqliteStorage(Storage):
                        "jodi", "sea", "view", "road", "nagar", "clear", "hindu", "available",
                        "facing", "neg", "lacs", "experience", "luxury", "brand", "new"}
 
-        # Sample raw messages
-        rows = self.db.execute("""
-            SELECT id, message FROM raw_messages
-            WHERE LENGTH(message) > 50
-            ORDER BY RANDOM()
+        # Amenities and marketing fluff — never real entity names
+        amenity_words = {
+            "easy truck access", "truck access", "direct inventory", "direct entry",
+            "individual", "sea view", "city view", "garden view", "pool view",
+            "open view", "natural light", "vastu compliant", "vastu", "corner",
+            "end unit", "high floor", "low floor", "penthouse", "duplex",
+            "renovated", "newly painted", "semi furnished", "fully furnished",
+            "unfurnished", "brand new", "newly built", "under construction",
+            "ready to move", "immediate possession", "negotiable", "nearest",
+            "opposite", "behind", "beside", "near", "close to", "walking distance",
+            "prime location", "premium location", "peaceful", "quiet", "serene",
+            "spacious", "compact", "affordable", "budget", "value for money",
+            "rare", "exclusive", "must see", "must visit", "owner", "deal direct",
+        }
+
+        # Sample raw messages — target recent unresolved resolver decisions first, fallback to random
+        unresolved = self.db.execute("""
+            SELECT rm.id, rm.message FROM resolver_decisions rd
+            JOIN parsed_output p ON p.id = rd.parsed_id
+            JOIN raw_messages rm ON rm.id = p.raw_message_id
+            WHERE rd.method = 'unresolved'
+            ORDER BY rd.id DESC
             LIMIT 200
         """).fetchall()
 
+        if not unresolved:
+            unresolved = self.db.execute("""
+                SELECT id, message FROM raw_messages
+                WHERE LENGTH(message) > 50
+                ORDER BY RANDOM()
+                LIMIT 200
+            """).fetchall()
+
         # Extract potential building names
         term_freq = {}
-        # More specific pattern: requires a proper noun followed by a building type suffix
-        building_pattern = re.compile(r'\b([A-Z][a-z]{2,}(?:\s+[A-Z][a-z]{2,})*)\s+(?:Bil\.?|Bldg\.?|Building|Apt\.?|Complex|Tower|Heights?|Park|Residency|Enclave|Villa|Society|CHS|Housing|Apartment|Ivory|Heights|Residences?|Nest|Abode|Haven|Vihar|Vatika|Gardens?|Groves?|Court|House|Mansion|Lodge|Retreat|Arcade|Plaza|Center|Centre|Quarters?)\b', re.IGNORECASE)
-        # Also match short proper nouns that appear as building names in context
+        match_details = {}
+        building_pattern = re.compile(r'\b([A-Z][a-z]{2,}(?:\s+[A-Z][a-z]{2,})*)\s+(?:Bil\.?|Bldg\.?|Building|Apt\.?|Complex|Tower|Heights?|Park|Residency|Enclave|Villa|Society|CHS|Housing|Apartment|Ivory|Residences?|Nest|Abode|Haven|Vihar|Vatika|Quarters?)\b', re.IGNORECASE)
         short_pattern = re.compile(r'\b([A-Z][a-z]{3,})\s+(?:Bil|Bldg|Bldg|Apt|CHS|Society|Tower|Heights)\b', re.IGNORECASE)
 
-        for row in rows:
+        for row in unresolved:
             msg = row[1] or ""
+            msg_id = row[0]
             for match in building_pattern.finditer(msg):
                 term = match.group(1).strip()
                 term_lower = term.lower()
 
-                # Skip if already known
                 if term_lower in known_buildings or term_lower in known_markets or term_lower in known_landmarks:
                     continue
-
-                if len(term) < 3:
+                if len(term) < 3 or len(term) > 30:
                     continue
-
-                # Skip stop words
                 if term_lower in stop_words:
                     continue
-
-                # Skip terms with newlines or special characters
-                if '\n' in term or '\r' in term or len(term) > 30:
+                if term_lower in amenity_words or any(aw in msg.lower() for aw in amenity_words):
+                    continue
+                if '\n' in term or '\r' in term:
+                    continue
+                if not term[0].isupper():
+                    continue
+                if "Tenant:" in msg[:msg.find(term)]:
+                    continue
+                if "Pvt. Ltd." in msg[msg.find(term):msg.find(term)+80] or " LLP" in term or " Ltd" in term:
                     continue
 
                 if term not in term_freq:
-                    term_freq[term] = {"count": 0, "contexts": []}
-                term_freq[term]["count"] += 1
-                if len(term_freq[term]["contexts"]) < 3:
-                    term_freq[term]["contexts"].append(msg[:100])
+                    term_freq[term] = 0
+                    match_details[term] = {"contexts": [], "raw_ids": []}
+                term_freq[term] += 1
+                if len(match_details[term]["contexts"]) < 3:
+                    match_details[term]["contexts"].append(msg[:120])
+                    match_details[term]["raw_ids"].append(msg_id)
 
-        # Sort by frequency and return top
-        sorted_terms = sorted(term_freq.items(), key=lambda x: x[1]["count"], reverse=True)[:limit]
-
-        return [
-            {
+        sorted_terms = sorted(term_freq.items(), key=lambda x: x[1], reverse=True)
+        results = []
+        for term, freq in sorted_terms:
+            if freq < 2:
+                continue
+            if len(results) >= limit:
+                break
+            details = match_details[term]
+            results.append({
                 "term": term,
-                "frequency": data["count"],
-                "contexts": data["contexts"],
+                "frequency": freq,
+                "contexts": details["contexts"],
+                "raw_ids": details["raw_ids"],
                 "already_in_trainer": self.db.execute(
                     "SELECT id FROM knowledge_trainer WHERE term = ?", (term,)
                 ).fetchone() is not None,
-            }
-            for term, data in sorted_terms
-        ]
+            })
+        return results
 
 
     # ── Knowledge Records (New Architecture) ───────────────────────
@@ -3586,32 +3706,35 @@ class SqliteStorage(Storage):
         return count
 
     def add_knowledge_alias(self, alias: str, canonical: str, entity_type: str,
-                            confidence: float = 1.0, source: str = "system") -> bool:
+                            confidence: float = 1.0, source: str = "system",
+                            locality: str = "", price_min: float = 0, price_max: float = 0) -> bool:
         """Add an alias mapping."""
         try:
             self.db.execute("""
-                INSERT OR REPLACE INTO knowledge_aliases (alias, canonical, entity_type, confidence, source)
-                VALUES (?, ?, ?, ?, ?)
-            """, (alias.lower().strip(), canonical, entity_type, confidence, source))
+                INSERT OR REPLACE INTO knowledge_aliases (alias, canonical, entity_type, confidence, source, locality, price_min, price_max)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, (alias.lower().strip(), canonical, entity_type, confidence, source, locality, price_min, price_max))
             self.db.commit()
             return True
         except Exception:
             return False
 
-    def resolve_alias(self, term: str, entity_type: str | None = None) -> str | None:
-        """Resolve a term to its canonical form via aliases."""
+    def resolve_alias(self, term: str, entity_type: str | None = None, locality: str | None = None) -> dict | None:
+        """Resolve a term to its canonical form via aliases. Returns canonical, locality, price range."""
         term_lower = term.lower().strip()
         if entity_type:
             row = self.db.execute(
-                "SELECT canonical FROM knowledge_aliases WHERE alias = ? AND entity_type = ?",
+                "SELECT canonical, locality, price_min, price_max FROM knowledge_aliases WHERE alias = ? AND entity_type = ?",
                 (term_lower, entity_type)
             ).fetchone()
         else:
             row = self.db.execute(
-                "SELECT canonical FROM knowledge_aliases WHERE alias = ?",
+                "SELECT canonical, locality, price_min, price_max FROM knowledge_aliases WHERE alias = ?",
                 (term_lower,)
             ).fetchone()
-        return row[0] if row else None
+        if row:
+            return {"canonical": row[0], "locality": row[1] or "", "price_min": row[2] or 0, "price_max": row[3] or 0}
+        return None
 
     def search_knowledge_records(self, query: str, limit: int = 20,
                                   content_type: str | None = None,
@@ -4022,6 +4145,24 @@ class ClientStorage:
             WHERE c.status = 'active'
             ORDER BY cr.is_primary DESC
         """).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_all_active_candidates(self, status: str = None, limit: int = 200) -> list[dict]:
+        """Get saved inventory candidates across active clients."""
+        self.ensure_client_tables()
+        query = """
+            SELECT cpc.*, c.name as client_name, c.phone as client_phone
+            FROM client_property_candidates cpc
+            JOIN clients c ON cpc.client_id = c.id
+            WHERE c.status = 'active'
+        """
+        params: list = []
+        if status:
+            query += " AND cpc.status = ?"
+            params.append(status)
+        query += " ORDER BY cpc.confidence DESC, cpc.created_at DESC LIMIT ?"
+        params.append(limit)
+        rows = self.db.execute(query, params).fetchall()
         return [dict(r) for r in rows]
 
     # ── Client Property Candidates ────────────────────────────────────

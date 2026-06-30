@@ -9,7 +9,7 @@ export default function MarketInventoryPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    api.getListings(50, 0).then((data) => {
+    api.getMyInventory(200).then((data) => {
       setListings(data || []);
       setLoading(false);
     }).catch(() => setLoading(false));
@@ -19,8 +19,8 @@ export default function MarketInventoryPage() {
     <div className="max-w-5xl">
       <div className="flex items-end justify-between">
         <div>
-          <h2 className="text-lg font-bold text-[#e2e8f0]">Market Inventory</h2>
-          <p className="mt-1 text-sm text-[#64748b]">Property listings observed across WhatsApp groups.</p>
+          <h2 className="text-lg font-bold text-[#e2e8f0]">My Inventory</h2>
+          <p className="mt-1 text-sm text-[#64748b]">Saved inventory mapped to your active clients.</p>
         </div>
         <button className="rounded-lg bg-[#111820] border border-[rgba(255,255,255,0.08)] px-4 py-2 text-sm text-[#e2e8f0] hover:bg-[#1a2332] transition-colors">
           + Log Listing
@@ -29,13 +29,13 @@ export default function MarketInventoryPage() {
 
       {loading ? (
         <div className="mt-6 rounded-2xl border border-[rgba(255,255,255,0.06)] bg-[#0d1117] p-8 text-center text-sm text-[#64748b]">
-          Loading market inventory...
+          Loading your inventory...
         </div>
       ) : listings.length === 0 ? (
         <div className="mt-6 rounded-2xl border border-[rgba(255,255,255,0.06)] bg-[#0d1117] p-8 text-center">
-          <div className="text-sm font-semibold text-[#e2e8f0]">No market listings observed yet.</div>
+          <div className="text-sm font-semibold text-[#e2e8f0]">No saved inventory yet.</div>
           <div className="mx-auto mt-2 max-w-xl text-sm text-[#64748b]">
-            Property listings from WhatsApp conversations will appear here as they are observed.
+            Save listings to a client bucket from inbox actions to see them here.
           </div>
         </div>
       ) : (
@@ -45,11 +45,11 @@ export default function MarketInventoryPage() {
               <div className="flex items-start justify-between gap-4">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 text-[10px] text-[#64748b]">
-                    <span className="badge badge-blue text-[8px]">MARKET LISTING</span>
-                    <span>Posted by</span>
-                    <span className="text-[#cbd5e1] font-semibold">{listing.broker_name || "Unknown Broker"}</span>
-                    {listing.broker_phone && (
-                      <span className="font-mono">{listing.broker_phone}</span>
+                    <span className="badge badge-blue text-[8px]">MY INVENTORY</span>
+                    <span>Client</span>
+                    <span className="text-[#cbd5e1] font-semibold">{listing.client_name || "Unknown Client"}</span>
+                    {listing.client_phone && (
+                      <span className="font-mono">{listing.client_phone}</span>
                     )}
                   </div>
                   <div className="flex items-center gap-2 text-xs text-[#64748b] mt-1">
@@ -66,11 +66,10 @@ export default function MarketInventoryPage() {
                     {listing.area_sqft && <span className="badge text-[9px] bg-[rgba(255,255,255,0.05)] text-[#94a3b8]">{listing.area_sqft} sqft</span>}
                     {listing.furnishing && <span className="badge text-[9px] bg-[rgba(255,255,255,0.05)] text-[#94a3b8]">{listing.furnishing}</span>}
                   </div>
-                  {listing.observation_count > 0 && (
+                  {(listing.confidence ?? 0) > 0 && (
                     <div className="mt-1.5 flex items-center gap-1 text-[10px] text-[#64748b]">
                       <Users className="w-2.5 h-2.5" strokeWidth={1.5} />
-                      Observed {listing.observation_count} time{listing.observation_count !== 1 ? "s" : ""}
-                      {listing.group_count > 0 && ` across ${listing.group_count} group${listing.group_count !== 1 ? "s" : ""}`}
+                      Match confidence {(listing.confidence ?? 0).toFixed(0)}%
                     </div>
                   )}
                 </div>

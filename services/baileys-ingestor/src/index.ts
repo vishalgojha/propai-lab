@@ -16,21 +16,28 @@ import Pino from "pino";
 import qrcode from "qrcode-terminal";
 
 const WEBHOOK_URL = process.env.PROPAI_WEBHOOK_URL || "http://localhost:8000/webhook";
+const PROPAI_API_URL = process.env.PROPAI_API_URL || WEBHOOK_URL.replace(/\/webhook\/?$/, "");
+const SELF_CHAT_URL = process.env.PROPAI_SELF_CHAT_URL || `${PROPAI_API_URL}/api/baileys/self-chat`;
 const INSTANCE_NAME = process.env.PROPAI_INSTANCE_NAME || "propai-baileys";
 const AUTH_DIR = process.env.BAILEYS_AUTH_DIR || "auth";
 const STATUS_FILE = process.env.BAILEYS_STATUS_FILE || path.resolve(AUTH_DIR, "status.json");
 const INGEST_PRIVATE_CHATS = parseBool(process.env.PROPAI_INGEST_PRIVATE_CHATS, false);
+const ENABLE_SELF_CHAT_AGENT = parseBool(process.env.PROPAI_ENABLE_SELF_CHAT_AGENT, true);
 const CAPTURE_HISTORY_SYNC = parseBool(process.env.PROPAI_CAPTURE_HISTORY_SYNC, false);
 const GROUP_ALLOWLIST = parseList(process.env.PROPAI_GROUP_ALLOWLIST);
 const GROUP_DENYLIST = parseList(process.env.PROPAI_GROUP_DENYLIST);
+const AGENT_PREFIX = "PropAI agent:";
 
 const logger = Pino({ level: process.env.LOG_LEVEL || "info" });
 const groupNames = new Map<string, string>();
+const handledSelfChatMessages: string[] = [];
+const handledSelfChatMessageIds = new Set<string>();
+const selfChatHistory = new Map<string, Array<{ role: "user" | "assistant"; content: string }>>();
 
 type OutboundMessage = {
-  event: "MESSAGES_UPSERT" | "MESSAGES_SET";
+  event: "MESSAGES_UPSERT" | "MESSAGES_SET" | "GROUPS_REFRESHED";
   instance: string;
-  data: {
+  data?: {
     key: WAMessage["key"];
     message: NonNullable<WAMessage["message"]>;
     messageTimestamp?: number;
@@ -40,6 +47,7 @@ type OutboundMessage = {
       name: string;
     };
   };
+  groups?: Array<{ id: string; name: string; participants: number }>;
 };
 
 function parseBool(value: string | undefined, fallback: boolean) {
@@ -59,7 +67,37 @@ function isGroupJid(jid = "") {
 }
 
 function isBroadcastOrStatus(jid = "") {
-  return jid === "status@broadcast" || jid.endsWith("@broadcast") || jid === "broadcast";
+  return jid === "status@broadcast" || jid.endsWith("@broadcast") || jid.endsWith("@newsletter") || jid === "broadcast";
+}
+
+function jidUser(jid = "") {
+  return jid.split("@")[0]?.split(":")[0] || "";
+}
+
+function isOwnChatJid(jid: string, sock: ReturnType<typeof makeWASocket>) {
+  if (!jid || isGroupJid(jid) || isBroadcastOrStatus(jid)) return false;
+  const remoteUser = jidUser(jid);
+  if (!remoteUser) return false;
+
+  const ownIds = [
+    sock.user?.id,
+    (sock.user as { lid?: string; jid?: string } | undefined)?.lid,
+    (sock.user as { lid?: string; jid?: string } | undefined)?.jid,
+  ].filter(Boolean) as string[];
+
+  return ownIds.some((ownId) => jidUser(ownId) === remoteUser);
+}
+
+function appendSelfChatHistory(remoteJid: string, role: "user" | "assistant", content: string) {
+  const clean = content.trim();
+  if (!remoteJid || !clean) return;
+  const history = selfChatHistory.get(remoteJid) || [];
+  history.push({ role, content: clean.slice(0, 1800) });
+  selfChatHistory.set(remoteJid, history.slice(-10));
+}
+
+function getSelfChatHistory(remoteJid: string) {
+  return selfChatHistory.get(remoteJid) || [];
 }
 
 function normalizeMatch(value = "") {
@@ -151,6 +189,25 @@ function senderName(message: WAMessage) {
   return (message.pushName || "").trim();
 }
 
+function messageDedupeKey(message: WAMessage) {
+  return [
+    message.key.remoteJid || "",
+    message.key.id || "",
+    messageTimestampSeconds(message),
+  ].join("::");
+}
+
+function rememberSelfChatMessage(key: string) {
+  if (handledSelfChatMessageIds.has(key)) return false;
+  handledSelfChatMessageIds.add(key);
+  handledSelfChatMessages.push(key);
+  while (handledSelfChatMessages.length > 500) {
+    const stale = handledSelfChatMessages.shift();
+    if (stale) handledSelfChatMessageIds.delete(stale);
+  }
+  return true;
+}
+
 async function postToPropAI(payload: OutboundMessage) {
   const response = await fetch(WEBHOOK_URL, {
     method: "POST",
@@ -169,8 +226,9 @@ async function forwardMessage(message: WAMessage, event: OutboundMessage["event"
   if (!remoteJid || !message.message || message.key.fromMe) return;
   if (!groupAllowed(remoteJid)) return;
 
+  const isDm = !isGroupJid(remoteJid) && !isBroadcastOrStatus(remoteJid);
   const text = textFromMessage(message.message);
-  if (!text) return;
+  if (!isDm && !text) return;
 
   await postToPropAI({
     event,
@@ -190,6 +248,89 @@ async function forwardMessage(message: WAMessage, event: OutboundMessage["event"
   logger.debug({ remoteJid, sender: senderName(message), chars: text.length }, "forwarded message");
 }
 
+async function askSelfChatAgent(message: WAMessage, sock: ReturnType<typeof makeWASocket>) {
+  if (!ENABLE_SELF_CHAT_AGENT || !message.key.fromMe || !message.message) return false;
+
+  const remoteJid = message.key.remoteJid || "";
+  if (!isOwnChatJid(remoteJid, sock)) return false;
+
+  const text = textFromMessage(message.message);
+  if (!text || text.startsWith(AGENT_PREFIX)) return true;
+
+  const key = messageDedupeKey(message);
+  if (!rememberSelfChatMessage(key)) return true;
+
+  try {
+    logger.info({ chars: text.length, remoteJid }, "self-chat agent query");
+    const priorMessages = getSelfChatHistory(remoteJid);
+    const response = await fetch(SELF_CHAT_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        text,
+        remote_jid: remoteJid,
+        sender_jid: senderJid(message),
+        message_id: message.key.id || "",
+        push_name: senderName(message),
+        messages: [...priorMessages, { role: "user", content: text }],
+      }),
+    });
+
+    let payload: { reply?: string; error?: unknown } = {};
+    const responseBody = await response.text();
+    try {
+      payload = responseBody ? JSON.parse(responseBody) as { reply?: string; error?: unknown } : {};
+    } catch {
+      payload = { reply: responseBody };
+    }
+
+    const rawReply = (payload.reply || "").trim();
+    const reply = rawReply || `I could not answer that. ${response.ok ? "" : `PropAI API returned ${response.status}.`}`.trim();
+    if (!reply) return true;
+
+    await sock.sendMessage(remoteJid, { text: `${AGENT_PREFIX} ${reply}` } satisfies AnyMessageContent);
+    appendSelfChatHistory(remoteJid, "user", text);
+    appendSelfChatHistory(remoteJid, "assistant", reply);
+    logger.info({ remoteJid, status: response.status }, "self-chat agent replied");
+  } catch (error) {
+    logger.error({ error }, "self-chat agent failed");
+    appendSelfChatHistory(remoteJid, "user", text);
+    appendSelfChatHistory(remoteJid, "assistant", "I could not reach the PropAI database right now.");
+    await sock.sendMessage(remoteJid, {
+      text: `${AGENT_PREFIX} I could not reach the PropAI database right now.`,
+    } satisfies AnyMessageContent);
+  }
+
+  return true;
+}
+
+async function postGroupsToPropAI() {
+  const groupList = Array.from(groupNames.entries()).map(([id, name]) => ({
+    id,
+    name,
+    participants: 0,
+  }));
+  try {
+    const payload: OutboundMessage = {
+      event: "GROUPS_REFRESHED",
+      instance: INSTANCE_NAME,
+      groups: groupList,
+    };
+    const response = await fetch(WEBHOOK_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!response.ok) {
+      logger.warn({ status: response.status }, "failed to post groups to PropAI");
+    } else {
+      logger.info({ groups: groupList.length }, "groups synced to PropAI");
+    }
+  } catch (error) {
+    logger.warn({ error }, "failed to post groups to PropAI");
+  }
+}
+
 async function refreshGroups(sock: ReturnType<typeof makeWASocket>) {
   try {
     const groups = await sock.groupFetchAllParticipating();
@@ -198,6 +339,7 @@ async function refreshGroups(sock: ReturnType<typeof makeWASocket>) {
       groupNames.set(jid, metadata.subject || jid);
     }
     logger.info({ groups: groupNames.size }, "group cache refreshed");
+    await postGroupsToPropAI();
   } catch (error) {
     logger.warn({ error }, "failed to refresh group cache");
   }
@@ -239,6 +381,7 @@ async function connect() {
         phone_number: sock.user?.id || "",
         display_name: sock.user?.name || "",
         instance_name: INSTANCE_NAME,
+        self_chat_agent: ENABLE_SELF_CHAT_AGENT,
       });
     }
 
@@ -261,11 +404,13 @@ async function connect() {
     for (const update of updates) {
       if (update.id && update.subject) groupNames.set(update.id, update.subject);
     }
+    postGroupsToPropAI();
   });
 
   sock.ev.on("messages.upsert", async ({ messages }) => {
     for (const message of messages) {
       try {
+        if (await askSelfChatAgent(message, sock)) continue;
         await forwardMessage(message, "MESSAGES_UPSERT");
       } catch (error) {
         logger.error({ error }, "failed to forward live message");

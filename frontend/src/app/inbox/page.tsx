@@ -233,9 +233,12 @@ export default function BrokerWorkspacePage() {
     const conversationName = "conversation_name" in msg ? msg.conversation_name : "";
     const group = displayGroupName(conversationName || msg.group_name);
     if (group) return group;
+    const brokerName = (msg.broker_name || "").trim();
+    if (brokerName) return brokerName;
     const sender = (msg.sender || "").trim();
-    if (isRawWhatsAppId(sender)) return displayPhoneString(msg.sender_phone || "") || "Direct Message";
-    return sender || displayPhoneString(msg.sender_phone || "") || "Direct Message";
+    const phone = resolveMessagePhone(msg);
+    if (isRawWhatsAppId(sender)) return displayPhoneString(phone) || "Direct Message";
+    return sender || displayPhoneString(phone) || "Direct Message";
   };
 
   const getWaLink = (phone: string) => {
@@ -251,22 +254,49 @@ export default function BrokerWorkspacePage() {
     const clippedExtract =
       cleanedExtract.length > 320 ? `${cleanedExtract.slice(0, 320)}...` : cleanedExtract;
     const recallMessage = `Recall:\n${clippedExtract}\n\nFound on PropAI Live`;
-    return `https://wa.me/${normalized}?text=${encodeURIComponent(recallMessage)}`;
+    const safe = recallMessage.replace(/[\uD800-\uDFFF]/g, "");
+    try {
+      return `https://wa.me/${normalized}?text=${encodeURIComponent(recallMessage)}`;
+    } catch {
+      return `https://wa.me/${normalized}?text=${encodeURIComponent(safe)}`;
+    }
+  };
+
+  const isRealPhoneDigits = (value?: string) => {
+    const digits = (value || "").replace(/\D/g, "");
+    if (digits.length === 10) return true;
+    if (digits.length === 12 && digits.startsWith("91")) return true;
+    if (digits.length === 11 && digits.startsWith("0")) return true;
+    return false;
+  };
+
+  const normalizeRealPhone = (value?: string) => {
+    const digits = (value || "").replace(/\D/g, "");
+    if (!isRealPhoneDigits(digits)) return "";
+    if (digits.length === 12 && digits.startsWith("91")) return digits.slice(-10);
+    if (digits.length === 11 && digits.startsWith("0")) return digits.slice(-10);
+    return digits;
   };
 
   const phoneFromJid = (jid?: string) => {
     if (!jid) return "";
+    if (jid.includes("@lid")) return "";
     const head = jid.split("@")[0] || "";
-    const digits = head.replace(/\D/g, "");
-    if (digits.length < 10) return "";
-    return digits.slice(-10);
+    return normalizeRealPhone(head);
   };
 
   const resolveMessagePhone = (msg?: Partial<api.RawMessage> | null) => {
     if (!msg) return "";
-    const direct = (msg.sender_phone || "").replace(/\D/g, "");
-    if (direct.length >= 10) return direct.slice(-10);
+    const brokerPhone = normalizeRealPhone(msg.broker_phone);
+    if (brokerPhone) return brokerPhone;
+    const direct = normalizeRealPhone(msg.sender_phone);
+    if (direct) return direct;
     return phoneFromJid(msg.sender_jid);
+  };
+
+  const resolveMessageSenderName = (msg?: Partial<api.RawMessage> | null) => {
+    if (!msg) return "";
+    return msg.broker_name || msg.sender || "";
   };
 
   const toggleRevealPhone = (phone: string) => {
@@ -286,52 +316,60 @@ export default function BrokerWorkspacePage() {
       area_sqft: selectedMsgDetails?.parsed?.area_sqft,
       furnishing: selectedMsgDetails?.parsed?.furnishing,
       intent: selectedMsgDetails?.parsed?.intent || selectedMsg.message_type,
-      broker_name: selectedMsg.sender,
-      broker_phone: selectedMsg.sender_phone,
+      broker_name: selectedMsgDetails?.parsed?.broker_name || selectedMsg.broker_name || selectedMsg.sender,
+      broker_phone: resolveMessagePhone(selectedMsg),
     } : {};
     setActionContext(ctx);
 
     switch (action) {
-      case "add-to-bucket":
-        setShowAddToBucket(true);
+      case "training-building":
+        api.inlineResolveTrainerTerm(text, selectedMsg?.id, "building").then(() =>
+          alert(`"${text}" saved as Building`)
+        ).catch(e => alert("Error: " + e.message));
+        break;
+      case "training-society":
+        api.inlineResolveTrainerTerm(text, selectedMsg?.id, "society").then(() =>
+          alert(`"${text}" saved as Society`)
+        ).catch(e => alert("Error: " + e.message));
+        break;
+      case "training-landmark":
+        api.inlineResolveTrainerTerm(text, selectedMsg?.id, "landmark").then(() =>
+          alert(`"${text}" saved as Landmark`)
+        ).catch(e => alert("Error: " + e.message));
+        break;
+      case "training-locality":
+        api.inlineResolveTrainerTerm(text, selectedMsg?.id, "locality").then(() =>
+          alert(`"${text}" saved as Locality`)
+        ).catch(e => alert("Error: " + e.message));
+        break;
+      case "training-ignore":
+        api.inlineResolveTrainerTerm(text, selectedMsg?.id, "ignored").then(() =>
+          alert(`"${text}" will be ignored in future`)
+        ).catch(e => alert("Error: " + e.message));
         break;
       case "resolve-building":
-        api.resolveBuilding(text).then(r => alert(r.resolved ? `Building: ${r.building_name}` : "No building found"));
-        break;
-      case "forward-to-client":
-        api.forwardToClient(text).then(r => {
-          navigator.clipboard.writeText(r.cleaned);
-          alert("Cleaned text copied to clipboard!");
-        });
+        api.resolveBuilding(text).then(r => alert(r.resolved ? `Building: ${r.building_name}` : "No building found")).catch(e => alert("Error: " + e.message));
         break;
       case "summarize":
-        api.summarizeText(text).then(r => alert(r.summary));
+        api.summarizeText(text).then(r => alert(r.summary)).catch(e => alert("Error: " + e.message));
         break;
       case "ask-propai":
-        api.askPropAI(text, selectedMsg?.id, ctx).then(r => alert(r.response));
-        break;
-      case "create-follow-up":
-        const dueDate = prompt("Follow-up date (YYYY-MM-DD):");
-        if (dueDate) {
-          api.createFollowUp({
-            message_id: selectedMsg?.id,
-            building_name: ctx.building_name,
-            broker_phone: ctx.broker_phone,
-            title: `Follow up: ${text.slice(0, 50)}`,
-            due_date: dueDate,
-          }).then(() => alert("Follow-up created!"));
-        }
+        api.askPropAI(text, selectedMsg?.id, ctx).then(r => alert(r.response)).catch(e => alert("Error: " + e.message));
         break;
     }
   };
 
   const contextActions = [
-    { id: "add-to-bucket", label: "Add to Client Bucket", icon: "💼", handler: (t: string) => handleTextAction(t, "add-to-bucket") },
-    { id: "resolve-building", label: "Resolve Building", icon: "🏢", handler: (t: string) => handleTextAction(t, "resolve-building") },
-    { id: "forward-to-client", label: "Forward to Client", icon: "📤", handler: (t: string) => handleTextAction(t, "forward-to-client") },
-    { id: "create-follow-up", label: "Create Follow-up", icon: "📅", handler: (t: string) => handleTextAction(t, "create-follow-up") },
-    { id: "summarize", label: "Summarize", icon: "📝", handler: (t: string) => handleTextAction(t, "summarize") },
     { id: "ask-propai", label: "Ask PropAI", icon: "✨", handler: (t: string) => handleTextAction(t, "ask-propai") },
+    { id: "summarize", label: "Summarize", icon: "📝", handler: (t: string) => handleTextAction(t, "summarize") },
+    { id: "sep1", label: "", icon: "", handler: () => {} },
+    { id: "training-building", label: "This is a Building", icon: "🏢", handler: (t: string) => handleTextAction(t, "training-building") },
+    { id: "training-society", label: "This is a Society", icon: "🏘️", handler: (t: string) => handleTextAction(t, "training-society") },
+    { id: "training-landmark", label: "This is a Landmark", icon: "📍", handler: (t: string) => handleTextAction(t, "training-landmark") },
+    { id: "training-locality", label: "This is a Locality", icon: "🗺️", handler: (t: string) => handleTextAction(t, "training-locality") },
+    { id: "training-ignore", label: "Ignore as Noise", icon: "🚫", handler: (t: string) => handleTextAction(t, "training-ignore") },
+    { id: "sep2", label: "", icon: "", handler: () => {} },
+    { id: "resolve-building", label: "Fix Building Detection", icon: "🔍", handler: (t: string) => handleTextAction(t, "resolve-building") },
   ];
 
   // 2. Compute Left Panel Grouped Lists
@@ -364,6 +402,7 @@ export default function BrokerWorkspacePage() {
   const groupChats = uniqueThreads
     .filter((m) => m.conversation_type === "group")
     .map((m) => ({
+      conversationKey: m.conversation_key || m.group_name,
       rawGroupName: m.group_name,
       title: displayGroupName(m.conversation_name || m.group_name),
       latest: m,
@@ -388,7 +427,7 @@ export default function BrokerWorkspacePage() {
       ? directChats.length === 0
       : uniqueThreads.length === 0;
 
-  const groupedConversationMessages = (() => {
+  const groupedConversationMessages: [string, api.RawMessage[][]][] = (() => {
     const grouped: Record<string, api.RawMessage[]> = {};
     conversationMessages.forEach((message) => {
       const rawDate = message.timestamp || "";
@@ -399,30 +438,58 @@ export default function BrokerWorkspacePage() {
       if (!grouped[label]) grouped[label] = [];
       grouped[label].push(message);
     });
-    return Object.entries(grouped);
+    // Within each day, group consecutive messages from same sender into blocks
+    const result: [string, api.RawMessage[][]][] = [];
+    for (const [dateLabel, dayMessages] of Object.entries(grouped)) {
+      const blocks: api.RawMessage[][] = [];
+      let currentBlock: api.RawMessage[] = [];
+      for (const msg of dayMessages) {
+        const lastMsg = currentBlock[currentBlock.length - 1];
+        const sameSender = lastMsg && msg.sender === lastMsg.sender;
+        const closeEnough = lastMsg && msg.timestamp && lastMsg.timestamp && (
+          Math.abs(new Date(msg.timestamp).getTime() - new Date(lastMsg.timestamp).getTime()) < 300000
+        );
+        if (lastMsg && sameSender && closeEnough) {
+          currentBlock.push(msg);
+        } else {
+          if (currentBlock.length > 0) blocks.push(currentBlock);
+          currentBlock = [msg];
+        }
+      }
+      if (currentBlock.length > 0) blocks.push(currentBlock);
+      result.push([dateLabel, blocks]);
+    }
+    return result;
   })();
 
   const selectedTitle = selectedMsg ? displayChatTitle(selectedMsg) : "";
+  const isGroupConversationSelected =
+    !!selectedMsg?.group_name && selectedMsg.group_name !== "seed" && selectedMsg.group_name !== "seed-bot";
   const selectedSubtitle =
-    selectedMsg?.sender_phone && displayPhoneString(selectedMsg.sender_phone) !== selectedMsg.sender_phone
-      ? displayPhoneString(selectedMsg.sender_phone)
+    isGroupConversationSelected
+      ? ""
+      : resolveMessagePhone(selectedMsg)
+      ? displayPhoneString(resolveMessagePhone(selectedMsg))
       : selectedMsg?.sender || "";
   const selectedCount =
     selectedMsg && "message_count" in selectedMsg ? selectedMsg.message_count : conversationMessages.length;
 
   // 3. Load Conversation Thread (Center Panel)
-  const selectConversation = async (msg: api.RawMessage) => {
+  const selectConversation = async (msg: api.RawMessage | api.InboxThread) => {
     setSelectedMsg(msg);
     setLoadingConv(true);
     try {
       let thread: api.RawMessage[] = [];
-      const groupName = msg.group_name?.trim();
+      const groupName =
+        "conversation_type" in msg && msg.conversation_type === "group"
+          ? (msg.conversation_key || msg.group_name || "").trim()
+          : msg.group_name?.trim();
       if (groupName && groupName !== "seed" && groupName !== "seed-bot") {
         // Group Conversation
         thread = await api.getRaw(80, 0, groupName);
       } else {
         // Direct Chat Conversation
-        const phone = msg.sender_phone || undefined;
+        const phone = isRealPhoneDigits(msg.sender_phone) ? msg.sender_phone : undefined;
         const jid = msg.sender_jid || undefined;
         thread = await api.getRaw(80, 0, undefined, undefined, phone, jid);
       }
@@ -433,7 +500,17 @@ export default function BrokerWorkspacePage() {
       // Inactive group rows use a synthetic row; analyze the latest real thread item instead.
       const detailTarget = msg.id ? msg : chronologicalThread[chronologicalThread.length - 1];
       if (detailTarget?.id) {
-        setSelectedMsg(detailTarget);
+        setSelectedMsg({
+          ...detailTarget,
+          ...("conversation_key" in msg
+            ? {
+                conversation_type: msg.conversation_type,
+                conversation_key: msg.conversation_key,
+                conversation_name: msg.conversation_name,
+                message_count: msg.message_count,
+              }
+            : {}),
+        } as api.RawMessage | api.InboxThread);
         loadMessageDetails(detailTarget.id);
       } else {
         setSelectedMsgDetails(null);
@@ -638,12 +715,9 @@ export default function BrokerWorkspacePage() {
   };
 
   const waSenderPhone =
-    selectedMsgDetails?.parsed?.broker_phone ||
-    selectedMsgDetails?.raw?.sender_phone ||
-    selectedMsg?.sender_phone ||
-    "";
-  const isGroupConversationSelected =
-    !!selectedMsg?.group_name && selectedMsg.group_name !== "seed" && selectedMsg.group_name !== "seed-bot";
+    normalizeRealPhone(selectedMsgDetails?.parsed?.broker_phone) ||
+    resolveMessagePhone(selectedMsgDetails?.raw) ||
+    resolveMessagePhone(selectedMsg);
 
   return (
     <div className="flex flex-col h-[calc(100vh-80px)] border border-[rgba(255,255,255,0.06)] rounded-2xl overflow-hidden bg-[#090d12]">
@@ -738,7 +812,10 @@ export default function BrokerWorkspacePage() {
                 {/* 1. All Chronological Feed */}
                 {viewMode === "all" &&
                   filteredMessages.map((m) => {
-                    const isSelected = selectedMsg?.id === m.id;
+                    const isSelected =
+                      selectedMsg &&
+                      "conversation_key" in selectedMsg &&
+                      selectedMsg.conversation_key === m.conversation_key;
                     const intentColor =
                       ({ SELL: "green", BUY: "purple", RENT: "yellow" } as Record<string, string>)[m.message_type?.toUpperCase()] || "blue";
                     return (
@@ -791,7 +868,10 @@ export default function BrokerWorkspacePage() {
                 {/* 2. Group Chats View */}
                 {viewMode === "groups" &&
                   groupChats.map((g) => {
-                    const isSelected = selectedMsg?.group_name === g.rawGroupName;
+                    const isSelected =
+                      selectedMsg &&
+                      "conversation_key" in selectedMsg &&
+                      selectedMsg.conversation_key === g.conversationKey;
                     return (
                       <button
                         key={g.rawGroupName}
@@ -821,7 +901,7 @@ export default function BrokerWorkspacePage() {
                           </div>
                         </div>
                         <div className="text-[10px] text-[#64748b] truncate mt-1">
-                          Last: {g.latest.sender}
+                          Last: {resolveMessageSenderName(g.latest)}
                         </div>
                         <div className="text-[11px] text-[#94a3b8] line-clamp-1 italic">
                           &quot;<WhatsAppMessage text={g.latest.message || ""} truncate maxLines={1} />&quot;
@@ -833,7 +913,11 @@ export default function BrokerWorkspacePage() {
                 {/* 3. Direct Chats View */}
                 {viewMode === "direct" &&
                   directChats.map((d) => {
-                    const isSelected = selectedMsg?.sender === d.name || selectedMsg?.sender_phone === d.senderKey;
+                    const latestPhone = resolveMessagePhone(d.latest);
+                    const isSelected =
+                      selectedMsg?.sender === d.name ||
+                      (selectedMsg && "conversation_key" in selectedMsg && selectedMsg.conversation_key === d.senderKey) ||
+                      resolveMessagePhone(selectedMsg) === latestPhone;
                     return (
                       <button
                         key={d.senderKey}
@@ -850,9 +934,9 @@ export default function BrokerWorkspacePage() {
                             {d.count} msg
                           </span>
                         </div>
-                        {d.latest.sender_phone && (
+                        {latestPhone && (
                           <div className="text-[9px] text-[#64748b] font-mono">
-                            {displayPhoneString(d.latest.sender_phone)}
+                            {displayPhoneString(latestPhone)}
                           </div>
                         )}
                         <div className="text-[11px] text-[#94a3b8] line-clamp-1 italic mt-1">
@@ -931,9 +1015,9 @@ export default function BrokerWorkspacePage() {
                   <button className="h-7 w-7 rounded-md border border-[rgba(255,255,255,0.06)] bg-[#111820] text-[#64748b] hover:text-white transition-colors flex items-center justify-center">
                     <Info className="w-3.5 h-3.5" strokeWidth={1.5} />
                   </button>
-                  {!isGroupConversationSelected && selectedMsg.sender_phone && (
+                  {!isGroupConversationSelected && resolveMessagePhone(selectedMsg) && (
                     <a
-                      href={getWaLink(selectedMsg.sender_phone)}
+                      href={getWaLink(resolveMessagePhone(selectedMsg))}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="px-2.5 py-1 bg-[#166534] text-green-100 hover:bg-[#15803d] rounded text-[10px] font-bold uppercase tracking-wider transition-colors"
@@ -979,44 +1063,57 @@ export default function BrokerWorkspacePage() {
                           <div className="h-px flex-1 bg-[rgba(255,255,255,0.06)]" />
                         </div>
                         <div className="space-y-3">
-                          {dayMessages.map((m, idx) => {
-                            const isLatestMsg = idx === dayMessages.length - 1 && dayMessages === groupedConversationMessages[groupedConversationMessages.length - 1]?.[1];
-                            const isSelf = m.sender === "seed-bot" || m.sender === "system" || m.sender === "owner";
-                            const bubbleBg = isLatestMsg
+                          {dayMessages.map((block, blockIdx) => {
+                            const first = block[0];
+                            const last = block[block.length - 1];
+                            const allBlocks = groupedConversationMessages.flatMap(([, b]) => b);
+                            const isLatestBlock = block === allBlocks[allBlocks.length - 1];
+                            const isSelf = first.sender === "seed-bot" || first.sender === "system" || first.sender === "owner";
+                            const bubbleBg = isLatestBlock
                               ? "bg-[#1d4ed8]/15 border border-[#3b82f6]/40"
                               : isSelf
                               ? "bg-emerald-950/40 border border-emerald-800/30 ml-auto"
                               : "bg-[#0d1117] border border-[rgba(255,255,255,0.06)]";
 
                             const intentBadgeColor =
-                              ({ SELL: "green", BUY: "purple", RENT: "yellow" } as Record<string, string>)[m.message_type?.toUpperCase()] || "blue";
-                            const msgPhone = resolveMessagePhone(m);
+                              ({ SELL: "green", BUY: "purple", RENT: "yellow" } as Record<string, string>)[first.message_type?.toUpperCase()] || "blue";
+                            const msgPhone = resolveMessagePhone(first);
+                            const msgSenderName = resolveMessageSenderName(first);
 
                             return (
                               <div
-                                key={m.id}
+                                key={first.id}
                                 className={`max-w-[72%] rounded-2xl p-4 space-y-2 relative transition-all group ${
                                   isSelf ? "text-right ml-auto" : ""
                                 } ${bubbleBg}`}
                               >
                                 <div className={`flex items-center gap-2 text-[10px] text-[#64748b] ${isSelf ? "justify-end" : "justify-between"}`}>
-                                  <span className="font-semibold text-[#cbd5e1] truncate max-w-[220px]">{m.sender}</span>
-                                  <span>
-                                    {new Date(m.timestamp).toLocaleTimeString([], {
-                                      hour: "2-digit",
-                                      minute: "2-digit",
-                                    })}
+                                  <span className="font-semibold text-[#cbd5e1] truncate max-w-[220px]">{msgSenderName}</span>
+                                  <span className="whitespace-nowrap">
+                                    {block.length > 1
+                                      ? `${new Date(first.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} – ${new Date(last.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
+                                      : new Date(first.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                                   </span>
                                 </div>
-                                <div className="text-xs text-[#e2e8f0] whitespace-pre-wrap leading-relaxed text-left propai-message-content">
-                                  <WhatsAppMessage text={m.message || ""} sender={m.sender} senderPhone={m.sender_phone} />
-                                </div>
-
+                                {block.map((m, msgIdx) => {
+                                  const mPhone = resolveMessagePhone(m);
+                                  const mSenderName = resolveMessageSenderName(m);
+                                  return (
+                                    <div key={m.id}>
+                                      <div className="text-xs text-[#e2e8f0] whitespace-pre-wrap leading-relaxed text-left propai-message-content">
+                                        <WhatsAppMessage text={m.message || ""} sender={mSenderName} senderPhone={mPhone} />
+                                      </div>
+                                      {msgIdx < block.length - 1 && (
+                                        <div className="my-2 border-t border-[rgba(255,255,255,0.04)]" />
+                                      )}
+                                    </div>
+                                  );
+                                })}
                                 <div className="flex items-center justify-between pt-1 border-t border-[rgba(255,255,255,0.04)]">
                                   <div>
-                                    {m.message_type && (
+                                    {first.message_type && (
                                       <span className={`badge badge-${intentBadgeColor} text-[8px] px-1 py-0`}>
-                                        {m.message_type}
+                                        {first.message_type}
                                       </span>
                                     )}
                                   </div>
@@ -1024,7 +1121,7 @@ export default function BrokerWorkspacePage() {
                                   <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                                     {msgPhone && (
                                       <a
-                                        href={getWaLinkWithRecall(msgPhone, m.message || "")}
+                                        href={getWaLinkWithRecall(msgPhone, first.message || "")}
                                         target="_blank"
                                         rel="noopener noreferrer"
                                         className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-[#166534] hover:bg-[#15803d] text-green-100"
@@ -1035,8 +1132,8 @@ export default function BrokerWorkspacePage() {
                                     )}
                                     <button
                                       onClick={() => {
-                                        setSelectedMsg(m);
-                                        loadMessageDetails(m.id);
+                                        setSelectedMsg(first);
+                                        loadMessageDetails(first.id);
                                       }}
                                       className="text-[9px] text-[#3EE88A] hover:underline"
                                     >
@@ -1191,9 +1288,13 @@ export default function BrokerWorkspacePage() {
                           Copy
                         </button>
                       </div>
-                      <p className="text-xs text-[#cbd5e1] whitespace-pre-wrap leading-relaxed">
-                        <WhatsAppMessage text={selectedMsgDetails.raw?.message || ""} sender={selectedMsgDetails.raw?.sender} senderPhone={selectedMsgDetails.raw?.sender_phone} />
-                      </p>
+                      <div className="text-xs text-[#cbd5e1] whitespace-pre-wrap leading-relaxed">
+                        <WhatsAppMessage
+                          text={selectedMsgDetails.raw?.message || ""}
+                          sender={resolveMessageSenderName(selectedMsgDetails.raw)}
+                          senderPhone={resolveMessagePhone(selectedMsgDetails.raw)}
+                        />
+                      </div>
                     </div>
 
                     {/* Structured Details Panel — Property-Type Aware */}

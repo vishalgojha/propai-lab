@@ -18,7 +18,7 @@ from queue import Queue, Empty
 from typing import Optional
 
 from lab.app import storage
-from lab.config import DB_PATH, EVOLUTION_INSTANCE
+from lab.config import DB_PATH
 from lab.ingestion import SourceRegistry, SourceRecord, SyncJob
 from lab.ingestion.registry import get_registry
 from lab.storage import SyncJob as StorageSyncJob

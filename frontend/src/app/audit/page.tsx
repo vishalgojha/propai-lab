@@ -19,9 +19,45 @@ type LearnedTerm = {
 
 type AuditData = {
   network?: Record<string, number | string | boolean>;
+  brokers?: Record<string, number | string | boolean | BrokerRecord[]>;
+  cleanup?: Record<string, number | string | boolean | DuplicatePhone[] | DuplicateName[]>;
+  groups?: GroupRecord[];
   capture?: Record<string, number | string | boolean | LatestRecord[]>;
   search_coverage?: Record<string, number | string>;
   learning?: Record<string, number | string | LearnedTerm[]>;
+};
+
+type BrokerRecord = {
+  name: string;
+  phone?: string;
+  observations: number;
+  listings: number;
+  requirements: number;
+  groups: number;
+};
+
+type DuplicatePhone = {
+  phone: string;
+  count: number;
+};
+
+type DuplicateName = {
+  name: string;
+  phone_count: number;
+  phones?: string;
+};
+
+type GroupRecord = {
+  name: string;
+  jid: string;
+  messages: number;
+  unique_senders: number;
+  listings: number;
+  requirements: number;
+  markets: number;
+  buildings: number;
+  signal_ratio: number;
+  last_seen: string;
 };
 
 type EvidenceGroup = {
@@ -70,6 +106,16 @@ function clockLabel(ts: string) {
   return d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
 }
 
+function cleanDisplayText(value: string) {
+  return String(value || "")
+    .replace(/[\p{Extended_Pictographic}\uFE0F]/gu, "")
+    .replace(/(^|\s)[*_~`#>]+/g, "$1")
+    .replace(/[*_~`#>]+(\s|$)/g, "$1")
+    .replace(/[*_~`#>]{2,}/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function Card({ children, className = "" }: { children: React.ReactNode; className?: string }) {
   return (
     <div className={`rounded-lg border border-[rgba(255,255,255,0.06)] bg-[#0d1117] ${className}`}>
@@ -89,6 +135,15 @@ function Metric({ label, value, sub }: { label: string; value: React.ReactNode; 
       <div className="mt-1 text-2xl font-semibold tabular-nums text-[#e2e8f0]">{value}</div>
       {sub ? <div className="mt-1 text-[11px] text-[#64748b]">{sub}</div> : null}
     </Card>
+  );
+}
+
+function MiniRow({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div className="flex items-center justify-between gap-3 rounded-lg bg-[#111820] px-3 py-2 text-xs">
+      <span className="truncate text-[#94a3b8]">{label}</span>
+      <span className="shrink-0 font-mono font-semibold text-[#e2e8f0]">{value}</span>
+    </div>
   );
 }
 
@@ -120,7 +175,7 @@ function RecordRow({ item }: { item: LatestRecord }) {
           <span className="max-w-[220px] truncate font-semibold text-[#e2e8f0]">{item.conversation || "WhatsApp"}</span>
           <span className="text-[#64748b]">{item.sender || "Unknown"}</span>
         </div>
-        <div className="mt-1 line-clamp-2 text-xs leading-5 text-[#94a3b8]">{item.preview || "No text content"}</div>
+        <div className="mt-1 line-clamp-2 text-xs leading-5 text-[#94a3b8]">{cleanDisplayText(item.preview) || "No text content"}</div>
       </div>
       <div className="self-start rounded-full border border-[#3EE88A]/25 bg-[#3EE88A]/10 px-2 py-1 text-center text-[10px] font-bold uppercase tracking-wide text-[#3EE88A]">
         {item.stored === false ? "Queued" : "Stored"}
@@ -181,10 +236,17 @@ export default function AuditPage() {
 
   const capture = (data?.capture || {}) as Record<string, unknown>;
   const network = (data?.network || {}) as Record<string, unknown>;
+  const brokers = (data?.brokers || {}) as Record<string, unknown>;
+  const cleanup = (data?.cleanup || {}) as Record<string, unknown>;
   const coverage = (data?.search_coverage || {}) as Record<string, unknown>;
   const learning = (data?.learning || {}) as Record<string, unknown>;
+  const groups = (Array.isArray(data?.groups) ? data.groups : []) as GroupRecord[];
   const latest = (Array.isArray(capture.latest_records) ? capture.latest_records : []) as LatestRecord[];
   const learned = (Array.isArray(learning.recently_learned) ? learning.recently_learned : []) as LearnedTerm[];
+  const topBrokers = (Array.isArray(brokers.top) ? brokers.top : []) as BrokerRecord[];
+  const duplicatePhones = (Array.isArray(cleanup.duplicate_phones) ? cleanup.duplicate_phones : []) as DuplicatePhone[];
+  const duplicateNames = (Array.isArray(cleanup.duplicate_names) ? cleanup.duplicate_names : []) as DuplicateName[];
+  const hasLearning = getNumber(learning, "unknown_terms") > 0 || getNumber(learning, "needs_review") > 0 || learned.length > 0;
 
   const recallValue = getNumber(coverage, "recall_ready");
   const recallReady = `${recallValue % 1 === 0 ? recallValue.toFixed(0) : recallValue.toFixed(1)}%`;
@@ -290,7 +352,7 @@ export default function AuditPage() {
                       <span className="truncate font-semibold text-[#e2e8f0]">{item.conversation || "WhatsApp"}</span>
                       <span className="shrink-0 font-mono text-[#64748b]">{clockLabel(item.time)}</span>
                     </div>
-                    <div className="mt-1 line-clamp-2 text-[#94a3b8]">{item.preview}</div>
+                    <div className="mt-1 line-clamp-2 text-[#94a3b8]">{cleanDisplayText(item.preview)}</div>
                   </div>
                 ))}
               </div>
@@ -299,9 +361,87 @@ export default function AuditPage() {
         </div>
       </section>
 
-      <section className="grid gap-4 lg:grid-cols-2">
+      <section className="grid gap-4 lg:grid-cols-[0.9fr_1.1fr]">
         <div className="space-y-3">
-          <SectionTitle title="Knowledge Learning" sub="Terms PropAI has not fully resolved yet, plus recent accepted learning." />
+          <SectionTitle title="Broker Network" sub="People identified from WhatsApp messages, broker profiles, phones, and group activity." />
+          <Card className="p-4">
+            <div className="grid grid-cols-2 gap-3">
+              <Metric label="Total Brokers" value={num(getNumber(brokers, "total"))} sub="Canonical broker profiles" />
+              <Metric label="Active This Week" value={num(getNumber(brokers, "recently_active"))} sub="Seen in recent messages" />
+              <Metric label="Known Phones" value={num(getNumber(brokers, "unique_phones"))} sub="Unique captured phone numbers" />
+              <Metric label="Duplicate Members" value={num(duplicatePhones.length + duplicateNames.length)} sub="Same phone/JID or name conflicts" />
+            </div>
+            <div className="mt-4 space-y-2">
+              <Label>Cleanup Signals</Label>
+              <MiniRow label="Phone numbers attached to multiple WhatsApp identities" value={num(duplicatePhones.length)} />
+              <MiniRow label="Broker names attached to multiple phone numbers" value={num(duplicateNames.length)} />
+              <MiniRow label="Brokers without market coverage" value={num(getNumber(cleanup, "brokers_no_market"))} />
+            </div>
+          </Card>
+        </div>
+
+        <div className="space-y-3">
+          <SectionTitle title="Top Broker Activity" sub="Highest-volume broker profiles currently visible in captured conversations." />
+          <Card className="overflow-hidden">
+            {topBrokers.length ? topBrokers.slice(0, 6).map((broker) => (
+              <div key={`${broker.name}-${broker.phone || ""}`} className="grid grid-cols-[minmax(0,1fr)_80px_80px_70px] gap-3 border-b border-[rgba(255,255,255,0.05)] px-4 py-3 text-xs last:border-b-0">
+                <div className="min-w-0">
+                  <div className="truncate font-semibold text-[#e2e8f0]">{broker.name || broker.phone || "Unknown broker"}</div>
+                  <div className="mt-0.5 truncate font-mono text-[10px] text-[#64748b]">{broker.phone || "No phone"}</div>
+                </div>
+                <div>
+                  <Label>Posts</Label>
+                  <div className="mt-1 font-mono text-[#e2e8f0]">{num(broker.observations)}</div>
+                </div>
+                <div>
+                  <Label>Listings</Label>
+                  <div className="mt-1 font-mono text-[#e2e8f0]">{num(broker.listings)}</div>
+                </div>
+                <div>
+                  <Label>Groups</Label>
+                  <div className="mt-1 font-mono text-[#e2e8f0]">{num(broker.groups)}</div>
+                </div>
+              </div>
+            )) : (
+              <div className="p-6 text-sm text-[#64748b]">No broker profiles calculated yet.</div>
+            )}
+          </Card>
+        </div>
+      </section>
+
+      {groups.length ? (
+        <section className="space-y-3">
+          <SectionTitle title="Group Audit" sub="Which WhatsApp groups are producing messages, senders, listings, requirements, markets, and building signals." />
+          <Card className="overflow-hidden">
+            <div className="grid grid-cols-[minmax(0,1fr)_80px_80px_80px_80px_80px] gap-3 border-b border-[rgba(255,255,255,0.06)] px-4 py-3 text-[10px] font-bold uppercase tracking-[0.12em] text-[#64748b]">
+              <div>Group</div>
+              <div>Messages</div>
+              <div>Members</div>
+              <div>Listings</div>
+              <div>Buyers</div>
+              <div>Signal</div>
+            </div>
+            {groups.slice(0, 8).map((group) => (
+              <div key={group.jid} className="grid grid-cols-[minmax(0,1fr)_80px_80px_80px_80px_80px] gap-3 border-b border-[rgba(255,255,255,0.05)] px-4 py-3 text-xs last:border-b-0">
+                <div className="min-w-0">
+                  <div className="truncate font-semibold text-[#e2e8f0]">{group.name}</div>
+                  <div className="mt-0.5 truncate text-[10px] text-[#64748b]">{timeAgo(group.last_seen)} · {num(group.markets)} markets · {num(group.buildings)} buildings</div>
+                </div>
+                <div className="font-mono text-[#e2e8f0]">{num(group.messages)}</div>
+                <div className="font-mono text-[#e2e8f0]">{num(group.unique_senders)}</div>
+                <div className="font-mono text-[#e2e8f0]">{num(group.listings)}</div>
+                <div className="font-mono text-[#e2e8f0]">{num(group.requirements)}</div>
+                <div className="font-mono text-[#3EE88A]">{num(group.signal_ratio)}%</div>
+              </div>
+            ))}
+          </Card>
+        </section>
+      ) : null}
+
+      <section className={`grid gap-4 ${hasLearning ? "lg:grid-cols-2" : "lg:grid-cols-1"}`}>
+        {hasLearning ? (
+        <div className="space-y-3">
+          <SectionTitle title="Knowledge Resolution Queue" sub="Only shown when unresolved terms or accepted learning records exist." />
           <Card className="p-4">
             <div className="grid grid-cols-2 gap-3">
               <Metric label="Unknown Terms" value={num(getNumber(learning, "unknown_terms"))} />
@@ -322,20 +462,23 @@ export default function AuditPage() {
             </div>
           </Card>
         </div>
+        ) : null}
 
         <div className="space-y-3">
-          <SectionTitle title="Search Coverage" sub="Whether captured knowledge is available for retrieval." />
+          <SectionTitle title="Search Coverage" sub="How much WhatsApp memory can be retrieved by keyword search and semantic AI recall." />
           <Card className="p-4">
             <div className="grid grid-cols-2 gap-3">
-              <Metric label="Messages" value={num(getNumber(coverage, "messages"))} />
-              <Metric label="Indexed" value={num(getNumber(coverage, "indexed"))} />
-              <Metric label="Searchable" value={num(getNumber(coverage, "searchable"))} />
-              <Metric label="Embeddings" value={num(getNumber(coverage, "embeddings"))} />
+              <Metric label="Messages" value={num(getNumber(coverage, "messages"))} sub="Raw WhatsApp messages stored" />
+              <Metric label="Indexed" value={num(getNumber(coverage, "indexed"))} sub="Rows placed into the text index" />
+              <Metric label="Searchable" value={num(getNumber(coverage, "searchable"))} sub="Records available to keyword search" />
+              <Metric label="Embeddings" value={num(getNumber(coverage, "embeddings"))} sub="Vector rows used for semantic recall" />
             </div>
             <div className="mt-4 rounded-lg border border-[#3EE88A]/20 bg-[#3EE88A]/10 p-4">
               <Label>Recall Ready</Label>
               <div className="mt-1 text-4xl font-semibold text-[#3EE88A]">{recallReady}</div>
-              <div className="mt-1 text-xs text-[#94a3b8]">Captured records available to search and recall.</div>
+              <div className="mt-1 text-xs leading-5 text-[#94a3b8]">
+                Percentage of captured knowledge records that are in the searchable index. Embeddings can be lower because they are only needed for semantic AI recall, not basic keyword lookup.
+              </div>
             </div>
           </Card>
         </div>

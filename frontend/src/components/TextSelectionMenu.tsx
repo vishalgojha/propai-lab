@@ -175,22 +175,29 @@ export default function TextSelectionMenu({ actions, context = {}, containerRef 
 
             {/* Actions */}
             <div className="py-1">
-              {actions.map((action, i) => (
-                <button
-                  key={action.id}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    action.handler(selectedText, context);
-                    setVisible(false);
-                    setShowFullMenu(false);
-                    window.getSelection()?.removeAllRanges();
-                  }}
-                  className="w-full text-left px-3 py-2 text-[11px] text-[#e2e8f0] hover:bg-[rgba(59,130,246,0.1)] flex items-center gap-2.5 transition-colors group"
-                >
-                  <span className="text-sm w-5 text-center">{action.icon}</span>
-                  <span className="group-hover:text-white">{action.label}</span>
-                </button>
-              ))}
+              {actions.map((action, i) => {
+                if (action.id.startsWith("sep")) {
+                  return i > 0 ? (
+                    <div key={action.id} className="h-px bg-[rgba(255,255,255,0.08)] mx-3 my-1" />
+                  ) : null;
+                }
+                return (
+                  <button
+                    key={action.id}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      action.handler(selectedText, context);
+                      setVisible(false);
+                      setShowFullMenu(false);
+                      window.getSelection()?.removeAllRanges();
+                    }}
+                    className="w-full text-left px-3 py-2 text-[11px] text-[#e2e8f0] hover:bg-[rgba(59,130,246,0.1)] flex items-center gap-2.5 transition-colors group"
+                  >
+                    <span className="text-sm w-5 text-center">{action.icon}</span>
+                    <span className="group-hover:text-white">{action.label}</span>
+                  </button>
+                );
+              })}
             </div>
 
             {/* Footer hint */}

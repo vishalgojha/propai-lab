@@ -7,8 +7,8 @@ Usage:
 Requires: qrcode, pyzbar, httpx, Pillow
 """
 import base64
-import json
 import io
+import json
 import os
 import time
 from pathlib import Path
@@ -16,7 +16,7 @@ from pathlib import Path
 import httpx
 from PIL import Image
 
-from lab.config import BAILEYS_STATUS_FILE, EVOLUTION_API_URL, EVOLUTION_API_KEY, EVOLUTION_INSTANCE
+from lab.config import BAILEYS_STATUS_FILE
 
 PROJECT_DIR = Path(__file__).resolve().parent
 LOCAL_STATUS_FILE = BAILEYS_STATUS_FILE if BAILEYS_STATUS_FILE.is_absolute() else PROJECT_DIR / BAILEYS_STATUS_FILE
@@ -40,39 +40,6 @@ C = {
     "rev": "\033[7m",
 }
 W = 62
-
-
-def get_api_key():
-    key = EVOLUTION_API_KEY
-    if not key:
-        key_path = Path(__file__).parent / ".api_key"
-        if key_path.exists():
-            key = key_path.read_text().strip()
-    return key or "propai-dev-key"
-
-
-def api_get(path: str) -> dict:
-    key = get_api_key()
-    url = f"{EVOLUTION_API_URL}/{path.lstrip('/')}"
-    try:
-        r = httpx.get(url, headers={"apikey": key}, timeout=15)
-        return r.json()
-    except httpx.ConnectError as e:
-        return {
-            "_error": f"Could not reach Evolution API at {EVOLUTION_API_URL}. Is it running?",
-            "_detail": str(e),
-        }
-    except httpx.TimeoutException as e:
-        return {
-            "_error": f"Timed out contacting Evolution API at {EVOLUTION_API_URL}.",
-            "_detail": str(e),
-        }
-    except Exception as e:
-        return {"_error": str(e)}
-
-
-def fetch_qr() -> dict:
-    return api_get(f"instance/connect/{EVOLUTION_INSTANCE}")
 
 
 def read_baileys_status() -> dict:
@@ -124,12 +91,7 @@ def check_connected() -> bool:
     backend = fetch_backend_connection()
     if backend:
         return bool(backend.get("connected")) or str(backend.get("connection_state", "")).lower() in ("open", "connected", "syncing")
-    data = api_get(f"instance/connectionState/{EVOLUTION_INSTANCE}")
-    state = data.get("instance", {}).get("state", "")
-    if state.lower() in ("open", "connected", "syncing"):
-        return True
-    info = get_connection_info()
-    return str(info.get("status", "")).lower() in ("open", "connected", "syncing")
+    return False
 
 
 def get_connection_info() -> dict:
@@ -158,20 +120,6 @@ def get_connection_info() -> dict:
             "created": backend.get("connected_since", ""),
         }
 
-    data = api_get("instance/fetchInstances")
-    instances = data if isinstance(data, list) else []
-    for inst in instances:
-        if inst.get("name") == EVOLUTION_INSTANCE:
-            jid = inst.get("ownerJid", "")
-            number = jid.split("@")[0] if jid else ""
-            formatted = f"+{number[:2]} {number[2:7]} {number[7:]}" if number else "—"
-            return {
-                "phone": formatted,
-                "name": inst.get("profileName", "—"),
-                "status": inst.get("connectionStatus", "unknown"),
-                "jid": jid,
-                "created": inst.get("createdAt", ""),
-            }
     return {"phone": "—", "name": "—", "status": "unknown"}
 
 
@@ -186,9 +134,6 @@ def box(title: str, lines: list[str], color: str = "cyan"):
         print(f"{c}{v}{C['reset']}  {C['bold']}{title}{C['reset']}{' ' * pad}{c}{v}{C['reset']}")
         print(f"{c}{v}{h * (W - 2)}{v}{C['reset']}")
     for line in lines:
-        clean = line.replace(C["reset"], "").replace(C["bold"], "").replace(C["dim"], "")
-        visible = len(clean.encode("ascii", "ignore")) if any(ord(ch) > 127 for ch in clean) else len(clean)
-        # Strip ANSI for width calc
         import re
         ansi_clean = re.sub(r'\033\[[0-9;]*m', '', line)
         vis_len = len(ansi_clean)
@@ -209,10 +154,6 @@ def banner():
 """)
 
 
-def hr():
-    print(f"  {C['grey']}{'─' * (W - 4)}{C['reset']}")
-
-
 def show_connected():
     info = get_connection_info()
     status = str(info.get("status", "unknown")).lower()
@@ -223,7 +164,6 @@ def show_connected():
         "",
         f"  {C['dim']}Phone:{C['reset']}     {C['bold']}{info['phone']}{C['reset']}",
         f"  {C['dim']}Profile:{C['reset']}    {info['name']}",
-        f"  {C['dim']}Instance:{C['reset']}   {EVOLUTION_INSTANCE}",
         f"  {C['dim']}Status:{C['reset']}     {C[status_color]}{info['status']}{C['reset']}",
         "",
         f"  {C['cyan']}→{C['reset']}  {C['bold']}http://localhost:8000{C['reset']}  {C['dim']}(dashboard){C['reset']}",
@@ -232,88 +172,6 @@ def show_connected():
     ]
 
     box("Connected", boxes, "green")
-
-
-def show_qr_flow():
-    refresh_count = 0
-    max_refreshes = 20
-
-    while refresh_count < max_refreshes:
-        refresh_count += 1
-        os.system("cls" if os.name == "nt" else "clear")
-        banner()
-
-        steps = [
-            f"  {C['green']}✓{C['reset']}  Start WhatsApp on your phone",
-            f"  {C['green']}✓{C['reset']}  Go to {C['bold']}Settings → Linked Devices{C['reset']}",
-            f"  {C['green']}✓{C['reset']}  Tap {C['bold']}'Link a Device'{C['reset']}",
-        ]
-        for s in steps:
-            print(f"  {s}")
-        print()
-
-        data = fetch_qr()
-
-        if "_error" in data:
-            lines = [
-                f"  {C['red']}Error: {data['_error']}{C['reset']}",
-                f"  {C['dim']}{data.get('_detail', '')}{C['reset']}" if data.get("_detail") else "",
-                "",
-                f"  Retrying in 3s...",
-            ]
-            box("Evolution API unreachable", [line for line in lines if line], "red")
-            time.sleep(3)
-            continue
-
-        if data.get("count") == 0:
-            if check_connected():
-                os.system("cls" if os.name == "nt" else "clear")
-                banner()
-                show_connected()
-                return
-            box("Waiting", [f"  {C['yellow']}Instance is starting. Retrying...{C['reset']}"], "yellow")
-            time.sleep(3)
-            continue
-
-        base64_png = data.get("base64", "")
-        if not base64_png:
-            lines = [
-                f"  {C['yellow']}No QR code yet. Retrying...{C['reset']}",
-            ]
-            box("Waiting", lines, "yellow")
-            time.sleep(3)
-            continue
-
-        qr_text = decode_qr_content(base64_png)
-        if not qr_text:
-            print(f"  {C['yellow']}Decoding QR...{C['reset']}")
-            time.sleep(2)
-            continue
-
-        ascii_qr = render_qr(qr_text)
-        qr_lines = ascii_qr.strip().split("\n")
-        padded = [f"     {line}" for line in qr_lines]
-        padded.append("")
-        padded.append(f"  {C['cyan']}→{C['reset']}  {C['bold']}Scan this QR with WhatsApp{C['reset']}")
-        padded.append(f"  {C['dim']}     Refresh #{refresh_count} | auto-refresh in 30s{C['reset']}")
-        padded.append(f"  {C['grey']}     Or open http://localhost:8000/connect{C['reset']}")
-
-        box("Scan QR Code", padded, "cyan")
-        print()
-
-        for i in range(30):
-            if check_connected():
-                os.system("cls" if os.name == "nt" else "clear")
-                banner()
-                show_connected()
-                return
-            time.sleep(1)
-
-    print()
-    box("Timeout", [
-        f"  {C['yellow']}QR refresh limit reached.{C['reset']}",
-        f"  Open browser: {C['bold']}http://localhost:8000/connect{C['reset']}",
-    ], "yellow")
 
 
 def main():
@@ -325,7 +183,12 @@ def main():
         print()
         print(f"  {C['grey']}Already connected. Run {C['bold']}propai status{C['reset']}{C['grey']} or open {C['bold']}http://localhost:8000{C['reset']}{C['grey']}.{C['reset']}")
     else:
-        show_qr_flow()
+        print()
+        print(f"  {C['yellow']}Not connected. Start the Baileys ingestor with:{C['reset']}")
+        print(f"  {C['cyan']}  pm2 start propai-baileys{C['reset']}")
+        print(f"  {C['grey']}  Then check the QR in pm2 logs:{C['reset']}")
+        print(f"  {C['cyan']}  pm2 logs propai-baileys --lines 20{C['reset']}")
+        print()
 
     print()
 

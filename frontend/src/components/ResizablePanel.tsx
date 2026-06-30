@@ -34,21 +34,22 @@ export default function ResizablePanel({
 }: ResizablePanelProps) {
   const [internalCollapsed, setInternalCollapsed] = useState(false);
   const collapsed = controlledCollapsed !== undefined ? controlledCollapsed : internalCollapsed;
-  const [width, setWidth] = useState(() => {
-    if (storageKey && typeof window !== "undefined") {
-      const stored = localStorage.getItem(storageKey);
-      if (stored) {
-        const parsed = parseInt(stored, 10);
-        if (!isNaN(parsed) && parsed >= minWidth && parsed <= maxWidth) return parsed;
-      }
-    }
-    return defaultWidth;
-  });
+  const [width, setWidth] = useState(defaultWidth);
   const [isDragging, setIsDragging] = useState(false);
   const [showPresets, setShowPresets] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
   const startXRef = useRef(0);
   const startWidthRef = useRef(0);
+
+  useEffect(() => {
+    if (!storageKey) return;
+    const stored = localStorage.getItem(storageKey);
+    if (!stored) return;
+    const parsed = parseInt(stored, 10);
+    if (!isNaN(parsed) && parsed >= minWidth && parsed <= maxWidth) {
+      setWidth(parsed);
+    }
+  }, [storageKey, minWidth, maxWidth]);
 
   const handleMouseDown = useCallback(
     (e: React.MouseEvent) => {

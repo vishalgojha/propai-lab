@@ -3,6 +3,7 @@ import json
 import sqlite3
 import datetime
 import re
+from pathlib import Path
 import pandas as pd
 from openai import OpenAI
 
@@ -11,6 +12,7 @@ BASE_URL = "https://api.doubleword.ai/v1"
 _lab_dir = os.path.realpath(os.path.dirname(os.path.abspath(__file__)))
 _propai_data = os.path.realpath(os.path.join(_lab_dir, "..", "propai", "data"))
 DATA_DIR = _propai_data if os.path.isdir(_propai_data) else os.path.join(_lab_dir, "data")
+PROMPT_DIR = Path(_lab_dir) / "prompts"
 
 _client = None
 
@@ -179,30 +181,27 @@ def build_overview(sources):
     return "\n".join(lines)
 
 
+def _read_prompt_file(name: str) -> str:
+    try:
+        return (PROMPT_DIR / name).read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""
+
+
 def build_system_prompt(sources):
     overview = build_overview(sources)
-    return f"""You are PropAI's Dynamic AI Workspace - a broker work assistant that queries PropAI's structured market database. You are NOT a chatbot. You are a Bloomberg-style terminal for Mumbai real estate.
+    identity = _read_prompt_file("identity.md")
+    bootstrap = _read_prompt_file("bootstrap.md")
+    return f"""{identity or "You are PropAI, a Mumbai real-estate broker assistant."}
+
+{bootstrap}
+
+You are also PropAI's Dynamic AI Workspace for structured market database work.
 
 AVAILABLE DATA:
 {overview}
 
-CORE PRINCIPLES:
-- Every answer must help the broker take immediate action.
-- You query PropAI's database — NOT internet knowledge.
-- Always show counts: "47 listings found across 12 brokers and 8 buildings"
-- Always show traceability: "Observed from WhatsApp group X, message at Y time"
-- Always explain WHY a result matches: "Matched because: 3 BHK, Rental, Bandra East, Building alias matched 'Kanakia Paris'"
-- Never dump listings in prose — use structured UI blocks.
-- If more results exist, say: "+37 more listings available" with "Load More" option.
-- Offer intelligent follow-ups: "Filter below ₹2 Cr", "Only furnished", "Newest first", "Compare prices".
-
-SEARCH BEHAVIOR:
-- When user asks for listings, query ALL matching records, not just a few.
-- Search buildings by aliases: "X BKC" = "X One BKC", "TEN BKC" = "Ten BKC", etc.
-- Always report: total count, brokers found, buildings found, WhatsApp groups, last update time.
-- Group by building when appropriate: "Kanakia Paris — 8 active rentals, 3 active sales".
-
-LISTING CARD FORMAT (when showing listings):
+LISTING CARD FORMAT (when showing listings in workspace UI):
 Building Name
 ₹Price / month (or sale)
 BHK | Area | Furnishing
@@ -210,22 +209,6 @@ Micro Market | Building | Broker
 First Seen | Last Seen | Observed (count messages)
 Confidence: XX%
 Actions: View | Open Inventory | Open Original Messages | Promote | Save | Connect Broker
-Why this result: ✓ 3 BHK ✓ Rental ✓ Bandra East ✓ Building alias matched ✓ Seen in 14 messages ✓ Active within 24h
-
-TRACEABILITY:
-Every listing must show:
-- WhatsApp group name
-- Original message (truncated)
-- Timestamp (IST)
-- Broker name and phone
-- Extraction confidence
-
-EMPTY STATES:
-Instead of "No results", say:
-"No exact matches found. Try: Nearby markets | Similar buildings | Different budget | Different BHK | Latest listings"
-
-EXPORTS:
-Always offer: Export CSV | Export Excel | Export PDF | Copy WhatsApp Summary | Copy Email Summary
 
 FINAL RESPONSE CONTRACT:
 - Return JSON only. No markdown fences, no prose outside JSON.
@@ -242,14 +225,8 @@ FINAL RESPONSE CONTRACT:
 - Never invent property details. If a fact is missing, surface it as missing.
 - Keep content short. The UI will render the blocks.
 
-RULES:
-- Use Indian Rupee (₹) format: ₹1.2 Cr, ₹85 L, ₹2.5L/month
-- Use IST timestamps
-- Never use technical terms: say "property" not "listing", "message" not "observation"
-- Prefer retrieval tools over perfect parsing: use search_jid_memory for people/JID history and search_listings for structured property filters
-- Use query_data only for direct table aggregation
-- Use create_suggestion when user asks to make changes
-- Do NOT make up data. If you don't know, say so plainly.
+EXPORTS:
+Always offer: Export CSV | Export Excel | Export PDF | Copy WhatsApp Summary | Copy Email Summary
 
 PRICE UNIT NORMALIZATION (IMPORTANT):
 When user mentions prices, normalize to standard units:
@@ -832,6 +809,36 @@ def fmt_price(val):
         return str(val)
 
 
+def fmt_listing_price(val, unit=None, intent=None):
+    if val in (None, ""):
+        return ""
+    try:
+        v = float(val)
+    except (ValueError, TypeError):
+        return str(val)
+
+    normalized_unit = str(unit or "").strip().lower()
+    suffix = "/month" if str(intent or "").upper() == "RENT" else ""
+    if str(intent or "").upper() == "RENT" and normalized_unit in {"", "none", "null", "abs"}:
+        if 0 < v < 100:
+            return f"₹{v:g} L{suffix}"
+        if 100 <= v < 1000:
+            return f"₹{v:g} K{suffix}"
+        if 1000 <= v < 10000:
+            return f"₹{v / 1000:g} L{suffix}"
+    if normalized_unit in {"lac", "lakh", "l"}:
+        return f"₹{v:g} L{suffix}"
+    if normalized_unit in {"cr", "crore"}:
+        return f"₹{v:g} Cr"
+    if normalized_unit == "k":
+        return f"₹{v:g} K{suffix}"
+    if normalized_unit in {"abs", "absolute", "rupees", "rs", "inr"}:
+        return f"{fmt_price(v)}{suffix}"
+    if str(intent or "").upper() == "RENT" and 0 < v < 100:
+        return f"₹{v:g} L{suffix}"
+    return f"{fmt_price(v)}{suffix}"
+
+
 def _open_db():
     """Open a connection to lab.db for operational queries."""
     lab_dir = os.path.realpath(os.path.dirname(os.path.abspath(__file__)))
@@ -1251,9 +1258,7 @@ def execute_tool(name, args, sources, db_path=None):
                     except:
                         first_age = ""
 
-                price_formatted = fmt_price(d.get("price")) if d.get("price") else ""
-                if d.get("price_unit") and d.get("price_unit") != "/sale" and d.get("intent") == "RENT":
-                    price_formatted += "/month"
+                price_formatted = fmt_listing_price(d.get("price"), d.get("price_unit"), d.get("intent"))
 
                 confidence_pct = round((d.get("confidence") or 0) * 100) if d.get("confidence") else 0
 
@@ -1262,6 +1267,7 @@ def execute_tool(name, args, sources, db_path=None):
                     "intent": d.get("intent"),
                     "bhk": d.get("bhk"),
                     "price": d.get("price"),
+                    "price_unit": d.get("price_unit"),
                     "price_formatted": price_formatted,
                     "area_sqft": d.get("area_sqft"),
                     "furnishing": d.get("furnishing"),

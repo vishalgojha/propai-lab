@@ -353,6 +353,10 @@ class Storage(ABC):
                         status: str = "pending") -> int: ...
 
     @abstractmethod
+    def prune_sync_jobs(self, source: str, instance: str,
+                        keep_jids: set) -> int: ...
+
+    @abstractmethod
     def get_sync_jobs(self, limit: int = 200, offset: int = 0,
                       source: str = "", status: str = "") -> list[SyncJob]: ...
 
