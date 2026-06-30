@@ -6,25 +6,15 @@ import "./globals.css";
 import { getConnectionState, getWhatsAppStatus, ConnectionState, WhatsAppStatus, searchMessages } from "@/lib/api";
 import {
   MessageSquare,
-  Users,
   BarChart3,
-  BookOpen,
   Search,
-  Zap,
   Building2,
   Briefcase,
   Brain,
   ClipboardCheck,
-  GraduationCap,
-  Radar,
-  MapPin,
-  Hash,
-  ChevronRight,
   Wifi,
   WifiOff,
-  X,
   UserCheck,
-  TrendingUp,
 } from "lucide-react";
 
 const navSections = [
@@ -35,37 +25,20 @@ const navSections = [
     ],
   },
   {
-    title: "Market",
+    title: "Listings & Clients",
     items: [
+      { href: "/market", label: "Find Properties", icon: Search },
+      { href: "/my/inventory", label: "My Inventory", icon: Building2 },
       { href: "/my/buyers", label: "Requirements", icon: ClipboardCheck },
-      { href: "/my/inventory", label: "Inventory", icon: Building2 },
       { href: "/brokers", label: "Brokers", icon: Briefcase },
-      { href: "/groups", label: "Groups", icon: Users },
-      { href: "/buildings", label: "Buildings", icon: Building2 },
-    ],
-  },
-  {
-    title: "My Workspace",
-    items: [
       { href: "/clients", label: "My Clients", icon: UserCheck },
-      { href: "/deals", label: "My Deals", icon: TrendingUp },
     ],
   },
   {
-    title: "Intelligence",
+    title: "Tools",
     items: [
-      { href: "/", label: "Dashboard", icon: BarChart3 },
       { href: "/chat", label: "AI Chat", icon: Brain },
-      { href: "/knowledge", label: "Knowledge Base", icon: BookOpen },
-      { href: "/market", label: "Markets", icon: MapPin },
-      { href: "/audit", label: "WhatsApp Audit", icon: Radar },
-    ],
-  },
-  {
-    title: "Workspace",
-    items: [
-      { href: "/connections", label: "Connection", icon: Wifi },
-      { href: "/trainer", label: "Trainer", icon: GraduationCap },
+      { href: "/", label: "Dashboard", icon: BarChart3 },
     ],
   },
 ];
