@@ -202,6 +202,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 
   return (
     <html lang="en">
+      <head>
+        <link rel="icon" type="image/svg+xml" href="/propai-logo.svg" />
+      </head>
       <body>
         <PaletteModal open={paletteOpen} onClose={() => setPaletteOpen(false)} />
 
@@ -211,9 +214,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             {/* Logo */}
             <div className="px-5 pt-6 pb-5">
               <div className="flex items-center gap-2.5">
-                <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
-                  <Zap className="w-3.5 h-3.5 text-white" />
-                </div>
+                <img src="/propai-logo.svg" alt="PropAI" className="w-7 h-7" />
                 <div>
                   <div className="text-[13px] font-bold text-white tracking-tight leading-none">PropAI</div>
                   <div className="text-[9px] text-[#4a5568] uppercase tracking-[0.15em] font-medium mt-0.5">Broker OS</div>
