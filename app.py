@@ -1536,6 +1536,93 @@ def _load_evidence_cache():
         return {}
 
 
+@app.get("/api/dashboard/time-window")
+async def dashboard_time_window(window: str = "today"):
+    """Dashboard metrics for a specific time window."""
+    now = datetime.now(timezone.utc)
+
+    windows = {
+        "today":      (now.strftime("%Y-%m-%d"), now.strftime("%Y-%m-%d")),
+        "yesterday":  ((now - timedelta(days=1)).strftime("%Y-%m-%d"), (now - timedelta(days=1)).strftime("%Y-%m-%d")),
+        "7d":         ((now - timedelta(days=6)).strftime("%Y-%m-%d"), now.strftime("%Y-%m-%d")),
+        "30d":        ((now - timedelta(days=29)).strftime("%Y-%m-%d"), now.strftime("%Y-%m-%d")),
+    }
+
+    labels = {
+        "today": "Today",
+        "yesterday": "Yesterday",
+        "7d": "Last 7 Days",
+        "30d": "Last 30 Days",
+        "all": "All Time",
+    }
+
+    if window == "all":
+        start_date, end_date = None, None
+    elif window in windows:
+        start_date, end_date = windows[window]
+    else:
+        start_date, end_date = windows["today"]
+
+    # Messages count
+    if start_date:
+        msg_count = storage.db.execute(
+            "SELECT COUNT(*) FROM raw_messages WHERE date(timestamp) >= ? AND date(timestamp) <= ?",
+            (start_date, end_date),
+        ).fetchone()[0]
+        total_msgs = storage.db.execute("SELECT COUNT(*) FROM raw_messages").fetchone()[0]
+        # Listings by intent in window
+        listings_in_window = storage.db.execute(
+            """SELECT COALESCE(p.intent, lo.message_type, 'UNKNOWN') as intent, COUNT(DISTINCT l.id) as c
+               FROM listings l
+               JOIN listing_observations lo ON lo.listing_id = l.id
+               LEFT JOIN parsed_output p ON p.id = lo.parsed_id
+               WHERE date(lo.seen_at) >= ? AND date(lo.seen_at) <= ?
+               GROUP BY intent""",
+            (start_date, end_date),
+        ).fetchall()
+        total_listings = storage.db.execute("SELECT COUNT(*) FROM listings").fetchone()[0]
+        # Low confidence in window
+        needs_review = storage.db.execute(
+            "SELECT COUNT(*) FROM parsed_output WHERE date(created_at) >= ? AND date(created_at) <= ? AND confidence < 0.5",
+            (start_date, end_date),
+        ).fetchone()[0]
+        total_needs_review = storage.db.execute(
+            "SELECT COUNT(*) FROM parsed_output WHERE confidence < 0.5"
+        ).fetchone()[0]
+    else:
+        msg_count = storage.db.execute("SELECT COUNT(*) FROM raw_messages").fetchone()[0]
+        total_msgs = msg_count
+        listings_in_window = storage.db.execute(
+            """SELECT COALESCE(p.intent, lo.message_type, 'UNKNOWN') as intent, COUNT(DISTINCT l.id) as c
+               FROM listings l
+               JOIN listing_observations lo ON lo.listing_id = l.id
+               LEFT JOIN parsed_output p ON p.id = lo.parsed_id
+               GROUP BY intent""",
+        ).fetchall()
+        total_listings = storage.db.execute("SELECT COUNT(*) FROM listings").fetchone()[0]
+        needs_review = storage.db.execute("SELECT COUNT(*) FROM parsed_output WHERE confidence < 0.5").fetchone()[0]
+        total_needs_review = needs_review
+
+    intents = {r["intent"]: r["c"] for r in listings_in_window}
+
+    return {
+        "window": window,
+        "label": labels.get(window, "Today"),
+        "messages": msg_count,
+        "total_messages": total_msgs,
+        "supply": intents.get("SELL", 0),
+        "total_supply": intents.get("SELL", 0) if window == "all" else storage.db.execute("SELECT COUNT(*) FROM listings WHERE intent='SELL'").fetchone()[0],
+        "demand": intents.get("BUY", 0),
+        "total_demand": intents.get("BUY", 0) if window == "all" else storage.db.execute("SELECT COUNT(*) FROM listings WHERE intent='BUY'").fetchone()[0],
+        "rentals": intents.get("RENT", 0) + intents.get("COMMERCIAL", 0),
+        "total_rentals": (intents.get("RENT", 0) + intents.get("COMMERCIAL", 0)) if window == "all" else storage.db.execute("SELECT COUNT(*) FROM listings WHERE intent IN ('RENT','COMMERCIAL')").fetchone()[0],
+        "needs_review": needs_review,
+        "total_needs_review": total_needs_review,
+        "start_date": start_date,
+        "end_date": end_date,
+    }
+
+
 @app.get("/api/dashboard/activity")
 async def dashboard_activity():
     """Today's market activity: messages, new sellers, buyers, rentals, etc."""

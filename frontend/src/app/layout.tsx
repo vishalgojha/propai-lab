@@ -253,7 +253,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             </nav>
 
             {/* Bottom Status */}
-            <div className="px-4 py-3 border-t border-[rgba(255,255,255,0.04)]">
+            <div className="px-4 py-3 border-t border-[rgba(255,255,255,0.04)] space-y-2">
               <button
                 onClick={() => setPaletteOpen(true)}
                 className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[11px] text-[#64748b] hover:text-[#94a3b8] hover:bg-[rgba(255,255,255,0.02)] transition-colors"
@@ -262,16 +262,30 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 <span>Search</span>
                 <kbd className="ml-auto text-[9px] bg-[rgba(255,255,255,0.04)] px-1.5 py-0.5 rounded text-[#64748b]">⌘K</kbd>
               </button>
-              <div className="flex items-center gap-2 px-2.5 py-1.5 mt-1">
+              <a
+                href="/connections"
+                className="flex items-center gap-2.5 px-2.5 py-2 rounded-lg hover:bg-[rgba(255,255,255,0.02)] transition-colors group"
+              >
                 {waConnected ? (
-                  <Wifi className="w-3 h-3 text-emerald-500" strokeWidth={1.5} />
+                  <div className="relative">
+                    <Wifi className="w-3.5 h-3.5 text-emerald-400" strokeWidth={1.5} />
+                    <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse" />
+                  </div>
                 ) : (
-                  <WifiOff className="w-3 h-3 text-red-500" strokeWidth={1.5} />
+                  <WifiOff className="w-3.5 h-3.5 text-red-400" strokeWidth={1.5} />
                 )}
-                <span className="text-[10px] text-[#64748b]">
-                  {waConnected ? "WhatsApp Connected" : "WhatsApp Disconnected"}
-                </span>
-              </div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-[11px] font-medium text-[#94a3b8] truncate">
+                    {waConnected ? (whatsapp?.phone || "WhatsApp Connected") : "WhatsApp Disconnected"}
+                  </div>
+                  {waConnected && whatsapp?.connected_since && (
+                    <div className="text-[9px] text-[#64748b] truncate">
+                      Since {new Date(whatsapp.connected_since).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                    </div>
+                  )}
+                </div>
+                <div className={`w-1.5 h-1.5 rounded-full ${waConnected ? "bg-emerald-400" : "bg-red-400"}`} />
+              </a>
             </div>
           </aside>
 

@@ -5,49 +5,51 @@ import { useRouter } from "next/navigation";
 import * as api from "@/lib/api";
 import { useEventStream } from "@/lib/useEventStream";
 import { LatestWhatsAppKnowledge } from "@/components/dashboard/LatestWhatsAppKnowledge";
+import { ChevronDown, TrendingUp, TrendingDown, ArrowRight } from "lucide-react";
 
-interface ActionCard {
+interface WindowOption {
+  key: string;
   label: string;
-  count: number;
-  icon: string;
-  color: string;
-  href: string;
-  detail?: string;
 }
 
-const cardValueClass: Record<string, string> = {
-  blue: "text-blue-400",
-  green: "text-emerald-400",
-  yellow: "text-yellow-400",
-  purple: "text-purple-400",
-  orange: "text-orange-400",
-  red: "text-red-400",
-};
+const WINDOWS: WindowOption[] = [
+  { key: "today", label: "Today" },
+  { key: "yesterday", label: "Yesterday" },
+  { key: "7d", label: "7 Days" },
+  { key: "30d", label: "30 Days" },
+  { key: "all", label: "All Time" },
+];
+
+const METRICS = [
+  { key: "messages", label: "Messages", icon: "💬", color: "text-blue-400", bg: "bg-blue-500/10" },
+  { key: "supply", label: "Supply", icon: "🏢", color: "text-emerald-400", bg: "bg-emerald-500/10" },
+  { key: "demand", label: "Requirements", icon: "🎯", color: "text-purple-400", bg: "bg-purple-500/10" },
+  { key: "rentals", label: "Rentals", icon: "🏠", color: "text-yellow-400", bg: "bg-yellow-500/10" },
+  { key: "needs_review", label: "Needs Review", icon: "⚠️", color: "text-orange-400", bg: "bg-orange-500/10" },
+];
 
 export default function DashboardPage() {
   const router = useRouter();
-  const [actions, setActions] = useState<any>(null);
-  const [activity, setActivity] = useState<api.DashboardActivity | null>(null);
+  const [window, setWindow] = useState("today");
+  const [metrics, setMetrics] = useState<api.TimeWindowMetrics | null>(null);
   const [feed, setFeed] = useState<any[]>([]);
-  const [coverage, setCoverage] = useState<api.DashboardCoverage | null>(null);
+  const [actionCards, setActionCards] = useState<any>(null);
   const [suggestionCounts, setSuggestionCounts] = useState<any>({});
 
   const loadAll = useCallback(async () => {
     try {
-      const [act, cov, f, a, sc] = await Promise.all([
-        api.getDashboardActivity(),
-        api.getDashboardCoverage(),
+      const [m, f, a, sc] = await Promise.all([
+        api.getTimeWindowMetrics(window),
         api.getDashboardFeed(10),
         api.getActionDashboard(),
         api.getChatSuggestions(),
       ]);
-      setActivity(act);
-      setCoverage(cov);
+      setMetrics(m);
       setFeed(f);
-      setActions(a);
+      setActionCards(a);
       setSuggestionCounts(sc);
     } catch (e) { console.error(e); }
-  }, []);
+  }, [window]);
 
   useEffect(() => { loadAll(); }, [loadAll]);
   useEventStream({
@@ -58,45 +60,65 @@ export default function DashboardPage() {
     "connection.changed": loadAll,
   });
 
-  const actionCards: ActionCard[] = [
-    { label: "Open Market Inbox", count: activity?.messages_today ?? 0, icon: "💬", color: "blue", href: "/inbox", detail: "WhatsApp-style broker workspace" },
-    { label: "Search Knowledge", count: coverage?.messages_stored ?? 0, icon: "🔎", color: "green", href: "/knowledge", detail: "Find any property, broker, group, or phrase" },
-    { label: "Review Items", count: actions?.low_confidence_parses ?? 0, icon: "✅", color: "yellow", href: "/chat?tab=review", detail: "Only records that need confirmation" },
-    { label: "Capture Health", count: coverage?.groups_connected ?? 0, icon: "📡", color: "purple", href: "/audit", detail: "Groups and messages being remembered" },
-  ];
-
-  const types = activity?.message_types || {};
   const suggestionPending = suggestionCounts?.pending ?? 0;
 
   return (
     <div className="space-y-6">
-      {/* Market Pulse */}
-      <div>
-        <div className="text-[11px] text-[#64748b] uppercase tracking-widest font-bold mb-3">MARKET PULSE</div>
-        <div className="flex gap-2.5 flex-wrap">
-          {[
-            { label: "Messages", val: activity?.messages_today ?? "—", color: "blue" },
-            { label: "Supply", val: types.SELL ?? 0, color: "green" },
-            { label: "Demand", val: types.BUY ?? 0, color: "purple" },
-            { label: "Rentals", val: types.RENT ?? 0, color: "yellow" },
-          ].map(s => (
-            <div key={s.label} className={`stat-card ${s.color}`}>
-              <div className="val">{s.val}</div>
-              <div className="lbl">{s.label}</div>
-            </div>
+      {/* Time Window Selector */}
+      <div className="flex items-center justify-between">
+        <div className="text-[11px] text-[#64748b] uppercase tracking-widest font-bold">
+          {window === "today" ? "Today's Market" : metrics?.label || "Market Activity"}
+        </div>
+        <div className="flex gap-1 bg-[#0d1117] border border-[rgba(255,255,255,0.06)] rounded-lg p-0.5">
+          {WINDOWS.map((w) => (
+            <button
+              key={w.key}
+              onClick={() => setWindow(w.key)}
+              className={`px-2.5 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider transition-colors ${
+                window === w.key
+                  ? "bg-[#111820] text-[#3EE88A] shadow-sm"
+                  : "text-[#64748b] hover:text-white"
+              }`}
+            >
+              {w.label}
+            </button>
           ))}
-          <div className={`stat-card ${suggestionPending > 0 ? "orange" : "blue"}`}>
-            <div className="val">{suggestionPending}</div>
-            <div className="lbl">To Review</div>
-          </div>
         </div>
       </div>
 
-      {/* Action Cards */}
+      {/* Market Pulse Cards */}
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-2.5">
+        {METRICS.map((m) => {
+          const val = metrics?.[m.key as keyof api.TimeWindowMetrics] as number ?? 0;
+          const totalKey = `total_${m.key}` as keyof api.TimeWindowMetrics;
+          const totalVal = metrics?.[totalKey] as number ?? 0;
+          return (
+            <div key={m.key} className="bg-[#0d1117] border border-[rgba(255,255,255,0.06)] rounded-2xl p-4 hover:border-[rgba(255,255,255,0.15)] transition-colors">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-lg">{m.icon}</span>
+                <span className={`text-2xl font-bold ${m.color}`}>{val}</span>
+              </div>
+              <div className="text-xs font-medium text-[#e2e8f0]">{m.label}</div>
+              {window !== "all" && (
+                <div className="text-[10px] text-[#64748b] mt-0.5">
+                  {totalVal.toLocaleString()} total
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Broker Actions */}
       <div>
         <div className="text-[11px] text-[#64748b] uppercase tracking-widest font-bold mb-3">BROKER ACTIONS</div>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
-          {actionCards.map(card => (
+          {[
+            { label: "Open Market Inbox", count: "→", icon: "💬", href: "/inbox", detail: "WhatsApp-style broker workspace" },
+            { label: "Search Knowledge", count: "→", icon: "🔎", href: "/knowledge", detail: "Find any property, broker, group" },
+            { label: "Review Items", count: suggestionPending || "→", icon: "✅", href: "/chat?tab=review", detail: "Records needing confirmation" },
+            { label: "Capture Health", count: suggestionPending || "→", icon: "📡", href: "/audit", detail: "Groups and messages being remembered" },
+          ].map(card => (
             <button
               key={card.label}
               onClick={() => router.push(card.href)}
@@ -104,10 +126,14 @@ export default function DashboardPage() {
             >
               <div className="flex items-center justify-between mb-1">
                 <span className="text-lg">{card.icon}</span>
-                <span className={`text-2xl font-bold ${cardValueClass[card.color] || "text-blue-400"}`}>{card.count}</span>
+                {typeof card.count === "number" && card.count > 0 ? (
+                  <span className="text-2xl font-bold text-yellow-400">{card.count}</span>
+                ) : (
+                  <ArrowRight className="w-5 h-5 text-[#64748b]" strokeWidth={1.5} />
+                )}
               </div>
               <div className="text-xs font-medium text-[#e2e8f0]">{card.label}</div>
-              {card.detail && <div className="text-[10px] text-[#64748b] mt-0.5">{card.detail}</div>}
+              <div className="text-[10px] text-[#64748b] mt-0.5">{card.detail}</div>
             </button>
           ))}
         </div>

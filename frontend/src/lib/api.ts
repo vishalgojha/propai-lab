@@ -87,6 +87,27 @@ export interface DashboardActivity {
   message_types: Record<string, number>;
 }
 
+export interface TimeWindowMetrics {
+  window: string;
+  label: string;
+  messages: number;
+  total_messages: number;
+  supply: number;
+  total_supply: number;
+  demand: number;
+  total_demand: number;
+  rentals: number;
+  total_rentals: number;
+  needs_review: number;
+  total_needs_review: number;
+  start_date: string | null;
+  end_date: string | null;
+}
+
+export function getTimeWindowMetrics(window = "today") {
+  return fetchJSON<TimeWindowMetrics>(`/dashboard/time-window?window=${window}`);
+}
+
 export interface DashboardCoverage {
   groups_connected: number;
   messages_stored: number;
