@@ -1,12 +1,59 @@
 "use client";
 
-import React from "react";
+import React, { useMemo } from "react";
 
 interface WhatsAppMessageProps {
   text: string;
   className?: string;
   truncate?: boolean;
   maxLines?: number;
+}
+
+const SEPARATOR_RE = /^[•\-\*═─━~]{3,}\s*$/;
+
+function isSeparatorLine(line: string): boolean {
+  return SEPARATOR_RE.test(line.trim());
+}
+
+function isBlankLine(line: string): boolean {
+  return line.trim() === "";
+}
+
+interface Paragraph {
+  type: "card";
+  lines: string[];
+}
+
+interface SeparatorBlock {
+  type: "separator";
+}
+
+type Block = Paragraph | SeparatorBlock;
+
+function groupIntoBlocks(lines: string[]): Block[] {
+  const blocks: Block[] = [];
+  let currentCard: string[] = [];
+
+  const flushCard = () => {
+    if (currentCard.length > 0) {
+      blocks.push({ type: "card", lines: [...currentCard] });
+      currentCard = [];
+    }
+  };
+
+  for (const line of lines) {
+    if (isSeparatorLine(line)) {
+      flushCard();
+      blocks.push({ type: "separator" });
+    } else if (isBlankLine(line)) {
+      flushCard();
+    } else {
+      currentCard.push(line);
+    }
+  }
+
+  flushCard();
+  return blocks;
 }
 
 export default function WhatsAppMessage({
@@ -20,22 +67,16 @@ export default function WhatsAppMessage({
   const lines = text.split("\n");
 
   const formatInline = (line: string) => {
-    // Split by formatting markers and render bold/italic
     const parts: React.ReactNode[] = [];
     let remaining = line;
     let key = 0;
 
     while (remaining.length > 0) {
-      // Bold: *text*
       const boldMatch = remaining.match(/\*([^*]+)\*/);
-      // Italic: _text_
       const italicMatch = remaining.match(/_([^_]+)_/);
-      // Strikethrough: ~text~
       const strikeMatch = remaining.match(/~([^~]+)~/);
-      // Code: ```text```
       const codeMatch = remaining.match(/```([^`]+)```/);
 
-      // Find earliest match
       const matches = [
         boldMatch && { type: "bold", match: boldMatch },
         italicMatch && { type: "italic", match: italicMatch },
@@ -98,40 +139,99 @@ export default function WhatsAppMessage({
     return parts;
   };
 
-  const renderedLines = lines.map((line, i) => {
-    // Empty line = spacing
-    if (line.trim() === "") {
-      return <div key={i} className="h-2" />;
-    }
+  const renderLine = (line: string, i: number) => {
+    if (isBlankLine(line)) return <div key={i} className="h-2" />;
 
-    // Bullet points: • - * followed by space
     const isBullet = /^[•\-\*]\s/.test(line);
     const isSubBullet = /^\s+[•\-\*]\s/.test(line);
-    const isNumbered = /^\d+\.\s/.test(line);
+    const isNumbered = /^\d+[\.\)]\s/.test(line);
 
     return (
       <div key={i} className={isBullet || isNumbered ? "flex gap-1.5 mt-0.5" : ""}>
         {isBullet && <span className="text-[#3b82f6] shrink-0">•</span>}
-        {isNumbered && <span className="text-[#3b82f6] shrink-0">{line.match(/^(\d+\.\s)/)?.[1]}</span>}
+        {isNumbered && (
+          <span className="text-[#3b82f6] shrink-0">
+            {line.match(/^(\d+[\.\)]\s)/)?.[1]}
+          </span>
+        )}
         <span className={isSubBullet ? "ml-4" : ""}>
-          {formatInline(isBullet ? line.replace(/^[•\-\*]\s/, "") : isNumbered ? line.replace(/^\d+\.\s/, "") : line)}
+          {formatInline(
+            isBullet
+              ? line.replace(/^[•\-\*]\s/, "")
+              : isNumbered
+              ? line.replace(/^\d+[\.\)]\s/, "")
+              : line
+          )}
         </span>
       </div>
     );
-  });
+  };
+
+  const blocks = useMemo(() => groupIntoBlocks(lines), [text]);
+  const multiBlock = blocks.length > 2;
 
   const containerClass = `whatsapp-message text-xs text-[#cbd5e1] leading-relaxed ${className}`;
 
   if (truncate) {
+    let lineCount = 0;
+    const truncatedBlocks: Block[] = [];
+    for (const block of blocks) {
+      if (block.type === "separator") {
+        truncatedBlocks.push(block);
+        continue;
+      }
+      const remaining = maxLines - lineCount;
+      if (remaining <= 0) break;
+      truncatedBlocks.push({
+        type: "card",
+        lines: block.lines.slice(0, remaining),
+      });
+      lineCount += block.lines.slice(0, remaining).length;
+    }
     return (
-      <div
-        className={`${containerClass} line-clamp-${maxLines}`}
-        style={{ WebkitLineClamp: maxLines }}
-      >
-        {renderedLines.slice(0, maxLines + 1)}
+      <div className={`${containerClass} line-clamp-${maxLines}`}>
+        {truncatedBlocks.map((block, bi) => {
+          if (block.type === "separator") {
+            return (
+              <div key={bi} className="my-1.5 border-t border-[rgba(255,255,255,0.06)]" />
+            );
+          }
+          return (
+            <div key={bi} className="space-y-0.5">
+              {block.lines.map((line, li) => renderLine(line, bi * 1000 + li))}
+            </div>
+          );
+        })}
       </div>
     );
   }
 
-  return <div className={containerClass}>{renderedLines}</div>;
+  return (
+    <div className={containerClass}>
+      {blocks.map((block, bi) => {
+        if (block.type === "separator") {
+          return (
+            <div key={bi} className="my-2 border-t border-[rgba(255,255,255,0.08)]" />
+          );
+        }
+
+        if (multiBlock) {
+          return (
+            <div
+              key={bi}
+              className="my-1.5 px-2.5 py-2 rounded-md bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.04)]"
+            >
+              {block.lines.map((line, li) => renderLine(line, bi * 1000 + li))}
+            </div>
+          );
+        }
+
+        return (
+          <div key={bi} className="space-y-0.5">
+            {block.lines.map((line, li) => renderLine(line, bi * 1000 + li))}
+          </div>
+        );
+      })}
+    </div>
+  );
 }
