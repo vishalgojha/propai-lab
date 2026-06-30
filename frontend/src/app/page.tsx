@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import * as api from "@/lib/api";
 import { useEventStream } from "@/lib/useEventStream";
+import { LatestWhatsAppKnowledge } from "@/components/dashboard/LatestWhatsAppKnowledge";
 
 interface ActionCard {
   label: string;
@@ -13,6 +14,15 @@ interface ActionCard {
   href: string;
   detail?: string;
 }
+
+const cardValueClass: Record<string, string> = {
+  blue: "text-blue-400",
+  green: "text-emerald-400",
+  yellow: "text-yellow-400",
+  purple: "text-purple-400",
+  orange: "text-orange-400",
+  red: "text-red-400",
+};
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -49,14 +59,10 @@ export default function DashboardPage() {
   });
 
   const actionCards: ActionCard[] = [
-    { label: "Pending Review", count: actions?.pending_review_unresolved ?? 0, icon: "📋", color: "yellow", href: "/chat?tab=review", detail: "Items that need a quick check" },
-    { label: "AI Suggestions", count: actions?.pending_ai_suggestions ?? 0, icon: "🤖", color: "blue", href: "/chat?tab=review", detail: "Awaiting your approval" },
-    { label: "New Buildings Today", count: actions?.new_buildings_today ?? 0, icon: "🏗️", color: "green", href: "/buildings", detail: "Found in broker groups" },
-    { label: "Duplicate Brokers", count: actions?.duplicate_brokers_detected ?? 0, icon: "🤝", color: "purple", href: "/chat?tab=review", detail: "Merge candidates" },
-    { label: "Duplicate Listings", count: actions?.duplicate_listings_detected ?? 0, icon: "🏠", color: "orange", href: "/chat?tab=review", detail: "Potential merges" },
-    { label: "Needs Review", count: actions?.low_confidence_parses ?? 0, icon: "⚠️", color: "red", href: "/chat?tab=review", detail: "Details need confirmation" },
-    { label: "Unknown Locations", count: actions?.unknown_locations ?? 0, icon: "🗺️", color: "yellow", href: "/chat?tab=review", detail: "Needs a market or building" },
-    { label: "Buildings Pending", count: actions?.buildings_pending_approval ?? 0, icon: "🏢", color: "blue", href: "/chat?tab=review", detail: "AI suggestions for buildings" },
+    { label: "Open Market Inbox", count: activity?.messages_today ?? 0, icon: "💬", color: "blue", href: "/inbox", detail: "WhatsApp-style broker workspace" },
+    { label: "Search Knowledge", count: coverage?.messages_stored ?? 0, icon: "🔎", color: "green", href: "/knowledge", detail: "Find any property, broker, group, or phrase" },
+    { label: "Review Items", count: actions?.low_confidence_parses ?? 0, icon: "✅", color: "yellow", href: "/chat?tab=review", detail: "Only records that need confirmation" },
+    { label: "Capture Health", count: coverage?.groups_connected ?? 0, icon: "📡", color: "purple", href: "/audit", detail: "Groups and messages being remembered" },
   ];
 
   const types = activity?.message_types || {};
@@ -64,9 +70,9 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
-      {/* Today's Pulse — minimal, shows rhythm */}
+      {/* Market Pulse */}
       <div>
-        <div className="text-[11px] text-[#64748b] uppercase tracking-widest font-bold mb-3">TODAY&apos;S PULSE</div>
+        <div className="text-[11px] text-[#64748b] uppercase tracking-widest font-bold mb-3">MARKET PULSE</div>
         <div className="flex gap-2.5 flex-wrap">
           {[
             { label: "Messages", val: activity?.messages_today ?? "—", color: "blue" },
@@ -79,7 +85,7 @@ export default function DashboardPage() {
               <div className="lbl">{s.label}</div>
             </div>
           ))}
-          <div className={`stat-card ${suggestionPending > 0 ? 'orange' : 'blue'}`}>
+          <div className={`stat-card ${suggestionPending > 0 ? "orange" : "blue"}`}>
             <div className="val">{suggestionPending}</div>
             <div className="lbl">To Review</div>
           </div>
@@ -88,7 +94,7 @@ export default function DashboardPage() {
 
       {/* Action Cards */}
       <div>
-        <div className="text-[11px] text-[#64748b] uppercase tracking-widest font-bold mb-3">ACTION CENTER</div>
+        <div className="text-[11px] text-[#64748b] uppercase tracking-widest font-bold mb-3">BROKER ACTIONS</div>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
           {actionCards.map(card => (
             <button
@@ -98,7 +104,7 @@ export default function DashboardPage() {
             >
               <div className="flex items-center justify-between mb-1">
                 <span className="text-lg">{card.icon}</span>
-                <span className={`text-2xl font-bold text-${card.color}-400`}>{card.count}</span>
+                <span className={`text-2xl font-bold ${cardValueClass[card.color] || "text-blue-400"}`}>{card.count}</span>
               </div>
               <div className="text-xs font-medium text-[#e2e8f0]">{card.label}</div>
               {card.detail && <div className="text-[10px] text-[#64748b] mt-0.5">{card.detail}</div>}
@@ -107,51 +113,7 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* Review Breakdown */}
-      {actions?.top_parser_failures && actions.top_parser_failures.length > 0 && (
-        <div className="bg-[#0d1117] border border-[rgba(255,255,255,0.06)] rounded-2xl p-5">
-          <div className="text-[11px] text-[#64748b] uppercase tracking-widest font-bold mb-3">NEEDS ATTENTION</div>
-          <div className="space-y-2">
-            {actions.top_parser_failures.map((f: any, i: number) => {
-              const maxCount = actions.top_parser_failures[0]?.c || 1;
-              return (
-                <div key={i} className="flex items-center gap-3">
-                  <span className="text-xs text-[#94a3b8] w-32 truncate shrink-0">{f.failure_category}</span>
-                  <div className="flex-1 h-4 bg-[rgba(255,255,255,0.06)] rounded-full overflow-hidden">
-                    <div className="h-full bg-orange-500/60 rounded-full" style={{ width: `${Math.max(3, (f.c / maxCount) * 100)}%` }} />
-                  </div>
-                  <span className="text-xs text-[#64748b] w-8 text-right">{f.c}</span>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* Recent Feed (compact) */}
-      <div className="bg-[#0d1117] border border-[rgba(255,255,255,0.06)] rounded-2xl p-5">
-        <div className="text-[11px] text-[#64748b] uppercase tracking-widest font-bold mb-3">RECENT ACTIVITY</div>
-        <div className="max-h-[240px] overflow-y-auto">
-          {feed.length === 0 ? (
-            <div className="text-[#64748b] text-center py-5">No messages yet</div>
-          ) : (
-            feed.map((f, i) => {
-              const color = ({ SELL: "green", BUY: "purple", RENT: "yellow" } as Record<string, string>)[f.intent] || "blue";
-              return (
-                <div key={i} className="feed-item">
-                  <div className="feed-header">
-                    <span className={`badge badge-${color}`}>{f.intent || "TEXT"}</span>
-                    {f.broker_name && <span className="font-semibold text-[#f0f6fc] text-xs">{f.broker_name}</span>}
-                    <span className="feed-time">{f.timestamp ? new Date(f.timestamp + "Z").toLocaleTimeString() : ""}</span>
-                    <span className="feed-group">{f.group_name?.slice(0, 20) || ""}</span>
-                  </div>
-                  <div className="feed-msg">{(f.message || "").slice(0, 200)}</div>
-                </div>
-              );
-            })
-          )}
-        </div>
-      </div>
+      <LatestWhatsAppKnowledge feed={feed} onOpenInbox={() => router.push("/inbox")} />
     </div>
   );
 }

@@ -9,10 +9,13 @@ else
 fi
 LOG_FILE="/tmp/propai.log"
 PROPAI_VENV="$PROPAI_DIR/.venv"
+API_HEALTH_URL="http://127.0.0.1:8000/health"
+API_CONNECTION_URL="http://127.0.0.1:8000/api/sync/connection"
+FRONTEND_HEALTH_URL="http://127.0.0.1:3000/"
 
 log() { echo "[propai] $*" | tee -a "$LOG_FILE" >&2; }
-http_ok() { curl --max-time 2 -sf "$1" >/dev/null 2>&1; }
-http_get() { curl --max-time 2 -sf "$1"; }
+http_ok() { curl --connect-timeout 1 --max-time 2 -sf "$1" >/dev/null 2>&1; }
+http_get() { curl --connect-timeout 1 --max-time 2 -sf "$1"; }
 
 # ── Helpers ───────────────────────────────────────────────────────
 
@@ -39,7 +42,7 @@ ensure_key() {
 }
 
 start_lab_api() {
-  if http_ok http://localhost:8000/health; then
+  if http_ok "$API_HEALTH_URL"; then
     return 0
   fi
   log "Starting PropAI server..."
@@ -47,19 +50,27 @@ start_lab_api() {
   local py
   py="$(python_cmd)"
   setsid "$py" -m uvicorn app:app --host 0.0.0.0 --port 8000 &>/tmp/lab-api.log &
-  disown
-  sleep 3
-  if http_ok http://localhost:8000/health; then
-    log "Server ready at http://localhost:8000"
-  else
-    log "ERROR: Server failed to start"
-    tail -5 /tmp/lab-api.log >&2
-    return 1
-  fi
+  local pid=$!
+  disown "$pid" 2>/dev/null || true
+  for i in $(seq 1 60); do
+    if http_ok "$API_HEALTH_URL"; then
+      log "Server ready at http://localhost:8000"
+      return 0
+    fi
+    if ! kill -0 "$pid" 2>/dev/null; then
+      log "ERROR: Server exited before it became ready"
+      tail -20 /tmp/lab-api.log >&2 || true
+      return 1
+    fi
+    sleep 1
+  done
+  log "ERROR: Server did not become ready within 60s"
+  tail -20 /tmp/lab-api.log >&2 || true
+  return 1
 }
 
 start_frontend() {
-  if http_ok http://localhost:3000/; then
+  if http_ok "$FRONTEND_HEALTH_URL"; then
     return 0
   fi
   if [ ! -d "$PROPAI_DIR/frontend/node_modules" ]; then
@@ -71,7 +82,7 @@ start_frontend() {
   setsid npm run dev -- --webpack --hostname 0.0.0.0 --port 3000 &>/tmp/propai-frontend.log &
   disown
   for i in $(seq 1 20); do
-    if http_ok http://localhost:3000/; then
+    if http_ok "$FRONTEND_HEALTH_URL"; then
       log "Frontend ready at http://localhost:3000"
       return 0
     fi
@@ -133,11 +144,11 @@ cmd_qr() {
 }
 
 whatsapp_connected() {
-  if ! http_ok http://localhost:8000/api/sync/connection; then
+  if ! http_ok "$API_CONNECTION_URL"; then
     return 1
   fi
   local connected
-  connected=$(http_get http://localhost:8000/api/sync/connection | python3 -c "import sys,json; print(json.load(sys.stdin).get('connected',False))" 2>/dev/null || true)
+  connected=$(http_get "$API_CONNECTION_URL" | python3 -c "import sys,json; print(json.load(sys.stdin).get('connected',False))" 2>/dev/null || true)
   [ "$connected" = "True" ] || [ "$connected" = "true" ]
 }
 
@@ -286,7 +297,7 @@ cmd_doctor() {
   local all_ok=true
 
   # Lab API
-  if http_ok http://localhost:8000/health; then
+  if http_ok "$API_HEALTH_URL"; then
     echo "  ✓ PropAI server"
   else
     echo "  ✗ PropAI server  (not running)"
@@ -294,7 +305,7 @@ cmd_doctor() {
   fi
 
   # Frontend
-  if http_ok http://localhost:3000/; then
+  if http_ok "$FRONTEND_HEALTH_URL"; then
     echo "  ✓ PropAI frontend"
   else
     echo "  ✗ PropAI frontend  (run 'propai dashboard')"
@@ -317,9 +328,9 @@ cmd_doctor() {
   fi
 
   # WhatsApp connection
-  if http_ok http://localhost:8000/api/sync/connection; then
+  if http_ok "$API_CONNECTION_URL"; then
     local connected
-    connected=$(http_get http://localhost:8000/api/sync/connection | python3 -c "import sys,json; print(json.load(sys.stdin).get('connected',False))" 2>/dev/null || true)
+    connected=$(http_get "$API_CONNECTION_URL" | python3 -c "import sys,json; print(json.load(sys.stdin).get('connected',False))" 2>/dev/null || true)
     if [ "$connected" = "True" ]; then
       echo "  ✓ WhatsApp connected"
     else
@@ -371,19 +382,19 @@ cmd_status() {
   if baileys_running; then
     baileys_live=true
   fi
-  if http_ok http://localhost:8000/health; then
+  if http_ok "$API_HEALTH_URL"; then
     echo "  Server       ✓  http://localhost:8000"
   else
     echo "  Server       ✗  (not running)"
   fi
-  if http_ok http://localhost:3000/; then
+  if http_ok "$FRONTEND_HEALTH_URL"; then
     echo "  Frontend     ✓  http://localhost:3000"
   else
     echo "  Frontend     ✗  (not running)"
   fi
-  if http_ok http://localhost:8000/api/sync/connection; then
+  if http_ok "$API_CONNECTION_URL"; then
     local connected
-    connected=$(http_get http://localhost:8000/api/sync/connection | python3 -c "import sys,json; print(json.load(sys.stdin).get('connected',False))" 2>/dev/null || true)
+    connected=$(http_get "$API_CONNECTION_URL" | python3 -c "import sys,json; print(json.load(sys.stdin).get('connected',False))" 2>/dev/null || true)
     if [ "$connected" = "True" ]; then
       echo "  WhatsApp     ✓  Connected"
     else
@@ -429,9 +440,9 @@ cmd_menu() {
   echo ""
 
   # Show live status
-  if http_ok http://localhost:8000/api/sync/connection; then
+  if http_ok "$API_CONNECTION_URL"; then
     local connected
-    connected=$(http_get http://localhost:8000/api/sync/connection | python3 -c "import sys,json; print(json.load(sys.stdin).get('connected',False))" 2>/dev/null || true)
+    connected=$(http_get "$API_CONNECTION_URL" | python3 -c "import sys,json; print(json.load(sys.stdin).get('connected',False))" 2>/dev/null || true)
     if [ "$connected" = "True" ]; then
       echo "  ✓ WhatsApp Connected"
     else

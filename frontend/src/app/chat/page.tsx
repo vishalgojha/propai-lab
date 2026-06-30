@@ -67,6 +67,29 @@ const AGENT_LABELS: Record<string, string> = {
 };
 
 const DETERMINISTIC_AGENTS = new Set(["duplicate_listing", "merge_broker", "price"]);
+const CHAT_HISTORY_STORAGE_KEY = "propai_ai_chat_history_v1";
+
+type ChatMessage =
+  | { role: "user"; content: string }
+  | ({ role: "assistant"; content: string } & api.ChatResponse);
+
+function loadStoredChatMessages(): ChatMessage[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = localStorage.getItem(CHAT_HISTORY_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(
+      (message): message is ChatMessage =>
+        message &&
+        (message.role === "user" || message.role === "assistant") &&
+        typeof message.content === "string",
+    );
+  } catch {
+    return [];
+  }
+}
 
 function evidenceLines(s: Suggestion): string[] {
   const lines: string[] = [];
@@ -133,9 +156,7 @@ function formatTokens(n: number): string {
 
 export default function AIReviewPage() {
   const [tab, setTab] = useState<"chat" | "review">("chat");
-  const [chatMessages, setChatMessages] = useState<
-    ({ role: "user"; content: string } | ({ role: "assistant"; content: string } & api.ChatResponse))[]
-  >([]);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>(loadStoredChatMessages);
   const [chatInput, setChatInput] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
@@ -183,6 +204,11 @@ export default function AIReviewPage() {
 
   useEffect(() => { load(); }, [load]);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    localStorage.setItem(CHAT_HISTORY_STORAGE_KEY, JSON.stringify(chatMessages.slice(-40)));
+  }, [chatMessages]);
+
   async function act(id: number, action: string, reason = "") {
     setActionId(id);
     try {
@@ -222,6 +248,14 @@ export default function AIReviewPage() {
       ]);
     } finally {
       setChatLoading(false);
+    }
+  }
+
+  function clearChat() {
+    setChatMessages([]);
+    setChatInput("");
+    if (typeof window !== "undefined") {
+      localStorage.removeItem(CHAT_HISTORY_STORAGE_KEY);
     }
   }
 
@@ -306,6 +340,17 @@ export default function AIReviewPage() {
       {/* ─── Tab: AI Chat ─── */}
       {tab === "chat" && (
         <div className="flex flex-col h-[calc(100vh-160px)]">
+          {chatMessages.length > 0 && (
+            <div className="mb-3 flex justify-end">
+              <button
+                onClick={clearChat}
+                disabled={chatLoading}
+                className="rounded-lg border border-[rgba(255,255,255,0.08)] px-3 py-1.5 text-xs font-medium text-[#94a3b8] hover:border-red-500/30 hover:text-red-200 disabled:opacity-40"
+              >
+                Clear chat
+              </button>
+            </div>
+          )}
           <div className="flex-1 overflow-y-auto space-y-3 mb-4 pr-2">
               {chatMessages.length === 0 ? (
               <div className="text-center py-12">

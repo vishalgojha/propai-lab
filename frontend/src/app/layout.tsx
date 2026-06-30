@@ -10,6 +10,7 @@ const navSections = [
     title: "My Business",
     items: [
       { href: "/connections", label: "Connection Center", icon: "🔌" },
+      { href: "/inbox", label: "Market Inbox", icon: "💬" },
       { href: "/my/inventory", label: "My Inventory", icon: "🏠" },
       { href: "/my/buyers", label: "My Buyers", icon: "🙋" },
       { href: "/promotions", label: "Promotions", icon: "📣" },
@@ -216,6 +217,9 @@ function PaletteModal({ open, onClose }: { open: boolean; onClose: () => void })
             <div className="grid grid-cols-2 gap-1.5">
               <button onClick={() => navigate("/knowledge")} className="flex items-center gap-2 text-xs text-[#94a3b8] hover:text-white hover:bg-[rgba(255,255,255,0.04)] rounded-lg px-2.5 py-2 transition-colors text-left">
                 <span>📚</span> Knowledge Base
+              </button>
+              <button onClick={() => navigate("/inbox")} className="flex items-center gap-2 text-xs text-[#94a3b8] hover:text-white hover:bg-[rgba(255,255,255,0.04)] rounded-lg px-2.5 py-2 transition-colors text-left">
+                <span>💬</span> Market Inbox
               </button>
               <button onClick={() => navigate("/requirements")} className="flex items-center gap-2 text-xs text-[#94a3b8] hover:text-white hover:bg-[rgba(255,255,255,0.04)] rounded-lg px-2.5 py-2 transition-colors text-left">
                 <span>📋</span> Extracted Requirements

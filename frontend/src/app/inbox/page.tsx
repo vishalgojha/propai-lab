@@ -2,19 +2,21 @@
 
 import { useEffect, useState, useRef, useCallback } from "react";
 import * as api from "@/lib/api";
+import WhatsAppMessage from "@/components/WhatsAppMessage";
 
 const PAGE_SIZE = 100;
 
 export default function BrokerWorkspacePage() {
   // Left Panel States
-  const [messages, setMessages] = useState<api.RawMessage[]>([]);
+  const [messages, setMessages] = useState<api.InboxThread[]>([]);
+  const [groups, setGroups] = useState<any[]>([]);
   const [loadingLeft, setLoadingLeft] = useState(false);
   const [offset, setOffset] = useState(0);
   const [searchText, setSearchText] = useState("");
   const [viewMode, setViewMode] = useState<"all" | "groups" | "direct">("all");
 
   // Selection States
-  const [selectedMsg, setSelectedMsg] = useState<api.RawMessage | null>(null);
+  const [selectedMsg, setSelectedMsg] = useState<api.RawMessage | api.InboxThread | null>(null);
   
   // Center Panel States
   const [conversationMessages, setConversationMessages] = useState<api.RawMessage[]>([]);
@@ -41,8 +43,10 @@ export default function BrokerWorkspacePage() {
   const loadFeed = useCallback(async () => {
     setLoadingLeft(true);
     try {
-      const rawMsgs = await api.getRaw(PAGE_SIZE, offset);
-      setMessages(rawMsgs);
+      const threadMsgs = await api.getInboxThreads(PAGE_SIZE, offset);
+      setMessages(threadMsgs);
+      const groupData = await api.getGroups();
+      setGroups(groupData);
       const sugData = await api.getSuggestions("pending", 100);
       setAllSuggestions(sugData);
     } catch (e) {
@@ -61,61 +65,109 @@ export default function BrokerWorkspacePage() {
     threadEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [conversationMessages]);
 
+  // Helper formatting functions
+  const maskPhoneString = (phone: string) => {
+    const digits = phone?.replace(/\D/g, "") || "";
+    if (digits.length < 4) return phone || "—";
+    return `••••••${digits.slice(-4)}`;
+  };
+
+  const displayPhoneString = (phone: string) => {
+    const digits = phone?.replace(/\D/g, "") || "";
+    const local = digits.slice(-10);
+    if (local.length !== 10) return phone || "—";
+    return `+91 ${local.slice(0, 5)} ${local.slice(5)}`;
+  };
+
+  const isRawWhatsAppId = (value?: string) => {
+    const text = value || "";
+    return /@(?:g\.us|s\.whatsapp\.net|lid)$/.test(text) || /^\d{12,}[-\d]*@/.test(text);
+  };
+
+  const displayGroupName = (value?: string) => {
+    const text = (value || "").trim();
+    if (!text || text === "seed" || text === "seed-bot") return "";
+    const knownGroup = groups.find((g) => g?.jid === text);
+    if (knownGroup?.name) return knownGroup.name;
+    if (isRawWhatsAppId(text)) {
+      const raw = text.split("@")[0];
+      const suffix = raw.includes("-") ? raw.split("-").pop()?.slice(-4) : raw.slice(-4);
+      return suffix ? `WhatsApp Group ${suffix}` : "WhatsApp Group";
+    }
+    return text;
+  };
+
+  const displayChatTitle = (msg: api.InboxThread | api.RawMessage) => {
+    const conversationName = "conversation_name" in msg ? msg.conversation_name : "";
+    const group = displayGroupName(conversationName || msg.group_name);
+    if (group) return group;
+    const sender = (msg.sender || "").trim();
+    if (isRawWhatsAppId(sender)) return displayPhoneString(msg.sender_phone || "") || "Direct Message";
+    return sender || displayPhoneString(msg.sender_phone || "") || "Direct Message";
+  };
+
+  const getWaLink = (phone: string) => {
+    const digits = phone?.replace(/\D/g, "");
+    return digits ? `https://wa.me/${digits.startsWith("91") ? digits : "91" + digits}` : "#";
+  };
+
+  const toggleRevealPhone = (phone: string) => {
+    setRevealedPhone(prev => ({ ...prev, [phone]: !prev[phone] }));
+  };
+
   // 2. Compute Left Panel Grouped Lists
-  const filteredMessages = messages.filter(
-    (m) =>
-      !searchText ||
-      m.message.toLowerCase().includes(searchText.toLowerCase()) ||
-      m.sender.toLowerCase().includes(searchText.toLowerCase()) ||
-      m.group_name.toLowerCase().includes(searchText.toLowerCase())
+  const query = searchText.trim().toLowerCase();
+
+  const filteredMessages = messages.filter((m) => {
+    const haystack = [
+      m.message,
+      m.sender,
+      m.sender_phone || "",
+      m.sender_jid || "",
+      m.group_name || "",
+      m.conversation_name || "",
+      displayGroupName(m.conversation_name || m.group_name),
+    ]
+      .join(" ")
+      .toLowerCase();
+    return !query || haystack.includes(query);
+  });
+
+  const uniqueThreads = Array.from(
+    new Map(
+      filteredMessages.map((m) => [
+        m.conversation_key || m.group_name || `${m.sender || "unknown"}:${m.timestamp}`,
+        m,
+      ])
+    ).values()
   );
 
-  // Group by WhatsApp Group name
-  const groupChats = (() => {
-    const groups: Record<string, { latest: api.RawMessage; count: number }> = {};
-    filteredMessages.forEach((m) => {
-      // Treat non-empty and non-seed as groups
-      const groupName = m.group_name?.trim();
-      if (groupName && groupName !== "seed" && groupName !== "seed-bot") {
-        if (!groups[groupName] || new Date(m.timestamp) > new Date(groups[groupName].latest.timestamp)) {
-          groups[groupName] = { latest: m, count: (groups[groupName]?.count || 0) + 1 };
-        } else {
-          groups[groupName].count += 1;
-        }
-      }
-    });
-    return Object.entries(groups)
-      .map(([name, data]) => ({
-        name,
-        latest: data.latest,
-        count: data.count,
-      }))
-      .sort((a, b) => new Date(b.latest.timestamp).getTime() - new Date(a.latest.timestamp).getTime());
-  })();
+  const groupChats = uniqueThreads
+    .filter((m) => m.conversation_type === "group")
+    .map((m) => ({
+      rawGroupName: m.group_name,
+      title: displayGroupName(m.conversation_name || m.group_name),
+      latest: m,
+      count: m.message_count || 0,
+    }))
+    .sort((a, b) => new Date(b.latest.timestamp).getTime() - new Date(a.latest.timestamp).getTime());
 
-  // Group by Direct Chats (Sender)
-  const directChats = (() => {
-    const direct: Record<string, { latest: api.RawMessage; count: number }> = {};
-    filteredMessages.forEach((m) => {
-      const isGroup = m.group_name && m.group_name !== "seed" && m.group_name !== "seed-bot";
-      if (!isGroup) {
-        const key = m.sender_phone || m.sender_jid || m.sender || "Unknown";
-        if (!direct[key] || new Date(m.timestamp) > new Date(direct[key].latest.timestamp)) {
-          direct[key] = { latest: m, count: (direct[key]?.count || 0) + 1 };
-        } else {
-          direct[key].count += 1;
-        }
-      }
-    });
-    return Object.entries(direct)
-      .map(([senderKey, data]) => ({
-        senderKey,
-        name: data.latest.sender || senderKey,
-        latest: data.latest,
-        count: data.count,
-      }))
-      .sort((a, b) => new Date(b.latest.timestamp).getTime() - new Date(a.latest.timestamp).getTime());
-  })();
+  const directChats = uniqueThreads
+    .filter((m) => m.conversation_type === "direct")
+    .map((m) => ({
+      senderKey: m.conversation_key,
+      name: displayChatTitle(m),
+      latest: m,
+      count: m.message_count || 0,
+    }))
+    .sort((a, b) => new Date(b.latest.timestamp).getTime() - new Date(a.latest.timestamp).getTime());
+
+  const leftListEmpty =
+    viewMode === "groups"
+      ? groupChats.length === 0
+      : viewMode === "direct"
+      ? directChats.length === 0
+      : uniqueThreads.length === 0;
 
   // 3. Load Conversation Thread (Center Panel)
   const selectConversation = async (msg: api.RawMessage) => {
@@ -134,10 +186,17 @@ export default function BrokerWorkspacePage() {
         thread = await api.getRaw(80, 0, undefined, undefined, phone, jid);
       }
       // Threads come newest first, reverse to show chronological top-to-bottom
-      setConversationMessages(thread.slice().reverse());
-      
-      // Load intelligence details for the selected message immediately
-      loadMessageDetails(msg.id);
+      const chronologicalThread = thread.slice().reverse();
+      setConversationMessages(chronologicalThread);
+
+      // Inactive group rows use a synthetic row; analyze the latest real thread item instead.
+      const detailTarget = msg.id ? msg : chronologicalThread[chronologicalThread.length - 1];
+      if (detailTarget?.id) {
+        setSelectedMsg(detailTarget);
+        loadMessageDetails(detailTarget.id);
+      } else {
+        setSelectedMsgDetails(null);
+      }
     } catch (e) {
       console.error("Failed to load thread:", e);
     } finally {
@@ -260,22 +319,6 @@ export default function BrokerWorkspacePage() {
     }
   };
 
-  // Helper formatting functions
-  const maskPhoneString = (phone: string) => {
-    const digits = phone?.replace(/\D/g, "") || "";
-    if (digits.length < 4) return phone || "—";
-    return `••••••${digits.slice(-4)}`;
-  };
-
-  const getWaLink = (phone: string) => {
-    const digits = phone?.replace(/\D/g, "");
-    return digits ? `https://wa.me/${digits.startsWith("91") ? digits : "91" + digits}` : "#";
-  };
-
-  const toggleRevealPhone = (phone: string) => {
-    setRevealedPhone(prev => ({ ...prev, [phone]: !prev[phone] }));
-  };
-
   const formatCurrency = (val: number, unit?: string) => {
     if (!val) return "—";
     if (unit?.toLowerCase() === "cr" || val >= 10000000) {
@@ -289,6 +332,17 @@ export default function BrokerWorkspacePage() {
       return `₹${(val / 1000).toFixed(0)} K`;
     }
     return `₹${val.toLocaleString("en-IN")}`;
+  };
+
+  const suggestionHasSource = (suggestion: any, value: string) => {
+    const source = suggestion?.source_data;
+    if (source == null) return false;
+    if (typeof source === "string") return source.includes(value);
+    try {
+      return JSON.stringify(source).includes(value);
+    } catch {
+      return false;
+    }
   };
 
   // Check signals/warnings
@@ -324,32 +378,17 @@ export default function BrokerWorkspacePage() {
       }
     }
 
-    // 3. Broker Merge Suggestion
-    if (selectedBroker) {
-      const brokerMergeSug = allSuggestions.find(
-        s => s.agent === "merge_broker" && s.status === "pending" && s.source_data.includes(String(selectedBroker.id))
-      );
-      if (brokerMergeSug) {
-        signals.push({
-          type: "info",
-          title: "Duplicate Broker Merge Candidate",
-          desc: `AI proposes merging this broker with another profile due to matching contacts/names: "${brokerMergeSug.title}"`,
-          actionSug: brokerMergeSug
-        });
-      }
-    }
-
-    // 4. Listing Duplicate Suggestion
+    // 3. Listing review suggestion
     if (selectedMsgDetails.listings && selectedMsgDetails.listings.length > 0) {
       const listingId = selectedMsgDetails.listings[0].id;
       const listingMergeSug = allSuggestions.find(
-        s => s.agent === "duplicate_listing" && s.status === "pending" && s.source_data.includes(String(listingId))
+        s => s.agent === "duplicate_listing" && s.status === "pending" && suggestionHasSource(s, String(listingId))
       );
       if (listingMergeSug) {
         signals.push({
           type: "info",
-          title: "Duplicate Listing Merge Candidate",
-          desc: `AI proposes merging this listing with a near-identical post from the same broker: "${listingMergeSug.title}"`,
+          title: "Listing Needs Review",
+          desc: `PropAI found a possible repeated property record: "${listingMergeSug.title}"`,
           actionSug: listingMergeSug
         });
       }
@@ -377,7 +416,10 @@ export default function BrokerWorkspacePage() {
           {/* Panel Search & Header */}
           <div className="p-4 border-b border-[rgba(255,255,255,0.06)] space-y-3">
             <div className="flex items-center justify-between">
-              <span className="text-sm font-bold tracking-wider text-[#e2e8f0] uppercase">Inbox Feed</span>
+              <div>
+                <div className="text-sm font-bold tracking-wider text-[#e2e8f0] uppercase">Market Inbox</div>
+                <div className="text-[10px] text-[#64748b] mt-0.5">WhatsApp conversations with PropAI memory</div>
+              </div>
               <button 
                 onClick={loadFeed} 
                 className="text-xs text-[#3EE88A] hover:underline"
@@ -389,7 +431,7 @@ export default function BrokerWorkspacePage() {
             
             <input
               type="text"
-              placeholder="Search chat or message..."
+              placeholder="Search chats, brokers, buildings..."
               value={searchText}
               onChange={(e) => setSearchText(e.target.value)}
               className="w-full px-3 py-1.5 bg-[#0d1117] border border-[rgba(255,255,255,0.1)] rounded-lg text-xs text-[#e2e8f0] focus:border-[#3EE88A] focus:outline-none transition-colors"
@@ -415,9 +457,9 @@ export default function BrokerWorkspacePage() {
 
           {/* List Content */}
           <div className="flex-1 overflow-y-auto divide-y divide-[rgba(255,255,255,0.04)]">
-            {loadingLeft && messages.length === 0 ? (
+            {loadingLeft && messages.length === 0 && groups.length === 0 ? (
               <div className="p-8 text-center text-xs text-[#64748b]">Loading inbox feed...</div>
-            ) : filteredMessages.length === 0 ? (
+            ) : leftListEmpty ? (
               <div className="p-8 text-center text-xs text-[#64748b]">No chats found</div>
             ) : (
               <>
@@ -442,10 +484,10 @@ export default function BrokerWorkspacePage() {
                           </span>
                         </div>
                         <div className="text-xs font-semibold text-[#f0f6fc] truncate">
-                          {m.group_name && m.group_name !== "seed" ? `👥 ${m.group_name}` : `👤 ${m.sender}`}
+                          {displayGroupName(m.group_name) ? `👥 ${displayGroupName(m.group_name)}` : `👤 ${displayChatTitle(m)}`}
                         </div>
                         <div className="text-[11px] text-[#94a3b8] line-clamp-2 leading-relaxed">
-                          {m.message}
+                          <WhatsAppMessage text={m.message || ""} truncate maxLines={2} />
                         </div>
                         {m.message_type && (
                           <div className="flex mt-1">
@@ -461,10 +503,10 @@ export default function BrokerWorkspacePage() {
                 {/* 2. Group Chats View */}
                 {viewMode === "groups" &&
                   groupChats.map((g) => {
-                    const isSelected = selectedMsg?.group_name === g.name;
+                    const isSelected = selectedMsg?.group_name === g.rawGroupName;
                     return (
                       <button
-                        key={g.name}
+                        key={g.rawGroupName}
                         onClick={() => selectConversation(g.latest)}
                         className={`w-full text-left p-3.5 transition-colors flex flex-col gap-1 select-none ${
                           isSelected ? "bg-blue-600/10 border-l-2 border-[#3b82f6]" : "hover:bg-[rgba(255,255,255,0.02)]"
@@ -472,7 +514,7 @@ export default function BrokerWorkspacePage() {
                       >
                         <div className="flex items-center justify-between">
                           <span className="text-[11px] font-bold text-[#e2e8f0] truncate max-w-[180px]">
-                            👥 {g.name}
+                            👥 {g.title}
                           </span>
                           <span className="text-[9px] bg-[#111820] text-[#64748b] px-1.5 py-0.5 rounded-full">
                             {g.count} msg
@@ -482,7 +524,7 @@ export default function BrokerWorkspacePage() {
                           Last: {g.latest.sender}
                         </div>
                         <div className="text-[11px] text-[#94a3b8] line-clamp-1 italic">
-                          &quot;{g.latest.message}&quot;
+                          &quot;<WhatsAppMessage text={g.latest.message || ""} truncate maxLines={1} />&quot;
                         </div>
                       </button>
                     );
@@ -510,11 +552,11 @@ export default function BrokerWorkspacePage() {
                         </div>
                         {d.latest.sender_phone && (
                           <div className="text-[9px] text-[#64748b] font-mono">
-                            {maskPhoneString(d.latest.sender_phone)}
+                            {displayPhoneString(d.latest.sender_phone)}
                           </div>
                         )}
                         <div className="text-[11px] text-[#94a3b8] line-clamp-1 italic mt-1">
-                          &quot;{d.latest.message}&quot;
+                          &quot;<WhatsAppMessage text={d.latest.message || ""} truncate maxLines={1} />&quot;
                         </div>
                       </button>
                     );
@@ -557,18 +599,16 @@ export default function BrokerWorkspacePage() {
                   </div>
                   <div>
                     <h3 className="text-sm font-bold text-[#e2e8f0]">
-                      {selectedMsg.group_name && selectedMsg.group_name !== "seed"
-                        ? selectedMsg.group_name
-                        : selectedMsg.sender}
+                      {displayChatTitle(selectedMsg)}
                     </h3>
                     <div className="text-[10px] text-[#64748b] flex items-center gap-2 mt-0.5">
-                      <span>Sender: {selectedMsg.sender}</span>
-                      {selectedMsg.sender_phone && (
-                        <>
-                          <span>•</span>
-                          <span className="font-mono">{maskPhoneString(selectedMsg.sender_phone)}</span>
-                        </>
-                      )}
+                          <span>{selectedMsg.sender}</span>
+                          {selectedMsg.sender_phone && (
+                            <>
+                              <span>•</span>
+                              <span className="font-mono">{displayPhoneString(selectedMsg.sender_phone)}</span>
+                            </>
+                          )}
                     </div>
                   </div>
                 </div>
@@ -581,7 +621,7 @@ export default function BrokerWorkspacePage() {
                       rel="noopener noreferrer"
                       className="px-2.5 py-1 bg-[#166534] text-green-100 hover:bg-[#15803d] rounded text-[10px] font-bold uppercase tracking-wider transition-colors"
                     >
-                      Connect WhatsApp
+                      Open WhatsApp
                     </a>
                   )}
                   {selectedBroker && (
@@ -639,7 +679,7 @@ export default function BrokerWorkspacePage() {
                             </span>
                           </div>
                           <div className="text-xs text-[#e2e8f0] whitespace-pre-wrap leading-relaxed text-left">
-                            {m.message}
+                            <WhatsAppMessage text={m.message || ""} />
                           </div>
                           
                           <div className="flex items-center justify-between pt-1 border-t border-[rgba(255,255,255,0.04)]">
@@ -681,7 +721,7 @@ export default function BrokerWorkspacePage() {
               <span className="text-4xl">💬</span>
               <h3 className="text-sm font-semibold text-[#cbd5e1]">No conversation selected</h3>
               <p className="text-xs max-w-xs">
-                Select any incoming message or group chat from the left panel to open the broker workspace.
+                Select a WhatsApp group or direct chat to see messages, evidence, and PropAI actions.
               </p>
             </div>
           )}
@@ -717,7 +757,7 @@ export default function BrokerWorkspacePage() {
               </div>
             ) : !selectedMsgDetails ? (
               <div className="h-full flex items-center justify-center text-xs text-[#64748b] text-center p-6">
-                Select a message to view structured PropAI knowledge graph insights.
+                Select a message to view PropAI evidence and broker actions.
               </div>
             ) : (
               <>
@@ -775,7 +815,7 @@ export default function BrokerWorkspacePage() {
                         </button>
                       </div>
                       <p className="text-xs text-[#cbd5e1] whitespace-pre-wrap leading-relaxed">
-                        {selectedMsgDetails.raw?.message}
+                        <WhatsAppMessage text={selectedMsgDetails.raw?.message || ""} />
                       </p>
                     </div>
 
@@ -929,7 +969,7 @@ export default function BrokerWorkspacePage() {
                             <span className="text-[#64748b]">Primary Phone</span>
                             <div className="flex items-center gap-2">
                               <span className="font-mono text-[#cbd5e1]">
-                                {revealedPhone[selectedBroker.phone] ? selectedBroker.phone : maskPhoneString(selectedBroker.phone)}
+                                {revealedPhone[selectedBroker.phone] ? displayPhoneString(selectedBroker.phone) : maskPhoneString(selectedBroker.phone)}
                               </span>
                               <button
                                 onClick={() => toggleRevealPhone(selectedBroker.phone)}
@@ -974,7 +1014,7 @@ export default function BrokerWorkspacePage() {
                                 rel="noopener noreferrer"
                                 className="w-full py-1.5 bg-[#166534] hover:bg-[#15803d] text-green-100 rounded text-[10px] font-bold uppercase tracking-wider text-center block transition-colors"
                               >
-                                WhatsApp Chat Link
+                                Open WhatsApp
                               </a>
                             </div>
                           )}

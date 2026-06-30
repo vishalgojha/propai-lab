@@ -238,7 +238,7 @@ function ListingBlock({ block, activeSource, onPromptSelect }: { block: Workspac
                 .filter(Boolean)
                 .join(" · ")}
               meta={[
-                item.price_formatted || item.price ? `₹${Number(item.price || 0).toLocaleString("en-IN")}` : "",
+                item.price_formatted ? String(item.price_formatted) : item.price ? `₹${Number(item.price || 0).toLocaleString("en-IN")}` : "",
                 item.area_sqft ? `${Number(item.area_sqft).toLocaleString("en-IN")} sqft` : "",
                 item.furnishing || item.furniture || "",
                 item.last_seen_text || item.last_seen || item.latest_timestamp || "",

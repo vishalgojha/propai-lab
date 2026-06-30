@@ -924,8 +924,8 @@ async def webhook(request: Request):
     sender_jid = key.get("participant", "") or baileys_sender.get("id", "")
     participant_phone_jid = key.get("participantAlt", "") or key.get("participant_pn", "") or baileys_sender.get("phone", "")
     phone_source = participant_phone_jid if str(participant_phone_jid).endswith("@s.whatsapp.net") else sender_jid
-    sender_phone = _phone_from_jid(phone_source) if str(phone_source).endswith("@s.whatsapp.net") else ""
-    sender = _format_whatsapp_sender(sender_name, sender_jid)
+    sender_phone = _canonical_phone_from_jid(phone_source) if str(phone_source).endswith("@s.whatsapp.net") else ""
+    sender = _format_whatsapp_sender(sender_name, sender_jid, sender_phone)
     group = key.get("remoteJid", "") or msg_data.get("from", "")
     group_name = _resolve_group_name(group)
     timestamp = msg_data.get("messageTimestamp", int(datetime.now(timezone.utc).timestamp()))
@@ -1193,12 +1193,12 @@ def _handle_system_event(event_class: str, event: str, data: dict, instance: str
         })
 
 
-def _format_whatsapp_sender(name: str = "", jid: str = "") -> str:
+def _format_whatsapp_sender(name: str = "", jid: str = "", phone: str = "") -> str:
     clean_name = (name or "").strip()
-    phone = _phone_from_jid(jid)
-    if clean_name and phone:
-        return f"{clean_name} ({phone})"
-    return clean_name or phone or "unknown"
+    display_phone = _masked_phone_from_digits(phone) or ("" if str(jid).endswith("@lid") else _phone_from_jid(jid))
+    if clean_name:
+        return clean_name
+    return display_phone or "unknown"
 
 
 def _resolve_group_name(jid: str) -> str:
@@ -1219,7 +1219,7 @@ def _resolve_group_name(jid: str) -> str:
     
     # DM JIDs (person JIDs)
     if jid.endswith("@s.whatsapp.net"):
-        phone = _phone_from_jid(jid)
+        phone = _display_phone_from_whatsapp_id(jid)
         if phone:
             return f"DM: {phone}"
         return f"DM: {jid}"
@@ -1251,6 +1251,21 @@ def _resolve_group_name(jid: str) -> str:
 
 def _phone_from_jid(jid: str = "") -> str:
     digits = _digits_from_whatsapp_id(jid)
+    return _masked_phone_from_digits(digits)
+
+
+def _canonical_phone_from_jid(jid: str = "") -> str:
+    digits = _digits_from_whatsapp_id(jid)
+    if not digits:
+        return ""
+    if digits.startswith("91") and len(digits) >= 12:
+        return digits[:12]
+    if len(digits) >= 10:
+        return digits[-10:]
+    return digits
+
+
+def _masked_phone_from_digits(digits: str = "") -> str:
     if not digits:
         return ""
     if digits.startswith("91") and len(digits) >= 12:
@@ -1427,6 +1442,60 @@ async def get_raw_message(raw_id: int):
     if not row:
         raise HTTPException(404)
     return asdict(row)
+
+
+@app.get("/api/inbox/threads")
+async def inbox_threads(limit: int = 500, offset: int = 0):
+    rows = storage.db.execute(
+        """
+        WITH ranked AS (
+            SELECT
+                rm.*,
+                CASE
+                    WHEN rm.group_name IS NOT NULL AND TRIM(rm.group_name) != '' AND rm.group_name NOT IN ('seed', 'seed-bot') THEN 'group'
+                    ELSE 'direct'
+                END AS conversation_type,
+                CASE
+                    WHEN rm.group_name IS NOT NULL AND TRIM(rm.group_name) != '' AND rm.group_name NOT IN ('seed', 'seed-bot') THEN rm.group_name
+                    ELSE COALESCE(NULLIF(TRIM(rm.sender_phone), ''), NULLIF(TRIM(rm.sender_jid), ''), NULLIF(TRIM(rm.sender), ''), 'unknown')
+                END AS conversation_key,
+                ROW_NUMBER() OVER (
+                    PARTITION BY
+                        CASE
+                            WHEN rm.group_name IS NOT NULL AND TRIM(rm.group_name) != '' AND rm.group_name NOT IN ('seed', 'seed-bot') THEN rm.group_name
+                            ELSE COALESCE(NULLIF(TRIM(rm.sender_phone), ''), NULLIF(TRIM(rm.sender_jid), ''), NULLIF(TRIM(rm.sender), ''), 'unknown')
+                        END
+                    ORDER BY datetime(rm.created_at) DESC, rm.id DESC
+                ) AS rn,
+                COUNT(*) OVER (
+                    PARTITION BY
+                        CASE
+                            WHEN rm.group_name IS NOT NULL AND TRIM(rm.group_name) != '' AND rm.group_name NOT IN ('seed', 'seed-bot') THEN rm.group_name
+                            ELSE COALESCE(NULLIF(TRIM(rm.sender_phone), ''), NULLIF(TRIM(rm.sender_jid), ''), NULLIF(TRIM(rm.sender), ''), 'unknown')
+                        END
+                ) AS message_count
+                , CASE
+                    WHEN rm.group_name IS NOT NULL AND TRIM(rm.group_name) != '' AND rm.group_name NOT IN ('seed', 'seed-bot')
+                      THEN COALESCE(NULLIF(TRIM(ssj.group_name), ''), rm.group_name)
+                    ELSE COALESCE(NULLIF(TRIM(rm.sender), ''), NULLIF(TRIM(rm.sender_phone), ''), NULLIF(TRIM(rm.sender_jid), ''), 'Direct Message')
+                  END AS display_name
+            FROM raw_messages rm
+            LEFT JOIN source_sync_jobs ssj
+                ON ssj.group_id = rm.group_name
+        )
+        SELECT
+            id, group_name, sender, sender_jid, sender_phone, message, message_type,
+            timestamp, source, event_id, message_uid, raw_payload, synced_at, pipeline_version,
+            conversation_type, conversation_key, message_count,
+            display_name AS conversation_name
+        FROM ranked
+        WHERE rn = 1
+        ORDER BY datetime(timestamp) DESC, id DESC
+        LIMIT ? OFFSET ?
+        """,
+        (limit, offset),
+    ).fetchall()
+    return [dict(row) for row in rows]
 
 
 @app.get("/api/parsed")
@@ -2254,6 +2323,214 @@ class ChatRequest(BaseModel):
     model: str = ""
 
 
+_LISTING_SEARCH_BLOCKERS = re.compile(
+    r"\b(broker|brokers|sender|senders|group|groups|duplicate|duplicates|trend|trends|market action|audit|remember|memory)\b",
+    re.IGNORECASE,
+)
+_LISTING_SEARCH_SIGNAL = re.compile(
+    r"\b(\d+(?:\.\d+)?\s*bhk|studio|rent|rental|lease|sale|sell|buy|purchase|available|availability|flat|apartment|property|listing|listings)\b",
+    re.IGNORECASE,
+)
+_KNOWN_MARKETS = [
+    "Bandra East",
+    "Bandra West",
+    "Bandra",
+    "Andheri East",
+    "Andheri West",
+    "Andheri",
+    "Santacruz East",
+    "Santacruz West",
+    "Santacruz",
+    "Juhu",
+    "Khar West",
+    "Khar",
+    "BKC",
+    "Lower Parel",
+    "Worli",
+    "Sion",
+    "Goregaon East",
+    "Goregaon West",
+    "Goregaon",
+    "Lokhandwala",
+    "Malad East",
+    "Malad West",
+    "Malad",
+    "Powai",
+    "Chembur",
+    "Dadar",
+    "Prabhadevi",
+    "Pali Hill",
+    "Kalina",
+]
+
+
+def _extract_simple_listing_query(messages: list[dict]) -> dict | None:
+    user_messages = [
+        str(m.get("content") or "").strip()
+        for m in messages
+        if m.get("role") == "user" and str(m.get("content") or "").strip()
+    ]
+    if not user_messages:
+        return None
+
+    text = user_messages[-1]
+    lowered = text.lower()
+    if len(text) > 180 or _LISTING_SEARCH_BLOCKERS.search(text) or not _LISTING_SEARCH_SIGNAL.search(text):
+        return None
+
+    args: dict = {"limit": 10, "sort_by": "last_seen", "group_by_building": True}
+
+    bhk_match = re.search(r"\b(\d+(?:\.\d+)?)\s*bhk\b", lowered)
+    if bhk_match:
+        args["bhk"] = bhk_match.group(1)
+    elif re.search(r"\bstudio\b", lowered):
+        args["bhk"] = "STUDIO"
+
+    if re.search(r"\b(rent|rental|lease|available|availability)\b", lowered):
+        args["intent"] = "RENT"
+    elif re.search(r"\b(sale|sell|buy|purchase)\b", lowered):
+        args["intent"] = "SELL"
+
+    for market in _KNOWN_MARKETS:
+        if re.search(rf"\b{re.escape(market.lower())}\b", lowered):
+            args["micro_market"] = market
+            break
+
+    if "micro_market" not in args:
+        loc_match = re.search(
+            r"\b(?:in|at|near|around)\s+([a-z][a-z\s]{2,40}?)(?:\s+(?:under|below|above|over|with|for|rent|sale|buy|available)\b|[?.!,]|$)",
+            lowered,
+        )
+        if loc_match:
+            locality = " ".join(part.capitalize() for part in loc_match.group(1).split())
+            if locality:
+                args["micro_market"] = locality
+
+    price_match = re.search(r"\b(?:under|below|upto|up to|max)\s*(?:₹|rs\.?\s*)?(\d+(?:\.\d+)?)\s*(cr|crore|crores|l|lac|lakh|lakhs|k)?\b", lowered)
+    if price_match:
+        amount = float(price_match.group(1))
+        unit = (price_match.group(2) or "").lower()
+        if unit in {"cr", "crore", "crores"}:
+            amount *= 1_00_00_000
+        elif unit in {"l", "lac", "lakh", "lakhs"}:
+            amount *= 1_00_000
+        elif unit == "k":
+            amount *= 1_000
+        args["price_max"] = amount
+
+    if not any(key in args for key in ("bhk", "intent", "micro_market", "building", "price_max")):
+        return None
+
+    return args
+
+
+def _format_listing_price(item: dict) -> str:
+    price = item.get("price")
+    if price in (None, ""):
+        return ""
+    try:
+        value = float(price)
+    except (TypeError, ValueError):
+        return str(price)
+    unit = str(item.get("price_unit") or "").lower()
+    is_rent = item.get("intent") == "RENT"
+    suffix = "/month" if is_rent else ""
+    if is_rent and unit in {"", "none", "null"}:
+        if 0 < value < 100:
+            return f"₹{value:g} L/month"
+        if 100 <= value < 1000:
+            return f"₹{value:g} K/month"
+        if 1000 <= value < 10000:
+            return f"₹{value / 1000:g} L/month"
+    if unit in {"lac", "lakh", "l"}:
+        return f"₹{value:g} L{suffix}"
+    if unit in {"cr", "crore"}:
+        return f"₹{value:g} Cr"
+    if unit == "k":
+        return f"₹{value:g} K{suffix}"
+    if value >= 1_00_00_000:
+        return f"₹{value / 1_00_00_000:.2f} Cr"
+    if value >= 1_00_000:
+        return f"₹{value / 1_00_000:.1f} L{suffix}"
+    return f"₹{value:,.0f}{suffix}"
+
+
+def _listing_search_response(args: dict) -> dict:
+    raw = chat_engine.execute_tool("search_listings", args, {}, db_path=str(DB_PATH))
+    try:
+        payload = json.loads(raw)
+    except Exception:
+        return {
+            "content": "I could not search listings right now.",
+            "blocks": [{"type": "error_state", "title": "Listing search failed", "body": str(raw)}],
+            "sources": ["unique_listings"],
+            "status_steps": ["Searching saved properties"],
+        }
+
+    results = payload.get("results") or []
+    for item in results:
+        item["price_formatted"] = _format_listing_price(item)
+
+    bhk_label = f"{args['bhk']} BHK " if args.get("bhk") and str(args.get("bhk")).upper() != "STUDIO" else ""
+    intent_label = "rentals" if args.get("intent") == "RENT" else "sale properties" if args.get("intent") == "SELL" else "properties"
+    market_label = f" in {args['micro_market']}" if args.get("micro_market") else ""
+    query_label = f"{bhk_label}{intent_label}{market_label}".strip()
+    total = int(payload.get("total") or 0)
+
+    if not results:
+        suggestions = []
+        if args.get("micro_market"):
+            suggestions.append(f"Show all 3 BHK rentals near {args['micro_market']}" if args.get("bhk") else f"Show all rentals near {args['micro_market']}")
+        suggestions.extend(["Search nearby markets", "Show latest rentals", "Show requirements instead"])
+        return {
+            "content": f"No exact matches found for {query_label}.",
+            "blocks": [
+                {
+                    "type": "empty_state",
+                    "title": "No exact matches",
+                    "body": f"PropAI searched saved WhatsApp property records for {query_label}.",
+                    "actions": [{"label": option, "value": option} for option in suggestions[:4]],
+                },
+                {"type": "suggested_questions", "title": "Try next", "items": suggestions[:4]},
+            ],
+            "sources": ["unique_listings"],
+            "status_steps": ["Parsed property search", "Searched saved properties", "Rendered results"],
+            "trace": {"route": "deterministic_listing_search", "args": args},
+        }
+
+    shown = len(results)
+    return {
+        "content": f"Found {total} {query_label}. Showing the latest {shown}.",
+        "blocks": [
+            {
+                "type": "summary",
+                "title": "Result",
+                "body": f"Found {total} {query_label}. Showing the latest {shown} saved from WhatsApp.",
+            },
+            {
+                "type": "listing_cards",
+                "title": query_label.title(),
+                "subtitle": f"{total} matching property records",
+                "items": results,
+                "body": "Sorted by latest seen",
+            },
+            {
+                "type": "suggested_questions",
+                "title": "Refine",
+                "items": [
+                    f"{query_label} under 3 L",
+                    f"Furnished {query_label}",
+                    f"Show brokers for {query_label}",
+                    f"Show original messages for {query_label}",
+                ],
+            },
+        ],
+        "sources": ["unique_listings"],
+        "status_steps": ["Parsed property search", "Searched saved properties", "Rendered results"],
+        "trace": {"route": "deterministic_listing_search", "args": args, "total": total},
+    }
+
+
 def _doubleword_error_response(exc: Exception) -> JSONResponse:
     status_code = getattr(exc, "status_code", None)
     body = getattr(exc, "body", None)
@@ -2300,6 +2577,10 @@ async def ai_config():
 
 @app.post("/api/ai/chat")
 async def ai_chat(req: ChatRequest):
+    listing_args = _extract_simple_listing_query(req.messages)
+    if listing_args:
+        return _listing_search_response(listing_args)
+
     api_key = req.api_key or DOUBLEWORD_API_KEY
     if not api_key:
         return {"error": "api_key_required", "message": "Set your Doubleword API key in Chat settings"}

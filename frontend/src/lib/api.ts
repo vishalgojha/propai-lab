@@ -49,6 +49,13 @@ export interface RawMessage {
   pipeline_version: string;
 }
 
+export interface InboxThread extends RawMessage {
+  conversation_type: "group" | "direct";
+  conversation_key: string;
+  message_count: number;
+  conversation_name: string;
+}
+
 export interface ParsedObservation {
   id: number;
   raw_message_id: number;
@@ -136,6 +143,11 @@ export function getRaw(limit = 50, offset = 0, group_name?: string, sender?: str
   if (sender_phone) params.set("sender_phone", sender_phone);
   if (sender_jid) params.set("sender_jid", sender_jid);
   return fetchJSON<RawMessage[]>(`/raw?${params.toString()}`);
+}
+
+export function getInboxThreads(limit = 500, offset = 0) {
+  const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+  return fetchJSON<InboxThread[]>(`/inbox/threads?${params.toString()}`);
 }
 
 export function getParsed(limit = 50, offset = 0) {
