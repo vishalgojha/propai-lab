@@ -5,6 +5,7 @@ import * as api from "@/lib/api";
 import WhatsAppMessage from "@/components/WhatsAppMessage";
 import TextSelectionMenu from "@/components/TextSelectionMenu";
 import AddToClientBucket from "@/components/AddToClientBucket";
+import ResizablePanel from "@/components/ResizablePanel";
 import {
   Users,
   User,
@@ -48,6 +49,7 @@ export default function BrokerWorkspacePage() {
   const [activeRightTab, setActiveRightTab] = useState<"analysis" | "broker" | "building">("analysis");
   const [selectedMsgDetails, setSelectedMsgDetails] = useState<any>(null);
   const [loadingDetails, setLoadingDetails] = useState(false);
+  const [rightCollapsed, setRightCollapsed] = useState(false);
   const [selectedBroker, setSelectedBroker] = useState<any>(null);
   const [loadingBroker, setLoadingBroker] = useState(false);
   const [selectedBuilding, setSelectedBuilding] = useState<any>(null);
@@ -541,7 +543,14 @@ export default function BrokerWorkspacePage() {
       <div className="flex-1 flex overflow-hidden">
         
         {/* ================= LEFT PANEL: INBOX ================= */}
-        <div className="w-80 border-r border-[rgba(255,255,255,0.06)] flex flex-col bg-[#0a0e14]">
+        <ResizablePanel
+          defaultWidth={320}
+          minWidth={240}
+          maxWidth={500}
+          storageKey="propai-inbox-left-width"
+          className="border-r border-[rgba(255,255,255,0.06)] bg-[#0a0e14]"
+        >
+          <div className="flex flex-col h-full">
           {/* Panel Search & Header */}
           <div className="p-4 border-b border-[rgba(255,255,255,0.06)] space-y-3">
             <div className="flex items-center justify-between">
@@ -718,7 +727,8 @@ export default function BrokerWorkspacePage() {
               Next
             </button>
           </div>
-        </div>
+          </div>
+        </ResizablePanel>
 
         {/* ================= CENTER PANEL: CONVERSATION ================= */}
         <div className="flex-1 flex flex-col bg-[#070b0e] overflow-hidden">
@@ -885,7 +895,22 @@ export default function BrokerWorkspacePage() {
         </div>
 
         {/* ================= RIGHT PANEL: INTELLIGENCE PANEL ================= */}
-        <div className="w-96 border-l border-[rgba(255,255,255,0.06)] flex flex-col bg-[#0a0e14] overflow-hidden">
+        <ResizablePanel
+          defaultWidth={384}
+          minWidth={280}
+          maxWidth={720}
+          storageKey="propai-inbox-right-width"
+          collapsed={rightCollapsed}
+          onCollapse={() => setRightCollapsed(true)}
+          onExpand={() => setRightCollapsed(false)}
+          presets={[
+            { label: "Compact", width: 280 },
+            { label: "Default", width: 384 },
+            { label: "Deep Analysis", width: 560 },
+          ]}
+          className="border-l border-[rgba(255,255,255,0.06)] bg-[#0a0e14]"
+        >
+          <div className="flex flex-col h-full">
           {/* Tab Switcher */}
           <div className="flex border-b border-[rgba(255,255,255,0.06)] bg-[#070b0e]">
             {(["analysis", "broker", "building"] as const).map((tab) => {
@@ -1353,7 +1378,8 @@ export default function BrokerWorkspacePage() {
               </>
             )}
           </div>
-        </div>
+          </div>
+        </ResizablePanel>
 
       </div>
     </div>
