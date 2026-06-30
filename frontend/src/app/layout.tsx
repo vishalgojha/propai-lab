@@ -271,7 +271,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               </button>
               <a
                 href="/connections"
-                className="flex items-center gap-2.5 px-2.5 py-2 rounded-lg hover:bg-[rgba(255,255,255,0.02)] transition-colors group"
+                className="flex items-center gap-2.5 px-2.5 py-2.5 rounded-lg hover:bg-[rgba(255,255,255,0.02)] transition-colors group"
               >
                 {waConnected ? (
                   <div className="relative">
@@ -282,11 +282,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                   <WifiOff className="w-3.5 h-3.5 text-red-400" strokeWidth={1.5} />
                 )}
                 <div className="flex-1 min-w-0">
-                  <div className="text-[11px] font-medium text-[#94a3b8] truncate">
+                  <div className="text-[12px] font-semibold text-[#cbd5e1] truncate">
                     {waConnected ? (whatsapp?.phone || "WhatsApp Connected") : "WhatsApp Disconnected"}
                   </div>
                   {waConnected && whatsapp?.connected_since && (
-                    <div className="text-[9px] text-[#64748b] truncate">
+                    <div className="text-[10px] text-[#64748b] truncate">
                       Since {new Date(whatsapp.connected_since).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                     </div>
                   )}
@@ -299,29 +299,38 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           {/* ═══════ Main Content ═══════ */}
           <main className="flex-1 overflow-hidden">
             {/* ═══ Persistent Connection Bar ═══ */}
-            <div className="flex items-center gap-2.5 px-5 py-1.5 border-b border-[rgba(255,255,255,0.04)] bg-[#0a0e14]">
+            <div className="flex items-center gap-2.5 px-5 py-2 border-b border-[rgba(255,255,255,0.04)] bg-[#0a0e14]">
               <div className="flex items-center gap-1.5">
                 {waConnected ? (
-                  <span className="flex items-center gap-1 text-[11px] text-emerald-400 font-medium">
-                    <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse" />
+                  <span className="flex items-center gap-1.5 text-[12px] text-emerald-300 font-semibold">
+                    <span className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse" />
                     Connected
                   </span>
                 ) : (
-                  <a href="/connections" className="flex items-center gap-1.5 text-[11px] text-amber-400 font-medium hover:text-amber-300 transition-colors">
-                    <span className="w-1.5 h-1.5 bg-amber-400 rounded-full" />
+                  <a href="/connections" className="flex items-center gap-1.5 text-[12px] text-amber-300 font-semibold hover:text-amber-200 transition-colors">
+                    <span className="w-2 h-2 bg-amber-400 rounded-full" />
                     Disconnected — Tap to reconnect
                   </a>
                 )}
               </div>
               {waConnected && whatsapp?.phone && (
-                <span className="text-[11px] text-[#64748b] font-mono">{whatsapp.phone}</span>
+                <span className="text-[12px] text-[#94a3b8] font-mono">{whatsapp.phone}</span>
               )}
               {waConnected && whatsapp?.connected_since && (
-                <span className="text-[10px] text-[#4a5568]">
+                <span className="text-[11px] text-[#64748b]">
                   Since {new Date(whatsapp.connected_since).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                 </span>
               )}
               <div className="flex-1" />
+              {waConnected && whatsapp?.phone && (
+                <a
+                  href="/connections"
+                  className="px-3 py-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 text-[11px] font-semibold text-emerald-200 hover:bg-emerald-500/20 transition-colors"
+                  title="Connected WhatsApp number"
+                >
+                  WhatsApp: {whatsapp.phone}
+                </a>
+              )}
               <a href="/connections" className="text-[9px] text-[#4a5568] hover:text-[#94a3b8] uppercase tracking-wider transition-colors">
                 Settings
               </a>

@@ -24,9 +24,16 @@ import {
   Calendar,
   MessageSquare,
   ClipboardList,
+  Maximize2,
+  Minimize2,
 } from "lucide-react";
 
 const PAGE_SIZE = 100;
+const RIGHT_TABS = [
+  { key: "analysis", label: "🎯 Analysis" },
+  { key: "broker", label: "🤝 Broker" },
+  { key: "building", label: "🏢 Building" },
+] as const;
 
 function detectPropertyType(parsed: any): "residential" | "commercial" | "retail" | "industrial" {
   const intent = (parsed.intent || "").toUpperCase();
@@ -133,6 +140,7 @@ export default function BrokerWorkspacePage() {
   const [selectedMsgDetails, setSelectedMsgDetails] = useState<any>(null);
   const [loadingDetails, setLoadingDetails] = useState(false);
   const [rightCollapsed, setRightCollapsed] = useState(false);
+  const [rightPoppedOut, setRightPoppedOut] = useState(false);
   const [selectedBroker, setSelectedBroker] = useState<any>(null);
   const [loadingBroker, setLoadingBroker] = useState(false);
   const [selectedBuilding, setSelectedBuilding] = useState<any>(null);
@@ -176,6 +184,18 @@ export default function BrokerWorkspacePage() {
   useEffect(() => {
     threadEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [conversationMessages]);
+
+  useEffect(() => {
+    if (!rightPoppedOut) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape" || event.key === "Enter") {
+        event.preventDefault();
+        setRightPoppedOut(false);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [rightPoppedOut]);
 
   // Helper formatting functions
   const maskPhoneString = (phone: string) => {
@@ -221,6 +241,32 @@ export default function BrokerWorkspacePage() {
   const getWaLink = (phone: string) => {
     const digits = phone?.replace(/\D/g, "");
     return digits ? `https://wa.me/${digits.startsWith("91") ? digits : "91" + digits}` : "#";
+  };
+
+  const getWaLinkWithRecall = (phone: string, extractedText: string) => {
+    const digits = phone?.replace(/\D/g, "");
+    if (!digits) return "#";
+    const normalized = digits.startsWith("91") ? digits : `91${digits}`;
+    const cleanedExtract = extractedText.trim();
+    const clippedExtract =
+      cleanedExtract.length > 320 ? `${cleanedExtract.slice(0, 320)}...` : cleanedExtract;
+    const recallMessage = `Recall:\n${clippedExtract}\n\nFound on PropAI Live`;
+    return `https://wa.me/${normalized}?text=${encodeURIComponent(recallMessage)}`;
+  };
+
+  const phoneFromJid = (jid?: string) => {
+    if (!jid) return "";
+    const head = jid.split("@")[0] || "";
+    const digits = head.replace(/\D/g, "");
+    if (digits.length < 10) return "";
+    return digits.slice(-10);
+  };
+
+  const resolveMessagePhone = (msg?: Partial<api.RawMessage> | null) => {
+    if (!msg) return "";
+    const direct = (msg.sender_phone || "").replace(/\D/g, "");
+    if (direct.length >= 10) return direct.slice(-10);
+    return phoneFromJid(msg.sender_jid);
   };
 
   const toggleRevealPhone = (phone: string) => {
@@ -579,6 +625,26 @@ export default function BrokerWorkspacePage() {
 
   const signals = getAISignals();
 
+  const getListingPayloadText = (listing: any): string | null => {
+    if (!listing) return null;
+    const payload = listing.raw_payload;
+    if (!payload) return null;
+    try {
+      const parsed = typeof payload === "string" ? JSON.parse(payload) : payload;
+      return parsed?.full_text || parsed?.text || null;
+    } catch {
+      return null;
+    }
+  };
+
+  const waSenderPhone =
+    selectedMsgDetails?.parsed?.broker_phone ||
+    selectedMsgDetails?.raw?.sender_phone ||
+    selectedMsg?.sender_phone ||
+    "";
+  const isGroupConversationSelected =
+    !!selectedMsg?.group_name && selectedMsg.group_name !== "seed" && selectedMsg.group_name !== "seed-bot";
+
   return (
     <div className="flex flex-col h-[calc(100vh-80px)] border border-[rgba(255,255,255,0.06)] rounded-2xl overflow-hidden bg-[#090d12]">
       
@@ -865,7 +931,7 @@ export default function BrokerWorkspacePage() {
                   <button className="h-7 w-7 rounded-md border border-[rgba(255,255,255,0.06)] bg-[#111820] text-[#64748b] hover:text-white transition-colors flex items-center justify-center">
                     <Info className="w-3.5 h-3.5" strokeWidth={1.5} />
                   </button>
-                  {selectedMsg.sender_phone && (
+                  {!isGroupConversationSelected && selectedMsg.sender_phone && (
                     <a
                       href={getWaLink(selectedMsg.sender_phone)}
                       target="_blank"
@@ -924,6 +990,7 @@ export default function BrokerWorkspacePage() {
 
                             const intentBadgeColor =
                               ({ SELL: "green", BUY: "purple", RENT: "yellow" } as Record<string, string>)[m.message_type?.toUpperCase()] || "blue";
+                            const msgPhone = resolveMessagePhone(m);
 
                             return (
                               <div
@@ -954,15 +1021,28 @@ export default function BrokerWorkspacePage() {
                                     )}
                                   </div>
 
-                                  <button
-                                    onClick={() => {
-                                      setSelectedMsg(m);
-                                      loadMessageDetails(m.id);
-                                    }}
-                                    className="text-[9px] text-[#3EE88A] hover:underline opacity-0 group-hover:opacity-100 transition-opacity"
-                                  >
-                                    Analyze details →
-                                  </button>
+                                  <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                    {msgPhone && (
+                                      <a
+                                        href={getWaLinkWithRecall(msgPhone, m.message || "")}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-[#166534] hover:bg-[#15803d] text-green-100"
+                                        title="Message this broker on WhatsApp"
+                                      >
+                                        <MessageSquare className="w-3 h-3" strokeWidth={1.8} />
+                                      </a>
+                                    )}
+                                    <button
+                                      onClick={() => {
+                                        setSelectedMsg(m);
+                                        loadMessageDetails(m.id);
+                                      }}
+                                      className="text-[9px] text-[#3EE88A] hover:underline"
+                                    >
+                                      Analyze details →
+                                    </button>
+                                  </div>
                                 </div>
                               </div>
                             );
@@ -987,6 +1067,15 @@ export default function BrokerWorkspacePage() {
         </div>
 
         {/* ================= RIGHT PANEL: INTELLIGENCE PANEL ================= */}
+        {rightPoppedOut && (
+          <button
+            type="button"
+            aria-label="Close expanded intelligence panel"
+            onClick={() => setRightPoppedOut(false)}
+            className="fixed inset-0 z-40 bg-black/55 backdrop-blur-[1px]"
+          />
+        )}
+
         <ResizablePanel
           defaultWidth={384}
           minWidth={280}
@@ -1000,13 +1089,16 @@ export default function BrokerWorkspacePage() {
             { label: "Default", width: 384 },
             { label: "Deep Analysis", width: 560 },
           ]}
-          className="border-l border-[rgba(255,255,255,0.06)] bg-[#0a0e14]"
+          className={
+            rightPoppedOut
+              ? "fixed z-50 top-6 right-6 bottom-6 left-[28%] border border-[rgba(255,255,255,0.08)] rounded-2xl shadow-2xl bg-[#0a0e14]"
+              : "border-l border-[rgba(255,255,255,0.06)] bg-[#0a0e14]"
+          }
         >
           <div className="flex flex-col h-full">
           {/* Tab Switcher */}
           <div className="flex border-b border-[rgba(255,255,255,0.06)] bg-[#070b0e]">
-            {(["analysis", "broker", "building"] as const).map((tab) => {
-              const label = { analysis: "🎯 Analysis", broker: "🤝 Broker", building: "🏢 Building" }[tab];
+            {RIGHT_TABS.map(({ key: tab, label }) => {
               return (
                 <button
                   key={tab}
@@ -1021,6 +1113,17 @@ export default function BrokerWorkspacePage() {
                 </button>
               );
             })}
+            <button
+              onClick={() => setRightPoppedOut((prev) => !prev)}
+              className="px-3 py-3 text-[#64748b] hover:text-white border-l border-[rgba(255,255,255,0.06)] transition-colors"
+              title={rightPoppedOut ? "Dock panel (Esc/Enter)" : "Pop out panel"}
+            >
+              {rightPoppedOut ? (
+                <Minimize2 className="w-3.5 h-3.5" strokeWidth={1.7} />
+              ) : (
+                <Maximize2 className="w-3.5 h-3.5" strokeWidth={1.7} />
+              )}
+            </button>
           </div>
 
           {/* Details Scroll Area */}
@@ -1101,6 +1204,77 @@ export default function BrokerWorkspacePage() {
                         <div className="text-xs text-[#64748b] italic py-2">No property details found.</div>
                       )}
                     </div>
+
+                    {/* Extracted Listings as Individual WhatsApp-style Messages */}
+                    {selectedMsgDetails.listings && selectedMsgDetails.listings.length > 1 && (
+                      <div className="bg-[#0d1117] rounded-xl p-3.5 border border-[rgba(255,255,255,0.04)] space-y-2">
+                        <div className="flex items-center justify-between text-[10px] text-[#64748b] uppercase tracking-wider font-bold">
+                          <span>Extracted listings from this message</span>
+                          {waSenderPhone && (
+                            <a
+                              href={getWaLink(waSenderPhone)}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-[#166534] hover:bg-[#15803d] text-green-100"
+                              title="Open WhatsApp with this broker"
+                            >
+                              <MessageSquare className="w-3 h-3" strokeWidth={1.6} />
+                            </a>
+                          )}
+                        </div>
+                        <div className="space-y-2">
+                          {selectedMsgDetails.listings.map((listing: any, idx: number) => {
+                            const text = getListingPayloadText(listing) || selectedMsgDetails.raw?.message || "";
+                            const intentLabel = listing.intent || selectedMsgDetails.parsed?.intent || "TEXT";
+                            const intentColor =
+                              ({ SELL: "green", BUY: "purple", RENT: "yellow" } as Record<string, string>)[
+                                String(intentLabel).toUpperCase()
+                              ] || "blue";
+                            return (
+                              <div
+                                key={listing.id ?? idx}
+                                className="flex items-start justify-between gap-3 px-2.5 py-2 rounded-lg bg-[#05070b] border border-[rgba(255,255,255,0.05)]"
+                              >
+                                <div className="flex-1 text-xs text-[#cbd5e1]">
+                                  <div className="flex items-center gap-1.5 mb-1">
+                                    <span className={`badge badge-${intentColor} text-[8px]`}>
+                                      {intentLabel || "TEXT"}
+                                    </span>
+                                    {listing.bhk && (
+                                      <span className="text-[10px] text-[#e2e8f0] font-semibold">
+                                        {listing.bhk}
+                                      </span>
+                                    )}
+                                    {listing.area_sqft && (
+                                      <span className="text-[10px] text-[#94a3b8]">
+                                        {listing.area_sqft.toLocaleString("en-IN")} sqft
+                                      </span>
+                                    )}
+                                    {listing.furnishing && (
+                                      <span className="text-[10px] text-[#94a3b8]">{listing.furnishing}</span>
+                                    )}
+                                  </div>
+                                  <div className="text-[11px] text-[#cbd5e1] whitespace-pre-wrap leading-relaxed">
+                                    <WhatsAppMessage text={text} />
+                                  </div>
+                                </div>
+                                {waSenderPhone && (
+                                  <a
+                                    href={getWaLinkWithRecall(waSenderPhone, text)}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="mt-0.5 inline-flex items-center justify-center w-7 h-7 rounded-full bg-[#166534] hover:bg-[#15803d] text-green-100 shrink-0"
+                                    title="Message this broker on WhatsApp"
+                                  >
+                                    <MessageSquare className="w-3.5 h-3.5" strokeWidth={1.8} />
+                                  </a>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
 
                     {/* Location Match Panel */}
                     <div className="bg-[#0d1117] rounded-xl p-3.5 border border-[rgba(255,255,255,0.04)] space-y-3">
