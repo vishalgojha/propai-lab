@@ -850,7 +850,7 @@ export default function BrokerWorkspacePage() {
                                   </span>
                                 </div>
                                 <div className="text-xs text-[#e2e8f0] whitespace-pre-wrap leading-relaxed text-left propai-message-content">
-                                  <WhatsAppMessage text={m.message || ""} />
+                                  <WhatsAppMessage text={m.message || ""} sender={m.sender} senderPhone={m.sender_phone} />
                                 </div>
 
                                 <div className="flex items-center justify-between pt-1 border-t border-[rgba(255,255,255,0.04)]">
@@ -997,7 +997,7 @@ export default function BrokerWorkspacePage() {
                         </button>
                       </div>
                       <p className="text-xs text-[#cbd5e1] whitespace-pre-wrap leading-relaxed">
-                        <WhatsAppMessage text={selectedMsgDetails.raw?.message || ""} />
+                        <WhatsAppMessage text={selectedMsgDetails.raw?.message || ""} sender={selectedMsgDetails.raw?.sender} senderPhone={selectedMsgDetails.raw?.sender_phone} />
                       </p>
                     </div>
 

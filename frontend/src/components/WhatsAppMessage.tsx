@@ -4,6 +4,8 @@ import React, { useMemo } from "react";
 
 interface WhatsAppMessageProps {
   text: string;
+  sender?: string;
+  senderPhone?: string;
   className?: string;
   truncate?: boolean;
   maxLines?: number;
@@ -15,11 +17,7 @@ function isSeparatorLine(line: string): boolean {
   return SEPARATOR_RE.test(line.trim());
 }
 
-function isBlankLine(line: string): boolean {
-  return line.trim() === "";
-}
-
-interface Paragraph {
+interface Card {
   type: "card";
   lines: string[];
 }
@@ -28,11 +26,12 @@ interface SeparatorBlock {
   type: "separator";
 }
 
-type Block = Paragraph | SeparatorBlock;
+type Block = Card | SeparatorBlock;
 
 function groupIntoBlocks(lines: string[]): Block[] {
   const blocks: Block[] = [];
   let currentCard: string[] = [];
+  let consecutiveBlanks = 0;
 
   const flushCard = () => {
     if (currentCard.length > 0) {
@@ -45,9 +44,15 @@ function groupIntoBlocks(lines: string[]): Block[] {
     if (isSeparatorLine(line)) {
       flushCard();
       blocks.push({ type: "separator" });
-    } else if (isBlankLine(line)) {
-      flushCard();
+      consecutiveBlanks = 0;
+    } else if (line.trim() === "") {
+      consecutiveBlanks++;
+      // Only flush on 2+ consecutive blank lines
+      if (consecutiveBlanks >= 2) {
+        flushCard();
+      }
     } else {
+      consecutiveBlanks = 0;
       currentCard.push(line);
     }
   }
@@ -58,6 +63,8 @@ function groupIntoBlocks(lines: string[]): Block[] {
 
 export default function WhatsAppMessage({
   text,
+  sender,
+  senderPhone,
   className = "",
   truncate = false,
   maxLines = 2,
@@ -140,7 +147,7 @@ export default function WhatsAppMessage({
   };
 
   const renderLine = (line: string, i: number) => {
-    if (isBlankLine(line)) return <div key={i} className="h-2" />;
+    if (line.trim() === "") return null;
 
     const isBullet = /^[•\-\*]\s/.test(line);
     const isSubBullet = /^\s+[•\-\*]\s/.test(line);
@@ -221,6 +228,14 @@ export default function WhatsAppMessage({
               key={bi}
               className="my-1.5 px-2.5 py-2 rounded-md bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.04)]"
             >
+              {sender && (
+                <div className="flex items-center gap-1.5 mb-1.5 pb-1.5 border-b border-[rgba(255,255,255,0.04)]">
+                  <span className="text-[10px] font-semibold text-[#94a3b8]">{sender}</span>
+                  {senderPhone && (
+                    <span className="text-[9px] text-[#64748b] font-mono">{senderPhone}</span>
+                  )}
+                </div>
+              )}
               {block.lines.map((line, li) => renderLine(line, bi * 1000 + li))}
             </div>
           );
