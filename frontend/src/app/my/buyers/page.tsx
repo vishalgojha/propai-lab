@@ -1,84 +1,83 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { getCompanionConfig, getConnectionState, type CompanionConfig, type ConnectionState } from "@/lib/api";
-
-function SourceTile({ label, connected }: { label: string; connected: boolean }) {
-  return (
-    <div className="rounded-xl border border-[rgba(255,255,255,0.06)] bg-[#0d1117] px-4 py-3">
-      <div className="text-sm font-semibold text-[#e2e8f0]">{label}</div>
-      <div className={`mt-2 text-xs font-semibold ${connected ? "text-[#3EE88A]" : "text-[#64748b]"}`}>
-        {connected ? "✓ Connected" : "○ Not connected"}
-      </div>
-    </div>
-  );
-}
+import { useEffect, useState } from "react";
+import * as api from "@/lib/api";
+import { User, MapPin, ArrowUpRight } from "lucide-react";
 
 export default function MyBuyersPage() {
-  const [waba, setWaba] = useState<CompanionConfig | null>(null);
-  const [whatsapp, setWhatsapp] = useState<ConnectionState | null>(null);
+  const [requirements, setRequirements] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    getCompanionConfig().then(setWaba).catch(() => setWaba(null));
-    getConnectionState().then(setWhatsapp).catch(() => setWhatsapp(null));
+    api.getDashboardRequirements(50).then((data) => {
+      setRequirements(data || []);
+      setLoading(false);
+    }).catch(() => setLoading(false));
   }, []);
-
-  const wabaConnected = Boolean(waba?.phone_number_id && waba?.has_access_token);
-  const whatsappConnected = Boolean(whatsapp?.connected);
-  const sources = useMemo(
-    () => [
-      { label: "WhatsApp Business chats", connected: wabaConnected },
-      { label: "WhatsApp groups", connected: whatsappConnected },
-      { label: "Direct conversations", connected: wabaConnected || whatsappConnected },
-      { label: "Manual", connected: true },
-    ],
-    [wabaConnected, whatsappConnected]
-  );
 
   return (
     <div className="max-w-5xl">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+      <div className="flex items-end justify-between">
         <div>
           <h2 className="text-lg font-bold text-[#e2e8f0]">My Buyers</h2>
-          <p className="mt-2 max-w-2xl text-sm text-[#64748b]">
-            Buyer profiles are automatically created from your conversations and market requirements.
-          </p>
+          <p className="mt-1 text-sm text-[#64748b]">Active buyer requirements from your market conversations.</p>
         </div>
-        <a href="/connections" className="rounded-lg bg-[#3EE88A] px-4 py-2 text-sm font-bold text-[#04100a] no-underline">
-          Connect WhatsApp Business
-        </a>
+        <button className="rounded-lg bg-[#111820] border border-[rgba(255,255,255,0.08)] px-4 py-2 text-sm text-[#e2e8f0] hover:bg-[#1a2332] transition-colors">
+          + Add Buyer Manually
+        </button>
       </div>
 
-      <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        {sources.map((source) => (
-          <SourceTile key={source.label} {...source} />
-        ))}
-      </div>
-
-      <div className="mt-6 rounded-2xl border border-[rgba(255,255,255,0.06)] bg-[#0d1117] p-8 text-center">
-        <div className="text-sm font-semibold text-[#e2e8f0]">No buyers detected yet.</div>
-        <div className="mx-auto mt-2 max-w-xl text-sm text-[#64748b]">
-          As buyer conversations and requirements come in, PropAI will organize matching profiles here.
+      {loading ? (
+        <div className="mt-6 rounded-2xl border border-[rgba(255,255,255,0.06)] bg-[#0d1117] p-8 text-center text-sm text-[#64748b]">
+          Loading buyer requirements...
         </div>
-        <div className="mt-5 flex flex-wrap justify-center gap-2">
-          <a href="/connections" className="rounded-lg bg-[#3EE88A] px-4 py-2 text-sm font-bold text-[#04100a] no-underline">
-            Connect WhatsApp Business
-          </a>
-          <a href="/connections" className="rounded-lg border border-[rgba(255,255,255,0.1)] px-4 py-2 text-sm text-[#e2e8f0] no-underline hover:bg-[#111820]">
-            Connect WhatsApp
-          </a>
-          <button className="rounded-lg border border-[rgba(255,255,255,0.1)] px-4 py-2 text-sm text-[#94a3b8] hover:bg-[#111820]">
-            Create Buyer Manually
+      ) : requirements.length === 0 ? (
+        <div className="mt-6 rounded-2xl border border-[rgba(255,255,255,0.06)] bg-[#0d1117] p-8 text-center">
+          <div className="text-sm font-semibold text-[#e2e8f0]">No buyers detected yet.</div>
+          <div className="mx-auto mt-2 max-w-xl text-sm text-[#64748b]">
+            Buyer requirements will appear here as they come in from your WhatsApp conversations.
+          </div>
+          <button className="mt-5 rounded-lg border border-[rgba(255,255,255,0.1)] px-4 py-2 text-sm text-[#94a3b8] hover:bg-[#111820] transition-colors">
+            + Create Buyer Manually
           </button>
         </div>
-      </div>
-
-      <div className="mt-6 rounded-2xl border border-[rgba(255,255,255,0.06)] bg-[#0d1117] p-5">
-        <div className="text-sm font-semibold text-[#e2e8f0]">Smart Suggestions</div>
-        <div className="mt-2 text-sm text-[#64748b]">
-          Repeat buyers and market requirements that match your clients will appear here with Merge and Ignore actions.
+      ) : (
+        <div className="mt-6 space-y-2">
+          {requirements.map((req: any) => (
+            <div key={req.id} className="rounded-xl border border-[rgba(255,255,255,0.06)] bg-[#0d1117] p-4 hover:border-[rgba(255,255,255,0.12)] transition-colors">
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 text-xs text-[#64748b]">
+                    <User className="w-3 h-3" strokeWidth={1.5} />
+                    <span className="text-[#cbd5e1] font-semibold">{req.broker_name || "Unknown"}</span>
+                    {req.broker_phone && (
+                      <>
+                        <span>•</span>
+                        <span className="font-mono">{req.broker_phone}</span>
+                      </>
+                    )}
+                  </div>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {req.intent && <span className="badge badge-purple text-[9px]">{req.intent}</span>}
+                    {req.bhk && <span className="badge badge-blue text-[9px]">{req.bhk}</span>}
+                    {req.price && req.price_unit && <span className="badge badge-green text-[9px]">₹{req.price} {req.price_unit}</span>}
+                    {req.area_sqft && <span className="badge text-[9px] bg-[rgba(255,255,255,0.05)] text-[#94a3b8]">{req.area_sqft} sqft</span>}
+                  </div>
+                  {req.location_raw && (
+                    <div className="mt-1.5 flex items-center gap-1 text-[10px] text-[#64748b]">
+                      <MapPin className="w-2.5 h-2.5" strokeWidth={1.5} />
+                      {req.location_raw}
+                    </div>
+                  )}
+                </div>
+                <button className="shrink-0 p-2 rounded-lg hover:bg-[rgba(255,255,255,0.05)] text-[#64748b] hover:text-white transition-colors">
+                  <ArrowUpRight className="w-4 h-4" strokeWidth={1.5} />
+                </button>
+              </div>
+            </div>
+          ))}
         </div>
-      </div>
+      )}
     </div>
   );
 }
