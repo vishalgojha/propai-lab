@@ -908,3 +908,168 @@ export function getAuditSearchEvidence(q: string) {
 export function getAuditTopContributors(limit = 10) {
   return fetchJSON<AuditTopContributor[]>(`/audit/top-contributors?limit=${limit}`);
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// Client Management
+// ═══════════════════════════════════════════════════════════════════════
+
+export interface Client {
+  id: number;
+  name: string;
+  phone?: string;
+  email?: string;
+  notes?: string;
+  status?: string;
+  created_at?: string;
+  requirements?: ClientRequirement[];
+  candidates?: ClientCandidate[];
+}
+
+export interface ClientRequirement {
+  id: number;
+  client_id: number;
+  intent: string;
+  bhk?: string;
+  price_min?: number;
+  price_max?: number;
+  micro_market?: string;
+  building_name?: string;
+  area_sqft_min?: number;
+  area_sqft_max?: number;
+  furnishing?: string;
+  use_type?: string;
+  notes?: string;
+  is_primary?: number;
+}
+
+export interface ClientCandidate {
+  id: number;
+  client_id: number;
+  listing_id?: number;
+  message_id?: number;
+  building_name?: string;
+  micro_market?: string;
+  bhk?: string;
+  price?: number;
+  area_sqft?: number;
+  furnishing?: string;
+  confidence?: number;
+  match_breakdown?: Record<string, any>;
+  source_text?: string;
+  notes?: string;
+  status?: string;
+  created_at?: string;
+}
+
+export interface MatchResult {
+  requirement: ClientRequirement & { client_name: string; client_phone?: string };
+  score: number;
+  breakdown: Record<string, { match: boolean | string; score: number }>;
+}
+
+export function getClients(q: string = "") {
+  return fetchJSON<Client[]>(`/clients?q=${encodeURIComponent(q)}`);
+}
+
+export function getClient(id: number) {
+  return fetchJSON<Client>(`/clients/${id}`);
+}
+
+export function createClient(data: { name: string; phone?: string; email?: string; notes?: string }) {
+  return fetchJSON<{ id: number; name: string }>("/clients", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export function updateClient(id: number, data: Partial<Client>) {
+  return fetchJSON<{ ok: boolean }>(`/clients/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(data),
+  });
+}
+
+export function addClientRequirement(clientId: number, data: Partial<ClientRequirement>) {
+  return fetchJSON<{ id: number }>(`/clients/${clientId}/requirements`, {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export function getClientCandidates(clientId: number, status?: string) {
+  const q = status ? `?status=${status}` : "";
+  return fetchJSON<ClientCandidate[]>(`/clients/${clientId}/candidates${q}`);
+}
+
+export function addClientCandidate(clientId: number, data: Partial<ClientCandidate>) {
+  return fetchJSON<{ id: number } | { error: string }>(`/clients/${clientId}/candidates`, {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export function matchClientsToListing(data: {
+  price?: number;
+  bhk?: string;
+  micro_market?: string;
+  area_sqft?: number;
+  building_name?: string;
+  furnishing?: string;
+  intent?: string;
+}) {
+  return fetchJSON<{ matches: MatchResult[] }>("/clients/match", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export function resolveBuilding(text: string) {
+  return fetchJSON<{ resolved: boolean; building_name?: string; details?: any; aliases?: string[]; past_listings?: any[] }>("/actions/resolve-building", {
+    method: "POST",
+    body: JSON.stringify({ text }),
+  });
+}
+
+export function forwardToClient(text: string) {
+  return fetchJSON<{ original: string; cleaned: string }>("/actions/forward-to-client", {
+    method: "POST",
+    body: JSON.stringify({ text }),
+  });
+}
+
+export function summarizeText(text: string) {
+  return fetchJSON<{ summary: string }>("/actions/summarize", {
+    method: "POST",
+    body: JSON.stringify({ text }),
+  }, 30000);
+}
+
+export function askPropAI(text: string, messageId?: number, context?: any) {
+  return fetchJSON<{ response: string }>("/actions/ask-propai", {
+    method: "POST",
+    body: JSON.stringify({ text, message_id: messageId, context }),
+  }, 30000);
+}
+
+export function createFollowUp(data: {
+  client_id?: number;
+  message_id?: number;
+  building_name?: string;
+  broker_phone?: string;
+  follow_up_type?: string;
+  title: string;
+  notes?: string;
+  due_date: string;
+  due_time?: string;
+}) {
+  return fetchJSON<{ id: number }>("/follow-ups", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export function getFollowUps(clientId?: number, status: string = "pending") {
+  const params = new URLSearchParams({ status });
+  if (clientId) params.set("client_id", String(clientId));
+  return fetchJSON<any[]>(`/follow-ups?${params}`);
+}

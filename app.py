@@ -6201,6 +6201,393 @@ async def normalize_building_name(name: str):
     return {"original": name, "normalized": normalized, "changed": name != normalized}
 
 
+# ═══════════════════════════════════════════════════════════════════════
+# Client Management API
+# ═══════════════════════════════════════════════════════════════════════
+
+from storage.sqlite import ClientStorage
+
+client_store = ClientStorage()
+
+
+def _get_client_store():
+    global client_store
+    if _get_client_store().db is None:
+        _get_client_store().db = storage.db
+    return client_store
+
+
+@app.get("/api/clients")
+async def list_clients(q: str = "", limit: int = 20):
+    return _get_client_store().search_clients(q, limit)
+
+
+@app.post("/api/clients")
+async def create_client(body: dict):
+    name = body.get("name", "").strip()
+    if not name:
+        return JSONResponse(status_code=400, content={"error": "name_required"})
+    cid = _get_client_store().create_client(name, body.get("phone"), body.get("email"), body.get("notes", ""))
+    return {"id": cid, "name": name}
+
+
+@app.get("/api/clients/{client_id}")
+async def get_client(client_id: int):
+    c = _get_client_store().get_client(client_id)
+    if not c:
+        return JSONResponse(status_code=404, content={"error": "not_found"})
+    c["requirements"] = _get_client_store().get_client_requirements(client_id)
+    c["candidates"] = _get_client_store().get_client_candidates(client_id)
+    return c
+
+
+@app.put("/api/clients/{client_id}")
+async def update_client(client_id: int, body: dict):
+    _get_client_store().update_client(client_id, **body)
+    return {"ok": True}
+
+
+@app.post("/api/clients/{client_id}/requirements")
+async def add_requirement(client_id: int, body: dict):
+    intent = body.get("intent", "BUY").upper()
+    rid = _get_client_store().add_client_requirement(
+        client_id, intent,
+        bhk=body.get("bhk"),
+        price_min=body.get("price_min"),
+        price_max=body.get("price_max"),
+        micro_market=body.get("micro_market"),
+        building_name=body.get("building_name"),
+        area_sqft_min=body.get("area_sqft_min"),
+        area_sqft_max=body.get("area_sqft_max"),
+        furnishing=body.get("furnishing"),
+        use_type=body.get("use_type"),
+        notes=body.get("notes", ""),
+    )
+    return {"id": rid}
+
+
+@app.get("/api/clients/{client_id}/candidates")
+async def list_candidates(client_id: int, status: str = None):
+    return _get_client_store().get_client_candidates(client_id, status)
+
+
+@app.post("/api/clients/{client_id}/candidates")
+async def add_candidate(client_id: int, body: dict):
+    cid = _get_client_store().add_property_candidate(
+        client_id,
+        listing_id=body.get("listing_id"),
+        message_id=body.get("message_id"),
+        building_name=body.get("building_name"),
+        micro_market=body.get("micro_market"),
+        bhk=body.get("bhk"),
+        price=body.get("price"),
+        price_unit=body.get("price_unit"),
+        area_sqft=body.get("area_sqft"),
+        furnishing=body.get("furnishing"),
+        confidence=body.get("confidence", 0),
+        match_breakdown=body.get("match_breakdown"),
+        source_text=body.get("source_text", ""),
+        notes=body.get("notes", ""),
+    )
+    if cid is None:
+        return JSONResponse(status_code=409, content={"error": "already_added"})
+    return {"id": cid}
+
+
+@app.put("/api/clients/candidates/{candidate_id}/status")
+async def update_candidate_status(candidate_id: int, body: dict):
+    status = body.get("status", "viewed")
+    _get_client_store().update_candidate_status(candidate_id, status)
+    return {"ok": True}
+
+
+# ── Match Clients ──────────────────────────────────────────────────
+
+@app.post("/api/clients/match")
+async def match_clients_to_listing(body: dict):
+    """Match a listing against all active client requirements."""
+    price = body.get("price", 0)
+    bhk = body.get("bhk", "")
+    micro_market = body.get("micro_market", "")
+    area_sqft = body.get("area_sqft", 0)
+    building_name = body.get("building_name", "")
+    furnishing = body.get("furnishing", "")
+    intent = body.get("intent", "")
+
+    requirements = _get_client_store().get_all_active_requirements()
+    matches = []
+
+    for req in requirements:
+        score = 0
+        breakdown = {}
+
+        # Intent match (must match)
+        req_intent = (req.get("intent") or "").upper()
+        if intent and req_intent and intent.upper() != req_intent:
+            continue  # Skip if intent doesn't match
+
+        # BHK match (30%)
+        if bhk and req.get("bhk"):
+            req_bhk = req["bhk"].replace(" BHK", "").strip()
+            msg_bhk = bhk.replace(" BHK", "").strip()
+            if req_bhk == msg_bhk:
+                score += 30
+                breakdown["bhk"] = {"match": True, "score": 30}
+            elif abs(int(req_bhk or 0) - int(msg_bhk or 0)) <= 1:
+                score += 15
+                breakdown["bhk"] = {"match": "close", "score": 15}
+            else:
+                breakdown["bhk"] = {"match": False, "score": 0}
+        else:
+            score += 15  # Unknown = partial match
+            breakdown["bhk"] = {"match": "unknown", "score": 15}
+
+        # Price match (25%)
+        if price and req.get("price_min") is not None and req.get("price_max") is not None:
+            if req["price_min"] <= price <= req["price_max"]:
+                score += 25
+                breakdown["price"] = {"match": True, "score": 25}
+            elif price < req["price_min"]:
+                ratio = price / req["price_min"] if req["price_min"] else 0
+                if ratio >= 0.8:
+                    score += 12
+                    breakdown["price"] = {"match": "close_low", "score": 12}
+                else:
+                    breakdown["price"] = {"match": False, "score": 0}
+            else:
+                ratio = req["price_max"] / price if price else 0
+                if ratio >= 0.8:
+                    score += 12
+                    breakdown["price"] = {"match": "close_high", "score": 12}
+                else:
+                    breakdown["price"] = {"match": False, "score": 0}
+        else:
+            score += 12
+            breakdown["price"] = {"match": "unknown", "score": 12}
+
+        # Location match (25%)
+        if micro_market and req.get("micro_market"):
+            if micro_market.lower() == req["micro_market"].lower():
+                score += 25
+                breakdown["location"] = {"match": True, "score": 25}
+            elif micro_market.lower() in (req["micro_market"] or "").lower() or (req["micro_market"] or "").lower() in micro_market.lower():
+                score += 15
+                breakdown["location"] = {"match": "partial", "score": 15}
+            else:
+                breakdown["location"] = {"match": False, "score": 0}
+        else:
+            score += 12
+            breakdown["location"] = {"match": "unknown", "score": 12}
+
+        # Area match (10%)
+        if area_sqft and (req.get("area_sqft_min") is not None or req.get("area_sqft_max") is not None):
+            amin = req.get("area_sqft_min") or 0
+            amax = req.get("area_sqft_max") or 99999
+            if amin <= area_sqft <= amax:
+                score += 10
+                breakdown["area"] = {"match": True, "score": 10}
+            else:
+                breakdown["area"] = {"match": False, "score": 0}
+        else:
+            score += 5
+            breakdown["area"] = {"match": "unknown", "score": 5}
+
+        # Building match (10%)
+        if building_name and req.get("building_name"):
+            if building_name.lower() == req["building_name"].lower():
+                score += 10
+                breakdown["building"] = {"match": True, "score": 10}
+            else:
+                breakdown["building"] = {"match": False, "score": 0}
+        else:
+            score += 5
+            breakdown["building"] = {"match": "unknown", "score": 5}
+
+        matches.append({
+            "requirement": req,
+            "score": min(score, 100),
+            "breakdown": breakdown,
+        })
+
+    matches.sort(key=lambda x: x["score"], reverse=True)
+    return {"matches": matches[:10]}
+
+
+# ── Follow-ups ──────────────────────────────────────────────────────
+
+@app.get("/api/follow-ups")
+async def list_follow_ups(client_id: int = None, status: str = "pending"):
+    return _get_client_store().get_follow_ups(client_id, status)
+
+
+@app.post("/api/follow-ups")
+async def create_follow_up(body: dict):
+    fid = _get_client_store().create_follow_up(
+        client_id=body.get("client_id"),
+        message_id=body.get("message_id"),
+        building_name=body.get("building_name"),
+        broker_phone=body.get("broker_phone"),
+        follow_up_type=body.get("follow_up_type", "call"),
+        title=body.get("title", ""),
+        notes=body.get("notes", ""),
+        due_date=body.get("due_date", ""),
+        due_time=body.get("due_time"),
+    )
+    return {"id": fid}
+
+
+@app.put("/api/follow-ups/{follow_up_id}/done")
+async def complete_follow_up(follow_up_id: int):
+    _get_client_store().complete_follow_up(follow_up_id)
+    return {"ok": True}
+
+
+# ── AI Context Actions ─────────────────────────────────────────────
+
+@app.post("/api/actions/resolve-building")
+async def action_resolve_building(body: dict):
+    """Resolve a building name from selected text."""
+    text = body.get("text", "")
+    # Try to extract building name
+    import re
+    # Look for common patterns: "Building Name", "*Building Name*"
+    building_match = re.search(r'(?:^|\n)\s*\*?([A-Z][A-Za-z0-9\s]+?)(?:\*|\n|$)', text)
+    building_name = building_match.group(1).strip() if building_match else None
+
+    if not building_name:
+        # Try fuzzy match against known buildings
+        words = text.split()
+        for i in range(len(words)):
+            for j in range(i + 2, min(i + 5, len(words) + 1)):
+                candidate = " ".join(words[i:j])
+                normalized = storage.normalize_building_name(candidate)
+                if normalized and normalized != candidate:
+                    building_name = normalized
+                    break
+            if building_name:
+                break
+
+    if not building_name:
+        return {"resolved": False, "text": text}
+
+    # Look up in buildings table
+    row = storage.db.execute(
+        "SELECT * FROM buildings WHERE canonical_name = ?", (building_name,)
+    ).fetchone()
+
+    # Get aliases
+    aliases = storage.db.execute(
+        "SELECT alias FROM building_aliases WHERE canonical = ?", (building_name,)
+    ).fetchall()
+
+    # Get past listings
+    listings = storage.db.execute(
+        "SELECT price, bhk, micro_market, furnishing, intent FROM listings WHERE building_name = ? ORDER BY last_seen DESC LIMIT 10",
+        (building_name,)
+    ).fetchall()
+
+    return {
+        "resolved": True,
+        "building_name": building_name,
+        "details": dict(row) if row else None,
+        "aliases": [a[0] for a in aliases],
+        "past_listings": [dict(l) for l in listings],
+    }
+
+
+@app.post("/api/actions/forward-to-client")
+async def action_forward_to_client(body: dict):
+    """Generate a clean client-friendly version of selected text."""
+    text = body.get("text", "")
+
+    # Clean up the text
+    import re
+    cleaned = text
+
+    # Remove phone spam patterns
+    cleaned = re.sub(r'(?:📞|📱|☎️|tel:?)\s*[\d\s\-\+]+', '', cleaned)
+    cleaned = re.sub(r'\d{10,}', '', cleaned)  # Long phone numbers
+
+    # Remove emoji spam (more than 2 consecutive)
+    cleaned = re.sub(r'([\U0001f600-\U0001f650]){3,}', '', cleaned)
+
+    # Remove broker signatures
+    cleaned = re.sub(r'(?:regards?|thanks?|thank you|best|cheers?)[\s,.*_\-]*$.*', '', cleaned, flags=re.IGNORECASE | re.MULTILINE)
+
+    # Clean up extra whitespace
+    cleaned = re.sub(r'\n{3,}', '\n\n', cleaned)
+    cleaned = re.sub(r'[ \t]{2,}', ' ', cleaned)
+
+    return {"original": text, "cleaned": cleaned.strip()}
+
+
+@app.post("/api/actions/summarize")
+async def action_summarize(body: dict):
+    """Summarize selected text using AI."""
+    text = body.get("text", "")
+    # Use the AI chat engine for summarization
+    from ai_chat_engine import get_model_reply, load_data, load_live_data, build_system_prompt
+    from lab.config import DOUBLEWORD_API_KEY
+
+    sources = load_data()
+    live = load_live_data(str(DB_PATH))
+    sources.update(live)
+
+    system_prompt = """You are PropAI. Summarize the following real estate message concisely.
+    Extract: Building, Location, Price, BHK, Area, Furnishing, Intent (Buy/Rent/Sell).
+    Return as a clean structured summary. No markdown. No extra text."""
+
+    msgs = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": f"Summarize this:\n\n{text}"},
+    ]
+
+    try:
+        reply = get_model_reply(msgs, sources, api_key=DOUBLEWORD_API_KEY, db_path=str(DB_PATH), max_tool_rounds=0)
+        return {"summary": reply.content or "Could not summarize."}
+    except Exception as e:
+        return {"summary": f"Error: {str(e)}"}
+
+
+@app.post("/api/actions/ask-propai")
+async def action_ask_propai(body: dict):
+    """Ask PropAI about selected text with full context."""
+    text = body.get("text", "")
+    message_id = body.get("message_id")
+    context = body.get("context", {})
+
+    # Build context-enhanced prompt
+    prompt = f"""About this message:
+{text}
+
+Context:
+- Building: {context.get('building_name', 'Unknown')}
+- Broker: {context.get('broker_name', 'Unknown')}
+- Market: {context.get('micro_market', 'Unknown')}
+- Previous messages in this conversation: {context.get('conversation_count', 0)}
+
+What should I know about this?"""
+
+    from ai_chat_engine import get_model_reply, load_data, load_live_data, build_system_prompt
+    from lab.config import DOUBLEWORD_API_KEY
+
+    sources = load_data()
+    live = load_live_data(str(DB_PATH))
+    sources.update(live)
+
+    system_prompt = build_system_prompt(sources)
+    msgs = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": prompt},
+    ]
+
+    try:
+        reply = get_model_reply(msgs, sources, api_key=DOUBLEWORD_API_KEY, db_path=str(DB_PATH), max_tool_rounds=2)
+        return {"response": reply.content or "Could not process."}
+    except Exception as e:
+        return {"response": f"Error: {str(e)}"}
+
+
 # ── Entrypoint ──────────────────────────────────────────────────
 
 if __name__ == "__main__":

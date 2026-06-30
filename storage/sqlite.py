@@ -3895,3 +3895,188 @@ def _normalize_price(price: float, unit: str | None) -> float | None:
     elif u in ('ABS', 'ABSOLUTE', 'RS', 'RUPEES', ''):
         return price
     return price
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# Client Management
+# ═══════════════════════════════════════════════════════════════════════
+
+def _init_client_tables(db):
+    """Create client management tables if they don't exist."""
+    schema_path = Path(__file__).parent.parent / "schema_clients.sql"
+    if schema_path.exists():
+        db.executescript(schema_path.read_text())
+
+
+class ClientStorage:
+    """Client management storage methods mixed into SqliteStorage."""
+
+    def __init__(self):
+        # Will be called after __init__ in SqliteStorage
+        pass
+
+    def ensure_client_tables(self):
+        _init_client_tables(self.db)
+
+    # ── Clients ───────────────────────────────────────────────────────
+
+    def create_client(self, name: str, phone: str = None, email: str = None, notes: str = "") -> int:
+        self.ensure_client_tables()
+        cur = self.db.execute(
+            "INSERT INTO clients (name, phone, email, notes) VALUES (?, ?, ?, ?)",
+            (name.strip(), phone, email, notes)
+        )
+        self.db.commit()
+        return cur.lastrowid
+
+    def get_client(self, client_id: int) -> dict | None:
+        row = self.db.execute("SELECT * FROM clients WHERE id = ?", (client_id,)).fetchone()
+        if not row:
+            return None
+        return dict(row)
+
+    def search_clients(self, query: str = "", limit: int = 20) -> list[dict]:
+        if query:
+            rows = self.db.execute(
+                "SELECT * FROM clients WHERE name LIKE ? OR phone LIKE ? ORDER BY updated_at DESC LIMIT ?",
+                (f"%{query}%", f"%{query}%", limit)
+            ).fetchall()
+        else:
+            rows = self.db.execute(
+                "SELECT * FROM clients ORDER BY updated_at DESC LIMIT ?", (limit,)
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def update_client(self, client_id: int, **kwargs) -> bool:
+        allowed = {"name", "phone", "email", "notes", "status"}
+        updates = {k: v for k, v in kwargs.items() if k in allowed}
+        if not updates:
+            return False
+        sets = ", ".join(f"{k} = ?" for k in updates)
+        vals = list(updates.values()) + [client_id]
+        self.db.execute(f"UPDATE clients SET {sets}, updated_at = datetime('now') WHERE id = ?", vals)
+        self.db.commit()
+        return True
+
+    # ── Client Requirements ───────────────────────────────────────────
+
+    def add_client_requirement(self, client_id: int, intent: str, bhk: str = None,
+                                price_min: float = None, price_max: float = None,
+                                micro_market: str = None, building_name: str = None,
+                                area_sqft_min: float = None, area_sqft_max: float = None,
+                                furnishing: str = None, use_type: str = None,
+                                notes: str = "", is_primary: int = 1) -> int:
+        self.ensure_client_tables()
+        cur = self.db.execute(
+            """INSERT INTO client_requirements
+               (client_id, intent, bhk, price_min, price_max, micro_market, building_name,
+                area_sqft_min, area_sqft_max, furnishing, use_type, notes, is_primary)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (client_id, intent, bhk, price_min, price_max, micro_market, building_name,
+             area_sqft_min, area_sqft_max, furnishing, use_type, notes, is_primary)
+        )
+        self.db.commit()
+        return cur.lastrowid
+
+    def get_client_requirements(self, client_id: int) -> list[dict]:
+        rows = self.db.execute(
+            "SELECT * FROM client_requirements WHERE client_id = ? ORDER BY is_primary DESC", (client_id,)
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_all_active_requirements(self) -> list[dict]:
+        """Get all requirements from active clients for matching."""
+        self.ensure_client_tables()
+        rows = self.db.execute("""
+            SELECT cr.*, c.name as client_name, c.phone as client_phone
+            FROM client_requirements cr
+            JOIN clients c ON cr.client_id = c.id
+            WHERE c.status = 'active'
+            ORDER BY cr.is_primary DESC
+        """).fetchall()
+        return [dict(r) for r in rows]
+
+    # ── Client Property Candidates ────────────────────────────────────
+
+    def add_property_candidate(self, client_id: int, listing_id: int = None,
+                                 message_id: int = None, building_name: str = None,
+                                 micro_market: str = None, bhk: str = None,
+                                 price: float = None, price_unit: str = None,
+                                 area_sqft: float = None, furnishing: str = None,
+                                 confidence: float = 0.0, match_breakdown: dict = None,
+                                 source_text: str = "", notes: str = "") -> int | None:
+        self.ensure_client_tables()
+        # Check for duplicate
+        if listing_id:
+            existing = self.db.execute(
+                "SELECT id FROM client_property_candidates WHERE client_id = ? AND listing_id = ?",
+                (client_id, listing_id)
+            ).fetchone()
+            if existing:
+                return None  # Already added
+
+        cur = self.db.execute(
+            """INSERT INTO client_property_candidates
+               (client_id, listing_id, message_id, building_name, micro_market, bhk,
+                price, price_unit, area_sqft, furnishing, confidence, match_breakdown,
+                source_text, notes)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (client_id, listing_id, message_id, building_name, micro_market, bhk,
+             price, price_unit, area_sqft, furnishing, confidence,
+             json.dumps(match_breakdown or {}), source_text, notes)
+        )
+        self.db.commit()
+        return cur.lastrowid
+
+    def get_client_candidates(self, client_id: int, status: str = None) -> list[dict]:
+        q = "SELECT * FROM client_property_candidates WHERE client_id = ?"
+        params = [client_id]
+        if status:
+            q += " AND status = ?"
+            params.append(status)
+        q += " ORDER BY confidence DESC, created_at DESC"
+        rows = self.db.execute(q, params).fetchall()
+        return [dict(r) for r in rows]
+
+    def update_candidate_status(self, candidate_id: int, status: str) -> bool:
+        self.db.execute(
+            "UPDATE client_property_candidates SET status = ? WHERE id = ?",
+            (status, candidate_id)
+        )
+        self.db.commit()
+        return True
+
+    # ── Follow-ups ────────────────────────────────────────────────────
+
+    def create_follow_up(self, client_id: int = None, message_id: int = None,
+                          building_name: str = None, broker_phone: str = None,
+                          follow_up_type: str = "call", title: str = "",
+                          notes: str = "", due_date: str = "", due_time: str = None) -> int:
+        self.ensure_client_tables()
+        cur = self.db.execute(
+            """INSERT INTO follow_ups
+               (client_id, message_id, building_name, broker_phone, follow_up_type,
+                title, notes, due_date, due_time)
+               VALUES (?,?,?,?,?,?,?,?,?)""",
+            (client_id, message_id, building_name, broker_phone, follow_up_type,
+             title, notes, due_date, due_time)
+        )
+        self.db.commit()
+        return cur.lastrowid
+
+    def get_follow_ups(self, client_id: int = None, status: str = "pending") -> list[dict]:
+        q = "SELECT * FROM follow_ups WHERE status = ?"
+        params = [status]
+        if client_id:
+            q += " AND client_id = ?"
+            params.append(client_id)
+        q += " ORDER BY due_date ASC"
+        rows = self.db.execute(q, params).fetchall()
+        return [dict(r) for r in rows]
+
+    def complete_follow_up(self, follow_up_id: int) -> bool:
+        self.db.execute(
+            "UPDATE follow_ups SET status = 'done' WHERE id = ?", (follow_up_id,)
+        )
+        self.db.commit()
+        return True
