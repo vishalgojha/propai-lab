@@ -136,3 +136,54 @@ body {
 .connection-card { background: #0d1117; border: 1px solid rgba(255,255,255,0.06); border-radius: 20px; padding: 20px; margin-bottom: 12px; }
 
 .inspector { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+
+/* ═══════════════════════════════════════════════════════════════════
+   PropAI Interaction Model
+   Text selection inside message areas = business objects, not plain text.
+   Like Figma/Notion/VS Code — the app owns the interaction.
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* Message content areas — PropAI takes over text selection */
+.propai-interaction-area {
+  user-select: text;
+  -webkit-user-select: text;
+  cursor: text;
+}
+
+/* Prevent native context menu inside message content — PropAI owns it */
+.propai-interaction-area[data-prevent-context="true"] {
+  -webkit-touch-callout: none;
+}
+
+/* Selected text inside PropAI — shows it's a business object */
+.propai-interaction-area ::selection {
+  background: rgba(59, 130, 246, 0.3);
+  color: inherit;
+}
+
+/* Subtle hover state on message content — signals "this is interactive" */
+.propai-message-content {
+  transition: background-color 0.15s ease;
+}
+.propai-message-content:hover {
+  background-color: rgba(255, 255, 255, 0.01);
+}
+
+/* Animate-in utilities for the menu */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes zoomIn {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+@keyframes slideInFromBottom {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-in { animation-duration: 100ms; animation-fill-mode: both; }
+.fade-in { animation-name: fadeIn; }
+.zoom-in { animation-name: zoomIn; }
+.slide-in-from-bottom-1 { animation-name: slideInFromBottom; }

@@ -3,6 +3,8 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import * as api from "@/lib/api";
 import WhatsAppMessage from "@/components/WhatsAppMessage";
+import TextSelectionMenu from "@/components/TextSelectionMenu";
+import AddToClientBucket from "@/components/AddToClientBucket";
 
 const PAGE_SIZE = 100;
 
@@ -38,6 +40,12 @@ export default function BrokerWorkspacePage() {
   // Interaction/UI States
   const [revealedPhone, setRevealedPhone] = useState<Record<string, boolean>>({});
   const [actionMessage, setActionMessage] = useState<string | null>(null);
+
+  // Context Action States
+  const [showAddToBucket, setShowAddToBucket] = useState(false);
+  const [selectedActionText, setSelectedActionText] = useState("");
+  const [actionContext, setActionContext] = useState<any>(null);
+  const messageAreaRef = useRef<HTMLDivElement>(null);
 
   // 1. Initial Load of Feed & Suggestions
   const loadFeed = useCallback(async () => {
@@ -114,6 +122,67 @@ export default function BrokerWorkspacePage() {
   const toggleRevealPhone = (phone: string) => {
     setRevealedPhone(prev => ({ ...prev, [phone]: !prev[phone] }));
   };
+
+  // Context Action Handlers
+  const handleTextAction = (text: string, action: string) => {
+    setSelectedActionText(text);
+    // Build context from current message
+    const ctx = selectedMsg ? {
+      id: selectedMsg.id,
+      building_name: selectedMsgDetails?.parsed?.building_name,
+      micro_market: selectedMsgDetails?.parsed?.micro_market,
+      bhk: selectedMsgDetails?.parsed?.bhk,
+      price: selectedMsgDetails?.parsed?.price,
+      area_sqft: selectedMsgDetails?.parsed?.area_sqft,
+      furnishing: selectedMsgDetails?.parsed?.furnishing,
+      intent: selectedMsgDetails?.parsed?.intent || selectedMsg.message_type,
+      broker_name: selectedMsg.sender,
+      broker_phone: selectedMsg.sender_phone,
+    } : {};
+    setActionContext(ctx);
+
+    switch (action) {
+      case "add-to-bucket":
+        setShowAddToBucket(true);
+        break;
+      case "resolve-building":
+        api.resolveBuilding(text).then(r => alert(r.resolved ? `Building: ${r.building_name}` : "No building found"));
+        break;
+      case "forward-to-client":
+        api.forwardToClient(text).then(r => {
+          navigator.clipboard.writeText(r.cleaned);
+          alert("Cleaned text copied to clipboard!");
+        });
+        break;
+      case "summarize":
+        api.summarizeText(text).then(r => alert(r.summary));
+        break;
+      case "ask-propai":
+        api.askPropAI(text, selectedMsg?.id, ctx).then(r => alert(r.response));
+        break;
+      case "create-follow-up":
+        const dueDate = prompt("Follow-up date (YYYY-MM-DD):");
+        if (dueDate) {
+          api.createFollowUp({
+            message_id: selectedMsg?.id,
+            building_name: ctx.building_name,
+            broker_phone: ctx.broker_phone,
+            title: `Follow up: ${text.slice(0, 50)}`,
+            due_date: dueDate,
+          }).then(() => alert("Follow-up created!"));
+        }
+        break;
+    }
+  };
+
+  const contextActions = [
+    { id: "add-to-bucket", label: "Add to Client Bucket", icon: "💼", handler: (t: string) => handleTextAction(t, "add-to-bucket") },
+    { id: "resolve-building", label: "Resolve Building", icon: "🏢", handler: (t: string) => handleTextAction(t, "resolve-building") },
+    { id: "forward-to-client", label: "Forward to Client", icon: "📤", handler: (t: string) => handleTextAction(t, "forward-to-client") },
+    { id: "create-follow-up", label: "Create Follow-up", icon: "📅", handler: (t: string) => handleTextAction(t, "create-follow-up") },
+    { id: "summarize", label: "Summarize Selection", icon: "📝", handler: (t: string) => handleTextAction(t, "summarize") },
+    { id: "ask-propai", label: "Ask PropAI", icon: "✨", handler: (t: string) => handleTextAction(t, "ask-propai") },
+  ];
 
   // 2. Compute Left Panel Grouped Lists
   const query = searchText.trim().toLowerCase();
@@ -424,6 +493,25 @@ export default function BrokerWorkspacePage() {
   return (
     <div className="flex flex-col h-[calc(100vh-80px)] border border-[rgba(255,255,255,0.06)] rounded-2xl overflow-hidden bg-[#090d12]">
       
+      {/* Context Action Menu - floats over message area */}
+      <TextSelectionMenu
+        actions={contextActions}
+        context={actionContext}
+        containerRef={messageAreaRef}
+      />
+
+      {/* Add to Client Bucket Modal */}
+      <AddToClientBucket
+        isOpen={showAddToBucket}
+        onClose={() => setShowAddToBucket(false)}
+        selectedText={selectedActionText}
+        messageContext={actionContext}
+        onSave={(clientId, notes) => {
+          setActionMessage(`Added to client bucket!`);
+          setTimeout(() => setActionMessage(null), 3000);
+        }}
+      />
+
       {actionMessage && (
         <div className="bg-[#1e293b] border-b border-[#3EE88A]/30 text-[#3EE88A] px-4 py-2 text-xs font-semibold text-center transition-all animate-pulse">
           🚀 {actionMessage}
@@ -669,8 +757,19 @@ export default function BrokerWorkspacePage() {
                 </div>
               </div>
 
-              {/* Chat Thread Message Area */}
-              <div className="flex-1 overflow-y-auto px-5 py-4">
+              {/* Chat Thread Message Area — PropAI owns text selection here */}
+              <div
+                ref={messageAreaRef}
+                className="flex-1 overflow-y-auto px-5 py-4 propai-interaction-area"
+                data-prevent-context="true"
+                onContextMenu={(e) => {
+                  // Prevent native context menu — PropAI owns this
+                  const selection = window.getSelection();
+                  if (selection && !selection.isCollapsed && selection.toString().trim()) {
+                    e.preventDefault();
+                  }
+                }}
+              >
                 {loadingConv ? (
                   <div className="h-full flex items-center justify-center text-xs text-[#64748b]">
                     Loading message thread...
@@ -713,7 +812,7 @@ export default function BrokerWorkspacePage() {
                                     })}
                                   </span>
                                 </div>
-                                <div className="text-xs text-[#e2e8f0] whitespace-pre-wrap leading-relaxed text-left">
+                                <div className="text-xs text-[#e2e8f0] whitespace-pre-wrap leading-relaxed text-left propai-message-content">
                                   <WhatsAppMessage text={m.message || ""} />
                                 </div>
 
