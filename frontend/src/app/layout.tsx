@@ -10,7 +10,6 @@ import {
   BarChart3,
   BookOpen,
   Search,
-  Settings,
   Zap,
   Building2,
   Briefcase,
@@ -24,6 +23,8 @@ import {
   Wifi,
   WifiOff,
   X,
+  UserCheck,
+  TrendingUp,
 } from "lucide-react";
 
 const navSections = [
@@ -31,16 +32,23 @@ const navSections = [
     title: "Conversations",
     items: [
       { href: "/inbox", label: "Market Inbox", icon: MessageSquare },
-      { href: "/groups", label: "Groups", icon: Users },
     ],
   },
   {
-    title: "Clients",
+    title: "Market",
     items: [
-      { href: "/my/buyers", label: "Buyers", icon: Users },
+      { href: "/my/buyers", label: "Requirements", icon: ClipboardCheck },
       { href: "/my/inventory", label: "Inventory", icon: Building2 },
       { href: "/brokers", label: "Brokers", icon: Briefcase },
-      { href: "/requirements", label: "Requirements", icon: ClipboardCheck },
+      { href: "/groups", label: "Groups", icon: Users },
+      { href: "/buildings", label: "Buildings", icon: Building2 },
+    ],
+  },
+  {
+    title: "My Workspace",
+    items: [
+      { href: "/clients", label: "My Clients", icon: UserCheck },
+      { href: "/deals", label: "My Deals", icon: TrendingUp },
     ],
   },
   {
@@ -58,7 +66,6 @@ const navSections = [
     items: [
       { href: "/connections", label: "Connection", icon: Wifi },
       { href: "/trainer", label: "Trainer", icon: GraduationCap },
-      { href: "/settings", label: "Settings", icon: Settings },
     ],
   },
 ];
