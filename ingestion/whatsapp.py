@@ -359,7 +359,7 @@ class WhatsAppSource(BaseSource):
                 json_body={
                     "where": {"key": {"remoteJid": group_jid}},
                     "limit": count,
-                    "offset": count,
+                    "offset": offset,
                     "page": page,
                 },
                 timeout=30,

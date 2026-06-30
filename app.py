@@ -1177,8 +1177,8 @@ def _handle_system_event(event_class: str, event: str, data: dict, instance: str
                     group_id=jid, group_name=name,
                     participants=participants,
                 )
-            except Exception:
-                pass
+            except Exception as e:
+                print(f"  upsert sync job failed for {jid}: {e}")
             get_bus().publish("group.updated", {
                 "instance": instance,
                 "jid": jid,

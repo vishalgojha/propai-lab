@@ -347,6 +347,12 @@ class Storage(ABC):
     def get_sync_job(self, job_id: int) -> Optional[SyncJob]: ...
 
     @abstractmethod
+    def upsert_sync_job(self, source: str, instance: str = "",
+                        group_id: str = "", group_name: str = "",
+                        participants: int = 0,
+                        status: str = "pending") -> int: ...
+
+    @abstractmethod
     def get_sync_jobs(self, limit: int = 200, offset: int = 0,
                       source: str = "", status: str = "") -> list[SyncJob]: ...
 

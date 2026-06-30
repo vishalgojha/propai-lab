@@ -1912,6 +1912,34 @@ class SqliteStorage(Storage):
         self._commit()
         return cur.lastrowid
 
+    def upsert_sync_job(self, source: str, instance: str = "",
+                        group_id: str = "", group_name: str = "",
+                        participants: int = 0,
+                        status: str = "pending") -> int:
+        existing = self.db.execute(
+            "SELECT id, meta FROM source_sync_jobs WHERE source = ? AND group_id = ? LIMIT 1",
+            (source, group_id)
+        ).fetchone()
+        now = datetime.utcnow().isoformat()
+        meta = json.dumps({"participants": participants}) if participants else "{}"
+        if existing:
+            self.db.execute(
+                """UPDATE source_sync_jobs
+                   SET group_name = ?, meta = ?, status = ?, updated_at = ?
+                   WHERE id = ?""",
+                (group_name, meta, status, now, existing["id"])
+            )
+            self._commit()
+            return existing["id"]
+        cur = self.db.execute(
+            """INSERT INTO source_sync_jobs
+               (source, instance, group_id, group_name, meta, status, created_at, updated_at)
+               VALUES (?,?,?,?,?,?,?,?)""",
+            (source, instance, group_id, group_name, meta, status, now, now)
+        )
+        self._commit()
+        return cur.lastrowid
+
     def update_sync_job(self, job_id: int, **updates):
         sets = ", ".join(f"{k} = ?" for k in updates)
         vals = list(updates.values()) + [job_id]
