@@ -2681,7 +2681,8 @@ def _extract_database_coverage_query(messages: list[dict]) -> bool:
     return bool(has_database and has_propai)
 
 
-def _casual_self_chat_response(messages: list[dict]) -> dict | None:
+def _get_casual_response(messages: list[dict]) -> dict | None:
+    """Check the last user message for casual/greeting content. Returns a minimal response or None."""
     latest = ""
     for message in reversed(messages):
         if message.get("role") == "user":
@@ -2691,23 +2692,30 @@ def _casual_self_chat_response(messages: list[dict]) -> dict | None:
         return None
     lowered = latest.lower()
 
-    if re.fullmatch(r"(hi|hey|hello|yo|ok|okay|thanks|thank you|cool|done)[.!?]*", lowered):
+    if re.fullmatch(r"(hi|hey|hello|yo|ok|okay|thanks|thank you|cool|done|bye|goodbye|sure|got it|hmm|aha|nice|great)[.!?]*", lowered):
         return {
-            "content": "Ready. Ask me for listings, requirements against a post, brokers, or market status.",
+            "content": "Ready.",
             "blocks": [],
-            "sources": ["self_chat"],
-            "trace": {"route": "deterministic_casual"},
+            "sources": [],
+            "trace": {"route": "casual"},
+        }
+
+    if lowered in {"who are you", "what are you", "who are you?"}:
+        return {
+            "content": "I'm PropAI, your broker assistant.",
+            "blocks": [],
+            "sources": [],
+            "trace": {"route": "casual"},
         }
 
     identity_match = re.search(r"\bi am\s+(.+?)(?:\.|\?|$)", latest, re.IGNORECASE)
     rings_bell = re.search(r"\b(ring a bell|know me|remember me|who am i)\b", lowered)
     if identity_match and rings_bell:
-        name = identity_match.group(1).strip()
         return {
-            "content": f"Generally, yes, {name} may ring a bell. In PropAI records, I only know what is in your broker/property database unless you ask me to check records.",
+            "content": "Yes, noted.",
             "blocks": [],
-            "sources": ["self_chat"],
-            "trace": {"route": "deterministic_casual_identity"},
+            "sources": [],
+            "trace": {"route": "casual_identity"},
         }
 
     return None
@@ -3654,7 +3662,7 @@ async def _run_workspace_agent(messages: list[dict], model: str = "") -> dict:
     if contextual:
         return contextual
 
-    casual = _casual_self_chat_response(messages)
+    casual = _get_casual_response(messages)
     if casual:
         return casual
 
@@ -3803,6 +3811,10 @@ async def ai_config():
 
 @app.post("/api/ai/chat")
 async def ai_chat(req: ChatRequest):
+    casual = _get_casual_response(req.messages)
+    if casual:
+        return casual
+
     listing_args = _extract_simple_listing_query(req.messages)
     if listing_args:
         return _listing_search_response(listing_args)
@@ -3832,7 +3844,7 @@ async def ai_chat(req: ChatRequest):
 
     def _call():
         system_prompt = chat_engine.build_system_prompt(sources)
-        msgs = [{"role": "system", "content": system_prompt}] + req.messages[-20:]
+        msgs = [{"role": "system", "content": system_prompt}] +     req.messages[-10:]
         reply = chat_engine.get_model_reply(
             msgs,
             sources,
@@ -7732,6 +7744,11 @@ async def action_ask_propai(body: dict):
     text = body.get("text", "")
     message_id = body.get("message_id")
     context = body.get("context", {})
+
+    # Short-circuit casual messages
+    casual = _get_casual_response([{"role": "user", "content": text}])
+    if casual:
+        return {"response": casual.get("content", "Ready.")}
 
     # Build context-enhanced prompt
     prompt = f"""About this message:

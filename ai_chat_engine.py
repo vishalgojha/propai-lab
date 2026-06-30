@@ -162,22 +162,7 @@ def build_overview(sources):
     for key, src in sources.items():
         df = src["df"]
         lines.append(f"-- {src['description']} --")
-        lines.append(f"  Rows: {len(df)}")
-        lines.append(f"  Columns: {', '.join(df.columns)}")
-        for col in df.columns:
-            if df[col].dtype == "object":
-                uniq = df[col].dropna().unique()
-                if len(uniq) <= 15:
-                    vals = ", ".join(str(u) for u in uniq)
-                else:
-                    vals = f"{len(uniq)} unique values (e.g. {uniq[0]}, {uniq[1]}, ...)"
-                lines.append(f"  {col}: {vals}")
-        num_cols = df.select_dtypes(include="number").columns
-        if len(num_cols):
-            lines.append(f"  Numeric columns: {', '.join(num_cols)}")
-            for c in num_cols:
-                lines.append(f"    {c}: min={df[c].min()}, max={df[c].max()}, mean={df[c].mean():.1f}")
-        lines.append("")
+        lines.append(f"  Rows: {len(df)}, Columns: {len(df.columns)}")
     return "\n".join(lines)
 
 
