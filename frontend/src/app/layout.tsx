@@ -31,7 +31,7 @@ const navSections = [
     title: "Conversations",
     items: [
       { href: "/inbox", label: "Market Inbox", icon: MessageSquare },
-      { href: "/audit", label: "Network Intel", icon: Radar },
+      { href: "/groups", label: "Groups", icon: Users },
     ],
   },
   {
@@ -50,7 +50,7 @@ const navSections = [
       { href: "/chat", label: "AI Chat", icon: Brain },
       { href: "/knowledge", label: "Knowledge Base", icon: BookOpen },
       { href: "/market", label: "Markets", icon: MapPin },
-      { href: "/groups", label: "Groups", icon: Users },
+      { href: "/audit", label: "WhatsApp Audit", icon: Radar },
     ],
   },
   {
@@ -226,7 +226,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <nav className="flex-1 overflow-y-auto px-3 pb-4">
               {navSections.map((section) => (
                 <div key={section.title} className="mb-4">
-                  <div className="px-2 mb-1.5 text-[9px] font-bold text-[#4a5568] uppercase tracking-[0.15em]">
+                  <div className="px-2 mb-1.5 text-[9px] font-bold text-[#64748b] uppercase tracking-[0.15em]">
                     {section.title}
                   </div>
                   {section.items.map((item) => {
@@ -239,7 +239,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                         className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-[12px] font-medium transition-all duration-100 mb-0.5 ${
                           active
                             ? "bg-[rgba(59,130,246,0.08)] text-white"
-                            : "text-[#64748b] hover:text-[#94a3b8] hover:bg-[rgba(255,255,255,0.02)]"
+                            : "text-[#94a3b8] hover:text-[#e2e8f0] hover:bg-[rgba(255,255,255,0.03)]"
                         }`}
                       >
                         <Icon className={`w-3.5 h-3.5 ${active ? "text-blue-400" : ""}`} strokeWidth={1.5} />
@@ -256,11 +256,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <div className="px-4 py-3 border-t border-[rgba(255,255,255,0.04)]">
               <button
                 onClick={() => setPaletteOpen(true)}
-                className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[11px] text-[#4a5568] hover:text-[#94a3b8] hover:bg-[rgba(255,255,255,0.02)] transition-colors"
+                className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[11px] text-[#64748b] hover:text-[#94a3b8] hover:bg-[rgba(255,255,255,0.02)] transition-colors"
               >
                 <Search className="w-3.5 h-3.5" strokeWidth={1.5} />
                 <span>Search</span>
-                <kbd className="ml-auto text-[9px] bg-[rgba(255,255,255,0.04)] px-1.5 py-0.5 rounded text-[#4a5568]">⌘K</kbd>
+                <kbd className="ml-auto text-[9px] bg-[rgba(255,255,255,0.04)] px-1.5 py-0.5 rounded text-[#64748b]">⌘K</kbd>
               </button>
               <div className="flex items-center gap-2 px-2.5 py-1.5 mt-1">
                 {waConnected ? (
@@ -268,7 +268,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 ) : (
                   <WifiOff className="w-3 h-3 text-red-500" strokeWidth={1.5} />
                 )}
-                <span className="text-[10px] text-[#4a5568]">
+                <span className="text-[10px] text-[#64748b]">
                   {waConnected ? "WhatsApp Connected" : "WhatsApp Disconnected"}
                 </span>
               </div>
