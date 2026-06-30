@@ -28,6 +28,89 @@ import {
 
 const PAGE_SIZE = 100;
 
+function detectPropertyType(parsed: any): "residential" | "commercial" | "retail" | "industrial" {
+  const intent = (parsed.intent || "").toUpperCase();
+  const msg = (parsed.raw_payload?.full_text || "").toLowerCase();
+  if (intent === "COMMERCIAL" || /commercial|office|shop|showroom|warehouse|godown|retail/.test(msg)) {
+    if (/warehouse|godown|industrial|loading|truck/.test(msg)) return "industrial";
+    if (/shop|showroom|retail|frontage|ground\s*floor/.test(msg)) return "retail";
+    return "commercial";
+  }
+  return "residential";
+}
+
+function formatCurrency(val: number, unit?: string) {
+  if (!val) return "—";
+  if (unit?.toLowerCase() === "cr" || val >= 10000000) {
+    const crVal = val >= 10000000 ? val / 10000000 : val;
+    return `₹${crVal.toFixed(2)} Cr`;
+  }
+  if (val >= 100000) {
+    return `₹${(val / 100000).toFixed(1)} L`;
+  }
+  if (val >= 1000) {
+    return `₹${(val / 1000).toFixed(0)} K`;
+  }
+  return `₹${val.toLocaleString("en-IN")}`;
+}
+
+function Field({ label, value, accent }: { label: string; value: React.ReactNode; accent?: boolean }) {
+  if (!value) return null;
+  return (
+    <div>
+      <span className="text-[10px] text-[#64748b] block uppercase tracking-wider">{label}</span>
+      <span className={`mt-0.5 block leading-normal ${accent ? "font-bold text-[#3EE88A]" : "font-semibold text-white"}`}>
+        {value}
+      </span>
+    </div>
+  );
+}
+
+function PropertyDetails({ parsed }: { parsed: any }) {
+  const type = detectPropertyType(parsed);
+  const intent = parsed.intent || "TEXT";
+  const price = parsed.price ? formatCurrency(parsed.price, parsed.price_unit) : null;
+  const area = parsed.area_sqft ? `${parsed.area_sqft} sqft` : null;
+  const location = parsed.location_raw || parsed.micro_market || null;
+  const building = parsed.building_name || null;
+  const furnishing = parsed.furnishing || null;
+  const bhk = parsed.bhk || null;
+
+  const typeLabels = {
+    residential: "Residential",
+    commercial: "Commercial Office",
+    retail: "Retail",
+    industrial: "Industrial",
+  };
+
+  const typeColors = {
+    residential: "badge-blue",
+    commercial: "badge-purple",
+    retail: "badge-yellow",
+    industrial: "badge-orange",
+  };
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-2">
+        <span className="text-[10px] text-[#64748b] uppercase tracking-wider font-bold">Property Details</span>
+        <span className={`badge ${typeColors[type]} text-[9px]`}>{typeLabels[type]}</span>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 text-xs">
+        <Field label="Intent" value={<span className="badge badge-blue">{intent}</span>} />
+        <Field label="Price" value={price} accent />
+        {type === "residential" && <Field label="BHK" value={bhk} />}
+        <Field label="Carpet" value={area} />
+        <Field label="Location" value={location} />
+        {building && <Field label="Building" value={building} />}
+        {furnishing && <Field label="Furnishing" value={furnishing} />}
+        {type === "commercial" && furnishing && <Field label="Fit-out" value={furnishing} />}
+      </div>
+    </div>
+  );
+}
+
 export default function BrokerWorkspacePage() {
   // Left Panel States
   const [messages, setMessages] = useState<api.InboxThread[]>([]);
@@ -429,21 +512,6 @@ export default function BrokerWorkspacePage() {
     } catch (e) {
       console.error("Failed to reject suggestion:", e);
     }
-  };
-
-  const formatCurrency = (val: number, unit?: string) => {
-    if (!val) return "—";
-    if (unit?.toLowerCase() === "cr" || val >= 10000000) {
-      const crVal = val >= 10000000 ? val / 10000000 : val;
-      return `₹${crVal.toFixed(2)} Cr`;
-    }
-    if (val >= 100000) {
-      return `₹${(val / 100000).toFixed(1)} L`;
-    }
-    if (val >= 1000) {
-      return `₹${(val / 1000).toFixed(0)} K`;
-    }
-    return `₹${val.toLocaleString("en-IN")}`;
   };
 
   const suggestionHasSource = (suggestion: any, value: string) => {
@@ -1001,45 +1069,10 @@ export default function BrokerWorkspacePage() {
                       </p>
                     </div>
 
-                    {/* Structured Details Panel */}
+                    {/* Structured Details Panel — Property-Type Aware */}
                     <div className="bg-[#0d1117] rounded-xl p-3.5 border border-[rgba(255,255,255,0.04)] space-y-3">
-                      <div className="text-[10px] text-[#64748b] uppercase tracking-wider font-bold">
-                        Property Details
-                      </div>
-                      
                       {selectedMsgDetails.parsed && Object.keys(selectedMsgDetails.parsed).length > 0 ? (
-                        <div className="grid grid-cols-2 gap-3 text-xs">
-                          <div>
-                            <span className="text-[10px] text-[#64748b] block uppercase">Intent</span>
-                            <span className="badge badge-blue font-bold mt-0.5">
-                              {selectedMsgDetails.parsed.intent || "TEXT"}
-                            </span>
-                          </div>
-                          <div>
-                            <span className="text-[10px] text-[#64748b] block uppercase">BHK</span>
-                            <span className="font-semibold text-white mt-0.5 block">
-                              {selectedMsgDetails.parsed.bhk || "—"}
-                            </span>
-                          </div>
-                          <div>
-                            <span className="text-[10px] text-[#64748b] block uppercase">Price</span>
-                            <span className="font-bold text-[#3EE88A] mt-0.5 block">
-                              {formatCurrency(selectedMsgDetails.parsed.price, selectedMsgDetails.parsed.price_unit)}
-                            </span>
-                          </div>
-                          <div>
-                            <span className="text-[10px] text-[#64748b] block uppercase">Area</span>
-                            <span className="font-semibold text-white mt-0.5 block">
-                              {selectedMsgDetails.parsed.area_sqft ? `${selectedMsgDetails.parsed.area_sqft} sqft` : "—"}
-                            </span>
-                          </div>
-                          <div className="col-span-2">
-                            <span className="text-[10px] text-[#64748b] block uppercase">Location Mentioned</span>
-                            <span className="text-white mt-0.5 block leading-normal">
-                              {selectedMsgDetails.parsed.location_raw || "—"}
-                            </span>
-                          </div>
-                        </div>
+                        <PropertyDetails parsed={selectedMsgDetails.parsed} />
                       ) : (
                         <div className="text-xs text-[#64748b] italic py-2">No property details found.</div>
                       )}
