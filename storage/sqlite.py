@@ -6,6 +6,7 @@ import sqlite3
 import uuid
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
+from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Optional
 
@@ -106,8 +107,20 @@ class SqliteStorage(Storage):
             "CREATE INDEX IF NOT EXISTS idx_raw_sender_jid ON raw_messages(sender_jid)",
             "CREATE INDEX IF NOT EXISTS idx_raw_sender_phone ON raw_messages(sender_phone)",
             "ALTER TABLE ai_suggestions ADD COLUMN rejection_reason TEXT DEFAULT NULL",
-            "ALTER TABLE knowledge_trainer ADD COLUMN raw_message_id INTEGER DEFAULT NULL",
-            "ALTER TABLE knowledge_trainer ADD COLUMN resolver_decision_id INTEGER DEFAULT NULL",
+            "CREATE TABLE IF NOT EXISTS knowledge_trainer (id INTEGER PRIMARY KEY AUTOINCREMENT, term TEXT UNIQUE, context TEXT DEFAULT '', status TEXT DEFAULT 'pending', frequency INTEGER DEFAULT 1, created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')), last_seen TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')), resolved_by TEXT DEFAULT NULL, resolved_at TEXT DEFAULT NULL, notes TEXT DEFAULT NULL, raw_message_id INTEGER DEFAULT NULL, resolver_decision_id INTEGER DEFAULT NULL)",
+            "CREATE TABLE IF NOT EXISTS knowledge_learning_candidates (id INTEGER PRIMARY KEY AUTOINCREMENT, phrase TEXT UNIQUE, frequency INTEGER DEFAULT 1, first_seen TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')), last_seen TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')), confidence REAL DEFAULT 0.0, contexts TEXT DEFAULT '[]', raw_message_ids TEXT DEFAULT '[]', source TEXT DEFAULT 'scanner', status TEXT DEFAULT 'candidate')",
+            "CREATE TABLE IF NOT EXISTS knowledge_aliases (id INTEGER PRIMARY KEY AUTOINCREMENT, alias TEXT NOT NULL, canonical TEXT NOT NULL, entity_type TEXT NOT NULL, confidence REAL DEFAULT 1.0, source TEXT DEFAULT 'system', created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')), locality TEXT DEFAULT '', price_min REAL DEFAULT 0, price_max REAL DEFAULT 0)",
+            "CREATE TABLE IF NOT EXISTS combined_locality_rules (id INTEGER PRIMARY KEY AUTOINCREMENT, surface TEXT NOT NULL UNIQUE, expands_to TEXT NOT NULL, created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')))",
+            "ALTER TABLE knowledge_aliases ADD COLUMN intel TEXT DEFAULT '{}'",
+            "ALTER TABLE brokers ADD COLUMN building_count INTEGER DEFAULT 0",
+            "ALTER TABLE brokers ADD COLUMN active_days_30 INTEGER DEFAULT 0",
+            "ALTER TABLE parsed_output ADD COLUMN summary_title TEXT DEFAULT NULL",
+            "CREATE TABLE IF NOT EXISTS observations (id INTEGER PRIMARY KEY AUTOINCREMENT, fingerprint TEXT NOT NULL, broker_key TEXT NOT NULL, summary_title TEXT DEFAULT '', intent TEXT, bhk TEXT, price REAL, price_unit TEXT, building_name TEXT, micro_market TEXT, location_raw TEXT, first_seen TEXT, last_seen TEXT, times_seen INTEGER DEFAULT 1, created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')), UNIQUE(broker_key, fingerprint))",
+            "CREATE TABLE IF NOT EXISTS observation_evidence (id INTEGER PRIMARY KEY AUTOINCREMENT, observation_id INTEGER NOT NULL, raw_message_id INTEGER NOT NULL, parsed_id INTEGER NOT NULL, evidence_type TEXT DEFAULT 'group', source_conversation TEXT DEFAULT '', seen_at TEXT, created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')), FOREIGN KEY (observation_id) REFERENCES observations(id), FOREIGN KEY (raw_message_id) REFERENCES raw_messages(id), FOREIGN KEY (parsed_id) REFERENCES parsed_output(id), UNIQUE(observation_id, raw_message_id))",
+            "CREATE TABLE IF NOT EXISTS team_members (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, email TEXT UNIQUE DEFAULT '', phone TEXT DEFAULT '', role TEXT NOT NULL DEFAULT 'member', permissions INTEGER NOT NULL DEFAULT 0, is_active INTEGER NOT NULL DEFAULT 1, linked_broker_phone TEXT DEFAULT NULL, created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')), updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')))",
+            "CREATE TABLE IF NOT EXISTS activity_log (id INTEGER PRIMARY KEY AUTOINCREMENT, team_member_id INTEGER NOT NULL, action TEXT NOT NULL, target_type TEXT DEFAULT '', target_id TEXT DEFAULT '', details TEXT DEFAULT '{}', ip_address TEXT DEFAULT '', created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')), FOREIGN KEY (team_member_id) REFERENCES team_members(id))",
+            "CREATE TABLE IF NOT EXISTS team_member_whatsapp_access (id INTEGER PRIMARY KEY AUTOINCREMENT, team_member_id INTEGER NOT NULL, whatsapp_number TEXT NOT NULL, can_send INTEGER NOT NULL DEFAULT 0, can_view_messages INTEGER NOT NULL DEFAULT 1, created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')), FOREIGN KEY (team_member_id) REFERENCES team_members(id), UNIQUE(team_member_id, whatsapp_number))",
+            "CREATE TABLE IF NOT EXISTS chat_assignments (id INTEGER PRIMARY KEY AUTOINCREMENT, whatsapp_number TEXT NOT NULL, remote_jid TEXT NOT NULL, assigned_to INTEGER DEFAULT NULL, taken_over_by INTEGER DEFAULT NULL, taken_over_at TEXT DEFAULT NULL, released_at TEXT DEFAULT NULL, created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')), FOREIGN KEY (assigned_to) REFERENCES team_members(id), FOREIGN KEY (taken_over_by) REFERENCES team_members(id), UNIQUE(whatsapp_number, remote_jid))",
         ]
         for sql in migs:
             try:
@@ -155,6 +168,26 @@ class SqliteStorage(Storage):
 
     # ── Broker graph ───────────────────────────────────────────
 
+    GENERIC_NAMES = frozenset({
+        "real estate", "property", "properties", "realtor", "broker", "agent",
+        "consultant", "advisor", "realty", "estate", "group", "team",
+    })
+
+    @staticmethod
+    def _extract_name_from_message(message: str | None) -> str | None:
+        """Extract broker name from message signature (text after phone number at end)."""
+        if not message:
+            return None
+        # Phone number on its own line, name on next line
+        m = re.search(r'(\d{10,12})\s*\n\s*([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)', message)
+        if m:
+            return m.group(2).strip()
+        # Phone number then name on same line at end
+        m = re.search(r'(\d{10,12})\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\s*$', message)
+        if m:
+            return m.group(2).strip()
+        return None
+
     @staticmethod
     def _broker_identity_key(name: str | None, phone: str | None) -> str | None:
         digits = re.sub(r"\D+", "", phone or "")
@@ -184,8 +217,8 @@ class SqliteStorage(Storage):
                       p.micro_market,
                       COALESCE(rd.building_name, p.building_name) AS building_name,
                       COALESCE(rd.landmark_name, p.landmark_name) AS landmark_name,
-                      p.price, p.bhk, p.created_at,
-                      r.group_name, r.sender, r.timestamp
+                       p.price, p.bhk, p.created_at,
+                       r.group_name, r.sender, r.message, r.timestamp
                FROM parsed_output p
                JOIN raw_messages r ON r.id = p.raw_message_id
                LEFT JOIN resolver_decisions rd ON rd.parsed_id = p.id
@@ -207,6 +240,10 @@ class SqliteStorage(Storage):
         for row in rows:
             d = dict(row)
             name = d.get("broker_name") or d.get("profile_name") or d.get("sender")
+            if not name or name.strip().lower() in self.GENERIC_NAMES:
+                sig_name = self._extract_name_from_message(d.get("message"))
+                if sig_name:
+                    name = sig_name
             key = self._broker_identity_key(name, d.get("broker_phone"))
             if key:
                 d["identity_key"] = key
@@ -250,10 +287,23 @@ class SqliteStorage(Storage):
 
             canonical_name = max(names.items(), key=lambda kv: (kv[1], len(kv[0])))[0] if names else ""
             primary_phone = max(phones.items(), key=lambda kv: kv[1])[0] if phones else None
-            avg_ticket = sum(prices) / len(prices) if prices else None
             seen_values = [t for t in seen_times if t]
             first_seen = min(seen_values) if seen_values else None
             last_seen = max(seen_values) if seen_values else None
+
+            # Coverage: unique buildings
+            buildings = set()
+            active_dates = set()
+            for item in items:
+                bn = item.get("building_name")
+                if bn and bn.strip() and bn.strip() != "-":
+                    buildings.add(bn.strip())
+                seen_date = (item.get("timestamp") or item.get("created_at") or "")[:10]
+                if seen_date and len(seen_date) == 10:
+                    active_dates.add(seen_date)
+            building_count = len(buildings)
+            thirty_days_ago = (datetime.now(timezone.utc) - timedelta(days=30)).strftime("%Y-%m-%d")
+            active_days_30 = len([d for d in active_dates if d >= thirty_days_ago])
 
             broker_id = existing_brokers.get(key)
             if broker_id:
@@ -262,22 +312,24 @@ class SqliteStorage(Storage):
                        SET canonical_name = ?, primary_phone = ?, first_seen_at = ?,
                            last_seen_at = ?, observation_count = ?, listing_count = ?,
                            requirement_count = ?, rental_count = ?, commercial_count = ?,
-                           group_count = ?, market_count = ?, avg_ticket = ?, updated_at = ?
+                           group_count = ?, market_count = ?, building_count = ?,
+                           active_days_30 = ?, updated_at = ?
                        WHERE id = ?""",
                     (canonical_name, primary_phone, first_seen, last_seen, len(items),
                      listing_count, requirement_count, rental_count, commercial_count,
-                     len(groups), len(markets), avg_ticket, now, broker_id),
+                     len(groups), len(markets), building_count, active_days_30, now, broker_id),
                 )
             else:
                 cur = self.db.execute(
                     """INSERT INTO brokers
                        (identity_key, canonical_name, primary_phone, first_seen_at, last_seen_at,
                         observation_count, listing_count, requirement_count, rental_count,
-                        commercial_count, group_count, market_count, avg_ticket, updated_at)
-                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                        commercial_count, group_count, market_count, building_count,
+                        active_days_30, updated_at)
+                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                     (key, canonical_name, primary_phone, first_seen, last_seen, len(items),
                      listing_count, requirement_count, rental_count, commercial_count,
-                     len(groups), len(markets), avg_ticket, now),
+                     len(groups), len(markets), building_count, active_days_30, now),
                 )
                 broker_id = cur.lastrowid
             broker_ids[key] = broker_id
@@ -382,6 +434,455 @@ class SqliteStorage(Storage):
 
         self._commit()
         return {"brokers": len(broker_rows), "observations": sum(len(v) for v in broker_rows.values())}
+
+    def _observation_fingerprint(self, parsed: dict) -> str:
+        import hashlib
+        broker_parts = [
+            str(parsed.get("broker_name") or parsed.get("profile_name") or "").strip().lower(),
+            re.sub(r"\D+", "", parsed.get("broker_phone") or ""),
+        ]
+        content_parts = [
+            str(parsed.get("intent") or "").strip().lower(),
+            str(parsed.get("bhk") or "").strip().lower(),
+            f"{float(parsed.get('price') or 0):.0f}",
+            str(parsed.get("building_name") or "").strip().lower(),
+            str(parsed.get("micro_market") or "").strip().lower(),
+            str(parsed.get("location_raw") or "").strip().lower(),
+        ]
+        raw = "::".join(filter(None, broker_parts)) + "||" + "::".join(filter(None, content_parts))
+        return hashlib.sha256(raw.encode()).hexdigest()
+
+    def rebuild_observation_graph(self) -> dict:
+        rows = self.db.execute(
+            """SELECT p.id AS parsed_id, p.raw_message_id, p.intent, p.bhk,
+                      p.price, p.price_unit, p.building_name, p.micro_market,
+                      p.location_raw, p.broker_name, p.broker_phone, p.profile_name,
+                      p.summary_title, p.created_at,
+                      r.group_name, r.timestamp, r.sender_jid, r.message
+               FROM parsed_output p
+               JOIN raw_messages r ON r.id = p.raw_message_id
+               WHERE COALESCE(p.broker_name, p.profile_name, r.sender, '') != ''
+               ORDER BY p.id"""
+        ).fetchall()
+
+        self.db.execute("DELETE FROM observation_evidence")
+        self.db.execute("DELETE FROM observations")
+
+        now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        obs_map: dict[str, dict] = {}
+
+        for row in rows:
+            d = dict(row)
+            # Backfill null parsed fields from raw message text
+            raw_text = d.get("message") or ""
+            backfilled = self._backfill_parsed(raw_text, d)
+            d["intent"] = backfilled["intent"]
+            d["building_name"] = backfilled["building_name"]
+            d["micro_market"] = backfilled["micro_market"]
+            d["location_raw"] = backfilled["location_raw"]
+            # Always regenerate title during rebuild with backfilled data
+            existing_title = d.get("summary_title") or ""
+            # Title is missing location — rebuild it
+            new_parts: list[str] = []
+            lower = raw_text.lower()
+            # Trans type
+            tt = None
+            if re.search(r'\bfor\s+sale\b', lower) or re.search(r'\bonsale\b', lower):
+                tt = "Sale"
+            elif re.search(r'\b(?:for\s+)?rent\b', lower):
+                tt = "Rent"
+            elif re.search(r'\bleased?\b', lower):
+                tt = "Lease"
+            if tt:
+                new_parts.append(tt)
+            # Property type
+            pt = None
+            for pat, label in [
+                (r'\bflat\b', "Flat"), (r'\boffice\b', "Office"),
+                (r'\bshop\b', "Shop"), (r'\bshowroom\b', "Showroom"),
+                (r'\bbungalow\b', "Bungalow"), (r'\bvilla\b', "Villa"),
+                (r'\bgodown\b', "Godown"), (r'\bwarehouse\b', "Warehouse"),
+                (r'\bcommercial\b', "Commercial"),
+            ]:
+                if re.search(pat, lower):
+                    pt = label
+                    break
+            if pt:
+                new_parts.append(pt)
+            # Location — prefer micro_market, validate location_raw against known patterns
+            loc = d.get("micro_market")
+            if not loc:
+                loc_raw = d.get("location_raw")
+                if loc_raw:
+                    # Only accept location_raw if it matches a known Mumbai locality
+                    loc_pats_combined = '|'.join([
+                        r'Andheri\s*(?:\(\s*[EW]\s*\)|\s+(?:East|West))?',
+                        r'Bandra\s*(?:East|West)?',
+                        r'Juhu', r'Khar\s*(?:East|West)?', r'Dadar',
+                        r'Worli', r'Malad\s*(?:East|West)?', r'Powai',
+                        r'Goregaon\s*(?:East|West)?', r'Kandivali\s*(?:East|West)?',
+                        r'Borivali\s*(?:East|West)?', r'Dombivli', r'Thane',
+                        r'Navi\s+Mumbai', r'Nerul', r'Vashi', r'Panvel',
+                        r'Chembur', r'Kurla', r'Ghatkopar', r'Vile\s+Parle',
+                        r'Lower\s+Para?l', r'Prabhadevi', r'Marine\s+Lines?',
+                        r'Colaba', r'Churchgate', r'Fort', r'Byculla',
+                        r'Mahim', r'Matunga', r'Sion', r'Wadala',
+                        r'Dahisar', r'Mira\s+Road', r'Bhayandar',
+                        r'Vasai', r'Virar', r'Kalyan', r'Ambernath',
+                        r'Badlapur', r'Ulhasnagar',
+                    ])
+                    if re.search(loc_pats_combined, loc_raw, re.IGNORECASE):
+                        loc = str(loc_raw).strip()
+            if loc:
+                new_parts.append(loc)
+            # Building
+            bldg = d.get("building_name")
+            if bldg:
+                new_parts.append(str(bldg))
+            # Price
+            price = d.get("price")
+            unit = d.get("price_unit") or ""
+            if price:
+                new_parts.append(f"₹{price:g} {unit}".strip())
+            if new_parts:
+                d["summary_title"] = " | ".join(new_parts)
+            fp = self._observation_fingerprint(d)
+            if fp not in obs_map:
+                obs_map[fp] = {
+                    "fingerprint": fp,
+                    "broker_key": re.sub(r"\D+", "", d.get("broker_phone") or ""),
+                    "summary_title": d.get("summary_title") or "",
+                    "intent": d.get("intent"),
+                    "bhk": d.get("bhk"),
+                    "price": d.get("price"),
+                    "price_unit": d.get("price_unit"),
+                    "building_name": d.get("building_name"),
+                    "micro_market": d.get("micro_market"),
+                    "location_raw": d.get("location_raw"),
+                    "first_seen": d.get("timestamp") or d.get("created_at") or now,
+                    "last_seen": d.get("timestamp") or d.get("created_at") or now,
+                    "times_seen": 0,
+                    "evidence": [],
+                }
+            existing = obs_map[fp]
+            seen_at = d.get("timestamp") or d.get("created_at") or now
+            if seen_at < existing["first_seen"]:
+                existing["first_seen"] = seen_at
+            if seen_at > existing["last_seen"]:
+                existing["last_seen"] = seen_at
+                if d.get("summary_title"):
+                    existing["summary_title"] = d["summary_title"]
+            existing["times_seen"] += 1
+            existing["evidence"].append({
+                "raw_message_id": d["raw_message_id"],
+                "parsed_id": d["parsed_id"],
+                "group_name": d.get("group_name") or "",
+                "sender_jid": d.get("sender_jid") or "",
+                "seen_at": seen_at,
+            })
+
+        for fp, obs in obs_map.items():
+            cur = self.db.execute(
+                """INSERT INTO observations
+                   (fingerprint, broker_key, summary_title, intent, bhk, price, price_unit,
+                    building_name, micro_market, location_raw, first_seen, last_seen, times_seen)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (obs["fingerprint"], obs["broker_key"], obs["summary_title"],
+                 obs["intent"], obs["bhk"], obs["price"], obs["price_unit"],
+                 obs["building_name"], obs["micro_market"], obs["location_raw"],
+                 obs["first_seen"], obs["last_seen"], obs["times_seen"]),
+            )
+            obs_id = cur.lastrowid
+            for ev in obs["evidence"]:
+                group_name = (ev["group_name"] or "").strip()
+                sender_jid = (ev["sender_jid"] or "").strip()
+                is_dm = not group_name and bool(sender_jid)
+                evidence_type = "dm" if is_dm else ("broadcast" if "broadcast" in group_name.lower() else "group")
+                source_conversation = sender_jid if is_dm else group_name
+                self.db.execute(
+                    """INSERT OR IGNORE INTO observation_evidence
+                       (observation_id, raw_message_id, parsed_id, evidence_type,
+                        source_conversation, seen_at)
+                       VALUES (?,?,?,?,?,?)""",
+                    (obs_id, ev["raw_message_id"], ev["parsed_id"],
+                     evidence_type, source_conversation, ev["seen_at"]),
+                )
+
+        self._commit()
+        return {"observations": len(obs_map), "evidence": sum(o["times_seen"] for o in obs_map.values())}
+
+    @staticmethod
+    def _backfill_parsed(raw_text: str, parsed: dict) -> dict:
+        """Fill null parsed fields by extracting from raw text directly."""
+        result = dict(parsed)
+        lower = raw_text.lower()
+
+        # Backfill intent
+        if not result.get("intent"):
+            if re.search(r'\bfor\s+sale\b', lower) or re.search(r'\bonsale\b', lower):
+                result["intent"] = "SELL"
+            elif re.search(r'\b(?:for\s+)?rent\b', lower) or re.search(r'\bleased?\b', lower):
+                result["intent"] = "RENT"
+
+        # Backfill building name — look for quoted text, conservative only
+        if not result.get("building_name"):
+            raw_one_line = raw_text.split("\n")[0] if raw_text else ""
+            # Match text in quotes on the first line (most reliable)
+            bm = re.search(r'["\u201C\u201D]([^"\u201C\u201D]{3,50})["\u201C\u201D]', raw_one_line)
+            if bm:
+                cand = bm.group(1).strip().strip("_").strip()
+                if cand and not re.search(r'(price|lac|cr|sqft|floor|contact|call|property|available|building|tower)', cand, re.IGNORECASE):
+                    result["building_name"] = cand
+            if not result.get("building_name"):
+                # Match markdown-wrapped: _"text"_ or _text_ (common in WhatsApp)
+                bm = re.search(r'_"([A-Z][A-Za-z0-9\s\-.]{3,50})"_', raw_text)
+                if bm:
+                    result["building_name"] = bm.group(1).strip()
+            if not result.get("building_name"):
+                # Last resort: first capitalized multi-word (2-4 words) on line 1
+                bm = re.search(r'(?:^|\s)([A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,3})(?:\s|$)', raw_one_line)
+                if bm:
+                    cand = bm.group(1).strip()
+                    if cand and not any(kw in cand.lower() for kw in ["price", "lac", "cr", "sqft", "call", "contact", "property", "please", "kindly", "available", "required"]):
+                        if len(cand) >= 5 and len(cand) <= 40:
+                            result["building_name"] = cand
+
+        # Backfill micro_market / location_raw
+        if not result.get("micro_market") and not result.get("location_raw"):
+            locs = [
+                r'Andheri\s*\(\s*[EW]\s*\)',
+                r'Andheri\s+(?:East|West)',
+                r'Bandra\s+(?:East|West)',
+                r'Bandra',
+                r'Juhu',
+                r'Khar\s+(?:East|West)',
+                r'Khar',
+                r'Dadar',
+                r'Worli',
+                r'Malad\s+(?:East|West)',
+                r'Powai',
+                r'Goregaon\s+(?:East|West)',
+                r'Kandivali\s+(?:East|West)',
+                r'Borivali\s+(?:East|West)',
+                r'Dombivli',
+                r'Thane',
+                r'Navi\s+Mumbai',
+                r'Nerul',
+                r'Vashi',
+                r'Panvel',
+                r'Chembur',
+                r'Kurla',
+                r'Ghatkopar',
+                r'Vile\s+Parle',
+                r'Lower\s+Para?l',
+                r'Prabhadevi',
+                r'Marine\s+Lines?',
+                r'Colaba',
+                r'Churchgate',
+                r'Fort',
+                r'Byculla',
+                r'Mahim',
+                r'Matunga',
+                r'Sion',
+                r'Wadala',
+                r'Dahisar',
+                r'Mira\s+Road',
+                r'Bhayandar',
+                r'Vasai',
+                r'Virar',
+                r'Kalyan',
+                r'Ambernath',
+                r'Badlapur',
+                r'Ulhasnagar',
+            ]
+            for pat in locs:
+                lm = re.search(pat, raw_text, re.IGNORECASE)
+                if lm:
+                    loc_raw = lm.group(0)
+                    # Normalize: "Andheri (W)" -> "Andheri West"
+                    loc_normalized = re.sub(r'\(\s*([EW])\s*\)', lambda m: {"E": "East", "W": "West"}.get(m.group(1).upper(), m.group(1)), loc_raw)
+                    loc_normalized = loc_normalized.replace("_", " ").strip()
+                    result["location_raw"] = loc_raw
+                    result["micro_market"] = loc_normalized
+                    break
+
+        return result
+
+    def _add_parsed_evidence(self, parsed_id: int, obs: ParsedObservation, raw_message_id: int):
+        try:
+            raw = self.db.execute(
+                "SELECT group_name, sender_jid, timestamp, message FROM raw_messages WHERE id = ?",
+                (raw_message_id,),
+            ).fetchone()
+            if not raw:
+                return
+
+            raw_text = raw["message"] or ""
+            backfilled = self._backfill_parsed(raw_text, {
+                "broker_name": obs.broker_name,
+                "broker_phone": obs.broker_phone,
+                "profile_name": obs.profile_name,
+                "intent": obs.intent,
+                "bhk": obs.bhk,
+                "price": obs.price,
+                "building_name": obs.building_name,
+                "micro_market": obs.micro_market,
+                "location_raw": obs.location_raw,
+            })
+
+            fp = self._observation_fingerprint(backfilled)
+            broker_key = re.sub(r"\D+", "", obs.broker_phone or "")
+            seen_at = raw["timestamp"] or datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+            group_name = (raw["group_name"] or "").strip()
+            sender_jid = (raw["sender_jid"] or "").strip()
+            is_dm = not group_name and bool(sender_jid)
+            evidence_type = "dm" if is_dm else ("broadcast" if "broadcast" in group_name.lower() else "group")
+            source_conversation = sender_jid if is_dm else group_name
+
+            existing = self.db.execute(
+                "SELECT id, times_seen FROM observations WHERE broker_key = ? AND fingerprint = ?",
+                (broker_key, fp),
+            ).fetchone()
+
+            if existing:
+                self.db.execute(
+                    """UPDATE observations SET times_seen = times_seen + 1,
+                       last_seen = MAX(last_seen, ?),
+                       first_seen = MIN(first_seen, ?)
+                       WHERE id = ?""",
+                    (seen_at, seen_at, existing["id"]),
+                )
+                obs_id = existing["id"]
+            else:
+                title = obs.summary_title or ""
+                cur = self.db.execute(
+                    """INSERT INTO observations
+                       (fingerprint, broker_key, summary_title, intent, bhk, price, price_unit,
+                        building_name, micro_market, location_raw, first_seen, last_seen, times_seen)
+                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,1)""",
+                    (fp, broker_key, title,
+                     backfilled["intent"], obs.bhk, obs.price, obs.price_unit,
+                     backfilled["building_name"], backfilled["micro_market"], backfilled["location_raw"],
+                     seen_at, seen_at),
+                )
+                obs_id = cur.lastrowid
+
+            try:
+                self.db.execute(
+                    """INSERT OR IGNORE INTO observation_evidence
+                       (observation_id, raw_message_id, parsed_id, evidence_type,
+                        source_conversation, seen_at)
+                       VALUES (?,?,?,?,?,?)""",
+                    (obs_id, raw_message_id, parsed_id, evidence_type, source_conversation, seen_at),
+                )
+            except Exception:
+                pass
+            self._commit()
+        except Exception:
+            pass
+
+    def get_observations_feed(self, limit: int = 50, offset: int = 0,
+                              broker_key: str = "", intent: str = "") -> list[dict]:
+        where = []
+        params: list = []
+        if broker_key:
+            where.append("o.broker_key = ?")
+            params.append(broker_key)
+        if intent:
+            where.append("o.intent = ?")
+            params.append(intent.upper())
+
+        where_sql = ("WHERE " + " AND ".join(where)) if where else ""
+        params.extend([limit, offset])
+
+        rows = self.db.execute(
+            f"""SELECT o.id, o.fingerprint, o.broker_key, o.summary_title,
+                       o.intent, o.bhk, o.price, o.price_unit,
+	                       o.building_name, o.micro_market, o.location_raw,
+	                       o.first_seen, o.last_seen, o.times_seen,
+	                       COALESCE(e.evidence_json, '[]') AS evidence_list,
+	                       (SELECT oe4.raw_message_id FROM observation_evidence oe4
+	                        WHERE oe4.observation_id = o.id
+	                        ORDER BY oe4.seen_at DESC LIMIT 1) AS latest_raw_message_id,
+	                       (SELECT oe5.parsed_id FROM observation_evidence oe5
+	                        WHERE oe5.observation_id = o.id
+	                        ORDER BY oe5.seen_at DESC LIMIT 1) AS latest_parsed_id,
+	                       (SELECT rm.message FROM observation_evidence oe2
+	                        JOIN raw_messages rm ON rm.id = oe2.raw_message_id
+	                        WHERE oe2.observation_id = o.id
+                        ORDER BY oe2.seen_at DESC LIMIT 1) AS raw_message,
+                       (SELECT rm.sender FROM observation_evidence oe3
+                        JOIN raw_messages rm ON rm.id = oe3.raw_message_id
+                        WHERE oe3.observation_id = o.id
+                        ORDER BY oe3.seen_at DESC LIMIT 1) AS raw_sender
+                FROM observations o
+                LEFT JOIN (
+                    SELECT observation_id,
+                           json_group_array(
+                               json_object('type', evidence_type, 'source', source_conversation, 'seen_at', seen_at)
+                           ) AS evidence_json
+                    FROM observation_evidence
+                    GROUP BY observation_id
+                ) e ON e.observation_id = o.id
+                {where_sql}
+                ORDER BY o.last_seen DESC
+                LIMIT ? OFFSET ?""",
+            params,
+        ).fetchall()
+
+        result = []
+        for r in rows:
+            d = dict(r)
+            d["evidence_list"] = json.loads(d.get("evidence_list") or "[]")
+            result.append(d)
+        return result
+
+    def get_brokers_feed(self, limit: int = 50, offset: int = 0,
+                         min_observations: int = 1) -> list[dict]:
+        rows = self.db.execute(
+            """SELECT
+                   b.primary_phone, b.canonical_name,
+                   b.building_count, b.active_days_30,
+                   COUNT(DISTINCT o.id) AS observation_count,
+                   MAX(o.last_seen) AS last_active,
+                   MIN(o.first_seen) AS first_seen,
+                   SUM(CASE WHEN oe.evidence_type = 'group' THEN 1 ELSE 0 END) AS group_evidence_count,
+                   SUM(CASE WHEN oe.evidence_type = 'dm' THEN 1 ELSE 0 END) AS dm_evidence_count,
+                   COUNT(DISTINCT oe.source_conversation) AS unique_channel_count,
+                   (SELECT o2.summary_title FROM observations o2
+                    WHERE o2.broker_key = b.primary_phone
+                    ORDER BY o2.last_seen DESC LIMIT 1) AS latest_title,
+                   (SELECT o2.intent FROM observations o2
+                    WHERE o2.broker_key = b.primary_phone
+                    ORDER BY o2.last_seen DESC LIMIT 1) AS latest_intent,
+                   (SELECT COALESCE(json_group_array(DISTINCT json_object(
+                       'source', oe2.source_conversation,
+                       'type', oe2.evidence_type
+                   )), '[]')
+                    FROM observation_evidence oe2
+                    JOIN observations o2 ON o2.id = oe2.observation_id
+                    WHERE o2.broker_key = b.primary_phone) AS channels
+               FROM brokers b
+               JOIN observations o ON o.broker_key = b.primary_phone
+               JOIN observation_evidence oe ON oe.observation_id = o.id
+               GROUP BY b.primary_phone
+               HAVING observation_count >= ?
+               ORDER BY last_active DESC
+               LIMIT ? OFFSET ?""",
+            (min_observations, limit, offset),
+        ).fetchall()
+
+        result = []
+        for r in rows:
+            d = dict(r)
+            d["group_evidence_count"] = d["group_evidence_count"] or 0
+            d["dm_evidence_count"] = d["dm_evidence_count"] or 0
+            d["unique_channel_count"] = d["unique_channel_count"] or 0
+            d["building_count"] = d["building_count"] or 0
+            d["active_days_30"] = d["active_days_30"] or 0
+            d["channels"] = json.loads(d.get("channels") or "[]")
+            result.append(d)
+        return result
 
     # ── Raw messages ───────────────────────────────────────────
 
@@ -893,8 +1394,9 @@ class SqliteStorage(Storage):
                (raw_message_id, message_type, intent, principal, bhk, price, price_unit, area_sqft,
                 furnishing, location_raw, location, building_name, landmark_name, street_name,
                 area, micro_market, developer, broker_name, broker_phone,
-                profile_name, listing_index, forwarded, confidence, raw_payload, event_id, embedding)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                profile_name, listing_index, forwarded, confidence, raw_payload, event_id, embedding,
+                summary_title)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (obs.raw_message_id, obs.message_type, obs.intent, obs.principal, obs.bhk,
              obs.price, obs.price_unit, obs.area_sqft, obs.furnishing, obs.location_raw,
              obs.location,
@@ -904,7 +1406,8 @@ class SqliteStorage(Storage):
              obs.profile_name, obs.listing_index,
              obs.forwarded,
              obs.confidence, obs.raw_payload, obs.event_id,
-             obs.embedding)
+             obs.embedding,
+             obs.summary_title)
         )
         parsed_id = cur.lastrowid
         self._commit()
@@ -916,6 +1419,10 @@ class SqliteStorage(Storage):
                 pass
         try:
             self.rebuild_broker_graph()
+        except Exception:
+            pass
+        try:
+            self._add_parsed_evidence(parsed_id, obs, obs.raw_message_id)
         except Exception:
             pass
         try:
@@ -1239,8 +1746,8 @@ class SqliteStorage(Storage):
                       p.street_name, p.area, p.micro_market, p.developer,
                       p.broker_name, p.broker_phone, p.profile_name,
                       p.listing_index, p.forwarded, p.confidence, p.raw_payload, p.event_id,
-                      p.created_at,
-                      r.group_name as raw_group,
+                       p.created_at, p.summary_title,
+                       r.group_name as raw_group,
                       r.timestamp as raw_timestamp
                FROM parsed_output p
                JOIN raw_messages r ON r.id = p.raw_message_id
@@ -2157,15 +2664,24 @@ class SqliteStorage(Storage):
 
     def dashboard_feed(self, limit: int = 20) -> list[dict]:
         rows = self.db.execute(
-            "SELECT r.id, r.message, r.timestamp, r.group_name, r.sender, "
-            "p.intent, p.principal, p.broker_name, "
-            "p.bhk, p.price, p.price_unit, "
-            "p.building_name, p.landmark_name, p.micro_market, p.furnishing, "
+            "SELECT r.id, r.message, r.timestamp, r.group_name, r.sender, r.sender_phone, "
+            "p.id AS parsed_id, p.intent, p.principal, p.broker_name, p.broker_phone, "
+            "p.bhk, p.price, p.price_unit, p.area_sqft, "
+            "p.building_name, p.landmark_name, p.micro_market, p.furnishing, p.location_raw, "
             "p.forwarded, p.profile_name, "
             "d.final_confidence, d.method "
             "FROM raw_messages r "
-            "LEFT JOIN parsed_output p ON p.raw_message_id = r.id "
+            "JOIN parsed_output p ON p.id = ("
+            "  SELECT p2.id FROM parsed_output p2 "
+            "  WHERE p2.raw_message_id = r.id "
+            "    AND p2.intent IS NOT NULL "
+            "    AND TRIM(p2.intent) != '' "
+            "    AND UPPER(p2.intent) NOT IN ('TEXT', 'SOCIAL', 'UNKNOWN') "
+            "  ORDER BY p2.confidence DESC, p2.id DESC LIMIT 1"
+            ") "
             "LEFT JOIN resolver_decisions d ON d.parsed_id = p.id "
+            "WHERE COALESCE(r.group_name, '') NOT LIKE '%@newsletter' "
+            "  AND COALESCE(r.sender_jid, '') NOT LIKE '%@newsletter' "
             "ORDER BY r.id DESC LIMIT ?",
             (limit,)
         ).fetchall()
@@ -3363,8 +3879,124 @@ class SqliteStorage(Storage):
 
     # ── Knowledge Trainer ───────────────────────────────────────────
 
-    def add_trainer_term(self, term: str, context: str = "", status: str = "pending", raw_message_id: int | None = None) -> dict | None:
-        """Add a term to the knowledge trainer queue."""
+    _ADJECTIVE_BLACKLIST = frozenset({
+        "large", "small", "big", "huge", "tiny", "massive", "spacious",
+        "compact", "cozy", "luxurious", "luxury", "beautiful", "lovely",
+        "amazing", "wonderful", "fantastic", "gorgeous", "stunning",
+        "premium", "exclusive", "superior", "deluxe", "standard",
+        "modern", "contemporary", "classic", "elegant", "charming",
+        "converted", "converted into", "converted to", "conversion",
+        "combined", "combined into", "knocked", "merged", "jodi",
+        "new", "old", "brand new", "newly", "ready", "ready to move",
+        "semi", "fully", "unfurnished", "furnished",
+        "higher", "lower", "front", "rear", "corner", "end",
+        "road", "lane", "street", "avenue",
+        "parking", "deck", "terrace", "balcony", "garden",
+        "view", "sea view", "city view", "garden view", "pool view",
+        "open", "vastu", "vastu compliant", "natural light",
+        "available", "direct", "direct inventory", "inventory",
+        "urgent", "urgently", "immediate", "immediate possession",
+        "negotiable", "affordable", "budget", "value for money",
+        "rare", "must see", "must visit",
+        "independent", "separate", "private",
+        "west", "north", "south", "facing",
+        "upper", "lower", "ground", "top", "middle", "basement",
+        "good", "great", "best", "super", "top", "fine",
+        "special", "exclusive", "sole",
+        "clear", "hindu", "union",
+        "owner", "deal direct", "direct owner",
+        "production", "glass", "facade",
+        "experience", "lease", "production",
+        "nana", "nani",
+        "selling", "sale", "rent", "rental",
+        "call", "contact", "details", "price", "rate", "cost",
+        "total", "final", "net",
+        "truck access", "easy truck access",
+        "walking", "walkable",
+        # Prepositions and functional words — noise when standalone
+        "with", "without", "for", "to", "from", "of", "by", "at", "in", "on",
+        "and", "or", "the", "a", "an", "is", "has", "have", "are", "was",
+        "this", "that", "these", "those", "it", "its", "all", "each", "every",
+        "being", "been", "just", "only", "also", "very", "too",
+        "more", "less", "most", "least", "some", "any", "no", "not",
+        "up", "down", "out", "off", "over", "under", "through", "across",
+        "along", "around", "about", "between", "among", "before", "after",
+    })
+
+    def add_trainer_term(self, term: str, context: str = "", status: str = "pending", raw_message_id: int | None = None, force_trainer: bool = False) -> dict | None:
+        """Add a term to the knowledge trainer queue.
+        
+        Returns {"term": ..., "status": ...} on success.
+        Returns {"error": "blacklisted", "term": ...} if the term is a known non-entity.
+        Returns {"status": "candidate", ...} if stored as a low-confidence learning candidate.
+        
+        Set force_trainer=True (e.g. from inline-resolve) to skip confidence routing
+        and insert directly into the trainer table.
+        """
+        term = term.strip()
+        if not term:
+            return {"error": "empty_term"}
+        import re
+        term_lower = term.lower()
+        term_words = term_lower.split()
+        
+        # Reject single-word adjectives and generic descriptors
+        if len(term_words) == 1 and term_lower in self._ADJECTIVE_BLACKLIST:
+            return {"error": "blacklisted", "term": term, "reason": "adjective"}
+        
+        # Reject if ALL words are blacklisted
+        if term_words and all(w in self._ADJECTIVE_BLACKLIST for w in term_words):
+            return {"error": "blacklisted", "term": term, "reason": "all_words_blacklisted"}
+        
+        # Score confidence based on structural signals
+        confidence = 0.0
+        has_capitalized = term[0].isupper() if term else False
+        has_real_suffix = bool(re.search(
+            r'(?:Bil|Bldg|Building|Apt|Complex|Tower|Heights|Park|Residency|'
+            r'Enclave|Villa|Society|CHS|Housing|Apartment|Ivory|Residences?|'
+            r'Nest|Abode|Haven|Vihar|Vatika|Quarters?)$',
+            term, re.IGNORECASE
+        ))
+        if has_real_suffix:
+            confidence += 0.4
+        if has_capitalized:
+            confidence += 0.2
+        if len(term_words) >= 2:
+            confidence += 0.15
+        if len(term) >= 6:
+            confidence += 0.1
+        # Bonus for multi-word where ALL words are capitalized (proper name signal)
+        if has_capitalized and len(term_words) >= 2 and all(w[0].isupper() for w in term_words if w):
+            confidence += 0.2
+        # Bonus for no blacklisted words at all (clean proper name)
+        if term_words and not any(w in self._ADJECTIVE_BLACKLIST for w in term_words):
+            confidence += 0.15
+        
+        # Low-confidence terms → learning candidates (not trainer)
+        if not force_trainer and confidence < 0.6:
+            try:
+                self.db.execute("""
+                    INSERT INTO knowledge_learning_candidates (phrase, frequency, contexts, raw_message_ids, confidence, source)
+                    VALUES (?, 1, ?, ?, ?, 'scanner')
+                    ON CONFLICT(phrase) DO UPDATE SET
+                        frequency = frequency + 1,
+                        last_seen = strftime('%Y-%m-%dT%H:%M:%SZ', 'now'),
+                        confidence = MAX(confidence, ?),
+                        contexts = ?
+                """, (
+                    term,
+                    json.dumps([context[:200]] if context else []),
+                    json.dumps([raw_message_id] if raw_message_id else []),
+                    round(confidence, 2),
+                    confidence,
+                    json.dumps([context[:200]] if context else []),
+                ))
+                self.db.commit()
+                return {"status": "candidate", "term": term, "confidence": round(confidence, 2)}
+            except Exception as e:
+                return {"error": str(e)}
+        
+        # High-confidence terms → knowledge trainer
         try:
             self.db.execute("""
                 INSERT INTO knowledge_trainer (term, context, status, raw_message_id)
@@ -3374,9 +4006,9 @@ class SqliteStorage(Storage):
                     last_seen = strftime('%Y-%m-%dT%H:%M:%SZ', 'now'),
                     context = ?,
                     raw_message_id = COALESCE(?, raw_message_id)
-            """, (term.strip(), context, status, raw_message_id, context, raw_message_id))
+            """, (term, context, status, raw_message_id, context, raw_message_id))
             self.db.commit()
-            return {"term": term.strip(), "status": status}
+            return {"term": term, "status": status, "confidence": round(confidence, 2)}
         except Exception as e:
             return {"error": str(e)}
 
@@ -3417,8 +4049,8 @@ class SqliteStorage(Storage):
             for r in rows
         ]
 
-    def resolve_trainer_term(self, term_id: int, status: str, resolved_by: str = "user", notes: str = "") -> bool:
-        """Resolve a trainer term (mark as building, society, landmark, locality, etc.)."""
+    def resolve_trainer_term(self, term_id: int, status: str, resolved_by: str = "user", notes: str = "", expands_to: list | None = None) -> bool:
+        """Resolve a trainer term (mark as building, society, landmark, locality, combined_locality, etc.)."""
         try:
             row = self.db.execute(
                 "SELECT term, raw_message_id FROM knowledge_trainer WHERE id = ?", (term_id,)
@@ -3434,13 +4066,19 @@ class SqliteStorage(Storage):
                 WHERE id = ?
             """, (status, resolved_by, notes, term_id))
 
+            # Reject blacklisted terms — never create aliases for adjectives
+            term_words = term.lower().split()
+            if term_words and all(w in self._ADJECTIVE_BLACKLIST for w in term_words):
+                return True  # Mark as resolved (ignored) without creating alias
+
             # Create knowledge alias for entity types so future parses recognize them
-            if status in ("building", "society", "landmark", "locality"):
+            if status in ("building", "society", "landmark", "locality", "combined_locality"):
                 entity_type_map = {
                     "building": "building",
                     "society": "building",
                     "landmark": "landmark",
                     "locality": "market",
+                    "combined_locality": "combined_locality",
                 }
                 canonical = term.strip()
 
@@ -3486,6 +4124,37 @@ class SqliteStorage(Storage):
                 except Exception:
                     pass
 
+                # Gather and store aggregated intel from all messages mentioning this entity
+                try:
+                    intel = self._gather_entity_intel(canonical)
+                    self.set_entity_intel(canonical.lower(), intel)
+                except Exception:
+                    pass
+
+            # Combined locality: store expansion rule mapping surface phrase → multiple canonical localities
+            if status == "combined_locality" and expands_to:
+                import json
+                surface = term.strip()
+                try:
+                    self.db.execute("""
+                        INSERT OR REPLACE INTO combined_locality_rules (surface, expands_to, created_at)
+                        VALUES (?, ?, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+                    """, (surface.lower(), json.dumps(expands_to)))
+                    self.db.commit()
+                except Exception:
+                    pass
+
+                # Also create individual knowledge aliases for each expanded locality
+                for loc in expands_to:
+                    try:
+                        self.db.execute("""
+                            INSERT OR IGNORE INTO knowledge_aliases (alias, canonical, entity_type, confidence, source, created_at)
+                            VALUES (?, ?, 'market', 0.85, ?, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+                        """, (loc.lower(), loc, f"trainer:{resolved_by}"))
+                    except Exception:
+                        pass
+                self.db.commit()
+
             return True
         except Exception:
             return False
@@ -3493,6 +4162,151 @@ class SqliteStorage(Storage):
     def ignore_trainer_term(self, term_id: int) -> bool:
         """Mark a trainer term as ignored."""
         return self.resolve_trainer_term(term_id, "ignored", "user")
+
+    def _gather_entity_intel(self, canonical: str) -> dict:
+        """Scans raw_messages and parsed_output for all mentions of an entity
+        and returns aggregated intel (brokers, BHK range, price range, count, time span)."""
+        import json
+        intel: dict = {
+            "message_count": 0,
+            "first_seen": None,
+            "last_seen": None,
+            "broker_names": [],
+            "broker_phones": [],
+            "bhk_sizes": [],
+            "price_min": 0.0,
+            "price_max": 0.0,
+            "localities": [],
+            "parsed_count": 0,
+        }
+        term_lower = canonical.lower()
+        # Build multiple search patterns — exact phrase + each word of the canonical
+        patterns = [f"%{term_lower}%"]
+        # Also match individual long words (>=5 chars) in case messages
+        # only mention e.g. "Indiabulls" without the full "Sky Forest"
+        # Skip common English words that would cause too many false positives
+        _COMMON_WORDS = {"reliable", "business", "centre", "center", "building", "tower",
+                         "office", "commercial", "properties", "property", "realty",
+                         "realtor", "estate", "consultant", "advisor", "corner",
+                         "square", "heights", "residency", "residential", "apartment",
+                         "platinum", "golden", "royal", "prime", "premium", "luxury",
+                         "grand", "elite", "supreme", "classic", "heritage",
+                         "corporate", "space", "shop", "sale", "rent", "rental",
+                         "floor", "ground", "first", "second", "third",
+                         "furnished", "unfurnished", "carpet", "area", "price",
+                         "contact", "call", "whatsapp", "available", "situated",
+                         "located", "near", "opposite", "beside", "above",
+                         "parking", "deposit", "negotiable", "immediate",
+                         "possession", "amenities", "security", "backup"}
+        for w in term_lower.split():
+            if len(w) >= 5 and w not in _COMMON_WORDS:
+                patterns.append(f"%{w}%")
+        try:
+            import re
+            ids_seen: set[int] = set()
+            rows = []
+            for pat in patterns:
+                for r in self.db.execute(
+                    "SELECT id, message, timestamp FROM raw_messages WHERE LOWER(message) LIKE ? ORDER BY id",
+                    (pat,),
+                ).fetchall():
+                    if r[0] not in ids_seen:
+                        ids_seen.add(r[0])
+                        rows.append(r)
+            intel["message_count"] = len(rows)
+            if rows:
+                for r in rows:
+                    mid, msg, ts = r
+                    msg_lower = (msg or "").lower()
+                    # BHK
+                    for m in __import__("re").finditer(r"(\d+)\s*bhk", msg_lower):
+                        b = int(m.group(1))
+                        if b not in intel["bhk_sizes"]:
+                            intel["bhk_sizes"].append(b)
+                    # Price
+                    for m in __import__("re").finditer(r"(\d+(?:\.\d+)?)\s*(cr|crore|lac|lakh|k)\b", msg_lower):
+                        amt = float(m.group(1))
+                        unit = m.group(2)
+                        if unit in ("cr", "crore"):
+                            amt *= 10000000
+                        elif unit in ("lac", "lakh"):
+                            amt *= 100000
+                        elif unit == "k":
+                            amt *= 1000
+                        if intel["price_min"] == 0 or amt < intel["price_min"]:
+                            intel["price_min"] = amt
+                        if amt > intel["price_max"]:
+                            intel["price_max"] = amt
+                    # Phones
+                    for m in __import__("re").finditer(r"(\d{10})", msg):
+                        phone = m.group(1)
+                        if phone not in intel["broker_phones"]:
+                            intel["broker_phones"].append(phone)
+                    # Time span
+                    if ts:
+                        if intel["first_seen"] is None or ts < intel["first_seen"]:
+                            intel["first_seen"] = ts
+                        if intel["last_seen"] is None or ts > intel["last_seen"]:
+                            intel["last_seen"] = ts
+                intel["bhk_sizes"].sort()
+            # Broker names from raw_messages (simple heuristic: lines with phone-like text or 'properties'/'realtor')
+            for r in rows:
+                msg = r[1] or ""
+                for line in msg.split("\n"):
+                    line_stripped = line.strip()
+                    if any(kw in line_stripped.lower() for kw in ("properties", "realtor", "realtors", "realty", "consultant")):
+                        name = line_stripped.strip("*📞📱 ")
+                        if name and len(name) > 2 and name not in intel["broker_names"]:
+                            intel["broker_names"].append(name)
+            # Localities from parsed_output
+            known_localities = {"bandra", "andheri", "santacruz", "khar", "juhu", "goregaon", "malad", "worli", "powai", "bkc", "lokhandwala", "versova", "vile parle", "kurla", "ghatkopar", "mulund", "thane", "vashi", "nerul", "belapur", "kharghar", "wadala", "prabhadevi", "lower parel", "dadar", "mahim", "matunga", "sion", "kings circle", "byculla", "marine lines", "churchgate", "colaba", "cuffe parade", "walkeshwar", "malabar hill", "peddar road", "altamount road", "nepean sea road", "breach candy", "tardeo", "grant road", "mumbai central", "pali hill", "mount mary", "bandstand", "chapel road", "turner road", "waterfield road", "linking road", "sv road", "marve road", "new link road", "oshiwara", "jogeshwari", "kandivali", "borivali", "dahisar", "mira road", "bhayandar", "vasai", "virar", "panvel", "kamothe", "new panvel", "ulwe", "ghansoli", "rabale", "airoli", "koparkhairane", "ghodbunder road", "kolshet road", "pokhran road", "hiranandani", "kasarvadavali", "manpada", "dombivili", "kalyan", "ambarnath", "badlapur", "karjat", "neral"}
+            seen_locs = set()
+            for r in rows:
+                msg_lower = (r[1] or "").lower()
+                for loc in known_localities:
+                    if loc in msg_lower and loc not in seen_locs:
+                        seen_locs.add(loc)
+                        intel["localities"].append(loc.title())
+            # Params for the price filter: exclude obvious outliers (> 10x median)
+            if intel["message_count"] > 0:
+                # Count parsed_output matches
+                try:
+                    po = self.db.execute(
+                        "SELECT COUNT(*) FROM parsed_output WHERE building_name LIKE ? OR landmark_name LIKE ?",
+                        (f"%{canonical}%", f"%{canonical}%"),
+                    ).fetchone()
+                    if po:
+                        intel["parsed_count"] = po[0]
+                except Exception:
+                    pass
+
+            return intel
+        except Exception:
+            return intel
+
+    def set_entity_intel(self, alias: str, intel: dict) -> bool:
+        """Store aggregated intel JSON on the knowledge_aliases row for a given alias."""
+        try:
+            self.db.execute(
+                "UPDATE knowledge_aliases SET intel = ? WHERE alias = ?",
+                (json.dumps(intel, default=str), alias),
+            )
+            self.db.commit()
+            return True
+        except Exception:
+            return False
+
+    def get_entity_intel(self, alias: str) -> dict | None:
+        """Retrieve aggregated intel for an entity alias."""
+        try:
+            row = self.db.execute(
+                "SELECT intel FROM knowledge_aliases WHERE alias = ?", (alias.lower(),)
+            ).fetchone()
+            if row and row[0]:
+                return json.loads(row[0])
+            return None
+        except Exception:
+            return None
 
     def get_trainer_stats(self) -> dict:
         """Get statistics for the knowledge trainer."""
@@ -3546,7 +4360,24 @@ class SqliteStorage(Storage):
                        "tower", "wing", "block", "section", "phase", "part", "type",
                        "lease", "production", "glass", "facade", "nana", "nani", "union",
                        "jodi", "sea", "view", "road", "nagar", "clear", "hindu", "available",
-                       "facing", "neg", "lacs", "experience", "luxury", "brand", "new"}
+                       "facing", "neg", "lacs", "experience", "luxury", "brand", "new",
+                       # Adjectives - never entities
+                       "large", "small", "huge", "tiny", "spacious", "compact",
+                       "luxurious", "beautiful", "lovely", "amazing", "stunning",
+                       "converted", "conversion", "combined", "knocked", "merged",
+                       "higher", "lower", "front", "rear", "corner", "end",
+                       "lane", "street", "avenue", "deck", "terrace", "balcony",
+                       "garden", "parking", "open", "vastu",
+                       "immediate", "ready", "furnished", "unfurnished",
+                       "semi", "fully", "direct", "urgent", "affordable",
+                       "rare", "special", "exclusive", "private",
+                       "east", "west", "north", "south", "facing",
+                       "middle", "basement", "top", "ground",
+                       "owner", "deal", "walking", "walkable",
+                       "selling", "rental", "leasehold", "freehold",
+                       "modular", "modern", "contemporary", "classic", "elegant",
+                       "separate", "individual", "sole", "negotiable",
+                       "prestigious", "prime", "good", "great"}
 
         # Amenities and marketing fluff — never real entity names
         amenity_words = {
@@ -3743,7 +4574,14 @@ class SqliteStorage(Storage):
         """Search knowledge records using FTS5."""
         try:
             # Try FTS5 first
-            where_clauses = []
+            where_clauses = [
+                "kr.is_valid = 1",
+                "COALESCE(kr.conversation_id, '') NOT LIKE '%@newsletter'",
+                "COALESCE(kr.conversation_name, '') NOT LIKE '%@newsletter'",
+                "COALESCE(kr.sender_jid, '') NOT LIKE '%@newsletter'",
+                "COALESCE(kr.conversation_id, '') NOT IN ('status@broadcast', 'broadcast')",
+                "COALESCE(kr.conversation_id, '') NOT LIKE '%@broadcast'",
+            ]
             params = []
 
             if content_type:
@@ -3788,7 +4626,13 @@ class SqliteStorage(Storage):
                        sender_phone, conversation_name, message_timestamp,
                        content_type, intent, confidence
                 FROM knowledge_records
-                WHERE raw_content LIKE ? AND is_valid = 1
+                WHERE raw_content LIKE ?
+                  AND is_valid = 1
+                  AND COALESCE(conversation_id, '') NOT LIKE '%@newsletter'
+                  AND COALESCE(conversation_name, '') NOT LIKE '%@newsletter'
+                  AND COALESCE(sender_jid, '') NOT LIKE '%@newsletter'
+                  AND COALESCE(conversation_id, '') NOT IN ('status@broadcast', 'broadcast')
+                  AND COALESCE(conversation_id, '') NOT LIKE '%@broadcast'
                 ORDER BY message_timestamp DESC
                 LIMIT ?
             """, (like_q, limit)).fetchall()
@@ -3873,6 +4717,11 @@ class SqliteStorage(Storage):
                 SUM(CASE WHEN content_type = 'unknown' THEN 1 ELSE 0 END) as unclassified
             FROM knowledge_records
             WHERE is_valid = 1
+              AND COALESCE(conversation_id, '') NOT LIKE '%@newsletter'
+              AND COALESCE(conversation_name, '') NOT LIKE '%@newsletter'
+              AND COALESCE(sender_jid, '') NOT LIKE '%@newsletter'
+              AND COALESCE(conversation_id, '') NOT IN ('status@broadcast', 'broadcast')
+              AND COALESCE(conversation_id, '') NOT LIKE '%@broadcast'
         """).fetchone()
 
         return {
@@ -4017,11 +4866,201 @@ class SqliteStorage(Storage):
         except Exception:
             return {"vocab_size": 0, "total_records": 0, "embedded_records": 0}
 
+    # ── Workspace / Team Management ──────────────────────────
+
+    PERMISSION_LABELS = [
+        ("view_inbox", "View Market Inbox"),
+        ("reply_whatsapp", "Reply from WhatsApp"),
+        ("save_requirements", "Save Requirements"),
+        ("save_listings", "Save Listings"),
+        ("export_contacts", "Export Contacts"),
+        ("view_broker_numbers", "View Broker Numbers"),
+        ("add_team_members", "Add Team Members"),
+        ("delete_data", "Delete Data"),
+        ("ai_actions", "AI Actions"),
+        ("bulk_broadcast", "Bulk Broadcast"),
+    ]
+
+    def _perm_bitfield(self, keys: list[str]) -> int:
+        labels = [k for k, _ in self.PERMISSION_LABELS]
+        return sum(1 << i for i, k in enumerate(labels) if k in keys)
+
+    def _perm_keys(self, bitfield: int) -> list[str]:
+        labels = [k for k, _ in self.PERMISSION_LABELS]
+        return [labels[i] for i in range(len(labels)) if bitfield & (1 << i)]
+
+    def list_team_members(self) -> list[dict]:
+        rows = self.db.execute(
+            "SELECT * FROM team_members ORDER BY role = 'owner' DESC, name ASC"
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_team_member(self, member_id: int) -> dict | None:
+        row = self.db.execute(
+            "SELECT * FROM team_members WHERE id = ?", (member_id,)
+        ).fetchone()
+        return dict(row) if row else None
+
+    def create_team_member(self, name: str, email: str = "", phone: str = "",
+                           role: str = "member", permission_keys: list[str] | None = None,
+                           linked_broker_phone: str | None = None) -> dict:
+        permissions = self._perm_bitfield(permission_keys or [])
+        email_val = email.strip() if email.strip() else None
+        phone_val = phone.strip() if phone.strip() else None
+        cur = self.db.execute(
+            """INSERT INTO team_members (name, email, phone, role, permissions, linked_broker_phone)
+               VALUES (?,?,?,?,?,?)""",
+            (name.strip(), email_val, phone_val, role, permissions, linked_broker_phone)
+        )
+        self._commit()
+        return self.get_team_member(cur.lastrowid) or {}
+
+    def update_team_member(self, member_id: int, **kwargs) -> dict | None:
+        member = self.get_team_member(member_id)
+        if not member:
+            return None
+        fields = {}
+        for k in ("name", "email", "phone", "role", "linked_broker_phone"):
+            v = kwargs.get(k)
+            if v is not None:
+                fields[k] = v.strip() if isinstance(v, str) else v
+        if "permission_keys" in kwargs:
+            fields["permissions"] = self._perm_bitfield(kwargs["permission_keys"])
+        if "is_active" in kwargs:
+            fields["is_active"] = 1 if kwargs["is_active"] else 0
+        if not fields:
+            return member
+        set_clause = ", ".join(f"{k} = ?" for k in fields)
+        fields["updated_at"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        set_clause += ", updated_at = ?"
+        vals = list(fields.values()) + [member_id]
+        self.db.execute(f"UPDATE team_members SET {set_clause} WHERE id = ?", vals)
+        self._commit()
+        return self.get_team_member(member_id)
+
+    def deactivate_team_member(self, member_id: int) -> bool:
+        self.db.execute(
+            "UPDATE team_members SET is_active = 0, updated_at = ? WHERE id = ?",
+            (datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), member_id)
+        )
+        self._commit()
+        return True
+
+    def log_activity(self, team_member_id: int, action: str,
+                     target_type: str = "", target_id: str = "",
+                     details: dict | None = None, ip_address: str = "") -> int:
+        cur = self.db.execute(
+            """INSERT INTO activity_log (team_member_id, action, target_type, target_id, details, ip_address)
+               VALUES (?,?,?,?,?,?)""",
+            (team_member_id, action, target_type, target_id,
+             json.dumps(details or {}), ip_address)
+        )
+        self._commit()
+        return cur.lastrowid
+
+    def list_activity(self, limit: int = 50, offset: int = 0,
+                      action: str | None = None,
+                      team_member_id: int | None = None) -> list[dict]:
+        clauses = []
+        params: list = []
+        if action:
+            clauses.append("a.action = ?")
+            params.append(action)
+        if team_member_id:
+            clauses.append("a.team_member_id = ?")
+            params.append(team_member_id)
+        where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+        rows = self.db.execute(
+            f"""SELECT a.*, t.name AS member_name, t.role AS member_role
+                FROM activity_log a
+                LEFT JOIN team_members t ON t.id = a.team_member_id
+                {where}
+                ORDER BY a.created_at DESC
+                LIMIT ? OFFSET ?""",
+            params + [limit, offset]
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def list_whatsapp_access(self) -> list[dict]:
+        rows = self.db.execute(
+            """SELECT wa.*, t.name AS member_name, t.role AS member_role
+               FROM team_member_whatsapp_access wa
+               JOIN team_members t ON t.id = wa.team_member_id
+               ORDER BY t.name"""
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def set_whatsapp_access(self, team_member_id: int, whatsapp_number: str,
+                            can_send: bool = False, can_view_messages: bool = True) -> dict:
+        self.db.execute(
+            """INSERT INTO team_member_whatsapp_access (team_member_id, whatsapp_number, can_send, can_view_messages)
+               VALUES (?,?,?,?)
+               ON CONFLICT(team_member_id, whatsapp_number)
+               DO UPDATE SET can_send = excluded.can_send, can_view_messages = excluded.can_view_messages""",
+            (team_member_id, whatsapp_number, 1 if can_send else 0, 1 if can_view_messages else 0)
+        )
+        self._commit()
+        row = self.db.execute(
+            "SELECT * FROM team_member_whatsapp_access WHERE team_member_id = ? AND whatsapp_number = ?",
+            (team_member_id, whatsapp_number)
+        ).fetchone()
+        return dict(row) if row else {}
+
+    def get_chat_assignment(self, whatsapp_number: str, remote_jid: str) -> dict | None:
+        row = self.db.execute(
+            """SELECT ca.*, t.name AS assigned_name, tover.name AS taken_over_by_name
+               FROM chat_assignments ca
+               LEFT JOIN team_members t ON t.id = ca.assigned_to
+               LEFT JOIN team_members tover ON tover.id = ca.taken_over_by
+               WHERE ca.whatsapp_number = ? AND ca.remote_jid = ?""",
+            (whatsapp_number, remote_jid)
+        ).fetchone()
+        return dict(row) if row else None
+
+    def assign_chat(self, whatsapp_number: str, remote_jid: str,
+                    team_member_id: int) -> dict:
+        self.db.execute(
+            """INSERT INTO chat_assignments (whatsapp_number, remote_jid, assigned_to)
+               VALUES (?,?,?)
+               ON CONFLICT(whatsapp_number, remote_jid)
+               DO UPDATE SET assigned_to = excluded.assigned_to,
+                             taken_over_by = NULL,
+                             taken_over_at = NULL,
+                             released_at = NULL""",
+            (whatsapp_number, remote_jid, team_member_id)
+        )
+        self._commit()
+        return self.get_chat_assignment(whatsapp_number, remote_jid) or {}
+
+    def take_over_chat(self, whatsapp_number: str, remote_jid: str,
+                       team_member_id: int) -> dict:
+        now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        self.db.execute(
+            """INSERT INTO chat_assignments (whatsapp_number, remote_jid, assigned_to, taken_over_by, taken_over_at)
+               VALUES (?,?,NULL,?,?)
+               ON CONFLICT(whatsapp_number, remote_jid)
+               DO UPDATE SET taken_over_by = excluded.taken_over_by,
+                             taken_over_at = excluded.taken_over_at,
+                             released_at = NULL""",
+            (whatsapp_number, remote_jid, team_member_id, now)
+        )
+        self._commit()
+        return self.get_chat_assignment(whatsapp_number, remote_jid) or {}
+
+    def release_chat(self, whatsapp_number: str, remote_jid: str) -> dict | None:
+        now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        self.db.execute(
+            """UPDATE chat_assignments
+               SET released_at = ?, taken_over_by = NULL, taken_over_at = NULL
+               WHERE whatsapp_number = ? AND remote_jid = ?""",
+            (now, whatsapp_number, remote_jid)
+        )
+        self._commit()
+        return self.get_chat_assignment(whatsapp_number, remote_jid)
+
 
 def _parse_bhk(bhk_str: str) -> int | None:
     """Parse '2 BHK', '3 BHK', '1RK' etc. to number."""
-    if not bhk_str:
-        return None
     s = bhk_str.upper().strip()
     if 'RK' in s:
         return 0.5
@@ -4057,6 +5096,17 @@ def _init_client_tables(db):
     schema_path = Path(__file__).parent.parent / "schema_clients.sql"
     if schema_path.exists():
         db.executescript(schema_path.read_text())
+    for column, definition in {
+        "source_timestamp": "TEXT",
+        "availability_status": "TEXT DEFAULT 'unknown'",
+        "availability_checked_at": "TEXT",
+        "last_offered_at": "TEXT",
+    }.items():
+        try:
+            db.execute(f"ALTER TABLE client_property_candidates ADD COLUMN {column} {definition}")
+        except sqlite3.OperationalError as exc:
+            if "duplicate column name" not in str(exc).lower():
+                raise
 
 
 class ClientStorage:
@@ -4069,6 +5119,11 @@ class ClientStorage:
     def ensure_client_tables(self):
         _init_client_tables(self.db)
 
+    def _normalize_client_alias(self, value: str = "") -> str:
+        normalized = (value or "").strip().lower()
+        normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+        return re.sub(r"\s+", " ", normalized).strip()
+
     # ── Clients ───────────────────────────────────────────────────────
 
     def create_client(self, name: str, phone: str = None, email: str = None, notes: str = "") -> int:
@@ -4077,8 +5132,15 @@ class ClientStorage:
             "INSERT INTO clients (name, phone, email, notes) VALUES (?, ?, ?, ?)",
             (name.strip(), phone, email, notes)
         )
+        client_id = cur.lastrowid
+        self.add_client_alias(client_id, name, source="client_name", confidence=1.0, commit=False)
+        first_name = (name.strip().split() or [""])[0]
+        if first_name and first_name.lower() != name.strip().lower():
+            self.add_client_alias(client_id, first_name, source="client_first_name", confidence=0.92, commit=False)
+        if phone:
+            self.add_client_alias(client_id, phone, source="client_phone", confidence=1.0, commit=False)
         self.db.commit()
-        return cur.lastrowid
+        return client_id
 
     def get_client(self, client_id: int) -> dict | None:
         row = self.db.execute("SELECT * FROM clients WHERE id = ?", (client_id,)).fetchone()
@@ -4106,6 +5168,177 @@ class ClientStorage:
         sets = ", ".join(f"{k} = ?" for k in updates)
         vals = list(updates.values()) + [client_id]
         self.db.execute(f"UPDATE clients SET {sets}, updated_at = datetime('now') WHERE id = ?", vals)
+        if "name" in updates:
+            updated_name = str(updates["name"])
+            self.add_client_alias(client_id, updated_name, source="client_name", confidence=1.0, commit=False)
+            first_name = (updated_name.strip().split() or [""])[0]
+            if first_name and first_name.lower() != updated_name.strip().lower():
+                self.add_client_alias(client_id, first_name, source="client_first_name", confidence=0.92, commit=False)
+        if "phone" in updates and updates["phone"]:
+            self.add_client_alias(client_id, str(updates["phone"]), source="client_phone", confidence=1.0, commit=False)
+        self.db.commit()
+        return True
+
+    # ── Client Aliases / Memory Resolution ────────────────────────────
+
+    def add_client_alias(self, client_id: int, alias: str, source: str = "manual",
+                         confidence: float = 1.0, commit: bool = True) -> int | None:
+        self.ensure_client_tables()
+        alias = (alias or "").strip()
+        normalized = self._normalize_client_alias(alias)
+        if not alias or not normalized:
+            return None
+        existing = self.db.execute(
+            "SELECT id, client_id FROM client_aliases WHERE normalized_alias = ?",
+            (normalized,),
+        ).fetchone()
+        if existing:
+            if int(existing["client_id"]) == int(client_id):
+                return existing["id"]
+            return None
+        cur = self.db.execute(
+            """INSERT INTO client_aliases (client_id, alias, normalized_alias, source, confidence)
+               VALUES (?, ?, ?, ?, ?)""",
+            (client_id, alias, normalized, source, confidence),
+        )
+        if commit:
+            self.db.commit()
+        return cur.lastrowid
+
+    def get_client_aliases(self, client_id: int) -> list[dict]:
+        self.ensure_client_tables()
+        rows = self.db.execute(
+            "SELECT * FROM client_aliases WHERE client_id = ? ORDER BY confidence DESC, created_at DESC",
+            (client_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def resolve_client(self, query: str, min_score: float = 0.74) -> dict | None:
+        self.ensure_client_tables()
+        query = (query or "").strip()
+        normalized = self._normalize_client_alias(query)
+        if not normalized:
+            return None
+
+        row = self.db.execute(
+            """SELECT c.*, ca.alias AS matched_alias, 1.0 AS match_score, 'alias_exact' AS match_method
+               FROM client_aliases ca
+               JOIN clients c ON c.id = ca.client_id
+               WHERE ca.normalized_alias = ?
+               LIMIT 1""",
+            (normalized,),
+        ).fetchone()
+        if row:
+            return dict(row)
+
+        row = self.db.execute(
+            """SELECT *, name AS matched_alias, 1.0 AS match_score, 'name_exact' AS match_method
+               FROM clients
+               WHERE lower(name) = lower(?) OR phone = ?
+               LIMIT 1""",
+            (query, query),
+        ).fetchone()
+        if row:
+            return dict(row)
+
+        candidates = self.db.execute(
+            """SELECT c.*, ca.alias AS matched_alias, ca.normalized_alias, ca.confidence
+               FROM client_aliases ca
+               JOIN clients c ON c.id = ca.client_id
+               WHERE c.status = 'active'
+               UNION ALL
+               SELECT c.*, c.name AS matched_alias, lower(c.name) AS normalized_alias, 1.0 AS confidence
+               FROM clients c
+               WHERE c.status = 'active'""",
+        ).fetchall()
+        best: dict | None = None
+        best_score = 0.0
+        compact_query = normalized.replace(" ", "")
+        for candidate in candidates:
+            cand = dict(candidate)
+            cand_norm = self._normalize_client_alias(cand.get("matched_alias") or cand.get("name") or "")
+            if not cand_norm:
+                continue
+            score = max(
+                SequenceMatcher(None, normalized, cand_norm).ratio(),
+                SequenceMatcher(None, compact_query, cand_norm.replace(" ", "")).ratio(),
+            )
+            if normalized in cand_norm or cand_norm in normalized:
+                score = max(score, 0.88)
+            score *= float(cand.get("confidence") or 1.0)
+            if score > best_score:
+                best_score = score
+                best = cand
+
+        if best and best_score >= min_score:
+            best["match_score"] = round(best_score, 3)
+            best["match_method"] = "fuzzy_alias"
+            return best
+        return None
+
+    # ── Client Notes ─────────────────────────────────────────────────
+
+    def add_client_note(self, client_id: int, body: str, note_type: str = "note",
+                        source_text: str = "", source_jid: str = "",
+                        source_message_id: str = "", confidence: float = 1.0,
+                        supersedes_note_id: int | None = None) -> int:
+        self.ensure_client_tables()
+        if supersedes_note_id:
+            self.db.execute(
+                "UPDATE client_notes SET is_active = 0, updated_at = datetime('now') WHERE id = ? AND client_id = ?",
+                (supersedes_note_id, client_id),
+            )
+        cur = self.db.execute(
+            """INSERT INTO client_notes
+               (client_id, note_type, body, source_text, source_jid, source_message_id,
+                confidence, supersedes_note_id)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (client_id, note_type, body.strip(), source_text, source_jid,
+             source_message_id, confidence, supersedes_note_id),
+        )
+        self.db.commit()
+        return cur.lastrowid
+
+    def get_client_notes(self, client_id: int, active_only: bool = True, limit: int = 100) -> list[dict]:
+        self.ensure_client_tables()
+        where = "client_id = ?"
+        params: list = [client_id]
+        if active_only:
+            where += " AND is_active = 1"
+        rows = self.db.execute(
+            f"""SELECT * FROM client_notes
+                WHERE {where}
+                ORDER BY datetime(created_at) DESC, id DESC
+                LIMIT ?""",
+            (*params, limit),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_latest_client_note(self, client_id: int) -> dict | None:
+        self.ensure_client_tables()
+        row = self.db.execute(
+            """SELECT * FROM client_notes
+               WHERE client_id = ? AND is_active = 1
+               ORDER BY datetime(created_at) DESC, id DESC
+               LIMIT 1""",
+            (client_id,),
+        ).fetchone()
+        return dict(row) if row else None
+
+    def update_client_note(self, note_id: int, body: str, note_type: str | None = None,
+                           is_active: int | None = None) -> bool:
+        self.ensure_client_tables()
+        updates: dict = {"body": body.strip()}
+        if note_type:
+            updates["note_type"] = note_type
+        if is_active is not None:
+            updates["is_active"] = int(is_active)
+        sets = ", ".join(f"{key} = ?" for key in updates)
+        values = list(updates.values()) + [note_id]
+        self.db.execute(
+            f"UPDATE client_notes SET {sets}, updated_at = datetime('now') WHERE id = ?",
+            values,
+        )
         self.db.commit()
         return True
 
@@ -4173,7 +5406,9 @@ class ClientStorage:
                                  price: float = None, price_unit: str = None,
                                  area_sqft: float = None, furnishing: str = None,
                                  confidence: float = 0.0, match_breakdown: dict = None,
-                                 source_text: str = "", notes: str = "") -> int | None:
+                                 source_text: str = "", notes: str = "",
+                                 source_timestamp: str = None,
+                                 availability_status: str = "unknown") -> int | None:
         self.ensure_client_tables()
         # Check for duplicate
         if listing_id:
@@ -4188,11 +5423,12 @@ class ClientStorage:
             """INSERT INTO client_property_candidates
                (client_id, listing_id, message_id, building_name, micro_market, bhk,
                 price, price_unit, area_sqft, furnishing, confidence, match_breakdown,
-                source_text, notes)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                source_text, notes, source_timestamp, availability_status)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (client_id, listing_id, message_id, building_name, micro_market, bhk,
              price, price_unit, area_sqft, furnishing, confidence,
-             json.dumps(match_breakdown or {}), source_text, notes)
+             json.dumps(match_breakdown or {}), source_text, notes,
+             source_timestamp, availability_status or "unknown")
         )
         self.db.commit()
         return cur.lastrowid
@@ -4208,12 +5444,76 @@ class ClientStorage:
         return [dict(r) for r in rows]
 
     def update_candidate_status(self, candidate_id: int, status: str) -> bool:
+        extra = ", last_offered_at = datetime('now')" if status == "offered" else ""
         self.db.execute(
-            "UPDATE client_property_candidates SET status = ? WHERE id = ?",
+            f"UPDATE client_property_candidates SET status = ?{extra} WHERE id = ?",
             (status, candidate_id)
         )
         self.db.commit()
         return True
+
+    def update_candidate_availability(self, candidate_id: int, availability_status: str,
+                                      checked_at: str | None = None) -> bool:
+        self.ensure_client_tables()
+        self.db.execute(
+            """UPDATE client_property_candidates
+               SET availability_status = ?, availability_checked_at = COALESCE(?, datetime('now'))
+               WHERE id = ?""",
+            (availability_status, checked_at, candidate_id),
+        )
+        self.db.commit()
+        return True
+
+    def estimate_candidate_availability(self, candidate: dict) -> dict:
+        status = str(candidate.get("availability_status") or "unknown").lower()
+        if status == "confirmed_available":
+            base = 0.96
+        elif status == "likely_available":
+            base = 0.78
+        elif status in {"unavailable", "stale"}:
+            base = 0.0 if status == "unavailable" else 0.18
+        else:
+            base = 0.62
+
+        source_ts = candidate.get("source_timestamp") or candidate.get("created_at")
+        age_days = None
+        try:
+            parsed = datetime.fromisoformat(str(source_ts).replace("Z", "+00:00"))
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=timezone.utc)
+            age_days = max(0, (datetime.now(timezone.utc) - parsed).days)
+        except Exception:
+            age_days = None
+
+        if age_days is not None and status not in {"confirmed_available", "unavailable"}:
+            if age_days <= 2:
+                age_factor = 1.0
+            elif age_days <= 7:
+                age_factor = 0.82
+            elif age_days <= 14:
+                age_factor = 0.55
+            elif age_days <= 30:
+                age_factor = 0.32
+            else:
+                age_factor = 0.15
+            base *= age_factor
+
+        candidate_status = str(candidate.get("status") or "").lower()
+        if candidate_status == "rejected":
+            base *= 0.25
+        elif candidate_status == "offered":
+            base *= 0.9
+
+        score = max(0.0, min(1.0, base))
+        if score >= 0.8:
+            label = "high"
+        elif score >= 0.5:
+            label = "medium"
+        elif score > 0:
+            label = "low"
+        else:
+            label = "unavailable"
+        return {"score": round(score, 2), "label": label, "age_days": age_days, "status": status}
 
     # ── Follow-ups ────────────────────────────────────────────────────
 
@@ -4249,3 +5549,4 @@ class ClientStorage:
         )
         self.db.commit()
         return True
+

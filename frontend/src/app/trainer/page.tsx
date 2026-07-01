@@ -26,6 +26,7 @@ interface TrainerStats {
   society: number;
   landmark: number;
   locality: number;
+  combined_locality: number;
   other: number;
 }
 
@@ -34,6 +35,7 @@ const KNOWLEDGE_OPTIONS = [
   { value: "society", label: "Society", color: "purple", desc: "This is a housing society/CHS" },
   { value: "landmark", label: "Landmark", color: "amber", desc: "This is a known area/landmark" },
   { value: "locality", label: "Locality", color: "teal", desc: "This is a micro-market name" },
+  { value: "combined_locality", label: "Combined Localities", color: "emerald", desc: "Maps to multiple canonical localities (e.g. Santacruz East & West)" },
   { value: "other", label: "Other", color: "slate", desc: "Tag for future reference" },
 ];
 
@@ -79,6 +81,7 @@ export default function TrainerPage() {
   const [scanning, setScanning] = useState(false);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [resolving, setResolving] = useState<Set<number>>(new Set());
+  const [incoming, setIncoming] = useState<{ term: string; status: string; message_id?: string; result?: string } | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -92,6 +95,37 @@ export default function TrainerPage() {
   };
 
   useEffect(() => { load(); }, [filter]);
+
+  // Handle incoming query params: ?term=...&type=...&message=...
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const term = params.get("term");
+    const type = params.get("type");
+    const message = params.get("message");
+    if (term && type) {
+      setIncoming({ term, status: type, message_id: message || undefined });
+      (async () => {
+        try {
+          const res = await fetch("/api/trainer/inline-resolve", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              text: term,
+              status: type,
+              raw_message_id: message ? parseInt(message) : null,
+            }),
+          });
+          const data = await res.json();
+          setIncoming(prev => prev ? { ...prev, result: data.status === "ok" ? "added" : "error" } : null);
+          load();
+          // Clean URL
+          window.history.replaceState({}, "", "/trainer");
+        } catch {
+          setIncoming(prev => prev ? { ...prev, result: "error" } : null);
+        }
+      })();
+    }
+  }, []);
 
   const resolve = async (id: number, status: string, notes: string = "") => {
     setResolving(prev => new Set(prev).add(id));
@@ -156,9 +190,28 @@ export default function TrainerPage() {
         </button>
       </div>
 
+      {/* Incoming term notification */}
+      {incoming && (
+        <div className={`rounded-lg p-4 mb-4 text-sm ${
+          incoming.result === "added"
+            ? "bg-green-500/10 border border-green-500/20 text-green-200"
+            : incoming.result === "error"
+            ? "bg-red-500/10 border border-red-500/20 text-red-200"
+            : "bg-blue-500/10 border border-blue-500/20 text-blue-200"
+        }`}>
+          {!incoming.result ? (
+            <>Adding <strong>{incoming.term}</strong> as {incoming.status}...</>
+          ) : incoming.result === "added" ? (
+            <>✅ <strong>{incoming.term}</strong> classified as <strong>{incoming.status}</strong></>
+          ) : (
+            <>❌ Failed to add <strong>{incoming.term}</strong></>
+          )}
+        </div>
+      )}
+
       {/* Stats */}
       {stats && (
-        <div className="grid grid-cols-7 gap-3 mb-6">
+        <div className="grid grid-cols-8 gap-3 mb-6">
           {[
             { label: "Total", value: stats.total, bg: "bg-[rgba(255,255,255,0.04)]", text: "text-[#94a3b8]" },
             { label: "Pending", value: stats.pending, bg: "bg-amber-500/10", text: "text-amber-300" },
@@ -166,6 +219,7 @@ export default function TrainerPage() {
             { label: "Societies", value: stats.society || 0, bg: "bg-purple-500/10", text: "text-purple-300" },
             { label: "Landmarks", value: stats.landmark || 0, bg: "bg-teal-500/10", text: "text-teal-300" },
             { label: "Localities", value: stats.locality || 0, bg: "bg-emerald-500/10", text: "text-emerald-300" },
+            { label: "Combined", value: stats.combined_locality || 0, bg: "bg-emerald-500/10", text: "text-emerald-300" },
             { label: "Ignored", value: stats.ignored || 0, bg: "bg-[rgba(255,255,255,0.03)]", text: "text-[#4a5568]" },
           ].map(s => (
             <div key={s.label} className={`rounded-lg p-3 ${s.bg}`}>
@@ -180,7 +234,7 @@ export default function TrainerPage() {
       {pendingTerms.length > 0 && tab !== "resolved" && (
         <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-4 mb-4 text-sm text-blue-200">
           <strong>How this works:</strong> PropAI found terms in messages that don't match known buildings, landmarks, or localities.
-          Classify them below to teach PropAI. Terms marked <strong>Building</strong>, <strong>Society</strong>, <strong>Landmark</strong>, or <strong>Locality</strong>
+          Classify them below to teach PropAI. Terms marked <strong>Building</strong>, <strong>Society</strong>, <strong>Landmark</strong>, <strong>Locality</strong>, or <strong>Combined Localities</strong>
           {" "}will be saved to the knowledge base and future parses will recognize them.
         </div>
       )}
@@ -211,7 +265,7 @@ export default function TrainerPage() {
 
       {/* Filter bar */}
       <div className="flex gap-2 mb-4 flex-wrap">
-        {[null, "pending", "building", "society", "landmark", "locality", "other", "ignored"].map(f => (
+        {[null, "pending", "building", "society", "landmark", "locality", "combined_locality", "other", "ignored"].map(f => (
           <button
             key={f || "all"}
             onClick={() => setFilter(f)}
@@ -311,6 +365,7 @@ export default function TrainerPage() {
                         term.status === "society" ? "bg-purple-500/10 text-purple-300" :
                         term.status === "landmark" ? "bg-teal-500/10 text-teal-300" :
                         term.status === "locality" ? "bg-emerald-500/10 text-emerald-300" :
+                        term.status === "combined_locality" ? "bg-emerald-500/10 text-emerald-300" :
                         term.status === "other" ? "bg-[rgba(255,255,255,0.04)] text-[#94a3b8]" :
                         "bg-[rgba(255,255,255,0.03)] text-[#4a5568]"
                       }`}>
@@ -413,6 +468,7 @@ function TermCard({
                 purple: "bg-purple-500 hover:bg-purple-600",
                 amber: "bg-amber-500 hover:bg-amber-600",
                 teal: "bg-teal-500 hover:bg-teal-600",
+                emerald: "bg-emerald-500 hover:bg-emerald-600",
                 slate: "bg-slate-500 hover:bg-slate-600",
               };
               return (
