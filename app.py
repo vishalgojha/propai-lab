@@ -2246,9 +2246,8 @@ async def inbox_slugs():
     # Default built-in views
     builtin = [
         {"slug": "brokers", "label": "Brokers", "view_type": "brokers", "is_default": True},
-        {"slug": "groups", "label": "Groups", "view_type": "groups", "is_default": False},
-        {"slug": "requirements", "label": "Requirements", "view_type": "clients", "is_default": False},
-        {"slug": "listings", "label": "Listings", "view_type": "personal", "is_default": False},
+        {"slug": "clients", "label": "Clients", "view_type": "clients", "is_default": False},
+        {"slug": "personal", "label": "Personal", "view_type": "personal", "is_default": False},
     ]
     # Load custom saved views from database
     custom = [
