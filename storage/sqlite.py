@@ -10,7 +10,7 @@ from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Optional
 
-from lab.storage.base import (
+from .base import (
     Storage,
     RawMessage, ParsedObservation, ResolverDecision,
     Evaluation, SyncJob, SyncCheckpoint, AISuggestion,
@@ -5058,6 +5058,72 @@ class SqliteStorage(Storage):
         self._commit()
         return self.get_chat_assignment(whatsapp_number, remote_jid)
 
+    # ── Saved Inbox Views ────────────────────────────────────────
+
+    def get_saved_inbox_views(self) -> list[dict]:
+        rows = self.db.execute(
+            "SELECT id, slug, name, description, filters, is_default, is_shared, created_at, updated_at "
+            "FROM saved_inbox_views ORDER BY is_default DESC, name ASC"
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_saved_inbox_view(self, slug: str) -> dict | None:
+        row = self.db.execute(
+            "SELECT id, slug, name, description, filters, is_default, is_shared, created_at, updated_at "
+            "FROM saved_inbox_views WHERE slug = ?", (slug,)
+        ).fetchone()
+        return dict(row) if row else None
+
+    def create_saved_inbox_view(self, slug: str, name: str, filters: dict,
+                                 description: str = "", is_default: bool = False,
+                                 is_shared: bool = False) -> int:
+        import json
+        cur = self.db.execute(
+            """INSERT INTO saved_inbox_views
+               (slug, name, description, filters, is_default, is_shared)
+               VALUES (?,?,?,?,?,?)""",
+            (slug, name, description, json.dumps(filters), int(is_default), int(is_shared))
+        )
+        self.db.commit()
+        return cur.lastrowid
+
+    def update_saved_inbox_view(self, slug: str, name: str = None, filters: dict = None,
+                                 description: str = None, is_default: bool = None,
+                                 is_shared: bool = None) -> bool:
+        import json
+        sets = []
+        params = []
+        if name is not None:
+            sets.append("name = ?")
+            params.append(name)
+        if filters is not None:
+            sets.append("filters = ?")
+            params.append(json.dumps(filters))
+        if description is not None:
+            sets.append("description = ?")
+            params.append(description)
+        if is_default is not None:
+            sets.append("is_default = ?")
+            params.append(int(is_default))
+        if is_shared is not None:
+            sets.append("is_shared = ?")
+            params.append(int(is_shared))
+        if not sets:
+            return False
+        sets.append("updated_at = datetime('now')")
+        params.append(slug)
+        self.db.execute(
+            f"UPDATE saved_inbox_views SET {', '.join(sets)} WHERE slug = ?", params
+        )
+        self.db.commit()
+        return True
+
+    def delete_saved_inbox_view(self, slug: str) -> bool:
+        cur = self.db.execute(
+            "DELETE FROM saved_inbox_views WHERE slug = ?", (slug,)
+        )
+        self.db.commit()
+        return cur.rowcount > 0
 
 
 def _parse_bhk(bhk_str: str) -> int | None:
