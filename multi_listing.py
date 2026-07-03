@@ -6,6 +6,7 @@ into individual parsed listings with inherited context.
 """
 
 import re
+from typing import Callable
 
 # ── Classification ──────────────────────────────────────────────────
 
@@ -13,15 +14,15 @@ _DIVIDER_RE = re.compile(r'^_{3,}$|^={3,}$|^[-–—]{3,}$|^__{3,}')
 _TITLE_CASE_BUILDING_RE = re.compile(r'^\s*🏢\s*([A-Z][A-Za-z .]+(?: [A-Z][A-Za-z .]*)*)')
 _UNNUMBERED_BLOCK_START_RE = re.compile(
     r'^\s*(?:[*_`~\s]*)?('
-    r'available\s+for\s+(?:rent|sale)|'
+    r'available\s+for\s+(?:\d+(?:\.\d+)?\s*(?:bhk|rk)\s+)?(?:rent|sale|lease)|'
     r'premium\s*/?\s*residential\s+property\s+available|'
-    r'.*\bavailable\s+for\s+(?:rent|sale)\b'
+    r'.*\bavailable\s+for\s+(?:\d+(?:\.\d+)?\s*(?:bhk|rk)\s+)?(?:rent|sale|lease)\b'
     r')',
     re.I,
 )
 
 _AVAILABLE_BHK_RELATION_RE = re.compile(
-    r'\bavailable\s+for\s+(?:rent|sale|lease)\s+\d+(?:\.\d+)?\s*(?:bhk|rk)\b.*?\b(?:in|at)\b',
+    r'\bavailable\s+for\s+(?:\d+(?:\.\d+)?\s*(?:bhk|rk)\s+)?(?:rent|sale|lease)\b.*?\b(?:in|at)\b',
     re.I,
 )
 
@@ -618,6 +619,24 @@ def _extract_building_name(text: str) -> str | None:
             if len(name) >= 3:
                 return _title_case_name(name)
 
+    # Priority 1.5: "Available for rent/sale/lease X BHK in/at BuildingName"
+    for line in lines:
+        # Pattern: Available for rent/sale/lease <N>BHK in/at <BuildingName>
+        m = re.search(r'\bavailable\s+for\s+(?:rent|sale|lease)\s+\d+\s*bhk\s+(?:in|at)\s+([A-Z][A-Za-z0-9 .&\'\-]+)', line, re.I)
+        if m:
+            name = m.group(1).strip()
+            # Clean up trailing punctuation/keywords
+            name = name.split(",")[0].strip()
+            name = re.split(r'\s[–—]\s', name)[0].strip()
+            name = name.strip(" *-–.,")
+            if not name or len(name) < 3:
+                continue
+            lower = name.lower()
+            if any(kw in lower for kw in ("rent", "sale", "commercial", "office", "shop", "space for", "premium", "prime", "corporate", "brand", "new", "luxury", "property", "inventory")):
+                continue
+            if lower not in _KNOWN_LOCALITIES:
+                return _title_case_name(name)
+
     # Priority 2: 🔹NAME🔹 — text between 🔹 delimiters (common in commercial listings)
     for line in lines:
         m = re.search(r'🔹\s*([A-Z][A-Za-z0-9 .&\'\-]{2,}?)\s*🔹', line)
@@ -1205,7 +1224,7 @@ def _extract_location_from_text(text: str) -> dict:
 
 def _enrich_listing_with_building_db(
     listing: dict,
-    building_lookup_fn: callable | None,
+    building_lookup_fn: Callable | None,
 ) -> dict:
     """Enrich listing with building database info if available."""
     if not building_lookup_fn:
@@ -1229,7 +1248,7 @@ def _enrich_listing_with_building_db(
 def parse_multi_message(
     text: str,
     profile_name: str | None = None,
-    building_lookup_fn: callable | None = None,
+    building_lookup_fn: Callable | None = None,
 ) -> list[dict]:
     """Parse a multi-listing message into individual listing dicts.
 
