@@ -28,7 +28,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from lab.storage import SqliteStorage, RawMessage, ParsedObservation, ResolverDecision, Evaluation
+from storage import SqliteStorage, RawMessage, ParsedObservation, ResolverDecision, Evaluation
 from lab.embedding import create_engine, observation_text, pack_embedding, EmbeddingEngine
 from lab import ai_chat_engine as chat_engine
 from lab import multi_listing
@@ -2238,6 +2238,86 @@ async def inbox_threads(limit: int = 500, offset: int = 0):
         (limit, offset),
     ).fetchall()
     return [dict(row) for row in rows]
+
+
+@app.get("/api/inbox/slugs")
+async def inbox_slugs():
+    """Return saved inbox view configurations (slugs) for the tabs."""
+    # Default built-in views
+    builtin = [
+        {"slug": "brokers", "label": "Brokers", "view_type": "brokers", "is_default": True},
+        {"slug": "groups", "label": "Groups", "view_type": "groups", "is_default": False},
+        {"slug": "requirements", "label": "Requirements", "view_type": "clients", "is_default": False},
+        {"slug": "listings", "label": "Listings", "view_type": "personal", "is_default": False},
+    ]
+    # Load custom saved views from database
+    custom = [
+        {
+            **view,
+            "label": view.get("label") or view.get("name") or view.get("slug"),
+            "view_type": view.get("view_type")
+            or ("personal" if view.get("slug") in {"personal", "my"} else None),
+        }
+        for view in storage.get_saved_inbox_views()
+    ]
+    return builtin + custom
+
+
+@app.get("/api/inbox/views")
+async def get_saved_inbox_views():
+    """List all saved inbox views."""
+    return storage.get_saved_inbox_views()
+
+
+@app.get("/api/inbox/views/{slug}")
+async def get_saved_inbox_view(slug: str):
+    """Get a specific saved inbox view by slug."""
+    view = storage.get_saved_inbox_view(slug)
+    if view is None:
+        raise HTTPException(status_code=404, detail="View not found")
+    return view
+
+
+@app.post("/api/inbox/views")
+async def create_saved_inbox_view(
+    slug: str,
+    name: str,
+    filters: dict,
+    description: str = "",
+    is_default: bool = False,
+    is_shared: bool = False,
+):
+    """Create a new saved inbox view."""
+    try:
+        view_id = storage.create_saved_inbox_view(slug, name, filters, description, is_default, is_shared)
+        return {"id": view_id, "slug": slug, "name": name}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.put("/api/inbox/views/{slug}")
+async def update_saved_inbox_view(
+    slug: str,
+    name: str | None = None,
+    filters: dict | None = None,
+    description: str | None = None,
+    is_default: bool | None = None,
+    is_shared: bool | None = None,
+):
+    """Update a saved inbox view."""
+    ok = storage.update_saved_inbox_view(slug, name, filters, description, is_default, is_shared)
+    if not ok:
+        raise HTTPException(status_code=404, detail="View not found")
+    return {"ok": True, "slug": slug}
+
+
+@app.delete("/api/inbox/views/{slug}")
+async def delete_saved_inbox_view(slug: str):
+    """Delete a saved inbox view."""
+    ok = storage.delete_saved_inbox_view(slug)
+    if not ok:
+        raise HTTPException(status_code=404, detail="View not found")
+    return {"ok": True, "slug": slug}
 
 
 @app.get("/api/parsed")
@@ -6397,7 +6477,7 @@ async def broker_summary(name: str = "", phone: str = ""):
 async def find_broker(name: str = "", phone: str = ""):
     if not name and not phone:
         raise HTTPException(400, "name or phone is required")
-    from lab.storage.sqlite import SqliteStorage
+    from storage.sqlite import SqliteStorage
     key = SqliteStorage._broker_identity_key(name, phone)
     if not key:
         raise HTTPException(404, "Broker identity key could not be resolved")

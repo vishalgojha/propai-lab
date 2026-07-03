@@ -1123,3 +1123,21 @@ export function getFollowUps(clientId?: number, status: string = "pending") {
   if (clientId) params.set("client_id", String(clientId));
   return fetchJSON<any[]>(`/follow-ups?${params}`);
 }
+
+export interface SavedView {
+  id: number;
+  slug: string;
+  name?: string;
+  label?: string;
+  view_type?: "brokers" | "groups" | "clients" | "personal";
+  description?: string;
+  filters?: Record<string, any>;
+  created_at?: string;
+  updated_at?: string;
+  is_default?: boolean;
+  is_shared?: boolean;
+}
+
+export function getInboxSlugs() {
+  return fetchJSON<SavedView[]>("/inbox/slugs");
+}
