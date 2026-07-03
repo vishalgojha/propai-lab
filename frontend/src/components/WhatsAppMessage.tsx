@@ -1,20 +1,72 @@
 "use client";
 
 import React, { useMemo } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { Building2, MapPin, Phone, User, Users } from "lucide-react";
+import * as api from "@/lib/api";
+import { entityProfileHref, entityTooltip } from "@/lib/entity-links";
 
 interface WhatsAppMessageProps {
   text: string;
   sender?: string;
   senderPhone?: string;
+  entities?: MessageEntity[];
+  onEntityClick?: (entity: MessageEntity) => boolean | void;
   className?: string;
   truncate?: boolean;
   maxLines?: number;
 }
 
 const SEPARATOR_RE = /^[•\-\*═─━~]{3,}\s*$/;
+const PHONE_RE = /(?:\+?91[\s-]?)?[6-9]\d{4}[\s-]?\d{5}\b/g;
+const LISTING_START_RE =
+  /(?:^|[\s|,-])(?:\d+(?:\.\d+)?\s*)?(?:bhk|rk|bed)\b.*\bavailable\b.*\b(?:rent|sale|lease)\b|^\s*(?:hot\s+deal|urgent|new\s+building|exclusive)\b/i;
+
+export type MessageEntityType =
+  | "broker"
+  | "firm"
+  | "building"
+  | "society"
+  | "locality"
+  | "landmark"
+  | "phone"
+  | "client"
+  | "requirement"
+  | "listing"
+  | "developer";
+
+export interface MessageEntity {
+  type: MessageEntityType;
+  text: string;
+  id?: string | number;
+  exists?: boolean;
+  phone?: string;
+  firm?: string;
+  rawMessageId?: number;
+  metadata?: Record<string, unknown>;
+}
 
 function isSeparatorLine(line: string): boolean {
   return SEPARATOR_RE.test(line.trim());
+}
+
+function isListingStartLine(line: string): boolean {
+  const clean = line.trim();
+  if (!clean) return false;
+  return LISTING_START_RE.test(clean);
+}
+
+function normalizeMessageLines(text: string): string[] {
+  return text
+    .split("\n")
+    .flatMap((line) =>
+      line
+        // Some WhatsApp exports collapse numbered listing items onto one line.
+        // Put each item back on its own logical line before block detection.
+        .replace(/\s+(\d+[\.)]\s+(?=[^\n]*\b(?:bhk|rk|bed|building|flat|office)\b))/gi, "\n$1")
+        .split("\n")
+    );
 }
 
 interface Card {
@@ -27,6 +79,198 @@ interface SeparatorBlock {
 }
 
 type Block = Card | SeparatorBlock;
+type PreviewData = {
+  total_listings?: number;
+  observation_count?: number;
+  broker_count?: number;
+  markets?: Array<string | { micro_market?: string }>;
+  top_markets?: string[];
+};
+
+const ENTITY_LABELS: Record<MessageEntityType, string> = {
+  broker: "Broker",
+  firm: "Firm",
+  building: "Building",
+  society: "Society",
+  locality: "Locality",
+  landmark: "Landmark",
+  phone: "Phone",
+  client: "Client",
+  requirement: "Requirement",
+  listing: "Listing",
+  developer: "Developer",
+};
+
+function entityIcon(type: MessageEntityType) {
+  const cls = "w-3 h-3";
+  switch (type) {
+    case "broker":
+    case "client":
+      return <User className={cls} strokeWidth={1.8} />;
+    case "firm":
+      return <Users className={cls} strokeWidth={1.8} />;
+    case "phone":
+      return <Phone className={cls} strokeWidth={1.8} />;
+    case "building":
+    case "society":
+    case "developer":
+      return <Building2 className={cls} strokeWidth={1.8} />;
+    default:
+      return <MapPin className={cls} strokeWidth={1.8} />;
+  }
+}
+
+function normalizeDigits(value: string) {
+  const digits = value.replace(/\D/g, "");
+  if (digits.length === 12 && digits.startsWith("91")) return digits.slice(-10);
+  if (digits.length === 11 && digits.startsWith("0")) return digits.slice(-10);
+  return digits;
+}
+
+function entityKey(entity: MessageEntity) {
+  return `${entity.type}:${String(entity.id || entity.phone || entity.text).toLowerCase()}`;
+}
+
+function dedupeEntities(entities: MessageEntity[]) {
+  const seen = new Set<string>();
+  return entities.filter((entity) => {
+    const text = entity.text?.trim();
+    if (!text) return false;
+    const key = entityKey({ ...entity, text });
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function PreviewCard({ entity }: { entity: MessageEntity }) {
+  const [data, setData] = React.useState<PreviewData | null>(null);
+  const [loaded, setLoaded] = React.useState(false);
+
+  React.useEffect(() => {
+    let cancelled = false;
+
+    async function load() {
+      try {
+        let next: PreviewData | null = null;
+        if (entity.type === "broker" || entity.type === "phone") {
+          next = await api.getBrokerSummary(
+            entity.type === "broker" ? entity.text : "",
+            entity.phone || entity.text
+          );
+        } else if (entity.type === "building") {
+          next = await api.getBuildingProfile(entity.text);
+        } else if (entity.type === "locality") {
+          next = await api.getMarketDetail(entity.text);
+        }
+        if (!cancelled) setData(next);
+      } catch {
+        if (!cancelled) setData(null);
+      } finally {
+        if (!cancelled) setLoaded(true);
+      }
+    }
+
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [entity.text, entity.phone, entity.type]);
+
+  const markets =
+    data?.markets?.map((market) => (typeof market === "string" ? market : market.micro_market)).filter(Boolean) ||
+    data?.top_markets ||
+    [];
+
+  return (
+    <div className="absolute left-0 top-full z-50 mt-1.5 w-64 rounded-lg border border-[rgba(255,255,255,0.1)] bg-[#0d1117] p-3 text-left shadow-2xl">
+      <div className="flex items-start gap-2">
+        <span className="mt-0.5 text-[#3EE88A]">{entityIcon(entity.type)}</span>
+        <div className="min-w-0">
+          <div className="truncate text-[12px] font-bold text-white">{entity.text}</div>
+          <div className="mt-0.5 text-[9px] uppercase tracking-wider text-[#64748b]">
+            {ENTITY_LABELS[entity.type]} {entity.exists === false ? "profile not yet created" : "profile"}
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-3 space-y-1.5 text-[10px] text-[#94a3b8]">
+        {!loaded ? (
+          <div>Loading preview...</div>
+        ) : entity.exists === false ? (
+          <div className="text-[#cbd5e1]">Create a lightweight profile from extracted messages.</div>
+        ) : data ? (
+          <>
+            {typeof data.total_listings === "number" && (
+              <div className="flex justify-between"><span>Listings</span><span className="text-[#e2e8f0]">{data.total_listings}</span></div>
+            )}
+            {typeof data.observation_count === "number" && (
+              <div className="flex justify-between"><span>Observations</span><span className="text-[#e2e8f0]">{data.observation_count}</span></div>
+            )}
+            {typeof data.broker_count === "number" && (
+              <div className="flex justify-between"><span>Active brokers</span><span className="text-[#e2e8f0]">{data.broker_count}</span></div>
+            )}
+            {markets.length > 0 && (
+              <div>
+                <div className="text-[9px] uppercase tracking-wider text-[#64748b]">Markets</div>
+                <div className="mt-0.5 text-[#e2e8f0]">{markets.slice(0, 3).join(", ")}</div>
+              </div>
+            )}
+          </>
+        ) : (
+          <div className="text-[#cbd5e1]">Open search or create a linked entity.</div>
+        )}
+      </div>
+
+      <div className="mt-3 border-t border-[rgba(255,255,255,0.06)] pt-2 text-[10px] font-semibold text-[#3EE88A]">
+        {entity.exists === false ? "Create profile ->" : "Open profile ->"}
+      </div>
+    </div>
+  );
+}
+
+function EntityLink({
+  entity,
+  children,
+  onEntityClick,
+}: {
+  entity: MessageEntity;
+  children: React.ReactNode;
+  onEntityClick?: (entity: MessageEntity) => boolean | void;
+}) {
+  const router = useRouter();
+  const [preview, setPreview] = React.useState(false);
+  const href = entityProfileHref(entity);
+  const title = entityTooltip(entity);
+
+  return (
+    <span
+      className="relative inline-flex align-baseline"
+      onMouseEnter={() => setPreview(true)}
+      onMouseLeave={() => setPreview(false)}
+    >
+      <Link
+        href={href}
+        prefetch={false}
+        onMouseEnter={() => router.prefetch(href)}
+        onFocus={() => router.prefetch(href)}
+        onClick={(event) => {
+          event.stopPropagation();
+          if (onEntityClick?.(entity)) {
+            event.preventDefault();
+          }
+        }}
+        className="inline-flex cursor-pointer items-center gap-1 rounded px-1 py-0.5 text-[#bfdbfe] underline decoration-[#3b82f6]/45 decoration-dotted underline-offset-2 hover:bg-[#1d4ed8]/20 hover:text-white"
+        title={title}
+        aria-label={title}
+      >
+        <span className="text-[#60a5fa]">{entityIcon(entity.type)}</span>
+        <span>{children}</span>
+      </Link>
+      {preview && <PreviewCard entity={entity} />}
+    </span>
+  );
+}
 
 function groupIntoBlocks(lines: string[]): Block[] {
   const blocks: Block[] = [];
@@ -53,6 +297,9 @@ function groupIntoBlocks(lines: string[]): Block[] {
       }
     } else {
       consecutiveBlanks = 0;
+      if (currentCard.length > 0 && isListingStartLine(line)) {
+        flushCard();
+      }
       currentCard.push(line);
     }
   }
@@ -65,13 +312,75 @@ export default function WhatsAppMessage({
   text,
   sender,
   senderPhone,
+  entities = [],
+  onEntityClick,
   className = "",
   truncate = false,
   maxLines = 2,
 }: WhatsAppMessageProps) {
-  if (!text) return null;
+  const allEntities = useMemo(() => {
+    const detectedPhones: MessageEntity[] = [];
+    for (const match of text.matchAll(PHONE_RE)) {
+      detectedPhones.push({
+        type: "phone",
+        text: match[0],
+        phone: normalizeDigits(match[0]),
+        exists: true,
+      });
+    }
+    return dedupeEntities([...entities, ...detectedPhones]).sort((a, b) => b.text.length - a.text.length);
+  }, [entities, text]);
 
-  const lines = text.split("\n");
+  const renderEntityText = (value: string, keyPrefix: string) => {
+    const parts: React.ReactNode[] = [];
+    let cursor = 0;
+
+    while (cursor < value.length) {
+      let best: { entity: MessageEntity; index: number; length: number } | null = null;
+      const slice = value.slice(cursor);
+      const lowerSlice = slice.toLowerCase();
+
+      for (const entity of allEntities) {
+        const entityText = entity.text.trim();
+        if (!entityText) continue;
+        const index = lowerSlice.indexOf(entityText.toLowerCase());
+        if (index < 0) continue;
+        const absoluteIndex = cursor + index;
+        const before = absoluteIndex > 0 ? value[absoluteIndex - 1] : "";
+        const after = value[absoluteIndex + entityText.length] || "";
+        const boundaryOk =
+          !/[A-Za-z0-9]/.test(before) &&
+          (!/[A-Za-z0-9]/.test(after) || entity.type === "phone");
+        if (!boundaryOk) continue;
+        if (!best || absoluteIndex < best.index || (absoluteIndex === best.index && entityText.length > best.length)) {
+          best = { entity, index: absoluteIndex, length: entityText.length };
+        }
+      }
+
+      if (!best) {
+        parts.push(value.slice(cursor));
+        break;
+      }
+
+      if (best.index > cursor) {
+        parts.push(value.slice(cursor, best.index));
+      }
+
+      const matchedText = value.slice(best.index, best.index + best.length);
+      parts.push(
+        <EntityLink
+          key={`${keyPrefix}-entity-${parts.length}`}
+          entity={{ ...best.entity, text: matchedText }}
+          onEntityClick={onEntityClick}
+        >
+          {matchedText}
+        </EntityLink>
+      );
+      cursor = best.index + best.length;
+    }
+
+    return parts;
+  };
 
   const formatInline = (line: string) => {
     const parts: React.ReactNode[] = [];
@@ -92,7 +401,7 @@ export default function WhatsAppMessage({
       ].filter(Boolean) as { type: string; match: RegExpMatchArray }[];
 
       if (matches.length === 0) {
-        parts.push(remaining);
+        parts.push(...renderEntityText(remaining, `plain-${key++}`));
         break;
       }
 
@@ -102,7 +411,7 @@ export default function WhatsAppMessage({
 
       const idx = earliest.match.index || 0;
       if (idx > 0) {
-        parts.push(remaining.slice(0, idx));
+        parts.push(...renderEntityText(remaining.slice(0, idx), `pre-${key++}`));
       }
 
       const content = earliest.match[1];
@@ -110,21 +419,21 @@ export default function WhatsAppMessage({
         case "bold":
           parts.push(
             <strong key={key++} className="font-bold text-white">
-              {content}
+              {renderEntityText(content, `bold-${key}`)}
             </strong>
           );
           break;
         case "italic":
           parts.push(
             <em key={key++} className="italic text-[#94a3b8]">
-              {content}
+              {renderEntityText(content, `italic-${key}`)}
             </em>
           );
           break;
         case "strike":
           parts.push(
             <span key={key++} className="line-through text-[#64748b]">
-              {content}
+              {renderEntityText(content, `strike-${key}`)}
             </span>
           );
           break;
@@ -174,10 +483,12 @@ export default function WhatsAppMessage({
     );
   };
 
-  const blocks = useMemo(() => groupIntoBlocks(lines), [text]);
+  const blocks = useMemo(() => groupIntoBlocks(normalizeMessageLines(text)), [text]);
   const multiBlock = blocks.length > 2;
 
   const containerClass = `whatsapp-message text-xs text-[#cbd5e1] leading-relaxed ${className}`;
+
+  if (!text) return null;
 
   if (truncate) {
     let lineCount = 0;

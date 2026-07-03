@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, use } from "react";
 import * as api from "@/lib/api";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 
 export default function BuildingProfilePage({ params }: { params: Promise<{ building_id: string }> }) {
   const { building_id } = use(params);
@@ -10,13 +11,22 @@ export default function BuildingProfilePage({ params }: { params: Promise<{ buil
   const [building, setBuilding] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [fallbackMentions, setFallbackMentions] = useState<api.RawSearchResult[]>([]);
 
   const loadBuilding = useCallback(async () => {
     try {
       const data = await api.getBuildingProfile(building_id);
       setBuilding(data);
+      setFallbackMentions([]);
     } catch (e) {
       console.error("Failed to load building", e);
+      setBuilding(null);
+      try {
+        const search = await api.searchRawMessages(building_id, 12, 0);
+        setFallbackMentions(search.results || []);
+      } catch {
+        setFallbackMentions([]);
+      }
     } finally {
       setLoading(false);
     }
@@ -42,7 +52,59 @@ export default function BuildingProfilePage({ params }: { params: Promise<{ buil
   }
 
   if (!building) {
-    return <div className="text-[#64748b]">Building not found</div>;
+    return (
+      <div className="max-w-5xl space-y-6">
+        <div>
+          <Link href="/buildings" className="text-[11px] text-[#64748b] hover:text-white transition-colors">
+            Back to Buildings
+          </Link>
+          <h1 className="mt-2 text-2xl font-bold text-[#e2e8f0]">{building_id}</h1>
+          <div className="mt-1 text-sm text-[#64748b]">
+            Lightweight building profile created on demand from captured mentions.
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <InfoCard label="Profile status" value="On demand" />
+          <InfoCard label="Mentions" value={fallbackMentions.length} />
+          <InfoCard label="Profile type" value="Building" />
+          <InfoCard label="Coverage" value={fallbackMentions.length > 0 ? "Found" : "Empty"} />
+        </div>
+
+        <div className="rounded-xl border border-[rgba(255,255,255,0.06)] bg-[#0d1117] p-5">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-semibold text-[#e2e8f0]">Recent mentions</h2>
+              <div className="text-xs text-[#64748b]">Search hits that reference this building name.</div>
+            </div>
+            <button
+              onClick={() => router.push(`/search?q=${encodeURIComponent(building_id)}`)}
+              className="text-xs font-semibold text-[#3EE88A] hover:underline"
+            >
+              Open search
+            </button>
+          </div>
+
+          <div className="mt-4 space-y-2">
+            {fallbackMentions.length === 0 ? (
+              <div className="py-10 text-center text-xs text-[#64748b]">
+                No canonical building profile yet. The chip still resolves here, so the entity has a stable landing page.
+              </div>
+            ) : (
+              fallbackMentions.map((item) => (
+                <div key={item.id} className="rounded-xl bg-[#0a0f14] p-3">
+                  <div className="flex items-center justify-between gap-2 text-[10px] text-[#64748b]">
+                    <span className="truncate">{item.group_name || "Direct Message"}</span>
+                    <span>{new Date(item.timestamp).toLocaleDateString("en-IN", { day: "2-digit", month: "short" })}</span>
+                  </div>
+                  <div className="mt-2 text-xs leading-relaxed text-[#e2e8f0]" dangerouslySetInnerHTML={{ __html: item.snippet }} />
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      </div>
+    );
   }
 
   const { building: b, aliases, observations, brokers, price_stats, recent_enrichments } = building;
@@ -236,7 +298,7 @@ export default function BuildingProfilePage({ params }: { params: Promise<{ buil
   );
 }
 
-function InfoCard({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
+function InfoCard({ label, value, accent }: { label: string; value: string | number; accent?: boolean }) {
   return (
     <div className="bg-[#0a0f14] border border-[rgba(255,255,255,0.06)] rounded-lg p-3">
       <div className="text-[11px] text-[#64748b] uppercase">{label}</div>

@@ -1,13 +1,14 @@
 "use client";
 
-import { useEffect, useState, useRef, useCallback, Suspense } from "react";
-import { useSearchParams } from "next/navigation";
+import { useEffect, useState, useRef, useCallback, useMemo, Suspense } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
 import * as api from "@/lib/api";
 import WhatsAppMessage, { MessageEntity } from "@/components/WhatsAppMessage";
 import TextSelectionMenu from "@/components/TextSelectionMenu";
 import { CombinedLocalityDialog } from "@/components/CombinedLocalityDialog";
 import AddToClientBucket from "@/components/AddToClientBucket";
 import ResizablePanel from "@/components/ResizablePanel";
+import { entityProfileHref } from "@/lib/entity-links";
 import {
   Users,
   User,
@@ -28,29 +29,82 @@ import {
   ClipboardList,
   Maximize2,
   Minimize2,
+  EyeOff,
+  Eye,
+  TrendingUp,
+  Home,
 } from "lucide-react";
 
 const PAGE_SIZE = 100;
 const RIGHT_TABS = [
-  { key: "analysis", label: "🎯 Analysis" },
-  { key: "broker", label: "🤝 Broker" },
-  { key: "building", label: "🏢 Building" },
+  { key: "analysis", label: "Analysis" },
+  { key: "broker", label: "Broker" },
+  { key: "market", label: "Market" },
 ] as const;
 
-function detectPropertyType(parsed: any): "residential" | "commercial" | "retail" | "industrial" {
-  const intent = (parsed.intent || "").toUpperCase();
-  const msg = (parsed.raw_payload?.full_text || "").toLowerCase();
-  if (intent === "COMMERCIAL" || /commercial|office|shop|showroom|warehouse|godown|retail/.test(msg)) {
-    if (/warehouse|godown|industrial|loading|truck/.test(msg)) return "industrial";
-    if (/shop|showroom|retail|frontage|ground\s*floor/.test(msg)) return "retail";
-    return "commercial";
-  }
-  return "residential";
-}
+type TrainingPrompt = {
+  text: string;
+  question: string;
+  actions: { label: string; action: string }[];
+};
 
 function stripEmojis(text: string | null | undefined): string {
   if (!text) return "";
   return text.replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F1E0}-\u{1F1FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{FE00}-\u{FE0F}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FA6F}\u{1FA70}-\u{1FAFF}\u{200D}\u{20E3}\u{231A}-\u{23FF}\u{25A0}-\u{25FF}\u{2934}-\u{2935}\u{2B05}-\u{2B55}\u{3030}\u{303D}\u{3297}\u{3299}\u{2122}\u{2139}\u{24C2}\u{25B6}\u{25C0}\u{25FB}-\u{25FE}\u{2600}-\u{27EB}]/gu, "").trim();
+}
+
+function intentIcon(intent?: string): string {
+  switch ((intent || "").toUpperCase()) {
+    case "SELL": case "SALE": case "LEASE": return "🏢";
+    case "RENT": return "🏠";
+    case "BUY": case "REQUIREMENT": case "WANTED": return "🔍";
+    case "COMMERCIAL": return "🏢";
+    default: return "💬";
+  }
+}
+
+function intentLabel(intent?: string): string {
+  switch ((intent || "").toUpperCase()) {
+    case "SELL": case "SALE": case "LEASE": return "Sale";
+    case "RENT": return "Rental";
+    case "BUY": case "REQUIREMENT": case "WANTED": return "Requirement";
+    case "COMMERCIAL": return "Commercial";
+    default: return "Message";
+  }
+}
+
+function intentColor(intent?: string): string {
+  switch ((intent || "").toUpperCase()) {
+    case "SELL": case "SALE": case "LEASE": return "badge-green";
+    case "RENT": return "badge-blue";
+    case "BUY": case "REQUIREMENT": case "WANTED": return "badge-orange";
+    case "COMMERCIAL": return "badge-purple";
+    default: return "badge-gray";
+  }
+}
+
+function observationTypeLabel(type?: string): string {
+  return type || "UNKNOWN";
+}
+
+function observationTypeIcon(type?: string): string {
+  switch ((type || "").toUpperCase()) {
+    case "LISTING": return "🏷️";
+    case "REQUIREMENT": return "🎯";
+    case "MARKET_UPDATE": return "📊";
+    case "INTRODUCTION": return "👋";
+    default: return "⚪";
+  }
+}
+
+function observationTypeColor(type?: string): string {
+  switch ((type || "").toUpperCase()) {
+    case "LISTING": return "badge-green";
+    case "REQUIREMENT": return "badge-blue";
+    case "MARKET_UPDATE": return "badge-purple";
+    case "INTRODUCTION": return "badge-orange";
+    default: return "badge-gray";
+  }
 }
 
 function formatCurrency(val: number, unit?: string) {
@@ -77,6 +131,25 @@ function formatCurrency(val: number, unit?: string) {
   return `₹${normalized.toLocaleString("en-IN")}`;
 }
 
+function formatAgeShort(value?: string) {
+  if (!value) return "—";
+  const ts = new Date(value).getTime();
+  if (Number.isNaN(ts)) return "—";
+  const diffMs = Date.now() - ts;
+  if (diffMs < 0) return "now";
+  const mins = Math.floor(diffMs / 60000);
+  if (mins < 1) return "now";
+  if (mins < 60) return `${mins}m`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d`;
+  const weeks = Math.floor(days / 7);
+  if (weeks < 5) return `${weeks}w`;
+  const months = Math.floor(days / 30);
+  return `${months}mo`;
+}
+
 function Field({ label, value, accent }: { label: string; value: React.ReactNode; accent?: boolean }) {
   if (!value) return null;
   return (
@@ -85,6 +158,201 @@ function Field({ label, value, accent }: { label: string; value: React.ReactNode
       <span className={`mt-0.5 block leading-normal ${accent ? "font-bold text-[#3EE88A]" : "font-semibold text-white"}`}>
         {value}
       </span>
+    </div>
+  );
+}
+
+function buildTeachingNotes(
+  instruction: string,
+  scope: { future: boolean; similar: boolean; messageOnly: boolean }
+): string {
+  const trimmed = instruction.trim();
+  const appliesTo = [
+    scope.future ? "future messages" : null,
+    scope.similar ? "similar patterns" : null,
+    scope.messageOnly ? "this message only" : null,
+  ].filter(Boolean);
+
+  if (!trimmed && appliesTo.length === 0) return "";
+  if (!trimmed) return `Applies to: ${appliesTo.join(", ")}`;
+  if (appliesTo.length === 0) return trimmed;
+  return `${trimmed}\n\nApplies to: ${appliesTo.join(", ")}`;
+}
+
+function TeachingForm({
+  parsed,
+  obsId,
+  parsedId,
+  rawMessageId,
+  onSave,
+}: {
+  parsed: any;
+  obsId: number;
+  parsedId: number;
+  rawMessageId: number;
+  onSave: () => void;
+}) {
+  const [building, setBuilding] = useState(parsed?.building_name || "");
+  const [location, setLocation] = useState(parsed?.micro_market || parsed?.location_raw || "");
+  const [landmark, setLandmark] = useState(parsed?.landmark_name || "");
+  const [developer, setDeveloper] = useState(parsed?.developer || "");
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState("");
+
+  const handleSave = async () => {
+    setSaving(true);
+    setError("");
+    try {
+      const payload: any = { parsed_id: parsedId, raw_message_id: rawMessageId };
+      if (building.trim()) payload.building_name = building.trim();
+      if (location.trim()) payload.micro_market = location.trim();
+      if (landmark.trim()) payload.landmark_name = landmark.trim();
+      if (developer.trim()) payload.developer = developer.trim();
+      const res = await api.teachObservation(obsId, payload);
+      if (res.status === "ok") {
+        setSaved(true);
+        setTimeout(() => { setSaved(false); onSave(); }, 1500);
+      } else {
+        setError("Save failed");
+      }
+    } catch (e: any) {
+      setError(e.message || "Error saving");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="bg-[#0d1117]/60 rounded-lg p-2 border border-[rgba(62,232,138,0.08)] space-y-1.5">
+      <div className="grid grid-cols-2 gap-1.5">
+        <div>
+          <label className="text-[8px] text-[#64748b] uppercase tracking-wider">Building</label>
+          <input
+            value={building}
+            onChange={(e) => { setBuilding(e.target.value); setSaved(false); }}
+            className="w-full bg-[#161b22] border border-[rgba(255,255,255,0.06)] rounded px-1.5 py-1 text-[10px] text-[#e2e8f0] outline-none focus:border-[#3EE88A]/40"
+            placeholder="e.g. Ananta"
+          />
+        </div>
+        <div>
+          <label className="text-[8px] text-[#64748b] uppercase tracking-wider">Location</label>
+          <input
+            value={location}
+            onChange={(e) => { setLocation(e.target.value); setSaved(false); }}
+            className="w-full bg-[#161b22] border border-[rgba(255,255,255,0.06)] rounded px-1.5 py-1 text-[10px] text-[#e2e8f0] outline-none focus:border-[#3EE88A]/40"
+            placeholder="e.g. Bandra West"
+          />
+        </div>
+        <div>
+          <label className="text-[8px] text-[#64748b] uppercase tracking-wider">Landmark</label>
+          <input
+            value={landmark}
+            onChange={(e) => { setLandmark(e.target.value); setSaved(false); }}
+            className="w-full bg-[#161b22] border border-[rgba(255,255,255,0.06)] rounded px-1.5 py-1 text-[10px] text-[#e2e8f0] outline-none focus:border-[#3EE88A]/40"
+            placeholder="e.g. Agarwal Nursing Home"
+          />
+        </div>
+        <div>
+          <label className="text-[8px] text-[#64748b] uppercase tracking-wider">Developer</label>
+          <input
+            value={developer}
+            onChange={(e) => { setDeveloper(e.target.value); setSaved(false); }}
+            className="w-full bg-[#161b22] border border-[rgba(255,255,255,0.06)] rounded px-1.5 py-1 text-[10px] text-[#e2e8f0] outline-none focus:border-[#3EE88A]/40"
+            placeholder="e.g. Ananta Realty"
+          />
+        </div>
+      </div>
+      <div className="flex items-center gap-2">
+        <button
+          onClick={handleSave}
+          disabled={saving}
+          className="text-[9px] px-2 py-0.5 rounded bg-[#166534] hover:bg-[#15803d] text-green-100 disabled:opacity-50"
+        >
+          {saving ? "Saving..." : saved ? "Saved!" : "Save Teaching"}
+        </button>
+        {error && <span className="text-[9px] text-red-400">{error}</span>}
+        {saved && <span className="text-[9px] text-[#3EE88A]">Saved as global knowledge</span>}
+      </div>
+    </div>
+  );
+}
+
+function TeachingPromptCard({
+  prompt,
+  onSave,
+}: {
+  prompt: TrainingPrompt;
+  onSave: (text: string, action: string, notes: string) => void;
+}) {
+  const [selectedAction, setSelectedAction] = useState(prompt.actions[0]?.action || "");
+  const [instruction, setInstruction] = useState("");
+  const [scope, setScope] = useState({ future: true, similar: true, messageOnly: false });
+
+  return (
+    <div className="rounded-lg bg-[#05070b] border border-[rgba(255,255,255,0.05)] p-2.5">
+      <div className="text-[10px] text-[#64748b] mb-1">{prompt.question}</div>
+      <div className="text-xs font-semibold text-[#e2e8f0] break-words">{prompt.text}</div>
+
+      <div className="mt-2 grid grid-cols-2 gap-1.5">
+        {prompt.actions.map(action => (
+          <label
+            key={action.action}
+            className={`flex min-h-8 items-center gap-1.5 rounded-md border px-2 py-1 text-[10px] font-semibold transition-colors ${
+              selectedAction === action.action
+                ? "border-[#3EE88A]/45 bg-[#3EE88A]/10 text-[#3EE88A]"
+                : "border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.03)] text-[#cbd5e1]"
+            }`}
+          >
+            <input
+              type="radio"
+              name={`teaching-${prompt.text}`}
+              checked={selectedAction === action.action}
+              onChange={() => setSelectedAction(action.action)}
+              className="h-3 w-3 accent-[#3EE88A]"
+            />
+            <span>{action.label}</span>
+          </label>
+        ))}
+      </div>
+
+      <label className="mt-2 block text-[10px] font-semibold uppercase tracking-wider text-[#64748b]">
+        Instruction
+      </label>
+      <textarea
+        value={instruction}
+        onChange={e => setInstruction(e.target.value)}
+        placeholder={`Whenever you see "${prompt.text}", treat it as...`}
+        rows={3}
+        className="mt-1 w-full resize-none rounded-md border border-[rgba(255,255,255,0.08)] bg-[#090d12] px-2 py-1.5 text-[11px] leading-relaxed text-[#cbd5e1] placeholder-[#4a5568] outline-none focus:border-[#3EE88A]/40"
+      />
+
+      <div className="mt-1.5 flex flex-wrap gap-2 text-[10px] text-[#94a3b8]">
+        {[
+          { key: "future" as const, label: "Future messages" },
+          { key: "similar" as const, label: "Similar patterns" },
+          { key: "messageOnly" as const, label: "This message only" },
+        ].map(item => (
+          <label key={item.key} className="inline-flex items-center gap-1">
+            <input
+              type="checkbox"
+              checked={scope[item.key]}
+              onChange={e => setScope(prev => ({ ...prev, [item.key]: e.target.checked }))}
+              className="h-3 w-3 accent-[#3EE88A]"
+            />
+            {item.label}
+          </label>
+        ))}
+      </div>
+
+      <button
+        type="button"
+        onClick={() => selectedAction && onSave(prompt.text, selectedAction, buildTeachingNotes(instruction, scope))}
+        disabled={!selectedAction}
+        className="mt-2 w-full rounded-md bg-[#3EE88A] px-2 py-1.5 text-[11px] font-bold text-[#07110b] hover:bg-[#2dd977] disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        Save Teaching
+      </button>
     </div>
   );
 }
@@ -116,47 +384,165 @@ function addEntity(entities: MessageEntity[], entity: MessageEntity) {
   entities.push({ ...entity, text });
 }
 
+function BuildingTooltip({ name }: { name: string }) {
+  const [data, setData] = useState<any>(null);
+  const [visible, setVisible] = useState(false);
+  const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function doFetch() {
+    api.getBuildingProfile(name).then(setData).catch(() => {});
+  }
+
+  return (
+    <div
+      className="relative inline-block"
+      onMouseEnter={() => { if (hideTimer.current) clearTimeout(hideTimer.current); if (!data) doFetch(); setVisible(true); }}
+      onMouseLeave={() => { hideTimer.current = setTimeout(() => setVisible(false), 200); }}
+    >
+      <span className="font-semibold text-[#3EE88A] truncate max-w-[220px] block cursor-pointer">{name}</span>
+      {visible && data && (
+        <div className="absolute bottom-full left-0 mb-1.5 z-50 min-w-[220px] rounded-lg border border-[rgba(255,255,255,0.08)] bg-[#111820] p-3 shadow-xl pointer-events-none">
+          <div className="text-[11px] text-[#e2e8f0] font-semibold mb-1.5">{data.canonical_name}</div>
+          <div className="space-y-1 text-[10px] text-[#94a3b8]">
+            {data.micro_market && <div>Market: <span className="text-[#cbd5e1]">{data.micro_market}</span></div>}
+            <div>Listings: <span className="text-[#cbd5e1]">{data.observed_listings}</span></div>
+            <div>Brokers: <span className="text-[#cbd5e1]">{data.observed_brokers}</span></div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ConfigurationBadge({ config }: { config?: string }) {
+  if (!config) return null;
+  const labels: Record<string, string> = {
+    JODI: "Jodi",
+    MULTI_OFFICE: "Multi Office",
+    DUPLEX: "Duplex",
+    PENTHOUSE: "Penthouse",
+  };
+  return (
+    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-900/40 text-purple-300 border border-purple-700/40">
+      {labels[config] || config}
+    </span>
+  );
+}
+
+function SaleModeBadge({ mode }: { mode?: string }) {
+  if (!mode) return null;
+  const labels: Record<string, string> = {
+    SPLIT_ALLOWED: "Can be sold separately",
+    TOGETHER_ONLY: "Together only",
+  };
+  const colors: Record<string, string> = {
+    SPLIT_ALLOWED: "bg-amber-900/40 text-amber-300 border-amber-700/40",
+    TOGETHER_ONLY: "bg-rose-900/40 text-rose-300 border-rose-700/40",
+  };
+  return (
+    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${colors[mode] || "bg-gray-800 text-gray-300"}`}>
+      {labels[mode] || mode}
+    </span>
+  );
+}
+
+function listingSourceBadge(source: string | null) {
+  switch (source) {
+    case "DIRECT":
+      return <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-green-500/10 text-green-400" title="Direct inventory — broker's own listing">Direct</span>;
+    case "INDIRECT":
+      return <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-orange-500/10 text-orange-400" title="Indirect (+1) inventory — shared from another broker">Indirect (+1)</span>;
+    default:
+      return <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-500/10 text-slate-400" title="Unknown inventory source">Unknown</span>;
+  }
+}
+
 function PropertyDetails({ parsed }: { parsed: any }) {
-  const type = detectPropertyType(parsed);
-  const intent = parsed.intent || "TEXT";
+  const intent = (parsed.intent || "").toUpperCase();
+  const obsType = parsed.observation_type || "UNKNOWN";
+  const propertyType = parsed.property_type;
+  const alternateIntent = parsed.alternate_intent;
   const price = parsed.price ? formatCurrency(parsed.price, parsed.price_unit) : null;
   const area = parsed.area_sqft ? `${parsed.area_sqft} sqft` : null;
   const location = parsed.location_raw || parsed.micro_market || null;
   const building = parsed.building_name || null;
   const furnishing = parsed.furnishing || null;
   const bhk = parsed.bhk || null;
-
-  const typeLabels = {
-    residential: "Residential",
-    commercial: "Commercial Office",
-    retail: "Retail",
-    industrial: "Industrial",
-  };
-
-  const typeColors = {
-    residential: "badge-blue",
-    commercial: "badge-purple",
-    retail: "badge-yellow",
-    industrial: "badge-orange",
-  };
+  const configuration = parsed.configuration || null;
+  const saleMode = parsed.sale_mode || null;
+  const rate = parsed.rate ? formatCurrency(parsed.rate, parsed.rate_unit) : null;
+  const parking = parsed.parking || null;
+  const units: any[] = parsed.units || [];
+  const combinedArea = parsed.combined_area_sqft;
+  const floorDesc = parsed.floor_description || null;
+  const view = parsed.view || null;
+  const orientation = parsed.orientation || null;
+  const position = parsed.position || null;
+  const projectName = parsed.project_name || null;
+  const towerName = parsed.tower_name || null;
+  const wingName = parsed.wing_name || null;
+  const listingSource = parsed.listing_source || null;
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center gap-2">
-        <span className="text-[10px] text-[#64748b] uppercase tracking-wider font-bold">Property Details</span>
-        <span className={`badge ${typeColors[type]} text-[9px]`}>{typeLabels[type]}</span>
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${observationTypeColor(obsType)} flex items-center gap-1`}>
+          <span>{observationTypeIcon(obsType)}</span>
+          <span>{observationTypeLabel(obsType)}</span>
+        </span>
+        {intent && <span className={`badge ${intentColor(parsed.intent)} text-[9px]`}>{intent}</span>}
+        {propertyType && <span className="text-[10px] text-[#94a3b8] font-medium">{propertyType}</span>}
+        <ConfigurationBadge config={configuration} />
+        <SaleModeBadge mode={saleMode} />
+        {listingSourceBadge(listingSource)}
       </div>
 
       <div className="grid grid-cols-2 gap-3 text-xs">
-        <Field label="Intent" value={<span className="badge badge-blue">{intent}</span>} />
+        <Field label="Intent" value={<span className={`badge ${intentColor(parsed.intent)}`}>{intent}</span>} />
         <Field label="Price" value={price} accent />
-        {type === "residential" && <Field label="BHK" value={bhk} />}
+        <Field label="BHK" value={bhk} />
         <Field label="Carpet" value={area} />
         <Field label="Location" value={location} />
-        {building && <Field label="Building" value={building} />}
+        {building && <Field label="Building" value={<BuildingTooltip name={building} />} />}
         {furnishing && <Field label="Furnishing" value={furnishing} />}
-        {type === "commercial" && furnishing && <Field label="Fit-out" value={furnishing} />}
+        {rate && <Field label="Rate" value={rate} />}
+        {parking && <Field label="Parking" value={parking} />}
+        {combinedArea && <Field label="Combined Area" value={`${combinedArea} sqft`} />}
+        {floorDesc && <Field label="Floor" value={floorDesc} />}
+        {view && <Field label="View" value={view} />}
+        {orientation && <Field label="Orientation" value={orientation} />}
+        {position && <Field label="Position" value={position} />}
+        {projectName && <Field label="Project" value={projectName} />}
+        {towerName && <Field label="Tower" value={towerName} />}
+        {wingName && <Field label="Wing" value={wingName} />}
       </div>
+
+      {/* Units section — show when there are multiple units */}
+      {units.length > 0 && (
+        <div className="border-t border-[rgba(255,255,255,0.04)] pt-2">
+          <span className="text-[9px] text-[#64748b] uppercase tracking-wider font-bold block mb-1.5">
+            Inventory Units ({units.length})
+          </span>
+          <div className="space-y-1">
+            {units.map((unit: any, i: number) => (
+              <div key={i} className="flex items-center gap-2 text-[10px] text-[#cbd5e1] bg-[rgba(255,255,255,0.02)] rounded px-2 py-1">
+                <span className="font-bold text-[#64748b]">#{i + 1}</span>
+                {unit.bhk && <span className="font-semibold">{unit.bhk}</span>}
+                {unit.area_sqft && <span>{unit.area_sqft} sqft</span>}
+                {(unit.price || unit.price_unit) && (
+                  <span className="font-bold text-[#3EE88A]">₹{formatCurrency(unit.price, unit.price_unit)}</span>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {alternateIntent && (
+        <div className="text-[10px] text-[#94a3b8] italic border-t border-[rgba(255,255,255,0.04)] pt-2 mt-1">
+          Also available for {alternateIntent === "RENT" ? "rent" : "sale"}
+        </div>
+      )}
     </div>
   );
 }
@@ -205,20 +591,25 @@ function BrokerTooltip({ name, phone, onContextMenu }: { name: string; phone: st
 }
 
 function InboxPageInner() {
+  const router = useRouter();
   // Left Panel States
   const [messages, setMessages] = useState<api.InboxThread[]>([]);
   const [groups, setGroups] = useState<any[]>([]);
   const [loadingLeft, setLoadingLeft] = useState(false);
   const [offset, setOffset] = useState(0);
   const [searchText, setSearchText] = useState("");
-  const [viewMode, setViewMode] = useState<"people" | "brokers" | "groups" | "direct">("brokers");
+  const [slugs, setSlugs] = useState<api.SavedView[]>([]);
+  const [currentSlug, setCurrentSlug] = useState<string>("brokers");
+  const activeSlug = useMemo(() => slugs.find(s => s.slug === currentSlug) || null, [slugs, currentSlug]);
   const [brokerFeed, setBrokerFeed] = useState<any[]>([]);
   const [loadingBrokerFeed, setLoadingBrokerFeed] = useState(false);
   const [selectedBrokerObservations, setSelectedBrokerObservations] = useState<any[]>([]);
   const [loadingBrokerObs, setLoadingBrokerObs] = useState(false);
+  const [now, setNow] = useState(() => Date.now());
 
   // Selection States
   const [selectedMsg, setSelectedMsg] = useState<api.RawMessage | api.InboxThread | null>(null);
+  const [teachingMsgId, setTeachingMsgId] = useState<number | null>(null);
   
   // Center Panel States
   const [conversationMessages, setConversationMessages] = useState<api.RawMessage[]>([]);
@@ -226,7 +617,7 @@ function InboxPageInner() {
   const threadEndRef = useRef<HTMLDivElement>(null);
 
   // Right Panel States
-  const [activeRightTab, setActiveRightTab] = useState<"analysis" | "broker" | "building">("analysis");
+  const [activeRightTab, setActiveRightTab] = useState<"analysis" | "broker" | "market">("analysis");
   const [selectedMsgDetails, setSelectedMsgDetails] = useState<any>(null);
   const [loadingDetails, setLoadingDetails] = useState(false);
   const [rightCollapsed, setRightCollapsed] = useState(false);
@@ -238,10 +629,80 @@ function InboxPageInner() {
   const [priceStats, setPriceStats] = useState<any>(null);
   const [loadingPriceStats, setLoadingPriceStats] = useState(false);
   const [allSuggestions, setAllSuggestions] = useState<any[]>([]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 60000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  const groupedBrokerObservations = useMemo(() => {
+    const groups = new Map<string, any>();
+    for (const obs of selectedBrokerObservations) {
+      const key = String(obs.latest_raw_message_id || obs.raw_message_id || obs.id);
+      const existing = groups.get(key);
+      if (!existing) {
+        groups.set(key, {
+          key,
+          rawMessageId: obs.latest_raw_message_id || obs.raw_message_id || obs.id,
+          representative: obs,
+          observations: [obs],
+          firstSeen: obs.first_seen,
+          lastSeen: obs.last_seen,
+        });
+        continue;
+      }
+      existing.observations.push(obs);
+      if (obs.last_seen && (!existing.lastSeen || new Date(obs.last_seen).getTime() > new Date(existing.lastSeen).getTime())) {
+        existing.lastSeen = obs.last_seen;
+        existing.representative = obs;
+        existing.rawMessageId = obs.latest_raw_message_id || obs.raw_message_id || obs.id;
+      }
+      if (obs.first_seen && (!existing.firstSeen || obs.first_seen < existing.firstSeen)) {
+        existing.firstSeen = obs.first_seen;
+      }
+    }
+    return [...groups.values()].sort(
+      (a, b) => new Date(b.lastSeen || b.representative.last_seen || 0).getTime() - new Date(a.lastSeen || a.representative.last_seen || 0).getTime()
+    );
+  }, [selectedBrokerObservations]);
   
   // Interaction/UI States
   const [revealedPhone, setRevealedPhone] = useState<Record<string, boolean>>({});
   const [actionMessage, setActionMessage] = useState<string | null>(null);
+  const [actionUndo, setActionUndo] = useState<{phone: string; name: string} | null>(null);
+  const [openMenuBroker, setOpenMenuBroker] = useState<string | null>(null);
+  const [expandedRawMessages, setExpandedRawMessages] = useState<Set<string>>(new Set());
+
+  const handleHideBroker = async (phone: string) => {
+    try {
+      const res = await api.hideBroker(phone);
+      setActionMessage(`Hidden: ${res.broker_name}`);
+      setActionUndo({ phone, name: res.broker_name });
+      setBrokerFeed((prev) => prev.filter((b: any) => b.primary_phone !== phone));
+      if (selectedBroker?.id === phone) {
+        setSelectedBroker(null);
+        setSelectedBrokerObservations([]);
+        setSelectedMsgDetails(null);
+      }
+      setTimeout(() => { setActionMessage(null); setActionUndo(null); }, 5000);
+    } catch {
+      setActionMessage("Failed to hide broker");
+      setTimeout(() => setActionMessage(null), 3000);
+    }
+    setOpenMenuBroker(null);
+  };
+
+  const handleUnhideBroker = async (phone: string) => {
+    try {
+      const res = await api.unhideBroker(phone);
+      setActionMessage(`Unhidden: ${res.broker_name}`);
+      setActionUndo(null);
+      setTimeout(() => setActionMessage(null), 3000);
+    } catch {
+      setActionMessage("Failed to unhide broker");
+      setTimeout(() => setActionMessage(null), 3000);
+    }
+  };
 
   // Context Action States
   const [showAddToBucket, setShowAddToBucket] = useState(false);
@@ -258,12 +719,49 @@ function InboxPageInner() {
   // URL state for selected message
   const searchParams = useSearchParams();
   const msgParam = searchParams.get("message");
+  const brokerParam = searchParams.get("broker");
+  const observationParam = searchParams.get("observation");
 
   // Sync selected message to URL
   const updateUrlMessage = useCallback((conversationKey: string, msgId: number) => {
     const url = new URL(window.location.href);
+    url.searchParams.delete("broker");
+    url.searchParams.delete("observation");
     url.searchParams.set("conversation", conversationKey);
     url.searchParams.set("message", String(msgId));
+    window.history.replaceState({}, "", url.toString());
+  }, []);
+
+  const updateUrlBroker = useCallback((phone: string) => {
+    const url = new URL(window.location.href);
+    url.searchParams.delete("message");
+    url.searchParams.delete("conversation");
+    url.searchParams.delete("observation");
+    url.searchParams.set("broker", phone);
+    window.history.replaceState({}, "", url.toString());
+  }, []);
+
+  const updateUrlObservation = useCallback((id: number) => {
+    const url = new URL(window.location.href);
+    url.searchParams.delete("message");
+    url.searchParams.delete("conversation");
+    url.searchParams.delete("broker");
+    url.searchParams.set("observation", String(id));
+    window.history.replaceState({}, "", url.toString());
+  }, []);
+
+  const updateUrlView = useCallback((slug: string) => {
+    const url = new URL(window.location.href);
+    url.searchParams.set("view", slug);
+    url.searchParams.delete("message");
+    url.searchParams.delete("conversation");
+    url.searchParams.delete("broker");
+    url.searchParams.delete("observation");
+    setSelectedBroker(null);
+    setSelectedBrokerObservations([]);
+    setSelectedMsg(null);
+    setSelectedMsgDetails(null);
+    setConversationMessages([]);
     window.history.replaceState({}, "", url.toString());
   }, []);
 
@@ -281,6 +779,54 @@ function InboxPageInner() {
       }
     }
   }, [msgParam, conversationMessages]);
+
+  // Auto-navigate to broker or observation from URL params
+  const initialNavDone = useRef(false);
+  useEffect(() => {
+    if (initialNavDone.current) return;
+    if (brokerParam && brokerFeed.length > 0) {
+      initialNavDone.current = true;
+      const broker = brokerFeed.find((b: any) =>
+        b.primary_phone?.includes(brokerParam) || brokerParam.includes(b.primary_phone || "")
+      );
+      if (broker) {
+        setCurrentSlug("brokers");
+        if (slugs.length > 0 && !slugs.some(s => s.slug === "brokers")) {
+          // brokers slug might not exist yet; ensure it's set
+        }
+        selectBroker(broker);
+      }
+    } else if (observationParam && Number(observationParam) > 0) {
+      initialNavDone.current = true;
+      const obsId = Number(observationParam);
+      if (!isNaN(obsId)) {
+        (async () => {
+          // Load the raw message details to discover broker
+          const details = await api.getObservation(obsId);
+          // Resolve broker from parsed data and load their observations timeline
+          const brokerPhone = details.parsed?.broker_phone;
+          const brokerName = details.parsed?.broker_name || details.parsed?.profile_name || details.raw?.sender;
+          if (brokerPhone || brokerName) {
+            const brokerInFeed = brokerFeed.find((b: any) =>
+              (brokerPhone && b.primary_phone?.includes(brokerPhone)) ||
+              (brokerPhone && brokerPhone.includes(b.primary_phone || "")) ||
+              (brokerName && b.canonical_name?.toLowerCase().includes(brokerName.toLowerCase()))
+            );
+            if (brokerInFeed) {
+              setCurrentSlug("brokers");
+              await selectBroker(brokerInFeed, obsId);
+              return;
+            }
+          }
+          // Fallback: just show the details without broker timeline
+          setSelectedMsgDetails(details);
+          if (details.raw?.id) {
+            setSelectedMsg(details.raw);
+          }
+        })();
+      }
+    }
+  }, [brokerParam, observationParam, brokerFeed, slugs]);
 
   // 1. Initial Load of Feed & Suggestions
   const loadFeed = useCallback(async () => {
@@ -303,6 +849,26 @@ function InboxPageInner() {
     loadFeed();
   }, [loadFeed]);
 
+  // Fetch available slugs (saved views) for the inbox tabs
+  useEffect(() => {
+    (async () => {
+      try {
+        const data = await api.getInboxSlugs();
+        setSlugs(data);
+        // If URL had a view param, try to use it; else use default
+        const viewFromUrl = searchParams.get("view");
+        if (viewFromUrl && data.some(s => s.slug === viewFromUrl)) {
+          setCurrentSlug(viewFromUrl);
+        } else if (data.length > 0 && !data.some(s => s.slug === currentSlug)) {
+          const def = data.find(s => s.is_default) || data[0];
+          setCurrentSlug(def.slug);
+        }
+      } catch (e) {
+        console.error("Failed to load inbox slugs:", e);
+      }
+    })();
+  }, []);
+
   const loadBrokerFeed = useCallback(async () => {
     setLoadingBrokerFeed(true);
     try {
@@ -315,12 +881,13 @@ function InboxPageInner() {
     }
   }, []);
 
-  // Load broker feed when switching to brokers or people tabs
+  // Load broker feed when switching to a slug whose view_type needs brokers feed
   useEffect(() => {
-    if ((viewMode === "brokers" || viewMode === "people") && brokerFeed.length === 0) {
+    const vt = activeSlug?.view_type;
+    if ((vt === "brokers" || vt === "personal") && brokerFeed.length === 0) {
       loadBrokerFeed();
     }
-  }, [viewMode, loadBrokerFeed, brokerFeed.length]);
+  }, [activeSlug, loadBrokerFeed, brokerFeed.length]);
 
   // Scroll to bottom of conversation thread when new messages arrive
   useEffect(() => {
@@ -442,6 +1009,7 @@ function InboxPageInner() {
 
   const resolveMessageSenderName = (msg?: Partial<api.RawMessage> | null) => {
     if (!msg) return "";
+    if (msg.from_me === 1 || msg.from_me === true || msg.sender === "seed-bot" || msg.sender === "system" || msg.sender === "owner") return "You";
     const phone = resolveMessagePhone(msg);
     const sender = (msg.sender || "").trim();
     if (sender && sender.toLowerCase() !== "unknown" && !isRawWhatsAppId(sender)) {
@@ -545,46 +1113,8 @@ function InboxPageInner() {
       if (msg) selectMessage(msg);
     }
 
-    if (entity.exists === false) {
-      window.location.href = entityCreateUrl(entity);
-      return;
-    }
-
-    if (entity.type === "broker" || entity.type === "phone") {
-      setActiveRightTab("broker");
-      loadBrokerDetails(entity.type === "broker" ? entity.text : "", entity.phone || entity.text);
-      return;
-    }
-
-    if (entity.type === "building" || entity.type === "society") {
-      setActiveRightTab("building");
-      loadBuildingDetails(entity.text);
-      return;
-    }
-
-    if (entity.type === "locality") {
-      setActiveRightTab("analysis");
-      loadPriceStats(entity.text, selectedMsgDetails?.parsed?.bhk || "", "listing");
-      return;
-    }
-
-    if (entity.type === "listing" && entity.id) {
-      window.location.href = `/market/listings?listing=${encodeURIComponent(String(entity.id))}`;
-      return;
-    }
-
-    if (entity.type === "requirement" && entity.id) {
-      window.location.href = `/requirements?requirement=${encodeURIComponent(String(entity.id))}`;
-      return;
-    }
-
-    setActiveRightTab("analysis");
-  };
-
-  const entityCreateUrl = (entity: MessageEntity) => {
-    const params = new URLSearchParams({ term: entity.text, type: entity.type });
-    if (entity.rawMessageId) params.set("message", String(entity.rawMessageId));
-    return `/trainer?${params.toString()}`;
+    router.push(entityProfileHref(entity));
+    return true;
   };
 
   const toggleRevealPhone = (phone: string) => {
@@ -592,7 +1122,7 @@ function InboxPageInner() {
   };
 
   // Context Action Handlers
-  const handleTextAction = (text: string, action: string) => {
+  const handleTextAction = (text: string, action: string, notes = "") => {
     setSelectedActionText(text);
     // Build context from current message
     const ctx = selectedMsg ? {
@@ -611,22 +1141,22 @@ function InboxPageInner() {
 
     switch (action) {
       case "training-building":
-        api.inlineResolveTrainerTerm(text, selectedMsg?.id, "building").then(() =>
+        api.inlineResolveTrainerTerm(text, selectedMsg?.id, "building", notes).then(() =>
           alert(`"${text}" saved as Building`)
         ).catch(e => alert("Error: " + e.message));
         break;
       case "training-society":
-        api.inlineResolveTrainerTerm(text, selectedMsg?.id, "society").then(() =>
+        api.inlineResolveTrainerTerm(text, selectedMsg?.id, "society", notes).then(() =>
           alert(`"${text}" saved as Society`)
         ).catch(e => alert("Error: " + e.message));
         break;
       case "training-landmark":
-        api.inlineResolveTrainerTerm(text, selectedMsg?.id, "landmark").then(() =>
+        api.inlineResolveTrainerTerm(text, selectedMsg?.id, "landmark", notes).then(() =>
           alert(`"${text}" saved as Landmark`)
         ).catch(e => alert("Error: " + e.message));
         break;
       case "training-locality":
-        api.inlineResolveTrainerTerm(text, selectedMsg?.id, "locality").then(() =>
+        api.inlineResolveTrainerTerm(text, selectedMsg?.id, "locality", notes).then(() =>
           alert(`"${text}" saved as Locality`)
         ).catch(e => alert("Error: " + e.message));
         break;
@@ -635,7 +1165,7 @@ function InboxPageInner() {
         setShowCombinedLocalityDialog(true);
         break;
       case "training-ignore":
-        api.inlineResolveTrainerTerm(text, selectedMsg?.id, "ignored").then(() =>
+        api.inlineResolveTrainerTerm(text, selectedMsg?.id, "ignored", notes).then(() =>
           alert(`"${text}" will be ignored in future`)
         ).catch(e => alert("Error: " + e.message));
         break;
@@ -773,14 +1303,41 @@ function InboxPageInner() {
     }))
     .sort((a, b) => new Date(b.latest.timestamp).getTime() - new Date(a.latest.timestamp).getTime());
 
-  const leftListEmpty =
-    viewMode === "brokers"
-      ? brokerFeed.length === 0
-      : viewMode === "groups"
-      ? groupChats.length === 0
-      : viewMode === "direct"
-      ? directChats.length === 0
-      : uniqueThreads.length === 0 && brokerFeed.length === 0 && directChats.length === 0;
+  // Apply search filter to broker feed and direct chats
+  const filteredBrokerFeed = !query
+    ? brokerFeed
+    : brokerFeed.filter((b: any) => {
+        const haystack = [
+          b.canonical_name,
+          b.name,
+          b.primary_phone,
+          b.latest_title,
+          b.latest_intent,
+          b.latest_micro_market,
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase();
+        return haystack.includes(query);
+      });
+
+  const filteredDirectChats = !query
+    ? directChats
+    : directChats.filter((d: any) => {
+        const haystack = [d.name, d.senderKey, d.latest?.message, d.latest?.sender]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase();
+        return haystack.includes(query);
+      });
+
+  const leftListEmpty = (() => {
+    const vt = activeSlug?.view_type;
+    if (vt === "brokers") return brokerFeed.length === 0;
+    if (vt === "clients") return directChats.length === 0;
+    if (vt === "personal") return uniqueThreads.length === 0 && brokerFeed.length === 0 && directChats.length === 0;
+    return uniqueThreads.length === 0;
+  })();
 
   const groupedConversationMessages: [string, api.RawMessage[][]][] = (() => {
     const grouped: Record<string, api.RawMessage[]> = {};
@@ -894,8 +1451,9 @@ function InboxPageInner() {
   }, [updateUrlMessage]);
 
   // 3c. Select a broker card -> show observations in center + profile in right panel
-  const selectBroker = useCallback(async (broker: any) => {
-    setActiveRightTab("broker");
+  const selectBroker = useCallback(async (broker: any, focusObsRawId?: number) => {
+    setActiveRightTab(!focusObsRawId ? "broker" : "analysis");
+    if (broker.primary_phone) updateUrlBroker(broker.primary_phone);
     setSelectedBroker({
       id: broker.primary_phone,
       phone: broker.primary_phone,
@@ -905,23 +1463,24 @@ function InboxPageInner() {
       first_seen: broker.first_seen,
       last_seen: broker.last_active,
     });
-    setSelectedMsgDetails(null);
+    if (!focusObsRawId) setSelectedMsgDetails(null);
     // Load observations for center timeline
     setLoadingBrokerObs(true);
-	    try {
-	      const obs = await api.getObservationsFeed(50, 0, broker.primary_phone);
-	      setSelectedBrokerObservations(obs);
-	      const latestRawId = obs?.[0]?.latest_raw_message_id || obs?.[0]?.raw_message_id;
-	      if (latestRawId) {
-	        loadMessageDetails(latestRawId, { setSelectedRaw: true, preserveProfiles: true });
-	      }
-	    } catch (e) {
-	      console.error("Failed to load broker observations:", e);
-	      setSelectedBrokerObservations([]);
+    try {
+      const obs = await api.getObservationsFeed(50, 0, broker.primary_phone);
+      setSelectedBrokerObservations(obs);
+      const rawId = focusObsRawId || obs?.[0]?.latest_raw_message_id || obs?.[0]?.raw_message_id;
+      if (rawId) {
+        updateUrlObservation(rawId);
+        loadMessageDetails(rawId, { setSelectedRaw: true, preserveProfiles: true });
+      }
+    } catch (e) {
+      console.error("Failed to load broker observations:", e);
+      setSelectedBrokerObservations([]);
     } finally {
       setLoadingBrokerObs(false);
     }
-  }, []);
+  }, [updateUrlBroker, updateUrlObservation]);
 
   // Keyboard navigation: arrow up/down through message blocks, enter to select
   useEffect(() => {
@@ -999,6 +1558,7 @@ function InboxPageInner() {
     const rawId = obs.latest_raw_message_id || obs.raw_message_id;
     if (!rawId) return;
     setActiveRightTab("analysis");
+    updateUrlObservation(rawId);
     loadMessageDetails(rawId, { setSelectedRaw: true, preserveProfiles: true });
   };
 
@@ -1123,12 +1683,12 @@ function InboxPageInner() {
     const resolver = selectedMsgDetails.resolver || {};
     if (!hasMarketContext(selectedMsgDetails)) return signals;
 
-    // 1. Missing building / Unresolved building
-    if (parsed.building_name && (!resolver.building_name || resolver.method === "unresolved")) {
+    // 1. Missing building — only warn when extraction itself failed to find any building
+    if (!parsed.building_name && !resolver.building_name) {
       signals.push({
         type: "warning",
         title: "Missing Building Mapping",
-        desc: `Building "${parsed.building_name}" needs confirmation before it can be used reliably.`
+        desc: `No property name detected in this message.`
       });
     }
 
@@ -1195,7 +1755,7 @@ function InboxPageInner() {
       .map((line: string) => stripEmojis(line).replace(/[*_`~]/g, "").trim())
       .filter((line: string) => line.length >= 3 && line.length <= 90);
 
-    const prompts: { text: string; question: string; actions: { label: string; action: string }[] }[] = [];
+    const prompts: TrainingPrompt[] = [];
     const seen = new Set<string>();
     const addPrompt = (text: string, question: string, actions: { label: string; action: string }[]) => {
       const key = `${question}:${text}`.toLowerCase();
@@ -1271,8 +1831,16 @@ function InboxPageInner() {
       />
 
       {actionMessage && (
-        <div className="bg-[#1e293b] border-b border-[#3EE88A]/30 text-[#3EE88A] px-4 py-2 text-xs font-semibold text-center transition-all animate-pulse">
-          🚀 {actionMessage}
+        <div className="bg-[#1e293b] border-b border-[#3EE88A]/30 text-[#3EE88A] px-4 py-2 text-xs font-semibold text-center flex items-center justify-center gap-3 animate-fadeIn">
+          <span>{actionMessage}</span>
+          {actionUndo && (
+            <button
+              onClick={() => handleUnhideBroker(actionUndo.phone)}
+              className="px-2 py-0.5 bg-[#111820] border border-[rgba(255,255,255,0.08)] rounded text-[10px] text-[#e2e8f0] hover:text-white transition-colors"
+            >
+              Undo
+            </button>
+          )}
         </div>
       )}
 
@@ -1312,21 +1880,32 @@ function InboxPageInner() {
               className="w-full px-3 py-1.5 bg-[#0d1117] border border-[rgba(255,255,255,0.1)] rounded-lg text-xs text-[#e2e8f0] focus:border-[#3EE88A] focus:outline-none transition-colors"
             />
 
-            {/* Filter Toggle Buttons */}
-            <div className="grid grid-cols-4 gap-1 bg-[#0d1117] p-0.5 rounded-lg border border-[rgba(255,255,255,0.03)]">
-              {(["brokers", "groups", "direct", "people"] as const).map((mode) => (
-                <button
-                  key={mode}
-                  onClick={() => setViewMode(mode)}
-                  className={`py-1 rounded-md text-[10px] font-bold uppercase tracking-wider transition-colors ${
-                    viewMode === mode
-                      ? "bg-[#111820] text-[#3EE88A] shadow-sm"
-                      : "text-[#64748b] hover:text-white"
-                  }`}
-                >
-                  {mode}
-                </button>
-              ))}
+            {/* Slug-based View Tabs */}
+            <div className="flex gap-1 bg-[#0d1117] p-0.5 rounded-lg border border-[rgba(255,255,255,0.03)]" style={{ gridTemplateColumns: `repeat(${Math.min(slugs.length, 5)}, 1fr)` }}>
+              {slugs.length === 0 ? (
+                <>
+                  <div className="flex-1 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wider text-center text-[#64748b] bg-[#111820]">Brokers</div>
+                  <div className="flex-1 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wider text-center text-[#64748b]">Clients</div>
+                  <div className="flex-1 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wider text-center text-[#64748b]">Personal</div>
+                </>
+              ) : (
+                slugs.map((sv) => (
+                  <button
+                    key={sv.slug}
+                    onClick={() => {
+                      setCurrentSlug(sv.slug);
+                      updateUrlView(sv.slug);
+                    }}
+                    className={`flex-1 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wider transition-colors ${
+                      currentSlug === sv.slug
+                        ? "bg-[#111820] text-[#3EE88A] shadow-sm"
+                        : "text-[#64748b] hover:text-white"
+                    }`}
+                  >
+                    {sv.label}
+                  </button>
+                ))
+              )}
             </div>
           </div>
 
@@ -1338,50 +1917,70 @@ function InboxPageInner() {
               <div className="p-8 text-center text-xs text-[#64748b]">No chats found</div>
             ) : (
               <>
-                {/* 1. People view: Broker cards + Direct chats (identity stream) */}
-                {viewMode === "people" && (
+                {/* Personal view: Broker cards + Direct chats (identity stream) */}
+                {activeSlug?.view_type === "personal" && (
                   <>
                     {brokerFeed.length > 0 && (
                       <>
                         <div className="px-3.5 py-2 text-[9px] text-[#64748b] uppercase tracking-wider font-bold">
-                          Brokers
+                            Brokers
                         </div>
-                        {brokerFeed.slice(0, 20).map((b: any) => (
-                          <button
-                            key={"broker-" + b.primary_phone}
-                            onClick={() => selectBroker(b)}
-                            className={`w-full text-left p-3.5 transition-colors flex flex-col gap-1.5 select-none ${
-                              selectedBroker?.id === b.primary_phone && viewMode === "people"
-                                ? "bg-blue-600/10 border-l-2 border-[#3b82f6]"
-                                : "hover:bg-[rgba(255,255,255,0.02)]"
-                            }`}
-                          >
-                            <div className="flex items-center justify-between">
-                              <span className="text-[11px] font-bold text-[#e2e8f0] truncate max-w-[160px] flex items-center gap-1">
-                                <User className="w-3 h-3 text-[#64748b]" strokeWidth={1.5} />
-                                {stripEmojis(b.canonical_name) || "Unknown"}
-                              </span>
-                              <div className="flex items-center gap-1.5">
-                                <span className="text-[9px] bg-[#111820] text-[#64748b] px-1.5 py-0.5 rounded-full">
-                                  {b.observation_count} obs
-                                </span>
+                        {filteredBrokerFeed.slice(0, 20).map((b: any) => (
+                          <div key={"broker-" + b.primary_phone} className="relative">
+                            <button
+                              onClick={() => selectBroker(b)}
+                              className={`w-full text-left p-3.5 transition-colors select-none ${
+                                selectedBroker?.id === b.primary_phone && activeSlug?.view_type === "personal"
+                                  ? "bg-blue-600/10 border-l-2 border-[#3b82f6]"
+                                  : "hover:bg-[rgba(255,255,255,0.02)]"
+                              }`}
+                            >
+                              <div className="flex items-center justify-between mb-1">
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <span className="text-[12px] font-bold text-[#e2e8f0] truncate max-w-[160px]">
+                                    {stripEmojis(b.canonical_name) || "Unknown"}
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-1">
+                                  <span className="text-[10px] font-bold text-[#e2e8f0] tabular-nums">
+                                    {b.observation_count}
+                                  </span>
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); setOpenMenuBroker(openMenuBroker === b.primary_phone ? null : b.primary_phone); }}
+                                    className="w-5 h-5 flex items-center justify-center rounded hover:bg-[rgba(255,255,255,0.06)] text-[#64748b] hover:text-white transition-colors"
+                                  >
+                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg>
+                                  </button>
+                                </div>
                               </div>
-                            </div>
-                            {b.latest_title && (
-                              <div className="text-[10px] text-[#94a3b8] line-clamp-1 leading-relaxed">
-                                {stripEmojis(b.latest_title)}
+                              {b.latest_title && (
+                                <div className="text-[10px] text-[#94a3b8] leading-relaxed truncate mb-1.5">
+                                  <span className="text-[#64748b]">Last: </span>
+                                  {stripEmojis(b.latest_title)}
+                                </div>
+                              )}
+                            </button>
+                            {openMenuBroker === b.primary_phone && (
+                              <div className="absolute right-2 top-3 z-50 bg-[#111820] border border-[rgba(255,255,255,0.08)] rounded-lg shadow-xl py-1 min-w-[140px]">
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); handleHideBroker(b.primary_phone); }}
+                                  className="w-full text-left px-3 py-1.5 text-[11px] text-[#e2e8f0] hover:bg-[rgba(255,255,255,0.06)] flex items-center gap-2"
+                                >
+                                  <EyeOff className="w-3 h-3" strokeWidth={1.5} />
+                                  Hide Broker
+                                </button>
                               </div>
                             )}
-                          </button>
+                          </div>
                         ))}
                       </>
                     )}
-                    {directChats.length > 0 && (
+                    {filteredDirectChats.length > 0 && (
                       <>
                         <div className="px-3.5 py-2 text-[9px] text-[#64748b] uppercase tracking-wider font-bold border-t border-[rgba(255,255,255,0.04)]">
                           Direct Messages
                         </div>
-                        {directChats.map((d) => {
+                        {filteredDirectChats.map((d) => {
                           const latestPhone = resolveMessagePhone(d.latest);
                           return (
                             <button
@@ -1417,60 +2016,13 @@ function InboxPageInner() {
                   </>
                 )}
 
-                {/* 2. Group Chats View */}
-                {viewMode === "groups" &&
-                  groupChats.map((g) => {
-                    const isSelected =
-                      selectedMsg &&
-                      "conversation_key" in selectedMsg &&
-                      selectedMsg.conversation_key === g.conversationKey;
-                    return (
-                      <button
-                        key={g.rawGroupName}
-                        onClick={() => selectConversation(g.latest)}
-                        className={`w-full text-left p-3.5 transition-colors flex flex-col gap-1 select-none ${
-                          isSelected ? "bg-blue-600/10 border-l-2 border-[#3b82f6]" : "hover:bg-[rgba(255,255,255,0.02)]"
-                        }`}
-                      >
-                        <div className="flex items-center justify-between">
-                          <span className="text-[11px] font-bold text-[#e2e8f0] truncate max-w-[180px]">
-                            <Users className="w-3 h-3 text-[#64748b]" strokeWidth={1.5} /> {g.title}
-                          </span>
-                          <div className="flex items-center gap-1.5">
-                            {g.latest.lag_seconds != null && (
-                              <span
-                                className={`w-1.5 h-1.5 rounded-full ${
-                                  g.latest.lag_seconds < 30 ? "bg-emerald-500" :
-                                  g.latest.lag_seconds < 300 ? "bg-yellow-500" :
-                                  g.latest.lag_seconds < 3600 ? "bg-orange-500" : "bg-red-500"
-                                }`}
-                                title={`Lag: ${g.latest.lag_seconds < 60 ? `${g.latest.lag_seconds}s` : `${Math.round(g.latest.lag_seconds / 60)}m`}`}
-                              />
-                            )}
-                            <span className="text-[9px] bg-[#111820] text-[#64748b] px-1.5 py-0.5 rounded-full">
-                              {g.count} msg
-                            </span>
-                          </div>
-                        </div>
-                        <div className="text-[10px] text-[#64748b] truncate mt-1">
-                          Last: {resolveMessageSenderName(g.latest)}
-                        </div>
-                        <div className="text-[11px] text-[#94a3b8] line-clamp-1 italic">
-                          &quot;<WhatsAppMessage
-                            text={g.latest.message || ""}
-                            entities={buildMessageEntities(g.latest)}
-                            onEntityClick={handleEntityClick}
-                            truncate
-                            maxLines={1}
-                          />&quot;
-                        </div>
-                      </button>
-                    );
-                  })}
+                {/* 2. Group Chats View (groups tab removed — direct & group chats now appear under Personal) */}
 
                 {/* 3. Direct Chats View */}
-                {viewMode === "direct" &&
-                  directChats.map((d) => {
+
+                {/* 3. Direct Chats View */}
+                {activeSlug?.view_type === "clients" &&
+                  filteredDirectChats.map((d) => {
                     const latestPhone = resolveMessagePhone(d.latest);
                     const isSelected =
                       selectedMsg?.sender === d.name ||
@@ -1511,86 +2063,79 @@ function InboxPageInner() {
                   })}
 
                 {/* 4. Broker Feed View */}
-                {viewMode === "brokers" && loadingBrokerFeed && (
+                {activeSlug?.view_type === "brokers" && loadingBrokerFeed && (
                   <div className="p-8 text-center text-xs text-[#64748b]">Loading broker feed...</div>
                 )}
-                {viewMode === "brokers" && !loadingBrokerFeed &&
-                  brokerFeed.map((b: any) => {
+                {activeSlug?.view_type === "brokers" && !loadingBrokerFeed &&
+                  filteredBrokerFeed.map((b: any) => {
                     const isSelected = selectedBroker?.id === b.primary_phone;
+                    const menuOpen = openMenuBroker === b.primary_phone;
+                    const isActiveNow = b.last_active && now - new Date(b.last_active).getTime() < 300000;
+                    const latestIntent = b.latest_intent || (b.latest_title || "").match(/^(Sale|Rent|Lease|Buy|Requirement)/i)?.[1];
                     return (
+                      <div key={b.primary_phone} className="relative">
                         <button
-                          key={b.primary_phone}
                           onClick={() => selectBroker(b)}
-                          className={`w-full text-left p-3.5 transition-colors flex flex-col gap-1.5 select-none ${
+                          className={`w-full text-left p-3.5 transition-colors select-none ${
                             isSelected ? "bg-blue-600/10 border-l-2 border-[#3b82f6]" : "hover:bg-[rgba(255,255,255,0.02)]"
                           }`}
                         >
-                          <div className="flex items-center justify-between">
-                            <span className="text-[11px] font-bold text-[#e2e8f0] truncate max-w-[160px] flex items-center gap-1">
-                              <User className="w-3 h-3 text-[#64748b]" strokeWidth={1.5} />
-                              {stripEmojis(b.canonical_name) || "Unknown"}
-                            </span>
-                            <div className="flex items-center gap-1.5">
-                              <span className="text-[9px] bg-[#111820] text-[#64748b] px-1.5 py-0.5 rounded-full">
-                                {b.observation_count} obs
-                              </span>
-                              <span className={`text-[9px] rounded-full px-1.5 py-0.5 ${
-                                b.active_days_30 > 0
-                                  ? "bg-emerald-900/40 text-emerald-400"
-                                  : "bg-[#111820] text-[#64748b]"
-                              }`}>
-                                {b.active_days_30 || 0}d
+                          <div className="flex items-center justify-between mb-1">
+                            <div className="flex items-center gap-2 min-w-0">
+                              {isActiveNow && <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" />}
+                              <span className="text-[12px] font-bold text-[#e2e8f0] truncate max-w-[160px]">
+                                {stripEmojis(b.canonical_name || b.name) || "Unknown"}
                               </span>
                             </div>
-                          </div>
-                          <div className="flex items-center justify-between">
-                            <span className="text-[9px] text-[#64748b] font-mono">
-                              {displayPhoneString(b.primary_phone)}
-                            </span>
-                            <span className="text-[9px] text-[#64748b]">
-                              {b.last_active ? new Date(b.last_active).toLocaleDateString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : ""}
-                            </span>
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-[10px] font-bold text-[#e2e8f0] tabular-nums">
+                                {b.observation_count}
+                              </span>
+                              <div onClick={(e) => { e.stopPropagation(); setOpenMenuBroker(menuOpen ? null : b.primary_phone); }} className="w-5 h-5 flex items-center justify-center rounded hover:bg-[rgba(255,255,255,0.06)] text-[#64748b] hover:text-white transition-colors cursor-pointer">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg>
+                              </div>
+                            </div>
                           </div>
                           {b.latest_title && (
-                            <div className="text-[10px] text-[#94a3b8] line-clamp-1 leading-relaxed">
-                              {stripEmojis(b.latest_title)}
+                            <div className="text-[10px] text-[#94a3b8] leading-relaxed truncate mb-1.5">
+                              <span className="text-[#64748b]">Last: </span>
+                              {(() => {
+                                const title = stripEmojis(b.latest_title);
+                                if (latestIntent) {
+                                  const stripped = title.replace(new RegExp(`^${latestIntent}\\s*[|•-]?\\s*`, "i"), "");
+                                  return <><span className="font-semibold text-[#cbd5e1]">{latestIntent}</span>{stripped ? ` ${stripped}` : ""}</>;
+                                }
+                                return <span>{title}</span>;
+                              })()}
                             </div>
                           )}
-                          {/* Observed In chips */}
-                          {b.channels && b.channels.length > 0 && (
-                            <div className="flex flex-wrap gap-1 mt-0.5">
-                              {b.channels.slice(0, 5).map((ch: any, i: number) => (
-                                <span
-                                  key={i}
-                                  className={`text-[8px] px-1.5 py-0.5 rounded-full border ${
-                                    ch.type === "group"
-                                      ? "bg-[#111820] border-[rgba(255,255,255,0.06)] text-[#94a3b8]"
-                                      : "bg-[#111820] border-[rgba(62,232,138,0.15)] text-[#3EE88A]"
-                                  }`}
-                                >
-                                  {ch.type === "group" ? displayGroupName(ch.source) || ch.source.slice(-8) : "DM"}
-                                </span>
-                              ))}
-                              {b.unique_channel_count > 5 && (
-                                <span className="text-[8px] text-[#64748b] px-1 py-0.5">
-                                  +{b.unique_channel_count - 5}
-                                </span>
-                              )}
-                            </div>
-                          )}
-                          {/* Evidence counts */}
                           <div className="flex items-center gap-2 text-[9px] text-[#64748b]">
                             {b.group_evidence_count > 0 && (
-                              <span>{b.group_evidence_count} group</span>
+                              <span>{b.group_evidence_count}g</span>
                             )}
                             {b.dm_evidence_count > 0 && (
-                              <span>{b.dm_evidence_count} dm</span>
+                              <span>{b.dm_evidence_count}dm</span>
                             )}
-                            {b.unique_channel_count > 0 && (
-                              <span>{b.unique_channel_count} channel{b.unique_channel_count !== 1 ? "s" : ""}</span>
+                            {b.last_active && (
+                              <>
+                                <span>·</span>
+                                <span>{formatAgeShort(b.last_active)}</span>
+                              </>
                             )}
                           </div>
-                        </button>
+                          </button>
+                          {menuOpen && (
+                            <div className="absolute right-2 top-3 z-50 bg-[#111820] border border-[rgba(255,255,255,0.08)] rounded-lg shadow-xl py-1 min-w-[140px]">
+                              <button
+                                onClick={(e) => { e.stopPropagation(); handleHideBroker(b.primary_phone); }}
+                                className="w-full text-left px-3 py-1.5 text-[11px] text-[#e2e8f0] hover:bg-[rgba(255,255,255,0.06)] flex items-center gap-2"
+                              >
+                                <EyeOff className="w-3 h-3" strokeWidth={1.5} />
+                                Hide Broker
+                              </button>
+                            </div>
+                          )}
+                        </div>
                       );
                     })
                   }
@@ -1623,7 +2168,7 @@ function InboxPageInner() {
 
         {/* ================= CENTER PANEL: CONVERSATION ================= */}
         <div className="flex-1 flex flex-col bg-[#070b0e] overflow-hidden">
-          {(viewMode === "brokers" || viewMode === "people") && selectedBroker ? (
+          {(activeSlug?.view_type === "brokers" || activeSlug?.view_type === "personal") && selectedBroker ? (
             <>
               {/* Observation Timeline Header */}
               <div className="px-5 py-4 border-b border-[rgba(255,255,255,0.06)] flex items-center justify-between bg-[#0a0e14]">
@@ -1633,7 +2178,7 @@ function InboxPageInner() {
                   </div>
                   <div className="min-w-0">
                     <h3 className="text-sm font-bold text-[#e2e8f0] truncate max-w-[340px]">
-                      {selectedBroker.canonical_name || "Unknown Broker"}
+                      {selectedBroker.canonical_name || selectedBroker.name || selectedMsgDetails?.parsed?.broker_name || "Unknown Broker"}
                     </h3>
                     <div className="text-[10px] text-[#64748b] flex items-center gap-2 mt-0.5 flex-wrap">
                       <span className="truncate">{displayPhoneString(selectedBroker.phone)}</span>
@@ -1648,104 +2193,161 @@ function InboxPageInner() {
                     </div>
                   </div>
                 </div>
-                <button
-                  onClick={() => window.open(getWaLink(selectedBroker.phone), '_blank')}
-                  className="h-7 px-3 rounded-md border border-[rgba(255,255,255,0.06)] bg-[#111820] text-[#3EE88A] hover:text-white transition-colors text-[10px] font-bold flex items-center gap-1"
-                >
-                  <MessageSquare className="w-3 h-3" strokeWidth={1.5} />
-                  WhatsApp
-                </button>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    onClick={() => window.open(getWaLink(selectedBroker.phone), '_blank')}
+                    className="h-7 px-3 rounded-md border border-[rgba(255,255,255,0.06)] bg-[#111820] text-[#3EE88A] hover:text-white transition-colors text-[10px] font-bold flex items-center gap-1"
+                  >
+                    <MessageSquare className="w-3 h-3" strokeWidth={1.5} />
+                    WhatsApp
+                  </button>
+                  <button
+                    onClick={() => handleHideBroker(selectedBroker.phone)}
+                    className="h-7 px-2 rounded-md border border-[rgba(255,255,255,0.06)] bg-[#111820] text-[#64748b] hover:text-red-400 transition-colors text-[10px] font-bold flex items-center gap-1"
+                    title="Hide this broker from inbox"
+                  >
+                    <EyeOff className="w-3 h-3" strokeWidth={1.5} />
+                  </button>
+                </div>
               </div>
 
               {/* Observation Timeline */}
               <div className="flex-1 overflow-y-auto p-4 space-y-4">
                 {loadingBrokerObs ? (
                   <div className="p-8 text-center text-xs text-[#64748b]">Loading observations...</div>
-                ) : selectedBrokerObservations.length === 0 ? (
+                ) : groupedBrokerObservations.length === 0 ? (
                   <div className="p-8 text-center text-xs text-[#64748b]">No observations yet</div>
                 ) : (
-                  selectedBrokerObservations.map((obs: any) => {
+                  groupedBrokerObservations.map((group: any) => {
+                    const obs = group.representative;
                     const ev: any[] = obs.evidence_list || [];
                     const groupChannels: string[] = [...new Set<string>(ev.filter((e: any) => e.type === "group").map((e: any) => e.source))];
                     const dmCount = ev.filter((e: any) => e.type === "dm").length;
+                    const isSelected = selectedMsgDetails?.raw?.id === (obs.latest_raw_message_id || obs.raw_message_id);
+                    const obsTime = obs.last_seen ? new Date(obs.last_seen) : null;
+                    const timeLabel = obsTime
+                      ? obsTime.toLocaleDateString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })
+                      : "";
+                    const dayLabel = obsTime
+                      ? obsTime.toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" })
+                      : "";
                     return (
-	                      <button
-	                        key={obs.id}
-	                        type="button"
-	                        onClick={() => selectBrokerObservation(obs)}
-	                        className="w-full text-left bg-[#0d1117] border border-[rgba(255,255,255,0.06)] rounded-xl overflow-hidden transition-colors hover:border-[#3b82f6]/40 hover:bg-[#101722]"
-	                      >
-                        {/* Title Bar */}
-                        <div className="px-4 py-3 border-b border-[rgba(255,255,255,0.04)] space-y-1.5">
-                          <div className="flex items-start justify-between gap-2">
-                            <h4 className="text-xs font-bold text-[#e2e8f0] leading-relaxed">
-                              {stripEmojis(obs.summary_title) || "(no title)"}
-                            </h4>
-                            {obs.intent && (
-                              <span className={`badge badge-${
-                                ({ SELL: "green", BUY: "purple", RENT: "yellow" } as Record<string, string>)[obs.intent?.toUpperCase()] || "blue"
-                              } text-[9px] px-1.5 py-0.5 shrink-0`}>
-                                {obs.intent}
-                              </span>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-2 text-[9px] text-[#64748b]">
-                            <span>Seen {obs.times_seen} time{obs.times_seen !== 1 ? "s" : ""}</span>
-                            {obs.last_seen && (
-                              <>
-                                <span>·</span>
-                                <span>Last: {new Date(obs.last_seen).toLocaleDateString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</span>
-                              </>
-                            )}
-                          </div>
-                          {/* Posted In chips */}
-                          {(groupChannels.length > 0 || dmCount > 0) && (
-                            <div className="flex flex-wrap gap-1 items-center">
-                              <span className="text-[8px] text-[#64748b] uppercase tracking-wider">Posted in:</span>
-                              {groupChannels.slice(0, 5).map((src: string, i: number) => (
-                                <span key={i} className="text-[8px] bg-[#111820] border border-[rgba(255,255,255,0.06)] text-[#94a3b8] px-1.5 py-0.5 rounded-full">
-                                  {displayGroupName(src) || src.slice(-8)}
-                                </span>
-                              ))}
-                              {groupChannels.length > 5 && (
-                                <span className="text-[8px] text-[#64748b]">+{groupChannels.length - 5}</span>
-                              )}
-                              {dmCount > 0 && (
-                                <span className="text-[8px] bg-[#111820] border border-[rgba(62,232,138,0.15)] text-[#3EE88A] px-1.5 py-0.5 rounded-full">
-                                  {dmCount} DM{dmCount > 1 ? "s" : ""}
-                                </span>
-                              )}
-                            </div>
-                          )}
+                      <div key={group.key}>
+                        {/* Time Divider */}
+                        <div className="flex items-center gap-3 mb-3">
+                          <div className="h-px flex-1 bg-[rgba(255,255,255,0.06)]" />
+                          <span className="text-[9px] uppercase tracking-wider text-[#64748b] font-semibold">{timeLabel}</span>
+                          <div className="h-px flex-1 bg-[rgba(255,255,255,0.06)]" />
                         </div>
-
-                        {/* Original Broker Message */}
-                        {obs.raw_message && (
-                          <div className="px-4 py-3 border-b border-[rgba(255,255,255,0.04)]">
-                            <div className="text-[8px] text-[#64748b] uppercase tracking-wider font-bold mb-1.5">Original Broker Message</div>
-                            <div className="text-[11px] text-[#cbd5e1] whitespace-pre-wrap leading-relaxed font-mono bg-[#05070b] rounded-lg p-3 border border-[rgba(255,255,255,0.03)]">
-                              {obs.raw_message}
+                        {/* Chat Bubble */}
+                        <button
+                          type="button"
+                          onClick={() => selectBrokerObservation(obs)}
+                          className={`w-full text-left bg-[#0d1117] border rounded-xl overflow-hidden transition-colors hover:border-[#3b82f6]/40 hover:bg-[#101722] ${
+                            isSelected ? "border-[#3b82f6]/50 ring-1 ring-[#3b82f6]/20" : "border-[rgba(255,255,255,0.06)]"
+                          }`}
+                        >
+                          {/* Bubble Header — Primary Type */}
+                          <div className="px-4 py-2.5 border-b border-[rgba(255,255,255,0.04)]">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <span className="text-base">{observationTypeIcon(obs.observation_type)}</span>
+                                <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${observationTypeColor(obs.observation_type)}`}>
+                                  {observationTypeLabel(obs.observation_type)}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <span className={`badge ${intentColor(obs.intent)} text-[9px]`}>
+                                  {obs.intent?.toUpperCase() || "—"}
+                                </span>
+                                <span className="text-[9px] text-[#64748b] tabular-nums">{timeLabel}</span>
+                              </div>
                             </div>
-                            {obs.raw_sender && (
-                              <div className="text-[9px] text-[#64748b] mt-1">
-                                — {obs.raw_sender}
+                            <div className="flex items-center gap-1.5 mt-1.5 text-[11px] text-[#94a3b8]">
+                              {obs.property_type && <span className="font-medium text-[#cbd5e1]">{obs.property_type}</span>}
+                              {obs.bhk && <><span className="text-[#475569]">·</span><span>{obs.bhk}</span></>}
+                              {obs.price != null && <><span className="text-[#475569]">·</span><span className="font-bold text-[#3EE88A]">{formatCurrency(obs.price, obs.price_unit)}</span></>}
+                              {obs.micro_market && <><span className="text-[#475569]">·</span><span>{obs.micro_market}</span></>}
+                              {obs.alternate_intent && (
+                                <span className="text-[9px] text-[#94a3b8] italic ml-1">
+                                  Also {obs.alternate_intent === "RENT" ? "Rent" : "Sale"}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          {/* Bubble Body */}
+                          <div className="px-4 py-3 space-y-2">
+                            {/* Key fields as inline chips */}
+                            <div className="flex flex-wrap gap-1.5">
+                              {obs.bhk && (
+                                <span className="text-[10px] bg-[#111820] text-[#cbd5e1] px-2 py-0.5 rounded-full border border-[rgba(255,255,255,0.04)]">
+                                  {stripEmojis(obs.bhk)}
+                                </span>
+                              )}
+                              {obs.micro_market && (
+                                <span className="text-[10px] bg-[#111820] text-[#cbd5e1] px-2 py-0.5 rounded-full border border-[rgba(255,255,255,0.04)]">
+                                  {stripEmojis(obs.micro_market)}
+                                </span>
+                              )}
+                              {obs.building_name && (
+                                <span className="text-[10px] bg-[#111820] text-[#cbd5e1] px-2 py-0.5 rounded-full border border-[rgba(255,255,255,0.04)]">
+                                  {stripEmojis(obs.building_name)}
+                                </span>
+                              )}
+                              {obs.times_seen && obs.times_seen > 1 && (
+                                <span className="text-[9px] text-[#64748b] px-1 py-0.5">
+                                  Seen {obs.times_seen}x
+                                </span>
+                              )}
+                            </div>
+                            {/* Posted In chips */}
+                            {(groupChannels.length > 0 || dmCount > 0) && (
+                              <div className="flex flex-wrap gap-1 items-center text-[8px]">
+                                {groupChannels.slice(0, 3).map((src: string, i: number) => (
+                                  <span key={i} className="bg-[#111820] border border-[rgba(255,255,255,0.06)] text-[#94a3b8] px-1.5 py-0.5 rounded-full">
+                                    {displayGroupName(src) || src.slice(-8)}
+                                  </span>
+                                ))}
+                                {groupChannels.length > 3 && <span className="text-[#64748b]">+{groupChannels.length - 3}g</span>}
+                                {dmCount > 0 && <span className="border border-[rgba(62,232,138,0.15)] text-[#3EE88A] px-1.5 py-0.5 rounded-full">{dmCount}dm</span>}
+                              </div>
+                            )}
+                            {/* Raw Message — always visible, truncate */}
+                            {obs.raw_message && (
+                              <div className="pt-1">
+                                <div className={`text-[11px] text-[#94a3b8] whitespace-pre-wrap leading-relaxed ${!expandedRawMessages.has(group.key) ? "line-clamp-2" : ""}`}>
+                                  {obs.raw_message}
+                                </div>
+                                {obs.raw_message.length > 120 && !expandedRawMessages.has(group.key) && (
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); setExpandedRawMessages((prev) => { const next = new Set(prev); next.add(group.key); return next; }); }}
+                                    className="text-[9px] text-[#3b82f6] hover:underline mt-1"
+                                  >
+                                    Show more
+                                  </button>
+                                )}
                               </div>
                             )}
                           </div>
-                        )}
-
-                        {/* AI Extracted Fields */}
-                        <div className="px-4 py-3">
-                          <div className="text-[8px] text-[#64748b] uppercase tracking-wider font-bold mb-2">AI Extracted</div>
-                          <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-[10px]">
-                            <Field label="Intent" value={stripEmojis(obs.intent)} />
-                            <Field label="Price" value={obs.price != null ? formatCurrency(obs.price, obs.price_unit) : null} />
-                            <Field label="Building" value={stripEmojis(obs.building_name) || "—"} />
-                            <Field label="Locality" value={stripEmojis(obs.micro_market) || "—"} />
-                            <Field label="BHK" value={stripEmojis(obs.bhk) || "—"} />
-                          </div>
-                        </div>
-                      </button>
+                          {/* WhatsApp CTA */}
+                          {selectedBroker?.phone && (
+                            <div
+                              className="border-t border-[rgba(255,255,255,0.04)] px-4 py-2 flex items-center gap-2"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <a
+                                href={getWaLinkWithRecall(selectedBroker.phone, obs.raw_message || obs.summary_title || "")}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="flex items-center gap-1.5 text-[10px] font-semibold text-green-400 hover:text-green-300 transition-colors"
+                              >
+                                <MessageSquare className="w-3 h-3" strokeWidth={1.8} />
+                                <span>Contact on WhatsApp</span>
+                              </a>
+                            </div>
+                          )}
+                        </button>
+                      </div>
                     );
                   })
                 )}
@@ -1845,7 +2447,7 @@ function InboxPageInner() {
                             const last = block[block.length - 1];
                             const allBlocks = groupedConversationMessages.flatMap(([, b]) => b);
                             const isLatestBlock = block === allBlocks[allBlocks.length - 1];
-                            const isSelf = first.sender === "seed-bot" || first.sender === "system" || first.sender === "owner";
+                            const isSelf = first.from_me === 1 || first.from_me === true || first.sender === "seed-bot" || first.sender === "system" || first.sender === "owner";
                             const bubbleBg = isLatestBlock
                               ? "bg-[#1d4ed8]/10 border border-[#3b82f6]/30"
                               : isSelf
@@ -1885,8 +2487,30 @@ function InboxPageInner() {
                                   const mSenderName = resolveMessageSenderName(m);
                                   const isSelectedMessage = selectedMsg?.id === m.id;
                                   const useInnerCard = block.length > 1;
-                                  const mIntentBadgeColor =
-                                    ({ SELL: "green", BUY: "purple", RENT: "yellow" } as Record<string, string>)[m.message_type?.toUpperCase()] || "blue";
+                                  const mBadges = (() => {
+                                    const badges: { label: string; color: string }[] = [];
+                                    const intent = (m as api.InboxThread).parsed_intent || m.parsed_intent;
+                                    if (intent) {
+                                      const intentUpper = intent.toUpperCase();
+                                      const label =
+                                        intentUpper === "SELL" ? "Listing" :
+                                        intentUpper === "BUY" ? "Requirement" :
+                                        intentUpper === "RENT" ? "Rental" :
+                                        intentUpper === "COMMERCIAL" ? "Commercial" : intent;
+                                      const color =
+                                        ({ SELL: "green", BUY: "purple", RENT: "yellow", COMMERCIAL: "orange" } as Record<string, string>)[intentUpper] || "blue";
+                                      badges.push({ label, color });
+                                    }
+                                    if (m.attachments) {
+                                      try {
+                                        const att = JSON.parse(m.attachments);
+                                        if (att.image) badges.push({ label: "Image", color: "cyan" });
+                                        if (att.video) badges.push({ label: "Video", color: "pink" });
+                                        if (att.document) badges.push({ label: "Document", color: "orange" });
+                                      } catch {}
+                                    }
+                                    return badges;
+                                  })();
                                   return (
                                     <div
                                       key={m.id}
@@ -1927,13 +2551,40 @@ function InboxPageInner() {
                                           onEntityClick={handleEntityClick}
                                         />
                                       </div>
-                                      <div className="flex items-center justify-between pt-1.5 mt-1.5 border-t border-[rgba(255,255,255,0.04)]">
-                                        <div>
-                                          {m.message_type && (
-                                            <span className={`badge badge-${mIntentBadgeColor} text-[8px] px-1 py-0`}>
-                                              {m.message_type}
-                                            </span>
+
+                                      {isSelectedMessage && selectedMsgDetails?.parsed && (
+                                        <div className="pt-2 mt-2 border-t border-[rgba(62,232,138,0.1)]">
+                                          <button
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              setTeachingMsgId(teachingMsgId === m.id ? null : m.id);
+                                            }}
+                                            className="text-[9px] text-[#3EE88A]/70 hover:text-[#3EE88A] flex items-center gap-1"
+                                          >
+                                            <Sparkles className="w-2.5 h-2.5" strokeWidth={1.7} />
+                                            {teachingMsgId === m.id ? "Close Teach AI" : "Teach AI"}
+                                          </button>
+                                          {teachingMsgId === m.id && (
+                                            <div className="mt-2 space-y-1.5" onClick={(e) => e.stopPropagation()}>
+                                              <TeachingForm
+                                                parsed={selectedMsgDetails.parsed}
+                                                obsId={m.id}
+                                                parsedId={selectedMsgDetails.parsed?.id}
+                                                rawMessageId={m.id}
+                                                onSave={() => setTeachingMsgId(null)}
+                                              />
+                                            </div>
                                           )}
+                                        </div>
+                                      )}
+
+                                      <div className="flex items-center justify-between pt-1.5 mt-1.5 border-t border-[rgba(255,255,255,0.04)]">
+                                        <div className="flex gap-1 flex-wrap">
+                                          {mBadges.map((b, bi) => (
+                                            <span key={bi} className={`badge badge-${b.color} text-[8px] px-1 py-0`}>
+                                              {b.label}
+                                            </span>
+                                          ))}
                                         </div>
 
                                         <div className="flex items-center gap-2 opacity-0 group-hover/message:opacity-100 transition-opacity">
@@ -2132,7 +2783,7 @@ function InboxPageInner() {
                             <span className="badge badge-blue">DIRECT MESSAGE</span>
                           </div>
                           <div className="flex justify-between gap-3">
-                            <span className="text-[#64748b]">Contact</span>
+                            <span className="text-[#64748b]">Sender</span>
                             <span className="text-right font-semibold text-white">
                               {resolveMessageSenderName(selectedMsgDetails.raw) || "Unknown contact"}
                             </span>
@@ -2238,35 +2889,6 @@ function InboxPageInner() {
     </div>
 	                    )}
 
-	                    {trainingPrompts.length > 0 && (
-	                      <div className="bg-[#0d1117] rounded-xl p-3.5 border border-[rgba(62,232,138,0.14)] space-y-3">
-	                        <div className="flex items-center gap-2 text-[10px] text-[#3EE88A] uppercase tracking-wider font-bold">
-	                          <Sparkles className="w-3 h-3" strokeWidth={1.7} />
-	                          <span>Teach PropAI</span>
-	                        </div>
-	                        <div className="space-y-2">
-	                          {trainingPrompts.map((prompt, idx) => (
-	                            <div key={`${prompt.text}-${idx}`} className="rounded-lg bg-[#05070b] border border-[rgba(255,255,255,0.05)] p-2.5">
-	                              <div className="text-[10px] text-[#64748b] mb-1">{prompt.question}</div>
-	                              <div className="text-xs font-semibold text-[#e2e8f0] break-words">{prompt.text}</div>
-	                              <div className="mt-2 flex flex-wrap gap-1.5">
-	                                {prompt.actions.map(action => (
-	                                  <button
-	                                    key={action.action}
-	                                    type="button"
-	                                    onClick={() => handleTextAction(prompt.text, action.action)}
-	                                    className="rounded-md border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.03)] px-2 py-1 text-[10px] font-semibold text-[#cbd5e1] hover:border-[#3EE88A]/40 hover:text-[#3EE88A]"
-	                                  >
-	                                    {action.label}
-	                                  </button>
-	                                ))}
-	                              </div>
-	                            </div>
-	                          ))}
-	                        </div>
-	                      </div>
-	                    )}
-	
 	                    {/* Location Match Panel */}
 	                    {selectedHasMarketContext && (
                       <div className="bg-[#0d1117] rounded-xl p-3.5 border border-[rgba(255,255,255,0.04)] space-y-3">
@@ -2348,6 +2970,59 @@ function InboxPageInner() {
                           <div className="text-[10px] text-[#64748b] pt-1.5 italic text-center">
                             Based on {priceStats.count} market listings
                           </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Building Profile (inline in Analysis when resolved) */}
+                    {selectedBuilding && (
+                      <div className="bg-[#0d1117] rounded-xl p-3.5 border border-[rgba(255,255,255,0.04)] space-y-3">
+                        <div className="flex items-center gap-2 text-[10px] text-[#64748b] uppercase tracking-wider font-bold">
+                          <Building2 className="w-3 h-3" strokeWidth={1.5} />
+                          <span>Building Profile</span>
+                        </div>
+                        <div className="space-y-2.5 text-xs">
+                          <div className="flex justify-between items-center">
+                            <span className="text-[#64748b]">Building</span>
+                            <span className="font-bold text-white">{selectedBuilding.name || "—"}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-[#64748b]">Database Observations</span>
+                            <span className="font-mono text-[#cbd5e1] font-bold">{selectedBuilding.observation_count}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-[#64748b]">Active Brokers</span>
+                            <span className="font-mono text-[#cbd5e1] font-bold">{selectedBuilding.broker_count}</span>
+                          </div>
+                          {selectedBuilding.markets?.[0]?.micro_market && (
+                            <div className="flex justify-between">
+                              <span className="text-[#64748b]">Micro Market</span>
+                              <span className="text-white font-semibold">{selectedBuilding.markets[0].micro_market}</span>
+                            </div>
+                          )}
+                          {selectedBuilding.landmarks?.length > 0 && (
+                            <div className="pt-1">
+                              <span className="text-[10px] text-[#64748b] block uppercase mb-1">Nearby Landmarks</span>
+                              <div className="flex flex-wrap gap-1">
+                                {selectedBuilding.landmarks.map((l: any, idx: number) => (
+                                  <span key={idx} className="bg-[#111820] px-2 py-0.5 rounded text-[10px] text-[#cbd5e1] border border-[rgba(255,255,255,0.03)]">{l.landmark_name}</span>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                          {selectedBuilding.price_stats?.length > 0 && (
+                            <div className="pt-1">
+                              <span className="text-[10px] text-[#64748b] block uppercase mb-1">Price Benchmarks</span>
+                              <div className="space-y-1">
+                                {selectedBuilding.price_stats.map((s: any, idx: number) => (
+                                  <div key={idx} className="flex justify-between text-[11px] border-b border-[rgba(255,255,255,0.04)] pb-1 last:border-b-0 last:pb-0">
+                                    <span className="text-[#e2e8f0]">{s.bhk} - {s.intent?.toUpperCase()}</span>
+                                    <span className="text-[#3EE88A]">Avg: {formatCurrency(s.avg_price)}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
                         </div>
                       </div>
                     )}
@@ -2500,101 +3175,151 @@ function InboxPageInner() {
                   </div>
                 )}
 
-                {/* ================= TAB 3: BUILDING PROFILE ================= */}
-                {activeRightTab === "building" && (
+                {/* ================= TAB 3: MARKET INTELLIGENCE ================= */}
+                {activeRightTab === "market" && (
                   <div className="space-y-4 animate-fadeIn">
-                    {loadingBuilding ? (
-                      <div className="text-center text-xs text-[#64748b] py-8">Resolving building metrics...</div>
-                    ) : !selectedBuilding ? (
-                      <div className="text-center text-xs text-[#64748b] py-8">
-                        No building profile matched for this message.
+                    {!selectedMsgDetails ? (
+                      <div className="h-full flex items-center justify-center text-xs text-[#64748b] text-center p-6">
+                        Select an observation to view market intelligence.
                       </div>
                     ) : (
                       <div className="space-y-4 text-xs">
-                        
-                        {/* Building basic info */}
-                        <div className="bg-[#0d1117] rounded-xl p-4 border border-[rgba(255,255,255,0.04)] flex flex-col gap-2">
-                          <h4 className="text-sm font-bold text-white">{selectedBuilding.name}</h4>
-                          
-                          <div className="flex justify-between text-[11px] border-t border-[rgba(255,255,255,0.04)] pt-2.5">
-                            <span className="text-[#64748b]">Database Observations</span>
-                            <span className="font-mono text-[#cbd5e1] font-bold">{selectedBuilding.observation_count}</span>
-                          </div>
-
-                          <div className="flex justify-between text-[11px]">
-                            <span className="text-[#64748b]">Active Brokers</span>
-                            <span className="font-mono text-[#cbd5e1] font-bold">{selectedBuilding.broker_count}</span>
-                          </div>
-
-                          {selectedBuilding.markets?.length > 0 && (
-                            <div className="flex justify-between text-[11px]">
-                              <span className="text-[#64748b]">Micro Market</span>
-                              <span className="text-white font-semibold">{selectedBuilding.markets[0].micro_market}</span>
+                        {/* Broker Memory Card */}
+                        {selectedBroker && (
+                          <div className="bg-[#0d1117] rounded-xl p-3.5 border border-[rgba(255,255,255,0.04)] space-y-2">
+                            <div className="flex items-center gap-2 text-[10px] text-[#64748b] uppercase tracking-wider font-bold">
+                              <User className="w-3 h-3" strokeWidth={1.5} />
+                              <span>Broker Memory</span>
                             </div>
-                          )}
+                            <div className="grid grid-cols-2 gap-2">
+                              <div className="bg-[#111820] rounded-lg p-2 text-center">
+                                <div className="text-sm font-bold text-white">{selectedBroker.observation_count || "—"}</div>
+                                <div className="text-[8px] text-[#64748b] uppercase">Observations</div>
+                              </div>
+                              <div className="bg-[#111820] rounded-lg p-2 text-center">
+                                <div className="text-sm font-bold text-white">{selectedBroker.active_days_30 != null ? `${selectedBroker.active_days_30}/30` : "—"}</div>
+                                <div className="text-[8px] text-[#64748b] uppercase">Active Days</div>
+                              </div>
+                            </div>
+                            {selectedMsgDetails.parsed?.micro_market && (
+                              <div className="flex justify-between pt-1 border-t border-[rgba(255,255,255,0.04)]">
+                                <span className="text-[#64748b]">Primary Market</span>
+                                <span className="font-semibold text-[#e2e8f0]">{selectedMsgDetails.parsed.micro_market}</span>
+                              </div>
+                            )}
+                            {selectedMsgDetails.parsed?.building_name && (
+                              <div className="flex justify-between">
+                                <span className="text-[#64748b]">Building</span>
+                                <span className="font-semibold text-[#e2e8f0]">{selectedMsgDetails.parsed.building_name}</span>
+                              </div>
+                            )}
+                            <div className="flex justify-between">
+                              <span className="text-[#64748b]">Active Since</span>
+                              <span className="text-[#cbd5e1]">
+                                {selectedBroker.first_seen
+                                  ? new Date(selectedBroker.first_seen).toLocaleDateString("en-IN", { month: "short", year: "numeric" })
+                                  : "—"}
+                              </span>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Similar Observations (same locality/intent) */}
+                        {selectedMsgDetails.parsed?.micro_market && (
+                          <div className="bg-[#0d1117] rounded-xl p-3.5 border border-[rgba(255,255,255,0.04)] space-y-2">
+                            <div className="flex items-center gap-2 text-[10px] text-[#64748b] uppercase tracking-wider font-bold">
+                              <MapPin className="w-3 h-3" strokeWidth={1.5} />
+                              <span>Similar in {selectedMsgDetails.parsed.micro_market}</span>
+                            </div>
+                            <div className="flex items-center gap-1.5 text-[11px] text-[#94a3b8]">
+                              <span>BHK:</span>
+                              <span className="font-semibold text-white">{selectedMsgDetails.parsed.bhk || "Any"}</span>
+                              <span className="mx-1">·</span>
+                              <span>Intent:</span>
+                              <span className="font-semibold text-white">{selectedMsgDetails.parsed.intent || "Any"}</span>
+                            </div>
+                            {/* Price comparison */}
+                            {priceStats && (
+                              <div className="bg-[#111820] rounded-lg p-2.5 space-y-1.5 mt-1">
+                                <div className="flex justify-between">
+                                  <span className="text-[#64748b]">This listing</span>
+                                  <span className="font-bold text-[#3EE88A]">{formatCurrency(selectedMsgDetails.parsed?.price)}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span className="text-[#64748b]">Market median</span>
+                                  <span className="font-semibold text-white">{formatCurrency(priceStats.median)}</span>
+                                </div>
+                                {selectedMsgDetails.parsed?.price && priceStats.median && (
+                                  <div className="flex justify-between border-t border-[rgba(255,255,255,0.04)] pt-1.5">
+                                    <span className="text-[#64748b]">vs Market</span>
+                                    <span className={`font-bold ${selectedMsgDetails.parsed.price > priceStats.median ? "text-red-400" : "text-[#3EE88A]"}`}>
+                                      {selectedMsgDetails.parsed.price > priceStats.median
+                                        ? `${Math.round((selectedMsgDetails.parsed.price / priceStats.median - 1) * 100)}% above`
+                                        : `${Math.round((1 - selectedMsgDetails.parsed.price / priceStats.median) * 100)}% below`}
+                                    </span>
+                                  </div>
+                                )}
+                                <div className="text-[9px] text-[#64748b] pt-1 text-center">
+                                  Based on {priceStats.count} similar listings
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Demand vs Supply Indicator */}
+                        <div className="bg-[#0d1117] rounded-xl p-3.5 border border-[rgba(255,255,255,0.04)] space-y-2">
+                          <div className="flex items-center gap-2 text-[10px] text-[#64748b] uppercase tracking-wider font-bold">
+                            <TrendingUp className="w-3 h-3" strokeWidth={1.5} />
+                            <span>Activity Summary</span>
+                          </div>
+                          <div className="space-y-2 text-[11px]">
+                            <div className="flex justify-between">
+                              <span className="text-[#64748b]">Total observations</span>
+                              <span className="font-semibold text-white">{selectedBrokerObservations.length}</span>
+                            </div>
+                            {(() => {
+                              const intents = selectedBrokerObservations.map((o: any) => (o.intent || "").toUpperCase());
+                              const sell = intents.filter((i: string) => i === "SELL" || i === "SALE").length;
+                              const rent = intents.filter((i: string) => i === "RENT").length;
+                              const buy = intents.filter((i: string) => i === "BUY" || i === "REQUIREMENT" || i === "WANTED").length;
+                              return (
+                                <>
+                                  {sell > 0 && <div className="flex justify-between"><span className="text-[#64748b]">Sell/Lease posts</span><span className="text-[#e2e8f0]">{sell}</span></div>}
+                                  {rent > 0 && <div className="flex justify-between"><span className="text-[#64748b]">Rent posts</span><span className="text-[#e2e8f0]">{rent}</span></div>}
+                                  {buy > 0 && <div className="flex justify-between"><span className="text-[#64748b]">Requirements</span><span className="text-[#e2e8f0]">{buy}</span></div>}
+                                  <div className="pt-1 text-[9.5px] text-[#64748b] italic">
+                                    {sell + rent > buy ? "Supply-heavy — more listings than requirements" : buy > sell + rent ? "Demand-heavy — more requirements than listings" : "Balanced activity"}
+                                  </div>
+                                </>
+                              );
+                            })()}
+                          </div>
                         </div>
 
-                        {/* Co-occurring landmarks */}
-                        {selectedBuilding.landmarks?.length > 0 && (
-                          <div className="bg-[#0d1117] rounded-xl p-3.5 border border-[rgba(255,255,255,0.04)] space-y-2">
-                            <div className="text-[10px] text-[#64748b] uppercase tracking-wider font-bold">
-                              Nearby Landmarks
+                        {/* Teaching & Merge Suggestions */}
+                        {allSuggestions.length > 0 && (
+                          <div className="bg-[#0d1117] rounded-xl p-3.5 border border-[rgba(62,232,138,0.14)] space-y-2">
+                            <div className="flex items-center gap-2 text-[10px] text-[#3EE88A] uppercase tracking-wider font-bold">
+                              <Sparkles className="w-3 h-3" strokeWidth={1.7} />
+                              <span>Suggestions</span>
                             </div>
-                            <div className="flex flex-wrap gap-1.5">
-                              {selectedBuilding.landmarks.map((l: any, idx: number) => (
-                                <span key={idx} className="bg-[#111820] px-2 py-0.5 rounded text-[10px] text-[#cbd5e1] border border-[rgba(255,255,255,0.03)]">
-                                  {l.landmark_name}
-                                </span>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Building Price Statistics */}
-                        {selectedBuilding.price_stats?.length > 0 && (
-                          <div className="bg-[#0d1117] rounded-xl p-3.5 border border-[rgba(255,255,255,0.04)] space-y-2">
-                            <div className="text-[10px] text-[#64748b] uppercase tracking-wider font-bold">
-                              Building Price Benchmarks
-                            </div>
-                            <div className="space-y-2">
-                              {selectedBuilding.price_stats.map((s: any, idx: number) => (
-                                <div key={idx} className="border-b border-[rgba(255,255,255,0.04)] pb-2 last:border-b-0 last:pb-0">
-                                  <div className="flex justify-between text-[11px] font-bold text-[#e2e8f0]">
-                                    <span>{s.bhk} - {s.intent?.toUpperCase()}</span>
-                                    <span className="text-[#3EE88A]">Avg: {formatCurrency(s.avg_price)}</span>
+                            <div className="space-y-1.5">
+                              {allSuggestions.slice(0, 5).map((s: any, idx: number) => (
+                                <div key={idx} className="flex items-center justify-between bg-[#111820] rounded-lg p-2">
+                                  <div className="flex-1 min-w-0">
+                                    <div className="text-[10px] text-[#cbd5e1] truncate">{s.text || s.description}</div>
+                                    <div className="text-[8px] text-[#64748b] uppercase mt-0.5">{s.type}</div>
                                   </div>
-                                  <div className="flex justify-between text-[9.5px] text-[#64748b] mt-0.5">
-                                    <span>Range: {formatCurrency(s.min_price)} – {formatCurrency(s.max_price)}</span>
-                                    <span>{s.sample_count} listings</span>
+                                  <div className="flex gap-1 shrink-0">
+                                    <button className="px-1.5 py-0.5 bg-[#166534] text-green-100 rounded text-[8px] font-bold">Accept</button>
+                                    <button className="px-1.5 py-0.5 bg-red-950/40 text-red-200 rounded text-[8px] font-bold">Reject</button>
                                   </div>
                                 </div>
                               ))}
                             </div>
                           </div>
                         )}
-
-                        {/* Active brokers in building */}
-                        {selectedBuilding.brokers?.length > 0 && (
-                          <div className="bg-[#0d1117] rounded-xl p-3.5 border border-[rgba(255,255,255,0.04)] space-y-2">
-                            <div className="text-[10px] text-[#64748b] uppercase tracking-wider font-bold">
-                              Brokers active here
-                            </div>
-                            <div className="space-y-2 divide-y divide-[rgba(255,255,255,0.04)]">
-                              {selectedBuilding.brokers.slice(0, 4).map((b: any, idx: number) => (
-                                <div key={idx} className="flex justify-between items-center pt-2 first:pt-0">
-                                  <div>
-                                    <span className="font-semibold text-[#cbd5e1] block">{b.name}</span>
-                                    <span className="text-[9px] text-[#64748b] font-mono">{maskPhoneString(b.phone)}</span>
-                                  </div>
-                                  <span className="text-[10.5px] text-[#94a3b8] font-bold">
-                                    {b.observation_count} posts
-                                  </span>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-
                       </div>
                     )}
                   </div>
