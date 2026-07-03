@@ -111,6 +111,15 @@ function formatPrice(value?: number, unit?: string) {
   return value.toLocaleString("en-IN");
 }
 
+function evidenceSummary(item: BrokerObservation) {
+  const parts = [item.bhk, item.building_name, item.micro_market].filter(Boolean);
+  if (parts.length > 0) return parts.join(" · ");
+  if (item.intent) {
+    return `${item.intent}${item.message_type ? ` • ${item.message_type}` : ""}`;
+  }
+  return "Observation";
+}
+
 function mixLabel(broker: BrokerProfile) {
   const supply = broker.listing_count || 0;
   const demand = broker.requirement_count || 0;
@@ -294,7 +303,7 @@ export default function BrokerProfilePage() {
                   <span className={`text-[10px] px-2 py-0.5 rounded-full ${item.role === "listing" ? "bg-blue-900/40 text-blue-200" : item.role === "requirement" ? "bg-amber-900/40 text-amber-200" : "bg-zinc-700 text-zinc-200"}`}>
                     {item.role || item.intent || "unknown"}
                   </span>
-                  <span>{[item.bhk, item.building_name, item.micro_market].filter(Boolean).join(" · ") || "Extracted message"}</span>
+                  <span>{evidenceSummary(item)}</span>
                 </div>
                 <div className="text-xs text-[#64748b] mt-1">
                   {[formatPrice(item.price, item.price_unit), item.furnishing, item.group_name, shortDate(item.seen_at || item.created_at)].filter(Boolean).join(" · ")}
@@ -303,7 +312,7 @@ export default function BrokerProfilePage() {
             ))}
           </div>
         </section>
-      )}
+       )}
     </div>
   );
 }
