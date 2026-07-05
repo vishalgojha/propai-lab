@@ -10,7 +10,7 @@ from typing import Callable
 
 # ── Classification ──────────────────────────────────────────────────
 
-_DIVIDER_RE = re.compile(r'^_{3,}$|^={3,}$|^[-–—]{3,}$|^__{3,}')
+_DIVIDER_RE = re.compile(r'^_{3,}$|^={3,}$|^[-–—]{3,}$|^__{3,}|^\*{3,}$|^⸻$')
 _TITLE_CASE_BUILDING_RE = re.compile(r'^\s*🏢\s*([A-Z][A-Za-z .]+(?: [A-Z][A-Za-z .]*)*)')
 _UNNUMBERED_BLOCK_START_RE = re.compile(
     r'^\s*(?:[*_`~\s]*)?('
@@ -83,6 +83,7 @@ _IMPOSSIBLE_BUILDINGS = _FLOOR_DESCRIPTIONS | _VIEW_DESCRIPTIONS | _ORIENTATIONS
     "available", "available for rent", "available for sale",
     "immediate possession", "ready possession",
     "new launch", "pre launch", "pre-launch",
+    "prime location", "premium location",
     "under construction",
 })
 
@@ -233,7 +234,7 @@ def extract_hierarchical_context(text: str) -> dict:
 _MULTI_INDICATORS: list[tuple[str, re.Pattern]] = [
     ("area_price_pair", re.compile(
         r'(\d[\d,]*)\s*(sq\.?\s*ft|sqft|sft|sq\s*feet)\s*[-–—:]?\s*'
-        r'(?:rs\.?\s*|inr\s*|₹)?\s*([\d,.]+)\s*(cr|crore|lac|lakh|l|k|thousand)',
+        r'(?:rs\.?\s*|inr\s*|₹)?\s*([\d,.]+)\s*(?:\/-\s*)?(?:cr|crore|lac|lakh|l|k|thousand|sqft|sq\s*ft|sft)?',
         re.I,
     )),
     ("section_header", re.compile(
@@ -247,12 +248,12 @@ _MULTI_INDICATORS: list[tuple[str, re.Pattern]] = [
     )),
     ("line_price", re.compile(
         r'^\s*(?:rs\.?\s*|inr\s*|₹)?\s*[\d,]+(?:\.\d+)?\s*'
-        r'(?:cr|crore|lac|lakh|l|k|thousand)\b',
+        r'(?:\/-\s*)?(?:cr|crore|lac|lakh|l|k|thousand)\b',
         re.I,
     )),
     ("bhk_price_pair", re.compile(
         r'(\d+)\s*(bhk|rk)\s*[-–—:]?\s*'
-        r'(?:rs\.?\s*|inr\s*|₹)?\s*([\d,.]+)\s*(cr|crore|lac|lakh|l|k|thousand)',
+        r'(?:rs\.?\s*|inr\s*|₹)?\s*([\d,.]+)\s*(?:\/-\s*)?(?:cr|crore|lac|lakh|l|k|thousand)',
         re.I,
     )),
 ]
@@ -291,6 +292,8 @@ def classify_message(text: str) -> str:
     building_count = sum(1 for line in lines if _TITLE_CASE_BUILDING_RE.match(line))
     # Count 📍 pin markers (each starts a new listing in bulk-forwarded messages)
     pin_count = sum(1 for line in lines if line.strip().startswith("📍"))
+    # Count floor indicator lines (commercial floor-pricing format)
+    floor_count = sum(1 for line in lines if _FLOOR_LINE_RE.search(line))
 
     if divider_count >= 1 and building_count >= 2:
         return "multi"
@@ -308,6 +311,10 @@ def classify_message(text: str) -> str:
         return "multi"
 
     if pin_count >= 2:
+        return "multi"
+
+    # 2+ floor lines = commercial floor-pricing format
+    if floor_count >= 2:
         return "multi"
 
     if section_headers >= 2 and (area_price_pairs >= 1 or bhk_price_pairs >= 1):
@@ -378,9 +385,36 @@ _AREA_PRICE_RE = re.compile(
     re.I,
 )
 
-_AREA_ONLY_RE = re.compile(r'(\d[\d,]*)\s*(sq\.?\s*ft|sqft|sft|sq\s*feet)', re.I)
+_AREA_ONLY_RE = re.compile(
+    r'(\d[\d,.]*)\s*((?:cr|crore|lac|lakh|l|lacs|lakhs|k|thousand))?\s*(sq\.?\s*ft|sqft|sft|sq\s*feet|carpet)',
+    re.I,
+)
+_AREA_RANGE_RE = re.compile(
+    r'(\d[\d,.]*)\s*(?:to|[-–])\s*(\d[\d,.]*)\s*((?:cr|crore|lac|lakh|l|lacs|lakhs|k|thousand))?\s*(sq\.?\s*ft|sqft|sft|sq\s*feet|carpet)',
+    re.I,
+)
 _PRICE_ONLY_RE = re.compile(
-    r'(?:rs\.?\s*|inr\s*|₹)?\s*([\d,.:/\-]+)\s*(cr|crore|lac|lakh|l|lacs|lakhs|k|thousand)\b',
+    r'(?:(?:cost|rate|price|rent|for\s+sale|for\s+(?:l\s*&?\s*l|lease|rent|leave\s+and\s+licence))\s*:?\s*)?'
+    r'(?:rs\.?\s*|inr\s*|₹)?\s*([\d,.:/\-]+)\s*(?:\/-\s*)?(cr|crore|lac|lakh|l|lacs|lakhs|k|thousand|sqft|sq\s*ft|sft)\b',
+    re.I,
+)
+_PER_SQFT_RE = re.compile(
+    r'(?:cost|rate|price|rent|for\s+sale|for\s+(?:l\s*&?\s*l|lease|rent|leave\s+and\s+licence))\s*:?\s*'
+    r'(?:rs\.?\s*|inr\s*|₹)?\s*([\d,.:/\-]+)\s*(?:\/-\s*)?((?:cr|crore|lac|lakh|l|lacs|lakhs|k|thousand))?'
+    r'\s*per\s+sq\b',
+    re.I,
+)
+_INTENT_ON_LINE_RE = re.compile(
+    r'(?:for\s+sale|for\s+(?:l\s*&?\s*l|lease|rent|leave\s+and\s+licence))',
+    re.I,
+)
+_AREA_NAKED_RE = re.compile(
+    r'(\d[\d,.]*)\s*(?:retail|semi-?\s*retail|commercial|office|shop|showroom|godown|warehouse)\b',
+    re.I,
+)
+_FLOOR_LINE_RE = re.compile(
+    r'^\s*(ground\s*\+?\s*one|terrace|basement|stilt)|'
+    r'(?:\d+\s*(?:st|nd|rd|th)?\s*(?:floor|flr|fl))\s*(?:to\s+\d+\s*(?:st|nd|rd|th)?\s*(?:floor|flr|fl))?',
     re.I,
 )
 _PRICE_RANGE_RE = re.compile(
@@ -396,7 +430,7 @@ _BUILDING_HEADER_RE = re.compile(
 )
 _BUILDING_NAME_RE = re.compile(r'^\s*(building|project|name)\s*[-–—:]\s*(.+)', re.I)
 _NUMBERED_LISTING_RE = re.compile(
-    r'^\s*(?:[⭐*•-]\s*)?(?:\d{1,3})\s*[\).:-]\s*(?=.*(?:bhk|rk|studio))(.+)',
+    r'^\s*(?:[⭐*•-]\s*)?(\d{1,3})\s*[\).:-]\s+(.*)',
     re.I,
 )
 
@@ -658,7 +692,8 @@ def _extract_building_name(text: str) -> str | None:
              "furnished", "immediate", "possession", "deposit", "landmark", "layout",
              "amenities", "commercial", "office", "shop", "conference", "workstation",
              "cabin", "pantry", "washroom", "security", "backup", "lift", "negotiable",
-             "contact", "details", "inspection", "site visit", "more details", "for more")):
+             "contact", "details", "inspection", "site visit", "more details", "for more",
+             "prime", "premium", "pillarless", "profile")):
             if stripped.lower() not in _KNOWN_LOCALITIES:
                 return _title_case_name(stripped)
 
@@ -696,6 +731,44 @@ def _parse_divider_block(
     # Skip blocks that are clearly headers (no listing data at all)
     if not building and not area and price is None and not location_line:
         return None
+
+    # ── Per-sqft price → compute total ──────────────────────────────
+    price_per_sqft = None
+    per_sqft_m = _PER_SQFT_RE.search(block)
+    if per_sqft_m:
+        raw = _parse_amount(per_sqft_m.group(1))
+        if raw is not None:
+            scale = per_sqft_m.group(2)
+            if scale:
+                sl = scale.strip().lower().rstrip("s")
+                if sl in ("k", "thousand"):
+                    raw *= 1000
+                elif sl in ("lac", "lakh", "l"):
+                    raw *= 100000
+                elif sl in ("cr", "crore"):
+                    raw *= 10000000
+            price_per_sqft = raw
+
+    if price_per_sqft is not None and area is not None and price is None:
+        # Per-sqft rate found but _parse_price_from_text didn't get it
+        # (e.g., "Rent: ₹225 per sq. ft." with _PARSE_PRICE_ONLY not matching)
+        price = price_per_sqft
+        unit = "abs"
+
+    if price_per_sqft is not None and area is not None and price is not None and unit == "abs":
+        total = price_per_sqft * area
+        if total >= 10000000:
+            price = round(total / 10000000, 2)
+            unit = "Cr"
+        elif total >= 100000:
+            price = round(total / 100000, 2)
+            unit = "Lac"
+        elif total >= 1000:
+            price = round(total / 1000, 2)
+            unit = "K"
+        else:
+            price = round(total, 2)
+            unit = "abs"
 
     # For blocks where building name wasn't found or is descriptive, try harder
     if not building or any(kw in building.lower() for kw in
@@ -735,19 +808,19 @@ def _parse_divider_block(
         "price": price,
         "price_unit": unit,
         "area_sqft": area,
-        "furnishing": _parse_furnishing_from_text(block),
-        "location_raw": location_line or loc.get("location_raw"),
-        "building_name": building or loc.get("building_name"),
-        "landmark_name": loc.get("landmark_name"),
-        "street_name": loc.get("street_name"),
+        "furnishing": furnishing,
+        "location_raw": shared_building,
+        "building_name": validate_building_name(shared_building),
+        "landmark_name": shared_building,
+        "street_name": None,
         "area": None,
-        "micro_market": loc.get("micro_market"),
+        "micro_market": None,
         "developer": None,
-        "broker_name": broker_name,
-        "broker_phone": broker_phone,
+        "broker_name": None,
+        "broker_phone": None,
         "forwarded": 0,
-        "confidence": 0.88,
-        "raw_payload": {"full_text": block},
+        "confidence": 0.85,
+        "raw_payload": {"full_text": line},
         "location": loc.get("location") or {},
         # Property attribute fields
         "floor_description": attrs.get("floor_description"),
@@ -973,6 +1046,38 @@ def _parse_numbered_block(
     if not any([building, area, price, location_line]):
         return None
 
+    # ── Per-sqft price → compute total ──────────────────────────────
+    price_per_sqft = None
+    per_sqft_m = _PER_SQFT_RE.search(block)
+    if per_sqft_m:
+        raw = _parse_amount(per_sqft_m.group(1))
+        if raw is not None:
+            scale = per_sqft_m.group(2)
+            if scale:
+                sl = scale.strip().lower().rstrip("s")
+                if sl in ("k", "thousand"):
+                    raw *= 1000
+                elif sl in ("lac", "lakh", "l"):
+                    raw *= 100000
+                elif sl in ("cr", "crore"):
+                    raw *= 10000000
+            price_per_sqft = raw
+
+    if price_per_sqft is not None and area is not None and price is not None and unit == "abs":
+        total = price_per_sqft * area
+        if total >= 10000000:
+            price = round(total / 10000000, 2)
+            unit = "Cr"
+        elif total >= 100000:
+            price = round(total / 100000, 2)
+            unit = "Lac"
+        elif total >= 1000:
+            price = round(total / 1000, 2)
+            unit = "K"
+        else:
+            price = round(total, 2)
+            unit = "abs"
+
     # Extract broker from signature lines at bottom
     broker_name, broker_phone = _extract_broker_from_block(block)
 
@@ -991,6 +1096,7 @@ def _parse_numbered_block(
         "bhk": bhk,
         "price": price,
         "price_unit": unit,
+        "price_per_sqft": price_per_sqft,
         "area_sqft": area,
         "furnishing": _parse_furnishing_from_text(block),
         "location_raw": location_line or loc.get("location_raw"),
@@ -1049,8 +1155,110 @@ def detect_listing_source(text: str) -> str | None:
 
 # ── Multi-listing parser ────────────────────────────────────────────
 
+# ── Ambiguous price pattern cache ─────────────────────────────────────
+# Brokers sometimes write "2.25,/50 cr" meaning "2.25 to 2.50 Cr".
+# This cache avoids repeated LLM calls for the same pattern.
+_PRICE_CACHE: dict[str, tuple[float | None, str | None]] = {}
+
+
+def _detect_ambiguous_price_shorthand(text: str) -> str | None:
+    """Detect broker shorthand like '2.25,/50 cr' (range shorthand).
+
+    Pattern: a decimal number (X.XX) followed by optional comma+slash or
+    just slash, then a small integer (<100), then a price unit.
+    Returns the matched shorthand substring if found, else None.
+    """
+    m = re.search(
+        r'(\d+\.\d+)\s*,?\s*/\s*(\d{1,2})\s*'
+        r'(cr|crore|lac|lakh|l|lacs|lakhs|k|thousand)\b',
+        text, re.I,
+    )
+    if m:
+        first = float(m.group(1))
+        second = int(m.group(2))
+        unit = m.group(3).lower().rstrip("s")
+        # Sanity: first has decimals, second is small (<100).
+        # The combined value (first.dd + second as continuation) should be
+        # a plausible price increment from first.
+        # e.g. 2.25,/50 → 2.25 to 2.50 (50 is the two-digit continuation)
+        # If second is > first or the combined range makes sense, flag it.
+        if first >= 0.1 and 1 <= second <= 99:
+            return m.group(0).strip()
+    return None
+
+
+def _resolve_ambiguous_price(shorthand: str) -> tuple[float | None, str | None]:
+    """Resolve a broker price shorthand using cached or LLM result.
+
+    Returns (amount, unit) where amount is the max of the range, or
+    (None, None) if resolution fails.  Retries once on failure since
+    the LLM provider can be flaky on cold start.
+    """
+    cache_key = shorthand.strip().lower()
+    cached = _PRICE_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
+
+    system = (
+        "You are a price normalizer for Indian real estate WhatsApp messages. "
+        "Brokers write shorthands like '2.25,/50 cr' meaning price range 2.25 Cr to 2.50 Cr "
+        "(the 50 after the slash is the decimal continuation: .50). "
+        "Return ONLY a JSON object with these exact keys: price_min, price_max, unit. "
+        "No markdown, no explanation, no code fences. "
+        'Example: {"price_min": 2.25, "price_max": 2.5, "unit": "Cr"}'
+    )
+    prompt = f"Parse this broker price shorthand: {shorthand}"
+
+    for attempt in range(2):
+        try:
+            from app import _ai_promote
+            result = _ai_promote(system, prompt)
+            if result:
+                clean = result.strip()
+                if clean.startswith("```"):
+                    start = clean.find("{")
+                    end = clean.rfind("}")
+                    if start >= 0 and end > start:
+                        clean = clean[start:end + 1]
+                import json
+                parsed = json.loads(clean)
+                pmin = parsed.get("price_min")
+                pmax = parsed.get("price_max")
+                unit = parsed.get("unit", "").lower().rstrip("s")
+                if unit in ("cr", "crore"):
+                    unit_clean = "Cr"
+                elif unit in ("lac", "lakh", "l"):
+                    unit_clean = "Lac"
+                elif unit in ("k", "thousand"):
+                    unit_clean = "K"
+                else:
+                    break
+                if pmin is not None and pmax is not None and 0 < pmin <= pmax:
+                    result_val = (pmax, unit_clean)
+                    _PRICE_CACHE[cache_key] = result_val
+                    return result_val
+        except Exception:
+            pass
+        if attempt == 0:
+            import time
+            time.sleep(3)
+    _PRICE_CACHE[cache_key] = (None, None)
+    return None, None
+
+
 def _parse_price_from_text(text: str) -> tuple[float | None, str | None]:
-    """Extract (price_in_raw, unit) from a line."""
+    """Extract (price_in_raw, unit) from a line.
+
+    If broker shorthand like '2.25,/50 cr' is detected, delegates to
+    an LLM normalizer with caching. Clean prices always use fast regex.
+    """
+    # ── Ambiguous shorthand check (before standard regex) ──────────
+    shorthand = _detect_ambiguous_price_shorthand(text)
+    if shorthand:
+        result = _resolve_ambiguous_price(shorthand)
+        if result[0] is not None:
+            return result
+
     range_match = _PRICE_RANGE_RE.search(text)
     if range_match:
         amount = _parse_amount(range_match.group(1))
@@ -1078,6 +1286,23 @@ def _parse_price_from_text(text: str) -> tuple[float | None, str | None]:
             return amount, "Lac"
         elif unit_raw in ("k", "thousand"):
             return amount, "K"
+        elif unit_raw in ("sqft", "sq ft", "sft"):
+            return amount, "abs"
+    # Try per-sqft price format: "Cost N per sq ft", "For L&L N per sq ft"
+    per_m = _PER_SQFT_RE.search(text)
+    if per_m:
+        amount = _parse_amount(per_m.group(1))
+        if amount is not None:
+            scale = per_m.group(2)
+            if scale:
+                scale_lower = scale.strip().lower().rstrip("s")
+                if scale_lower in ("k", "thousand"):
+                    amount *= 1000
+                elif scale_lower in ("lac", "lakh", "l"):
+                    amount *= 100000
+                elif scale_lower in ("cr", "crore"):
+                    amount *= 10000000
+            return amount, "abs"
     # Fallback: numbers with ₹/Rs prefix and no explicit unit
     fallback_m = re.search(r'(?:rs\.?\s*|inr\s*|₹)\s*([\d,]+)\s*(?:/-)?\b', text, re.I)
     if fallback_m:
@@ -1096,9 +1321,25 @@ def _parse_price_from_text(text: str) -> tuple[float | None, str | None]:
 
 
 def _parse_area_from_text(text: str) -> float | None:
+    # First try range format: "1000 to 5400 sq ft carpet" → use max value
+    range_m = _AREA_RANGE_RE.search(text)
+    if range_m:
+        val2 = float(range_m.group(2).replace(",", ""))
+        scale = range_m.group(3)
+        if scale and scale.lower().rstrip("s") in ("k", "thousand"):
+            val2 *= 1000
+        return val2
     m = _AREA_ONLY_RE.search(text)
     if m:
-        return float(m.group(1).replace(",", ""))
+        val = float(m.group(1).replace(",", ""))
+        scale = m.group(2)
+        if scale and scale.lower().rstrip("s") in ("k", "thousand"):
+            val *= 1000
+        return val
+    # Try naked area: "5400 Retail", "1000 semi retail"
+    naked_m = _AREA_NAKED_RE.search(text)
+    if naked_m:
+        return float(naked_m.group(1).replace(",", ""))
     return None
 
 
@@ -1160,7 +1401,7 @@ def _lines_to_listings(
         listing_source = detect_listing_source(line)
 
         result: dict = {
-            "intent": section_intent,
+            "intent": "listing",
             "principal": None,
             "bhk": bhk,
             "price": price,
@@ -1245,6 +1486,221 @@ def _enrich_listing_with_building_db(
     return listing
 
 
+def _split_commercial_floors(text: str) -> list[dict]:
+    """Split commercial floor-pricing message into listing dicts.
+
+    Detects lines like '2nd floor', 'ground + one' as block delimiters,
+    each followed by area and per-sqft price lines.  When a block has
+    multiple intent lines (sale + lease), produces one listing per intent.
+
+    Extracts building name, micro_market, and location context from the
+    header lines preceding the first floor indicator.  Computes total
+    price from per-sqft rate × area and scales to Cr/Lac/K units.
+    """
+    lines = [l.strip() for l in text.split("\n") if l.strip()]
+    if not lines:
+        return []
+
+    # Find floor indicator line indices
+    floor_indices = []
+    for i, line in enumerate(lines):
+        if _FLOOR_LINE_RE.search(line):
+            floor_indices.append(i)
+    if len(floor_indices) < 2:
+        return []
+
+    # ── Extract overall context from header (before first floor line) ──
+    header_end = floor_indices[0]
+    header_lines = lines[:header_end]
+    header_text = "\n".join(header_lines)
+
+    # Extract area values from header as fallback for blocks that lack their own
+    header_areas = []
+    for hl in header_lines:
+        a = _parse_area_from_text(hl)
+        if a is not None:
+            header_areas.append(a)
+    header_max_area = max(header_areas) if header_areas else None
+
+    # Extract location context from header (before first floor indicator)
+    # Use header-only parsing to avoid street/road names overwriting micro_market
+    header_loc = _extract_location_from_text(header_text) if header_text.strip() else {}
+    overall_loc = _extract_location_from_text(text)
+    loc_building = None  # commercial listings often lack explicit building names
+    # Prefer header-derived location_raw; fall back to overall
+    loc_raw = header_loc.get("location_raw") or overall_loc.get("location_raw") or (header_lines[0] if header_lines else None)
+    # Prefer header-derived micro_market (less likely to be overwritten by street names)
+    loc_micro_market = header_loc.get("micro_market") or overall_loc.get("micro_market")
+
+    # Extract broker info from the full message signature
+    broker_name, broker_phone = _extract_broker_from_block(text)
+
+    # ── Build floor blocks ──
+    blocks: list[list[str]] = []
+    for idx, start in enumerate(floor_indices):
+        end = floor_indices[idx + 1] if idx + 1 < len(floor_indices) else len(lines)
+        blk = lines[start:end]
+        if len(blk) >= 2:
+            blocks.append(blk)
+
+    results: list[dict] = []
+    for block in blocks:
+        floor_line = block[0]
+        rest = block[1:]
+
+        # Clean floor description — extract just the floor range/name
+        clean_floor = _clean_floor_description(floor_line)
+
+        # Extract area from floor line first, then rest, then header fallback
+        area = _parse_area_from_text(floor_line)
+        if area is None:
+            for line in rest:
+                a = _parse_area_from_text(line)
+                if a is not None:
+                    area = a
+                    break
+        if area is None and header_max_area is not None:
+            area = header_max_area
+
+        # Find all per-sqft price lines (check floor_line too)
+        price_lines = []
+        candidates = [floor_line] + rest
+        for line in candidates:
+            # Strip "CAD"/"CAM" to avoid regex interference
+            clean_line = re.sub(r'\s*\+\s*(?:cad|cam)\b', '', line, flags=re.I)
+            per_m = _PER_SQFT_RE.search(clean_line)
+            if per_m:
+                amount = _parse_amount(per_m.group(1))
+                if amount is not None:
+                    scale = per_m.group(2)
+                    if scale:
+                        sl = scale.strip().lower().rstrip("s")
+                        if sl in ("k", "thousand"):
+                            amount *= 1000
+                        elif sl in ("lac", "lakh", "l"):
+                            amount *= 100000
+                        elif sl in ("cr", "crore"):
+                            amount *= 10000000
+
+                    intent = _detect_intent_from_line(line)
+                    price_lines.append({"amount": amount, "intent": intent, "line": line})
+
+        if not price_lines:
+            # Fallback: try standard price regex on clean line
+            for line in [floor_line] + rest:
+                clean_line = re.sub(r'\s*\+\s*(?:cad|cam)\b', '', line, flags=re.I)
+                price, unit = _parse_price_from_text(clean_line)
+                if price is not None:
+                    price_lines.append({"amount": price, "intent": _detect_intent_from_line(line), "line": line})
+
+        for pl in price_lines:
+            per_sqft_amount = pl["amount"]
+
+            # Compute total price = per-sqft rate × area
+            total_price = None
+            total_unit = None
+            if per_sqft_amount is not None and area is not None:
+                total = per_sqft_amount * area
+                if total >= 10000000:
+                    total_price = round(total / 10000000, 2)
+                    total_unit = "Cr"
+                elif total >= 100000:
+                    total_price = round(total / 100000, 2)
+                    total_unit = "Lac"
+                elif total >= 1000:
+                    total_price = round(total / 1000, 2)
+                    total_unit = "K"
+                else:
+                    total_price = round(total, 2)
+                    total_unit = "abs"
+            else:
+                total_price = per_sqft_amount
+                total_unit = "abs"
+
+            result = {
+                "intent": pl["intent"] or _infer_intent_from_text(header_text + "\n" + "\n".join(block)),
+                "principal": None,
+                "bhk": None,
+                "price": total_price,
+                "price_unit": total_unit,
+                "price_per_sqft": per_sqft_amount,
+                "area_sqft": area,
+                "furnishing": None,
+                "location_raw": loc_raw,
+                "building_name": loc_building,
+                "landmark_name": loc_building or loc_micro_market,
+                "street_name": None,
+                "area": None,
+                "micro_market": loc_micro_market,
+                "developer": None,
+                "broker_name": broker_name,
+                "broker_phone": broker_phone,
+                "forwarded": 0,
+                "confidence": 0.85,
+                "raw_payload": {"full_text": "\n".join(block)},
+                "location": overall_loc.get("location") or {},
+                "floor_description": clean_floor,
+                "view": None,
+                "orientation": None,
+                "position": None,
+                "project_name": None,
+                "tower_name": None,
+                "wing_name": None,
+                "listing_source": None,
+            }
+            results.append(result)
+
+    # Filter: only include listings with at least area or price
+    results = [r for r in results if r.get("area_sqft") is not None or r.get("price") is not None]
+
+    return results
+
+
+def _clean_floor_description(floor_line: str) -> str:
+    """Extract a clean floor label from a floor line.
+
+    Converts things like '3 rd floor semi retail' -> '3rd Floor',
+    '4th floor to 14th floor' -> '4th-14th Floor',
+    'Ground + one' -> 'Ground+1'.
+    """
+    m = re.match(
+        r'^\s*((?:ground\s*\+?\s*one|terrace|basement|stilt)'
+        r'|\d+\s*(?:st|nd|rd|th)?\s*(?:floor|flr|fl)'
+        r'(?:\s*to\s+\d+\s*(?:st|nd|rd|th)?\s*(?:floor|flr|fl))?)',
+        floor_line.strip(), re.I
+    )
+    if m:
+        raw = m.group(1).strip()
+        # Normalize "Ground + one" -> "Ground+1"
+        raw = re.sub(r'\s*\+\s*one\b', '+1', raw, flags=re.I)
+        # Normalize "3 rd Floor" -> "3rd Floor" and "2nd floor" -> "2nd Floor"
+        raw = re.sub(r'(\d+)\s*(st|nd|rd|th)\s+(?:floor|flr|fl)', r'\1\2 Floor', raw, flags=re.I)
+        # Normalize "4th Floor to 14th Floor" -> "4th-14th Floor"
+        raw = re.sub(
+            r'(\d+(?:st|nd|rd|th)?)\s*(?:floor|flr|fl)\s+to\s+(\d+(?:st|nd|rd|th)?)\s*(?:floor|flr|fl)',
+            r'\1-\2 Floor', raw, flags=re.I
+        )
+        # Normalize standalone floor line: "2nd Floor"
+        raw = re.sub(r'\b(floor|flr|fl)\b', 'Floor', raw, flags=re.I)
+        # No title-case — just capitalize the first letter
+        raw = raw[0].upper() + raw[1:] if raw else raw
+        return raw
+    return floor_line.strip()
+
+
+def _detect_intent_from_line(line: str) -> str | None:
+    intent_m = _INTENT_ON_LINE_RE.search(line)
+    if intent_m:
+        it = intent_m.group(0).lower()
+        if "sale" in it:
+            return "Sale"
+        if "l" in it or "lease" in it or "rent" in it or "licence" in it:
+            return "Lease"
+    if "cost" in line.lower() or "rate" in line.lower():
+        return "Lease"
+    return None
+
+
 def parse_multi_message(
     text: str,
     profile_name: str | None = None,
@@ -1258,6 +1714,15 @@ def parse_multi_message(
     """
     # Extract document-level hierarchical context
     hier_ctx = extract_hierarchical_context(text)
+
+    # Try commercial floor-pricing split (early return - distinct format)
+    floor_listings = _split_commercial_floors(text)
+    if len(floor_listings) >= 2:
+        enriched = []
+        for listing in floor_listings:
+            listing = _enrich_listing_with_building_db(listing, building_lookup_fn)
+            enriched.append(listing)
+        return enriched
 
     numbered_blocks = _split_numbered_blocks(text)
     if len(numbered_blocks) >= 2:

@@ -23,7 +23,7 @@ from contextlib import asynccontextmanager
 from dataclasses import asdict
 
 from fastapi import FastAPI, Request, HTTPException, Body, Depends
-from fastapi.responses import Response, StreamingResponse
+from fastapi.responses import Response, StreamingResponse, FileResponse
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -45,6 +45,12 @@ from evidence.parsers import parse as broker_parse
 
 # ── Global storage (lazy-initialized, wired in lifespan) ────────
 storage: SqliteStorage | None = None
+
+# ── Media storage for listing photos ──────────────────────────
+MEDIA_DIR = PROJECT_DIR / "media" / "listing_photos"
+MEDIA_DIR.mkdir(parents=True, exist_ok=True)
+
+PIC_TOKEN_RE = re.compile(r'\bPIC-(\d+)-([A-F0-9]+)\b')
 
 # ── Global embedding engine ─────────────────────────────────────
 _embedder: EmbeddingEngine | None = None
@@ -610,44 +616,94 @@ def parse_message(raw_text: str, profile_name: str | None = None) -> dict:
         # Don't present those as residential unit types.
         result["bhk"] = None
 
-    # ── 6. Extract price — two-pass: with unit first, then absolute ──
-    price_match = _RE.search(
-        r'(?:rs\.?\s*|inr\s*|₹)?\s*([\d,]+(?:\.\d+)?)\s*(cr|crore|lacs?|lakhs?|l|k|thousand)\b',
-        lower,
+    # ── 6. Extract price — with ambiguous-shorthand guard ─────────
+    # Check for broker shorthand "X.XX,/YY unit" before standard regex
+    ambiguous_m = re.search(
+        r'(\d+\.\d+)\s*,?\s*/\s*(\d{1,2})\s*'
+        r'(cr|crore|lac|lakh|l|lacs|lakhs|k|thousand)\b',
+        text, re.I,
     )
-    if price_match and price_match.group(1).strip():
-        try:
-            amount = float(price_match.group(1).replace(",", ""))
-        except ValueError:
-            amount = None
-        if amount and amount > 0:
-            unit_raw = price_match.group(2).lower()
-            # Store RAW amount + unit. Display code normalizes to absolute rupees.
-            # e.g. "85K" → price=85, price_unit=K (meaning ₹85,000)
-            # e.g. "1.1L" → price=1.1, price_unit=Lac (meaning ₹1,10,000)
-            unit_raw = unit_raw.rstrip("s")
-            if unit_raw in ("cr", "crore"):
-                result["price"] = amount
-                result["price_unit"] = "Cr"
-            elif unit_raw in ("lac", "lakh", "l"):
-                result["price"] = amount
-                result["price_unit"] = "Lac"
-            elif unit_raw in ("k", "thousand"):
-                result["price"] = amount
-                result["price_unit"] = "K"
-    else:
-        abs_match = _RE.search(
-            r'(?:rs\.?\s*|inr\s*|₹)\s*([\d,]+(?:\.\d+)?)',
+    if ambiguous_m:
+        first = float(ambiguous_m.group(1))
+        second = int(ambiguous_m.group(2))
+        if first >= 0.1 and 1 <= second <= 99:
+            shorthand = ambiguous_m.group(0).strip()
+            system = (
+                "You are a price normalizer for Indian real estate WhatsApp messages. "
+                "Brokers write shorthands like '2.25,/50 cr' meaning price range 2.25 Cr to 2.50 Cr "
+                "(the 50 after the slash is the decimal continuation: .50). "
+                "Return ONLY a JSON object with these exact keys: price_min, price_max, unit. "
+                "No markdown, no explanation, no code fences. "
+                'Example: {"price_min": 2.25, "price_max": 2.5, "unit": "Cr"}'
+            )
+            prompt = f"Parse this broker price shorthand: {shorthand}"
+            for retry in range(2):
+                try:
+                    from app import _ai_promote
+                    ai_result = _ai_promote(system, prompt)
+                    if ai_result:
+                        clean = ai_result.strip()
+                        if clean.startswith("```"):
+                            start = clean.find("{")
+                            end = clean.rfind("}")
+                            if start >= 0 and end > start:
+                                clean = clean[start:end + 1]
+                        parsed = json.loads(clean)
+                        pmin = parsed.get("price_min")
+                        pmax = parsed.get("price_max")
+                        unit_raw = (parsed.get("unit") or "").lower().rstrip("s")
+                        if pmin is not None and pmax is not None and 0 < pmin <= pmax:
+                            if unit_raw in ("cr", "crore"):
+                                result["price"] = pmax
+                                result["price_unit"] = "Cr"
+                            elif unit_raw in ("lac", "lakh", "l"):
+                                result["price"] = pmax
+                                result["price_unit"] = "Lac"
+                            elif unit_raw in ("k", "thousand"):
+                                result["price"] = pmax
+                                result["price_unit"] = "K"
+                            break
+                except Exception:
+                    pass
+                if retry == 0:
+                    import time
+                    time.sleep(3)
+
+    if result.get("price") is None:
+        price_match = _RE.search(
+            r'(?:rs\.?\s*|inr\s*|₹)?\s*([\d,]+(?:\.\d+)?)\s*(cr|crore|lacs?|lakhs?|l|k|thousand)\b',
             lower,
         )
-        if abs_match and abs_match.group(1).strip():
+        if price_match and price_match.group(1).strip():
             try:
-                amount = float(abs_match.group(1).replace(",", ""))
+                amount = float(price_match.group(1).replace(",", ""))
             except ValueError:
                 amount = None
             if amount and amount > 0:
-                result["price"] = amount
-                result["price_unit"] = "abs"
+                unit_raw = price_match.group(2).lower()
+                unit_raw = unit_raw.rstrip("s")
+                if unit_raw in ("cr", "crore"):
+                    result["price"] = amount
+                    result["price_unit"] = "Cr"
+                elif unit_raw in ("lac", "lakh", "l"):
+                    result["price"] = amount
+                    result["price_unit"] = "Lac"
+                elif unit_raw in ("k", "thousand"):
+                    result["price"] = amount
+                    result["price_unit"] = "K"
+        else:
+            abs_match = _RE.search(
+                r'(?:rs\.?\s*|inr\s*|₹)\s*([\d,]+(?:\.\d+)?)',
+                lower,
+            )
+            if abs_match and abs_match.group(1).strip():
+                try:
+                    amount = float(abs_match.group(1).replace(",", ""))
+                except ValueError:
+                    amount = None
+                if amount and amount > 0:
+                    result["price"] = amount
+                    result["price_unit"] = "abs"
 
     # ── 7. Extract area sqft ────────────────────────────────────
     area_match = _RE.search(r'(\d+[\d,]*)\s*(sq\.?\s*ft|sqft|sft|sq\s*feet)', lower)
@@ -5010,6 +5066,70 @@ async def baileys_self_chat(req: BaileysSelfChatRequest):
         )
 
 
+class SendMessageRequest(BaseModel):
+    remote_jid: str
+    text: str
+    quoted_message_id: str = ""
+    quoted_remote_jid: str = ""
+    quoted_participant: str = ""
+    quoted_from_me: bool = False
+
+
+@app.post("/api/baileys/send")
+async def baileys_send(req: SendMessageRequest):
+    text = req.text.strip()
+    if not text:
+        return JSONResponse(status_code=400, content={"success": False, "error": "text is required"})
+    if not req.remote_jid:
+        return JSONResponse(status_code=400, content={"success": False, "error": "remote_jid is required"})
+
+    try:
+        ingestor_url = _baileys_send_url()
+        payload = {
+            "remoteJid": req.remote_jid,
+            "text": text,
+        }
+        if req.quoted_message_id:
+            payload["quotedMessageId"] = req.quoted_message_id
+            payload["quotedRemoteJid"] = req.quoted_remote_jid or req.remote_jid
+            payload["quotedParticipant"] = req.quoted_participant
+            payload["quotedFromMe"] = req.quoted_from_me
+
+        async with httpx.AsyncClient(timeout=30) as client:
+            response = await client.post(f"{ingestor_url}/send-message", json=payload)
+
+        return JSONResponse(
+            status_code=response.status_code,
+            content=response.json() if response.text else {"success": False, "error": "empty response"},
+        )
+    except httpx.ConnectError:
+        return JSONResponse(
+            status_code=502,
+            content={"success": False, "error": "Cannot reach WhatsApp ingestor. Is WhatsApp connected?"},
+        )
+    except Exception as exc:
+        return JSONResponse(
+            status_code=500,
+            content={"success": False, "error": str(exc)},
+        )
+
+
+def _baileys_send_url() -> str:
+    url = os.getenv("PROPAI_SEND_URL", "")
+    if url:
+        return url.rstrip("/")
+    try:
+        status_file = os.getenv("BAILEYS_STATUS_FILE", str(config.BAILEYS_STATUS_FILE))
+        if os.path.exists(status_file):
+            with open(status_file) as f:
+                status = json.load(f)
+            port = status.get("send_port", 3001)
+            return f"http://127.0.0.1:{port}"
+    except Exception:
+        pass
+    return "http://127.0.0.1:3001"
+
+
 def _doubleword_error_response(exc: Exception) -> JSONResponse:
     status_code = getattr(exc, "status_code", None)
     body = getattr(exc, "body", None)
@@ -5583,10 +5703,91 @@ async def companion_webhook_verify(request: Request):
     raise HTTPException(403, "Webhook verify token does not match")
 
 
+async def _download_waba_media(media_id: str) -> dict | None:
+    """Download media from WhatsApp Business API. Returns {filename, filepath, mime_type} or None."""
+    access_token = _companion_get_config_value("access_token", "WABA_ACCESS_TOKEN")
+    if not access_token:
+        return None
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.get(
+                f"https://graph.facebook.com/v21.0/{media_id}",
+                params={"access_token": access_token},
+            )
+            if resp.status_code != 200:
+                return None
+            media_info = resp.json()
+            url = media_info.get("url")
+            mime_type = media_info.get("mime_type", "image/jpeg")
+            if not url:
+                return None
+            file_resp = await client.get(url, params={"access_token": access_token})
+            if file_resp.status_code != 200:
+                return None
+            ext = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp"}.get(mime_type, ".jpg")
+            filename = f"{media_id}{ext}"
+            filepath = str(MEDIA_DIR / filename)
+            MEDIA_DIR.mkdir(parents=True, exist_ok=True)
+            Path(filepath).write_bytes(file_resp.content)
+            return {"filename": filename, "filepath": filepath, "mime_type": mime_type}
+    except Exception:
+        return None
+
+
 @app.post("/api/companion/webhook")
 async def companion_webhook_receive(request: Request):
     body = await request.json()
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    processed = []
+
+    for entry in body.get("entry", []):
+        for change in entry.get("changes", []):
+            value = change.get("value", {})
+            for msg in value.get("messages", []):
+                msg_from = msg.get("from", "")
+                msg_id = msg.get("id", "")
+                msg_type = msg.get("type", "")
+                caption = ""
+                pic_token = ""
+                media_id = ""
+
+                if msg_type == "image":
+                    img = msg.get("image", {})
+                    media_id = img.get("id", "")
+                    caption = img.get("caption", "") or ""
+
+                elif msg_type == "text":
+                    caption = msg.get("text", {}).get("body", "")
+
+                if caption:
+                    m = PIC_TOKEN_RE.search(caption)
+                    if m:
+                        pic_token = m.group(0)
+                        listing_id = int(m.group(1))
+                        listing_data = storage.get_listing_by_pic_token(pic_token)
+                        if listing_data:
+                            if msg_type == "image" and media_id:
+                                dl = await _download_waba_media(media_id)
+                                if dl:
+                                    contact = (value.get("contacts") or [{}])[0]
+                                    sender_name = contact.get("profile", {}).get("name", "") if contact else ""
+                                    photo_id = storage.save_listing_photo(
+                                        listing_id=listing_id,
+                                        pic_token=pic_token,
+                                        media_id=media_id,
+                                        filename=dl["filename"],
+                                        filepath=dl["filepath"],
+                                        mime_type=dl["mime_type"],
+                                        caption=caption,
+                                        sender_phone=msg_from,
+                                        sender_name=sender_name,
+                                    )
+                                    processed.append({"type": "listing_photo_saved", "listing_id": listing_id, "photo_id": photo_id})
+                                else:
+                                    processed.append({"type": "media_download_failed", "listing_id": listing_id, "media_id": media_id})
+                            elif msg_type == "text":
+                                processed.append({"type": "pic_token_received_no_image", "listing_id": listing_id, "pic_token": pic_token, "from": msg_from})
+
     storage.db.execute(
         """INSERT INTO companion_audit_log
            (action, target_type, target_id, status, details, created_at)
@@ -5599,12 +5800,14 @@ async def companion_webhook_receive(request: Request):
             json.dumps({
                 "object": body.get("object"),
                 "entries": len(body.get("entry", [])) if isinstance(body.get("entry"), list) else 0,
+                "messages_processed": len(processed),
+                "processed": processed,
             }),
             now,
         ),
     )
     storage._commit()
-    return {"status": "received"}
+    return {"status": "received", "processed": processed}
 
 
 @app.get("/api/companion/team")
@@ -6562,7 +6765,240 @@ async def get_broker_profile(broker_id: int):
         ORDER BY bo.seen_at DESC
         LIMIT 100
     """, (broker_id,)).fetchall()]
+    # Add daily activity timeline for last 60 days
+    try:
+        timeline = storage.db.execute("""
+            SELECT DATE(seen_at) AS day, COUNT(*) AS count
+            FROM broker_observations
+            WHERE broker_id = ? AND seen_at IS NOT NULL
+              AND seen_at >= DATE('now', '-60 days')
+            GROUP BY DATE(seen_at)
+            ORDER BY day ASC
+        """, (broker_id,)).fetchall()
+        broker["timeline"] = [{"day": r[0], "count": r[1]} for r in timeline]
+    except Exception:
+        broker["timeline"] = []
+
+    # Unique contribution highlights: buildings where this broker is sole or majority source
+    try:
+        highlights = storage.db.execute("""
+            SELECT
+                b.building_name,
+                b.observation_count AS broker_obs,
+                (SELECT COUNT(*) FROM broker_observations WHERE building_name = b.building_name) AS total_obs
+            FROM broker_building_stats b
+            WHERE b.broker_id = ?
+              AND b.observation_count > 0
+            ORDER BY b.observation_count DESC
+            LIMIT 50
+        """, (broker_id,)).fetchall()
+        contribution = []
+        for h in highlights:
+            bldg = h["building_name"]
+            bo = h["broker_obs"]
+            to = h["total_obs"]
+            if to > 0:
+                pct = round(bo / to * 100)
+                if pct >= 70:
+                    contribution.append({
+                        "building_name": bldg,
+                        "broker_obs": bo,
+                        "total_obs": to,
+                        "share_pct": pct,
+                        "is_exclusive": pct == 100,
+                    })
+        broker["contribution_highlights"] = contribution[:10]
+    except Exception:
+        broker["contribution_highlights"] = []
+
     return broker
+
+
+@app.get("/api/brokers/{broker_id}/share-card")
+async def get_broker_share_card(broker_id: int):
+    storage.rebuild_broker_graph()
+    row = storage.db.execute("""
+        SELECT id, canonical_name AS name, primary_phone AS phone,
+               observation_count, listing_count, requirement_count,
+               rental_count, commercial_count, group_count, market_count,
+               building_count, active_days_30, first_seen_at, last_seen_at
+        FROM brokers
+        WHERE id = ?
+    """, (broker_id,)).fetchone()
+    if not row:
+        raise HTTPException(404, "Broker not found")
+
+    broker = dict(row)
+
+    markets = [dict(r) for r in storage.db.execute("""
+        SELECT micro_market, observation_count, listing_count, requirement_count
+        FROM broker_market_stats
+        WHERE broker_id = ?
+        ORDER BY observation_count DESC
+        LIMIT 3
+    """, (broker_id,)).fetchall()]
+
+    groups = [
+        {
+            "group_name": _group_jid_to_name(r["group_name"]),
+            "observation_count": r["observation_count"],
+        }
+        for r in storage.db.execute("""
+            SELECT group_name, COUNT(*) AS observation_count
+            FROM broker_observations
+            WHERE broker_id = ? AND group_name IS NOT NULL AND group_name != ''
+            GROUP BY group_name
+            ORDER BY observation_count DESC
+            LIMIT 5
+        """, (broker_id,)).fetchall()
+    ]
+
+    def _is_masked(name):
+        if not name:
+            return False
+        return name.startswith("+") or "XXX" in name
+
+    def _disp_phone(phone):
+        if not phone:
+            return ""
+        digits = re.sub(r"\D+", "", phone)
+        local = digits[-10:] if len(digits) >= 10 else digits
+        if len(local) != 10:
+            return ""
+        return f"+91 {local[:5]} {local[5:]}"
+
+    card_data = {
+        "broker_name": _disp_phone(broker["phone"]) if _is_masked(broker["name"]) else (broker["name"] or "Unknown Broker"),
+        "is_masked": _is_masked(broker["name"]),
+        "phone_display": _disp_phone(broker["phone"]),
+        "total_observations": broker["observation_count"] or 0,
+        "supply_count": broker["listing_count"] or 0,
+        "demand_count": broker["requirement_count"] or 0,
+        "top_markets": markets,
+        "top_groups": groups,
+        "first_seen": broker["first_seen_at"],
+        "last_active": broker["last_seen_at"],
+        "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M"),
+    }
+
+    return card_data
+
+
+@app.post("/api/brokers/{broker_id}/share-card/snapshot")
+async def save_broker_share_card_snapshot(broker_id: int):
+    import hashlib
+    storage.rebuild_broker_graph()
+    row = storage.db.execute("""
+        SELECT id, canonical_name AS name, primary_phone AS phone,
+               observation_count, listing_count, requirement_count,
+               rental_count, commercial_count, group_count, market_count,
+               building_count, active_days_30, first_seen_at, last_seen_at
+        FROM brokers
+        WHERE id = ?
+    """, (broker_id,)).fetchone()
+    if not row:
+        raise HTTPException(404, "Broker not found")
+
+    token = hashlib.sha256(f"{broker_id}:{datetime.now(timezone.utc).isoformat()}:{uuid.uuid4()}".encode()).hexdigest()[:16]
+
+    broker = dict(row)
+    markets = [dict(r) for r in storage.db.execute("""
+        SELECT micro_market, observation_count, listing_count, requirement_count
+        FROM broker_market_stats
+        WHERE broker_id = ?
+        ORDER BY observation_count DESC
+        LIMIT 3
+    """, (broker_id,)).fetchall()]
+    groups = [
+        {
+            "group_name": _group_jid_to_name(r["group_name"]),
+            "observation_count": r["observation_count"],
+        }
+        for r in storage.db.execute("""
+            SELECT group_name, COUNT(*) AS observation_count
+            FROM broker_observations
+            WHERE broker_id = ? AND group_name IS NOT NULL AND group_name != ''
+            GROUP BY group_name
+            ORDER BY observation_count DESC
+            LIMIT 5
+        """, (broker_id,)).fetchall()
+    ]
+
+    def _is_masked(name):
+        if not name:
+            return False
+        return name.startswith("+") or "XXX" in name
+
+    def _disp_phone(phone):
+        if not phone:
+            return ""
+        digits = re.sub(r"\D+", "", phone)
+        local = digits[-10:] if len(digits) >= 10 else digits
+        if len(local) != 10:
+            return ""
+        return f"+91 {local[:5]} {local[5:]}"
+
+    card_data = {
+        "broker_name": _disp_phone(broker["phone"]) if _is_masked(broker["name"]) else (broker["name"] or "Unknown Broker"),
+        "is_masked": _is_masked(broker["name"]),
+        "phone_display": _disp_phone(broker["phone"]),
+        "total_observations": broker["observation_count"] or 0,
+        "supply_count": broker["listing_count"] or 0,
+        "demand_count": broker["requirement_count"] or 0,
+        "top_markets": markets,
+        "top_groups": groups,
+        "first_seen": broker["first_seen_at"],
+        "last_active": broker["last_seen_at"],
+        "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M"),
+    }
+
+    storage.db.execute(
+        "INSERT INTO share_cards (token, broker_id, card_data, created_at) VALUES (?, ?, ?, ?)",
+        (token, broker_id, json.dumps(card_data), datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")),
+    )
+    storage.db.commit()
+
+    return {"token": token, "url": f"/api/share/brokers/{token}"}
+
+
+@app.post("/api/observations/{obs_id}/teach")
+async def teach_observation(obs_id: int, data: dict):
+    result = storage.teach_observation(obs_id, data)
+    return result
+
+
+@app.post("/api/brokers/{phone}/hide")
+async def hide_broker(phone: str):
+    result = storage.hide_broker(phone)
+    if not result.get("success"):
+        raise HTTPException(404, "Broker not found")
+    return result
+
+
+@app.post("/api/brokers/{phone}/unhide")
+async def unhide_broker(phone: str):
+    result = storage.unhide_broker(phone)
+    if not result.get("success"):
+        raise HTTPException(404, "Broker not found")
+    return result
+
+
+@app.get("/api/clients/{client_id}/messages")
+async def get_client_messages(client_id: int, limit: int = 100, offset: int = 0):
+    return storage.get_client_messages(client_id, limit, offset)
+
+
+@app.get("/api/share/brokers/{token}")
+async def get_shared_broker_card(token: str):
+    row = storage.db.execute(
+        "SELECT card_data, created_at FROM share_cards WHERE token = ?",
+        (token,),
+    ).fetchone()
+    if not row:
+        raise HTTPException(404, "Share card not found or expired")
+    card = json.loads(row["card_data"])
+    card["token"] = token
+    return card
 
 
 # ── AI Suggestions Queue ─────────────────────────────────────────
@@ -6978,6 +7414,74 @@ async def list_listings(limit: int = 50, offset: int = 0):
 async def get_listing_sources(listing_id: int):
     """Get source observations that contributed to a listing."""
     return storage.get_listing_sources(listing_id)
+
+
+@app.get("/api/listings/{listing_id}/photos")
+async def list_listing_photos(listing_id: int):
+    """Get photos for a listing."""
+    photos = storage.get_listing_photos(listing_id)
+    return [{
+        "id": p["id"],
+        "media_id": p["media_id"],
+        "filename": p["filename"],
+        "mime_type": p["mime_type"],
+        "caption": p["caption"],
+        "sender_phone": p["sender_phone"],
+        "sender_name": p["sender_name"],
+        "created_at": p["created_at"],
+        "url": f"/api/media/photos/{p['id']}",
+    } for p in photos]
+
+
+@app.get("/api/media/photos/{photo_id}")
+async def serve_listing_photo(photo_id: int):
+    """Serve a listing photo file."""
+    row = storage.db.execute(
+        "SELECT * FROM listing_photos WHERE id = ?", (photo_id,)
+    ).fetchone()
+    if not row:
+        raise HTTPException(404, "Photo not found")
+    p = dict(row)
+    filepath = p.get("filepath", "")
+    if not filepath or not Path(filepath).exists():
+        raise HTTPException(404, "Photo file not found on disk")
+    mime = p.get("mime_type", "image/jpeg")
+    return FileResponse(filepath, media_type=mime)
+
+
+@app.post("/api/listings/{listing_id}/photos")
+async def upload_listing_photo(listing_id: int, request: Request):
+    """Upload a photo for a listing (for testing/admin via multipart)."""
+    pic_token = storage.get_or_create_pic_token(listing_id)
+    if not pic_token:
+        raise HTTPException(500, "Could not generate PIC token")
+    form = await request.form()
+    file = form.get("file")
+    if not file or not hasattr(file, "filename") or not file.filename:
+        raise HTTPException(400, "No file provided")
+    content = await file.read()
+    ext = Path(file.filename).suffix or ".jpg"
+    media_id = f"upload_{uuid.uuid4().hex[:12]}"
+    filename = f"{media_id}{ext}"
+    filepath = str(MEDIA_DIR / filename)
+    MEDIA_DIR.mkdir(parents=True, exist_ok=True)
+    Path(filepath).write_bytes(content)
+    mime = file.content_type or "image/jpeg"
+    caption = form.get("caption", "")
+    sender_phone = form.get("sender_phone", "")
+    sender_name = form.get("sender_name", "")
+    photo_id = storage.save_listing_photo(
+        listing_id=listing_id,
+        pic_token=pic_token,
+        media_id=media_id,
+        filename=filename,
+        filepath=filepath,
+        mime_type=mime,
+        caption=caption,
+        sender_phone=sender_phone,
+        sender_name=sender_name,
+    )
+    return {"id": photo_id, "filename": filename, "url": f"/api/media/photos/{photo_id}"}
 
 
 @app.get("/api/parsed/{parsed_id}/sources")
