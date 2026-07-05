@@ -1,14 +1,14 @@
 FROM node:20-bookworm-slim AS deps
 
 WORKDIR /app
-COPY package.json package-lock.json tsconfig.json ./
+COPY services/baileys-ingestor/package.json services/baileys-ingestor/package-lock.json services/baileys-ingestor/tsconfig.json ./
 RUN npm ci
 
 FROM node:20-bookworm-slim AS builder
 
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
-COPY . .
+COPY services/baileys-ingestor/ .
 
 RUN npm run build
 
@@ -18,7 +18,7 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=3001
 
-COPY package.json package-lock.json ./
+COPY services/baileys-ingestor/package.json services/baileys-ingestor/package-lock.json ./
 COPY --from=builder /app/dist ./dist
 COPY --from=deps /app/node_modules ./node_modules
 
