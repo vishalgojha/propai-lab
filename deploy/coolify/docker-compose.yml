@@ -1,0 +1,52 @@
+services:
+  api:
+    build:
+      context: ../..
+      dockerfile: Dockerfile.api
+    environment:
+      LAB_HOST: 0.0.0.0
+      LAB_PORT: 8000
+      LAB_DB_PATH: /data/lab.db
+      BAILEYS_AUTH_DIR: /data/baileys/auth
+      BAILEYS_STATUS_FILE: /data/baileys/status.json
+    volumes:
+      - propai-data:/data
+    expose:
+      - "8000"
+    restart: unless-stopped
+
+  app:
+    build:
+      context: ../../frontend
+      dockerfile: Dockerfile
+      args:
+        LAB_API_BASE_URL: http://api:8000
+    environment:
+      LAB_API_BASE_URL: http://api:8000
+      NODE_ENV: production
+    depends_on:
+      - api
+    expose:
+      - "3000"
+    restart: unless-stopped
+
+  ingestor:
+    build:
+      context: ../../services/baileys-ingestor
+      dockerfile: Dockerfile
+    environment:
+      PROPAI_WEBHOOK_URL: http://api:8000/webhook
+      PROPAI_API_URL: http://api:8000
+      PROPAI_SEND_PORT: 3001
+      BAILEYS_AUTH_DIR: /data/baileys/auth
+      BAILEYS_STATUS_FILE: /data/baileys/status.json
+    depends_on:
+      - api
+    volumes:
+      - propai-data:/data
+    expose:
+      - "3001"
+    restart: unless-stopped
+
+volumes:
+  propai-data:
