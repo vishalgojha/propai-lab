@@ -1152,16 +1152,6 @@ async def lifespan(app: FastAPI):
         print("  Supabase schema managed by migrations — skipping local init")
     except Exception as exc:
         print(f"  Listings rebuild skipped: {exc}")
-    # Backfill sender_phone from sender_jid for existing rows
-    try:
-        storage.db.execute(
-            "UPDATE raw_messages SET sender_phone = TRIM(REPLACE(split_part(sender_jid, '@', 1), ' ', '')) "
-            "WHERE sender_jid IS NOT NULL AND sender_jid != '' AND (sender_phone IS NULL OR sender_phone = '')"
-        )
-        storage.db.commit()
-        print("  Backfill sender_phone complete")
-    except Exception as exc:
-        print(f"  Sender phone backfill skipped: {exc}")
     enrichment_worker = None
     print("  Supabase mode: broker graph, alias learner, enrichment worker disabled (run via workers)")
     # Auto-generate API key if missing

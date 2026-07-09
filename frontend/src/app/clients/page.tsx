@@ -1,5 +1,7 @@
 "use client";
 
+export const dynamic = 'force-dynamic';
+
 import { useEffect, useMemo, useState } from "react";
 import * as api from "@/lib/api";
 import { Mail, Phone, Search, UserCheck } from "lucide-react";

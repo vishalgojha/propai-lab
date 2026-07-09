@@ -6,19 +6,12 @@ import { X, Search } from "lucide-react";
 
 const navSections = [
   {
-    title: "Conversations",
-    items: [
-      { href: "/inbox", label: "Market Inbox" },
-    ],
-  },
-  {
     title: "Market",
     items: [
-      { href: "/my/buyers", label: "Requirements" },
+      { href: "/inbox", label: "Market Inbox" },
+      { href: "/requirements", label: "Requirements" },
       { href: "/my/inventory", label: "Inventory" },
-      { href: "/brokers", label: "Brokers" },
-      { href: "/groups", label: "Groups" },
-      { href: "/buildings", label: "Buildings" },
+      { href: "/chat", label: "AI Chat" },
     ],
   },
   {
@@ -29,23 +22,15 @@ const navSections = [
     ],
   },
   {
-    title: "Intelligence",
-    items: [
-      { href: "/dashboard", label: "Dashboard" },
-      { href: "/chat", label: "AI Chat" },
-      { href: "/knowledge", label: "Knowledge Base" },
-      { href: "/market", label: "Markets" },
-      { href: "/audit", label: "WhatsApp Audit" },
-      { href: "/workspace/llm-providers", label: "AI Providers" },
-    ],
-  },
-  {
-    title: "Workspace",
+    title: "Settings",
     items: [
       { href: "/connections", label: "Connection" },
+      { href: "/profile", label: "My Profile" },
       { href: "/profile/team", label: "Team" },
+      { href: "/settings/privacy", label: "Privacy" },
+      { href: "/profile/billing", label: "Billing" },
       { href: "/waba", label: "WABA API" },
-      { href: "/trainer", label: "Trainer" },
+      { href: "/trainer", label: "AI Learning" },
     ],
   },
 ];

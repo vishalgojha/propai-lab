@@ -9,7 +9,7 @@ const STATIC_ASSETS = [
   "/favicon.ico",
   "/favicon.svg",
   "/apple-touch-icon.png",
-  "/manifest",
+  "/manifest.json",
 ];
 
 const NAV_CACHE = "propai-nav-v2";

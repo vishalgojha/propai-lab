@@ -14,6 +14,7 @@ interface ResizablePanelProps {
   onExpand?: () => void;
   presets?: { label: string; width: number }[];
   className?: string;
+  mobile?: boolean;
 }
 
 export default function ResizablePanel({
@@ -31,6 +32,7 @@ export default function ResizablePanel({
     { label: "Deep Analysis", width: 560 },
   ],
   className = "",
+  mobile = false,
 }: ResizablePanelProps) {
   const [internalCollapsed, setInternalCollapsed] = useState(false);
   const collapsed = controlledCollapsed !== undefined ? controlledCollapsed : internalCollapsed;
@@ -40,6 +42,16 @@ export default function ResizablePanel({
   const panelRef = useRef<HTMLDivElement>(null);
   const startXRef = useRef(0);
   const startWidthRef = useRef(0);
+
+  // On mobile, render full-width with no resizer / presets / collapse chrome
+  if (mobile) {
+    return (
+      <div className={`relative flex flex-col w-full ${className}`}>
+        {children}
+      </div>
+    );
+  }
+
 
   useEffect(() => {
     if (!storageKey) return;

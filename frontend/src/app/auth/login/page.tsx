@@ -1,15 +1,16 @@
 "use client";
 
+export const dynamic = 'force-dynamic';
+
 import { useEffect, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Mail, Lock, Eye, EyeOff, ArrowRight, AlertCircle, Loader2, CheckCircle } from "lucide-react";
+import { Mail, Lock, Eye, EyeOff, ArrowRight, AlertCircle, Loader2 } from "lucide-react";
 import { signInWithEmail, signInWithMagicLink, getSession } from "@/lib/auth";
 
-export default function LoginPage() {
+function LoginContent() {
   const router = useRouter();
-  const searchParams = useSearchParams();
-  const next = searchParams.get("next") || "/";
+  const [next, setNext] = useState("/");
 
   const [mode, setMode] = useState<"email" | "magic">("email");
   const [email, setEmail] = useState("");
@@ -41,12 +42,15 @@ export default function LoginPage() {
     }
   };
 
-  // Check for existing session
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const target = params.get("next") || "/";
+    setNext(target);
+
     getSession().then((session) => {
-      if (session) router.push(next);
+      if (session) router.push(target);
     });
-  }, [router, next]);
+  }, [router]);
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-black px-4 py-12">
@@ -173,4 +177,8 @@ export default function LoginPage() {
       </div>
     </div>
   );
+}
+
+export default function LoginPage() {
+  return <LoginContent />;
 }

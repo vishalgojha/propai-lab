@@ -1,9 +1,12 @@
 "use client";
 
+export const dynamic = 'force-dynamic';
+
 import { useCallback, useEffect, useMemo, useState } from "react";
 import * as api from "@/lib/api";
 import SourceDrawer from "@/components/SourceDrawer";
 import MatchDrawer from "@/components/MatchDrawer";
+import { resolveBrokerIdentity, getDisplayName } from "@/lib/broker-resolution";
 
 const PAGE_SIZE = 100;
 
@@ -106,18 +109,31 @@ function whatsappLink(row: api.ParsedObservation): string {
 
 export default function RequirementsPage() {
   const [rows, setRows] = useState<api.ParsedObservation[]>([]);
-  const [offset, setOffset] = useState(0);
   const [search, setSearch] = useState("");
   const [sourceParsed, setSourceParsed] = useState<api.ParsedObservation | null>(null);
   const [matchSummary, setMatchSummary] = useState<Record<string, { count: number; best: number }>>({});
   const [matchDrawerId, setMatchDrawerId] = useState<number | null>(null);
+  const [resolvedBrokers, setResolvedBrokers] = useState<Map<number, { name: string; phone: string; isResolved: boolean }>>(new Map());
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
 
-  const load = useCallback(() => {
-    api.getParsed(PAGE_SIZE, offset).then(setRows);
+  const PAGE_SIZE = 100;
+
+  const load = useCallback((newOffset: number) => {
+    setLoadingMore(true);
+    api.getParsed(PAGE_SIZE, newOffset).then((data) => {
+      if (newOffset === 0) {
+        setRows(data);
+      } else {
+        setRows((prev) => [...prev, ...data]);
+      }
+      setHasMore(data.length === PAGE_SIZE);
+      setLoadingMore(false);
+    }).catch(() => setLoadingMore(false));
     api.getRequirementMatchesSummary().then(setMatchSummary);
-  }, [offset]);
+  }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { load(0); }, [load]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -223,10 +239,28 @@ export default function RequirementsPage() {
 
                   {/* Broker */}
                   <td className="px-2.5 py-2 border-b border-white/10">
-                    <div className="broker-cell">
-                      <span className="text-xs font-semibold text-white">{row.broker_name || (row.broker_phone ? phoneDisplay(row.broker_phone) : "—")}</span>
-                      {waLink && <a href={waLink} target="_blank" rel="noreferrer" className="wa-icon" title="Message on WhatsApp">WA</a>}
-                    </div>
+                    {(() => {
+                      const resolved = resolvedBrokers.get(row.id);
+                      if (resolved) {
+                        return (
+                          <div className="broker-cell">
+                            <span className={`text-xs font-semibold ${resolved.isResolved ? "text-emerald-400" : "text-white"}`}>
+                              {resolved.name}
+                            </span>
+                            {waLink && <a href={waLink} target="_blank" rel="noreferrer" className="wa-icon" title="Message on WhatsApp">WA</a>}
+                          </div>
+                        );
+                      }
+                      // Fallback while resolving
+                      return (
+                        <div className="broker-cell">
+                          <span className="text-xs font-semibold text-white">
+                            {row.broker_name || (row.broker_phone ? phoneDisplay(row.broker_phone) : "—")}
+                          </span>
+                          {waLink && <a href={waLink} target="_blank" rel="noreferrer" className="wa-icon" title="Message on WhatsApp">WA</a>}
+                        </div>
+                      );
+                    })()}
                     {row.broker_phone && isValidPhone(row.broker_phone) && (
                       <div className="text-[10px] text-zinc-500 font-mono mt-0.5">{phoneDisplay(row.broker_phone)}</div>
                     )}
@@ -269,11 +303,15 @@ export default function RequirementsPage() {
         </table>
       </div>
 
-      <div className="flex gap-2 items-center mt-3">
-        <button disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))} className="px-3 py-1 bg-zinc-800 border border-white/10 rounded-lg text-sm disabled:opacity-40">Prev</button>
-        <span className="text-sm text-zinc-500">{filtered.length > 0 ? `${offset + 1}-${offset + filtered.length}` : "0"}</span>
-        <button disabled={rows.length < PAGE_SIZE} onClick={() => setOffset(offset + PAGE_SIZE)} className="px-3 py-1 bg-zinc-800 border border-white/10 rounded-lg text-sm disabled:opacity-40">Next</button>
-      </div>
+      {hasMore && (
+        <button
+          onClick={() => { setLoadingMore(true); load(rows.length); }}
+          disabled={loadingMore}
+          className="w-full mt-4 py-3 bg-zinc-800 border border-white/10 rounded-lg text-sm font-semibold text-white disabled:opacity-50 hover:bg-zinc-700"
+        >
+          {loadingMore ? "Loading..." : `Load More (${filtered.length} shown)`}
+        </button>
+      )}
       {sourceParsed && (
         <SourceDrawer
           parsedId={sourceParsed.id}

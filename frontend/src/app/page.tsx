@@ -124,7 +124,7 @@ export default function HomePage() {
             <Link href="/how-it-works" className="text-sm text-zinc-400 transition-colors hover:text-white">
               How it works
             </Link>
-            <Link href="/dashboard" className="text-sm text-zinc-400 transition-colors hover:text-white">
+            <Link href="/auth/login?next=/dashboard" className="text-sm text-zinc-400 transition-colors hover:text-white">
               Log in
             </Link>
             <Link

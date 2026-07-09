@@ -60,6 +60,7 @@ class ParsedObservation:
     created_at: str = ""
     embedding: Optional[bytes] = None  # float32 numpy array packed via pack_embedding
     summary_title: Optional[str] = None
+    normalized_message: Optional[str] = None
 
 
 @dataclass
@@ -159,6 +160,7 @@ class SyncJob:
     instance: str = ""
     group_id: str = ""
     group_name: str = ""
+    participants: int = 0
     meta: str = "{}"
     status: str = "pending"
     records_found: int = 0

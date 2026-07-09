@@ -29,7 +29,7 @@ import {
   AlertTriangle,
   Shield,
 } from "lucide-react";
-import { LayoutProvider, useLayout } from "@/hooks/useLayout";
+import { AuthProvider } from "@/lib/AuthProvider";
 import { useIsMobile } from "@/hooks/useMediaQuery";
 import { BottomNav } from "@/components/layout/BottomNav";
 import { MobileDrawer } from "@/components/layout/MobileDrawer";
@@ -38,50 +38,33 @@ import { ServiceWorkerRegister } from "@/components/layout/ServiceWorkerRegister
 
 const navSections = [
   {
-    title: "Conversations",
-    items: [
-      { href: "/inbox", label: "Market Inbox", icon: MessageSquare },
-    ],
-  },
-  {
     title: "Market",
     items: [
+      { href: "/inbox", label: "Market Inbox", icon: MessageSquare },
       { href: "/requirements", label: "Requirements", icon: ClipboardCheck },
       { href: "/my/inventory", label: "Inventory", icon: Building2 },
-      { href: "/brokers", label: "Brokers", icon: Briefcase },
-      { href: "/buildings", label: "Buildings", icon: Building2 },
-      { href: "/groups", label: "Groups", icon: Users },
+      { href: "/chat", label: "AI Chat", icon: Brain },
     ],
   },
   {
     title: "Workspace",
     items: [
-      { href: "/clients", label: "Clients", icon: UserCheck },
-      { href: "/deals", label: "Deals", icon: TrendingUp },
+      { href: "/clients", label: "My Clients", icon: UserCheck },
+      { href: "/deals", label: "My Deals", icon: TrendingUp },
     ],
   },
   {
-    title: "Intelligence",
+    title: "Settings",
     items: [
-      { href: "/dashboard", label: "Dashboard", icon: BarChart3 },
-      { href: "/knowledge", label: "Knowledge Base", icon: BookOpen },
-      { href: "/chat", label: "AI Chat", icon: Brain },
-      { href: "/market", label: "Markets", icon: MapPin },
-      { href: "/audit", label: "Audit", icon: Radar },
+      { href: "/connections", label: "Connection", icon: Wifi },
+      { href: "/profile", label: "My Profile", icon: UserCheck },
+      { href: "/profile/team", label: "Team", icon: UserCog },
+      { href: "/settings/privacy", label: "Privacy", icon: Shield },
+      { href: "/profile/billing", label: "Billing", icon: TrendingUp },
+      { href: "/waba", label: "API", icon: Key },
+      { href: "/trainer", label: "AI Learning", icon: GraduationCap },
     ],
   },
-{
-      title: "Settings",
-      items: [
-        { href: "/connections", label: "Connection", icon: Wifi },
-        { href: "/profile", label: "My Profile", icon: UserCheck },
-        { href: "/profile/team", label: "Team", icon: UserCog },
-        { href: "/settings/privacy", label: "Privacy", icon: Shield },
-        { href: "/profile/billing", label: "Billing", icon: TrendingUp },
-        { href: "/waba", label: "API", icon: Key },
-        { href: "/trainer", label: "Trainer", icon: GraduationCap },
-      ],
-    },
 ];
 
 function PaletteModal({ open, onClose }: { open: boolean; onClose: () => void }) {
@@ -507,7 +490,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <LandingLayout>{children}</LandingLayout>
         ) : (
           <LayoutProvider>
-            <AppShell>{children}</AppShell>
+            <AuthProvider>
+              <AppShell>{children}</AppShell>
+            </AuthProvider>
           </LayoutProvider>
         )}
       </body>

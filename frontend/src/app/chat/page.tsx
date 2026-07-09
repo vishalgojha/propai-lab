@@ -1,5 +1,7 @@
 "use client";
 
+export const dynamic = 'force-dynamic';
+
 import { useEffect, useState, useCallback, useRef } from "react";
 import * as api from "@/lib/api";
 import AIWorkspace from "@/components/AIWorkspace";

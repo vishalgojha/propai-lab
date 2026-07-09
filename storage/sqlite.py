@@ -1517,8 +1517,8 @@ class SqliteStorage(Storage):
                 furnishing, location_raw, location, building_name, landmark_name, street_name,
                 area, micro_market, developer, broker_name, broker_phone,
                 profile_name, listing_index, forwarded, confidence, raw_payload, event_id, embedding,
-                summary_title)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                summary_title, normalized_message)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (obs.raw_message_id, obs.message_type, obs.intent, obs.principal, obs.bhk,
              obs.price, obs.price_unit, obs.area_sqft, obs.furnishing, obs.location_raw,
              obs.location,
@@ -1529,7 +1529,8 @@ class SqliteStorage(Storage):
              obs.forwarded,
              obs.confidence, obs.raw_payload, obs.event_id,
              obs.embedding,
-             obs.summary_title)
+             obs.summary_title,
+             getattr(obs, 'normalized_message', None))
         )
         parsed_id = cur.lastrowid
         self._commit()
@@ -1868,7 +1869,7 @@ class SqliteStorage(Storage):
                       p.street_name, p.area, p.micro_market, p.developer,
                       p.broker_name, p.broker_phone, p.profile_name,
                       p.listing_index, p.forwarded, p.confidence, p.raw_payload, p.event_id,
-                       p.created_at, p.summary_title,
+                       p.created_at, p.summary_title, p.normalized_message,
                        r.group_name as raw_group,
                       r.timestamp as raw_timestamp
                FROM parsed_output p

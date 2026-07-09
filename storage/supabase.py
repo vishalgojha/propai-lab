@@ -367,16 +367,23 @@ class SupabaseStorage(Storage):
 
     # ── User Profiles / Onboarding ─────────────────────────────────
 
+    def _normalize_phone(self, phone: str) -> str:
+        """Normalize phone to 10-digit format (last 10 digits)."""
+        digits = "".join(ch for ch in phone if ch.isdigit())
+        return digits[-10:] if len(digits) >= 10 else digits
+
     def get_user_profile(self, phone: str) -> dict | None:
+        norm = self._normalize_phone(phone)
         try:
-            res = self.client.table("user_profiles").select("*").eq("phone", phone).limit(1).execute()
+            res = self.client.table("user_profiles").select("*").eq("phone", norm).limit(1).execute()
             return res.data[0] if res.data else None
         except Exception:
             return None
 
     def save_user_profile(self, phone: str, data: dict) -> dict | None:
+        norm = self._normalize_phone(phone)
         payload = {
-            "phone": phone,
+            "phone": norm,
             "first_name": data.get("first_name", ""),
             "last_name": data.get("last_name", ""),
             "email": data.get("email", ""),
@@ -384,9 +391,9 @@ class SupabaseStorage(Storage):
             "onboarding_complete": True,
             "updated_at": "now()",
         }
-        existing = self.get_user_profile(phone)
+        existing = self.get_user_profile(norm)
         if existing:
-            res = self.client.table("user_profiles").update(payload).eq("phone", phone).execute()
+            res = self.client.table("user_profiles").update(payload).eq("phone", norm).execute()
         else:
             res = self.client.table("user_profiles").insert(payload).execute()
         return res.data[0] if res and res.data else None

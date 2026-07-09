@@ -47,6 +47,7 @@ CREATE TABLE IF NOT EXISTS parsed_output (
     forwarded       INTEGER DEFAULT 0,
     confidence      REAL DEFAULT 0.0,
     raw_payload     TEXT DEFAULT '{}',
+    normalized_message TEXT DEFAULT NULL,
     event_id        TEXT DEFAULT NULL,
     embedding       BLOB DEFAULT NULL,
     created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))

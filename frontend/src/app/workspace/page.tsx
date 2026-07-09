@@ -1,5 +1,7 @@
 "use client";
 
+export const dynamic = 'force-dynamic';
+
 import React from "react";
 import { Users, Activity, Phone, Shield, LayoutDashboard } from "lucide-react";
 import Link from "next/link";

@@ -1,5 +1,7 @@
 "use client";
 
+export const dynamic = 'force-dynamic';
+
 import { useEffect, useState, useRef, useCallback, useMemo, Suspense, lazy } from "react";
 import dynamic from "next/dynamic";
 import { useSearchParams, useRouter } from "next/navigation";
@@ -13,6 +15,7 @@ import ResizablePanel from "@/components/ResizablePanel";
 import { entityProfileHref } from "@/lib/entity-links";
 import { useIsMobile } from "@/hooks/useMediaQuery";
 import { useInfiniteScroll } from "@/hooks/useInfiniteScroll";
+import InboxAIChat from "@/components/InboxAIChat";
 import {
   Users,
   User,
@@ -38,6 +41,8 @@ import {
   TrendingUp,
   Home,
   ChevronLeft,
+  Sparkles,
+  MessageSquare,
 } from "lucide-react";
 
 const PAGE_SIZE = 100;
@@ -45,6 +50,7 @@ const RIGHT_TABS = [
   { key: "analysis", label: "Analysis" },
   { key: "broker", label: "Broker" },
   { key: "market", label: "Market" },
+  { key: "ai", label: "AI Assistant" },
   { key: "notes", label: "Notes" },
 ] as const;
 
@@ -625,7 +631,7 @@ function InboxPageInner() {
   const threadEndRef = useRef<HTMLDivElement>(null);
 
   // Right Panel States
-  const [activeRightTab, setActiveRightTab] = useState<"analysis" | "broker" | "market" | "notes">("analysis");
+  const [activeRightTab, setActiveRightTab] = useState<"analysis" | "broker" | "market" | "ai" | "notes">("analysis");
   const [selectedMsgDetails, setSelectedMsgDetails] = useState<any>(null);
   const [loadingDetails, setLoadingDetails] = useState(false);
   const [rightCollapsed, setRightCollapsed] = useState(false);
@@ -1367,7 +1373,7 @@ function InboxPageInner() {
 
   const leftListEmpty = (() => {
     const vt = activeSlug?.view_type;
-    if (vt === "brokers") return brokerFeed.length === 0;
+    if (vt === "brokers") return filteredBrokerFeed.length === 0 && groupChats.length === 0 && filteredDirectChats.length === 0;
     if (vt === "clients") return directChats.length === 0;
     if (vt === "personal") return uniqueThreads.length === 0 && brokerFeed.length === 0 && directChats.length === 0;
     return uniqueThreads.length === 0;
@@ -1846,7 +1852,7 @@ function InboxPageInner() {
   const selectedHasMarketContext = hasMarketContext(selectedMsgDetails);
 
   return (
-    <div className="flex flex-col h-[calc(100vh-80px)] border border-white/10 rounded-2xl overflow-hidden bg-black">
+    <div className="flex flex-col h-full min-h-0 border border-white/10 rounded-2xl overflow-hidden bg-black">
       
       {/* Context Action Menu - floats over message area */}
       <TextSelectionMenu
@@ -1890,6 +1896,7 @@ function InboxPageInner() {
           minWidth={240}
           maxWidth={500}
           storageKey="propai-inbox-left-width"
+          mobile={isMobile}
           className="border-r border-white/10 bg-black/80"
         >
           <div className="flex flex-col h-full">
@@ -2223,6 +2230,102 @@ function InboxPageInner() {
                       );
                     })
                   }
+                {activeSlug?.view_type === "brokers" && !loadingBrokerFeed && filteredBrokerFeed.length === 0 && (
+                  <>
+                    <div className="px-3.5 py-2 text-[9px] text-zinc-500 uppercase tracking-wider font-bold">
+                      Recent WhatsApp Conversations
+                    </div>
+                    {filteredDirectChats.length > 0 && (
+                      <>
+                        <div className="px-3.5 py-2 text-[9px] text-zinc-500 uppercase tracking-wider font-bold border-t border-white/5">
+                          Direct Messages
+                        </div>
+                        {filteredDirectChats.map((d) => {
+                          const latestPhone = resolveMessagePhone(d.latest);
+                          return (
+                            <button
+                              key={"fallback-direct-" + d.senderKey}
+                              onClick={() => selectConversation(d.latest)}
+                              className={`w-full text-left p-2.5 lg:p-3 transition-colors flex flex-col gap-1 select-none ${
+                                resolveMessagePhone(selectedMsg) === latestPhone
+                                  ? "bg-blue-600/10 border-l-2 border-[#3b82f6]"
+                                  : "hover:bg-white/5"
+                              }`}
+                            >
+                              <div className="flex items-center justify-between">
+                                <span className="text-[11px] font-bold text-white truncate max-w-[180px]">
+                                  <User className="w-3 h-3 text-zinc-500" strokeWidth={1.5} /> {d.name}
+                                </span>
+                                <span className="text-[10px] text-zinc-500 tabular-nums">{d.count}</span>
+                              </div>
+                              {d.latest?.message && (
+                                <div className="text-[11px] text-zinc-400 leading-4 truncate">
+                                  <WhatsAppMessage
+                                    text={d.latest.message}
+                                    entities={buildMessageEntities(d.latest)}
+                                    onEntityClick={handleEntityClick}
+                                    truncate
+                                    maxLines={1}
+                                  />
+                                </div>
+                              )}
+                              <div className="flex items-center gap-2 text-[9px] text-zinc-500">
+                                {latestPhone && <span className="font-mono">{displayPhoneString(latestPhone)}</span>}
+                                <span>·</span>
+                                <span>{formatAgeShort(d.latest?.timestamp)}</span>
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </>
+                    )}
+                    {groupChats.length > 0 && (
+                      <>
+                        <div className="px-3.5 py-2 text-[9px] text-zinc-500 uppercase tracking-wider font-bold border-t border-white/5">
+                          Group Chats
+                        </div>
+                        {groupChats.slice(0, 50).map((g) => (
+                          <button
+                            key={"fallback-group-" + g.conversationKey}
+                            onClick={() => selectConversation(g.latest)}
+                            className={`w-full text-left p-2.5 lg:p-3 transition-colors flex flex-col gap-1 select-none ${
+                              selectedMsg?.group_name === g.latest.group_name
+                                ? "bg-blue-600/10 border-l-2 border-[#3b82f6]"
+                                : "hover:bg-white/5"
+                            }`}
+                          >
+                            <div className="flex items-center justify-between">
+                              <span className="text-sm font-semibold text-white truncate max-w-[180px]">
+                                {g.title}
+                              </span>
+                              <span className="text-[10px] text-zinc-500 tabular-nums">{g.count}</span>
+                            </div>
+                            {g.latest?.message && (
+                              <div className="text-[11px] text-zinc-400 leading-4 truncate">
+                                <WhatsAppMessage
+                                  text={g.latest.message}
+                                  entities={buildMessageEntities(g.latest)}
+                                  onEntityClick={handleEntityClick}
+                                  truncate
+                                  maxLines={1}
+                                />
+                              </div>
+                            )}
+                            <div className="flex items-center gap-2 text-[9px] text-zinc-500">
+                              <span>·</span>
+                              <span>{formatAgeShort(g.latest?.timestamp)}</span>
+                            </div>
+                          </button>
+                        ))}
+                      </>
+                    )}
+                    {filteredDirectChats.length === 0 && groupChats.length === 0 && (
+                      <div className="p-8 text-center text-xs text-zinc-500">
+                        No broker cards yet, but the underlying WhatsApp feed is empty too.
+                      </div>
+                    )}
+                  </>
+                )}
               </>
             )}
           </div>
@@ -2245,7 +2348,7 @@ function InboxPageInner() {
               Prev
             </button>
             <span className="text-[10px] text-zinc-500">
-              Showing {offset + 1}–{offset + messages.length}
+              Page {Math.floor(offset / PAGE_SIZE) + 1}
             </span>
             <button
               onClick={() => setOffset(offset + PAGE_SIZE)}
@@ -2767,6 +2870,7 @@ function InboxPageInner() {
           collapsed={rightCollapsed}
           onCollapse={() => setRightCollapsed(true)}
           onExpand={() => setRightCollapsed(false)}
+          mobile={isMobile}
           presets={[
             { label: "Compact", width: 280 },
             { label: "Default", width: 384 },
@@ -3464,6 +3568,16 @@ function InboxPageInner() {
           </div>
         </ResizablePanel>
         </div>
+
+        {/* ================= TAB: AI ASSISTANT ================= */}
+        {activeRightTab === "ai" && (
+          <InboxAIChat
+            selectedMessage={selectedMsgDetails?.raw || selectedMsg}
+            context={selectedMsgDetails?.raw?.message || selectedMsgDetails?.raw?.text || ""}
+          )}
+        )}
+      </div>
+      </div>
 
         {/* Combined Localities Dialog */}
         <CombinedLocalityDialog

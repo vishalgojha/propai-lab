@@ -1,11 +1,42 @@
-import { createClient, type SupabaseClient, type User, type Session } from "@supabase/supabase-js";
+import { type SupabaseClient, type User, type Session } from "@supabase/supabase-js";
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
+
+// During build (next build), credentials aren't available in Coolify
+// Check if we have real credentials - if not, we're at build time
+const isBuildTime = !supabaseUrl || !supabaseAnonKey;
+
+// Create a minimal mock client for build time that doesn't make network requests
+function createMockSupabaseClient(): SupabaseClient {
+  const mockAuth = {
+    getSession: async () => ({ data: { session: null }, error: null }),
+    getUser: async () => ({ data: { user: null }, error: null }),
+    signInWithPassword: async () => ({ data: null, error: { message: "Build-time mock" } }),
+    signInWithOtp: async () => ({ data: null, error: { message: "Build-time mock" } }),
+    signUp: async () => ({ data: null, error: { message: "Build-time mock" } }),
+    signOut: async () => ({ error: null }),
+    onAuthStateChange: () => ({ data: { subscription: { unsubscribe: () => {} } } }),
+    exchangeCodeForSession: async () => ({ data: null, error: { message: "Build-time mock" } }),
+  };
+
+  return {
+    auth: mockAuth,
+  } as unknown as SupabaseClient;
+}
 
 let supabase: SupabaseClient | null = null;
 
-export function getSupabase(): SupabaseClient {
+function getSupabaseOrThrow(): SupabaseClient {
+  if (isBuildTime) {
+    if (!supabase) {
+      supabase = createMockSupabaseClient();
+    }
+    return supabase;
+  }
+
+  // Dynamic import to avoid issues at build time
+  const { createClient } = require("@supabase/supabase-js");
   if (!supabase) {
     supabase = createClient(supabaseUrl, supabaseAnonKey, {
       auth: {
@@ -16,6 +47,10 @@ export function getSupabase(): SupabaseClient {
     });
   }
   return supabase;
+}
+
+export function getSupabase(): SupabaseClient {
+  return getSupabaseOrThrow();
 }
 
 export async function signInWithEmail(email: string, password: string) {

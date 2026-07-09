@@ -696,9 +696,9 @@ export default function ConnectionCenterPage() {
       {showOnboarding && user && (
         <OnboardingModal
           phone={user.phone || ""}
-          defaultFirstName={displayName || user.first_name || undefined}
+          defaultFirstName={user.first_name || ""}
           onClose={() => setShowOnboarding(false)}
-          onComplete={() => {
+          onComplete={(profile) => {
             setShowOnboarding(false);
             setProfileDone(true);
             if (user.phone) sessionStorage.setItem("propai_onboarded", user.phone);
