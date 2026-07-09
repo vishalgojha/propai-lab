@@ -1,6 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
-import { ArrowRight, MessageSquare, Search, Lock, Bell, Brain, Layers } from "lucide-react";
+import { ArrowRight, MessageSquare, Search, Database, Lock, Bell, Brain, Layers } from "lucide-react";
 
 const steps = [
   {
