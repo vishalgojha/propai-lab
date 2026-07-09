@@ -43,6 +43,7 @@ const navSections = [
     title: "Workspace",
     items: [
       { href: "/connections", label: "Connection" },
+      { href: "/profile/team", label: "Team" },
       { href: "/waba", label: "WABA API" },
       { href: "/trainer", label: "Trainer" },
     ],
