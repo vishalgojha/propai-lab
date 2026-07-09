@@ -138,6 +138,14 @@ export default function ProfilePage() {
             </div>
             <span className="text-zinc-500 text-lg">&rarr;</span>
           </button>
+          <button onClick={() => router.push("/profile/billing")}
+            className="w-full flex items-center justify-between px-6 py-4 text-left hover:bg-white/5 transition-colors">
+            <div>
+              <div className="text-sm font-medium text-white">Billing & Plan</div>
+              <div className="text-xs text-zinc-500">Subscription, usage, invoices</div>
+            </div>
+            <span className="text-zinc-500 text-lg">&rarr;</span>
+          </button>
         </div>
       </div>
     </div>

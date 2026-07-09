@@ -75,6 +75,7 @@ const navSections = [
       { href: "/connections", label: "Connection", icon: Wifi },
       { href: "/profile", label: "My Profile", icon: UserCheck },
       { href: "/profile/team", label: "Team", icon: UserCog },
+      { href: "/profile/billing", label: "Billing", icon: TrendingUp },
       { href: "/waba", label: "API", icon: Key },
       { href: "/trainer", label: "Trainer", icon: GraduationCap },
     ],
