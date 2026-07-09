@@ -2,6 +2,7 @@ FROM node:20-bookworm-slim AS deps
 
 WORKDIR /app
 COPY frontend/package.json frontend/package-lock.json ./
+# Cache bust: 2026-07-10
 RUN npm install
 
 FROM node:20-bookworm-slim AS builder
