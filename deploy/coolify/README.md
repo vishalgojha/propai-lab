@@ -47,6 +47,8 @@ Set these on each service in Coolify:
 |----------|-------|
 | `LAB_API_BASE_URL` | `http://api:8000` (internal Docker DNS) |
 | `NODE_ENV` | `production` |
+| `NEXT_PUBLIC_SUPABASE_URL` | Your Supabase project URL |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anon key |
 
 The frontend rewrites `/api/*` to `http://api:8000/api/*` inside the Docker network.
 
