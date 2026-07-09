@@ -550,6 +550,7 @@ def parse_message(raw_text: str, profile_name: str | None = None) -> dict:
         "confidence": 0.0,
         "raw_payload": {},
         "normalized_message": normalized_result["cleaned"],
+    }
 
     # ── 1. Principal (who is behind the message) ──────────────────
     if _RE.search(r'\b(owner\s*(sale|direct|selling)?|direct\s*owner|owner\s*property)\b', lower):
