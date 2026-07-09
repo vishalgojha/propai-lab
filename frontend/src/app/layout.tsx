@@ -26,6 +26,7 @@ import {
   Key,
   Menu,
   X,
+  AlertTriangle,
 } from "lucide-react";
 import { LayoutProvider, useLayout } from "@/hooks/useLayout";
 import { useIsMobile } from "@/hooks/useMediaQuery";
@@ -194,6 +195,9 @@ function AppShell({ children }: { children: React.ReactNode }) {
   const [offline, setOffline] = useState(false);
   const [profile, setProfile] = useState<{ phone: string; first_name: string; last_name?: string; email?: string; city?: string } | null>(null);
   const [editProfileOpen, setEditProfileOpen] = useState(false);
+  const [reconnectCountdown, setReconnectCountdown] = useState<number | null>(null);
+  const wasConnectedRef = useRef(false);
+  const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Read profile from localStorage
   useEffect(() => {
@@ -231,6 +235,37 @@ function AppShell({ children }: { children: React.ReactNode }) {
     link.href = "/manifest.json";
     document.head.appendChild(link);
   }, []);
+
+  // Reconnect timer: detect disconnect and start 10s countdown
+  useEffect(() => {
+    if (waConnected) {
+      wasConnectedRef.current = true;
+      if (reconnectCountdown !== null) {
+        setReconnectCountdown(null);
+        if (countdownRef.current) { clearInterval(countdownRef.current); countdownRef.current = null; }
+      }
+      return;
+    }
+    // Not connected
+    if (!wasConnectedRef.current) return; // never been connected, skip
+    if (reconnectCountdown !== null) return; // already counting
+
+    // Start 10s countdown
+    setReconnectCountdown(10);
+    if (countdownRef.current) clearInterval(countdownRef.current);
+    countdownRef.current = setInterval(() => {
+      setReconnectCountdown(prev => {
+        if (prev === null || prev <= 1) {
+          if (countdownRef.current) clearInterval(countdownRef.current);
+          countdownRef.current = null;
+          router.push("/connections");
+          return null;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => { if (countdownRef.current) { clearInterval(countdownRef.current); countdownRef.current = null; } };
+  }, [waConnected, reconnectCountdown, router]);
 
   // Offline detection
   useEffect(() => {
@@ -314,7 +349,6 @@ function AppShell({ children }: { children: React.ReactNode }) {
           ))}
         </nav>
 
-        {/* Profile Section */}
         {/* Profile Section */}
         {profile && (
           <div className="px-4 py-3 border-t border-white/5">
@@ -418,6 +452,21 @@ function AppShell({ children }: { children: React.ReactNode }) {
             Settings
           </a>
         </div>
+
+        {/* Reconnect banner */}
+        {reconnectCountdown !== null && (
+          <div className="flex items-center justify-between px-4 lg:px-5 py-2 bg-red-900/30 border-b border-red-500/20 text-sm">
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 text-red-400 shrink-0" />
+              <span className="text-red-300 font-medium">WhatsApp disconnected</span>
+              <span className="text-red-400/80 text-xs">Reconnecting in {reconnectCountdown}s…</span>
+            </div>
+            <a href="/connections"
+              className="text-[11px] font-semibold text-red-300 underline hover:text-red-200 transition-colors shrink-0">
+              Reconnect now
+            </a>
+          </div>
+        )}
 
         {/* Page content */}
         <div className="flex-1 overflow-y-auto text-white">
