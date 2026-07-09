@@ -672,9 +672,6 @@ class SupabaseStorage(Storage):
         return [dict_to_dataclass(RawMessage, d) for d in res.data]
 
     def get_inbox_threads(self, limit: int = 500, offset: int = 0, tenant_id: str | None = None) -> list[dict]:
-        # Fetch most recent messages for grouping — postgrest-py versions may vary
-        # in filter syntax, so we keep it simple: just get recent raw_messages sorted
-        # by timestamp desc and let Python-side conv_key handle filtering
         query = self.client.table("raw_messages").select("*")\
             .order("timestamp", desc=True)\
             .limit(2000)
@@ -684,8 +681,23 @@ class SupabaseStorage(Storage):
 
         res = query.execute()
         rows = res.data if res.data else []
+        if not rows:
+            return []
 
-        # Group by conversation_key
+        raw_ids = [r["id"] for r in rows if r.get("id")]
+        parsed_map: dict[int, dict] = {}
+        if raw_ids:
+            parsed_res = self.client.table("parsed_output")\
+                .select("raw_message_id,intent,building_name,micro_market,landmark_name,location_raw,broker_name,broker_phone,confidence")\
+                .in_("raw_message_id", raw_ids)\
+                .order("confidence", desc=True)\
+                .order("id", desc=True)\
+                .execute()
+            for p in (parsed_res.data or []):
+                rid = p.get("raw_message_id")
+                if rid and rid not in parsed_map:
+                    parsed_map[rid] = p
+
         def conv_key(r: dict) -> str:
             gn = (r.get("group_name") or "").strip()
             if gn and gn not in ("seed", "seed-bot") and not gn.endswith("@s.whatsapp.net") and not gn.endswith("@lid") and not gn.endswith("@newsletter") and not gn.endswith("@broadcast") and gn != "status@broadcast":
@@ -708,7 +720,6 @@ class SupabaseStorage(Storage):
             latest = msgs[0]
             ts = latest.get("timestamp") or latest.get("created_at") or ""
             ct = conv_type(latest)
-            # conversation_name: group name for group chats, sender info for DMs
             if ct == "group":
                 conv_name = latest.get("group_name") or key
             else:
@@ -718,19 +729,11 @@ class SupabaseStorage(Storage):
             latest["conversation_name"] = conv_name
             latest["message_count"] = len(msgs)
             latest["latest_message_at"] = ts
-            # Fetch best parsed fields for this raw message
-            parsed = self.client.table("parsed_output")\
-                .select("id,intent,building_name,micro_market,landmark_name,location_raw,broker_name,broker_phone,confidence")\
-                .eq("raw_message_id", latest["id"])\
-                .order("confidence", desc=True)\
-                .order("id", desc=True)\
-                .limit(1)\
-                .execute()
-            if parsed.data:
-                p = parsed.data[0]
-                for field in ("id", "intent", "building_name", "micro_market", "landmark_name", "location_raw", "broker_name", "broker_phone"):
+            p = parsed_map.get(latest["id"])
+            if p:
+                for field in ("intent", "building_name", "micro_market", "landmark_name", "location_raw", "broker_name", "broker_phone"):
                     if p.get(field):
-                        latest[f"parsed_{field}" if field == "id" else field] = p[field]
+                        latest[field] = p[field]
             threads.append(latest)
 
         threads.sort(key=lambda t: (t.get("timestamp") or t.get("created_at") or ""), reverse=True)
@@ -752,7 +755,7 @@ class SupabaseStorage(Storage):
         "street_name", "area", "micro_market", "developer",
         "broker_name", "broker_phone", "profile_name", "listing_index",
         "forwarded", "confidence", "raw_payload", "created_at",
-        "summary_title",
+        "summary_title", "normalized_message",
     }
 
     def save_parsed(self, parsed: ParsedObservation) -> int:
@@ -873,7 +876,27 @@ class SupabaseStorage(Storage):
 
     def get_broker(self, broker_id: int) -> dict | None:
         res = self.client.table("brokers").select("*").eq("id", broker_id).limit(1).execute()
-        return res.data[0] if res.data else None
+        if not res.data:
+            return None
+        broker = res.data[0]
+        
+        # Get aliases
+        aliases_res = self.client.table("broker_aliases").select("*").eq("broker_id", broker_id).order("observation_count", desc=True).limit(20).execute()
+        broker["aliases"] = aliases_res.data if aliases_res.data else []
+        
+        # Get phones
+        phones_res = self.client.table("broker_phones").select("*").eq("broker_id", broker_id).order("observation_count", desc=True).limit(10).execute()
+        broker["phones"] = phones_res.data if phones_res.data else []
+        
+        # Get market stats
+        markets_res = self.client.table("broker_market_stats").select("*").eq("broker_id", broker_id).order("observation_count", desc=True).limit(20).execute()
+        broker["markets"] = markets_res.data if markets_res.data else []
+        
+        # Get building stats
+        buildings_res = self.client.table("broker_building_stats").select("*").eq("broker_id", broker_id).order("observation_count", desc=True).limit(20).execute()
+        broker["buildings"] = buildings_res.data if buildings_res.data else []
+        
+        return broker
 
     def find_broker(self, name: str = "", phone: str = "") -> dict | None:
         q = self.client.table("brokers").select("*")
@@ -1003,6 +1026,25 @@ class SupabaseStorage(Storage):
         res = query.execute()
         return [dict_to_dataclass(SyncJob, d) for d in res.data]
 
+    def get_group_markets(self) -> dict[str, list[str]]:
+        """Derived tags: aggregate distinct micro_markets per WhatsApp group
+        from parsed_output joined to raw_messages by group_name.
+        Returns {group_name: [market, ...]}."""
+        try:
+            res = self.client.table("parsed_output").select(
+                "micro_market, raw_messages!inner(group_name)"
+            ).not_.is_("micro_market", "null").neq("micro_market", "").limit(5000).execute()
+            out: dict[str, set[str]] = {}
+            for row in (res.data or []):
+                rm = row.get("raw_messages") or {}
+                gn = rm.get("group_name") if isinstance(rm, dict) else None
+                mk = row.get("micro_market")
+                if gn and mk:
+                    out.setdefault(gn, set()).add(mk)
+            return {k: sorted(v) for k, v in out.items()}
+        except Exception:
+            return {}
+
     # ── Sync Checkpoints ─────────────────────────────────────────
 
     def get_checkpoints(self, instance_name: str) -> list[SyncCheckpoint]:
@@ -1033,10 +1075,13 @@ class SupabaseStorage(Storage):
         listings = self.client.table("listings").select("id", count="exact").execute()
         brokers = self.client.table("brokers").select("id", count="exact").execute()
         buildings = self.client.table("buildings").select("id", count="exact").execute()
+        requirements = self.client.table("parsed_output").select("id", count="exact")\
+            .in_("intent", ["BUY", "BUYER", "REQUIREMENT", "RENTAL_SEEKER"]).execute()
         return {
             "total_messages": msgs.count or 0,
             "total_parsed": parsed.count or 0,
             "total_listings": listings.count or 0,
+            "total_requirements": requirements.count or 0,
             "total_brokers": brokers.count or 0,
             "total_buildings": buildings.count or 0,
         }
@@ -1044,10 +1089,43 @@ class SupabaseStorage(Storage):
     # ── Observation Detail ───────────────────────────────────────
 
     def get_observation_detail(self, obs_id: int) -> dict:
-        res = self.client.table("parsed_output").select("*,raw_messages!inner(*)").eq("id", obs_id).limit(1).execute()
-        if res.data:
-            return res.data[0]
-        return {}
+        # Get all parsed outputs for this raw message (handles multi-listing messages)
+        parsed_res = self.client.table("parsed_output").select("*").eq("raw_message_id", obs_id).order("listing_index").execute()
+        if not parsed_res.data:
+            return {}
+        
+        parsed_rows = parsed_res.data
+        first_parsed = parsed_rows[0] if parsed_rows else None
+        
+        # Get raw message
+        raw_res = self.client.table("raw_messages").select("*").eq("id", obs_id).limit(1).execute()
+        raw_dict = raw_res.data[0] if raw_res.data else {}
+        
+        # Get resolver decision for first parsed
+        resolver_dict = {}
+        if first_parsed:
+            r_res = self.client.table("resolver_decisions").select("*").eq("parsed_id", first_parsed["id"]).order("id", desc=True).limit(1).execute()
+            if r_res.data:
+                resolver_dict = r_res.data[0]
+                if isinstance(resolver_dict.get("candidates"), str):
+                    try:
+                        resolver_dict["candidates"] = json.loads(resolver_dict["candidates"])
+                    except (json.JSONDecodeError, TypeError):
+                        resolver_dict["candidates"] = []
+        
+        # Get evaluation
+        eval_dict = {}
+        eval_res = self.client.table("evaluations").select("*").eq("raw_message_id", obs_id).order("id", desc=True).limit(1).execute()
+        if eval_res.data:
+            eval_dict = eval_res.data[0]
+        
+        return {
+            "raw": raw_dict,
+            "parsed": first_parsed or {},
+            "listings": parsed_rows,
+            "resolver": resolver_dict,
+            "evaluation": eval_dict,
+        }
 
     def source_summary(self) -> dict:
         groups = self.client.table("raw_messages").select("group_name", count="exact").execute()
@@ -1339,7 +1417,8 @@ class SupabaseStorage(Storage):
                          min_observations: int = 1) -> list[dict]:
         try:
             tid = self._tenant_id
-            tenant_filter = "AND b.tenant_id = $4::uuid" if tid else ""
+            # tenant_filter = "AND b.tenant_id = $4::uuid" if tid else ""
+            tenant_filter = ""
             params = [min_observations, limit, offset]
             if tid:
                 params.append(tid)
@@ -1355,27 +1434,27 @@ class SupabaseStorage(Storage):
                        SUM(CASE WHEN oe.evidence_type = 'dm' THEN 1 ELSE 0 END) AS dm_evidence_count,
                        COUNT(DISTINCT oe.source_conversation) AS unique_channel_count,
                        (SELECT o2.summary_title FROM observations o2
-                        WHERE o2.broker_key = b.primary_phone
-                        ORDER BY o2.last_seen DESC LIMIT 1) AS latest_title,
-                       (SELECT o2.intent FROM observations o2
-                        WHERE o2.broker_key = b.primary_phone
-                        ORDER BY o2.last_seen DESC LIMIT 1) AS latest_intent,
-                       COALESCE(
-                           (SELECT json_agg(DISTINCT json_build_object(
-                               'source', oe2.source_conversation,
-                               'type', oe2.evidence_type
-                           ))
-                            FROM observation_evidence oe2
-                            JOIN observations o2 ON o2.id = oe2.observation_id
-                            WHERE o2.broker_key = b.primary_phone),
-                           '[]'::json
-                       ) AS channels
-                   FROM brokers b
-                   JOIN observations o ON o.broker_key = b.primary_phone
-                   JOIN observation_evidence oe ON oe.observation_id = o.id
-                   WHERE b.observation_count >= $1
-                     AND b.is_hidden = false
-                     {tenant_filter}
+                         WHERE right(o2.broker_key, 10) = b.primary_phone
+                         ORDER BY o2.last_seen DESC LIMIT 1) AS latest_title,
+                        (SELECT o2.intent FROM observations o2
+                         WHERE right(o2.broker_key, 10) = b.primary_phone
+                         ORDER BY o2.last_seen DESC LIMIT 1) AS latest_intent,
+                        COALESCE(
+                            (SELECT json_agg(DISTINCT json_build_object(
+                                'source', oe2.source_conversation,
+                                'type', oe2.evidence_type
+                            ))
+                             FROM observation_evidence oe2
+                             JOIN observations o2 ON o2.id = oe2.observation_id
+                             WHERE right(o2.broker_key, 10) = b.primary_phone),
+                            '[]'::json
+                        ) AS channels
+                    FROM brokers b
+                    JOIN observations o ON right(o.broker_key, 10) = b.primary_phone
+                    JOIN observation_evidence oe ON oe.observation_id = o.id
+                    WHERE b.observation_count >= $1
+                      AND b.is_hidden = false
+                      {tenant_filter}
                    GROUP BY b.id, b.identity_key, b.primary_phone, b.canonical_name,
                             b.building_count, b.active_days_30, b.observation_count,
                             b.listing_count, b.requirement_count
@@ -1409,5 +1488,132 @@ class SupabaseStorage(Storage):
             return res.data if res.data else []
         except Exception:
             return []
+
+    def get_building_profile(self, building_db_id: int) -> dict:
+        """Get full building profile with stats."""
+        try:
+            # Get building by database ID
+            building_res = self.client.table("buildings").select("*").eq("id", building_db_id).limit(1).execute()
+            if not building_res.data:
+                return None
+            building = building_res.data[0]
+            
+            # Get aliases
+            aliases_res = self.client.table("building_name_aliases").select("*").eq("building_id", building["id"]).execute()
+            aliases = aliases_res.data if aliases_res.data else []
+            
+            # Get enrichment sources
+            sources_res = self.client.table("building_enrichment_sources").select("*").eq("building_id", building["id"]).order("enriched_at", desc=True).execute()
+            sources = sources_res.data if sources_res.data else []
+            
+            # Get enrichment history
+            history_res = self.client.table("building_enrichment_history").select("*").eq("building_id", building["id"]).order("created_at", desc=True).limit(50).execute()
+            history = history_res.data if history_res.data else []
+            
+            # Get observed listings count
+            listings_res = self.client.table("listings").select("id", count="exact").eq("building_name", building["canonical_name"]).execute()
+            listings_count = listings_res.count or 0
+            
+            # Get observed brokers count
+            brokers_res = self.client.table("parsed_output").select("broker_name", count="exact").eq("building_name", building["canonical_name"]).not_.is_("broker_name", "null").neq("broker_name", "").execute()
+            brokers_count = brokers_res.count or 0
+            
+            # Get observed requirements count
+            req_res = self.client.table("parsed_output").select("id", count="exact").eq("building_name", building["canonical_name"]).in_("intent", ["BUY", "RENTAL_SEEKER", "BUYER", "REQUIREMENT"]).execute()
+            requirements_count = req_res.count or 0
+            
+            # Get price stats
+            price_stats_res = self.client.table("price_stats").select("*").eq("micro_market", building.get("micro_market")).execute()
+            price_stats = price_stats_res.data if price_stats_res.data else []
+            
+            # Get landmarks
+            landmarks_res = self.client.table("building_landmarks").select("*,landmarks!inner(*)").eq("building_id", building["id"]).execute()
+            landmarks = landmarks_res.data if landmarks_res.data else []
+            
+            # Get markets
+            markets_res = self.client.table("building_landmarks").select("landmarks!inner(micro_market)").eq("building_id", building["id"]).execute()
+            market_set = set()
+            if markets_res.data:
+                for m in markets_res.data:
+                    if m.get("landmarks") and m["landmarks"].get("micro_market"):
+                        market_set.add(m["landmarks"]["micro_market"])
+            markets = list(market_set)
+            
+            return {
+                **building,
+                "aliases": aliases,
+                "sources": sources,
+                "history": history,
+                "observed_listings": listings_count,
+                "observed_brokers": brokers_count,
+                "observed_requirements": requirements_count,
+                "price_stats": price_stats,
+                "landmarks": landmarks,
+                "markets": [{"micro_market": m} for m in markets],
+            }
+        except Exception as e:
+            print(f"Error getting building profile: {e}")
+            return None
+
+    def get_broker_summary(self, name: str = "", phone: str = "") -> dict:
+        """On-the-fly broker summary from listings table."""
+        try:
+            empty = {"total_listings": 0, "intents": {}, "top_bhk": [], "markets": [], "price_range_sale": "", "price_range_rent": ""}
+            if not name and not phone:
+                return empty
+            
+            # Query listings for this broker
+            query = self.client.table("listings").select("intent, bhk, price, price_unit, micro_market, observation_count")
+            if name:
+                query = query.ilike("broker_name", f"%{name}%")
+            if phone:
+                query = query.ilike("broker_phone", f"%{phone}%")
+            
+            res = query.execute()
+            rows = res.data if res.data else []
+            
+            total = len(rows)
+            intents = {}
+            bhk_dist = {}
+            markets = {}
+            prices_sale = []
+            prices_rent = []
+            
+            for r in rows:
+                intent = r["intent"] or "UNKNOWN"
+                intents[intent] = intents.get(intent, 0) + 1
+                bhk = r["bhk"] or "?"
+                bhk_dist[bhk] = bhk_dist.get(bhk, 0) + 1
+                market = r["micro_market"] or "?"
+                markets[market] = markets.get(market, 0) + 1
+                if r["price"] and r["price_unit"]:
+                    p = float(r["price"])
+                    if intent in ("RENT", "LEASE"):
+                        prices_rent.append(p)
+                    else:
+                        prices_sale.append(p)
+            
+            def _fmt_price_range(prices: list[float]) -> str:
+                if not prices:
+                    return ""
+                prices.sort()
+                if len(prices) == 1:
+                    return f"₹{prices[0]:,.0f}"
+                return f"₹{prices[0]:,.0f} – ₹{prices[-1]:,.0f}"
+            
+            top_markets = sorted(markets, key=markets.__getitem__, reverse=True)[:3]
+            top_bhk = sorted(bhk_dist, key=bhk_dist.__getitem__, reverse=True)[:3]
+            
+            return {
+                "total_listings": total,
+                "intents": intents,
+                "top_bhk": top_bhk,
+                "markets": top_markets,
+                "price_range_sale": _fmt_price_range(prices_sale),
+                "price_range_rent": _fmt_price_range(prices_rent),
+            }
+        except Exception as e:
+            print(f"Error getting broker summary: {e}")
+            return empty
 
 
