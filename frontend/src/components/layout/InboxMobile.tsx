@@ -88,7 +88,7 @@ export function MobileBottomSheet({
           </div>
           <button
             onClick={onClose}
-            className="p-1 rounded-lg text-zinc-400 hover:text-white hover:bg-white/5 transition-colors"
+            className="p-1 rounded-lg text-zinc-400 hover:text-white hover:bg-white/5 transition-colors touch-target"
             aria-label="Close"
           >
             <X className="w-4 h-4" />

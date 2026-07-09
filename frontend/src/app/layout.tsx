@@ -330,11 +330,11 @@ function AppShell({ children }: { children: React.ReactNode }) {
       {/* ═══════ Main Content ═══════ */}
       <main className="flex-1 flex flex-col overflow-hidden bg-black min-w-0">
         {/* ═══ Top Bar ═══ */}
-        <div className="flex items-center gap-2.5 px-3 lg:px-5 py-2 border-b border-white/5 bg-black/80 min-h-[44px]">
+        <div className="flex items-center gap-2 px-2 lg:px-5 py-1.5 lg:py-2 border-b border-white/5 bg-black/80 min-h-[40px] lg:min-h-[44px]">
           {/* Hamburger (mobile) */}
           <button
             onClick={toggleDrawer}
-            className="lg:hidden p-2 -ml-1 rounded-lg text-zinc-400 hover:text-white hover:bg-white/5 transition-colors touch-target"
+            className="lg:hidden p-1.5 -ml-1 rounded-lg text-zinc-400 hover:text-white hover:bg-white/5 transition-colors"
             aria-label={drawerOpen ? "Close menu" : "Open menu"}
           >
             {drawerOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
@@ -343,19 +343,18 @@ function AppShell({ children }: { children: React.ReactNode }) {
           {/* Connection status */}
           <div className="flex items-center gap-1.5 min-w-0">
             {offline && (
-              <span className="flex items-center gap-1 text-[11px] text-red-400 font-semibold">
+              <span className="flex items-center gap-1 text-[10px] text-red-400 font-semibold">
                 <WifiOff className="w-3 h-3" strokeWidth={1.5} />
                 Offline
               </span>
             )}
-            <a href="/connections" className={`flex items-center gap-1.5 text-[12px] font-semibold transition-colors ${waConnected ? "text-emerald-300" : "text-amber-300 hover:text-amber-200"}`}>
-              <span className={`w-2 h-2 rounded-full ${waConnected ? "bg-emerald-400 animate-pulse" : "bg-amber-400"}`} />
+            <a href="/connections" className={`flex items-center gap-1 text-[11px] lg:text-[12px] font-semibold transition-colors ${waConnected ? "text-emerald-300" : "text-amber-300 hover:text-amber-200"}`}>
+              <span className={`w-1.5 h-1.5 lg:w-2 lg:h-2 rounded-full ${waConnected ? "bg-emerald-400 animate-pulse" : "bg-amber-400"}`} />
               <span className="hidden sm:inline">{waConnected ? "Connected" : "Disconnected"}</span>
-              <span className="sm:hidden">{waConnected ? "✓" : "!Connect"}</span>
             </a>
           </div>
           {waConnected && whatsapp?.phone && (
-            <span className="text-[11px] text-zinc-500 font-mono truncate">{whatsapp.phone}</span>
+            <span className="text-[10px] lg:text-[11px] text-zinc-500 font-mono truncate max-w-[120px] lg:max-w-none">{whatsapp.phone}</span>
           )}
           <div className="flex-1" />
           <a href="/connections" className="text-[9px] text-zinc-500 hover:text-zinc-300 uppercase tracking-wider transition-colors shrink-0">
@@ -388,7 +387,7 @@ function LandingLayout({ children }: { children: React.ReactNode }) {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const isLanding = pathname === "/";
+  const isLanding = pathname === "/" || pathname === "/how-it-works";
 
   return (
     <html lang="en">

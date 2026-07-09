@@ -1,12 +1,18 @@
-const CACHE = "propai-v1";
+const CACHE = "propai-v2";
 const STATIC_ASSETS = [
   "/offline.html",
   "/pwa-192x192.png",
   "/pwa-512x512.png",
+  "/pwa-192x192-maskable.png",
+  "/pwa-512x512-maskable.png",
   "/propai-logo.svg",
   "/favicon.ico",
   "/favicon.svg",
+  "/apple-touch-icon.png",
+  "/manifest",
 ];
+
+const NAV_CACHE = "propai-nav-v2";
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -22,7 +28,7 @@ self.addEventListener("activate", (event) => {
   event.waitUntil(
     (async () => {
       const keys = await caches.keys();
-      await Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)));
+      await Promise.all(keys.filter((k) => k !== CACHE && k !== NAV_CACHE).map((k) => caches.delete(k)));
     })()
   );
   self.clients.claim();
@@ -38,9 +44,9 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // Navigation requests: network-first with offline fallback
+  // Navigation requests: stale-while-revalidate for instant back/forward
   if (request.mode === "navigate") {
-    event.respondWith(networkFirstWithFallback(request, "/offline.html"));
+    event.respondWith(staleWhileRevalidateNav(request));
     return;
   }
 
@@ -57,6 +63,18 @@ self.addEventListener("fetch", (event) => {
   // Everything else: network-first
   event.respondWith(networkFirstWithFallback(request, "/offline.html"));
 });
+
+async function staleWhileRevalidateNav(request) {
+  const cache = await caches.open(NAV_CACHE);
+  const cached = await cache.match(request);
+  const fetchPromise = fetch(request)
+    .then((response) => {
+      if (response.ok) cache.put(request, response.clone());
+      return response;
+    })
+    .catch(() => cached);
+  return cached || fetchPromise;
+}
 
 async function networkFirstWithFallback(request, fallbackUrl) {
   try {

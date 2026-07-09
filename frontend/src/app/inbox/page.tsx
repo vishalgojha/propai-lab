@@ -12,6 +12,7 @@ const AddToClientBucket = dynamic(() => import("@/components/AddToClientBucket")
 import ResizablePanel from "@/components/ResizablePanel";
 import { entityProfileHref } from "@/lib/entity-links";
 import { useIsMobile } from "@/hooks/useMediaQuery";
+import { useInfiniteScroll } from "@/hooks/useInfiniteScroll";
 import {
   Users,
   User,
@@ -836,15 +837,19 @@ function InboxPageInner() {
   }, [brokerParam, observationParam, brokerFeed, slugs]);
 
   // 1. Initial Load of Feed & Suggestions
-  const loadFeed = useCallback(async () => {
+  const loadFeed = useCallback(async (append = false) => {
     setLoadingLeft(true);
     try {
       const threadMsgs = await api.getInboxThreads(PAGE_SIZE, offset);
-      setMessages(threadMsgs);
-      const groupData = await api.getGroups();
-      setGroups(groupData);
-      const sugData = await api.getSuggestions("pending", 100);
-      setAllSuggestions(sugData);
+      setMessages((prev) => (append ? [...prev, ...threadMsgs] : threadMsgs));
+      if (!append) {
+        const [groupData, sugData] = await Promise.all([
+          api.getGroups(),
+          api.getSuggestions("pending", 100),
+        ]);
+        setGroups(groupData);
+        setAllSuggestions(sugData);
+      }
     } catch (e) {
       console.error("Failed to load feed:", e);
     } finally {
@@ -852,9 +857,31 @@ function InboxPageInner() {
     }
   }, [offset]);
 
+  const hasMore = messages.length >= PAGE_SIZE;
+
+  const loadMore = useCallback(() => {
+    if (!hasMore || loadingLeft) return;
+    setOffset((prev) => prev + PAGE_SIZE);
+  }, [hasMore, loadingLeft]);
+
+  const { sentinelRef } = useInfiniteScroll(loadMore, {
+    enabled: isMobile && hasMore && !loadingLeft,
+    threshold: 300,
+  });
+
+  // Load feed on mount; append when offset changes via loadMore
+  const initialLoadDone = useRef(false);
+  const prevOffsetRef = useRef(0);
   useEffect(() => {
-    loadFeed();
-  }, [loadFeed]);
+    if (!initialLoadDone.current) {
+      initialLoadDone.current = true;
+      prevOffsetRef.current = offset;
+      loadFeed(false);
+    } else if (offset !== prevOffsetRef.current) {
+      prevOffsetRef.current = offset;
+      loadFeed(offset > 0);
+    }
+  }, [offset, loadFeed]);
 
   // Fetch available slugs (saved views) for the inbox tabs
   useEffect(() => {
@@ -1867,27 +1894,27 @@ function InboxPageInner() {
         >
           <div className="flex flex-col h-full">
           {/* Panel Search & Header */}
-          <div className="p-4 border-b border-white/10 space-y-3">
+          <div className="p-3 sm:p-4 border-b border-white/10 space-y-2 sm:space-y-3">
             <div className="flex items-center justify-between">
               <div>
                 <div className="text-sm font-bold tracking-wider text-white uppercase">Market Inbox</div>
-                <div className="text-[10px] text-zinc-500 mt-0.5">WhatsApp conversations with PropAI memory</div>
+                <div className="hidden sm:block text-[10px] text-zinc-500 mt-0.5">WhatsApp conversations with PropAI memory</div>
               </div>
               <button
-                onClick={loadFeed}
-                className="text-xs text-[#3EE88A] hover:underline"
+                onClick={() => { setOffset(0); prevOffsetRef.current = 0; loadFeed(false); }}
+                className="text-[10px] sm:text-xs text-[#3EE88A] hover:underline"
                 disabled={loadingLeft}
               >
-                {loadingLeft ? "Refreshing..." : "Refresh"}
+                {loadingLeft ? "Refreshing..." : <><span className="sm:hidden">↻</span><span className="hidden sm:inline">Refresh</span></>}
               </button>
             </div>
             
             <input
               type="text"
-              placeholder="Search chats, brokers, buildings..."
+              placeholder="Search"
               value={searchText}
               onChange={(e) => setSearchText(e.target.value)}
-              className="w-full px-3 py-1.5 bg-zinc-900 border border-white/10 rounded-lg text-xs text-white focus:border-[#3EE88A] focus:outline-none transition-colors"
+              className="w-full px-2.5 py-1.5 bg-zinc-900 border border-white/10 rounded-lg text-xs text-white focus:border-[#3EE88A] focus:outline-none transition-colors"
             />
 
             {/* Slug-based View Tabs */}
@@ -1906,7 +1933,7 @@ function InboxPageInner() {
                       setCurrentSlug(sv.slug);
                       updateUrlView(sv.slug);
                     }}
-                    className={`flex-1 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wider transition-colors ${
+                    className={`flex-1 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wider transition-colors touch-target ${
                       currentSlug === sv.slug
                         ? "bg-zinc-800 text-[#3EE88A] shadow-sm"
                         : "text-zinc-500 hover:text-white"
@@ -1939,7 +1966,7 @@ function InboxPageInner() {
                           <div key={"broker-" + b.primary_phone} className="relative">
                             <button
                               onClick={() => selectBroker(b)}
-                              className={`w-full text-left p-3.5 transition-colors select-none ${
+                              className={`w-full text-left p-2.5 lg:p-3 transition-colors select-none ${
                                 selectedBroker?.id === b.primary_phone && activeSlug?.view_type === "personal"
                                   ? "bg-blue-600/10 border-l-2 border-[#3b82f6]"
                                   : "hover:bg-white/5"
@@ -1996,7 +2023,7 @@ function InboxPageInner() {
                             <button
                               key={"direct-" + d.senderKey}
                               onClick={() => selectConversation(d.latest)}
-                              className={`w-full text-left p-3.5 transition-colors flex flex-col gap-1 select-none ${
+                              className={`w-full text-left p-2.5 lg:p-3 transition-colors flex flex-col gap-1 select-none ${
                                 resolveMessagePhone(selectedMsg) === latestPhone
                                   ? "bg-blue-600/10 border-l-2 border-[#3b82f6]"
                                   : "hover:bg-white/5"
@@ -2006,15 +2033,24 @@ function InboxPageInner() {
                                 <span className="text-[11px] font-bold text-white truncate max-w-[180px]">
                                   <User className="w-3 h-3 text-zinc-500" strokeWidth={1.5} /> {d.name}
                                 </span>
-                                <span className="text-[9px] bg-zinc-800 text-zinc-500 px-1.5 py-0.5 rounded-full">
-                                  {d.count} msg
-                                </span>
+                                <span className="text-[10px] text-zinc-500 tabular-nums">{d.count}</span>
                               </div>
-                              {latestPhone && (
-                                <div className="text-[9px] text-zinc-500 font-mono">
-                                  {displayPhoneString(latestPhone)}
+                              {d.latest?.message && (
+                                <div className="text-[11px] text-zinc-400 leading-4 truncate">
+                                  <WhatsAppMessage
+                                    text={d.latest.message}
+                                    entities={buildMessageEntities(d.latest)}
+                                    onEntityClick={handleEntityClick}
+                                    truncate
+                                    maxLines={1}
+                                  />
                                 </div>
                               )}
+                              <div className="flex items-center gap-2 text-[9px] text-zinc-500">
+                                {latestPhone && <span className="font-mono">{displayPhoneString(latestPhone)}</span>}
+                                <span>·</span>
+                                <span>{formatAgeShort(d.latest?.timestamp)}</span>
+                              </div>
                             </button>
                           );
                         })}
@@ -2034,29 +2070,29 @@ function InboxPageInner() {
                           <button
                             key={"group-" + g.conversationKey}
                             onClick={() => selectConversation(g.latest)}
-                            className={`w-full text-left p-3.5 transition-colors flex flex-col gap-1 select-none ${
+                            className={`w-full text-left p-2.5 lg:p-3 transition-colors flex flex-col gap-1 select-none ${
                               selectedMsg?.group_name === g.latest.group_name
                                 ? "bg-blue-600/10 border-l-2 border-[#3b82f6]"
                                 : "hover:bg-white/5"
                             }`}
                           >
                             <div className="flex items-center justify-between">
-                              <span className="text-[11px] font-bold text-white truncate max-w-[180px]">
-                                <Users className="w-3 h-3 text-zinc-500" strokeWidth={1.5} /> {g.title}
+                              <span className="text-sm font-semibold text-white truncate max-w-[180px]">
+                                {g.title}
                               </span>
-                              <span className="text-[9px] bg-zinc-800 text-zinc-500 px-1.5 py-0.5 rounded-full">
-                                {g.count} msg
-                              </span>
+                              <span className="text-[10px] text-zinc-500 tabular-nums">{g.count}</span>
                             </div>
-                            <div className="text-[11px] text-zinc-400 line-clamp-1 italic mt-1">
-                              &quot;<WhatsAppMessage
-                                text={g.latest.message || ""}
-                                entities={buildMessageEntities(g.latest)}
-                                onEntityClick={handleEntityClick}
-                                truncate
-                                maxLines={1}
-                              />&quot;
-                            </div>
+                            {g.latest?.message && (
+                              <div className="text-[11px] text-zinc-400 leading-4 truncate">
+                                <WhatsAppMessage
+                                  text={g.latest.message}
+                                  entities={buildMessageEntities(g.latest)}
+                                  onEntityClick={handleEntityClick}
+                                  truncate
+                                  maxLines={1}
+                                />
+                              </div>
+                            )}
                           </button>
                         ))}
                       </>
@@ -2080,31 +2116,31 @@ function InboxPageInner() {
                       <button
                         key={d.senderKey}
                         onClick={() => selectConversation(d.latest)}
-                        className={`w-full text-left p-3.5 transition-colors flex flex-col gap-1 select-none ${
+                        className={`w-full text-left p-2.5 lg:p-3 transition-colors flex flex-col gap-1 select-none ${
                           isSelected ? "bg-blue-600/10 border-l-2 border-[#3b82f6]" : "hover:bg-white/5"
                         }`}
                       >
                         <div className="flex items-center justify-between">
-                          <span className="text-[11px] font-bold text-white truncate max-w-[180px]">
-                            <User className="w-3 h-3 text-zinc-500" strokeWidth={1.5} /> {d.name}
+                          <span className="text-sm font-semibold text-white truncate max-w-[180px]">
+                            {d.name}
                           </span>
-                          <span className="text-[9px] bg-zinc-800 text-zinc-500 px-1.5 py-0.5 rounded-full">
-                            {d.count} msg
-                          </span>
+                          <span className="text-[10px] text-zinc-500 tabular-nums">{d.count}</span>
                         </div>
-                        {latestPhone && (
-                          <div className="text-[9px] text-zinc-500 font-mono">
-                            {displayPhoneString(latestPhone)}
+                        {d.latest?.message && (
+                          <div className="text-[11px] text-zinc-400 leading-4 truncate">
+                            <WhatsAppMessage
+                              text={d.latest.message}
+                              entities={buildMessageEntities(d.latest)}
+                              onEntityClick={handleEntityClick}
+                              truncate
+                              maxLines={1}
+                            />
                           </div>
                         )}
-                        <div className="text-[11px] text-zinc-400 line-clamp-1 italic mt-1">
-                          &quot;<WhatsAppMessage
-                            text={d.latest.message || ""}
-                            entities={buildMessageEntities(d.latest)}
-                            onEntityClick={handleEntityClick}
-                            truncate
-                            maxLines={1}
-                          />&quot;
+                        <div className="flex items-center gap-2 text-[9px] text-zinc-500">
+                          {latestPhone && <span className="font-mono">{displayPhoneString(latestPhone)}</span>}
+                          <span>·</span>
+                          <span>{formatAgeShort(d.latest?.timestamp)}</span>
                         </div>
                       </button>
                     );
@@ -2124,7 +2160,7 @@ function InboxPageInner() {
                       <div key={b.primary_phone} className="relative">
                         <button
                           onClick={() => selectBroker(b)}
-                          className={`w-full text-left p-3.5 transition-colors select-none ${
+                          className={`w-full text-left p-2.5 lg:p-3 transition-colors select-none ${
                             isSelected ? "bg-blue-600/10 border-l-2 border-[#3b82f6]" : "hover:bg-white/5"
                           }`}
                         >
@@ -2191,7 +2227,15 @@ function InboxPageInner() {
             )}
           </div>
           
-          {/* Left panel footer / Pagination */}
+          {/* Left panel footer / Pagination (desktop) / Infinite scroll sentinel (mobile) */}
+          {isMobile ? (
+            <>
+              <div ref={sentinelRef} className="h-4" />
+              {loadingLeft && (
+                <div className="p-3 text-center text-[10px] text-zinc-500">Loading more...</div>
+              )}
+            </>
+          ) : (
           <div className="p-3 border-t border-white/10 flex items-center justify-between bg-black/80">
             <button
               onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
@@ -2211,6 +2255,7 @@ function InboxPageInner() {
               Next
             </button>
           </div>
+          )}
           </div>
         </ResizablePanel>
         </div>
@@ -2397,7 +2442,7 @@ function InboxPageInner() {
                                 href={getWaLinkWithRecall(selectedBroker.phone, obs.raw_message || obs.summary_title || "")}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="flex items-center gap-1.5 text-[10px] font-semibold text-green-400 hover:text-green-300 transition-colors"
+                                className="flex items-center gap-1.5 text-[10px] font-semibold text-green-400 hover:text-green-300 transition-colors touch-target"
                               >
                                 <MessageSquare className="w-3 h-3" strokeWidth={1.8} />
                                 <span>Contact on WhatsApp</span>
@@ -2449,16 +2494,16 @@ function InboxPageInner() {
                 </div>
 
                 <div className="flex items-center gap-1">
-                  <button className="h-7 w-7 rounded-md border border-white/10 bg-zinc-800 text-zinc-500 hover:text-white transition-colors flex items-center justify-center">
+                  <button className="h-7 w-7 lg:h-7 lg:w-7 rounded-md border border-white/10 bg-zinc-800 text-zinc-500 hover:text-white transition-colors flex items-center justify-center touch-target">
                     <Search className="w-3.5 h-3.5" strokeWidth={1.5} />
                   </button>
-                  <button className="h-7 w-7 rounded-md border border-white/10 bg-zinc-800 text-zinc-500 hover:text-white transition-colors flex items-center justify-center">
+                  <button className="h-7 w-7 lg:h-7 lg:w-7 rounded-md border border-white/10 bg-zinc-800 text-zinc-500 hover:text-white transition-colors flex items-center justify-center touch-target">
                     <Phone className="w-3.5 h-3.5" strokeWidth={1.5} />
                   </button>
-                  <button className="h-7 w-7 rounded-md border border-white/10 bg-zinc-800 text-zinc-500 hover:text-white transition-colors flex items-center justify-center">
+                  <button className="h-7 w-7 lg:h-7 lg:w-7 rounded-md border border-white/10 bg-zinc-800 text-zinc-500 hover:text-white transition-colors flex items-center justify-center touch-target">
                     <Video className="w-3.5 h-3.5" strokeWidth={1.5} />
                   </button>
-                  <button className="h-7 w-7 rounded-md border border-white/10 bg-zinc-800 text-zinc-500 hover:text-white transition-colors flex items-center justify-center">
+                  <button className="h-7 w-7 lg:h-7 lg:w-7 rounded-md border border-white/10 bg-zinc-800 text-zinc-500 hover:text-white transition-colors flex items-center justify-center touch-target">
                     <Info className="w-3.5 h-3.5" strokeWidth={1.5} />
                   </button>
                   {!isGroupConversationSelected && resolveMessagePhone(selectedMsg) && (
@@ -2466,7 +2511,7 @@ function InboxPageInner() {
                       href={getWaLink(resolveMessagePhone(selectedMsg))}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="px-2.5 py-1 bg-[#166534] text-green-100 hover:bg-[#15803d] rounded text-[10px] font-bold uppercase tracking-wider transition-colors"
+                      className="px-2.5 py-1 bg-[#166534] text-green-100 hover:bg-[#15803d] rounded text-[10px] font-bold uppercase tracking-wider transition-colors touch-target"
                     >
                       Open WhatsApp
                     </a>
@@ -2474,7 +2519,7 @@ function InboxPageInner() {
                   {selectedBroker && (
                     <button
                       onClick={() => setActiveRightTab("broker")}
-                      className="px-2.5 py-1 bg-[#1e293b] text-zinc-300 hover:text-white rounded text-[10px] font-bold uppercase tracking-wider transition-colors"
+                      className="px-2.5 py-1 bg-[#1e293b] text-zinc-300 hover:text-white rounded text-[10px] font-bold uppercase tracking-wider transition-colors touch-target"
                     >
                       View Broker Graph
                     </button>
