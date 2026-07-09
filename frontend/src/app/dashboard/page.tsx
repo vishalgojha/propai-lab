@@ -6,6 +6,7 @@ import * as api from "@/lib/api";
 import { useEventStream } from "@/lib/useEventStream";
 import { LatestWhatsAppKnowledge } from "@/components/dashboard/LatestWhatsAppKnowledge";
 import { ChevronDown, TrendingUp, TrendingDown, ArrowRight } from "lucide-react";
+import { useAuth } from "@/lib/AuthProvider";
 
 interface WindowOption {
   key: string;
@@ -30,6 +31,18 @@ const METRICS = [
 
 export default function DashboardPage() {
   const router = useRouter();
+  const { user, loading } = useAuth();
+
+  useEffect(() => {
+    if (!loading && !user) {
+      router.push("/auth/login?next=/dashboard");
+    }
+  }, [user, loading, router]);
+
+  if (loading || !user) {
+    return null;
+  }
+
   const [window, setWindow] = useState("today");
   const [metrics, setMetrics] = useState<api.TimeWindowMetrics | null>(null);
   const [feed, setFeed] = useState<any[]>([]);
