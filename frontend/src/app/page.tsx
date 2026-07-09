@@ -176,14 +176,14 @@ export default function HomePage() {
             <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center">
               <Link
                 href="/connections"
-                className="inline-flex items-center justify-center gap-2 rounded-full bg-[#3EE88A] px-5 py-3.5 text-sm font-semibold text-black transition-transform hover:translate-y-[-1px]"
+                className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#3EE88A] px-5 py-3 text-sm font-semibold text-black transition-transform hover:translate-y-[-1px]"
               >
                 Connect WhatsApp
                 <ArrowRight className="h-4 w-4" strokeWidth={2} />
               </Link>
               <Link
                 href="/how-it-works"
-                className="inline-flex items-center justify-center rounded-full px-1 py-3 text-sm font-semibold text-zinc-400 transition-colors hover:text-white"
+                className="inline-flex items-center justify-center rounded-lg px-5 py-3 text-sm font-semibold text-zinc-400 transition-colors hover:text-white"
               >
                 How it works
               </Link>

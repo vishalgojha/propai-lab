@@ -166,23 +166,23 @@ function HowItWorksPage() {
       </div>
 
       {/* ─── Hero ─── */}
-      <section className="mx-auto max-w-[1400px] px-4 sm:px-6 lg:px-8 py-16 lg:py-24">
+      <section className="mx-auto max-w-[1400px] px-4 sm:px-6 lg:px-8 py-10 lg:py-16">
         <div className="max-w-3xl">
-          <div className="inline-flex items-center gap-2 rounded-full border border-[#3EE88A]/20 bg-[#3EE88A]/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-[#3EE88A]">
+          <div className="inline-flex items-center gap-2 rounded-full border border-[#3EE88A]/20 bg-[#3EE88A]/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.24em] text-[#3EE88A]">
             Seven steps
           </div>
-          <h1 className="mt-6 text-4xl font-bold tracking-tight text-white sm:text-5xl lg:text-6xl">
+          <h1 className="mt-4 text-3xl font-bold tracking-tight text-white sm:text-4xl lg:text-5xl">
             How PropAI works
           </h1>
-          <p className="mt-5 max-w-2xl text-lg leading-7 text-zinc-400">
+          <p className="mt-4 max-w-2xl text-base leading-7 text-zinc-400 sm:text-lg">
             From WhatsApp chaos to structured market intelligence in seven steps. No training, no setup, no behaviour change.
           </p>
         </div>
       </section>
 
       {/* ─── Steps ─── */}
-      <div className="mx-auto max-w-[1400px] px-4 sm:px-6 lg:px-8 pb-24">
-        <div className="space-y-20">
+      <div className="mx-auto max-w-[1400px] px-4 sm:px-6 lg:px-8 pb-16 lg:pb-24">
+        <div className="space-y-12 lg:space-y-20">
           {steps.map((step, i) => (
             <section
               key={step.num}
@@ -318,8 +318,8 @@ function HowItWorksPage() {
                   <p className="mt-4 text-sm leading-6 text-zinc-500">{step.detail}</p>
                 </div>
 
-                {/* Right column — visual placeholder / mockup area for future screenshots */}
-                <div className={i % 2 === 1 ? "lg:order-1" : ""}>
+{/* Right column — visual placeholder / mockup area for future screenshots */}
+                <div className="hidden lg:block" style={{ order: i % 2 === 1 ? 1 : 2 }}>
                   <div className="sticky top-8 rounded-2xl border border-white/5 bg-white/[0.02] p-8 lg:p-12">
                     <div className="flex items-center justify-center">
                       <div className="text-center">
@@ -346,7 +346,7 @@ function HowItWorksPage() {
 
               {/* Separator */}
               {i < steps.length - 1 && (
-                <div className="mt-20 border-t border-white/5" />
+                <div className="mt-12 lg:mt-20 border-t border-white/5" />
               )}
             </section>
           ))}
@@ -355,30 +355,30 @@ function HowItWorksPage() {
 
       {/* ─── CTA ─── */}
       <section className="border-t border-white/5">
-        <div className="mx-auto max-w-[1400px] px-4 py-16 sm:px-6 lg:px-8 lg:py-24">
+        <div className="mx-auto max-w-[1400px] px-4 py-12 sm:px-6 lg:px-8 lg:py-16">
           <div className="mx-auto max-w-2xl text-center">
-            <h2 className="text-3xl font-semibold tracking-tight text-white sm:text-4xl">
+            <h2 className="text-2xl font-semibold tracking-tight text-white sm:text-3xl">
               Ready to organise your market?
             </h2>
-            <p className="mt-4 text-lg text-zinc-400">
+            <p className="mt-3 text-base text-zinc-400 sm:text-lg">
               Connect WhatsApp in under a minute. No credit card required.
             </p>
-            <div className="mt-8 flex flex-col items-center gap-3 sm:flex-row sm:justify-center">
+            <div className="mt-6 flex items-center justify-center gap-3">
               <Link
                 href="/connections"
-                className="inline-flex items-center gap-2 rounded-full bg-[#3EE88A] px-6 py-3.5 text-sm font-semibold text-black transition-transform hover:translate-y-[-1px]"
+                className="inline-flex items-center gap-2 rounded-lg bg-[#3EE88A] px-5 py-2.5 text-sm font-semibold text-black transition-transform hover:translate-y-[-1px]"
               >
                 Connect WhatsApp
-                <ArrowRight className="h-4 w-4" strokeWidth={2} />
+                <ArrowRight className="h-3.5 w-3.5" strokeWidth={2} />
               </Link>
               <Link
                 href="/"
-                className="inline-flex items-center gap-2 rounded-full px-6 py-3.5 text-sm font-semibold text-zinc-400 transition-colors hover:text-white"
+                className="inline-flex items-center gap-2 rounded-lg px-5 py-2.5 text-sm font-semibold text-zinc-400 transition-colors hover:text-white"
               >
                 Back to homepage
               </Link>
             </div>
-            <div className="mt-4 text-[11px] uppercase tracking-[0.24em] text-zinc-600">
+            <div className="mt-4 text-[10px] uppercase tracking-[0.24em] text-zinc-600">
               Plans from ₹599/mo · Works with the groups you are already in
             </div>
           </div>
