@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import "./globals.css";
-import { getConnectionState, getWhatsAppStatus, ConnectionState, WhatsAppStatus, searchMessages } from "@/lib/api";
+import { getConnectionState, getWhatsAppStatus, ConnectionState, WhatsAppStatus, searchMessages, getProfile, saveProfile } from "@/lib/api";
 import {
   MessageSquare,
   BarChart3,
@@ -193,6 +193,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [offline, setOffline] = useState(false);
   const [profile, setProfile] = useState<{ phone: string; first_name: string; last_name?: string; email?: string; city?: string } | null>(null);
+  const [editProfileOpen, setEditProfileOpen] = useState(false);
 
   // Read profile from localStorage
   useEffect(() => {
@@ -221,6 +222,14 @@ function AppShell({ children }: { children: React.ReactNode }) {
     load();
     const t = setInterval(load, 15000);
     return () => clearInterval(t);
+  }, []);
+
+  // PWA manifest link
+  useEffect(() => {
+    const link = document.createElement("link");
+    link.rel = "manifest";
+    link.href = "/manifest.json";
+    document.head.appendChild(link);
   }, []);
 
   // Offline detection
@@ -306,9 +315,11 @@ function AppShell({ children }: { children: React.ReactNode }) {
         </nav>
 
         {/* Profile Section */}
+        {/* Profile Section */}
         {profile && (
           <div className="px-4 py-3 border-t border-white/5">
-            <div className="flex items-center gap-3 px-2.5 py-2">
+            <button onClick={() => setEditProfileOpen(true)}
+              className="w-full flex items-center gap-3 px-2.5 py-2 rounded-lg hover:bg-white/5 transition-colors text-left">
               <div className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-400/10 text-emerald-400 text-xs font-bold shrink-0">
                 {profile.first_name?.charAt(0)?.toUpperCase() || "?"}
               </div>
@@ -318,8 +329,22 @@ function AppShell({ children }: { children: React.ReactNode }) {
                 </div>
                 {profile.city && <div className="text-[10px] text-zinc-500 truncate">{profile.city}</div>}
               </div>
-            </div>
+            </button>
           </div>
+        )}
+
+        {/* Profile Edit Modal */}
+        {editProfileOpen && profile && (
+          <ProfileEditModal
+            profile={profile}
+            onClose={() => setEditProfileOpen(false)}
+            onSave={(updated) => {
+              const data = { ...profile, ...updated };
+              localStorage.setItem("propai_profile", JSON.stringify(data));
+              setProfile(data);
+              setEditProfileOpen(false);
+            }}
+          />
         )}
 
         {/* Bottom Status */}
@@ -405,6 +430,77 @@ function AppShell({ children }: { children: React.ReactNode }) {
 
       {/* Install Prompt */}
       <InstallPrompt />
+    </div>
+  );
+}
+
+function ProfileEditModal({ profile, onClose, onSave }: {
+  profile: { phone: string; first_name: string; last_name?: string; email?: string; city?: string };
+  onClose: () => void;
+  onSave: (data: { first_name: string; last_name: string; email: string; city: string }) => void;
+}) {
+  const [firstName, setFirstName] = useState(profile.first_name || "");
+  const [lastName, setLastName] = useState(profile.last_name || "");
+  const [email, setEmail] = useState(profile.email || "");
+  const [city, setCity] = useState(profile.city || "");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!firstName.trim()) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const data = { first_name: firstName.trim(), last_name: lastName.trim(), email: email.trim(), city: city.trim() };
+      await saveProfile(profile.phone, data);
+      onSave(data);
+    } catch (err: any) {
+      setError(err.message || "Failed to save profile");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[800] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+      <div className="w-full max-w-md rounded-2xl border border-white/10 bg-zinc-900 shadow-2xl">
+        <div className="flex items-center justify-between px-6 pt-6 pb-4">
+          <h2 className="text-lg font-bold text-white">Edit Profile</h2>
+          <button onClick={onClose} className="p-1 rounded-lg text-zinc-500 hover:text-white hover:bg-white/5 transition-colors">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+        <form onSubmit={handleSubmit} className="px-6 pb-6 space-y-4">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-[11px] font-semibold text-zinc-500 uppercase tracking-wider">First Name *</label>
+              <input value={firstName} onChange={e => setFirstName(e.target.value)} required
+                className="mt-1 w-full rounded-lg border border-white/10 bg-zinc-800/50 px-3 py-2.5 text-sm text-white placeholder-zinc-500 outline-none focus:border-emerald-500/50 transition-colors" />
+            </div>
+            <div>
+              <label className="text-[11px] font-semibold text-zinc-500 uppercase tracking-wider">Last Name</label>
+              <input value={lastName} onChange={e => setLastName(e.target.value)}
+                className="mt-1 w-full rounded-lg border border-white/10 bg-zinc-800/50 px-3 py-2.5 text-sm text-white placeholder-zinc-500 outline-none focus:border-emerald-500/50 transition-colors" />
+            </div>
+          </div>
+          <div>
+            <label className="text-[11px] font-semibold text-zinc-500 uppercase tracking-wider">Email</label>
+            <input type="email" value={email} onChange={e => setEmail(e.target.value)}
+              className="mt-1 w-full rounded-lg border border-white/10 bg-zinc-800/50 px-3 py-2.5 text-sm text-white placeholder-zinc-500 outline-none focus:border-emerald-500/50 transition-colors" />
+          </div>
+          <div>
+            <label className="text-[11px] font-semibold text-zinc-500 uppercase tracking-wider">City</label>
+            <input value={city} onChange={e => setCity(e.target.value)}
+              className="mt-1 w-full rounded-lg border border-white/10 bg-zinc-800/50 px-3 py-2.5 text-sm text-white placeholder-zinc-500 outline-none focus:border-emerald-500/50 transition-colors" />
+          </div>
+          {error && <p className="text-xs text-red-400">{error}</p>}
+          <button type="submit" disabled={saving || !firstName.trim()}
+            className="w-full rounded-lg bg-emerald-400 px-4 py-2.5 text-sm font-bold text-black min-h-[44px] disabled:opacity-50 transition-opacity">
+            {saving ? "Saving..." : "Save"}
+          </button>
+        </form>
+      </div>
     </div>
   );
 }

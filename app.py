@@ -10803,6 +10803,49 @@ async def deactivate_team_member(member_id: int, member: dict = Depends(get_curr
     return {"deleted": ok}
 
 
+# ── Custom Team Roles ─────────────────────────────────────────────
+
+@app.get("/api/workspace/roles")
+async def list_team_roles():
+    return {"roles": storage.list_team_roles()}
+
+
+@app.post("/api/workspace/roles")
+async def create_team_role(body: dict, member: dict = Depends(get_current_member)):
+    check_permission(member, "add_team_members")
+    name = body.get("name", "").strip()
+    if not name:
+        raise HTTPException(400, "Role name is required")
+    role = storage.create_team_role(name, body.get("permission_keys", []))
+    if not role:
+        raise HTTPException(500, "Failed to create role")
+    return role
+
+
+@app.put("/api/workspace/roles/{role_id}")
+async def update_team_role(role_id: int, body: dict, member: dict = Depends(get_current_member)):
+    check_permission(member, "add_team_members")
+    role = storage.get_team_role(role_id)
+    if not role:
+        raise HTTPException(404, "Role not found")
+    if role.get("is_system"):
+        raise HTTPException(403, "Cannot edit system roles")
+    updated = storage.update_team_role(role_id, body.get("name"), body.get("permission_keys"))
+    return updated or {"error": "update failed"}
+
+
+@app.delete("/api/workspace/roles/{role_id}")
+async def delete_team_role(role_id: int, member: dict = Depends(get_current_member)):
+    check_permission(member, "add_team_members")
+    role = storage.get_team_role(role_id)
+    if not role:
+        raise HTTPException(404, "Role not found")
+    if role.get("is_system"):
+        raise HTTPException(403, "Cannot delete system roles")
+    ok = storage.delete_team_role(role_id)
+    return {"deleted": ok}
+
+
 @app.get("/api/workspace/activity")
 async def list_activity(limit: int = 50, offset: int = 0,
                         action: str = None, team_member_id: int = None,

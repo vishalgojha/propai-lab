@@ -349,6 +349,136 @@ class SupabaseStorage(Storage):
             res = self.client.table("user_profiles").insert(payload).execute()
         return res.data[0] if res and res.data else None
 
+    # ── Permission helpers (shared with SqliteStorage) ─────────────
+
+    PERMISSION_LABELS: list[tuple[str, str]] = [
+        ("view_inbox", "View Market Inbox"),
+        ("reply_whatsapp", "Reply from WhatsApp"),
+        ("save_requirements", "Save Requirements"),
+        ("save_listings", "Save Listings"),
+        ("export_contacts", "Export Contacts"),
+        ("view_broker_numbers", "View Broker Numbers"),
+        ("add_team_members", "Add Team Members"),
+        ("delete_data", "Delete Data"),
+        ("ai_actions", "AI Actions"),
+        ("bulk_broadcast", "Bulk Broadcast"),
+    ]
+
+    def _perm_bitfield(self, keys: list[str]) -> int:
+        labels = [k for k, _ in self.PERMISSION_LABELS]
+        return sum(1 << i for i, k in enumerate(labels) if k in keys)
+
+    def _perm_keys(self, bitfield: int) -> list[str]:
+        labels = [k for k, _ in self.PERMISSION_LABELS]
+        return [labels[i] for i in range(len(labels)) if bitfield & (1 << i)]
+
+    # ── Team Members ───────────────────────────────────────────────
+
+    def list_team_members(self) -> list[dict]:
+        try:
+            res = self.client.table("team_members").select("*").order("role", desc=False).order("name", desc=False).execute()
+            return res.data if res.data else []
+        except Exception:
+            return []
+
+    def get_team_member(self, member_id: int) -> dict | None:
+        try:
+            res = self.client.table("team_members").select("*").eq("id", member_id).limit(1).execute()
+            return res.data[0] if res.data else None
+        except Exception:
+            return None
+
+    def create_team_member(self, name: str, email: str = "", phone: str = "",
+                           role: str = "member", permission_keys: list[str] | None = None,
+                           linked_broker_phone: str | None = None) -> dict:
+        permissions = self._perm_bitfield(permission_keys or [])
+        payload = {
+            "name": name.strip(),
+            "email": email.strip() or None,
+            "phone": phone.strip() or None,
+            "role": role,
+            "permissions": permissions,
+            "linked_broker_phone": linked_broker_phone,
+        }
+        res = self.client.table("team_members").insert(payload).execute()
+        return res.data[0] if res and res.data else {}
+
+    def update_team_member(self, member_id: int, **kwargs) -> dict | None:
+        member = self.get_team_member(member_id)
+        if not member:
+            return None
+        fields = {}
+        for k in ("name", "email", "phone", "role", "linked_broker_phone"):
+            v = kwargs.get(k)
+            if v is not None:
+                fields[k] = v.strip() if isinstance(v, str) else v
+        if "permission_keys" in kwargs:
+            fields["permissions"] = self._perm_bitfield(kwargs["permission_keys"])
+        if "is_active" in kwargs:
+            fields["is_active"] = 1 if kwargs["is_active"] else 0
+        if not fields:
+            return member
+        fields["updated_at"] = "now()"
+        res = self.client.table("team_members").update(fields).eq("id", member_id).execute()
+        return res.data[0] if res and res.data else None
+
+    def deactivate_team_member(self, member_id: int) -> bool:
+        try:
+            self.client.table("team_members").update({
+                "is_active": 0, "updated_at": "now()"
+            }).eq("id", member_id).execute()
+            return True
+        except Exception:
+            return False
+
+    # ── Custom Roles ───────────────────────────────────────────────
+
+    def list_team_roles(self) -> list[dict]:
+        try:
+            res = self.client.table("team_roles").select("*").order("is_system", desc=True).order("name", desc=False).execute()
+            return res.data if res.data else []
+        except Exception:
+            return []
+
+    def create_team_role(self, name: str, permission_keys: list[str]) -> dict | None:
+        try:
+            res = self.client.table("team_roles").insert({
+                "name": name.strip(),
+                "permission_keys": json.dumps(permission_keys),
+                "is_system": False,
+            }).execute()
+            return res.data[0] if res and res.data else None
+        except Exception:
+            return None
+
+    def update_team_role(self, role_id: int, name: str | None = None, permission_keys: list[str] | None = None) -> dict | None:
+        fields = {}
+        if name is not None:
+            fields["name"] = name.strip()
+        if permission_keys is not None:
+            fields["permission_keys"] = json.dumps(permission_keys)
+        if not fields:
+            return self.get_team_role(role_id)
+        try:
+            res = self.client.table("team_roles").update(fields).eq("id", role_id).execute()
+            return res.data[0] if res and res.data else None
+        except Exception:
+            return None
+
+    def get_team_role(self, role_id: int) -> dict | None:
+        try:
+            res = self.client.table("team_roles").select("*").eq("id", role_id).limit(1).execute()
+            return res.data[0] if res.data else None
+        except Exception:
+            return None
+
+    def delete_team_role(self, role_id: int) -> bool:
+        try:
+            self.client.table("team_roles").delete().eq("id", role_id).execute()
+            return True
+        except Exception:
+            return False
+
     def init_schema(self):
         pass
 

@@ -1,5 +1,5 @@
 const BASE = "/api";
-const API_TIMEOUT_MS = 8000;
+const API_TIMEOUT_MS = 30000;
 
 async function fetchJSON<T>(url: string, init?: RequestInit, timeoutMs = API_TIMEOUT_MS): Promise<T> {
   const controller = new AbortController();
