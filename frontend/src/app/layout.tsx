@@ -192,6 +192,21 @@ function AppShell({ children }: { children: React.ReactNode }) {
   const [whatsapp, setWhatsapp] = useState<WhatsAppStatus | null>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [offline, setOffline] = useState(false);
+  const [profile, setProfile] = useState<{ phone: string; first_name: string; last_name?: string; email?: string; city?: string } | null>(null);
+
+  // Read profile from localStorage
+  useEffect(() => {
+    const stored = localStorage.getItem("propai_profile");
+    if (stored) {
+      try { setProfile(JSON.parse(stored)); } catch {}
+    }
+    const handler = () => {
+      const s = localStorage.getItem("propai_profile");
+      if (s) { try { setProfile(JSON.parse(s)); } catch { setProfile(null); } }
+    };
+    window.addEventListener("storage", handler);
+    return () => window.removeEventListener("storage", handler);
+  }, []);
 
   const waConnected = conn?.connected;
 
@@ -289,6 +304,23 @@ function AppShell({ children }: { children: React.ReactNode }) {
             </div>
           ))}
         </nav>
+
+        {/* Profile Section */}
+        {profile && (
+          <div className="px-4 py-3 border-t border-white/5">
+            <div className="flex items-center gap-3 px-2.5 py-2">
+              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-400/10 text-emerald-400 text-xs font-bold shrink-0">
+                {profile.first_name?.charAt(0)?.toUpperCase() || "?"}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="text-[12px] font-semibold text-white truncate">
+                  {profile.first_name}{profile.last_name ? ` ${profile.last_name}` : ""}
+                </div>
+                {profile.city && <div className="text-[10px] text-zinc-500 truncate">{profile.city}</div>}
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Bottom Status */}
         <div className="px-4 py-3 border-t border-white/5 space-y-2">

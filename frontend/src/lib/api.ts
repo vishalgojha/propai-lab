@@ -1277,3 +1277,25 @@ export function createNote(data: {
 export function deleteNote(noteId: number) {
   return fetchJSON<{ ok: boolean }>(`/notes/${noteId}`, { method: "DELETE" });
 }
+
+// ── User Profile / Onboarding ────────────────────────────────────
+
+export interface UserProfile {
+  phone: string;
+  first_name: string;
+  last_name: string;
+  email: string;
+  city: string;
+  onboarding_complete: boolean;
+}
+
+export function getProfile(phone: string) {
+  return fetchJSON<UserProfile>(`/profile?phone=${encodeURIComponent(phone)}`);
+}
+
+export function saveProfile(phone: string, data: { first_name: string; last_name: string; email: string; city: string }) {
+  return fetchJSON<UserProfile>(`/profile?phone=${encodeURIComponent(phone)}`, {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}

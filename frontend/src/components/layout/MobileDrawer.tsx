@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { X, Search } from "lucide-react";
 
@@ -61,6 +61,12 @@ export function MobileDrawer({
   const pathname = usePathname();
   const router = useRouter();
   const overlayRef = useRef<HTMLDivElement>(null);
+  const [profile, setProfile] = useState<{ phone: string; first_name: string; last_name?: string; city?: string } | null>(null);
+
+  useEffect(() => {
+    const stored = localStorage.getItem("propai_profile");
+    if (stored) { try { setProfile(JSON.parse(stored)); } catch {} }
+  }, []);
 
   useEffect(() => {
     if (open) {
@@ -164,6 +170,23 @@ export function MobileDrawer({
             </div>
           ))}
         </nav>
+
+        {/* Profile */}
+        {profile && (
+          <div className="px-4 py-3 border-t border-white/5">
+            <div className="flex items-center gap-3 px-2.5 py-2">
+              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-400/10 text-emerald-400 text-sm font-bold shrink-0">
+                {profile.first_name?.charAt(0)?.toUpperCase() || "?"}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-semibold text-white truncate">
+                  {profile.first_name}{profile.last_name ? ` ${profile.last_name}` : ""}
+                </div>
+                {profile.city && <div className="text-[11px] text-zinc-500 truncate">{profile.city}</div>}
+              </div>
+            </div>
+          </div>
+        )}
       </aside>
     </>
   );

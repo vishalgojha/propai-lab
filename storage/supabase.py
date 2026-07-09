@@ -323,6 +323,32 @@ class SupabaseStorage(Storage):
     def close(self):
         pass
 
+    # ── User Profiles / Onboarding ─────────────────────────────────
+
+    def get_user_profile(self, phone: str) -> dict | None:
+        try:
+            res = self.client.table("user_profiles").select("*").eq("phone", phone).limit(1).execute()
+            return res.data[0] if res.data else None
+        except Exception:
+            return None
+
+    def save_user_profile(self, phone: str, data: dict) -> dict | None:
+        payload = {
+            "phone": phone,
+            "first_name": data.get("first_name", ""),
+            "last_name": data.get("last_name", ""),
+            "email": data.get("email", ""),
+            "city": data.get("city", ""),
+            "onboarding_complete": True,
+            "updated_at": "now()",
+        }
+        existing = self.get_user_profile(phone)
+        if existing:
+            res = self.client.table("user_profiles").update(payload).eq("phone", phone).execute()
+        else:
+            res = self.client.table("user_profiles").insert(payload).execute()
+        return res.data[0] if res and res.data else None
+
     def init_schema(self):
         pass
 

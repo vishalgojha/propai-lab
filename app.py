@@ -29,6 +29,13 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 
+
+class OnboardingProfile(BaseModel):
+    first_name: str
+    last_name: str = ""
+    email: str = ""
+    city: str = ""
+
 from storage import Storage, SupabaseStorage, RawMessage, ParsedObservation, ResolverDecision, Evaluation, LLMProvider
 from lab.embedding import create_engine, observation_text, pack_embedding, EmbeddingEngine
 from lab import ai_chat_engine as chat_engine
@@ -9888,6 +9895,22 @@ async def root():
 @app.get("/health")
 async def health():
     return {"status": "ok", "db": SUPABASE_URL}
+
+
+# ── User Profile / Onboarding ─────────────────────────────────────
+
+@app.get("/api/profile")
+async def get_profile(phone: str, auth_user=Depends(require_user)):
+    storage: SupabaseStorage = request.state.storage
+    profile = storage.get_user_profile(phone)
+    return profile or {}
+
+
+@app.post("/api/profile")
+async def save_profile(body: OnboardingProfile, phone: str, auth_user=Depends(require_user)):
+    storage: SupabaseStorage = request.state.storage
+    profile = storage.save_user_profile(phone, body.model_dump())
+    return profile or {"error": "failed to save"}
 
 
 @app.get("/api/key")
