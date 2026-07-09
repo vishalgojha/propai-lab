@@ -19,8 +19,8 @@ const steps = [
       "Broker WhatsApp groups are noisy. Fragmented language, abbreviations, mixed Hindi and English, voice notes, and screenshots. PropAI understands this language natively.",
     examples: [
       "PKG — Package deal",
-      "Semi — Semi-furnished",
-      "FF — Floor",
+      "SF — Semi-furnished",
+      "FF — Fully furnished",
       "14R — 1 BHK (Room + Hall + Kitchen)",
       "CR — Closing Report",
       "LKW — Looking for (requirement)",
