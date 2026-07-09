@@ -27,6 +27,7 @@ import {
   Menu,
   X,
   AlertTriangle,
+  Shield,
 } from "lucide-react";
 import { LayoutProvider, useLayout } from "@/hooks/useLayout";
 import { useIsMobile } from "@/hooks/useMediaQuery";
@@ -69,17 +70,18 @@ const navSections = [
       { href: "/audit", label: "Audit", icon: Radar },
     ],
   },
-  {
-    title: "Settings",
-    items: [
-      { href: "/connections", label: "Connection", icon: Wifi },
-      { href: "/profile", label: "My Profile", icon: UserCheck },
-      { href: "/profile/team", label: "Team", icon: UserCog },
-      { href: "/profile/billing", label: "Billing", icon: TrendingUp },
-      { href: "/waba", label: "API", icon: Key },
-      { href: "/trainer", label: "Trainer", icon: GraduationCap },
-    ],
-  },
+{
+      title: "Settings",
+      items: [
+        { href: "/connections", label: "Connection", icon: Wifi },
+        { href: "/profile", label: "My Profile", icon: UserCheck },
+        { href: "/profile/team", label: "Team", icon: UserCog },
+        { href: "/settings/privacy", label: "Privacy", icon: Shield },
+        { href: "/profile/billing", label: "Billing", icon: TrendingUp },
+        { href: "/waba", label: "API", icon: Key },
+        { href: "/trainer", label: "Trainer", icon: GraduationCap },
+      ],
+    },
 ];
 
 function PaletteModal({ open, onClose }: { open: boolean; onClose: () => void }) {
@@ -229,12 +231,14 @@ function AppShell({ children }: { children: React.ReactNode }) {
     return () => clearInterval(t);
   }, []);
 
-  // PWA manifest link
+  // PWA manifest link (static in RootLayout, this is for dynamic fallback)
   useEffect(() => {
-    const link = document.createElement("link");
-    link.rel = "manifest";
-    link.href = "/manifest.json";
-    document.head.appendChild(link);
+    if (!document.querySelector('link[rel="manifest"]')) {
+      const link = document.createElement("link");
+      link.rel = "manifest";
+      link.href = "/manifest";
+      document.head.appendChild(link);
+    }
   }, []);
 
   // Reconnect timer: detect disconnect and start 10s countdown
@@ -457,7 +461,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
         )}
 
         {/* Page content */}
-        <div className="flex-1 overflow-y-auto text-white">
+        <div className="flex-1 min-h-0 overflow-y-auto text-white">
           {children}
         </div>
       </main>
@@ -494,7 +498,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <meta name="apple-mobile-web-app-title" content="PropAI" />
         <link rel="icon" type="image/svg+xml" href="/propai-logo.svg" />
         <link rel="apple-touch-icon" href="/pwa-192x192.png" />
-        <link rel="manifest" href="/manifest" />
+        <link rel="manifest" href="/manifest.json" />
         <meta name="application-name" content="PropAI" />
         <meta name="mobile-web-app-capable" content="yes" />
       </head>
