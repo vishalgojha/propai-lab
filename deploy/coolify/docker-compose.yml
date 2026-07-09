@@ -1,0 +1,48 @@
+services:
+  api:
+    build:
+      context: ../..
+      dockerfile: Dockerfile.api
+    environment:
+      LAB_HOST: 0.0.0.0
+      LAB_PORT: 8000
+      STATUS_FILE: /data/status.json
+      INGESTOR_INTERNAL_URL: http://ingestor:3001
+    volumes:
+      - propai-data:/data
+    expose:
+      - "8000"
+    restart: unless-stopped
+
+  app:
+    build:
+      context: ../..
+      dockerfile: frontend/Dockerfile
+      args:
+        LAB_API_BASE_URL: http://api:8000
+    environment:
+      LAB_API_BASE_URL: http://api:8000
+      NODE_ENV: production
+    depends_on:
+      - api
+    expose:
+      - "3000"
+    restart: unless-stopped
+
+  ingestor:
+    build:
+      context: ../..
+      dockerfile: services/whatsmeow-ingestor/Dockerfile
+    environment:
+      PROPAI_WEBHOOK_URL: https://api.propai.live/webhook
+      PROPAI_API_URL: https://api.propai.live
+      PROPAI_INSTANCE_NAME: propai-whatsmeow
+      DATABASE_URL: postgres://postgres:${SUPABASE_DB_PASSWORD}@db.${SUPABASE_REF}.supabase.co:5432/postgres?sslmode=require
+    depends_on:
+      - api
+    expose:
+      - "3001"
+    restart: unless-stopped
+
+volumes:
+  propai-data:

@@ -1,0 +1,244 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+if [ -f "$PWD/requirements.txt" ] && [ -f "$PWD/app.py" ] && [ -d "$PWD/frontend" ]; then
+  PROPAI_DIR="$PWD"
+else
+  PROPAI_DIR="$SCRIPT_DIR"
+fi
+LOG_FILE="/tmp/propai.log"
+PROPAI_VENV="$PROPAI_DIR/.venv"
+API_HEALTH_URL="http://127.0.0.1:8000/health"
+FRONTEND_HEALTH_URL="http://127.0.0.1:3000/"
+
+log() { echo "[propai] $*" | tee -a "$LOG_FILE" >&2; }
+http_ok() { curl --connect-timeout 1 --max-time 2 -sf "$1" >/dev/null 2>&1; }
+
+# ── Helpers ───────────────────────────────────────────────────────
+
+python_cmd() {
+  if [ -x "$PROPAI_VENV/bin/python" ]; then
+    echo "$PROPAI_VENV/bin/python"
+  else
+    echo "python3"
+  fi
+}
+
+start_lab_api() {
+  if http_ok "$API_HEALTH_URL"; then
+    return 0
+  fi
+  log "Starting PropAI server..."
+  cd "$PROPAI_DIR"
+  local py
+  py="$(python_cmd)"
+  setsid "$py" -m uvicorn app:app --host 0.0.0.0 --port 8000 &>/tmp/lab-api.log &
+  local pid=$!
+  disown "$pid" 2>/dev/null || true
+  for i in $(seq 1 60); do
+    if http_ok "$API_HEALTH_URL"; then
+      log "Server ready at http://localhost:8000"
+      return 0
+    fi
+    if ! kill -0 "$pid" 2>/dev/null; then
+      log "ERROR: Server exited before it became ready"
+      tail -20 /tmp/lab-api.log >&2 || true
+      return 1
+    fi
+    sleep 1
+  done
+  log "ERROR: Server did not become ready within 60s"
+  tail -20 /tmp/lab-api.log >&2 || true
+  return 1
+}
+
+start_frontend() {
+  if http_ok "$FRONTEND_HEALTH_URL"; then
+    return 0
+  fi
+  if [ ! -d "$PROPAI_DIR/frontend/node_modules" ]; then
+    log "Frontend dependencies missing. Run: propai install"
+    return 1
+  fi
+  log "Starting PropAI frontend..."
+  cd "$PROPAI_DIR/frontend"
+  setsid npm run dev -- --webpack --hostname 0.0.0.0 --port 3000 &>/tmp/propai-frontend.log &
+  disown
+  for i in $(seq 1 20); do
+    if http_ok "$FRONTEND_HEALTH_URL"; then
+      log "Frontend ready at http://localhost:3000"
+      return 0
+    fi
+    sleep 1
+  done
+  log "WARNING: Frontend did not become ready"
+  tail -5 /tmp/propai-frontend.log >&2 || true
+  return 1
+}
+
+open_browser() {
+  local url="$1"
+  if command -v xdg-open &>/dev/null; then
+    xdg-open "$url" 2>/dev/null || true
+  elif command -v open &>/dev/null; then
+    open "$url" 2>/dev/null || true
+  elif command -v sensible-browser &>/dev/null; then
+    sensible-browser "$url" 2>/dev/null || true
+  fi
+  echo "  → $url"
+}
+
+# ── Commands ──────────────────────────────────────────────────────
+
+cmd_install() {
+  echo ""
+  echo "  ── PropAI Installer ───────────────────"
+  echo ""
+
+  if ! command -v python3 >/dev/null 2>&1; then
+    echo "  ✗ python3 is required"
+    return 1
+  fi
+  if ! command -v npm >/dev/null 2>&1; then
+    echo "  ✗ npm is required"
+    return 1
+  fi
+
+  echo "  Creating local Python environment..."
+  if ! python3 -m venv "$PROPAI_VENV" >/dev/null 2>&1; then
+    echo "  ✗ python3-venv is required"
+    echo "    Install it with: sudo apt install python3-venv"
+    return 1
+  fi
+  local py
+  py="$PROPAI_VENV/bin/python"
+
+  echo "  Installing Python dependencies..."
+  "$py" -m pip install --upgrade pip setuptools wheel >/dev/null
+  "$py" -m pip install -r "$PROPAI_DIR/requirements.txt"
+
+  echo ""
+  echo "  Installing frontend dependencies..."
+  npm --prefix "$PROPAI_DIR/frontend" install
+
+  echo ""
+  echo "  ✓ PropAI installed"
+  echo ""
+}
+
+cmd_start() {
+  start_lab_api
+  start_frontend
+  echo ""
+  echo "  PropAI running:"
+  echo "  → http://localhost:3000"
+  echo "  → http://localhost:8000"
+  echo ""
+}
+
+cmd_dashboard() {
+  start_lab_api
+  start_frontend
+  echo ""
+  open_browser "http://localhost:3000/"
+  echo ""
+}
+
+cmd_doctor() {
+  echo ""
+  echo "  ── PropAI Health Check ───────────────────"
+  echo ""
+  local all_ok=true
+
+  if http_ok "$API_HEALTH_URL"; then
+    echo "  ✓ PropAI server"
+  else
+    echo "  ✗ PropAI server  (not running)"
+    all_ok=false
+  fi
+
+  if http_ok "$FRONTEND_HEALTH_URL"; then
+    echo "  ✓ PropAI frontend"
+  else
+    echo "  ✗ PropAI frontend  (run 'propai dashboard')"
+    all_ok=false
+  fi
+
+  local py
+  py="$(python_cmd)"
+  if "$py" -c "import fastapi, uvicorn, httpx" 2>/dev/null; then
+    echo "  ✓ Python dependencies"
+  else
+    echo "  ✗ Python dependencies  (run 'propai install')"
+    all_ok=false
+  fi
+
+  echo ""
+  if $all_ok; then
+    echo "  Everything looks good."
+  else
+    echo "  Some checks failed. Run 'propai dashboard' to start."
+  fi
+  echo ""
+}
+
+cmd_status() {
+  echo ""
+  echo "  ── PropAI Status ─────────────────────"
+  echo ""
+  if http_ok "$API_HEALTH_URL"; then
+    echo "  Server       ✓  http://localhost:8000"
+  else
+    echo "  Server       ✗  (not running)"
+  fi
+  if http_ok "$FRONTEND_HEALTH_URL"; then
+    echo "  Frontend     ✓  http://localhost:3000"
+  else
+    echo "  Frontend     ✗  (not running)"
+  fi
+  echo ""
+}
+
+usage() {
+  echo "Usage: propai <command>"
+  echo ""
+  echo "Commands:"
+  echo "  install    Install Python and frontend dependencies"
+  echo "  start      Start API and frontend in background"
+  echo "  dashboard  Open the PropAI dashboard"
+  echo "  doctor     Run health checks"
+  echo "  status     Show running services"
+  echo "  help       Show this help"
+}
+
+# ── Dispatch ──────────────────────────────────────────────────────
+
+case "${1:-}" in
+  install|setup)
+    cmd_install
+    ;;
+  start)
+    cmd_start
+    ;;
+  dashboard|lab|admin)
+    cmd_dashboard
+    ;;
+  doctor|check)
+    cmd_doctor
+    ;;
+  status)
+    cmd_status
+    ;;
+  help|--help|-h)
+    usage
+    ;;
+  '')
+    usage
+    ;;
+  *)
+    echo "Unknown command: $1"
+    usage
+    exit 1
+    ;;
+esac

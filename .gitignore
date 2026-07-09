@@ -1,0 +1,37 @@
+__pycache__/
+*.pyc
+.env
+.env.supabase
+.api_key
+lab.db
+lab.db-*
+*.log
+*.db-shm
+*.db-wal
+propai.db
+/tmp/
+.DS_Store
+lab.db.backup-*
+lab.db
+
+# Build artifacts
+node_modules/
+src-tauri/target/
+src-tauri/node_modules/
+src-tauri/binaries/
+desktop/build/
+desktop/dist/
+desktop/sidecars/
+data/
+*.sqlite
+*.sqlite3
+backend/
+scripts/
+.qwen/
+.github/
+
+# Go ingestor build artifacts
+services/whatsmeow-ingestor/ingestor
+auth/
+whatsmeow-ingestor/whatsmeow-ingestor
+_sqlite3.Connection*
