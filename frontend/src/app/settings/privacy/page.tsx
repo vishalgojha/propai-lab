@@ -2,10 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Shield, Share2, Lock, Eye, EyeOff, Check, AlertCircle, Building2, ClipboardCheck, TrendingUp, Activity, Users, Award } from "lucide-react";
+import { Shield, Share2, Lock, Eye, EyeOff, Check, AlertCircle, Building2, ClipboardCheck, TrendingUp, Activity, Users, Award, MapPin } from "lucide-react";
 import { getOrgPrivacy, updateOrgPrivacy, OrgPrivacySettings } from "@/lib/api";
-
-// Cache bust: 2026-07-10
 
 const PRIVACY_OPTIONS = [
   {
@@ -57,8 +55,6 @@ const PRIVACY_OPTIONS = [
     icon: MapPin,
   },
 ] as const;
-
-import { Building2, ClipboardCheck, TrendingUp, Activity, Users, Award, MapPin } from "lucide-react";
 
 export default function PrivacyPage() {
   const router = useRouter();

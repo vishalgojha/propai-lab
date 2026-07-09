@@ -1,3 +1,5 @@
+import { getAccessToken } from "@/lib/auth";
+
 const BASE = "/api";
 const API_TIMEOUT_MS = 30000;
 
@@ -5,10 +7,15 @@ async function fetchJSON<T>(url: string, init?: RequestInit, timeoutMs = API_TIM
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
+    const token = await getAccessToken();
     const res = await fetch(`${BASE}${url}`, {
       ...init,
       signal: init?.signal || controller.signal,
-      headers: { "Content-Type": "application/json", ...init?.headers },
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...init?.headers,
+      },
     });
     if (!res.ok) {
       const body = await res.text();
@@ -1296,6 +1303,31 @@ export function getProfile(phone: string) {
 export function saveProfile(phone: string, data: { first_name: string; last_name: string; email: string; city: string }) {
   return fetchJSON<UserProfile>(`/profile?phone=${encodeURIComponent(phone)}`, {
     method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+// ── Organization Privacy Settings ──────────────────────────────────
+
+export interface OrgPrivacySettings {
+  privacy_mode: "private" | "shared";
+  share_listings: boolean;
+  share_requirements: boolean;
+  share_price_trends: boolean;
+  share_market_activity: boolean;
+  share_building_intelligence: boolean;
+  share_broker_network: boolean;
+  share_broker_reputation: boolean;
+  share_demand_signals: boolean;
+}
+
+export function getOrgPrivacy(orgId: string) {
+  return fetchJSON<OrgPrivacySettings>(`/orgs/${orgId}/privacy`);
+}
+
+export function updateOrgPrivacy(orgId: string, data: Partial<OrgPrivacySettings>) {
+  return fetchJSON<OrgPrivacySettings>(`/orgs/${orgId}/privacy`, {
+    method: "PUT",
     body: JSON.stringify(data),
   });
 }
