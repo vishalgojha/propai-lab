@@ -58,7 +58,7 @@ const features = [
     id: "06",
     icon: Users,
     title: "Private by Default",
-    description: "Your groups stay yours. Opt in to share anonymous market intelligence and get visibility beyond your own network. No raw messages are ever shared.",
+    description: "Your groups stay yours. Share anonymized market signals — not conversations. Personal chats, client conversations, phone numbers, and WhatsApp messages never leave your workspace.",
     href: "/how-it-works#step-06",
     tag: "Live now",
   },
@@ -123,9 +123,6 @@ export default function HomePage() {
           <nav className="flex items-center gap-3 sm:gap-5">
             <Link href="/how-it-works" className="text-sm text-zinc-400 transition-colors hover:text-white">
               How it works
-            </Link>
-            <Link href="/docs" className="text-sm text-zinc-400 transition-colors hover:text-white">
-              Docs
             </Link>
             <Link href="/dashboard" className="text-sm text-zinc-400 transition-colors hover:text-white">
               Log in
@@ -197,14 +194,14 @@ export default function HomePage() {
                 <div className="mt-0.5 text-sm">🔒</div>
                 <div>
                   <div className="text-sm font-semibold text-white">Private Mode <span className="text-[10px] font-normal uppercase tracking-wider text-[#3EE88A]">Default</span></div>
-                  <div className="text-xs text-zinc-400 mt-1">Only your groups. Nothing shared. Immediate value.</div>
+                  <div className="text-xs text-zinc-400 mt-1">Only your groups. Nothing shared. Immediate value from day one.</div>
                 </div>
               </div>
               <div className="flex items-start gap-3 rounded-xl border border-white/5 bg-white/[0.02] px-4 py-3">
                 <div className="mt-0.5 text-sm">🌐</div>
                 <div>
                   <div className="text-sm font-semibold text-white">Shared Market <span className="text-[10px] font-normal uppercase tracking-wider text-zinc-500">Opt-in</span></div>
-                  <div className="text-xs text-zinc-400 mt-1">Contribute anonymously. Get visibility beyond your own network.</div>
+                  <div className="text-xs text-zinc-400 mt-1">Share anonymized market signals — not conversations. Personal chats, client conversations, phone numbers, and WhatsApp messages never leave your workspace.</div>
                 </div>
               </div>
             </div>
