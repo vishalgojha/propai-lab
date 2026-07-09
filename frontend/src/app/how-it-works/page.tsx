@@ -50,54 +50,75 @@ const steps = [
     detail:
       "Search across listings, requirements, buildings, and brokers. Results are ranked by relevance and freshness. Filter by location, budget, property type, and more — all without leaving the inbox.",
   },
-  {
-    num: "05",
-    icon: Brain,
-    title: "PropAI builds memory",
-    description:
-      "This is PropAI's biggest differentiator. Conversations aren't just indexed — the platform continuously builds knowledge that compounds over time.",
-    capabilities: [
-      "Building knowledge — every mention of a building is tracked, resolved, and enriched",
-      "Broker profiles — names, aliases, phone numbers, activity patterns, and deal history",
-      "Alias learning — the same broker uses different names across groups; PropAI learns to connect them",
-      "Market relationships — who deals with whom, which brokers operate in which micro-markets",
-      "Location graph — buildings, landmarks, micro-markets, and how they relate",
-      "Conversation memory — context is maintained across days, weeks, and months",
-    ],
-    detail:
-      "The memory layer means PropAI gets smarter the longer you use it. A broker's history, past deals, and market relationships are available without any manual input.",
-  },
-  {
-    num: "06",
-    icon: Lock,
-    title: "Private by default",
-    description:
-      "Your groups stay yours. Nothing leaves your workspace unless you choose to share.",
-    modes: [
-      {
-        label: "Private Mode",
-        tag: "Default",
-        description: "Only your groups. Nothing shared outside your workspace. Immediate value from day one.",
-        features: [
-          "Your messages never leave your workspace",
-          "AI extraction runs on your data only",
-          "Broker profiles are private to your team",
-          "Full search and memory within your workspace",
-        ],
-      },
-      {
-        label: "Shared Market",
-        tag: "Opt-in",
-        description: "Contribute anonymous market intelligence and get visibility beyond your own network.",
-        features: [
-          "Only anonymous market data is shared (aggregate pricing, trends)",
-          "Phone numbers, names, messages, media, and customers are never shared",
-          "Opt in or out at any time",
-          "Get market-wide insights beyond your own groups",
-        ],
-      },
-    ],
-  },
+{
+      num: "05",
+      icon: Brain,
+      title: "Every broker gets a unified profile — across all your groups",
+      description:
+        "This is PropAI's core differentiator. The same broker appears under different names, numbers, and handles across 50+ groups. PropAI extracts their entity, deduplicates them, and surfaces everything as a single DM-like profile.",
+      capabilities: [
+        "Broker entity extraction — one canonical profile per person, not per handle",
+        "Cross-group deduplication — messages from 'Rajesh', 'Rajesh Sharma', '98xxx5432' in 12 groups become one thread",
+        "Unified DM view — open a broker's profile to see every listing, requirement, building, and conversation across all groups",
+        "Alias learning — PropAI continuously merges names, phones, and display names as new evidence arrives",
+        "Activity timeline — listings posted, requirements shared, buildings mentioned, markets active in",
+        "Deal context — which listings matched which requirements, when, and at what price",
+      ],
+      detail:
+        "Instead of scrolling 50 groups to find what Rajesh posted, open his profile. Every message, every property, every market — unified. This is how PropAI turns group chaos into actionable broker intelligence.",
+    },
+{
+      num: "06",
+      icon: Lock,
+      title: "Private by default",
+      description:
+        "Your groups stay yours. Nothing leaves your workspace unless you choose to share.",
+      modes: [
+        {
+          label: "Private (Default)",
+          tag: "Default",
+          description: "Only your workspace can access your data. Personal chats, client conversations, phone numbers, and WhatsApp messages never leave your workspace.",
+          features: [
+            "Conversations",
+            "Groups",
+            "Listings",
+            "Requirements",
+            "Broker graph",
+            "Knowledge graph",
+          ],
+          neverShared: [
+            "WhatsApp messages",
+            "Media",
+            "Phone numbers",
+            "Customer chats",
+            "Direct Messages",
+            "Personal chats",
+            "Client conversations",
+          ],
+        },
+        {
+          label: "Shared Market",
+          tag: "Opt-in",
+          description: "Contribute anonymous market intelligence and get visibility beyond your own network.",
+          features: [
+            "Better market visibility",
+            "Cross-network inventory",
+            "Demand trends",
+            "Price trends (anonymized)",
+            "Market activity signals",
+          ],
+          neverShared: [
+            "WhatsApp messages",
+            "Media",
+            "Phone numbers",
+            "Customer chats",
+            "Direct Messages",
+            "Personal chats",
+            "Client conversations",
+          ],
+        },
+      ],
+    },
   {
     num: "07",
     icon: Bell,
@@ -313,7 +334,7 @@ function HowItWorksPage() {
                           {i === 1 && "Broker language, understood."}
                           {i === 2 && "Chaos → Structure"}
                           {i === 3 && "Search instead of scroll"}
-                          {i === 4 && "Memory that compounds"}
+                          {i === 4 && "One broker. One profile. Every group."}
                           {i === 5 && "You control what leaves"}
                           {i === 6 && "One inbox to rule them all"}
                         </div>
