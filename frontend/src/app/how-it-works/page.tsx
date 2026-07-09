@@ -270,7 +270,7 @@ function HowItWorksPage() {
                           Raw WhatsApp
                         </div>
                         <div className="text-sm text-zinc-300 leading-relaxed">
-                          &quot;Semi 2bhk andheri west near station 35k negotiable ALL LL call 98765xxxxx urgent&quot;
+                          &quot;2bhk sf andheri west nr station 65k neg ALL brokers call 98765xxxxx urgent&quot;
                         </div>
                       </div>
                       <div className="flex items-center justify-center">
@@ -285,8 +285,8 @@ function HowItWorksPage() {
                           <div><span className="text-zinc-500">BHK:</span> <span className="text-white">2</span></div>
                           <div><span className="text-zinc-500">Furnishing:</span> <span className="text-white">Semi-furnished</span></div>
                           <div><span className="text-zinc-500">Location:</span> <span className="text-white">Andheri West</span></div>
-                          <div><span className="text-zinc-500">Price:</span> <span className="text-white">₹35,000/mo</span></div>
-                          <div><span className="text-zinc-500">Landlord:</span> <span className="text-white">ALL LL (All Landlords)</span></div>
+                          <div><span className="text-zinc-500">Price:</span> <span className="text-white">₹65,000/mo</span></div>
+                          <div><span className="text-zinc-500">Landlord:</span> <span className="text-white">Direct</span></div>
                           <div><span className="text-zinc-500">Contact:</span> <span className="text-white">98765xxxxx</span></div>
                           <div><span className="text-zinc-500">Urgency:</span> <span className="text-amber-400">Urgent</span></div>
                         </div>
