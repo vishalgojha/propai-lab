@@ -14,6 +14,7 @@ import re
 import base64
 import ast
 import subprocess
+import jwt as pyjwt
 from fnmatch import fnmatch
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -21,7 +22,7 @@ from typing import Optional
 from contextlib import asynccontextmanager
 from dataclasses import asdict
 
-from fastapi import FastAPI, Request, HTTPException, Body, Depends, Query
+from fastapi import FastAPI, Request, HTTPException, Body, Depends, Query, Security, Header
 from fastapi.responses import Response, StreamingResponse, FileResponse
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
@@ -2216,6 +2217,70 @@ async def get_raw_message(raw_id: int):
         payload["landmark_name"] = parsed["landmark_name"] or ""
         payload["location_raw"] = parsed["location_raw"] or ""
     return payload
+
+
+# ── Auth / Tenant helpers ──────────────────────────────────────────────
+
+SUPABASE_JWT_SECRET = os.getenv("SUPABASE_JWT_SECRET", "")
+
+security_scheme = HTTPBearer(auto_error=False)
+
+
+def verify_supabase_token(token: str) -> dict | None:
+    secret = SUPABASE_JWT_SECRET
+    if not secret:
+        return None
+    try:
+        payload = pyjwt.decode(
+            token, secret, algorithms=["HS256"],
+            options={"require": ["sub", "exp"]},
+        )
+        return payload
+    except Exception:
+        return None
+
+
+async def get_current_user(
+    credentials: HTTPAuthorizationCredentials | None = Security(security_scheme),
+) -> dict | None:
+    if credentials is None:
+        return None
+    payload = verify_supabase_token(credentials.credentials)
+    if payload is None:
+        return None
+    return {
+        "id": payload.get("sub"),
+        "email": payload.get("email", ""),
+        "phone": payload.get("phone", ""),
+    }
+
+
+async def require_user(user: dict | None = Depends(get_current_user)) -> dict:
+    if user is None:
+        raise HTTPException(401, "Authentication required")
+    return user
+
+
+async def get_tenant_context(
+    user: dict | None = Depends(get_current_user),
+    x_tenant_id: str | None = Header(None),
+) -> str | None:
+    tid = x_tenant_id
+    if not tid and user:
+        orgs = storage.get_user_organizations(user["id"])
+        if orgs:
+            tid = orgs[0]["id"]
+    if tid:
+        storage.tenant_id = tid
+    return tid
+
+
+async def require_tenant(
+    tenant_id: str | None = Depends(get_tenant_context),
+) -> str:
+    if tenant_id is None:
+        raise HTTPException(403, "No organization membership found")
+    return tenant_id
 
 
 @app.get("/api/inbox/threads")
@@ -10412,72 +10477,7 @@ if __name__ == "__main__":
     uvicorn.run("lab.app:app", host=HOST, port=PORT, reload=True)
 
 
-# ═══════════════════════════════════════════════════════════════
-# Multi-Tenant: Tenant Context & Management
-# ═══════════════════════════════════════════════════════════════
 
-import jwt as pyjwt
-
-SUPABASE_JWT_SECRET = os.getenv("SUPABASE_JWT_SECRET", "")
-
-security_scheme = HTTPBearer(auto_error=False)
-
-
-def verify_supabase_token(token: str) -> dict | None:
-    secret = SUPABASE_JWT_SECRET
-    if not secret:
-        return None
-    try:
-        payload = pyjwt.decode(
-            token, secret, algorithms=["HS256"],
-            options={"require": ["sub", "exp"]},
-        )
-        return payload
-    except Exception:
-        return None
-
-
-async def get_current_user(
-    credentials: HTTPAuthorizationCredentials | None = Security(security_scheme),
-) -> dict | None:
-    if credentials is None:
-        return None
-    payload = verify_supabase_token(credentials.credentials)
-    if payload is None:
-        return None
-    return {
-        "id": payload.get("sub"),
-        "email": payload.get("email", ""),
-        "phone": payload.get("phone", ""),
-    }
-
-
-async def require_user(user: dict | None = Depends(get_current_user)) -> dict:
-    if user is None:
-        raise HTTPException(401, "Authentication required")
-    return user
-
-
-async def get_tenant_context(
-    user: dict | None = Depends(get_current_user),
-    x_tenant_id: str | None = Header(None),
-) -> str | None:
-    tid = x_tenant_id
-    if not tid and user:
-        orgs = storage.get_user_organizations(user["id"])
-        if orgs:
-            tid = orgs[0]["id"]
-    if tid:
-        storage.tenant_id = tid
-    return tid
-
-
-async def require_tenant(
-    tenant_id: str | None = Depends(get_tenant_context),
-) -> str:
-    if tenant_id is None:
-        raise HTTPException(403, "No organization membership found")
-    return tenant_id
 
 
 @app.get("/api/auth/me")
