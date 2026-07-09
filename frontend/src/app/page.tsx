@@ -150,7 +150,7 @@ export default function HomePage() {
             </div>
 
             <h1 className="mt-6 max-w-xl text-3xl font-semibold tracking-tight text-white sm:text-4xl lg:text-5xl">
-              50 WhatsApp groups. One organised market inbox.
+              All your WhatsApp groups. One organised market inbox.
             </h1>
 
             <p className="mt-5 max-w-xl text-base leading-7 text-zinc-400 sm:text-lg">
