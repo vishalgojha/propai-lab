@@ -2268,6 +2268,12 @@ async def require_user(user: dict | None = Depends(get_current_user)) -> dict:
     return user
 
 
+# Shared default organization used when no tenant context is provided
+# (e.g. unauthenticated feed endpoints). Brokers/observations are seeded
+# under this tenant, so scoping to it keeps the inbox populated.
+DEFAULT_TENANT_ID = "00000000-0000-0000-0000-000000000010"
+
+
 async def get_tenant_context(
     user: dict | None = Depends(get_current_user),
     x_tenant_id: str | None = Header(None),
@@ -2277,8 +2283,13 @@ async def get_tenant_context(
         orgs = storage.get_user_organizations(user["id"])
         if orgs:
             tid = orgs[0]["id"]
-    if tid:
-        storage.tenant_id = tid
+    # Always reset tenant context to avoid leaking a stale value from a
+    # previous request on the same (global) storage singleton. Default to
+    # the shared workspace so unauthenticated feed endpoints still scope
+    # to the correct organization.
+    if not tid:
+        tid = DEFAULT_TENANT_ID
+    storage.tenant_id = tid
     return tid
 
 
@@ -2395,6 +2406,7 @@ async def get_observations_feed(
 async def get_brokers_feed(
     limit: int = 50, offset: int = 0,
     min_observations: int = 1,
+    tenant_id: str | None = Depends(get_tenant_context),
 ):
     return storage.get_brokers_feed(limit, offset, min_observations=min_observations)
 
