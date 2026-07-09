@@ -9900,15 +9900,13 @@ async def health():
 # ── User Profile / Onboarding ─────────────────────────────────────
 
 @app.get("/api/profile")
-async def get_profile(phone: str, auth_user=Depends(require_user)):
-    storage: SupabaseStorage = request.state.storage
+async def get_profile(phone: str):
     profile = storage.get_user_profile(phone)
     return profile or {}
 
 
 @app.post("/api/profile")
-async def save_profile(body: OnboardingProfile, phone: str, auth_user=Depends(require_user)):
-    storage: SupabaseStorage = request.state.storage
+async def save_profile(body: OnboardingProfile, phone: str):
     profile = storage.save_user_profile(phone, body.model_dump())
     return profile or {"error": "failed to save"}
 
