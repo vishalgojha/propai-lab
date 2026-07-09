@@ -21,6 +21,7 @@ const steps = [
       "SF — Semi-furnished",
       "FF — Fully furnished",
       "SBS — Side by side transaction",
+      "+1 / Plus 1 — Indirect deal via another broker",
     ],
     detail: "Messages are cleaned, de-duplicated, and structured automatically. Voice notes are transcribed. Images are analysed for property details. Nothing is lost.",
   },
