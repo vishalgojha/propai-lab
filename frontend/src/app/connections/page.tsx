@@ -16,6 +16,10 @@ type ConnectionPhase =
   | "reconnecting"
   | "error";
 
+function randomMovieQuote() {
+  return MOVIE_QUOTES[Math.floor(Math.random() * MOVIE_QUOTES.length)];
+}
+
 const MOVIE_QUOTES = [
   "Life finds a way. — Jurassic Park",
   "I'll be back. — Terminator 2",
@@ -274,6 +278,13 @@ export default function ConnectionCenterPage() {
       if (detail?.connected_since) setConnectedSince(detail.connected_since);
       if (detail?.last_message_at) setLastMessageAt(detail.last_message_at);
 
+      // Bootstrap phase from the polling endpoint (reliable even if SSE is flaky)
+      if (detail?.connected || detail?.connection_state === "open") {
+        setPhase((p) => (p === "connected" || p === "syncing" ? p : "connected"));
+        wasEverConnectedRef.current = true;
+        reconnectAttempts.current = 0;
+      }
+
       if (stats?.total_messages != null && !detail?.messages_found) setMessages(stats.total_messages);
       if (stats?.total_parsed != null) setTotalParsed(stats.total_parsed);
       if (stats?.total_listings != null) setTotalListings(stats.total_listings);
@@ -293,9 +304,9 @@ export default function ConnectionCenterPage() {
 
   const handleDisconnected = useCallback((data: Record<string, unknown>) => {
     const reason = (data.reason as string) || "unknown";
-    const msg = DISCONNECT_REASONS[String(reason)] || `Disconnected: ${reason}`;
+    const specific = DISCONNECT_REASONS[String(reason)];
     setPhase("error");
-    setErrorMsg(msg);
+    setErrorMsg(specific || randomMovieQuote());
     setQrText(null);
   }, []);
 
@@ -304,7 +315,7 @@ export default function ConnectionCenterPage() {
     if (phase !== "loading") return;
     loadingFallback.current = setTimeout(() => {
       setPhase("error");
-      setErrorMsg("Could not reach WhatsApp service");
+      setErrorMsg(randomMovieQuote());
     }, 8000);
     return () => { if (loadingFallback.current) clearTimeout(loadingFallback.current); };
   }, [phase]);
@@ -340,12 +351,12 @@ export default function ConnectionCenterPage() {
           handleDisconnected({ reason: cs, ...data } as Record<string, unknown>);
         } else if (cs === "error") {
           setPhase("error");
-          setErrorMsg((data.error as string) || "Connection error");
+          setErrorMsg((data.error as string) || randomMovieQuote());
         } else if (cs === "unknown" || !cs) {
-          // Only show "Not connected" on initial load; if we were connected, stay reconnecting
+          // Only show movie quote on initial load; if we were connected, stay reconnecting
           if (!wasEverConnectedRef.current) {
             setPhase("error");
-            setErrorMsg("Not connected");
+            setErrorMsg(randomMovieQuote());
           }
         }
       } catch { /* ignore */ }
@@ -397,6 +408,7 @@ export default function ConnectionCenterPage() {
 
   useEffect(() => {
     connectSSE();
+    fetchStats(); // Bootstrap phase from polling endpoint (reliable even if SSE is flaky)
     return () => {
       if (eventSourceRef.current) eventSourceRef.current.close();
     };
@@ -543,23 +555,24 @@ export default function ConnectionCenterPage() {
 
             {phase === "error" && (
               <div className="flex flex-col items-center py-12 text-center">
-                <AlertTriangle className="w-8 h-8 text-[#fca5a5] mb-3" />
-                <div className="text-sm font-bold text-[#fca5a5]">Connection Issue</div>
-                <p className="mt-1 text-xs text-[#fca5a5]/80 mb-6">{errorMsg || "Something went wrong"}</p>
-                <div className="flex flex-wrap items-center justify-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center mb-3">
+                  <MessageSquare className="w-5 h-5 text-zinc-400" strokeWidth={1.5} />
+                </div>
+                <p className="text-sm text-zinc-300 italic max-w-md leading-relaxed">"{errorMsg || "Something went wrong"}"</p>
+                <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
                   <button
                     onClick={fetchQR}
                     disabled={qrLoading}
                     className="rounded-lg bg-[#3EE88A] px-6 py-2.5 text-xs font-bold text-black min-h-[44px] disabled:opacity-50"
                   >
-                    {qrLoading ? "Loading..." : "Reconnect"}
+                    {qrLoading ? "Loading..." : "Scan QR Code"}
                   </button>
                   <button
                     onClick={async () => {
                       setQrLoading(true);
                       try {
                         await fetch("/api/sync/refresh-qr", { method: "POST" });
-                        setErrorMsg(MOVIE_QUOTES[Math.floor(Math.random() * MOVIE_QUOTES.length)]);
+                        await fetchQR();
                       } catch {
                         setErrorMsg("Could not refresh QR");
                       } finally {

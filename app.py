@@ -6207,11 +6207,12 @@ async def sync_events():
     """SSE endpoint that streams real-time connection status changes."""
     async def event_stream():
         seen: dict = {}
-        yield f"event: status\ndata: {json.dumps(_status_file())}\n\n"
+        initial = _memory_status if _memory_status else _status_file()
+        yield f"event: status\ndata: {json.dumps(initial)}\n\n"
         while True:
             try:
                 await asyncio.sleep(1.5)
-                current = _status_file()
+                current = _memory_status if _memory_status else _status_file()
                 prev = seen
                 seen = dict(current)
                 cs = current.get("connection_state", "")
