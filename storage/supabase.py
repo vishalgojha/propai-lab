@@ -73,7 +73,49 @@ class _SupabaseDatabaseAdapter:
                 translated.append(f"${idx}")
             else:
                 translated.append(ch)
-        return "".join(translated), list(params)
+
+        # Apply SQLite-to-Postgres function translations
+        translated_sql = "".join(translated)
+        # INSTR(haystack, needle) -> POSITION(needle IN haystack) or split_part for common '@' case
+        # Handle INSTR(sender_jid, '@') pattern
+        translated_sql = re.sub(
+            r'INSTR\s*\(\s*(\w+)\s*,\s*[\'"]([^\'"]+)[\'"]\s*\)',
+            r'POSITION(\2 IN \1)',
+            translated_sql,
+            flags=re.IGNORECASE,
+        )
+        # General INSTR(haystack, needle) -> POSITION(needle IN haystack)
+        translated_sql = re.sub(
+            r'INSTR\s*\(\s*([^,]+)\s*,\s*([^)]+)\s*\)',
+            r'POSITION(\2 IN \1)',
+            translated_sql,
+            flags=re.IGNORECASE,
+        )
+        # SUBSTR(str, start, length) -> SUBSTRING(str FROM start FOR length)
+        translated_sql = re.sub(
+            r'SUBSTR\s*\(\s*([^,]+)\s*,\s*([^,]+)\s*,\s*([^)]+)\s*\)',
+            r'SUBSTRING(\1 FROM \2 FOR \3)',
+            translated_sql,
+            flags=re.IGNORECASE,
+        )
+        # SUBSTR(str, start) -> SUBSTRING(str FROM start)
+        translated_sql = re.sub(
+            r'SUBSTR\s*\(\s*([^,]+)\s*,\s*([^)]+)\s*\)',
+            r'SUBSTRING(\1 FROM \2)',
+            translated_sql,
+            flags=re.IGNORECASE,
+        )
+        # IFNULL(a, b) -> COALESCE(a, b)
+        translated_sql = re.sub(
+            r'IFNULL\s*\(\s*([^,]+)\s*,\s*([^)]+)\s*\)',
+            r'COALESCE(\1, \2)',
+            translated_sql,
+            flags=re.IGNORECASE,
+        )
+        # Boolean literals
+        translated_sql = translated_sql.replace("TRUE", "true").replace("FALSE", "false")
+
+        return translated_sql, list(params)
 
     @staticmethod
     def _is_query(sql: str) -> bool:

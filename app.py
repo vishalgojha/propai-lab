@@ -523,8 +523,12 @@ def parse_message(raw_text: str, profile_name: str | None = None) -> dict:
     Parse a WhatsApp message into structured fields.
     Broker-first extraction with intent/principal separation.
     """
-    text = raw_text.strip()
+    # Pre-process: normalize emoji, abbreviations, formatting
+    from normalize import preprocess_for_parsing, normalize_whatsapp_message
+    text = preprocess_for_parsing(raw_text)
     lower = text.lower()
+    # Also get full normalization result for metadata
+    normalized_result = normalize_whatsapp_message(raw_text)
     result = {
         "intent": None,
         "principal": None,
@@ -545,7 +549,7 @@ def parse_message(raw_text: str, profile_name: str | None = None) -> dict:
         "forwarded": 0,
         "confidence": 0.0,
         "raw_payload": {},
-    }
+        "normalized_message": normalized_result["cleaned"],
 
     # ── 1. Principal (who is behind the message) ──────────────────
     if _RE.search(r'\b(owner\s*(sale|direct|selling)?|direct\s*owner|owner\s*property)\b', lower):
@@ -810,6 +814,9 @@ def parse_message(raw_text: str, profile_name: str | None = None) -> dict:
 
     result["confidence"] = _compute_parser_confidence(result)
     result["raw_payload"]["full_text"] = text
+    # Store normalized version for search/indexing
+    from normalize import preprocess_for_parsing
+    result["normalized_message"] = preprocess_for_parsing(raw_text)
     return result
 
 
@@ -1147,7 +1154,7 @@ async def lifespan(app: FastAPI):
     # Backfill sender_phone from sender_jid for existing rows
     try:
         storage.db.execute(
-            "UPDATE raw_messages SET sender_phone = TRIM(REPLACE(SUBSTR(sender_jid, 1, INSTR(sender_jid, '@') - 1), ' ', '')) "
+            "UPDATE raw_messages SET sender_phone = TRIM(REPLACE(split_part(sender_jid, '@', 1), ' ', '')) "
             "WHERE sender_jid IS NOT NULL AND sender_jid != '' AND (sender_phone IS NULL OR sender_phone = '')"
         )
         storage.db.commit()
@@ -1173,7 +1180,13 @@ async def lifespan(app: FastAPI):
         except Exception:
             pass
 
-app = FastAPI(title="PropAI Local Intelligence Lab", version="0.1.0", lifespan=lifespan)
+app = FastAPI(
+    title="PropAI Local Intelligence Lab",
+    version="0.1.0",
+    lifespan=lifespan,
+    docs_url=None,
+    redoc_url=None,
+)
 
 
 # ── Global error handler for debugging ───────────────────────────
@@ -1292,7 +1305,139 @@ def _parsed_has_market_anchor(parsed: dict, raw_text: str = "") -> bool:
     return has_property_signal and (has_market_action or bool(parsed.get("price")))
 
 
-def generate_summary_title(parsed: dict, raw_text: str) -> str | None:
+# ── Conversation Classification for Privacy ─────────────────────────
+
+_BROKER_GROUP_KEYWORDS = frozenset({
+    "broker", "brokers", "property", "properties", "realty", "real estate",
+    "listing", "listings", "inventory", "availability", "mandate", "mandates",
+    "deal", "deals", "market", "markets", "bkc", "bandra", "andheri", "juhu",
+    "powai", "worli", "colaba", "chembur", "wadala", "malad", "goregaon",
+    "thane", "navi mumbai", "commercial", "residential", "rental", "rent",
+    "lease", "buyer", "seller", "investment", "sqft", "bhk", "carpet",
+    "built up", "possession", "handover", "availability", "rate", "price",
+    "crore", "lac", "lakh", "lacs",
+})
+
+_CLIENT_GROUP_KEYWORDS = frozenset({
+    "client", "clients", "buyer", "buyers", "tenant", "tenants",
+    "requirement", "requirements", "need", "looking for", "searching",
+    "budget", "preference", "preferences", "site visit", "inspection",
+})
+
+_PERSONAL_KEYWORDS = frozenset({
+    "family", "personal", "friend", "friends", "birthday", "wedding",
+    "party", "celebration", "festival", "holiday", "vacation", "travel",
+    "food", "restaurant", "movie", "cricket", "football", "sports",
+    "whatsapp", "forward", "good morning", "good night", "joke", "meme",
+    "video", "photo", "image", "sticker", "gif",
+})
+
+CONV_TYPE_BROKER_GROUP = "broker_group"
+CONV_TYPE_CLIENT_GROUP = "client_group"
+CONV_TYPE_DM = "dm"
+CONV_TYPE_PERSONAL = "personal"
+CONV_TYPE_BROADCAST = "broadcast"
+
+
+def classify_conversation(group_name: str, group_jid: str, message_text: str) -> str:
+    """
+    Classify a WhatsApp conversation into:
+    - broker_group: Professional broker groups (shared market eligible)
+    - client_group: Client-facing groups (never shared)
+    - dm: Direct messages (never shared)
+    - personal: Personal chats (never shared)
+    - broadcast: Broadcast lists (never shared)
+    """
+    if not group_name and not group_jid:
+        return CONV_TYPE_PERSONAL
+
+    # DM check
+    if str(group_jid).endswith("@s.whatsapp.net") or str(group_jid).endswith("@lid"):
+        return CONV_TYPE_DM
+
+    # Broadcast check
+    if group_jid.endswith("@broadcast") or "broadcast" in (group_name or "").lower():
+        return CONV_TYPE_BROADCAST
+
+    gn = (group_name or "").lower()
+    msg = (message_text or "").lower()
+
+    # Check for personal chat indicators
+    if any(kw in gn for kw in _PERSONAL_KEYWORDS):
+        return CONV_TYPE_PERSONAL
+
+    # Check for client group indicators
+    if any(kw in gn for kw in _CLIENT_GROUP_KEYWORDS):
+        return CONV_TYPE_CLIENT_GROUP
+
+    # Check for broker group indicators
+    if any(kw in gn for kw in _BROKER_GROUP_KEYWORDS):
+        return CONV_TYPE_BROKER_GROUP
+
+    # Check message content for broker signals
+    if any(kw in msg for kw in _BROKER_GROUP_KEYWORDS):
+        return CONV_TYPE_BROKER_GROUP
+
+    # Default: treat unknown groups as personal (safer)
+    return CONV_TYPE_PERSONAL
+
+
+def check_share_eligibility(parsed: dict, org_privacy: dict, conv_type: str) -> tuple[bool, str]:
+    """
+    Determine if a parsed observation should be shared to the shared market.
+    Returns (eligible, reason)
+    """
+    if conv_type != CONV_TYPE_BROKER_GROUP:
+        return False, f"conversation_type_{conv_type}"
+
+    if org_privacy.get("privacy_mode") != "shared":
+        return False, "privacy_mode_private"
+
+    intent = (parsed.get("intent") or "").upper()
+    principal = (parsed.get("principal") or "").upper()
+
+    # Listings (SELL, RENT, COMMERCIAL)
+    if intent in ("SELL", "RENT", "COMMERCIAL", "PRE-LAUNCH"):
+        if principal in ("OWNER", "UNKNOWN"):
+            if not org_privacy.get("share_listings", False):
+                return False, "share_listings_disabled_owner"
+        if not org_privacy.get("share_listings", False):
+            return False, "share_listings_disabled"
+
+    # Requirements (BUY, RENTAL_SEEKER)
+    if intent in ("BUY", "BUYER", "RENTAL_SEEKER"):
+        if not org_privacy.get("share_requirements", False):
+            return False, "share_requirements_disabled"
+
+    # Price trends
+    if parsed.get("price") and parsed.get("micro_market"):
+        if not org_privacy.get("share_price_trends", False):
+            return False, "share_price_trends_disabled"
+
+    # Market activity
+    if not org_privacy.get("share_market_activity", False):
+        return False, "share_market_activity_disabled"
+
+    # Building intelligence
+    if parsed.get("building_name") and not org_privacy.get("share_building_intelligence", False):
+        return False, "share_building_intelligence_disabled"
+
+    # Broker network
+    if parsed.get("broker_name") and not org_privacy.get("share_broker_network", False):
+        return False, "share_broker_network_disabled"
+
+    # Broker reputation
+    if parsed.get("broker_phone") and not org_privacy.get("share_broker_reputation", False):
+        return False, "share_broker_reputation_disabled"
+
+    # Demand signals
+    if intent in ("BUY", "BUYER", "RENTAL_SEEKER") and not org_privacy.get("share_demand_signals", False):
+        return False, "share_demand_signals_disabled"
+
+    return True, "ok"
+
+
+# ── Parser helpers ──────────────────────────────────────────────────
     pieces: list[str] = []
 
     lower = raw_text.lower()
@@ -1526,14 +1671,31 @@ async def webhook(request: Request):
     group_name = _resolve_group_name(group)
     is_dm = str(group).endswith("@s.whatsapp.net") or str(group).endswith("@lid")
     raw_group_name = "" if is_dm else group_name
-    timestamp = msg_data.get("messageTimestamp", int(datetime.now(timezone.utc).timestamp()))
-    if isinstance(timestamp, (int, float)):
-        timestamp = datetime.fromtimestamp(timestamp, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
-    # Dedup key
-    message_id = key.get("id", "")
-    remote_jid = key.get("remoteJid", group)
-    message_uid = f"whatsapp::{instance}::{remote_jid}::{message_id}" if message_id and remote_jid else None
+    # ── Classify conversation for privacy filtering ──────────────────
+    conv_type = classify_conversation(group_name, group, msg_text)
+    # Fetch org privacy settings once per webhook (cache in memory)
+    org_privacy = None
+    try:
+        org_id = "00000000-0000-0000-0000-000000000010"  # Default tenant
+        org = storage.get_organization(org_id)
+        if org:
+            org_privacy = {
+                "privacy_mode": org.get("privacy_mode", "private"),
+                "share_listings": org.get("share_listings", False),
+                "share_requirements": org.get("share_requirements", False),
+                "share_price_trends": org.get("share_price_trends", False),
+                "share_market_activity": org.get("share_market_activity", False),
+                "share_building_intelligence": org.get("share_building_intelligence", False),
+                "share_broker_network": org.get("share_broker_network", False),
+                "share_broker_reputation": org.get("share_broker_reputation", False),
+                "share_demand_signals": org.get("share_demand_signals", False),
+            }
+    except Exception:
+        org_privacy = {"privacy_mode": "private"}  # Safe default
+    # Store conv_type and org_privacy for later use
+    request.state.conv_type = conv_type
+    request.state.org_privacy = org_privacy
 
     # Save raw message
     try:
@@ -1685,6 +1847,22 @@ async def webhook(request: Request):
 
     parsed_ids: list[int] = []
     for idx, parsed in enumerate(parsed_listings):
+        # Privacy check: determine if this observation can be shared to market
+        share_eligible, share_reason = True, "ok"
+        try:
+            conv_type = getattr(request.state, "conv_type", "unknown")
+            org_privacy = getattr(request.state, "org_privacy", {"privacy_mode": "private"})
+            share_eligible, share_reason = check_share_eligibility(parsed, org_privacy, conv_type)
+        except Exception:
+            pass
+        if not share_eligible:
+            # Mark as not shareable but still save locally
+            parsed["_can_share_to_market"] = False
+            parsed["_share_reason"] = share_reason
+        else:
+            parsed["_can_share_to_market"] = True
+            parsed["_share_reason"] = share_reason
+
         try:
             embedding_blob = compute_embedding(parsed) if idx == 0 else None
         except Exception as exc:
@@ -1989,6 +2167,124 @@ def _clean_person_name(name: str = "") -> str:
     if re.fullmatch(r"\+?[\dXx\s().-]{7,}", clean):
         return ""
     return clean
+
+
+# ── Conversation Classification ──────────────────────────────────────
+# Determines if a conversation should be shared to the market network
+
+CONV_TYPE_BROKER_GROUP = "broker_group"
+CONV_TYPE_CLIENT_GROUP = "client_group"
+CONV_TYPE_DM = "dm"
+CONV_TYPE_PERSONAL = "personal"
+CONV_TYPE_BROADCAST = "broadcast"
+
+_BROKER_GROUP_KEYWORDS = [
+    "broker", "brokers", "realty", "real estate", "property", "properties",
+    "mandate", "listing", "inventory", "deal", "deals", "buyer", "seller",
+    "rental", "rent", "lease", "commercial", "residential", "investment",
+    "market", "bhk", "sqft", "carpet", "built up", "possession", "handover",
+    "availability", "rate", "price", "crore", "lac", "lakh", "lacs",
+]
+
+_CLIENT_GROUP_KEYWORDS = [
+    "client", "clients", "buyer", "buyers", "tenant", "tenants",
+    "requirement", "requirements", "need", "looking for", "searching",
+    "budget", "preference", "preferences", "site visit", "inspection",
+]
+
+_PERSONAL_KEYWORDS = [
+    "family", "personal", "friend", "friends", "birthday", "wedding",
+    "party", "celebration", "festival", "holiday", "vacation", "travel",
+    "food", "restaurant", "movie", "cricket", "football", "sports",
+    "whatsapp", "forward", "good morning", "good night", "joke", "meme",
+    "video", "photo", "image", "sticker", "gif",
+]
+
+def classify_conversation(group_name: str, group_jid: str, message_text: str) -> str:
+    """
+    Classify a WhatsApp conversation into:
+    - broker_group: Professional broker groups (shared market eligible)
+    - client_group: Client-facing groups (never shared)
+    - dm: Direct messages (never shared)
+    - personal: Personal chats (never shared)
+    - broadcast: Broadcast lists (never shared)
+    """
+    if not group_name and not group_jid:
+        return CONV_TYPE_PERSONAL
+
+    # DM check
+    if str(group_jid).endswith("@s.whatsapp.net") or str(group_jid).endswith("@lid"):
+        return CONV_TYPE_DM
+
+    # Broadcast check
+    if group_jid.endswith("@broadcast") or "broadcast" in (group_name or "").lower():
+        return CONV_TYPE_BROADCAST
+
+    gn = (group_name or "").lower()
+    msg = (message_text or "").lower()
+
+    # Check for personal chat indicators
+    if any(kw in gn for kw in _PERSONAL_KEYWORDS):
+        return CONV_TYPE_PERSONAL
+
+    # Check for client group indicators
+    if any(kw in gn for kw in _CLIENT_GROUP_KEYWORDS):
+        return CONV_TYPE_CLIENT_GROUP
+
+    # Check for broker group indicators
+    if any(kw in gn for kw in _BROKER_GROUP_KEYWORDS):
+        return CONV_TYPE_BROKER_GROUP
+
+    # Check message content for broker signals
+    if any(kw in msg for kw in _BROKER_GROUP_KEYWORDS):
+        return CONV_TYPE_BROKER_GROUP
+
+    # Default: treat unknown groups as personal (safer)
+    return CONV_TYPE_PERSONAL
+
+
+def should_share_to_market(
+    org_privacy: dict,
+    conv_type: str,
+    parsed_intent: str | None = None,
+    is_listing: bool = False,
+    is_requirement: bool = False,
+) -> bool:
+    """
+    Determine if a message/observation should be shared to the shared market.
+    Rules:
+    - Only broker_group conversations are eligible
+    - Workspace must be in 'shared' privacy mode
+    - Must have at least one share_* option enabled
+    - Specific content types controlled by share_* flags
+    """
+    # Only broker groups can contribute
+    if conv_type != CONV_TYPE_BROKER_GROUP:
+        return False
+
+    # Workspace must be in shared mode
+    if org_privacy.get("privacy_mode") != "shared":
+        return False
+
+    # Check if any share option is enabled
+    share_keys = [k for k in org_privacy.keys() if k.startswith("share_")]
+    if not any(org_privacy.get(k) for k in share_keys):
+        return False
+
+    # If it's a listing, check share_listings
+    if is_listing and not org_privacy.get("share_listings"):
+        return False
+
+    # If it's a requirement, check share_requirements
+    if is_requirement and not org_privacy.get("share_requirements"):
+        return False
+
+    # For general observations, check share_market_activity
+    if not is_listing and not is_requirement:
+        if not org_privacy.get("share_market_activity"):
+            return False
+
+    return True
 
 
 # ── Manual ingest endpoint (for testing) ────────────────────────
@@ -6395,7 +6691,7 @@ async def rebuild_observation_graph():
 async def list_brokers():
     storage.rebuild_broker_graph()
     rows = storage.db.execute("""
-        SELECT id, canonical_name AS name, primary_phone AS phone,
+        SELECT id, canonical_name, primary_phone,
                observation_count, listing_count, requirement_count,
                rental_count, commercial_count, group_count, market_count,
                building_count, active_days_30, first_seen_at, last_seen_at
@@ -7636,6 +7932,7 @@ async def igr_search(
 @app.get("/api/groups")
 async def list_groups():
     jobs = storage.get_sync_jobs(limit=500, source="whatsapp")
+    group_markets = storage.get_group_markets()
     allowlist = load_group_allowlist()
     groups = []
     for j in jobs:
@@ -7643,6 +7940,13 @@ async def list_groups():
             meta = json.loads(j.meta) if isinstance(j.meta, str) else (j.meta or {})
         except (json.JSONDecodeError, TypeError):
             meta = {}
+        # Member count comes from the column (populated by the ingestor on group refresh)
+        participants = j.participants or meta.get("participants", 0) or 0
+        # Tags: merge name-parsed markets/segments with data-derived markets
+        parsed = parse_group_name(j.group_name)
+        derived = group_markets.get(j.group_name) or []
+        merged_markets = list(dict.fromkeys([*parsed.get("markets", []), *derived]))
+        enriched = {**parsed, "markets": merged_markets}
         allowed = any(
             entry.lower() in j.group_name.lower()
             for entry in allowlist
@@ -7650,8 +7954,8 @@ async def list_groups():
         groups.append({
             "jid": j.group_id,
             "name": j.group_name,
-            "participants": meta.get("participants", 0),
-            "parsed": parse_group_name(j.group_name),
+            "participants": participants,
+            "parsed": enriched,
             "records_found": j.records_found or 0,
             "records_processed": j.records_processed or 0,
             "status": j.status,
@@ -10562,10 +10866,141 @@ async def get_organization(org_id: str):
 @app.patch("/api/orgs/{org_id}")
 async def update_organization(org_id: str, body: dict):
     allowed = {"name", "privacy_mode", "share_listings", "share_requirements",
-               "share_price_trends", "share_market_activity", "is_active"}
+               "share_price_trends", "share_market_activity", "share_building_intelligence",
+               "share_broker_network", "share_broker_reputation", "share_demand_signals",
+               "is_active"}
     updates = {k: v for k, v in body.items() if k in allowed}
     if not updates:
         raise HTTPException(400, "No valid fields to update")
+    ok = storage.update_organization(org_id, **updates)
+    if not ok:
+        raise HTTPException(404, "Organization not found")
+    return {"ok": True}
+
+
+@app.get("/api/orgs/{org_id}/privacy")
+async def get_organization_privacy(org_id: str):
+    """Get organization privacy settings."""
+    org = storage.get_organization(org_id)
+    if not org:
+        raise HTTPException(404, "Organization not found")
+    return {
+        "privacy_mode": org.get("privacy_mode", "private"),
+        "share_listings": org.get("share_listings", False),
+        "share_requirements": org.get("share_requirements", False),
+        "share_price_trends": org.get("share_price_trends", False),
+        "share_market_activity": org.get("share_market_activity", False),
+        "share_building_intelligence": org.get("share_building_intelligence", False),
+        "share_broker_network": org.get("share_broker_network", False),
+        "share_broker_reputation": org.get("share_broker_reputation", False),
+        "share_demand_signals": org.get("share_demand_signals", False),
+    }
+
+
+@app.put("/api/orgs/{org_id}/privacy")
+async def update_organization_privacy(org_id: str, body: dict):
+    """Update organization privacy settings."""
+    org = storage.get_organization(org_id)
+    if not org:
+        raise HTTPException(404, "Organization not found")
+
+    allowed = {"privacy_mode", "share_listings", "share_requirements",
+               "share_price_trends", "share_market_activity",
+               "share_building_intelligence", "share_broker_network",
+               "share_broker_reputation", "share_demand_signals"}
+
+    updates = {k: v for k, v in body.items() if k in allowed}
+
+    # If switching to shared mode, require at least one share option
+    if updates.get("privacy_mode") == "shared":
+        share_fields = {k: v for k, v in updates.items() if k.startswith("share_") and v}
+        # Also check existing values
+        if not share_fields:
+            existing_shares = {k: v for k, v in org.items() if k.startswith("share_") and v}
+            if not existing_shares:
+                raise HTTPException(400, "At least one share option must be enabled for shared mode")
+
+    if not updates:
+        raise HTTPException(400, "No valid privacy fields to update")
+
+    ok = storage.update_organization(org_id, **updates)
+    if not ok:
+        raise HTTPException(404, "Organization not found")
+
+    # Return updated settings
+    updated = storage.get_organization(org_id)
+    return {
+        "ok": True,
+        "privacy_mode": updated.get("privacy_mode", "private"),
+        "share_listings": updated.get("share_listings", False),
+        "share_requirements": updated.get("share_requirements", False),
+        "share_price_trends": updated.get("share_price_trends", False),
+        "share_market_activity": updated.get("share_market_activity", False),
+        "share_building_intelligence": updated.get("share_building_intelligence", False),
+        "share_broker_network": updated.get("share_broker_network", False),
+        "share_broker_reputation": updated.get("share_broker_reputation", False),
+        "share_demand_signals": updated.get("share_demand_signals", False),
+    }
+
+
+@app.get("/api/orgs/{org_id}/privacy")
+async def get_organization_privacy(org_id: str, user: dict = Depends(require_user)):
+    org = storage.get_organization(org_id)
+    if not org:
+        raise HTTPException(404, "Organization not found")
+    # Check membership
+    members = storage.list_organization_members(org_id)
+    if not any(m["user_id"] == user["id"] for m in members):
+        raise HTTPException(403, "Not a member of this organization")
+    return {
+        "privacy_mode": org.get("privacy_mode", "private"),
+        "share_listings": org.get("share_listings", False),
+        "share_requirements": org.get("share_requirements", False),
+        "share_price_trends": org.get("share_price_trends", False),
+        "share_market_activity": org.get("share_market_activity", False),
+        "share_broker_network": org.get("share_broker_network", False),
+        "share_broker_reputation": org.get("share_broker_reputation", False),
+        "share_demand_signals": org.get("share_demand_signals", False),
+    }
+
+
+@app.put("/api/orgs/{org_id}/privacy")
+async def update_organization_privacy(org_id: str, body: dict, user: dict = Depends(require_user)):
+    org = storage.get_organization(org_id)
+    if not org:
+        raise HTTPException(404, "Organization not found")
+    # Check membership and admin role
+    members = storage.list_organization_members(org_id)
+    member = next((m for m in members if m["user_id"] == user["id"]), None)
+    if not member:
+        raise HTTPException(403, "Not a member of this organization")
+    # Only admins/owners can change privacy settings
+    if member.get("role") not in ("owner", "admin"):
+        raise HTTPException(403, "Admin access required")
+
+    allowed = {"privacy_mode", "share_listings", "share_requirements",
+               "share_price_trends", "share_market_activity", "share_broker_network",
+               "share_broker_reputation", "share_demand_signals"}
+    updates = {k: v for k, v in body.items() if k in allowed}
+    if not updates:
+        raise HTTPException(400, "No valid privacy fields to update")
+
+    # Validate privacy_mode
+    if "privacy_mode" in updates and updates["privacy_mode"] not in ("private", "shared_market"):
+        raise HTTPException(400, "Invalid privacy_mode")
+
+    # If switching to private, disable all sharing
+    if updates.get("privacy_mode") == "private":
+        updates.update({
+            "share_listings": False,
+            "share_requirements": False,
+            "share_price_trends": False,
+            "share_market_activity": False,
+            "share_broker_network": False,
+            "share_broker_reputation": False,
+            "share_demand_signals": False,
+        })
+
     ok = storage.update_organization(org_id, **updates)
     if not ok:
         raise HTTPException(404, "Organization not found")
