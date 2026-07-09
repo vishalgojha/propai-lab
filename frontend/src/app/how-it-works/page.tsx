@@ -18,7 +18,6 @@ const steps = [
     description:
       "Broker WhatsApp groups are noisy. Fragmented language, abbreviations, mixed Hindi and English, voice notes, and screenshots. PropAI understands this language natively.",
     examples: [
-      "ALL LL — Landlord sending to all brokers",
       "PKG — Package deal",
       "Semi — Semi-furnished",
       "FF — Floor",
