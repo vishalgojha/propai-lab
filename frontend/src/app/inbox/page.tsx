@@ -607,7 +607,7 @@ function InboxPageInner() {
   const [offset, setOffset] = useState(0);
   const [searchText, setSearchText] = useState("");
   const [slugs, setSlugs] = useState<api.SavedView[]>([]);
-  const [currentSlug, setCurrentSlug] = useState<string>("personal");
+  const [currentSlug, setCurrentSlug] = useState<string>("brokers");
   const activeSlug = useMemo(() => slugs.find(s => s.slug === currentSlug) || null, [slugs, currentSlug]);
   const [brokerFeed, setBrokerFeed] = useState<any[]>([]);
   const [loadingBrokerFeed, setLoadingBrokerFeed] = useState(false);
@@ -1923,7 +1923,7 @@ function InboxPageInner() {
                 <>
                   <div className="flex-1 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wider text-center text-zinc-500 bg-zinc-800">Brokers</div>
                   <div className="flex-1 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wider text-center text-zinc-500">Clients</div>
-                  <div className="flex-1 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wider text-center text-zinc-500">Personal</div>
+                  <div className="flex-1 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wider text-center text-zinc-500">Direct Messages</div>
                 </>
               ) : (
                 slugs.map((sv) => (
