@@ -5,6 +5,7 @@ import QRCode from "qrcode";
 import { useRouter } from "next/navigation";
 import { Activity, Building, Clock, Database, ImageUp, Inbox, List, LogOut, MessageSquare, RefreshCw, Shield, Smartphone, AlertTriangle, Users, Zap } from "lucide-react";
 import { OnboardingModal } from "@/components/OnboardingModal";
+import { getProfile } from "@/lib/api";
 
 type ConnectionPhase =
   | "loading"
@@ -253,6 +254,7 @@ export default function ConnectionCenterPage() {
   const [lastMessageAt, setLastMessageAt] = useState<string | null>(null);
   const [totalParsed, setTotalParsed] = useState<number>(0);
   const [totalListings, setTotalListings] = useState<number>(0);
+  const [totalRequirements, setTotalRequirements] = useState<number>(0);
   const [totalBrokers, setTotalBrokers] = useState<number>(0);
   const [totalBuildings, setTotalBuildings] = useState<number>(0);
   const [qrLoading, setQrLoading] = useState(false);
@@ -288,6 +290,7 @@ export default function ConnectionCenterPage() {
       if (stats?.total_messages != null && !detail?.messages_found) setMessages(stats.total_messages);
       if (stats?.total_parsed != null) setTotalParsed(stats.total_parsed);
       if (stats?.total_listings != null) setTotalListings(stats.total_listings);
+      if (stats?.total_requirements != null) setTotalRequirements(stats.total_requirements);
       if (stats?.total_brokers != null) setTotalBrokers(stats.total_brokers);
       if (stats?.total_buildings != null) setTotalBuildings(stats.total_buildings);
     } catch { /* ignore */ }
@@ -418,21 +421,34 @@ export default function ConnectionCenterPage() {
     if (phase === "connected" || phase === "syncing") fetchStats();
   }, [phase, fetchStats]);
 
-  // Check if onboarding is needed once connected
+  // Check if onboarding is needed once connected (once per session)
   useEffect(() => {
-    if ((phase === "connected" || phase === "syncing") && phoneNumber && !profileDone) {
-      const stored = localStorage.getItem("propai_profile");
-      if (stored) {
-        try {
-          const parsed = JSON.parse(stored);
-          if (parsed.phone === phoneNumber && parsed.first_name) {
-            setProfileDone(true);
-            return;
-          }
-        } catch {}
+    if (!(phase === "connected" || phase === "syncing") || !phoneNumber || profileDone) return;
+    // Don't re-prompt in the same session once dismissed/onboarded
+    if (sessionStorage.getItem("propai_onboarded") === phoneNumber) {
+      setProfileDone(true);
+      return;
+    }
+    const stored = localStorage.getItem("propai_profile");
+    if (stored) {
+      try {
+        const parsed = JSON.parse(stored);
+        if (parsed.phone === phoneNumber && parsed.first_name) {
+          setProfileDone(true);
+          return;
+        }
+      } catch {}
+    }
+    // Check database for onboarding completion
+    getProfile(phoneNumber).then((profile: any) => {
+      if (profile?.onboarding_complete) {
+        setProfileDone(true);
+        return;
       }
       setShowOnboarding(true);
-    }
+    }).catch(() => {
+      setShowOnboarding(true);
+    });
   }, [phase, phoneNumber, profileDone]);
 
   const fetchQR = useCallback(async () => {
@@ -617,17 +633,17 @@ export default function ConnectionCenterPage() {
 
           {/* ═══ Activity ═══ */}
           <Section title="Activity">
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
               <StatBox icon={<MessageSquare className="w-4 h-4 text-zinc-400" />} label="Total Messages" value={messages?.toLocaleString() || "—"} />
               <StatBox icon={<Zap className="w-4 h-4 text-zinc-400" />} label="AI Processed" value={totalParsed?.toLocaleString() || "—"} />
-              <StatBox icon={<List className="w-4 h-4 text-zinc-400" />} label="Listings Extracted" value={totalListings?.toLocaleString() || "—"} />
+              <StatBox icon={<List className="w-4 h-4 text-zinc-400" />} label="Items Extracted" value={(totalListings + totalRequirements)?.toLocaleString() || "—"} />
               <StatBox icon={<Users className="w-4 h-4 text-zinc-400" />} label="Brokers Identified" value={totalBrokers?.toLocaleString() || "—"} />
             </div>
           </Section>
 
           {/* ═══ Coverage ═══ */}
           <Section title="Coverage">
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
               <StatBox icon={<Users className="w-4 h-4 text-zinc-400" />} label="Groups" value={groups?.toLocaleString() || "—"} />
               <StatBox icon={<MessageSquare className="w-4 h-4 text-zinc-400" />} label="Private Chats" value="—" />
               <StatBox icon={<Activity className="w-4 h-4 text-zinc-400" />} label="Active Conversations" value="—" />
@@ -665,8 +681,8 @@ export default function ConnectionCenterPage() {
               {totalParsed > 0 && (
                 <ActivityItem icon={<Zap className="w-3 h-3 text-zinc-400" />} text={`AI processed ${totalParsed.toLocaleString()} messages`} time="—" />
               )}
-              {totalListings > 0 && (
-                <ActivityItem icon={<List className="w-3 h-3 text-zinc-400" />} text={`${totalListings.toLocaleString()} requirements extracted`} time="—" />
+              {(totalListings > 0 || totalRequirements > 0) && (
+                <ActivityItem icon={<List className="w-3 h-3 text-zinc-400" />} text={`${(totalListings + totalRequirements).toLocaleString()} items extracted (${totalListings} listings, ${totalRequirements} requirements)`} time="—" />
               )}
               {messages && messages > 0 && (
                 <ActivityItem icon={<Database className="w-3 h-3 text-zinc-400" />} text={`${messages.toLocaleString()} total messages in database`} time="—" />
@@ -681,7 +697,11 @@ export default function ConnectionCenterPage() {
           phone={phoneNumber}
           defaultFirstName={displayName || undefined}
           onClose={() => setShowOnboarding(false)}
-          onComplete={() => { setShowOnboarding(false); setProfileDone(true); }}
+          onComplete={() => {
+            setShowOnboarding(false);
+            setProfileDone(true);
+            if (phoneNumber) sessionStorage.setItem("propai_onboarded", phoneNumber);
+          }}
         />
       )}
     </div>

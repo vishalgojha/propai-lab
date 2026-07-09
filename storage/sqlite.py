@@ -2658,12 +2658,18 @@ class SqliteStorage(Storage):
         )
         self._commit()
 
-    # ── Stats ──────────────────────────────────────────────────
+# ── Stats ──────────────────────────────────────────────────
 
     def get_stats(self) -> dict:
         db = self.db
         total_raw = db.execute("SELECT COUNT(*) as c FROM raw_messages").fetchone()["c"]
         total_parsed = db.execute("SELECT COUNT(*) as c FROM parsed_output").fetchone()["c"]
+        total_listings = db.execute("SELECT COUNT(*) as c FROM listings").fetchone()["c"]
+        total_requirements = db.execute(
+            "SELECT COUNT(*) as c FROM parsed_output WHERE intent IN ('BUY', 'BUYER', 'REQUIREMENT', 'RENTAL_SEEKER')"
+        ).fetchone()["c"]
+        total_brokers = db.execute("SELECT COUNT(*) as c FROM brokers").fetchone()["c"]
+        total_buildings = db.execute("SELECT COUNT(*) as c FROM buildings").fetchone()["c"]
         resolved = db.execute(
             "SELECT COUNT(*) as c FROM resolver_decisions WHERE method = 'resolved'"
         ).fetchone()["c"]
@@ -2694,6 +2700,10 @@ class SqliteStorage(Storage):
         return {
             "total_raw": total_raw,
             "total_parsed": total_parsed,
+            "total_listings": total_listings,
+            "total_requirements": total_requirements,
+            "total_brokers": total_brokers,
+            "total_buildings": total_buildings,
             "resolved": resolved,
             "unresolved": unresolved,
             "errors": errors,
