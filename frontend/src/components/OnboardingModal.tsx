@@ -16,6 +16,7 @@ export function OnboardingModal({ phone, defaultFirstName, onClose, onComplete }
   const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
   const [city, setCity] = useState("");
+  const [customCity, setCustomCity] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -25,7 +26,8 @@ export function OnboardingModal({ phone, defaultFirstName, onClose, onComplete }
     setSaving(true);
     setError(null);
     try {
-      const data = { first_name: firstName.trim(), last_name: lastName.trim(), email: email.trim(), city: city.trim() };
+      const finalCity = city === "__other__" ? customCity.trim() : city;
+      const data = { first_name: firstName.trim(), last_name: lastName.trim(), email: email.trim(), city: finalCity };
       await saveProfile(phone, data);
       localStorage.setItem("propai_profile", JSON.stringify({ phone, ...data }));
       onComplete(data);
@@ -80,9 +82,32 @@ export function OnboardingModal({ phone, defaultFirstName, onClose, onComplete }
 
           <div>
             <label htmlFor="ct" className="text-[11px] font-semibold text-zinc-500 uppercase tracking-wider">City</label>
-            <input id="ct" value={city} onChange={e => setCity(e.target.value)}
-              className="mt-1 w-full rounded-lg border border-white/10 bg-zinc-800/50 px-3 py-2.5 text-sm text-white placeholder-zinc-500 outline-none focus:border-emerald-500/50 transition-colors"
-              placeholder="Mumbai, Delhi, Bangalore..." />
+            <select id="ct" value={city} onChange={e => { setCity(e.target.value); if (e.target.value !== "__other__") setCustomCity(""); }}
+              className="mt-1 w-full rounded-lg border border-white/10 bg-zinc-800/50 px-3 py-2.5 text-sm text-white outline-none focus:border-emerald-500/50 transition-colors appearance-none">
+              <option value="" disabled>Select your city</option>
+              <option value="Mumbai">Mumbai</option>
+              <option value="Delhi / NCR">Delhi / NCR</option>
+              <option value="Bangalore">Bangalore</option>
+              <option value="Pune">Pune</option>
+              <option value="Hyderabad">Hyderabad</option>
+              <option value="Chennai">Chennai</option>
+              <option value="Ahmedabad">Ahmedabad</option>
+              <option value="Kolkata">Kolkata</option>
+              <option value="Surat">Surat</option>
+              <option value="Jaipur">Jaipur</option>
+              <option value="Lucknow">Lucknow</option>
+              <option value="Chandigarh">Chandigarh</option>
+              <option value="Kochi">Kochi</option>
+              <option value="Indore">Indore</option>
+              <option value="Nagpur">Nagpur</option>
+              <option value="Goa">Goa</option>
+              <option value="__other__">Other</option>
+            </select>
+            {city === "__other__" && (
+              <input value={customCity} onChange={e => setCustomCity(e.target.value)}
+                className="mt-2 w-full rounded-lg border border-white/10 bg-zinc-800/50 px-3 py-2.5 text-sm text-white placeholder-zinc-500 outline-none focus:border-emerald-500/50 transition-colors"
+                placeholder="Type your city" autoFocus />
+            )}
           </div>
 
           {error && <p className="text-xs text-red-400">{error}</p>}
