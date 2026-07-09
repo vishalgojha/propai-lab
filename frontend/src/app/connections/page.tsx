@@ -1,11 +1,14 @@
 "use client";
 
+export const dynamic = 'force-dynamic';
+
 import { useCallback, useEffect, useRef, useState } from "react";
 import QRCode from "qrcode";
 import { useRouter } from "next/navigation";
-import { Activity, Building, Clock, Database, ImageUp, Inbox, List, LogOut, MessageSquare, RefreshCw, Shield, Smartphone, AlertTriangle, Users, Zap } from "lucide-react";
+import { Activity, Building, Clock, Database, ImageUp, Inbox, List, LogOut, MessageSquare, RefreshCw, Shield, Smartphone, AlertTriangle, Users, Zap, Lock } from "lucide-react";
 import { OnboardingModal } from "@/components/OnboardingModal";
 import { getProfile } from "@/lib/api";
+import { useAuth } from "@/lib/AuthProvider";
 
 type ConnectionPhase =
   | "loading"
@@ -242,6 +245,19 @@ function formatTime(iso: string | null): string {
 
 export default function ConnectionCenterPage() {
   const router = useRouter();
+  const { user, loading: authLoading } = useAuth();
+
+  // Redirect to login if not authenticated
+  useEffect(() => {
+    if (!authLoading && !user) {
+      router.push("/auth/login?next=/connections");
+    }
+  }, [user, authLoading, router]);
+
+  if (authLoading || !user) {
+    return null;
+  }
+
   const [phase, setPhase] = useState<ConnectionPhase>("loading");
   const [qrText, setQrText] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -423,24 +439,9 @@ export default function ConnectionCenterPage() {
 
   // Check if onboarding is needed once connected (once per session)
   useEffect(() => {
-    if (!(phase === "connected" || phase === "syncing") || !phoneNumber || profileDone) return;
-    // Don't re-prompt in the same session once dismissed/onboarded
-    if (sessionStorage.getItem("propai_onboarded") === phoneNumber) {
-      setProfileDone(true);
-      return;
-    }
-    const stored = localStorage.getItem("propai_profile");
-    if (stored) {
-      try {
-        const parsed = JSON.parse(stored);
-        if (parsed.phone === phoneNumber && parsed.first_name) {
-          setProfileDone(true);
-          return;
-        }
-      } catch {}
-    }
+    if (!(phase === "connected" || phase === "syncing") || !user || profileDone) return;
     // Check database for onboarding completion
-    getProfile(phoneNumber).then((profile: any) => {
+    getProfile(user.phone || "").then((profile: any) => {
       if (profile?.onboarding_complete) {
         setProfileDone(true);
         return;
@@ -449,7 +450,7 @@ export default function ConnectionCenterPage() {
     }).catch(() => {
       setShowOnboarding(true);
     });
-  }, [phase, phoneNumber, profileDone]);
+  }, [phase, user, profileDone]);
 
   const fetchQR = useCallback(async () => {
     setQrLoading(true);
@@ -692,15 +693,15 @@ export default function ConnectionCenterPage() {
         </div>
       )}
 
-      {showOnboarding && phoneNumber && (
+      {showOnboarding && user && (
         <OnboardingModal
-          phone={phoneNumber}
-          defaultFirstName={displayName || undefined}
+          phone={user.phone || ""}
+          defaultFirstName={displayName || user.first_name || undefined}
           onClose={() => setShowOnboarding(false)}
           onComplete={() => {
             setShowOnboarding(false);
             setProfileDone(true);
-            if (phoneNumber) sessionStorage.setItem("propai_onboarded", phoneNumber);
+            if (user.phone) sessionStorage.setItem("propai_onboarded", user.phone);
           }}
         />
       )}
