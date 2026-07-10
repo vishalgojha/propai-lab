@@ -249,7 +249,7 @@ export default function BrokersPage() {
 
             return (
               <Link key={broker.id} href={`/brokers/${broker.id}`} className="group">
-                <article className="rounded-2xl border border-white/10 bg-zinc-950/50 p-4 hover:border-emerald-400/30 hover:bg-zinc-900/50 transition-all">
+                <article className="rounded-2xl border border-white/10 p-4 hover:border-emerald-400/30 transition-all">
                   {/* Header */}
                   <div className="flex items-start justify-between gap-2 mb-3">
                     <div className="flex-1 min-w-0">
@@ -336,7 +336,7 @@ export default function BrokersPage() {
 
                   {/* Recent Activity */}
                   {recentObs.length > 0 && (
-                    <div className="mb-3 p-2 rounded-lg bg-zinc-900/50 border border-white/5">
+                    <div className="mb-3 p-2">
                       <div className="text-caption font-medium text-zinc-500 uppercase tracking-wider mb-1">Recent Activity</div>
                       <div className="space-y-1">
                         {recentObs.map((obs) => (

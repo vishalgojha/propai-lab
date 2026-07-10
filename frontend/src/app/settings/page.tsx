@@ -86,7 +86,7 @@ export default function SettingsPage() {
       <h2 className="text-lg font-bold">Settings</h2>
 
       {/* Doubleword AI */}
-      <div className="bg-zinc-900 border border-white/10 rounded-2xl p-5">
+      <div className="border border-white/10 rounded-2xl p-5">
         <div className="flex items-start justify-between gap-3 mb-4">
           <div>
             <h3 className="text-sm font-bold text-white">Doubleword AI</h3>
@@ -153,7 +153,7 @@ export default function SettingsPage() {
       </div>
 
       {/* WhatsApp Connection */}
-      <div className="bg-zinc-900 border border-white/10 rounded-2xl p-5">
+      <div className="border border-white/10 rounded-2xl p-5">
         <h3 className="text-sm font-bold text-white mb-4">WhatsApp Connection</h3>
 
         <div className="flex items-center gap-2 mb-4">
@@ -191,7 +191,7 @@ export default function SettingsPage() {
       </div>
 
       {/* Live Capture */}
-      <div className="bg-zinc-900 border border-white/10 rounded-2xl p-5">
+      <div className="border border-white/10 rounded-2xl p-5">
         <h3 className="text-sm font-bold text-white mb-4">Live Capture</h3>
         <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-sm">
           {[

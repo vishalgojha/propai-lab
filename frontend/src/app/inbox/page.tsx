@@ -234,7 +234,7 @@ function TeachingForm({
   };
 
   return (
-    <div className="bg-zinc-900/60 rounded-lg p-2 border border-[rgba(62,232,138,0.08)] space-y-1.5">
+    <div className="rounded-lg p-2 border border-white/10 space-y-1.5">
       <div className="grid grid-cols-2 gap-1.5">
         <div>
           <label className="text-[8px] text-zinc-500 uppercase tracking-wider">Building</label>
@@ -2160,7 +2160,7 @@ function InboxPageInner() {
                         <button
                           type="button"
                           onClick={() => selectBrokerObservation(obs)}
-                          className={`w-full text-left bg-zinc-900 border rounded-xl overflow-hidden transition-colors hover:border-[#3b82f6]/40 hover:bg-[#101722] ${
+                          className={`w-full text-left border rounded-xl overflow-hidden transition-colors hover:border-[#3b82f6]/40 ${
                             isSelected ? "border-[#3b82f6]/50 ring-1 ring-[#3b82f6]/20" : "border-white/10"
                           }`}
                         >
@@ -2378,7 +2378,7 @@ function InboxPageInner() {
                               ? "bg-[#1d4ed8]/10 border border-[#3b82f6]/30"
                               : isSelf
                               ? "bg-emerald-950/40 border border-emerald-800/30 ml-auto"
-                              : "bg-zinc-900 border border-white/10";
+                              : "border border-white/10";
 
                             return (
                               <div
