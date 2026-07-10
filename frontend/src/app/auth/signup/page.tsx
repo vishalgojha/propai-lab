@@ -73,7 +73,7 @@ function SignupContent() {
           <p className="mt-2 text-sm text-zinc-500">Join PropAI and organize your market intelligence</p>
         </div>
 
-        <div className="rounded-2xl border border-white/10 bg-zinc-950/50 p-6">
+        <div className="rounded-2xl border border-white/10 p-6">
           {success && (
             <div className="mb-4 flex items-center gap-2 p-3 rounded-lg bg-green-900/30 border border-green-500/20 text-green-300 text-sm">
               <CheckCircle className="w-4 h-4 shrink-0" />

@@ -66,7 +66,7 @@ function LoginContent() {
           <p className="mt-2 text-sm text-zinc-500">Sign in to your PropAI workspace</p>
         </div>
 
-        <div className="rounded-2xl border border-white/10 bg-zinc-950/50 p-6">
+        <div className="rounded-2xl border border-white/10 p-6">
           <div className="flex gap-1 mb-6 bg-zinc-900 rounded-lg p-1">
             <button
               onClick={() => setMode("email")}
