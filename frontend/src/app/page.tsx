@@ -119,22 +119,6 @@ export default function HomePage() {
       <div className="mx-auto flex min-h-screen w-full max-w-[1400px] flex-col px-4 py-4 sm:px-6 lg:px-8">
         <header className="flex items-center justify-between gap-4 border-b border-white/10 pb-4">
           <BrandLockup />
-
-          <nav className="flex items-center gap-3 sm:gap-5">
-            <Link href="/how-it-works" className="text-sm text-zinc-400 transition-colors hover:text-white">
-              How it works
-            </Link>
-            <Link href="/auth/login?next=/dashboard" className="text-sm text-zinc-400 transition-colors hover:text-white">
-              Log in
-            </Link>
-            <Link
-              href="/auth/signup?next=/connections"
-              className="inline-flex items-center gap-2 rounded-full bg-[#3EE88A] px-4 py-2 text-sm font-semibold text-black transition-transform hover:translate-y-[-1px]"
-            >
-              Get started
-              <ArrowRight className="h-4 w-4" strokeWidth={2} />
-            </Link>
-          </nav>
         </header>
 
         {/* ════════════════════════════════════════════
