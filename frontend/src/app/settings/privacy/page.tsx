@@ -142,7 +142,7 @@ export default function PrivacyPage() {
       )}
 
       {/* Privacy Mode Toggle */}
-      <div className="rounded-2xl border border-white/10 bg-zinc-900 overflow-hidden">
+      <div className="rounded-2xl border border-white/10 overflow-hidden">
         <div className="px-6 py-4 border-b border-white/10">
           <h3 className="text-sm font-bold text-white">Privacy Mode</h3>
           <p className="mt-1 text-xs text-zinc-500">
@@ -214,7 +214,7 @@ export default function PrivacyPage() {
 
       {/* Granular Share Controls */}
       {privacy?.privacy_mode === "shared" && (
-        <div className="rounded-2xl border border-white/10 bg-zinc-900 overflow-hidden">
+        <div className="rounded-2xl border border-white/10 overflow-hidden">
           <div className="px-6 py-4 border-b border-white/10">
             <h3 className="text-sm font-bold text-white">What to Share</h3>
             <p className="mt-1 text-xs text-zinc-500">
@@ -224,7 +224,7 @@ export default function PrivacyPage() {
           </div>
           <div className="p-6 space-y-3">
             {PRIVACY_OPTIONS.map(({ key, label, description }) => (
-              <div key={key} className="flex items-start justify-between gap-4 p-3 rounded-lg bg-zinc-800/50">
+              <div key={key} className="flex items-start justify-between gap-4 p-3 rounded-lg border-b border-white/[0.04]">
                 <div className="flex-1 min-w-0">
                   <div className="font-medium text-white text-sm">{label}</div>
                   <div className="mt-0.5 text-xs text-zinc-500">{description}</div>
@@ -247,7 +247,7 @@ export default function PrivacyPage() {
 
       {/* Private Mode Explanation */}
       {privacy?.privacy_mode === "private" && (
-        <div className="rounded-2xl border border-white/10 bg-zinc-900 overflow-hidden">
+        <div className="rounded-2xl border border-white/10 overflow-hidden">
           <div className="p-6">
             <div className="flex items-center gap-3 mb-4">
               <div className="w-10 h-10 rounded-lg bg-emerald-400/10 flex items-center justify-center">
@@ -282,7 +282,7 @@ export default function PrivacyPage() {
 
       {/* Shared Mode - What's Never Shared */}
       {privacy?.privacy_mode === "shared" && (
-        <div className="rounded-2xl border border-white/10 bg-zinc-900 overflow-hidden">
+        <div className="rounded-2xl border border-white/10 overflow-hidden">
           <div className="px-6 py-4 border-b border-white/10">
             <h3 className="text-sm font-bold text-white flex items-center gap-2">
               <Shield className="w-4 h-4 text-emerald-400" />

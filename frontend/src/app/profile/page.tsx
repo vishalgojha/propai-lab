@@ -141,7 +141,7 @@ export default function ProfilePage() {
         <form id="profile-form" onSubmit={handleSubmit} className="grid lg:grid-cols-[1fr_380px] gap-6">
           {/* Left Column - Personal Details */}
           <div className="space-y-6">
-            <section className="rounded-2xl border border-white/10 bg-zinc-950/50 p-6">
+            <section className="rounded-2xl border border-white/10 p-6">
               <h2 className="flex items-center gap-2 text-sm font-bold text-white mb-5">
                 <User className="w-4 h-4 text-emerald-400" />
                 Personal Details
@@ -246,7 +246,7 @@ export default function ProfilePage() {
             </section>
 
             {/* Workspace Info (read-only) */}
-            <section className="rounded-2xl border border-white/10 bg-zinc-950/50 p-6">
+            <section className="rounded-2xl border border-white/10 p-6">
               <h2 className="flex items-center gap-2 text-sm font-bold text-white mb-5">
                 <Settings className="w-4 h-4 text-emerald-400" />
                 Workspace
@@ -270,7 +270,7 @@ export default function ProfilePage() {
 
           {/* Right Column - Account Actions */}
           <div className="space-y-6">
-            <section className="rounded-2xl border border-white/10 bg-zinc-950/50 p-6 h-fit sticky top-24">
+            <section className="rounded-2xl border border-white/10 p-6 h-fit sticky top-24">
               <h2 className="flex items-center gap-2 text-sm font-bold text-white mb-5">
                 <Key className="w-4 h-4 text-emerald-400" />
                 Account
@@ -281,7 +281,7 @@ export default function ProfilePage() {
                   onClick={() => router.push("/profile/team")}
                   className="w-full flex items-center gap-3 px-3 py-3 rounded-lg text-left hover:bg-white/5 transition-colors group"
                 >
-                  <div className="w-8 h-8 rounded-lg bg-zinc-800 flex items-center justify-center group-hover:bg-emerald-400/20 transition-colors">
+                  <div className="w-8 h-8 flex items-center justify-center">
                     <Users className="w-4 h-4 text-zinc-400 group-hover:text-emerald-400 transition-colors" />
                   </div>
                   <div className="flex-1 min-w-0">
@@ -295,7 +295,7 @@ export default function ProfilePage() {
                   onClick={() => router.push("/profile/billing")}
                   className="w-full flex items-center gap-3 px-3 py-3 rounded-lg text-left hover:bg-white/5 transition-colors group"
                 >
-                  <div className="w-8 h-8 rounded-lg bg-zinc-800 flex items-center justify-center group-hover:bg-emerald-400/20 transition-colors">
+                  <div className="w-8 h-8 flex items-center justify-center">
                     <CreditCard className="w-4 h-4 text-zinc-400 group-hover:text-emerald-400 transition-colors" />
                   </div>
                   <div className="flex-1 min-w-0">
@@ -309,7 +309,7 @@ export default function ProfilePage() {
                   onClick={() => router.push("/waba")}
                   className="w-full flex items-center gap-3 px-3 py-3 rounded-lg text-left hover:bg-white/5 transition-colors group"
                 >
-                  <div className="w-8 h-8 rounded-lg bg-zinc-800 flex items_center justify-center group-hover:bg-emerald-400/20 transition-colors">
+                  <div className="w-8 h-8 flex items-center justify-center">
                     <Key className="w-4 h-4 text-zinc-400 group-hover:text-emerald-400 transition-colors" />
                   </div>
                   <div className="flex-1 min-w-0">
@@ -321,7 +321,7 @@ export default function ProfilePage() {
             </section>
 
             {/* Quick Stats */}
-            <section className="rounded-2xl border border-white/10 bg-zinc-950/50 p-6">
+            <section className="rounded-2xl border border-white/10 p-6">
               <h2 className="text-sm font-bold text-white mb-4">Quick Stats</h2>
               <dl className="grid grid-cols-2 gap-4 text-sm">
                 <div>
