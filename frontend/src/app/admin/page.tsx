@@ -84,7 +84,7 @@ export default function AdminPage() {
       </div>
 
       {/* Super Admins */}
-      <section className="rounded-2xl border border-white/10 bg-zinc-950/50 p-6 mb-6">
+      <section className="rounded-2xl border border-white/10 p-6 mb-6">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-bold text-white flex items-center gap-2">
             <Shield className="w-5 h-5 text-emerald-400" />
@@ -156,7 +156,7 @@ export default function AdminPage() {
       </section>
 
       {/* Developer Tools */}
-      <section className="rounded-2xl border border-white/10 bg-zinc-950/50 p-6">
+      <section className="rounded-2xl border border-white/10 p-6">
         <h2 className="text-lg font-bold text-white flex items-center gap-2 mb-4">
           <Wrench className="w-5 h-5 text-amber-400" />
           Developer Tools
@@ -164,7 +164,7 @@ export default function AdminPage() {
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           <Link
             href="/admin/knowledge"
-            className="block p-4 rounded-xl border border-white/10 bg-zinc-900/50 hover:border-emerald-400/30 hover:bg-zinc-900 transition-colors"
+            className="block p-4 rounded-xl border border-white/10 hover:border-emerald-400/30 transition-colors"
           >
             <div className="flex items-center gap-3 mb-2">
               <Database className="w-5 h-5 text-emerald-400" />
@@ -175,7 +175,7 @@ export default function AdminPage() {
 
           <Link
             href="/admin/knowledge/observations"
-            className="block p-4 rounded-xl border border-white/10 bg-zinc-900/50 hover:border-emerald-400/30 hover:bg-zinc-900 transition-colors"
+            className="block p-4 rounded-xl border border-white/10 hover:border-emerald-400/30 transition-colors"
           >
             <div className="flex items-center gap-3 mb-2">
               <Terminal className="w-5 h-5 text-blue-400" />
@@ -186,7 +186,7 @@ export default function AdminPage() {
 
           <Link
             href="/admin/extraction"
-            className="block p-4 rounded-xl border border-white/10 bg-zinc-900/50 hover:border-emerald-400/30 hover:bg-zinc-900 transition-colors"
+            className="block p-4 rounded-xl border border-white/10 hover:border-emerald-400/30 transition-colors"
           >
             <div className="flex items-center gap-3 mb-2">
               <Shield className="w-5 h-5 text-purple-400" />
@@ -197,7 +197,7 @@ export default function AdminPage() {
 
           <Link
             href="/admin/pipeline"
-            className="block p-4 rounded-xl border border-white/10 bg-zinc-900/50 hover:border-emerald-400/30 hover:bg-zinc-900 transition-colors"
+            className="block p-4 rounded-xl border border-white/10 hover:border-emerald-400/30 transition-colors"
           >
             <div className="flex items-center gap-3 mb-2">
               <Wrench className="w-5 h-5 text-amber-400" />
@@ -208,7 +208,7 @@ export default function AdminPage() {
 
           <Link
             href="/admin/entities"
-            className="block p-4 rounded-xl border border-white/10 bg-zinc-900/50 hover:border-emerald-400/30 hover:bg-zinc-900 transition-colors"
+            className="block p-4 rounded-xl border border-white/10 hover:border-emerald-400/30 transition-colors"
           >
             <div className="flex items-center gap-3 mb-2">
               <Database className="w-5 h-5 text-pink-400" />
@@ -219,7 +219,7 @@ export default function AdminPage() {
 
           <Link
             href="/admin/errors"
-            className="block p-4 rounded-xl border border-white/10 bg-zinc-900/50 hover:border-emerald-400/30 hover:bg-zinc-900 transition-colors"
+            className="block p-4 rounded-xl border border-white/10 hover:border-emerald-400/30 transition-colors"
           >
             <div className="flex items-center gap-3 mb-2">
               <Shield className="w-5 h-5 text-red-400" />
