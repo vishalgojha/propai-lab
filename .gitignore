@@ -1,45 +1,26 @@
-<<<<<<< HEAD
 __pycache__/
 *.pyc
 .env
+.env*
 .env.supabase
 .api_key
+*.pem
+*.log
+
+# Local databases and state
 lab.db
 lab.db-*
-*.log
+lab.db.backup-*
+propai.db
 *.db-shm
 *.db-wal
-propai.db
-/tmp/
-.DS_Store
-lab.db.backup-*
-lab.db
-
-# Build artifacts
-node_modules/
-src-tauri/target/
-src-tauri/node_modules/
-src-tauri/binaries/
-desktop/build/
-desktop/dist/
-desktop/sidecars/
-data/
 *.sqlite
 *.sqlite3
-backend/
-scripts/
-.qwen/
-.github/
+/tmp/
+/data/
 
-# Go ingestor build artifacts
-services/whatsmeow-ingestor/ingestor
-auth/
-whatsmeow-ingestor/whatsmeow-ingestor
-_sqlite3.Connection*
-=======
-# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
-
-# dependencies
+# Dependencies
+node_modules/
 /node_modules
 /.pnp
 .pnp.*
@@ -49,33 +30,36 @@ _sqlite3.Connection*
 !.yarn/releases
 !.yarn/versions
 
-# testing
-/coverage
-
-# next.js
+# Build artifacts
 /.next/
 /out/
-
-# production
 /build
+src-tauri/target/
+src-tauri/node_modules/
+src-tauri/binaries/
+desktop/build/
+desktop/dist/
+desktop/sidecars/
 
-# misc
-.DS_Store
-*.pem
-
-# debug
+# Tooling and local generated folders
+backend/
+scripts/
+.qwen/
+.github/
+.vercel
+/coverage
+*.tsbuildinfo
+next-env.d.ts
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files (can opt-in for committing if needed)
-.env*
+# Go ingestor build artifacts and local auth state
+services/whatsmeow-ingestor/ingestor
+/auth/
+whatsmeow-ingestor/whatsmeow-ingestor
+_sqlite3.Connection*
 
-# vercel
-.vercel
-
-# typescript
-*.tsbuildinfo
-next-env.d.ts
->>>>>>> d6d6293 (Fix frontend build and layout wiring)
+# OS files
+.DS_Store
