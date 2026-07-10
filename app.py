@@ -1694,6 +1694,7 @@ async def webhook(request: Request):
     except ImportError:
         PIPELINE_VERSION = "0.0.0"
     try:
+        now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         raw_id = storage.save_raw_message(RawMessage(
             group_name=raw_group_name,
             sender=sender,
@@ -1712,12 +1713,12 @@ async def webhook(request: Request):
                 or msg.get("videoMessage", {}).get("contextInfo", {})
                 or {}
             ),
-            timestamp=timestamp,
+            timestamp=now,
             source="WHATSAPP",
             raw_payload=json.dumps(data),
             message_uid=message_uid,
             pipeline_version=PIPELINE_VERSION,
-            synced_at=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            synced_at=now,
         ))
     except Exception as exc:
         print(f"[webhook] save_raw_message error: {exc}", flush=True)
@@ -1751,7 +1752,7 @@ async def webhook(request: Request):
             "sender_phone": sender_phone,
             "conversation_id": group,
             "conversation_name": kr_conversation_name,
-            "message_timestamp": timestamp,
+            "message_timestamp": now,
             "content_type": "unknown",
             "metadata": json.dumps({
                 "raw_id": raw_id,
