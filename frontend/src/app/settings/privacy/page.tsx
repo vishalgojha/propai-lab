@@ -88,7 +88,7 @@ export default function PrivacyPage() {
     const newSettings = { ...privacy, [key]: value };
 
     // If switching to shared mode, ensure at least one share option is enabled
-    if (key === "privacy_mode" && value === "shared") {
+    if (key === "privacy_mode" && value === "shared_market") {
       const hasShareEnabled = Object.keys(privacy).some(
         k => k.startsWith("share_") && (k === "share_listings" ? true : privacy[k as keyof OrgPrivacySettings])
       );
@@ -182,15 +182,15 @@ export default function PrivacyPage() {
 
             {/* Shared Market Mode */}
             <button
-              onClick={() => handleToggle("privacy_mode", "shared")}
+              onClick={() => handleToggle("privacy_mode", "shared_market")}
               disabled={saving}
               className={`relative p-4 rounded-xl border-2 transition-all ${
-                privacy?.privacy_mode === "shared"
+                privacy?.privacy_mode === "shared_market"
                   ? "border-blue-400 bg-blue-400/5"
                   : "border-white/10 hover:border-white/20"
               }`}
             >
-              {privacy?.privacy_mode === "shared" && (
+              {privacy?.privacy_mode === "shared_market" && (
                 <div className="absolute -top-2 -right-2 w-5 h-5 bg-blue-400 rounded-full flex items-center justify-center">
                   <Check className="w-3 h-3 text-black" />
                 </div>
@@ -213,7 +213,7 @@ export default function PrivacyPage() {
       </div>
 
       {/* Granular Share Controls */}
-      {privacy?.privacy_mode === "shared" && (
+      {privacy?.privacy_mode === "shared_market" && (
         <div className="rounded-2xl border border-white/10 overflow-hidden">
           <div className="px-6 py-4 border-b border-white/10">
             <h3 className="text-sm font-bold text-white">What to Share</h3>
@@ -285,7 +285,7 @@ export default function PrivacyPage() {
       )}
 
       {/* Shared Mode - What's Never Shared */}
-      {privacy?.privacy_mode === "shared" && (
+      {privacy?.privacy_mode === "shared_market" && (
         <div className="rounded-2xl border border-white/10 overflow-hidden">
           <div className="px-6 py-4 border-b border-white/10">
             <h3 className="text-sm font-bold text-white flex items-center gap-2">

@@ -1295,7 +1295,7 @@ export function saveProfile(phone: string, data: { first_name: string; last_name
 // ── Organization Privacy Settings ──────────────────────────────────
 
 export interface OrgPrivacySettings {
-  privacy_mode: "private" | "shared";
+  privacy_mode: "private" | "shared_market";
   share_listings: boolean;
   share_requirements: boolean;
   share_price_trends: boolean;
