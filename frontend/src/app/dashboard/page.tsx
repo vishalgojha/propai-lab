@@ -34,6 +34,11 @@ const METRICS = [
 export default function DashboardPage() {
   const router = useRouter();
   const { user, loading } = useAuth();
+  const [window, setWindow] = useState("today");
+  const [metrics, setMetrics] = useState<api.TimeWindowMetrics | null>(null);
+  const [feed, setFeed] = useState<any[]>([]);
+  const [actionCards, setActionCards] = useState<any>(null);
+  const [suggestionCounts, setSuggestionCounts] = useState<any>({});
 
   useEffect(() => {
     if (!loading && !user) {
@@ -41,17 +46,8 @@ export default function DashboardPage() {
     }
   }, [user, loading, router]);
 
-  if (loading || !user) {
-    return null;
-  }
-
-  const [window, setWindow] = useState("today");
-  const [metrics, setMetrics] = useState<api.TimeWindowMetrics | null>(null);
-  const [feed, setFeed] = useState<any[]>([]);
-  const [actionCards, setActionCards] = useState<any>(null);
-  const [suggestionCounts, setSuggestionCounts] = useState<any>({});
-
   const loadAll = useCallback(async () => {
+    if (!user) return;
     try {
       const [m, f, a, sc] = await Promise.all([
         api.getTimeWindowMetrics(window),
@@ -74,6 +70,10 @@ export default function DashboardPage() {
     "sync.completed": loadAll,
     "connection.changed": loadAll,
   });
+
+  if (loading || !user) {
+    return null;
+  }
 
   const suggestionPending = suggestionCounts?.pending ?? 0;
 
