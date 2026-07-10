@@ -2598,24 +2598,9 @@ async def inbox_threads(limit: int = 500, offset: int = 0,
 @app.get("/api/inbox/slugs")
 async def inbox_slugs():
     """Return saved inbox view configurations (slugs) for the tabs."""
-    # Default built-in views (Brokers first for a Mumbai broker's workflow)
-    builtin = [
+    return [
         {"slug": "brokers", "label": "Brokers", "view_type": "brokers", "is_default": True},
-        {"slug": "clients", "label": "Clients", "view_type": "clients", "is_default": False},
-        {"slug": "personal", "label": "Direct Messages", "view_type": "personal", "is_default": False},
     ]
-    # Load custom saved views from database
-    saved = storage.get_saved_inbox_views()
-    custom = [
-        {
-            **view,
-            "label": view.get("label") or view.get("name") or view.get("slug"),
-            "view_type": view.get("view_type")
-            or ("personal" if view.get("slug") in {"personal", "my"} else None),
-        }
-        for view in saved
-    ]
-    return builtin + custom
 
 
 @app.get("/api/inbox/views")

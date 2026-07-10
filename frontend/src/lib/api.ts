@@ -1146,7 +1146,7 @@ export interface SavedView {
   slug: string;
   name?: string;
   label?: string;
-  view_type?: "brokers" | "groups" | "clients" | "personal";
+  view_type?: "brokers" | "groups";
   description?: string;
   filters?: Record<string, any>;
   created_at?: string;

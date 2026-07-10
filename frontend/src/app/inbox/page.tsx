@@ -891,15 +891,16 @@ function InboxPageInner() {
   useEffect(() => {
     (async () => {
       try {
-        const data = await api.getInboxSlugs();
+        const data = (await api.getInboxSlugs()).filter((s) => s.view_type === "brokers" || s.slug === "brokers");
         setSlugs(data);
-        // If URL had a view param, try to use it; else use default
         const viewFromUrl = searchParams.get("view");
-        if (viewFromUrl && data.some(s => s.slug === viewFromUrl)) {
+        if (viewFromUrl === "brokers" && data.some(s => s.slug === viewFromUrl)) {
           setCurrentSlug(viewFromUrl);
         } else if (data.length > 0 && !data.some(s => s.slug === currentSlug)) {
           const def = data.find(s => s.is_default) || data[0];
           setCurrentSlug(def.slug);
+        } else {
+          setCurrentSlug("brokers");
         }
       } catch (e) {
         console.error("Failed to load inbox slugs:", e);
@@ -922,7 +923,7 @@ function InboxPageInner() {
   // Load broker feed when switching to a slug whose view_type needs brokers feed
   useEffect(() => {
     const vt = activeSlug?.view_type;
-    if ((vt === "brokers" || vt === "personal") && brokerFeed.length === 0) {
+    if (vt === "brokers" && brokerFeed.length === 0) {
       loadBrokerFeed();
     }
   }, [activeSlug, loadBrokerFeed, brokerFeed.length]);
@@ -1343,8 +1344,9 @@ function InboxPageInner() {
 
   // Apply search filter to broker feed and direct chats
   const filteredBrokerFeed = !query
-    ? brokerFeed
+    ? brokerFeed.filter((b: any) => Number(b.group_evidence_count || 0) > 0)
     : brokerFeed.filter((b: any) => {
+        if (Number(b.group_evidence_count || 0) <= 0) return false;
         const haystack = [
           b.canonical_name,
           b.name,
@@ -1371,9 +1373,7 @@ function InboxPageInner() {
 
   const leftListEmpty = (() => {
     const vt = activeSlug?.view_type;
-    if (vt === "brokers") return filteredBrokerFeed.length === 0 && groupChats.length === 0 && filteredDirectChats.length === 0;
-    if (vt === "clients") return directChats.length === 0;
-    if (vt === "personal") return uniqueThreads.length === 0 && brokerFeed.length === 0 && directChats.length === 0;
+    if (vt === "brokers") return filteredBrokerFeed.length === 0;
     return uniqueThreads.length === 0;
   })();
 
@@ -1927,8 +1927,6 @@ function InboxPageInner() {
               {slugs.length === 0 ? (
                 <>
                   <div className="flex-1 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wider text-center text-zinc-500 bg-zinc-800">Brokers</div>
-                  <div className="flex-1 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wider text-center text-zinc-500">Clients</div>
-                  <div className="flex-1 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wider text-center text-zinc-500">Direct Messages</div>
                 </>
               ) : (
                 slugs.map((sv) => (
@@ -1956,202 +1954,13 @@ function InboxPageInner() {
             {loadingLeft && messages.length === 0 && groups.length === 0 ? (
               <div className="p-8 text-center text-xs text-zinc-500">Loading inbox feed...</div>
             ) : leftListEmpty ? (
-              <div className="p-8 text-center text-xs text-zinc-500">No chats found</div>
+              <div className="p-8 text-center text-xs text-zinc-500">
+                {activeSlug?.view_type === "brokers"
+                  ? "No broker entities extracted from group messages yet."
+                  : "No chats found"}
+              </div>
             ) : (
               <>
-                {/* Personal view: Broker cards + Direct chats (identity stream) */}
-                {activeSlug?.view_type === "personal" && (
-                  <>
-                    {brokerFeed.length > 0 && (
-                      <>
-                        <div className="px-3.5 py-2 text-[9px] text-zinc-500 uppercase tracking-wider font-bold">
-                            Brokers
-                        </div>
-                        {filteredBrokerFeed.slice(0, 20).map((b: any) => (
-                          <div key={"broker-" + b.primary_phone} className="relative">
-                            <button
-                              onClick={() => selectBroker(b)}
-                              className={`w-full text-left p-2.5 lg:p-3 transition-colors select-none ${
-                                selectedBroker?.id === b.primary_phone && activeSlug?.view_type === "personal"
-                                  ? "bg-blue-600/10 border-l-2 border-[#3b82f6]"
-                                  : "hover:bg-white/5"
-                              }`}
-                            >
-                              <div className="flex items-center justify-between mb-1">
-                                <div className="flex items-center gap-2 min-w-0">
-                                  <span className="text-[12px] font-bold text-white truncate max-w-[160px]">
-                                    {stripEmojis(b.canonical_name) || "Unknown"}
-                                  </span>
-                                </div>
-                                <div className="flex items-center gap-1">
-                                  <span className="text-[10px] font-bold text-white tabular-nums">
-                                    {b.observation_count}
-                                  </span>
-                                  <button
-                                    onClick={(e) => { e.stopPropagation(); setOpenMenuBroker(openMenuBroker === b.primary_phone ? null : b.primary_phone); }}
-                                    className="w-5 h-5 flex items-center justify-center rounded hover:bg-[rgba(255,255,255,0.06)] text-zinc-500 hover:text-white transition-colors"
-                                  >
-                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg>
-                                  </button>
-                                </div>
-                              </div>
-                              {b.latest_title && (
-                                <div className="text-[10px] text-zinc-400 leading-relaxed truncate mb-1.5">
-                                  <span className="text-zinc-500">Last: </span>
-                                  {stripEmojis(b.latest_title)}
-                                </div>
-                              )}
-                            </button>
-                            {openMenuBroker === b.primary_phone && (
-                              <div className="absolute right-2 top-3 z-50 bg-zinc-800 border border-white/10 rounded-lg shadow-xl py-1 min-w-[140px]">
-                                <button
-                                  onClick={(e) => { e.stopPropagation(); handleHideBroker(b.primary_phone); }}
-                                  className="w-full text-left px-3 py-1.5 text-[11px] text-white hover:bg-[rgba(255,255,255,0.06)] flex items-center gap-2"
-                                >
-                                  <EyeOff className="w-3 h-3" strokeWidth={1.5} />
-                                  Hide Broker
-                                </button>
-                              </div>
-                            )}
-                          </div>
-                        ))}
-                      </>
-                    )}
-                    {filteredDirectChats.length > 0 && (
-                      <>
-                        <div className="px-3.5 py-2 text-[9px] text-zinc-500 uppercase tracking-wider font-bold border-t border-white/5">
-                          Direct Messages
-                        </div>
-                        {filteredDirectChats.map((d) => {
-                          const latestPhone = resolveMessagePhone(d.latest);
-                          return (
-                            <button
-                              key={"direct-" + d.senderKey}
-                              onClick={() => selectConversation(d.latest)}
-                              className={`w-full text-left p-2.5 lg:p-3 transition-colors flex flex-col gap-1 select-none ${
-                                resolveMessagePhone(selectedMsg) === latestPhone
-                                  ? "bg-blue-600/10 border-l-2 border-[#3b82f6]"
-                                  : "hover:bg-white/5"
-                              }`}
-                            >
-                              <div className="flex items-center justify-between">
-                                <span className="text-[11px] font-bold text-white truncate max-w-[180px]">
-                                  <User className="w-3 h-3 text-zinc-500" strokeWidth={1.5} /> {d.name}
-                                </span>
-                                <span className="text-[10px] text-zinc-500 tabular-nums">{d.count}</span>
-                              </div>
-                              {d.latest?.message && (
-                                <div className="text-[11px] text-zinc-400 leading-4 truncate">
-                                  <WhatsAppMessage
-                                    text={d.latest.message}
-                                    entities={buildMessageEntities(d.latest)}
-                                    onEntityClick={handleEntityClick}
-                                    truncate
-                                    maxLines={1}
-                                  />
-                                </div>
-                              )}
-                              <div className="flex items-center gap-2 text-[9px] text-zinc-500">
-                                {latestPhone && <span className="font-mono">{displayPhoneString(latestPhone)}</span>}
-                                <span>·</span>
-                                <span>{formatAgeShort(d.latest?.timestamp)}</span>
-                              </div>
-                            </button>
-                          );
-                        })}
-                      </>
-                    )}
-                    {brokerFeed.length === 0 && directChats.length === 0 && groupChats.length === 0 && (
-                      <div className="p-8 text-center text-xs text-zinc-500">No identities found</div>
-                    )}
-
-                    {/* Group Chats */}
-                    {groupChats.length > 0 && (
-                      <>
-                        <div className="px-3.5 py-2 text-[9px] text-zinc-500 uppercase tracking-wider font-bold border-t border-white/5">
-                          Group Chats
-                        </div>
-                        {groupChats.slice(0, 50).map((g) => (
-                          <button
-                            key={"group-" + g.conversationKey}
-                            onClick={() => selectConversation(g.latest)}
-                            className={`w-full text-left p-2.5 lg:p-3 transition-colors flex flex-col gap-1 select-none ${
-                              selectedMsg?.group_name === g.latest.group_name
-                                ? "bg-blue-600/10 border-l-2 border-[#3b82f6]"
-                                : "hover:bg-white/5"
-                            }`}
-                          >
-                            <div className="flex items-center justify-between">
-                              <span className="text-sm font-semibold text-white truncate max-w-[180px]">
-                                {g.title}
-                              </span>
-                              <span className="text-[10px] text-zinc-500 tabular-nums">{g.count}</span>
-                            </div>
-                            {g.latest?.message && (
-                              <div className="text-[11px] text-zinc-400 leading-4 truncate">
-                                <WhatsAppMessage
-                                  text={g.latest.message}
-                                  entities={buildMessageEntities(g.latest)}
-                                  onEntityClick={handleEntityClick}
-                                  truncate
-                                  maxLines={1}
-                                />
-                              </div>
-                            )}
-                          </button>
-                        ))}
-                      </>
-                    )}
-                  </>
-                )}
-
-                {/* 2. Group Chats View (groups tab removed — direct & group chats now appear under Personal) */}
-
-                {/* 3. Direct Chats View */}
-
-                {/* 3. Direct Chats View */}
-                {activeSlug?.view_type === "clients" &&
-                  filteredDirectChats.map((d) => {
-                    const latestPhone = resolveMessagePhone(d.latest);
-                    const isSelected =
-                      selectedMsg?.sender === d.name ||
-                      (selectedMsg && "conversation_key" in selectedMsg && selectedMsg.conversation_key === d.senderKey) ||
-                      resolveMessagePhone(selectedMsg) === latestPhone;
-                    return (
-                      <button
-                        key={d.senderKey}
-                        onClick={() => selectConversation(d.latest)}
-                        className={`w-full text-left p-2.5 lg:p-3 transition-colors flex flex-col gap-1 select-none ${
-                          isSelected ? "bg-blue-600/10 border-l-2 border-[#3b82f6]" : "hover:bg-white/5"
-                        }`}
-                      >
-                        <div className="flex items-center justify-between">
-                          <span className="text-sm font-semibold text-white truncate max-w-[180px]">
-                            {d.name}
-                          </span>
-                          <span className="text-[10px] text-zinc-500 tabular-nums">{d.count}</span>
-                        </div>
-                        {d.latest?.message && (
-                          <div className="text-[11px] text-zinc-400 leading-4 truncate">
-                            <WhatsAppMessage
-                              text={d.latest.message}
-                              entities={buildMessageEntities(d.latest)}
-                              onEntityClick={handleEntityClick}
-                              truncate
-                              maxLines={1}
-                            />
-                          </div>
-                        )}
-                        <div className="flex items-center gap-2 text-[9px] text-zinc-500">
-                          {latestPhone && <span className="font-mono">{displayPhoneString(latestPhone)}</span>}
-                          <span>·</span>
-                          <span>{formatAgeShort(d.latest?.timestamp)}</span>
-                        </div>
-                      </button>
-                    );
-                  })}
-
-                {/* 4. Broker Feed View */}
                 {activeSlug?.view_type === "brokers" && loadingBrokerFeed && (
                   <div className="p-8 text-center text-xs text-zinc-500">Loading broker feed...</div>
                 )}
@@ -2228,102 +2037,6 @@ function InboxPageInner() {
                       );
                     })
                   }
-                {activeSlug?.view_type === "brokers" && !loadingBrokerFeed && filteredBrokerFeed.length === 0 && (
-                  <>
-                    <div className="px-3.5 py-2 text-[9px] text-zinc-500 uppercase tracking-wider font-bold">
-                      Recent WhatsApp Conversations
-                    </div>
-                    {filteredDirectChats.length > 0 && (
-                      <>
-                        <div className="px-3.5 py-2 text-[9px] text-zinc-500 uppercase tracking-wider font-bold border-t border-white/5">
-                          Direct Messages
-                        </div>
-                        {filteredDirectChats.map((d) => {
-                          const latestPhone = resolveMessagePhone(d.latest);
-                          return (
-                            <button
-                              key={"fallback-direct-" + d.senderKey}
-                              onClick={() => selectConversation(d.latest)}
-                              className={`w-full text-left p-2.5 lg:p-3 transition-colors flex flex-col gap-1 select-none ${
-                                resolveMessagePhone(selectedMsg) === latestPhone
-                                  ? "bg-blue-600/10 border-l-2 border-[#3b82f6]"
-                                  : "hover:bg-white/5"
-                              }`}
-                            >
-                              <div className="flex items-center justify-between">
-                                <span className="text-[11px] font-bold text-white truncate max-w-[180px]">
-                                  <User className="w-3 h-3 text-zinc-500" strokeWidth={1.5} /> {d.name}
-                                </span>
-                                <span className="text-[10px] text-zinc-500 tabular-nums">{d.count}</span>
-                              </div>
-                              {d.latest?.message && (
-                                <div className="text-[11px] text-zinc-400 leading-4 truncate">
-                                  <WhatsAppMessage
-                                    text={d.latest.message}
-                                    entities={buildMessageEntities(d.latest)}
-                                    onEntityClick={handleEntityClick}
-                                    truncate
-                                    maxLines={1}
-                                  />
-                                </div>
-                              )}
-                              <div className="flex items-center gap-2 text-[9px] text-zinc-500">
-                                {latestPhone && <span className="font-mono">{displayPhoneString(latestPhone)}</span>}
-                                <span>·</span>
-                                <span>{formatAgeShort(d.latest?.timestamp)}</span>
-                              </div>
-                            </button>
-                          );
-                        })}
-                      </>
-                    )}
-                    {groupChats.length > 0 && (
-                      <>
-                        <div className="px-3.5 py-2 text-[9px] text-zinc-500 uppercase tracking-wider font-bold border-t border-white/5">
-                          Group Chats
-                        </div>
-                        {groupChats.slice(0, 50).map((g) => (
-                          <button
-                            key={"fallback-group-" + g.conversationKey}
-                            onClick={() => selectConversation(g.latest)}
-                            className={`w-full text-left p-2.5 lg:p-3 transition-colors flex flex-col gap-1 select-none ${
-                              selectedMsg?.group_name === g.latest.group_name
-                                ? "bg-blue-600/10 border-l-2 border-[#3b82f6]"
-                                : "hover:bg-white/5"
-                            }`}
-                          >
-                            <div className="flex items-center justify-between">
-                              <span className="text-sm font-semibold text-white truncate max-w-[180px]">
-                                {g.title}
-                              </span>
-                              <span className="text-[10px] text-zinc-500 tabular-nums">{g.count}</span>
-                            </div>
-                            {g.latest?.message && (
-                              <div className="text-[11px] text-zinc-400 leading-4 truncate">
-                                <WhatsAppMessage
-                                  text={g.latest.message}
-                                  entities={buildMessageEntities(g.latest)}
-                                  onEntityClick={handleEntityClick}
-                                  truncate
-                                  maxLines={1}
-                                />
-                              </div>
-                            )}
-                            <div className="flex items-center gap-2 text-[9px] text-zinc-500">
-                              <span>·</span>
-                              <span>{formatAgeShort(g.latest?.timestamp)}</span>
-                            </div>
-                          </button>
-                        ))}
-                      </>
-                    )}
-                    {filteredDirectChats.length === 0 && groupChats.length === 0 && (
-                      <div className="p-8 text-center text-xs text-zinc-500">
-                        No broker cards yet, but the underlying WhatsApp feed is empty too.
-                      </div>
-                    )}
-                    </>
-                  )}
                   </>
                 )}
           </div>
@@ -2363,7 +2076,7 @@ function InboxPageInner() {
 
         {/* ================= CENTER PANEL: CONVERSATION ================= */}
         <div className={`flex-1 flex flex-col bg-[#070b0e] overflow-hidden ${isMobile && mobileView !== "conversation" ? "hidden" : ""}`}>
-          {(activeSlug?.view_type === "brokers" || activeSlug?.view_type === "personal") && selectedBroker ? (
+          {activeSlug?.view_type === "brokers" && selectedBroker ? (
             <>
               {/* Observation Timeline Header */}
               <div className="px-5 py-4 border-b border-white/10 flex items-center justify-between bg-black/80">
