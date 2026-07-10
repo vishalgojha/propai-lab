@@ -1,5 +1,4 @@
 {
-<<<<<<< HEAD
   "name": "propai-lab",
   "version": "0.1.0",
   "description": "Local PropAI WhatsApp intelligence lab",
@@ -48,37 +47,5 @@
   },
   "dependencies": {
     "@tavily/core": "^0.7.6"
-=======
-  "name": "frontend",
-  "version": "0.1.0",
-  "private": true,
-  "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
-    "lint": "eslint"
-  },
-  "dependencies": {
-    "@ai-sdk/openai-compatible": "^3.0.7",
-    "@ai-sdk/react": "^4.0.20",
-    "@supabase/supabase-js": "^2.39.0",
-    "ai": "^7.0.19",
-    "lucide-react": "^1.22.0",
-    "next": "16.2.9",
-    "qrcode": "^1.5.4",
-    "react": "19.2.4",
-    "react-dom": "19.2.4"
-  },
-  "devDependencies": {
-    "@tailwindcss/postcss": "^4",
-    "@types/node": "^20",
-    "@types/qrcode": "^1.5.6",
-    "@types/react": "^19",
-    "@types/react-dom": "^19",
-    "eslint": "^9",
-    "eslint-config-next": "16.2.9",
-    "tailwindcss": "^4",
-    "typescript": "^5"
->>>>>>> d6d6293 (Fix frontend build and layout wiring)
   }
 }

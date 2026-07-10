@@ -3,8 +3,8 @@
 export const dynamic = 'force-dynamic';
 
 import { useEffect, useState, useCallback, useRef } from "react";
+import { useChat } from "@ai-sdk/react";
 import * as api from "@/lib/api";
-import AIWorkspace from "@/components/AIWorkspace";
 
 interface Suggestion {
   id: number;
@@ -69,29 +69,6 @@ const AGENT_LABELS: Record<string, string> = {
 };
 
 const DETERMINISTIC_AGENTS = new Set(["duplicate_listing", "merge_broker", "price"]);
-const CHAT_HISTORY_STORAGE_KEY = "propai_ai_chat_history_v1";
-
-type ChatMessage =
-  | { role: "user"; content: string }
-  | ({ role: "assistant"; content: string } & api.ChatResponse);
-
-function loadStoredChatMessages(): ChatMessage[] {
-  if (typeof window === "undefined") return [];
-  try {
-    const raw = localStorage.getItem(CHAT_HISTORY_STORAGE_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
-    return parsed.filter(
-      (message): message is ChatMessage =>
-        message &&
-        (message.role === "user" || message.role === "assistant") &&
-        typeof message.content === "string",
-    );
-  } catch {
-    return [];
-  }
-}
 
 function evidenceLines(s: Suggestion): string[] {
   const lines: string[] = [];
@@ -158,10 +135,9 @@ function formatTokens(n: number): string {
 
 export default function AIReviewPage() {
   const [tab, setTab] = useState<"chat" | "review">("chat");
-  const [chatMessages, setChatMessages] = useState<ChatMessage[]>(loadStoredChatMessages);
-  const [chatInput, setChatInput] = useState("");
-  const [chatLoading, setChatLoading] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const [input, setInput] = useState("");
+  const { messages, sendMessage, status, setMessages, error } = useChat();
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [counts, setCounts] = useState<Record<string, number>>({});
   const [filter, setFilter] = useState("pending");
@@ -206,11 +182,6 @@ export default function AIReviewPage() {
 
   useEffect(() => { load(); }, [load]);
 
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    localStorage.setItem(CHAT_HISTORY_STORAGE_KEY, JSON.stringify(chatMessages.slice(-40)));
-  }, [chatMessages]);
-
   async function act(id: number, action: string, reason = "") {
     setActionId(id);
     try {
@@ -223,42 +194,13 @@ export default function AIReviewPage() {
     }
   }
 
-  useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [chatMessages]);
+  useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, status]);
 
-  async function sendChat() {
-    if (!chatInput.trim() || chatLoading) return;
-    const userMsg = chatInput.trim();
-    setChatInput("");
-    setChatMessages((prev) => [...prev, { role: "user", content: userMsg }]);
-    setChatLoading(true);
-    try {
-      const key = typeof window !== "undefined" ? localStorage.getItem("doubleword_key") || "" : "";
-      const model = typeof window !== "undefined" ? localStorage.getItem("doubleword_model") || "" : "";
-      const res = await api.chatAIChat([...chatMessages, { role: "user", content: userMsg }], key, model);
-      setChatMessages((prev) => [...prev, { role: "assistant", ...res }]);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Unknown AI error";
-      setChatMessages((prev) => [
-        ...prev,
-        {
-          role: "assistant",
-          content: `Sorry, I couldn't process that. ${message}`,
-          blocks: [{ type: "error_state", title: "AI request failed", body: message }],
-          sources: [],
-          status_steps: [],
-        },
-      ]);
-    } finally {
-      setChatLoading(false);
-    }
-  }
-
-  function clearChat() {
-    setChatMessages([]);
-    setChatInput("");
-    if (typeof window !== "undefined") {
-      localStorage.removeItem(CHAT_HISTORY_STORAGE_KEY);
-    }
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!input.trim() || status === "submitted") return;
+    sendMessage(input.trim());
+    setInput("");
   }
 
   async function batchAct(action: string, reason = "") {
@@ -342,11 +284,11 @@ export default function AIReviewPage() {
       {/* ─── Tab: AI Chat ─── */}
       {tab === "chat" && (
         <div className="flex flex-col h-[calc(100dvh-160px)] lg:h-[calc(100vh-160px)]">
-          {chatMessages.length > 0 && (
+          {messages.length > 0 && (
             <div className="mb-3 flex justify-end">
               <button
-                onClick={clearChat}
-                disabled={chatLoading}
+                onClick={() => setMessages([])}
+                disabled={status === "submitted" || status === "streaming"}
                 className="rounded-lg border border-white/10 px-3 py-1.5 text-xs font-medium text-zinc-400 hover:border-red-500/30 hover:text-red-200 disabled:opacity-40"
               >
                 Clear chat
@@ -354,7 +296,7 @@ export default function AIReviewPage() {
             </div>
           )}
           <div className="flex-1 overflow-y-auto space-y-3 mb-4 pr-2">
-              {chatMessages.length === 0 ? (
+            {messages.length === 0 ? (
               <div className="text-center py-12">
                 <div className="text-3xl mb-3">🤖</div>
                 <h2 className="text-sm font-semibold text-white mb-2">Ask PropAI anything</h2>
@@ -363,7 +305,7 @@ export default function AIReviewPage() {
                 </p>
                 <div className="flex flex-wrap gap-2 justify-center max-w-lg mx-auto">
                   {["Owner listings in Bandra under 3 Cr", "Requirements for 3 BHK in Andheri", "Who deals in Kalina offices?", "Show all Chandak Unicorn listings", "Brokers active in Juhu rentals", "Duplicate brokers in database", "Which brokers post Chandak Unicorn most?", "Show me this week's price trends"].map((q) => (
-                    <button key={q} onClick={() => setChatInput(q)}
+                    <button key={q} onClick={() => setInput(q)}
                       className="text-xs text-zinc-400 border border-white/10 hover:border-blue-500/30 hover:text-white rounded-lg px-2.5 py-1.5 lg:px-3 lg:py-2 transition-colors min-h-[36px]"
                     >
                       {q}
@@ -373,8 +315,8 @@ export default function AIReviewPage() {
               </div>
             ) : (
               <>
-                {chatMessages.map((m, i) => (
-                  <div key={i} className={`flex gap-3 ${m.role === "user" ? "justify-end" : ""}`}>
+                {messages.map((m, i) => (
+                  <div key={m.id || i} className={`flex gap-3 ${m.role === "user" ? "justify-end" : ""}`}>
                     {m.role === "assistant" && <span className="text-lg mt-1">🤖</span>}
                     {m.role === "user" ? (
                       <div className="max-w-[80%] rounded-xl px-4 py-2.5 text-sm bg-blue-600 text-white whitespace-pre-wrap">
@@ -382,7 +324,7 @@ export default function AIReviewPage() {
                       </div>
                     ) : (
                       <div className="max-w-[90%] w-full">
-                        <AIWorkspace response={m} onPromptSelect={(value) => setChatInput(value)} />
+                        <div className="text-sm text-zinc-300 whitespace-pre-wrap leading-relaxed">{m.content}</div>
                       </div>
                     )}
                     {m.role === "user" && <span className="text-lg mt-1">👤</span>}
@@ -390,7 +332,7 @@ export default function AIReviewPage() {
                 ))}
               </>
             )}
-            {chatLoading && (
+            {(status === "submitted" || status === "streaming") && (
               <div className="flex gap-3">
                 <span className="text-lg mt-1">🤖</span>
                 <div className="bg-zinc-900 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-zinc-400">
@@ -398,26 +340,34 @@ export default function AIReviewPage() {
                 </div>
               </div>
             )}
+            {error && (
+              <div className="flex gap-3">
+                <span className="text-lg mt-1">⚠️</span>
+                <div className="bg-red-900/20 border border-red-500/20 rounded-xl px-4 py-2.5 text-sm text-red-300">
+                  {error instanceof Error ? error.message : "Something went wrong"}
+                </div>
+              </div>
+            )}
             <div ref={chatEndRef} />
           </div>
 
-          <div className="flex gap-2 items-end border-t border-white/10 pt-3 lg:pt-4 pb-2 lg:pb-0">
+          <form onSubmit={handleSubmit} className="flex gap-2 items-end border-t border-white/10 pt-3 lg:pt-4 pb-2 lg:pb-0">
             <textarea
-              value={chatInput}
-              onChange={(e) => setChatInput(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendChat(); } }}
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSubmit(e); } }}
               placeholder="Ask a question about your market data..."
               rows={2}
               className="flex-1 bg-zinc-900 border border-white/10 rounded-xl px-3 lg:px-4 py-2.5 text-sm text-white placeholder-[#64748b] resize-none max-h-[120px]"
             />
             <button
-              onClick={sendChat}
-              disabled={chatLoading || !chatInput.trim()}
+              type="submit"
+              disabled={status === "submitted" || status === "streaming" || !input.trim()}
               className="px-3 lg:px-4 py-2.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 rounded-xl text-sm font-medium min-h-[44px]"
             >
               Send
             </button>
-          </div>
+          </form>
         </div>
       )}
 
