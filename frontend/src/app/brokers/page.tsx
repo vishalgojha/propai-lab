@@ -127,6 +127,60 @@ function activityMix(broker: Broker) {
   return { label: "Balanced", tone: "bg-green-900/40 text-green-200" };
 }
 
+const badgeBase = "inline-flex items-center px-2 py-0.5 rounded text-xs font-medium";
+const badgeVariants = {
+  sell: "bg-blue-900/40 text-blue-200",
+  rent: "bg-green-900/40 text-green-200",
+  buy: "bg-purple-900/40 text-purple-200",
+  default: "bg-zinc-700 text-zinc-200",
+} as const;
+
+function intentBadge(intent?: string) {
+  const upper = (intent || "").toUpperCase();
+  if (upper === "SELL" || upper === "SALE") return <span className={`${badgeBase} bg-blue-900/40 text-blue-200`}>Sale</span>;
+  if (upper === "RENT") return <span className={`${badgeBase} bg-green-900/40 text-green-200`}>Rent</span>;
+  if (upper === "BUY" || upper === "BUYER" || upper === "REQUIREMENT") return <span className={`${badgeBase} bg-purple-900/40 text-purple-200`}>Buy</span>;
+  if (upper === "COMMERCIAL") return <span className={`${badgeBase} bg-amber-900/40 text-amber-200`}>Commercial</span>;
+  if (upper === "PRE-LAUNCH") return <span className={`${badgeBase} bg-amber-900/40 text-amber-200`}>Pre-Launch</span>;
+  return <span className={`${badgeBase} bg-zinc-700 text-zinc-200`}>{intent || "Unknown"}</span>;
+}
+
+function marketBadge(market: string) {
+  return <span className="text-caption bg-zinc-800 border border-white/10 rounded px-2 py-1 text-zinc-400">{market}</span>;
+}
+
+function buildingBadge(building: string) {
+  return <span className="text-caption bg-zinc-800 border border-blue-500/20 rounded px-2 py-1 text-blue-300">{building}</span>;
+}
+
+function groupBadge(group: string) {
+  return <div className="text-caption text-zinc-400 truncate">{group}</div>;
+}
+
+function intentBadgeSmall(intent?: string) {
+  const upper = (intent || "").toUpperCase();
+  const base = "px-1 py-0.5 rounded text-[9px] font-medium";
+  if (upper === "SELL" || upper === "SALE") return <span className={`${base} bg-blue-900/40 text-blue-200`}>Sale</span>;
+  if (upper === "RENT") return <span className={`${base} bg-green-900/40 text-green-200`}>Rent</span>;
+  if (upper === "BUY" || upper === "BUYER" || upper === "REQUIREMENT") return <span className={`${base} bg-purple-900/40 text-purple-200`}>Buy</span>;
+  if (upper === "COMMERCIAL") return <span className={`${base} bg-amber-900/40 text-amber-200`}>Commercial</span>;
+  return <span className={`${base} bg-zinc-700 text-zinc-200`}>{intent || "Text"}</span>;
+}
+
+function obsTypeBadge(type?: string) {
+  const upper = (type || "").toUpperCase();
+  const base = "px-1 py-0.5 rounded text-[9px] font-medium";
+  if (upper === "BUILDING_FEEDBACK") return <span className={`${base} bg-blue-900/40 text-blue-200`}>Building Feedback</span>;
+  if (upper === "PRICE_FEEDBACK") return <span className={`${base} bg-green-900/40 text-green-200`}>Price Feedback</span>;
+  if (upper === "CLIENT_PREFERENCE") return <span className={`${base} bg-purple-900/40 text-purple-200`}>Client Preference</span>;
+  if (upper === "AMENITY_FEEDBACK") return <span className={`${base} bg-amber-900/40 text-amber-200`}>Amenity Feedback</span>;
+  if (upper === "CONSTRUCTION_FEEDBACK") return <span className={`${base} bg-orange-900/40 text-orange-200`}>Construction Feedback</span>;
+  if (upper === "MAINTENANCE_FEEDBACK") return <span className={`${base} bg-red-900/40 text-red-200`}>Maintenance Feedback</span>;
+  if (upper === "LOCATION_FEEDBACK") return <span className={`${base} bg-teal-900/40 text-teal-200`}>Location Feedback</span>;
+  if (upper === "BROKER_FEEDBACK") return <span className={`${base} bg-pink-900/40 text-pink-200`}>Broker Feedback</span>;
+  return <span className={`${base} bg-zinc-800/50 text-zinc-200`}>{type || "Unknown"}</span>;
+}
+
 export default function BrokersPage() {
   const [brokers, setBrokers] = useState<Broker[]>([]);
   const [query, setQuery] = useState("");
@@ -210,30 +264,33 @@ export default function BrokersPage() {
                           </a>
                         )}
                         {!hasWhatsApp && <span className="flex items-center gap-1 text-zinc-500"><XCircle className="w-3 h-3" /> No WA</span>}
-                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${mix.tone}`}>{mix.label}</span>
+                        <span className={`px-1.5 py-0.5 rounded text-xs font-semibold ${mix.tone}`}>{mix.label}</span>
                       </div>
                     </div>
                   </div>
 
-                  {/* Stats Row */}
-                  <div className="grid grid-cols-4 gap-2 mb-3 text-center">
-                    <div className="rounded-lg bg-zinc-800/50 px-2 py-1.5">
-                      <div className="text-white font-bold text-sm">{broker.listing_count}</div>
-                      <div className="text-[10px] text-zinc-500">Listings</div>
-                    </div>
-                    <div className="rounded-lg bg-zinc-800/50 px-2 py-1.5">
-                      <div className="text-white font-bold text-sm">{broker.requirement_count}</div>
-                      <div className="text-[10px] text-zinc-500">Reqs</div>
-                    </div>
-                    <div className="rounded-lg bg-zinc-800/50 px-2 py-1.5">
-                      <div className="text-white font-bold text-sm">{broker.market_count}</div>
-                      <div className="text-[10px] text-zinc-500">Markets</div>
-                    </div>
-                    <div className="rounded-lg bg-zinc-800/50 px-2 py-1.5">
-                      <div className="text-white font-bold text-sm">{broker.building_count}</div>
-                      <div className="text-[10px] text-zinc-500">Buildings</div>
-                    </div>
+<activityMix>
+                </div>
+
+                {/* Stats Row */}
+                <div className="grid grid-cols-4 gap-2 mb-3 text-center">
+                  <div className="rounded-lg bg-zinc-800/50 px-2 py-2">
+                    <div className="text-white font-bold text-sm">{broker.listing_count}</div>
+                    <div className="text-caption text-zinc-500">Listings</div>
                   </div>
+                  <div className="rounded-lg bg-zinc-800/50 px-2 py-2">
+                    <div className="text-white font-bold text-sm">{broker.requirement_count}</div>
+                    <div className="text-caption text-zinc-500">Reqs</div>
+                  </div>
+                  <div className="rounded-lg bg-zinc-800/50 px-2 py-2">
+                    <div className="text-white font-bold text-sm">{broker.market_count}</div>
+                    <div className="text-caption text-zinc-500">Markets</div>
+                  </div>
+                  <div className="rounded-lg bg-zinc-800/50 px-2 py-2">
+                    <div className="text-white font-bold text-sm">{broker.building_count}</div>
+                    <div className="text-caption text-zinc-500">Buildings</div>
+                  </div>
+                </div>
 
                   {/* Markets */}
                   {topMarkets.length > 0 && (
@@ -317,11 +374,12 @@ export default function BrokersPage() {
                       View Profile
                     </Link>
                   </div>
-</article>
+                </article>
               </Link>
-            ))}
+            );
+          })}
           </div>
-        ) : null}
+        )}
       </div>
     );
   }

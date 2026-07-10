@@ -2324,10 +2324,10 @@ function InboxPageInner() {
                         No broker cards yet, but the underlying WhatsApp feed is empty too.
                       </div>
                     )}
+                    </>
+                  )}
                   </>
                 )}
-              </>
-            )}
           </div>
           
           {/* Left panel footer / Pagination (desktop) / Infinite scroll sentinel (mobile) */}
@@ -3567,7 +3567,7 @@ function InboxPageInner() {
           </div>
           </div>
         </ResizablePanel>
-        </div>
+      </div>
 
         {/* ================= TAB: AI ASSISTANT ================= */}
         {activeRightTab === "ai" ? (
@@ -3578,14 +3578,17 @@ function InboxPageInner() {
         ) : null}
       </div>
       </div>
+      </>
 
         {/* Combined Localities Dialog */}
-        <CombinedLocalityDialog
-          isOpen={showCombinedLocalityDialog}
-          onClose={() => setShowCombinedLocalityDialog(false)}
-          surfaceText={combinedLocalitySurfaceText}
-          onSave={handleCombinedLocalitySave}
-        />
+        {showCombinedLocalityDialog && (
+          <CombinedLocalityDialog
+            isOpen={showCombinedLocalityDialog}
+            onClose={() => setShowCombinedLocalityDialog(false)}
+            surfaceText={combinedLocalitySurfaceText}
+            onSave={handleCombinedLocalitySave}
+          />
+        )}
 
       </div>
     </div>

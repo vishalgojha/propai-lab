@@ -227,7 +227,7 @@ export default function AdminKnowledgePage() {
             >
               Next
             </button>
-          )}
+          </div>
         )}
       </div>
 
