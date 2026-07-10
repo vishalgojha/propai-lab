@@ -3,6 +3,7 @@
 export const dynamic = 'force-dynamic';
 
 import { useEffect, useState, useCallback, useRef } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import { useChat } from "@ai-sdk/react";
 import * as api from "@/lib/api";
 
@@ -267,6 +268,16 @@ export default function AIReviewPage() {
 
   return (
     <div className="max-w-4xl mx-auto px-4 lg:px-0">
+      <style>{`
+        @keyframes typing-bounce {
+          0%, 80%, 100% { transform: translateY(0); }
+          40% { transform: translateY(-6px); }
+        }
+        .typing-dot { width: 6px; height: 6px; border-radius: 50%; background: #a1a1aa; animation: typing-bounce 1.4s infinite both; }
+        .typing-dot:nth-child(1) { animation-delay: -0.32s; }
+        .typing-dot:nth-child(2) { animation-delay: -0.16s; }
+        .typing-dot:nth-child(3) { animation-delay: 0s; }
+      `}</style>
       {/* ─── Tab Bar ─── */}
       <div className="flex gap-1 mb-4 lg:mb-6 border-b border-white/10 pb-2 overflow-x-auto">
         <button onClick={() => setTab("chat")}
@@ -314,9 +325,15 @@ export default function AIReviewPage() {
                 </div>
               </div>
             ) : (
-              <>
+              <AnimatePresence initial={false}>
                 {messages.map((m, i) => (
-                  <div key={m.id || i} className={`flex gap-3 ${m.role === "user" ? "justify-end" : ""}`}>
+                  <motion.div
+                    key={m.id || i}
+                    initial={{ opacity: 0, y: 12 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.25, ease: "easeOut" }}
+                    className={`flex gap-3 ${m.role === "user" ? "justify-end" : ""}`}
+                  >
                     {m.role === "assistant" && <span className="text-lg mt-1">🤖</span>}
                     {m.role === "user" ? (
                       <div className="max-w-[80%] rounded-xl px-4 py-2.5 text-sm bg-blue-600 text-white whitespace-pre-wrap">
@@ -328,17 +345,22 @@ export default function AIReviewPage() {
                       </div>
                     )}
                     {m.role === "user" && <span className="text-lg mt-1">👤</span>}
-                  </div>
+                  </motion.div>
                 ))}
-              </>
+              </AnimatePresence>
             )}
             {(status === "submitted" || status === "streaming") && (
-              <div className="flex gap-3">
+              <motion.div
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.2 }}
+                className="flex gap-3"
+              >
                 <span className="text-lg mt-1">🤖</span>
-                <div className="bg-zinc-900 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-zinc-400">
-                  Thinking...
+                <div className="bg-zinc-900 border border-white/10 rounded-xl px-4 py-3 text-sm text-zinc-400 flex items-center gap-1.5 min-w-[60px]">
+                  <span className="typing-dot" /><span className="typing-dot" /><span className="typing-dot" />
                 </div>
-              </div>
+              </motion.div>
             )}
             {error && (
               <div className="flex gap-3">
