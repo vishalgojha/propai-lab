@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { X, Search } from "lucide-react";
+import { LogOut, X, Search } from "lucide-react";
+import { useAuth } from "@/lib/AuthProvider";
 
 const navSections = [
   {
@@ -46,6 +47,7 @@ export function MobileDrawer({
 }) {
   const pathname = usePathname();
   const router = useRouter();
+  const { signOut } = useAuth();
   const overlayRef = useRef<HTMLDivElement>(null);
   const [profile, setProfile] = useState<{ phone: string; first_name: string; last_name?: string; city?: string } | null>(null);
 
@@ -74,6 +76,13 @@ export function MobileDrawer({
   function navigate(href: string) {
     router.push(href);
     onClose();
+  }
+
+  async function handleSignOut() {
+    localStorage.removeItem("propai_profile");
+    await signOut();
+    onClose();
+    router.replace("/auth/login");
   }
 
   return (
@@ -160,16 +169,28 @@ export function MobileDrawer({
         {/* Profile */}
         {profile && (
           <div className="px-4 py-3 border-t border-white/5">
-            <div className="flex items-center gap-3 px-2.5 py-2">
-              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-400/10 text-emerald-400 text-sm font-bold shrink-0">
-                {profile.first_name?.charAt(0)?.toUpperCase() || "?"}
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="text-sm font-semibold text-white truncate">
-                  {profile.first_name}{profile.last_name ? ` ${profile.last_name}` : ""}
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => navigate("/profile")}
+                className="flex min-w-0 flex-1 items-center gap-3 rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-white/5"
+              >
+                <div className="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-400/10 text-emerald-400 text-sm font-bold shrink-0">
+                  {profile.first_name?.charAt(0)?.toUpperCase() || "?"}
                 </div>
-                {profile.city && <div className="text-[11px] text-zinc-500 truncate">{profile.city}</div>}
-              </div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-semibold text-white truncate">
+                    {profile.first_name}{profile.last_name ? ` ${profile.last_name}` : ""}
+                  </div>
+                  {profile.city && <div className="text-[11px] text-zinc-500 truncate">{profile.city}</div>}
+                </div>
+              </button>
+              <button
+                onClick={handleSignOut}
+                className="flex h-10 w-10 items-center justify-center rounded-lg text-zinc-500 transition-colors hover:bg-white/5 hover:text-white"
+                aria-label="Log out"
+              >
+                <LogOut className="h-4 w-4" strokeWidth={1.5} />
+              </button>
             </div>
           </div>
         )}

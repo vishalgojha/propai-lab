@@ -24,6 +24,7 @@ import {
   Radar,
   TrendingUp,
   Key,
+  LogOut,
   Menu,
   X,
   AlertTriangle,
@@ -183,31 +184,49 @@ function AppShell({ children }: { children: React.ReactNode }) {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [offline, setOffline] = useState(false);
   const [profile, setProfile] = useState<{ phone: string; first_name: string; last_name?: string; email?: string; city?: string } | null>(null);
+  const [profileLoaded, setProfileLoaded] = useState(false);
   const [reconnectCountdown, setReconnectCountdown] = useState<number | null>(null);
   const wasConnectedRef = useRef(false);
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const { signOut: authSignOut } = useAuth();
 
   // Read profile from localStorage
   useEffect(() => {
-    const stored = localStorage.getItem("propai_profile");
-    if (stored) {
-      try { setProfile(JSON.parse(stored)); } catch {}
-    }
-    const handler = () => {
+    const readProfile = () => {
       const s = localStorage.getItem("propai_profile");
       if (s) { try { setProfile(JSON.parse(s)); } catch { setProfile(null); } }
+      else setProfile(null);
+      setProfileLoaded(true);
     };
-    window.addEventListener("storage", handler);
-    return () => window.removeEventListener("storage", handler);
+    readProfile();
+    window.addEventListener("storage", readProfile);
+    window.addEventListener("propai_profile_updated", readProfile);
+    return () => {
+      window.removeEventListener("storage", readProfile);
+      window.removeEventListener("propai_profile_updated", readProfile);
+    };
   }, []);
 
   const waConnected = conn?.connected;
 
   useEffect(() => {
-    if (!authLoading && !user) {
+    if (authLoading) return;
+    if (!user) {
       router.replace(`/auth/login?next=${encodeURIComponent(pathname || "/dashboard")}`);
+      return;
     }
-  }, [authLoading, user, pathname, router]);
+    if (!profileLoaded) return;
+    if (!profile && pathname !== "/profile") {
+      router.replace(`/profile?next=${encodeURIComponent(pathname || "/connections")}`);
+    }
+  }, [authLoading, user, profileLoaded, profile, pathname, router]);
+
+  const handleSignOut = useCallback(async () => {
+    localStorage.removeItem("propai_profile");
+    setProfile(null);
+    await authSignOut();
+    router.replace("/auth/login");
+  }, [authSignOut, router]);
 
   useEffect(() => {
     if (authLoading || !user) return;
@@ -294,7 +313,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
     document.body.classList.toggle("no-scroll", drawerOpen);
   }, [drawerOpen]);
 
-  if (authLoading || !user) {
+  if (authLoading || !user || !profileLoaded || (!profile && pathname !== "/profile")) {
     return null;
   }
 
@@ -355,18 +374,28 @@ function AppShell({ children }: { children: React.ReactNode }) {
         {/* Profile Section */}
         {profile && (
           <div className="px-4 py-3 border-t border-white/5">
-            <button onClick={() => router.push("/profile")}
-              className="w-full flex items-center gap-3 px-2.5 py-2 rounded-lg hover:bg-white/5 transition-colors text-left">
-              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-400/10 text-emerald-400 text-xs font-bold shrink-0">
-                {profile.first_name?.charAt(0)?.toUpperCase() || "?"}
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="text-[12px] font-semibold text-white truncate">
-                  {profile.first_name}{profile.last_name ? ` ${profile.last_name}` : ""}
+            <div className="flex items-center gap-2">
+              <button onClick={() => router.push("/profile")}
+                className="flex min-w-0 flex-1 items-center gap-3 px-2.5 py-2 rounded-lg hover:bg-white/5 transition-colors text-left">
+                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-400/10 text-emerald-400 text-xs font-bold shrink-0">
+                  {profile.first_name?.charAt(0)?.toUpperCase() || "?"}
                 </div>
-                {profile.city && <div className="text-[10px] text-zinc-500 truncate">{profile.city}</div>}
-              </div>
-            </button>
+                <div className="flex-1 min-w-0">
+                  <div className="text-[12px] font-semibold text-white truncate">
+                    {profile.first_name}{profile.last_name ? ` ${profile.last_name}` : ""}
+                  </div>
+                  {profile.city && <div className="text-[10px] text-zinc-500 truncate">{profile.city}</div>}
+                </div>
+              </button>
+              <button
+                onClick={handleSignOut}
+                className="flex h-9 w-9 items-center justify-center rounded-lg text-zinc-500 transition-colors hover:bg-white/5 hover:text-white"
+                aria-label="Log out"
+                title="Log out"
+              >
+                <LogOut className="h-4 w-4" strokeWidth={1.5} />
+              </button>
+            </div>
           </div>
         )}
 
@@ -440,6 +469,14 @@ function AppShell({ children }: { children: React.ReactNode }) {
           <a href="/connections" className="text-[9px] text-zinc-500 hover:text-zinc-300 uppercase tracking-wider transition-colors shrink-0">
             Settings
           </a>
+          <button
+            onClick={handleSignOut}
+            className="flex h-7 w-7 items-center justify-center rounded-lg text-zinc-500 transition-colors hover:bg-white/5 hover:text-white"
+            aria-label="Log out"
+            title="Log out"
+          >
+            <LogOut className="h-3.5 w-3.5" strokeWidth={1.5} />
+          </button>
         </div>
 
         {/* Reconnect banner */}

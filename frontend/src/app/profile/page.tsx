@@ -3,9 +3,10 @@
 export const dynamic = 'force-dynamic';
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Smartphone, Save, Users, CreditCard, Key, Settings, Mail, MapPin, User } from "lucide-react";
 import { getProfile, saveProfile } from "@/lib/api";
+import { useAuth } from "@/lib/AuthProvider";
 
 const CITIES = [
   "Mumbai", "Delhi / NCR", "Bangalore", "Pune", "Hyderabad",
@@ -15,8 +16,11 @@ const CITIES = [
 
 export default function ProfilePage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const { user } = useAuth();
   const [profile, setProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [hasStoredProfile, setHasStoredProfile] = useState(false);
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
@@ -25,39 +29,78 @@ export default function ProfilePage() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [dirty, setDirty] = useState(false);
+  const next = searchParams.get("next") || "";
 
   // Load profile from API on mount
   useEffect(() => {
     let mounted = true;
-    getProfile().then((data: any) => {
+    const fullName = String(user?.user_metadata?.full_name || "").trim();
+    const [defaultFirstName = "", ...defaultLastNameParts] = fullName.split(/\s+/);
+    const stored = localStorage.getItem("propai_profile");
+    let localProfile: any = null;
+    if (stored) {
+      try { localProfile = JSON.parse(stored); } catch {}
+    }
+    const baseProfile = {
+      phone: localProfile?.phone || user?.phone || "",
+      first_name: localProfile?.first_name || defaultFirstName || "",
+      last_name: localProfile?.last_name || defaultLastNameParts.join(" "),
+      email: localProfile?.email || user?.email || "",
+      city: localProfile?.city || "",
+    };
+
+    const applyProfile = (data: any) => {
+      setProfile(data);
+      setFirstName(data.first_name || "");
+      setLastName(data.last_name || "");
+      setEmail(data.email || "");
+      const c = data.city || "";
+      if (CITIES.includes(c)) { setCity(c); } else if (c) { setCity("__other__"); setCustomCity(c); }
+    };
+
+    applyProfile(baseProfile);
+    setHasStoredProfile(Boolean(localProfile?.first_name));
+
+    if (!baseProfile.phone) {
+      setLoading(false);
+      return () => { mounted = false; };
+    }
+
+    getProfile(baseProfile.phone).then((data: any) => {
       if (!mounted) return;
       if (data && data.first_name) {
-        setProfile(data);
-        setFirstName(data.first_name || "");
-        setLastName(data.last_name || "");
-        setEmail(data.email || "");
-        const c = data.city || "";
-        if (CITIES.includes(c)) { setCity(c); } else if (c) { setCity("__other__"); setCustomCity(c); }
+        applyProfile({ ...baseProfile, ...data });
+        setHasStoredProfile(true);
       }
       setLoading(false);
     }).catch(() => setLoading(false));
     return () => { mounted = false; };
-  }, []);
+  }, [user]);
 
   const markDirty = () => setDirty(true);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!firstName.trim() || !profile?.phone) return;
+    if (!firstName.trim() || !email.trim()) return;
     setSaving(true);
     setSaved(false);
+    const finalCity = city === "__other__" ? customCity.trim() : city;
+    const data = { first_name: firstName.trim(), last_name: lastName.trim(), email: email.trim(), city: finalCity };
+    const localProfile = { phone: profile?.phone || "", ...data };
+    localStorage.setItem("propai_profile", JSON.stringify(localProfile));
+    window.dispatchEvent(new Event("propai_profile_updated"));
     try {
-      const finalCity = city === "__other__" ? customCity.trim() : city;
-      const data = { first_name: firstName.trim(), last_name: lastName.trim(), email: email.trim(), city: finalCity };
-      await saveProfile(profile.phone, data);
-      setProfile({ ...profile, ...data });
+      if (profile?.phone) {
+        try { await saveProfile(profile.phone, data); } catch {}
+      }
+      setProfile(localProfile);
+      setHasStoredProfile(true);
       setSaved(true);
       setDirty(false);
+      if (next && next !== "/profile") {
+        router.push(next);
+        return;
+      }
       setTimeout(() => setSaved(false), 2000);
     } catch { alert("Failed to save profile"); }
     finally { setSaving(false); }
@@ -82,11 +125,11 @@ export default function ProfilePage() {
             <button
               type="submit"
               form="profile-form"
-              disabled={saving || !firstName.trim() || !dirty}
+              disabled={saving || !firstName.trim() || !email.trim() || (!dirty && hasStoredProfile && !next)}
               className="flex items-center gap-2 px-4 py-2 bg-emerald-400 text-black rounded-lg text-sm font-bold min-h-[40px] disabled:opacity-50 transition-opacity shrink-0"
             >
               <Save className="w-4 h-4" />
-              {saving ? "Saving..." : "Save Changes"}
+              {saving ? "Saving..." : next ? "Save & Continue" : "Save Changes"}
             </button>
           </div>
         </div>
@@ -130,6 +173,7 @@ export default function ProfilePage() {
                     type="email"
                     value={email}
                     onChange={(e) => { setEmail(e.target.value); markDirty(); }}
+                    required
                     className="flex-1 rounded-lg border border-white/10 bg-zinc-800/50 px-3 py-2.5 text-sm text-white placeholder-zinc-500 outline-none focus:border-emerald-500/50 transition-colors"
                     placeholder="your@email.com"
                   />
@@ -162,7 +206,7 @@ export default function ProfilePage() {
                   <label className="text-[11px] font-semibold text-zinc-500 uppercase tracking-wider">WhatsApp Number</label>
                   <div className="mt-1 flex items-center gap-2 rounded-lg border border-white/10 bg-zinc-800/50 px-3 py-2.5 text-sm text-zinc-300">
                     <Smartphone className="w-4 h-4 text-zinc-500 shrink-0" />
-                    <span className="font-mono text-white">{profile?.phone || "—"}</span>
+                    <span className="font-mono text-white">{profile?.phone || "Added after WhatsApp connection"}</span>
                   </div>
                 </div>
               </div>
