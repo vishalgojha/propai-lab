@@ -30,6 +30,7 @@ import {
   Shield,
 } from "lucide-react";
 import { AuthProvider } from "@/lib/AuthProvider";
+import { LayoutProvider, useLayout } from "@/hooks/useLayout";
 import { useIsMobile } from "@/hooks/useMediaQuery";
 import { BottomNav } from "@/components/layout/BottomNav";
 import { MobileDrawer } from "@/components/layout/MobileDrawer";

@@ -1,11 +1,12 @@
 import { tool } from "ai";
 import { z } from "zod";
-import { supabaseAdmin } from "@/lib/supabase-admin";
 
 export const getOverviewTool = tool({
   description: "Get an overview of all available datasets (schema, row counts, sample values)",
   parameters: z.object({}),
   execute: async () => {
+    const { supabaseAdmin } = await import("@/lib/supabase-admin");
+
     const sources = [
       "raw_messages",
       "parsed_observations",

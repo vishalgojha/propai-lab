@@ -3,14 +3,14 @@
 export const dynamic = 'force-dynamic';
 
 import { useEffect, useState, useRef, useCallback, useMemo, Suspense, lazy } from "react";
-import dynamic from "next/dynamic";
+import nextDynamic from "next/dynamic";
 import { useSearchParams, useRouter } from "next/navigation";
 import * as api from "@/lib/api";
 import WhatsAppMessage, { MessageEntity } from "@/components/WhatsAppMessage";
 import TextSelectionMenu from "@/components/TextSelectionMenu";
 import NotesPanel from "@/components/notes/NotesPanel";
-const CombinedLocalityDialog = dynamic(() => import("@/components/CombinedLocalityDialog").then((m) => ({ default: m.CombinedLocalityDialog })), { ssr: false });
-const AddToClientBucket = dynamic(() => import("@/components/AddToClientBucket"), { ssr: false });
+const CombinedLocalityDialog = nextDynamic(() => import("@/components/CombinedLocalityDialog").then((m) => ({ default: m.CombinedLocalityDialog })), { ssr: false });
+const AddToClientBucket = nextDynamic(() => import("@/components/AddToClientBucket"), { ssr: false });
 import ResizablePanel from "@/components/ResizablePanel";
 import { entityProfileHref } from "@/lib/entity-links";
 import { useIsMobile } from "@/hooks/useMediaQuery";
@@ -41,8 +41,6 @@ import {
   TrendingUp,
   Home,
   ChevronLeft,
-  Sparkles,
-  MessageSquare,
 } from "lucide-react";
 
 const PAGE_SIZE = 100;
@@ -3576,10 +3574,6 @@ function InboxPageInner() {
             context={selectedMsgDetails?.raw?.message || selectedMsgDetails?.raw?.text || ""}
           />
         ) : null}
-      </div>
-      </div>
-      </>
-
         {/* Combined Localities Dialog */}
         {showCombinedLocalityDialog && (
           <CombinedLocalityDialog
@@ -3589,9 +3583,8 @@ function InboxPageInner() {
             onSave={handleCombinedLocalitySave}
           />
         )}
-
       </div>
-    </div>
+      </div>
   );
 }
 

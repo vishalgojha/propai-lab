@@ -6,6 +6,6 @@ const doubleword = createOpenAICompatible({
   apiKey: process.env.DOUBLEWORD_API_KEY,
 });
 
-export const model = doubleword.chat(
+export const model = doubleword.chatModel(
   process.env.DOUBLEWORD_MODEL || "Qwen/Qwen3.6-35B-A3B-FP8"
 );

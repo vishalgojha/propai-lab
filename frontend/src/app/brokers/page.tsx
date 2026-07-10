@@ -121,28 +121,28 @@ function formatRelativeTime(ts?: string) {
 function activityMix(broker: Broker) {
   const supply = broker.listing_count || 0;
   const demand = broker.requirement_count || 0;
-  if (supply === 0 && demand === 0) return { label: "Unclassified", tone: "bg-zinc-700 text-zinc-200" };
-  if (supply >= demand * 3) return { label: "Supply", tone: "bg-blue-900/40 text-blue-200" };
-  if (demand >= supply * 2) return { label: "Demand", tone: "bg-amber-900/40 text-amber-200" };
-  return { label: "Balanced", tone: "bg-green-900/40 text-green-200" };
+  if (supply === 0 && demand === 0) return { label: "Unclassified", tone: "badge-intent-unknown" };
+  if (supply >= demand * 3) return { label: "Supply", tone: "badge-intent-sell" };
+  if (demand >= supply * 2) return { label: "Demand", tone: "badge-intent-buy" };
+  return { label: "Balanced", tone: "badge-intent-rent" };
 }
 
 const badgeBase = "inline-flex items-center px-2 py-0.5 rounded text-xs font-medium";
 const badgeVariants = {
-  sell: "bg-blue-900/40 text-blue-200",
-  rent: "bg-green-900/40 text-green-200",
-  buy: "bg-purple-900/40 text-purple-200",
-  default: "bg-zinc-700 text-zinc-200",
+  sell: "badge-intent-sell",
+  rent: "badge-intent-rent",
+  buy: "badge-intent-buy",
+  default: "badge-intent-unknown",
 } as const;
 
 function intentBadge(intent?: string) {
   const upper = (intent || "").toUpperCase();
-  if (upper === "SELL" || upper === "SALE") return <span className={`${badgeBase} bg-blue-900/40 text-blue-200`}>Sale</span>;
-  if (upper === "RENT") return <span className={`${badgeBase} bg-green-900/40 text-green-200`}>Rent</span>;
-  if (upper === "BUY" || upper === "BUYER" || upper === "REQUIREMENT") return <span className={`${badgeBase} bg-purple-900/40 text-purple-200`}>Buy</span>;
-  if (upper === "COMMERCIAL") return <span className={`${badgeBase} bg-amber-900/40 text-amber-200`}>Commercial</span>;
-  if (upper === "PRE-LAUNCH") return <span className={`${badgeBase} bg-amber-900/40 text-amber-200`}>Pre-Launch</span>;
-  return <span className={`${badgeBase} bg-zinc-700 text-zinc-200`}>{intent || "Unknown"}</span>;
+  if (upper === "SELL" || upper === "SALE") return <span className={`${badgeBase} badge-intent-sell`}>Sale</span>;
+  if (upper === "RENT") return <span className="${badgeBase} badge-intent-rent">Rent</span>;
+  if (upper === "BUY" || upper === "BUYER" || upper === "REQUIREMENT") return <span className="${badgeBase} badge-intent-buy">Buy</span>;
+  if (upper === "COMMERCIAL") return <span className="${badgeBase} badge-intent-commercial">Commercial</span>;
+  if (upper === "PRE-LAUNCH") return <span className="${badgeBase} badge-intent-prelaunch">Pre-Launch</span>;
+  return <span className="${badgeBase} badge-intent-unknown">{intent || "Unknown"}</span>;
 }
 
 function marketBadge(market: string) {
@@ -159,26 +159,26 @@ function groupBadge(group: string) {
 
 function intentBadgeSmall(intent?: string) {
   const upper = (intent || "").toUpperCase();
-  const base = "px-1 py-0.5 rounded text-[9px] font-medium";
-  if (upper === "SELL" || upper === "SALE") return <span className={`${base} bg-blue-900/40 text-blue-200`}>Sale</span>;
-  if (upper === "RENT") return <span className={`${base} bg-green-900/40 text-green-200`}>Rent</span>;
-  if (upper === "BUY" || upper === "BUYER" || upper === "REQUIREMENT") return <span className={`${base} bg-purple-900/40 text-purple-200`}>Buy</span>;
-  if (upper === "COMMERCIAL") return <span className={`${base} bg-amber-900/40 text-amber-200`}>Commercial</span>;
-  return <span className={`${base} bg-zinc-700 text-zinc-200`}>{intent || "Text"}</span>;
+  const base = "px-1 py-0.5 rounded text-caption font-medium";
+  if (upper === "SELL" || upper === "SALE") return <span className={`${base} badge-intent-sell`}>Sale</span>;
+  if (upper === "RENT") return <span className="${base} badge-intent-rent">Rent</span>;
+  if (upper === "BUY" || upper === "BUYER" || upper === "REQUIREMENT") return <span className="${base} badge-intent-buy">Buy</span>;
+  if (upper === "COMMERCIAL") return <span className="${base} badge-intent-commercial">Commercial</span>;
+  return <span className="${base} badge-intent-unknown">{intent || "Text"}</span>;
 }
 
 function obsTypeBadge(type?: string) {
   const upper = (type || "").toUpperCase();
-  const base = "px-1 py-0.5 rounded text-[9px] font-medium";
-  if (upper === "BUILDING_FEEDBACK") return <span className={`${base} bg-blue-900/40 text-blue-200`}>Building Feedback</span>;
-  if (upper === "PRICE_FEEDBACK") return <span className={`${base} bg-green-900/40 text-green-200`}>Price Feedback</span>;
-  if (upper === "CLIENT_PREFERENCE") return <span className={`${base} bg-purple-900/40 text-purple-200`}>Client Preference</span>;
-  if (upper === "AMENITY_FEEDBACK") return <span className={`${base} bg-amber-900/40 text-amber-200`}>Amenity Feedback</span>;
-  if (upper === "CONSTRUCTION_FEEDBACK") return <span className={`${base} bg-orange-900/40 text-orange-200`}>Construction Feedback</span>;
-  if (upper === "MAINTENANCE_FEEDBACK") return <span className={`${base} bg-red-900/40 text-red-200`}>Maintenance Feedback</span>;
-  if (upper === "LOCATION_FEEDBACK") return <span className={`${base} bg-teal-900/40 text-teal-200`}>Location Feedback</span>;
-  if (upper === "BROKER_FEEDBACK") return <span className={`${base} bg-pink-900/40 text-pink-200`}>Broker Feedback</span>;
-  return <span className={`${base} bg-zinc-800/50 text-zinc-200`}>{type || "Unknown"}</span>;
+  const base = "px-1 py-0.5 rounded text-caption font-medium";
+  if (upper === "BUILDING_FEEDBACK") return <span className="${base} badge-obs-building">Building Feedback</span>;
+  if (upper === "PRICE_FEEDBACK") return <span className="${base} badge-obs-price">Price Feedback</span>;
+  if (upper === "CLIENT_PREFERENCE") return <span className="${base} badge-obs-client">Client Preference</span>;
+  if (upper === "AMENITY_FEEDBACK") return <span className="${base} badge-obs-amenity">Amenity Feedback</span>;
+  if (upper === "CONSTRUCTION_FEEDBACK") return <span className="${base} badge-obs-construction">Construction Feedback</span>;
+  if (upper === "MAINTENANCE_FEEDBACK") return <span className="${base} badge-obs-maintenance">Maintenance Feedback</span>;
+  if (upper === "LOCATION_FEEDBACK") return <span className="${base} badge-obs-location">Location Feedback</span>;
+  if (upper === "BROKER_FEEDBACK") return <span className="${base} badge-obs-broker">Broker Feedback</span>;
+  return <span className="${base} badge-obs-unknown">{type || "Unknown"}</span>;
 }
 
 export default function BrokersPage() {
@@ -269,39 +269,36 @@ export default function BrokersPage() {
                     </div>
                   </div>
 
-<activityMix>
-                </div>
-
-                {/* Stats Row */}
-                <div className="grid grid-cols-4 gap-2 mb-3 text-center">
-                  <div className="rounded-lg bg-zinc-800/50 px-2 py-2">
-                    <div className="text-white font-bold text-sm">{broker.listing_count}</div>
-                    <div className="text-caption text-zinc-500">Listings</div>
+                  {/* Stats Row */}
+                  <div className="grid grid-cols-4 gap-2 mb-3 text-center">
+                    <div className="rounded-lg bg-zinc-800/50 px-2 py-2">
+                      <div className="text-white font-bold text-sm">{broker.listing_count}</div>
+                      <div className="text-caption text-zinc-500">Listings</div>
+                    </div>
+                    <div className="rounded-lg bg-zinc-800/50 px-2 py-2">
+                      <div className="text-white font-bold text-sm">{broker.requirement_count}</div>
+                      <div className="text-caption text-zinc-500">Reqs</div>
+                    </div>
+                    <div className="rounded-lg bg-zinc-800/50 px-2 py-2">
+                      <div className="text-white font-bold text-sm">{broker.market_count}</div>
+                      <div className="text-caption text-zinc-500">Markets</div>
+                    </div>
+                    <div className="rounded-lg bg-zinc-800/50 px-2 py-2">
+                      <div className="text-white font-bold text-sm">{broker.building_count}</div>
+                      <div className="text-caption text-zinc-500">Buildings</div>
+                    </div>
                   </div>
-                  <div className="rounded-lg bg-zinc-800/50 px-2 py-2">
-                    <div className="text-white font-bold text-sm">{broker.requirement_count}</div>
-                    <div className="text-caption text-zinc-500">Reqs</div>
-                  </div>
-                  <div className="rounded-lg bg-zinc-800/50 px-2 py-2">
-                    <div className="text-white font-bold text-sm">{broker.market_count}</div>
-                    <div className="text-caption text-zinc-500">Markets</div>
-                  </div>
-                  <div className="rounded-lg bg-zinc-800/50 px-2 py-2">
-                    <div className="text-white font-bold text-sm">{broker.building_count}</div>
-                    <div className="text-caption text-zinc-500">Buildings</div>
-                  </div>
-                </div>
 
                   {/* Markets */}
                   {topMarkets.length > 0 && (
                     <div className="mb-3">
-                      <div className="text-[10px] font-medium text-zinc-500 uppercase tracking-wider mb-1">Markets</div>
+                      <div className="text-caption font-medium text-zinc-500 uppercase tracking-wider mb-1">Markets</div>
                       <div className="flex flex-wrap gap-1">
                         {topMarkets.map((market) => (
-                          <span key={market} className="text-[10px] bg-zinc-800 border border-white/10 rounded px-1.5 py-0.5 text-zinc-400">{market}</span>
+                          <span key={market} className="text-caption bg-zinc-800 border border-white/10 rounded px-2 py-1 text-zinc-400">{market}</span>
                         ))}
                         {broker.market_count > topMarkets.length && (
-                          <span className="text-[10px] text-zinc-500">+{broker.market_count - topMarkets.length}</span>
+                          <span className="text-caption text-zinc-500">+{broker.market_count - topMarkets.length}</span>
                         )}
                       </div>
                     </div>
@@ -310,13 +307,13 @@ export default function BrokersPage() {
                   {/* Buildings */}
                   {topBuildings.length > 0 && (
                     <div className="mb-3">
-                      <div className="text-[10px] font-medium text-zinc-500 uppercase tracking-wider mb-1">Buildings</div>
+                      <div className="text-caption font-medium text-zinc-500 uppercase tracking-wider mb-1">Buildings</div>
                       <div className="flex flex-wrap gap-1">
                         {topBuildings.map((building) => (
-                          <span key={building} className="text-[10px] bg-zinc-800 border border-blue-500/20 rounded px-1.5 py-0.5 text-blue-300">{building}</span>
+                          <span key={building} className="text-caption bg-zinc-800 border border-blue-500/20 rounded px-2 py-1 text-blue-300">{building}</span>
                         ))}
                         {broker.building_count > topBuildings.length && (
-                          <span className="text-[10px] text-zinc-500">+{broker.building_count - topBuildings.length}</span>
+                          <span className="text-caption text-zinc-500">+{broker.building_count - topBuildings.length}</span>
                         )}
                       </div>
                     </div>
@@ -325,13 +322,13 @@ export default function BrokersPage() {
                   {/* Groups */}
                   {topGroups.length > 0 && (
                     <div className="mb-3">
-                      <div className="text-[10px] font-medium text-zinc-500 uppercase tracking-wider mb-1">Groups</div>
-                      <div className="space-y-0.5">
+                      <div className="text-caption font-medium text-zinc-500 uppercase tracking-wider mb-1">Groups</div>
+                      <div className="space-y-1">
                         {topGroups.map((group) => (
-                          <div key={group} className="text-xs text-zinc-400 truncate">{group}</div>
+                          <div key={group} className="text-caption text-zinc-400 truncate">{group}</div>
                         ))}
                         {broker.group_count > topGroups.length && (
-                          <div className="text-[10px] text-zinc-500">+{broker.group_count - topGroups.length} more groups</div>
+                          <div className="text-caption text-zinc-500">+{broker.group_count - topGroups.length} more groups</div>
                         )}
                       </div>
                     </div>
@@ -340,16 +337,11 @@ export default function BrokersPage() {
                   {/* Recent Activity */}
                   {recentObs.length > 0 && (
                     <div className="mb-3 p-2 rounded-lg bg-zinc-900/50 border border-white/5">
-                      <div className="text-[10px] font-medium text-zinc-500 uppercase tracking-wider mb-1">Recent Activity</div>
+                      <div className="text-caption font-medium text-zinc-500 uppercase tracking-wider mb-1">Recent Activity</div>
                       <div className="space-y-1">
                         {recentObs.map((obs) => (
-                          <div key={obs.id} className="text-xs text-zinc-400 flex items-center gap-1.5">
-                            <span className={`px-1 py-0.5 rounded text-[9px] font-medium ${
-                              obs.intent === "SELL" ? "bg-blue-900/40 text-blue-200" :
-                              obs.intent === "RENT" ? "bg-green-900/40 text-green-200" :
-                              obs.intent === "BUY" ? "bg-purple-900/40 text-purple-200" :
-                              "bg-zinc-700 text-zinc-200"
-                            }`}>{obs.intent}</span>
+                          <div key={obs.id} className="text-sm text-zinc-400 flex items-center gap-2">
+                            <span className="${badgeBase} ${intentBadgeVariants[obs.intent as keyof typeof intentBadgeVariants] || badgeVariants.default}">{obs.intent}</span>
                             {obs.bhk && <span>{obs.bhk}</span>}
                             {obs.micro_market && <span className="text-emerald-400">{obs.micro_market}</span>}
                             {obs.building_name && <span className="text-blue-400">{obs.building_name}</span>}
@@ -360,29 +352,29 @@ export default function BrokersPage() {
                     </div>
                   )}
 
-                  {/* Footer */}
-                  <div className="pt-3 border-t border-white/10 flex items-center justify-between">
-                    <div className="text-xs text-zinc-500">
-                      <Clock className="w-3 h-3 inline-block align-middle mr-1" />
-                      {formatRelativeTime(broker.last_seen_at)}
-                    </div>
-                    <Link
-                      href={`/brokers/${broker.id}`}
-                      className="text-[11px] font-semibold text-white bg-emerald-400 hover:bg-emerald-400/80 rounded px-2.5 py-1 transition-colors"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      View Profile
-                    </Link>
+                {/* Footer */}
+                <div className="pt-3 border-t border-white/10 flex items-center justify-between">
+                  <div className="text-caption text-zinc-500">
+                    <Clock className="w-3 h-3 inline-block align-middle mr-1" />
+                    {formatRelativeTime(broker.last_seen_at)}
                   </div>
+                  <Link
+                    href={`/brokers/${broker.id}`}
+                    className="text-sm font-semibold text-black bg-emerald-400 hover:bg-emerald-400/80 rounded px-3 py-1.5 transition-colors"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    View Profile
+                  </Link>
+                </div>
                 </article>
               </Link>
             );
           })}
-          </div>
-        )}
-      </div>
-    );
-  }
+        </div>
+      )}
+    </div>
+  );
+}
 
 function formatPrice(price?: number, unit?: string) {
   if (!price) return "";

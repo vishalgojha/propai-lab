@@ -2,24 +2,14 @@ FROM node:20-bookworm-slim AS deps
 
 WORKDIR /app
 COPY frontend/package.json frontend/package-lock.json ./
-<<<<<<< HEAD
 # Cache bust: 2026-07-10-5
 ARG CACHE_BUST_DEPS=20260710-5
-RUN npm install
-=======
-# Cache bust: 2026-07-10-8
-ARG CACHE_BUST_DEPS=20260710-8
 RUN npm ci
->>>>>>> d6d6293 (Fix frontend build and layout wiring)
 
 FROM node:20-bookworm-slim AS builder
 
 WORKDIR /app
-<<<<<<< HEAD
 ARG LAB_API_BASE_URL=http://api:8000
-=======
-ARG LAB_API_BASE_URL
->>>>>>> d6d6293 (Fix frontend build and layout wiring)
 ARG NEXT_PUBLIC_SUPABASE_URL
 ARG NEXT_PUBLIC_SUPABASE_ANON_KEY
 ARG SUPABASE_URL
@@ -27,13 +17,8 @@ ARG SUPABASE_SERVICE_KEY
 ARG DOUBLEWORD_API_URL
 ARG DOUBLEWORD_API_KEY
 ARG DOUBLEWORD_MODEL
-<<<<<<< HEAD
 ARG CACHE_BUST=20260710-5
 ENV LAB_API_BASE_URL=${LAB_API_BASE_URL}
-=======
-ARG CACHE_BUST=20260710-7
-ENV LAB_API_BASE_URL=${LAB_API_BASE_URL:-http://api:8000}
->>>>>>> d6d6293 (Fix frontend build and layout wiring)
 ENV NEXT_PUBLIC_SUPABASE_URL=${NEXT_PUBLIC_SUPABASE_URL}
 ENV NEXT_PUBLIC_SUPABASE_ANON_KEY=${NEXT_PUBLIC_SUPABASE_ANON_KEY}
 ENV SUPABASE_URL=${SUPABASE_URL}
@@ -44,11 +29,7 @@ ENV DOUBLEWORD_MODEL=${DOUBLEWORD_MODEL}
 ENV NEXT_TELEMETRY_DISABLED=1
 
 COPY --from=deps /app/node_modules ./node_modules
-<<<<<<< HEAD
 ARG CACHE_BUST_COPY=20260710-4
-=======
-ARG CACHE_BUST_COPY=20260710-5
->>>>>>> d6d6293 (Fix frontend build and layout wiring)
 COPY frontend/ .
 
 RUN npm run build
@@ -78,8 +59,4 @@ COPY --from=builder /app/.next ./.next
 
 EXPOSE 3000
 
-<<<<<<< HEAD
 CMD ["npm", "run", "start"]
-=======
-CMD ["npm", "run", "start"]
->>>>>>> d6d6293 (Fix frontend build and layout wiring)
