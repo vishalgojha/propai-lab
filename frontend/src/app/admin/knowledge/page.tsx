@@ -171,7 +171,7 @@ export default function AdminKnowledgePage() {
               <div
                 key={record.id}
                 onClick={() => setSelected(record)}
-                className="border-b border-white/[0.04] last:border-0 py-3 cursor-pointer hover:bg-white/[0.02] transition-colors">
+                className="border-b border-white/[0.04] last:border-0 py-3 cursor-pointer hover:bg-white/[0.02] transition-colors"
               >
                 <div className="flex items-start justify-between">
                   <div className="flex-1 min-w-0">
