@@ -83,9 +83,9 @@ function displayInsight(insight: Insight): DisplayInsight {
     return {
       ...insight,
       displayTitle: insight.title,
-      displayDescription: "Buyers are waiting in captured WhatsApp requirements. Match them against your own inventory or market listings.",
-      cta: "Review requirements",
-      href: "/requirements",
+      displayDescription: "Demand signals are captured from WhatsApp groups. Review the source conversations before acting.",
+      cta: "Open market inbox",
+      href: "/inbox",
     };
   }
 

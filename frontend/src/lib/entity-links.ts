@@ -75,7 +75,7 @@ export function entityProfileHref(entity: EntityLinkLike) {
   if (entity.type === "landmark") return `/landmarks/${slug || encodedText}`;
   if (entity.type === "developer") return `/developers/${slug || encodedText}`;
   if (entity.type === "listing" && entity.id) return `/market/listings?listing=${encodeURIComponent(String(entity.id))}`;
-  if (entity.type === "requirement" && entity.id) return `/requirements?requirement=${encodeURIComponent(String(entity.id))}`;
+  if (entity.type === "requirement") return `/search?q=${encodedText}`;
   if (entity.type === "client" && entity.id) return `/clients/${encodeURIComponent(String(entity.id))}`;
   return `/search?q=${encodedText}`;
 }

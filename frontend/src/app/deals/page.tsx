@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
 
 export default function DealsRedirectPage() {
-  redirect("/my/inventory");
+  redirect("/clients");
 }

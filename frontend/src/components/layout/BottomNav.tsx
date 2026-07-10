@@ -3,16 +3,14 @@
 import { usePathname, useRouter } from "next/navigation";
 import {
   MessageSquare,
-  ClipboardCheck,
-  Building2,
+  UserCheck,
   Brain,
   Wifi,
 } from "lucide-react";
 
 const tabs = [
   { href: "/inbox", label: "Inbox", icon: MessageSquare },
-  { href: "/my/buyers", label: "Requirements", icon: ClipboardCheck },
-  { href: "/my/inventory", label: "Inventory", icon: Building2 },
+  { href: "/clients", label: "Clients", icon: UserCheck },
   { href: "/chat", label: "AI Chat", icon: Brain },
   { href: "/connections", label: "Connect", icon: Wifi },
 ];

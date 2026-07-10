@@ -586,32 +586,8 @@ export function getDashboardListings(limit = 20) {
   return fetchJSON<any[]>(`/dashboard/listings?limit=${limit}`);
 }
 
-export function getDashboardRequirements(limit = 20) {
-  return fetchJSON<any[]>(`/dashboard/requirements?limit=${limit}`);
-}
-
 export function getMyRequirements(limit = 200) {
   return fetchJSON<any[]>(`/my/requirements?limit=${limit}`);
-}
-
-export function getMyInventory(limit = 200, status = "") {
-  const params = new URLSearchParams({ limit: String(limit) });
-  if (status) params.set("status", status);
-  return fetchJSON<any[]>(`/my/inventory?${params.toString()}`);
-}
-
-export function matchRequirements() {
-  return fetchJSON<{ matched: number }>("/requirements/match", { method: "POST" });
-}
-
-export function getRequirementMatchesSummary() {
-  return fetchJSON<Record<string, { count: number; best: number }>>("/requirements/matches/summary");
-}
-
-export function getRequirementMatches(reqId: number, limit = 20) {
-  return fetchJSON<{ requirement_id: number; matches: any[]; count: number }>(
-    `/requirements/${reqId}/matches?limit=${limit}`
-  );
 }
 
 export function getDashboardSignals() {
