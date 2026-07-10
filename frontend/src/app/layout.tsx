@@ -183,7 +183,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
   const [whatsapp, setWhatsapp] = useState<WhatsAppStatus | null>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [offline, setOffline] = useState(false);
-  const [profile, setProfile] = useState<{ phone: string; first_name: string; last_name?: string; email?: string; city?: string } | null>(null);
+  const [profile, setProfile] = useState<{ auth_user_id?: string; phone: string; first_name: string; last_name?: string; email?: string; city?: string } | null>(null);
   const [profileLoaded, setProfileLoaded] = useState(false);
   const [reconnectCountdown, setReconnectCountdown] = useState<number | null>(null);
   const wasConnectedRef = useRef(false);
@@ -194,8 +194,16 @@ function AppShell({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const readProfile = () => {
       const s = localStorage.getItem("propai_profile");
-      if (s) { try { setProfile(JSON.parse(s)); } catch { setProfile(null); } }
-      else setProfile(null);
+      if (s) {
+        try {
+          const parsed = JSON.parse(s);
+          setProfile(parsed?.auth_user_id === user?.id ? parsed : null);
+        } catch {
+          setProfile(null);
+        }
+      } else {
+        setProfile(null);
+      }
       setProfileLoaded(true);
     };
     readProfile();
@@ -205,7 +213,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
       window.removeEventListener("storage", readProfile);
       window.removeEventListener("propai_profile_updated", readProfile);
     };
-  }, []);
+  }, [user?.id]);
 
   const waConnected = conn?.connected;
 

@@ -47,14 +47,32 @@ export function MobileDrawer({
 }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { signOut } = useAuth();
+  const { signOut, user } = useAuth();
   const overlayRef = useRef<HTMLDivElement>(null);
-  const [profile, setProfile] = useState<{ phone: string; first_name: string; last_name?: string; city?: string } | null>(null);
+  const [profile, setProfile] = useState<{ auth_user_id?: string; phone: string; first_name: string; last_name?: string; city?: string } | null>(null);
 
   useEffect(() => {
-    const stored = localStorage.getItem("propai_profile");
-    if (stored) { try { setProfile(JSON.parse(stored)); } catch {} }
-  }, []);
+    const readProfile = () => {
+      const stored = localStorage.getItem("propai_profile");
+      if (stored) {
+        try {
+          const parsed = JSON.parse(stored);
+          setProfile(parsed?.auth_user_id === user?.id ? parsed : null);
+        } catch {
+          setProfile(null);
+        }
+      } else {
+        setProfile(null);
+      }
+    };
+    readProfile();
+    window.addEventListener("storage", readProfile);
+    window.addEventListener("propai_profile_updated", readProfile);
+    return () => {
+      window.removeEventListener("storage", readProfile);
+      window.removeEventListener("propai_profile_updated", readProfile);
+    };
+  }, [user?.id]);
 
   useEffect(() => {
     if (open) {

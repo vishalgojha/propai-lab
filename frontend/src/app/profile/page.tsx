@@ -42,11 +42,12 @@ export default function ProfilePage() {
       try { localProfile = JSON.parse(stored); } catch {}
     }
     const baseProfile = {
-      phone: localProfile?.phone || user?.phone || "",
-      first_name: localProfile?.first_name || defaultFirstName || "",
-      last_name: localProfile?.last_name || defaultLastNameParts.join(" "),
-      email: localProfile?.email || user?.email || "",
-      city: localProfile?.city || "",
+      auth_user_id: user?.id || "",
+      phone: localProfile?.auth_user_id === user?.id ? localProfile?.phone || user?.phone || "" : user?.phone || "",
+      first_name: localProfile?.auth_user_id === user?.id ? localProfile?.first_name || defaultFirstName || "" : defaultFirstName || "",
+      last_name: localProfile?.auth_user_id === user?.id ? localProfile?.last_name || defaultLastNameParts.join(" ") : defaultLastNameParts.join(" "),
+      email: localProfile?.auth_user_id === user?.id ? localProfile?.email || user?.email || "" : user?.email || "",
+      city: localProfile?.auth_user_id === user?.id ? localProfile?.city || "" : "",
     };
 
     const applyProfile = (data: any) => {
@@ -59,7 +60,7 @@ export default function ProfilePage() {
     };
 
     applyProfile(baseProfile);
-    setHasStoredProfile(Boolean(localProfile?.first_name));
+    setHasStoredProfile(Boolean(localProfile?.auth_user_id === user?.id && localProfile?.first_name));
 
     if (!baseProfile.phone) {
       setLoading(false);
@@ -86,7 +87,7 @@ export default function ProfilePage() {
     setSaved(false);
     const finalCity = city === "__other__" ? customCity.trim() : city;
     const data = { first_name: firstName.trim(), last_name: lastName.trim(), email: email.trim(), city: finalCity };
-    const localProfile = { phone: profile?.phone || "", ...data };
+    const localProfile = { auth_user_id: user?.id || "", phone: profile?.phone || "", ...data };
     localStorage.setItem("propai_profile", JSON.stringify(localProfile));
     window.dispatchEvent(new Event("propai_profile_updated"));
     try {
