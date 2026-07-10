@@ -183,7 +183,7 @@ function PreviewCard({ entity }: { entity: MessageEntity }) {
     [];
 
   return (
-    <div className="absolute left-0 top-full z-50 mt-1.5 w-64 rounded-lg border border-white/10 bg-zinc-900 p-3 text-left shadow-2xl">
+    <div className="absolute left-0 top-full z-50 mt-1.5 w-64 rounded-lg border border-white/10 p-3 text-left shadow-2xl">
       <div className="flex items-start gap-2">
         <span className="mt-0.5 text-[#3EE88A]">{entityIcon(entity.type)}</span>
         <div className="min-w-0">

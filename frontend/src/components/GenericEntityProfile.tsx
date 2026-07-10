@@ -62,7 +62,7 @@ export default function GenericEntityProfile({
         { label: "Coverage", value: loading ? "Loading" : count > 0 ? "Found" : "Empty", sub: "WhatsApp memory" },
       ]}
     >
-      <div className="rounded-2xl border border-white/10 bg-zinc-900 p-5">
+      <div className="rounded-2xl border border-white/10 p-5">
         <div className="flex items-center justify-between gap-3">
           <div>
             <h2 className="text-sm font-semibold text-white">Recent mentions</h2>

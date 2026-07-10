@@ -72,7 +72,7 @@ export default function EntityProfileShell({
 
 function MetricCard({ metric }: { metric: EntityMetric }) {
   return (
-    <div className="rounded-2xl border border-white/10 bg-zinc-900 p-4">
+    <div className="rounded-2xl border border-white/10 p-4">
       <div className={`text-2xl font-bold ${toneClasses(metric.tone)}`}>{metric.value}</div>
       <div className="mt-1 text-[10px] uppercase tracking-[0.16em] text-zinc-500">{metric.label}</div>
       {metric.sub ? <div className="mt-1 text-[10px] text-[#475569]">{metric.sub}</div> : null}
