@@ -473,9 +473,6 @@ function AppShell({ children }: { children: React.ReactNode }) {
             <span className="text-[10px] lg:text-[11px] text-zinc-500 font-mono truncate max-w-[120px] lg:max-w-none">{whatsapp.phone}</span>
           )}
           <div className="flex-1" />
-          <a href="/connections" className="text-[9px] text-zinc-500 hover:text-zinc-300 uppercase tracking-wider transition-colors shrink-0">
-            Settings
-          </a>
           <button
             onClick={handleSignOut}
             className="flex h-7 w-7 items-center justify-center rounded-lg text-zinc-500 transition-colors hover:bg-white/5 hover:text-white"
