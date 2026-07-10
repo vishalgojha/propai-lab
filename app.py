@@ -8,6 +8,7 @@ import json
 import os
 import sys
 import asyncio
+import time
 import httpx
 import uuid
 import re
@@ -5595,6 +5596,122 @@ async def ai_config():
         "base_url": chat_engine.BASE_URL,
         "model": chat_engine.MODEL,
     }
+
+
+# ── Chat Suggestion Chips ──────────────────────────────────────
+
+_chip_cache: dict = {}
+_chip_cache_at: float = 0.0
+
+@app.get("/api/chat/suggestions")
+async def chat_suggestions():
+    now = time.time()
+    if _chip_cache and (now - _chip_cache_at) < 3600:
+        return _chip_cache
+
+    week_ago = (datetime.utcnow() - timedelta(days=7)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    top_building = storage.db.execute("""
+        SELECT p.building_name, COUNT(*) AS cnt FROM parsed_output p
+        JOIN raw_messages r ON r.id = p.raw_message_id
+        WHERE p.building_name IS NOT NULL AND p.building_name != ''
+          AND r.timestamp >= ?
+        GROUP BY p.building_name ORDER BY cnt DESC LIMIT 1
+    """, (week_ago,)).fetchone()
+
+    top_supply_market = storage.db.execute("""
+        SELECT p.micro_market, COUNT(*) AS cnt FROM parsed_output p
+        JOIN raw_messages r ON r.id = p.raw_message_id
+        WHERE p.intent IN ('SELL','RENT','COMMERCIAL')
+          AND p.micro_market IS NOT NULL AND p.micro_market != ''
+          AND r.timestamp >= ?
+        GROUP BY p.micro_market ORDER BY cnt DESC LIMIT 1
+    """, (week_ago,)).fetchone()
+
+    top_demand_market = storage.db.execute("""
+        SELECT p.micro_market, COUNT(*) AS cnt FROM parsed_output p
+        JOIN raw_messages r ON r.id = p.raw_message_id
+        WHERE p.intent IN ('BUY','RENTAL_SEEKER')
+          AND p.micro_market IS NOT NULL AND p.micro_market != ''
+          AND r.timestamp >= ?
+        GROUP BY p.micro_market ORDER BY cnt DESC LIMIT 1
+    """, (week_ago,)).fetchone()
+
+    top_commercial_market = storage.db.execute("""
+        SELECT p.micro_market, COUNT(*) AS cnt FROM parsed_output p
+        JOIN raw_messages r ON r.id = p.raw_message_id
+        WHERE p.intent = 'COMMERCIAL'
+          AND p.micro_market IS NOT NULL AND p.micro_market != ''
+          AND r.timestamp >= ?
+        GROUP BY p.micro_market ORDER BY cnt DESC LIMIT 1
+    """, (week_ago,)).fetchone()
+
+    top_rental_market = storage.db.execute("""
+        SELECT p.micro_market, COUNT(*) AS cnt FROM parsed_output p
+        JOIN raw_messages r ON r.id = p.raw_message_id
+        WHERE p.intent = 'RENT'
+          AND p.micro_market IS NOT NULL AND p.micro_market != ''
+          AND r.timestamp >= ?
+        GROUP BY p.micro_market ORDER BY cnt DESC LIMIT 1
+    """, (week_ago,)).fetchone()
+
+    def _val(row):
+        return row[0] if row else None
+
+    def _with_fallback(seven_day_result, fallback_query, params=()):
+        v = _val(seven_day_result)
+        if v is not None:
+            return v
+        row = storage.db.execute(fallback_query, params).fetchone()
+        return row[0] if row else None
+
+    result = {
+        "top_building": _with_fallback(
+            top_building,
+            "SELECT p.building_name, COUNT(*) AS cnt FROM parsed_output p "
+            "JOIN raw_messages r ON r.id = p.raw_message_id "
+            "WHERE p.building_name IS NOT NULL AND p.building_name != '' "
+            "GROUP BY p.building_name ORDER BY cnt DESC LIMIT 1"
+        ),
+        "top_supply_market": _with_fallback(
+            top_supply_market,
+            "SELECT p.micro_market, COUNT(*) AS cnt FROM parsed_output p "
+            "JOIN raw_messages r ON r.id = p.raw_message_id "
+            "WHERE p.intent IN ('SELL','RENT','COMMERCIAL') "
+            "AND p.micro_market IS NOT NULL AND p.micro_market != '' "
+            "GROUP BY p.micro_market ORDER BY cnt DESC LIMIT 1"
+        ),
+        "top_demand_market": _with_fallback(
+            top_demand_market,
+            "SELECT p.micro_market, COUNT(*) AS cnt FROM parsed_output p "
+            "JOIN raw_messages r ON r.id = p.raw_message_id "
+            "WHERE p.intent IN ('BUY','RENTAL_SEEKER') "
+            "AND p.micro_market IS NOT NULL AND p.micro_market != '' "
+            "GROUP BY p.micro_market ORDER BY cnt DESC LIMIT 1"
+        ),
+        "top_commercial_market": _with_fallback(
+            top_commercial_market,
+            "SELECT p.micro_market, COUNT(*) AS cnt FROM parsed_output p "
+            "JOIN raw_messages r ON r.id = p.raw_message_id "
+            "WHERE p.intent = 'COMMERCIAL' "
+            "AND p.micro_market IS NOT NULL AND p.micro_market != '' "
+            "GROUP BY p.micro_market ORDER BY cnt DESC LIMIT 1"
+        ),
+        "top_rental_market": _with_fallback(
+            top_rental_market,
+            "SELECT p.micro_market, COUNT(*) AS cnt FROM parsed_output p "
+            "JOIN raw_messages r ON r.id = p.raw_message_id "
+            "WHERE p.intent = 'RENT' "
+            "AND p.micro_market IS NOT NULL AND p.micro_market != '' "
+            "GROUP BY p.micro_market ORDER BY cnt DESC LIMIT 1"
+        ),
+    }
+    result["top_broker_building"] = result["top_building"]
+
+    _chip_cache.clear()
+    _chip_cache.update(result)
+    _chip_cache_at = now
+    return result
 
 
 @app.post("/api/ai/chat")

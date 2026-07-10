@@ -429,8 +429,17 @@ export function getActionDashboard() {
   return fetchJSON<any>("/action/dashboard");
 }
 
-export function getChatSuggestions() {
-  return fetchJSON<any>("/suggestions/counts");
+export interface ChatSuggestions {
+  top_building: string | null;
+  top_supply_market: string | null;
+  top_demand_market: string | null;
+  top_commercial_market: string | null;
+  top_rental_market: string | null;
+  top_broker_building: string | null;
+}
+
+export function getChatSuggestions(): Promise<ChatSuggestions> {
+  return fetchJSON<ChatSuggestions>("/chat/suggestions");
 }
 
 export function getResolver(limit = 50, offset = 0, method?: string) {
