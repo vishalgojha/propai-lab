@@ -172,7 +172,7 @@ export default function NotesPanel({ entityType, entityId }: Props) {
           {notes.map((note) => (
             <div
               key={note.id}
-              className="bg-zinc-800/30 border border-zinc-700/50 rounded-lg p-3 relative group"
+              className="border-b border-white/[0.04] last:border-0 py-3 relative group"
             >
               <div className="flex items-start justify-between gap-2">
                 <div className="flex-1 min-w-0">

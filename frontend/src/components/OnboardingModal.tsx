@@ -60,7 +60,7 @@ export function OnboardingModal({ phone, defaultFirstName, onClose, onComplete }
 
   return (
     <div className="fixed inset-0 z-[800] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-      <div className="w-full max-w-md rounded-2xl border border-white/10 bg-zinc-900 shadow-2xl">
+      <div className="w-full max-w-md rounded-2xl border border-white/10 shadow-2xl">
         <div className="flex items-center justify-between px-6 pt-6 pb-4">
           <h2 className="text-lg font-bold text-white">
             {step === "confirm_phone" ? "Confirm Your Number" : "Create Your Workspace"}

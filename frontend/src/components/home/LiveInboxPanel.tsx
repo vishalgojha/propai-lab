@@ -80,7 +80,7 @@ export function LiveInboxPanel() {
 
   return (
     <section id="live-inbox" className="relative">
-      <div className="relative overflow-hidden rounded-[28px] border border-white/10 bg-zinc-900 shadow-[0_30px_90px_rgba(0,0,0,0.45)]">
+      <div className="relative overflow-hidden rounded-[28px] border border-white/10 shadow-[0_30px_90px_rgba(0,0,0,0.45)]">
         <div className="flex items-center justify-between border-b border-white/5 bg-black/80 px-3 py-2.5 sm:px-4">
           <div className="flex items-center gap-2">
             <span className="h-2.5 w-2.5 rounded-full bg-red-400" />
@@ -122,7 +122,7 @@ export function LiveInboxPanel() {
           </div>
 
           <div className="p-3 sm:p-4">
-            <div className="rounded-2xl border border-white/5 bg-black/50 p-3 sm:p-4">
+            <div className="p-3 sm:p-4">
               <div className="flex items-center justify-between gap-2">
                 <div className="text-[10px] uppercase tracking-[0.24em] text-zinc-500">{selected.group}</div>
                 <span className="text-[10px] text-zinc-500">{selected.sender}</span>
@@ -130,7 +130,7 @@ export function LiveInboxPanel() {
 
               <div className="mt-3 space-y-2">
                 {selected.listings.map((l, i) => (
-                  <div key={i} className="rounded-xl border border-white/5 bg-zinc-800/50 p-2.5">
+                  <div key={i} className="p-2.5 border-b border-white/[0.04] last:border-0">
                     <div className="flex items-start justify-between gap-2">
                       <div>
                         <div className="flex items-center gap-2">
@@ -146,7 +146,7 @@ export function LiveInboxPanel() {
                 ))}
               </div>
 
-              <div className="mt-3 rounded-xl border border-white/5 bg-zinc-800/50 p-2.5">
+              <div className="mt-3 p-2.5 border-t border-white/[0.04]">
                 <div className="text-[10px] uppercase tracking-[0.15em] text-zinc-500 mb-1">Original message</div>
                 <div className="text-[11px] leading-5 text-zinc-400 whitespace-pre-wrap">{selected.preview}</div>
               </div>
