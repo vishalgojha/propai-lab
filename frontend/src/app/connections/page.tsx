@@ -113,8 +113,8 @@ function StatusDot({ status }: { status: HealthStatus }) {
 
 function StatBox({ icon, label, value, status }: { icon: React.ReactNode; label: string; value: string; status?: HealthStatus }) {
   return (
-    <div className="flex items-center gap-3 rounded-xl border border-white/10 bg-zinc-900/50 p-4">
-      <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-zinc-800">
+    <div className="flex items-center gap-3 p-4">
+      <div className="flex h-10 w-10 items-center justify-center shrink-0">
         {icon}
       </div>
       <div className="flex-1 min-w-0">
@@ -146,7 +146,7 @@ function HealthRow({ label, status, detail }: { label: string; status: HealthSta
 function ActivityItem({ icon, text, time }: { icon: React.ReactNode; text: string; time: string }) {
   return (
     <div className="flex items-start gap-3 py-2">
-      <div className="mt-0.5 flex h-6 w-6 items-center justify-center rounded-full bg-zinc-800">{icon}</div>
+      <div className="mt-0.5 flex h-6 w-6 items-center justify-center">{icon}</div>
       <div className="flex-1 min-w-0">
         <div className="text-xs text-zinc-300">{text}</div>
         <div className="text-[11px] text-zinc-600">{time}</div>
@@ -196,7 +196,7 @@ function LoadingDots() {
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="rounded-2xl border border-white/10 bg-zinc-900/60 overflow-hidden">
+    <div className="rounded-2xl border border-white/10 overflow-hidden">
       <div className="px-5 py-3 border-b border-white/10">
         <h3 className="text-sm font-bold text-white">{title}</h3>
       </div>
@@ -616,7 +616,7 @@ export default function ConnectionCenterPage() {
 
           {/* ═══ Activity ═══ */}
           <Section title="Activity">
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <StatBox icon={<MessageSquare className="w-4 h-4 text-zinc-400" />} label="Total Messages" value={messages?.toLocaleString() || "—"} />
               <StatBox icon={<Zap className="w-4 h-4 text-zinc-400" />} label="AI Processed" value={totalParsed?.toLocaleString() || "—"} />
               <StatBox icon={<List className="w-4 h-4 text-zinc-400" />} label="Items Extracted" value={(totalListings + totalRequirements)?.toLocaleString() || "—"} />
@@ -626,7 +626,7 @@ export default function ConnectionCenterPage() {
 
           {/* ═══ Coverage ═══ */}
           <Section title="Coverage">
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <StatBox icon={<Users className="w-4 h-4 text-zinc-400" />} label="Groups" value={groups?.toLocaleString() || "—"} />
               <StatBox icon={<MessageSquare className="w-4 h-4 text-zinc-400" />} label="Private Chats" value="—" />
               <StatBox icon={<Activity className="w-4 h-4 text-zinc-400" />} label="Active Conversations" value="—" />

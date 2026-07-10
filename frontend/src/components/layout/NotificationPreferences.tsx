@@ -8,7 +8,7 @@ export function NotificationPreferences() {
 
   if (!supported) {
     return (
-      <div className="rounded-xl border border-white/10 bg-zinc-900 p-4">
+      <div className="rounded-xl border border-white/10 p-4">
         <h3 className="text-sm font-bold text-white">Notifications</h3>
         <p className="mt-1 text-xs text-zinc-500">
           Notifications are not supported in this browser.
@@ -20,7 +20,7 @@ export function NotificationPreferences() {
   const enabled = permission === "granted";
 
   return (
-    <div className="rounded-xl border border-white/10 bg-zinc-900 p-4">
+    <div className="rounded-xl border border-white/10 p-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           {enabled ? (

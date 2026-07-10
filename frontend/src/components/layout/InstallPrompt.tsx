@@ -9,7 +9,7 @@ export function InstallPrompt() {
 
   return (
     <div className="fixed bottom-20 left-4 right-4 z-[900] lg:bottom-4 lg:left-auto lg:right-4 lg:w-80 animate-in fade-in">
-      <div className="rounded-2xl border border-white/10 bg-zinc-900 p-4 shadow-2xl">
+      <div className="rounded-2xl border border-white/10 bg-black p-4 shadow-2xl">
         <div className="flex items-start gap-3">
           <img src="/propai-logo.svg" alt="" className="mt-0.5 h-8 w-8 shrink-0" />
           <div className="min-w-0 flex-1">
