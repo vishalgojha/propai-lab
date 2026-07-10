@@ -271,19 +271,19 @@ export default function BrokersPage() {
 
                   {/* Stats Row */}
                   <div className="grid grid-cols-4 gap-2 mb-3 text-center">
-                    <div className="rounded-lg bg-zinc-800/50 px-2 py-2">
+                    <div className="px-2 py-2">
                       <div className="text-white font-bold text-sm">{broker.listing_count}</div>
                       <div className="text-caption text-zinc-500">Listings</div>
                     </div>
-                    <div className="rounded-lg bg-zinc-800/50 px-2 py-2">
+                    <div className="px-2 py-2">
                       <div className="text-white font-bold text-sm">{broker.requirement_count}</div>
                       <div className="text-caption text-zinc-500">Reqs</div>
                     </div>
-                    <div className="rounded-lg bg-zinc-800/50 px-2 py-2">
+                    <div className="px-2 py-2">
                       <div className="text-white font-bold text-sm">{broker.market_count}</div>
                       <div className="text-caption text-zinc-500">Markets</div>
                     </div>
-                    <div className="rounded-lg bg-zinc-800/50 px-2 py-2">
+                    <div className="px-2 py-2">
                       <div className="text-white font-bold text-sm">{broker.building_count}</div>
                       <div className="text-caption text-zinc-500">Buildings</div>
                     </div>

@@ -213,11 +213,11 @@ export default function KnowledgeObservationsPage() {
 
       {/* Top Entities */}
       {topEntities.length > 0 && (
-        <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4 mb-6">
+        <div className="rounded-lg border border-white/10 p-4 mb-6">
           <h3 className="font-semibold mb-3 text-zinc-300">Top Entities by Observation Count</h3>
           <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-2">
             {topEntities.slice(0, 15).map((e) => (
-              <div key={`${e.entity_name}-${e.entity_type}`} className="bg-zinc-800/50 rounded-lg p-3">
+              <div key={`${e.entity_name}-${e.entity_type}`} className="p-3">
                 <div className="font-medium text-sm truncate" title={e.entity_name}>
                   {e.entity_name}
                 </div>
