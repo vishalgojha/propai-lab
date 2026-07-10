@@ -161,7 +161,7 @@ export default function AddToClientBucket({
 
   return (
     <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div className="bg-zinc-900 border border-white/10 rounded-2xl w-full max-w-lg shadow-2xl">
+      <div className="border border-white/10 rounded-2xl w-full max-w-lg shadow-2xl">
         {/* Header */}
         <div className="p-5 border-b border-white/10">
           <div className="flex items-center justify-between">

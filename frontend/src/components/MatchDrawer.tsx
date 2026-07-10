@@ -32,7 +32,7 @@ function MatchDrawer({ requirementId, onClose }: { requirementId: number; onClos
     return (
       <div className="fixed inset-0 z-50 flex justify-end">
         <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-        <div className="relative w-full max-w-lg bg-zinc-900 border-l border-white/10 overflow-y-auto">
+        <div className="relative w-full max-w-lg border-l border-white/10 overflow-y-auto">
           <div className="flex items-center justify-center h-64 text-zinc-500 text-sm">Loading matches...</div>
         </div>
       </div>
@@ -44,9 +44,9 @@ function MatchDrawer({ requirementId, onClose }: { requirementId: number; onClos
   return (
     <div className="fixed inset-0 z-50 flex justify-end">
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-      <div className="relative w-full max-w-lg bg-zinc-900 border-l border-white/10 overflow-y-auto">
+      <div className="relative w-full max-w-lg border-l border-white/10 overflow-y-auto">
         {/* Header */}
-        <div className="sticky top-0 bg-zinc-900 border-b border-white/10 p-4 flex items-center justify-between z-10">
+        <div className="sticky top-0 border-b border-white/10 p-4 flex items-center justify-between z-10">
           <div>
             <h3 className="text-sm font-bold text-white">Matching Listings</h3>
             <p className="text-[10px] text-zinc-500 mt-0.5">

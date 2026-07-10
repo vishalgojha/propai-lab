@@ -164,7 +164,7 @@ export default function TextSelectionMenu({ actions, context = {}, containerRef 
             transform: "translate(-50%, -100%)",
           }}
         >
-          <div className="w-60 bg-zinc-900 border border-white/10 rounded-xl shadow-2xl shadow-black/50 overflow-hidden backdrop-blur-xl">
+          <div className="w-60 border border-white/10 rounded-xl shadow-2xl shadow-black/50 overflow-hidden backdrop-blur-xl">
             {/* Selection Preview */}
             <div className="px-3 py-2 border-b border-white/10 bg-white/5">
               <div className="text-[9px] text-zinc-500 uppercase tracking-wider font-bold mb-0.5">Selected</div>

@@ -129,7 +129,7 @@ function KnowledgeRow({ item, index }: { item: any; index: number }) {
 
 export function LatestWhatsAppKnowledge({ feed, onOpenInbox }: LatestWhatsAppKnowledgeProps) {
   return (
-    <section className="bg-zinc-900 border border-white/10 rounded-2xl p-5">
+    <section className="border border-white/10 rounded-2xl p-5">
       <div className="flex items-center justify-between mb-3">
         <div className="text-[11px] text-zinc-500 uppercase tracking-widest font-bold">LATEST WHATSAPP KNOWLEDGE</div>
         <button

@@ -79,7 +79,7 @@ export function CombinedLocalityDialog({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="bg-zinc-900 border border-white/10 rounded-xl w-full max-w-md max-h-[80vh] flex flex-col overflow-hidden">
+      <div className="border border-white/10 rounded-xl w-full max-w-md max-h-[80vh] flex flex-col overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-white/10">
           <div>

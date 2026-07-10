@@ -75,7 +75,7 @@ export function InboxAIChat({ context, selectedMessage, onClose }: InboxAIChatPr
   if (onClose) {
     return (
       <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
-        <div className="w-full max-w-2xl h-[80vh] bg-zinc-950 rounded-2xl border border-white/10 flex flex-col overflow-hidden animate-in fade-in zoom-in-95">
+        <div className="w-full max-w-2xl h-[80vh] rounded-2xl border border-white/10 flex flex-col overflow-hidden animate-in fade-in zoom-in-95">
           <div className="flex items-center justify-between p-4 border-b border-white/10">
             <div className="flex items-center gap-3">
               <Sparkles className="w-5 h-5 text-emerald-400" />
@@ -91,7 +91,7 @@ export function InboxAIChat({ context, selectedMessage, onClose }: InboxAIChatPr
           <div className="flex-1 overflow-y-auto p-4 space-y-4">
             {messages.map((msg, idx) => (
               <div key={idx} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
-                <div className={`max-w-[85%] rounded-2xl px-4 py-3 ${msg.role === "user" ? "bg-emerald-400 text-black" : "bg-zinc-900 border border-white/10"}`}>
+                <div className={`max-w-[85%] rounded-2xl px-4 py-3 ${msg.role === "user" ? "bg-emerald-400 text-black" : "border border-white/10"}`}>
                   {msg.blocks ? (
                     <AIWorkspace response={{ blocks: msg.blocks, content: msg.content }} />
                   ) : (
@@ -133,7 +133,7 @@ export function InboxAIChat({ context, selectedMessage, onClose }: InboxAIChatPr
   }
 
   return (
-    <div className="h-full flex flex-col bg-zinc-950/50 rounded-xl border border-white/10">
+    <div className="h-full flex flex-col rounded-xl border border-white/10">
       <div className="flex items-center justify-between p-3 border-b border-white/10">
         <div className="flex items-center gap-2">
           <Sparkles className="w-4 h-4 text-emerald-400" />
@@ -148,7 +148,7 @@ export function InboxAIChat({ context, selectedMessage, onClose }: InboxAIChatPr
       <div className="flex-1 overflow-y-auto p-3 space-y-3">
         {messages.map((msg, idx) => (
           <div key={idx} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
-            <div className={`max-w-[85%] rounded-2xl px-4 py-3 ${msg.role === "user" ? "bg-emerald-400 text-black" : "bg-zinc-900 border border-white/10"}`}>
+            <div className={`max-w-[85%] rounded-2xl px-4 py-3 ${msg.role === "user" ? "bg-emerald-400 text-black" : "border border-white/10"}`}>
               {msg.blocks ? (
                 <AIWorkspace response={{ blocks: msg.blocks, content: msg.content }} />
               ) : (
@@ -165,13 +165,12 @@ export function InboxAIChat({ context, selectedMessage, onClose }: InboxAIChatPr
       <div className="p-3 border-t border-white/10">
         <div className="flex gap-2">
           <input
-            ref={(el) => { el?.focus(); }}
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && (e.preventDefault(), sendMessage())}
-            placeholder="Ask about this message..."
-            className="flex-1 bg-zinc-900 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder-zinc-500 focus:border-emerald-400/50 focus:outline-none focus:ring-1 focus:ring-emerald-400/50 transition-colors"
+            placeholder="Ask about the message..."
+            className="flex-1 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder-zinc-500 focus:border-emerald-400/50 focus:outline-none focus:ring-1 focus:ring-emerald-400/50 transition-colors"
             disabled={loading}
           />
           <button
