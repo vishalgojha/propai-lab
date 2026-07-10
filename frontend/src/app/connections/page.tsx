@@ -628,9 +628,9 @@ export default function ConnectionCenterPage() {
           {/* ═══ Coverage ═══ */}
           <Section title="Coverage">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-0 [&>*:nth-child(2n)]:sm:border-l [&>*:nth-child(2n)]:border-white/10 [&>*:nth-child(n+3)]:border-t [&>*:nth-child(n+3)]:border-white/10">
-              <StatBox icon={<Users className="w-4 h-4 text-zinc-400" />} label="Groups" value={groups?.toLocaleString() || "—"} />
-              <StatBox icon={<MessageSquare className="w-4 h-4 text-zinc-400" />} label="Private Chats" value="—" />
-              <StatBox icon={<Activity className="w-4 h-4 text-zinc-400" />} label="Active Conversations" value="—" />
+              <StatBox icon={<Users className="w-4 h-4 text-zinc-400" />} label="Groups Monitored" value={groups?.toLocaleString() || "—"} />
+              <StatBox icon={<MessageSquare className="w-4 h-4 text-zinc-400" />} label="Messages Captured" value={messages?.toLocaleString() || "—"} />
+              <StatBox icon={<Activity className="w-4 h-4 text-zinc-400" />} label="Broker Entities" value={totalBrokers?.toLocaleString() || "—"} />
               <StatBox icon={<Building className="w-4 h-4 text-zinc-400" />} label="Buildings Tracked" value={totalBuildings?.toLocaleString() || "—"} />
             </div>
           </Section>
