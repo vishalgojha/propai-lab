@@ -151,14 +151,14 @@ function HowItWorksPage() {
             <Link href="/" className="text-sm text-zinc-400 transition-colors hover:text-white">
               Docs
             </Link>
-            <Link href="/dashboard" className="text-sm text-zinc-400 transition-colors hover:text-white">
+            <Link href="/auth/login?next=/dashboard" className="text-sm text-zinc-400 transition-colors hover:text-white">
               Log in
             </Link>
             <Link
-              href="/connections"
+              href="/auth/signup?next=/connections"
               className="inline-flex items-center gap-2 rounded-full bg-[#3EE88A] px-4 py-2 text-sm font-semibold text-black transition-transform hover:translate-y-[-1px]"
             >
-              Connect WhatsApp
+              Get started
               <ArrowRight className="h-4 w-4" strokeWidth={2} />
             </Link>
           </nav>
@@ -365,10 +365,10 @@ function HowItWorksPage() {
             </p>
             <div className="mt-6 flex items-center justify-center gap-3">
               <Link
-                href="/connections"
+                href="/auth/signup?next=/connections"
                 className="inline-flex items-center gap-2 rounded-lg bg-[#3EE88A] px-5 py-2.5 text-sm font-semibold text-black transition-transform hover:translate-y-[-1px]"
               >
-                Connect WhatsApp
+                Get started
                 <ArrowRight className="h-3.5 w-3.5" strokeWidth={2} />
               </Link>
               <Link

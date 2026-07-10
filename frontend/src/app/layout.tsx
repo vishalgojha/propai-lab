@@ -29,7 +29,7 @@ import {
   AlertTriangle,
   Shield,
 } from "lucide-react";
-import { AuthProvider } from "@/lib/AuthProvider";
+import { AuthProvider, useAuth } from "@/lib/AuthProvider";
 import { LayoutProvider, useLayout } from "@/hooks/useLayout";
 import { useIsMobile } from "@/hooks/useMediaQuery";
 import { BottomNav } from "@/components/layout/BottomNav";
@@ -175,6 +175,7 @@ function PaletteModal({ open, onClose }: { open: boolean; onClose: () => void })
 function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
+  const { user, loading: authLoading } = useAuth();
   const isMobile = useIsMobile();
   const { drawerOpen, setDrawerOpen, toggleDrawer, setLastTab } = useLayout();
   const [conn, setConn] = useState<ConnectionState | null>(null);
@@ -203,6 +204,13 @@ function AppShell({ children }: { children: React.ReactNode }) {
   const waConnected = conn?.connected;
 
   useEffect(() => {
+    if (!authLoading && !user) {
+      router.replace(`/auth/login?next=${encodeURIComponent(pathname || "/dashboard")}`);
+    }
+  }, [authLoading, user, pathname, router]);
+
+  useEffect(() => {
+    if (authLoading || !user) return;
     const load = async () => {
       try {
         const [c, w] = await Promise.all([getConnectionState(), getWhatsAppStatus()]);
@@ -213,7 +221,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
     load();
     const t = setInterval(load, 15000);
     return () => clearInterval(t);
-  }, []);
+  }, [authLoading, user]);
 
   // PWA manifest link (static in RootLayout, this is for dynamic fallback)
   useEffect(() => {
@@ -227,6 +235,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
 
   // Reconnect timer: detect disconnect and start 10s countdown
   useEffect(() => {
+    if (authLoading || !user) return;
     if (waConnected) {
       wasConnectedRef.current = true;
       if (reconnectCountdown !== null) {
@@ -254,7 +263,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
       });
     }, 1000);
     return () => { if (countdownRef.current) { clearInterval(countdownRef.current); countdownRef.current = null; } };
-  }, [waConnected, reconnectCountdown, router]);
+  }, [authLoading, user, waConnected, reconnectCountdown, router]);
 
   // Offline detection
   useEffect(() => {
@@ -284,6 +293,10 @@ function AppShell({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     document.body.classList.toggle("no-scroll", drawerOpen);
   }, [drawerOpen]);
+
+  if (authLoading || !user) {
+    return null;
+  }
 
   return (
     <div className="flex h-screen overflow-hidden bg-black">
@@ -471,7 +484,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   const pathname = usePathname();
   const isLanding = pathname === "/" || pathname === "/how-it-works";
   const isAuth = pathname.startsWith("/auth");
-  const isStandalone = isLanding || isAuth;
+  const isPublicShare = pathname.startsWith("/share/");
+  const isStandalone = isLanding || isAuth || isPublicShare;
 
   return (
     <html lang="en">

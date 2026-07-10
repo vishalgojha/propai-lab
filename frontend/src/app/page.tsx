@@ -128,10 +128,10 @@ export default function HomePage() {
               Log in
             </Link>
             <Link
-              href="/connections"
+              href="/auth/signup?next=/connections"
               className="inline-flex items-center gap-2 rounded-full bg-[#3EE88A] px-4 py-2 text-sm font-semibold text-black transition-transform hover:translate-y-[-1px]"
             >
-              Connect WhatsApp
+              Get started
               <ArrowRight className="h-4 w-4" strokeWidth={2} />
             </Link>
           </nav>
@@ -175,10 +175,10 @@ export default function HomePage() {
 
             <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center">
               <Link
-                href="/connections"
+                href="/auth/signup?next=/connections"
                 className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#3EE88A] px-5 py-3 text-sm font-semibold text-black transition-transform hover:translate-y-[-1px]"
               >
-                Connect WhatsApp
+                Get started
                 <ArrowRight className="h-4 w-4" strokeWidth={2} />
               </Link>
               <Link
