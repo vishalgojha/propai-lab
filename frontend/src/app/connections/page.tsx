@@ -592,37 +592,38 @@ export default function ConnectionCenterPage() {
         /* ── Connected Dashboard ── */
         <div className="space-y-6">
 
-          {/* ═══ Connection ═══ */}
-          <Section title="Connection">
-            <div className="flex items-center gap-4 mb-4">
-              <div className="flex h-14 w-14 items-center justify-center rounded-full bg-[#3EE88A]/10">
-                <Smartphone className="w-6 h-6 text-[#3EE88A]" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <span className="text-base font-bold text-white">{formatPhone(displayPhone)}</span>
-                  <StatusDot status="healthy" />
+          {/* ═══ Connection + Activity (side by side) ═══ */}
+          <div className="grid lg:grid-cols-2 gap-6">
+            <Section title="Connection">
+              <div className="flex items-center gap-4 mb-4">
+                <div className="flex h-14 w-14 items-center justify-center rounded-full bg-[#3EE88A]/10">
+                  <Smartphone className="w-6 h-6 text-[#3EE88A]" />
                 </div>
-                {displayName && <div className="text-xs text-zinc-500">{displayName}</div>}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="text-base font-bold text-white">{formatPhone(displayPhone)}</span>
+                    <StatusDot status="healthy" />
+                  </div>
+                  {displayName && <div className="text-xs text-zinc-500">{displayName}</div>}
+                </div>
               </div>
-            </div>
-            <div className="grid grid-cols-2 gap-0 [&>*:nth-child(2n)]:border-l [&>*:nth-child(2n)]:border-white/10 [&>*:nth-child(n+3)]:border-t [&>*:nth-child(n+3)]:border-white/10">
-              <StatBox icon={<Clock className="w-4 h-4 text-zinc-400" />} label="Connected" value={connectedSeconds ? formatDuration(connectedSeconds) : "—"} />
-              <StatBox icon={<Activity className="w-4 h-4 text-zinc-400" />} label="Last Activity" value={formatTime(lastMessageAt || lastSync)} />
-              <StatBox icon={<Users className="w-4 h-4 text-zinc-400" />} label="Connected Account" value={displayName || "—"} />
-              <StatBox icon={<Shield className="w-4 h-4 text-zinc-400" />} label="Status" value={connectionHealth === "healthy" ? "Healthy" : "Offline"} status={connectionHealth} />
-            </div>
-          </Section>
+              <div className="grid grid-cols-2 gap-0 [&>*:nth-child(2n)]:border-l [&>*:nth-child(2n)]:border-white/10 [&>*:nth-child(n+3)]:border-t [&>*:nth-child(n+3)]:border-white/10">
+                <StatBox icon={<Clock className="w-4 h-4 text-zinc-400" />} label="Connected" value={connectedSeconds ? formatDuration(connectedSeconds) : "—"} />
+                <StatBox icon={<Activity className="w-4 h-4 text-zinc-400" />} label="Last Activity" value={formatTime(lastMessageAt || lastSync)} />
+                <StatBox icon={<Users className="w-4 h-4 text-zinc-400" />} label="Connected Account" value={displayName || "—"} />
+                <StatBox icon={<Shield className="w-4 h-4 text-zinc-400" />} label="Status" value={connectionHealth === "healthy" ? "Healthy" : "Offline"} status={connectionHealth} />
+              </div>
+            </Section>
 
-          {/* ═══ Activity ═══ */}
-          <Section title="Activity">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-0 [&>*:nth-child(2n)]:sm:border-l [&>*:nth-child(2n)]:border-white/10 [&>*:nth-child(n+3)]:border-t [&>*:nth-child(n+3)]:border-white/10">
-              <StatBox icon={<MessageSquare className="w-4 h-4 text-zinc-400" />} label="Total Messages" value={messages?.toLocaleString() || "—"} />
-              <StatBox icon={<Zap className="w-4 h-4 text-zinc-400" />} label="AI Processed" value={totalParsed?.toLocaleString() || "—"} />
-              <StatBox icon={<List className="w-4 h-4 text-zinc-400" />} label="Items Extracted" value={(totalListings + totalRequirements)?.toLocaleString() || "—"} />
-              <StatBox icon={<Users className="w-4 h-4 text-zinc-400" />} label="Brokers Identified" value={totalBrokers?.toLocaleString() || "—"} />
-            </div>
-          </Section>
+            <Section title="Activity">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-0 [&>*:nth-child(2n)]:sm:border-l [&>*:nth-child(2n)]:border-white/10 [&>*:nth-child(n+3)]:border-t [&>*:nth-child(n+3)]:border-white/10">
+                <StatBox icon={<MessageSquare className="w-4 h-4 text-zinc-400" />} label="Total Messages" value={messages?.toLocaleString() || "—"} />
+                <StatBox icon={<Zap className="w-4 h-4 text-zinc-400" />} label="AI Processed" value={totalParsed?.toLocaleString() || "—"} />
+                <StatBox icon={<List className="w-4 h-4 text-zinc-400" />} label="Items Extracted" value={(totalListings + totalRequirements)?.toLocaleString() || "—"} />
+                <StatBox icon={<Users className="w-4 h-4 text-zinc-400" />} label="Brokers Identified" value={totalBrokers?.toLocaleString() || "—"} />
+              </div>
+            </Section>
+          </div>
 
           {/* ═══ Coverage ═══ */}
           <Section title="Coverage">
