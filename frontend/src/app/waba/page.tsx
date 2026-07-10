@@ -104,7 +104,7 @@ export default function WabaPage() {
       </div>
 
       {/* PropAI Shared WABA */}
-      <div className="rounded-2xl border border-[#3EE88A]/20 bg-zinc-900 p-5 mb-4">
+      <div className="rounded-2xl border border-[#3EE88A]/20 p-5 mb-4">
         <div className="flex items-start gap-4">
           <div className="w-2 h-2 rounded-full bg-[#3EE88A] mt-1.5 flex-shrink-0" />
           <div>
@@ -123,7 +123,7 @@ export default function WabaPage() {
       {/* Toggle own WABA */}
       <button
         onClick={() => setUseOwnWaba(!useOwnWaba)}
-        className="w-full rounded-2xl border border-white/10 bg-zinc-900 p-4 text-left hover:bg-zinc-800 transition-colors"
+        className="w-full rounded-2xl border border-white/10 p-4 text-left transition-colors"
       >
         <div className="flex items-center justify-between">
           <div>
@@ -140,8 +140,11 @@ export default function WabaPage() {
 
       {useOwnWaba && (
         <>
-          <div className="mt-4 rounded-2xl border border-white/10 bg-zinc-900 p-5">
-            <h3 className="text-sm font-bold text-white mb-4">Your WABA Credentials</h3>
+          <div className="mt-4 rounded-2xl border border-white/10">
+            <div className="px-5 py-3 border-b border-white/10">
+              <h3 className="text-sm font-bold text-white">Your WABA Credentials</h3>
+            </div>
+            <div className="px-5 py-4">
 
             <form onSubmit={handleSave} className="space-y-4">
               <div>
@@ -269,11 +272,15 @@ export default function WabaPage() {
                 {status}
               </div>
             )}
+            </div>
           </div>
 
           {wabaConnected && (
-            <div className="mt-6 rounded-2xl border border-white/10 bg-zinc-900 p-5">
-              <h3 className="text-sm font-bold text-white mb-4">Webhook Setup</h3>
+            <div className="mt-6 rounded-2xl border border-white/10">
+              <div className="px-5 py-3 border-b border-white/10">
+                <h3 className="text-sm font-bold text-white">Webhook Setup</h3>
+              </div>
+              <div className="px-5 py-4">
               <p className="text-sm text-zinc-500 mb-3">
                 Add this Callback URL and your Verify Token in the Meta App Dashboard under{" "}
                 <strong className="text-zinc-300">WhatsApp → Configuration → Webhook</strong>.
@@ -293,12 +300,16 @@ export default function WabaPage() {
                 </div>
               </div>
             </div>
+          </div>
           )}
         </>
       )}
 
-      <div className="mt-6 rounded-2xl border border-white/10 bg-zinc-900 p-5">
-        <h3 className="text-sm font-bold text-white mb-3">Need help?</h3>
+      <div className="mt-6 rounded-2xl border border-white/10">
+        <div className="px-5 py-3 border-b border-white/10">
+          <h3 className="text-sm font-bold text-white">Need help?</h3>
+        </div>
+        <div className="px-5 py-4">
         <div className="space-y-2 text-xs text-zinc-500">
           <p>
             <a href="https://developers.facebook.com/docs/whatsapp/cloud-api/get-started" target="_blank" rel="noreferrer" className="text-[#3EE88A] underline">
@@ -317,6 +328,8 @@ export default function WabaPage() {
           </p>
         </div>
       </div>
+      </div>
     </div>
   );
 }
+
