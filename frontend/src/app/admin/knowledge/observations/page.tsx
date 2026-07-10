@@ -145,19 +145,19 @@ export default function AdminKnowledgeObservationsPage() {
 
       {/* Stats Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-        <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4">
+        <div className="p-4">
           <div className="text-3xl font-bold text-white">{total.toLocaleString()}</div>
           <div className="text-xs text-zinc-400">Total Observations</div>
         </div>
-        <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4">
+        <div className="p-4">
           <div className="text-3xl font-bold text-blue-400">{byType.length}</div>
           <div className="text-xs text-zinc-400">Observation Types</div>
         </div>
-        <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4">
+        <div className="p-4">
           <div className="text-3xl font-bold text-purple-400">{byEntityType.length}</div>
           <div className="text-xs text-zinc-400">Entity Types</div>
         </div>
-        <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4">
+        <div className="p-4">
           <div className="text-3xl font-bold text-green-400">{topEntities.length}</div>
           <div className="text-xs text-zinc-400">Top Entities</div>
         </div>
@@ -165,7 +165,7 @@ export default function AdminKnowledgeObservationsPage() {
 
       {/* Breakdown Stats */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-        <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4">
+        <div className="rounded-lg border border-white/10 p-4">
           <h3 className="font-semibold mb-2 text-zinc-300">By Observation Type</h3>
           <div className="space-y-1">
             {byType.slice(0, 10).map((t) => (
@@ -176,7 +176,7 @@ export default function AdminKnowledgeObservationsPage() {
             ))}
           </div>
         </div>
-        <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4">
+        <div className="rounded-lg border border-white/10 p-4">
           <h3 className="font-semibold mb-2 text-zinc-300">By Entity Type</h3>
           <div className="space-y-1">
             {byEntityType.map((t) => (
@@ -230,11 +230,11 @@ export default function AdminKnowledgeObservationsPage() {
 
       {/* Top Entities */}
       {topEntities.length > 0 && (
-        <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4 mb-6">
+      <div className="rounded-lg border border-white/10 p-4 mb-6">
           <h3 className="font-semibold mb-3 text-zinc-300">Top Entities by Observation Count</h3>
           <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-2">
             {topEntities.slice(0, 15).map((e) => (
-              <div key={`${e.entity_name}-${e.entity_type}`} className="bg-zinc-800/50 rounded-lg p-3">
+              <div key={`${e.entity_name}-${e.entity_type}`} className="p-3">
                 <div className="font-medium text-sm truncate" title={e.entity_name}>
                   {e.entity_name}
                 </div>
@@ -267,7 +267,7 @@ export default function AdminKnowledgeObservationsPage() {
               <div
                 key={obs.id}
                 onClick={() => setSelected(obs)}
-                className={`border rounded-lg p-4 cursor-pointer hover:border-zinc-500 transition-colors ${getEntityTypeColor(obs.entity_type)}`}
+                className="border-b border-white/[0.04] last:border-0 py-3 cursor-pointer hover:bg-white/[0.02] transition-colors"
               >
                 <div className="flex items-start justify-between">
                   <div className="flex-1 min-w-0">
@@ -329,7 +329,7 @@ export default function AdminKnowledgeObservationsPage() {
               Copied to clipboard!
             </div>
           )}
-          <div className="bg-zinc-900 rounded-xl max-w-3xl w-full max-h-[80vh] overflow-auto p-6">
+          <div className="rounded-xl border border-white/10 max-w-3xl w-full max-h-[80vh] overflow-auto p-6">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-semibold">Observation #{selected.id}</h2>
               <button onClick={() => setSelected(null)} className="text-zinc-400 hover:text-white">✕</button>
@@ -369,7 +369,7 @@ export default function AdminKnowledgeObservationsPage() {
                     <Copy className="w-3 h-3" /> Copy
                   </button>
                 </div>
-                <div className="bg-zinc-800 rounded-lg p-3 text-sm whitespace-pre-wrap text-zinc-200 cursor-pointer hover:bg-zinc-700/50 transition-colors"
+                <div className="rounded-lg border border-white/10 p-3 text-sm whitespace-pre-wrap text-zinc-200 cursor-pointer transition-colors"
                      onClick={async () => {
                        const success = await copyToClipboard(selected.observation_text);
                        if (success) {
