@@ -1,10 +1,7 @@
 import type { NextConfig } from "next";
 
 const configuredApiBase = process.env.LAB_API_BASE_URL || "http://localhost:8000";
-const API_BASE =
-  configuredApiBase.includes("api.propai.live") || configuredApiBase.includes(".propai.live")
-    ? "http://api:8000"
-    : configuredApiBase;
+const API_BASE = configuredApiBase;
 
 const nextConfig: NextConfig = {
   typescript: { ignoreBuildErrors: true },

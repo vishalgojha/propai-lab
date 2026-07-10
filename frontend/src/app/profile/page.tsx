@@ -4,7 +4,7 @@ export const dynamic = 'force-dynamic';
 
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Smartphone, Save, Users, CreditCard, Key, Settings, Mail, MapPin, User } from "lucide-react";
+import { ChevronDown, Smartphone, Save, Users, CreditCard, Key, Settings, Mail, MapPin, User } from "lucide-react";
 import { getProfile, saveProfile } from "@/lib/api";
 import { useAuth } from "@/lib/AuthProvider";
 
@@ -25,6 +25,7 @@ export default function ProfilePage() {
   const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
   const [city, setCity] = useState("");
+  const [cityOpen, setCityOpen] = useState(false);
   const [customCity, setCustomCity] = useState("");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -184,15 +185,46 @@ export default function ProfilePage() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="text-[11px] font-semibold text-zinc-500 uppercase tracking-wider">City</label>
-                  <select
-                    value={city}
-                    onChange={(e) => { setCity(e.target.value); if (e.target.value !== "__other__") setCustomCity(""); markDirty(); }}
-                    className="mt-1 w-full rounded-lg border border-white/10 bg-zinc-800/50 px-3 py-2.5 text-sm text-white outline-none focus:border-emerald-500/50 transition-colors appearance-none"
-                  >
-                    <option value="">Select your city</option>
-                    {CITIES.map(c => <option key={c} value={c}>{c}</option>)}
-                    <option value="__other__">Other</option>
-                  </select>
+                  <div className="relative mt-1">
+                    <button
+                      type="button"
+                      onClick={() => setCityOpen((open) => !open)}
+                      className="flex w-full items-center justify-between rounded-lg border border-white/10 bg-zinc-800/50 px-3 py-2.5 text-left text-sm text-white outline-none transition-colors hover:bg-zinc-800 focus:border-emerald-500/50"
+                    >
+                      <span className={city ? "text-white" : "text-zinc-500"}>
+                        {city === "__other__" ? customCity || "Other" : city || "Select your city"}
+                      </span>
+                      <ChevronDown className={`h-4 w-4 text-zinc-500 transition-transform ${cityOpen ? "rotate-180" : ""}`} />
+                    </button>
+                    {cityOpen && (
+                      <div className="absolute left-0 right-0 top-full z-50 mt-1 max-h-64 overflow-y-auto rounded-lg border border-white/10 bg-zinc-950 py-1 shadow-2xl">
+                        <button
+                          type="button"
+                          onClick={() => { setCity(""); setCustomCity(""); setCityOpen(false); markDirty(); }}
+                          className="block w-full px-3 py-2 text-left text-sm text-zinc-500 transition-colors hover:bg-white/5 hover:text-white"
+                        >
+                          Select your city
+                        </button>
+                        {CITIES.map((c) => (
+                          <button
+                            key={c}
+                            type="button"
+                            onClick={() => { setCity(c); setCustomCity(""); setCityOpen(false); markDirty(); }}
+                            className={`block w-full px-3 py-2 text-left text-sm transition-colors hover:bg-emerald-400/10 hover:text-emerald-300 ${city === c ? "bg-emerald-400/10 text-emerald-300" : "text-zinc-200"}`}
+                          >
+                            {c}
+                          </button>
+                        ))}
+                        <button
+                          type="button"
+                          onClick={() => { setCity("__other__"); setCityOpen(false); markDirty(); }}
+                          className={`block w-full px-3 py-2 text-left text-sm transition-colors hover:bg-emerald-400/10 hover:text-emerald-300 ${city === "__other__" ? "bg-emerald-400/10 text-emerald-300" : "text-zinc-200"}`}
+                        >
+                          Other
+                        </button>
+                      </div>
+                    )}
+                  </div>
                   {city === "__other__" && (
                     <input
                       value={customCity}
