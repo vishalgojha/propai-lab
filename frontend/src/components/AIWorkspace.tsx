@@ -17,7 +17,7 @@ function chipClass(tone?: string) {
 }
 
 function frame(children: ReactNode, className = "") {
-  return <div className={`rounded-xl border border-white/10 bg-zinc-900 p-4 ${className}`}>{children}</div>;
+  return <div className={`rounded-xl border border-white/10 p-4 ${className}`}>{children}</div>;
 }
 
 function toText(value: unknown): string {
@@ -706,7 +706,7 @@ export default function AIWorkspace({ response, onPromptSelect }: Props) {
       )}
 
       {filteredBlocks.length === 0 ? (
-        <div className="rounded-xl border border-white/10 bg-zinc-900 p-4 text-sm text-zinc-400">
+        <div className="rounded-xl border border-white/10 p-4 text-sm text-zinc-400">
           No blocks match the selected source filter.
         </div>
       ) : (

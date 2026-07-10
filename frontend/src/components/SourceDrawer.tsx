@@ -179,15 +179,15 @@ export default function SourceDrawer({ listingId, parsedId, listing, parsed, tit
           {!loading && sources.length > 0 && (
             <Section title="Evidence Summary">
               <div className="grid grid-cols-3 gap-3 text-sm">
-                <div className="bg-zinc-800 rounded-lg p-3">
+                <div className="p-3">
                   <div className="text-[10px] text-zinc-500 uppercase">Total Sightings</div>
                   <div className="text-lg font-bold text-white">{sources.length}</div>
                 </div>
-                <div className="bg-zinc-800 rounded-lg p-3">
+                <div className="p-3">
                   <div className="text-[10px] text-zinc-500 uppercase">Groups</div>
                   <div className="text-lg font-bold text-white">{uniqueGroups.length}</div>
                 </div>
-                <div className="bg-zinc-800 rounded-lg p-3">
+                <div className="p-3">
                   <div className="text-[10px] text-zinc-500 uppercase">First Seen</div>
                   <div className="text-sm font-bold text-white">{formatRelativeTime(firstSeen || "")}</div>
                 </div>
@@ -233,7 +233,7 @@ export default function SourceDrawer({ listingId, parsedId, listing, parsed, tit
             <Section title="Original WhatsApp Posts">
               <div className="space-y-4">
                 {sources.map((source, idx) => (
-                  <div key={idx} className="rounded-lg border border-white/10 bg-zinc-900 p-4">
+                  <div key={idx} className="rounded-lg border border-white/10 p-4">
                     {/* Observation header */}
                     <div className="flex items-start justify-between gap-3 mb-3">
                       <div className="flex items-center gap-2">
@@ -255,7 +255,7 @@ export default function SourceDrawer({ listingId, parsedId, listing, parsed, tit
                     </div>
 
                     {/* Raw message */}
-                    <div className="bg-zinc-800 rounded-lg p-3 mb-3">
+                    <div className="rounded-lg border border-white/10 p-3 mb-3">
                       <div className="text-[10px] text-zinc-500 uppercase tracking-wider mb-1">Raw Message</div>
                       <div className="text-sm text-white whitespace-pre-wrap break-words font-mono leading-relaxed">
                         {source.raw_message}
@@ -263,7 +263,7 @@ export default function SourceDrawer({ listingId, parsedId, listing, parsed, tit
                     </div>
 
                     {/* Parser extraction */}
-                    <div className="bg-zinc-800 rounded-lg p-3">
+                    <div className="rounded-lg border border-white/10 p-3">
                       <div className="text-[10px] text-zinc-500 uppercase tracking-wider mb-2">Parser Extraction</div>
                       <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[11px]">
                         {source.intent && <ExtractionField label="Type" value={intentLabel(source.intent)} />}

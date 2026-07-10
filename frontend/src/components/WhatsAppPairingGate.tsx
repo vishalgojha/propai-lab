@@ -232,7 +232,7 @@ export default function WhatsAppPairingGate({ embedded = false, autoRedirect = t
 
   if (embedded) {
     return (
-      <div className="w-full rounded-2xl border border-white/10 bg-zinc-900 p-5">
+      <div className="w-full rounded-2xl border border-white/10 p-5">
         <div className="flex items-start justify-between gap-3">
           <div>
             <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.03] px-3 py-1 text-[11px] uppercase tracking-[0.2em] text-zinc-400">
@@ -304,7 +304,7 @@ export default function WhatsAppPairingGate({ embedded = false, autoRedirect = t
 
   return (
     <main className="min-h-screen bg-black text-white flex items-center justify-center px-4 py-8">
-      <div className="w-full max-w-5xl rounded-[28px] border border-white/10 bg-zinc-900 shadow-2xl shadow-black/30 overflow-hidden">
+      <div className="w-full max-w-5xl rounded-[28px] border border-white/10 shadow-2xl shadow-black/30 overflow-hidden">
         <div className="grid gap-0 lg:grid-cols-[1.15fr_0.85fr]">
           <section className="p-6 sm:p-8 lg:p-10">
             <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.03] px-3 py-1 text-[11px] uppercase tracking-[0.2em] text-zinc-400">
