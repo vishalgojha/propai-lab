@@ -176,36 +176,38 @@ export default function AdminKnowledgePage() {
             <div className="text-xs text-zinc-500 mt-1">Try adjusting your search or filters</div>
           </div>
         ) : (
-          records.map((record) => (
-            <div
-              key={record.id}
-              onClick={() => setSelected(record)}
-              className={`border rounded-lg p-4 cursor-pointer hover:border-zinc-500 transition-colors ${getTypeColor(record.content_type)}`}
-            >
-              <div className="flex items-start justify-between">
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="text-xs text-zinc-400">#{record.id}</span>
-                    <span className="text-xs text-zinc-500">{record.source_type}</span>
-                    {record.intent && record.intent !== "NONE" && (
-                      <span className={`text-xs px-2 py-0.5 rounded ${getIntentColor(record.intent)}`}>
-                        {record.intent}
-                      </span>
-                    )}
+          <>
+            {records.map((record) => (
+              <div
+                key={record.id}
+                onClick={() => setSelected(record)}
+                className={`border rounded-lg p-4 cursor-pointer hover:border-zinc-500 transition-colors ${getTypeColor(record.content_type)}`}
+              >
+                <div className="flex items-start justify-between">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="text-xs text-zinc-400">#{record.id}</span>
+                      <span className="text-xs text-zinc-500">{record.source_type}</span>
+                      {record.intent && record.intent !== "NONE" && (
+                        <span className={`text-xs px-2 py-0.5 rounded ${getIntentColor(record.intent)}`}>
+                          {record.intent}
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-sm line-clamp-2">{record.raw_content}</div>
+                    <div className="flex items-center gap-3 mt-2 text-xs text-zinc-400">
+                      <span>{record.sender_name || "Unknown"}</span>
+                      <span>{record.conversation_name}</span>
+                      <span>{(record.message_timestamp || record.timestamp)?.split("T")[0]}</span>
+                    </div>
                   </div>
-                  <div className="text-sm line-clamp-2">{record.raw_content}</div>
-                  <div className="flex items-center gap-3 mt-2 text-xs text-zinc-400">
-                    <span>{record.sender_name || "Unknown"}</span>
-                    <span>{record.conversation_name}</span>
-                    <span>{(record.message_timestamp || record.timestamp)?.split("T")[0]}</span>
+                  <div className="text-right text-xs text-zinc-500">
+                    {Math.round(record.confidence * 100)}%
                   </div>
-                </div>
-                <div className="text-right text-xs text-zinc-500">
-                  {Math.round(record.confidence * 100)}%
                 </div>
               </div>
-            </div>
-          ))}
+            ))}
+          </>
         )}
 
         {/* Pagination */}

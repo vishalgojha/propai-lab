@@ -262,40 +262,42 @@ export default function AdminKnowledgeObservationsPage() {
             <div className="text-xs text-zinc-500 mt-1">Try adjusting your filters</div>
           </div>
         ) : (
-          observations.map((obs) => (
-            <div
-              key={obs.id}
-              onClick={() => setSelected(obs)}
-              className={`border rounded-lg p-4 cursor-pointer hover:border-zinc-500 transition-colors ${getEntityTypeColor(obs.entity_type)}`}
-            >
-              <div className="flex items-start justify-between">
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-2">
-                    <span className="text-xs text-zinc-400">#{obs.id}</span>
-                    <span className={`text-xs px-2 py-0.5 rounded font-medium ${getEntityTypeColor(obs.entity_type).replace("bg-", "bg-").replace("border-", "text-")}`}>
-                      {obs.entity_type}
-                    </span>
-                    <span className={`text-xs px-2 py-0.5 rounded ${getObservationTypeColor(obs.observation_type)}`}>
-                      {obs.observation_type.replace(/_/g, " ")}
-                    </span>
+          <>
+            {observations.map((obs) => (
+              <div
+                key={obs.id}
+                onClick={() => setSelected(obs)}
+                className={`border rounded-lg p-4 cursor-pointer hover:border-zinc-500 transition-colors ${getEntityTypeColor(obs.entity_type)}`}
+              >
+                <div className="flex items-start justify-between">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="text-xs text-zinc-400">#{obs.id}</span>
+                      <span className={`text-xs px-2 py-0.5 rounded font-medium ${getEntityTypeColor(obs.entity_type).replace("bg-", "bg-").replace("border-", "text-")}`}>
+                        {obs.entity_type}
+                      </span>
+                      <span className={`text-xs px-2 py-0.5 rounded ${getObservationTypeColor(obs.observation_type)}`}>
+                        {obs.observation_type.replace(/_/g, " ")}
+                      </span>
+                    </div>
+                    <div className="text-lg font-medium text-white truncate">{obs.entity_name}</div>
+                    <div className="text-sm line-clamp-2 mt-1 text-zinc-300">{obs.observation_text}</div>
+                    <div className="flex items-center gap-3 mt-2 text-xs text-zinc-400">
+                      {obs.source_broker_name && <span>{obs.source_broker_name}</span>}
+                      {obs.source_broker_phone && <span className="font-mono">{obs.source_broker_phone}</span>}
+                      <span>{obs.updated_at?.split("T")[0]}</span>
+                    </div>
                   </div>
-                  <div className="text-lg font-medium text-white truncate">{obs.entity_name}</div>
-                  <div className="text-sm line-clamp-2 mt-1 text-zinc-300">{obs.observation_text}</div>
-                  <div className="flex items-center gap-3 mt-2 text-xs text-zinc-400">
-                    {obs.source_broker_name && <span>{obs.source_broker_name}</span>}
-                    {obs.source_broker_phone && <span className="font-mono">{obs.source_broker_phone}</span>}
-                    <span>{obs.updated_at?.split("T")[0]}</span>
+                  <div className="text-right">
+                    <div className={`text-xs px-2 py-1 rounded ${getConfidenceColor(obs.confidence)} font-medium`}>
+                      Confidence: {obs.confidence}/5
+                    </div>
+                    <div className="text-xs text-zinc-500 mt-1">{obs.observation_count} report{obs.observation_count !== 1 ? "s" : ""}</div>
                   </div>
-                </div>
-                <div className="text-right">
-                  <div className={`text-xs px-2 py-1 rounded ${getConfidenceColor(obs.confidence)} font-medium`}>
-                    Confidence: {obs.confidence}/5
-                  </div>
-                  <div className="text-xs text-zinc-500 mt-1">{obs.observation_count} report{obs.observation_count !== 1 ? "s" : ""}</div>
                 </div>
               </div>
-            </div>
-          ))}
+            ))}
+          </>
         )}
 
         {/* Pagination */}

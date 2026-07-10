@@ -3570,12 +3570,12 @@ function InboxPageInner() {
         </div>
 
         {/* ================= TAB: AI ASSISTANT ================= */}
-        {activeRightTab === "ai" && (
+        {activeRightTab === "ai" ? (
           <InboxAIChat
             selectedMessage={selectedMsgDetails?.raw || selectedMsg}
             context={selectedMsgDetails?.raw?.message || selectedMsgDetails?.raw?.text || ""}
-          )}
-        )}
+          />
+        ) : null}
       </div>
       </div>
 

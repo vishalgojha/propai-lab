@@ -317,14 +317,14 @@ export default function BrokersPage() {
                       View Profile
                     </Link>
                   </div>
-                </article>
+</article>
               </Link>
             ))}
-        </div>
-      )}
-    </div>
-  );
-}
+          </div>
+        ) : null}
+      </div>
+    );
+  }
 
 function formatPrice(price?: number, unit?: string) {
   if (!price) return "";
