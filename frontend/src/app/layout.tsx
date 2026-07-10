@@ -470,6 +470,8 @@ function LandingLayout({ children }: { children: React.ReactNode }) {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const isLanding = pathname === "/" || pathname === "/how-it-works";
+  const isAuth = pathname.startsWith("/auth");
+  const isStandalone = isLanding || isAuth;
 
   return (
     <html lang="en">
@@ -486,8 +488,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <meta name="application-name" content="PropAI" />
         <meta name="mobile-web-app-capable" content="yes" />
       </head>
-      <body className={isLanding ? "" : "lg:overflow-hidden"}>
-        {isLanding ? (
+      <body className={isStandalone ? "" : "lg:overflow-hidden"}>
+        {isStandalone ? (
           <LandingLayout>{children}</LandingLayout>
         ) : (
           <LayoutProvider>
