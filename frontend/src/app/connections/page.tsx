@@ -606,7 +606,7 @@ export default function ConnectionCenterPage() {
                 {displayName && <div className="text-xs text-zinc-500">{displayName}</div>}
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 gap-0 [&>*:nth-child(2n)]:border-l [&>*:nth-child(2n)]:border-white/10 [&>*:nth-child(n+3)]:border-t [&>*:nth-child(n+3)]:border-white/10">
               <StatBox icon={<Clock className="w-4 h-4 text-zinc-400" />} label="Connected" value={connectedSeconds ? formatDuration(connectedSeconds) : "—"} />
               <StatBox icon={<Activity className="w-4 h-4 text-zinc-400" />} label="Last Activity" value={formatTime(lastMessageAt || lastSync)} />
               <StatBox icon={<Users className="w-4 h-4 text-zinc-400" />} label="Connected Account" value={displayName || "—"} />
@@ -616,7 +616,7 @@ export default function ConnectionCenterPage() {
 
           {/* ═══ Activity ═══ */}
           <Section title="Activity">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-0 [&>*:nth-child(2n)]:sm:border-l [&>*:nth-child(2n)]:border-white/10 [&>*:nth-child(n+3)]:border-t [&>*:nth-child(n+3)]:border-white/10">
               <StatBox icon={<MessageSquare className="w-4 h-4 text-zinc-400" />} label="Total Messages" value={messages?.toLocaleString() || "—"} />
               <StatBox icon={<Zap className="w-4 h-4 text-zinc-400" />} label="AI Processed" value={totalParsed?.toLocaleString() || "—"} />
               <StatBox icon={<List className="w-4 h-4 text-zinc-400" />} label="Items Extracted" value={(totalListings + totalRequirements)?.toLocaleString() || "—"} />
@@ -626,7 +626,7 @@ export default function ConnectionCenterPage() {
 
           {/* ═══ Coverage ═══ */}
           <Section title="Coverage">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-0 [&>*:nth-child(2n)]:sm:border-l [&>*:nth-child(2n)]:border-white/10 [&>*:nth-child(n+3)]:border-t [&>*:nth-child(n+3)]:border-white/10">
               <StatBox icon={<Users className="w-4 h-4 text-zinc-400" />} label="Groups" value={groups?.toLocaleString() || "—"} />
               <StatBox icon={<MessageSquare className="w-4 h-4 text-zinc-400" />} label="Private Chats" value="—" />
               <StatBox icon={<Activity className="w-4 h-4 text-zinc-400" />} label="Active Conversations" value="—" />

@@ -125,7 +125,7 @@ export default function PrivacyPage() {
   if (loading) return <div className="p-8 text-zinc-500">Loading...</div>;
 
   return (
-    <div className="max-w-3xl mx-auto px-4 lg:px-6 pt-12 pb-12 space-y-6">
+    <div className="max-w-5xl mx-auto px-4 lg:px-6 pt-12 pb-12 space-y-6">
       <div className="mb-8">
         <h2 className="text-lg font-bold text-white">Privacy</h2>
         <p className="mt-1 text-sm text-zinc-500">
@@ -258,23 +258,27 @@ export default function PrivacyPage() {
                 <p className="text-xs text-zinc-500">Your workspace data never leaves your organization</p>
               </div>
             </div>
-            <div className="space-y-2 text-sm text-zinc-400">
-              <p><strong className="text-white">What stays private:</strong></p>
-              <ul className="list-disc list-inside space-y-1 ml-2">
-                <li>All WhatsApp messages and media</li>
-                <li>Direct messages and personal chats</li>
-                <li>Client conversations and negotiations</li>
-                <li>Phone numbers and WhatsApp IDs</li>
-                <li>Broker relationships and contact details</li>
-                <li>Listings, requirements, and market intelligence</li>
-                <li>AI memory, notes, and internal workspace data</li>
-              </ul>
-              <p className="mt-4"><strong className="text-white">What you don't get:</strong></p>
-              <ul className="list-disc list-inside space-y-1 ml-2">
-                <li>Cross-network inventory visibility</li>
-                <li>Market demand trends from other workspaces</li>
-                <li>Broker reputation scores from the network</li>
-              </ul>
+            <div className="grid md:grid-cols-2 gap-6 text-sm text-zinc-400">
+              <div>
+                <p><strong className="text-white">What stays private:</strong></p>
+                <ul className="list-disc list-inside space-y-1 ml-2 mt-2">
+                  <li>All WhatsApp messages and media</li>
+                  <li>Direct messages and personal chats</li>
+                  <li>Client conversations and negotiations</li>
+                  <li>Phone numbers and WhatsApp IDs</li>
+                  <li>Broker relationships and contact details</li>
+                  <li>Listings, requirements, and market intelligence</li>
+                  <li>AI memory, notes, and internal workspace data</li>
+                </ul>
+              </div>
+              <div>
+                <p><strong className="text-white">What you don't get:</strong></p>
+                <ul className="list-disc list-inside space-y-1 ml-2 mt-2">
+                  <li>Cross-network inventory visibility</li>
+                  <li>Market demand trends from other workspaces</li>
+                  <li>Broker reputation scores from the network</li>
+                </ul>
+              </div>
             </div>
           </div>
         </div>
