@@ -6,6 +6,7 @@ import * as api from "@/lib/api";
 import { useEffect, useState, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useChat } from "@ai-sdk/react";
+import { DefaultChatTransport } from "ai";
 
 function buildChipLabels(s: api.ChatSuggestions | null): string[] {
   const chips: string[] = [];
@@ -24,7 +25,9 @@ export default function ChatPage() {
   const [input, setInput] = useState("");
   const [suggestionsData, setSuggestionsData] = useState<api.ChatSuggestions | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
-  const { messages, sendMessage, status, setMessages, error } = useChat();
+  const { messages, sendMessage, status, setMessages, error } = useChat({
+    transport: new DefaultChatTransport({ api: "/api/ai/chat" }),
+  });
 
   useEffect(() => {
     api.getChatSuggestions().then(setSuggestionsData).catch(() => {});
