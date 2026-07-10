@@ -5,7 +5,7 @@ export const dynamic = 'force-dynamic';
 import { useCallback, useEffect, useRef, useState } from "react";
 import QRCode from "qrcode";
 import { useRouter } from "next/navigation";
-import { Activity, Building, Clock, Database, ImageUp, Inbox, List, LogOut, MessageSquare, RefreshCw, Shield, Smartphone, AlertTriangle, Users, Zap, Lock } from "lucide-react";
+import { Activity, Clock, Database, ImageUp, Inbox, List, LogOut, MessageSquare, RefreshCw, Shield, Smartphone, AlertTriangle, Users, Zap, Lock } from "lucide-react";
 import { useAuth } from "@/lib/AuthProvider";
 
 type ConnectionPhase =
@@ -266,7 +266,6 @@ export default function ConnectionCenterPage() {
   const [totalListings, setTotalListings] = useState<number>(0);
   const [totalRequirements, setTotalRequirements] = useState<number>(0);
   const [totalBrokers, setTotalBrokers] = useState<number>(0);
-  const [totalBuildings, setTotalBuildings] = useState<number>(0);
   const [qrLoading, setQrLoading] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
   const eventSourceRef = useRef<EventSource | null>(null);
@@ -299,7 +298,6 @@ export default function ConnectionCenterPage() {
       if (stats?.total_listings != null) setTotalListings(stats.total_listings);
       if (stats?.total_requirements != null) setTotalRequirements(stats.total_requirements);
       if (stats?.total_brokers != null) setTotalBrokers(stats.total_brokers);
-      if (stats?.total_buildings != null) setTotalBuildings(stats.total_buildings);
     } catch { /* ignore */ }
   }, []);
 
@@ -631,7 +629,7 @@ export default function ConnectionCenterPage() {
               <StatBox icon={<Users className="w-4 h-4 text-zinc-400" />} label="Groups Monitored" value={groups?.toLocaleString() || "—"} />
               <StatBox icon={<MessageSquare className="w-4 h-4 text-zinc-400" />} label="Messages Captured" value={messages?.toLocaleString() || "—"} />
               <StatBox icon={<Activity className="w-4 h-4 text-zinc-400" />} label="Broker Entities" value={totalBrokers?.toLocaleString() || "—"} />
-              <StatBox icon={<Building className="w-4 h-4 text-zinc-400" />} label="Buildings Tracked" value={totalBuildings?.toLocaleString() || "—"} />
+              <StatBox icon={<List className="w-4 h-4 text-zinc-400" />} label="Listings Extracted" value={totalListings?.toLocaleString() || "—"} />
             </div>
           </Section>
 
