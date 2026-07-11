@@ -9782,415 +9782,422 @@ async def audit_intelligence():
     day_ago = (datetime.utcnow() - timedelta(hours=24)).strftime("%Y-%m-%dT%H:%M:%SZ")
     week_ago = (datetime.utcnow() - timedelta(days=7)).strftime("%Y-%m-%dT%H:%M:%SZ")
 
-    # ── Network Overview ──
-    total_groups = db.execute("SELECT COUNT(DISTINCT group_name) FROM raw_messages").fetchone()[0]
-    total_raw = db.execute("SELECT COUNT(*) FROM raw_messages").fetchone()[0]
-    total_parsed = db.execute("SELECT COUNT(*) FROM parsed_output").fetchone()[0]
-    msgs_today = db.execute("SELECT COUNT(*) FROM raw_messages WHERE created_at >= ?", (today_start,)).fetchone()[0]
-    parsed_today = db.execute("SELECT COUNT(*) FROM parsed_output WHERE created_at >= ?", (today_start,)).fetchone()[0]
-    active_groups_24h = db.execute("SELECT COUNT(DISTINCT group_name) FROM raw_messages WHERE created_at >= ?", (day_ago,)).fetchone()[0]
-    last_msg = db.execute("SELECT MAX(created_at) FROM raw_messages").fetchone()[0]
-    webhook_ok = last_msg is not None and last_msg >= five_min_ago
+    def _safe(r, idx=0, default=0):
+        return r[idx] if r is not None and idx < len(r) else default
 
-    knowledge_records = _count_table("knowledge_records") if _table_exists("knowledge_records") else total_raw
-    searchable_records = _count_table("knowledge_records_fts") if _table_exists("knowledge_records_fts") else total_raw
-    embeddings_count = _count_table("embeddings") if _table_exists("embeddings") else db.execute(
-        "SELECT COUNT(*) FROM parsed_output WHERE embedding IS NOT NULL"
-    ).fetchone()[0]
-    indexed_records = searchable_records if searchable_records else knowledge_records
-    recall_ready_pct = round(
-        min(indexed_records, searchable_records) / max(1, knowledge_records) * 100,
-        1,
-    ) if knowledge_records else 0
+    def _q(sql, params=None, default=0):
+        try:
+            return db.execute(sql, params or ()).fetchone()
+        except Exception:
+            return None if default is None else (default,)
 
-    attachment_count = db.execute("""
-        SELECT COUNT(*) FROM raw_messages
-        WHERE message_type != 'text'
-           OR attachments::text != '[]'
-    """).fetchone()[0]
-    communities_count = db.execute("""
-        SELECT COUNT(DISTINCT group_name) FROM raw_messages
-        WHERE lower(group_name) LIKE '%community%'
-    """).fetchone()[0]
-    broadcast_count = db.execute("""
-        SELECT COUNT(DISTINCT group_name) FROM raw_messages
-        WHERE group_name LIKE '%@broadcast'
-           OR group_name = 'status@broadcast'
-           OR lower(group_name) LIKE '%broadcast%'
-    """).fetchone()[0]
-    direct_message_count = db.execute("""
-        SELECT COUNT(*) FROM raw_messages
-        WHERE group_name LIKE '%@s.whatsapp.net'
-           OR group_name LIKE '%@lid'
-    """).fetchone()[0]
+    def _qa(sql, params=None, default=None):
+        try:
+            return db.execute(sql, params or ()).fetchall()
+        except Exception:
+            return default or []
 
-    if _table_exists("learning_cards"):
-        learning_unknown = db.execute("SELECT COUNT(*) FROM learning_cards WHERE status = 'pending'").fetchone()[0]
-        learning_needs_review = db.execute("""
-            SELECT COUNT(*) FROM learning_cards WHERE status = 'pending' AND frequency >= 2
-        """).fetchone()[0]
-        learned_rows = db.execute("""
-            SELECT term, COALESCE(resolved_value, resolved_type, 'Learned') AS learned_as
-            FROM learning_cards
-            WHERE status = 'resolved'
-            ORDER BY COALESCE(resolved_at, last_seen, created_at) DESC
-            LIMIT 5
-        """).fetchall()
-    else:
-        learning_unknown = 0
-        learning_needs_review = 0
-        learned_rows = []
+    try:
+        # ── Network Overview ──
+        total_groups = _safe(_q("SELECT COUNT(DISTINCT group_name) FROM raw_messages"))
+        total_raw = _safe(_q("SELECT COUNT(*) FROM raw_messages"))
+        total_parsed = _safe(_q("SELECT COUNT(*) FROM parsed_output"))
+        msgs_today = _safe(_q("SELECT COUNT(*) FROM raw_messages WHERE created_at >= ?", (today_start,)))
+        parsed_today = _safe(_q("SELECT COUNT(*) FROM parsed_output WHERE created_at >= ?", (today_start,)))
+        active_groups_24h = _safe(_q("SELECT COUNT(DISTINCT group_name) FROM raw_messages WHERE created_at >= ?", (day_ago,)))
+        last_msg_row = _q("SELECT MAX(created_at) FROM raw_messages", default=None)
+        last_msg = _safe(last_msg_row) if last_msg_row else None
+        webhook_ok = last_msg is not None and last_msg >= five_min_ago
 
-    if not learned_rows and _table_exists("knowledge_aliases"):
-        learned_rows = db.execute("""
-            SELECT alias AS term, canonical || ' -> ' || entity_type AS learned_as
-            FROM knowledge_aliases
-            ORDER BY created_at DESC
-            LIMIT 5
-        """).fetchall()
+        knowledge_records = _count_table("knowledge_records") if _table_exists("knowledge_records") else total_raw
+        searchable_records = _count_table("knowledge_records_fts") if _table_exists("knowledge_records_fts") else total_raw
+        embeddings_count = _count_table("embeddings") if _table_exists("embeddings") else _safe(_q("SELECT COUNT(*) FROM parsed_output WHERE embedding IS NOT NULL"))
+        indexed_records = searchable_records if searchable_records else knowledge_records
+        recall_ready_pct = round(
+            min(indexed_records, searchable_records) / max(1, knowledge_records) * 100,
+            1,
+        ) if knowledge_records else 0
 
-    latest_records = db.execute("""
-        SELECT rm.created_at, rm.group_name, rm.sender, rm.message, rm.id,
-               MAX(CASE WHEN kr.id IS NULL THEN 0 ELSE 1 END) AS stored
-        FROM raw_messages rm
-        LEFT JOIN knowledge_records kr ON kr.source_id = rm.message_uid
-        GROUP BY rm.id
-        ORDER BY rm.created_at DESC
-        LIMIT 12
-    """).fetchall() if _table_exists("knowledge_records") else db.execute("""
-        SELECT created_at, group_name, sender, message, id, 1 AS stored
-        FROM raw_messages
-        ORDER BY created_at DESC
-        LIMIT 12
-    """).fetchall()
+        attachment_count = _safe(_q("""
+            SELECT COUNT(*) FROM raw_messages
+            WHERE message_type != 'text'
+               OR attachments::text != '[]'
+        """))
+        communities_count = _safe(_q("""
+            SELECT COUNT(DISTINCT group_name) FROM raw_messages
+            WHERE lower(group_name) LIKE '%community%'
+        """))
+        broadcast_count = _safe(_q("""
+            SELECT COUNT(DISTINCT group_name) FROM raw_messages
+            WHERE group_name LIKE '%@broadcast'
+               OR group_name = 'status@broadcast'
+               OR lower(group_name) LIKE '%broadcast%'
+        """))
+        direct_message_count = _safe(_q("""
+            SELECT COUNT(*) FROM raw_messages
+            WHERE group_name LIKE '%@s.whatsapp.net'
+               OR group_name LIKE '%@lid'
+        """))
 
-    # Parser success
-    parser_success = db.execute(
-        "SELECT ROUND(CAST(COUNT(CASE WHEN confidence > 0.5 THEN 1 END) AS FLOAT) / COUNT(*) * 100, 1) FROM parsed_output"
-    ).fetchone()[0]
+        if _table_exists("learning_cards"):
+            learning_unknown = _safe(_q("SELECT COUNT(*) FROM learning_cards WHERE status = 'pending'"))
+            learning_needs_review = _safe(_q("SELECT COUNT(*) FROM learning_cards WHERE status = 'pending' AND frequency >= 2"))
+            learned_rows = _qa("""
+                SELECT term, COALESCE(resolved_value, resolved_type, 'Learned') AS learned_as
+                FROM learning_cards
+                WHERE status = 'resolved'
+                ORDER BY COALESCE(resolved_at, last_seen, created_at) DESC
+                LIMIT 5
+            """)
+        else:
+            learning_unknown = 0
+            learning_needs_review = 0
+            learned_rows = []
 
-    # ── Broker Network ──
-    total_brokers = db.execute("SELECT COUNT(*) FROM brokers").fetchone()[0]
-    total_jids = db.execute("SELECT COUNT(*) FROM jid_profiles").fetchone()[0]
-    unique_phones = db.execute("SELECT COUNT(DISTINCT phone) FROM jid_profiles WHERE phone IS NOT NULL AND phone != ''").fetchone()[0]
-    named_contacts = db.execute("SELECT COUNT(*) FROM jid_profiles WHERE display_name != 'Unknown'").fetchone()[0]
-    unnamed_contacts = db.execute("SELECT COUNT(*) FROM jid_profiles WHERE display_name = 'Unknown'").fetchone()[0]
+        if not learned_rows and _table_exists("knowledge_aliases"):
+            learned_rows = _qa("""
+                SELECT alias AS term, canonical || ' -> ' || entity_type AS learned_as
+                FROM knowledge_aliases
+                ORDER BY created_at DESC
+                LIMIT 5
+            """)
 
-    # New brokers discovered
-    new_brokers_today = db.execute("SELECT COUNT(*) FROM brokers WHERE date(first_seen_at) = date('now')").fetchone()[0]
-    new_brokers_week = db.execute("SELECT COUNT(*) FROM brokers WHERE first_seen_at >= ?", (week_ago,)).fetchone()[0]
-    recently_active = db.execute("SELECT COUNT(*) FROM brokers WHERE last_seen_at >= ?", (week_ago,)).fetchone()[0]
+        if _table_exists("knowledge_records"):
+            latest_records = _qa("""
+                SELECT rm.created_at, rm.group_name, rm.sender, rm.message, rm.id,
+                       MAX(CASE WHEN kr.id IS NULL THEN 0 ELSE 1 END) AS stored
+                FROM raw_messages rm
+                LEFT JOIN knowledge_records kr ON kr.source_id = rm.message_uid
+                GROUP BY rm.id
+                ORDER BY rm.created_at DESC
+                LIMIT 12
+            """)
+        else:
+            latest_records = _qa("""
+                SELECT created_at, group_name, sender, message, id, 1 AS stored
+                FROM raw_messages
+                ORDER BY created_at DESC
+                LIMIT 12
+            """)
 
-    # JIDs without phone
-    jids_no_phone = db.execute("SELECT COUNT(*) FROM jid_profiles WHERE phone IS NULL OR phone = ''").fetchone()[0]
+        # Parser success
+        parser_success = _safe(_q(
+            "SELECT ROUND(CAST(COUNT(CASE WHEN confidence > 0.5 THEN 1 END) AS FLOAT) / COUNT(*) * 100, 1) FROM parsed_output"
+        ))
 
-    # ── Contact Cleanup ──
-    # Phones with multiple JIDs (possible duplicates)
-    dup_phones = db.execute("""
-        SELECT phone, COUNT(*) as cnt FROM jid_profiles 
-        WHERE phone IS NOT NULL AND phone != ''
-        GROUP BY phone HAVING cnt > 1
-    """).fetchall()
+        # ── Broker Network ──
+        total_brokers = _safe(_q("SELECT COUNT(*) FROM brokers"))
+        total_jids = _safe(_q("SELECT COUNT(*) FROM jid_profiles"))
+        unique_phones = _safe(_q("SELECT COUNT(DISTINCT phone) FROM jid_profiles WHERE phone IS NOT NULL AND phone != ''"))
+        named_contacts = _safe(_q("SELECT COUNT(*) FROM jid_profiles WHERE display_name != 'Unknown'"))
+        unnamed_contacts = _safe(_q("SELECT COUNT(*) FROM jid_profiles WHERE display_name = 'Unknown'"))
 
-    # Broker names with multiple phones (possible merge candidates)
-    dup_names = db.execute("""
-        SELECT canonical_name, COUNT(DISTINCT primary_phone) as phone_cnt,
-               string_agg(DISTINCT primary_phone, ' | ') as phones
-        FROM brokers 
-        GROUP BY canonical_name HAVING phone_cnt > 1
-    """).fetchall()
+        # New brokers discovered
+        new_brokers_today = _safe(_q("SELECT COUNT(*) FROM brokers WHERE date(first_seen_at) = ?", (today,)))
+        new_brokers_week = _safe(_q("SELECT COUNT(*) FROM brokers WHERE first_seen_at >= ?", (week_ago,)))
+        recently_active = _safe(_q("SELECT COUNT(*) FROM brokers WHERE last_seen_at >= ?", (week_ago,)))
 
-    # Brokers with no market coverage
-    brokers_no_market = db.execute("""
-        SELECT COUNT(*) FROM brokers b
-        LEFT JOIN (
-            SELECT broker_name, COUNT(DISTINCT micro_market) as markets
+        # JIDs without phone
+        jids_no_phone = _safe(_q("SELECT COUNT(*) FROM jid_profiles WHERE phone IS NULL OR phone = ''"))
+
+        # ── Contact Cleanup ──
+        dup_phones = _qa("""
+            SELECT phone, COUNT(*) as cnt FROM jid_profiles 
+            WHERE phone IS NOT NULL AND phone != ''
+            GROUP BY phone HAVING cnt > 1
+        """)
+
+        dup_names = _qa("""
+            SELECT canonical_name, COUNT(DISTINCT primary_phone) as phone_cnt,
+                   string_agg(DISTINCT primary_phone, ' | ') as phones
+            FROM brokers 
+            GROUP BY canonical_name HAVING phone_cnt > 1
+        """)
+
+        brokers_no_market = _safe(_q("""
+            SELECT COUNT(*) FROM brokers b
+            LEFT JOIN (
+                SELECT broker_name, COUNT(DISTINCT micro_market) as markets
+                FROM listings 
+                WHERE broker_name IS NOT NULL AND micro_market IS NOT NULL AND micro_market != ''
+                GROUP BY broker_name
+            ) bm ON b.canonical_name = bm.broker_name
+            WHERE bm.markets IS NULL OR bm.markets = 0
+        """))
+
+        # ── Listings & Requirements ──
+        total_listings = _safe(_q("SELECT COUNT(*) FROM listings"))
+        sell_count = _safe(_q("SELECT COUNT(*) FROM listings WHERE intent IN ('SELL','SELLER')"))
+        rent_count = _safe(_q("SELECT COUNT(*) FROM listings WHERE intent IN ('RENT','RENTAL')"))
+        commercial_count = _safe(_q("SELECT COUNT(*) FROM listings WHERE intent IN ('COMMERCIAL','COMMERCIAL_SALE','COMMERCIAL_RENTAL')"))
+        total_requirements = _safe(_q("SELECT COUNT(*) FROM parsed_output WHERE intent IN ('BUY','BUYER','RENTAL_SEEKER')"))
+
+        # ── Market Coverage ──
+        markets_observed = _safe(_q("SELECT COUNT(DISTINCT micro_market) FROM parsed_output WHERE micro_market IS NOT NULL AND micro_market != ''"))
+        buildings_observed = _safe(_q("SELECT COUNT(*) FROM buildings"))
+        buildings_with_data = _safe(_q("SELECT COUNT(*) FROM buildings WHERE observed_listings > 0"))
+        developers_observed = _safe(_q("SELECT COUNT(DISTINCT developer) FROM parsed_output WHERE developer IS NOT NULL AND developer != ''"))
+        localities_observed = _safe(_q("SELECT COUNT(DISTINCT area) FROM parsed_output WHERE area IS NOT NULL AND area != ''"))
+        landmarks_observed = _safe(_q("SELECT COUNT(DISTINCT landmark_name) FROM parsed_output WHERE landmark_name IS NOT NULL AND landmark_name != ''"))
+
+        market_stats = _qa("""
+            SELECT micro_market, 
+                   COUNT(*) as total,
+                   SUM(CASE WHEN intent IN ('SELL','RENT') THEN 1 ELSE 0 END) as residential,
+                   SUM(CASE WHEN intent = 'COMMERCIAL' THEN 1 ELSE 0 END) as commercial,
+                   COUNT(DISTINCT broker_name) as brokers
+            FROM parsed_output 
+            WHERE micro_market IS NOT NULL AND micro_market != ''
+            GROUP BY micro_market ORDER BY total DESC
+        """)
+
+        top_markets = _qa("""
+            SELECT micro_market, COUNT(DISTINCT broker_name) as brokers
             FROM listings 
-            WHERE broker_name IS NOT NULL AND micro_market IS NOT NULL AND micro_market != ''
-            GROUP BY broker_name
-        ) bm ON b.canonical_name = bm.broker_name
-        WHERE bm.markets IS NULL OR bm.markets = 0
-    """).fetchone()[0]
+            WHERE micro_market IS NOT NULL AND micro_market != ''
+            GROUP BY micro_market ORDER BY brokers DESC LIMIT 10
+        """)
 
-    # ── Listings & Requirements ──
-    total_listings = db.execute("SELECT COUNT(*) FROM listings").fetchone()[0]
-    sell_count = db.execute("SELECT COUNT(*) FROM listings WHERE intent IN ('SELL','SELLER')").fetchone()[0]
-    rent_count = db.execute("SELECT COUNT(*) FROM listings WHERE intent IN ('RENT','RENTAL')").fetchone()[0]
-    commercial_count = db.execute("SELECT COUNT(*) FROM listings WHERE intent IN ('COMMERCIAL','COMMERCIAL_SALE','COMMERCIAL_RENTAL')").fetchone()[0]
-    total_requirements = db.execute("SELECT COUNT(*) FROM parsed_output WHERE intent IN ('BUY','BUYER','RENTAL_SEEKER')").fetchone()[0]
+        coverage_gaps = _qa("""
+            SELECT micro_market, COUNT(DISTINCT broker_name) as brokers
+            FROM listings 
+            WHERE micro_market IS NOT NULL AND micro_market != ''
+            GROUP BY micro_market ORDER BY brokers ASC LIMIT 5
+        """)
 
-    # ── Market Coverage ──
-    markets_observed = db.execute("SELECT COUNT(DISTINCT micro_market) FROM parsed_output WHERE micro_market IS NOT NULL AND micro_market != ''").fetchone()[0]
-    buildings_observed = db.execute("SELECT COUNT(*) FROM buildings").fetchone()[0]
-    buildings_with_data = db.execute("SELECT COUNT(*) FROM buildings WHERE observed_listings > 0").fetchone()[0]
-    developers_observed = db.execute("SELECT COUNT(DISTINCT developer) FROM parsed_output WHERE developer IS NOT NULL AND developer != ''").fetchone()[0]
-    localities_observed = db.execute("SELECT COUNT(DISTINCT area) FROM parsed_output WHERE area IS NOT NULL AND area != ''").fetchone()[0]
-    landmarks_observed = db.execute("SELECT COUNT(DISTINCT landmark_name) FROM parsed_output WHERE landmark_name IS NOT NULL AND landmark_name != ''").fetchone()[0]
+        # ── Group Intelligence ──
+        group_name_map = dict(_qa("SELECT group_id, group_name FROM source_sync_jobs"))
 
-    # Market breakdown
-    market_stats = db.execute("""
-        SELECT micro_market, 
-               COUNT(*) as total,
-               SUM(CASE WHEN intent IN ('SELL','RENT') THEN 1 ELSE 0 END) as residential,
-               SUM(CASE WHEN intent = 'COMMERCIAL' THEN 1 ELSE 0 END) as commercial,
-               COUNT(DISTINCT broker_name) as brokers
-        FROM parsed_output 
-        WHERE micro_market IS NOT NULL AND micro_market != ''
-        GROUP BY micro_market ORDER BY total DESC
-    """).fetchall()
+        group_stats = _qa("""
+            SELECT rm.group_name,
+                   COUNT(*) as messages,
+                   COUNT(DISTINCT rm.sender) as unique_senders,
+                   MIN(rm.created_at) as first_seen,
+                   MAX(rm.created_at) as last_seen
+            FROM raw_messages rm
+            GROUP BY rm.group_name
+            ORDER BY messages DESC
+        """)
 
-    # Top markets by broker coverage
-    top_markets = db.execute("""
-        SELECT micro_market, COUNT(DISTINCT broker_name) as brokers
-        FROM listings 
-        WHERE micro_market IS NOT NULL AND micro_market != ''
-        GROUP BY micro_market ORDER BY brokers DESC LIMIT 10
-    """).fetchall()
+        group_intelligence = []
+        for g in group_stats:
+            gname = g[0]
+            lr = _q("""
+                SELECT 
+                    SUM(CASE WHEN po.intent IN ('SELL','RENT','COMMERCIAL') THEN 1 ELSE 0 END) as listings,
+                    SUM(CASE WHEN po.intent IN ('BUY','BUYER','RENTAL_SEEKER') THEN 1 ELSE 0 END) as requirements,
+                    COUNT(CASE WHEN po.confidence > 0.5 THEN 1 END) as parsed_ok
+                FROM parsed_output po
+                JOIN raw_messages rm ON po.raw_message_id = rm.id
+                WHERE rm.group_name = ?
+            """, (gname,), default=None)
 
-    # Markets with few brokers (coverage gaps)
-    coverage_gaps = db.execute("""
-        SELECT micro_market, COUNT(DISTINCT broker_name) as brokers
-        FROM listings 
-        WHERE micro_market IS NOT NULL AND micro_market != ''
-        GROUP BY micro_market ORDER BY brokers ASC LIMIT 5
-    """).fetchall()
+            markets_in_group = _safe(_q("""
+                SELECT COUNT(DISTINCT po.micro_market)
+                FROM parsed_output po
+                JOIN raw_messages rm ON po.raw_message_id = rm.id
+                WHERE rm.group_name = ? AND po.micro_market IS NOT NULL AND po.micro_market != ''
+            """, (gname,)))
 
-    # ── Group Intelligence ──
-    # Get group names from source_sync_jobs
-    group_name_map = dict(db.execute("SELECT group_id, group_name FROM source_sync_jobs").fetchall())
+            buildings_in_group = _safe(_q("""
+                SELECT COUNT(DISTINCT po.building_name)
+                FROM parsed_output po
+                JOIN raw_messages rm ON po.raw_message_id = rm.id
+                WHERE rm.group_name = ? AND po.building_name IS NOT NULL AND po.building_name != ''
+            """, (gname,)))
 
-    group_stats = db.execute("""
-        SELECT rm.group_name,
-               COUNT(*) as messages,
-               COUNT(DISTINCT rm.sender) as unique_senders,
-               MIN(rm.created_at) as first_seen,
-               MAX(rm.created_at) as last_seen
-        FROM raw_messages rm
-        GROUP BY rm.group_name
-        ORDER BY messages DESC
-    """).fetchall()
+            messages = g[1]
+            parsed_ok = lr[2] if lr else 0
+            signal_ratio = round(parsed_ok / max(1, messages) * 100, 1)
 
-    # Enrich group stats with parsed data
-    group_intelligence = []
-    for g in group_stats:
-        gname = g[0]
-        # Count listings and requirements in this group
-        lr = db.execute("""
-            SELECT 
-                SUM(CASE WHEN po.intent IN ('SELL','RENT','COMMERCIAL') THEN 1 ELSE 0 END) as listings,
-                SUM(CASE WHEN po.intent IN ('BUY','BUYER','RENTAL_SEEKER') THEN 1 ELSE 0 END) as requirements,
-                COUNT(CASE WHEN po.confidence > 0.5 THEN 1 END) as parsed_ok
-            FROM parsed_output po
-            JOIN raw_messages rm ON po.raw_message_id = rm.id
-            WHERE rm.group_name = ?
-        """, (gname,)).fetchone()
-
-        # Markets in this group
-        markets_in_group = db.execute("""
-            SELECT COUNT(DISTINCT po.micro_market)
-            FROM parsed_output po
-            JOIN raw_messages rm ON po.raw_message_id = rm.id
-            WHERE rm.group_name = ? AND po.micro_market IS NOT NULL AND po.micro_market != ''
-        """, (gname,)).fetchone()[0]
-
-        # Buildings in this group
-        buildings_in_group = db.execute("""
-            SELECT COUNT(DISTINCT po.building_name)
-            FROM parsed_output po
-            JOIN raw_messages rm ON po.raw_message_id = rm.id
-            WHERE rm.group_name = ? AND po.building_name IS NOT NULL AND po.building_name != ''
-        """, (gname,)).fetchone()[0]
-
-        messages = g[1]
-        parsed_ok = lr[2] if lr else 0
-        signal_ratio = round(parsed_ok / max(1, messages) * 100, 1)
-
-        group_intelligence.append({
-            "name": group_name_map.get(gname, gname[:50]),
-            "jid": gname,
-            "messages": messages,
-            "unique_senders": g[2],
-            "listings": lr[0] if lr else 0,
-            "requirements": lr[1] if lr else 0,
-            "markets": markets_in_group,
-            "buildings": buildings_in_group,
-            "signal_ratio": signal_ratio,
-            "first_seen": g[3],
-            "last_seen": g[4],
-        })
-
-    # ── Broker Discovery (top brokers by activity) ──
-    top_brokers = db.execute("""
-        SELECT canonical_name, primary_phone, observation_count, listing_count, 
-               requirement_count, group_count, first_seen_at, last_seen_at
-        FROM brokers ORDER BY observation_count DESC LIMIT 15
-    """).fetchall()
-
-    # ── Broker Reach (brokers in most groups) ──
-    broker_reach = db.execute("""
-        SELECT broker_name, 
-               COUNT(DISTINCT rm.group_name) as groups,
-               COUNT(*) as observations,
-               MIN(rm.created_at) as first_seen,
-               MAX(rm.created_at) as last_seen
-        FROM parsed_output po
-        JOIN raw_messages rm ON po.raw_message_id = rm.id
-        WHERE broker_name IS NOT NULL AND broker_name != ''
-        GROUP BY broker_name 
-        ORDER BY groups DESC
-        LIMIT 10
-    """).fetchall()
-
-    # ── Network Suggestions ──
-    suggestions = []
-
-    if unnamed_contacts > 0:
-        suggestions.append({
-            "type": "contact_cleanup",
-            "message": f"{unnamed_contacts} contacts have no name. Review and add names to improve your network.",
-            "action": "review_unnamed",
-            "count": unnamed_contacts,
-        })
-
-    if len(dup_names) > 0:
-        suggestions.append({
-            "type": "merge_candidates",
-            "message": f"{len(dup_names)} broker names appear under multiple phone numbers. Review possible merges.",
-            "action": "review_merges",
-            "count": len(dup_names),
-        })
-
-    if len(dup_phones) > 0:
-        suggestions.append({
-            "type": "duplicate_phones",
-            "message": f"{len(dup_phones)} phone numbers have multiple JID profiles. These may be the same person.",
-            "action": "review_duplicates",
-            "count": len(dup_phones),
-        })
-
-    if brokers_no_market > 0:
-        suggestions.append({
-            "type": "no_coverage",
-            "message": f"{brokers_no_market} brokers have no market coverage. Add market tags to organize your network.",
-            "action": "tag_brokers",
-            "count": brokers_no_market,
-        })
-
-    # Coverage gaps
-    if coverage_gaps:
-        gap_names = [g[0] for g in coverage_gaps if g[1] <= 2]
-        if gap_names:
-            suggestions.append({
-                "type": "coverage_gap",
-                "message": f"Low coverage in: {', '.join(gap_names[:3])}. Consider joining groups in these markets.",
-                "action": "find_groups",
-                "count": len(gap_names),
+            group_intelligence.append({
+                "name": group_name_map.get(gname, gname[:50]),
+                "jid": gname,
+                "messages": messages,
+                "unique_senders": g[2],
+                "listings": lr[0] if lr else 0,
+                "requirements": lr[1] if lr else 0,
+                "markets": markets_in_group,
+                "buildings": buildings_in_group,
+                "signal_ratio": signal_ratio,
+                "first_seen": g[3],
+                "last_seen": g[4],
             })
 
-    # New brokers this week
-    if new_brokers_week > 10:
-        suggestions.append({
-            "type": "new_brokers",
-            "message": f"{new_brokers_week} new brokers appeared this week. Add them to your contacts?",
-            "action": "review_new",
-            "count": new_brokers_week,
-        })
+        # ── Broker Discovery ──
+        top_brokers = _qa("""
+            SELECT canonical_name, primary_phone, observation_count, listing_count, 
+                   requirement_count, group_count, first_seen_at, last_seen_at
+            FROM brokers ORDER BY observation_count DESC LIMIT 15
+        """)
 
-    return {
-        "network": {
-            "total_groups": total_groups,
-            "active_groups_24h": active_groups_24h,
-            "total_messages": total_raw,
-            "knowledge_records": knowledge_records,
-            "attachments": attachment_count,
-            "communities": communities_count,
-            "broadcasts": broadcast_count,
-            "direct_messages": direct_message_count,
-            "messages_today": msgs_today,
-            "parsed_today": parsed_today,
-            "parser_success": parser_success,
-            "last_message": last_msg or "never",
-            "webhook_healthy": webhook_ok,
-        },
-        "brokers": {
-            "total": total_brokers,
-            "total_jids": total_jids,
-            "unique_phones": unique_phones,
-            "named_contacts": named_contacts,
-            "unnamed_contacts": unnamed_contacts,
-            "new_today": new_brokers_today,
-            "new_this_week": new_brokers_week,
-            "recently_active": recently_active,
-            "jids_no_phone": jids_no_phone,
-            "top": [{"name": r[0], "phone": r[1], "observations": r[2], "listings": r[3], "requirements": r[4], "groups": r[5], "first_seen": r[6], "last_seen": r[7]} for r in top_brokers],
-        },
-        "cleanup": {
-            "duplicate_phones": [{"phone": r[0], "count": r[1]} for r in dup_phones],
-            "duplicate_names": [{"name": r[0], "phone_count": r[1], "phones": r[2]} for r in dup_names],
-            "brokers_no_market": brokers_no_market,
-        },
-        "listings": {
-            "total": total_listings,
-            "sell": sell_count,
-            "rent": rent_count,
-            "commercial": commercial_count,
-            "requirements": total_requirements,
-        },
-        "coverage": {
-            "markets": markets_observed,
-            "buildings": buildings_observed,
-            "buildings_with_data": buildings_with_data,
-            "developers": developers_observed,
-            "localities": localities_observed,
-            "landmarks": landmarks_observed,
-            "market_stats": [{"name": r[0], "total": r[1], "residential": r[2], "commercial": r[3], "brokers": r[4]} for r in market_stats],
-            "top_markets": [{"name": r[0], "brokers": r[1]} for r in top_markets],
-            "coverage_gaps": [{"name": r[0], "brokers": r[1]} for r in coverage_gaps],
-        },
-        "capture": {
-            "status": "connected" if webhook_ok else "stale",
-            "last_message": last_msg or "never",
-            "messages_captured": total_raw,
-            "knowledge_records": knowledge_records,
-            "attachments": attachment_count,
-            "communities": communities_count,
-            "groups": total_groups,
-            "broadcasts": broadcast_count,
-            "direct_messages": direct_message_count,
-            "latest_records": [
-                {
-                    "id": r[4],
-                    "time": r[0],
-                    "conversation": _group_jid_to_name(r[1]),
-                    "sender": r[2],
-                    "preview": (r[3] or "")[:180],
-                    "stored": bool(r[5]),
-                }
-                for r in latest_records
-            ],
-        },
-        "search_coverage": {
-            "messages": total_raw,
-            "indexed": indexed_records,
-            "searchable": searchable_records,
-            "embeddings": embeddings_count,
-            "recall_ready": recall_ready_pct,
-        },
-        "learning": {
-            "unknown_terms": learning_unknown,
-            "needs_review": learning_needs_review,
-            "recently_learned": [
-                {
-                    "term": r[0],
-                    "learned_as": r[1],
-                }
-                for r in learned_rows
-            ],
-        },
-        "groups": group_intelligence[:20],
-        "broker_reach": [{"name": r[0], "groups": r[1], "observations": r[2], "first_seen": r[3], "last_seen": r[4]} for r in broker_reach],
-        "suggestions": suggestions,
-    }
+        broker_reach = _qa("""
+            SELECT broker_name, 
+                   COUNT(DISTINCT rm.group_name) as groups,
+                   COUNT(*) as observations,
+                   MIN(rm.created_at) as first_seen,
+                   MAX(rm.created_at) as last_seen
+            FROM parsed_output po
+            JOIN raw_messages rm ON po.raw_message_id = rm.id
+            WHERE broker_name IS NOT NULL AND broker_name != ''
+            GROUP BY broker_name 
+            ORDER BY groups DESC
+            LIMIT 10
+        """)
+
+        # ── Network Suggestions ──
+        suggestions = []
+
+        if unnamed_contacts > 0:
+            suggestions.append({
+                "type": "contact_cleanup",
+                "message": f"{unnamed_contacts} contacts have no name. Review and add names to improve your network.",
+                "action": "review_unnamed",
+                "count": unnamed_contacts,
+            })
+
+        if len(dup_names) > 0:
+            suggestions.append({
+                "type": "merge_candidates",
+                "message": f"{len(dup_names)} broker names appear under multiple phone numbers. Review possible merges.",
+                "action": "review_merges",
+                "count": len(dup_names),
+            })
+
+        if len(dup_phones) > 0:
+            suggestions.append({
+                "type": "duplicate_phones",
+                "message": f"{len(dup_phones)} phone numbers have multiple JID profiles. These may be the same person.",
+                "action": "review_duplicates",
+                "count": len(dup_phones),
+            })
+
+        if brokers_no_market > 0:
+            suggestions.append({
+                "type": "no_coverage",
+                "message": f"{brokers_no_market} brokers have no market coverage. Add market tags to organize your network.",
+                "action": "tag_brokers",
+                "count": brokers_no_market,
+            })
+
+        if coverage_gaps:
+            gap_names = [g[0] for g in coverage_gaps if g[1] <= 2]
+            if gap_names:
+                suggestions.append({
+                    "type": "coverage_gap",
+                    "message": f"Low coverage in: {', '.join(gap_names[:3])}. Consider joining groups in these markets.",
+                    "action": "find_groups",
+                    "count": len(gap_names),
+                })
+
+        if new_brokers_week > 10:
+            suggestions.append({
+                "type": "new_brokers",
+                "message": f"{new_brokers_week} new brokers appeared this week. Add them to your contacts?",
+                "action": "review_new",
+                "count": new_brokers_week,
+            })
+
+        result = {
+            "network": {
+                "total_groups": total_groups,
+                "active_groups_24h": active_groups_24h,
+                "total_messages": total_raw,
+                "knowledge_records": knowledge_records,
+                "attachments": attachment_count,
+                "communities": communities_count,
+                "broadcasts": broadcast_count,
+                "direct_messages": direct_message_count,
+                "messages_today": msgs_today,
+                "parsed_today": parsed_today,
+                "parser_success": parser_success,
+                "last_message": last_msg or "never",
+                "webhook_healthy": webhook_ok,
+            },
+            "brokers": {
+                "total": total_brokers,
+                "total_jids": total_jids,
+                "unique_phones": unique_phones,
+                "named_contacts": named_contacts,
+                "unnamed_contacts": unnamed_contacts,
+                "new_today": new_brokers_today,
+                "new_this_week": new_brokers_week,
+                "recently_active": recently_active,
+                "jids_no_phone": jids_no_phone,
+                "top": [{"name": r[0], "phone": r[1], "observations": r[2], "listings": r[3], "requirements": r[4], "groups": r[5], "first_seen": r[6], "last_seen": r[7]} for r in top_brokers],
+            },
+            "cleanup": {
+                "duplicate_phones": [{"phone": r[0], "count": r[1]} for r in dup_phones],
+                "duplicate_names": [{"name": r[0], "phone_count": r[1], "phones": r[2]} for r in dup_names],
+                "brokers_no_market": brokers_no_market,
+            },
+            "listings": {
+                "total": total_listings,
+                "sell": sell_count,
+                "rent": rent_count,
+                "commercial": commercial_count,
+                "requirements": total_requirements,
+            },
+            "coverage": {
+                "markets": markets_observed,
+                "buildings": buildings_observed,
+                "buildings_with_data": buildings_with_data,
+                "developers": developers_observed,
+                "localities": localities_observed,
+                "landmarks": landmarks_observed,
+                "market_stats": [{"name": r[0], "total": r[1], "residential": r[2], "commercial": r[3], "brokers": r[4]} for r in market_stats],
+                "top_markets": [{"name": r[0], "brokers": r[1]} for r in top_markets],
+                "coverage_gaps": [{"name": r[0], "brokers": r[1]} for r in coverage_gaps],
+            },
+            "capture": {
+                "status": "connected" if webhook_ok else "stale",
+                "last_message": last_msg or "never",
+                "messages_captured": total_raw,
+                "knowledge_records": knowledge_records,
+                "attachments": attachment_count,
+                "communities": communities_count,
+                "groups": total_groups,
+                "broadcasts": broadcast_count,
+                "direct_messages": direct_message_count,
+                "latest_records": [
+                    {
+                        "id": r[4],
+                        "time": r[0],
+                        "conversation": _group_jid_to_name(r[1]),
+                        "sender": r[2],
+                        "preview": (r[3] or "")[:180],
+                        "stored": bool(r[5]),
+                    }
+                    for r in latest_records
+                ],
+            },
+            "search_coverage": {
+                "messages": total_raw,
+                "indexed": indexed_records,
+                "searchable": searchable_records,
+                "embeddings": embeddings_count,
+                "recall_ready": recall_ready_pct,
+            },
+            "learning": {
+                "unknown_terms": learning_unknown,
+                "needs_review": learning_needs_review,
+                "recently_learned": [
+                    {
+                        "term": r[0],
+                        "learned_as": r[1],
+                    }
+                    for r in learned_rows
+                ],
+            },
+            "groups": group_intelligence[:20],
+            "broker_reach": [{"name": r[0], "groups": r[1], "observations": r[2], "first_seen": r[3], "last_seen": r[4]} for r in broker_reach],
+            "suggestions": suggestions,
+        }
+    except Exception as e:
+        logger.exception(f"audit_intelligence failed: {e}")
+        return {"error": str(e)[:500], "partial": locals().get("result", {})}
+
+    return result
 
 
 @app.get("/api/audit/search-evidence")
