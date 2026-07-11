@@ -964,11 +964,18 @@ function InboxPageInner() {
     return /@(?:g\.us|s\.whatsapp\.net|lid)$/.test(text) || /^\d{12,}[-\d]*@/.test(text);
   };
 
-  const displayGroupName = (value?: string) => {
+  const resolveKnownGroupName = (value?: string) => {
     const text = (value || "").trim();
     if (!text || text === "seed" || text === "seed-bot") return "";
     const knownGroup = groups.find((g) => g?.jid === text);
-    if (knownGroup?.name) return knownGroup.name;
+    return (knownGroup?.name || "").trim();
+  };
+
+  const displayGroupName = (value?: string) => {
+    const text = (value || "").trim();
+    if (!text || text === "seed" || text === "seed-bot") return "";
+    const knownGroupName = resolveKnownGroupName(text);
+    if (knownGroupName) return knownGroupName;
     if (isRawWhatsAppId(text)) {
       const raw = text.split("@")[0];
       const suffix = raw.includes("-") ? raw.split("-").pop()?.slice(-4) : raw.slice(-4);
@@ -979,14 +986,17 @@ function InboxPageInner() {
 
   const displayChatTitle = (msg: api.InboxThread | api.RawMessage) => {
     const conversationName = "conversation_name" in msg ? msg.conversation_name : "";
-    const group = displayGroupName(conversationName || msg.group_name);
-    if (group) return group;
+    const rawConversation = conversationName || msg.group_name;
+    const knownGroupName = resolveKnownGroupName(rawConversation);
+    if (knownGroupName) return knownGroupName;
     const brokerName = (msg.broker_name || "").trim();
     if (brokerName) return brokerName;
     const sender = (msg.sender || "").trim();
     const phone = resolveMessagePhone(msg);
     if (isRawWhatsAppId(sender)) return displayPhoneString(phone) || "Direct Message";
-    return sender || displayPhoneString(phone) || "Direct Message";
+    if (sender && sender.toLowerCase() !== "unknown") return sender;
+    const group = displayGroupName(rawConversation);
+    return group || displayPhoneString(phone) || "Direct Message";
   };
 
   const getWaLink = (phone: string) => {
@@ -1326,7 +1336,8 @@ function InboxPageInner() {
     .map((m) => ({
       conversationKey: m.conversation_key || m.group_name,
       rawGroupName: m.group_name,
-      title: displayGroupName(m.conversation_name || m.group_name),
+      groupLabel: displayGroupName(m.conversation_name || m.group_name),
+      title: displayChatTitle(m),
       latest: m,
       count: m.message_count || 0,
     }))
@@ -1375,7 +1386,7 @@ function InboxPageInner() {
     ...groupChats.map((chat) => ({
       key: chat.conversationKey,
       title: chat.title,
-      subtitle: displayGroupName(chat.rawGroupName || chat.conversationKey),
+      subtitle: chat.groupLabel && chat.groupLabel !== chat.title ? chat.groupLabel : "WhatsApp group",
       latest: chat.latest,
       count: chat.count,
       type: "group" as const,
@@ -1453,6 +1464,7 @@ function InboxPageInner() {
   const selectConversation = async (msg: api.RawMessage | api.InboxThread) => {
     if (isMobile) setMobileView("conversation");
     setSelectedMsg(msg);
+    setConversationMessages(msg.id ? [msg as api.RawMessage] : []);
     setLoadingConv(true);
     try {
       let thread: api.RawMessage[] = [];
@@ -1471,7 +1483,7 @@ function InboxPageInner() {
         thread = await api.getRaw(80, 0, undefined, undefined, phone, jid);
       }
       // Threads come newest first, reverse to show chronological top-to-bottom
-      const chronologicalThread = thread.slice().reverse();
+      const chronologicalThread = (thread.length ? thread : msg.id ? [msg as api.RawMessage] : []).slice().reverse();
       setConversationMessages(chronologicalThread);
 
       // Inactive group rows use a synthetic row; analyze the latest real thread item instead.
