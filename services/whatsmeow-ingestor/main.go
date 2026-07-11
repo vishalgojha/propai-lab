@@ -820,7 +820,10 @@ func (sm *SessionManager) historyBackfillHandler(w http.ResponseWriter, r *http.
 			skipped++
 			continue
 		}
-		if _, err := s.client.SendPeerMessage(context.Background(), historyReq); err != nil {
+		sendCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		_, err := s.client.SendPeerMessage(sendCtx, historyReq)
+		cancel()
+		if err != nil {
 			log.Printf("[broker %s] history backfill request failed for %s: %v", brokerID, info.Chat.String(), err)
 			skipped++
 			continue
