@@ -85,6 +85,18 @@ BUSINESS_TIMEZONE = "Asia/Kolkata"
 BUSINESS_START_HOUR = 10
 BUSINESS_END_HOUR = 19
 
+DEFAULT_ORG_PRIVACY = {
+    "privacy_mode": "shared_market",
+    "share_listings": True,
+    "share_requirements": True,
+    "share_price_trends": True,
+    "share_market_activity": True,
+    "share_building_intelligence": True,
+    "share_broker_network": True,
+    "share_broker_reputation": True,
+    "share_demand_signals": True,
+}
+
 GROUP_MARKET_KEYWORDS = {
     "Bandra": ["bandra", "bkc", "bks"],
     "Khar": ["khar"],
@@ -1376,7 +1388,7 @@ def classify_conversation(group_name: str, group_jid: str, message_text: str) ->
 
 def check_share_eligibility(parsed: dict, org_privacy: dict, conv_type: str) -> tuple[bool, str]:
     """
-    Determine if a parsed observation should be shared to the shared market.
+    Determine if a parsed observation should contribute to the broker network.
     Returns (eligible, reason)
     """
     if conv_type != CONV_TYPE_BROKER_GROUP:
@@ -1384,47 +1396,6 @@ def check_share_eligibility(parsed: dict, org_privacy: dict, conv_type: str) -> 
 
     if org_privacy.get("privacy_mode") != "shared_market":
         return False, "privacy_mode_private"
-
-    intent = (parsed.get("intent") or "").upper()
-    principal = (parsed.get("principal") or "").upper()
-
-    # Listings (SELL, RENT, COMMERCIAL)
-    if intent in ("SELL", "RENT", "COMMERCIAL", "PRE-LAUNCH"):
-        if principal in ("OWNER", "UNKNOWN"):
-            if not org_privacy.get("share_listings", False):
-                return False, "share_listings_disabled_owner"
-        if not org_privacy.get("share_listings", False):
-            return False, "share_listings_disabled"
-
-    # Requirements (BUY, RENTAL_SEEKER)
-    if intent in ("BUY", "BUYER", "RENTAL_SEEKER"):
-        if not org_privacy.get("share_requirements", False):
-            return False, "share_requirements_disabled"
-
-    # Price trends
-    if parsed.get("price") and parsed.get("micro_market"):
-        if not org_privacy.get("share_price_trends", False):
-            return False, "share_price_trends_disabled"
-
-    # Market activity
-    if not org_privacy.get("share_market_activity", False):
-        return False, "share_market_activity_disabled"
-
-    # Building intelligence
-    if parsed.get("building_name") and not org_privacy.get("share_building_intelligence", False):
-        return False, "share_building_intelligence_disabled"
-
-    # Broker network
-    if parsed.get("broker_name") and not org_privacy.get("share_broker_network", False):
-        return False, "share_broker_network_disabled"
-
-    # Broker reputation
-    if parsed.get("broker_phone") and not org_privacy.get("share_broker_reputation", False):
-        return False, "share_broker_reputation_disabled"
-
-    # Demand signals
-    if intent in ("BUY", "BUYER", "RENTAL_SEEKER") and not org_privacy.get("share_demand_signals", False):
-        return False, "share_demand_signals_disabled"
 
     return True, "ok"
 
@@ -2011,12 +1982,10 @@ def should_share_to_market(
     is_requirement: bool = False,
 ) -> bool:
     """
-    Determine if a message/observation should be shared to the shared market.
+    Determine if a message/observation should contribute to the broker network.
     Rules:
     - Only broker_group conversations are eligible
-    - Workspace must be in 'shared' privacy mode
-    - Must have at least one share_* option enabled
-    - Specific content types controlled by share_* flags
+    - Workspace must be in 'shared_market' privacy mode
     """
     # Only broker groups can contribute
     if conv_type != CONV_TYPE_BROKER_GROUP:
@@ -2025,24 +1994,6 @@ def should_share_to_market(
     # Workspace must be in shared mode
     if org_privacy.get("privacy_mode") != "shared_market":
         return False
-
-    # Check if any share option is enabled
-    share_keys = [k for k in org_privacy.keys() if k.startswith("share_")]
-    if not any(org_privacy.get(k) for k in share_keys):
-        return False
-
-    # If it's a listing, check share_listings
-    if is_listing and not org_privacy.get("share_listings"):
-        return False
-
-    # If it's a requirement, check share_requirements
-    if is_requirement and not org_privacy.get("share_requirements"):
-        return False
-
-    # For general observations, check share_market_activity
-    if not is_listing and not is_requirement:
-        if not org_privacy.get("share_market_activity"):
-            return False
 
     return True
 
@@ -10828,15 +10779,15 @@ async def get_organization_privacy(org_id: str):
     if not org:
         raise HTTPException(404, "Organization not found")
     return {
-        "privacy_mode": org.get("privacy_mode", "private"),
-        "share_listings": org.get("share_listings", False),
-        "share_requirements": org.get("share_requirements", False),
-        "share_price_trends": org.get("share_price_trends", False),
-        "share_market_activity": org.get("share_market_activity", False),
-        "share_building_intelligence": org.get("share_building_intelligence", False),
-        "share_broker_network": org.get("share_broker_network", False),
-        "share_broker_reputation": org.get("share_broker_reputation", False),
-        "share_demand_signals": org.get("share_demand_signals", False),
+        "privacy_mode": org.get("privacy_mode") or DEFAULT_ORG_PRIVACY["privacy_mode"],
+        "share_listings": org.get("share_listings", DEFAULT_ORG_PRIVACY["share_listings"]),
+        "share_requirements": org.get("share_requirements", DEFAULT_ORG_PRIVACY["share_requirements"]),
+        "share_price_trends": org.get("share_price_trends", DEFAULT_ORG_PRIVACY["share_price_trends"]),
+        "share_market_activity": org.get("share_market_activity", DEFAULT_ORG_PRIVACY["share_market_activity"]),
+        "share_building_intelligence": org.get("share_building_intelligence", DEFAULT_ORG_PRIVACY["share_building_intelligence"]),
+        "share_broker_network": org.get("share_broker_network", DEFAULT_ORG_PRIVACY["share_broker_network"]),
+        "share_broker_reputation": org.get("share_broker_reputation", DEFAULT_ORG_PRIVACY["share_broker_reputation"]),
+        "share_demand_signals": org.get("share_demand_signals", DEFAULT_ORG_PRIVACY["share_demand_signals"]),
     }
 
 
@@ -10854,14 +10805,18 @@ async def update_organization_privacy(org_id: str, body: dict):
 
     updates = {k: v for k, v in body.items() if k in allowed}
 
-    # If switching to shared mode, require at least one share option
+    if updates.get("privacy_mode") == "shared":
+        updates["privacy_mode"] = "shared_market"
+    if "privacy_mode" in updates and updates["privacy_mode"] not in ("private", "shared_market"):
+        raise HTTPException(400, "Invalid privacy_mode")
     if updates.get("privacy_mode") == "shared_market":
-        share_fields = {k: v for k, v in updates.items() if k.startswith("share_") and v}
-        # Also check existing values
-        if not share_fields:
-            existing_shares = {k: v for k, v in org.items() if k.startswith("share_") and v}
-            if not existing_shares:
-                raise HTTPException(400, "At least one share option must be enabled for shared mode")
+        for k, v in DEFAULT_ORG_PRIVACY.items():
+            if k.startswith("share_"):
+                updates[k] = v
+    if updates.get("privacy_mode") == "private":
+        for k in DEFAULT_ORG_PRIVACY:
+            if k.startswith("share_"):
+                updates[k] = False
 
     if not updates:
         raise HTTPException(400, "No valid privacy fields to update")
@@ -10874,15 +10829,15 @@ async def update_organization_privacy(org_id: str, body: dict):
     updated = storage.get_organization(org_id)
     return {
         "ok": True,
-        "privacy_mode": updated.get("privacy_mode", "private"),
-        "share_listings": updated.get("share_listings", False),
-        "share_requirements": updated.get("share_requirements", False),
-        "share_price_trends": updated.get("share_price_trends", False),
-        "share_market_activity": updated.get("share_market_activity", False),
-        "share_building_intelligence": updated.get("share_building_intelligence", False),
-        "share_broker_network": updated.get("share_broker_network", False),
-        "share_broker_reputation": updated.get("share_broker_reputation", False),
-        "share_demand_signals": updated.get("share_demand_signals", False),
+        "privacy_mode": updated.get("privacy_mode") or DEFAULT_ORG_PRIVACY["privacy_mode"],
+        "share_listings": updated.get("share_listings", DEFAULT_ORG_PRIVACY["share_listings"]),
+        "share_requirements": updated.get("share_requirements", DEFAULT_ORG_PRIVACY["share_requirements"]),
+        "share_price_trends": updated.get("share_price_trends", DEFAULT_ORG_PRIVACY["share_price_trends"]),
+        "share_market_activity": updated.get("share_market_activity", DEFAULT_ORG_PRIVACY["share_market_activity"]),
+        "share_building_intelligence": updated.get("share_building_intelligence", DEFAULT_ORG_PRIVACY["share_building_intelligence"]),
+        "share_broker_network": updated.get("share_broker_network", DEFAULT_ORG_PRIVACY["share_broker_network"]),
+        "share_broker_reputation": updated.get("share_broker_reputation", DEFAULT_ORG_PRIVACY["share_broker_reputation"]),
+        "share_demand_signals": updated.get("share_demand_signals", DEFAULT_ORG_PRIVACY["share_demand_signals"]),
     }
 
 
@@ -10896,14 +10851,15 @@ async def get_organization_privacy(org_id: str, user: dict = Depends(require_use
     if not any(m["user_id"] == user["id"] for m in members):
         raise HTTPException(403, "Not a member of this organization")
     return {
-        "privacy_mode": org.get("privacy_mode", "private"),
-        "share_listings": org.get("share_listings", False),
-        "share_requirements": org.get("share_requirements", False),
-        "share_price_trends": org.get("share_price_trends", False),
-        "share_market_activity": org.get("share_market_activity", False),
-        "share_broker_network": org.get("share_broker_network", False),
-        "share_broker_reputation": org.get("share_broker_reputation", False),
-        "share_demand_signals": org.get("share_demand_signals", False),
+        "privacy_mode": org.get("privacy_mode") or DEFAULT_ORG_PRIVACY["privacy_mode"],
+        "share_listings": org.get("share_listings", DEFAULT_ORG_PRIVACY["share_listings"]),
+        "share_requirements": org.get("share_requirements", DEFAULT_ORG_PRIVACY["share_requirements"]),
+        "share_price_trends": org.get("share_price_trends", DEFAULT_ORG_PRIVACY["share_price_trends"]),
+        "share_market_activity": org.get("share_market_activity", DEFAULT_ORG_PRIVACY["share_market_activity"]),
+        "share_building_intelligence": org.get("share_building_intelligence", DEFAULT_ORG_PRIVACY["share_building_intelligence"]),
+        "share_broker_network": org.get("share_broker_network", DEFAULT_ORG_PRIVACY["share_broker_network"]),
+        "share_broker_reputation": org.get("share_broker_reputation", DEFAULT_ORG_PRIVACY["share_broker_reputation"]),
+        "share_demand_signals": org.get("share_demand_signals", DEFAULT_ORG_PRIVACY["share_demand_signals"]),
     }
 
 
@@ -10922,32 +10878,45 @@ async def update_organization_privacy(org_id: str, body: dict, user: dict = Depe
         raise HTTPException(403, "Admin access required")
 
     allowed = {"privacy_mode", "share_listings", "share_requirements",
-               "share_price_trends", "share_market_activity", "share_broker_network",
-               "share_broker_reputation", "share_demand_signals"}
+               "share_price_trends", "share_market_activity", "share_building_intelligence",
+               "share_broker_network", "share_broker_reputation", "share_demand_signals"}
     updates = {k: v for k, v in body.items() if k in allowed}
     if not updates:
         raise HTTPException(400, "No valid privacy fields to update")
 
     # Validate privacy_mode
+    if updates.get("privacy_mode") == "shared":
+        updates["privacy_mode"] = "shared_market"
     if "privacy_mode" in updates and updates["privacy_mode"] not in ("private", "shared_market"):
         raise HTTPException(400, "Invalid privacy_mode")
 
+    if updates.get("privacy_mode") == "shared_market":
+        for k, v in DEFAULT_ORG_PRIVACY.items():
+            if k.startswith("share_"):
+                updates[k] = v
+
     # If switching to private, disable all sharing
     if updates.get("privacy_mode") == "private":
-        updates.update({
-            "share_listings": False,
-            "share_requirements": False,
-            "share_price_trends": False,
-            "share_market_activity": False,
-            "share_broker_network": False,
-            "share_broker_reputation": False,
-            "share_demand_signals": False,
-        })
+        for k in DEFAULT_ORG_PRIVACY:
+            if k.startswith("share_"):
+                updates[k] = False
 
     ok = storage.update_organization(org_id, **updates)
     if not ok:
         raise HTTPException(404, "Organization not found")
-    return {"ok": True}
+    updated = storage.get_organization(org_id) or {}
+    return {
+        "ok": True,
+        "privacy_mode": updated.get("privacy_mode") or DEFAULT_ORG_PRIVACY["privacy_mode"],
+        "share_listings": updated.get("share_listings", DEFAULT_ORG_PRIVACY["share_listings"]),
+        "share_requirements": updated.get("share_requirements", DEFAULT_ORG_PRIVACY["share_requirements"]),
+        "share_price_trends": updated.get("share_price_trends", DEFAULT_ORG_PRIVACY["share_price_trends"]),
+        "share_market_activity": updated.get("share_market_activity", DEFAULT_ORG_PRIVACY["share_market_activity"]),
+        "share_building_intelligence": updated.get("share_building_intelligence", DEFAULT_ORG_PRIVACY["share_building_intelligence"]),
+        "share_broker_network": updated.get("share_broker_network", DEFAULT_ORG_PRIVACY["share_broker_network"]),
+        "share_broker_reputation": updated.get("share_broker_reputation", DEFAULT_ORG_PRIVACY["share_broker_reputation"]),
+        "share_demand_signals": updated.get("share_demand_signals", DEFAULT_ORG_PRIVACY["share_demand_signals"]),
+    }
 
 
 @app.get("/api/orgs/{org_id}/members")
