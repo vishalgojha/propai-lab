@@ -1258,6 +1258,29 @@ def _is_blocked_whatsapp_conversation(jid: str) -> bool:
     )
 
 
+def _coerce_whatsapp_timestamp(value) -> str:
+    if value in (None, ""):
+        return ""
+    try:
+        if isinstance(value, str):
+            stripped = value.strip()
+            if not stripped:
+                return ""
+            if re.fullmatch(r"\d+(?:\.\d+)?", stripped):
+                value = float(stripped)
+            else:
+                parsed = datetime.fromisoformat(stripped.replace("Z", "+00:00"))
+                return parsed.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        if isinstance(value, (int, float)):
+            seconds = float(value)
+            if seconds > 10_000_000_000:
+                seconds = seconds / 1000
+            return datetime.fromtimestamp(seconds, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    except Exception:
+        return ""
+    return ""
+
+
 _REAL_ESTATE_SIGNAL_RE = re.compile(
     r"\b("
     r"bhk|rk|bed(?:room)?|flat|apartment|office|shop|showroom|warehouse|godown|"
@@ -1597,7 +1620,8 @@ async def webhook(request: Request):
 
     data = body if isinstance(body, dict) else {}
     event = data.get("event", "")
-    instance = data.get("instance", "unknown")
+    msg_data_for_instance = data.get("data", {}) if isinstance(data.get("data", {}), dict) else {}
+    instance = data.get("instance") or msg_data_for_instance.get("instance") or "unknown"
 
     # ── Classify and route event ──────────────────────────────────
     try:
@@ -1633,13 +1657,30 @@ async def webhook(request: Request):
     sender_phone = _canonical_phone_from_jid(phone_source) if str(phone_source).endswith("@s.whatsapp.net") else ""
     sender = _format_whatsapp_sender(sender_name, sender_jid, sender_phone)
     group = key.get("remoteJid", "") or msg_data.get("from", "")
-    if _is_blocked_whatsapp_conversation(group) or _is_blocked_whatsapp_conversation(sender_jid):
+    if _is_blocked_whatsapp_conversation(group) or (sender_jid and _is_blocked_whatsapp_conversation(sender_jid)):
         return {"status": "ignored", "reason": "blocked_whatsapp_conversation", "jid": group}
     if group in load_excluded_groups():
         return {"status": "ignored", "reason": "group_opted_out", "jid": group}
-    group_name = _resolve_group_name(group)
+    supplied_conversation_name = (
+        msg_data.get("conversationName")
+        or msg_data.get("chatName")
+        or msg_data.get("conversation_name")
+        or ""
+    ).strip()
+    group_name = supplied_conversation_name or _resolve_group_name(group)
     is_dm = str(group).endswith("@s.whatsapp.net") or str(group).endswith("@lid")
     raw_group_name = "" if is_dm else group_name
+    if supplied_conversation_name and str(group).endswith("@g.us"):
+        try:
+            storage.upsert_sync_job(
+                source="whatsapp",
+                instance=instance or msg_data.get("instance", ""),
+                group_id=group,
+                group_name=supplied_conversation_name,
+                status="complete",
+            )
+        except Exception as exc:
+            print(f"[webhook] group name upsert error: {exc}", flush=True)
 
     # Generate stable message UID for dedup
     message_id = msg_data.get("key", {}).get("id") or msg_data.get("id") or str(uuid.uuid4())
@@ -1660,6 +1701,9 @@ async def webhook(request: Request):
         PIPELINE_VERSION = "0.0.0"
     try:
         now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        message_timestamp = _coerce_whatsapp_timestamp(
+            msg_data.get("messageTimestamp") or msg_data.get("timestamp")
+        ) or now
         raw_id = storage.save_raw_message(RawMessage(
             group_name=raw_group_name,
             sender=sender,
@@ -1678,7 +1722,7 @@ async def webhook(request: Request):
                 or msg.get("videoMessage", {}).get("contextInfo", {})
                 or {}
             ),
-            timestamp=now,
+            timestamp=message_timestamp,
             source="WHATSAPP",
             raw_payload=json.dumps(data),
             message_uid=message_uid,
@@ -5742,7 +5786,7 @@ async def source_sync(source_name: str):
     if source_name == "whatsapp":
         raise HTTPException(
             410,
-            "Historical WhatsApp sync is disabled. PropAI captures live webhook messages during 10 AM - 7 PM IST.",
+            "WhatsApp history sync is automatic after QR pairing. PropAI stores live and historical messages through the WhatsApp ingestor.",
         )
     scheduler = get_scheduler()
     if scheduler.is_running:
@@ -6330,17 +6374,24 @@ async def sync_connection():
     jobs = storage.get_sync_jobs(limit=500, source="whatsapp") if storage else []
     last_finished = max((j.finished_at for j in jobs if j.finished_at), default=None)
     discovered_groups = len(jobs)
+    historical_messages = 0
+    try:
+        historical_messages = storage.db.execute(
+            "SELECT COUNT(*) AS c FROM raw_messages WHERE raw_payload LIKE '%\"source\":\"history_sync\"%' OR raw_payload LIKE '%\"source\": \"history_sync\"%'"
+        ).fetchone()["c"]
+    except Exception:
+        historical_messages = 0
     if details.get("total_groups") is None or discovered_groups > details.get("total_groups", 0):
         details["total_groups"] = discovered_groups
     details.update({
         "api_url": None,
         "ingestor": "whatsapp",
-        "capture_mode": "live_webhook_only",
+        "capture_mode": "live_and_history_webhook",
         "business_window": business_window_status(),
-        "historical_sync_state": "disabled",
+        "historical_sync_state": _historical_sync_state(jobs),
         "last_sync": last_finished,
         "discovered_jobs": discovered_groups,
-        "historical_messages": 0,
+        "historical_messages": historical_messages,
         "messages_found": 0,
         "top_message_groups": _top_message_groups(jobs),
     })

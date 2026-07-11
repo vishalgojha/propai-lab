@@ -17,6 +17,7 @@ import (
 
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/proto/waE2E"
+	"go.mau.fi/whatsmeow/proto/waWeb"
 	"go.mau.fi/whatsmeow/store"
 	"go.mau.fi/whatsmeow/store/sqlstore"
 	"go.mau.fi/whatsmeow/types"
@@ -469,6 +470,9 @@ func (sm *SessionManager) handleEvent(s *BrokerSession, evt interface{}) {
 
 	case *events.Message:
 		go sm.handleMessage(s, v)
+
+	case *events.HistorySync:
+		go sm.handleHistorySync(s, v)
 	}
 }
 
@@ -530,6 +534,122 @@ func (sm *SessionManager) handleMessage(s *BrokerSession, evt *events.Message) {
 }
 
 // ── HTTP handlers ──────────────────────────────────────────────────────────
+
+func (sm *SessionManager) handleHistorySync(s *BrokerSession, evt *events.HistorySync) {
+	if evt == nil || evt.Data == nil {
+		return
+	}
+
+	conversations := evt.Data.GetConversations()
+	posted := 0
+	for _, conv := range conversations {
+		if conv == nil {
+			continue
+		}
+		chatID := conv.GetID()
+		chatName := strings.TrimSpace(conv.GetName())
+		if chatName == "" {
+			chatName = strings.TrimSpace(conv.GetDisplayName())
+		}
+
+		for _, historyMsg := range conv.GetMessages() {
+			if historyMsg == nil || historyMsg.GetMessage() == nil {
+				continue
+			}
+			if sm.postWebMessage(s, historyMsg.GetMessage(), chatID, chatName, "history_sync") {
+				posted++
+			}
+		}
+	}
+
+	if posted > 0 {
+		s.totalMessages += int64(posted)
+		cur := s.getStatus()
+		s.setStatus(Status{
+			Connected:       true,
+			ConnectionState: "open",
+			SocketState:     "connected",
+			PhoneNumber:     cur.PhoneNumber,
+			DisplayName:     cur.DisplayName,
+			ConnectedSince:  cur.ConnectedSince,
+			LastMessageAt:   time.Now().UTC().Format(time.RFC3339),
+		})
+	}
+	log.Printf("[broker %s] history sync progress=%d conversations=%d messages_posted=%d", s.brokerID, evt.Data.GetProgress(), len(conversations), posted)
+}
+
+func (sm *SessionManager) postWebMessage(s *BrokerSession, wmsg *waWeb.WebMessageInfo, chatID, chatName, source string) bool {
+	if wmsg == nil || wmsg.GetMessage() == nil || wmsg.GetKey() == nil {
+		return false
+	}
+
+	keyInfo := wmsg.GetKey()
+	messageID := strings.TrimSpace(keyInfo.GetID())
+	if messageID == "" {
+		return false
+	}
+
+	remoteJID := strings.TrimSpace(keyInfo.GetRemoteJID())
+	if remoteJID == "" {
+		remoteJID = strings.TrimSpace(chatID)
+	}
+	if remoteJID == "" {
+		return false
+	}
+
+	fromMe := keyInfo.GetFromMe()
+	participant := strings.TrimSpace(wmsg.GetParticipant())
+	if participant == "" {
+		participant = strings.TrimSpace(keyInfo.GetParticipant())
+	}
+
+	senderID := participant
+	if senderID == "" && !fromMe {
+		senderID = remoteJID
+	}
+
+	key := map[string]interface{}{
+		"remoteJid": remoteJID,
+		"fromMe":    fromMe,
+		"id":        messageID,
+	}
+	if participant != "" {
+		key["participant"] = participant
+	}
+
+	pushName := strings.TrimSpace(wmsg.GetPushName())
+	timestamp := int64(wmsg.GetMessageTimestamp())
+	if timestamp <= 0 {
+		timestamp = time.Now().Unix()
+	}
+
+	payload := map[string]interface{}{
+		"event": "MESSAGES_UPSERT",
+		"data": map[string]interface{}{
+			"key":              key,
+			"message":          marshalMessage(wmsg.GetMessage()),
+			"pushName":         pushName,
+			"messageTimestamp": timestamp,
+			"sender": map[string]interface{}{
+				"id":   senderID,
+				"name": pushName,
+			},
+			"instance":         instanceName,
+			"broker_id":        s.brokerID,
+			"source":           source,
+			"conversationName": chatName,
+		},
+	}
+
+	b, _ := json.Marshal(payload)
+	resp, err := http.Post(webhookURL, "application/json", strings.NewReader(string(b)))
+	if err != nil {
+		log.Printf("[broker %s] error sending %s webhook: %v", s.brokerID, source, err)
+		return false
+	}
+	resp.Body.Close()
+	return true
+}
 
 func brokerIDFromRequest(r *http.Request) string {
 	if id := r.URL.Query().Get("broker_id"); id != "" {
