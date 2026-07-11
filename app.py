@@ -6426,6 +6426,23 @@ async def sync_refresh_qr():
         return {"ok": False, "message": f"Cannot reach ingestor: {e}"}
 
 
+@app.post("/api/sync/history-backfill")
+async def sync_history_backfill(limit: int = 25, count: int = 50):
+    """Ask the WhatsApp phone for older messages before the latest known messages."""
+    limit = max(1, min(int(limit or 25), 100))
+    count = max(1, min(int(count or 50), 50))
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.post(
+                f"{INGESTOR_INTERNAL_URL}/history/backfill",
+                params={"broker_id": "default", "limit": limit, "count": count},
+            )
+            payload = resp.json() if resp.headers.get("content-type", "").startswith("application/json") else {"message": resp.text}
+            return {"ok": resp.status_code < 300, "status_code": resp.status_code, **payload}
+    except httpx.RequestError as e:
+        return {"ok": False, "message": f"Cannot reach ingestor: {e}"}
+
+
 @app.post("/api/sync/status")
 async def sync_status_update(request: Request):
     """Receive connection status from the WhatsApp ingestor."""

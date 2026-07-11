@@ -146,6 +146,13 @@ type SessionManager struct {
 	db        *sql.DB
 }
 
+type inboxThreadCursor struct {
+	GroupName  string                 `json:"group_name"`
+	SenderJID  string                 `json:"sender_jid"`
+	Timestamp  string                 `json:"timestamp"`
+	RawPayload map[string]interface{} `json:"raw_payload"`
+}
+
 func NewSessionManager(container *sqlstore.Container, db *sql.DB) *SessionManager {
 	return &SessionManager{
 		sessions:  make(map[string]*BrokerSession),
@@ -747,6 +754,197 @@ func (sm *SessionManager) disconnectHandler(w http.ResponseWriter, r *http.Reque
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
+func (sm *SessionManager) historyBackfillHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	brokerID := brokerIDFromRequest(r)
+	s := sm.Get(brokerID)
+	if s == nil || s.client == nil || !s.client.IsConnected() {
+		w.WriteHeader(http.StatusConflict)
+		json.NewEncoder(w).Encode(map[string]interface{}{"ok": false, "error": "whatsapp session is not connected"})
+		return
+	}
+
+	limit := 25
+	count := 50
+	if raw := r.URL.Query().Get("limit"); raw != "" {
+		fmt.Sscanf(raw, "%d", &limit)
+	}
+	if raw := r.URL.Query().Get("count"); raw != "" {
+		fmt.Sscanf(raw, "%d", &count)
+	}
+	if limit < 1 {
+		limit = 1
+	}
+	if limit > 100 {
+		limit = 100
+	}
+	if count < 1 {
+		count = 1
+	}
+	if count > 50 {
+		count = 50
+	}
+
+	reqURL := fmt.Sprintf("%s/api/inbox/threads?limit=%d", strings.TrimRight(apiURL, "/"), limit)
+	resp, err := http.Get(reqURL)
+	if err != nil {
+		w.WriteHeader(http.StatusBadGateway)
+		json.NewEncoder(w).Encode(map[string]interface{}{"ok": false, "error": err.Error()})
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		w.WriteHeader(http.StatusBadGateway)
+		json.NewEncoder(w).Encode(map[string]interface{}{"ok": false, "error": fmt.Sprintf("api returned %d", resp.StatusCode)})
+		return
+	}
+
+	var cursors []inboxThreadCursor
+	if err := json.NewDecoder(resp.Body).Decode(&cursors); err != nil {
+		w.WriteHeader(http.StatusBadGateway)
+		json.NewEncoder(w).Encode(map[string]interface{}{"ok": false, "error": err.Error()})
+		return
+	}
+
+	requested := 0
+	skipped := 0
+	for _, cursor := range cursors {
+		info, ok := messageInfoFromCursor(cursor)
+		if !ok {
+			skipped++
+			continue
+		}
+		historyReq := s.client.BuildHistorySyncRequest(info, count)
+		if historyReq == nil {
+			skipped++
+			continue
+		}
+		if _, err := s.client.SendPeerMessage(context.Background(), historyReq); err != nil {
+			log.Printf("[broker %s] history backfill request failed for %s: %v", brokerID, info.Chat.String(), err)
+			skipped++
+			continue
+		}
+		requested++
+		time.Sleep(250 * time.Millisecond)
+	}
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"ok":             true,
+		"requested":      requested,
+		"skipped":        skipped,
+		"messages_count": count,
+		"note":           "WhatsApp will return history asynchronously through HistorySync events.",
+	})
+}
+
+func messageInfoFromCursor(cursor inboxThreadCursor) (*types.MessageInfo, bool) {
+	data, _ := cursor.RawPayload["data"].(map[string]interface{})
+	key, _ := data["key"].(map[string]interface{})
+	if len(key) == 0 {
+		return nil, false
+	}
+
+	remoteJID := stringFromAny(key["remoteJid"])
+	if remoteJID == "" {
+		remoteJID = strings.TrimSpace(cursor.GroupName)
+	}
+	messageID := stringFromAny(key["id"])
+	if remoteJID == "" || messageID == "" {
+		return nil, false
+	}
+
+	chat, err := types.ParseJID(remoteJID)
+	if err != nil {
+		return nil, false
+	}
+
+	fromMe := boolFromAny(key["fromMe"])
+	participant := stringFromAny(key["participant"])
+	if participant == "" {
+		participant = strings.TrimSpace(cursor.SenderJID)
+	}
+	sender := types.EmptyJID
+	if participant != "" {
+		if parsed, err := types.ParseJID(participant); err == nil {
+			sender = parsed
+		}
+	}
+	if sender.IsEmpty() && !fromMe {
+		sender = chat
+	}
+
+	ts := time.Now()
+	if parsed := timestampFromAny(data["messageTimestamp"]); !parsed.IsZero() {
+		ts = parsed
+	} else if parsed := timestampFromAny(cursor.Timestamp); !parsed.IsZero() {
+		ts = parsed
+	}
+
+	return &types.MessageInfo{
+		MessageSource: types.MessageSource{
+			Chat:     chat,
+			Sender:   sender,
+			IsFromMe: fromMe,
+			IsGroup:  strings.HasSuffix(remoteJID, "@g.us"),
+		},
+		ID:        messageID,
+		PushName:  stringFromAny(data["pushName"]),
+		Timestamp: ts,
+	}, true
+}
+
+func stringFromAny(value interface{}) string {
+	switch v := value.(type) {
+	case string:
+		return strings.TrimSpace(v)
+	case fmt.Stringer:
+		return strings.TrimSpace(v.String())
+	default:
+		return ""
+	}
+}
+
+func boolFromAny(value interface{}) bool {
+	switch v := value.(type) {
+	case bool:
+		return v
+	case string:
+		return strings.EqualFold(v, "true")
+	default:
+		return false
+	}
+}
+
+func timestampFromAny(value interface{}) time.Time {
+	switch v := value.(type) {
+	case float64:
+		if v > 10_000_000_000 {
+			v = v / 1000
+		}
+		return time.Unix(int64(v), 0)
+	case int64:
+		if v > 10_000_000_000 {
+			v = v / 1000
+		}
+		return time.Unix(v, 0)
+	case string:
+		if v == "" {
+			return time.Time{}
+		}
+		if parsed, err := time.Parse(time.RFC3339, v); err == nil {
+			return parsed
+		}
+		var numeric float64
+		if _, err := fmt.Sscanf(v, "%f", &numeric); err == nil && numeric > 0 {
+			if numeric > 10_000_000_000 {
+				numeric = numeric / 1000
+			}
+			return time.Unix(int64(numeric), 0)
+		}
+	}
+	return time.Time{}
+}
+
 func getEnv(key, fallback string) string {
 	if v := os.Getenv(key); v != "" {
 		return v
@@ -845,6 +1043,7 @@ func main() {
 	mux.HandleFunc("/connect", sm.connectHandler)
 	mux.HandleFunc("/reset", sm.resetHandler)
 	mux.HandleFunc("/disconnect", sm.disconnectHandler)
+	mux.HandleFunc("/history/backfill", sm.historyBackfillHandler)
 
 	server := &http.Server{
 		Addr:    ":" + sendPort,
