@@ -9586,8 +9586,31 @@ async def audit_intelligence():
     day_ago = (datetime.utcnow() - timedelta(hours=24)).strftime("%Y-%m-%dT%H:%M:%SZ")
     week_ago = (datetime.utcnow() - timedelta(days=7)).strftime("%Y-%m-%dT%H:%M:%SZ")
 
+    def _to_number(value, default=0):
+        if value is None:
+            return default
+        if isinstance(value, (int, float)):
+            return value
+        if isinstance(value, str):
+            try:
+                n = float(value) if "." in value else int(value)
+                return n
+            except ValueError:
+                return default
+        return default
+
     def _safe(r, idx=0, default=0):
-        return r[idx] if r is not None and idx < len(r) else default
+        if r is None or idx >= len(r):
+            return default
+        value = r[idx]
+        if isinstance(default, (int, float)):
+            if isinstance(value, str):
+                try:
+                    return float(value) if "." in value else int(value)
+                except ValueError:
+                    return value
+            return _to_number(value, default)
+        return value
 
     def _q(sql, params=None, default=0):
         try:
@@ -9613,9 +9636,9 @@ async def audit_intelligence():
         last_msg = _safe(last_msg_row) if last_msg_row else None
         webhook_ok = last_msg is not None and last_msg >= five_min_ago
 
-        knowledge_records = _count_table("knowledge_records") if _table_exists("knowledge_records") else total_raw
-        searchable_records = _count_table("knowledge_records_fts") if _table_exists("knowledge_records_fts") else total_raw
-        embeddings_count = _count_table("embeddings") if _table_exists("embeddings") else _safe(_q("SELECT COUNT(*) FROM parsed_output WHERE embedding IS NOT NULL"))
+        knowledge_records = _to_number(_count_table("knowledge_records") if _table_exists("knowledge_records") else total_raw)
+        searchable_records = _to_number(_count_table("knowledge_records_fts") if _table_exists("knowledge_records_fts") else total_raw)
+        embeddings_count = _to_number(_count_table("embeddings") if _table_exists("embeddings") else _safe(_q("SELECT COUNT(*) FROM parsed_output WHERE embedding IS NOT NULL")))
         indexed_records = searchable_records if searchable_records else knowledge_records
         recall_ready_pct = round(
             min(indexed_records, searchable_records) / max(1, knowledge_records) * 100,
@@ -9797,26 +9820,26 @@ async def audit_intelligence():
             GROUP BY rm.group_name
         """):
             group_metrics[row[0]] = {
-                "listings": row[1] or 0,
-                "requirements": row[2] or 0,
-                "parsed_ok": row[3] or 0,
-                "markets": row[4] or 0,
-                "buildings": row[5] or 0,
+                "listings": _to_number(row[1]),
+                "requirements": _to_number(row[2]),
+                "parsed_ok": _to_number(row[3]),
+                "markets": _to_number(row[4]),
+                "buildings": _to_number(row[5]),
             }
 
         group_intelligence = []
         for g in group_stats:
             gname = g[0]
             m = group_metrics.get(gname, {})
-            messages = g[1]
-            parsed_ok = m.get("parsed_ok", 0)
+            messages = _to_number(g[1])
+            parsed_ok = _to_number(m.get("parsed_ok", 0))
             signal_ratio = round(parsed_ok / max(1, messages) * 100, 1)
 
             group_intelligence.append({
                 "name": group_name_map.get(gname, gname[:50]),
                 "jid": gname,
                 "messages": messages,
-                "unique_senders": g[2],
+                "unique_senders": _to_number(g[2]),
                 "listings": m.get("listings", 0),
                 "requirements": m.get("requirements", 0),
                 "markets": m.get("markets", 0),
@@ -9883,7 +9906,7 @@ async def audit_intelligence():
             })
 
         if coverage_gaps:
-            gap_names = [g[0] for g in coverage_gaps if g[1] <= 2]
+            gap_names = [g[0] for g in coverage_gaps if _to_number(g[1]) <= 2]
             if gap_names:
                 suggestions.append({
                     "type": "coverage_gap",
