@@ -9979,35 +9979,33 @@ async def audit_intelligence():
             ORDER BY messages DESC
         """)
 
+        # Batch all group-level parsed metrics in one query
+        group_metrics = {}
+        for row in _qa("""
+            SELECT rm.group_name,
+                   SUM(CASE WHEN po.intent IN ('SELL','RENT','COMMERCIAL') THEN 1 ELSE 0 END) as listings,
+                   SUM(CASE WHEN po.intent IN ('BUY','BUYER','RENTAL_SEEKER') THEN 1 ELSE 0 END) as requirements,
+                   COUNT(CASE WHEN po.confidence > 0.5 THEN 1 END) as parsed_ok,
+                   COUNT(DISTINCT CASE WHEN po.micro_market IS NOT NULL AND po.micro_market != '' THEN po.micro_market END) as markets,
+                   COUNT(DISTINCT CASE WHEN po.building_name IS NOT NULL AND po.building_name != '' THEN po.building_name END) as buildings
+            FROM parsed_output po
+            JOIN raw_messages rm ON po.raw_message_id = rm.id
+            GROUP BY rm.group_name
+        """):
+            group_metrics[row[0]] = {
+                "listings": row[1] or 0,
+                "requirements": row[2] or 0,
+                "parsed_ok": row[3] or 0,
+                "markets": row[4] or 0,
+                "buildings": row[5] or 0,
+            }
+
         group_intelligence = []
         for g in group_stats:
             gname = g[0]
-            lr = _q("""
-                SELECT 
-                    SUM(CASE WHEN po.intent IN ('SELL','RENT','COMMERCIAL') THEN 1 ELSE 0 END) as listings,
-                    SUM(CASE WHEN po.intent IN ('BUY','BUYER','RENTAL_SEEKER') THEN 1 ELSE 0 END) as requirements,
-                    COUNT(CASE WHEN po.confidence > 0.5 THEN 1 END) as parsed_ok
-                FROM parsed_output po
-                JOIN raw_messages rm ON po.raw_message_id = rm.id
-                WHERE rm.group_name = ?
-            """, (gname,), default=None)
-
-            markets_in_group = _safe(_q("""
-                SELECT COUNT(DISTINCT po.micro_market)
-                FROM parsed_output po
-                JOIN raw_messages rm ON po.raw_message_id = rm.id
-                WHERE rm.group_name = ? AND po.micro_market IS NOT NULL AND po.micro_market != ''
-            """, (gname,)))
-
-            buildings_in_group = _safe(_q("""
-                SELECT COUNT(DISTINCT po.building_name)
-                FROM parsed_output po
-                JOIN raw_messages rm ON po.raw_message_id = rm.id
-                WHERE rm.group_name = ? AND po.building_name IS NOT NULL AND po.building_name != ''
-            """, (gname,)))
-
+            m = group_metrics.get(gname, {})
             messages = g[1]
-            parsed_ok = lr[2] if lr else 0
+            parsed_ok = m.get("parsed_ok", 0)
             signal_ratio = round(parsed_ok / max(1, messages) * 100, 1)
 
             group_intelligence.append({
@@ -10015,10 +10013,10 @@ async def audit_intelligence():
                 "jid": gname,
                 "messages": messages,
                 "unique_senders": g[2],
-                "listings": lr[0] if lr else 0,
-                "requirements": lr[1] if lr else 0,
-                "markets": markets_in_group,
-                "buildings": buildings_in_group,
+                "listings": m.get("listings", 0),
+                "requirements": m.get("requirements", 0),
+                "markets": m.get("markets", 0),
+                "buildings": m.get("buildings", 0),
                 "signal_ratio": signal_ratio,
                 "first_seen": g[3],
                 "last_seen": g[4],
