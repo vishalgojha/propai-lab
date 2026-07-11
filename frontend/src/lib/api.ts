@@ -933,7 +933,7 @@ export interface AuditSearchEvidence {
 }
 
 export function getAuditIntelligence() {
-  return fetchJSON<AuditIntelligence>("/audit/intelligence", undefined, 20000);
+  return fetchJSON<AuditIntelligence>("/api/audit/intelligence", undefined, 60000);
 }
 
 export function getAuditSearchEvidence(q: string) {

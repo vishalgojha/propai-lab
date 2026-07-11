@@ -1382,7 +1382,7 @@ def check_share_eligibility(parsed: dict, org_privacy: dict, conv_type: str) -> 
     if conv_type != CONV_TYPE_BROKER_GROUP:
         return False, f"conversation_type_{conv_type}"
 
-    if org_privacy.get("privacy_mode") != "shared":
+    if org_privacy.get("privacy_mode") != "shared_market":
         return False, "privacy_mode_private"
 
     intent = (parsed.get("intent") or "").upper()
@@ -2256,7 +2256,7 @@ def should_share_to_market(
         return False
 
     # Workspace must be in shared mode
-    if org_privacy.get("privacy_mode") != "shared":
+    if org_privacy.get("privacy_mode") != "shared_market":
         return False
 
     # Check if any share option is enabled
@@ -11011,7 +11011,7 @@ async def update_organization_privacy(org_id: str, body: dict):
     updates = {k: v for k, v in body.items() if k in allowed}
 
     # If switching to shared mode, require at least one share option
-    if updates.get("privacy_mode") == "shared":
+    if updates.get("privacy_mode") == "shared_market":
         share_fields = {k: v for k, v in updates.items() if k.startswith("share_") and v}
         # Also check existing values
         if not share_fields:
