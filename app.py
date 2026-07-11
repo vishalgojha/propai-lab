@@ -8960,7 +8960,7 @@ async def audit_dashboard():
     dupes = storage.db.execute("""
         SELECT group_name, COUNT(*) as c FROM source_sync_jobs
         WHERE group_name != '' AND group_name IS NOT NULL
-        GROUP BY group_name HAVING c > 1
+        GROUP BY group_name HAVING COUNT(*) > 1
     """).fetchall()
     duplicate_groups = len(dupes)
 
@@ -9708,14 +9708,14 @@ async def audit_intelligence():
         dup_phones = _qa("""
             SELECT phone, COUNT(*) as cnt FROM jid_profiles 
             WHERE phone IS NOT NULL AND phone != ''
-            GROUP BY phone HAVING cnt > 1
+            GROUP BY phone HAVING COUNT(*) > 1
         """)
 
         dup_names = _qa("""
             SELECT canonical_name, COUNT(DISTINCT primary_phone) as phone_cnt,
                    string_agg(DISTINCT primary_phone, ' | ') as phones
             FROM brokers 
-            GROUP BY canonical_name HAVING phone_cnt > 1
+            GROUP BY canonical_name HAVING COUNT(DISTINCT primary_phone) > 1
         """)
 
         brokers_no_market = _safe(_q("""
@@ -9996,7 +9996,7 @@ async def audit_intelligence():
             "suggestions": suggestions,
         }
     except Exception as e:
-        logger.exception(f"audit_intelligence failed: {e}")
+        print(f"[audit_intelligence] failed: {e}", flush=True)
         return {"error": str(e)[:500], "partial": locals().get("result", {})}
 
     return result
