@@ -1371,10 +1371,31 @@ function InboxPageInner() {
         return haystack.includes(query);
       });
 
+  const threadFallbackItems = [
+    ...groupChats.map((chat) => ({
+      key: chat.conversationKey,
+      title: chat.title,
+      subtitle: displayGroupName(chat.rawGroupName || chat.conversationKey),
+      latest: chat.latest,
+      count: chat.count,
+      type: "group" as const,
+    })),
+    ...filteredDirectChats.map((chat) => ({
+      key: chat.senderKey,
+      title: chat.name,
+      subtitle: resolveMessagePhone(chat.latest) ? displayPhoneString(resolveMessagePhone(chat.latest)) : "Direct chat",
+      latest: chat.latest,
+      count: chat.count,
+      type: "direct" as const,
+    })),
+  ].sort((a, b) => new Date(b.latest.timestamp).getTime() - new Date(a.latest.timestamp).getTime());
+
+  const showThreadFallback = activeSlug?.view_type !== "brokers" || (!loadingBrokerFeed && filteredBrokerFeed.length === 0);
+
   const leftListEmpty = (() => {
     const vt = activeSlug?.view_type;
-    if (vt === "brokers") return filteredBrokerFeed.length === 0;
-    return uniqueThreads.length === 0;
+    if (vt === "brokers") return filteredBrokerFeed.length === 0 && threadFallbackItems.length === 0;
+    return threadFallbackItems.length === 0;
   })();
 
   const groupedConversationMessages: [string, api.RawMessage[][]][] = (() => {
@@ -2037,6 +2058,41 @@ function InboxPageInner() {
                       );
                     })
                   }
+                  {showThreadFallback && threadFallbackItems.map((item) => {
+                    const isSelected = selectedMsg && (
+                      ("conversation_key" in selectedMsg && selectedMsg.conversation_key === item.key) ||
+                      selectedMsg.group_name === item.latest.group_name ||
+                      selectedMsg.sender_jid === item.latest.sender_jid
+                    );
+                    return (
+                      <button
+                        key={`${item.type}-${item.key}`}
+                        onClick={() => selectConversation(item.latest)}
+                        className={`w-full text-left p-2.5 lg:p-3 transition-colors select-none ${
+                          isSelected ? "bg-blue-600/10 border-l-2 border-[#3b82f6]" : "hover:bg-white/5"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-2 mb-1">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <MessageSquare className="w-3.5 h-3.5 shrink-0 text-zinc-500" strokeWidth={1.5} />
+                            <span className="text-[12px] font-bold text-white truncate max-w-[190px]">
+                              {stripEmojis(item.title) || "WhatsApp conversation"}
+                            </span>
+                          </div>
+                          <span className="text-[10px] font-bold text-white tabular-nums">{item.count}</span>
+                        </div>
+                        <div className="text-[10px] text-zinc-500 leading-relaxed truncate mb-1">
+                          {stripEmojis(item.latest.sender || item.subtitle)}
+                        </div>
+                        <div className="text-[10px] text-zinc-400 leading-relaxed line-clamp-2">
+                          {stripEmojis(item.latest.message) || "No text content"}
+                        </div>
+                        <div className="mt-1.5 text-[9px] text-zinc-600">
+                          {formatAgeShort(item.latest.timestamp || item.latest.created_at || item.latest.latest_message_at)}
+                        </div>
+                      </button>
+                    );
+                  })}
                   </>
                 )}
           </div>
