@@ -786,7 +786,8 @@ func (sm *SessionManager) historyBackfillHandler(w http.ResponseWriter, r *http.
 	}
 
 	reqURL := fmt.Sprintf("%s/api/inbox/threads?limit=%d", strings.TrimRight(apiURL, "/"), limit)
-	resp, err := http.Get(reqURL)
+	client := &http.Client{Timeout: 15 * time.Second}
+	resp, err := client.Get(reqURL)
 	if err != nil {
 		w.WriteHeader(http.StatusBadGateway)
 		json.NewEncoder(w).Encode(map[string]interface{}{"ok": false, "error": err.Error()})

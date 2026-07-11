@@ -6411,6 +6411,16 @@ async def sync_qr():
 
 
 INGESTOR_INTERNAL_URL = os.getenv("INGESTOR_INTERNAL_URL", "http://ingestor:3001")
+INGESTOR_PUBLIC_URL = os.getenv("INGESTOR_PUBLIC_URL", "http://egn4dqsw3xxmhb9noorm85do.62.238.18.85.sslip.io")
+
+
+def _ingestor_urls() -> list[str]:
+    urls = []
+    for candidate in (INGESTOR_INTERNAL_URL, INGESTOR_PUBLIC_URL):
+        candidate = (candidate or "").rstrip("/")
+        if candidate and candidate not in urls:
+            urls.append(candidate)
+    return urls
 
 
 @app.post("/api/sync/refresh-qr")
@@ -6431,16 +6441,19 @@ async def sync_history_backfill(limit: int = 25, count: int = 50):
     """Ask the WhatsApp phone for older messages before the latest known messages."""
     limit = max(1, min(int(limit or 25), 100))
     count = max(1, min(int(count or 50), 50))
-    try:
-        async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.post(
-                f"{INGESTOR_INTERNAL_URL}/history/backfill",
-                params={"broker_id": "default", "limit": limit, "count": count},
-            )
-            payload = resp.json() if resp.headers.get("content-type", "").startswith("application/json") else {"message": resp.text}
-            return {"ok": resp.status_code < 300, "status_code": resp.status_code, **payload}
-    except httpx.RequestError as e:
-        return {"ok": False, "message": f"Cannot reach ingestor: {e}"}
+    errors = []
+    async with httpx.AsyncClient(timeout=35) as client:
+        for base_url in _ingestor_urls():
+            try:
+                resp = await client.post(
+                    f"{base_url}/history/backfill",
+                    params={"broker_id": "default", "limit": limit, "count": count},
+                )
+                payload = resp.json() if resp.headers.get("content-type", "").startswith("application/json") else {"message": resp.text}
+                return {"ok": resp.status_code < 300, "status_code": resp.status_code, "ingestor_url": base_url, **payload}
+            except httpx.RequestError as e:
+                errors.append(f"{base_url}: {e}")
+    return {"ok": False, "message": "Cannot reach ingestor", "errors": errors}
 
 
 @app.post("/api/sync/status")
