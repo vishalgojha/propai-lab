@@ -1,80 +1,78 @@
+import {
+  createUIMessageStream,
+  createUIMessageStreamResponse,
+  type UIMessage,
+} from "ai";
+
 const API_BASE = process.env.LAB_API_BASE_URL || "http://localhost:8000";
+
+function extractText(message: UIMessage | Record<string, any>) {
+  if (typeof (message as any).content === "string") return (message as any).content;
+  const parts = Array.isArray((message as any).parts) ? (message as any).parts : [];
+  return parts
+    .map((part: any) => {
+      if (part?.type === "text") return part.text || "";
+      if (typeof part?.text === "string") return part.text;
+      return "";
+    })
+    .join("")
+    .trim();
+}
+
+function toBackendMessages(messages: UIMessage[]) {
+  return messages
+    .map((message) => ({
+      role: message.role,
+      content: extractText(message),
+    }))
+    .filter((message) => message.content && ["system", "user", "assistant"].includes(message.role));
+}
+
+function textStream(content: string) {
+  return createUIMessageStream({
+    execute({ writer }) {
+      const id = crypto.randomUUID();
+      writer.write({ type: "text-start", id });
+      writer.write({ type: "text-delta", id, delta: content });
+      writer.write({ type: "text-end", id });
+    },
+  });
+}
 
 export async function POST(req: Request) {
   const body = await req.json();
-  const { messages } = body;
+  const messages = toBackendMessages((body.messages || []) as UIMessage[]);
 
-  const fastapi = await fetch(`${API_BASE}/api/ai/chat`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ messages: messages.slice() }),
-  });
+  if (!messages.length || messages[messages.length - 1].role !== "user") {
+    return createUIMessageStreamResponse({
+      stream: textStream("Type a question and I will search your PropAI workspace."),
+    });
+  }
 
-  const raw = await fastapi.text();
-  let json: Record<string, unknown> = {};
   try {
-    json = JSON.parse(raw);
-  } catch {
-    json = {};
-  }
-
-  const messageId = crypto.randomUUID();
-
-  if (!fastapi.ok || json.error) {
-    const errorText = (json.message as string) || (json.error as string) || fastapi.statusText;
-    const encoder = new TextEncoder();
-    const stream = new ReadableStream({
-      start(controller) {
-        controller.enqueue(
-          encoder.encode(`data: ${JSON.stringify({ type: "text-start", id: messageId })}\n\n`)
-        );
-        controller.enqueue(
-          encoder.encode(`data: ${JSON.stringify({ type: "text-delta", id: messageId, delta: errorText })}\n\n`)
-        );
-        controller.enqueue(
-          encoder.encode(`data: ${JSON.stringify({ type: "text-end", id: messageId })}\n\n`)
-        );
-        controller.enqueue(encoder.encode("data: [DONE]\n\n"));
-        controller.close();
-      },
+    const fastapi = await fetch(`${API_BASE}/api/ai/chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ messages }),
     });
-    return new Response(stream, {
-      headers: {
-        "Content-Type": "text/event-stream",
-        "Cache-Control": "no-cache",
-        Connection: "keep-alive",
-        "x-vercel-ai-ui-message-stream": "v1",
-        "X-Accel-Buffering": "no",
-      },
-    });
+
+    const raw = await fastapi.text();
+    let json: Record<string, unknown> = {};
+    try {
+      json = JSON.parse(raw);
+    } catch {
+      json = {};
+    }
+
+    if (!fastapi.ok || json.error) {
+      const errorText = (json.message as string) || (json.error as string) || fastapi.statusText;
+      return createUIMessageStreamResponse({ stream: textStream(errorText) });
+    }
+
+    const content = String(json.content || "").trim() || "I could not find an answer for that yet.";
+    return createUIMessageStreamResponse({ stream: textStream(content) });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Chat API failed";
+    return createUIMessageStreamResponse({ stream: textStream(message) });
   }
-
-  const content = (json.content as string) || "";
-
-  const encoder = new TextEncoder();
-  const stream = new ReadableStream({
-    start(controller) {
-      controller.enqueue(
-        encoder.encode(`data: ${JSON.stringify({ type: "text-start", id: messageId })}\n\n`)
-      );
-      controller.enqueue(
-        encoder.encode(`data: ${JSON.stringify({ type: "text-delta", id: messageId, delta: content })}\n\n`)
-      );
-      controller.enqueue(
-        encoder.encode(`data: ${JSON.stringify({ type: "text-end", id: messageId })}\n\n`)
-      );
-      controller.enqueue(encoder.encode("data: [DONE]\n\n"));
-      controller.close();
-    },
-  });
-
-  return new Response(stream, {
-    headers: {
-      "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache",
-      Connection: "keep-alive",
-      "x-vercel-ai-ui-message-stream": "v1",
-      "X-Accel-Buffering": "no",
-    },
-  });
 }

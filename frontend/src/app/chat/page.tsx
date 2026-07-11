@@ -21,6 +21,13 @@ function buildChipLabels(s: api.ChatSuggestions | null): string[] {
   return chips;
 }
 
+function messageText(message: { content?: string; parts?: Array<{ type?: string; text?: string }> }) {
+  if (typeof message.content === "string" && message.content) return message.content;
+  return (message.parts || [])
+    .map((part) => (part?.type === "text" ? part.text || "" : ""))
+    .join("");
+}
+
 export default function ChatPage() {
   const [input, setInput] = useState("");
   const [suggestionsData, setSuggestionsData] = useState<api.ChatSuggestions | null>(null);
@@ -40,7 +47,7 @@ export default function ChatPage() {
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!input.trim() || status === "submitted") return;
-    sendMessage(input.trim());
+    sendMessage({ text: input.trim() });
     setInput("");
   }
 
@@ -103,11 +110,11 @@ export default function ChatPage() {
                   {m.role === "assistant" && <span className="text-lg mt-1">🤖</span>}
                   {m.role === "user" ? (
                     <div className="max-w-[80%] rounded-xl px-4 py-2.5 text-sm bg-blue-600 text-white whitespace-pre-wrap">
-                      {m.content}
+                      {messageText(m)}
                     </div>
                   ) : (
                     <div className="max-w-[90%] w-full">
-                      <div className="text-sm text-zinc-300 whitespace-pre-wrap leading-relaxed">{m.content}</div>
+                      <div className="text-sm text-zinc-300 whitespace-pre-wrap leading-relaxed">{messageText(m)}</div>
                     </div>
                   )}
                   {m.role === "user" && <span className="text-lg mt-1">👤</span>}

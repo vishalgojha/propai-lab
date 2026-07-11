@@ -1,4 +1,4 @@
-import { streamText } from "ai";
+import { convertToModelMessages, createUIMessageStreamResponse, streamText, toUIMessageStream, type UIMessage } from "ai";
 import { model } from "@/lib/ai-provider";
 
 export const runtime = "edge";
@@ -13,11 +13,14 @@ Guidelines:
 - Support your claims with numbers and specifics when possible`;
 
 export async function POST(req: Request) {
-  const { messages } = await req.json();
+  const { messages } = await req.json() as { messages?: UIMessage[] };
+  const modelMessages = await convertToModelMessages(messages || []);
   const result = streamText({
     model,
     system: SYSTEM_PROMPT,
-    messages,
+    messages: modelMessages,
   });
-  return result.toDataStreamResponse();
+  return createUIMessageStreamResponse({
+    stream: toUIMessageStream({ stream: result.stream }),
+  });
 }
