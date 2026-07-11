@@ -36,18 +36,23 @@ var (
 // ── Status ──────────────────────────────────────────────────────────────────
 
 type Status struct {
-	BrokerID         string `json:"broker_id,omitempty"`
-	Connected        bool   `json:"connected"`
-	ConnectionState  string `json:"connection_state"`
-	QR               string `json:"qr,omitempty"`
-	QRAvailable      bool   `json:"qr_available,omitempty"`
-	PhoneNumber      string `json:"phone_number,omitempty"`
-	DisplayName      string `json:"display_name,omitempty"`
-	InstanceName     string `json:"instance_name,omitempty"`
-	ConnectedSince   string `json:"connected_since,omitempty"`
-	LastMessageAt    string `json:"last_message_at,omitempty"`
-	DisconnectReason int    `json:"disconnect_reason,omitempty"`
-	SendPort         int    `json:"send_port,omitempty"`
+	BrokerID              string `json:"broker_id,omitempty"`
+	Connected             bool   `json:"connected"`
+	ConnectionState       string `json:"connection_state"`
+	QR                    string `json:"qr,omitempty"`
+	QRAvailable           bool   `json:"qr_available,omitempty"`
+	PhoneNumber           string `json:"phone_number,omitempty"`
+	DisplayName           string `json:"display_name,omitempty"`
+	InstanceName          string `json:"instance_name,omitempty"`
+	ConnectedSince        string `json:"connected_since,omitempty"`
+	LastMessageAt         string `json:"last_message_at,omitempty"`
+	DisconnectReason      int    `json:"disconnect_reason,omitempty"`
+	SendPort              int    `json:"send_port,omitempty"`
+	ReconnectCount        int    `json:"reconnect_count,omitempty"`
+	ConsecutiveFailures   int    `json:"consecutive_failures,omitempty"`
+	TotalMessagesReceived int64  `json:"total_messages_received,omitempty"`
+	LastDisconnectAt      string `json:"last_disconnect_at,omitempty"`
+	SocketState           string `json:"socket_state,omitempty"`
 }
 
 // ── Broker session ─────────────────────────────────────────────────────────
@@ -63,6 +68,8 @@ type BrokerSession struct {
 	disconnected      chan struct{}
 	disconnectOnce    func() struct{}
 	reconnectFailures int
+	reconnectCount    int
+	totalMessages     int64
 	statusFile        string
 }
 
@@ -88,6 +95,12 @@ func (s *BrokerSession) setStatus(st Status) {
 	if st.LastMessageAt == "" {
 		st.LastMessageAt = cur.LastMessageAt
 	}
+	if st.LastDisconnectAt == "" {
+		st.LastDisconnectAt = cur.LastDisconnectAt
+	}
+	st.ReconnectCount = s.reconnectCount
+	st.ConsecutiveFailures = s.reconnectFailures
+	st.TotalMessagesReceived = s.totalMessages
 	st.BrokerID = s.brokerID
 	st.InstanceName = instanceName
 	st.SendPort = parsePort(sendPort)
@@ -208,6 +221,7 @@ func (sm *SessionManager) newSession(brokerID string, device *store.Device) *Bro
 		statusFile: fmt.Sprintf("/tmp/status_%s.json", brokerID),
 		status: Status{
 			ConnectionState: "new",
+			SocketState:     "new",
 			InstanceName:    instanceName,
 			BrokerID:        brokerID,
 			SendPort:        parsePort(sendPort),
@@ -253,6 +267,9 @@ func (sm *SessionManager) runSession(s *BrokerSession) {
 		}
 
 		if attempt > 0 {
+			s.reconnectCount++
+			s.reconnectFailures++
+			s.setStatus(Status{LastDisconnectAt: time.Now().UTC().Format(time.RFC3339)})
 			backoff := time.Duration(2+rand.Intn(1+attempt)) * time.Second
 			if backoff > 30*time.Second {
 				backoff = 30 * time.Second
@@ -267,7 +284,7 @@ func (sm *SessionManager) runSession(s *BrokerSession) {
 		}
 
 		log.Printf("[broker %s] connecting to WhatsApp...", s.brokerID)
-		s.setStatus(Status{Connected: false, ConnectionState: "connecting"})
+		s.setStatus(Status{Connected: false, ConnectionState: "connecting", SocketState: "connecting"})
 
 		ctx := context.Background()
 
@@ -380,10 +397,13 @@ func (sm *SessionManager) handleEvent(s *BrokerSession, evt interface{}) {
 	case *events.Disconnected:
 		hasSession := s.client != nil && s.client.Store.ID != nil
 		state := "reconnecting"
+		socketState := "disconnected"
 		if !hasSession {
 			state = "closed"
+			socketState = "closed"
 		}
-		s.setStatus(Status{Connected: false, ConnectionState: state})
+		now := time.Now().UTC().Format(time.RFC3339)
+		s.setStatus(Status{Connected: false, ConnectionState: state, SocketState: socketState, LastDisconnectAt: now})
 		log.Printf("[broker %s] disconnected (session: %v)", s.brokerID, hasSession)
 		if s.disconnectOnce != nil {
 			s.disconnectOnce()
@@ -407,9 +427,11 @@ func (sm *SessionManager) handleEvent(s *BrokerSession, evt interface{}) {
 			phone = s.client.Store.ID.User
 			displayName = s.client.Store.PushName
 		}
+		s.reconnectFailures = 0
 		s.setStatus(Status{
 			Connected:       hasSession,
 			ConnectionState: "open",
+			SocketState:     "connected",
 			PhoneNumber:     phone,
 			DisplayName:     displayName,
 			ConnectedSince:  time.Now().UTC().Format(time.RFC3339),
@@ -428,7 +450,7 @@ func (sm *SessionManager) handleEvent(s *BrokerSession, evt interface{}) {
 			log.Printf("[broker %s] error saving device mapping: %v", s.brokerID, err)
 		}
 		s.setStatus(Status{
-			Connected: true, ConnectionState: "open",
+			Connected: true, ConnectionState: "open", SocketState: "connected",
 			PhoneNumber: phone, DisplayName: displayName,
 			ConnectedSince: time.Now().UTC().Format(time.RFC3339),
 		})
@@ -457,6 +479,8 @@ func (sm *SessionManager) handleMessage(s *BrokerSession, evt *events.Message) {
 	if info.ID == "" || info.IsFromMe {
 		return
 	}
+
+	s.totalMessages++
 
 	key := map[string]interface{}{
 		"remoteJid": info.Chat.String(),
@@ -489,6 +513,7 @@ func (sm *SessionManager) handleMessage(s *BrokerSession, evt *events.Message) {
 	s.setStatus(Status{
 		Connected:       true,
 		ConnectionState: "open",
+		SocketState:     "connected",
 		PhoneNumber:     cur.PhoneNumber,
 		DisplayName:     cur.DisplayName,
 		ConnectedSince:  cur.ConnectedSince,

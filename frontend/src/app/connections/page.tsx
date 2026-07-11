@@ -266,6 +266,11 @@ export default function ConnectionCenterPage() {
   const [totalListings, setTotalListings] = useState<number>(0);
   const [totalRequirements, setTotalRequirements] = useState<number>(0);
   const [totalBrokers, setTotalBrokers] = useState<number>(0);
+  const [rawTotal, setRawTotal] = useState<number>(0);
+  const [rawProcessed, setRawProcessed] = useState<number>(0);
+  const [rawPending, setRawPending] = useState<number>(0);
+  const [extractionPct, setExtractionPct] = useState<number>(0);
+  const [recentlyProcessed1h, setRecentlyProcessed1h] = useState<number>(0);
   const [qrLoading, setQrLoading] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
   const eventSourceRef = useRef<EventSource | null>(null);
@@ -274,9 +279,10 @@ export default function ConnectionCenterPage() {
 
   const fetchStats = useCallback(async () => {
     try {
-      const [detail, stats] = await Promise.all([
+      const [detail, stats, syncAct] = await Promise.all([
         fetch("/api/sync/connection").then((r) => r.json()),
         fetch("/api/stats").then((r) => r.json()).catch(() => ({})),
+        fetch("/api/dashboard/sync-activity").then((r) => r.json()).catch(() => ({})),
       ]);
       if (detail?.phone_number) setPhoneNumber(detail.phone_number);
       if (detail?.display_name) setDisplayName(detail.display_name);
@@ -298,6 +304,20 @@ export default function ConnectionCenterPage() {
       if (stats?.total_listings != null) setTotalListings(stats.total_listings);
       if (stats?.total_requirements != null) setTotalRequirements(stats.total_requirements);
       if (stats?.total_brokers != null) setTotalBrokers(stats.total_brokers);
+
+      // Extraction pipeline progress
+      const ext = syncAct?.extraction;
+      if (ext) {
+        if (ext.total_raw != null) setRawTotal(ext.total_raw);
+        if (ext.processed != null) setRawProcessed(ext.processed);
+        if (ext.pending != null) setRawPending(ext.pending);
+        if (ext.pct != null) setExtractionPct(ext.pct);
+      }
+      // Also try the dedicated extraction progress endpoint for recent activity
+      try {
+        const extProgress = await fetch("/api/extraction/progress").then((r) => r.json());
+        if (extProgress?.recently_processed_1h != null) setRecentlyProcessed1h(extProgress.recently_processed_1h);
+      } catch { /* ignore */ }
     } catch { /* ignore */ }
   }, []);
 
@@ -640,6 +660,34 @@ export default function ConnectionCenterPage() {
               <HealthRow label="Database" status={dbHealth} detail={`${messages?.toLocaleString() || "0"} messages stored`} />
               <HealthRow label="AI Processing" status={aiHealth} detail={`${totalParsed?.toLocaleString() || "0"} messages processed`} />
               <HealthRow label="Real-time Updates" status={realtimeHealth} detail={phase === "connected" ? "Active" : "Disconnected"} />
+            </div>
+          </Section>
+
+          {/* ═══ Extraction Pipeline ═══ */}
+          <Section title="Extraction Pipeline">
+            <div className="space-y-4">
+              <div className="grid grid-cols-3 gap-0 [&>*:nth-child(2n)]:border-l [&>*:nth-child(2n)]:border-white/10">
+                <StatBox icon={<Database className="w-4 h-4 text-zinc-400" />} label="Total Raw" value={rawTotal.toLocaleString()} />
+                <StatBox icon={<Zap className="w-4 h-4 text-zinc-400" />} label="Processed" value={rawProcessed.toLocaleString()} />
+                <StatBox icon={<Clock className="w-4 h-4 text-zinc-400" />} label="Pending" value={rawPending.toLocaleString()} />
+              </div>
+              {rawTotal > 0 && (
+                <div className="px-4 pb-2">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-[11px] font-medium text-zinc-500 uppercase tracking-wider">Progress</span>
+                    <span className="text-xs font-bold text-white">{extractionPct}%</span>
+                  </div>
+                  <div className="h-2 rounded-full bg-zinc-800 overflow-hidden">
+                    <div
+                      className="h-full rounded-full bg-[#3EE88A] transition-all duration-500"
+                      style={{ width: `${Math.min(extractionPct, 100)}%` }}
+                    />
+                  </div>
+                </div>
+              )}
+              <div className="border-t border-white/[0.04] mx-4">
+                <HealthRow label="Recently Processed (1h)" status={recentlyProcessed1h > 0 ? "healthy" : "warning"} detail={`${recentlyProcessed1h} messages`} />
+              </div>
             </div>
           </Section>
 

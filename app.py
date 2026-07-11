@@ -1614,7 +1614,11 @@ def _demote_weak_property_parse(parsed: dict, raw_text: str = "") -> dict:
 
 @app.post("/webhook")
 async def webhook(request: Request):
-    """Receive webhook from WhatsApp ingestor. Route by event type before any processing."""
+    """Receive webhook from WhatsApp ingestor.
+
+    Layer 1 — Raw Storage: writes the message immediately with processed=false.
+    Returns fast. Async workers pick up unprocessed messages for extraction.
+    """
     try:
         body = await request.json()
     except Exception:
@@ -1635,7 +1639,7 @@ async def webhook(request: Request):
         _handle_system_event(event_class, event, data, instance)
         return {"status": "event_handled", "event": event, "class": event_class}
 
-    # ── Human message ─────────────────────────────────────────────
+    # ── Human message — Layer 1: Raw Storage only ─────────────────
     msg_data = data.get("data", data)
     key = msg_data.get("key", {})
     msg = msg_data.get("message", {})
@@ -1666,32 +1670,19 @@ async def webhook(request: Request):
     is_dm = str(group).endswith("@s.whatsapp.net") or str(group).endswith("@lid")
     raw_group_name = "" if is_dm else group_name
 
-    # ── Classify conversation for privacy filtering ──────────────────
-    conv_type = classify_conversation(group_name, group, msg_text)
-    # Fetch org privacy settings once per webhook (cache in memory)
-    org_privacy = None
-    try:
-        org_id = "00000000-0000-0000-0000-000000000010"  # Default tenant
-        org = storage.get_organization(org_id)
-        if org:
-            org_privacy = {
-                "privacy_mode": org.get("privacy_mode", "private"),
-                "share_listings": org.get("share_listings", False),
-                "share_requirements": org.get("share_requirements", False),
-                "share_price_trends": org.get("share_price_trends", False),
-                "share_market_activity": org.get("share_market_activity", False),
-                "share_building_intelligence": org.get("share_building_intelligence", False),
-                "share_broker_network": org.get("share_broker_network", False),
-                "share_broker_reputation": org.get("share_broker_reputation", False),
-                "share_demand_signals": org.get("share_demand_signals", False),
-            }
-    except Exception:
-        org_privacy = {"privacy_mode": "private"}  # Safe default
-    # Store conv_type and org_privacy for later use
-    request.state.conv_type = conv_type
-    request.state.org_privacy = org_privacy
+    # Generate stable message UID for dedup
+    message_id = msg_data.get("key", {}).get("id") or msg_data.get("id") or str(uuid.uuid4())
+    message_uid = f"{group}:{message_id}"
 
-    # Save raw message
+    # Check for duplicate before writing
+    try:
+        existing = storage.get_raw_by_uid(message_uid)
+        if existing:
+            return {"status": "duplicate", "raw_id": existing.id, "message": "already_saved"}
+    except Exception:
+        pass
+
+    # Save raw message — immediate, no blocking
     try:
         from lab.scheduler import PIPELINE_VERSION
     except ImportError:
@@ -1722,283 +1713,57 @@ async def webhook(request: Request):
             message_uid=message_uid,
             pipeline_version=PIPELINE_VERSION,
             synced_at=now,
+            processed=False,
         ))
     except Exception as exc:
         print(f"[webhook] save_raw_message error: {exc}", flush=True)
         return {"error": f"save_raw_message: {exc}", "status": "failed"}
 
+    # Publish event for async workers and live UI
     try:
         get_bus().publish("message.received", {
-            "raw_id": raw_id, "group": group, "sender": sender, "message": msg_text[:200],
+            "raw_id": raw_id,
+            "group": group,
+            "group_name": group_name,
+            "sender": sender,
+            "sender_jid": sender_jid,
+            "sender_phone": sender_phone,
+            "sender_name": sender_name,
+            "message": msg_text[:200],
+            "message_uid": message_uid,
+            "instance": instance,
+            "is_dm": is_dm,
         })
     except Exception as exc:
         print(f"[webhook] bus publish error: {exc}", flush=True)
 
-    # ── Knowledge Record (new architecture) ────────────────────────
-    # Save to knowledge_records regardless of parse success
-    kr_source_type = "dm" if is_dm else "whatsapp"
-    kr_conversation_name = (
-        sender_name
-        or (f"+{sender_phone}" if sender_phone else "")
-        or group
-        if is_dm
-        else group_name
-    )
-
+    # ── Schedule async extraction in background ───────────────────
     try:
-        knowledge_record_id = storage.create_knowledge_record({
-            "source_type": kr_source_type,
-            "source_id": message_uid,
-            "raw_content": msg_text,
-            "sender_jid": sender_jid,
+        loop = asyncio.get_running_loop()
+        loop.run_in_executor(None, _process_single_raw, raw_id, {
             "sender_name": sender_name,
+            "push_name": push_name,
+            "sender_jid": sender_jid,
             "sender_phone": sender_phone,
-            "conversation_id": group,
-            "conversation_name": kr_conversation_name,
-            "message_timestamp": now,
-            "content_type": "unknown",
-            "metadata": json.dumps({
-                "raw_id": raw_id,
-                "message_id": message_id,
-                "instance": instance,
-                "has_image": bool(msg.get("imageMessage")),
-                "has_video": bool(msg.get("videoMessage")),
-                "has_document": bool(msg.get("documentMessage")),
-            }),
+            "group": group,
+            "group_name": group_name,
+            "msg_text": msg_text,
+            "instance": instance,
+            "is_dm": is_dm,
+            "message_uid": message_uid,
+            "message_id": message_id,
+            "msg": msg,
         })
     except Exception as exc:
-        print(f"[webhook] create_knowledge_record error: {exc}", flush=True)
-        knowledge_record_id = None
+        print(f"[webhook] schedule extraction error: {exc}", flush=True)
 
-    # Parse — single or multi-listing
-    try:
-        msg_class = multi_listing.classify_message(msg_text)
-    except Exception as exc:
-        print(f"[webhook] classify_message error: {exc}", flush=True)
-        return {"status": "ok", "raw_id": raw_id, "message": "saved", "parse_error": str(exc)}
+    return {"status": "ok", "raw_id": raw_id, "message": "saved"}
 
-    if msg_class == "multi":
-        try:
-            parsed_listings = multi_listing.parse_multi_message(
-                msg_text, profile_name=sender_name or push_name
-            )
-        except Exception as exc:
-            print(f"[webhook] parse_multi_message error: {exc}", flush=True)
-            parsed_listings = []
-    else:
-        try:
-            single = parse_message(msg_text, profile_name=sender_name or push_name)
-            parsed_listings = [single] if single else []
-        except Exception as exc:
-            print(f"[webhook] parse_message error: {exc}", flush=True)
-            parsed_listings = []
 
-    market_listings = []
-    for pl in parsed_listings:
-        source_text = _parsed_source_text(pl, msg_text)
-        cleaned = _demote_weak_property_parse(pl, source_text)
-        if _parsed_has_market_anchor(cleaned, source_text):
-            market_listings.append(cleaned)
-    parsed_listings = market_listings
-
-    # If parsing failed, keep the raw/knowledge record but do not promote it.
-    if not parsed_listings:
-        try:
-            get_bus().publish("extraction.skipped", {
-                "raw_id": raw_id,
-                "reason": "no_real_estate_anchor",
-                "message": msg_text[:200],
-            })
-        except Exception as exc:
-            print(f"[webhook] publish extraction.skipped error: {exc}", flush=True)
-        return {
-            "status": "ignored",
-            "reason": "no_real_estate_anchor",
-            "raw_id": raw_id,
-            "parsed_ids": [],
-            "count": 0,
-        }
-
-    # Fallback broker identity from sender JID when not found in message
-    for pl in parsed_listings:
-        if not pl.get("broker_name") or not pl.get("broker_phone"):
-            if not pl.get("broker_name"):
-                if len(sender_phone) >= 10:
-                    pl["broker_name"] = f"+91 {sender_phone[-10:]}"
-                elif sender_phone:
-                    pl["broker_name"] = f"+{sender_phone}"
-            if not pl.get("broker_phone"):
-                if len(sender_phone) >= 10:
-                    pl["broker_phone"] = sender_phone[-10:]
-
-    # Append broker attribution to each block's text
-    if parsed_listings:
-        for pl in parsed_listings:
-            suffix = _attribution_suffix(pl.get("broker_name"), pl.get("broker_phone"))
-            if suffix:
-                rp = pl.get("raw_payload")
-                if isinstance(rp, dict) and isinstance(rp.get("full_text"), str):
-                    rp["full_text"] = rp["full_text"].rstrip() + suffix
-
-    parsed_ids: list[int] = []
-    for idx, parsed in enumerate(parsed_listings):
-        # Privacy check: determine if this observation can be shared to market
-        share_eligible, share_reason = True, "ok"
-        try:
-            conv_type = getattr(request.state, "conv_type", "unknown")
-            org_privacy = getattr(request.state, "org_privacy", {"privacy_mode": "private"})
-            share_eligible, share_reason = check_share_eligibility(parsed, org_privacy, conv_type)
-        except Exception:
-            pass
-        if not share_eligible:
-            # Mark as not shareable but still save locally
-            parsed["_can_share_to_market"] = False
-            parsed["_share_reason"] = share_reason
-        else:
-            parsed["_can_share_to_market"] = True
-            parsed["_share_reason"] = share_reason
-
-        try:
-            embedding_blob = compute_embedding(parsed) if idx == 0 else None
-        except Exception as exc:
-            print(f"[webhook] compute_embedding error: {exc}", flush=True)
-            embedding_blob = None
-        block_text = None
-        if isinstance(parsed.get("raw_payload"), dict):
-            block_text = parsed["raw_payload"].get("full_text")
-        source_text = block_text or msg_text
-        obs = ParsedObservation(
-            raw_message_id=raw_id,
-            listing_index=idx,
-            message_type=parsed.get("message_type"),
-            intent=parsed.get("intent"),
-            principal=parsed.get("principal"),
-            bhk=parsed.get("bhk"),
-            price=parsed.get("price"),
-            price_unit=parsed.get("price_unit"),
-            area_sqft=parsed.get("area_sqft"),
-            furnishing=parsed.get("furnishing"),
-            location_raw=parsed.get("location_raw"),
-            location=json.dumps(parsed.get("location")) if parsed.get("location") else None,
-            building_name=parsed.get("building_name"),
-            landmark_name=parsed.get("landmark_name"),
-            street_name=parsed.get("street_name"),
-            area=parsed.get("area"),
-            micro_market=parsed.get("micro_market"),
-            developer=parsed.get("developer"),
-            broker_name=parsed.get("broker_name"),
-            broker_phone=parsed.get("broker_phone"),
-            profile_name=sender_name or push_name,
-            forwarded=parsed.get("forwarded", 0),
-            confidence=parsed.get("confidence", 0.0),
-            raw_payload=json.dumps(parsed.get("raw_payload", {})),
-            embedding=embedding_blob,
-            summary_title=generate_summary_title(parsed, source_text),
-        )
-        try:
-            parsed_id = storage.save_parsed(obs)
-            parsed_ids.append(parsed_id)
-        except Exception as exc:
-            print(f"[webhook] save_parsed error: {exc}", flush=True)
-            continue
-
-        # ── Add tags to knowledge record ──────────────────────────────
-        if knowledge_record_id:
-            tags = {}
-            if parsed.get("intent"):
-                tags["intent"] = [parsed["intent"]]
-            if parsed.get("bhk"):
-                tags["bhk"] = [f"{parsed['bhk']} BHK" if parsed['bhk'] != 0.5 else "1 RK"]
-            if parsed.get("building_name"):
-                tags["building"] = [parsed["building_name"]]
-            if parsed.get("micro_market"):
-                tags["market"] = [parsed["micro_market"]]
-            if parsed.get("furnishing"):
-                tags["furnishing"] = [parsed["furnishing"]]
-            if parsed.get("price"):
-                tags["price"] = [str(parsed["price"])]
-            if tags:
-                try:
-                    storage.bulk_add_knowledge_tags(knowledge_record_id, tags, source="parser")
-                except Exception as exc:
-                    print(f"[webhook] bulk_add_knowledge_tags error: {exc}", flush=True)
-
-            # Update content_type based on intent
-            intent = parsed.get("intent")
-            try:
-                if intent in ("SELL", "RENT"):
-                    storage.update_knowledge_record(knowledge_record_id, {"content_type": "listing", "intent": intent})
-                elif intent in ("BUY", "BUYER", "RENTAL_SEEKER"):
-                    storage.update_knowledge_record(knowledge_record_id, {"content_type": "requirement", "intent": intent})
-            except Exception as exc:
-                print(f"[webhook] update_knowledge_record error: {exc}", flush=True)
-
-        # Resolve (run once, reuse for all listings in a multi)
-        try:
-            if idx == 0 or msg_class != "multi":
-                resolver_result = resolve_parsed(parsed, msg_text)
-            resolver_result["parsed_id"] = parsed_id
-        except Exception as exc:
-            print(f"[webhook] resolve_parsed error: {exc}", flush=True)
-            resolver_result = {"parsed_id": parsed_id}
-
-        dec = ResolverDecision(
-            parsed_id=parsed_id,
-            building_id=resolver_result.get("building_id"),
-            building_name=resolver_result.get("building_name"),
-            landmark_id=resolver_result.get("landmark_id"),
-            landmark_name=resolver_result.get("landmark_name"),
-            street_id=resolver_result.get("street_id"),
-            street_name=resolver_result.get("street_name"),
-            project_id=resolver_result.get("project_id"),
-            project_name=resolver_result.get("project_name"),
-            developer_name=resolver_result.get("developer_name"),
-            parser_confidence=resolver_result.get("parser_confidence", 0.0),
-            resolver_confidence=resolver_result.get("resolver_confidence", 0.0),
-            final_confidence=resolver_result.get("final_confidence", 0.0),
-            method=resolver_result.get("method", "unresolved"),
-            method_detail=resolver_result.get("method_detail"),
-            candidates=json.dumps(resolver_result.get("candidates", [])),
-            failure_category=resolver_result.get("failure_category"),
-            error=resolver_result.get("error"),
-        )
-        try:
-            storage.save_resolver_decision(dec)
-        except Exception as exc:
-            print(f"[webhook] save_resolver_decision error: {exc}", flush=True)
-
-    try:
-        get_bus().publish("extraction.completed", {
-            "parsed_ids": parsed_ids, "raw_id": raw_id, "count": len(parsed_ids),
-            "intent": parsed_listings[0].get("intent"), "broker": parsed_listings[0].get("broker_name"),
-        })
-    except Exception as exc:
-        print(f"[webhook] extraction.completed error: {exc}", flush=True)
-    try:
-        get_bus().publish("resolution.completed", {
-            "parsed_ids": parsed_ids, "raw_id": raw_id,
-            "building": resolver_result.get("building_name"),
-            "method": resolver_result.get("method", "unresolved"),
-            "confidence": resolver_result.get("final_confidence", 0),
-        })
-    except Exception as exc:
-        print(f"[webhook] resolution.completed error: {exc}", flush=True)
-
-    # ── Extract implicit observations (non-blocking) ─────────────
-    if msg_text and len(msg_text) > 30:
-        try:
-            loop = asyncio.get_running_loop()
-            loop.run_in_executor(None, _process_observations,
-                msg_text,
-                parsed_listings[0].get("broker_name", ""),
-                parsed_listings[0].get("broker_phone", ""),
-                parsed_ids,
-                raw_id,
-            )
-        except Exception as exc:
-            print(f"[webhook] _process_observations error: {exc}", flush=True)
-
-    return {"status": "ok", "raw_id": raw_id, "parsed_ids": parsed_ids, "count": len(parsed_ids)}
+def _process_single_raw(raw_id: int, ctx: dict):
+    """Thin wrapper — delegates to the shared extraction module."""
+    from extraction import process_raw_message
+    process_raw_message(raw_id, ctx, storage=storage)
 
 
 def _handle_system_event(event_class: str, event: str, data: dict, instance: str):
@@ -3064,11 +2829,68 @@ async def dashboard_sync_activity():
             "records_processed": j.get("records_processed", 0),
         }
     overall = st.get("overall", "idle")
+    # Extraction progress
+    raw_total = 0
+    raw_processed = 0
+    try:
+        raw_total = _raw_count_all()
+        raw_processed = _raw_count_processed()
+    except Exception:
+        pass
     return {
         "overall": overall,
         "total_jobs": len(get_jobs(source="whatsapp")),
         "running": running,
+        "extraction": {
+            "total_raw": raw_total,
+            "processed": raw_processed,
+            "pending": raw_total - raw_processed,
+            "pct": round(raw_processed / raw_total * 100, 1) if raw_total else 0,
+        },
     }
+
+
+@app.get("/api/extraction/progress")
+async def extraction_progress():
+    """Current extraction pipeline progress (async worker status)."""
+    total = _raw_count_all()
+    processed = _raw_count_processed()
+    pending = total - processed
+    # Recent activity window
+    from datetime import timedelta
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+    recent_processed = 0
+    try:
+        res = storage.client.table("raw_messages").select("id", count="exact")\
+            .eq("processed", True)\
+            .gte("processed_at", cutoff).execute()
+        recent_processed = res.count if hasattr(res, "count") else 0
+    except Exception:
+        pass
+    return {
+        "total_raw_messages": total,
+        "processed": processed,
+        "pending": pending,
+        "progress_pct": round(processed / total * 100, 1) if total else 0,
+        "recently_processed_1h": recent_processed,
+    }
+
+
+def _raw_count_all() -> int:
+    try:
+        res = storage.client.table("raw_messages").select("id", count="exact").execute()
+        return res.count if hasattr(res, "count") else 0
+    except Exception:
+        return 0
+
+
+def _raw_count_processed() -> int:
+    try:
+        res = storage.client.table("raw_messages").select("id", count="exact")\
+            .eq("processed", True).execute()
+        return res.count if hasattr(res, "count") else 0
+    except Exception:
+        return 0
 
 
 @app.get("/api/dashboard/graph-growth")

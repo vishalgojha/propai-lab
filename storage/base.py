@@ -26,6 +26,8 @@ class RawMessage:
     pipeline_version: Optional[str] = None
     synced_at: Optional[str] = None
     event_id: Optional[str] = None
+    processed: bool = False
+    processed_at: Optional[str] = None
     created_at: str = ""
 
 
@@ -310,6 +312,15 @@ class Storage(ABC):
 
     @abstractmethod
     def get_all_raw_for_replay(self) -> list[RawMessage]: ...
+
+    @abstractmethod
+    def get_unprocessed_raw_messages(self, limit: int = 100) -> list[RawMessage]: ...
+
+    @abstractmethod
+    def mark_raw_processed(self, raw_id: int): ...
+
+    @abstractmethod
+    def count_unprocessed_raw(self) -> int: ...
 
     # ── Parsed observations ────────────────────────────────────
 

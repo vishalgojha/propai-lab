@@ -659,6 +659,7 @@ class SupabaseStorage(Storage):
         "group_name", "sender", "sender_jid", "sender_phone",
         "message", "message_type", "attachments", "reply_context",
         "timestamp", "source", "raw_payload", "message_uid",
+        "processed", "processed_at",
         "created_at",
     }
 
@@ -719,6 +720,24 @@ class SupabaseStorage(Storage):
     def get_all_raw_for_replay(self) -> list[RawMessage]:
         res = self.client.table("raw_messages").select("*").order("timestamp", desc=True).limit(1000).execute()
         return [dict_to_dataclass(RawMessage, d) for d in res.data]
+
+    def get_unprocessed_raw_messages(self, limit: int = 100) -> list[RawMessage]:
+        res = self.client.table("raw_messages").select("*")\
+            .is_("processed", "false")\
+            .order("id", desc=False).limit(limit).execute()
+        return [dict_to_dataclass(RawMessage, d) for d in res.data]
+
+    def mark_raw_processed(self, raw_id: int):
+        now = datetime.now(timezone.utc).isoformat()
+        self.client.table("raw_messages").update({
+            "processed": True,
+            "processed_at": now,
+        }).eq("id", raw_id).execute()
+
+    def count_unprocessed_raw(self) -> int:
+        res = self.client.table("raw_messages").select("id", count="exact")\
+            .is_("processed", "false").execute()
+        return res.count if hasattr(res, "count") else 0
 
     def get_inbox_threads(self, limit: int = 500, offset: int = 0, tenant_id: str | None = None) -> list[dict]:
         query = self.client.table("raw_messages").select("*")\
