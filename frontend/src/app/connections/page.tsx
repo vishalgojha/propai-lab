@@ -18,82 +18,9 @@ type ConnectionPhase =
   | "reconnecting"
   | "error";
 
-function randomMovieQuote() {
-  return MOVIE_QUOTES[Math.floor(Math.random() * MOVIE_QUOTES.length)];
+function defaultConnectionError() {
+  return "Could not determine WhatsApp connection state. Refresh the QR code or reconnect WhatsApp.";
 }
-
-const MOVIE_QUOTES = [
-  "Life finds a way. — Jurassic Park",
-  "I'll be back. — Terminator 2",
-  "Why so serious? — The Dark Knight",
-  "There's no place like home. — The Wizard of Oz",
-  "To infinity and beyond! — Toy Story",
-  "You shall not pass! — The Lord of the Rings",
-  "I'm the king of the world! — Titanic",
-  "Just keep swimming. — Finding Nemo",
-  "Hakuna Matata. — The Lion King",
-  "I feel the need — the need for speed! — Top Gun",
-  "You can't handle the truth! — A Few Good Men",
-  "The name's Bond. James Bond. — Casino Royale",
-  "May the Force be with you. — Star Wars",
-  "I see dead people. — The Sixth Sense",
-  "Here's looking at you, kid. — Casablanca",
-  "I'm gonna make him an offer he can't refuse. — The Godfather",
-  "You're gonna need a bigger boat. — Jaws",
-  "I have a bad feeling about this. — Star Wars",
-  "It's alive! It's alive! — Frankenstein",
-  "They live. — They Live",
-  "I'll have what she's having. — When Harry Met Sally",
-  "Keep your friends close, but your enemies closer. — The Godfather Part II",
-  "Snakes. Why'd it have to be snakes? — Raiders of the Lost Ark",
-  "Roads? Where we're going we don't need roads. — Back to the Future",
-  "Show me the money! — Jerry Maguire",
-  "You're killing me, Smalls. — The Sandlot",
-  "Forget it, Jake. It's Chinatown. — Chinatown",
-  "You had me at hello. — Jerry Maguire",
-  "Nobody puts Baby in a corner. — Dirty Dancing",
-  "I'll get you, my pretty, and your little dog too! — The Wizard of Oz",
-  "Carpe diem. Seize the day, boys. — Dead Poets Society",
-  "E.T. phone home. — E.T.",
-  "Houston, we have a problem. — Apollo 13",
-  "Go ahead, make my day. — Sudden Impact",
-  "I'm walking here! — Midnight Cowboy",
-  "Hello, my name is Inigo Montoya. You killed my father. Prepare to die. — The Princess Bride",
-  "My precious. — The Lord of the Rings",
-  "I am your father. — Star Wars",
-  "Get your paws off me, you damned dirty ape! — Planet of the Apes",
-  "Magic Mirror on the wall, who is the fairest one of all? — Snow White",
-  "I think this is the beginning of a beautiful friendship. — Casablanca",
-  "Of all the gin joints in all the towns in all the world, she walks into mine. — Casablanca",
-  "Round up the usual suspects. — Casablanca",
-  "Play it, Sam. Play 'As Time Goes By.' — Casablanca",
-  "Frankly, my dear, I don't give a damn. — Gone with the Wind",
-  "After all, tomorrow is another day. — Gone with the Wind",
-  "There's no crying in baseball! — A League of Their Own",
-  "I love the smell of napalm in the morning. — Apocalypse Now",
-  "I'm mad as hell, and I'm not going to take this anymore! — Network",
-  "You talkin' to me? — Taxi Driver",
-  "I could dance with you till the cows come home. — The Princess Bride",
-  "As you wish. — The Princess Bride",
-  "You keep using that word. I do not think it means what you think it means. — The Princess Bride",
-  "Have fun storming the castle! — The Princess Bride",
-  "I'm not left-handed either. — The Princess Bride",
-  "Hello. My name is Inigo Montoya. — The Princess Bride",
-  "I'll tell you in a word... inconceivable! — The Princess Bride",
-  "Never go in against a Sicilian when death is on the line! — The Princess Bride",
-  "Are you not entertained?! — Gladiator",
-  "This is Sparta! — 300",
-  "I'm the one who knocks. — Breaking Bad",
-  "I am the danger. — Breaking Bad",
-  "Say my name. — Breaking Bad",
-  "I am the one who knocks. — Breaking Bad",
-  "I'm not in danger, Skyler. I AM the danger. — Breaking Bad",
-  "I'm the one who knocks! — Breaking Bad",
-  "I've seen things you people wouldn't believe. — Blade Runner",
-  "Tears in rain. Time to die. — Blade Runner",
-  "I've seen things you people wouldn't believe. Attack ships on fire off the shoulder of Orion. I watched C-beams glitter in the dark near the Tannhäuser Gate. — Blade Runner",
-  "This is the way. — The Mandalorian",
-];
 
 const DISCONNECT_REASONS: Record<string, string> = {
   "408": "QR expired — tap to refresh",
@@ -334,7 +261,7 @@ export default function ConnectionCenterPage() {
     const reason = (data.reason as string) || "unknown";
     const specific = DISCONNECT_REASONS[String(reason)];
     setPhase("error");
-    setErrorMsg(specific || randomMovieQuote());
+    setErrorMsg(specific || defaultConnectionError());
     setQrText(null);
   }, []);
 
@@ -343,7 +270,7 @@ export default function ConnectionCenterPage() {
     if (phase !== "loading") return;
     loadingFallback.current = setTimeout(() => {
       setPhase("error");
-      setErrorMsg(randomMovieQuote());
+      setErrorMsg(defaultConnectionError());
     }, 8000);
     return () => { if (loadingFallback.current) clearTimeout(loadingFallback.current); };
   }, [phase]);
@@ -379,12 +306,12 @@ export default function ConnectionCenterPage() {
           handleDisconnected({ reason: cs, ...data } as Record<string, unknown>);
         } else if (cs === "error") {
           setPhase("error");
-          setErrorMsg((data.error as string) || randomMovieQuote());
+          setErrorMsg((data.error as string) || defaultConnectionError());
         } else if (cs === "unknown" || !cs) {
           // Only show movie quote on initial load; if we were connected, stay reconnecting
           if (!wasEverConnectedRef.current) {
             setPhase("error");
-            setErrorMsg(randomMovieQuote());
+            setErrorMsg(defaultConnectionError());
           }
         }
       } catch { /* ignore */ }

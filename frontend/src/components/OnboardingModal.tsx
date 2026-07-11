@@ -88,7 +88,7 @@ export function OnboardingModal({ phone, defaultFirstName, onClose, onComplete }
                     value={confirmedPhone}
                     onChange={e => setConfirmedPhone(e.target.value)}
                     className="flex-1 bg-transparent text-sm text-white placeholder-zinc-500 outline-none"
-                    placeholder="+91 98765 43210"
+                    placeholder="Your WhatsApp number"
                   />
                 </div>
                 <p className="text-xs text-zinc-500">This number will be your primary login identity. You can add more numbers later in Settings.</p>

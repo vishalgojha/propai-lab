@@ -70,21 +70,21 @@ const steps = [
 {
       num: "06",
       icon: Lock,
-      title: "Private by default",
+      title: "Shared market by default",
       description:
-        "Your groups stay yours. Nothing leaves your workspace unless you choose to share.",
+        "PropAI is built as a broker network. Real-estate group intelligence contributes by default, while DMs, personal chats, client groups, friends and family groups, and opted-out groups stay out of extraction.",
       modes: [
         {
-          label: "Private (Default)",
+          label: "Shared Market (Default)",
           tag: "Default",
-          description: "Only your workspace can access your data. Personal chats, client conversations, phone numbers, and WhatsApp messages never leave your workspace.",
+          description: "Real-estate group listings, requirements, price signals, building intelligence, broker network, and demand signals contribute to the shared broker network.",
           features: [
-            "Conversations",
-            "Groups",
             "Listings",
             "Requirements",
-            "Broker graph",
-            "Knowledge graph",
+            "Price trends",
+            "Building intelligence",
+            "Broker network",
+            "Demand signals",
           ],
           neverShared: [
             "WhatsApp messages",
@@ -97,15 +97,14 @@ const steps = [
           ],
         },
         {
-          label: "Shared Market",
-          tag: "Opt-in",
-          description: "Contribute anonymous market intelligence and get visibility beyond your own network.",
+          label: "Private",
+          tag: "Premium",
+          description: "Keep extracted real-estate group intelligence private to your workspace.",
           features: [
-            "Better market visibility",
-            "Cross-network inventory",
-            "Demand trends",
-            "Price trends (anonymized)",
-            "Market activity signals",
+            "Workspace-only intelligence",
+            "No cross-network inventory",
+            "No network demand signals",
+            "Private extraction results",
           ],
           neverShared: [
             "WhatsApp messages",
@@ -282,43 +281,16 @@ function HowItWorksPage() {
                       ))}
                     </div>
                   )}
-
-                  {/* Before/After (Step 3) */}
                   {step.beforeAfter && (
-                    <div className="mt-6 space-y-3">
-                      <div className="rounded-xl border border-white/10 bg-zinc-900 p-4">
-                        <div className="text-[10px] font-bold uppercase tracking-wider text-zinc-500 mb-2">
-                          Raw WhatsApp
-                        </div>
-                        <div className="text-sm text-zinc-300 leading-relaxed">
-                          &quot;2bhk sf andheri west nr station 65k neg ALL brokers call 98765xxxxx urgent&quot;
-                        </div>
-                      </div>
-                      <div className="flex items-center justify-center">
-                        <ArrowRight className="h-5 w-5 text-[#3EE88A]" strokeWidth={2} />
-                      </div>
-                      <div className="rounded-xl border border-[#3EE88A]/20 bg-[#3EE88A]/[0.03] p-4">
-                        <div className="text-[10px] font-bold uppercase tracking-wider text-[#3EE88A] mb-3">
-                          Structured Property Card
-                        </div>
-                        <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
-                          <div><span className="text-zinc-500">Type:</span> <span className="text-white">Listing</span></div>
-                          <div><span className="text-zinc-500">BHK:</span> <span className="text-white">2</span></div>
-                          <div><span className="text-zinc-500">Furnishing:</span> <span className="text-white">Semi-furnished</span></div>
-                          <div><span className="text-zinc-500">Location:</span> <span className="text-white">Andheri West</span></div>
-                          <div><span className="text-zinc-500">Price:</span> <span className="text-white">₹65,000/mo</span></div>
-                          <div><span className="text-zinc-500">Landlord:</span> <span className="text-white">Direct</span></div>
-                          <div><span className="text-zinc-500">Contact:</span> <span className="text-white">98765xxxxx</span></div>
-                          <div><span className="text-zinc-500">Urgency:</span> <span className="text-amber-400">Urgent</span></div>
-                        </div>
-                      </div>
+                    <div className="mt-6 rounded-xl border border-white/10 bg-zinc-900 p-4 text-sm leading-6 text-zinc-400">
+                      Real examples are shown only inside a connected workspace, using messages captured from that workspace.
                     </div>
                   )}
 
                   <p className="mt-4 text-sm leading-6 text-zinc-500">{step.detail}</p>
                 </div>
 
-{/* Right column — visual placeholder / mockup area for future screenshots */}
+{/* Right column - product step visual */}
                 <div className="hidden lg:block" style={{ order: i % 2 === 1 ? 1 : 2 }}>
                   <div className="sticky top-8 rounded-2xl border border-white/5 bg-white/[0.02] p-8 lg:p-12">
                     <div className="flex items-center justify-center">
