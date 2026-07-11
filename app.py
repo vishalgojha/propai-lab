@@ -9624,6 +9624,71 @@ async def audit_intelligence():
         except Exception:
             return default or []
 
+    def _audit_fallback(reason: Exception, scope: dict):
+        total_raw = scope.get("total_raw", 0)
+        total_groups = scope.get("total_groups", 0)
+        last_msg = scope.get("last_msg", None)
+        return {
+            "network": {
+                "total_groups": _to_number(total_groups),
+                "active_groups_24h": _to_number(scope.get("active_groups_24h", 0)),
+                "total_messages": _to_number(total_raw),
+                "knowledge_records": _to_number(scope.get("knowledge_records", total_raw)),
+                "attachments": _to_number(scope.get("attachment_count", 0)),
+                "communities": _to_number(scope.get("communities_count", 0)),
+                "broadcasts": _to_number(scope.get("broadcast_count", 0)),
+                "direct_messages": _to_number(scope.get("direct_message_count", 0)),
+                "messages_today": _to_number(scope.get("msgs_today", 0)),
+                "parsed_today": _to_number(scope.get("parsed_today", 0)),
+                "parser_success": _to_number(scope.get("parser_success", 0)),
+                "last_message": last_msg or "never",
+                "webhook_healthy": False,
+            },
+            "brokers": {"total": _to_number(scope.get("total_brokers", 0)), "top": []},
+            "cleanup": {"duplicate_phones": [], "duplicate_names": [], "brokers_no_market": 0},
+            "listings": {
+                "total": _to_number(scope.get("total_listings", 0)),
+                "sell": _to_number(scope.get("sell_count", 0)),
+                "rent": _to_number(scope.get("rent_count", 0)),
+                "commercial": _to_number(scope.get("commercial_count", 0)),
+                "requirements": _to_number(scope.get("total_requirements", 0)),
+            },
+            "coverage": {
+                "markets": _to_number(scope.get("markets_observed", 0)),
+                "buildings": _to_number(scope.get("buildings_observed", 0)),
+                "buildings_with_data": _to_number(scope.get("buildings_with_data", 0)),
+                "developers": _to_number(scope.get("developers_observed", 0)),
+                "localities": _to_number(scope.get("localities_observed", 0)),
+                "landmarks": _to_number(scope.get("landmarks_observed", 0)),
+                "market_stats": [],
+                "top_markets": [],
+                "coverage_gaps": [],
+            },
+            "capture": {
+                "status": "degraded",
+                "last_message": last_msg or "never",
+                "messages_captured": _to_number(total_raw),
+                "knowledge_records": _to_number(scope.get("knowledge_records", total_raw)),
+                "attachments": _to_number(scope.get("attachment_count", 0)),
+                "communities": _to_number(scope.get("communities_count", 0)),
+                "groups": _to_number(total_groups),
+                "broadcasts": _to_number(scope.get("broadcast_count", 0)),
+                "direct_messages": _to_number(scope.get("direct_message_count", 0)),
+                "latest_records": [],
+            },
+            "search_coverage": {
+                "messages": _to_number(total_raw),
+                "indexed": _to_number(scope.get("indexed_records", 0)),
+                "searchable": _to_number(scope.get("searchable_records", 0)),
+                "embeddings": _to_number(scope.get("embeddings_count", 0)),
+                "recall_ready": _to_number(scope.get("recall_ready_pct", 0)),
+            },
+            "learning": {"unknown_terms": 0, "needs_review": 0, "recently_learned": []},
+            "groups": [],
+            "broker_reach": [],
+            "suggestions": [{"type": "audit_degraded", "message": str(reason)[:180], "count": 1}],
+        }
+
     try:
         # ── Network Overview ──
         total_groups = _safe(_q("SELECT COUNT(DISTINCT group_name) FROM raw_messages"))
@@ -10020,7 +10085,8 @@ async def audit_intelligence():
         }
     except Exception as e:
         print(f"[audit_intelligence] failed: {e}", flush=True)
-        return {"error": str(e)[:500], "partial": locals().get("result", {})}
+        scope = locals()
+        return scope.get("result") or _audit_fallback(e, scope)
 
     return result
 
