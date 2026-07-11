@@ -54,7 +54,8 @@ const navSections = [
   {
     title: "Settings",
     items: [
-      { href: "/connections", label: "Connection", icon: Wifi },
+      { href: "/connections", label: "Connect WhatsApp", icon: Wifi },
+      { href: "/audit", label: "WhatsApp Audit", icon: MessageSquare },
       { href: "/profile", label: "My Profile", icon: UserCheck },
       { href: "/profile/team", label: "Team", icon: UserCog },
       { href: "/settings/privacy", label: "Privacy", icon: Shield },

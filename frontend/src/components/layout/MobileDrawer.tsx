@@ -23,7 +23,8 @@ const navSections = [
   {
     title: "Settings",
     items: [
-      { href: "/connections", label: "Connection" },
+      { href: "/connections", label: "Connect WhatsApp" },
+      { href: "/audit", label: "WhatsApp Audit" },
       { href: "/profile", label: "My Profile" },
       { href: "/profile/team", label: "Team" },
       { href: "/settings/privacy", label: "Privacy" },

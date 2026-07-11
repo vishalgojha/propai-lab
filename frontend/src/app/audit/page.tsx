@@ -193,6 +193,9 @@ export default function AuditPage() {
   const [loading, setLoading] = useState(true);
   const [searching, setSearching] = useState(false);
   const [error, setError] = useState("");
+  const [auditGroups, setAuditGroups] = useState<api.AuditGroupCard[]>([]);
+  const [excludedJids, setExcludedJids] = useState<string[]>([]);
+  const [excludedLoading, setExcludedLoading] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -235,6 +238,38 @@ export default function AuditPage() {
     }, 250);
     return () => clearTimeout(t);
   }, [query]);
+
+  // Fetch audit groups and excluded JIDs for parser control
+  useEffect(() => {
+    async function load() {
+      try {
+        const [groups, excluded] = await Promise.all([
+          api.getAuditGroups(),
+          api.getExcludedGroups(),
+        ]);
+        setAuditGroups(groups);
+        setExcludedJids(excluded);
+      } catch {
+        // silent
+      }
+    }
+    load();
+  }, []);
+
+  async function toggleGroupParser(jid: string, currentlyExcluded: boolean) {
+    setExcludedLoading(true);
+    try {
+      const updated = currentlyExcluded
+        ? excludedJids.filter((j) => j !== jid)
+        : [...excludedJids, jid];
+      await api.setExcludedGroups(updated);
+      setExcludedJids(updated);
+    } catch {
+      // silent
+    } finally {
+      setExcludedLoading(false);
+    }
+  }
 
   const capture = (data?.capture || {}) as Record<string, unknown>;
   const network = (data?.network || {}) as Record<string, unknown>;
@@ -436,6 +471,44 @@ export default function AuditPage() {
                 <div className="font-mono text-[#3EE88A]">{num(group.signal_ratio)}%</div>
               </div>
             ))}
+          </Card>
+        </section>
+      ) : null}
+
+      {auditGroups.length ? (
+        <section className="space-y-3">
+          <SectionTitle title="Group Parser Control" sub="Toggle parser on/off per group. Opted-out groups are skipped during webhook processing." />
+          <Card className="overflow-hidden">
+            <div className="grid grid-cols-[minmax(0,1fr)_80px_100px] gap-3 border-b border-white/10 px-4 py-3 text-[10px] font-bold uppercase tracking-[0.12em] text-zinc-500">
+              <div>Group</div>
+              <div>Messages</div>
+              <div>Parser</div>
+            </div>
+            {auditGroups.map((group) => {
+              const isExcluded = excludedJids.includes(group.jid);
+              return (
+                <div key={group.jid} className="grid grid-cols-[minmax(0,1fr)_80px_100px] gap-3 border-b border-[rgba(255,255,255,0.05)] px-4 py-3 text-xs items-center last:border-b-0">
+                  <div className="min-w-0">
+                    <div className="truncate font-semibold text-white">{group.name}</div>
+                    <div className="mt-0.5 truncate text-[10px] text-zinc-500">{group.jid}</div>
+                  </div>
+                  <div className="font-mono text-white">{num(group.messages)}</div>
+                  <div>
+                    <button
+                      onClick={() => toggleGroupParser(group.jid, isExcluded)}
+                      disabled={excludedLoading}
+                      className={`w-full rounded-lg px-2.5 py-1.5 text-[11px] font-semibold transition-colors ${
+                        isExcluded
+                          ? "bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20"
+                          : "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20"
+                      }`}
+                    >
+                      {isExcluded ? "Opted Out" : "Parser On"}
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
           </Card>
         </section>
       ) : null}

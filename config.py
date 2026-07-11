@@ -63,6 +63,27 @@ def save_group_allowlist(entries: list[str]):
     import json
     GROUP_ALLOWLIST_PATH.write_text(json.dumps(entries, indent=2))
 
+
+# Group opt-out — groups that should NOT be parsed
+# File: config.py's directory /group_exclude.json — array of group JIDs
+GROUP_EXCLUDE_PATH = LAB_DIR / "group_exclude.json"
+
+def load_excluded_groups() -> list[str]:
+    if not GROUP_EXCLUDE_PATH.exists():
+        return []
+    import json
+    try:
+        raw = json.loads(GROUP_EXCLUDE_PATH.read_text())
+        if isinstance(raw, list):
+            return [str(x).strip() for x in raw if x]
+        return []
+    except (json.JSONDecodeError, OSError):
+        return []
+
+def save_excluded_groups(entries: list[str]):
+    import json
+    GROUP_EXCLUDE_PATH.write_text(json.dumps(entries, indent=2))
+
 # Feature flags
 ENABLE_AI_PROMO = os.getenv("ENABLE_AI_PROMO", "false").lower() == "true"
 ENABLE_META_PUBLISHING = os.getenv("ENABLE_META_PUBLISHING", "false").lower() == "true"

@@ -48,7 +48,7 @@ from lab.events import get_bus
 PROJECT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(PROJECT_DIR))
 
-from lab.config import HOST, PORT, FRONTEND_URL, DOUBLEWORD_API_KEY, ENABLE_AI_PROMO, ENABLE_META_PUBLISHING, STATUS_FILE, SUPABASE_URL, SUPABASE_SERVICE_KEY, load_group_allowlist, save_group_allowlist
+from lab.config import HOST, PORT, FRONTEND_URL, DOUBLEWORD_API_KEY, ENABLE_AI_PROMO, ENABLE_META_PUBLISHING, STATUS_FILE, SUPABASE_URL, SUPABASE_SERVICE_KEY, load_group_allowlist, save_group_allowlist, load_excluded_groups, save_excluded_groups
 from evidence.resolver import resolve, resolve_by_landmark, resolve_by_street
 from evidence.parsers import parse as broker_parse
 
@@ -1660,6 +1660,8 @@ async def webhook(request: Request):
     group = key.get("remoteJid", "") or msg_data.get("from", "")
     if _is_blocked_whatsapp_conversation(group) or _is_blocked_whatsapp_conversation(sender_jid):
         return {"status": "ignored", "reason": "blocked_whatsapp_conversation", "jid": group}
+    if group in load_excluded_groups():
+        return {"status": "ignored", "reason": "group_opted_out", "jid": group}
     group_name = _resolve_group_name(group)
     is_dm = str(group).endswith("@s.whatsapp.net") or str(group).endswith("@lid")
     raw_group_name = "" if is_dm else group_name
@@ -8084,6 +8086,26 @@ async def clear_allowlist():
     """Clear the group allowlist (track all groups)."""
     save_group_allowlist([])
     return {"status": "ok"}
+
+
+@app.get("/api/groups/excluded")
+async def get_excluded():
+    """Return the current group opt-out list (JIDs that should NOT be parsed)."""
+    return load_excluded_groups()
+
+
+@app.post("/api/groups/excluded")
+async def set_excluded(request: Request):
+    """Set the group opt-out list (JSON array of group JIDs)."""
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(400, "Invalid JSON")
+    if not isinstance(body, list):
+        raise HTTPException(400, "Expected a JSON array of strings")
+    entries = [str(x).strip() for x in body if x and str(x).strip()]
+    save_excluded_groups(entries)
+    return {"status": "ok", "count": len(entries)}
 
 
 @app.get("/api/listings")

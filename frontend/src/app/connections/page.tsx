@@ -490,7 +490,7 @@ export default function ConnectionCenterPage() {
   return (
     <div className="max-w-6xl mx-auto px-4 lg:px-6 pt-12 pb-12">
       <div className="mb-8">
-        <h2 className="text-lg font-bold text-white">WhatsApp Connection</h2>
+        <h2 className="text-lg font-bold text-white">Connect WhatsApp</h2>
         <p className="mt-2 max-w-2xl text-sm text-zinc-500">
           Monitor and manage your WhatsApp integration. All data is processed in real-time.
         </p>

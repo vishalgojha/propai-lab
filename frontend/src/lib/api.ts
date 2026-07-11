@@ -1316,3 +1316,19 @@ export function updateOrgPrivacy(orgId: string, data: Partial<OrgPrivacySettings
     body: JSON.stringify(data),
   });
 }
+
+
+// ── Group Opt-out (Parser Control) ──────────────────────────────────
+
+export function getExcludedGroups() {
+  return fetchJSON<string[]>("/groups/excluded");
+}
+
+export function setExcludedGroups(jids: string[]) {
+  return fetchJSON<{ status: string; count: number }>("/groups/excluded", {
+    method: "POST",
+    body: JSON.stringify(jids),
+  });
+}
+
+
