@@ -61,5 +61,20 @@ services:
       - "3001"
     restart: unless-stopped
 
+  extraction-worker:
+    build:
+      context: ../..
+      dockerfile: Dockerfile.api
+    command: ["python", "extraction_worker.py", "--poll", "5"]
+    environment:
+      SUPABASE_URL: ${SUPABASE_URL}
+      SUPABASE_SERVICE_KEY: ${SUPABASE_SERVICE_KEY}
+      FRONTEND_URL: https://app.propai.live
+      EXTRACTION_WORKER_BATCH_SIZE: 10
+      EXTRACTION_WORKER_POLL_SECONDS: 5
+    depends_on:
+      - api
+    restart: unless-stopped
+
 volumes:
   propai-data:

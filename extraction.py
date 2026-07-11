@@ -50,7 +50,6 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
     from lab import multi_listing
     from evidence.parsers import parse as parse_message
     from lab.config import load_excluded_groups
-    from lab.organizations import check_share_eligibility
 
     msg_text = ctx["msg_text"]
     sender_name = ctx["sender_name"]
@@ -71,7 +70,7 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
         compute_embedding, resolve_parsed,
         _parsed_source_text, _demote_weak_property_parse,
         _parsed_has_market_anchor, _attribution_suffix,
-        _process_observations,
+        _process_observations, check_share_eligibility,
     )
 
     # Skip excluded groups

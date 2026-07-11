@@ -10,33 +10,74 @@ dedicated worker should own all extraction.
 
 import argparse
 import json
+import os
 import sys
 import time
 import traceback
 
 from extraction import get_storage, process_raw_message
 
-POLL_INTERVAL = 5     # seconds between polls
-BATCH_SIZE = 10        # messages per cycle
+POLL_INTERVAL = int(os.getenv("EXTRACTION_WORKER_POLL_SECONDS", "5"))
+BATCH_SIZE = int(os.getenv("EXTRACTION_WORKER_BATCH_SIZE", "10"))
+
+
+def row_value(row, key: str, default=None):
+    if isinstance(row, dict):
+        return row.get(key, default)
+    return getattr(row, key, default)
+
+
+def parse_json(value, default):
+    if isinstance(value, (dict, list)):
+        return value
+    if isinstance(value, str) and value.strip():
+        try:
+            return json.loads(value)
+        except (json.JSONDecodeError, TypeError):
+            return default
+    return default
+
+
+def context_from_raw(row) -> dict:
+    raw_payload = parse_json(row_value(row, "raw_payload"), {})
+    data = raw_payload.get("data", raw_payload) if isinstance(raw_payload, dict) else {}
+    key = data.get("key", {}) if isinstance(data, dict) else {}
+    sender_data = data.get("sender", {}) if isinstance(data, dict) else {}
+    msg = data.get("message", {}) if isinstance(data, dict) else {}
+
+    group = (
+        key.get("remoteJid")
+        or data.get("from")
+        or row_value(row, "group_name")
+        or ""
+    )
+    sender_jid = key.get("participant") or sender_data.get("id") or row_value(row, "sender_jid") or ""
+    sender_name = sender_data.get("name") or data.get("pushName") or row_value(row, "sender") or ""
+    sender_phone = row_value(row, "sender_phone") or ""
+    message_uid = row_value(row, "message_uid") or f"{group}:{key.get('id') or row_value(row, 'id')}"
+
+    return {
+        "sender_name": sender_name,
+        "push_name": data.get("pushName") or sender_name,
+        "sender_jid": sender_jid,
+        "sender_phone": sender_phone,
+        "group": group,
+        "group_name": row_value(row, "group_name") or "",
+        "instance": data.get("instance") or raw_payload.get("instance") or "",
+        "is_dm": str(group).endswith("@s.whatsapp.net") or str(group).endswith("@lid"),
+        "message_uid": message_uid,
+        "message_id": key.get("id") or "",
+        "msg_text": row_value(row, "message") or "",
+        "msg": msg,
+    }
 
 
 def run_cycle(storage):
     unprocessed = storage.get_unprocessed_raw_messages(limit=BATCH_SIZE)
     for row in unprocessed:
-        raw_id = row["id"]
+        raw_id = row_value(row, "id")
         try:
-            ctx = json.loads(row.get("context") or "{}")
-            ctx.setdefault("sender_name", row.get("sender_name") or "")
-            ctx.setdefault("push_name", row.get("push_name") or "")
-            ctx.setdefault("sender_jid", row.get("sender_jid") or "")
-            ctx.setdefault("sender_phone", row.get("sender_phone") or "")
-            ctx.setdefault("group", row.get("group_name") or row.get("conversation_id") or "")
-            ctx.setdefault("group_name", row.get("group_name") or "")
-            ctx.setdefault("instance", ctx.get("instance", ""))
-            ctx.setdefault("is_dm", row.get("is_dm", False))
-            ctx.setdefault("message_uid", row.get("message_uid") or str(raw_id))
-            ctx.setdefault("message_id", ctx.get("message_id", ""))
-            ctx.setdefault("msg_text", row.get("message") or "")
+            ctx = context_from_raw(row)
             process_raw_message(raw_id, ctx, storage=storage)
         except Exception:
             print(f"[worker] Error processing raw_id={raw_id}:", flush=True)

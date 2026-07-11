@@ -2766,20 +2766,26 @@ async def get_market_detail(market_name: str):
 @app.get("/api/dashboard/sync-activity")
 async def dashboard_sync_activity():
     """Currently reading group and sync progress."""
-    scheduler = get_scheduler()
-    st = scheduler.status()
-    from lab.scheduler import get_jobs
-    jobs = get_jobs(source="whatsapp", status="running")
+    try:
+        overall = get_scheduler().status().get("overall", "idle")
+    except Exception:
+        overall = "idle"
+    jobs = []
+    all_jobs = []
+    try:
+        all_jobs = storage.get_sync_jobs(limit=500, source="whatsapp") if storage else []
+        jobs = [j for j in all_jobs if getattr(j, "status", "") == "running"]
+    except Exception as exc:
+        print(f"[sync-activity] sync_jobs unavailable: {exc}", flush=True)
     running = None
     if jobs:
         j = jobs[0]
         running = {
-            "group_name": j.get("group_name", j.get("group_id", "")),
-            "group_id": j.get("group_id", ""),
-            "records_found": j.get("records_found", 0),
-            "records_processed": j.get("records_processed", 0),
+            "group_name": getattr(j, "group_name", "") or getattr(j, "group_id", ""),
+            "group_id": getattr(j, "group_id", ""),
+            "records_found": getattr(j, "records_found", 0) or 0,
+            "records_processed": getattr(j, "records_processed", 0) or 0,
         }
-    overall = st.get("overall", "idle")
     # Extraction progress
     raw_total = 0
     raw_processed = 0
@@ -2790,7 +2796,7 @@ async def dashboard_sync_activity():
         pass
     return {
         "overall": overall,
-        "total_jobs": len(get_jobs(source="whatsapp")),
+        "total_jobs": len(all_jobs),
         "running": running,
         "extraction": {
             "total_raw": raw_total,
@@ -6310,8 +6316,11 @@ async def sync_status_legacy():
 @app.get("/api/sync/groups")
 async def sync_groups_legacy():
     """Legacy: list WhatsApp sync jobs as groups."""
-    from lab.scheduler import get_jobs
-    return get_jobs(source="whatsapp")
+    jobs = storage.get_sync_jobs(limit=500, source="whatsapp") if storage else []
+    return [
+        {f.name: getattr(j, f.name) for f in j.__dataclass_fields__.values()}
+        for j in jobs
+    ]
 
 
 @app.get("/api/sync/connection")

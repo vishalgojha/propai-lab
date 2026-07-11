@@ -12,12 +12,12 @@ The scheduler is resumable, rate-limited, and never blocks live ingestion.
 
 import json
 import logging
+import sys
 import threading
 from datetime import datetime, timezone
 from queue import Queue, Empty
 from typing import Optional
 
-from lab.app import storage
 from lab.ingestion import BaseSource, SourceRegistry, SourceRecord, SyncJob
 from lab.ingestion.registry import get_registry
 from lab.storage import SyncJob as StorageSyncJob
@@ -29,6 +29,15 @@ PIPELINE_VERSION = "1.0.0"
 
 # Max concurrent sync jobs
 MAX_WORKERS = 3
+
+
+def get_app_storage():
+    """Return the initialized FastAPI storage object without capturing a stale import."""
+    app_mod = sys.modules.get("app") or sys.modules.get("lab.app")
+    storage = getattr(app_mod, "storage", None) if app_mod else None
+    if storage is None:
+        raise RuntimeError("PropAI storage is not initialized")
+    return storage
 
 
 # ── Sync Job Lifecycle ────────────────────────────────────────────
@@ -44,22 +53,22 @@ def create_job_in_db(source: str, instance: str, group_id: str,
                      group_name: str = "", meta: str = "{}") -> int:
     job = StorageSyncJob(source=source, instance=instance, group_id=group_id,
                          group_name=group_name, meta=meta, status=JOB_STATUS_PENDING)
-    return storage.create_sync_job(job)
+    return get_app_storage().create_sync_job(job)
 
 
 def update_job(job_id: int, **kwargs):
-    storage.update_sync_job(job_id, **kwargs)
+    get_app_storage().update_sync_job(job_id, **kwargs)
 
 
 def get_job(job_id: int) -> Optional[dict]:
-    job = storage.get_sync_job(job_id)
+    job = get_app_storage().get_sync_job(job_id)
     if job:
         return {f.name: getattr(job, f.name) for f in job.__dataclass_fields__.values()}
     return None
 
 
 def get_jobs(source: str = "", status: str = "", limit: int = 50) -> list[dict]:
-    jobs = storage.get_sync_jobs(limit=limit, source=source, status=status)
+    jobs = get_app_storage().get_sync_jobs(limit=limit, source=source, status=status)
     return [{f.name: getattr(j, f.name) for f in j.__dataclass_fields__.values()} for j in jobs]
 
 
@@ -77,7 +86,12 @@ def process_record(record: SourceRecord, pipeline_version: str = PIPELINE_VERSIO
 
     Returns dict with raw_id, parsed_id, resolver result.
     """
-    from lab.app import storage, parse_message, resolve_parsed
+    app_mod = sys.modules.get("app") or sys.modules.get("lab.app")
+    if app_mod is None:
+        raise RuntimeError("PropAI app module is not loaded")
+    storage = get_app_storage()
+    parse_message = getattr(app_mod, "parse_message")
+    resolve_parsed = getattr(app_mod, "resolve_parsed")
     from lab.storage import RawMessage, ParsedObservation, ResolverDecision
     import json
 
