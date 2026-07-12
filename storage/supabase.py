@@ -928,12 +928,9 @@ class SupabaseStorage(Storage):
         return [dict_to_dataclass(RawMessage, row) for row in rows[offset:offset + limit]]
 
     def get_inbox_threads(self, limit: int = 500, offset: int = 0, tenant_id: str | None = None) -> list[dict]:
-        chats = self.get_chats(limit, offset, tenant_id=tenant_id)
-        if chats:
-            return chats
         query = self.client.table("raw_messages").select("*")\
             .order("timestamp", desc=True)\
-            .limit(2000)
+            .limit(max(5000, limit + offset))
         tid = tenant_id or self._tenant_id
         if tid:
             query = query.eq("tenant_id", tid)
@@ -957,38 +954,66 @@ class SupabaseStorage(Storage):
                 if rid and rid not in parsed_map:
                     parsed_map[rid] = p
 
-        def conv_key(r: dict) -> str:
+        def is_market_group_message(r: dict) -> bool:
             gn = (r.get("group_name") or "").strip()
-            if gn and gn not in ("seed", "seed-bot") and not gn.endswith("@s.whatsapp.net") and not gn.endswith("@lid") and not gn.endswith("@newsletter") and not gn.endswith("@broadcast") and gn != "status@broadcast":
-                return gn
-            return (r.get("sender_phone") or "").strip() or (r.get("sender_jid") or "").strip() or gn or (r.get("sender") or "").strip() or "unknown"
+            if not gn or gn in ("seed", "seed-bot", "status@broadcast", "broadcast"):
+                return False
+            return not (
+                gn.endswith("@s.whatsapp.net")
+                or gn.endswith("@lid")
+                or gn.endswith("@newsletter")
+                or gn.endswith("@broadcast")
+            )
 
-        def conv_type(r: dict) -> str:
-            gn = (r.get("group_name") or "").strip()
-            if gn and gn not in ("seed", "seed-bot") and not gn.endswith("@s.whatsapp.net") and not gn.endswith("@lid") and not gn.endswith("@newsletter") and not gn.endswith("@broadcast") and gn != "status@broadcast":
-                return "group"
-            return "direct"
+        def broker_key(r: dict, parsed: dict | None = None) -> str:
+            parsed = parsed or {}
+            return (
+                (r.get("sender_jid") or "").strip()
+                or (r.get("sender_phone") or "").strip()
+                or (parsed.get("broker_phone") or "").strip()
+                or (parsed.get("broker_name") or "").strip()
+                or (r.get("sender") or "").strip()
+                or "unknown"
+            )
+
+        def broker_label(r: dict, parsed: dict | None = None) -> str:
+            parsed = parsed or {}
+            return (
+                _clean_person_name(parsed.get("broker_name") or "")
+                or _clean_person_name(r.get("sender") or "")
+                or (parsed.get("broker_phone") or "").strip()
+                or (r.get("sender_phone") or "").strip()
+                or (r.get("sender_jid") or "").strip()
+                or "Unknown broker"
+            )
 
         groups: dict[str, list[dict]] = {}
         for row in rows:
-            key = conv_key(row)
+            if not is_market_group_message(row):
+                continue
+            key = broker_key(row, parsed_map.get(row.get("id")))
             groups.setdefault(key, []).append(row)
 
         threads = []
         for key, msgs in groups.items():
             latest = msgs[0]
             ts = latest.get("timestamp") or latest.get("created_at") or ""
-            ct = conv_type(latest)
-            if ct == "group":
-                conv_name = latest.get("group_name") or key
-            else:
-                conv_name = (latest.get("sender") or "").strip() or (latest.get("sender_phone") or "").strip() or (latest.get("sender_jid") or "").strip() or key or "Direct Message"
+            p = parsed_map.get(latest["id"])
+            conv_name = broker_label(latest, p)
+            chat_id = (
+                latest.get("sender_jid")
+                or latest.get("sender_phone")
+                or (p or {}).get("broker_phone")
+                or key
+            )
+            latest["chat_id"] = chat_id
+            latest["chat_type"] = "direct"
+            latest["chat_name"] = conv_name
             latest["conversation_key"] = key
-            latest["conversation_type"] = ct
+            latest["conversation_type"] = "direct"
             latest["conversation_name"] = conv_name
             latest["message_count"] = len(msgs)
             latest["latest_message_at"] = ts
-            p = parsed_map.get(latest["id"])
             if p:
                 for field in ("intent", "building_name", "micro_market", "landmark_name", "location_raw", "broker_name", "broker_phone"):
                     if p.get(field):

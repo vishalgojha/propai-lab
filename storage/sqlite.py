@@ -1540,9 +1540,6 @@ class SqliteStorage(Storage):
         return [dict_to_dataclass(RawMessage, r) for r in rows]
 
     def get_inbox_threads(self, limit: int = 500, offset: int = 0, tenant_id: str | None = None) -> list[dict]:
-        chats = self.get_chats(limit, offset, tenant_id=tenant_id)
-        if chats:
-            return chats
         group_expr = """
             rm.group_name IS NOT NULL
             AND TRIM(rm.group_name) != ''
@@ -1555,33 +1552,11 @@ class SqliteStorage(Storage):
         """
         rows = self.db.execute(
             f"""
-            WITH ranked AS (
+            WITH enriched AS (
                 SELECT
                     rm.*,
-                    CASE
-                        WHEN {group_expr} THEN 'group'
-                        ELSE 'direct'
-                    END AS conversation_type,
-                    CASE
-                        WHEN {group_expr} THEN rm.group_name
-                        ELSE COALESCE(NULLIF(TRIM(rm.sender_phone), ''), NULLIF(TRIM(rm.sender_jid), ''), NULLIF(TRIM(rm.group_name), ''), NULLIF(TRIM(rm.sender), ''), 'unknown')
-                    END AS conversation_key,
-                    ROW_NUMBER() OVER (
-                        PARTITION BY
-                            CASE
-                                WHEN {group_expr} THEN rm.group_name
-                                ELSE COALESCE(NULLIF(TRIM(rm.sender_phone), ''), NULLIF(TRIM(rm.sender_jid), ''), NULLIF(TRIM(rm.group_name), ''), NULLIF(TRIM(rm.sender), ''), 'unknown')
-                            END
-                        ORDER BY COALESCE(datetime(rm.timestamp), datetime(rm.created_at)) DESC, rm.id DESC
-                    ) AS rn,
-                    COUNT(*) OVER (
-                        PARTITION BY
-                            CASE
-                                WHEN {group_expr} THEN rm.group_name
-                                ELSE COALESCE(NULLIF(TRIM(rm.sender_phone), ''), NULLIF(TRIM(rm.sender_jid), ''), NULLIF(TRIM(rm.group_name), ''), NULLIF(TRIM(rm.sender), ''), 'unknown')
-                            END
-                    ) AS message_count
-                    , (
+                    'direct' AS conversation_type,
+                    (
                         SELECT p.broker_name
                         FROM parsed_output p
                         WHERE p.raw_message_id = rm.id
@@ -1654,6 +1629,41 @@ class SqliteStorage(Storage):
                   AND COALESCE(rm.sender_jid, '') NOT LIKE '%@newsletter'
                   AND COALESCE(rm.group_name, '') NOT IN ('status@broadcast', 'broadcast')
                   AND COALESCE(rm.group_name, '') NOT LIKE '%@broadcast'
+                  AND {group_expr}
+            ),
+            keyed AS (
+                SELECT
+                    enriched.*,
+                    COALESCE(
+                        NULLIF(TRIM(sender_jid), ''),
+                        NULLIF(TRIM(sender_phone), ''),
+                        NULLIF(TRIM(broker_phone), ''),
+                        NULLIF(TRIM(broker_name), ''),
+                        NULLIF(TRIM(sender), ''),
+                        'unknown'
+                    ) AS conversation_key,
+                    COALESCE(
+                        NULLIF(TRIM(broker_name), ''),
+                        NULLIF(TRIM(sender), ''),
+                        NULLIF(TRIM(broker_phone), ''),
+                        NULLIF(TRIM(sender_phone), ''),
+                        NULLIF(TRIM(sender_jid), ''),
+                        'Unknown broker'
+                    ) AS conversation_name
+                FROM enriched
+            ),
+            ranked AS (
+                SELECT
+                    keyed.*,
+                    conversation_key AS chat_id,
+                    'direct' AS chat_type,
+                    conversation_name AS chat_name,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY conversation_key
+                        ORDER BY COALESCE(datetime(timestamp), datetime(created_at)) DESC, id DESC
+                    ) AS rn,
+                    COUNT(*) OVER (PARTITION BY conversation_key) AS message_count
+                FROM keyed
             )
             SELECT * FROM ranked WHERE rn = 1
             ORDER BY COALESCE(datetime(timestamp), '1970-01-01') DESC, id DESC
@@ -1661,7 +1671,14 @@ class SqliteStorage(Storage):
             """,
             (limit, offset),
         ).fetchall()
-        return [dict(row) for row in rows]
+        result = []
+        for row in rows:
+            d = dict(row)
+            d["conversation_name"] = _clean_person_name(d.get("conversation_name") or "") or d.get("conversation_name")
+            d["chat_name"] = d["conversation_name"]
+            d["latest_message_at"] = d.get("timestamp") or d.get("created_at") or ""
+            result.append(d)
+        return result
 
     # ── Parsed observations ────────────────────────────────────
 

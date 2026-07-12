@@ -995,10 +995,10 @@ function InboxPageInner() {
   const displayChatTitle = (msg: api.InboxThread | api.RawMessage) => {
     const conversationName = msg.chat_name || ("conversation_name" in msg ? msg.conversation_name : "");
     const rawConversation = conversationName || msg.group_name;
-    const knownGroupName = resolveKnownGroupName(rawConversation);
-    if (knownGroupName) return knownGroupName;
     const brokerName = (msg.broker_name || "").trim();
     if (brokerName) return brokerName;
+    const knownGroupName = resolveKnownGroupName(rawConversation);
+    if (knownGroupName && msg.conversation_type !== "direct" && msg.chat_type !== "direct") return knownGroupName;
     const sender = (msg.sender || "").trim();
     const phone = resolveMessagePhone(msg);
     if (isRawWhatsAppId(sender)) return displayPhoneString(phone) || "Direct Message";
@@ -1392,18 +1392,20 @@ function InboxPageInner() {
       });
 
   const threadFallbackItems = [
-    ...groupChats.map((chat) => ({
+    ...(activeSlug?.view_type === "brokers" ? [] : groupChats.map((chat) => ({
       key: chat.conversationKey,
       title: chat.title,
       subtitle: chat.groupLabel && chat.groupLabel !== chat.title ? chat.groupLabel : "WhatsApp group",
       latest: chat.latest,
       count: chat.count,
       type: "group" as const,
-    })),
+    }))),
     ...filteredDirectChats.map((chat) => ({
       key: chat.senderKey,
       title: chat.name,
-      subtitle: resolveMessagePhone(chat.latest) ? displayPhoneString(resolveMessagePhone(chat.latest)) : "Direct chat",
+      subtitle:
+        displayGroupName(chat.latest?.group_name)
+        || (resolveMessagePhone(chat.latest) ? displayPhoneString(resolveMessagePhone(chat.latest)) : "Broker evidence"),
       latest: chat.latest,
       count: chat.count,
       type: "direct" as const,
