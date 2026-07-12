@@ -298,7 +298,7 @@ function renderOAuthContinuePage(opts: {
     .page{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
     .card{max-width:440px;width:100%;background:#0a0a0a;border:1px solid rgba(255,255,255,.1);border-radius:16px;padding:32px}
     .logo{display:flex;align-items:center;gap:12px;margin-bottom:24px}
-    .mark{display:flex;align-items:center;justify-content:center;width:44px;height:44px;border-radius:12px;background:#06130c;border:1px solid rgba(62,232,138,.24);color:#3EE88A;font-size:24px;font-weight:900}
+    .mark{display:block;width:44px;height:44px;border-radius:12px;border:1px solid rgba(62,232,138,.24)}
     .brand{font-size:18px;font-weight:800;color:#fff}
     .kicker{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.16em;color:#8b8f98}
     h1{font-size:22px;font-weight:700;margin-bottom:6px}
@@ -319,7 +319,7 @@ function renderOAuthContinuePage(opts: {
   <div class="page">
     <div class="card">
       <div class="logo">
-        <div class="mark">+</div>
+        <img class="mark" src="/assets/propai-logo.svg" alt="PropAI" />
         <div>
           <div class="brand">PropAI</div>
           <div class="kicker">Broker OS</div>

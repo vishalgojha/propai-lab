@@ -35,6 +35,7 @@ type McpSession = {
 
 const sessions = new Map<string, McpSession>();
 
+app.use("/assets", express.static("public", { immutable: true, maxAge: "30d" }));
 app.use(express.json({ limit: "1mb" }));
 app.use(express.urlencoded({ extended: false }));
 
