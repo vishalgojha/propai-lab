@@ -249,24 +249,15 @@ export async function oauthAuthorizeGetHandler(req: Request, res: Response) {
       return res.status(400).type("html").send(renderErrorPage("Redirect URI is not allowed for this client"));
     }
 
-    const deviceCode = generateDeviceCode();
-    const userCode = deviceCode;
+    const verificationUrl = new URL("https://app.propai.live/mcp-authorize");
+    verificationUrl.searchParams.set("client_id", clientId);
+    verificationUrl.searchParams.set("redirect_uri", redirectUri);
+    verificationUrl.searchParams.set("state", state);
+    verificationUrl.searchParams.set("code_challenge", codeChallenge);
+    verificationUrl.searchParams.set("code_challenge_method", codeChallengeMethod);
 
-    const deviceCodeRecord: DeviceCodeRecord = {
-      device_code: deviceCode,
-      user_code: userCode,
-      client_id: clientId,
-      expires_at: new Date(Date.now() + DEVICE_CODE_EXPIRY_SECONDS * 1000).toISOString(),
-      interval: DEVICE_CODE_INTERVAL_SECONDS,
-    };
-
-    storeDeviceCode(deviceCodeRecord);
-
-    res.type("html").send(renderDeviceCodePage({
-      userCode,
-      deviceCode,
-      verificationUri: "https://app.propai.live/mcp-authorize",
-      verificationUriComplete: `https://app.propai.live/mcp-authorize?user_code=${userCode}`,
+    res.type("html").send(renderOAuthContinuePage({
+      verificationUriComplete: verificationUrl.toString(),
       expiresIn: DEVICE_CODE_EXPIRY_SECONDS,
     }));
   } catch (error) {
@@ -291,10 +282,7 @@ h1{font-size:20px;margin:0 0 8px}p{color:#ff9b9b;line-height:1.5}
 </html>`;
 }
 
-function renderDeviceCodePage(opts: {
-  userCode: string;
-  deviceCode: string;
-  verificationUri: string;
+function renderOAuthContinuePage(opts: {
   verificationUriComplete: string;
   expiresIn: number;
 }) {
@@ -306,16 +294,19 @@ function renderDeviceCodePage(opts: {
   <title>Authorize PropAI MCP</title>
   <style>
     *{box-sizing:border-box;margin:0;padding:0}
-    body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;background:#050b12;color:#e8edf2;line-height:1.5}
+    body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;background:#000;color:#fff;line-height:1.5}
     .page{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
-    .card{max-width:440px;width:100%;background:#0d1622;border:1px solid #1e2d3d;border-radius:20px;padding:32px}
-    .logo{font-size:13px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#3EE88A;margin-bottom:4px}
+    .card{max-width:440px;width:100%;background:#0a0a0a;border:1px solid rgba(255,255,255,.1);border-radius:16px;padding:32px}
+    .logo{display:flex;align-items:center;gap:12px;margin-bottom:24px}
+    .mark{display:flex;align-items:center;justify-content:center;width:44px;height:44px;border-radius:12px;background:#06130c;border:1px solid rgba(62,232,138,.24);color:#3EE88A;font-size:24px;font-weight:900}
+    .brand{font-size:18px;font-weight:800;color:#fff}
+    .kicker{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.16em;color:#8b8f98}
     h1{font-size:22px;font-weight:700;margin-bottom:6px}
-    .sub{color:#8ea4b9;font-size:14px;margin-bottom:24px}
-    .code-box{background:#09111c;border:1px solid #253544;border-radius:14px;padding:20px;text-align:center;margin-bottom:24px}
-    .code-box .label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.12em;color:#6a8097;margin-bottom:8px}
+    .sub{color:#a1a1aa;font-size:14px;margin-bottom:24px}
+    .code-box{background:#111;border:1px solid rgba(255,255,255,.1);border-radius:12px;padding:20px;text-align:center;margin-bottom:24px}
+    .code-box .label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.12em;color:#8b8f98;margin-bottom:8px}
     .code-box .code{font-size:32px;font-weight:800;letter-spacing:0.15em;font-family:'SF Mono','Fira Code','Courier New',monospace;color:#fff;word-break:break-all}
-    .code-box .hint{font-size:12px;color:#5a7087;margin-top:8px}
+    .code-box .hint{font-size:12px;color:#71717a;margin-top:8px}
     .btn-group{display:flex;flex-direction:column;gap:10px;margin-bottom:20px}
     .btn{display:flex;align-items:center;justify-content:center;gap:8px;padding:14px 20px;border-radius:12px;font-size:14px;font-weight:700;border:0;cursor:pointer;text-decoration:none;transition:opacity 0.15s}
     .btn:hover{opacity:0.9}
@@ -327,19 +318,25 @@ function renderDeviceCodePage(opts: {
 <body>
   <div class="page">
     <div class="card">
-      <div class="logo">PropAI Pulse</div>
-      <h1>Connect MCP Server</h1>
-      <p class="sub">Authorize this device to use PropAI tools from your IDE or MCP client.</p>
+      <div class="logo">
+        <div class="mark">+</div>
+        <div>
+          <div class="brand">PropAI</div>
+          <div class="kicker">Broker OS</div>
+        </div>
+      </div>
+      <h1>Connect PropAI MCP</h1>
+      <p class="sub">Authorize Claude, ChatGPT, or another MCP client to use your PropAI broker workspace.</p>
 
       <div class="code-box">
-        <div class="label">Your device code</div>
-        <div class="code">${escapeHtml(opts.userCode)}</div>
-        <div class="hint">Code expires in ${Math.floor(opts.expiresIn / 60)} minutes</div>
+        <div class="label">What gets access</div>
+        <div style="font-size:14px;color:#d4d4d8">Broker workspace tools, market search, listings, requirements, and saved PropAI context.</div>
+        <div class="hint">Approval expires in ${Math.floor(opts.expiresIn / 60)} minutes</div>
       </div>
 
       <div class="btn-group">
-        <a href="${escapeHtml(opts.verificationUriComplete)}" target="_blank" class="btn btn-app" onclick="document.getElementById('pollMsg').style.display='block'">
-          Authorize with PropAI App
+        <a href="${escapeHtml(opts.verificationUriComplete)}" class="btn btn-app">
+          Continue in PropAI App
         </a>
       </div>
       <p id="pollMsg" style="display:none;font-size:12px;color:#8ea4b9;text-align:center;margin-bottom:16px">
@@ -588,16 +585,66 @@ export async function oauthTokenHandler(req: Request, res: Response) {
 
 export async function deviceAuthorizeHandler(req: Request, res: Response) {
   const userCode = String(req.body?.user_code || "").trim().toUpperCase();
+  const clientId = String(req.body?.client_id || "").trim();
+  const redirectUri = String(req.body?.redirect_uri || "").trim();
+  const state = String(req.body?.state || "");
+  const codeChallenge = String(req.body?.code_challenge || "").trim();
+  const codeChallengeMethod = String(req.body?.code_challenge_method || "S256").trim();
+  const refreshToken = String(req.body?.refresh_token || "").trim();
   const token = String(req.headers.authorization || "").replace(/^Bearer\s+/i, "").trim();
 
-  if (!userCode || !token) {
-    return res.status(400).json({ error: "user_code and Authorization header required" });
+  if (!token) {
+    return res.status(400).json({ error: "Authorization header required" });
   }
 
   const { verifyPropAIToken } = await import("./supabase.js");
   const user = await verifyPropAIToken(token).catch(() => null);
   if (!user?.id) {
     return res.status(401).json({ error: "Invalid or expired authorization token" });
+  }
+
+  if (clientId && redirectUri && codeChallenge) {
+    if (!(await validateRedirectUri(clientId, redirectUri))) {
+      return res.status(400).json({ error: "Redirect URI is not allowed for this client" });
+    }
+
+    await pruneAuthorizationCodes();
+
+    const existingClient = await getOAuthClient(clientId);
+    if (!existingClient) {
+      await createOAuthClient({
+        client_id: clientId,
+        client_name: "PropAI MCP Client",
+        redirect_uris: [redirectUri],
+        grant_types: ["authorization_code", "refresh_token"],
+        response_types: ["code"],
+        token_endpoint_auth_method: "none",
+        created_at: new Date().toISOString(),
+      });
+    }
+
+    const code = crypto.randomBytes(32).toString("base64url");
+    await saveAuthorizationCode({
+      code,
+      client_id: clientId,
+      redirect_uri: redirectUri,
+      code_challenge: codeChallenge,
+      code_challenge_method: codeChallengeMethod || "S256",
+      access_token: token,
+      refresh_token: refreshToken || null,
+      expires_in: 86400,
+      created_at: new Date().toISOString(),
+    });
+
+    const target = new URL(redirectUri);
+    target.searchParams.set("code", code);
+    if (state) target.searchParams.set("state", state);
+
+    return res.json({ success: true, redirect_url: target.toString() });
+  }
+
+  if (!userCode) {
+    return res.status(400).json({ error: "user_code or OAuth authorization fields required" });
   }
 
   for (const [, record] of deviceCodeStore) {

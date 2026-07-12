@@ -539,8 +539,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   const pathname = usePathname();
   const isLanding = pathname === "/" || pathname === "/how-it-works";
   const isAuth = pathname.startsWith("/auth");
+  const isMcpAuthorize = pathname === "/mcp-authorize";
   const isPublicShare = pathname.startsWith("/share/");
-  const isStandalone = isLanding || isAuth || isPublicShare;
+  const isStandalone = isLanding || isAuth || isMcpAuthorize || isPublicShare;
 
   return (
     <html lang="en">
