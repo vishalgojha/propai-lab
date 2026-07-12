@@ -453,6 +453,7 @@ type BrokerObservationRow = {
   bhk?: string;
   price?: number;
   price_unit?: string;
+  location_raw?: string;
   micro_market?: string;
   alternate_intent?: string;
   times_seen?: number;
@@ -469,6 +470,8 @@ type BrokerObservationGroup = {
   lastSeen?: string;
   duplicateCount: number;
 };
+
+type OpportunityFilter = "all" | "listings" | "requirements";
 
 function addEntity(entities: MessageEntity[], entity: MessageEntity) {
   const text = entity.text?.trim();
@@ -703,6 +706,7 @@ function InboxPageInner() {
   const [loadingMarketAccess, setLoadingMarketAccess] = useState(true);
   const [selectedBrokerObservations, setSelectedBrokerObservations] = useState<any[]>([]);
   const [loadingBrokerObs, setLoadingBrokerObs] = useState(false);
+  const [opportunityFilter, setOpportunityFilter] = useState<OpportunityFilter>("all");
   const [now, setNow] = useState(() => Date.now());
 
   // Selection States
@@ -766,7 +770,19 @@ function InboxPageInner() {
     const groups = new Map<string, BrokerObservationGroup>();
     for (const obs of selectedBrokerObservations as BrokerObservationRow[]) {
       const rawMessageId = obs.latest_raw_message_id || obs.raw_message_id || obs.id;
-      const normalizedText = normalizeMessageForDedupe(obs.raw_message || obs.summary_title || "");
+      const opportunitySignature = normalizeMessageForDedupe(
+        [
+          obs.summary_title,
+          obs.intent,
+          obs.bhk,
+          obs.building_name,
+          obs.micro_market,
+          obs.location_raw,
+          obs.price,
+          obs.price_unit,
+        ].filter(Boolean).join(" ")
+      );
+      const normalizedText = opportunitySignature || normalizeMessageForDedupe(obs.raw_message || "");
       const brokerKey = normalizeMessageForDedupe(
         [obs.broker_phone, obs.broker_name, selectedBroker?.phone, selectedBroker?.canonical_name].filter(Boolean).join(" ")
       );
@@ -803,6 +819,23 @@ function InboxPageInner() {
       (a, b) => new Date(b.lastSeen || b.representative.last_seen || 0).getTime() - new Date(a.lastSeen || a.representative.last_seen || 0).getTime()
     );
   }, [selectedBroker, selectedBrokerObservations]);
+
+  const isRequirementObservation = useCallback((obs: BrokerObservationRow) => {
+    const intent = (obs.intent || obs.alternate_intent || "").toUpperCase();
+    const text = `${obs.summary_title || ""} ${obs.raw_message || ""}`.toLowerCase();
+    return (
+      ["BUY", "BUYER", "REQUIREMENT", "RENTAL_SEEKER", "WANTED"].includes(intent)
+      || /\b(requirement|required|wanted|looking|need|buyer|tenant)\b/.test(text)
+    );
+  }, []);
+
+  const filteredBrokerObservationGroups = useMemo(() => {
+    if (opportunityFilter === "all") return groupedBrokerObservations;
+    return groupedBrokerObservations.filter((group) => {
+      const isRequirement = isRequirementObservation(group.representative);
+      return opportunityFilter === "requirements" ? isRequirement : !isRequirement;
+    });
+  }, [groupedBrokerObservations, isRequirementObservation, opportunityFilter]);
   
   // Interaction/UI States
   const [revealedPhone, setRevealedPhone] = useState<Record<string, boolean>>({});
@@ -1775,6 +1808,7 @@ function InboxPageInner() {
   const selectBroker = useCallback(async (broker: any, focusObsRawId?: number) => {
     if (isMobile) setMobileView(focusObsRawId ? "analysis" : "conversation");
     setActiveRightTab(!focusObsRawId ? "broker" : "analysis");
+    setOpportunityFilter("all");
     if (broker.primary_phone) updateUrlBroker(broker.primary_phone);
     setSelectedBroker({
       id: broker.primary_phone,
@@ -2287,7 +2321,7 @@ function InboxPageInner() {
                         <button
                           onClick={() => selectBroker(b)}
                           className={`w-full text-left p-2.5 lg:p-3 transition-colors select-none ${
-                            isSelected ? "bg-blue-600/10 border-l-2 border-[#3b82f6]" : "hover:bg-white/5"
+                            isSelected ? "bg-[#3EE88A]/10 border-l-2 border-[#3EE88A]" : "hover:bg-white/5"
                           }`}
                         >
                           <div className="flex items-center justify-between mb-1">
@@ -2357,7 +2391,7 @@ function InboxPageInner() {
                         key={`${item.type}-${item.key}`}
                         onClick={() => selectConversation(item.latest)}
                         className={`w-full text-left p-2.5 lg:p-3 transition-colors select-none ${
-                          isSelected ? "bg-blue-600/10 border-l-2 border-[#3b82f6]" : "hover:bg-white/5"
+                          isSelected ? "bg-[#3EE88A]/10 border-l-2 border-[#3EE88A]" : "hover:bg-white/5"
                         }`}
                       >
                         <div className="flex items-center justify-between gap-2 mb-1">
@@ -2458,8 +2492,8 @@ function InboxPageInner() {
                       <ChevronLeft className="w-5 h-5" />
                     </button>
                   )}
-                  <div className="w-9 h-9 rounded-full bg-blue-600/20 text-blue-400 flex items-center justify-center font-bold text-sm shadow-inner">
-                    <User className="w-4 h-4 text-zinc-500" strokeWidth={1.5} />
+                  <div className="w-9 h-9 rounded-full bg-[#3EE88A]/10 text-[#3EE88A] flex items-center justify-center font-bold text-sm shadow-inner">
+                    <User className="w-4 h-4" strokeWidth={1.5} />
                   </div>
                   <div className="min-w-0">
                     <h3 className="text-sm font-bold text-white truncate max-w-[340px]">
@@ -2468,7 +2502,7 @@ function InboxPageInner() {
                     <div className="text-[10px] text-zinc-500 flex items-center gap-2 mt-0.5 flex-wrap">
                       <span className="truncate">{displayPhoneString(selectedBroker.phone) || "Phone unavailable"}</span>
                       <span>•</span>
-                      <span>{selectedBrokerObservations.length} observations</span>
+                      <span>{selectedBrokerObservations.length} opportunities</span>
                       {selectedBroker.building_count > 0 && (
                         <>
                           <span>•</span>
@@ -2505,7 +2539,37 @@ function InboxPageInner() {
                 ) : groupedBrokerObservations.length === 0 ? (
                   <div className="p-8 text-center text-xs text-zinc-500">No observations yet</div>
                 ) : (
-                  groupedBrokerObservations.map((group) => {
+                  <>
+                    <div className="sticky top-0 z-10 -mx-4 -mt-4 border-b border-white/10 bg-[#070b0e]/95 px-4 py-3 backdrop-blur">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+                          {filteredBrokerObservationGroups.length} shown
+                        </div>
+                        <div className="flex rounded-lg border border-white/10 bg-zinc-950 p-0.5">
+                          {([
+                            ["all", "All"],
+                            ["listings", "Listings"],
+                            ["requirements", "Requirements"],
+                          ] as [OpportunityFilter, string][]).map(([value, label]) => (
+                            <button
+                              key={value}
+                              type="button"
+                              onClick={() => setOpportunityFilter(value)}
+                              className={`h-7 rounded-md px-2.5 text-[10px] font-bold transition-colors ${
+                                opportunityFilter === value
+                                  ? "bg-[#3EE88A] text-black"
+                                  : "text-zinc-500 hover:text-white"
+                              }`}
+                            >
+                              {label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                    {filteredBrokerObservationGroups.length === 0 ? (
+                      <div className="p-8 text-center text-xs text-zinc-500">No {opportunityFilter} for this broker yet.</div>
+                    ) : filteredBrokerObservationGroups.map((group) => {
                     const obs = group.representative;
                     const ev = group.observations.flatMap((item) => item.evidence_list || []);
                     const groupChannels = [
@@ -2530,12 +2594,12 @@ function InboxPageInner() {
                           <span className="text-[9px] uppercase tracking-wider text-zinc-500 font-semibold">{timeLabel}</span>
                           <div className="h-px flex-1 bg-[rgba(255,255,255,0.06)]" />
                         </div>
-                        {/* Chat Bubble */}
+                        {/* Opportunity Card */}
                         <button
                           type="button"
                           onClick={() => selectBrokerObservation(obs)}
-                          className={`w-full text-left border rounded-xl overflow-hidden transition-colors hover:border-[#3b82f6]/40 ${
-                            isSelected ? "border-[#3b82f6]/50 ring-1 ring-[#3b82f6]/20" : "border-white/10"
+                          className={`w-full text-left border rounded-lg bg-zinc-950/70 overflow-hidden transition-colors hover:border-[#3EE88A]/35 ${
+                            isSelected ? "border-[#3EE88A]/60 ring-1 ring-[#3EE88A]/20" : "border-white/10"
                           }`}
                         >
                           {/* Bubble Header — Primary Type */}
@@ -2556,9 +2620,9 @@ function InboxPageInner() {
                             </div>
                             <div className="flex items-center gap-1.5 mt-1.5 text-[11px] text-zinc-400">
                               {obs.property_type && <span className="font-medium text-zinc-300">{obs.property_type}</span>}
-                              {obs.bhk && <><span className="text-[#475569]">·</span><span>{obs.bhk}</span></>}
-                              {obs.price != null && <><span className="text-[#475569]">·</span><span className="font-bold text-[#3EE88A]">{formatCurrency(obs.price, obs.price_unit)}</span></>}
-                              {obs.micro_market && <><span className="text-[#475569]">·</span><span>{obs.micro_market}</span></>}
+                              {obs.bhk && <><span className="text-zinc-700">·</span><span>{obs.bhk}</span></>}
+                              {obs.price != null && <><span className="text-zinc-700">·</span><span className="font-bold text-[#3EE88A]">{formatCurrency(obs.price, obs.price_unit)}</span></>}
+                              {obs.micro_market && <><span className="text-zinc-700">·</span><span>{obs.micro_market}</span></>}
                               {obs.alternate_intent && (
                                 <span className="text-[9px] text-zinc-400 italic ml-1">
                                   Also {obs.alternate_intent === "RENT" ? "Rent" : "Sale"}
@@ -2568,6 +2632,11 @@ function InboxPageInner() {
                           </div>
                           {/* Bubble Body */}
                           <div className="px-4 py-3 space-y-2">
+                            {obs.summary_title && (
+                              <div className="text-[12px] font-semibold leading-relaxed text-zinc-100">
+                                {stripEmojis(obs.summary_title)}
+                              </div>
+                            )}
                             {/* Key fields as inline chips */}
                             <div className="flex flex-wrap gap-1.5">
                               {obs.bhk && (
@@ -2615,14 +2684,17 @@ function InboxPageInner() {
                             )}
                             {/* Raw Message — always visible, truncate */}
                             {obs.raw_message && (
-                              <div className="pt-1">
+                              <div className="pt-1 border-t border-white/5">
+                                <div className="mb-1 text-[9px] font-semibold uppercase tracking-wider text-zinc-600">
+                                  Source excerpt
+                                </div>
                                 <div className={`text-[11px] text-zinc-400 whitespace-pre-wrap leading-relaxed ${!expandedRawMessages.has(group.key) ? "line-clamp-2" : ""}`}>
                                   {obs.raw_message}
                                 </div>
                                 {obs.raw_message.length > 120 && !expandedRawMessages.has(group.key) && (
                                   <button
                                     onClick={(e) => { e.stopPropagation(); setExpandedRawMessages((prev) => { const next = new Set(prev); next.add(group.key); return next; }); }}
-                                    className="text-[9px] text-blue-400 hover:underline mt-1"
+                                    className="text-[9px] text-[#3EE88A] hover:underline mt-1"
                                   >
                                     Show more
                                   </button>
@@ -2650,7 +2722,8 @@ function InboxPageInner() {
                         </button>
                       </div>
                     );
-                  })
+                    })}
+                  </>
                 )}
               </div>
             </>
@@ -2668,7 +2741,7 @@ function InboxPageInner() {
                       <ChevronLeft className="w-5 h-5" />
                     </button>
                   )}
-                  <div className="w-9 h-9 rounded-full bg-blue-600/20 text-blue-400 flex items-center justify-center font-bold text-sm shadow-inner">
+                  <div className="w-9 h-9 rounded-full bg-[#3EE88A]/10 text-[#3EE88A] flex items-center justify-center font-bold text-sm shadow-inner">
                     {selectedMsg.group_name && selectedMsg.group_name !== "seed" ? (
                       <Users className="w-4 h-4 text-zinc-500" strokeWidth={1.5} />
                     ) : (
@@ -3395,7 +3468,7 @@ function InboxPageInner() {
                               {normalizeRealPhone(selectedBroker.phone) && (
                                 <button
                                   onClick={() => toggleRevealPhone(selectedBroker.phone)}
-                                  className="text-[9.5px] text-blue-400 hover:underline"
+                                  className="text-[9.5px] text-[#3EE88A] hover:underline"
                                 >
                                   {revealedPhone[selectedBroker.phone] ? "Hide" : "Reveal"}
                                 </button>
