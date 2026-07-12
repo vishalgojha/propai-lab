@@ -92,9 +92,9 @@ export const MCP_TOOL_NAMES = [
   "match_listing_to_requirement",
   "semantic_search",
   "get_fresh_stream",
-  "broker_activity",
+  "broker_activity_legacy",
   "triage_hot_leads",
-  "market_summary",
+  "market_summary_legacy",
   "price_estimate",
   "building_intel",
   "save_listing",
@@ -571,7 +571,7 @@ export function createMcpServer(context: ToolContext = {}) {
   );
 
   server.registerTool(
-    "broker_activity",
+    "broker_activity_legacy",
     {
       description:
         "Summarize the broker's recent PropAI activity: lead volume, active chats, follow-up queue, and top localities.",
@@ -581,7 +581,7 @@ export function createMcpServer(context: ToolContext = {}) {
     },
     async (input) => {
       const id = requireBrokerId(context);
-      await logToolCall(id, "broker_activity", input);
+      await logToolCall(id, "broker_activity_legacy", input);
       const result = await getBrokerActivity({ brokerId: id, days: input.days });
       const topLocalities = result.top_localities.length
         ? result.top_localities.map((item) => `${item.locality} (${item.count})`).join(", ")
@@ -691,7 +691,7 @@ export function createMcpServer(context: ToolContext = {}) {
   );
 
   server.registerTool(
-    "market_summary",
+    "market_summary_legacy",
     {
       description:
         "Summarize listing market activity for a locality, city, deal type, or BHK from PropAI's public stream.",
@@ -706,7 +706,7 @@ export function createMcpServer(context: ToolContext = {}) {
     },
     async (input) => {
       const id = requireBrokerId(context);
-      await logToolCall(id, "market_summary", input);
+      await logToolCall(id, "market_summary_legacy", input);
       const result = await getMarketSummary(input);
       const topLocalities = result.top_localities.length
         ? result.top_localities.map((item) => `${item.locality} (${item.count})`).join(", ")
