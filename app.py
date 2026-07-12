@@ -1700,11 +1700,13 @@ async def webhook(request: Request):
     except ImportError:
         PIPELINE_VERSION = "0.0.0"
     try:
+        storage.tenant_id = DEFAULT_TENANT_ID
         now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         message_timestamp = _coerce_whatsapp_timestamp(
             msg_data.get("messageTimestamp") or msg_data.get("timestamp")
         ) or now
         raw_id = storage.save_raw_message(RawMessage(
+            tenant_id=DEFAULT_TENANT_ID,
             group_name=raw_group_name,
             sender=sender,
             sender_jid=sender_jid,

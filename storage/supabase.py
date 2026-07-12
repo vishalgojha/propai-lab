@@ -668,7 +668,7 @@ class SupabaseStorage(Storage):
         "group_name", "sender", "sender_jid", "sender_phone",
         "message", "message_type", "attachments", "reply_context",
         "timestamp", "source", "raw_payload", "message_uid",
-        "processed", "processed_at",
+        "processed", "processed_at", "tenant_id",
         "created_at",
     }
 
@@ -676,6 +676,8 @@ class SupabaseStorage(Storage):
         data = {k: v for k, v in msg.__dict__.items()
                 if v is not None and k in self.RAW_MESSAGE_COLUMNS}
         data.pop("id", None)
+        if not data.get("tenant_id") and self._tenant_id:
+            data["tenant_id"] = self._tenant_id
         if isinstance(data.get("attachments"), str):
             try:
                 data["attachments"] = json.loads(data["attachments"])
@@ -1546,27 +1548,49 @@ class SupabaseStorage(Storage):
 
     # ── Suggestions (AI) ─────────────────────────────────────────
 
+    def get_suggestions(self, status: str = "pending", limit: int = 50, offset: int = 0) -> list[dict]:
+        query = self.client.table("ai_suggestions").select("*").order("created_at", desc=True).limit(limit).offset(offset)
+        if status != "all":
+            query = query.eq("status", status)
+        if self._tenant_id:
+            query = query.eq("tenant_id", self._tenant_id)
+        res = query.execute()
+        return res.data or []
+
+    def get_suggestion_counts(self) -> dict:
+        counts = {"pending": 0, "approved": 0, "rejected": 0, "ignored": 0}
+        query = self.client.table("ai_suggestions").select("status")
+        if self._tenant_id:
+            query = query.eq("tenant_id", self._tenant_id)
+        res = query.execute()
+        for row in res.data or []:
+            status = row.get("status") or "pending"
+            counts[status] = counts.get(status, 0) + 1
+        return counts
+
     def create_suggestion(self, sug: AISuggestion) -> int:
         data = {k: v for k, v in sug.__dict__.items() if v is not None}
         data.pop("id", None)
-        res = self.client.table("suggestions").insert(data).execute()
+        if not data.get("tenant_id") and self._tenant_id:
+            data["tenant_id"] = self._tenant_id
+        res = self.client.table("ai_suggestions").insert(data).execute()
         return res.data[0]["id"] if res.data else 0
 
     def apply_suggestion(self, sug_id: int) -> bool:
-        res = self.client.table("suggestions").update({"status": "applied"}).eq("id", sug_id).execute()
+        res = self.client.table("ai_suggestions").update({"status": "applied"}).eq("id", sug_id).execute()
         return len(res.data) > 0
 
     def update_suggestion_status(self, sug_id: int, status: str, rejection_reason: str = ""):
         data = {"status": status}
         if rejection_reason:
             data["rejection_reason"] = rejection_reason
-        self.client.table("suggestions").update(data).eq("id", sug_id).execute()
+        self.client.table("ai_suggestions").update(data).eq("id", sug_id).execute()
 
     def batch_update_suggestions(self, ids: list[int], status: str, rejection_reason: str = ""):
         data = {"status": status}
         if rejection_reason:
             data["rejection_reason"] = rejection_reason
-        self.client.table("suggestions").update(data).in_("id", ids).execute()
+        self.client.table("ai_suggestions").update(data).in_("id", ids).execute()
 
     def get_ai_memory_stats(self) -> dict:
         return {"suggestions": 0, "memory_entries": 0}

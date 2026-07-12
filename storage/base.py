@@ -28,6 +28,7 @@ class RawMessage:
     event_id: Optional[str] = None
     processed: bool = False
     processed_at: Optional[str] = None
+    tenant_id: Optional[str] = None
     created_at: str = ""
 
 

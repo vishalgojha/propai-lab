@@ -847,12 +847,20 @@ function InboxPageInner() {
       const threadMsgs = await api.getInboxThreads(PAGE_SIZE, offset);
       setMessages((prev) => (append ? [...prev, ...threadMsgs] : threadMsgs));
       if (!append) {
-        const [groupData, sugData] = await Promise.all([
+        const [groupResult, suggestionResult] = await Promise.allSettled([
           api.getGroups(),
           api.getSuggestions("pending", 100),
         ]);
-        setGroups(groupData);
-        setAllSuggestions(sugData);
+        if (groupResult.status === "fulfilled") {
+          setGroups(groupResult.value);
+        } else {
+          console.error("Failed to load inbox groups:", groupResult.reason);
+        }
+        if (suggestionResult.status === "fulfilled") {
+          setAllSuggestions(suggestionResult.value);
+        } else {
+          console.error("Failed to load inbox suggestions:", suggestionResult.reason);
+        }
       }
     } catch (e) {
       console.error("Failed to load feed:", e);
