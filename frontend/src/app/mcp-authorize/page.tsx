@@ -55,7 +55,7 @@ export default function McpAuthorizePage() {
   }, []);
 
   async function authorize() {
-    if (!accessToken || !cleanCode) return;
+    if (!accessToken || (!cleanCode && !oauthParams.client_id)) return;
 
     setStatus("authorizing");
     setMessage("");
@@ -94,9 +94,11 @@ export default function McpAuthorizePage() {
     <main className="min-h-screen bg-black text-white flex items-center justify-center px-4 py-12">
       <section className="w-full max-w-md rounded-2xl border border-white/10 bg-zinc-950 p-6 shadow-2xl">
         <div className="mb-6 flex items-center gap-3">
-          <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-emerald-400/20 bg-emerald-400/10 text-2xl font-black text-emerald-400">
-            +
-          </div>
+          <img
+            src="/propai-logo.svg"
+            alt="PropAI"
+            className="h-12 w-12 rounded-xl border border-emerald-400/20"
+          />
           <div>
             <div className="text-lg font-bold">PropAI</div>
             <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-zinc-500">Broker OS</div>
