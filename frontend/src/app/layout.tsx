@@ -26,6 +26,7 @@ import {
   Menu,
   X,
   Shield,
+  AlertTriangle,
 } from "lucide-react";
 import { AuthProvider, useAuth } from "@/lib/AuthProvider";
 import { LayoutProvider, useLayout } from "@/hooks/useLayout";
@@ -40,6 +41,7 @@ const navSections = [
     title: "Market",
     items: [
       { href: "/inbox", label: "Market Inbox", icon: MessageSquare },
+      { href: "/format-issues", label: "Format Issues", icon: AlertTriangle },
       { href: "/chat", label: "AI Chat", icon: Brain },
     ],
   },

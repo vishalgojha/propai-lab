@@ -10,6 +10,7 @@ const navSections = [
     title: "Market",
     items: [
       { href: "/inbox", label: "Market Inbox" },
+      { href: "/format-issues", label: "Format Issues" },
       { href: "/chat", label: "AI Chat" },
     ],
   },
