@@ -2173,7 +2173,7 @@ function InboxPageInner() {
   const selectedHasMarketContext = hasMarketContext(selectedMsgDetails);
 
   return (
-    <div className="flex flex-col h-full min-h-0 max-h-full border border-white/10 rounded-2xl overflow-hidden bg-black">
+    <div className="flex flex-col h-[calc(100dvh-104px)] min-h-0 max-h-[calc(100dvh-104px)] overflow-hidden bg-black lg:h-full lg:max-h-full lg:rounded-2xl lg:border lg:border-white/10">
       
       {/* Context Action Menu - floats over message area */}
       <TextSelectionMenu
@@ -2211,7 +2211,7 @@ function InboxPageInner() {
       <div className="flex-1 flex min-h-0 overflow-hidden">
         
         {/* ================= LEFT PANEL: INBOX ================= */}
-        <div className={`h-full min-h-0 shrink-0 ${isMobile && mobileView !== "list" ? "hidden" : ""}`}>
+        <div className={`h-full min-h-0 w-full shrink-0 lg:w-auto ${isMobile && mobileView !== "list" ? "hidden" : ""}`}>
         <ResizablePanel
           defaultWidth={320}
           minWidth={240}
@@ -2459,7 +2459,7 @@ function InboxPageInner() {
         </div>
 
         {/* ================= CENTER PANEL: CONVERSATION ================= */}
-        <div className={`flex-1 min-w-0 h-full min-h-0 flex flex-col bg-[#070b0e] overflow-hidden ${isMobile && mobileView !== "conversation" ? "hidden" : ""}`}>
+        <div className={`flex-1 min-w-0 w-full h-full min-h-0 flex flex-col bg-[#070b0e] overflow-hidden lg:w-auto ${isMobile && mobileView !== "conversation" ? "hidden" : ""}`}>
           {marketAccess && !marketAccess.market_unlocked ? (
             <div className="flex flex-1 items-center justify-center px-6 text-center">
               <div className="max-w-md">
@@ -3035,7 +3035,7 @@ function InboxPageInner() {
         </div>
 
         {/* ================= RIGHT PANEL: INTELLIGENCE PANEL ================= */}
-        <div className={`h-full min-h-0 shrink-0 ${isMobile && mobileView !== "analysis" ? "hidden" : ""}`}>
+        <div className={`h-full min-h-0 w-full shrink-0 lg:w-auto ${isMobile && mobileView !== "analysis" ? "hidden" : ""}`}>
         {rightPoppedOut && (
           <button
             type="button"
