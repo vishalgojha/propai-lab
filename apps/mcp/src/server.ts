@@ -25,7 +25,7 @@ declare global {
 }
 
 const app = express();
-const PORT = Number(process.env.PORT || 3003);
+const PORT = Number(process.env.MCP_PORT || 3000);
 const PUBLIC_URL = process.env.MCP_SERVER_URL || "https://mcp.propai.live";
 
 type McpSession = {
