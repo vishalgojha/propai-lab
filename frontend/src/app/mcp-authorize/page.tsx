@@ -76,7 +76,8 @@ export default function McpAuthorizePage() {
 
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
-        throw new Error(payload?.error || "Unable to authorize this MCP client.");
+        const detail = payload?.error_description || payload?.error;
+        throw new Error(detail || `Unable to authorize this MCP client. (${response.status})`);
       }
 
       setStatus("success");

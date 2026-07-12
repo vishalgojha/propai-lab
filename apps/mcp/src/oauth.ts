@@ -26,6 +26,19 @@ function thrownMessage(error: unknown) {
   return error instanceof Error ? error.message : "Unknown error";
 }
 
+function tokenPayload(accessToken: string, refreshToken: string | null | undefined, expiresIn: number) {
+  const payload: Record<string, unknown> = {
+    access_token: accessToken,
+    token_type: "Bearer",
+    expires_in: expiresIn,
+    scope: "mcp",
+  };
+  if (refreshToken) {
+    payload.refresh_token = refreshToken;
+  }
+  return payload;
+}
+
 // Device code flow constants
 const DEVICE_CODE_EXPIRY_SECONDS = 900; // 15 minutes
 const DEVICE_CODE_INTERVAL_SECONDS = 5; // polling interval
@@ -497,12 +510,11 @@ export async function oauthTokenHandler(req: Request, res: Response) {
         });
       }
 
-      return res.json({
-        access_token: data.session.access_token,
-        refresh_token: data.session.refresh_token,
-        token_type: "bearer",
-        expires_in: data.session.expires_in || 86400,
-      });
+      return res.json(tokenPayload(
+        data.session.access_token,
+        data.session.refresh_token,
+        data.session.expires_in || 86400,
+      ));
     }
 
     if (grantType === "authorization_code") {
@@ -520,7 +532,7 @@ export async function oauthTokenHandler(req: Request, res: Response) {
         });
       }
 
-      if (record.client_id !== clientId || record.redirect_uri !== redirectUri) {
+      if ((clientId && record.client_id !== clientId) || (redirectUri && record.redirect_uri !== redirectUri)) {
         return res.status(400).json({
           error: "invalid_grant",
           error_description: "Authorization code does not match client or redirect URI",
@@ -535,12 +547,7 @@ export async function oauthTokenHandler(req: Request, res: Response) {
       }
 
       await deleteAuthorizationCode(code);
-      return res.json({
-        access_token: record.access_token,
-        refresh_token: record.refresh_token,
-        token_type: "bearer",
-        expires_in: record.expires_in,
-      });
+      return res.json(tokenPayload(record.access_token, record.refresh_token, record.expires_in));
     }
 
     if (grantType === "refresh_token") {
@@ -563,12 +570,11 @@ export async function oauthTokenHandler(req: Request, res: Response) {
         });
       }
 
-      return res.json({
-        access_token: data.session.access_token,
-        refresh_token: data.session.refresh_token,
-        token_type: "bearer",
-        expires_in: data.session.expires_in || 86400,
-      });
+      return res.json(tokenPayload(
+        data.session.access_token,
+        data.session.refresh_token,
+        data.session.expires_in || 86400,
+      ));
     }
 
     return res.status(400).json({
@@ -584,81 +590,91 @@ export async function oauthTokenHandler(req: Request, res: Response) {
 }
 
 export async function deviceAuthorizeHandler(req: Request, res: Response) {
-  const userCode = String(req.body?.user_code || "").trim().toUpperCase();
-  const clientId = String(req.body?.client_id || "").trim();
-  const redirectUri = String(req.body?.redirect_uri || "").trim();
-  const state = String(req.body?.state || "");
-  const codeChallenge = String(req.body?.code_challenge || "").trim();
-  const codeChallengeMethod = String(req.body?.code_challenge_method || "S256").trim();
-  const refreshToken = String(req.body?.refresh_token || "").trim();
-  const token = String(req.headers.authorization || "").replace(/^Bearer\s+/i, "").trim();
+  try {
+    const userCode = String(req.body?.user_code || "").trim().toUpperCase();
+    const clientId = String(req.body?.client_id || "").trim();
+    const redirectUri = String(req.body?.redirect_uri || "").trim();
+    const state = String(req.body?.state || "");
+    const codeChallenge = String(req.body?.code_challenge || "").trim();
+    const codeChallengeMethod = String(req.body?.code_challenge_method || "S256").trim();
+    const refreshToken = String(req.body?.refresh_token || "").trim();
+    const token = String(req.headers.authorization || "").replace(/^Bearer\s+/i, "").trim();
 
-  if (!token) {
-    return res.status(400).json({ error: "Authorization header required" });
-  }
-
-  const { verifyPropAIToken } = await import("./supabase.js");
-  const user = await verifyPropAIToken(token).catch(() => null);
-  if (!user?.id) {
-    return res.status(401).json({ error: "Invalid or expired authorization token" });
-  }
-
-  if (clientId && redirectUri && codeChallenge) {
-    if (!(await validateRedirectUri(clientId, redirectUri))) {
-      return res.status(400).json({ error: "Redirect URI is not allowed for this client" });
+    if (!token) {
+      return res.status(400).json({ error: "Authorization header required" });
     }
 
-    await pruneAuthorizationCodes();
+    const { verifyPropAIToken } = await import("./supabase.js");
+    const user = await verifyPropAIToken(token).catch((error) => {
+      console.error("[OAuth Error] device_authorize token verification failed:", thrownMessage(error));
+      return null;
+    });
+    if (!user?.id) {
+      return res.status(401).json({ error: "Invalid or expired authorization token" });
+    }
 
-    const existingClient = await getOAuthClient(clientId);
-    if (!existingClient) {
-      await createOAuthClient({
+    if (clientId && redirectUri && codeChallenge) {
+      if (!(await validateRedirectUri(clientId, redirectUri))) {
+        return res.status(400).json({ error: "Redirect URI is not allowed for this client" });
+      }
+
+      await pruneAuthorizationCodes();
+
+      const existingClient = await getOAuthClient(clientId);
+      if (!existingClient) {
+        await createOAuthClient({
+          client_id: clientId,
+          client_name: "PropAI MCP Client",
+          redirect_uris: [redirectUri],
+          grant_types: ["authorization_code", "refresh_token"],
+          response_types: ["code"],
+          token_endpoint_auth_method: "none",
+          created_at: new Date().toISOString(),
+        });
+      }
+
+      const code = crypto.randomBytes(32).toString("base64url");
+      await saveAuthorizationCode({
+        code,
         client_id: clientId,
-        client_name: "PropAI MCP Client",
-        redirect_uris: [redirectUri],
-        grant_types: ["authorization_code", "refresh_token"],
-        response_types: ["code"],
-        token_endpoint_auth_method: "none",
+        redirect_uri: redirectUri,
+        code_challenge: codeChallenge,
+        code_challenge_method: codeChallengeMethod || "S256",
+        access_token: token,
+        refresh_token: refreshToken || null,
+        expires_in: 86400,
         created_at: new Date().toISOString(),
       });
+
+      const target = new URL(redirectUri);
+      target.searchParams.set("code", code);
+      if (state) target.searchParams.set("state", state);
+
+      return res.json({ success: true, redirect_url: target.toString() });
     }
 
-    const code = crypto.randomBytes(32).toString("base64url");
-    await saveAuthorizationCode({
-      code,
-      client_id: clientId,
-      redirect_uri: redirectUri,
-      code_challenge: codeChallenge,
-      code_challenge_method: codeChallengeMethod || "S256",
-      access_token: token,
-      refresh_token: refreshToken || null,
-      expires_in: 86400,
-      created_at: new Date().toISOString(),
+    if (!userCode) {
+      return res.status(400).json({ error: "user_code or OAuth authorization fields required" });
+    }
+
+    for (const [, record] of deviceCodeStore) {
+      if (record.user_code === userCode && new Date(record.expires_at) > new Date()) {
+        record.user_id = user.id;
+        record.access_token = token;
+        record.refresh_token = refreshToken || token;
+        record.expires_in = 86400;
+        record.authorized_at = new Date().toISOString();
+        return res.json({ success: true, message: "Device authorized" });
+      }
+    }
+
+    return res.status(404).json({ error: "Device code not found or expired" });
+  } catch (error) {
+    return oauthError(res, 500, "server_error", `App authorization failed: ${thrownMessage(error)}`, {
+      handler: "device_authorize",
+      client_id: req.body?.client_id || "",
     });
-
-    const target = new URL(redirectUri);
-    target.searchParams.set("code", code);
-    if (state) target.searchParams.set("state", state);
-
-    return res.json({ success: true, redirect_url: target.toString() });
   }
-
-  if (!userCode) {
-    return res.status(400).json({ error: "user_code or OAuth authorization fields required" });
-  }
-
-  for (const [, record] of deviceCodeStore) {
-    if (record.user_code === userCode && new Date(record.expires_at) > new Date()) {
-      record.user_id = user.id;
-      record.access_token = token;
-      record.refresh_token = token;
-      record.expires_in = 86400;
-      record.authorized_at = new Date().toISOString();
-      return res.json({ success: true, message: "Device authorized" });
-    }
-  }
-
-  return res.status(404).json({ error: "Device code not found or expired" });
 }
 
 export function setMcpUnauthorizedHeaders(req: Request, res: Response) {
