@@ -1,6 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { getMarketSummary, getLocalityStats, logToolCall } from "../data.ts";
+import { getMarketSummary, logToolCall } from "../data.ts";
 import { executeSmartSearch } from "../smartSearch.ts";
 import type { ToolContext } from "../types.js";
 
@@ -48,23 +48,6 @@ export function registerMarketTools(server: McpServer, context: ToolContext) {
     return textResponse(
       `${input.location || "Mumbai"}: ${result.listing_count} listings, avg ₹${result.avg_price_cr || "N/A"} Cr, avg ₹${result.avg_price_per_sqft || "N/A"}/sqft`,
       result,
-    );
-  });
-
-  server.registerTool("market_stats", {
-    description: "Get IGR transaction stats for a locality — registered sale prices per sqft",
-    inputSchema: {
-      location: z.string().describe("Locality (e.g. 'Bandra West', 'Powai')"),
-      months: z.number().optional().default(6),
-    },
-  }, async (input) => {
-    const id = brokerId(context);
-    await logToolCall(id, "market_stats", input);
-    const stats = await getLocalityStats(input.location, input.months);
-    if (!stats) return textResponse(`No statistics for "${input.location}".`, { stats: null });
-    return textResponse(
-      `${input.location}: ${stats.transaction_count} registered transactions, avg ₹${stats.avg_price_per_sqft || "N/A"}/sqft, median ₹${stats.median_consideration ? (stats.median_consideration / 10000000).toFixed(2) + " Cr" : "N/A"}`,
-      stats,
     );
   });
 

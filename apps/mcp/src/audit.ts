@@ -150,7 +150,6 @@ async function main() {
   console.log("--- Group 2: Market intelligence ---");
   await testFn("market_summary", function() { return mcp.getMarketSummary({ locality: "Bandra", days: 30, limit: 50 }); });
   await testFn("building_intel", function() { return mcp.getBuildingIntel({ building_name: "Kalpataru", days_back: 90 }); });
-  await testFn("get_igr_price", function() { return mcp.getIgrPrice({ locality: "Bandra West" }); });
   await testFn("price_estimate", function() { return mcp.estimatePrice({ locality: "Bandra", bhk: 2, property_type: "sale" }); });
   await testFn("pricing_negotiation_brief", function() { return mcp.buildPricingNegotiationBrief({ locality: "Bandra", bhk: 2, asking_price_cr: 3.5 }); });
   console.log("");

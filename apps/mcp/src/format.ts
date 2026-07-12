@@ -1,4 +1,4 @@
-import type { IgrTransaction, LocalityStats, PublicListing } from "./types.js";
+import type { PublicListing } from "./types.js";
 
 const dateFormatter = new Intl.DateTimeFormat("en-IN", {
   day: "2-digit",
@@ -77,34 +77,4 @@ export function listingLine(row: PublicListing, index: number) {
   const size = row.size_sqft ? `, ${formatSqft(row.size_sqft)}` : "";
   const suffix = age ? ` (${age})` : "";
   return `${index + 1}. ${listingLabel(row)}, ${formatCurrencyCr(row.price)} - ${place}${size}${suffix}`;
-}
-
-export function igrSummary(
-  transaction: IgrTransaction | null,
-  stats: LocalityStats | null,
-  requestedBuilding?: string,
-  requestedLocality?: string,
-) {
-  if (!transaction && !stats) {
-    return "No Maharashtra IGR transaction data found for this building or locality.";
-  }
-
-  if (!transaction && stats) {
-    return `No exact building match found. Area average (${stats.months} months) in ${stats.locality}: ${formatPerSqft(stats.avg_price_per_sqft)} across ${stats.transaction_count} transactions.`;
-  }
-
-  const dealRate = transaction?.price_per_sqft ?? null;
-  const marketRate = stats?.avg_price_per_sqft ?? null;
-  let comparison = "";
-  if (dealRate != null && marketRate != null && marketRate > 0) {
-    comparison = dealRate >= marketRate ? "above market" : "below market";
-  }
-
-  const building = transaction?.building_name || requestedBuilding || "Building";
-  const locality = transaction?.locality || requestedLocality || "locality not available";
-  const avgLine = stats
-    ? `Area average (${stats.months} months): ${formatPerSqft(stats.avg_price_per_sqft)}${comparison ? ` - ${comparison}` : ""}`
-    : "Area average (6 months): N/A";
-
-  return `Last registered: ${building}, ${locality} - ${formatCurrencyCr(transaction?.consideration)} on ${formatDate(transaction?.reg_date)} (${formatSqft(transaction?.area_sqft)}, ${formatPerSqft(transaction?.price_per_sqft)})\n${avgLine}`;
 }

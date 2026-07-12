@@ -1,6 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { getMarketSummary, getLocalityStats, logToolCall } from "../data.ts";
+import { getMarketSummary, logToolCall } from "../data.ts";
 import type { ToolContext } from "../types.js";
 
 function textResponse(text: string, structured?: unknown) {
@@ -48,20 +48,4 @@ export function registerGeographyTools(server: McpServer, context: ToolContext) 
     return textResponse(`Activity near ${input.location} (${input.radius_km}km): ${result.listing_count} listings`, result);
   });
 
-  server.registerTool("location_market", {
-    description: "Get detailed IGR transaction analysis for a location",
-    inputSchema: {
-      location: z.string().describe("Locality to analyze"),
-      months: z.number().optional().default(6),
-    },
-  }, async (input) => {
-    const id = brokerId(context);
-    await logToolCall(id, "location_market", input);
-    const stats = await getLocalityStats(input.location, input.months);
-    if (!stats) return textResponse(`No market data for "${input.location}".`, { stats: null });
-    return textResponse(
-      `${input.location}: ${stats.transaction_count} transactions, avg ₹${stats.avg_price_per_sqft || "N/A"}/sqft, range ₹${stats.min_consideration ? (stats.min_consideration / 10000000).toFixed(2) + " Cr" : "N/A"}–${stats.max_consideration ? (stats.max_consideration / 10000000).toFixed(2) + " Cr" : "N/A"}`,
-      stats,
-    );
-  });
 }

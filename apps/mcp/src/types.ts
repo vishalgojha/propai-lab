@@ -31,24 +31,3 @@ export type PublicListing = {
   message_timestamp: string | null;
   created_at: string | null;
 };
-
-export type IgrTransaction = {
-  doc_number: string | null;
-  reg_date: string | null;
-  building_name: string | null;
-  locality: string | null;
-  consideration: number | null;
-  area_sqft: number | null;
-  price_per_sqft: number | null;
-  config: string | null;
-};
-
-export type LocalityStats = {
-  locality: string;
-  months: number;
-  avg_price_per_sqft: number | null;
-  median_consideration: number | null;
-  min_consideration: number | null;
-  max_consideration: number | null;
-  transaction_count: number;
-};

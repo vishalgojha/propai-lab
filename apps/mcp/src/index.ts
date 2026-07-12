@@ -12,7 +12,6 @@ import {
   getBuildingIntel,
   getFreshStream,
   getHotLeadTriage,
-  getIgrPrice,
   getListingById,
   getMarketSummary,
   matchBuyerToInventory,
@@ -46,7 +45,6 @@ export const MCP_TOOL_NAMES = [
   // Domain-organized tools (primary)
   "market_search",
   "market_summary",
-  "market_stats",
   "market_trends",
   "listing_get",
   "listing_similar",
@@ -67,7 +65,6 @@ export const MCP_TOOL_NAMES = [
   "building_marketPulse",
   "location_search",
   "location_nearby",
-  "location_market",
   "conversation_search",
   "conversation_timeline",
   "conversation_summarize",
@@ -87,7 +84,6 @@ export const MCP_TOOL_NAMES = [
   "searchBrokers",
   "search_listings",
   "search_requirements",
-  "get_igr_price",
   "match_listing_to_requirement",
   "semantic_search",
   "get_fresh_stream",
@@ -411,7 +407,7 @@ export function createMcpServer(context: ToolContext = {}) {
     "pricing_negotiation_brief",
     {
       description:
-        "Build a pricing and negotiation brief using current asking price, market comparables, and Maharashtra IGR context.",
+        "Build a pricing and negotiation brief using current asking price and live PropAI market comparables.",
       inputSchema: {
         locality: z.string().optional(),
         building_name: z.string().optional(),
@@ -746,7 +742,7 @@ export function createMcpServer(context: ToolContext = {}) {
     "price_estimate",
     {
       description:
-        "Estimate a property's price from public comparables and Maharashtra IGR data.",
+        "Estimate a property's price from live PropAI market comparables.",
       inputSchema: {
         locality: z.string().optional(),
         building_name: z.string().optional(),
@@ -957,27 +953,6 @@ export function createMcpServer(context: ToolContext = {}) {
       return textResponse(`Found ${rows.length} buyer/tenant requirements for ${summary}:\n\n${lines.join("\n")}`, {
         results: rows,
       });
-    },
-  );
-
-  server.registerTool(
-    "get_igr_price",
-    {
-      description:
-        "Get last registered transaction price for a building or locality from Maharashtra IGR government records. Use when broker asks about market rate, wants to verify price, or counter a lowball offer.",
-      inputSchema: {
-        building_name: z.string().optional(),
-        locality: z.string().describe("Fallback if building not found").optional(),
-      },
-    },
-    async (input) => {
-      await logToolCall(brokerId(context), "get_igr_price", input);
-      if (!input.building_name && !input.locality) {
-        return textResponse("Provide a building_name or locality to check Maharashtra IGR prices.");
-      }
-
-      const result = await getIgrPrice(input);
-      return textResponse(result.summary, result);
     },
   );
 
@@ -1438,7 +1413,6 @@ export {
   estimatePrice,
   getMarketSummary,
   getBuildingIntel,
-  getIgrPrice,
   buildBroadcastDraft,
   describeSearch,
   draftGrowthAssetWithLlm,

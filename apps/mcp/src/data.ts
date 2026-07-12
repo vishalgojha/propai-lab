@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import { supabase } from "./supabase.ts";
-import { formatBudgetRange, formatCurrencyCr, formatPerSqft, igrSummary, listingLabel, toNumber, formatDate, formatSqft } from "./format.ts";
-import type { IgrTransaction, LocalityStats, PublicListing } from "./types.js";
+import { formatBudgetRange, formatCurrencyCr, formatPerSqft, listingLabel, toNumber, formatSqft } from "./format.ts";
+import type { PublicListing } from "./types.js";
 
 export const PUBLIC_LISTING_COLUMNS =
   "source_message_id, source_group_name, listing_type, area, sub_area, location, price, price_type, size_sqft, furnishing, bhk, property_type, title, description, raw_message, cleaned_message, primary_contact_name, primary_contact_number, primary_contact_wa, message_timestamp";
@@ -382,39 +382,6 @@ export async function getWorkspaceListings(input: {
     raw_text: string | null;
     created_at: string | null;
   }>;
-}
-
-export async function getLastTransactionForBuilding(buildingName: string): Promise<IgrTransaction | null> {
-  const name = buildingName.trim();
-  if (!name) return null;
-  return null;
-}
-
-export async function getLocalityStats(locality: string, months = 6): Promise<LocalityStats | null> {
-  const name = locality.trim();
-  if (!name) return null;
-
-  return {
-    locality: name,
-    months,
-    avg_price_per_sqft: null,
-    median_consideration: null,
-    min_consideration: null,
-    max_consideration: null,
-    transaction_count: 0,
-  };
-}
-
-export async function getIgrPrice(input: { building_name?: string; locality?: string }) {
-  const transaction = input.building_name ? await getLastTransactionForBuilding(input.building_name) : null;
-  const statsLocality = transaction?.locality || input.locality || "";
-  const stats = statsLocality ? await getLocalityStats(statsLocality, 6) : null;
-
-  return {
-    transaction,
-    locality_stats: stats,
-    summary: "Maharashtra IGR transaction data is not enabled in this PropAI workspace yet. Use live WhatsApp market listings for current asking-price context.",
-  };
 }
 
 export function describeSearch(input: {
@@ -1247,14 +1214,8 @@ export async function estimatePrice(input: {
     days: 90,
     limit: 250,
   });
-  const igr = await getIgrPrice({
-    building_name: input.building_name,
-    locality: input.locality,
-  });
-
   const publicPpsf = market.avg_price_per_sqft;
-  const igrPpsf = igr.locality_stats?.avg_price_per_sqft ?? null;
-  const referencePpsf = publicPpsf || igrPpsf || null;
+  const referencePpsf = publicPpsf || null;
   const estimatedPriceCr = referencePpsf && input.area_sqft
     ? Number(((referencePpsf * input.area_sqft) / 10000000).toFixed(2))
     : market.median_price_cr;
@@ -1263,8 +1224,6 @@ export async function estimatePrice(input: {
     estimated_price_cr: estimatedPriceCr,
     reference_price_per_sqft: referencePpsf,
     public_market: market,
-    igr_market: igr.locality_stats,
-    igr_transaction: igr.transaction,
     summary: referencePpsf
       ? input.area_sqft
         ? `Estimated value: ${formatCurrencyCr(estimatedPriceCr)} using ${formatPerSqft(referencePpsf)} and ${Math.round(input.area_sqft).toLocaleString("en-IN")} sqft.`
@@ -1292,7 +1251,6 @@ export async function buildPricingNegotiationBrief(input: {
   const askingPrice = input.asking_price_cr ?? null;
   const estimatedPrice = estimate.estimated_price_cr ?? null;
   const referencePpsf = estimate.reference_price_per_sqft ?? null;
-  const igrRate = estimate.igr_market?.avg_price_per_sqft ?? null;
   const publicRate = estimate.public_market?.avg_price_per_sqft ?? null;
 
   let pricePosition: "above_market" | "at_market" | "below_market" | "unknown" = "unknown";
@@ -1317,17 +1275,13 @@ export async function buildPricingNegotiationBrief(input: {
     if (pricePosition === "at_market") {
       return "Negotiate on terms, urgency, furnishing, and payment certainty rather than forcing a large price cut.";
     }
-    return "Use IGR and current comparables to test the ask before taking a hard negotiation stance.";
+    return "Use current PropAI market comparables to test the ask before taking a hard negotiation stance.";
   })();
 
   const leveragePoints = [
     publicRate != null ? `Public comparable rate around ${formatPerSqft(publicRate)}` : null,
-    igrRate != null ? `IGR-backed locality rate around ${formatPerSqft(igrRate)}` : null,
     askingPrice != null && estimatedPrice != null
       ? `Ask is ${deltaCr && deltaCr > 0 ? `${formatCurrencyCr(deltaCr)} above` : deltaCr && deltaCr < 0 ? `${formatCurrencyCr(Math.abs(deltaCr))} below` : "roughly at"} the estimated market value`
-      : null,
-    estimate.igr_transaction?.reg_date
-      ? `Recent IGR transaction on ${formatDate(estimate.igr_transaction.reg_date)}`
       : null,
   ].filter(Boolean) as string[];
 
@@ -1356,8 +1310,6 @@ export async function buildPricingNegotiationBrief(input: {
     delta_cr: deltaCr,
     reference_price_per_sqft: referencePpsf,
     public_market: estimate.public_market,
-    igr_market: estimate.igr_market,
-    igr_transaction: estimate.igr_transaction,
     leverage_points: leveragePoints,
     risks,
     negotiation_stance: negotiationStance,

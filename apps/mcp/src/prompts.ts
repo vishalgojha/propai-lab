@@ -42,7 +42,7 @@ export function registerMcpPrompts(server: McpServer) {
           role: "user",
           content: {
             type: "text",
-            text: `Build a pricing and negotiation brief for this property. Locality: ${locality || "not provided"}. Building: ${building_name || "not provided"}. Ask: ${asking_price_cr || "not provided"} Cr. Area: ${area_sqft || "not provided"} sqft. Use market comps and IGR context, then tell me how I should negotiate.`,
+            text: `Build a pricing and negotiation brief for this property. Locality: ${locality || "not provided"}. Building: ${building_name || "not provided"}. Ask: ${asking_price_cr || "not provided"} Cr. Area: ${area_sqft || "not provided"} sqft. Use live PropAI market comps, then tell me how I should negotiate.`,
           },
         },
       ],
@@ -230,10 +230,10 @@ export function registerMcpPrompts(server: McpServer) {
   );
 
   server.registerPrompt(
-    "price_property_with_igr",
+    "price_property",
     {
-      title: "Price Property with IGR",
-      description: "Estimate a property using both market comparables and IGR context.",
+      title: "Price Property",
+      description: "Estimate a property using live PropAI market comparables.",
       argsSchema: {
         locality: z.string().optional(),
         building_name: z.string().optional(),
