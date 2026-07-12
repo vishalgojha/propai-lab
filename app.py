@@ -2358,6 +2358,35 @@ async def inbox_threads(limit: int = 500, offset: int = 0,
     return storage.get_inbox_threads(limit, offset, tenant_id=tenant_id)
 
 
+@app.get("/api/chats")
+async def list_chats(limit: int = 500, offset: int = 0,
+                     tenant_id: str | None = Depends(get_tenant_context)):
+    return storage.get_chats(limit, offset, tenant_id=tenant_id)
+
+
+@app.get("/api/chats/{chat_id}/messages")
+async def chat_messages(chat_id: str, limit: int = 200, offset: int = 0,
+                        tenant_id: str | None = Depends(get_tenant_context)):
+    rows = storage.get_chat_messages(chat_id, limit, offset, tenant_id=tenant_id)
+    return [asdict(r) for r in rows]
+
+
+@app.get("/api/chats/{chat_id}")
+async def get_chat(chat_id: str, tenant_id: str | None = Depends(get_tenant_context)):
+    for chat in storage.get_chats(1000, 0, tenant_id=tenant_id):
+        if str(chat.get("chat_id") or chat.get("conversation_key") or "") == chat_id:
+            return chat
+    messages = storage.get_chat_messages(chat_id, 1, 0, tenant_id=tenant_id)
+    if not messages:
+        raise HTTPException(status_code=404, detail="Chat not found")
+    row = asdict(messages[0])
+    row["chat_id"] = chat_id
+    row["conversation_key"] = chat_id
+    row["conversation_name"] = row.get("group_name") or row.get("sender") or chat_id
+    row["message_count"] = 1
+    return row
+
+
 @app.get("/api/inbox/slugs")
 async def inbox_slugs():
     """Return saved inbox view configurations (slugs) for the tabs."""

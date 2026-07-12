@@ -49,6 +49,12 @@ async function fetchJSON<T>(url: string, init?: RequestInit, timeoutMs = API_TIM
 
 export interface RawMessage {
   id: number;
+  chat_id?: string;
+  chat_type?: "group" | "direct";
+  chat_name?: string;
+  conversation_type?: "group" | "direct";
+  conversation_key?: string;
+  conversation_name?: string;
   group_name: string;
   sender: string;
   sender_jid?: string;
@@ -71,6 +77,9 @@ export interface InboxThread extends RawMessage {
   conversation_key: string;
   message_count: number;
   conversation_name: string;
+  chat_id?: string;
+  chat_type?: "group" | "direct";
+  chat_name?: string;
   latest_message_at?: string;
   lag_seconds?: number;
 }
@@ -188,6 +197,16 @@ export function getRaw(limit = 50, offset = 0, group_name?: string, sender?: str
 export function getInboxThreads(limit = 500, offset = 0) {
   const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
   return fetchJSON<InboxThread[]>(`/inbox/threads?${params.toString()}`);
+}
+
+export function getChats(limit = 500, offset = 0) {
+  const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+  return fetchJSON<InboxThread[]>(`/chats?${params.toString()}`);
+}
+
+export function getChatMessages(chatId: string, limit = 300, offset = 0) {
+  const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+  return fetchJSON<RawMessage[]>(`/chats/${encodeURIComponent(chatId)}/messages?${params.toString()}`);
 }
 
 export function getParsed(limit = 50, offset = 0) {

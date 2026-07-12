@@ -985,7 +985,7 @@ function InboxPageInner() {
   };
 
   const displayChatTitle = (msg: api.InboxThread | api.RawMessage) => {
-    const conversationName = "conversation_name" in msg ? msg.conversation_name : "";
+    const conversationName = msg.chat_name || ("conversation_name" in msg ? msg.conversation_name : "");
     const rawConversation = conversationName || msg.group_name;
     const knownGroupName = resolveKnownGroupName(rawConversation);
     if (knownGroupName) return knownGroupName;
@@ -1052,6 +1052,7 @@ function InboxPageInner() {
     return (
       phoneFromJid(msg.sender_jid) ||
       phoneFromJid(msg.group_name) ||
+      phoneFromJid((msg as Partial<api.InboxThread>)?.chat_id) ||
       phoneFromJid((msg as Partial<api.InboxThread>)?.conversation_key)
     );
   };
@@ -1325,7 +1326,7 @@ function InboxPageInner() {
   const uniqueThreads = Array.from(
     new Map(
       filteredMessages.map((m) => [
-        m.conversation_key || m.group_name || `${m.sender || "unknown"}:${m.timestamp}`,
+        m.chat_id || m.conversation_key || m.group_name || `${m.sender || "unknown"}:${m.timestamp}`,
         m,
       ])
     ).values()
@@ -1334,9 +1335,9 @@ function InboxPageInner() {
   const groupChats = uniqueThreads
     .filter((m) => m.conversation_type === "group")
     .map((m) => ({
-      conversationKey: m.conversation_key || m.group_name,
+      conversationKey: m.chat_id || m.conversation_key || m.group_name,
       rawGroupName: m.group_name,
-      groupLabel: displayGroupName(m.conversation_name || m.group_name),
+      groupLabel: displayGroupName(m.chat_name || m.conversation_name || m.group_name),
       title: displayChatTitle(m),
       latest: m,
       count: m.message_count || 0,
@@ -1346,7 +1347,7 @@ function InboxPageInner() {
   const directChats = uniqueThreads
     .filter((m) => m.conversation_type === "direct")
     .map((m) => ({
-      senderKey: m.conversation_key,
+      senderKey: m.chat_id || m.conversation_key,
       name: displayChatTitle(m),
       latest: m,
       count: m.message_count || 0,
@@ -1450,7 +1451,9 @@ function InboxPageInner() {
 
   const selectedTitle = selectedMsg ? displayChatTitle(selectedMsg) : "";
   const isGroupConversationSelected =
-    !!selectedMsg?.group_name && selectedMsg.group_name !== "seed" && selectedMsg.group_name !== "seed-bot";
+    selectedMsg?.chat_type === "group" ||
+    selectedMsg?.conversation_type === "group" ||
+    (!!selectedMsg?.group_name && selectedMsg.group_name !== "seed" && selectedMsg.group_name !== "seed-bot");
   const selectedSubtitle =
     isGroupConversationSelected
       ? ""
@@ -1468,22 +1471,32 @@ function InboxPageInner() {
     setLoadingConv(true);
     try {
       let thread: api.RawMessage[] = [];
+      const chatId = (msg.chat_id || ("conversation_key" in msg ? msg.conversation_key : "") || "").trim();
       const groupName =
-        "conversation_type" in msg && msg.conversation_type === "group"
-          ? (msg.conversation_key || msg.group_name || "").trim()
+        (msg.chat_type === "group" || ("conversation_type" in msg && msg.conversation_type === "group"))
+          ? (chatId || msg.group_name || "").trim()
           : "";
-      if (groupName && groupName !== "seed" && groupName !== "seed-bot") {
-        // Group Conversation
-        thread = await api.getRaw(80, 0, groupName);
+      if (chatId) {
+        thread = await api.getChatMessages(chatId, 500, 0);
+      } else if (groupName && groupName !== "seed" && groupName !== "seed-bot") {
+        thread = await api.getRaw(200, 0, groupName);
       } else {
-        // Direct Chat Conversation
         const resolvedPhone = resolveMessagePhone(msg);
         const phone = isRealPhoneDigits(resolvedPhone) ? resolvedPhone : undefined;
         const jid = msg.sender_jid || msg.group_name || ("conversation_key" in msg ? msg.conversation_key : "") || undefined;
-        thread = await api.getRaw(80, 0, undefined, undefined, phone, jid);
+        thread = await api.getRaw(200, 0, undefined, undefined, phone, jid);
       }
       // Threads come newest first, reverse to show chronological top-to-bottom
-      const chronologicalThread = (thread.length ? thread : msg.id ? [msg as api.RawMessage] : []).slice().reverse();
+      const decoratedThread = thread.map((item) => ({
+        ...item,
+        chat_id: chatId || item.chat_id,
+        chat_name: msg.chat_name || item.chat_name,
+        chat_type: msg.chat_type || item.chat_type,
+        conversation_type: msg.conversation_type || item.conversation_type,
+        conversation_key: chatId || msg.conversation_key || item.conversation_key,
+        conversation_name: msg.conversation_name || msg.chat_name || item.conversation_name,
+      }));
+      const chronologicalThread = (decoratedThread.length ? decoratedThread : msg.id ? [msg as api.RawMessage] : []).slice().reverse();
       setConversationMessages(chronologicalThread);
 
       // Inactive group rows use a synthetic row; analyze the latest real thread item instead.
@@ -1494,8 +1507,11 @@ function InboxPageInner() {
           ...("conversation_key" in msg
             ? {
                 conversation_type: msg.conversation_type,
-                conversation_key: msg.conversation_key,
-                conversation_name: msg.conversation_name,
+                conversation_key: chatId || msg.conversation_key,
+                conversation_name: msg.conversation_name || msg.chat_name,
+                chat_id: chatId || msg.chat_id,
+                chat_name: msg.chat_name,
+                chat_type: msg.chat_type,
                 message_count: msg.message_count,
               }
             : {}),
@@ -1515,7 +1531,7 @@ function InboxPageInner() {
   const selectMessage = useCallback((msg: api.RawMessage) => {
     setSelectedMsg(msg as any);
     loadMessageDetails(msg.id);
-    updateUrlMessage((msg as any).conversation_key || msg.group_name || "", msg.id);
+    updateUrlMessage((msg as any).chat_id || (msg as any).conversation_key || msg.group_name || "", msg.id);
     const el = messageRefs.current[msg.id];
     if (el) {
       el.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -2072,6 +2088,7 @@ function InboxPageInner() {
                   }
                   {showThreadFallback && threadFallbackItems.map((item) => {
                     const isSelected = selectedMsg && (
+                      selectedMsg.chat_id === item.key ||
                       ("conversation_key" in selectedMsg && selectedMsg.conversation_key === item.key) ||
                       selectedMsg.group_name === item.latest.group_name ||
                       selectedMsg.sender_jid === item.latest.sender_jid
@@ -3187,7 +3204,7 @@ function InboxPageInner() {
                     entityId={(() => {
                       if (!selectedMsg) return "none";
                       const msg = selectedMsg as any;
-                      return msg.conversation_key || msg.group_name || msg.sender_phone || String(msg.id);
+                      return msg.chat_id || msg.conversation_key || msg.group_name || msg.sender_phone || String(msg.id);
                     })()}
                   />
                 )}

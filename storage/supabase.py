@@ -3,6 +3,7 @@
 import json
 import os
 import re
+from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Optional
@@ -16,6 +17,14 @@ from lab.storage.base import (
     dict_to_dataclass,
 )
 from lab.inventory import listing_fingerprint, listing_label
+
+
+def _clean_person_name(name: str = "") -> str:
+    clean = (name or "").strip()
+    clean = re.sub(r"\s*\([^)]*(?:\+?\d|X{2,})[^)]*\)\s*", " ", clean, flags=re.I)
+    clean = re.sub(r"\s*\+?\d[\d\s().-]{7,}\s*", " ", clean)
+    clean = re.sub(r"\s{2,}", " ", clean).strip(" -")
+    return clean
 
 
 @dataclass
@@ -739,7 +748,187 @@ class SupabaseStorage(Storage):
             .is_("processed", "false").execute()
         return res.count if hasattr(res, "count") else 0
 
+    @staticmethod
+    def _payload_dict(value) -> dict:
+        if isinstance(value, dict):
+            return value
+        if isinstance(value, str) and value:
+            try:
+                parsed = json.loads(value)
+                return parsed if isinstance(parsed, dict) else {}
+            except json.JSONDecodeError:
+                return {}
+        return {}
+
+    @staticmethod
+    def _jid_phone(jid: str = "") -> str:
+        head = (jid or "").split("@", 1)[0]
+        digits = re.sub(r"\D", "", head)
+        return digits or head
+
+    @staticmethod
+    def _is_group_jid(value: str = "") -> bool:
+        return (value or "").endswith("@g.us")
+
+    @staticmethod
+    def _is_direct_jid(value: str = "") -> bool:
+        return (value or "").endswith("@s.whatsapp.net") or (value or "").endswith("@lid")
+
+    def _source_group_maps(self) -> tuple[dict[str, str], dict[str, str]]:
+        try:
+            res = self.client.table("source_sync_jobs")\
+                .select("group_id,group_name")\
+                .neq("group_id", "")\
+                .execute()
+        except Exception:
+            return {}, {}
+        id_to_name: dict[str, str] = {}
+        name_to_id: dict[str, str] = {}
+        for row in (res.data or []):
+            gid = (row.get("group_id") or "").strip()
+            name = (row.get("group_name") or "").strip()
+            if gid and name:
+                id_to_name[gid] = name
+                name_to_id.setdefault(name, gid)
+        return id_to_name, name_to_id
+
+    def _raw_chat_identity(
+        self,
+        row: dict,
+        id_to_name: dict[str, str] | None = None,
+        name_to_id: dict[str, str] | None = None,
+    ) -> tuple[str, str, str]:
+        id_to_name = id_to_name or {}
+        name_to_id = name_to_id or {}
+        payload = self._payload_dict(row.get("raw_payload"))
+        key = payload.get("key") if isinstance(payload.get("key"), dict) else {}
+        if not key and isinstance(payload.get("data"), dict):
+            key = payload["data"].get("key") if isinstance(payload["data"].get("key"), dict) else {}
+        chat_id = (
+            key.get("remoteJid")
+            or payload.get("remoteJid")
+            or payload.get("from")
+            or ""
+        )
+        message_uid = (row.get("message_uid") or "").strip()
+        if not chat_id and ":" in message_uid:
+            chat_id = message_uid.split(":", 1)[0]
+
+        group_name = (row.get("group_name") or "").strip()
+        sender_jid = (row.get("sender_jid") or "").strip()
+        sender_phone = (row.get("sender_phone") or "").strip()
+        sender = (row.get("sender") or "").strip()
+
+        if not chat_id and group_name in name_to_id:
+            chat_id = name_to_id[group_name]
+        if not chat_id and self._is_group_jid(group_name):
+            chat_id = group_name
+        if not chat_id and self._is_direct_jid(group_name):
+            chat_id = group_name
+        if not chat_id:
+            chat_id = sender_jid or sender_phone or group_name or sender or "unknown"
+
+        chat_type = "group" if self._is_group_jid(chat_id) or (group_name and not self._is_direct_jid(group_name) and group_name not in ("seed", "seed-bot")) else "direct"
+        if chat_type == "group":
+            chat_name = id_to_name.get(chat_id) or (group_name if not self._is_group_jid(group_name) else "") or chat_id
+        else:
+            chat_name = _clean_person_name(sender) or sender_phone or self._jid_phone(chat_id) or "Direct Message"
+        return chat_id, chat_type, chat_name
+
+    @staticmethod
+    def _decorate_chat_row(row: dict, chat_id: str, chat_type: str, chat_name: str, count: int | None = None) -> dict:
+        decorated = dict(row)
+        decorated["chat_id"] = chat_id
+        decorated["chat_type"] = chat_type
+        decorated["chat_name"] = chat_name
+        decorated["conversation_key"] = chat_id
+        decorated["conversation_type"] = "group" if chat_type == "group" else "direct"
+        decorated["conversation_name"] = chat_name
+        decorated["latest_message_at"] = decorated.get("timestamp") or decorated.get("created_at") or ""
+        if count is not None:
+            decorated["message_count"] = count
+        return decorated
+
+    def get_chats(self, limit: int = 500, offset: int = 0, tenant_id: str | None = None) -> list[dict]:
+        query = self.client.table("raw_messages").select("*")\
+            .order("timestamp", desc=True)\
+            .limit(max(5000, limit + offset))
+        tid = tenant_id or self._tenant_id
+        if tid:
+            query = query.eq("tenant_id", tid)
+        res = query.execute()
+        rows = res.data or []
+        if not rows:
+            return []
+
+        id_to_name, name_to_id = self._source_group_maps()
+        grouped: dict[str, dict] = {}
+        counts: dict[str, int] = defaultdict(int)
+        for row in rows:
+            group_name = (row.get("group_name") or "").strip()
+            sender_jid = (row.get("sender_jid") or "").strip()
+            if group_name in ("status@broadcast", "broadcast") or group_name.endswith("@broadcast"):
+                continue
+            if group_name.endswith("@newsletter") or sender_jid.endswith("@newsletter"):
+                continue
+            chat_id, chat_type, chat_name = self._raw_chat_identity(row, id_to_name, name_to_id)
+            if chat_id in ("seed", "seed-bot", "status@broadcast", "broadcast"):
+                continue
+            counts[chat_id] += 1
+            if chat_id not in grouped:
+                grouped[chat_id] = self._decorate_chat_row(row, chat_id, chat_type, chat_name)
+        chats = []
+        for chat_id, latest in grouped.items():
+            latest["message_count"] = counts.get(chat_id, 0)
+            chats.append(latest)
+        chats.sort(key=lambda t: (t.get("timestamp") or t.get("created_at") or "", t.get("id") or 0), reverse=True)
+        return chats[offset:offset + limit]
+
+    def get_chat_messages(self, chat_id: str, limit: int = 200, offset: int = 0, tenant_id: str | None = None) -> list[RawMessage]:
+        chat_id = (chat_id or "").strip()
+        if not chat_id:
+            return []
+        id_to_name, _ = self._source_group_maps()
+        names = [chat_id]
+        if chat_id in id_to_name:
+            names.append(id_to_name[chat_id])
+        digits = self._jid_phone(chat_id)
+        tid = tenant_id or self._tenant_id
+        collected: dict[int, dict] = {}
+
+        def add_query(field: str, value: str, op: str = "eq"):
+            if not value:
+                return
+            try:
+                q = self.client.table("raw_messages").select("*").order("timestamp", desc=True).limit(limit + offset)
+                if tid:
+                    q = q.eq("tenant_id", tid)
+                if op == "like":
+                    q = q.like(field, value)
+                else:
+                    q = q.eq(field, value)
+                for row in (q.execute().data or []):
+                    rid = row.get("id")
+                    if rid is not None:
+                        collected[int(rid)] = row
+            except Exception:
+                return
+
+        add_query("message_uid", f"{chat_id}:%", "like")
+        for name in names:
+            add_query("group_name", name)
+        add_query("sender_jid", chat_id)
+        if digits:
+            add_query("sender_phone", digits)
+
+        rows = list(collected.values())
+        rows.sort(key=lambda r: (r.get("timestamp") or r.get("created_at") or "", r.get("id") or 0), reverse=True)
+        return [dict_to_dataclass(RawMessage, row) for row in rows[offset:offset + limit]]
+
     def get_inbox_threads(self, limit: int = 500, offset: int = 0, tenant_id: str | None = None) -> list[dict]:
+        chats = self.get_chats(limit, offset, tenant_id=tenant_id)
+        if chats:
+            return chats
         query = self.client.table("raw_messages").select("*")\
             .order("timestamp", desc=True)\
             .limit(2000)
