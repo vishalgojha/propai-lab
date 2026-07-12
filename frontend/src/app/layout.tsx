@@ -25,7 +25,6 @@ import {
   LogOut,
   Menu,
   X,
-  AlertTriangle,
   Shield,
 } from "lucide-react";
 import { AuthProvider, useAuth } from "@/lib/AuthProvider";
@@ -183,9 +182,6 @@ function AppShell({ children }: { children: React.ReactNode }) {
   const [offline, setOffline] = useState(false);
   const [profile, setProfile] = useState<{ auth_user_id?: string; phone: string; first_name: string; last_name?: string; email?: string; city?: string } | null>(null);
   const [profileLoaded, setProfileLoaded] = useState(false);
-  const [reconnectCountdown, setReconnectCountdown] = useState<number | null>(null);
-  const wasConnectedRef = useRef(false);
-  const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const { signOut: authSignOut } = useAuth();
 
   // Read profile from localStorage
@@ -254,38 +250,6 @@ function AppShell({ children }: { children: React.ReactNode }) {
       document.head.appendChild(link);
     }
   }, []);
-
-  // Reconnect timer: detect disconnect and start 10s countdown
-  useEffect(() => {
-    if (authLoading || !user) return;
-    if (waConnected) {
-      wasConnectedRef.current = true;
-      if (reconnectCountdown !== null) {
-        setReconnectCountdown(null);
-        if (countdownRef.current) { clearInterval(countdownRef.current); countdownRef.current = null; }
-      }
-      return;
-    }
-    // Not connected
-    if (!wasConnectedRef.current) return; // never been connected, skip
-    if (reconnectCountdown !== null) return; // already counting
-
-    // Start 10s countdown
-    setReconnectCountdown(10);
-    if (countdownRef.current) clearInterval(countdownRef.current);
-    countdownRef.current = setInterval(() => {
-      setReconnectCountdown(prev => {
-        if (prev === null || prev <= 1) {
-          if (countdownRef.current) clearInterval(countdownRef.current);
-          countdownRef.current = null;
-          router.push("/connections");
-          return null;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-    return () => { if (countdownRef.current) { clearInterval(countdownRef.current); countdownRef.current = null; } };
-  }, [authLoading, user, waConnected, reconnectCountdown, router]);
 
   // Offline detection
   useEffect(() => {
@@ -480,21 +444,6 @@ function AppShell({ children }: { children: React.ReactNode }) {
             <LogOut className="h-3.5 w-3.5" strokeWidth={1.5} />
           </button>
         </div>
-
-        {/* Reconnect banner */}
-        {reconnectCountdown !== null && (
-          <div className="flex items-center justify-between px-4 lg:px-5 py-2 bg-red-900/30 border-b border-red-500/20 text-sm">
-            <div className="flex items-center gap-2">
-              <AlertTriangle className="w-4 h-4 text-red-400 shrink-0" />
-              <span className="text-red-300 font-medium">WhatsApp disconnected</span>
-              <span className="text-red-400/80 text-xs">Reconnecting in {reconnectCountdown}s…</span>
-            </div>
-            <a href="/connections"
-              className="text-[11px] font-semibold text-red-300 underline hover:text-red-200 transition-colors shrink-0">
-              Reconnect now
-            </a>
-          </div>
-        )}
 
         {/* Page content */}
         <div className="flex-1 min-h-0 overflow-y-auto text-white relative">
