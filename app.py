@@ -2986,6 +2986,37 @@ async def dashboard_whatsapp_status():
 # AI Layer — read-only intelligence endpoints
 # ═══════════════════════════════════════════════════════════════
 
+@app.get("/api/market/access")
+async def market_access_status(
+    user: dict | None = Depends(get_current_user),
+    tenant_id: str | None = Depends(get_tenant_context),
+):
+    """Access gate for shared market intelligence.
+
+    First enforced production gate: the user must have WhatsApp connected.
+    Billing/trial state is explicit in the response so the UI can tighten this
+    once subscription tables exist without changing the frontend contract.
+    """
+    details = _connection_details()
+    connected = bool(details.get("connected"))
+    return {
+        "authenticated": bool(user),
+        "tenant_id": tenant_id,
+        "whatsapp_connected": connected,
+        "trial_active": connected,
+        "paid_active": False,
+        "market_unlocked": connected,
+        "trial_started_at": None,
+        "trial_ends_at": None,
+        "reason": "ready" if connected else "connect_whatsapp",
+        "message": (
+            "Market Inbox unlocks after WhatsApp is connected."
+            if not connected
+            else "Market Inbox is available for this connected workspace."
+        ),
+    }
+
+
 class QueryRequest(BaseModel):
     query: str
     k: int = 10

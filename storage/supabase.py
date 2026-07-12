@@ -5,7 +5,7 @@ import os
 import re
 from collections import defaultdict
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 import httpx
@@ -25,6 +25,32 @@ def _clean_person_name(name: str = "") -> str:
     clean = re.sub(r"\s*\+?\d[\d\s().-]{7,}\s*", " ", clean)
     clean = re.sub(r"\s{2,}", " ", clean).strip(" -")
     return clean
+
+
+def _normalize_india_phone(value: str = "") -> str:
+    raw = (value or "").strip()
+    if not raw or re.search(r"[xX*•]", raw):
+        return ""
+    digits = re.sub(r"\D", "", raw)
+    if len(digits) == 12 and digits.startswith("91"):
+        digits = digits[-10:]
+    elif len(digits) == 11 and digits.startswith("0"):
+        digits = digits[-10:]
+    if len(digits) == 10 and re.match(r"^[6-9]\d{9}$", digits):
+        return digits
+    return ""
+
+
+def _is_market_group_name(group_name: str = "") -> bool:
+    gn = (group_name or "").strip()
+    if not gn or gn in ("seed", "seed-bot", "status@broadcast", "broadcast"):
+        return False
+    return not (
+        gn.endswith("@s.whatsapp.net")
+        or gn.endswith("@lid")
+        or gn.endswith("@newsletter")
+        or gn.endswith("@broadcast")
+    )
 
 
 @dataclass
@@ -931,6 +957,13 @@ class SupabaseStorage(Storage):
         return [dict_to_dataclass(RawMessage, row) for row in rows[offset:offset + limit]]
 
     def get_inbox_threads(self, limit: int = 500, offset: int = 0, tenant_id: str | None = None) -> list[dict]:
+        try:
+            parsed_threads = self._get_parsed_market_threads(limit, offset, tenant_id=tenant_id)
+            if parsed_threads:
+                return parsed_threads
+        except Exception:
+            pass
+
         query = self.client.table("raw_messages").select("*")\
             .order("timestamp", desc=True)\
             .limit(max(5000, limit + offset))
@@ -942,17 +975,6 @@ class SupabaseStorage(Storage):
         rows = res.data if res.data else []
         if not rows:
             return []
-
-        def is_market_group_message(r: dict) -> bool:
-            gn = (r.get("group_name") or "").strip()
-            if not gn or gn in ("seed", "seed-bot", "status@broadcast", "broadcast"):
-                return False
-            return not (
-                gn.endswith("@s.whatsapp.net")
-                or gn.endswith("@lid")
-                or gn.endswith("@newsletter")
-                or gn.endswith("@broadcast")
-            )
 
         def broker_key(r: dict, parsed: dict | None = None) -> str:
             parsed = parsed or {}
@@ -978,7 +1000,7 @@ class SupabaseStorage(Storage):
 
         groups: dict[str, list[dict]] = {}
         for row in rows:
-            if not is_market_group_message(row):
+            if not _is_market_group_name(row.get("group_name") or ""):
                 continue
             key = broker_key(row)
             groups.setdefault(key, []).append(row)
@@ -1024,6 +1046,101 @@ class SupabaseStorage(Storage):
             threads.append(latest)
 
         threads.sort(key=lambda t: (t.get("timestamp") or t.get("created_at") or ""), reverse=True)
+        return threads[offset:offset + limit]
+
+    def _get_parsed_market_threads(self, limit: int, offset: int, tenant_id: str | None = None) -> list[dict]:
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
+        tid = tenant_id or self._tenant_id
+
+        query = self.client.table("parsed_output")\
+            .select("id,raw_message_id,message_type,intent,bhk,price,price_unit,area_sqft,furnishing,location_raw,building_name,landmark_name,micro_market,broker_name,broker_phone,profile_name,listing_index,confidence,summary_title,normalized_message,created_at,raw_messages(*)")\
+            .gte("created_at", cutoff)\
+            .order("created_at", desc=True)\
+            .limit(max(5000, limit + offset))
+        if tid:
+            query = query.eq("tenant_id", tid)
+        parsed_rows = query.execute().data or []
+        if not parsed_rows:
+            return []
+
+        grouped: dict[str, dict] = {}
+        for parsed in parsed_rows:
+            raw = parsed.get("raw_messages") or {}
+            if not _is_market_group_name(raw.get("group_name") or ""):
+                continue
+
+            phone = (
+                _normalize_india_phone(parsed.get("broker_phone") or "")
+                or _normalize_india_phone(raw.get("sender_phone") or "")
+                or _normalize_india_phone((raw.get("sender_jid") or "").split("@")[0])
+            )
+            name = (
+                _clean_person_name(parsed.get("broker_name") or "")
+                or _clean_person_name(parsed.get("profile_name") or "")
+                or _clean_person_name(raw.get("sender") or "")
+            )
+            if not phone and not name:
+                continue
+
+            identity = phone or f"name:{name.lower()}"
+            ts = raw.get("timestamp") or parsed.get("created_at") or raw.get("created_at") or ""
+            bucket = grouped.setdefault(identity, {
+                "latest": None,
+                "message_count": 0,
+                "listing_count": 0,
+                "requirement_count": 0,
+                "source_group_names": set(),
+                "latest_ts": "",
+            })
+
+            bucket["message_count"] += 1
+            intent = (parsed.get("intent") or "").upper()
+            if intent in {"BUY", "BUYER", "REQUIREMENT", "RENTAL_SEEKER"}:
+                bucket["requirement_count"] += 1
+            else:
+                bucket["listing_count"] += 1
+            if raw.get("group_name"):
+                bucket["source_group_names"].add(raw.get("group_name"))
+
+            if not bucket["latest"] or str(ts) > str(bucket["latest_ts"]):
+                bucket["latest"] = (parsed, raw, phone, name, identity)
+                bucket["latest_ts"] = ts
+
+        threads: list[dict] = []
+        for bucket in grouped.values():
+            latest = bucket.get("latest")
+            if not latest:
+                continue
+            parsed, raw, phone, name, identity = latest
+            conv_name = name or (phone and phone) or "Unknown broker"
+            chat_id = phone or identity
+            raw_row = dict(raw)
+            raw_row.update({
+                "chat_id": chat_id,
+                "chat_type": "direct",
+                "chat_name": conv_name,
+                "conversation_key": identity,
+                "conversation_type": "direct",
+                "conversation_name": conv_name,
+                "message_count": bucket["message_count"],
+                "opportunity_count": bucket["message_count"],
+                "listing_count": bucket["listing_count"],
+                "requirement_count": bucket["requirement_count"],
+                "latest_message_at": bucket["latest_ts"],
+                "broker_name": name,
+                "broker_phone": phone,
+                "parsed_intent": parsed.get("intent"),
+                "intent": parsed.get("intent"),
+                "building_name": parsed.get("building_name"),
+                "micro_market": parsed.get("micro_market"),
+                "landmark_name": parsed.get("landmark_name"),
+                "location_raw": parsed.get("location_raw"),
+                "summary_title": parsed.get("summary_title"),
+                "source_group_names": sorted(bucket["source_group_names"]),
+            })
+            threads.append(raw_row)
+
+        threads.sort(key=lambda t: (t.get("latest_message_at") or t.get("timestamp") or t.get("created_at") or ""), reverse=True)
         return threads[offset:offset + limit]
 
     def count_raw_messages(self, group_name: str = "") -> int:
@@ -1717,13 +1834,122 @@ class SupabaseStorage(Storage):
                         r["evidence_list"] = []
                     r.setdefault("raw_message", "")
                     r.setdefault("raw_sender", "")
-                return rows
-            return []
+                if rows:
+                    return rows
         except Exception:
+            pass
+
+        return self._get_parsed_observations_for_broker(limit, offset, broker_key=broker_key, intent=intent)
+
+    def _get_parsed_observations_for_broker(self, limit: int = 50, offset: int = 0,
+                                            broker_key: str = "", intent: str = "") -> list[dict]:
+        if not broker_key:
             return []
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
+        normalized_key = _normalize_india_phone(broker_key)
+        name_key = broker_key.replace("name:", "", 1).strip().lower()
+
+        query = self.client.table("parsed_output")\
+            .select("id,raw_message_id,message_type,intent,bhk,price,price_unit,area_sqft,furnishing,location_raw,building_name,landmark_name,micro_market,broker_name,broker_phone,profile_name,listing_index,confidence,summary_title,normalized_message,created_at,raw_messages(*)")\
+            .gte("created_at", cutoff)\
+            .order("created_at", desc=True)\
+            .limit(limit + offset)
+        if self._tenant_id:
+            query = query.eq("tenant_id", self._tenant_id)
+        if intent:
+            query = query.eq("intent", intent.upper())
+
+        result = []
+        for parsed in (query.execute().data or []):
+            raw = parsed.get("raw_messages") or {}
+            if not _is_market_group_name(raw.get("group_name") or ""):
+                continue
+            phone = (
+                _normalize_india_phone(parsed.get("broker_phone") or "")
+                or _normalize_india_phone(raw.get("sender_phone") or "")
+                or _normalize_india_phone((raw.get("sender_jid") or "").split("@")[0])
+            )
+            name = (
+                _clean_person_name(parsed.get("broker_name") or "")
+                or _clean_person_name(parsed.get("profile_name") or "")
+                or _clean_person_name(raw.get("sender") or "")
+            )
+            if normalized_key:
+                if phone != normalized_key:
+                    continue
+            elif name_key and name.lower() != name_key:
+                continue
+            else:
+                continue
+
+            seen_at = raw.get("timestamp") or parsed.get("created_at")
+            result.append({
+                "id": parsed.get("id"),
+                "fingerprint": f"parsed:{parsed.get('id')}",
+                "broker_key": phone or f"name:{name.lower()}",
+                "summary_title": parsed.get("summary_title") or parsed.get("normalized_message") or raw.get("message") or "",
+                "intent": parsed.get("intent"),
+                "bhk": parsed.get("bhk"),
+                "price": parsed.get("price"),
+                "price_unit": parsed.get("price_unit"),
+                "building_name": parsed.get("building_name"),
+                "micro_market": parsed.get("micro_market"),
+                "location_raw": parsed.get("location_raw"),
+                "first_seen": seen_at,
+                "last_seen": seen_at,
+                "times_seen": 1,
+                "evidence_list": [{
+                    "type": "group",
+                    "source": raw.get("group_name") or "",
+                    "seen_at": seen_at,
+                }],
+                "latest_raw_message_id": parsed.get("raw_message_id"),
+                "latest_parsed_id": parsed.get("id"),
+                "raw_message": raw.get("message") or "",
+                "raw_sender": raw.get("sender") or name,
+                "broker_name": name,
+                "broker_phone": phone,
+            })
+
+        return result[offset:offset + limit]
 
     def get_brokers_feed(self, limit: int = 50, offset: int = 0,
                          min_observations: int = 1) -> list[dict]:
+        try:
+            parsed_threads = self._get_parsed_market_threads(limit, offset, tenant_id=self._tenant_id)
+            result = []
+            for thread in parsed_threads:
+                identity = thread.get("conversation_key") or thread.get("chat_id") or ""
+                phone = _normalize_india_phone(thread.get("broker_phone") or "")
+                result.append({
+                    "id": identity,
+                    "identity_key": identity,
+                    "primary_phone": phone or identity,
+                    "canonical_name": thread.get("broker_name") or thread.get("conversation_name") or "Unknown broker",
+                    "building_count": 1 if thread.get("building_name") else 0,
+                    "active_days_30": None,
+                    "observation_count": thread.get("opportunity_count") or thread.get("message_count") or 0,
+                    "listing_count": thread.get("listing_count") or 0,
+                    "requirement_count": thread.get("requirement_count") or 0,
+                    "obs_count": thread.get("opportunity_count") or thread.get("message_count") or 0,
+                    "last_active": thread.get("latest_message_at") or thread.get("timestamp") or thread.get("created_at"),
+                    "first_seen": None,
+                    "group_evidence_count": len(thread.get("source_group_names") or []),
+                    "dm_evidence_count": 0,
+                    "unique_channel_count": len(thread.get("source_group_names") or []),
+                    "latest_title": thread.get("summary_title") or thread.get("message"),
+                    "latest_intent": thread.get("intent") or thread.get("parsed_intent"),
+                    "latest_micro_market": thread.get("micro_market"),
+                    "channels": [
+                        {"source": group_name, "type": "group"}
+                        for group_name in (thread.get("source_group_names") or [])
+                    ],
+                })
+            if result:
+                return result
+        except Exception:
+            pass
+
         try:
             tid = self._tenant_id
             # tenant_filter = "AND b.tenant_id = $4::uuid" if tid else ""

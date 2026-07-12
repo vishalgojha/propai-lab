@@ -196,6 +196,19 @@ export interface WhatsAppStatus {
   connected_since: string;
 }
 
+export interface MarketAccessStatus {
+  authenticated: boolean;
+  tenant_id?: string;
+  whatsapp_connected: boolean;
+  trial_active: boolean;
+  paid_active: boolean;
+  market_unlocked: boolean;
+  trial_started_at?: string | null;
+  trial_ends_at?: string | null;
+  reason: "ready" | "connect_whatsapp" | "start_trial" | string;
+  message: string;
+}
+
 export function getRaw(limit = 50, offset = 0, group_name?: string, sender?: string, sender_phone?: string, sender_jid?: string) {
   const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
   if (group_name) params.set("group_name", group_name);
@@ -254,6 +267,10 @@ export function getSyncActivity() {
 
 export function getWhatsAppStatus() {
   return fetchJSON<WhatsAppStatus>("/dashboard/whatsapp-status");
+}
+
+export function getMarketAccessStatus() {
+  return fetchJSON<MarketAccessStatus>("/market/access");
 }
 
 export function getSourceStatus() {

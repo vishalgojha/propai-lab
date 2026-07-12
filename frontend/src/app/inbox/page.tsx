@@ -5,6 +5,7 @@ export const dynamic = 'force-dynamic';
 import { useEffect, useState, useRef, useCallback, useMemo, Suspense, lazy } from "react";
 import nextDynamic from "next/dynamic";
 import { useSearchParams, useRouter } from "next/navigation";
+import Link from "next/link";
 import * as api from "@/lib/api";
 import WhatsAppMessage, { MessageEntity } from "@/components/WhatsAppMessage";
 import TextSelectionMenu from "@/components/TextSelectionMenu";
@@ -698,6 +699,8 @@ function InboxPageInner() {
   const activeSlug = useMemo(() => slugs.find(s => s.slug === currentSlug) || null, [slugs, currentSlug]);
   const [brokerFeed, setBrokerFeed] = useState<any[]>([]);
   const [loadingBrokerFeed, setLoadingBrokerFeed] = useState(false);
+  const [marketAccess, setMarketAccess] = useState<api.MarketAccessStatus | null>(null);
+  const [loadingMarketAccess, setLoadingMarketAccess] = useState(true);
   const [selectedBrokerObservations, setSelectedBrokerObservations] = useState<any[]>([]);
   const [loadingBrokerObs, setLoadingBrokerObs] = useState(false);
   const [now, setNow] = useState(() => Date.now());
@@ -728,6 +731,35 @@ function InboxPageInner() {
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 60000);
     return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setLoadingMarketAccess(true);
+      try {
+        const access = await api.getMarketAccessStatus();
+        if (!cancelled) setMarketAccess(access);
+      } catch (e) {
+        console.error("Failed to load market access:", e);
+        if (!cancelled) {
+          setMarketAccess({
+            authenticated: false,
+            whatsapp_connected: false,
+            trial_active: false,
+            paid_active: false,
+            market_unlocked: false,
+            reason: "connect_whatsapp",
+            message: "Connect WhatsApp to unlock Market Inbox.",
+          });
+        }
+      } finally {
+        if (!cancelled) setLoadingMarketAccess(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const groupedBrokerObservations = useMemo(() => {
@@ -938,6 +970,13 @@ function InboxPageInner() {
 
   // 1. Initial Load of Feed & Suggestions
   const loadFeed = useCallback(async (append = false, requestedOffset = offset) => {
+    if (marketAccess && !marketAccess.market_unlocked) {
+      setMessages([]);
+      setGroups([]);
+      setAllSuggestions([]);
+      setLoadingLeft(false);
+      return;
+    }
     setLoadingLeft(true);
     try {
       const threadMsgs = await api.getInboxThreads(PAGE_SIZE, requestedOffset);
@@ -963,7 +1002,7 @@ function InboxPageInner() {
     } finally {
       setLoadingLeft(false);
     }
-  }, [offset]);
+  }, [marketAccess, offset]);
 
   const resetSelectionForPageChange = useCallback(() => {
     autoSelectedThreadRef.current = "";
@@ -990,6 +1029,7 @@ function InboxPageInner() {
   const initialLoadDone = useRef(false);
   const prevOffsetRef = useRef(0);
   useEffect(() => {
+    if (loadingMarketAccess || (marketAccess && !marketAccess.market_unlocked)) return;
     if (!initialLoadDone.current) {
       initialLoadDone.current = true;
       prevOffsetRef.current = offset;
@@ -998,7 +1038,7 @@ function InboxPageInner() {
       prevOffsetRef.current = offset;
       loadFeed(isMobile && offset > 0);
     }
-  }, [isMobile, offset, loadFeed]);
+  }, [isMobile, loadingMarketAccess, marketAccess, offset, loadFeed]);
 
   // Fetch available slugs (saved views) for the inbox tabs
   useEffect(() => {
@@ -1022,6 +1062,10 @@ function InboxPageInner() {
   }, []);
 
   const loadBrokerFeed = useCallback(async () => {
+    if (marketAccess && !marketAccess.market_unlocked) {
+      setBrokerFeed([]);
+      return;
+    }
     setLoadingBrokerFeed(true);
     try {
       const data = await api.getBrokersFeed(100, 0);
@@ -1031,15 +1075,16 @@ function InboxPageInner() {
     } finally {
       setLoadingBrokerFeed(false);
     }
-  }, []);
+  }, [marketAccess]);
 
   // Load broker feed when switching to a slug whose view_type needs brokers feed
   useEffect(() => {
+    if (loadingMarketAccess || (marketAccess && !marketAccess.market_unlocked)) return;
     const vt = activeSlug?.view_type;
     if (vt === "brokers" && brokerFeed.length === 0) {
       loadBrokerFeed();
     }
-  }, [activeSlug, loadBrokerFeed, brokerFeed.length]);
+  }, [activeSlug, brokerFeed.length, loadBrokerFeed, loadingMarketAccess, marketAccess]);
 
   // Scroll to bottom of conversation thread when new messages arrive
   useEffect(() => {
@@ -1760,34 +1805,10 @@ function InboxPageInner() {
   }, [updateUrlBroker, updateUrlObservation]);
 
   useEffect(() => {
-    if (selectedMsg || selectedBroker || loadingLeft || loadingBrokerFeed) return;
-    if (activeSlug?.view_type !== "brokers") return;
-
-    const firstBroker = filteredBrokerFeed[0];
-    if (firstBroker?.primary_phone) {
-      const key = `broker:${firstBroker.primary_phone}`;
-      if (autoSelectedThreadRef.current === key) return;
-      autoSelectedThreadRef.current = key;
-      selectBroker(firstBroker);
-      return;
-    }
-
-    const firstThread = threadFallbackItems[0];
-    if (firstThread?.latest) {
-      const key = `thread:${firstThread.key}`;
-      if (autoSelectedThreadRef.current === key) return;
-      autoSelectedThreadRef.current = key;
-      selectConversation(firstThread.latest);
-    }
+    autoSelectedThreadRef.current = "";
   }, [
     activeSlug?.view_type,
-    filteredBrokerFeed,
-    loadingBrokerFeed,
-    loadingLeft,
-    selectedBroker,
-    selectedMsg,
-    selectBroker,
-    threadFallbackItems,
+    offset,
   ]);
 
   // Keyboard navigation: arrow up/down through message blocks, enter to select
@@ -2224,7 +2245,25 @@ function InboxPageInner() {
 
           {/* List Content */}
           <div className="flex-1 overflow-y-auto divide-y divide-[rgba(255,255,255,0.04)]">
-            {loadingLeft && messages.length === 0 && groups.length === 0 ? (
+            {loadingMarketAccess ? (
+              <div className="p-8 text-center text-xs text-zinc-500">Checking workspace access...</div>
+            ) : marketAccess && !marketAccess.market_unlocked ? (
+              <div className="p-5 text-center">
+                <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-lg border border-[#3EE88A]/30 bg-[#3EE88A]/10 text-[#3EE88A]">
+                  <MessageSquare className="h-4 w-4" strokeWidth={1.6} />
+                </div>
+                <div className="text-sm font-bold text-white">Connect WhatsApp first</div>
+                <p className="mx-auto mt-2 max-w-[260px] text-xs leading-relaxed text-zinc-500">
+                  Market Inbox opens after your workspace connects WhatsApp. This keeps broker discovery behind the trial flow.
+                </p>
+                <Link
+                  href="/connections"
+                  className="mt-4 inline-flex h-9 items-center justify-center rounded-lg bg-[#3EE88A] px-4 text-xs font-bold text-black hover:bg-[#35d47c]"
+                >
+                  Connect WhatsApp
+                </Link>
+              </div>
+            ) : loadingLeft && messages.length === 0 && groups.length === 0 ? (
               <div className="p-8 text-center text-xs text-zinc-500">Loading inbox feed...</div>
             ) : leftListEmpty ? (
               <div className="p-8 text-center text-xs text-zinc-500">
@@ -2387,7 +2426,25 @@ function InboxPageInner() {
 
         {/* ================= CENTER PANEL: CONVERSATION ================= */}
         <div className={`flex-1 min-w-0 h-full min-h-0 flex flex-col bg-[#070b0e] overflow-hidden ${isMobile && mobileView !== "conversation" ? "hidden" : ""}`}>
-          {activeSlug?.view_type === "brokers" && selectedBroker ? (
+          {marketAccess && !marketAccess.market_unlocked ? (
+            <div className="flex flex-1 items-center justify-center px-6 text-center">
+              <div className="max-w-md">
+                <div className="mx-auto mb-5 flex h-12 w-12 items-center justify-center rounded-xl border border-[#3EE88A]/30 bg-[#3EE88A]/10 text-[#3EE88A]">
+                  <MessageSquare className="h-5 w-5" strokeWidth={1.6} />
+                </div>
+                <h3 className="text-lg font-bold text-white">Market intelligence starts after WhatsApp scan</h3>
+                <p className="mt-2 text-sm leading-relaxed text-zinc-500">
+                  Once WhatsApp is connected, PropAI can parse real-estate groups, build broker entities, and unlock the trial workspace.
+                </p>
+                <Link
+                  href="/connections"
+                  className="mt-5 inline-flex h-10 items-center justify-center rounded-lg bg-[#3EE88A] px-5 text-sm font-bold text-black hover:bg-[#35d47c]"
+                >
+                  Connect WhatsApp
+                </Link>
+              </div>
+            </div>
+          ) : activeSlug?.view_type === "brokers" && selectedBroker ? (
             <>
               {/* Observation Timeline Header */}
               <div className="px-5 py-4 border-b border-white/10 flex items-center justify-between bg-black/80">
