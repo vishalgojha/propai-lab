@@ -34,7 +34,13 @@ const DEVICE_CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const DEVICE_CODE_PREFIX = "PROP-";
 
 function publicUrl(req: Request) {
-  return process.env.MCP_SERVER_URL || `${req.protocol}://${req.get("host")}`;
+  const forwardedProto = String(req.get("x-forwarded-proto") || "").split(",")[0]?.trim();
+  const forwardedHost = String(req.get("x-forwarded-host") || "").split(",")[0]?.trim();
+  const host = forwardedHost || req.get("host");
+
+  if (process.env.MCP_SERVER_URL) return process.env.MCP_SERVER_URL;
+  if (host) return `${forwardedProto || "https"}://${host}`;
+  return "https://mcp.propai.live";
 }
 
 // Generate a device code similar to activation codes
