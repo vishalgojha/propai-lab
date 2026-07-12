@@ -40,6 +40,7 @@ import { registerInboxTools } from "./tools/inbox.ts";
 import { registerIntelligenceTools } from "./tools/intelligence.ts";
 import { registerContactTools } from "./tools/contact.ts";
 import type { ToolContext } from "./types.js";
+import { LISTING_CARDS_URI } from "./uiResources.ts";
 
 export const MCP_TOOL_NAMES = [
   // Domain-organized tools (primary)
@@ -135,6 +136,31 @@ function noResults(label: string) {
   return textResponse(`No ${label} found for this query. Try widening the locality, budget, BHK, or time window.`, {
     results: [],
   });
+}
+
+function listingCardPayload(row: Record<string, unknown>) {
+  const price = typeof row.price === "number" ? row.price : Number(row.price);
+  const priceCr = Number.isFinite(price) ? Number((price / 10_000_000).toFixed(2)) : null;
+  return {
+    id: row.source_message_id,
+    source_message_id: row.source_message_id,
+    title: row.title || row.description || "Property",
+    locality: row.sub_area || row.area || row.location,
+    location: row.location || row.sub_area || row.area,
+    source_group_name: row.source_group_name,
+    price: row.price,
+    price_cr: priceCr,
+    price_display: typeof row.price === "number" ? formatCurrencyCr(row.price) : null,
+    bhk: row.bhk,
+    property_type: row.property_type || row.listing_type,
+    area_sqft: row.size_sqft,
+    area_display: typeof row.size_sqft === "number" ? formatSqft(row.size_sqft) : null,
+    furnishing: row.furnishing,
+    broker_name: row.primary_contact_name,
+    broker_phone: row.primary_contact_number || row.primary_contact_wa,
+    raw_message: row.raw_message,
+    message_timestamp: row.message_timestamp,
+  };
 }
 
 export function createMcpServer(context: ToolContext = {}) {
@@ -881,9 +907,20 @@ export function createMcpServer(context: ToolContext = {}) {
 
       const place = [input.locality, input.city].filter(Boolean).join(", ") || "your search";
       const lines = rows.map(listingLine);
-      return textResponse(`Found ${rows.length} listings in ${place}:\n\n${lines.join("\n")}`, {
-        results: rows,
-      });
+      const listingCards = rows.map((row) => listingCardPayload(row as Record<string, unknown>));
+      return {
+        content: [{ type: "text" as const, text: `Found ${rows.length} listings in ${place}:\n\n${lines.join("\n")}` }],
+        structuredContent: {
+          results: rows,
+          listing_cards: listingCards,
+        },
+        _meta: {
+          ui: {
+            resourceUri: LISTING_CARDS_URI,
+          },
+          listings: listingCards,
+        },
+      } as any;
     },
   );
 

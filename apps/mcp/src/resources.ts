@@ -9,6 +9,7 @@ import {
   getStoredThreadMessages,
 } from "./data.ts";
 import type { ToolContext } from "./types.js";
+import { LISTING_CARDS_URI, listingCardsHtml } from "./uiResources.ts";
 
 function brokerId(context?: ToolContext) {
   return context?.user?.broker_id || context?.user?.id;
@@ -47,6 +48,25 @@ function listResourceUris(items: Array<{ remote_jid: string }>) {
 }
 
 export function registerMcpResources(server: McpServer, context: ToolContext = {}) {
+  server.registerResource(
+    "listing-cards-ui",
+    LISTING_CARDS_URI,
+    {
+      title: "PropAI Listing Cards",
+      description: "Interactive cards for PropAI listing search results.",
+      mimeType: "text/html+skybridge",
+    },
+    async () => ({
+      contents: [
+        {
+          uri: LISTING_CARDS_URI,
+          mimeType: "text/html+skybridge",
+          text: listingCardsHtml,
+        },
+      ],
+    }),
+  );
+
   server.registerResource(
     "broker-activity",
     "propai://broker/activity",

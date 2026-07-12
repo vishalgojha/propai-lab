@@ -1,6 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { searchBrokers as searchBrokersData, logToolCall } from "../data.ts";
+import { getListingById, searchBrokers as searchBrokersData, logToolCall } from "../data.ts";
 import type { ToolContext } from "../types.js";
 
 function textResponse(text: string, structured?: unknown) {
@@ -35,16 +35,31 @@ export function registerContactTools(server: McpServer, context: ToolContext) {
   server.registerTool("contact_call", {
     description: "Get the phone number for a broker contact",
     inputSchema: {
+      listing_id: z.string().optional().describe("Listing id returned by search_listings"),
       name: z.string().optional().describe("Broker name"),
       phone: z.string().optional().describe("Broker phone number"),
     },
   }, async (input) => {
     const id = brokerId(context);
     await logToolCall(id, "contact_call", input);
+    if (input.listing_id) {
+      const listing = await getListingById(input.listing_id);
+      if (listing?.primary_contact_number || listing?.primary_contact_wa) {
+        const phone = listing.primary_contact_number || listing.primary_contact_wa;
+        return textResponse(`${listing.primary_contact_name || "Broker"}: ${phone}`, {
+          listing_id: input.listing_id,
+          name: listing.primary_contact_name,
+          phone,
+        });
+      }
+    }
+
+    if (input.phone) {
+      return textResponse(`Contact: ${input.phone}`, { name: input.name || null, phone: input.phone });
+    }
+
     const brokers = await searchBrokersData({ limit: 10 });
-    const broker = input.phone
-      ? brokers.find((b: any) => b.phone?.includes(input.phone!))
-      : input.name ? brokers.find((b: any) => b.full_name?.toLowerCase().includes(input.name!.toLowerCase())) : null;
+    const broker = input.name ? brokers.find((b: any) => b.full_name?.toLowerCase().includes(input.name!.toLowerCase())) : null;
     if (!broker) return textResponse("Contact not found.", { contact: null });
     return textResponse(`${broker.full_name || "Contact"}: ${broker.phone || "No phone"}`, { name: broker.full_name, phone: broker.phone });
   });
