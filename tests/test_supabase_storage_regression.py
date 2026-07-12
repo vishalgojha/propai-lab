@@ -47,6 +47,39 @@ def test_connection_details_is_safe_without_sqlite_storage(monkeypatch):
     assert details["instance_name"] == "propai-whatsapp"
 
 
+def test_connection_details_falls_back_when_status_file_is_unknown(monkeypatch):
+    """A stale/missing status file should not lock a synced workspace out."""
+    import app
+
+    class Row(dict):
+        def __getitem__(self, key):
+            return self.get(key)
+
+    class FakeDb:
+        def execute(self, sql, params=None):
+            class Result:
+                def fetchone(self_inner):
+                    if "COUNT(*) AS c" in sql and "group_name LIKE" in sql:
+                        return Row(c=12)
+                    if "COUNT(*) AS c" in sql:
+                        return Row(c=345)
+                    return Row(created_at="2026-07-13T09:00:00Z", timestamp="2026-07-13T09:05:00Z")
+
+            return Result()
+
+    class FakeStorage:
+        db = FakeDb()
+
+    monkeypatch.setattr(app, "storage", FakeStorage())
+    monkeypatch.setattr(app, "_status_file", lambda: {"connection_state": "unknown", "connected": False})
+
+    details = app._connection_details()
+
+    assert details["connected"] is True
+    assert details["connection_state"] == "open"
+    assert details["messages_captured"] == 345
+
+
 def test_supabase_create_client_supports_basic_query_flow():
     """The local adapter should support the query shape used by storage code."""
     from storage.supabase import create_client

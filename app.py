@@ -6033,6 +6033,15 @@ def _status_file() -> dict:
     return {"connection_state": "unknown", "connected": False}
 
 
+def _status_has_live_signal(status: dict | None) -> bool:
+    if not status:
+        return False
+    state = str(status.get("connection_state") or "").lower()
+    if status.get("connected") or status.get("qr") or status.get("phone_number"):
+        return True
+    return state not in ("", "unknown")
+
+
 def _today_count(table: str, column: str = "created_at", where: str = "1=1") -> int:
     try:
         return storage.db.execute(
@@ -6468,9 +6477,17 @@ async def sync_qr():
     qr = status.get("qr")
     if qr:
         return {"qr": qr, "available": True}
+    details = _connection_details()
+    if details.get("connected"):
+        return {
+            "qr": None,
+            "available": False,
+            "connected": True,
+            "message": "WhatsApp is already connected.",
+        }
     if status.get("qr_available") and not qr:
         return {"qr": None, "available": False, "message": "QR being generated, try again"}
-    return {"qr": None, "available": False, "message": f"Not connected: {status.get('connection_state', 'unknown')}"}
+    return {"qr": None, "available": False, "message": f"QR not available: {status.get('connection_state', 'unknown')}"}
 
 
 INGESTOR_INTERNAL_URL = os.getenv("INGESTOR_INTERNAL_URL", "http://ingestor:3001")
@@ -6489,14 +6506,21 @@ def _ingestor_urls() -> list[str]:
 @app.post("/api/sync/refresh-qr")
 async def sync_refresh_qr():
     """Force the ingestor to clear its session and generate a fresh QR code."""
-    try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            resp = await client.post(f"{INGESTOR_INTERNAL_URL}/reset?broker_id=default")
-            if resp.status_code == 200:
-                return {"ok": True, "message": "Session cleared, QR should appear shortly"}
-            return {"ok": False, "message": f"Ingestor returned {resp.status_code}"}
-    except httpx.RequestError as e:
-        return {"ok": False, "message": f"Cannot reach ingestor: {e}"}
+    errors = []
+    async with httpx.AsyncClient(timeout=10) as client:
+        for base_url in _ingestor_urls():
+            try:
+                resp = await client.post(f"{base_url}/reset?broker_id=default")
+                if resp.status_code == 200:
+                    return {
+                        "ok": True,
+                        "ingestor_url": base_url,
+                        "message": "Session cleared, QR should appear shortly",
+                    }
+                errors.append(f"{base_url}: {resp.status_code}")
+            except httpx.RequestError as e:
+                errors.append(f"{base_url}: {e}")
+    return {"ok": False, "message": "Cannot reach ingestor", "errors": errors}
 
 
 @app.post("/api/sync/history-backfill")
@@ -6535,14 +6559,29 @@ async def sync_status_update(request: Request):
 @app.get("/api/sync/events")
 async def sync_events():
     """SSE endpoint that streams real-time connection status changes."""
+    def current_sync_status() -> dict:
+        raw = _memory_status if _memory_status else _status_file()
+        if _status_has_live_signal(raw):
+            return raw
+        details = _connection_details()
+        return {
+            **raw,
+            "connected": details.get("connected", False),
+            "connection_state": details.get("connection_state", "unknown"),
+            "phone_number": details.get("phone_number") or raw.get("phone_number"),
+            "display_name": details.get("display_name") or raw.get("display_name"),
+            "connected_since": details.get("connected_since") or raw.get("connected_since"),
+            "last_message_at": details.get("last_message_at") or raw.get("last_message_at"),
+        }
+
     async def event_stream():
         seen: dict = {}
-        initial = _memory_status if _memory_status else _status_file()
+        initial = current_sync_status()
         yield f"event: status\ndata: {json.dumps(initial)}\n\n"
         while True:
             try:
                 await asyncio.sleep(1.5)
-                current = _memory_status if _memory_status else _status_file()
+                current = current_sync_status()
                 prev = seen
                 seen = dict(current)
                 cs = current.get("connection_state", "")
@@ -6590,7 +6629,7 @@ async def sync_connection_state():
 
 def _connection_details() -> dict:
     status = _status_file()
-    if status:
+    if _status_has_live_signal(status):
         connected = bool(status.get("connected"))
         connection_state = str(status.get("connection_state") or ("open" if connected else "unknown")).lower()
         return {
