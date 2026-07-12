@@ -352,13 +352,31 @@ export async function getWorkspaceListings(input: {
 }) {
   const { data, error } = await supabase
     .from("listings")
-    .select("id, structured_data, raw_text, created_at")
+    .select("id, intent, bhk, price, price_unit, area_sqft, furnishing, location_label, micro_market, building_name, broker_name, broker_phone, created_at, last_seen")
     .eq("tenant_id", input.brokerId)
-    .order("created_at", { ascending: false })
+    .order("last_seen", { ascending: false, nullsFirst: false })
     .limit(clampLimit(input.limit, 25, 100));
 
   if (error) throw new Error(error.message);
-  return (data || []) as Array<{
+  return (data || []).map((row: any) => ({
+    id: String(row.id),
+    structured_data: {
+      title: row.building_name || row.location_label || "Saved listing",
+      bhk: row.bhk,
+      location: row.micro_market || row.location_label,
+      price: row.price != null ? `${row.price} ${row.price_unit || "cr"}` : null,
+      carpet_area: row.area_sqft,
+      furnishing: row.furnishing,
+      contact_number: row.broker_phone,
+    },
+    raw_text: [
+      row.bhk,
+      row.building_name,
+      row.micro_market || row.location_label,
+      row.price != null ? `${row.price} ${row.price_unit || "cr"}` : null,
+    ].filter(Boolean).join(" "),
+    created_at: row.last_seen || row.created_at,
+  })) as Array<{
     id: string;
     structured_data: Record<string, unknown> | null;
     raw_text: string | null;
@@ -366,57 +384,24 @@ export async function getWorkspaceListings(input: {
   }>;
 }
 
-export async function getLastTransactionForBuilding(buildingName: string) {
+export async function getLastTransactionForBuilding(buildingName: string): Promise<IgrTransaction | null> {
   const name = buildingName.trim();
   if (!name) return null;
-
-  const { data, error } = await supabase
-    .from("igr_transactions")
-    .select("doc_number, reg_date, building_name, locality, consideration, area_sqft, price_per_sqft, config")
-    .ilike("building_name", `%${name}%`)
-    .order("reg_date", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  if (error) throw new Error(error.message);
-  if (!data) return null;
-
-  return {
-    ...data,
-    consideration: toNumber(data.consideration),
-    area_sqft: toNumber(data.area_sqft),
-    price_per_sqft: toNumber(data.price_per_sqft),
-  } as IgrTransaction;
+  return null;
 }
 
 export async function getLocalityStats(locality: string, months = 6): Promise<LocalityStats | null> {
   const name = locality.trim();
   if (!name) return null;
 
-  const cutoffDate = new Date();
-  cutoffDate.setMonth(cutoffDate.getMonth() - months);
-
-  const { data, error } = await supabase
-    .from("igr_transactions")
-    .select("consideration, price_per_sqft, locality")
-    .ilike("locality", `%${name}%`)
-    .gte("reg_date", cutoffDate.toISOString().slice(0, 10))
-    .order("reg_date", { ascending: false });
-
-  if (error) throw new Error(error.message);
-
-  const rows = data || [];
-  const priceValues = rows.map((row) => toNumber(row.price_per_sqft)).filter((value): value is number => value != null);
-  const considerationValues = rows.map((row) => toNumber(row.consideration)).filter((value): value is number => value != null);
-
   return {
     locality: name,
     months,
-    avg_price_per_sqft: priceValues.length ? Math.round(priceValues.reduce((sum, value) => sum + value, 0) / priceValues.length) : null,
-    median_consideration: median(considerationValues),
-    min_consideration: considerationValues.length ? Math.min(...considerationValues) : null,
-    max_consideration: considerationValues.length ? Math.max(...considerationValues) : null,
-    transaction_count: rows.length,
+    avg_price_per_sqft: null,
+    median_consideration: null,
+    min_consideration: null,
+    max_consideration: null,
+    transaction_count: 0,
   };
 }
 
@@ -428,7 +413,7 @@ export async function getIgrPrice(input: { building_name?: string; locality?: st
   return {
     transaction,
     locality_stats: stats,
-    summary: igrSummary(transaction, stats, input.building_name, input.locality),
+    summary: "Maharashtra IGR transaction data is not enabled in this PropAI workspace yet. Use live WhatsApp market listings for current asking-price context.",
   };
 }
 
@@ -476,6 +461,27 @@ function normalizePhone(value?: string | null) {
   if (digits.length === 10) return `+91${digits}`;
   if (digits.length === 12 && digits.startsWith("91")) return `+${digits}`;
   return value?.trim() || "";
+}
+
+function compactText(value?: string | null) {
+  return String(value || "").trim();
+}
+
+function mcpFingerprint(prefix: string, brokerId: string, text: string) {
+  return crypto
+    .createHash("sha1")
+    .update([prefix, brokerId, normalizeListingText(text)].join("|"))
+    .digest("hex");
+}
+
+function splitDueDateTime(value?: string | null) {
+  const parsed = value ? new Date(value) : new Date(Date.now() + 24 * 60 * 60 * 1000);
+  const safeDate = Number.isNaN(parsed.getTime()) ? new Date(Date.now() + 24 * 60 * 60 * 1000) : parsed;
+  return {
+    due_date: safeDate.toISOString().slice(0, 10),
+    due_time: safeDate.toISOString().slice(11, 19),
+    due_at: safeDate.toISOString(),
+  };
 }
 
 function fallbackLeadId(input: { recordType: string; phone?: string; locality?: string | null; rawText: string }) {
@@ -527,52 +533,65 @@ async function upsertLeadRecord(input: LeadRecordInput) {
   const priorityScore = input.priorityScore ?? scoreFromUrgency(urgency);
   const locality = input.locality || input.locationHint || null;
 
-  const contactJid = phone ? `${phone}@s.whatsapp.net` : `unknown-mcp-${input.brokerId.slice(0, 8)}`;
+  let clientId: number | null = null;
+  if (phone) {
+    const { data: existingClient, error: existingError } = await supabase
+      .from("clients")
+      .select("id")
+      .eq("tenant_id", input.brokerId)
+      .eq("phone", phone)
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (existingError) throw new Error(existingError.message);
+    clientId = existingClient?.id ?? null;
+  }
 
-  const { data: contactRow, error: contactError } = await supabase
-    .from("contacts")
-    .upsert({
-      tenant_id: input.brokerId,
-      remote_jid: contactJid,
-      display_name: input.name || null,
-      classification: "Client",
-      last_interacted_at: now,
-    }, { onConflict: "tenant_id,remote_jid" })
-    .select("id")
-    .single();
+  if (clientId == null) {
+    const { data: clientRow, error: clientError } = await supabase
+      .from("clients")
+      .insert({
+        tenant_id: input.brokerId,
+        name: compactText(input.name) || "MCP Lead",
+        phone: phone || null,
+        notes: input.rawText,
+        status: "active",
+        created_at: now,
+        updated_at: now,
+      })
+      .select("id")
+      .single();
+    if (clientError) throw new Error(clientError.message);
+    clientId = clientRow.id;
+  }
 
-  if (contactError) throw new Error(contactError.message);
-
-  const { data: leadRow, error: leadError } = await supabase
-    .from("leads")
-    .insert({
-      tenant_id: input.brokerId,
-      contact_id: contactRow.id,
-      status: "New",
-      created_at: now,
-    })
-    .select("id")
-    .single();
-
-  if (leadError) throw new Error(leadError.message);
-
-  const { error } = await supabase.from("lead_records").insert({
-    tenant_id: input.brokerId,
-    lead_id: leadRow.id,
-    phone: phone || null,
-    name: input.name,
-    record_type: input.recordType,
-    budget: input.budget ?? null,
-    location_hint: input.locationHint ?? locality,
-    raw_text: input.rawText,
-    created_at: now,
-    updated_at: now,
-  });
-
-  if (error) throw new Error(error.message);
+  let requirementId: number | null = null;
+  if (input.recordType === "buyer_requirement") {
+    const { data: requirementRow, error: requirementError } = await supabase
+      .from("client_requirements")
+      .insert({
+        tenant_id: input.brokerId,
+        client_id: clientId,
+        intent: "requirement",
+        bhk: Array.isArray(input.payload?.bhk_preference)
+          ? (input.payload?.bhk_preference as unknown[]).join(", ")
+          : null,
+        price_max: input.budget ?? null,
+        micro_market: locality,
+        notes: input.rawText,
+        created_at: now,
+        updated_at: now,
+      })
+      .select("id")
+      .single();
+    if (requirementError) throw new Error(requirementError.message);
+    requirementId = requirementRow.id;
+  }
 
   return {
-    lead_id: leadRow.id,
+    lead_id: requirementId ? String(requirementId) : String(clientId),
+    client_id: clientId,
+    requirement_id: requirementId,
     phone: phone || null,
     priority_bucket: priorityBucket,
     urgency,
@@ -606,12 +625,22 @@ export async function saveListingRecord(input: {
 
   const { data, error } = await supabase
     .from("listings")
-    .insert({
+    .upsert({
       tenant_id: input.brokerId,
-      source_group_id: "mcp",
-      structured_data: structured,
-      raw_text: input.raw_text,
-    })
+      fingerprint: mcpFingerprint("mcp-listing", input.brokerId, input.raw_text),
+      intent: "listing",
+      bhk: input.bhk || null,
+      price: parseBudgetToCr(input.price),
+      price_unit: input.price ? "cr" : null,
+      area_sqft: toNumber(input.carpet_area),
+      furnishing: input.furnishing || null,
+      location_label: input.location || null,
+      micro_market: input.location || null,
+      broker_name: input.name || null,
+      broker_phone: normalizePhone(input.contact_number || input.phone) || null,
+      listing_source: "mcp",
+      last_seen: new Date().toISOString(),
+    }, { onConflict: "fingerprint" })
     .select("id, created_at")
     .single();
 
@@ -691,27 +720,27 @@ export async function scheduleFollowUp(input: {
   action_type?: "call" | "email" | "visit";
   priority_bucket?: "P1" | "P2" | "P3";
 }) {
-  const dueAt = input.due_at || new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+  const due = splitDueDateTime(input.due_at);
   const { error } = await supabase
-    .from("follow_up_tasks")
-    .upsert({
+    .from("follow_ups")
+    .insert({
       tenant_id: input.brokerId,
-      lead_id: input.lead_id || null,
-      lead_name: input.lead_name,
-      lead_phone: normalizePhone(input.lead_phone) || null,
-      action_type: input.action_type || "call",
-      due_at: dueAt,
+      client_id: input.lead_id && /^\d+$/.test(input.lead_id) ? Number(input.lead_id) : null,
+      broker_phone: normalizePhone(input.lead_phone) || null,
+      follow_up_type: input.action_type || "call",
+      title: input.lead_name,
+      due_date: due.due_date,
+      due_time: due.due_time,
       status: "pending",
       notes: input.notes || null,
-      priority_bucket: input.priority_bucket || null,
-      updated_at: new Date().toISOString(),
-    }, { onConflict: "tenant_id,lead_id,action_type,due_at" });
+      created_at: new Date().toISOString(),
+    });
 
   if (error) throw new Error(error.message);
 
   return {
     scheduled: true,
-    due_at: dueAt,
+    due_at: due.due_at,
     action_type: input.action_type || "call",
   };
 }
@@ -720,55 +749,70 @@ export async function getBrokerActivity(input: { brokerId: string; days?: number
   const days = Math.min(Math.max(input.days ?? 7, 1), 90);
   const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
 
-  const [leadResult, messageResult, followUpResult] = await Promise.all([
+  const [listingResult, requirementResult, messageResult, followUpResult] = await Promise.all([
     supabase
-      .from("lead_records")
-      .select("record_type, location_hint, created_at")
+      .from("listings")
+      .select("micro_market, location_label, created_at")
       .eq("tenant_id", input.brokerId)
       .gte("created_at", since)
       .order("created_at", { ascending: false })
       .limit(200),
     supabase
-      .from("messages")
-      .select("remote_jid, text, sender, timestamp, created_at")
+      .from("client_requirements")
+      .select("micro_market, created_at")
       .eq("tenant_id", input.brokerId)
       .gte("created_at", since)
       .order("created_at", { ascending: false })
       .limit(200),
     supabase
-      .from("follow_up_tasks")
-      .select("lead_name, due_at, status, priority_bucket")
+      .from("raw_messages")
+      .select("sender_jid, group_name, message, sender, timestamp, created_at")
+      .eq("tenant_id", input.brokerId)
+      .gte("created_at", since)
+      .order("created_at", { ascending: false })
+      .limit(200),
+    supabase
+      .from("follow_ups")
+      .select("title, due_date, due_time, status, broker_phone")
       .eq("tenant_id", input.brokerId)
       .eq("status", "pending")
-      .order("due_at", { ascending: true })
+      .order("due_date", { ascending: true })
       .limit(25),
   ]);
 
-  if (leadResult.error) throw new Error(leadResult.error.message);
+  if (listingResult.error) throw new Error(listingResult.error.message);
+  if (requirementResult.error) throw new Error(requirementResult.error.message);
   if (messageResult.error) throw new Error(messageResult.error.message);
   if (followUpResult.error) throw new Error(followUpResult.error.message);
 
-  const leads = leadResult.data || [];
+  const listings = listingResult.data || [];
+  const requirements = requirementResult.data || [];
   const messages = messageResult.data || [];
   const followUps = followUpResult.data || [];
   const localities = new Map<string, number>();
 
-  for (const row of leads) {
-    const locality = String(row.location_hint || "").trim();
+  for (const row of [...listings, ...requirements]) {
+    const locality = String((row as any).micro_market || (row as any).location_label || "").trim();
     if (!locality) continue;
     localities.set(locality, (localities.get(locality) || 0) + 1);
   }
 
   return {
     days,
-    leads_total: leads.length,
-    listings_total: leads.filter((row) => row.record_type === "inventory_listing").length,
-    requirements_total: leads.filter((row) => row.record_type === "buyer_requirement").length,
+    leads_total: listings.length + requirements.length,
+    listings_total: listings.length,
+    requirements_total: requirements.length,
     p1_total: 0,
     messages_total: messages.length,
-    active_chats: new Set(messages.map((row) => row.remote_jid).filter(Boolean)).size,
+    active_chats: new Set(messages.map((row) => row.sender_jid || row.group_name).filter(Boolean)).size,
     pending_follow_ups: followUps.length,
-    next_follow_up: followUps[0] || null,
+    next_follow_up: followUps[0]
+      ? {
+          lead_name: followUps[0].title,
+          due_at: [followUps[0].due_date, followUps[0].due_time].filter(Boolean).join(" "),
+          status: followUps[0].status,
+        }
+      : null,
     top_localities: [...localities.entries()]
       .sort((a, b) => b[1] - a[1])
       .slice(0, 5)
@@ -780,59 +824,44 @@ export async function getHotLeadTriage(input: { brokerId: string; days?: number;
   const days = Math.min(Math.max(input.days ?? 7, 1), 30);
   const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
 
-  const [leadResult, followUpResult, messageResult] = await Promise.all([
+  const [requirementResult, followUpResult] = await Promise.all([
     supabase
-      .from("lead_records")
-      .select("lead_id, name, phone, record_type, location_hint, budget, raw_text, created_at, updated_at")
+      .from("client_requirements")
+      .select("id, client_id, intent, bhk, price_max, micro_market, building_name, notes, created_at, updated_at, clients(name, phone)")
       .eq("tenant_id", input.brokerId)
       .gte("created_at", since)
       .order("created_at", { ascending: false, nullsFirst: false })
       .limit(100),
     supabase
-      .from("follow_up_tasks")
-      .select("lead_id, lead_name, lead_phone, due_at, status, priority_bucket, notes")
+      .from("follow_ups")
+      .select("client_id, title, broker_phone, due_date, due_time, status, notes")
       .eq("tenant_id", input.brokerId)
       .eq("status", "pending")
-      .order("due_at", { ascending: true })
+      .order("due_date", { ascending: true })
       .limit(100),
-    supabase
-      .from("messages")
-      .select("remote_jid, text, sender, timestamp, created_at")
-      .eq("tenant_id", input.brokerId)
-      .gte("created_at", since)
-      .order("created_at", { ascending: false })
-      .limit(200),
   ]);
 
-  if (leadResult.error) throw new Error(leadResult.error.message);
+  if (requirementResult.error) throw new Error(requirementResult.error.message);
   if (followUpResult.error) throw new Error(followUpResult.error.message);
-  if (messageResult.error) throw new Error(messageResult.error.message);
 
-  const leads = leadResult.data || [];
+  const requirements = requirementResult.data || [];
   const followUps = followUpResult.data || [];
-  const messages = messageResult.data || [];
   const now = Date.now();
-  const followUpByLeadId = new Map<string, typeof followUps[number]>();
+  const followUpByClientId = new Map<number, typeof followUps[number]>();
   const followUpByPhone = new Map<string, typeof followUps[number]>();
 
   for (const item of followUps) {
-    if (item.lead_id) followUpByLeadId.set(item.lead_id, item);
-    if (item.lead_phone) followUpByPhone.set(item.lead_phone, item);
+    if (item.client_id) followUpByClientId.set(Number(item.client_id), item);
+    if (item.broker_phone) followUpByPhone.set(item.broker_phone, item);
   }
 
-  const scored = leads.map((lead) => {
-    const followUp = (lead.lead_id && followUpByLeadId.get(lead.lead_id))
-      || (lead.phone && followUpByPhone.get(lead.phone))
+  const scored = requirements.map((lead: any) => {
+    const client = Array.isArray(lead.clients) ? lead.clients[0] : lead.clients;
+    const phone = client?.phone || null;
+    const followUp = (lead.client_id && followUpByClientId.get(Number(lead.client_id)))
+      || (phone && followUpByPhone.get(phone))
       || null;
-    const leadText = String(lead.raw_text || "").toLowerCase();
-    const recentMessageCount = messages.filter((message) => {
-      const text = String(message.text || "").toLowerCase();
-      return (
-        text.includes((lead.phone || "").replace(/[^\d]/g, "").slice(-6))
-        || (lead.name && text.includes(String(lead.name).toLowerCase()))
-        || (lead.location_hint && text.includes(String(lead.location_hint).toLowerCase()))
-      );
-    }).length;
+    const leadText = String(lead.notes || "").toLowerCase();
 
     let score = 0;
 
@@ -840,8 +869,8 @@ export async function getHotLeadTriage(input: { brokerId: string; days?: number;
       score += 10;
     }
 
-    if (followUp?.due_at) {
-      const dueAt = new Date(followUp.due_at).getTime();
+    if (followUp?.due_date) {
+      const dueAt = new Date(`${followUp.due_date}T${followUp.due_time || "00:00:00"}`).getTime();
       if (!Number.isNaN(dueAt)) {
         if (dueAt <= now) score += 18;
         else if (dueAt - now <= 24 * 60 * 60 * 1000) score += 10;
@@ -850,33 +879,35 @@ export async function getHotLeadTriage(input: { brokerId: string; days?: number;
       score += 6;
     }
 
-    score += Math.min(recentMessageCount * 2, 10);
+    if (lead.micro_market) score += 6;
+    if (lead.price_max != null) score += 4;
 
     const why = [
-      followUp?.due_at
-        ? new Date(followUp.due_at).getTime() <= now
+      followUp?.due_date
+        ? new Date(`${followUp.due_date}T${followUp.due_time || "00:00:00"}`).getTime() <= now
           ? "follow-up overdue"
           : "follow-up scheduled"
         : "no follow-up booked",
-      recentMessageCount > 0 ? `${recentMessageCount} recent message signals` : null,
+      lead.micro_market ? "locality known" : null,
+      lead.price_max != null ? "budget known" : null,
     ].filter(Boolean) as string[];
 
     return {
-      lead_id: lead.lead_id,
-      name: lead.name || followUp?.lead_name || "Unknown lead",
-      phone: lead.phone || followUp?.lead_phone || null,
-      record_type: lead.record_type,
-      location: lead.location_hint || null,
-      budget: lead.budget ?? null,
+      lead_id: String(lead.id),
+      name: client?.name || followUp?.title || "Unknown lead",
+      phone,
+      record_type: "buyer_requirement",
+      location: lead.micro_market || lead.building_name || null,
+      budget: lead.price_max ?? null,
       priority_bucket: null,
       urgency: null,
-      due_at: followUp?.due_at || null,
+      due_at: followUp?.due_date ? [followUp.due_date, followUp.due_time].filter(Boolean).join(" ") : null,
       score,
       why,
-      next_action: followUp?.due_at
+      next_action: followUp?.due_date
         ? "Call or message this lead before the due follow-up slips further."
         : "Book a follow-up now and confirm exact budget, locality, and timeline.",
-      raw_text: lead.raw_text || null,
+      raw_text: lead.notes || null,
     };
   });
 
@@ -886,7 +917,7 @@ export async function getHotLeadTriage(input: { brokerId: string; days?: number;
 
   return {
     days,
-    total_candidates: leads.length,
+    total_candidates: requirements.length,
     pending_follow_ups: followUps.length,
     items,
   };
@@ -1078,54 +1109,53 @@ export async function matchBuyerToInventory(input: {
 
 export async function getPendingFollowUps(input: { brokerId: string; limit?: number }) {
   const { data, error } = await supabase
-    .from("follow_up_tasks")
-    .select("lead_id, lead_name, lead_phone, action_type, due_at, status, notes, priority_bucket, created_at")
+    .from("follow_ups")
+    .select("id, client_id, title, broker_phone, follow_up_type, due_date, due_time, status, notes, created_at")
     .eq("tenant_id", input.brokerId)
     .eq("status", "pending")
-    .order("due_at", { ascending: true })
+    .order("due_date", { ascending: true })
     .limit(clampLimit(input.limit, 25, 100));
 
   if (error) throw new Error(error.message);
-  return data || [];
+  return (data || []).map((row: any) => ({
+    lead_id: row.client_id ? String(row.client_id) : String(row.id),
+    lead_name: row.title,
+    lead_phone: row.broker_phone,
+    action_type: row.follow_up_type,
+    due_at: [row.due_date, row.due_time].filter(Boolean).join(" "),
+    status: row.status,
+    notes: row.notes,
+    priority_bucket: null,
+    created_at: row.created_at,
+  }));
 }
 
 export async function getRecentSavedListings(input: { brokerId: string; limit?: number }) {
-  const { data, error } = await supabase
-    .from("listings")
-    .select("id, structured_data, raw_text, created_at")
-    .eq("tenant_id", input.brokerId)
-    .order("created_at", { ascending: false })
-    .limit(clampLimit(input.limit, 20, 100));
-
-  if (error) throw new Error(error.message);
-  return (data || []) as Array<{
-    id: string;
-    structured_data: Record<string, unknown> | null;
-    raw_text: string | null;
-    created_at: string | null;
-  }>;
+  return getWorkspaceListings(input);
 }
 
 export async function getRecentRequirements(input: { brokerId: string; limit?: number }) {
   const { data, error } = await supabase
-    .from("lead_records")
-    .select("lead_id, name, phone, location_hint, locality_canonical, budget, raw_text, created_at")
+    .from("client_requirements")
+    .select("id, client_id, micro_market, building_name, price_max, notes, created_at, clients(name, phone)")
     .eq("tenant_id", input.brokerId)
-    .eq("record_type", "buyer_requirement")
     .order("created_at", { ascending: false })
     .limit(clampLimit(input.limit, 20, 100));
 
   if (error) throw new Error(error.message);
-  return (data || []) as Array<{
-    lead_id: string;
-    name: string;
-    phone: string | null;
-    location_hint: string | null;
-    locality_canonical: string | null;
-    budget: number | null;
-    raw_text: string | null;
-    created_at: string | null;
-  }>;
+  return (data || []).map((row: any) => {
+    const client = Array.isArray(row.clients) ? row.clients[0] : row.clients;
+    return {
+      lead_id: String(row.id),
+      name: client?.name || "Unknown lead",
+      phone: client?.phone || null,
+      location_hint: row.micro_market || row.building_name || null,
+      locality_canonical: row.micro_market || null,
+      budget: row.price_max ?? null,
+      raw_text: row.notes || null,
+      created_at: row.created_at,
+    };
+  });
 }
 
 export async function getStoredThreadMessages(input: {
@@ -1134,21 +1164,27 @@ export async function getStoredThreadMessages(input: {
   limit?: number;
 }) {
   let query = supabase
-    .from("messages")
-    .select("remote_jid, text, sender, timestamp, created_at")
+    .from("raw_messages")
+    .select("sender_jid, group_name, message, sender, timestamp, created_at")
     .eq("tenant_id", input.brokerId)
     .order("timestamp", { ascending: false, nullsFirst: false })
     .limit(clampLimit(input.limit, 40, 200));
 
   if (input.remoteJid) {
-    query = query.eq("remote_jid", input.remoteJid);
+    query = query.or(`sender_jid.eq.${input.remoteJid},group_name.eq.${input.remoteJid}`);
   } else {
-    query = query.not("remote_jid", "is", null);
+    query = query.not("message", "is", null);
   }
 
   const { data, error } = await query;
   if (error) throw new Error(error.message);
-  return (data || []) as Array<{
+  return (data || []).map((row: any) => ({
+    remote_jid: row.sender_jid || row.group_name || "",
+    text: row.message || null,
+    sender: row.sender || null,
+    timestamp: row.timestamp || null,
+    created_at: row.created_at || null,
+  })) as Array<{
     remote_jid: string;
     text: string | null;
     sender: string | null;
@@ -1339,17 +1375,17 @@ export async function getStaleLeadReactivation(input: {
 
   const [leadResult, followUpResult] = await Promise.all([
     supabase
-      .from("lead_records")
-      .select("lead_id, name, phone, record_type, location_hint, budget, raw_text, created_at, updated_at")
+      .from("client_requirements")
+      .select("id, client_id, micro_market, building_name, price_max, notes, created_at, updated_at, clients(name, phone)")
       .eq("tenant_id", input.brokerId)
       .lt("updated_at", cutoffIso)
       .order("updated_at", { ascending: true, nullsFirst: false })
       .limit(100),
     supabase
-      .from("follow_up_tasks")
-      .select("lead_id, lead_name, lead_phone, due_at, status, notes")
+      .from("follow_ups")
+      .select("client_id, title, broker_phone, due_date, due_time, status, notes")
       .eq("tenant_id", input.brokerId)
-      .order("due_at", { ascending: false })
+      .order("due_date", { ascending: false })
       .limit(200),
   ]);
 
@@ -1357,18 +1393,20 @@ export async function getStaleLeadReactivation(input: {
   if (followUpResult.error) throw new Error(followUpResult.error.message);
 
   const followUps = followUpResult.data || [];
-  const followUpByLeadId = new Map<string, typeof followUps[number]>();
+  const followUpByClientId = new Map<number, typeof followUps[number]>();
   const followUpByPhone = new Map<string, typeof followUps[number]>();
 
   for (const item of followUps) {
-    if (item.lead_id) followUpByLeadId.set(item.lead_id, item);
-    if (item.lead_phone) followUpByPhone.set(item.lead_phone, item);
+    if (item.client_id) followUpByClientId.set(Number(item.client_id), item);
+    if (item.broker_phone) followUpByPhone.set(item.broker_phone, item);
   }
 
   const items = (leadResult.data || [])
-    .map((lead) => {
-      const followUp = (lead.lead_id && followUpByLeadId.get(lead.lead_id))
-        || (lead.phone && followUpByPhone.get(lead.phone))
+    .map((lead: any) => {
+      const client = Array.isArray(lead.clients) ? lead.clients[0] : lead.clients;
+      const phone = client?.phone || null;
+      const followUp = (lead.client_id && followUpByClientId.get(Number(lead.client_id)))
+        || (phone && followUpByPhone.get(phone))
         || null;
       const lastTouchedAt = lead.updated_at || lead.created_at;
       const staleForDays = lastTouchedAt
@@ -1377,35 +1415,34 @@ export async function getStaleLeadReactivation(input: {
 
       let score = staleForDays;
 
-      if (lead.record_type === "buyer_requirement") score += 8;
+      score += 8;
       if (!followUp || followUp.status !== "pending") score += 6;
 
       const why = [
         `${staleForDays} days stale`,
-        lead.record_type === "buyer_requirement" ? "buyer-side lead" : "inventory-side lead",
+        "buyer-side requirement",
         !followUp || followUp.status !== "pending" ? "no active follow-up" : "follow-up exists",
       ].filter(Boolean) as string[];
 
-      const location = lead.location_hint || null;
-      const budgetText = lead.budget != null ? formatCurrencyCr(lead.budget) : null;
-      const rawText = String(lead.raw_text || "").trim();
-      const opener = lead.record_type === "buyer_requirement"
-        ? `Hi ${lead.name || "there"}, circling back on your ${location || "property"} requirement. Still active, or has the brief changed?`
-        : `Hi ${lead.name || "there"}, checking whether your ${location || "listing"} is still active and if pricing or availability has shifted.`;
+      const location = lead.micro_market || lead.building_name || null;
+      const budgetText = lead.price_max != null ? formatCurrencyCr(lead.price_max) : null;
+      const rawText = String(lead.notes || "").trim();
+      const name = client?.name || "there";
+      const opener = `Hi ${name}, circling back on your ${location || "property"} requirement. Still active, or has the brief changed?`;
 
       return {
-        lead_id: lead.lead_id,
-        name: lead.name || "Unknown lead",
-        phone: lead.phone || null,
-        record_type: lead.record_type,
+        lead_id: String(lead.id),
+        name: client?.name || "Unknown lead",
+        phone,
+        record_type: "buyer_requirement",
         location,
         budget: budgetText,
         stale_for_days: staleForDays,
         score,
         why,
-        recommended_channel: lead.phone ? "whatsapp_or_call" : "manual_review",
+        recommended_channel: phone ? "whatsapp_or_call" : "manual_review",
         reactivation_opener: opener,
-        next_action: lead.phone
+        next_action: phone
           ? "Send the opener, then confirm current need, timing, and whether pricing has moved."
           : "Find the latest contact path before attempting reactivation.",
         raw_text: rawText || null,
@@ -1441,14 +1478,14 @@ export async function qualifyLead(input: {
   let existingLeadId = input.lead_id || null;
   if (!existingLeadId && phone) {
     const { data } = await supabase
-      .from("lead_records")
-      .select("lead_id")
+      .from("clients")
+      .select("id")
       .eq("tenant_id", input.brokerId)
       .eq("phone", phone)
-      .order("created_at", { ascending: false })
+      .order("updated_at", { ascending: false })
       .limit(1)
       .maybeSingle();
-    existingLeadId = data?.lead_id || null;
+    existingLeadId = data?.id ? String(data.id) : null;
   }
 
   const payload = {
@@ -1633,30 +1670,29 @@ export async function getBuildingIntel(input: {
   const daysBack = Math.min(Math.max(input.days_back ?? 90, 7), 365);
   const since = new Date(Date.now() - daysBack * 86400000).toISOString();
 
-  const fetchRows = async (table: string) => {
-    let query = supabase
-      .from(table as any)
-      .select(STREAM_INTEL_COLUMNS)
-      .eq("ingestion_status", "accepted")
-      .gte("created_at", since);
-
-    const buildingTokens = normalizedBuilding.split(/\s+/).filter(Boolean);
-    for (const token of buildingTokens) {
-      query = query.ilike("building_name", `%${token}%`);
-    }
-    if (input.locality) {
-      query = query.ilike("locality", `%${normalizeLocality(input.locality)}%`);
-    }
-    const { data, error } = await query;
-    return error ? [] : (data as any[] || []);
-  };
-
-  const [residential, commercial] = await Promise.all([
-    fetchRows("stream_items_residential"),
-    fetchRows("stream_items_commercial"),
-  ]);
-
-  const allRows = [...residential, ...commercial];
+  const buildingTokens = normalizedBuilding.split(/\s+/).filter(Boolean);
+  const parsedRows = await fetchParsedMarketRows(500, since);
+  const allRows = normalizePublicListings(parsedRows)
+    .filter((row) => {
+      const building = normalizeBuildingName(row.title || row.description || row.raw_message || "");
+      const locality = normalizeLocality(row.location || row.sub_area || row.area);
+      const buildingMatch = buildingTokens.every((token) => building.includes(token));
+      const localityMatch = input.locality ? locality.includes(normalizeLocality(input.locality)) : true;
+      return buildingMatch && localityMatch;
+    })
+    .map((row) => ({
+      source_message_id: row.source_message_id,
+      building_name: row.title || input.building_name,
+      locality: row.location || row.sub_area || row.area,
+      city: "Mumbai",
+      price_numeric: row.price,
+      area_sqft: row.size_sqft,
+      type: row.property_type === "rent" ? "Rent" : "Sale",
+      configuration: row.bhk != null ? `${row.bhk} BHK` : null,
+      furnishing: row.furnishing,
+      record_type: row.listing_type === "requirement" ? "requirement" : "listing",
+      created_at: row.created_at || row.message_timestamp,
+    }));
 
   if (allRows.length === 0) {
     return {
@@ -1776,25 +1812,44 @@ export async function searchBrokers(input: {
   limit?: number;
 }) {
   const limit = clampLimit(input.limit, 20, 100);
-  const query = supabase
-    .from("profiles")
-    .select("id, full_name, phone, email, city, locations, agency_name, app_role");
+  let query = supabase
+    .from("brokers")
+    .select("id, canonical_name, primary_phone, observation_count, listing_count, requirement_count, rental_count, commercial_count, group_count, last_seen_at, broker_phones(phone)");
 
   const orConditions: string[] = [];
   if (input.locality) {
-    orConditions.push(`locations.cs.{${input.locality}}`);
-    orConditions.push(`city.ilike.%${input.locality}%`);
+    orConditions.push(`canonical_name.ilike.%${input.locality}%`);
   }
   if (input.city) {
-    orConditions.push(`city.ilike.%${input.city}%`);
+    orConditions.push(`canonical_name.ilike.%${input.city}%`);
   }
   if (orConditions.length) {
-    query.or(orConditions.join(","));
+    query = query.or(orConditions.join(","));
   }
 
-  const { data, error } = await query.limit(limit);
+  const { data, error } = await query
+    .eq("is_hidden", false)
+    .order("last_seen_at", { ascending: false, nullsFirst: false })
+    .limit(limit);
   if (error) throw new Error(error.message);
 
-  return (data || [])
-    .filter((p: { app_role?: string }) => p.app_role === "broker" || p.app_role === "super_admin");
+  return (data || []).map((broker: any) => {
+    const phones = Array.isArray(broker.broker_phones) ? broker.broker_phones : [];
+    const primaryPhone = broker.primary_phone || phones[0]?.phone || null;
+    return {
+      id: String(broker.id),
+      broker_id: String(broker.id),
+      full_name: broker.canonical_name || "Unknown broker",
+      broker_name: broker.canonical_name || "Unknown broker",
+      phone: primaryPhone,
+      city: input.city || "Mumbai",
+      locations: input.locality ? [input.locality] : [],
+      agency_name: "",
+      app_role: "broker",
+      observation_count: broker.observation_count,
+      listing_count: broker.listing_count,
+      requirement_count: broker.requirement_count,
+      last_seen_at: broker.last_seen_at,
+    };
+  });
 }

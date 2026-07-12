@@ -1040,7 +1040,7 @@ export function createMcpServer(context: ToolContext = {}) {
 
       async function fetchRowsWithEmbeddings() {
         const results: Array<Record<string, unknown> & { similarity: number }> = [];
-        for (const table of ["stream_items_residential", "stream_items_commercial"]) {
+        for (const table of [] as string[]) {
           let offset = 0;
           while (true) {
             const { data: rows, error } = await supabase
