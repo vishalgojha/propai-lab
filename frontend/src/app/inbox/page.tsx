@@ -123,6 +123,55 @@ function observationTypeColor(type?: string): string {
   }
 }
 
+function inferOpportunityKind(input: { intent?: string; observation_type?: string; text?: string }) {
+  const intent = (input.intent || "").toUpperCase();
+  const type = (input.observation_type || "").toUpperCase();
+  const text = (input.text || "").toLowerCase();
+  if (
+    type === "REQUIREMENT" ||
+    ["BUY", "BUYER", "REQUIREMENT", "RENTAL_SEEKER", "WANTED"].includes(intent) ||
+    /\b(requirement|required|wanted|looking|need|client wants|buyer|tenant)\b/.test(text)
+  ) {
+    return "Requirement";
+  }
+  if (type === "LISTING" || ["SELL", "SALE", "RENT", "LEASE"].includes(intent)) {
+    return "Listing";
+  }
+  return "Market";
+}
+
+function inferOpportunitySide(input: { intent?: string; text?: string }) {
+  const intent = (input.intent || "").toUpperCase();
+  const text = (input.text || "").toLowerCase();
+  if (["RENT", "LEASE", "RENTAL_SEEKER"].includes(intent)) return "Rent";
+  if (["SELL", "SALE"].includes(intent)) return "Sale";
+  if (["BUY", "BUYER", "REQUIREMENT", "WANTED"].includes(intent)) {
+    if (/\b(rent|rental|lease|tenant)\b/.test(text)) return "Rent";
+    return "Buy";
+  }
+  if (/\b(rent|rental|lease|tenant)\b/.test(text)) return "Rent";
+  if (/\b(sale|sell|outright|distress|asking|reserve price|for sale)\b/.test(text)) return "Sale";
+  return "";
+}
+
+function marketOpportunityLabel(input: { intent?: string; observation_type?: string; text?: string }) {
+  const kind = inferOpportunityKind(input);
+  const side = inferOpportunitySide(input);
+  return side ? `${side} ${kind}` : kind;
+}
+
+function marketOpportunityColor(label: string) {
+  const lower = label.toLowerCase();
+  if (lower.includes("requirement")) return lower.includes("rent") ? "badge-orange" : "badge-purple";
+  if (lower.includes("rent")) return "badge-blue";
+  if (lower.includes("sale")) return "badge-green";
+  return "badge-gray";
+}
+
+function marketOpportunityColorToken(label: string) {
+  return marketOpportunityColor(label).replace("badge-", "");
+}
+
 function formatCurrency(val: number, unit?: string) {
   if (!val) return "—";
   // Normalize value by unit
@@ -2586,6 +2635,11 @@ function InboxPageInner() {
                     const timeLabel = obsTime
                       ? obsTime.toLocaleDateString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })
                       : "";
+                    const opportunityLabel = marketOpportunityLabel({
+                      intent: obs.intent,
+                      observation_type: obs.observation_type,
+                      text: `${obs.summary_title || ""} ${obs.raw_message || ""}`,
+                    });
                     return (
                       <div key={group.key}>
                         {/* Time Divider */}
@@ -2607,13 +2661,13 @@ function InboxPageInner() {
                             <div className="flex items-center justify-between">
                               <div className="flex items-center gap-2">
                                 <span className="text-base">{observationTypeIcon(obs.observation_type)}</span>
-                                <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${observationTypeColor(obs.observation_type)}`}>
-                                  {observationTypeLabel(obs.observation_type)}
+                                <span className={`badge ${marketOpportunityColor(opportunityLabel)} text-[10px]`}>
+                                  {opportunityLabel}
                                 </span>
                               </div>
                               <div className="flex items-center gap-2">
-                                <span className={`badge ${intentColor(obs.intent)} text-[9px]`}>
-                                  {intentLabelFor(obs.intent) || "—"}
+                                <span className={`text-[9px] font-semibold px-2 py-0.5 rounded-full ${observationTypeColor(obs.observation_type)}`}>
+                                  {observationTypeLabel(obs.observation_type)}
                                 </span>
                                 <span className="text-[9px] text-zinc-500 tabular-nums">{timeLabel}</span>
                               </div>
@@ -2858,8 +2912,9 @@ function InboxPageInner() {
                                   const mBadges = (() => {
                                     const badges: { label: string; color: string }[] = [];
                                     const intent = (m as api.InboxThread).parsed_intent || m.parsed_intent || inferredMessageIntent(m);
-                                    if (intent) {
-                                      badges.push({ label: intentLabelFor(intent), color: intentBadgeColorFor(intent) });
+                                    const marketLabel = marketOpportunityLabel({ intent, text: m.message || "" });
+                                    if (marketLabel && marketLabel !== "Market") {
+                                      badges.push({ label: marketLabel, color: marketOpportunityColorToken(marketLabel) });
                                     }
                                     if (m.attachments) {
                                       try {
@@ -2910,11 +2965,18 @@ function InboxPageInner() {
                                                 <span className="rounded border border-[#3EE88A]/20 bg-[#3EE88A]/10 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wider text-[#3EE88A]">
                                                   Item {chunkIndex + 1}
                                                 </span>
-                                                {mBadges.slice(0, 1).map((b, bi) => (
-                                                  <span key={bi} className={`badge badge-${b.color} text-[8px] px-1 py-0`}>
-                                                    {b.label}
-                                                  </span>
-                                                ))}
+                                                {(() => {
+                                                  const chunkLabel = marketOpportunityLabel({
+                                                    intent: (m as api.InboxThread).parsed_intent || m.parsed_intent || inferredMessageIntent({ ...m, message: chunk }),
+                                                    text: chunk,
+                                                  });
+                                                  if (!chunkLabel || chunkLabel === "Market") return null;
+                                                  return (
+                                                    <span className={`badge ${marketOpportunityColor(chunkLabel)} text-[8px] px-1 py-0`}>
+                                                      {chunkLabel}
+                                                    </span>
+                                                  );
+                                                })()}
                                               </div>
                                               <div className="text-xs text-zinc-200 whitespace-pre-wrap leading-relaxed text-left propai-message-content">
                                                 <WhatsAppMessage
