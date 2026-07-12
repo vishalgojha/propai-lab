@@ -382,6 +382,37 @@ function normalizeMessageForDedupe(text?: string) {
     .trim();
 }
 
+function splitDelimitedListingText(text?: string) {
+  const rawLines = (text || "").split(/\r?\n/);
+  const lines = rawLines.map((line) => line.trim()).filter(Boolean);
+  if (lines.length < 8) return [];
+
+  const boundaryIndexes: number[] = [];
+  lines.forEach((line, index) => {
+    if (/^(?:\d+(?:\.\d+)?\s*(?:BHK|RK)|Commercial|Office|Shop|Godown|Warehouse)\b/i.test(line)) {
+      boundaryIndexes.push(index);
+    }
+  });
+
+  if (boundaryIndexes.length < 2) return [];
+
+  const intro = lines.slice(0, boundaryIndexes[0]).join("\n");
+  const footerMarkers = /^(?:[A-Z][A-Z\s.&-]{3,}|[A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,3}:|\+?\d[\d\s/-]{7,})$/;
+
+  return boundaryIndexes
+    .map((start, index) => {
+      const end = boundaryIndexes[index + 1] ?? lines.length;
+      let chunk = lines.slice(start, end);
+      if (index === boundaryIndexes.length - 1) {
+        while (chunk.length > 4 && footerMarkers.test(chunk[chunk.length - 1])) {
+          chunk = chunk.slice(0, -1);
+        }
+      }
+      return [index === 0 ? intro : "", ...chunk].filter(Boolean).join("\n");
+    })
+    .filter((chunk) => chunk.split("\n").length >= 2);
+}
+
 type EntityDetailShape = {
   raw?: Partial<api.RawMessage>;
   parsed?: Partial<api.ParsedObservation> & {
@@ -2693,6 +2724,7 @@ function InboxPageInner() {
                                   const mSenderName = resolveMessageSenderName(m);
                                   const isSelectedMessage = selectedMsg?.id === m.id;
                                   const useInnerCard = block.length > 1;
+                                  const listingChunks = splitDelimitedListingText(m.message);
                                   const mBadges = (() => {
                                     const badges: { label: string; color: string }[] = [];
                                     const intent = (m as api.InboxThread).parsed_intent || m.parsed_intent || inferredMessageIntent(m);
@@ -2726,29 +2758,57 @@ function InboxPageInner() {
                                         });
                                       }}
                                       className={`relative group/message transition-all cursor-pointer ${
-                                        useInnerCard ? "rounded-lg px-2.5 py-2" : ""
-                                      } ${
-                                        isSelectedMessage && useInnerCard
-                                          ? "bg-[#1d4ed8]/20 border border-[#3b82f6] shadow-[0_0_10px_rgba(59,130,246,0.14)]"
-                                          : useInnerCard
-                                          ? "border border-transparent hover:bg-white/[0.025] hover:border-white/[0.06]"
+                                        useInnerCard
+                                          ? "rounded-lg border border-transparent px-2.5 py-2 hover:bg-white/[0.025] hover:border-white/[0.06]"
                                           : ""
                                       }`}
                                     >
-                                      {isSelectedMessage && useInnerCard && (
-                                        <div className="absolute -left-4 top-1/2 -translate-y-1/2 text-blue-400">
-                                          <div className="w-2 h-2 rounded-full bg-[#3b82f6] shadow-[0_0_6px_rgba(59,130,246,0.6)]" />
+                                      {listingChunks.length > 1 ? (
+                                        <div className="space-y-2">
+                                          <div className="flex items-center justify-between gap-2 border-b border-white/10 pb-2">
+                                            <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+                                              Split into {listingChunks.length} items
+                                            </span>
+                                            <span className="text-[9px] text-zinc-600">Original WhatsApp post</span>
+                                          </div>
+                                          {listingChunks.map((chunk, chunkIndex) => (
+                                            <div
+                                              key={`${m.id}-chunk-${chunkIndex}`}
+                                              className="rounded-lg border border-white/10 bg-[#05070b] px-3 py-2.5"
+                                            >
+                                              <div className="mb-1.5 flex items-center gap-1.5">
+                                                <span className="rounded border border-[#3EE88A]/20 bg-[#3EE88A]/10 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wider text-[#3EE88A]">
+                                                  Item {chunkIndex + 1}
+                                                </span>
+                                                {mBadges.slice(0, 1).map((b, bi) => (
+                                                  <span key={bi} className={`badge badge-${b.color} text-[8px] px-1 py-0`}>
+                                                    {b.label}
+                                                  </span>
+                                                ))}
+                                              </div>
+                                              <div className="text-xs text-zinc-200 whitespace-pre-wrap leading-relaxed text-left propai-message-content">
+                                                <WhatsAppMessage
+                                                  text={chunk}
+                                                  sender={mSenderName}
+                                                  senderPhone={mPhone}
+                                                  entities={buildMessageEntities(m)}
+                                                  onEntityClick={handleEntityClick}
+                                                />
+                                              </div>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      ) : (
+                                        <div className="text-xs text-zinc-200 whitespace-pre-wrap leading-relaxed text-left propai-message-content">
+                                          <WhatsAppMessage
+                                            text={m.message || ""}
+                                            sender={mSenderName}
+                                            senderPhone={mPhone}
+                                            entities={buildMessageEntities(m)}
+                                            onEntityClick={handleEntityClick}
+                                          />
                                         </div>
                                       )}
-                                      <div className="text-xs text-white whitespace-pre-wrap leading-relaxed text-left propai-message-content">
-                                        <WhatsAppMessage
-                                          text={m.message || ""}
-                                          sender={mSenderName}
-                                          senderPhone={mPhone}
-                                          entities={buildMessageEntities(m)}
-                                          onEntityClick={handleEntityClick}
-                                        />
-                                      </div>
                                       {(m.duplicate_count || 0) > 1 && (
                                         <div className="mt-2 flex flex-wrap items-center gap-1 text-[9px] text-zinc-500">
                                           <span>Repeated {m.duplicate_count}x</span>
