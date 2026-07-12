@@ -3,7 +3,7 @@ import { supabase } from "./supabase.ts";
 import { formatBudgetRange, formatCurrencyCr, formatPerSqft, igrSummary, listingLabel, toNumber, formatDate, formatSqft } from "./format.ts";
 import type { IgrTransaction, LocalityStats, PublicListing } from "./types.js";
 
-const PUBLIC_LISTING_COLUMNS =
+export const PUBLIC_LISTING_COLUMNS =
   "source_message_id, source_group_name, listing_type, area, sub_area, location, price, price_type, size_sqft, furnishing, bhk, property_type, title, description, raw_message, cleaned_message, primary_contact_name, primary_contact_number, primary_contact_wa, message_timestamp";
 const PLACEHOLDER_LOCALITIES = new Set([
   "unknown",
@@ -100,7 +100,7 @@ function dedupePublicListings(rows: PublicListing[]) {
   return deduped;
 }
 
-function normalizePublicListings(rows: unknown[]) {
+export function normalizePublicListings(rows: unknown[]) {
   return dedupePublicListings(
     (rows as any[])
       .map((row) => ({

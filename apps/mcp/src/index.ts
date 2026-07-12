@@ -19,6 +19,8 @@ import {
   getStaleLeadReactivation,
   buildPricingNegotiationBrief,
   logToolCall,
+  normalizePublicListings,
+  PUBLIC_LISTING_COLUMNS,
   qualifyLead,
   saveListingRecord,
   scheduleFollowUp,
@@ -77,6 +79,9 @@ export const MCP_TOOL_NAMES = [
   "contact_search",
   "contact_call",
   "contact_whatsapp",
+  // ChatGPT-compatible tools (OpenAI search/fetch contract)
+  "search",
+  "fetch",
   // Legacy tools (backward compatible)
   "smartSearch",
   "getListing",
@@ -1141,6 +1146,245 @@ export function createMcpServer(context: ToolContext = {}) {
       return textResponse(lines.join("\n"), { result });
     },
   );
+
+  // ChatGPT-compatible OpenAI MCP tools (search + fetch).
+  // These follow OpenAI's exact contract: search(query: string) -> { results: [{ id, title, url? }] }
+  // fetch(id: string) -> { id, title, text, url?, metadata? }
+
+  server.registerTool("search", {
+    description:
+      "Search Mumbai real estate listings, requirements, brokers, buildings, and market intelligence using natural language. Returns results with routable IDs for use with fetch().",
+    inputSchema: {
+      query: z.string().describe(
+        "Natural language query. Examples: '3 BHK for sale in Bandra under 8 crore', 'rental requirements in Khar West above 1 lakh', 'brokers dealing in Powai', 'market rate for Kalpataru Magnus'"
+      ),
+    },
+  }, async (input) => {
+    const id = brokerId(context);
+    await logToolCall(id, "search", input);
+    const result = await executeSmartSearch(input);
+
+    const items = Array.isArray(result.results) ? result.results : [];
+    const intent = String(result.intent || "");
+    const searchResults = items.map((r: unknown, index: number) => {
+      const row = r as Record<string, unknown>;
+      let resultId: string;
+      let title: string;
+
+      // Determine type and build routable ID
+      const listingType = row.listing_type as string | undefined;
+      const isRequirement = listingType === "requirement";
+      const isListing = listingType && listingType.startsWith("listing");
+
+      if (isRequirement) {
+        resultId = `requirement:${String(row.source_message_id || `result-${index}`)}`;
+        title = `${row.title || "Requirement"} - ${row.sub_area || row.area || row.location || "Unknown"} - ${row.price != null ? formatCurrencyCr(row.price as number) : "Price on request"}`;
+      } else if (isListing) {
+        resultId = `listing:${String(row.source_message_id || `result-${index}`)}`;
+        const priceStr = row.price != null ? formatCurrencyCr(row.price as number) : "Price on request";
+        title = `${row.title || row.property_type || "Listing"} - ${row.bhk != null ? `${row.bhk} BHK` : "?"} BHK - ${priceStr} - ${row.sub_area || row.area || row.location || "Unknown"}`;
+      } else if (row.broker_id) {
+        // Broker search result
+        resultId = `broker:${row.broker_id}`;
+        title = `${row.broker_name || "Unknown Broker"} - ${row.city || ""} - ${row.agency || ""} - ${row.phone || "No phone"}`;
+      } else if (row.building_name) {
+        // Building intel result
+        resultId = `building:${row.building_name}`;
+        title = `Building: ${row.building_name} - ${row.locality || row.city || "Unknown"}`;
+      } else if (intent === "market_insights") {
+        resultId = `market:${encodeURIComponent(input.query)}`;
+        title = String(result.explanation || `Market intelligence for ${input.query}`).split("\n")[0] || `Market intelligence for ${input.query}`;
+      } else {
+        // Fallback
+        resultId = `listing:${row.source_message_id || `result-${index}`}`;
+        title = row.title ? String(row.title) : "Unknown";
+      }
+
+      // Optional URL - only include if we have a real public URL
+      // Currently no public listing pages exist, so omit url
+
+      return { id: resultId, title };
+    });
+
+    // Return both structuredContent (for OpenAI) and content (for MCP compatibility)
+    return {
+      structuredContent: { results: searchResults },
+      content: [{ type: "text" as const, text: JSON.stringify({ results: searchResults }) }],
+    };
+  });
+
+  server.registerTool("fetch", {
+    description:
+      "Fetch full details for a result ID returned by search(). The ID format is type:value (e.g., listing:msg-123, requirement:msg-456, broker:broker-uuid, building:Building Name). Returns full human-readable content and optional metadata.",
+    inputSchema: {
+      id: z.string().describe("The routable ID returned by search() - format: type:value (e.g., listing:msg-123, requirement:msg-456, broker:broker-uuid, building:Building Name)"),
+    },
+  }, async (input) => {
+    const id = brokerId(context);
+    await logToolCall(id, "fetch", input);
+
+    const [type, ...rest] = input.id.split(":");
+    const value = rest.join(":"); // Handle values with colons (e.g., building names)
+
+    try {
+      switch (type) {
+        case "listing": {
+          const result = await getListingById(value);
+          if (!result) {
+            return {
+              structuredContent: { error: `Listing "${value}" not found.` },
+              content: [{ type: "text" as const, text: JSON.stringify({ error: `Listing "${value}" not found.` }) }],
+            };
+          }
+          const r = result as Record<string, unknown>;
+          const priceStr = r.price != null ? formatCurrencyCr(r.price as number) : "Price on request";
+          const areaStr = r.size_sqft != null ? formatSqft(r.size_sqft as number) : "N/A";
+          const bhkStr = r.bhk != null ? `${r.bhk} BHK` : "? BHK";
+          const lines = [
+            `Title: ${r.title || "N/A"}`,
+            `Type: ${r.listing_type || "N/A"}`,
+            `Locality: ${r.sub_area || r.area || r.location || "N/A"}`,
+            `Price: ${priceStr}`,
+            `Area: ${areaStr}`,
+            `BHK: ${bhkStr}`,
+            `Furnishing: ${r.furnishing || "N/A"}`,
+            `Contact: ${r.primary_contact_name || "N/A"} - ${r.primary_contact_number || "N/A"}`,
+            `Description: ${r.description || r.raw_message || "N/A"}`,
+            `Posted: ${r.message_timestamp ? new Date(String(r.message_timestamp)).toLocaleDateString("en-IN") : "N/A"}`,
+            `Source: ${r.source_group_name || "N/A"}`,
+          ];
+          return {
+            structuredContent: { id: input.id, title: lines[0], text: lines.join("\n"), metadata: r },
+            content: [{ type: "text" as const, text: JSON.stringify({ id: input.id, title: lines[0], text: lines.join("\n"), metadata: r }) }],
+          };
+        }
+
+        case "requirement": {
+          // Requirements are in public_listings with listing_type='requirement'
+          const { data, error } = await supabase
+            .from("public_listings")
+            .select(PUBLIC_LISTING_COLUMNS)
+            .eq("source_message_id", value)
+            .maybeSingle();
+          if (error) throw new Error(error.message);
+          if (!data) {
+            return {
+              structuredContent: { error: `Requirement "${value}" not found.` },
+              content: [{ type: "text" as const, text: JSON.stringify({ error: `Requirement "${value}" not found.` }) }],
+            };
+          }
+          const normalized = normalizePublicListings([data])[0];
+          if (!normalized) {
+            return {
+              structuredContent: { error: `Requirement "${value}" not found.` },
+              content: [{ type: "text" as const, text: JSON.stringify({ error: `Requirement "${value}" not found.` }) }],
+            };
+          }
+          const r = normalized as Record<string, unknown>;
+          const priceStr = r.price != null ? formatCurrencyCr(r.price as number) : "Budget not specified";
+          const lines = [
+            `Title: ${r.title || "Requirement"}`,
+            `Type: ${r.listing_type || "Requirement"}`,
+            `Locality: ${r.sub_area || r.area || r.location || "N/A"}`,
+            `Budget: ${priceStr}`,
+            `BHK: ${r.bhk != null ? `${r.bhk} BHK` : "Any"}`,
+            `Contact: ${r.primary_contact_name || "N/A"} - ${r.primary_contact_number || "N/A"}`,
+            `Description: ${r.description || r.raw_message || "N/A"}`,
+            `Posted: ${r.message_timestamp ? new Date(String(r.message_timestamp)).toLocaleDateString("en-IN") : "N/A"}`,
+          ];
+          return {
+            structuredContent: { id: input.id, title: lines[0], text: lines.join("\n"), metadata: r },
+            content: [{ type: "text" as const, text: JSON.stringify({ id: input.id, title: lines[0], text: lines.join("\n"), metadata: r }) }],
+          };
+        }
+
+        case "broker": {
+          // Use searchBrokersData with the broker ID - need to search by ID
+          const { data, error } = await supabase
+            .from("profiles")
+            .select("id, full_name, phone, email, city, locations, agency_name, app_role")
+            .eq("id", value)
+            .maybeSingle();
+          if (error) throw new Error(error.message);
+          if (!data) {
+            return {
+              structuredContent: { error: `Broker "${value}" not found.` },
+              content: [{ type: "text" as const, text: JSON.stringify({ error: `Broker "${value}" not found.` }) }],
+            };
+          }
+          const broker = data as Record<string, unknown>;
+          const locations = Array.isArray(broker.locations) ? broker.locations.join(", ") : "N/A";
+          const lines = [
+            `Name: ${broker.full_name || "Unknown"}`,
+            `Phone: ${broker.phone || "N/A"}`,
+            `Email: ${broker.email || "N/A"}`,
+            `City: ${broker.city || "N/A"}`,
+            `Agency: ${broker.agency_name || "N/A"}`,
+            `Locations: ${locations}`,
+            `Role: ${broker.app_role || "N/A"}`,
+          ];
+          return {
+            structuredContent: { id: input.id, title: lines[0], text: lines.join("\n"), metadata: broker },
+            content: [{ type: "text" as const, text: JSON.stringify({ id: input.id, title: lines[0], text: lines.join("\n"), metadata: broker }) }],
+          };
+        }
+
+        case "building": {
+          const result = await getBuildingIntel({
+            building_name: value,
+            locality: undefined,
+            days_back: 90,
+          });
+          const saleAvg = result.price_benchmarks.sale?.avg_price_per_sqft;
+          const rentAvg = result.price_benchmarks.rent?.avg_price_per_sqft;
+          const lines = [
+            `Building: ${result.building_name}`,
+            `Localities: ${result.matched_localities.join(", ") || "N/A"}`,
+            `Sale Benchmark: ${result.price_benchmarks.sale && saleAvg != null ? `${formatPerSqft(saleAvg)} avg, ${result.price_benchmarks.sale.listing_count} listings` : "N/A"}`,
+            `Rent Benchmark: ${result.price_benchmarks.rent && rentAvg != null ? `${formatPerSqft(rentAvg)} avg, ${result.price_benchmarks.rent.listing_count} listings` : "N/A"}`,
+            `Sample Days: ${result.sample_days}`,
+            "",
+            "Locality Supply:",
+            ...result.locality_supply.slice(0, 5).map((ls) => `  ${ls.locality}: ${ls.listings} listings, ${ls.requirements} reqs - ${ls.ratio}`),
+            "",
+            "Config Mix:",
+            ...result.configuration_map.slice(0, 5).map((cm) => `  ${cm.configuration}: ${cm.count} (${cm.percentage_of_locality}%)`),
+          ];
+          return {
+            structuredContent: { id: input.id, title: lines[0], text: lines.join("\n"), metadata: result },
+            content: [{ type: "text" as const, text: JSON.stringify({ id: input.id, title: lines[0], text: lines.join("\n"), metadata: result }) }],
+          };
+        }
+
+        case "market": {
+          const query = decodeURIComponent(value);
+          const result = await executeSmartSearch({ query });
+          const lines = [
+            String(result.explanation || `Market intelligence for ${query}`),
+            "",
+            "Suggested follow-ups:",
+            ...result.suggestedFollowUps.map((followUp) => `- ${followUp}`),
+          ];
+          return {
+            structuredContent: { id: input.id, title: lines[0], text: lines.join("\n"), metadata: result },
+            content: [{ type: "text" as const, text: JSON.stringify({ id: input.id, title: lines[0], text: lines.join("\n"), metadata: result }) }],
+          };
+        }
+
+        default:
+          return {
+            structuredContent: { error: `Unknown ID type: ${type}. Supported types: listing, requirement, broker, building, market` },
+            content: [{ type: "text" as const, text: JSON.stringify({ error: `Unknown ID type: ${type}. Supported types: listing, requirement, broker, building, market` }) }],
+          };
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      return {
+        structuredContent: { error: message },
+        content: [{ type: "text" as const, text: JSON.stringify({ error: message }) }],
+      };
+    }
+  });
 
   return server;
 }
