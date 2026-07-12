@@ -14,6 +14,7 @@ const CombinedLocalityDialog = nextDynamic(() => import("@/components/CombinedLo
 const AddToClientBucket = nextDynamic(() => import("@/components/AddToClientBucket"), { ssr: false });
 import ResizablePanel from "@/components/ResizablePanel";
 import { entityProfileHref } from "@/lib/entity-links";
+import { classifyFormatIssue } from "@/lib/format-issues";
 import { useIsMobile } from "@/hooks/useMediaQuery";
 import { useInfiniteScroll } from "@/hooks/useInfiniteScroll";
 import InboxAIChat from "@/components/InboxAIChat";
@@ -512,6 +513,9 @@ function normalizeMessageForDedupe(text?: string) {
 }
 
 function splitDelimitedListingText(text?: string) {
+  const issue = classifyFormatIssue({ message: text || "" });
+  if (issue && ["Too compressed", "Mixed listing + requirement"].includes(issue.reason)) return [];
+
   const rawLines = (text || "").split(/\r?\n/);
   const lines = rawLines.map((line) => line.trim()).filter(Boolean);
   if (lines.length < 8) return [];
@@ -562,7 +566,7 @@ function splitDelimitedListingText(text?: string) {
       }
       return [index === 0 ? intro : "", ...chunk].filter(Boolean).join("\n");
     })
-    .filter((chunk) => chunk.split("\n").length >= 2);
+    .filter((chunk) => chunk.split("\n").map((line) => line.trim()).filter(Boolean).length >= 3);
 }
 
 type EntityDetailShape = {
@@ -3013,6 +3017,7 @@ function InboxPageInner() {
                                   const isSelectedMessage = selectedMsg?.id === m.id;
                                   const useInnerCard = block.length > 1;
                                   const listingChunks = splitDelimitedListingText(m.message);
+                                  const formatIssue = classifyFormatIssue(m);
                                   const mBadges = (() => {
                                     const badges: { label: string; color: string }[] = [];
                                     const intent = (m as api.InboxThread).parsed_intent || m.parsed_intent || inferredMessageIntent(m);
@@ -3145,6 +3150,19 @@ function InboxPageInner() {
                                             />
                                           </div>
                                           <MoneySignalChips text={m.message || ""} label={mBadges[0]?.label} />
+                                          {formatIssue && (
+                                            <div className="mt-2 rounded-md border border-amber-500/20 bg-amber-500/10 px-2.5 py-2 text-[10px] leading-relaxed text-amber-200">
+                                              <div className="font-bold">{formatIssue.reason}</div>
+                                              <div className="mt-0.5 text-amber-100/75">{formatIssue.detail}</div>
+                                              <Link
+                                                href="/format-issues"
+                                                className="mt-1 inline-flex font-bold text-[#3EE88A] hover:underline"
+                                                onClick={(e) => e.stopPropagation()}
+                                              >
+                                                Open in Format Issues
+                                              </Link>
+                                            </div>
+                                          )}
                                         </div>
                                       )}
                                       {(m.duplicate_count || 0) > 1 && (
