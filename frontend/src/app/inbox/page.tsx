@@ -423,6 +423,85 @@ function TeachingPromptCard({
 }
 
 const FIRM_LINE_RE = /\b(?:real\s+estate|realtors?|properties|property|consultants?|associates|llp|pvt|private|ltd|estate)\b/i;
+const URL_OR_SOCIAL_RE = /\b(?:https?:\/\/|www\.|instagram\.com|fb\.com|facebook\.com|youtu\.be|youtube\.com|t\.me|wa\.me|chat\.whatsapp\.com)\b/i;
+const SOCIAL_PROMO_RE = /\b(?:follow|insta|instagram|subscribe|like|share|new properties|link in bio|reel|reels)\b/i;
+
+function isExternalOrPromoLine(line: string) {
+  return URL_OR_SOCIAL_RE.test(line) || SOCIAL_PROMO_RE.test(line);
+}
+
+function isLikelyFirmSignature(line: string) {
+  const cleaned = stripEmojis(line).trim();
+  if (!FIRM_LINE_RE.test(cleaned)) return false;
+  if (isExternalOrPromoLine(cleaned)) return false;
+  if (/[?=:/\\]/.test(cleaned)) return false;
+  if (cleaned.split(/\s+/).length > 8) return false;
+  return /^[A-Z0-9][A-Za-z0-9&.\-\s]+$/.test(cleaned);
+}
+
+function cleanMoneyLine(line: string) {
+  return stripEmojis(line).replace(/^[^\dA-Za-z]+/, "").replace(/\s+/g, " ").trim();
+}
+
+function moneyValueFromLine(line: string) {
+  const cleaned = cleanMoneyLine(line)
+    .replace(/\b(?:rent|rental|deposit|deposite|security|budget|price|asking|ask|quote|reserve|sale|outright)\b\s*:?\s*/gi, "")
+    .trim();
+  const match = cleaned.match(/(?:rs\.?|inr|₹)?\s*(\d[\d,]*(?:\.\d+)?\s*(?:k|l|lac|lacs|lakh|lakhs|cr|crore|crores)?(?:\s*(?:to|-)\s*\d[\d,]*(?:\.\d+)?\s*(?:k|l|lac|lacs|lakh|lakhs|cr|crore|crores)?)?)/i);
+  return match ? match[1].trim() : "";
+}
+
+function extractMoneySignals(text?: string, label?: string) {
+  const lines = (text || "").split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const result: { rent?: string; deposit?: string; budget?: string; price?: string } = {};
+  const bareMoney: string[] = [];
+
+  for (const line of lines) {
+    const cleaned = cleanMoneyLine(line);
+    const lower = cleaned.toLowerCase();
+    const value = moneyValueFromLine(cleaned);
+    if (!value) continue;
+    if (/\b(?:deposit|deposite|security)\b/.test(lower)) result.deposit ||= value;
+    else if (/\b(?:rent|rental)\b/.test(lower)) result.rent ||= value;
+    else if (/\bbudget\b/.test(lower)) result.budget ||= value;
+    else if (/\b(?:price|asking|ask|quote|reserve|sale|outright)\b/.test(lower)) result.price ||= value;
+    else if (/^(?:rs\.?|inr|₹)?\s*\d[\d,]*(?:\.\d+)?\s*(?:k|l|lac|lacs|lakh|lakhs|cr|crore|crores)?$/i.test(cleaned)) {
+      bareMoney.push(value);
+    }
+  }
+
+  if ((label || "").toLowerCase().includes("rent")) {
+    if (!result.rent && bareMoney[0]) result.rent = bareMoney[0];
+    if (!result.deposit && bareMoney[1]) result.deposit = bareMoney[1];
+  } else if (!result.price && bareMoney[0]) {
+    result.price = bareMoney[0];
+  }
+
+  return result;
+}
+
+function MoneySignalChips({ text, label }: { text?: string; label?: string }) {
+  const signals = extractMoneySignals(text, label);
+  const items = [
+    signals.rent ? ["Rent", signals.rent] : null,
+    signals.deposit ? ["Deposit", signals.deposit] : null,
+    signals.budget ? ["Budget", signals.budget] : null,
+    signals.price && !signals.rent ? ["Price", signals.price] : null,
+  ].filter(Boolean) as [string, string][];
+  if (items.length === 0) return null;
+  return (
+    <div className="mt-2 flex flex-wrap gap-1.5">
+      {items.map(([name, value]) => (
+        <span
+          key={`${name}-${value}`}
+          className="rounded border border-white/10 bg-white/[0.035] px-2 py-1 text-[10px] font-semibold text-zinc-200"
+        >
+          <span className="text-zinc-500">{name}:</span> {value}
+        </span>
+      ))}
+    </div>
+  );
+}
 
 function normalizeMessageForDedupe(text?: string) {
   return (text || "")
@@ -1415,7 +1494,7 @@ function InboxPageInner() {
       const cleaned = line.replace(/^[^\w]+/, "").trim();
       if (cleaned.length < 4 || cleaned.length > 80) continue;
       if (brokerName && cleaned.toLowerCase() === brokerName.toLowerCase()) continue;
-      if (FIRM_LINE_RE.test(cleaned)) {
+      if (isLikelyFirmSignature(cleaned)) {
         addEntity(entities, {
           type: "firm",
           text: cleaned,
@@ -1845,6 +1924,7 @@ function InboxPageInner() {
   // 3b. Select a specific message within the current conversation
   const selectMessage = useCallback((msg: api.RawMessage) => {
     setSelectedMsg(msg as any);
+    setActiveRightTab("analysis");
     loadMessageDetails(msg.id);
     updateUrlMessage((msg as any).chat_id || (msg as any).conversation_key || msg.group_name || "", msg.id);
     const el = messageRefs.current[msg.id];
@@ -2956,49 +3036,84 @@ function InboxPageInner() {
                                             </span>
                                             <span className="text-[9px] text-zinc-600">Original WhatsApp post</span>
                                           </div>
-                                          {listingChunks.map((chunk, chunkIndex) => (
-                                            <div
-                                              key={`${m.id}-chunk-${chunkIndex}`}
-                                              className="rounded-lg border border-white/10 bg-[#05070b] px-3 py-2.5"
-                                            >
-                                              <div className="mb-1.5 flex items-center gap-1.5">
-                                                <span className="rounded border border-[#3EE88A]/20 bg-[#3EE88A]/10 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wider text-[#3EE88A]">
-                                                  Item {chunkIndex + 1}
-                                                </span>
-                                                {(() => {
-                                                  const chunkLabel = marketOpportunityLabel({
-                                                    intent: (m as api.InboxThread).parsed_intent || m.parsed_intent || inferredMessageIntent({ ...m, message: chunk }),
-                                                    text: chunk,
-                                                  });
-                                                  if (!chunkLabel || chunkLabel === "Market") return null;
-                                                  return (
-                                                    <span className={`badge ${marketOpportunityColor(chunkLabel)} text-[8px] px-1 py-0`}>
-                                                      {chunkLabel}
+                                          {listingChunks.map((chunk, chunkIndex) => {
+                                            const chunkLabel = marketOpportunityLabel({
+                                              intent: (m as api.InboxThread).parsed_intent || m.parsed_intent || inferredMessageIntent({ ...m, message: chunk }),
+                                              text: chunk,
+                                            });
+                                            return (
+                                              <div
+                                                key={`${m.id}-chunk-${chunkIndex}`}
+                                                className="rounded-md border border-white/10 bg-white/[0.025] px-3 py-2.5"
+                                              >
+                                                <div className="mb-2 flex items-center justify-between gap-2">
+                                                  <div className="flex items-center gap-1.5">
+                                                    {chunkLabel && chunkLabel !== "Market" && (
+                                                      <span className={`badge ${marketOpportunityColor(chunkLabel)} text-[8px] px-1.5 py-0.5`}>
+                                                        {chunkLabel}
+                                                      </span>
+                                                    )}
+                                                    <span className="text-[8px] font-bold uppercase tracking-wider text-zinc-500">
+                                                      Item {chunkIndex + 1}
                                                     </span>
-                                                  );
-                                                })()}
+                                                  </div>
+                                                </div>
+                                                <div className="text-xs text-zinc-200 whitespace-pre-wrap leading-relaxed text-left propai-message-content">
+                                                  <WhatsAppMessage
+                                                    text={chunk}
+                                                    sender={mSenderName}
+                                                    senderPhone={mPhone}
+                                                    entities={buildMessageEntities({ ...m, message: chunk })}
+                                                    onEntityClick={handleEntityClick}
+                                                  />
+                                                </div>
+                                                <MoneySignalChips text={chunk} label={chunkLabel} />
+                                                <div className="mt-2 flex items-center justify-end gap-2 border-t border-white/5 pt-2">
+                                                  {mPhone && (
+                                                    <a
+                                                      href={getWaLinkWithRecall(mPhone, chunk)}
+                                                      target="_blank"
+                                                      rel="noopener noreferrer"
+                                                      className="inline-flex items-center gap-1.5 rounded-md border border-[#3EE88A]/20 bg-[#3EE88A]/10 px-2 py-1 text-[10px] font-bold text-[#3EE88A] hover:bg-[#3EE88A]/15"
+                                                      title="Message this broker with this item recalled"
+                                                      onClick={(e) => e.stopPropagation()}
+                                                    >
+                                                      <MessageSquare className="h-3 w-3" strokeWidth={1.8} />
+                                                      WhatsApp
+                                                    </a>
+                                                  )}
+                                                  <button
+                                                    onClick={(e) => { e.stopPropagation(); selectMessage(m); }}
+                                                    className="text-[10px] font-semibold text-[#3EE88A] hover:underline"
+                                                  >
+                                                    Analyze
+                                                  </button>
+                                                </div>
                                               </div>
-                                              <div className="text-xs text-zinc-200 whitespace-pre-wrap leading-relaxed text-left propai-message-content">
-                                                <WhatsAppMessage
-                                                  text={chunk}
-                                                  sender={mSenderName}
-                                                  senderPhone={mPhone}
-                                                  entities={buildMessageEntities(m)}
-                                                  onEntityClick={handleEntityClick}
-                                                />
-                                              </div>
-                                            </div>
-                                          ))}
+                                            );
+                                          })}
                                         </div>
                                       ) : (
-                                        <div className="text-xs text-zinc-200 whitespace-pre-wrap leading-relaxed text-left propai-message-content">
-                                          <WhatsAppMessage
-                                            text={m.message || ""}
-                                            sender={mSenderName}
-                                            senderPhone={mPhone}
-                                            entities={buildMessageEntities(m)}
-                                            onEntityClick={handleEntityClick}
-                                          />
+                                        <div>
+                                          {mBadges.length > 0 && (
+                                            <div className="mb-2 flex flex-wrap gap-1">
+                                              {mBadges.map((b, bi) => (
+                                                <span key={bi} className={`badge badge-${b.color} text-[8px] px-1.5 py-0.5`}>
+                                                  {b.label}
+                                                </span>
+                                              ))}
+                                            </div>
+                                          )}
+                                          <div className="text-xs text-zinc-200 whitespace-pre-wrap leading-relaxed text-left propai-message-content">
+                                            <WhatsAppMessage
+                                              text={m.message || ""}
+                                              sender={mSenderName}
+                                              senderPhone={mPhone}
+                                              entities={buildMessageEntities(m)}
+                                              onEntityClick={handleEntityClick}
+                                            />
+                                          </div>
+                                          <MoneySignalChips text={m.message || ""} label={mBadges[0]?.label} />
                                         </div>
                                       )}
                                       {(m.duplicate_count || 0) > 1 && (
@@ -3038,8 +3153,8 @@ function InboxPageInner() {
                                         </div>
                                       )}
 
-                                      <div className="flex items-center justify-between pt-1.5 mt-1.5 border-t border-white/5">
-                                        <div className="flex gap-1 flex-wrap">
+                                      <div className={`${listingChunks.length > 1 ? "hidden" : "flex"} items-center justify-end gap-2 pt-1.5 mt-1.5 border-t border-white/5`}>
+                                        <div className="hidden">
                                           {mBadges.map((b, bi) => (
                                             <span key={bi} className={`badge badge-${b.color} text-[8px] px-1 py-0`}>
                                               {b.label}
@@ -3047,24 +3162,25 @@ function InboxPageInner() {
                                           ))}
                                         </div>
 
-                                        <div className="flex items-center gap-2 opacity-0 group-hover/message:opacity-100 transition-opacity">
+                                        <div className="flex items-center gap-2">
                                           {mPhone && (
                                             <a
                                               href={getWaLinkWithRecall(mPhone, m.message || "")}
                                               target="_blank"
                                               rel="noopener noreferrer"
-                                              className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-[#166534] hover:bg-[#15803d] text-green-100"
+                                              className="inline-flex items-center gap-1.5 rounded-md border border-[#3EE88A]/20 bg-[#3EE88A]/10 px-2 py-1 text-[10px] font-bold text-[#3EE88A] hover:bg-[#3EE88A]/15"
                                               title="Message this broker on WhatsApp"
                                               onClick={(e) => e.stopPropagation()}
                                             >
                                               <MessageSquare className="w-3 h-3" strokeWidth={1.8} />
+                                              WhatsApp
                                             </a>
                                           )}
                                           <button
                                             onClick={(e) => { e.stopPropagation(); selectMessage(m); }}
-                                            className="text-[9px] text-[#3EE88A] hover:underline"
+                                            className="text-[10px] font-semibold text-[#3EE88A] hover:underline"
                                           >
-                                            Analyze details →
+                                            Analyze
                                           </button>
                                         </div>
                                       </div>
