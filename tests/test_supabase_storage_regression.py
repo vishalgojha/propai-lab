@@ -80,6 +80,29 @@ def test_connection_details_falls_back_when_status_file_is_unknown(monkeypatch):
     assert details["messages_captured"] == 345
 
 
+def test_connection_details_uses_whatsapp_jobs_when_status_file_is_unknown(monkeypatch):
+    """Existing WhatsApp sync jobs are enough to unlock the connected workspace."""
+    import app
+    from types import SimpleNamespace
+
+    class FakeStorage:
+        def get_sync_jobs(self, limit=500, source="whatsapp"):
+            assert source == "whatsapp"
+            return [
+                SimpleNamespace(finished_at="2026-07-13T09:00:00Z"),
+                SimpleNamespace(finished_at="2026-07-13T09:05:00Z"),
+            ]
+
+    monkeypatch.setattr(app, "storage", FakeStorage())
+    monkeypatch.setattr(app, "_status_file", lambda: {"connection_state": "unknown", "connected": False})
+
+    details = app._connection_details()
+
+    assert details["connected"] is True
+    assert details["connection_state"] == "open"
+    assert details["total_groups"] == 2
+
+
 def test_supabase_create_client_supports_basic_query_flow():
     """The local adapter should support the query shape used by storage code."""
     from storage.supabase import create_client

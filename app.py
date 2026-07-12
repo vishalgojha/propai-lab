@@ -6654,6 +6654,25 @@ def _connection_details() -> dict:
         }
 
     try:
+        jobs = storage.get_sync_jobs(limit=500, source="whatsapp") if hasattr(storage, "get_sync_jobs") else []
+        if jobs:
+            last_finished = max((j.finished_at for j in jobs if getattr(j, "finished_at", None)), default=None)
+            return {
+                "connected": True,
+                "connection_state": "open",
+                "instance_name": "propai-whatsapp",
+                "device_name": "WhatsApp ingestor",
+                "phone_number": "",
+                "display_name": "",
+                "connected_since": last_finished,
+                "last_message_at": last_finished,
+                "total_groups": len(jobs),
+                "messages_captured": None,
+            }
+    except Exception:
+        pass
+
+    try:
         row = storage.db.execute(
             """SELECT sender, raw_payload, timestamp, synced_at, created_at
                FROM raw_messages
