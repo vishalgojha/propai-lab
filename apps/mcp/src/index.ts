@@ -19,8 +19,6 @@ import {
   getStaleLeadReactivation,
   buildPricingNegotiationBrief,
   logToolCall,
-  normalizePublicListings,
-  PUBLIC_LISTING_COLUMNS,
   qualifyLead,
   saveListingRecord,
   scheduleFollowUp,
@@ -1260,27 +1258,14 @@ export function createMcpServer(context: ToolContext = {}) {
         }
 
         case "requirement": {
-          // Requirements are in public_listings with listing_type='requirement'
-          const { data, error } = await supabase
-            .from("public_listings")
-            .select(PUBLIC_LISTING_COLUMNS)
-            .eq("source_message_id", value)
-            .maybeSingle();
-          if (error) throw new Error(error.message);
-          if (!data) {
+          const result = await getListingById(value);
+          if (!result) {
             return {
               structuredContent: { error: `Requirement "${value}" not found.` },
               content: [{ type: "text" as const, text: JSON.stringify({ error: `Requirement "${value}" not found.` }) }],
             };
           }
-          const normalized = normalizePublicListings([data])[0];
-          if (!normalized) {
-            return {
-              structuredContent: { error: `Requirement "${value}" not found.` },
-              content: [{ type: "text" as const, text: JSON.stringify({ error: `Requirement "${value}" not found.` }) }],
-            };
-          }
-          const r = normalized as Record<string, unknown>;
+          const r = result as Record<string, unknown>;
           const priceStr = r.price != null ? formatCurrencyCr(r.price as number) : "Budget not specified";
           const lines = [
             `Title: ${r.title || "Requirement"}`,

@@ -5,6 +5,8 @@ import type { IgrTransaction, LocalityStats, PublicListing } from "./types.js";
 
 export const PUBLIC_LISTING_COLUMNS =
   "source_message_id, source_group_name, listing_type, area, sub_area, location, price, price_type, size_sqft, furnishing, bhk, property_type, title, description, raw_message, cleaned_message, primary_contact_name, primary_contact_number, primary_contact_wa, message_timestamp";
+const PARSED_MARKET_COLUMNS =
+  "id, raw_message_id, listing_index, message_type, intent, bhk, price, price_unit, area_sqft, furnishing, location_raw, area, micro_market, building_name, broker_name, broker_phone, profile_name, raw_payload, summary_title, created_at, raw_messages(group_name, sender, sender_phone, message, timestamp)";
 const PLACEHOLDER_LOCALITIES = new Set([
   "unknown",
   "mumbai market",
@@ -24,6 +26,114 @@ function normalizeListingText(value: string | null | undefined) {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, " ")
     .trim();
+}
+
+function parseMaybeJson(value: unknown): Record<string, unknown> {
+  if (!value) return {};
+  if (typeof value === "object" && !Array.isArray(value)) return value as Record<string, unknown>;
+  if (typeof value !== "string") return {};
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as Record<string, unknown> : {};
+  } catch {
+    return {};
+  }
+}
+
+function firstString(...values: unknown[]) {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return null;
+}
+
+function normalizeParsedPrice(value: unknown, unit: unknown) {
+  const price = toNumber(value);
+  if (price == null) return null;
+  const normalizedUnit = String(unit || "").toLowerCase().replace(/[^a-z]/g, "");
+  if (["cr", "crore", "crores"].includes(normalizedUnit)) return price * 10_000_000;
+  if (["lac", "lakh", "lakhs", "l"].includes(normalizedUnit)) return price * 100_000;
+  if (["k", "thousand"].includes(normalizedUnit)) return price * 1_000;
+  return price;
+}
+
+function parseBhk(value: unknown) {
+  if (value == null) return null;
+  const direct = toNumber(value);
+  if (direct != null) return direct;
+  const match = String(value).match(/\d+(?:\.\d+)?/);
+  return match ? toNumber(match[0]) : null;
+}
+
+function inferListingTypeFromParsed(row: Record<string, unknown>, rawText: string) {
+  const text = [
+    row.intent,
+    row.message_type,
+    row.price_unit,
+    row.summary_title,
+    rawText,
+  ].filter(Boolean).join(" ").toLowerCase();
+
+  if (/(requirement|wanted|looking|need|tenant|buyer|rent req|lease req)/.test(text)) return "requirement";
+  if (/(rent|lease|monthly|tenant)/.test(text)) return "listing_rent";
+  if (/(sale|sell|outright|resale|distress|auction|cr\b|crore)/.test(text)) return "listing_sale";
+  return "listing";
+}
+
+function parsedSourceId(row: Record<string, unknown>) {
+  const rawId = String(row.raw_message_id || row.id || "");
+  const index = Number.isFinite(Number(row.listing_index)) ? Number(row.listing_index) : 0;
+  return `${rawId}:${index}`;
+}
+
+function sourceIdParts(listingId: string) {
+  const [rawId, index] = String(listingId).split(":");
+  return {
+    rawId: rawId && /^\d+$/.test(rawId) ? Number(rawId) : null,
+    index: index != null && /^\d+$/.test(index) ? Number(index) : null,
+  };
+}
+
+function mapParsedRowToPublicListing(row: Record<string, unknown>): PublicListing {
+  const rawMessage = Array.isArray(row.raw_messages) ? row.raw_messages[0] : row.raw_messages;
+  const raw = rawMessage && typeof rawMessage === "object" ? rawMessage as Record<string, unknown> : {};
+  const payload = parseMaybeJson(row.raw_payload);
+  const fullText = firstString(
+    payload.full_text,
+    payload.text,
+    payload.message,
+    row.summary_title,
+    raw.message,
+  );
+  const locality = firstString(row.micro_market, row.location_raw, row.area, row.building_name);
+  const title = firstString(row.summary_title, row.building_name, fullText?.split(/\r?\n/)[0]);
+  const brokerName = firstString(row.broker_name, row.profile_name, raw.sender);
+  const brokerPhone = firstString(row.broker_phone, raw.sender_phone);
+  const listingType = inferListingTypeFromParsed(row, fullText || "");
+
+  return {
+    source_message_id: parsedSourceId(row),
+    source_group_name: firstString(raw.group_name),
+    listing_type: listingType,
+    area: firstString(row.area, row.micro_market, row.location_raw),
+    sub_area: locality,
+    location: locality,
+    price: normalizeParsedPrice(row.price, row.price_unit),
+    price_type: firstString(row.price_unit),
+    size_sqft: toNumber(row.area_sqft),
+    furnishing: firstString(row.furnishing),
+    bhk: parseBhk(row.bhk),
+    property_type: listingType === "listing_rent" ? "rent" : listingType === "listing_sale" ? "sale" : null,
+    title,
+    description: fullText,
+    raw_message: fullText,
+    cleaned_message: fullText,
+    primary_contact_name: brokerName,
+    primary_contact_number: brokerPhone,
+    primary_contact_wa: brokerPhone,
+    message_timestamp: firstString(raw.timestamp, row.created_at),
+    created_at: firstString(row.created_at),
+  };
 }
 
 function normalizeIndianPhone(value: string | null | undefined) {
@@ -144,6 +254,59 @@ function applyListingType(query: any, requested?: string, fallback?: string) {
   return query.or(`listing_type.ilike.%${type}%,property_type.ilike.%${type}%`);
 }
 
+function filterPublicListingRows(rows: PublicListing[], input: {
+  locality?: string;
+  city?: string;
+  property_type?: "sale" | "rent" | "lease" | "all";
+  bhk?: number;
+  max_budget_cr?: number;
+  budget_min_cr?: number;
+  budget_max_cr?: number;
+  listingKind?: "listing" | "requirement";
+}) {
+  const terms = [input.locality, input.city].map((value) => normalizeListingText(value)).filter(Boolean);
+  const propertyType = input.property_type === "lease" ? "rent" : input.property_type;
+  const maxBudget = input.max_budget_cr ?? input.budget_max_cr;
+
+  return rows.filter((row) => {
+    const haystack = normalizeListingText([
+      row.area,
+      row.sub_area,
+      row.location,
+      row.title,
+      row.description,
+      row.raw_message,
+      row.source_group_name,
+    ].filter(Boolean).join(" "));
+    if (terms.length && !terms.every((term) => haystack.includes(term))) return false;
+
+    const dealType = inferPublicDealType(row);
+    if (input.listingKind === "requirement" && dealType !== "requirement") return false;
+    if (input.listingKind === "listing" && dealType === "requirement") return false;
+    if (propertyType && propertyType !== "all" && dealType !== propertyType) return false;
+    if (input.bhk != null && row.bhk !== input.bhk) return false;
+    if (maxBudget != null && row.price != null && row.price > maxBudget * 10_000_000) return false;
+    if (input.budget_min_cr != null && row.price != null && row.price < input.budget_min_cr * 10_000_000) return false;
+    return true;
+  });
+}
+
+async function fetchParsedMarketRows(limit: number, since?: string) {
+  let query = supabase
+    .from("parsed_output")
+    .select(PARSED_MARKET_COLUMNS)
+    .order("created_at", { ascending: false, nullsFirst: false })
+    .limit(limit);
+
+  if (since) {
+    query = query.gte("created_at", since);
+  }
+
+  const { data, error } = await query;
+  if (error) throw new Error(error.message);
+  return ((data || []) as Record<string, unknown>[]).map(mapParsedRowToPublicListing);
+}
+
 export async function logToolCall(brokerId: string | undefined, toolName: string, input: unknown) {
   console.log(JSON.stringify({ event: "mcp_tool_call", broker_id: brokerId || null, tool: toolName }));
 
@@ -171,58 +334,16 @@ export async function searchPublicListings(input: {
   limit?: number;
 }) {
   const limit = clampLimit(input.limit);
-  let query = supabase
-    .from("public_listings")
-    .select(PUBLIC_LISTING_COLUMNS)
-    .order("message_timestamp", { ascending: false, nullsFirst: false })
-    .limit(limit);
-
-  if (input.listingKind) {
-    if (input.listingKind === "listing") {
-      if (input.property_type === "sale" || input.property_type === "rent") {
-        query = query.eq("listing_type", DEAL_TYPE_MAP[input.property_type]);
-      } else {
-        query = query.eq("listing_type", "listing_rent");
-      }
-    } else {
-      query = query.eq("listing_type", "requirement");
-    }
-  } else {
-    query = applyListingType(query, input.property_type);
-  }
-
-  query = applyLocality(query, input.locality, input.city);
-
-  if (input.bhk != null) {
-    query = query.eq("bhk", input.bhk);
-  }
-
-  query = applyBudget(query, input.max_budget_cr ?? input.budget_max_cr);
-
-  if (input.budget_min_cr != null) {
-    query = query.gte("price", input.budget_min_cr * 10_000_000);
-  }
-
-  const { data, error } = await query;
-  if (error) throw new Error(error.message);
-  return normalizePublicListings(data || []);
+  const rows = await fetchParsedMarketRows(Math.max(limit * 20, 500));
+  return normalizePublicListings(filterPublicListingRows(rows, input)).slice(0, limit);
 }
 
 export async function getFreshStream(input: { hours?: number; city?: string; limit?: number }) {
   const hours = Math.min(Math.max(input.hours ?? 72, 1), 168);
   const since = new Date(Date.now() - hours * 3600000).toISOString();
-  let query = supabase
-    .from("public_listings")
-    .select(PUBLIC_LISTING_COLUMNS)
-    .gte("message_timestamp", since)
-    .order("message_timestamp", { ascending: false, nullsFirst: false })
-    .limit(clampLimit(input.limit, 50, 100));
-
-  query = applyLocality(query, undefined, input.city);
-
-  const { data, error } = await query;
-  if (error) throw new Error(error.message);
-  return normalizePublicListings(data || []).slice(0, clampLimit(input.limit, 50, 100));
+  const limit = clampLimit(input.limit, 50, 100);
+  const rows = await fetchParsedMarketRows(Math.max(limit * 10, 250), since);
+  return normalizePublicListings(filterPublicListingRows(rows, { city: input.city })).slice(0, limit);
 }
 
 export async function getWorkspaceListings(input: {
@@ -1046,23 +1167,9 @@ export async function getMarketSummary(input: {
 }) {
   const days = Math.min(Math.max(input.days ?? 30, 1), 180);
   const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
-  let query = supabase
-    .from("public_listings")
-    .select(PUBLIC_LISTING_COLUMNS)
-    .gte("message_timestamp", since)
-    .order("message_timestamp", { ascending: false, nullsFirst: false })
-    .limit(clampLimit(input.limit, 200, 500));
-
-  query = applyLocality(query, input.locality, input.city);
-  query = applyListingType(query, input.property_type);
-  if (input.bhk != null) {
-    query = query.eq("bhk", input.bhk);
-  }
-
-  const { data, error } = await query;
-  if (error) throw new Error(error.message);
-
-  const rows = normalizePublicListings(data || []);
+  const limit = clampLimit(input.limit, 200, 500);
+  const parsedRows = await fetchParsedMarketRows(limit, since);
+  const rows = normalizePublicListings(filterPublicListingRows(parsedRows, input));
 
   const prices = rows.map((row) => row.price).filter((value): value is number => value != null);
   const ppsf = rows
@@ -1642,16 +1749,23 @@ export async function getBuildingIntel(input: {
 }
 
 export async function getListingById(listingId: string) {
-  const { data, error } = await supabase
-    .from("public_listings")
-    .select(PUBLIC_LISTING_COLUMNS)
-    .eq("source_message_id", listingId)
-    .maybeSingle();
+  const parts = sourceIdParts(listingId);
+  let query = supabase
+    .from("parsed_output")
+    .select(PARSED_MARKET_COLUMNS);
 
+  if (parts.rawId != null) {
+    query = query.eq("raw_message_id", parts.rawId);
+    if (parts.index != null) query = query.eq("listing_index", parts.index);
+  } else {
+    query = query.eq("id", listingId);
+  }
+
+  const { data, error } = await query.limit(1).maybeSingle();
   if (error) throw new Error(error.message);
   if (!data) return null;
 
-  const normalized = normalizePublicListings([data]);
+  const normalized = normalizePublicListings([mapParsedRowToPublicListing(data as Record<string, unknown>)]);
   return normalized.length ? normalized[0] : null;
 }
 
