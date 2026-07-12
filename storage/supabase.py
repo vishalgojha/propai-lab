@@ -1814,6 +1814,13 @@ class SupabaseStorage(Storage):
 
     def get_observations_feed(self, limit: int = 50, offset: int = 0,
                               broker_key: str = "", intent: str = "") -> list[dict]:
+        if broker_key:
+            parsed_rows = self._get_parsed_observations_for_broker(
+                limit, offset, broker_key=broker_key, intent=intent
+            )
+            if parsed_rows:
+                return parsed_rows
+
         try:
             data = self.db.execute(
                 """SELECT public.get_observations_feed(
@@ -1839,7 +1846,11 @@ class SupabaseStorage(Storage):
         except Exception:
             pass
 
-        return self._get_parsed_observations_for_broker(limit, offset, broker_key=broker_key, intent=intent)
+        if broker_key:
+            return self._get_parsed_observations_for_broker(
+                limit, offset, broker_key=broker_key, intent=intent
+            )
+        return []
 
     def _get_parsed_observations_for_broker(self, limit: int = 50, offset: int = 0,
                                             broker_key: str = "", intent: str = "") -> list[dict]:
@@ -1883,18 +1894,29 @@ class SupabaseStorage(Storage):
                 continue
 
             seen_at = raw.get("timestamp") or parsed.get("created_at")
+            intent_value = (parsed.get("intent") or "").upper()
+            observation_type = (
+                "REQUIREMENT"
+                if intent_value in {"BUY", "BUYER", "REQUIREMENT", "RENTAL_SEEKER"}
+                else "LISTING"
+            )
             result.append({
                 "id": parsed.get("id"),
                 "fingerprint": f"parsed:{parsed.get('id')}",
                 "broker_key": phone or f"name:{name.lower()}",
                 "summary_title": parsed.get("summary_title") or parsed.get("normalized_message") or raw.get("message") or "",
+                "observation_type": observation_type,
                 "intent": parsed.get("intent"),
                 "bhk": parsed.get("bhk"),
                 "price": parsed.get("price"),
                 "price_unit": parsed.get("price_unit"),
+                "area_sqft": parsed.get("area_sqft"),
+                "furnishing": parsed.get("furnishing"),
+                "property_type": parsed.get("message_type"),
                 "building_name": parsed.get("building_name"),
                 "micro_market": parsed.get("micro_market"),
                 "location_raw": parsed.get("location_raw"),
+                "listing_index": parsed.get("listing_index"),
                 "first_seen": seen_at,
                 "last_seen": seen_at,
                 "times_seen": 1,
