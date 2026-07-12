@@ -1424,6 +1424,7 @@ def check_share_eligibility(parsed: dict, org_privacy: dict, conv_type: str) -> 
 
 
 # ── Parser helpers ──────────────────────────────────────────────────
+def generate_summary_title(parsed: dict, raw_text: str = "") -> str | None:
     pieces: list[str] = []
 
     lower = raw_text.lower()
