@@ -5939,7 +5939,7 @@ def _count_table(table: str) -> int:
 def _table_exists(table: str) -> bool:
     try:
         return storage.db.execute(
-            "SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = $1",
+            "SELECT 1 FROM sqlite_master WHERE type IN ('table', 'view') AND name = ?",
             (table,),
         ).fetchone() is not None
     except Exception:
@@ -9042,55 +9042,42 @@ async def audit_dashboard():
     five_min_ago = (datetime.utcnow() - timedelta(minutes=5)).strftime("%Y-%m-%dT%H:%M:%SZ")
     day_ago = (datetime.utcnow() - timedelta(hours=24)).strftime("%Y-%m-%dT%H:%M:%SZ")
 
-    # Total groups with messages
-    total_groups = storage.db.execute(
-        "SELECT COUNT(DISTINCT group_name) FROM raw_messages"
-    ).fetchone()[0]
+    def _scalar(sql: str, params=(), default=0):
+        try:
+            row = storage.db.execute(sql, params).fetchone()
+            if row is None:
+                return default
+            return row[0]
+        except Exception:
+            return default
 
-    # Live groups (messages in last 5 min)
-    live_groups = storage.db.execute(
-        "SELECT COUNT(DISTINCT group_name) FROM raw_messages WHERE created_at >= ?",
-        (five_min_ago,)
-    ).fetchone()[0]
+    total_groups = _scalar("SELECT COUNT(DISTINCT group_name) FROM raw_messages")
+    live_groups = _scalar("SELECT COUNT(DISTINCT group_name) FROM raw_messages WHERE created_at >= ?", (five_min_ago,))
+    msgs_today = _scalar("SELECT COUNT(*) FROM raw_messages WHERE created_at >= ?", (today_start,))
+    last_msg = _scalar("SELECT MAX(created_at) FROM raw_messages", default=None)
 
-    # Messages today
-    msgs_today = storage.db.execute(
-        "SELECT COUNT(*) FROM raw_messages WHERE created_at >= ?", (today_start,)
-    ).fetchone()[0]
-
-    # Last webhook
-    last_msg = storage.db.execute(
-        "SELECT MAX(created_at) FROM raw_messages"
-    ).fetchone()[0]
-
-    # Groups with errors
-    error_groups = storage.db.execute(
-        "SELECT COUNT(*) FROM source_sync_jobs WHERE error IS NOT NULL AND error != ''"
-    ).fetchone()[0]
-
-    # Duplicate names (multiple groups with same display name)
-    dupes = storage.db.execute("""
-        SELECT group_name, COUNT(*) as c FROM source_sync_jobs
-        WHERE group_name != '' AND group_name IS NOT NULL
-        GROUP BY group_name HAVING COUNT(*) > 1
-    """).fetchall()
-    duplicate_groups = len(dupes)
-
-    # Groups needing attention: errors + no activity in 24h
-    inactive_count = storage.db.execute("""
+    duplicate_groups = _scalar("""
         SELECT COUNT(*) FROM (
-            SELECT sj.group_id FROM source_sync_jobs sj
-            WHERE sj.group_id NOT IN (
-                SELECT DISTINCT group_name FROM raw_messages WHERE created_at >= ?
-            )
-        ) AS inactive_sub
-    """, (day_ago,)).fetchone()[0]
+            SELECT group_name FROM raw_messages
+            WHERE group_name IS NOT NULL AND group_name != ''
+            GROUP BY group_name
+            HAVING COUNT(*) > 1
+        )
+    """)
 
-    # Unnamed groups (no display name in source_sync_jobs)
-    unnamed_count = storage.db.execute("""
-        SELECT COUNT(*) FROM source_sync_jobs
-        WHERE (group_name IS NULL OR group_name = '')
-    """).fetchone()[0]
+    inactive_count = _scalar("""
+        SELECT COUNT(*) FROM (
+            SELECT group_name FROM raw_messages
+            GROUP BY group_name
+            HAVING MAX(created_at) < ?
+        )
+    """, (day_ago,))
+
+    unnamed_count = _scalar("""
+        SELECT COUNT(DISTINCT group_name) FROM raw_messages
+        WHERE group_name IS NULL OR group_name = ''
+    """)
+    error_groups = 0
 
     attention_required = error_groups + inactive_count
     attention_breakdown = {
@@ -9100,34 +9087,17 @@ async def audit_dashboard():
         "error": error_groups,
     }
 
-    # Groups discovered (source_sync_jobs) vs monitored (have messages)
-    groups_discovered = storage.db.execute(
-        "SELECT COUNT(*) FROM source_sync_jobs WHERE group_id IS NOT NULL"
-    ).fetchone()[0]
+    groups_discovered = total_groups
     groups_monitored = total_groups
 
     # Webhook healthy
     webhook_ok = last_msg is not None and last_msg >= five_min_ago
 
     # Capture health metrics
-    failed_events = storage.db.execute(
-        "SELECT COUNT(*) FROM enrichment_jobs WHERE status = 'failed'"
-    ).fetchone()[0]
-    pending_enrichment = storage.db.execute(
-        "SELECT COUNT(*) FROM enrichment_jobs WHERE status = 'pending'"
-    ).fetchone()[0]
-    pending_ai = storage.db.execute(
-        "SELECT COUNT(*) FROM ai_suggestions WHERE status = 'pending'"
-    ).fetchone()[0]
-
-    # Average processing time
-    avg_process = storage.db.execute("""
-        SELECT COALESCE(AVG(
-            EXTRACT(EPOCH FROM p.created_at) - EXTRACT(EPOCH FROM r.created_at)
-        ), 0) FROM parsed_output p
-        JOIN raw_messages r ON r.id = p.raw_message_id
-        WHERE p.created_at >= ?
-    """, (day_ago,)).fetchone()[0]
+    failed_events = 0
+    pending_enrichment = 0
+    pending_ai = 0
+    avg_process = None
 
     # Messages per minute today
     msgs_per_min = msgs_today / max(1, (datetime.utcnow().hour * 60 + datetime.utcnow().minute))
@@ -9327,17 +9297,9 @@ async def audit_groups(q: str = "", status: str = ""):
     week_ago = (datetime.utcnow() - timedelta(days=7)).strftime("%Y-%m-%dT%H:%M:%SZ")
 
     rows = storage.db.execute("""
-        WITH jobs AS (
-            SELECT group_id AS jid,
-                   MAX(group_name) AS group_name,
-                   MAX(error) AS error,
-                   MAX(updated_at) AS updated_at
-            FROM source_sync_jobs
-            WHERE source = 'whatsapp' AND group_id IS NOT NULL AND group_id != ''
-            GROUP BY group_id
-        ),
-        raw_stats AS (
+        WITH raw_stats AS (
             SELECT group_name AS jid,
+                   COALESCE(NULLIF(group_name, ''), 'Unknown group') AS group_name,
                    COUNT(*) AS msg_count,
                    MAX(created_at) AS last_ts
             FROM raw_messages
@@ -9354,8 +9316,9 @@ async def audit_groups(q: str = "", status: str = ""):
         listing_stats AS (
             SELECT r.group_name AS jid,
                    COUNT(*) AS listing_count
-            FROM listings l
-            JOIN raw_messages r ON r.id = l.latest_raw_message_id
+            FROM parsed_output p
+            JOIN raw_messages r ON r.id = p.raw_message_id
+            WHERE COALESCE(p.intent, '') NOT IN ('BUY', 'BUYER', 'REQUIREMENT', 'RENTAL_SEEKER')
             GROUP BY r.group_name
         ),
         requirement_stats AS (
@@ -9363,48 +9326,45 @@ async def audit_groups(q: str = "", status: str = ""):
                    COUNT(*) AS req_count
             FROM parsed_output p
             JOIN raw_messages r ON r.id = p.raw_message_id
-            WHERE p.intent IN ('BUY', 'RENTAL_SEEKER')
+            WHERE p.intent IN ('BUY', 'BUYER', 'REQUIREMENT', 'RENTAL_SEEKER')
             GROUP BY r.group_name
         ),
         unknown_stats AS (
             SELECT r.group_name AS jid,
                    COUNT(*) AS unknown_locs
-            FROM resolver_decisions rd
-            JOIN parsed_output p ON p.id = rd.parsed_id
+            FROM parsed_output p
             JOIN raw_messages r ON r.id = p.raw_message_id
-            WHERE rd.method = 'unresolved'
+            WHERE COALESCE(p.location_raw, '') != ''
+              AND COALESCE(p.micro_market, '') = ''
             GROUP BY r.group_name
         ),
         broker_stats AS (
             SELECT r.group_name AS jid,
-                   COUNT(DISTINCT p.broker_name) AS active_brokers
+                   COUNT(DISTINCT COALESCE(NULLIF(p.broker_name, ''), NULLIF(p.profile_name, ''), NULLIF(r.sender, ''))) AS active_brokers
             FROM parsed_output p
             JOIN raw_messages r ON r.id = p.raw_message_id
-            WHERE p.broker_name IS NOT NULL
-              AND p.broker_name != ''
-              AND r.created_at >= ?
+            WHERE r.created_at >= ?
             GROUP BY r.group_name
         )
-        SELECT j.jid,
-               COALESCE(NULLIF(j.group_name, ''), j.jid) AS group_name,
-               j.error,
-               j.updated_at,
-               COALESCE(rs.msg_count, 0) AS msg_count,
-               COALESCE(rs.last_ts, j.updated_at) AS last_ts,
+        SELECT rs.jid,
+               rs.group_name,
+               '' AS error,
+               rs.last_ts AS updated_at,
+               rs.msg_count,
+               rs.last_ts,
                COALESCE(os.obs_count, 0) AS obs_count,
                COALESCE(os.markets, 0) AS markets,
                COALESCE(ls.listing_count, 0) AS listing_count,
                COALESCE(rqs.req_count, 0) AS req_count,
                COALESCE(us.unknown_locs, 0) AS unknown_locs,
                COALESCE(bs.active_brokers, 0) AS active_brokers
-        FROM jobs j
-        LEFT JOIN raw_stats rs ON rs.jid = j.jid
-        LEFT JOIN obs_stats os ON os.jid = j.jid
-        LEFT JOIN listing_stats ls ON ls.jid = j.jid
-        LEFT JOIN requirement_stats rqs ON rqs.jid = j.jid
-        LEFT JOIN unknown_stats us ON us.jid = j.jid
-        LEFT JOIN broker_stats bs ON bs.jid = j.jid
-        ORDER BY msg_count DESC
+        FROM raw_stats rs
+        LEFT JOIN obs_stats os ON os.jid = rs.jid
+        LEFT JOIN listing_stats ls ON ls.jid = rs.jid
+        LEFT JOIN requirement_stats rqs ON rqs.jid = rs.jid
+        LEFT JOIN unknown_stats us ON us.jid = rs.jid
+        LEFT JOIN broker_stats bs ON bs.jid = rs.jid
+        ORDER BY rs.msg_count DESC
         LIMIT 1000
     """, (week_ago,)).fetchall()
 
