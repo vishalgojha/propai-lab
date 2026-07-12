@@ -199,15 +199,28 @@ def _extract_broker_from_signature(text: str) -> tuple[str | None, str | None]:
             return False
         return bool(_RE.match(r'^[A-Z][A-Za-z .&-]{2,}$', cleaned))
 
+    phone_candidate_re = re.compile(r'(?:\+?91[\s-]*)?[6-9](?:[\s-]*\d){9}')
+
+    def normalize_phone_candidate(value: str | None) -> str | None:
+        digits = re.sub(r'\D+', '', value or '')
+        if len(digits) == 12 and digits.startswith('91'):
+            digits = digits[-10:]
+        elif len(digits) == 11 and digits.startswith('0'):
+            digits = digits[-10:]
+        if len(digits) == 10 and re.match(r'^[6-9]\d{9}$', digits):
+            return digits
+        return None
+
     # Scan from bottom for signature patterns
     name = None
     phone = None
     for i in range(len(lines) - 1, -1, -1):
         line = lines[i]
         # Phone line
-        phone_match = _RE.search(r'(\d{10})', line)
-        if phone_match and not phone:
-            phone = phone_match.group(1)
+        phone_match = phone_candidate_re.search(line)
+        normalized_phone = normalize_phone_candidate(phone_match.group(0) if phone_match else None)
+        if normalized_phone and not phone:
+            phone = normalized_phone
             continue
         # Name line — starts with uppercase word, not a phone/email/URL
         if not name and valid_signature_name(line):

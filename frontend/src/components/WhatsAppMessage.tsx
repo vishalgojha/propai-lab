@@ -19,7 +19,7 @@ interface WhatsAppMessageProps {
 }
 
 const SEPARATOR_RE = /^[•\-\*═─━~]{3,}\s*$/;
-const PHONE_RE = /(?:\+?91[\s-]?)?[6-9]\d{4}[\s-]?\d{5}\b/g;
+const PHONE_RE = /(?:\+?91[\s-]*)?[6-9](?:[\s-]*\d){9}\b/g;
 const LISTING_START_RE =
   /(?:^|[\s|,-])(?:\d+(?:\.\d+)?\s*)?(?:bhk|rk|bed)\b.*\bavailable\b.*\b(?:rent|sale|lease)\b|^\s*(?:hot\s+deal|urgent|new\s+building|exclusive)\b/i;
 
@@ -324,7 +324,7 @@ export default function WhatsAppMessage({
       detectedPhones.push({
         type: "phone",
         text: match[0],
-        phone: normalizeDigits(match[0]),
+        phone: normalizeDigits(match[0]).slice(-10),
         exists: true,
       });
     }

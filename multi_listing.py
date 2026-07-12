@@ -837,8 +837,20 @@ def _parse_divider_block(
     return result
 
 
-_BROKER_LINE_RE = re.compile(r'(?:contact|call|whatsapp|📞|📱)\s*:?\s*([A-Z][a-zA-Z]+(?: [A-Z][a-zA-Z]+)*)\s*[-–]?\s*(\d{10})')
-_NAME_PHONE_RE = re.compile(r'^([A-Z][a-zA-Z]+(?: [A-Z][a-zA-Z]+)+)\s*[-–]?\s*(\d{10})$')
+_PHONE_CANDIDATE_RE = re.compile(r'(?:\+?91[\s-]*)?[6-9](?:[\s-]*\d){9}')
+_BROKER_LINE_RE = re.compile(r'(?:contact|call|whatsapp|📞|📱)\s*:?\s*([A-Z][a-zA-Z]+(?: [A-Z][a-zA-Z]+)*)\s*[-–]?\s*((?:\+?91[\s-]*)?[6-9](?:[\s-]*\d){9})')
+_CALL_NAME_CONTACT_RE = re.compile(r'\b(?:call|contact|whatsapp)\s+([A-Z][a-zA-Z]+(?: [A-Z][a-zA-Z]+){0,3})\s+(?:contact|call|whatsapp)\s*:?\s*((?:\+?91[\s-]*)?[6-9](?:[\s-]*\d){9})', re.I)
+_NAME_PHONE_RE = re.compile(r'^([A-Z][a-zA-Z]+(?: [A-Z][a-zA-Z]+)+)\s*[-–]?\s*((?:\+?91[\s-]*)?[6-9](?:[\s-]*\d){9})$')
+
+def _normalize_indian_phone(value: str | None) -> str | None:
+    digits = re.sub(r'\D+', '', value or '')
+    if len(digits) == 12 and digits.startswith('91'):
+        digits = digits[-10:]
+    elif len(digits) == 11 and digits.startswith('0'):
+        digits = digits[-10:]
+    if len(digits) == 10 and re.match(r'^[6-9]\d{9}$', digits):
+        return digits
+    return None
 
 def _extract_broker_from_block(text: str) -> tuple[str | None, str | None]:
     """Extract (broker_name, broker_phone) from the end of a block.
@@ -853,8 +865,10 @@ def _extract_broker_from_block(text: str) -> tuple[str | None, str | None]:
     # First pass: find the last phone number
     for i in range(len(lines) - 1, -1, -1):
         clean = re.sub(r'[*_`~📞📱🔹📍💰🏢📍📐🔐]', '', lines[i]).strip()
-        if re.search(r'(\d{10})', clean):
-            phone = re.search(r'(\d{10})', clean).group(1)
+        phone_match = _PHONE_CANDIDATE_RE.search(clean)
+        normalized_phone = _normalize_indian_phone(phone_match.group(0) if phone_match else None)
+        if normalized_phone:
+            phone = normalized_phone
             phone_line_idx = i
             break
 
@@ -863,13 +877,20 @@ def _extract_broker_from_block(text: str) -> tuple[str | None, str | None]:
 
     # Check the phone line itself for name + phone (e.g. "JUNED MENK 9967252525")
     phone_line_clean = re.sub(r'[*_`~📞📱🔹📍💰🏢📍📐🔐]', '', lines[phone_line_idx]).strip()
+    m = _CALL_NAME_CONTACT_RE.search(phone_line_clean)
+    if m:
+        name = m.group(1).strip()
+        phone = _normalize_indian_phone(m.group(2)) or phone
+        return name, phone
     m = _BROKER_LINE_RE.search(phone_line_clean)
     if m:
         name = m.group(1).strip()
+        phone = _normalize_indian_phone(m.group(2)) or phone
         return name, phone
     m = _NAME_PHONE_RE.search(phone_line_clean)
     if m:
         name = m.group(1).strip()
+        phone = _normalize_indian_phone(m.group(2)) or phone
         return name, phone
 
     # Second pass: look for name within 2 lines above phone line
