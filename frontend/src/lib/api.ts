@@ -61,13 +61,22 @@ export interface RawMessage {
   sender_phone?: string;
   broker_name?: string;
   broker_phone?: string;
+  building_name?: string;
+  micro_market?: string;
+  landmark_name?: string;
+  parsed_intent?: string;
+  message_count?: number;
+  latest_message_at?: string;
   message: string;
   message_type: string;
   timestamp: string;
+  created_at?: string;
   source: string;
   event_id: string;
   message_uid: string;
   raw_payload: string;
+  attachments?: string | Record<string, boolean>;
+  from_me?: boolean | number;
   synced_at: string;
   pipeline_version: string;
 }

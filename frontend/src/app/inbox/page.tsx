@@ -58,6 +58,15 @@ type TrainingPrompt = {
   actions: { label: string; action: string }[];
 };
 
+type ThreadFallbackItem = {
+  key: string;
+  title: string;
+  subtitle: string;
+  latest: api.InboxThread;
+  count: number;
+  type: "group" | "direct";
+};
+
 function stripEmojis(text: string | null | undefined): string {
   if (!text) return "";
   return text.replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F1E0}-\u{1F1FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{FE00}-\u{FE0F}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FA6F}\u{1FA70}-\u{1FAFF}\u{200D}\u{20E3}\u{231A}-\u{23FF}\u{25A0}-\u{25FF}\u{2934}-\u{2935}\u{2B05}-\u{2B55}\u{3030}\u{303D}\u{3297}\u{3299}\u{2122}\u{2139}\u{24C2}\u{25B6}\u{25C0}\u{25FB}-\u{25FE}\u{2600}-\u{27EB}]/gu, "").trim();
@@ -684,6 +693,7 @@ function InboxPageInner() {
   const [actionUndo, setActionUndo] = useState<{phone: string; name: string} | null>(null);
   const [openMenuBroker, setOpenMenuBroker] = useState<string | null>(null);
   const [expandedRawMessages, setExpandedRawMessages] = useState<Set<string>>(new Set());
+  const autoSelectedThreadRef = useRef<string>("");
 
   const handleHideBroker = async (phone: string) => {
     try {
@@ -774,6 +784,7 @@ function InboxPageInner() {
     setSelectedMsg(null);
     setSelectedMsgDetails(null);
     setConversationMessages([]);
+    autoSelectedThreadRef.current = "";
     window.history.replaceState({}, "", url.toString());
   }, []);
 
@@ -841,10 +852,10 @@ function InboxPageInner() {
   }, [brokerParam, observationParam, brokerFeed, slugs]);
 
   // 1. Initial Load of Feed & Suggestions
-  const loadFeed = useCallback(async (append = false) => {
+  const loadFeed = useCallback(async (append = false, requestedOffset = offset) => {
     setLoadingLeft(true);
     try {
-      const threadMsgs = await api.getInboxThreads(PAGE_SIZE, offset);
+      const threadMsgs = await api.getInboxThreads(PAGE_SIZE, requestedOffset);
       setMessages((prev) => (append ? [...prev, ...threadMsgs] : threadMsgs));
       if (!append) {
         const [groupResult, suggestionResult] = await Promise.allSettled([
@@ -869,6 +880,15 @@ function InboxPageInner() {
     }
   }, [offset]);
 
+  const resetSelectionForPageChange = useCallback(() => {
+    autoSelectedThreadRef.current = "";
+    setSelectedBroker(null);
+    setSelectedBrokerObservations([]);
+    setSelectedMsg(null);
+    setSelectedMsgDetails(null);
+    setConversationMessages([]);
+  }, []);
+
   const hasMore = messages.length >= PAGE_SIZE;
 
   const loadMore = useCallback(() => {
@@ -891,9 +911,9 @@ function InboxPageInner() {
       loadFeed(false);
     } else if (offset !== prevOffsetRef.current) {
       prevOffsetRef.current = offset;
-      loadFeed(offset > 0);
+      loadFeed(isMobile && offset > 0);
     }
-  }, [offset, loadFeed]);
+  }, [isMobile, offset, loadFeed]);
 
   // Fetch available slugs (saved views) for the inbox tabs
   useEffect(() => {
@@ -965,6 +985,18 @@ function InboxPageInner() {
     const local = digits.slice(-10);
     if (local.length !== 10) return phone || "—";
     return `+91 ${local.slice(0, 5)} ${local.slice(5)}`;
+  };
+
+  const threadKeyFor = (msg?: Partial<api.InboxThread | api.RawMessage> | null) => {
+    if (!msg) return "";
+    return (
+      (msg as Partial<api.InboxThread>).conversation_key ||
+      (msg as Partial<api.InboxThread>).chat_id ||
+      msg.sender_jid ||
+      msg.sender_phone ||
+      msg.group_name ||
+      (msg.id ? String(msg.id) : "")
+    );
   };
 
   const isRawWhatsAppId = (value?: string) => {
@@ -1391,9 +1423,9 @@ function InboxPageInner() {
         return haystack.includes(query);
       });
 
-  const threadFallbackItems = [
+  const threadFallbackItems: ThreadFallbackItem[] = [
     ...(activeSlug?.view_type === "brokers" ? [] : groupChats.map((chat) => ({
-      key: chat.conversationKey,
+      key: String(chat.conversationKey || ""),
       title: chat.title,
       subtitle: chat.groupLabel && chat.groupLabel !== chat.title ? chat.groupLabel : "WhatsApp group",
       latest: chat.latest,
@@ -1401,7 +1433,7 @@ function InboxPageInner() {
       type: "group" as const,
     }))),
     ...filteredDirectChats.map((chat) => ({
-      key: chat.senderKey,
+      key: String(chat.senderKey || ""),
       title: chat.name,
       subtitle:
         displayGroupName(chat.latest?.group_name)
@@ -1410,7 +1442,9 @@ function InboxPageInner() {
       count: chat.count,
       type: "direct" as const,
     })),
-  ].sort((a, b) => new Date(b.latest.timestamp).getTime() - new Date(a.latest.timestamp).getTime());
+  ]
+    .filter((item) => Boolean(item.key))
+    .sort((a, b) => new Date(b.latest.timestamp).getTime() - new Date(a.latest.timestamp).getTime());
 
   const showThreadFallback = activeSlug?.view_type !== "brokers" || (!loadingBrokerFeed && filteredBrokerFeed.length === 0);
 
@@ -1580,6 +1614,37 @@ function InboxPageInner() {
       setLoadingBrokerObs(false);
     }
   }, [updateUrlBroker, updateUrlObservation]);
+
+  useEffect(() => {
+    if (selectedMsg || selectedBroker || loadingLeft || loadingBrokerFeed) return;
+    if (activeSlug?.view_type !== "brokers") return;
+
+    const firstBroker = filteredBrokerFeed[0];
+    if (firstBroker?.primary_phone) {
+      const key = `broker:${firstBroker.primary_phone}`;
+      if (autoSelectedThreadRef.current === key) return;
+      autoSelectedThreadRef.current = key;
+      selectBroker(firstBroker);
+      return;
+    }
+
+    const firstThread = threadFallbackItems[0];
+    if (firstThread?.latest) {
+      const key = `thread:${firstThread.key}`;
+      if (autoSelectedThreadRef.current === key) return;
+      autoSelectedThreadRef.current = key;
+      selectConversation(firstThread.latest);
+    }
+  }, [
+    activeSlug?.view_type,
+    filteredBrokerFeed,
+    loadingBrokerFeed,
+    loadingLeft,
+    selectedBroker,
+    selectedMsg,
+    selectBroker,
+    threadFallbackItems,
+  ]);
 
   // Keyboard navigation: arrow up/down through message blocks, enter to select
   useEffect(() => {
@@ -1909,7 +1974,7 @@ function InboxPageInner() {
   const selectedHasMarketContext = hasMarketContext(selectedMsgDetails);
 
   return (
-    <div className="flex flex-col h-full min-h-0 border border-white/10 rounded-2xl overflow-hidden bg-black">
+    <div className="flex flex-col h-full min-h-0 max-h-full border border-white/10 rounded-2xl overflow-hidden bg-black">
       
       {/* Context Action Menu - floats over message area */}
       <TextSelectionMenu
@@ -1944,17 +2009,17 @@ function InboxPageInner() {
       )}
 
       {/* Main Layout Grid */}
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex-1 flex min-h-0 overflow-hidden">
         
         {/* ================= LEFT PANEL: INBOX ================= */}
-        <div className={`${isMobile && mobileView !== "list" ? "hidden" : ""}`}>
+        <div className={`h-full min-h-0 shrink-0 ${isMobile && mobileView !== "list" ? "hidden" : ""}`}>
         <ResizablePanel
           defaultWidth={320}
           minWidth={240}
           maxWidth={500}
           storageKey="propai-inbox-left-width"
           mobile={isMobile}
-          className="border-r border-white/10 bg-black/80"
+          className="h-full min-h-0 border-r border-white/10 bg-black/80"
         >
           <div className="flex flex-col h-full">
           {/* Panel Search & Header */}
@@ -1965,7 +2030,12 @@ function InboxPageInner() {
                 <div className="hidden sm:block text-[10px] text-zinc-500 mt-0.5">WhatsApp conversations with PropAI memory</div>
               </div>
               <button
-                onClick={() => { setOffset(0); prevOffsetRef.current = 0; loadFeed(false); }}
+                onClick={() => {
+                  resetSelectionForPageChange();
+                  setOffset(0);
+                  prevOffsetRef.current = 0;
+                  loadFeed(false, 0);
+                }}
                 className="text-[10px] sm:text-xs text-[#3EE88A] hover:underline"
                 disabled={loadingLeft}
               >
@@ -2097,12 +2167,8 @@ function InboxPageInner() {
                     })
                   }
                   {showThreadFallback && threadFallbackItems.map((item) => {
-                    const isSelected = selectedMsg && (
-                      selectedMsg.chat_id === item.key ||
-                      ("conversation_key" in selectedMsg && selectedMsg.conversation_key === item.key) ||
-                      selectedMsg.group_name === item.latest.group_name ||
-                      selectedMsg.sender_jid === item.latest.sender_jid
-                    );
+                    const selectedKey = threadKeyFor(selectedMsg);
+                    const isSelected = Boolean(selectedKey && selectedKey === item.key);
                     return (
                       <button
                         key={`${item.type}-${item.key}`}
@@ -2147,7 +2213,10 @@ function InboxPageInner() {
           ) : (
           <div className="p-3 border-t border-white/10 flex items-center justify-between bg-black/80">
             <button
-              onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
+              onClick={() => {
+                resetSelectionForPageChange();
+                setOffset(Math.max(0, offset - PAGE_SIZE));
+              }}
               disabled={offset === 0}
               className="px-2 py-1 text-[10px] font-bold bg-zinc-800 text-zinc-400 border border-white/10 rounded disabled:opacity-30"
             >
@@ -2157,7 +2226,10 @@ function InboxPageInner() {
               Page {Math.floor(offset / PAGE_SIZE) + 1}
             </span>
             <button
-              onClick={() => setOffset(offset + PAGE_SIZE)}
+              onClick={() => {
+                resetSelectionForPageChange();
+                setOffset(offset + PAGE_SIZE);
+              }}
               disabled={messages.length < PAGE_SIZE}
               className="px-2 py-1 text-[10px] font-bold bg-zinc-800 text-zinc-400 border border-white/10 rounded disabled:opacity-30"
             >
@@ -2170,7 +2242,7 @@ function InboxPageInner() {
         </div>
 
         {/* ================= CENTER PANEL: CONVERSATION ================= */}
-        <div className={`flex-1 flex flex-col bg-[#070b0e] overflow-hidden ${isMobile && mobileView !== "conversation" ? "hidden" : ""}`}>
+        <div className={`flex-1 min-w-0 h-full min-h-0 flex flex-col bg-[#070b0e] overflow-hidden ${isMobile && mobileView !== "conversation" ? "hidden" : ""}`}>
           {activeSlug?.view_type === "brokers" && selectedBroker ? (
             <>
               {/* Observation Timeline Header */}
@@ -2524,7 +2596,7 @@ function InboxPageInner() {
                                     }
                                     if (m.attachments) {
                                       try {
-                                        const att = JSON.parse(m.attachments);
+                                        const att = typeof m.attachments === "string" ? JSON.parse(m.attachments) : m.attachments;
                                         if (att.image) badges.push({ label: "Image", color: "cyan" });
                                         if (att.video) badges.push({ label: "Video", color: "pink" });
                                         if (att.document) badges.push({ label: "Document", color: "orange" });
@@ -2658,7 +2730,7 @@ function InboxPageInner() {
         </div>
 
         {/* ================= RIGHT PANEL: INTELLIGENCE PANEL ================= */}
-        <div className={`${isMobile && mobileView !== "analysis" ? "hidden" : ""}`}>
+        <div className={`h-full min-h-0 shrink-0 ${isMobile && mobileView !== "analysis" ? "hidden" : ""}`}>
         {rightPoppedOut && (
           <button
             type="button"
@@ -2685,7 +2757,7 @@ function InboxPageInner() {
           className={
             rightPoppedOut
               ? "fixed z-50 top-6 right-6 bottom-6 left-[28%] border border-white/10 rounded-2xl shadow-2xl bg-black/80"
-              : "border-l border-white/10 bg-black/80"
+              : "h-full min-h-0 border-l border-white/10 bg-black/80"
           }
         >
           <div className="flex flex-col h-full">
