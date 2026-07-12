@@ -516,9 +516,32 @@ function splitDelimitedListingText(text?: string) {
   const lines = rawLines.map((line) => line.trim()).filter(Boolean);
   if (lines.length < 8) return [];
 
+  const normalizeBoundaryLine = (line: string) => stripEmojis(line).replace(/^[^\p{L}\p{N}]+/u, "").trim();
+  const hasPropertyDetails = (value: string) =>
+    /\b(?:\d+(?:\.\d+)?\s*(?:BHK|RK)|Commercial|Office|Shop|Godown|Warehouse|Apartment|Villa)\b/i.test(value);
+  const hasMoneyDetails = (value: string) =>
+    /\b(?:Sale\s*Price|Rent|Budget|Deposit|Asking|Quote|Price|CR|Crore|Lac|Lakh|K)\b/i.test(value);
+  const isDirectBoundary = (line: string) =>
+    /^(?:\d+(?:\.\d+)?\s*(?:BHK|RK)|Commercial|Office|Shop|Godown|Warehouse)\b/i.test(normalizeBoundaryLine(line));
+  const isLocationBoundary = (line: string, index: number) => {
+    const cleaned = normalizeBoundaryLine(line);
+    if (cleaned.length < 3 || cleaned.length > 60) return false;
+    if (/^\d/.test(cleaned)) return false;
+    if (/^(?:Sale|Rent|Budget|Deposit|Price|Carpet|Area|Furnished|Unfurnished|Bare|Higher|Lower|Middle|Car|Parking|Park|Open|Well|Spacious|Ready|Possession)\b/i.test(cleaned)) {
+      return false;
+    }
+    if (/^[A-Za-z][A-Za-z\s]+:$/.test(cleaned)) return false;
+    const startsWithMarker = /^[^\p{L}\p{N}]/u.test(line.trim());
+    const mentionsLocation = /\b(?:road|rd|lane|marg|nagar|west|east|juhu|bandra|andheri|khar|santacruz|bkc|worli|parel|malad|goregaon|thane)\b/i.test(cleaned);
+    if (!startsWithMarker && !mentionsLocation) return false;
+    const lookahead = lines.slice(index + 1, index + 9).join("\n");
+    return hasPropertyDetails(lookahead) && hasMoneyDetails(lookahead);
+  };
+
   const boundaryIndexes: number[] = [];
   lines.forEach((line, index) => {
-    if (/^(?:\d+(?:\.\d+)?\s*(?:BHK|RK)|Commercial|Office|Shop|Godown|Warehouse)\b/i.test(line)) {
+    if (isDirectBoundary(line) || isLocationBoundary(line, index)) {
+      if (boundaryIndexes[boundaryIndexes.length - 1] === index - 1) return;
       boundaryIndexes.push(index);
     }
   });
