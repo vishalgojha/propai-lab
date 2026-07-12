@@ -2974,6 +2974,7 @@ function InboxPageInner() {
                             const first = block[0];
                             const last = block[block.length - 1];
                             const isSelf = first.from_me === 1 || first.from_me === true || first.sender === "seed-bot" || first.sender === "system" || first.sender === "owner";
+                            const blockHasSplitListings = block.some((m) => splitDelimitedListingText(m.message).length > 1);
                             const bubbleBg = isSelf
                               ? "bg-emerald-950/40 border border-emerald-800/30 ml-auto"
                               : "border border-white/10";
@@ -2981,9 +2982,9 @@ function InboxPageInner() {
                             return (
                               <div
                                 key={first.id}
-                                className={`max-w-[72%] rounded-2xl p-4 space-y-2 relative transition-all ${
-                                  isSelf ? "text-right ml-auto" : ""
-                                } ${bubbleBg}`}
+                                className={`${
+                                  blockHasSplitListings ? "w-full rounded-none border-0 bg-transparent p-0" : `max-w-[72%] rounded-2xl p-4 ${bubbleBg}`
+                                } space-y-2 relative transition-all ${isSelf && !blockHasSplitListings ? "text-right ml-auto" : ""}`}
                               >
 <div className={`flex items-center gap-2 text-[10px] text-zinc-500 ${isSelf ? "justify-end" : "justify-between"}`}>
                                    <BrokerTooltip 
@@ -3046,19 +3047,25 @@ function InboxPageInner() {
                                         });
                                       }}
                                       className={`relative group/message transition-all cursor-pointer ${
-                                        useInnerCard
-                                          ? "rounded-lg border border-transparent px-2.5 py-2 hover:bg-white/[0.025] hover:border-white/[0.06]"
-                                          : ""
+                                        listingChunks.length > 1
+                                          ? "w-full"
+                                          : useInnerCard
+                                            ? "rounded-lg border border-transparent px-2.5 py-2 hover:bg-white/[0.025] hover:border-white/[0.06]"
+                                            : ""
                                       }`}
                                     >
                                       {listingChunks.length > 1 ? (
                                         <div className="space-y-2">
                                           <div className="flex items-center justify-between gap-2 border-b border-white/10 pb-2">
-                                            <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
-                                              Split into {listingChunks.length} items
-                                            </span>
+                                            <div className="min-w-0">
+                                              <div className="text-xs font-semibold text-white">{mSenderName || resolveMessageSenderName(first)}</div>
+                                              <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+                                                Split into {listingChunks.length} items
+                                              </span>
+                                            </div>
                                             <span className="text-[9px] text-zinc-600">Original WhatsApp post</span>
                                           </div>
+                                          <div className="divide-y divide-white/[0.06]">
                                           {listingChunks.map((chunk, chunkIndex) => {
                                             const chunkLabel = marketOpportunityLabel({
                                               intent: (m as api.InboxThread).parsed_intent || m.parsed_intent || inferredMessageIntent({ ...m, message: chunk }),
@@ -3067,7 +3074,7 @@ function InboxPageInner() {
                                             return (
                                               <div
                                                 key={`${m.id}-chunk-${chunkIndex}`}
-                                                className="rounded-md border border-white/10 bg-white/[0.025] px-3 py-2.5"
+                                                className="py-3 first:pt-2 last:pb-2"
                                               >
                                                 <div className="mb-2 flex items-center justify-between gap-2">
                                                   <div className="flex items-center gap-1.5">
@@ -3091,7 +3098,7 @@ function InboxPageInner() {
                                                   />
                                                 </div>
                                                 <MoneySignalChips text={chunk} label={chunkLabel} />
-                                                <div className="mt-2 flex items-center justify-end gap-2 border-t border-white/5 pt-2">
+                                                <div className="mt-2 flex items-center justify-end gap-2">
                                                   {mPhone && (
                                                     <a
                                                       href={getWaLinkWithRecall(mPhone, chunk)}
@@ -3115,6 +3122,7 @@ function InboxPageInner() {
                                               </div>
                                             );
                                           })}
+                                          </div>
                                         </div>
                                       ) : (
                                         <div>
