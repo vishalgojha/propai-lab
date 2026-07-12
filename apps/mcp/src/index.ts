@@ -890,6 +890,13 @@ export function createMcpServer(context: ToolContext = {}) {
     {
       description:
         "Search real estate listings from PropAI's live WhatsApp stream. Use when someone asks about available properties, flats, offices, or shops in a locality.",
+      _meta: {
+        ui: {
+          resourceUri: LISTING_CARDS_URI,
+          visibility: ["model", "app"],
+        },
+        "ui/resourceUri": LISTING_CARDS_URI,
+      },
       inputSchema: {
         locality: z.string().describe("Area name e.g. Bandra, Powai, Andheri").optional(),
         city: z.string().describe("City e.g. Mumbai, Pune").optional(),
@@ -917,7 +924,9 @@ export function createMcpServer(context: ToolContext = {}) {
         _meta: {
           ui: {
             resourceUri: LISTING_CARDS_URI,
+            visibility: ["model", "app"],
           },
+          "ui/resourceUri": LISTING_CARDS_URI,
           listings: listingCards,
         },
       } as any;

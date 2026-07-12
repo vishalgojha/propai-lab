@@ -1,4 +1,5 @@
 export const LISTING_CARDS_URI = "ui://propai/listing-cards";
+export const MCP_APP_MIME_TYPE = "text/html;profile=mcp-app";
 
 export const listingCardsHtml = `<!DOCTYPE html>
 <html>
