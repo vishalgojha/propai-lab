@@ -67,6 +67,8 @@ export interface RawMessage {
   parsed_intent?: string;
   message_count?: number;
   latest_message_at?: string;
+  duplicate_count?: number;
+  duplicate_group_names?: string[];
   message: string;
   message_type: string;
   timestamp: string;

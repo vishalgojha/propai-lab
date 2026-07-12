@@ -19,10 +19,6 @@ import InboxAIChat from "@/components/InboxAIChat";
 import {
   Users,
   User,
-  Phone,
-  Search,
-  Video,
-  Info,
   Sparkles,
   Building2,
   MapPin,
@@ -378,6 +374,14 @@ function TeachingPromptCard({
 
 const FIRM_LINE_RE = /\b(?:real\s+estate|realtors?|properties|property|consultants?|associates|llp|pvt|private|ltd|estate)\b/i;
 
+function normalizeMessageForDedupe(text?: string) {
+  return (text || "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .replace(/[^\p{L}\p{N}\s]/gu, "")
+    .trim();
+}
+
 type EntityDetailShape = {
   raw?: Partial<api.RawMessage>;
   parsed?: Partial<api.ParsedObservation> & {
@@ -393,6 +397,45 @@ type EntityDetailShape = {
     building_name?: string;
     micro_market?: string;
   }>;
+};
+
+type BrokerEvidenceItem = {
+  type?: string;
+  source?: string;
+};
+
+type BrokerObservationRow = {
+  id?: string | number;
+  latest_raw_message_id?: string | number;
+  raw_message_id?: string | number;
+  raw_message?: string;
+  summary_title?: string;
+  broker_phone?: string;
+  broker_name?: string;
+  evidence_list?: BrokerEvidenceItem[];
+  first_seen?: string;
+  last_seen?: string;
+  observation_type?: string;
+  intent?: string;
+  property_type?: string;
+  bhk?: string;
+  price?: number;
+  price_unit?: string;
+  micro_market?: string;
+  alternate_intent?: string;
+  times_seen?: number;
+  building_name?: string;
+};
+
+type BrokerObservationGroup = {
+  key: string;
+  rawMessageId?: string | number;
+  rawMessageIds: string[];
+  representative: BrokerObservationRow;
+  observations: BrokerObservationRow[];
+  firstSeen?: string;
+  lastSeen?: string;
+  duplicateCount: number;
 };
 
 function addEntity(entities: MessageEntity[], entity: MessageEntity) {
@@ -657,26 +700,37 @@ function InboxPageInner() {
   }, []);
 
   const groupedBrokerObservations = useMemo(() => {
-    const groups = new Map<string, any>();
-    for (const obs of selectedBrokerObservations) {
-      const key = String(obs.latest_raw_message_id || obs.raw_message_id || obs.id);
+    const groups = new Map<string, BrokerObservationGroup>();
+    for (const obs of selectedBrokerObservations as BrokerObservationRow[]) {
+      const rawMessageId = obs.latest_raw_message_id || obs.raw_message_id || obs.id;
+      const normalizedText = normalizeMessageForDedupe(obs.raw_message || obs.summary_title || "");
+      const brokerKey = normalizeMessageForDedupe(
+        [obs.broker_phone, obs.broker_name, selectedBroker?.phone, selectedBroker?.canonical_name].filter(Boolean).join(" ")
+      );
+      const key = normalizedText ? `${brokerKey || "broker"}::${normalizedText}` : String(rawMessageId);
       const existing = groups.get(key);
       if (!existing) {
         groups.set(key, {
           key,
-          rawMessageId: obs.latest_raw_message_id || obs.raw_message_id || obs.id,
+          rawMessageId,
+          rawMessageIds: rawMessageId ? [String(rawMessageId)] : [],
           representative: obs,
           observations: [obs],
           firstSeen: obs.first_seen,
           lastSeen: obs.last_seen,
+          duplicateCount: 1,
         });
         continue;
       }
       existing.observations.push(obs);
+      if (rawMessageId && !existing.rawMessageIds.includes(String(rawMessageId))) {
+        existing.rawMessageIds.push(String(rawMessageId));
+      }
+      existing.duplicateCount = existing.rawMessageIds.length || 1;
       if (obs.last_seen && (!existing.lastSeen || new Date(obs.last_seen).getTime() > new Date(existing.lastSeen).getTime())) {
         existing.lastSeen = obs.last_seen;
         existing.representative = obs;
-        existing.rawMessageId = obs.latest_raw_message_id || obs.raw_message_id || obs.id;
+        existing.rawMessageId = rawMessageId;
       }
       if (obs.first_seen && (!existing.firstSeen || obs.first_seen < existing.firstSeen)) {
         existing.firstSeen = obs.first_seen;
@@ -685,7 +739,7 @@ function InboxPageInner() {
     return [...groups.values()].sort(
       (a, b) => new Date(b.lastSeen || b.representative.last_seen || 0).getTime() - new Date(a.lastSeen || a.representative.last_seen || 0).getTime()
     );
-  }, [selectedBrokerObservations]);
+  }, [selectedBroker, selectedBrokerObservations]);
   
   // Interaction/UI States
   const [revealedPhone, setRevealedPhone] = useState<Record<string, boolean>>({});
@@ -975,15 +1029,14 @@ function InboxPageInner() {
 
   // Helper formatting functions
   const maskPhoneString = (phone: string) => {
-    const digits = phone?.replace(/\D/g, "") || "";
-    if (digits.length < 4) return phone || "—";
+    const digits = normalizeRealPhone(phone);
+    if (digits.length < 4) return "Phone unavailable";
     return `••••••${digits.slice(-4)}`;
   };
 
   const displayPhoneString = (phone: string) => {
-    const digits = phone?.replace(/\D/g, "") || "";
-    const local = digits.slice(-10);
-    if (local.length !== 10) return phone || "—";
+    const local = normalizeRealPhone(phone);
+    if (!local) return "";
     return `+91 ${local.slice(0, 5)} ${local.slice(5)}`;
   };
 
@@ -1040,14 +1093,14 @@ function InboxPageInner() {
   };
 
   const getWaLink = (phone: string) => {
-    const digits = phone?.replace(/\D/g, "");
-    return digits ? `https://wa.me/${digits.startsWith("91") ? digits : "91" + digits}` : "#";
+    const digits = normalizeRealPhone(phone);
+    return digits ? `https://wa.me/91${digits}` : "#";
   };
 
   const getWaLinkWithRecall = (phone: string, extractedText: string) => {
-    const digits = phone?.replace(/\D/g, "");
+    const digits = normalizeRealPhone(phone);
     if (!digits) return "#";
-    const normalized = digits.startsWith("91") ? digits : `91${digits}`;
+    const normalized = `91${digits}`;
     const cleanedExtract = extractedText.trim();
     const clippedExtract =
       cleanedExtract.length > 320 ? `${cleanedExtract.slice(0, 320)}...` : cleanedExtract;
@@ -1061,16 +1114,19 @@ function InboxPageInner() {
   };
 
   const isRealPhoneDigits = (value?: string) => {
-    const digits = (value || "").replace(/\D/g, "");
-    if (digits.length === 10) return true;
-    if (digits.length === 12 && digits.startsWith("91")) return true;
-    if (digits.length === 11 && digits.startsWith("0")) return true;
+    const raw = (value || "").trim();
+    if (!raw || /[xX*•]/.test(raw)) return false;
+    const digits = raw.replace(/\D/g, "");
+    if (digits.length === 10) return /^[6-9]\d{9}$/.test(digits);
+    if (digits.length === 12 && digits.startsWith("91")) return /^[6-9]\d{9}$/.test(digits.slice(-10));
+    if (digits.length === 11 && digits.startsWith("0")) return /^[6-9]\d{9}$/.test(digits.slice(-10));
     return false;
   };
 
   const normalizeRealPhone = (value?: string) => {
-    const digits = (value || "").replace(/\D/g, "");
-    if (!isRealPhoneDigits(digits)) return "";
+    const raw = (value || "").trim();
+    if (!isRealPhoneDigits(raw)) return "";
+    const digits = raw.replace(/\D/g, "");
     if (digits.length === 12 && digits.startsWith("91")) return digits.slice(-10);
     if (digits.length === 11 && digits.startsWith("0")) return digits.slice(-10);
     return digits;
@@ -1096,6 +1152,32 @@ function InboxPageInner() {
       phoneFromJid((msg as Partial<api.InboxThread>)?.conversation_key)
     );
   };
+
+  const inferredMessageIntent = (msg?: Partial<api.RawMessage> | null) => {
+    const text = (msg?.message || "").toLowerCase();
+    if (!text) return "";
+    if (/\b(requirement|required|wanted|looking|need|client wants|buyer|tenant|lease requirement|rent requirement)\b/.test(text)) {
+      return "BUY";
+    }
+    if (/\b(available|for sale|distress sale|outright|rent|lease|asking|price|carpet|bhk|sq\.?ft|inspection)\b/.test(text)) {
+      return "SELL";
+    }
+    return "";
+  };
+
+  const intentLabelFor = (intent?: string) => {
+    const intentUpper = (intent || "").toUpperCase();
+    if (intentUpper === "SELL") return "Listing";
+    if (intentUpper === "BUY") return "Requirement";
+    if (intentUpper === "RENT") return "Rental";
+    if (intentUpper === "COMMERCIAL") return "Commercial";
+    return intent || "";
+  };
+
+  const intentBadgeColorFor = (intent?: string) =>
+    ({ SELL: "green", BUY: "purple", RENT: "yellow", COMMERCIAL: "orange" } as Record<string, string>)[
+      (intent || "").toUpperCase()
+    ] || "blue";
 
   const resolveMessageSenderName = (msg?: Partial<api.RawMessage> | null) => {
     if (!msg) return "";
@@ -1456,7 +1538,38 @@ function InboxPageInner() {
 
   const groupedConversationMessages: [string, api.RawMessage[][]][] = (() => {
     const grouped: Record<string, api.RawMessage[]> = {};
-    conversationMessages.forEach((message) => {
+    const dedupedMessages = Array.from(
+      conversationMessages.reduce((map, message) => {
+        const dedupeText = normalizeMessageForDedupe(message.message);
+        const senderKey = message.sender_jid || message.sender_phone || message.sender || "";
+        const key = `${senderKey}::${dedupeText || message.id}`;
+        const existing = map.get(key);
+        if (!existing) {
+          map.set(key, {
+            ...message,
+            duplicate_count: 1,
+            duplicate_group_names: message.group_name ? [message.group_name] : [],
+          });
+          return map;
+        }
+        existing.duplicate_count = (existing.duplicate_count || 1) + 1;
+        if (message.group_name && !(existing.duplicate_group_names || []).includes(message.group_name)) {
+          existing.duplicate_group_names = [...(existing.duplicate_group_names || []), message.group_name];
+        }
+        const existingTime = new Date(existing.timestamp || existing.created_at || 0).getTime();
+        const messageTime = new Date(message.timestamp || message.created_at || 0).getTime();
+        if (messageTime > existingTime) {
+          map.set(key, {
+            ...message,
+            duplicate_count: existing.duplicate_count,
+            duplicate_group_names: existing.duplicate_group_names,
+          });
+        }
+        return map;
+      }, new Map<string, api.RawMessage>()).values()
+    ).sort((a, b) => new Date(a.timestamp || a.created_at || 0).getTime() - new Date(b.timestamp || b.created_at || 0).getTime());
+
+    dedupedMessages.forEach((message) => {
       const rawDate = message.timestamp || "";
       const date = rawDate ? new Date(rawDate.endsWith("Z") ? rawDate : `${rawDate}Z`) : new Date();
       const label = Number.isNaN(date.getTime())
@@ -2265,7 +2378,7 @@ function InboxPageInner() {
                       {selectedBroker.canonical_name || selectedBroker.name || selectedMsgDetails?.parsed?.broker_name || "Unknown Broker"}
                     </h3>
                     <div className="text-[10px] text-zinc-500 flex items-center gap-2 mt-0.5 flex-wrap">
-                      <span className="truncate">{displayPhoneString(selectedBroker.phone)}</span>
+                      <span className="truncate">{displayPhoneString(selectedBroker.phone) || "Phone unavailable"}</span>
                       <span>•</span>
                       <span>{selectedBrokerObservations.length} observations</span>
                       {selectedBroker.building_count > 0 && (
@@ -2278,13 +2391,15 @@ function InboxPageInner() {
                   </div>
                 </div>
                 <div className="flex items-center gap-1.5">
-                  <button
-                    onClick={() => window.open(getWaLink(selectedBroker.phone), '_blank')}
-                    className="h-7 px-3 rounded-md border border-white/10 bg-zinc-800 text-[#3EE88A] hover:text-white transition-colors text-[10px] font-bold flex items-center gap-1"
-                  >
-                    <MessageSquare className="w-3 h-3" strokeWidth={1.5} />
-                    WhatsApp
-                  </button>
+                  {normalizeRealPhone(selectedBroker.phone) && (
+                    <button
+                      onClick={() => window.open(getWaLink(selectedBroker.phone), '_blank')}
+                      className="h-7 px-3 rounded-md border border-white/10 bg-zinc-800 text-[#3EE88A] hover:text-white transition-colors text-[10px] font-bold flex items-center gap-1"
+                    >
+                      <MessageSquare className="w-3 h-3" strokeWidth={1.5} />
+                      WhatsApp
+                    </button>
+                  )}
                   <button
                     onClick={() => handleHideBroker(selectedBroker.phone)}
                     className="h-7 px-2 rounded-md border border-white/10 bg-zinc-800 text-zinc-500 hover:text-red-400 transition-colors text-[10px] font-bold flex items-center gap-1"
@@ -2302,18 +2417,22 @@ function InboxPageInner() {
                 ) : groupedBrokerObservations.length === 0 ? (
                   <div className="p-8 text-center text-xs text-zinc-500">No observations yet</div>
                 ) : (
-                  groupedBrokerObservations.map((group: any) => {
+                  groupedBrokerObservations.map((group) => {
                     const obs = group.representative;
-                    const ev: any[] = obs.evidence_list || [];
-                    const groupChannels: string[] = [...new Set<string>(ev.filter((e: any) => e.type === "group").map((e: any) => e.source))];
-                    const dmCount = ev.filter((e: any) => e.type === "dm").length;
+                    const ev = group.observations.flatMap((item) => item.evidence_list || []);
+                    const groupChannels = [
+                      ...new Set(
+                        ev
+                          .filter((e) => e.type === "group")
+                          .map((e) => e.source)
+                          .filter((source): source is string => Boolean(source))
+                      ),
+                    ];
+                    const dmCount = ev.filter((e) => e.type === "dm").length;
                     const isSelected = selectedMsgDetails?.raw?.id === (obs.latest_raw_message_id || obs.raw_message_id);
                     const obsTime = obs.last_seen ? new Date(obs.last_seen) : null;
                     const timeLabel = obsTime
                       ? obsTime.toLocaleDateString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })
-                      : "";
-                    const dayLabel = obsTime
-                      ? obsTime.toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" })
                       : "";
                     return (
                       <div key={group.key}>
@@ -2342,7 +2461,7 @@ function InboxPageInner() {
                               </div>
                               <div className="flex items-center gap-2">
                                 <span className={`badge ${intentColor(obs.intent)} text-[9px]`}>
-                                  {obs.intent?.toUpperCase() || "—"}
+                                  {intentLabelFor(obs.intent) || "—"}
                                 </span>
                                 <span className="text-[9px] text-zinc-500 tabular-nums">{timeLabel}</span>
                               </div>
@@ -2383,6 +2502,16 @@ function InboxPageInner() {
                                   Seen {obs.times_seen}x
                                 </span>
                               )}
+                              {group.duplicateCount > 1 && (
+                                <span className="text-[9px] text-zinc-500 px-1 py-0.5">
+                                  Repeated {group.duplicateCount}x
+                                </span>
+                              )}
+                              {group.observations.length > 1 && (
+                                <span className="text-[9px] text-zinc-500 px-1 py-0.5">
+                                  Extracted {group.observations.length} items
+                                </span>
+                              )}
                             </div>
                             {/* Posted In chips */}
                             {(groupChannels.length > 0 || dmCount > 0) && (
@@ -2414,7 +2543,7 @@ function InboxPageInner() {
                             )}
                           </div>
                           {/* WhatsApp CTA */}
-                          {selectedBroker?.phone && (
+                          {normalizeRealPhone(selectedBroker?.phone) && (
                             <div
                               className="border-t border-white/5 px-4 py-2 flex items-center gap-2"
                               onClick={(e) => e.stopPropagation()}
@@ -2475,18 +2604,6 @@ function InboxPageInner() {
                 </div>
 
                 <div className="flex items-center gap-1">
-                  <button className="h-7 w-7 lg:h-7 lg:w-7 rounded-md border border-white/10 bg-zinc-800 text-zinc-500 hover:text-white transition-colors flex items-center justify-center touch-target">
-                    <Search className="w-3.5 h-3.5" strokeWidth={1.5} />
-                  </button>
-                  <button className="h-7 w-7 lg:h-7 lg:w-7 rounded-md border border-white/10 bg-zinc-800 text-zinc-500 hover:text-white transition-colors flex items-center justify-center touch-target">
-                    <Phone className="w-3.5 h-3.5" strokeWidth={1.5} />
-                  </button>
-                  <button className="h-7 w-7 lg:h-7 lg:w-7 rounded-md border border-white/10 bg-zinc-800 text-zinc-500 hover:text-white transition-colors flex items-center justify-center touch-target">
-                    <Video className="w-3.5 h-3.5" strokeWidth={1.5} />
-                  </button>
-                  <button className="h-7 w-7 lg:h-7 lg:w-7 rounded-md border border-white/10 bg-zinc-800 text-zinc-500 hover:text-white transition-colors flex items-center justify-center touch-target">
-                    <Info className="w-3.5 h-3.5" strokeWidth={1.5} />
-                  </button>
                   {!isGroupConversationSelected && resolveMessagePhone(selectedMsg) && (
                     <a
                       href={getWaLink(resolveMessagePhone(selectedMsg))}
@@ -2538,12 +2655,8 @@ function InboxPageInner() {
                           {dayMessages.map((block) => {
                             const first = block[0];
                             const last = block[block.length - 1];
-                            const allBlocks = groupedConversationMessages.flatMap(([, b]) => b);
-                            const isLatestBlock = block === allBlocks[allBlocks.length - 1];
                             const isSelf = first.from_me === 1 || first.from_me === true || first.sender === "seed-bot" || first.sender === "system" || first.sender === "owner";
-                            const bubbleBg = isLatestBlock
-                              ? "bg-[#1d4ed8]/10 border border-[#3b82f6]/30"
-                              : isSelf
+                            const bubbleBg = isSelf
                               ? "bg-emerald-950/40 border border-emerald-800/30 ml-auto"
                               : "border border-white/10";
 
@@ -2582,17 +2695,9 @@ function InboxPageInner() {
                                   const useInnerCard = block.length > 1;
                                   const mBadges = (() => {
                                     const badges: { label: string; color: string }[] = [];
-                                    const intent = (m as api.InboxThread).parsed_intent || m.parsed_intent;
+                                    const intent = (m as api.InboxThread).parsed_intent || m.parsed_intent || inferredMessageIntent(m);
                                     if (intent) {
-                                      const intentUpper = intent.toUpperCase();
-                                      const label =
-                                        intentUpper === "SELL" ? "Listing" :
-                                        intentUpper === "BUY" ? "Requirement" :
-                                        intentUpper === "RENT" ? "Rental" :
-                                        intentUpper === "COMMERCIAL" ? "Commercial" : intent;
-                                      const color =
-                                        ({ SELL: "green", BUY: "purple", RENT: "yellow", COMMERCIAL: "orange" } as Record<string, string>)[intentUpper] || "blue";
-                                      badges.push({ label, color });
+                                      badges.push({ label: intentLabelFor(intent), color: intentBadgeColorFor(intent) });
                                     }
                                     if (m.attachments) {
                                       try {
@@ -2644,6 +2749,16 @@ function InboxPageInner() {
                                           onEntityClick={handleEntityClick}
                                         />
                                       </div>
+                                      {(m.duplicate_count || 0) > 1 && (
+                                        <div className="mt-2 flex flex-wrap items-center gap-1 text-[9px] text-zinc-500">
+                                          <span>Repeated {m.duplicate_count}x</span>
+                                          {(m.duplicate_group_names || []).slice(0, 3).map((groupName) => (
+                                            <span key={groupName} className="rounded-full border border-white/10 bg-zinc-900 px-1.5 py-0.5">
+                                              {displayGroupName(groupName)}
+                                            </span>
+                                          ))}
+                                        </div>
+                                      )}
 
                                       {isSelectedMessage && selectedMsgDetails?.parsed && (
                                         <div className="pt-2 mt-2 border-t border-[rgba(62,232,138,0.1)]">
@@ -3154,14 +3269,20 @@ function InboxPageInner() {
                             <span className="text-zinc-500">Primary Phone</span>
                             <div className="flex items-center gap-2">
                               <span className="font-mono text-zinc-300">
-                                {revealedPhone[selectedBroker.phone] ? displayPhoneString(selectedBroker.phone) : maskPhoneString(selectedBroker.phone)}
+                                {normalizeRealPhone(selectedBroker.phone)
+                                  ? revealedPhone[selectedBroker.phone]
+                                    ? displayPhoneString(selectedBroker.phone)
+                                    : maskPhoneString(selectedBroker.phone)
+                                  : "Phone unavailable"}
                               </span>
-                              <button
-                                onClick={() => toggleRevealPhone(selectedBroker.phone)}
-                                className="text-[9.5px] text-blue-400 hover:underline"
-                              >
-                                {revealedPhone[selectedBroker.phone] ? "Hide" : "Reveal"}
-                              </button>
+                              {normalizeRealPhone(selectedBroker.phone) && (
+                                <button
+                                  onClick={() => toggleRevealPhone(selectedBroker.phone)}
+                                  className="text-[9.5px] text-blue-400 hover:underline"
+                                >
+                                  {revealedPhone[selectedBroker.phone] ? "Hide" : "Reveal"}
+                                </button>
+                              )}
                             </div>
                           </div>
 
@@ -3191,7 +3312,7 @@ function InboxPageInner() {
                             </div>
                           )}
 
-                          {selectedBroker.phone && (
+                          {normalizeRealPhone(selectedBroker.phone) && (
                             <div className="pt-2">
                               <a
                                 href={getWaLink(selectedBroker.phone)}
