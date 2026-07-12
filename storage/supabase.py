@@ -852,9 +852,12 @@ class SupabaseStorage(Storage):
         return decorated
 
     def get_chats(self, limit: int = 500, offset: int = 0, tenant_id: str | None = None) -> list[dict]:
-        query = self.client.table("raw_messages").select("*")\
+        query = self.client.table("raw_messages").select(
+            "id,group_name,sender,sender_jid,sender_phone,message,message_type,"
+            "timestamp,source,message_uid,created_at,tenant_id,attachments,reply_context"
+        )\
             .order("timestamp", desc=True)\
-            .limit(max(5000, limit + offset))
+            .limit(max(2000, limit + offset))
         tid = tenant_id or self._tenant_id
         if tid:
             query = query.eq("tenant_id", tid)
@@ -940,20 +943,6 @@ class SupabaseStorage(Storage):
         if not rows:
             return []
 
-        raw_ids = [r["id"] for r in rows if r.get("id")]
-        parsed_map: dict[int, dict] = {}
-        if raw_ids:
-            parsed_res = self.client.table("parsed_output")\
-                .select("raw_message_id,intent,building_name,micro_market,landmark_name,location_raw,broker_name,broker_phone,confidence")\
-                .in_("raw_message_id", raw_ids)\
-                .order("confidence", desc=True)\
-                .order("id", desc=True)\
-                .execute()
-            for p in (parsed_res.data or []):
-                rid = p.get("raw_message_id")
-                if rid and rid not in parsed_map:
-                    parsed_map[rid] = p
-
         def is_market_group_message(r: dict) -> bool:
             gn = (r.get("group_name") or "").strip()
             if not gn or gn in ("seed", "seed-bot", "status@broadcast", "broadcast"):
@@ -991,8 +980,22 @@ class SupabaseStorage(Storage):
         for row in rows:
             if not is_market_group_message(row):
                 continue
-            key = broker_key(row, parsed_map.get(row.get("id")))
+            key = broker_key(row)
             groups.setdefault(key, []).append(row)
+
+        latest_ids = [msgs[0].get("id") for msgs in groups.values() if msgs and msgs[0].get("id")]
+        parsed_map: dict[int, dict] = {}
+        if latest_ids:
+            parsed_res = self.client.table("parsed_output")\
+                .select("raw_message_id,intent,building_name,micro_market,landmark_name,location_raw,broker_name,broker_phone,confidence")\
+                .in_("raw_message_id", latest_ids[: max(1, limit + offset)])\
+                .order("confidence", desc=True)\
+                .order("id", desc=True)\
+                .execute()
+            for p in (parsed_res.data or []):
+                rid = p.get("raw_message_id")
+                if rid and rid not in parsed_map:
+                    parsed_map[rid] = p
 
         threads = []
         for key, msgs in groups.items():
