@@ -10,6 +10,22 @@ import {
 } from "./oauthStore.js";
 import { supabaseAuth } from "./supabase.js";
 
+// OAuth error helper
+function oauthError(
+  res: Response,
+  status: number,
+  error: string,
+  description: string,
+  context: Record<string, unknown> = {},
+) {
+  console.error(`[OAuth Error] ${error}: ${description}`, { status, ...context });
+  return res.status(status).json({ error, error_description: description });
+}
+
+function thrownMessage(error: unknown) {
+  return error instanceof Error ? error.message : "Unknown error";
+}
+
 // Device code flow constants
 const DEVICE_CODE_EXPIRY_SECONDS = 900; // 15 minutes
 const DEVICE_CODE_INTERVAL_SECONDS = 5; // polling interval
@@ -211,41 +227,48 @@ export function oauthProtectedResourceMetadata(req: Request, res: Response) {
 }
 
 export async function oauthAuthorizeGetHandler(req: Request, res: Response) {
-  const responseType = String(req.query.response_type || "code");
-  const clientId = String(req.query.client_id || "");
-  const redirectUri = String(req.query.redirect_uri || "");
-  const state = String(req.query.state || "");
-  const codeChallenge = String(req.query.code_challenge || "");
-  const codeChallengeMethod = String(req.query.code_challenge_method || "S256");
+  try {
+    const responseType = String(req.query.response_type || "code");
+    const clientId = String(req.query.client_id || "");
+    const redirectUri = String(req.query.redirect_uri || "");
+    const state = String(req.query.state || "");
+    const codeChallenge = String(req.query.code_challenge || "");
+    const codeChallengeMethod = String(req.query.code_challenge_method || "S256");
 
-  if (responseType !== "code" || !clientId || !redirectUri || !codeChallenge) {
-    return res.status(400).type("html").send(renderErrorPage("Invalid OAuth authorization request"));
+    if (responseType !== "code" || !clientId || !redirectUri || !codeChallenge) {
+      return res.status(400).type("html").send(renderErrorPage("Invalid OAuth authorization request"));
+    }
+
+    if (!(await validateRedirectUri(clientId, redirectUri))) {
+      return res.status(400).type("html").send(renderErrorPage("Redirect URI is not allowed for this client"));
+    }
+
+    const deviceCode = generateDeviceCode();
+    const userCode = deviceCode;
+
+    const deviceCodeRecord: DeviceCodeRecord = {
+      device_code: deviceCode,
+      user_code: userCode,
+      client_id: clientId,
+      expires_at: new Date(Date.now() + DEVICE_CODE_EXPIRY_SECONDS * 1000).toISOString(),
+      interval: DEVICE_CODE_INTERVAL_SECONDS,
+    };
+
+    storeDeviceCode(deviceCodeRecord);
+
+    res.type("html").send(renderDeviceCodePage({
+      userCode,
+      deviceCode,
+      verificationUri: "https://app.propai.live/mcp-authorize",
+      verificationUriComplete: `https://app.propai.live/mcp-authorize?user_code=${userCode}`,
+      expiresIn: DEVICE_CODE_EXPIRY_SECONDS,
+    }));
+  } catch (error) {
+    return oauthError(res, 500, "server_error", `Authorization failed: ${thrownMessage(error)}`, {
+      handler: "authorize_get",
+      client_id: req.query.client_id || "",
+    });
   }
-
-  if (!(await validateRedirectUri(clientId, redirectUri))) {
-    return res.status(400).type("html").send(renderErrorPage("Redirect URI is not allowed for this client"));
-  }
-
-  const deviceCode = generateDeviceCode();
-  const userCode = deviceCode;
-
-  const deviceCodeRecord: DeviceCodeRecord = {
-    device_code: deviceCode,
-    user_code: userCode,
-    client_id: clientId,
-    expires_at: new Date(Date.now() + DEVICE_CODE_EXPIRY_SECONDS * 1000).toISOString(),
-    interval: DEVICE_CODE_INTERVAL_SECONDS,
-  };
-
-  storeDeviceCode(deviceCodeRecord);
-
-  res.type("html").send(renderDeviceCodePage({
-    userCode,
-    deviceCode,
-    verificationUri: "https://app.propai.live/mcp-authorize",
-    verificationUriComplete: `https://app.propai.live/mcp-authorize?user_code=${userCode}`,
-    expiresIn: DEVICE_CODE_EXPIRY_SECONDS,
-  }));
 }
 
 function renderErrorPage(message: string) {
@@ -324,127 +347,23 @@ function renderDeviceCodePage(opts: {
 }
 
 export async function oauthAuthorizePostHandler(req: Request, res: Response) {
-  const {
-    email,
-    password,
-    client_id: clientId,
-    redirect_uri: redirectUri,
-    state,
-    code_challenge: codeChallenge,
-    code_challenge_method: codeChallengeMethod = "S256",
-  } = req.body ?? {};
+  try {
+    const {
+      email,
+      password,
+      client_id: clientId,
+      redirect_uri: redirectUri,
+      state,
+      code_challenge: codeChallenge,
+      code_challenge_method: codeChallengeMethod = "S256",
+    } = req.body ?? {};
 
-  if (!email || !password || !clientId || !redirectUri || !codeChallenge) {
-    return res.status(400).send("Missing required OAuth authorization fields");
-  }
+    if (!email || !password || !clientId || !redirectUri || !codeChallenge) {
+      return res.status(400).type("html").send(renderErrorPage("Missing required OAuth authorization fields"));
+    }
 
-  if (!(await validateRedirectUri(String(clientId), String(redirectUri)))) {
-    return res.status(400).send("Redirect URI is not allowed for this client");
-  }
-
-  const { data, error } = await supabaseAuth.auth.signInWithPassword({
-    email: String(email).trim().toLowerCase(),
-    password: String(password),
-  });
-
-  if (error || !data.session) {
-    return res
-      .status(401)
-      .setHeader("Content-Type", "text/html; charset=utf-8")
-      .send(renderAuthorizePage({
-        response_type: "code",
-        client_id: String(clientId),
-        redirect_uri: String(redirectUri),
-        state: String(state || ""),
-        code_challenge: String(codeChallenge),
-        code_challenge_method: String(codeChallengeMethod || "S256"),
-      }, error?.message || "Invalid credentials"));
-  }
-
-  await pruneAuthorizationCodes();
-
-  const existingClient = await getOAuthClient(String(clientId));
-  if (!existingClient) {
-    await createOAuthClient({
-      client_id: String(clientId),
-      client_name: String(req.body?.client_name || "PropAI MCP Client"),
-      redirect_uris: [String(redirectUri)],
-      grant_types: ["authorization_code", "refresh_token"],
-      response_types: ["code"],
-      token_endpoint_auth_method: "none",
-      created_at: new Date().toISOString(),
-    });
-  }
-
-  const code = crypto.randomBytes(32).toString("base64url");
-  await saveAuthorizationCode({
-    code,
-    client_id: String(clientId),
-    redirect_uri: String(redirectUri),
-    code_challenge: String(codeChallenge),
-    code_challenge_method: String(codeChallengeMethod || "S256"),
-    access_token: data.session.access_token,
-    refresh_token: data.session.refresh_token || null,
-    expires_in: data.session.expires_in || 86400,
-    created_at: new Date().toISOString(),
-  });
-
-  const target = new URL(String(redirectUri));
-  target.searchParams.set("code", code);
-  if (state) {
-    target.searchParams.set("state", String(state));
-  }
-
-  return res.redirect(target.toString());
-}
-
-export async function oauthRegisterHandler(req: Request, res: Response) {
-  const redirectUris = Array.isArray(req.body?.redirect_uris)
-    ? req.body.redirect_uris.map((entry: unknown) => String(entry))
-    : [];
-
-  if (!redirectUris.length) {
-    return res.status(400).json({
-      error: "invalid_client_metadata",
-      error_description: "redirect_uris is required",
-    });
-  }
-
-  const clientId = crypto.randomUUID();
-  const client = {
-    client_id: clientId,
-    client_name: String(req.body?.client_name || "PropAI MCP Client"),
-    redirect_uris: redirectUris,
-    grant_types: ["authorization_code", "refresh_token"],
-    response_types: ["code"],
-    token_endpoint_auth_method: "none" as const,
-    created_at: new Date().toISOString(),
-  };
-  await createOAuthClient(client);
-
-  return res.status(201).json({
-    client_id: client.client_id,
-    client_id_issued_at: Math.floor(new Date(client.created_at).getTime() / 1000),
-    client_name: client.client_name,
-    redirect_uris: client.redirect_uris,
-    grant_types: client.grant_types,
-    response_types: client.response_types,
-    token_endpoint_auth_method: client.token_endpoint_auth_method,
-  });
-}
-
-export async function oauthTokenHandler(req: Request, res: Response) {
-  const grantType = String(req.body?.grant_type || "");
-
-  // Backward-compatible direct credential exchange.
-  if (!grantType) {
-    const { email, password } = req.body ?? {};
-
-    if (!email || !password) {
-      return res.status(400).json({
-        error: "invalid_request",
-        error_description: "email and password are required",
-      });
+    if (!(await validateRedirectUri(String(clientId), String(redirectUri)))) {
+      return res.status(400).type("html").send(renderErrorPage("Redirect URI is not allowed for this client"));
     }
 
     const { data, error } = await supabaseAuth.auth.signInWithPassword({
@@ -453,90 +372,212 @@ export async function oauthTokenHandler(req: Request, res: Response) {
     });
 
     if (error || !data.session) {
-      return res.status(401).json({
-        error: "invalid_grant",
-        error_description: error?.message || "Invalid credentials",
-      });
+      return res
+        .status(401)
+        .setHeader("Content-Type", "text/html; charset=utf-8")
+        .send(renderAuthorizePage({
+          response_type: "code",
+          client_id: String(clientId),
+          redirect_uri: String(redirectUri),
+          state: String(state || ""),
+          code_challenge: String(codeChallenge),
+          code_challenge_method: String(codeChallengeMethod || "S256"),
+        }, error?.message || "Invalid credentials"));
     }
 
-    return res.json({
-      access_token: data.session.access_token,
-      refresh_token: data.session.refresh_token,
-      token_type: "bearer",
-      expires_in: data.session.expires_in || 86400,
-    });
-  }
-
-  if (grantType === "authorization_code") {
     await pruneAuthorizationCodes();
-    const code = String(req.body?.code || "");
-    const clientId = String(req.body?.client_id || "");
-    const redirectUri = String(req.body?.redirect_uri || "");
-    const codeVerifier = String(req.body?.code_verifier || "");
 
-    const record = await getAuthorizationCode(code);
-    if (!record) {
-      return res.status(400).json({
-        error: "invalid_grant",
-        error_description: "Authorization code is invalid or expired",
+    const existingClient = await getOAuthClient(String(clientId));
+    if (!existingClient) {
+      await createOAuthClient({
+        client_id: String(clientId),
+        client_name: String(req.body?.client_name || "PropAI MCP Client"),
+        redirect_uris: [String(redirectUri)],
+        grant_types: ["authorization_code", "refresh_token"],
+        response_types: ["code"],
+        token_endpoint_auth_method: "none",
+        created_at: new Date().toISOString(),
       });
     }
 
-    if (record.client_id !== clientId || record.redirect_uri !== redirectUri) {
-      return res.status(400).json({
-        error: "invalid_grant",
-        error_description: "Authorization code does not match client or redirect URI",
-      });
-    }
-
-    if (record.code_challenge_method !== "S256" || sha256Base64Url(codeVerifier) !== record.code_challenge) {
-      return res.status(400).json({
-        error: "invalid_grant",
-        error_description: "PKCE verification failed",
-      });
-    }
-
-    await deleteAuthorizationCode(code);
-    return res.json({
-      access_token: record.access_token,
-      refresh_token: record.refresh_token,
-      token_type: "bearer",
-      expires_in: record.expires_in,
-    });
-  }
-
-  if (grantType === "refresh_token") {
-    const refreshToken = String(req.body?.refresh_token || "");
-    if (!refreshToken) {
-      return res.status(400).json({
-        error: "invalid_request",
-        error_description: "refresh_token is required",
-      });
-    }
-
-    const { data, error } = await supabaseAuth.auth.refreshSession({
-      refresh_token: refreshToken,
-    });
-
-    if (error || !data.session) {
-      return res.status(401).json({
-        error: "invalid_grant",
-        error_description: error?.message || "Refresh token is invalid",
-      });
-    }
-
-    return res.json({
+    const code = crypto.randomBytes(32).toString("base64url");
+    await saveAuthorizationCode({
+      code,
+      client_id: String(clientId),
+      redirect_uri: String(redirectUri),
+      code_challenge: String(codeChallenge),
+      code_challenge_method: String(codeChallengeMethod || "S256"),
       access_token: data.session.access_token,
-      refresh_token: data.session.refresh_token,
-      token_type: "bearer",
+      refresh_token: data.session.refresh_token || null,
       expires_in: data.session.expires_in || 86400,
+      created_at: new Date().toISOString(),
+    });
+
+    const target = new URL(String(redirectUri));
+    target.searchParams.set("code", code);
+    if (state) {
+      target.searchParams.set("state", String(state));
+    }
+
+    return res.redirect(target.toString());
+  } catch (error) {
+    return oauthError(res, 500, "server_error", `Authorization failed: ${thrownMessage(error)}`, {
+      handler: "authorize_post",
+      client_id: req.body?.client_id || "",
     });
   }
+}
 
-  return res.status(400).json({
-    error: "unsupported_grant_type",
-    error_description: `Unsupported grant type: ${grantType}`,
-  });
+export async function oauthRegisterHandler(req: Request, res: Response) {
+  try {
+    const redirectUris = Array.isArray(req.body?.redirect_uris)
+      ? req.body.redirect_uris.map((entry: unknown) => String(entry))
+      : [];
+
+    if (!redirectUris.length) {
+      return oauthError(res, 400, "invalid_client_metadata", "redirect_uris is required");
+    }
+
+    const clientId = crypto.randomUUID();
+    const client = {
+      client_id: clientId,
+      client_name: String(req.body?.client_name || "PropAI MCP Client"),
+      redirect_uris: redirectUris,
+      grant_types: ["authorization_code", "refresh_token"],
+      response_types: ["code"],
+      token_endpoint_auth_method: "none" as const,
+      created_at: new Date().toISOString(),
+    };
+    await createOAuthClient(client);
+
+    return res.status(201).json({
+      client_id: client.client_id,
+      client_id_issued_at: Math.floor(new Date(client.created_at).getTime() / 1000),
+      client_name: client.client_name,
+      redirect_uris: client.redirect_uris,
+      grant_types: client.grant_types,
+      response_types: client.response_types,
+      token_endpoint_auth_method: client.token_endpoint_auth_method,
+    });
+  } catch (error) {
+    return oauthError(res, 500, "server_error", `Client registration failed: ${thrownMessage(error)}`, {
+      handler: "register",
+      client_name: req.body?.client_name || "",
+    });
+  }
+}
+
+export async function oauthTokenHandler(req: Request, res: Response) {
+  try {
+    const grantType = String(req.body?.grant_type || "");
+
+    // Backward-compatible direct credential exchange.
+    if (!grantType) {
+      const { email, password } = req.body ?? {};
+
+      if (!email || !password) {
+        return res.status(400).json({
+          error: "invalid_request",
+          error_description: "email and password are required",
+        });
+      }
+
+      const { data, error } = await supabaseAuth.auth.signInWithPassword({
+        email: String(email).trim().toLowerCase(),
+        password: String(password),
+      });
+
+      if (error || !data.session) {
+        return res.status(401).json({
+          error: "invalid_grant",
+          error_description: error?.message || "Invalid credentials",
+        });
+      }
+
+      return res.json({
+        access_token: data.session.access_token,
+        refresh_token: data.session.refresh_token,
+        token_type: "bearer",
+        expires_in: data.session.expires_in || 86400,
+      });
+    }
+
+    if (grantType === "authorization_code") {
+      await pruneAuthorizationCodes();
+      const code = String(req.body?.code || "");
+      const clientId = String(req.body?.client_id || "");
+      const redirectUri = String(req.body?.redirect_uri || "");
+      const codeVerifier = String(req.body?.code_verifier || "");
+
+      const record = await getAuthorizationCode(code);
+      if (!record) {
+        return res.status(400).json({
+          error: "invalid_grant",
+          error_description: "Authorization code is invalid or expired",
+        });
+      }
+
+      if (record.client_id !== clientId || record.redirect_uri !== redirectUri) {
+        return res.status(400).json({
+          error: "invalid_grant",
+          error_description: "Authorization code does not match client or redirect URI",
+        });
+      }
+
+      if (record.code_challenge_method !== "S256" || sha256Base64Url(codeVerifier) !== record.code_challenge) {
+        return res.status(400).json({
+          error: "invalid_grant",
+          error_description: "PKCE verification failed",
+        });
+      }
+
+      await deleteAuthorizationCode(code);
+      return res.json({
+        access_token: record.access_token,
+        refresh_token: record.refresh_token,
+        token_type: "bearer",
+        expires_in: record.expires_in,
+      });
+    }
+
+    if (grantType === "refresh_token") {
+      const refreshToken = String(req.body?.refresh_token || "");
+      if (!refreshToken) {
+        return res.status(400).json({
+          error: "invalid_request",
+          error_description: "refresh_token is required",
+        });
+      }
+
+      const { data, error } = await supabaseAuth.auth.refreshSession({
+        refresh_token: refreshToken,
+      });
+
+      if (error || !data.session) {
+        return res.status(401).json({
+          error: "invalid_grant",
+          error_description: error?.message || "Refresh token is invalid",
+        });
+      }
+
+      return res.json({
+        access_token: data.session.access_token,
+        refresh_token: data.session.refresh_token,
+        token_type: "bearer",
+        expires_in: data.session.expires_in || 86400,
+      });
+    }
+
+    return res.status(400).json({
+      error: "unsupported_grant_type",
+      error_description: `Unsupported grant type: ${grantType}`,
+    });
+  } catch (error) {
+    return oauthError(res, 500, "server_error", `Token exchange failed: ${thrownMessage(error)}`, {
+      handler: "token",
+      client_id: req.body?.client_id || "",
+    });
+  }
 }
 
 export async function deviceAuthorizeHandler(req: Request, res: Response) {
