@@ -41,10 +41,12 @@ export function MobileDrawer({
   open,
   onClose,
   onOpenPalette,
+  formatIssueCount = 0,
 }: {
   open: boolean;
   onClose: () => void;
   onOpenPalette: () => void;
+  formatIssueCount?: number;
 }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -164,6 +166,7 @@ export function MobileDrawer({
                 const active =
                   pathname === item.href ||
                   (item.href !== "/" && pathname.startsWith(item.href));
+                const showFormatBadge = item.href === "/format-issues" && formatIssueCount > 0;
                 return (
                   <button
                     key={item.href}
@@ -175,6 +178,11 @@ export function MobileDrawer({
                     }`}
                   >
                     <span>{item.label}</span>
+                    {showFormatBadge && (
+                      <span className="float-right ml-2 rounded-full border border-amber-500/20 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-bold text-amber-300">
+                        {formatIssueCount > 99 ? "99+" : formatIssueCount}
+                      </span>
+                    )}
                     {active && (
                       <span className="float-right mt-1 h-1.5 w-1.5 rounded-full bg-blue-400" />
                     )}

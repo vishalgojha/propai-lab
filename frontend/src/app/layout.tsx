@@ -4,7 +4,8 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import "./globals.css";
-import { getConnectionState, getWhatsAppStatus, ConnectionState, WhatsAppStatus, searchMessages } from "@/lib/api";
+import { getConnectionState, getWhatsAppStatus, getRaw, ConnectionState, WhatsAppStatus, searchMessages } from "@/lib/api";
+import { classifyFormatIssue } from "@/lib/format-issues";
 import {
   MessageSquare,
   BarChart3,
@@ -184,6 +185,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
   const [offline, setOffline] = useState(false);
   const [profile, setProfile] = useState<{ auth_user_id?: string; phone: string; first_name: string; last_name?: string; email?: string; city?: string } | null>(null);
   const [profileLoaded, setProfileLoaded] = useState(false);
+  const [formatIssueCount, setFormatIssueCount] = useState(0);
   const { signOut: authSignOut } = useAuth();
 
   // Read profile from localStorage
@@ -243,6 +245,21 @@ function AppShell({ children }: { children: React.ReactNode }) {
     return () => clearInterval(t);
   }, [authLoading, user]);
 
+  useEffect(() => {
+    if (authLoading || !user) return;
+    let cancelled = false;
+    getRaw(150, 0)
+      .then((messages) => {
+        if (!cancelled) setFormatIssueCount(messages.filter((message) => classifyFormatIssue(message)).length);
+      })
+      .catch(() => {
+        if (!cancelled) setFormatIssueCount(0);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [authLoading, user]);
+
   // PWA manifest link (static in RootLayout, this is for dynamic fallback)
   useEffect(() => {
     if (!document.querySelector('link[rel="manifest"]')) {
@@ -296,6 +313,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
         open={drawerOpen}
         onClose={() => setDrawerOpen(false)}
         onOpenPalette={() => setPaletteOpen(true)}
+        formatIssueCount={formatIssueCount}
       />
 
       {/* ═══════ Sidebar (desktop) ═══════ */}
@@ -321,6 +339,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
                {section.items.map((item) => {
                 const active = pathname === item.href || (item.href !== "/" && pathname.startsWith(item.href));
                 const Icon = item.icon;
+                const showFormatBadge = item.href === "/format-issues" && formatIssueCount > 0;
                 return (
                   <Link
                     key={item.href}
@@ -334,7 +353,12 @@ function AppShell({ children }: { children: React.ReactNode }) {
                   >
                     <Icon className={`w-3.5 h-3.5 shrink-0 ${active ? "text-blue-400" : ""}`} strokeWidth={1.5} />
                     <span className="truncate">{item.label}</span>
-                    {active && <div className="ml-auto w-1 h-1 rounded-full bg-blue-400 shrink-0" />}
+                    {showFormatBadge && (
+                      <span className="ml-auto rounded-full border border-amber-500/20 bg-amber-500/10 px-1.5 py-0.5 text-[9px] font-bold text-amber-300">
+                        {formatIssueCount > 99 ? "99+" : formatIssueCount}
+                      </span>
+                    )}
+                    {active && <div className={`${showFormatBadge ? "ml-1" : "ml-auto"} w-1 h-1 rounded-full bg-blue-400 shrink-0`} />}
                   </Link>
                 );
               })}
