@@ -622,9 +622,9 @@ export function chatAIChat(
   model = ""
 ): Promise<ChatResponse> {
   return fetchJSON<ChatResponse>(
-    "/ai/chat",
+    "/ai/chat/json",
     {
-      method: "POST",
+      method: "PUT",
       body: JSON.stringify({ messages, api_key: apiKey, model }),
     },
     120000,

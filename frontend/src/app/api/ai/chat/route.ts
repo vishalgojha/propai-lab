@@ -39,6 +39,30 @@ function textStream(content: string) {
   });
 }
 
+async function callFastAPI(messages: { role: string; content: string }[]) {
+  const fastapi = await fetch(`${API_BASE}/api/ai/chat`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ messages }),
+  });
+
+  const raw = await fastapi.text();
+  let json: Record<string, unknown> = {};
+  try {
+    json = JSON.parse(raw);
+  } catch {
+    json = {};
+  }
+
+  if (!fastapi.ok || json.error) {
+    const errorText = (json.message as string) || (json.error as string) || fastapi.statusText;
+    throw new Error(errorText);
+  }
+
+  const content = String(json.content || "").trim() || "I could not find an answer for that yet.";
+  return { content, blocks: json.blocks || [], sources: json.sources || [], status_steps: json.status_steps || [], trace: json.trace };
+}
+
 export async function POST(req: Request) {
   const body = await req.json();
   const messages = toBackendMessages((body.messages || []) as UIMessage[]);
@@ -50,29 +74,25 @@ export async function POST(req: Request) {
   }
 
   try {
-    const fastapi = await fetch(`${API_BASE}/api/ai/chat`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ messages }),
-    });
-
-    const raw = await fastapi.text();
-    let json: Record<string, unknown> = {};
-    try {
-      json = JSON.parse(raw);
-    } catch {
-      json = {};
-    }
-
-    if (!fastapi.ok || json.error) {
-      const errorText = (json.message as string) || (json.error as string) || fastapi.statusText;
-      return createUIMessageStreamResponse({ stream: textStream(errorText) });
-    }
-
-    const content = String(json.content || "").trim() || "I could not find an answer for that yet.";
-    return createUIMessageStreamResponse({ stream: textStream(content) });
+    const result = await callFastAPI(messages);
+    return createUIMessageStreamResponse({ stream: textStream(result.content) });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Chat API failed";
     return createUIMessageStreamResponse({ stream: textStream(message) });
+  }
+}
+
+// Non-streaming endpoint for InboxAIChat (expects ChatResponse JSON)
+export async function PUT(req: Request) {
+  const body = await req.json();
+  const messages = (body.messages || []) as { role: string; content: string }[];
+
+  try {
+    const filtered = messages.filter((m) => m.content && ["system", "user", "assistant"].includes(m.role));
+    const result = await callFastAPI(filtered);
+    return Response.json(result);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Chat API failed";
+    return Response.json({ error: message }, { status: 500 });
   }
 }
