@@ -19,6 +19,49 @@ from lab.storage.base import (
 from lab.inventory import listing_fingerprint, listing_label
 
 
+_EMOJI_ICON_RE = re.compile(
+    "["
+    "\U0001F1E0-\U0001F1FF"
+    "\U0001F300-\U0001F5FF"
+    "\U0001F600-\U0001F64F"
+    "\U0001F680-\U0001F6FF"
+    "\U0001F900-\U0001F9FF"
+    "\U0001FA00-\U0001FAFF"
+    "\u200d"
+    "\u20e3"
+    "\u231a-\u23ff"
+    "\u25a0-\u25ff"
+    "\u2600-\u27bf"
+    "\u2934-\u2935"
+    "\u2b05-\u2b55"
+    "\u3030"
+    "\u303d"
+    "\u3297"
+    "\u3299"
+    "\ufe00-\ufe0f"
+    "]+",
+    flags=re.UNICODE,
+)
+
+
+def _strip_icons(value: str = "") -> str:
+    clean = _EMOJI_ICON_RE.sub("", value or "")
+    clean = re.sub(r"[ \t]+", " ", clean)
+    clean = re.sub(r" *\n *", "\n", clean)
+    clean = re.sub(r"\n{3,}", "\n\n", clean)
+    return clean.strip()
+
+
+def _sanitize_parsed_payload(value: Any) -> Any:
+    if isinstance(value, str):
+        return _strip_icons(value)
+    if isinstance(value, list):
+        return [_sanitize_parsed_payload(item) for item in value]
+    if isinstance(value, dict):
+        return {key: _sanitize_parsed_payload(item) for key, item in value.items()}
+    return value
+
+
 def _clean_person_name(name: str = "") -> str:
     clean = (name or "").strip()
     clean = re.sub(r"\s*\([^)]*(?:\+?\d|X{2,})[^)]*\)\s*", " ", clean, flags=re.I)
@@ -1173,6 +1216,7 @@ class SupabaseStorage(Storage):
                     data[field] = json.loads(data[field])
                 except (json.JSONDecodeError, TypeError):
                     data[field] = {} if field == "raw_payload" else None
+        data = _sanitize_parsed_payload(data)
         res = self.client.table("parsed_output").insert(data).execute()
         return res.data[0]["id"] if res.data else 0
 

@@ -10,6 +10,7 @@ Import pattern:
 
 import json
 import os
+import re
 import sys
 import time
 from datetime import datetime, timezone
@@ -30,6 +31,55 @@ def get_storage():
     if not url or not key:
         raise RuntimeError("Supabase is required. Set SUPABASE_URL and SUPABASE_SERVICE_KEY.")
     return SupabaseStorage(url, key)
+
+
+_EMOJI_ICON_RE = re.compile(
+    "["
+    "\U0001F1E0-\U0001F1FF"
+    "\U0001F300-\U0001F5FF"
+    "\U0001F600-\U0001F64F"
+    "\U0001F680-\U0001F6FF"
+    "\U0001F900-\U0001F9FF"
+    "\U0001FA00-\U0001FAFF"
+    "\u200d"
+    "\u20e3"
+    "\u231a-\u23ff"
+    "\u25a0-\u25ff"
+    "\u2600-\u27bf"
+    "\u2934-\u2935"
+    "\u2b05-\u2b55"
+    "\u3030"
+    "\u303d"
+    "\u3297"
+    "\u3299"
+    "\ufe00-\ufe0f"
+    "]+",
+    flags=re.UNICODE,
+)
+
+
+def _strip_icons(text):
+    if text is None:
+        return None
+    cleaned = _EMOJI_ICON_RE.sub("", str(text))
+    cleaned = re.sub(r"[ \t]+", " ", cleaned)
+    cleaned = re.sub(r" *\n *", "\n", cleaned)
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+    return cleaned.strip()
+
+
+def _sanitize_parsed_value(value):
+    if isinstance(value, str):
+        return _strip_icons(value)
+    if isinstance(value, list):
+        return [_sanitize_parsed_value(item) for item in value]
+    if isinstance(value, dict):
+        return {key: _sanitize_parsed_value(item) for key, item in value.items()}
+    return value
+
+
+def _sanitize_parsed_listing(parsed: dict) -> dict:
+    return {key: _sanitize_parsed_value(value) for key, value in parsed.items()}
 
 
 def process_raw_message(raw_id: int, ctx: dict, storage=None):
@@ -165,7 +215,7 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
         cleaned = _demote_weak_property_parse(pl, source_text)
         if _parsed_has_market_anchor(cleaned, source_text):
             market_listings.append(cleaned)
-    parsed_listings = market_listings
+    parsed_listings = [_sanitize_parsed_listing(pl) for pl in market_listings]
 
     if not parsed_listings:
         try:
