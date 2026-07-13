@@ -19,6 +19,8 @@ export default function McpAuthorizePage() {
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const [refreshToken, setRefreshToken] = useState<string | null>(null);
   const [oauthParams, setOauthParams] = useState<Record<string, string>>({});
+  const [redirectUrl, setRedirectUrl] = useState("");
+  const [redirectCountdown, setRedirectCountdown] = useState(5);
 
   const cleanCode = useMemo(() => userCode.trim().toUpperCase(), [userCode]);
 
@@ -54,6 +56,23 @@ export default function McpAuthorizePage() {
     });
   }, []);
 
+  useEffect(() => {
+    if (status !== "success" || !redirectUrl) return;
+
+    setRedirectCountdown(5);
+    const interval = window.setInterval(() => {
+      setRedirectCountdown((value) => Math.max(0, value - 1));
+    }, 1000);
+    const timeout = window.setTimeout(() => {
+      window.location.href = redirectUrl;
+    }, 5000);
+
+    return () => {
+      window.clearInterval(interval);
+      window.clearTimeout(timeout);
+    };
+  }, [redirectUrl, status]);
+
   async function authorize() {
     if (!accessToken || (!cleanCode && !oauthParams.client_id)) return;
 
@@ -81,9 +100,11 @@ export default function McpAuthorizePage() {
       }
 
       setStatus("success");
-      setMessage("PropAI MCP is connected. You can return to Claude or ChatGPT.");
+      const nextUrl = payload?.redirect_url ? String(payload.redirect_url) : "";
+      setRedirectUrl(nextUrl);
+      setMessage(nextUrl ? "PropAI MCP is connected." : "PropAI MCP is connected. You can return to Claude or ChatGPT.");
       if (payload?.redirect_url) {
-        window.location.href = String(payload.redirect_url);
+        setRedirectCountdown(5);
       }
     } catch (error) {
       setStatus("error");
@@ -140,7 +161,19 @@ export default function McpAuthorizePage() {
               <CheckCircle2 className="h-4 w-4 text-emerald-400" />
               Connected
             </div>
-            {message}
+            <div>{message}</div>
+            {redirectUrl ? (
+              <div className="mt-3 rounded-lg border border-emerald-400/20 bg-black/20 p-3 text-emerald-100">
+                Redirecting back to Claude or ChatGPT in{" "}
+                <span className="font-mono text-base font-black text-white">{redirectCountdown}</span>s.
+                <a
+                  href={redirectUrl}
+                  className="mt-2 block text-xs font-bold text-emerald-300 underline underline-offset-4 hover:text-emerald-200"
+                >
+                  Return now
+                </a>
+              </div>
+            ) : null}
           </div>
         )}
 
