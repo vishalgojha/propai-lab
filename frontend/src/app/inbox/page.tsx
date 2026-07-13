@@ -3140,7 +3140,7 @@ function InboxPageInner() {
                                             <div className="min-w-0">
                                               <div className="text-[11px] font-semibold text-zinc-300">{mSenderName || resolveMessageSenderName(first)}</div>
                                               <span className="font-semibold uppercase tracking-wider">
-                                                Split into {listingChunks.length} items
+                                                Split into {listingChunks.length} codes
                                               </span>
                                             </div>
                                             <span className="text-zinc-600">Original WhatsApp post</span>
@@ -3165,7 +3165,7 @@ function InboxPageInner() {
                                                       </span>
                                                     )}
                                                     <span className="text-[8px] font-bold uppercase tracking-wider text-zinc-500">
-                                                      Item {chunkIndex + 1}
+                                                      Code {chunkIndex + 1}
                                                     </span>
                                                   </div>
                                                 </div>
