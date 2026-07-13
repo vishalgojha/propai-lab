@@ -930,6 +930,20 @@ function InboxPageInner() {
   const [loadingConv, setLoadingConv] = useState(false);
   const threadEndRef = useRef<HTMLDivElement>(null);
 
+  const withThreadTimeout = async <T,>(promise: Promise<T>, ms = 8000): Promise<T> => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([
+        promise,
+        new Promise<T>((_, reject) => {
+          timer = setTimeout(() => reject(new Error("Thread load timed out")), ms);
+        }),
+      ]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  };
+
   // Right Panel States
   const [activeRightTab, setActiveRightTab] = useState<"analysis" | "broker" | "market" | "ai" | "notes">("analysis");
   const [selectedMsgDetails, setSelectedMsgDetails] = useState<any>(null);
@@ -2009,14 +2023,14 @@ function InboxPageInner() {
           ? (chatId || msg.group_name || "").trim()
           : "";
       if (chatId) {
-        thread = await api.getChatMessages(chatId, 500, 0);
+        thread = await withThreadTimeout(api.getChatMessages(chatId, 80, 0));
       } else if (groupName && groupName !== "seed" && groupName !== "seed-bot") {
-        thread = await api.getRaw(200, 0, groupName);
+        thread = await withThreadTimeout(api.getRaw(80, 0, groupName));
       } else {
         const resolvedPhone = resolveMessagePhone(msg);
         const phone = isRealPhoneDigits(resolvedPhone) ? resolvedPhone : undefined;
         const jid = msg.sender_jid || msg.group_name || ("conversation_key" in msg ? msg.conversation_key : "") || undefined;
-        thread = await api.getRaw(200, 0, undefined, undefined, phone, jid);
+        thread = await withThreadTimeout(api.getRaw(80, 0, undefined, undefined, phone, jid));
       }
       // Threads come newest first, reverse to show chronological top-to-bottom
       const decoratedThread = thread.map((item) => ({
@@ -3077,12 +3091,17 @@ function InboxPageInner() {
                   }
                 }}
               >
-                {loadingConv ? (
+                {conversationMessages.length === 0 && loadingConv ? (
                   <div className="h-full flex items-center justify-center text-xs text-zinc-500">
                     Loading message thread...
                   </div>
                 ) : (
                   <div className="space-y-5">
+                    {loadingConv && (
+                      <div className="sticky top-0 z-20 mx-auto w-fit rounded-full border border-white/10 bg-black/80 px-3 py-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-400 backdrop-blur">
+                        Loading latest context...
+                      </div>
+                    )}
                     {groupedConversationMessages.map(([dateLabel, dayMessages]) => (
                       <div key={dateLabel} className="space-y-3">
                         <div className="flex items-center gap-3">

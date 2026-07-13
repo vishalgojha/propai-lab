@@ -68,6 +68,12 @@ function displayPhone(phone?: string) {
   return `+91 ${local.slice(0, 5)} ${local.slice(5)}`;
 }
 
+function displayCompactPhone(phone?: string) {
+  const local = digits(phone).slice(-10);
+  if (local.length !== 10) return "";
+  return `+91 ${local}`;
+}
+
 function waLink(phone?: string) {
   const local = digits(phone).slice(-10);
   if (local.length !== 10) return "";
@@ -176,9 +182,32 @@ export default function BrokerProfilePage() {
   if (!broker) return <div className="text-zinc-500 mt-8">Loading...</div>;
 
   const whatsapp = waLink(broker.phone);
+  const parsedPhones = (broker.phones || [])
+    .filter((item) => validPhone(item.phone))
+    .filter((item, index, all) => all.findIndex((other) => digits(other.phone).slice(-10) === digits(item.phone).slice(-10)) === index);
+  const hasRealIdentity = validPhone(broker.phone) || parsedPhones.length > 0;
+  const hasUsefulEvidence =
+    hasRealIdentity ||
+    Boolean(broker.markets?.length) ||
+    Boolean(broker.buildings?.length) ||
+    Boolean(broker.groups?.length) ||
+    Boolean(broker.observations?.length);
 
   return (
     <div className="max-w-6xl space-y-7">
+      {!hasUsefulEvidence && (
+        <section className="rounded-lg border border-amber-500/20 bg-amber-500/10 px-4 py-3">
+          <div className="text-sm font-bold text-amber-100">This broker profile is not ready yet.</div>
+          <p className="mt-1 max-w-3xl text-xs leading-relaxed text-amber-100/75">
+            PropAI has not captured a real phone, team member, market, building, or recent parsed opportunity for this source.
+            Until that evidence exists, this page should not be treated as a useful broker profile.
+          </p>
+          <Link href="/inbox" className="mt-2 inline-flex text-xs font-bold text-[#3EE88A] hover:text-white">
+            Open Market Inbox evidence
+          </Link>
+        </section>
+      )}
+
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <Link href="/brokers" className="text-xs text-zinc-500 hover:text-white">Back to Broker Sources</Link>
@@ -212,6 +241,31 @@ export default function BrokerProfilePage() {
         <StatCard label="Markets" value={broker.market_count} sub="operating areas" />
         <StatCard label="Groups" value={broker.group_count} sub="source groups" />
       </div>
+
+      {parsedPhones.length > 0 && (
+        <section className="rounded-lg border border-white/10 bg-white/[0.025] p-4">
+          <h3 className="text-sm font-semibold text-white">Parsed Contact Numbers</h3>
+          <div className="mt-1 text-xs leading-relaxed text-zinc-500">
+            These are real numbers PropAI has seen attached to this broker source. Team/agency grouping is shown only when the data gives stronger relationship evidence.
+          </div>
+          <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {parsedPhones.slice(0, 12).map((item) => {
+              const link = waLink(item.phone);
+              return (
+                <div key={digits(item.phone).slice(-10)} className="rounded-md border border-white/10 bg-black/30 px-3 py-2">
+                  <div className="text-sm font-semibold text-white">{displayCompactPhone(item.phone)}</div>
+                  <div className="mt-0.5 text-[10px] uppercase tracking-wide text-zinc-500">{item.observation_count} mentions</div>
+                  {link && (
+                    <a href={link} target="_blank" rel="noreferrer" className="mt-2 inline-flex text-xs font-bold text-[#3EE88A] hover:text-white">
+                      Contact on WhatsApp
+                    </a>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
 
       <section className="bg-zinc-900 rounded-lg p-4">
         <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
