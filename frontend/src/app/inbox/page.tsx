@@ -133,14 +133,16 @@ function inferOpportunityKind(input: { intent?: string; observation_type?: strin
   const intent = (input.intent || "").toUpperCase();
   const type = (input.observation_type || "").toUpperCase();
   const text = (input.text || "").toLowerCase();
+  const hasRequirementSignal = /\b(requirement|required|wanted|looking|need|client wants|buyer|tenant)\b/.test(text);
+  const hasListingSignal = /\b(available|on rent|for rent|rent only|for sale|on sale|distress|outright|asking|inspection|call|contact)\b/.test(text);
   if (
     type === "REQUIREMENT" ||
     ["BUY", "BUYER", "REQUIREMENT", "RENTAL_SEEKER", "WANTED"].includes(intent) ||
-    /\b(requirement|required|wanted|looking|need|client wants|buyer|tenant)\b/.test(text)
+    (hasRequirementSignal && !hasListingSignal)
   ) {
     return "Requirement";
   }
-  if (type === "LISTING" || ["SELL", "SALE", "RENT", "LEASE"].includes(intent)) {
+  if (hasListingSignal || type === "LISTING" || ["SELL", "SALE", "RENT", "LEASE"].includes(intent)) {
     return "Listing";
   }
   return "Market";
@@ -149,6 +151,10 @@ function inferOpportunityKind(input: { intent?: string; observation_type?: strin
 function inferOpportunitySide(input: { intent?: string; text?: string }) {
   const intent = (input.intent || "").toUpperCase();
   const text = (input.text || "").toLowerCase();
+  const rentSignal = /\b(on rent|for rent|rent only|rent\s*:|rental|lease|leave\s*&\s*license|l\s*&\s*l|per month|p\.?m\.?)\b/.test(text);
+  const saleSignal = /\b(for sale|on sale|distress sale|outright|sale price|reserve price)\b/.test(text);
+  if (rentSignal) return "Rent";
+  if (saleSignal) return "Sale";
   if (["RENT", "LEASE", "RENTAL_SEEKER"].includes(intent)) return "Rent";
   if (["SELL", "SALE"].includes(intent)) return "Sale";
   if (["BUY", "BUYER", "REQUIREMENT", "WANTED"].includes(intent)) {
@@ -1475,6 +1481,16 @@ function InboxPageInner() {
     return digits;
   };
 
+  const extractPhoneFromText = (text?: string) => {
+    const raw = text || "";
+    const matches = raw.match(/(?:\+?91[\s-]?)?[6-9]\d(?:[\s-]?\d){8}/g) || [];
+    for (const match of matches) {
+      const phone = normalizeRealPhone(match);
+      if (phone) return phone;
+    }
+    return "";
+  };
+
   const phoneFromJid = (jid?: string) => {
     if (!jid) return "";
     if (jid.includes("@lid")) return "";
@@ -2420,7 +2436,8 @@ function InboxPageInner() {
   const waSenderPhone =
     normalizeRealPhone(selectedMsgDetails?.parsed?.broker_phone) ||
     resolveMessagePhone(selectedMsgDetails?.raw) ||
-    resolveMessagePhone(selectedMsg);
+    resolveMessagePhone(selectedMsg) ||
+    extractPhoneFromText(selectedMsgDetails?.raw?.message || selectedMsg?.message);
   const selectedHasMarketContext = hasMarketContext(selectedMsgDetails);
 
   return (
@@ -3112,14 +3129,16 @@ function InboxPageInner() {
                                   </span>
                                 </div>
                                 {block.map((m, msgIdx) => {
-                                  const mPhone = resolveMessagePhone(m);
+                                  const mPhone = resolveMessagePhone(m) || extractPhoneFromText(m.message);
                                   const mSenderName = resolveMessageSenderName(m);
                                   const isSelectedMessage = selectedMsg?.id === m.id;
                                   const useInnerCard = block.length > 1;
                                   const listingChunks = splitDelimitedListingText(m.message);
                                   const formatIssue = classifyFormatIssue(m);
+                                  const suppressAsOpportunity = Boolean(formatIssue && formatIssue.severity === "high");
                                   const mBadges = (() => {
                                     const badges: { label: string; color: string }[] = [];
+                                    if (suppressAsOpportunity) return badges;
                                     const intent = (m as api.InboxThread).parsed_intent || m.parsed_intent || inferredMessageIntent(m);
                                     const marketLabel = marketOpportunityLabel({ intent, text: m.message || "" });
                                     if (marketLabel && marketLabel !== "Market") {
@@ -3159,7 +3178,21 @@ function InboxPageInner() {
                                             : ""
                                       }`}
                                     >
-                                      {listingChunks.length > 1 ? (
+                                      {suppressAsOpportunity ? (
+                                        <div className="rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-3 text-xs text-amber-100">
+                                          <div className="font-bold">{formatIssue?.reason || "Format issue"}</div>
+                                          <div className="mt-1 text-[11px] leading-relaxed text-amber-100/75">
+                                            This post needs better structure before it becomes a market opportunity.
+                                          </div>
+                                          <Link
+                                            href="/format-issues"
+                                            className="mt-2 inline-flex font-bold text-[#3EE88A] hover:underline"
+                                            onClick={(e) => e.stopPropagation()}
+                                          >
+                                            Open in Format Issues
+                                          </Link>
+                                        </div>
+                                      ) : listingChunks.length > 1 ? (
                                         <div className="space-y-2">
                                           <div className="flex items-center justify-between gap-2 text-[10px] text-zinc-500">
                                             <div className="min-w-0">

@@ -44,7 +44,12 @@ export default function FormatIssuesPage() {
     setLoading(true);
     setError("");
     try {
-      const messages = await api.getRaw(500, 0);
+      let messages: api.RawMessage[] = [];
+      try {
+        messages = await api.getRaw(500, 0);
+      } catch {
+        messages = await api.getInboxThreads(500, 0);
+      }
       const next = messages
         .map((message) => {
           const issue = classifyFormatIssue(message);
