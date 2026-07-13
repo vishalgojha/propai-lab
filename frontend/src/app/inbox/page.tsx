@@ -485,27 +485,44 @@ function extractMoneySignals(text?: string, label?: string) {
   const lines = (text || "").split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
   const result: { rent?: string; deposit?: string; budget?: string; price?: string } = {};
   const bareMoney: string[] = [];
+  const grouped: Record<"rent" | "deposit" | "budget" | "price", string[]> = {
+    rent: [],
+    deposit: [],
+    budget: [],
+    price: [],
+  };
+  const addSignal = (kind: keyof typeof grouped, value: string) => {
+    const normalized = value.toLowerCase().replace(/\s+/g, "");
+    if (!grouped[kind].some((existing) => existing.toLowerCase().replace(/\s+/g, "") === normalized)) {
+      grouped[kind].push(value);
+    }
+  };
 
   for (const line of lines) {
     const cleaned = cleanMoneyLine(line);
     const lower = cleaned.toLowerCase();
     const value = moneyValueFromLine(cleaned);
     if (!value) continue;
-    if (/\b(?:deposit|deposite|security)\b/.test(lower)) result.deposit ||= value;
-    else if (/\b(?:rent|rental)\b/.test(lower)) result.rent ||= value;
-    else if (/\bbudget\b/.test(lower)) result.budget ||= value;
-    else if (/\b(?:price|asking|ask|quote|reserve|sale|outright)\b/.test(lower)) result.price ||= value;
+    if (/\b(?:deposit|deposite|security)\b/.test(lower)) addSignal("deposit", value);
+    else if (/\b(?:rent|rental)\b/.test(lower)) addSignal("rent", value);
+    else if (/\bbudget\b/.test(lower)) addSignal("budget", value);
+    else if (/\b(?:price|asking|ask|quote|reserve|sale|outright)\b/.test(lower)) addSignal("price", value);
     else if (/^(?:rs\.?|inr|₹)?\s*\d[\d,]*(?:\.\d+)?\s*(?:k|l|lac|lacs|lakh|lakhs|cr|crore|crores)?$/i.test(cleaned)) {
       bareMoney.push(value);
     }
   }
 
   if ((label || "").toLowerCase().includes("rent")) {
-    if (!result.rent && bareMoney[0]) result.rent = bareMoney[0];
-    if (!result.deposit && bareMoney[1]) result.deposit = bareMoney[1];
-  } else if (!result.price && bareMoney[0]) {
-    result.price = bareMoney[0];
+    if (!grouped.rent.length && bareMoney[0]) addSignal("rent", bareMoney[0]);
+    if (!grouped.deposit.length && bareMoney[1]) addSignal("deposit", bareMoney[1]);
+  } else if (!grouped.price.length && bareMoney[0]) {
+    bareMoney.forEach((value) => addSignal("price", value));
   }
+
+  result.rent = grouped.rent.join(", ");
+  result.deposit = grouped.deposit.join(", ");
+  result.budget = grouped.budget.join(", ");
+  result.price = grouped.price.join(", ");
 
   return result;
 }
