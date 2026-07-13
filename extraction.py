@@ -291,8 +291,7 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
 
         # ── Resolve ──────────────────────────────────────────────
         try:
-            if idx == 0 or msg_class != "multi":
-                resolver_result = resolve_parsed(parsed, msg_text)
+            resolver_result = resolve_parsed(parsed, source_text)
             resolver_result["parsed_id"] = parsed_id
         except Exception as exc:
             print(f"  [extract] resolve_parsed error: {exc}", flush=True)
