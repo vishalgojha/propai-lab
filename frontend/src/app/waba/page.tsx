@@ -26,7 +26,7 @@ export default function WabaPage() {
   useEffect(() => {
     getCompanionConfig().then((cfg) => {
       setWaba(cfg);
-      if (cfg.whatsapp_business_number && cfg.whatsapp_business_number !== PROPAI_WABA_NUMBER) {
+      if (cfg.outbound_allowed && cfg.whatsapp_business_number && cfg.whatsapp_business_number !== PROPAI_WABA_NUMBER) {
         setUseOwnWaba(true);
         const display = cfg.whatsapp_business_number.replace(/^\+91/, "");
         setBusinessNumber(display);
@@ -39,8 +39,10 @@ export default function WabaPage() {
 
   useEffect(() => {
     if (!waba || useOwnWaba) return;
-    setBusinessNumber(waba.whatsapp_business_number?.replace(/^\+91/, "") || "");
-    setPhoneNumberId(waba.phone_number_id || "");
+    if (waba.outbound_allowed && waba.whatsapp_business_number !== PROPAI_WABA_NUMBER) {
+      setBusinessNumber(waba.whatsapp_business_number?.replace(/^\+91/, "") || "");
+      setPhoneNumberId(waba.phone_number_id || "");
+    }
   }, [waba, useOwnWaba]);
 
   async function handleSave(event: FormEvent<HTMLFormElement>) {
@@ -57,6 +59,11 @@ export default function WabaPage() {
     const nextVerifyToken = useOwnWaba ? String(form.get("verify_token") || "").trim() : "";
 
     if (useOwnWaba) {
+      if (`+91${cleaned}` === PROPAI_WABA_NUMBER) {
+        setStatus("PropAI shared WABA is reserved for platform messages. Connect your own WABA for outbound messaging.");
+        setSaving(false);
+        return;
+      }
       const missing = [
         !cleaned ? "WhatsApp Business Number" : "",
         !nextPhoneNumberId ? "Phone Number ID" : "",
@@ -92,7 +99,7 @@ export default function WabaPage() {
     }
   }
 
-  const wabaConnected = Boolean(waba?.phone_number_id && waba?.has_access_token);
+  const wabaConnected = Boolean(waba?.outbound_allowed);
 
   return (
     <div className="max-w-3xl mx-auto px-4 lg:px-0 py-8">

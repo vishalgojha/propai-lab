@@ -782,6 +782,9 @@ export interface CompanionTeamMemberInput {
 export interface CompanionOverview {
   connection_status: string;
   whatsapp_business_number: string;
+  shared_waba_number?: string;
+  waba_owner?: "propai" | "broker" | "none";
+  outbound_allowed?: boolean;
   connected_team_members: number;
   total_team_members: number;
   last_sync: string;
@@ -802,6 +805,9 @@ export interface CompanionOverview {
 
 export interface CompanionConfig {
   whatsapp_business_number: string;
+  shared_waba_number?: string;
+  waba_owner?: "propai" | "broker" | "none";
+  outbound_allowed?: boolean;
   phone_number_id: string;
   has_access_token: boolean;
   access_token_preview: string;

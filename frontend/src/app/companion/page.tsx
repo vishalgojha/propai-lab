@@ -74,9 +74,13 @@ export default function CompanionPage() {
 
   const overviewCards = useMemo(() => {
     if (!overview) return [];
+    const wabaLabel =
+      overview.waba_owner === "propai"
+        ? `${overview.shared_waba_number || overview.whatsapp_business_number} (PropAI platform only)`
+        : overview.whatsapp_business_number || "Not connected";
     return [
       ["Connection Status", formatLabel(overview.connection_status)],
-      ["WhatsApp Business Number", overview.whatsapp_business_number || "Not connected"],
+      ["WhatsApp Business Number", wabaLabel],
       ["Connected Team Members", `${overview.connected_team_members}/${overview.total_team_members}`],
       ["Last Sync", formatDate(overview.last_sync)],
       ["Messages Today", overview.messages_today],
