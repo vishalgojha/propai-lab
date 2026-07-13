@@ -1511,6 +1511,20 @@ function InboxPageInner() {
     return msg.broker_name || (phone ? displayPhoneString(phone) : "");
   };
 
+  const appendBrokerSignature = (text: string, brokerName?: string, brokerPhone?: string) => {
+    const cleanText = String(text || "").trim();
+    const name = stripEmojis(brokerName || "").trim();
+    const phone = normalizeRealPhone(brokerPhone) || "";
+    if (!cleanText || (!name && !phone)) return cleanText;
+
+    const normalizedText = normalizeMessageForDedupe(cleanText);
+    const signatureParts = [name, phone ? displayPhoneString(phone) : ""].filter(Boolean);
+    const signature = `Broker: ${signatureParts.join(" | ")}`;
+    const hasSignature = normalizedText.includes(normalizeMessageForDedupe(signature));
+    if (hasSignature) return cleanText;
+    return `${cleanText}\n\n${signature}`;
+  };
+
   const buildMessageEntities = (
     msg?: Partial<api.RawMessage> | null,
     details?: EntityDetailShape
@@ -3128,9 +3142,10 @@ function InboxPageInner() {
                                           </div>
                                           <div className="divide-y divide-white/[0.06]">
                                           {listingChunks.map((chunk, chunkIndex) => {
+                                            const signedChunk = appendBrokerSignature(chunk, mSenderName || resolveMessageSenderName(first), mPhone || resolveMessagePhone(first));
                                             const chunkLabel = marketOpportunityLabel({
-                                              intent: (m as api.InboxThread).parsed_intent || m.parsed_intent || inferredMessageIntent({ ...m, message: chunk }),
-                                              text: chunk,
+                                              intent: (m as api.InboxThread).parsed_intent || m.parsed_intent || inferredMessageIntent({ ...m, message: signedChunk }),
+                                              text: signedChunk,
                                             });
                                             return (
                                               <div
@@ -3151,19 +3166,19 @@ function InboxPageInner() {
                                                 </div>
                                                 <div className="text-xs text-zinc-200 whitespace-pre-wrap leading-relaxed text-left propai-message-content">
                                                   <WhatsAppMessage
-                                                    text={chunk}
+                                                    text={signedChunk}
                                                     sender={mSenderName}
                                                     senderPhone={mPhone}
-                                                    entities={buildMessageEntities({ ...m, message: chunk })}
+                                                    entities={buildMessageEntities({ ...m, message: signedChunk })}
                                                     onEntityClick={handleEntityClick}
                                                     flatMultiBlocks
                                                   />
                                                 </div>
-                                                <MoneySignalChips text={chunk} label={chunkLabel} />
+                                                <MoneySignalChips text={signedChunk} label={chunkLabel} />
                                                 <div className="mt-2 flex items-center justify-end gap-2">
                                                   {mPhone && (
                                                     <a
-                                                      href={getWaLinkWithRecall(mPhone, chunk)}
+                                                      href={getWaLinkWithRecall(mPhone, signedChunk)}
                                                       target="_blank"
                                                       rel="noopener noreferrer"
                                                       className="inline-flex items-center gap-1.5 rounded-md border border-[#3EE88A]/20 bg-[#3EE88A]/10 px-2 py-1 text-[10px] font-bold text-[#3EE88A] hover:bg-[#3EE88A]/15"
