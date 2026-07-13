@@ -1480,6 +1480,9 @@ function InboxPageInner() {
     if (/\b(requirement|required|wanted|looking|need|client wants|buyer|tenant|lease requirement|rent requirement)\b/.test(text)) {
       return "BUY";
     }
+    if (/\b(rent|rental|lease|leave\s*&\s*license|l\s*&\s*l)\b/.test(text)) {
+      return "RENT";
+    }
     if (/\b(available|for sale|distress sale|outright|rent|lease|asking|price|carpet|bhk|sq\.?ft|inspection)\b/.test(text)) {
       return "SELL";
     }
@@ -3148,8 +3151,9 @@ function InboxPageInner() {
                                           <div className="divide-y divide-white/[0.06]">
                                           {listingChunks.map((chunk, chunkIndex) => {
                                             const signedChunk = appendBrokerSignature(chunk, mSenderName || resolveMessageSenderName(first), mPhone || resolveMessagePhone(first));
+                                            const chunkIntent = inferredMessageIntent({ ...m, message: signedChunk });
                                             const chunkLabel = marketOpportunityLabel({
-                                              intent: (m as api.InboxThread).parsed_intent || m.parsed_intent || inferredMessageIntent({ ...m, message: signedChunk }),
+                                              intent: chunkIntent || (m as api.InboxThread).parsed_intent || m.parsed_intent,
                                               text: signedChunk,
                                             });
                                             return (
