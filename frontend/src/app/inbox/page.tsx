@@ -3061,14 +3061,14 @@ function InboxPageInner() {
                                     >
                                       {listingChunks.length > 1 ? (
                                         <div className="space-y-2">
-                                          <div className="flex items-center justify-between gap-2 border-b border-white/10 pb-2">
+                                          <div className="flex items-center justify-between gap-2 text-[10px] text-zinc-500">
                                             <div className="min-w-0">
-                                              <div className="text-xs font-semibold text-white">{mSenderName || resolveMessageSenderName(first)}</div>
-                                              <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+                                              <div className="text-[11px] font-semibold text-zinc-300">{mSenderName || resolveMessageSenderName(first)}</div>
+                                              <span className="font-semibold uppercase tracking-wider">
                                                 Split into {listingChunks.length} items
                                               </span>
                                             </div>
-                                            <span className="text-[9px] text-zinc-600">Original WhatsApp post</span>
+                                            <span className="text-zinc-600">Original WhatsApp post</span>
                                           </div>
                                           <div className="divide-y divide-white/[0.06]">
                                           {listingChunks.map((chunk, chunkIndex) => {
@@ -3100,6 +3100,7 @@ function InboxPageInner() {
                                                     senderPhone={mPhone}
                                                     entities={buildMessageEntities({ ...m, message: chunk })}
                                                     onEntityClick={handleEntityClick}
+                                                    flatMultiBlocks
                                                   />
                                                 </div>
                                                 <MoneySignalChips text={chunk} label={chunkLabel} />
@@ -3147,6 +3148,7 @@ function InboxPageInner() {
                                               senderPhone={mPhone}
                                               entities={buildMessageEntities(m)}
                                               onEntityClick={handleEntityClick}
+                                              flatMultiBlocks={listingChunks.length > 1}
                                             />
                                           </div>
                                           <MoneySignalChips text={m.message || ""} label={mBadges[0]?.label} />

@@ -16,6 +16,7 @@ interface WhatsAppMessageProps {
   className?: string;
   truncate?: boolean;
   maxLines?: number;
+  flatMultiBlocks?: boolean;
 }
 
 const SEPARATOR_RE = /^[•\-\*═─━~]{3,}\s*$/;
@@ -317,6 +318,7 @@ export default function WhatsAppMessage({
   className = "",
   truncate = false,
   maxLines = 2,
+  flatMultiBlocks = false,
 }: WhatsAppMessageProps) {
   const allEntities = useMemo(() => {
     const detectedPhones: MessageEntity[] = [];
@@ -533,7 +535,7 @@ export default function WhatsAppMessage({
           );
         }
 
-        if (multiBlock) {
+        if (multiBlock && !flatMultiBlocks) {
           return (
             <div
               key={bi}
