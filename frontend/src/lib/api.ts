@@ -200,6 +200,10 @@ export interface MarketAccessStatus {
   authenticated: boolean;
   tenant_id?: string;
   whatsapp_connected: boolean;
+  initial_sync_complete?: boolean;
+  privacy_receipt_complete?: boolean;
+  excluded_groups_count?: number;
+  market_groups_detected?: number;
   trial_active: boolean;
   paid_active: boolean;
   market_unlocked: boolean;
@@ -271,6 +275,26 @@ export function getWhatsAppStatus() {
 
 export function getMarketAccessStatus() {
   return fetchJSON<MarketAccessStatus>("/market/access");
+}
+
+export interface PrivacyReceiptStatus {
+  whatsapp_connected: boolean;
+  privacy_receipt_complete: boolean;
+  completed_at?: string | null;
+  market_groups_detected: number;
+  private_groups_excluded: number;
+  excluded_groups_count: number;
+  direct_messages_private: boolean;
+  shared_market_default: boolean;
+  message: string;
+}
+
+export function getPrivacyReceiptStatus() {
+  return fetchJSON<PrivacyReceiptStatus>("/privacy/receipt");
+}
+
+export function completePrivacyReceipt() {
+  return fetchJSON<PrivacyReceiptStatus>("/privacy/receipt/complete", { method: "POST" });
 }
 
 export function getSourceStatus() {

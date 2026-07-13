@@ -905,6 +905,8 @@ function InboxPageInner() {
           setMarketAccess({
             authenticated: false,
             whatsapp_connected: false,
+            initial_sync_complete: false,
+            privacy_receipt_complete: false,
             trial_active: false,
             paid_active: false,
             market_unlocked: false,
@@ -920,6 +922,32 @@ function InboxPageInner() {
       cancelled = true;
     };
   }, []);
+
+  const marketLock = useMemo(() => {
+    const reason = marketAccess?.reason || "connect_whatsapp";
+    if (reason === "privacy_receipt") {
+      return {
+        title: "Finish group privacy review",
+        description: marketAccess?.message || "Review which WhatsApp groups PropAI can parse before opening the shared broker market.",
+        href: "/audit",
+        cta: "Review Groups",
+      };
+    }
+    if (reason === "sync_pending") {
+      return {
+        title: "Preparing your market feed",
+        description: marketAccess?.message || "WhatsApp is connected. PropAI is waiting for the first synced messages before opening Market Inbox.",
+        href: "/audit",
+        cta: "Open Audit",
+      };
+    }
+    return {
+      title: "Connect WhatsApp first",
+      description: marketAccess?.message || "Connect WhatsApp and start your trial to unlock your personalized broker market feed.",
+      href: "/connections",
+      cta: "Connect WhatsApp",
+    };
+  }, [marketAccess]);
 
   const groupedBrokerObservations = useMemo(() => {
     const groups = new Map<string, BrokerObservationGroup>();
@@ -2442,15 +2470,15 @@ function InboxPageInner() {
                 <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-lg border border-[#3EE88A]/30 bg-[#3EE88A]/10 text-[#3EE88A]">
                   <MessageSquare className="h-4 w-4" strokeWidth={1.6} />
                 </div>
-                <div className="text-sm font-bold text-white">Connect WhatsApp first</div>
+                <div className="text-sm font-bold text-white">{marketLock.title}</div>
                 <p className="mx-auto mt-2 max-w-[260px] text-xs leading-relaxed text-zinc-500">
-                  Market Inbox opens after your workspace connects WhatsApp. This keeps broker discovery behind the trial flow.
+                  {marketLock.description}
                 </p>
                 <Link
-                  href="/connections"
+                  href={marketLock.href}
                   className="mt-4 inline-flex h-9 items-center justify-center rounded-lg bg-[#3EE88A] px-4 text-xs font-bold text-black hover:bg-[#35d47c]"
                 >
-                  Connect WhatsApp
+                  {marketLock.cta}
                 </Link>
               </div>
             ) : loadingLeft && messages.length === 0 && groups.length === 0 ? (
@@ -2622,15 +2650,15 @@ function InboxPageInner() {
                 <div className="mx-auto mb-5 flex h-12 w-12 items-center justify-center rounded-xl border border-[#3EE88A]/30 bg-[#3EE88A]/10 text-[#3EE88A]">
                   <MessageSquare className="h-5 w-5" strokeWidth={1.6} />
                 </div>
-                <h3 className="text-lg font-bold text-white">Market intelligence starts after WhatsApp scan</h3>
+                <h3 className="text-lg font-bold text-white">{marketLock.title}</h3>
                 <p className="mt-2 text-sm leading-relaxed text-zinc-500">
-                  Once WhatsApp is connected, PropAI can parse real-estate groups, build broker entities, and unlock the trial workspace.
+                  {marketLock.description}
                 </p>
                 <Link
-                  href="/connections"
+                  href={marketLock.href}
                   className="mt-5 inline-flex h-10 items-center justify-center rounded-lg bg-[#3EE88A] px-5 text-sm font-bold text-black hover:bg-[#35d47c]"
                 >
-                  Connect WhatsApp
+                  {marketLock.cta}
                 </Link>
               </div>
             </div>

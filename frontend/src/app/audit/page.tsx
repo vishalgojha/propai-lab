@@ -196,6 +196,9 @@ export default function AuditPage() {
   const [auditGroups, setAuditGroups] = useState<api.AuditGroupCard[]>([]);
   const [excludedJids, setExcludedJids] = useState<string[]>([]);
   const [excludedLoading, setExcludedLoading] = useState(false);
+  const [privacyReceipt, setPrivacyReceipt] = useState<api.PrivacyReceiptStatus | null>(null);
+  const [receiptSaving, setReceiptSaving] = useState(false);
+  const [receiptError, setReceiptError] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -243,12 +246,14 @@ export default function AuditPage() {
   useEffect(() => {
     async function load() {
       try {
-        const [groups, excluded] = await Promise.all([
+        const [groups, excluded, receipt] = await Promise.all([
           api.getAuditGroups(),
           api.getExcludedGroups(),
+          api.getPrivacyReceiptStatus(),
         ]);
         setAuditGroups(groups);
         setExcludedJids(excluded);
+        setPrivacyReceipt(receipt);
       } catch {
         // silent
       }
@@ -264,10 +269,27 @@ export default function AuditPage() {
         : [...excludedJids, jid];
       await api.setExcludedGroups(updated);
       setExcludedJids(updated);
+      setPrivacyReceipt((current) => current ? {
+        ...current,
+        private_groups_excluded: updated.length,
+        excluded_groups_count: updated.length,
+      } : current);
     } catch {
       // silent
     } finally {
       setExcludedLoading(false);
+    }
+  }
+
+  async function finishPrivacyReview() {
+    setReceiptSaving(true);
+    setReceiptError("");
+    try {
+      setPrivacyReceipt(await api.completePrivacyReceipt());
+    } catch (e) {
+      setReceiptError(e instanceof Error ? e.message : "Failed to finish privacy review");
+    } finally {
+      setReceiptSaving(false);
     }
   }
 
@@ -477,6 +499,33 @@ export default function AuditPage() {
 
       {auditGroups.length ? (
         <section className="space-y-3">
+          <Card className="p-4">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+              <div className="min-w-0">
+                <Label>Privacy Receipt</Label>
+                <h2 className="mt-1 text-sm font-semibold text-white">
+                  Shared Market is on by default. DMs and opted-out groups stay private.
+                </h2>
+                <p className="mt-1 max-w-3xl text-xs leading-5 text-zinc-500">
+                  PropAI aims to parse real-estate groups only. Use the parser toggle below for client, family, friends, or private groups you do not want in the market graph.
+                </p>
+              </div>
+              <button
+                onClick={finishPrivacyReview}
+                disabled={receiptSaving || !privacyReceipt?.whatsapp_connected || privacyReceipt?.privacy_receipt_complete}
+                className="h-9 shrink-0 rounded-lg bg-[#3EE88A] px-4 text-xs font-bold text-black transition-colors hover:bg-[#35d47c] disabled:cursor-not-allowed disabled:bg-zinc-800 disabled:text-zinc-500"
+              >
+                {privacyReceipt?.privacy_receipt_complete ? "Review Complete" : receiptSaving ? "Saving..." : "Finish Privacy Review"}
+              </button>
+            </div>
+            {receiptError ? <div className="mt-3 text-xs text-red-400">{receiptError}</div> : null}
+            <div className="mt-4 grid gap-2 text-xs sm:grid-cols-2 lg:grid-cols-4">
+              <MiniRow label="Groups detected" value={num(privacyReceipt?.market_groups_detected || auditGroups.length)} />
+              <MiniRow label="Groups opted out" value={num(privacyReceipt?.excluded_groups_count || excludedJids.length)} />
+              <MiniRow label="Direct messages" value="Private" />
+              <MiniRow label="Shared Market" value={privacyReceipt?.privacy_receipt_complete ? "Active" : "Pending review"} />
+            </div>
+          </Card>
           <SectionTitle title="Group Parser Control" sub="Toggle parser on/off per group. Opted-out groups are skipped during webhook processing." />
           <Card className="overflow-hidden">
             <div className="grid grid-cols-[minmax(0,1fr)_80px_100px] gap-3 border-b border-white/10 px-4 py-3 text-[10px] font-bold uppercase tracking-[0.12em] text-zinc-500">

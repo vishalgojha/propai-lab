@@ -3006,28 +3006,66 @@ async def market_access_status(
 ):
     """Access gate for shared market intelligence.
 
-    First enforced production gate: the user must have WhatsApp connected.
-    Billing/trial state is explicit in the response so the UI can tighten this
-    once subscription tables exist without changing the frontend contract.
+    Signup alone is not a trial. The market unlocks only after WhatsApp is
+    connected, at least one sync record exists, and the group privacy review is
+    acknowledged. Billing can replace the time-based trial flag later without
+    changing the frontend contract.
     """
     details = _connection_details()
     connected = bool(details.get("connected"))
+    sync_ready = connected and _market_sync_ready(details)
+    privacy_payload = _privacy_receipt_payload(details)
+    privacy_ready = bool(privacy_payload["privacy_receipt_complete"])
+    paid_active = False
+    trial_active = connected and sync_ready and privacy_ready
+    unlocked = paid_active or trial_active
+
+    reason = "ready"
+    message = "Market Inbox is available for this connected workspace."
+    if not connected:
+        reason = "connect_whatsapp"
+        message = "Connect WhatsApp and start your trial to unlock your personalized broker market feed."
+    elif not sync_ready:
+        reason = "sync_pending"
+        message = "WhatsApp is connected. PropAI is waiting for the first sync record before opening Market Inbox."
+    elif not privacy_ready:
+        reason = "privacy_receipt"
+        message = "Review group privacy once. Real-estate groups feed Shared Market; DMs and opted-out groups stay private."
+
     return {
         "authenticated": bool(user),
         "tenant_id": tenant_id,
         "whatsapp_connected": connected,
-        "trial_active": connected,
-        "paid_active": False,
-        "market_unlocked": connected,
-        "trial_started_at": None,
+        "initial_sync_complete": sync_ready,
+        "privacy_receipt_complete": privacy_ready,
+        "excluded_groups_count": privacy_payload["excluded_groups_count"],
+        "market_groups_detected": privacy_payload["market_groups_detected"],
+        "trial_active": trial_active,
+        "paid_active": paid_active,
+        "market_unlocked": unlocked,
+        "trial_started_at": privacy_payload["completed_at"] if trial_active else None,
         "trial_ends_at": None,
-        "reason": "ready" if connected else "connect_whatsapp",
-        "message": (
-            "Market Inbox unlocks after WhatsApp is connected."
-            if not connected
-            else "Market Inbox is available for this connected workspace."
-        ),
+        "reason": reason,
+        "message": message,
     }
+
+
+@app.get("/api/privacy/receipt")
+async def get_privacy_receipt():
+    return _privacy_receipt_payload()
+
+
+@app.post("/api/privacy/receipt/complete")
+async def complete_privacy_receipt():
+    details = _connection_details()
+    if not details.get("connected"):
+        raise HTTPException(400, "Connect WhatsApp before finishing privacy review")
+    completed_at = _mark_privacy_receipt_complete()
+    payload = _privacy_receipt_payload(details)
+    payload["privacy_receipt_complete"] = True
+    payload["completed_at"] = completed_at
+    payload["message"] = "Review complete. Shared Market is on by default; DMs and opted-out groups stay private."
+    return payload
 
 
 class QueryRequest(BaseModel):
@@ -6011,6 +6049,60 @@ def _companion_set_config_value(key: str, value: str):
            ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at""",
         (key, value, now),
     )
+    storage.db.commit()
+
+
+PRIVACY_RECEIPT_KEY = "privacy_receipt_completed_at"
+
+
+def _privacy_receipt_completed_at() -> str:
+    return _companion_get_config_value(PRIVACY_RECEIPT_KEY)
+
+
+def _mark_privacy_receipt_complete() -> str:
+    completed_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    _companion_set_config_value(PRIVACY_RECEIPT_KEY, completed_at)
+    return completed_at
+
+
+def _market_sync_ready(details: dict) -> bool:
+    captured = details.get("messages_captured")
+    try:
+        if captured is not None and int(captured) > 0:
+            return True
+    except Exception:
+        pass
+    return _count_table("raw_messages") > 0
+
+
+def _privacy_receipt_payload(details: dict | None = None) -> dict:
+    details = details or _connection_details()
+    detected = 0
+    try:
+        if _table_exists("raw_messages"):
+            detected = storage.db.execute(
+                "SELECT COUNT(DISTINCT group_name) AS c FROM raw_messages WHERE COALESCE(group_name, '') != ''"
+            ).fetchone()["c"]
+    except Exception:
+        detected = 0
+    excluded = load_excluded_groups()
+    completed_at = _privacy_receipt_completed_at()
+    excluded_count = len(excluded)
+    return {
+        "whatsapp_connected": bool(details.get("connected")),
+        "privacy_receipt_complete": bool(completed_at),
+        "completed_at": completed_at or None,
+        "market_groups_detected": detected,
+        "private_groups_excluded": excluded_count,
+        "excluded_groups_count": excluded_count,
+        "direct_messages_private": True,
+        "shared_market_default": True,
+        "message": (
+            "Review complete. Shared Market is on by default; DMs and opted-out groups stay private."
+            if completed_at
+            else "Review your groups once. Real-estate groups feed Shared Market; DMs and opted-out groups stay private."
+        ),
+    }
 
 
 def _mask_secret(value: str = "") -> str:
@@ -11470,9 +11562,9 @@ async def update_organization(org_id: str, body: dict):
     return {"ok": True}
 
 
-@app.get("/api/orgs/{org_id}/privacy")
-async def get_organization_privacy(org_id: str):
-    """Get organization privacy settings."""
+@app.get("/api/internal/orgs/{org_id}/privacy-open-legacy")
+async def get_organization_privacy_open_legacy(org_id: str, user: dict = Depends(require_user)):
+    """Legacy internal privacy reader kept off the public API path."""
     org = storage.get_organization(org_id)
     if not org:
         raise HTTPException(404, "Organization not found")
@@ -11489,9 +11581,9 @@ async def get_organization_privacy(org_id: str):
     }
 
 
-@app.put("/api/orgs/{org_id}/privacy")
-async def update_organization_privacy(org_id: str, body: dict):
-    """Update organization privacy settings."""
+@app.put("/api/internal/orgs/{org_id}/privacy-open-legacy")
+async def update_organization_privacy_open_legacy(org_id: str, body: dict, user: dict = Depends(require_user)):
+    """Legacy internal privacy writer kept off the public API path."""
     org = storage.get_organization(org_id)
     if not org:
         raise HTTPException(404, "Organization not found")
