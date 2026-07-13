@@ -2542,6 +2542,8 @@ function InboxPageInner() {
                     const menuOpen = openMenuBroker === b.primary_phone;
                     const isActiveNow = b.last_active && now - new Date(b.last_active).getTime() < 300000;
                     const latestIntent = b.latest_intent || (b.latest_title || "").match(/^(Sale|Rent|Lease|Buy|Requirement)/i)?.[1];
+                    const brokerPhoneDigits = normalizeRealPhone(b.primary_phone || "");
+                    const brokerIdentityHint = brokerPhoneDigits ? `Phone ending ${brokerPhoneDigits.slice(-4)}` : "No phone anchor";
                     return (
                       <div key={b.primary_phone} className="relative">
                         <button
@@ -2565,6 +2567,9 @@ function InboxPageInner() {
                                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg>
                               </div>
                             </div>
+                          </div>
+                          <div className="mb-1 text-[9px] font-medium text-zinc-600">
+                            {brokerIdentityHint}
                           </div>
                           {b.latest_title && (
                             <div className="text-[10px] text-zinc-400 leading-relaxed truncate mb-1.5">
