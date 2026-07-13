@@ -9130,13 +9130,80 @@ async def update_knowledge_record(record_id: int, request: Request):
 
 def _group_jid_to_name(jid: str) -> str:
     """Resolve a JID to its human-readable name from sync_jobs."""
-    row = storage.db.execute(
-        "SELECT group_name FROM source_sync_jobs WHERE group_id = ? AND group_name != '' LIMIT 1",
-        (jid,)
-    ).fetchone()
-    if row:
-        return row[0]
-    return jid.split("@")[0][-8:]  # fallback: last 8 chars of JID
+    value = str(jid or "")
+    if not value:
+        return "Unknown"
+    try:
+        if _table_exists("source_sync_jobs"):
+            row = storage.db.execute(
+                "SELECT group_name FROM source_sync_jobs WHERE group_id = ? AND group_name != '' LIMIT 1",
+                (value,),
+            ).fetchone()
+            if row:
+                return row[0]
+    except Exception:
+        pass
+    if "@" not in value:
+        return value[:80]
+    return value.split("@")[0][-8:]  # fallback: last 8 chars of JID
+
+
+def _audit_row_value(row, key_or_idx, default=None):
+    if row is None:
+        return default
+    try:
+        return row[key_or_idx]
+    except Exception:
+        try:
+            return row[int(key_or_idx)]
+        except Exception:
+            return default
+
+
+def _audit_scalar(sql: str, params=(), default=0):
+    try:
+        row = storage.db.execute(sql, params).fetchone()
+        if row is None:
+            return default
+        value = row[0]
+        return default if value is None else value
+    except Exception as exc:
+        print(f"[audit] scalar failed: {exc} :: {sql[:120]}", flush=True)
+        return default
+
+
+def _audit_rows(sql: str, params=()):
+    try:
+        return storage.db.execute(sql, params).fetchall()
+    except Exception as exc:
+        print(f"[audit] rows failed: {exc} :: {sql[:120]}", flush=True)
+        return []
+
+
+def _audit_count(table: str) -> int:
+    return _count_table(table) if _table_exists(table) else 0
+
+
+def _audit_intent_bucket(intent: str) -> str:
+    value = (intent or "").upper()
+    if value in {"BUY", "BUYER", "REQUIREMENT", "RENTAL_SEEKER", "TENANT"}:
+        return "requirement"
+    if value in {"RENT", "RENTAL", "LEASE", "COMMERCIAL_RENTAL"}:
+        return "rent"
+    if value in {"SELL", "SELLER", "SALE", "COMMERCIAL_SALE", "PRE-LAUNCH"}:
+        return "sale"
+    if "RENT" in value:
+        return "rent"
+    if "BUY" in value or "REQ" in value:
+        return "requirement"
+    return "listing"
+
+
+def _audit_group_display_name(jid: str) -> str:
+    name = _group_jid_to_name(jid)
+    if not name or name == jid:
+        return _group_jid_to_name(jid)
+    return name
 
 @app.get("/api/audit/dashboard")
 async def audit_dashboard():
@@ -9393,7 +9460,7 @@ async def audit_top_contributors(limit: int = 10):
     return result
 
 
-@app.get("/api/audit/groups")
+@app.get("/api/audit/groups-legacy")
 async def audit_groups(q: str = "", status: str = ""):
     """Group explorer with stats per group."""
     day_ago = (datetime.utcnow() - timedelta(hours=24)).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -9534,6 +9601,95 @@ async def audit_groups(q: str = "", status: str = ""):
         groups.append(g)
 
     groups.sort(key=lambda g: g["messages"], reverse=True)
+    return groups
+
+
+@app.get("/api/audit/groups")
+async def audit_groups_v2(q: str = "", status: str = ""):
+    """Fresh group audit backed by raw_messages and parsed_output only."""
+    day_ago = (datetime.utcnow() - timedelta(hours=24)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    query = (q or "").strip().lower()
+
+    if not _table_exists("raw_messages"):
+        return []
+
+    if _table_exists("parsed_output"):
+        rows = _audit_rows("""
+            SELECT rm.group_name AS jid,
+                   COUNT(*) AS messages,
+                   COUNT(DISTINCT rm.sender) AS unique_senders,
+                   MAX(rm.created_at) AS last_activity,
+                   COUNT(po.id) AS observations,
+                   SUM(CASE WHEN upper(COALESCE(po.intent, '')) IN ('BUY','BUYER','REQUIREMENT','RENTAL_SEEKER','TENANT') THEN 1 ELSE 0 END) AS requirements,
+                   SUM(CASE WHEN po.id IS NOT NULL AND upper(COALESCE(po.intent, '')) NOT IN ('BUY','BUYER','REQUIREMENT','RENTAL_SEEKER','TENANT') THEN 1 ELSE 0 END) AS listings,
+                   COUNT(DISTINCT NULLIF(po.micro_market, '')) AS markets_count,
+                   SUM(CASE WHEN COALESCE(po.location_raw, '') != '' AND COALESCE(po.micro_market, '') = '' THEN 1 ELSE 0 END) AS unknown_locations,
+                   COUNT(DISTINCT COALESCE(NULLIF(po.broker_name, ''), NULLIF(po.profile_name, ''), NULLIF(rm.sender, ''))) AS active_brokers
+            FROM raw_messages rm
+            LEFT JOIN parsed_output po ON po.raw_message_id = rm.id
+            GROUP BY rm.group_name
+            ORDER BY messages DESC
+            LIMIT 1000
+        """)
+    else:
+        rows = _audit_rows("""
+            SELECT group_name AS jid,
+                   COUNT(*) AS messages,
+                   COUNT(DISTINCT sender) AS unique_senders,
+                   MAX(created_at) AS last_activity,
+                   0 AS observations,
+                   0 AS requirements,
+                   0 AS listings,
+                   0 AS markets_count,
+                   0 AS unknown_locations,
+                   0 AS active_brokers
+            FROM raw_messages
+            GROUP BY group_name
+            ORDER BY messages DESC
+            LIMIT 1000
+        """)
+
+    groups = []
+    for row in rows:
+        jid = str(row[0] or "")
+        name = _audit_group_display_name(jid)
+        messages = row[1] or 0
+        last_activity = str(row[3] or "")
+        observations = row[4] or 0
+        unknown_locations = row[8] or 0
+        is_live = bool(last_activity and last_activity >= day_ago)
+        coverage = round(((observations - unknown_locations) / max(1, observations)) * 100, 1) if observations else 0
+        group_status = "live" if is_live else "inactive"
+        health = "healthy" if is_live and unknown_locations == 0 else ("degraded" if is_live else "stale")
+
+        if query and query not in name.lower() and query not in jid.lower():
+            continue
+        if status == "live" and group_status != "live":
+            continue
+        if status == "inactive" and group_status != "inactive":
+            continue
+        if status == "error":
+            continue
+
+        groups.append({
+            "jid": jid,
+            "name": name,
+            "status": group_status,
+            "health": health,
+            "error": "",
+            "messages": messages,
+            "last_activity": last_activity,
+            "observations": observations,
+            "listings": row[6] or 0,
+            "requirements": row[5] or 0,
+            "markets_count": row[7] or 0,
+            "unknown_locations": unknown_locations,
+            "coverage": coverage,
+            "active_brokers": row[9] or 0,
+            "duplicate_pct": 0,
+            "parsed": parse_group_name(name),
+        })
+
     return groups
 
 
@@ -9751,7 +9907,7 @@ async def audit_capture_health():
     }
 
 
-@app.get("/api/audit/intelligence")
+@app.get("/api/audit/intelligence-legacy")
 async def audit_intelligence():
     """Network Intelligence Center — comprehensive broker network data."""
     db = storage.db
@@ -10264,6 +10420,275 @@ async def audit_intelligence():
         return scope.get("result") or _audit_fallback(e, scope)
 
     return result
+
+
+@app.get("/api/audit/intelligence")
+async def audit_intelligence_v2():
+    """Fresh WhatsApp audit read model backed by current PropAI tables."""
+    now_dt = datetime.utcnow()
+    today = now_dt.strftime("%Y-%m-%d")
+    today_start = now_dt.strftime("%Y-%m-%dT00:00:00Z")
+    five_min_ago = (now_dt - timedelta(minutes=5)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    day_ago = (now_dt - timedelta(hours=24)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    week_ago = (now_dt - timedelta(days=7)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    total_raw = _audit_count("raw_messages")
+    total_parsed = _audit_count("parsed_output")
+    total_groups = _audit_scalar("SELECT COUNT(DISTINCT group_name) FROM raw_messages", default=0) if _table_exists("raw_messages") else 0
+    active_groups_24h = _audit_scalar("SELECT COUNT(DISTINCT group_name) FROM raw_messages WHERE created_at >= ?", (day_ago,), 0) if _table_exists("raw_messages") else 0
+    msgs_today = _audit_scalar("SELECT COUNT(*) FROM raw_messages WHERE created_at >= ?", (today_start,), 0) if _table_exists("raw_messages") else 0
+    parsed_today = _audit_scalar("SELECT COUNT(*) FROM parsed_output WHERE created_at >= ?", (today_start,), 0) if _table_exists("parsed_output") else 0
+    last_msg = _audit_scalar("SELECT MAX(created_at) FROM raw_messages", default=None) if _table_exists("raw_messages") else None
+    webhook_ok = bool(last_msg and str(last_msg) >= five_min_ago)
+    parser_success = round((total_parsed / max(1, total_raw)) * 100, 1)
+
+    knowledge_records = _audit_count("knowledge_records") or total_raw
+    searchable_records = _audit_count("knowledge_records_fts") or knowledge_records
+    embeddings_count = _audit_count("embeddings")
+    indexed_records = searchable_records or knowledge_records
+    recall_ready_pct = round((indexed_records / max(1, knowledge_records)) * 100, 1) if knowledge_records else 0
+
+    attachment_count = _audit_scalar("SELECT COUNT(*) FROM raw_messages WHERE COALESCE(message_type, 'text') != 'text'", default=0) if _table_exists("raw_messages") else 0
+    communities_count = _audit_scalar("SELECT COUNT(DISTINCT group_name) FROM raw_messages WHERE lower(group_name) LIKE '%community%'", default=0) if _table_exists("raw_messages") else 0
+    broadcast_count = _audit_scalar("""
+        SELECT COUNT(DISTINCT group_name) FROM raw_messages
+        WHERE group_name LIKE '%@broadcast'
+           OR group_name = 'status@broadcast'
+           OR lower(group_name) LIKE '%broadcast%'
+    """, default=0) if _table_exists("raw_messages") else 0
+    direct_message_count = _audit_scalar("""
+        SELECT COUNT(*) FROM raw_messages
+        WHERE group_name LIKE '%@s.whatsapp.net'
+           OR group_name LIKE '%@lid'
+    """, default=0) if _table_exists("raw_messages") else 0
+
+    total_brokers = _audit_count("brokers")
+    total_jids = _audit_count("jid_profiles")
+    unique_phones = _audit_scalar("SELECT COUNT(DISTINCT phone) FROM jid_profiles WHERE phone IS NOT NULL AND phone != ''", default=0) if _table_exists("jid_profiles") else 0
+    named_contacts = _audit_scalar("SELECT COUNT(*) FROM jid_profiles WHERE COALESCE(display_name, '') NOT IN ('', 'Unknown')", default=0) if _table_exists("jid_profiles") else 0
+    unnamed_contacts = max(0, total_jids - named_contacts)
+    new_brokers_today = _audit_scalar("SELECT COUNT(*) FROM brokers WHERE date(first_seen_at) = ?", (today,), 0) if _table_exists("brokers") else 0
+    new_brokers_week = _audit_scalar("SELECT COUNT(*) FROM brokers WHERE first_seen_at >= ?", (week_ago,), 0) if _table_exists("brokers") else 0
+    recently_active = _audit_scalar("SELECT COUNT(*) FROM brokers WHERE last_seen_at >= ?", (week_ago,), 0) if _table_exists("brokers") else 0
+    jids_no_phone = _audit_scalar("SELECT COUNT(*) FROM jid_profiles WHERE phone IS NULL OR phone = ''", default=0) if _table_exists("jid_profiles") else 0
+
+    total_listings = _audit_count("listings")
+    sell_count = _audit_scalar("SELECT COUNT(*) FROM listings WHERE upper(COALESCE(intent, '')) IN ('SELL','SELLER','SALE','COMMERCIAL_SALE','PRE-LAUNCH')", default=0) if _table_exists("listings") else 0
+    rent_count = _audit_scalar("SELECT COUNT(*) FROM listings WHERE upper(COALESCE(intent, '')) IN ('RENT','RENTAL','LEASE','COMMERCIAL_RENTAL')", default=0) if _table_exists("listings") else 0
+    commercial_count = _audit_scalar("SELECT COUNT(*) FROM listings WHERE upper(COALESCE(intent, '')) LIKE '%COMMERCIAL%'", default=0) if _table_exists("listings") else 0
+    total_requirements = _audit_scalar("""
+        SELECT COUNT(*) FROM parsed_output
+        WHERE upper(COALESCE(intent, '')) IN ('BUY','BUYER','REQUIREMENT','RENTAL_SEEKER','TENANT')
+    """, default=0) if _table_exists("parsed_output") else 0
+
+    markets_observed = _audit_scalar("SELECT COUNT(DISTINCT micro_market) FROM parsed_output WHERE COALESCE(micro_market, '') != ''", default=0) if _table_exists("parsed_output") else 0
+    buildings_observed = _audit_count("buildings")
+    buildings_with_data = _audit_scalar("SELECT COUNT(*) FROM buildings WHERE COALESCE(observed_listings, 0) > 0", default=0) if _table_exists("buildings") else 0
+    developers_observed = _audit_scalar("SELECT COUNT(DISTINCT developer) FROM parsed_output WHERE COALESCE(developer, '') != ''", default=0) if _table_exists("parsed_output") else 0
+    localities_observed = _audit_scalar("SELECT COUNT(DISTINCT area) FROM parsed_output WHERE COALESCE(area, '') != ''", default=0) if _table_exists("parsed_output") else 0
+    landmarks_observed = _audit_scalar("SELECT COUNT(DISTINCT landmark_name) FROM parsed_output WHERE COALESCE(landmark_name, '') != ''", default=0) if _table_exists("parsed_output") else 0
+
+    latest_records = _audit_rows("""
+        SELECT id, created_at, group_name, sender, message
+        FROM raw_messages
+        ORDER BY created_at DESC
+        LIMIT 12
+    """) if _table_exists("raw_messages") else []
+
+    group_rows = []
+    if _table_exists("raw_messages") and _table_exists("parsed_output"):
+        group_rows = _audit_rows("""
+            SELECT rm.group_name,
+                   COUNT(*) AS messages,
+                   COUNT(DISTINCT rm.sender) AS unique_senders,
+                   MAX(rm.created_at) AS last_seen,
+                   COUNT(po.id) AS observations,
+                   SUM(CASE WHEN upper(COALESCE(po.intent, '')) IN ('BUY','BUYER','REQUIREMENT','RENTAL_SEEKER','TENANT') THEN 1 ELSE 0 END) AS requirements,
+                   SUM(CASE WHEN po.id IS NOT NULL AND upper(COALESCE(po.intent, '')) NOT IN ('BUY','BUYER','REQUIREMENT','RENTAL_SEEKER','TENANT') THEN 1 ELSE 0 END) AS listings,
+                   COUNT(DISTINCT NULLIF(po.micro_market, '')) AS markets,
+                   COUNT(DISTINCT NULLIF(po.building_name, '')) AS buildings
+            FROM raw_messages rm
+            LEFT JOIN parsed_output po ON po.raw_message_id = rm.id
+            GROUP BY rm.group_name
+            ORDER BY messages DESC
+            LIMIT 20
+        """)
+    elif _table_exists("raw_messages"):
+        group_rows = _audit_rows("""
+            SELECT group_name, COUNT(*) AS messages, COUNT(DISTINCT sender) AS unique_senders,
+                   MAX(created_at) AS last_seen, 0 AS observations, 0 AS requirements,
+                   0 AS listings, 0 AS markets, 0 AS buildings
+            FROM raw_messages
+            GROUP BY group_name
+            ORDER BY messages DESC
+            LIMIT 20
+        """)
+
+    top_brokers = _audit_rows("""
+        SELECT canonical_name, primary_phone, observation_count, listing_count,
+               requirement_count, group_count, first_seen_at, last_seen_at
+        FROM brokers
+        ORDER BY observation_count DESC
+        LIMIT 15
+    """) if _table_exists("brokers") else []
+
+    broker_reach = _audit_rows("""
+        SELECT broker_name,
+               COUNT(DISTINCT rm.group_name) AS groups,
+               COUNT(*) AS observations,
+               MIN(rm.created_at) AS first_seen,
+               MAX(rm.created_at) AS last_seen
+        FROM parsed_output po
+        JOIN raw_messages rm ON po.raw_message_id = rm.id
+        WHERE COALESCE(broker_name, '') != ''
+        GROUP BY broker_name
+        ORDER BY groups DESC, observations DESC
+        LIMIT 10
+    """) if _table_exists("parsed_output") and _table_exists("raw_messages") else []
+
+    market_stats = _audit_rows("""
+        SELECT micro_market,
+               COUNT(*) AS total,
+               SUM(CASE WHEN upper(COALESCE(intent, '')) NOT IN ('BUY','BUYER','REQUIREMENT','RENTAL_SEEKER','TENANT') THEN 1 ELSE 0 END) AS residential,
+               SUM(CASE WHEN upper(COALESCE(intent, '')) LIKE '%COMMERCIAL%' THEN 1 ELSE 0 END) AS commercial,
+               COUNT(DISTINCT broker_name) AS brokers
+        FROM parsed_output
+        WHERE COALESCE(micro_market, '') != ''
+        GROUP BY micro_market
+        ORDER BY total DESC
+        LIMIT 20
+    """) if _table_exists("parsed_output") else []
+
+    top_markets = _audit_rows("""
+        SELECT micro_market, COUNT(DISTINCT broker_name) AS brokers
+        FROM parsed_output
+        WHERE COALESCE(micro_market, '') != ''
+        GROUP BY micro_market
+        ORDER BY brokers DESC
+        LIMIT 10
+    """) if _table_exists("parsed_output") else []
+
+    suggestions = []
+    if total_raw == 0:
+        suggestions.append({"type": "capture_empty", "message": "No WhatsApp messages captured yet.", "action": "connect_whatsapp", "count": 1})
+    if total_parsed and parser_success < 30:
+        suggestions.append({"type": "parser_health", "message": "Parser success is low. Review message format issues.", "action": "review_format", "count": total_parsed})
+    if unnamed_contacts:
+        suggestions.append({"type": "contact_cleanup", "message": f"{unnamed_contacts} WhatsApp identities have no saved name.", "action": "review_unnamed", "count": unnamed_contacts})
+
+    return {
+        "network": {
+            "total_groups": total_groups,
+            "active_groups_24h": active_groups_24h,
+            "total_messages": total_raw,
+            "knowledge_records": knowledge_records,
+            "attachments": attachment_count,
+            "communities": communities_count,
+            "broadcasts": broadcast_count,
+            "direct_messages": direct_message_count,
+            "messages_today": msgs_today,
+            "parsed_today": parsed_today,
+            "parser_success": parser_success,
+            "last_message": str(last_msg or "never"),
+            "webhook_healthy": webhook_ok,
+        },
+        "brokers": {
+            "total": total_brokers,
+            "total_jids": total_jids,
+            "unique_phones": unique_phones,
+            "named_contacts": named_contacts,
+            "unnamed_contacts": unnamed_contacts,
+            "new_today": new_brokers_today,
+            "new_this_week": new_brokers_week,
+            "recently_active": recently_active,
+            "jids_no_phone": jids_no_phone,
+            "top": [
+                {
+                    "name": _audit_row_value(r, 0, ""),
+                    "phone": _audit_row_value(r, 1, ""),
+                    "observations": _audit_row_value(r, 2, 0) or 0,
+                    "listings": _audit_row_value(r, 3, 0) or 0,
+                    "requirements": _audit_row_value(r, 4, 0) or 0,
+                    "groups": _audit_row_value(r, 5, 0) or 0,
+                    "first_seen": _audit_row_value(r, 6, ""),
+                    "last_seen": _audit_row_value(r, 7, ""),
+                }
+                for r in top_brokers
+            ],
+        },
+        "cleanup": {"duplicate_phones": [], "duplicate_names": [], "brokers_no_market": 0},
+        "listings": {
+            "total": total_listings,
+            "sell": sell_count,
+            "rent": rent_count,
+            "commercial": commercial_count,
+            "requirements": total_requirements,
+        },
+        "coverage": {
+            "markets": markets_observed,
+            "buildings": buildings_observed,
+            "buildings_with_data": buildings_with_data,
+            "developers": developers_observed,
+            "localities": localities_observed,
+            "landmarks": landmarks_observed,
+            "market_stats": [
+                {"name": r[0], "total": r[1] or 0, "residential": r[2] or 0, "commercial": r[3] or 0, "brokers": r[4] or 0}
+                for r in market_stats
+            ],
+            "top_markets": [{"name": r[0], "brokers": r[1] or 0} for r in top_markets],
+            "coverage_gaps": [],
+        },
+        "capture": {
+            "status": "connected" if webhook_ok else ("stale" if total_raw else "empty"),
+            "last_message": str(last_msg or "never"),
+            "messages_captured": total_raw,
+            "knowledge_records": knowledge_records,
+            "attachments": attachment_count,
+            "communities": communities_count,
+            "groups": total_groups,
+            "broadcasts": broadcast_count,
+            "direct_messages": direct_message_count,
+            "latest_records": [
+                {
+                    "id": r[0],
+                    "time": str(r[1] or ""),
+                    "conversation": _audit_group_display_name(str(r[2] or "")),
+                    "sender": str(r[3] or ""),
+                    "preview": str(r[4] or "")[:180],
+                    "stored": True,
+                }
+                for r in latest_records
+            ],
+        },
+        "search_coverage": {
+            "messages": total_raw,
+            "indexed": indexed_records,
+            "searchable": searchable_records,
+            "embeddings": embeddings_count,
+            "recall_ready": recall_ready_pct,
+        },
+        "learning": {"unknown_terms": 0, "needs_review": 0, "recently_learned": []},
+        "groups": [
+            {
+                "name": _audit_group_display_name(str(r[0] or "")),
+                "jid": str(r[0] or ""),
+                "messages": r[1] or 0,
+                "unique_senders": r[2] or 0,
+                "listings": r[6] or 0,
+                "requirements": r[5] or 0,
+                "markets": r[7] or 0,
+                "buildings": r[8] or 0,
+                "signal_ratio": round(((r[4] or 0) / max(1, r[1] or 0)) * 100, 1),
+                "last_seen": str(r[3] or ""),
+            }
+            for r in group_rows
+        ],
+        "broker_reach": [
+            {"name": r[0], "groups": r[1] or 0, "observations": r[2] or 0, "first_seen": r[3], "last_seen": r[4]}
+            for r in broker_reach
+        ],
+        "suggestions": suggestions,
+    }
 
 
 @app.get("/api/audit/search-evidence")
