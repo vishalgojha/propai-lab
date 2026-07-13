@@ -216,6 +216,35 @@ function formatAgeShort(value?: string) {
   return `${months}mo`;
 }
 
+function normalizeMessageTimestamp(message?: Partial<api.RawMessage> | null) {
+  if (!message) return "";
+  const candidates = [
+    message.timestamp,
+    message.latest_message_at,
+    message.created_at,
+    message.synced_at,
+  ];
+  for (const raw of candidates) {
+    if (!raw) continue;
+    const value = String(raw);
+    const date = new Date(value.endsWith("Z") || /[+-]\d\d:?\d\d$/.test(value) ? value : `${value}Z`);
+    if (!Number.isNaN(date.getTime())) {
+      return date.toISOString();
+    }
+  }
+  return "";
+}
+
+function messageDateValue(message?: Partial<api.RawMessage> | null) {
+  const normalized = normalizeMessageTimestamp(message);
+  return normalized ? new Date(normalized) : null;
+}
+
+function messageTimeLabel(message?: Partial<api.RawMessage> | null) {
+  const date = messageDateValue(message);
+  return date ? date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "Time unavailable";
+}
+
 function Field({ label, value, accent }: { label: string; value: React.ReactNode; accent?: boolean }) {
   if (!value) return null;
   return (
@@ -1756,7 +1785,7 @@ function InboxPageInner() {
       latest: m,
       count: m.message_count || 0,
     }))
-    .sort((a, b) => new Date(b.latest.timestamp).getTime() - new Date(a.latest.timestamp).getTime());
+    .sort((a, b) => (messageDateValue(b.latest)?.getTime() || 0) - (messageDateValue(a.latest)?.getTime() || 0));
 
   const directChats = uniqueThreads
     .filter((m) => m.conversation_type === "direct")
@@ -1766,7 +1795,7 @@ function InboxPageInner() {
       latest: m,
       count: m.message_count || 0,
     }))
-    .sort((a, b) => new Date(b.latest.timestamp).getTime() - new Date(a.latest.timestamp).getTime());
+    .sort((a, b) => (messageDateValue(b.latest)?.getTime() || 0) - (messageDateValue(a.latest)?.getTime() || 0));
 
   // Apply search filter to broker feed and direct chats
   const filteredBrokerFeed = !query
@@ -1818,7 +1847,7 @@ function InboxPageInner() {
     })),
   ]
     .filter((item) => Boolean(item.key))
-    .sort((a, b) => new Date(b.latest.timestamp).getTime() - new Date(a.latest.timestamp).getTime());
+    .sort((a, b) => (messageDateValue(b.latest)?.getTime() || 0) - (messageDateValue(a.latest)?.getTime() || 0));
 
   const showThreadFallback = activeSlug?.view_type !== "brokers" || (!loadingBrokerFeed && filteredBrokerFeed.length === 0);
 
@@ -1848,8 +1877,8 @@ function InboxPageInner() {
         if (message.group_name && !(existing.duplicate_group_names || []).includes(message.group_name)) {
           existing.duplicate_group_names = [...(existing.duplicate_group_names || []), message.group_name];
         }
-        const existingTime = new Date(existing.timestamp || existing.created_at || 0).getTime();
-        const messageTime = new Date(message.timestamp || message.created_at || 0).getTime();
+        const existingTime = messageDateValue(existing)?.getTime() || 0;
+        const messageTime = messageDateValue(message)?.getTime() || 0;
         if (messageTime > existingTime) {
           map.set(key, {
             ...message,
@@ -1859,13 +1888,12 @@ function InboxPageInner() {
         }
         return map;
       }, new Map<string, api.RawMessage>()).values()
-    ).sort((a, b) => new Date(a.timestamp || a.created_at || 0).getTime() - new Date(b.timestamp || b.created_at || 0).getTime());
+    ).sort((a, b) => (messageDateValue(a)?.getTime() || 0) - (messageDateValue(b)?.getTime() || 0));
 
     dedupedMessages.forEach((message) => {
-      const rawDate = message.timestamp || "";
-      const date = rawDate ? new Date(rawDate.endsWith("Z") ? rawDate : `${rawDate}Z`) : new Date();
-      const label = Number.isNaN(date.getTime())
-        ? "Unknown date"
+      const date = messageDateValue(message);
+      const label = !date || Number.isNaN(date.getTime())
+        ? "Recent"
         : date.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
       if (!grouped[label]) grouped[label] = [];
       grouped[label].push(message);
@@ -1878,9 +1906,9 @@ function InboxPageInner() {
       for (const msg of dayMessages) {
         const lastMsg = currentBlock[currentBlock.length - 1];
         const sameSender = lastMsg && msg.sender === lastMsg.sender;
-        const closeEnough = lastMsg && msg.timestamp && lastMsg.timestamp && (
-          Math.abs(new Date(msg.timestamp).getTime() - new Date(lastMsg.timestamp).getTime()) < 300000
-        );
+        const msgTime = messageDateValue(msg)?.getTime();
+        const lastTime = messageDateValue(lastMsg)?.getTime();
+        const closeEnough = Boolean(lastMsg && msgTime && lastTime && Math.abs(msgTime - lastTime) < 300000);
         if (lastMsg && sameSender && closeEnough) {
           currentBlock.push(msg);
         } else {
@@ -3035,8 +3063,8 @@ function InboxPageInner() {
                                    />
                                   <span className="whitespace-nowrap">
                                     {block.length > 1
-                                      ? `${new Date(first.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} – ${new Date(last.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
-                                      : new Date(first.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                                      ? `${messageTimeLabel(first)} - ${messageTimeLabel(last)}`
+                                      : messageTimeLabel(first)}
                                   </span>
                                 </div>
                                 {block.map((m, msgIdx) => {
