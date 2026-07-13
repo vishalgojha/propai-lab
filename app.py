@@ -10013,10 +10013,16 @@ async def audit_capture_health():
     today_start = now_dt.strftime("%Y-%m-%dT00:00:00Z")
     five_min_ago = (now_dt - timedelta(minutes=5)).strftime("%Y-%m-%dT%H:%M:%SZ")
 
+    errors: list[str] = []
+
     def _q(sql: str, params=()):
         try:
             return storage.db.execute(sql, params).fetchone()[0]
-        except Exception:
+        except Exception as e:
+            err = f"audit_capture_health query failed: {sql!r} — {e}"
+            import logging
+            logging.error(err)
+            errors.append(err)
             return None
 
     total_raw      = _q("SELECT COUNT(*) FROM raw_messages") or 0
@@ -10054,6 +10060,8 @@ async def audit_capture_health():
         "last_webhook": str(last_msg or "") if last_msg else "never",
         "webhook_ok": webhook_ok,
         "queue_backlog": (pending_enrich or 0) + (pending_ai or 0),
+        "errors": errors,
+        "degraded": bool(errors),
     }
 
 
@@ -10080,7 +10088,7 @@ async def audit_intelligence():
                 return default
         return default
 
-    def _safe(r, idx=0, default=0):
+def _safe(r, idx=0, default=0):
         if r is None or idx >= len(r):
             return default
         value = r[idx]
@@ -10093,11 +10101,21 @@ async def audit_intelligence():
             return _to_number(value, default)
         return value
 
+
+def _safe_exec(fn, default=0):
+    """Execute a function, return default on any exception."""
+    try:
+        return fn()
+    except Exception:
+        return default
+
     def _q(sql, params=None, default=0):
         try:
             return db.execute(sql, params or ()).fetchone()
-        except Exception:
-            return None if default is None else (default,)
+        except Exception as e:
+            import logging
+            logging.error(f"query failed: {sql!r} — {e}")
+            raise  # let caller handle
 
     def _qa(sql, params=None, default=None):
         try:
@@ -10170,51 +10188,51 @@ async def audit_intelligence():
             "suggestions": [{"type": "audit_degraded", "message": str(reason)[:180], "count": 1}],
         }
 
-    try:
+try:
         # ── Network Overview ──
-        total_groups = _safe(_q("SELECT COUNT(DISTINCT group_name) FROM raw_messages"))
-        total_raw = _safe(_q("SELECT COUNT(*) FROM raw_messages"))
-        total_parsed = _safe(_q("SELECT COUNT(*) FROM parsed_output"))
-        msgs_today = _safe(_q("SELECT COUNT(*) FROM raw_messages WHERE created_at >= ?", (today_start,)))
-        parsed_today = _safe(_q("SELECT COUNT(*) FROM parsed_output WHERE created_at >= ?", (today_start,)))
-        active_groups_24h = _safe(_q("SELECT COUNT(DISTINCT group_name) FROM raw_messages WHERE created_at >= ?", (day_ago,)))
-        last_msg_row = _q("SELECT MAX(created_at) FROM raw_messages", default=None)
+        total_groups = _safe_exec(lambda: _q("SELECT COUNT(DISTINCT group_name) FROM raw_messages"))
+        total_raw = _safe_exec(lambda: _q("SELECT COUNT(*) FROM raw_messages"))
+        total_parsed = _safe_exec(lambda: _q("SELECT COUNT(*) FROM parsed_output"))
+        msgs_today = _safe_exec(lambda: _q("SELECT COUNT(*) FROM raw_messages WHERE created_at >= ?", (today_start,)))
+        parsed_today = _safe_exec(lambda: _q("SELECT COUNT(*) FROM parsed_output WHERE created_at >= ?", (today_start,)))
+        active_groups_24h = _safe_exec(lambda: _q("SELECT COUNT(DISTINCT group_name) FROM raw_messages WHERE created_at >= ?", (day_ago,)))
+        last_msg_row = _safe_exec(lambda: _q("SELECT MAX(created_at) FROM raw_messages", default=None))
         last_msg = _safe(last_msg_row) if last_msg_row else None
         webhook_ok = last_msg is not None and last_msg >= five_min_ago
 
         knowledge_records = _to_number(_count_table("knowledge_records") if _table_exists("knowledge_records") else total_raw)
         searchable_records = _to_number(_count_table("knowledge_records_fts") if _table_exists("knowledge_records_fts") else total_raw)
-        embeddings_count = _to_number(_count_table("embeddings") if _table_exists("embeddings") else _safe(_q("SELECT COUNT(*) FROM parsed_output WHERE embedding IS NOT NULL")))
+        embeddings_count = _to_number(_count_table("embeddings") if _table_exists("embeddings") else _safe_exec(lambda: _q("SELECT COUNT(*) FROM parsed_output WHERE embedding IS NOT NULL")))
         indexed_records = searchable_records if searchable_records else knowledge_records
         recall_ready_pct = round(
             min(indexed_records, searchable_records) / max(1, knowledge_records) * 100,
             1,
         ) if knowledge_records else 0
 
-        attachment_count = _safe(_q("""
+        attachment_count = _safe_exec(lambda: _q("""
             SELECT COUNT(*) FROM raw_messages
             WHERE message_type != 'text'
                OR attachments::text != '[]'
         """))
-        communities_count = _safe(_q("""
+        communities_count = _safe_exec(lambda: _q("""
             SELECT COUNT(DISTINCT group_name) FROM raw_messages
             WHERE lower(group_name) LIKE '%community%'
         """))
-        broadcast_count = _safe(_q("""
+        broadcast_count = _safe_exec(lambda: _q("""
             SELECT COUNT(DISTINCT group_name) FROM raw_messages
             WHERE group_name LIKE '%@broadcast'
                OR group_name = 'status@broadcast'
                OR lower(group_name) LIKE '%broadcast%'
         """))
-        direct_message_count = _safe(_q("""
+        direct_message_count = _safe_exec(lambda: _q("""
             SELECT COUNT(*) FROM raw_messages
             WHERE group_name LIKE '%@s.whatsapp.net'
                OR group_name LIKE '%@lid'
         """))
 
         if _table_exists("learning_cards"):
-            learning_unknown = _safe(_q("SELECT COUNT(*) FROM learning_cards WHERE status = 'pending'"))
-            learning_needs_review = _safe(_q("SELECT COUNT(*) FROM learning_cards WHERE status = 'pending' AND frequency >= 2"))
+            learning_unknown = _safe_exec(lambda: _q("SELECT COUNT(*) FROM learning_cards WHERE status = 'pending'"))
+            learning_needs_review = _safe_exec(lambda: _q("SELECT COUNT(*) FROM learning_cards WHERE status = 'pending' AND frequency >= 2"))
             learned_rows = _qa("""
                 SELECT term, COALESCE(resolved_value, resolved_type, 'Learned') AS learned_as
                 FROM learning_cards
@@ -10254,24 +10272,24 @@ async def audit_intelligence():
             """)
 
         # Parser success
-        parser_success = _safe(_q(
+        parser_success = _safe_exec(lambda: _q(
             "SELECT ROUND(CAST(COUNT(CASE WHEN confidence > 0.5 THEN 1 END) AS FLOAT) / COUNT(*) * 100, 1) FROM parsed_output"
         ))
 
         # ── Broker Network ──
-        total_brokers = _safe(_q("SELECT COUNT(*) FROM brokers"))
-        total_jids = _safe(_q("SELECT COUNT(*) FROM jid_profiles"))
-        unique_phones = _safe(_q("SELECT COUNT(DISTINCT phone) FROM jid_profiles WHERE phone IS NOT NULL AND phone != ''"))
-        named_contacts = _safe(_q("SELECT COUNT(*) FROM jid_profiles WHERE display_name != 'Unknown'"))
-        unnamed_contacts = _safe(_q("SELECT COUNT(*) FROM jid_profiles WHERE display_name = 'Unknown'"))
+        total_brokers = _safe_exec(lambda: _q("SELECT COUNT(*) FROM brokers"))
+        total_jids = _safe_exec(lambda: _q("SELECT COUNT(*) FROM jid_profiles"))
+        unique_phones = _safe_exec(lambda: _q("SELECT COUNT(DISTINCT phone) FROM jid_profiles WHERE phone IS NOT NULL AND phone != ''"))
+        named_contacts = _safe_exec(lambda: _q("SELECT COUNT(*) FROM jid_profiles WHERE display_name != 'Unknown'"))
+        unnamed_contacts = _safe_exec(lambda: _q("SELECT COUNT(*) FROM jid_profiles WHERE display_name = 'Unknown'"))
 
         # New brokers discovered
-        new_brokers_today = _safe(_q("SELECT COUNT(*) FROM brokers WHERE date(first_seen_at) = ?", (today,)))
-        new_brokers_week = _safe(_q("SELECT COUNT(*) FROM brokers WHERE first_seen_at >= ?", (week_ago,)))
-        recently_active = _safe(_q("SELECT COUNT(*) FROM brokers WHERE last_seen_at >= ?", (week_ago,)))
+        new_brokers_today = _safe_exec(lambda: _q("SELECT COUNT(*) FROM brokers WHERE date(first_seen_at) = ?", (today,)))
+        new_brokers_week = _safe_exec(lambda: _q("SELECT COUNT(*) FROM brokers WHERE first_seen_at >= ?", (week_ago,)))
+        recently_active = _safe_exec(lambda: _q("SELECT COUNT(*) FROM brokers WHERE last_seen_at >= ?", (week_ago,)))
 
         # JIDs without phone
-        jids_no_phone = _safe(_q("SELECT COUNT(*) FROM jid_profiles WHERE phone IS NULL OR phone = ''"))
+        jids_no_phone = _safe_exec(lambda: _q("SELECT COUNT(*) FROM jid_profiles WHERE phone IS NULL OR phone = ''"))
 
         # ── Contact Cleanup ──
         dup_phones = _qa("""
@@ -10287,7 +10305,7 @@ async def audit_intelligence():
             GROUP BY canonical_name HAVING COUNT(DISTINCT primary_phone) > 1
         """)
 
-        brokers_no_market = _safe(_q("""
+        brokers_no_market = _safe_exec(lambda: _q("""
             SELECT COUNT(*) FROM brokers b
             LEFT JOIN (
                 SELECT broker_name, COUNT(DISTINCT micro_market) as markets
@@ -10299,19 +10317,19 @@ async def audit_intelligence():
         """))
 
         # ── Listings & Requirements ──
-        total_listings = _safe(_q("SELECT COUNT(*) FROM listings"))
-        sell_count = _safe(_q("SELECT COUNT(*) FROM listings WHERE intent IN ('SELL','SELLER')"))
-        rent_count = _safe(_q("SELECT COUNT(*) FROM listings WHERE intent IN ('RENT','RENTAL')"))
-        commercial_count = _safe(_q("SELECT COUNT(*) FROM listings WHERE intent IN ('COMMERCIAL','COMMERCIAL_SALE','COMMERCIAL_RENTAL')"))
-        total_requirements = _safe(_q("SELECT COUNT(*) FROM parsed_output WHERE intent IN ('BUY','BUYER','RENTAL_SEEKER')"))
+        total_listings = _safe_exec(lambda: _q("SELECT COUNT(*) FROM listings"))
+        sell_count = _safe_exec(lambda: _q("SELECT COUNT(*) FROM listings WHERE intent IN ('SELL','SELLER')"))
+        rent_count = _safe_exec(lambda: _q("SELECT COUNT(*) FROM listings WHERE intent IN ('RENT','RENTAL')"))
+        commercial_count = _safe_exec(lambda: _q("SELECT COUNT(*) FROM listings WHERE intent IN ('COMMERCIAL','COMMERCIAL_SALE','COMMERCIAL_RENTAL')"))
+        total_requirements = _safe_exec(lambda: _q("SELECT COUNT(*) FROM parsed_output WHERE intent IN ('BUY','BUYER','RENTAL_SEEKER')"))
 
         # ── Market Coverage ──
-        markets_observed = _safe(_q("SELECT COUNT(DISTINCT micro_market) FROM parsed_output WHERE micro_market IS NOT NULL AND micro_market != ''"))
-        buildings_observed = _safe(_q("SELECT COUNT(*) FROM buildings"))
-        buildings_with_data = _safe(_q("SELECT COUNT(*) FROM buildings WHERE observed_listings > 0"))
-        developers_observed = _safe(_q("SELECT COUNT(DISTINCT developer) FROM parsed_output WHERE developer IS NOT NULL AND developer != ''"))
-        localities_observed = _safe(_q("SELECT COUNT(DISTINCT area) FROM parsed_output WHERE area IS NOT NULL AND area != ''"))
-        landmarks_observed = _safe(_q("SELECT COUNT(DISTINCT landmark_name) FROM parsed_output WHERE landmark_name IS NOT NULL AND landmark_name != ''"))
+        markets_observed = _safe_exec(lambda: _q("SELECT COUNT(DISTINCT micro_market) FROM parsed_output WHERE micro_market IS NOT NULL AND micro_market != ''"))
+        buildings_observed = _safe_exec(lambda: _q("SELECT COUNT(*) FROM buildings"))
+        buildings_with_data = _safe_exec(lambda: _q("SELECT COUNT(*) FROM buildings WHERE observed_listings > 0"))
+        developers_observed = _safe_exec(lambda: _q("SELECT COUNT(DISTINCT developer) FROM parsed_output WHERE developer IS NOT NULL AND developer != ''"))
+        localities_observed = _safe_exec(lambda: _q("SELECT COUNT(DISTINCT area) FROM parsed_output WHERE area IS NOT NULL AND area != ''"))
+        landmarks_observed = _safe_exec(lambda: _q("SELECT COUNT(DISTINCT landmark_name) FROM parsed_output WHERE landmark_name IS NOT NULL AND landmark_name != ''"))
 
         market_stats = _qa("""
             SELECT micro_market, 

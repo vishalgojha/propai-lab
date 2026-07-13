@@ -1,0 +1,1 @@
+{"query": "SELECT proname, prosrc FROM pg_proc WHERE proname = 'propai_query_sql' OR proname = 'propai_run_sql';"}
