@@ -18,6 +18,35 @@ import subprocess
 import jwt as pyjwt
 from fnmatch import fnmatch
 from datetime import datetime, timedelta, timezone
+
+
+# ── WhatsApp text sanitizer (post-process, unconditional safety net) ──────────
+def sanitize_whatsapp_text(text: str) -> str:
+    """Strip markdown/bullets/headers that the model shouldn't emit for WhatsApp."""
+    if not isinstance(text, str):
+        return str(text) if text is not None else ""
+    # **bold** → bold
+    text = re.sub(r"\*\*(.+?)\*\*", r"\1", text)
+    # *italic* → italic
+    text = re.sub(r"\*(.+?)\*", r"\1", text)
+    # strip leading bullets (• or -)
+    text = re.sub(r"^[•\-]\s+", "", text, flags=re.M)
+    # strip markdown headers (# ## ###)
+    text = re.sub(r"^#{1,6}\s*", "", text, flags=re.M)
+    return text.strip()
+
+
+def _looks_like_echo_misfire(user_msg: str, assistant_msg: str, threshold: float = 0.6) -> bool:
+    """Flag responses that substantially echo the user's own message back —
+    a strong signal the model misclassified a data query as small talk."""
+    if not user_msg:
+        return False
+    user_tokens = set(user_msg.lower().split())
+    assistant_tokens = set(assistant_msg.lower().split())
+    if not user_tokens:
+        return False
+    overlap = len(user_tokens & assistant_tokens) / len(user_tokens)
+    return overlap >= threshold
 from pathlib import Path
 from typing import Optional
 from contextlib import asynccontextmanager
@@ -5297,7 +5326,7 @@ def _workspace_response_to_whatsapp(response: dict) -> str:
         text = "I found a response, but it had no readable text."
     if len(text) > 3200:
         text = text[:3190].rstrip() + "\n…"
-    return text
+    return sanitize_whatsapp_text(text)
 
 
 async def _run_workspace_agent(messages: list[dict], model: str = "", session_id: str = "whatsapp") -> dict:
@@ -5383,6 +5412,16 @@ WHATSAPP SELF-CHAT MODE:
         )
         if reply.content:
             memory.add("assistant", reply.content)
+        # Echo-detection guardrail: catch "Nice to meet you" misfires on data queries
+        last_user = next((m.get("content", "") for m in reversed(messages) if m.get("role") == "user"), "")
+        assistant_reply = reply.content or ""
+        if _looks_like_echo_misfire(last_user, assistant_reply):
+            # Log for review; could also force a retry with explicit tool reminder
+            import logging
+            logging.warning(
+                "possible_echo_misfire",
+                extra={"user_msg": last_user[:200], "assistant_msg": assistant_reply[:200]}
+            )
         return chat_engine.normalize_workspace_response(reply.content or "", sources)
 
     return await asyncio.wait_for(loop.run_in_executor(None, _call), timeout=90)
