@@ -12,6 +12,9 @@ from typing import Callable
 
 _DIVIDER_RE = re.compile(r'^_{3,}$|^={3,}$|^[-–—]{3,}$|^__{3,}|^\*{3,}$|^⸻$')
 _TITLE_CASE_BUILDING_RE = re.compile(r'^\s*🏢\s*([A-Z][A-Za-z .]+(?: [A-Z][A-Za-z .]*)*)')
+# Decorative broker star ratings like "*****" are common inside listings, so
+# do not treat bare asterisk runs as section dividers.
+_DIVIDER_RE = re.compile(r'^_{3,}$|^={3,}$|^[-–—]{3,}$|^__{3,}|^⸻$')
 _UNNUMBERED_BLOCK_START_RE = re.compile(
     r'^\s*(?:[*_`~\s]*)?('
     r'available\s+for\s+(?:\d+(?:\.\d+)?\s*(?:bhk|rk)\s+)?(?:rent|sale|lease)|'
@@ -807,20 +810,21 @@ def _parse_divider_block(
         "bhk": bhk,
         "price": price,
         "price_unit": unit,
+        "price_per_sqft": price_per_sqft,
         "area_sqft": area,
-        "furnishing": furnishing,
-        "location_raw": shared_building,
-        "building_name": validate_building_name(shared_building),
-        "landmark_name": shared_building,
-        "street_name": None,
+        "furnishing": _parse_furnishing_from_text(block),
+        "location_raw": location_line or loc.get("location_raw"),
+        "building_name": building or loc.get("building_name"),
+        "landmark_name": loc.get("landmark_name"),
+        "street_name": loc.get("street_name"),
         "area": None,
-        "micro_market": None,
+        "micro_market": loc.get("micro_market"),
         "developer": None,
-        "broker_name": None,
-        "broker_phone": None,
+        "broker_name": broker_name,
+        "broker_phone": broker_phone,
         "forwarded": 0,
         "confidence": 0.85,
-        "raw_payload": {"full_text": line},
+        "raw_payload": {"full_text": block},
         "location": loc.get("location") or {},
         # Property attribute fields
         "floor_description": attrs.get("floor_description"),
@@ -1722,6 +1726,77 @@ def _detect_intent_from_line(line: str) -> str | None:
     return None
 
 
+def _rank_split_strategies(text: str) -> list[dict]:
+    """Run splitters and rank them by marker specificity.
+
+    The old parser returned the first matching splitter, which let weak
+    floor-line matches beat stronger numbered-list markers. Ranking keeps
+    every splitter honest and makes collisions explicit.
+    """
+    strategies: list[dict] = []
+
+    numbered_blocks = _split_numbered_blocks(text)
+    if len(numbered_blocks) >= 2:
+        strategies.append({
+            "name": "numbered",
+            "score": 100 + (len(numbered_blocks) * 3),
+            "blocks": numbered_blocks,
+        })
+
+    divider_blocks = _split_by_dividers(text)
+    if len(divider_blocks) >= 2:
+        strategies.append({
+            "name": "divider",
+            "score": 80 + (len(divider_blocks) * 2),
+            "blocks": divider_blocks,
+        })
+
+    pin_blocks = _split_by_pin_markers(text)
+    if len(pin_blocks) >= 2:
+        strategies.append({
+            "name": "pin",
+            "score": 75 + (len(pin_blocks) * 2),
+            "blocks": pin_blocks,
+        })
+
+    repeated_blocks = _split_repeated_available_blocks(text)
+    if len(repeated_blocks) >= 2:
+        strategies.append({
+            "name": "repeated",
+            "score": 70 + (len(repeated_blocks) * 2),
+            "blocks": repeated_blocks,
+        })
+
+    floor_listings = _split_commercial_floors(text)
+    if len(floor_listings) >= 2:
+        strategies.append({
+            "name": "commercial_floors",
+            "score": 50 + len(floor_listings),
+            "listings": floor_listings,
+        })
+
+    return sorted(strategies, key=lambda item: (item["score"], len(item.get("blocks") or item.get("listings") or [])), reverse=True)
+
+
+def _parse_split_blocks(
+    blocks: list[str],
+    parser: Callable,
+    profile_name: str | None,
+    hier_ctx: dict,
+    building_lookup_fn: Callable | None,
+) -> list[dict]:
+    listings: list[dict] = []
+    for block in blocks:
+        block_ctx = dict(hier_ctx)
+        block_hier = extract_hierarchical_context(block)
+        block_ctx.update({k: v for k, v in block_hier.items() if v is not None})
+        parsed = parser(block, profile_name, hierarchical_ctx=block_ctx)
+        if parsed:
+            parsed = _enrich_listing_with_building_db(parsed, building_lookup_fn)
+            listings.append(parsed)
+    return listings
+
+
 def parse_multi_message(
     text: str,
     profile_name: str | None = None,
@@ -1735,6 +1810,27 @@ def parse_multi_message(
     """
     # Extract document-level hierarchical context
     hier_ctx = extract_hierarchical_context(text)
+
+    for strategy in _rank_split_strategies(text):
+        if strategy["name"] == "commercial_floors":
+            enriched = [
+                _enrich_listing_with_building_db(listing, building_lookup_fn)
+                for listing in strategy.get("listings", [])
+            ]
+            if len(enriched) >= 2:
+                return enriched
+            continue
+
+        parser = _parse_numbered_block if strategy["name"] == "numbered" else _parse_divider_block
+        listings = _parse_split_blocks(
+            strategy.get("blocks", []),
+            parser,
+            profile_name,
+            hier_ctx,
+            building_lookup_fn,
+        )
+        if len(listings) >= 2:
+            return listings
 
     # Try commercial floor-pricing split (early return - distinct format)
     floor_listings = _split_commercial_floors(text)
