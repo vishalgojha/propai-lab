@@ -99,7 +99,7 @@ export default function WabaPage() {
       <div className="mb-8">
         <h2 className="text-lg font-bold text-white">WhatsApp Business API</h2>
         <p className="mt-2 max-w-2xl text-sm text-zinc-500">
-          PropAI uses the WhatsApp Business API to send outbound messages (alerts, notifications, property cards) to your clients.
+          Configure your own WhatsApp Business API for broker-owned outbound messaging. PropAI's shared WABA is reserved for platform messages only.
         </p>
       </div>
 
@@ -113,8 +113,11 @@ export default function WabaPage() {
               <span className="text-zinc-500">Number:</span> {PROPAI_WABA_NUMBER}
             </div>
             <p className="mt-2 text-xs text-zinc-500">
-              All PropAI users can send outbound messages through this shared WhatsApp Business account.
-              No setup required — it works out of the box.
+              This is PropAI's own WhatsApp Business account for system-owned messages.
+              Brokers cannot send outbound client or broker messages from this number.
+            </p>
+            <p className="mt-2 text-xs font-semibold text-[#3EE88A]">
+              For your personal outbound messaging, connect your own WABA below.
             </p>
           </div>
         </div>
@@ -129,7 +132,7 @@ export default function WabaPage() {
           <div>
             <div className="text-sm font-bold text-white">Connect your own WABA</div>
             <p className="mt-1 text-xs text-zinc-500">
-              Use your own WhatsApp Business Account for org-specific messaging.
+              Use your own WhatsApp Business Account for broker-owned outbound messages and private client communication.
             </p>
           </div>
           <div className={`w-10 h-6 rounded-full transition-colors ${useOwnWaba ? "bg-[#3EE88A]" : "bg-zinc-700"} relative`}>
