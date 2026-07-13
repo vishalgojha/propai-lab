@@ -1,616 +1,449 @@
 "use client";
 
-export const dynamic = 'force-dynamic';
+export const dynamic = "force-dynamic";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import Link from "next/link";
+import { AlertTriangle, Eye, Network, RefreshCw, ShieldCheck, Users } from "lucide-react";
 import * as api from "@/lib/api";
+import { classifyFormatIssue } from "@/lib/format-issues";
 
-type LatestRecord = {
-  id: number | string;
-  time: string;
-  conversation: string;
-  sender: string;
-  preview: string;
-  stored?: boolean;
+type LoadState = {
+  raw: api.RawMessage[];
+  threads: api.InboxThread[];
+  groups: api.AuditGroupCard[];
+  health: api.AuditCaptureHealth | null;
+  excluded: string[];
+  errors: string[];
 };
 
-type LearnedTerm = {
-  term: string;
-  learned_as: string;
-};
-
-type AuditData = {
-  network?: Record<string, number | string | boolean>;
-  brokers?: Record<string, number | string | boolean | BrokerRecord[]>;
-  cleanup?: Record<string, number | string | boolean | DuplicatePhone[] | DuplicateName[]>;
-  groups?: GroupRecord[];
-  capture?: Record<string, number | string | boolean | LatestRecord[]>;
-  search_coverage?: Record<string, number | string>;
-  learning?: Record<string, number | string | LearnedTerm[]>;
-};
-
-type BrokerRecord = {
+type GroupInsight = {
+  key: string;
   name: string;
-  phone?: string;
-  observations: number;
-  listings: number;
-  requirements: number;
-  groups: number;
-};
-
-type DuplicatePhone = {
-  phone: string;
-  count: number;
-};
-
-type DuplicateName = {
-  name: string;
-  phone_count: number;
-  phones?: string;
-};
-
-type GroupRecord = {
-  name: string;
-  jid: string;
   messages: number;
-  unique_senders: number;
+  latest: string;
+  uniqueMembers: number;
+  duplicateMembers: number;
+  overlapPct: number;
   listings: number;
   requirements: number;
-  markets: number;
-  buildings: number;
-  signal_ratio: number;
-  last_seen: string;
+  rentSignals: number;
+  saleSignals: number;
+  formatIssues: number;
+  duplicatePct: number;
+  activeBrokers: number;
+  parserOff: boolean;
 };
 
-type EvidenceGroup = {
-  name: string;
-  count: number;
+const emptyState: LoadState = {
+  raw: [],
+  threads: [],
+  groups: [],
+  health: null,
+  excluded: [],
+  errors: [],
 };
 
-type SearchEvidence = {
-  count: number;
-  first_seen: string;
-  last_seen: string;
-  groups: number;
-  unique_senders: number;
-  top_groups: EvidenceGroup[];
-  recent?: LatestRecord[];
-};
-
-function num(value: number | string | null | undefined) {
-  const n = Number(value || 0);
-  return n.toLocaleString();
+async function safe<T>(label: string, fn: () => Promise<T>, fallback: T): Promise<{ value: T; error?: string }> {
+  try {
+    return { value: await fn() };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return { value: fallback, error: `${label}: ${message}` };
+  }
 }
 
-function timeAgo(ts: string) {
-  if (!ts || ts === "never") return "never";
+function digits(value?: string) {
+  return (value || "").replace(/\D/g, "");
+}
+
+function memberKey(message: api.RawMessage) {
+  const phone = digits(message.sender_phone || message.broker_phone).slice(-10);
+  if (phone.length === 10) return `phone:${phone}`;
+  return message.sender_jid || message.sender || message.broker_name || "unknown";
+}
+
+function groupKey(message: api.RawMessage) {
+  return message.chat_id || message.conversation_key || message.chat_name || message.conversation_name || message.group_name || "Unknown group";
+}
+
+function groupName(message: api.RawMessage) {
+  return message.chat_name || message.conversation_name || message.group_name || "Unknown group";
+}
+
+function timeAgo(ts?: string) {
+  if (!ts) return "never";
   const ms = new Date(ts).getTime();
-  if (Number.isNaN(ms)) return ts;
+  if (Number.isNaN(ms)) return "unknown";
   const secs = Math.max(0, Math.floor((Date.now() - ms) / 1000));
-  if (secs < 10) return "just now";
-  if (secs < 60) return `${secs}s ago`;
+  if (secs < 60) return "just now";
   if (secs < 3600) return `${Math.floor(secs / 60)}m ago`;
   if (secs < 86400) return `${Math.floor(secs / 3600)}h ago`;
   return `${Math.floor(secs / 86400)}d ago`;
 }
 
-function dateLabel(ts: string) {
-  if (!ts) return "-";
-  const d = new Date(ts);
-  if (Number.isNaN(d.getTime())) return ts;
-  return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+function num(value?: number | string | null) {
+  return Number(value || 0).toLocaleString("en-IN");
 }
 
-function clockLabel(ts: string) {
-  if (!ts) return "--:--";
-  const d = new Date(ts);
-  if (Number.isNaN(d.getTime())) return "--:--";
-  return d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+function pct(value?: number | string | null) {
+  const n = Number(value || 0);
+  return `${Math.round(n)}%`;
 }
 
-function cleanDisplayText(value: string) {
+function hasRentSignal(text: string) {
+  return /\b(on rent|for rent|rent only|rental|lease|leave\s*&\s*license|l\s*&\s*l|per month|p\.?m\.?)\b/i.test(text);
+}
+
+function hasSaleSignal(text: string) {
+  return /\b(for sale|on sale|distress sale|outright|sale price|reserve price|asking)\b/i.test(text);
+}
+
+function isRequirement(text: string) {
+  return /\b(requirement|required|wanted|looking|need|buyer|tenant)\b/i.test(text);
+}
+
+function isListing(text: string) {
+  return /\b(available|on rent|for rent|for sale|on sale|distress|outright|inspection|call|contact)\b/i.test(text);
+}
+
+function cleanPreview(value?: string) {
   return String(value || "")
     .replace(/[\p{Extended_Pictographic}\uFE0F]/gu, "")
-    .replace(/(^|\s)[*_~`#>]+/g, "$1")
-    .replace(/[*_~`#>]+(\s|$)/g, "$1")
-    .replace(/[*_~`#>]{2,}/g, " ")
     .replace(/\s+/g, " ")
     .trim();
 }
 
-function Card({ children, className = "" }: { children: React.ReactNode; className?: string }) {
-  return (
-    <div className={`rounded-lg border border-white/10 bg-zinc-900 ${className}`}>
-      {children}
-    </div>
-  );
+function Card({ children, className = "" }: { children: ReactNode; className?: string }) {
+  return <div className={`rounded-lg border border-white/10 bg-white/[0.025] ${className}`}>{children}</div>;
 }
 
-function Label({ children }: { children: React.ReactNode }) {
-  return <div className="text-[10px] font-bold uppercase tracking-[0.12em] text-zinc-500">{children}</div>;
-}
-
-function Metric({ label, value, sub }: { label: string; value: React.ReactNode; sub?: React.ReactNode }) {
+function Metric({ label, value, sub }: { label: string; value: ReactNode; sub?: ReactNode }) {
   return (
     <Card className="p-4">
-      <Label>{label}</Label>
-      <div className="mt-1 text-2xl font-semibold tabular-nums text-white">{value}</div>
-      {sub ? <div className="mt-1 text-[11px] text-zinc-500">{sub}</div> : null}
+      <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-500">{label}</div>
+      <div className="mt-1 text-2xl font-bold tabular-nums text-white">{value}</div>
+      {sub ? <div className="mt-1 text-[11px] leading-4 text-zinc-500">{sub}</div> : null}
     </Card>
   );
 }
 
-function MiniRow({ label, value }: { label: string; value: React.ReactNode }) {
+function SectionTitle({ icon, title, sub }: { icon?: ReactNode; title: string; sub?: string }) {
   return (
-    <div className="flex items-center justify-between gap-3 rounded-lg bg-zinc-800 px-3 py-2 text-xs">
-      <span className="truncate text-zinc-400">{label}</span>
-      <span className="shrink-0 font-mono font-semibold text-white">{value}</span>
-    </div>
-  );
-}
-
-function SectionTitle({ title, sub }: { title: string; sub?: string }) {
-  return (
-    <div className="flex items-end justify-between gap-4">
+    <div className="flex items-start gap-2">
+      {icon ? <div className="mt-0.5 text-[#3EE88A]">{icon}</div> : null}
       <div>
-        <h2 className="text-sm font-semibold text-white">{title}</h2>
-        {sub ? <div className="mt-1 text-xs text-zinc-500">{sub}</div> : null}
-      </div>
-    </div>
-  );
-}
-
-function getNumber(record: Record<string, unknown>, key: string) {
-  return Number(record[key] || 0);
-}
-
-function getString(record: Record<string, unknown>, key: string) {
-  return String(record[key] || "");
-}
-
-function RecordRow({ item }: { item: LatestRecord }) {
-  return (
-    <div className="grid grid-cols-[64px_minmax(0,1fr)_74px] gap-3 border-b border-[rgba(255,255,255,0.05)] px-4 py-3 last:border-b-0">
-      <div className="font-mono text-[11px] text-zinc-500">{clockLabel(item.time)}</div>
-      <div className="min-w-0">
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
-          <span className="max-w-[220px] truncate font-semibold text-white">{item.conversation || "WhatsApp"}</span>
-          <span className="text-zinc-500">{item.sender || "Unknown"}</span>
-        </div>
-        <div className="mt-1 line-clamp-2 text-xs leading-5 text-zinc-400">{cleanDisplayText(item.preview) || "No text content"}</div>
-      </div>
-      <div className="self-start rounded-full border border-[#3EE88A]/25 bg-[#3EE88A]/10 px-2 py-1 text-center text-[10px] font-bold uppercase tracking-wide text-[#3EE88A]">
-        {item.stored === false ? "Queued" : "Stored"}
+        <h2 className="text-sm font-bold text-white">{title}</h2>
+        {sub ? <p className="mt-1 text-xs leading-5 text-zinc-500">{sub}</p> : null}
       </div>
     </div>
   );
 }
 
 export default function AuditPage() {
-  const [data, setData] = useState<AuditData | null>(null);
-  const [query, setQuery] = useState("");
-  const [evidence, setEvidence] = useState<SearchEvidence | null>(null);
+  const [state, setState] = useState<LoadState>(emptyState);
   const [loading, setLoading] = useState(true);
-  const [searching, setSearching] = useState(false);
-  const [error, setError] = useState("");
-  const [auditGroups, setAuditGroups] = useState<api.AuditGroupCard[]>([]);
-  const [excludedJids, setExcludedJids] = useState<string[]>([]);
-  const [excludedLoading, setExcludedLoading] = useState(false);
-  const [privacyReceipt, setPrivacyReceipt] = useState<api.PrivacyReceiptStatus | null>(null);
-  const [receiptSaving, setReceiptSaving] = useState(false);
-  const [receiptError, setReceiptError] = useState("");
+  const [savingJid, setSavingJid] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
-    setError("");
-    try {
-      try {
-        setData(await api.getAuditIntelligence());
-      } catch {
-        await new Promise((resolve) => setTimeout(resolve, 600));
-        setData(await api.getAuditIntelligence());
-      }
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Failed to load audit data");
-    } finally {
-      setLoading(false);
-    }
+    const [raw, threads, groups, health, excluded] = await Promise.all([
+      safe("raw messages", () => api.getRaw(1000, 0), [] as api.RawMessage[]),
+      safe("market inbox", () => api.getInboxThreads(500, 0), [] as api.InboxThread[]),
+      safe("group audit", () => api.getAuditGroups(), [] as api.AuditGroupCard[]),
+      safe("capture health", () => api.getAuditCaptureHealth(), null as api.AuditCaptureHealth | null),
+      safe("group controls", () => api.getExcludedGroups(), [] as string[]),
+    ]);
+
+    setState({
+      raw: raw.value,
+      threads: threads.value,
+      groups: groups.value,
+      health: health.value,
+      excluded: excluded.value,
+      errors: [raw.error, threads.error, groups.error, health.error, excluded.error].filter(Boolean) as string[],
+    });
+    setLoading(false);
   }, []);
 
   useEffect(() => {
-    const t = setTimeout(() => {
-      void load();
-    }, 0);
-    return () => clearTimeout(t);
+    void load();
   }, [load]);
 
-  useEffect(() => {
-    const term = query.trim();
-    if (!term) {
-      return;
+  const insights = useMemo<GroupInsight[]>(() => {
+    const membersByGroup = new Map<string, Set<string>>();
+    const memberGroups = new Map<string, Set<string>>();
+    const rawByGroup = new Map<string, api.RawMessage[]>();
+
+    for (const message of state.raw) {
+      const gKey = groupKey(message);
+      const mKey = memberKey(message);
+      if (!membersByGroup.has(gKey)) membersByGroup.set(gKey, new Set());
+      if (!memberGroups.has(mKey)) memberGroups.set(mKey, new Set());
+      if (!rawByGroup.has(gKey)) rawByGroup.set(gKey, []);
+      membersByGroup.get(gKey)?.add(mKey);
+      memberGroups.get(mKey)?.add(gKey);
+      rawByGroup.get(gKey)?.push(message);
     }
-    const t = setTimeout(async () => {
-      setSearching(true);
-      try {
-        setEvidence(await api.getAuditSearchEvidence(term));
-      } catch {
-        setEvidence(null);
-      } finally {
-        setSearching(false);
+
+    const groupCards = new Map<string, api.AuditGroupCard>();
+    for (const group of state.groups) {
+      groupCards.set(group.jid || group.name, group);
+    }
+
+    const keys = new Set<string>([...rawByGroup.keys(), ...groupCards.keys()]);
+    return [...keys].map((key) => {
+      const group = groupCards.get(key);
+      const messages = rawByGroup.get(key) || [];
+      const members = membersByGroup.get(key) || new Set<string>();
+      let duplicateMembers = 0;
+      for (const member of members) {
+        if ((memberGroups.get(member)?.size || 0) > 1) duplicateMembers += 1;
       }
-    }, 250);
-    return () => clearTimeout(t);
-  }, [query]);
+      const latest = messages
+        .map((message) => message.timestamp || message.created_at || message.latest_message_at || "")
+        .filter(Boolean)
+        .sort()
+        .at(-1) || group?.last_activity || "";
+      const issueCount = messages.reduce((total, message) => total + (classifyFormatIssue(message) ? 1 : 0), 0);
+      const text = messages.map((message) => message.message || "").join("\n");
+      const listingCount = messages.reduce((total, message) => total + (isListing(message.message || "") ? 1 : 0), 0);
+      const requirementCount = messages.reduce((total, message) => total + (isRequirement(message.message || "") ? 1 : 0), 0);
+      return {
+        key,
+        name: group?.name || messages[0] ? group?.name || groupName(messages[0]) : key,
+        messages: group?.messages || messages.length,
+        latest,
+        uniqueMembers: members.size,
+        duplicateMembers,
+        overlapPct: members.size ? Math.round((duplicateMembers / members.size) * 100) : 0,
+        listings: group?.listings || listingCount,
+        requirements: group?.requirements || requirementCount,
+        rentSignals: (text.match(/\b(rent|rental|lease|leave\s*&\s*license|l\s*&\s*l)\b/gi) || []).length,
+        saleSignals: (text.match(/\b(sale|outright|distress|asking|reserve price)\b/gi) || []).length,
+        formatIssues: issueCount,
+        duplicatePct: Number(group?.duplicate_pct || 0),
+        activeBrokers: group?.active_brokers || members.size,
+        parserOff: state.excluded.includes(group?.jid || key),
+      };
+    }).sort((a, b) => Number(new Date(b.latest || 0)) - Number(new Date(a.latest || 0)));
+  }, [state]);
 
-  // Fetch audit groups and excluded JIDs for parser control
-  useEffect(() => {
-    async function load() {
-      try {
-        const [groups, excluded, receipt] = await Promise.all([
-          api.getAuditGroups(),
-          api.getExcludedGroups(),
-          api.getPrivacyReceiptStatus(),
-        ]);
-        setAuditGroups(groups);
-        setExcludedJids(excluded);
-        setPrivacyReceipt(receipt);
-      } catch {
-        // silent
-      }
+  const network = useMemo(() => {
+    const memberGroups = new Map<string, Set<string>>();
+    for (const message of state.raw) {
+      const member = memberKey(message);
+      if (!memberGroups.has(member)) memberGroups.set(member, new Set());
+      memberGroups.get(member)?.add(groupKey(message));
     }
-    load();
-  }, []);
+    const uniqueMembers = memberGroups.size;
+    const duplicateMembers = [...memberGroups.values()].filter((groups) => groups.size > 1).length;
+    const appearances = [...memberGroups.values()].reduce((sum, groups) => sum + groups.size, 0);
+    return {
+      uniqueMembers,
+      duplicateMembers,
+      appearances,
+      overlapPct: uniqueMembers ? Math.round((duplicateMembers / uniqueMembers) * 100) : 0,
+      groups: new Set(state.raw.map(groupKey)).size || state.groups.length,
+    };
+  }, [state.raw, state.groups.length]);
 
-  async function toggleGroupParser(jid: string, currentlyExcluded: boolean) {
-    setExcludedLoading(true);
+  async function toggleGroup(jid: string, parserOff: boolean) {
+    if (!jid) return;
+    setSavingJid(jid);
+    const next = parserOff ? state.excluded.filter((item) => item !== jid) : [...state.excluded, jid];
     try {
-      const updated = currentlyExcluded
-        ? excludedJids.filter((j) => j !== jid)
-        : [...excludedJids, jid];
-      await api.setExcludedGroups(updated);
-      setExcludedJids(updated);
-      setPrivacyReceipt((current) => current ? {
-        ...current,
-        private_groups_excluded: updated.length,
-        excluded_groups_count: updated.length,
-      } : current);
-    } catch {
-      // silent
+      await api.setExcludedGroups(next);
+      setState((current) => ({ ...current, excluded: next }));
     } finally {
-      setExcludedLoading(false);
+      setSavingJid("");
     }
-  }
-
-  async function finishPrivacyReview() {
-    setReceiptSaving(true);
-    setReceiptError("");
-    try {
-      setPrivacyReceipt(await api.completePrivacyReceipt());
-    } catch (e) {
-      setReceiptError(e instanceof Error ? e.message : "Failed to finish privacy review");
-    } finally {
-      setReceiptSaving(false);
-    }
-  }
-
-  const capture = (data?.capture || {}) as Record<string, unknown>;
-  const network = (data?.network || {}) as Record<string, unknown>;
-  const brokers = (data?.brokers || {}) as Record<string, unknown>;
-  const cleanup = (data?.cleanup || {}) as Record<string, unknown>;
-  const coverage = (data?.search_coverage || {}) as Record<string, unknown>;
-  const learning = (data?.learning || {}) as Record<string, unknown>;
-  const groups = (Array.isArray(data?.groups) ? data.groups : []) as GroupRecord[];
-  const latest = (Array.isArray(capture.latest_records) ? capture.latest_records : []) as LatestRecord[];
-  const learned = (Array.isArray(learning.recently_learned) ? learning.recently_learned : []) as LearnedTerm[];
-  const topBrokers = (Array.isArray(brokers.top) ? brokers.top : []) as BrokerRecord[];
-  const duplicatePhones = (Array.isArray(cleanup.duplicate_phones) ? cleanup.duplicate_phones : []) as DuplicatePhone[];
-  const duplicateNames = (Array.isArray(cleanup.duplicate_names) ? cleanup.duplicate_names : []) as DuplicateName[];
-  const hasLearning = getNumber(learning, "unknown_terms") > 0 || getNumber(learning, "needs_review") > 0 || learned.length > 0;
-
-  const recallValue = getNumber(coverage, "recall_ready");
-  const recallReady = `${recallValue % 1 === 0 ? recallValue.toFixed(0) : recallValue.toFixed(1)}%`;
-
-  if (loading && !data) {
-    return <div className="py-16 text-center text-sm text-zinc-500">Loading WhatsApp evidence...</div>;
-  }
-
-  if (error && !data) {
-    return (
-      <div className="py-16 text-center">
-        <div className="text-sm text-red-400">Failed to load WhatsApp Audit</div>
-        <div className="mt-2 text-xs text-zinc-500">{error}</div>
-        <button onClick={load} className="mt-4 rounded-lg bg-[#3EE88A] px-3 py-2 text-xs font-semibold text-black">
-          Retry
-        </button>
-      </div>
-    );
   }
 
   return (
-    <div className="mx-auto max-w-6xl space-y-7">
+    <div className="mx-auto max-w-7xl space-y-6 px-6 py-6 text-white">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <Label>WhatsApp Audit</Label>
-          <h1 className="mt-2 text-2xl font-bold text-white">Knowledge Capture</h1>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-400">
-            Proof that WhatsApp conversations are being captured, stored, searchable, and ready for recall.
+          <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-zinc-500">WhatsApp Audit</div>
+          <h1 className="mt-2 text-2xl font-bold tracking-tight">Group Intelligence</h1>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-400">
+            A clean operational view of what your WhatsApp groups are producing: useful opportunities, repeated network members, noisy posts, and parser controls.
           </p>
         </div>
-        <button onClick={load} className="rounded-lg border border-white/10 bg-zinc-800 px-3 py-2 text-xs font-semibold text-zinc-400 hover:text-white">
+        <button
+          type="button"
+          onClick={load}
+          disabled={loading}
+          className="inline-flex items-center gap-2 rounded-md border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-bold text-zinc-200 hover:bg-white/[0.08] disabled:opacity-50"
+        >
+          <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} strokeWidth={1.8} />
           Refresh
         </button>
       </div>
 
-      <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Metric
-          label="Status"
-          value={<span className={capture.status === "connected" ? "text-[#3EE88A]" : "text-[#f59e0b]"}>{capture.status === "connected" ? "Connected" : "Stale"}</span>}
-          sub={`Last message ${timeAgo(getString(capture, "last_message") || getString(network, "last_message"))}`}
-        />
-        <Metric label="Messages Captured" value={num(getNumber(capture, "messages_captured") || getNumber(network, "total_messages"))} />
-        <Metric label="Knowledge Records" value={num(getNumber(capture, "knowledge_records") || getNumber(network, "knowledge_records"))} />
-        <Metric label="Attachments" value={num(getNumber(capture, "attachments") || getNumber(network, "attachments"))} />
-        <Metric label="Communities" value={num(getNumber(capture, "communities") || getNumber(network, "communities"))} />
-        <Metric label="Groups" value={num(getNumber(capture, "groups") || getNumber(network, "total_groups"))} sub={`${num(getNumber(network, "active_groups_24h"))} active in 24h`} />
-        <Metric label="Broadcasts" value={num(getNumber(capture, "broadcasts") || getNumber(network, "broadcasts"))} />
-        <Metric label="Direct Messages" value={num(getNumber(capture, "direct_messages") || getNumber(network, "direct_messages"))} />
+      {state.errors.length > 0 && (
+        <Card className="border-amber-500/20 bg-amber-500/10 p-4">
+          <div className="flex gap-2 text-sm font-bold text-amber-100">
+            <AlertTriangle className="h-4 w-4" strokeWidth={1.8} />
+            Some old audit endpoints are unhealthy, but this page is still usable.
+          </div>
+          <div className="mt-2 space-y-1 text-xs text-amber-100/75">
+            {state.errors.slice(0, 3).map((error) => <div key={error}>{error}</div>)}
+          </div>
+        </Card>
+      )}
+
+      <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <Metric label="Capture Status" value={state.health?.last_webhook ? "Live" : state.raw.length ? "Recent Data" : "No Data"} sub={`Last webhook ${timeAgo(state.health?.last_webhook)}`} />
+        <Metric label="Messages Sampled" value={num(state.raw.length)} sub={`${num(state.threads.length)} market inbox threads loaded`} />
+        <Metric label="Groups Seen" value={num(network.groups)} sub={`${num(state.excluded.length)} parser opt-outs`} />
+        <Metric label="Parser Queue" value={num(state.health?.queue_backlog)} sub={`${num(state.health?.total_parsed_today)} parsed today`} />
       </section>
 
-      <section className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
-        <div className="space-y-3">
-          <SectionTitle title="Latest Knowledge Records" sub="Recent WhatsApp messages that entered the knowledge store." />
-          <Card className="overflow-hidden">
-            {latest.length ? latest.slice(0, 8).map((item) => <RecordRow key={item.id} item={item} />) : (
-              <div className="p-6 text-sm text-zinc-500">No captured records yet.</div>
-            )}
-          </Card>
-        </div>
-
-        <div className="space-y-3">
-          <SectionTitle title="Search Captured Knowledge" sub="Check whether PropAI remembers a building, broker, locality, client, or phrase." />
-          <Card className="p-4">
-            <input
-              value={query}
-              onChange={(e) => {
-                setQuery(e.target.value);
-                if (!e.target.value.trim()) setEvidence(null);
-              }}
-              className="w-full rounded-lg border border-white/10 bg-black px-3 py-2 text-sm text-white outline-none placeholder:text-[#475569] focus:border-[#3EE88A]/60"
-              placeholder="Search WhatsApp memory..."
-            />
-            <div className="mt-4 rounded-lg bg-zinc-800 p-4">
-              <Label>{searching ? "Searching" : evidence?.count ? "Remembered" : "Result"}</Label>
-              <div className="mt-1 text-3xl font-semibold tabular-nums text-white">{num(evidence?.count || 0)} times</div>
-              <div className="mt-1 text-xs text-zinc-500">
-                Across {num(evidence?.groups || 0)} groups and {num(evidence?.unique_senders || 0)} senders
-              </div>
-            </div>
-            <div className="mt-4 grid grid-cols-2 gap-3">
-              <Metric label="First Seen" value={<span className="text-base">{dateLabel(evidence?.first_seen || "")}</span>} />
-              <Metric label="Last Seen" value={<span className="text-base">{evidence?.last_seen ? timeAgo(evidence.last_seen) : "-"}</span>} />
-              <Metric label="Groups" value={num(evidence?.groups)} />
-              <Metric label="Unique Senders" value={num(evidence?.unique_senders)} />
-            </div>
-            {evidence?.top_groups?.length ? (
-              <div className="mt-4 space-y-2">
-                <Label>Top Conversations</Label>
-                {evidence.top_groups.map((group) => (
-                  <div key={group.name} className="flex items-center justify-between gap-3 text-xs">
-                    <span className="truncate text-zinc-400">{group.name}</span>
-                    <span className="font-mono text-white">{num(group.count)}</span>
-                  </div>
-                ))}
-              </div>
-            ) : null}
-            {evidence?.recent?.length ? (
-              <div className="mt-4 space-y-2">
-                <Label>Recent Evidence</Label>
-                {evidence.recent.slice(0, 3).map((item) => (
-                  <div key={item.id} className="rounded-lg bg-black px-3 py-2 text-xs">
-                    <div className="flex items-center justify-between gap-3">
-                      <span className="truncate font-semibold text-white">{item.conversation || "WhatsApp"}</span>
-                      <span className="shrink-0 font-mono text-zinc-500">{clockLabel(item.time)}</span>
-                    </div>
-                    <div className="mt-1 line-clamp-2 text-zinc-400">{cleanDisplayText(item.preview)}</div>
-                  </div>
-                ))}
-              </div>
-            ) : null}
-          </Card>
-        </div>
+      <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <Metric label="Unique Members" value={num(network.uniqueMembers)} sub="Unique senders in loaded group data" />
+        <Metric label="Duplicate Members" value={num(network.duplicateMembers)} sub="Members appearing in more than one group" />
+        <Metric label="Member Appearances" value={num(network.appearances)} sub="Group-member relationships" />
+        <Metric label="Network Overlap" value={pct(network.overlapPct)} sub="How repeated your group network is" />
       </section>
 
-      <section className="grid gap-4 lg:grid-cols-[0.9fr_1.1fr]">
+      <section className="grid gap-5 xl:grid-cols-[1.25fr_0.75fr]">
         <div className="space-y-3">
-          <SectionTitle title="Broker Network" sub="People identified from WhatsApp messages, broker profiles, phones, and group activity." />
-          <Card className="p-4">
-            <div className="grid grid-cols-2 gap-3">
-              <Metric label="Total Brokers" value={num(getNumber(brokers, "total"))} sub="Canonical broker profiles" />
-              <Metric label="Active This Week" value={num(getNumber(brokers, "recently_active"))} sub="Seen in recent messages" />
-              <Metric label="Known Phones" value={num(getNumber(brokers, "unique_phones"))} sub="Unique captured phone numbers" />
-              <Metric label="Duplicate Members" value={num(duplicatePhones.length + duplicateNames.length)} sub="Same phone/JID or name conflicts" />
-            </div>
-            <div className="mt-4 space-y-2">
-              <Label>Cleanup Signals</Label>
-              <MiniRow label="Phone numbers attached to multiple WhatsApp identities" value={num(duplicatePhones.length)} />
-              <MiniRow label="Broker names attached to multiple phone numbers" value={num(duplicateNames.length)} />
-              <MiniRow label="Brokers without market coverage" value={num(getNumber(cleanup, "brokers_no_market"))} />
-            </div>
-          </Card>
-        </div>
-
-        <div className="space-y-3">
-          <SectionTitle title="Top Broker Activity" sub="Highest-volume broker profiles currently visible in captured conversations." />
+          <SectionTitle
+            icon={<Eye className="h-4 w-4" strokeWidth={1.8} />}
+            title="Group Audit"
+            sub="The eye-opener: which groups create useful market signal, which are duplicate-heavy, and which should stay private or parser-off."
+          />
           <Card className="overflow-hidden">
-            {topBrokers.length ? topBrokers.slice(0, 6).map((broker) => (
-              <div key={`${broker.name}-${broker.phone || ""}`} className="grid grid-cols-[minmax(0,1fr)_80px_80px_70px] gap-3 border-b border-[rgba(255,255,255,0.05)] px-4 py-3 text-xs last:border-b-0">
-                <div className="min-w-0">
-                  <div className="truncate font-semibold text-white">{broker.name || broker.phone || "Unknown broker"}</div>
-                  <div className="mt-0.5 truncate font-mono text-[10px] text-zinc-500">{broker.phone || "No phone"}</div>
-                </div>
-                <div>
-                  <Label>Posts</Label>
-                  <div className="mt-1 font-mono text-white">{num(broker.observations)}</div>
-                </div>
-                <div>
-                  <Label>Listings</Label>
-                  <div className="mt-1 font-mono text-white">{num(broker.listings)}</div>
-                </div>
-                <div>
-                  <Label>Groups</Label>
-                  <div className="mt-1 font-mono text-white">{num(broker.groups)}</div>
-                </div>
-              </div>
-            )) : (
-              <div className="p-6 text-sm text-zinc-500">No broker profiles calculated yet.</div>
-            )}
-          </Card>
-        </div>
-      </section>
-
-      {groups.length ? (
-        <section className="space-y-3">
-          <SectionTitle title="Group Audit" sub="Which WhatsApp groups are producing messages, senders, listings, requirements, markets, and building signals." />
-          <Card className="overflow-hidden">
-            <div className="grid grid-cols-[minmax(0,1fr)_80px_80px_80px_80px_80px] gap-3 border-b border-white/10 px-4 py-3 text-[10px] font-bold uppercase tracking-[0.12em] text-zinc-500">
+            <div className="grid grid-cols-[minmax(220px,1.4fr)_90px_90px_90px_90px_92px_88px] gap-3 border-b border-white/10 px-4 py-2 text-[10px] font-bold uppercase tracking-wide text-zinc-500">
               <div>Group</div>
-              <div>Messages</div>
-              <div>Members</div>
-              <div>Listings</div>
-              <div>Buyers</div>
               <div>Signal</div>
+              <div>Members</div>
+              <div>Overlap</div>
+              <div>Noise</div>
+              <div>Freshness</div>
+              <div>Parser</div>
             </div>
-            {groups.slice(0, 8).map((group) => (
-              <div key={group.jid} className="grid grid-cols-[minmax(0,1fr)_80px_80px_80px_80px_80px] gap-3 border-b border-[rgba(255,255,255,0.05)] px-4 py-3 text-xs last:border-b-0">
+            {insights.length === 0 ? (
+              <div className="px-4 py-10 text-center text-sm text-zinc-500">
+                No group data loaded yet. Once WhatsApp sync captures group messages, this page will populate without depending on the old audit endpoint.
+              </div>
+            ) : insights.slice(0, 60).map((group) => (
+              <div key={group.key} className="grid grid-cols-[minmax(220px,1.4fr)_90px_90px_90px_90px_92px_88px] gap-3 border-b border-white/[0.06] px-4 py-3 text-xs last:border-b-0">
                 <div className="min-w-0">
                   <div className="truncate font-semibold text-white">{group.name}</div>
-                  <div className="mt-0.5 truncate text-[10px] text-zinc-500">{timeAgo(group.last_seen)} · {num(group.markets)} markets · {num(group.buildings)} buildings</div>
+                  <div className="mt-1 line-clamp-1 text-[11px] text-zinc-500">
+                    {num(group.messages)} posts · {num(group.activeBrokers)} active members · {group.rentSignals} rent signals · {group.saleSignals} sale signals
+                  </div>
                 </div>
-                <div className="font-mono text-white">{num(group.messages)}</div>
-                <div className="font-mono text-white">{num(group.unique_senders)}</div>
-                <div className="font-mono text-white">{num(group.listings)}</div>
-                <div className="font-mono text-white">{num(group.requirements)}</div>
-                <div className="font-mono text-[#3EE88A]">{num(group.signal_ratio)}%</div>
+                <div>
+                  <div className="font-mono font-semibold text-[#3EE88A]">{num(group.listings)}</div>
+                  <div className="text-[10px] text-zinc-500">{num(group.requirements)} reqs</div>
+                </div>
+                <div>
+                  <div className="font-mono font-semibold text-white">{num(group.uniqueMembers)}</div>
+                  <div className="text-[10px] text-zinc-500">{num(group.duplicateMembers)} repeat</div>
+                </div>
+                <div className={group.overlapPct >= 70 ? "font-mono font-semibold text-amber-300" : "font-mono font-semibold text-zinc-200"}>
+                  {pct(group.overlapPct)}
+                </div>
+                <div>
+                  <div className={group.formatIssues > 0 ? "font-mono font-semibold text-amber-300" : "font-mono font-semibold text-zinc-200"}>{num(group.formatIssues)}</div>
+                  <div className="text-[10px] text-zinc-500">bad format</div>
+                </div>
+                <div className="text-zinc-400">{timeAgo(group.latest)}</div>
+                <button
+                  type="button"
+                  disabled={savingJid === group.key}
+                  onClick={() => toggleGroup(group.key, group.parserOff)}
+                  className={`rounded-md px-2 py-1 text-[10px] font-bold uppercase tracking-wide ${
+                    group.parserOff
+                      ? "border border-amber-500/30 bg-amber-500/10 text-amber-200"
+                      : "border border-[#3EE88A]/25 bg-[#3EE88A]/10 text-[#3EE88A]"
+                  }`}
+                >
+                  {group.parserOff ? "Off" : "On"}
+                </button>
               </div>
             ))}
           </Card>
-        </section>
-      ) : null}
-
-      {auditGroups.length ? (
-        <section className="space-y-3">
-          <Card className="p-4">
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-              <div className="min-w-0">
-                <Label>Privacy Receipt</Label>
-                <h2 className="mt-1 text-sm font-semibold text-white">
-                  Shared Market is on by default. DMs and opted-out groups stay private.
-                </h2>
-                <p className="mt-1 max-w-3xl text-xs leading-5 text-zinc-500">
-                  PropAI aims to parse real-estate groups only. Use the parser toggle below for client, family, friends, or private groups you do not want in the market graph.
-                </p>
-              </div>
-              <button
-                onClick={finishPrivacyReview}
-                disabled={receiptSaving || !privacyReceipt?.whatsapp_connected || privacyReceipt?.privacy_receipt_complete}
-                className="h-9 shrink-0 rounded-lg bg-[#3EE88A] px-4 text-xs font-bold text-black transition-colors hover:bg-[#35d47c] disabled:cursor-not-allowed disabled:bg-zinc-800 disabled:text-zinc-500"
-              >
-                {privacyReceipt?.privacy_receipt_complete ? "Review Complete" : receiptSaving ? "Saving..." : "Finish Privacy Review"}
-              </button>
-            </div>
-            {receiptError ? <div className="mt-3 text-xs text-red-400">{receiptError}</div> : null}
-            <div className="mt-4 grid gap-2 text-xs sm:grid-cols-2 lg:grid-cols-4">
-              <MiniRow label="Groups detected" value={num(privacyReceipt?.market_groups_detected || auditGroups.length)} />
-              <MiniRow label="Groups opted out" value={num(privacyReceipt?.excluded_groups_count || excludedJids.length)} />
-              <MiniRow label="Direct messages" value="Private" />
-              <MiniRow label="Shared Market" value={privacyReceipt?.privacy_receipt_complete ? "Active" : "Pending review"} />
-            </div>
-          </Card>
-          <SectionTitle title="Group Parser Control" sub="Toggle parser on/off per group. Opted-out groups are skipped during webhook processing." />
-          <Card className="overflow-hidden">
-            <div className="grid grid-cols-[minmax(0,1fr)_80px_100px] gap-3 border-b border-white/10 px-4 py-3 text-[10px] font-bold uppercase tracking-[0.12em] text-zinc-500">
-              <div>Group</div>
-              <div>Messages</div>
-              <div>Parser</div>
-            </div>
-            {auditGroups.map((group) => {
-              const isExcluded = excludedJids.includes(group.jid);
-              return (
-                <div key={group.jid} className="grid grid-cols-[minmax(0,1fr)_80px_100px] gap-3 border-b border-[rgba(255,255,255,0.05)] px-4 py-3 text-xs items-center last:border-b-0">
-                  <div className="min-w-0">
-                    <div className="truncate font-semibold text-white">{group.name}</div>
-                    <div className="mt-0.5 truncate text-[10px] text-zinc-500">{group.jid}</div>
-                  </div>
-                  <div className="font-mono text-white">{num(group.messages)}</div>
-                  <div>
-                    <button
-                      onClick={() => toggleGroupParser(group.jid, isExcluded)}
-                      disabled={excludedLoading}
-                      className={`w-full rounded-lg px-2.5 py-1.5 text-[11px] font-semibold transition-colors ${
-                        isExcluded
-                          ? "bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20"
-                          : "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20"
-                      }`}
-                    >
-                      {isExcluded ? "Opted Out" : "Parser On"}
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </Card>
-        </section>
-      ) : null}
-
-      <section className={`grid gap-4 ${hasLearning ? "lg:grid-cols-2" : "lg:grid-cols-1"}`}>
-        {hasLearning ? (
-        <div className="space-y-3">
-          <SectionTitle title="Knowledge Resolution Queue" sub="Only shown when unresolved terms or accepted learning records exist." />
-          <Card className="p-4">
-            <div className="grid grid-cols-2 gap-3">
-              <Metric label="Unknown Terms" value={num(getNumber(learning, "unknown_terms"))} />
-              <Metric label="Needs Review" value={num(getNumber(learning, "needs_review"))} />
-            </div>
-            <div className="mt-4">
-              <Label>Recently Learned</Label>
-              <div className="mt-2 space-y-2">
-                {learned.length ? learned.map((item, i) => (
-                  <div key={`${item.term}-${i}`} className="flex items-center justify-between gap-3 rounded-lg bg-zinc-800 px-3 py-2 text-xs">
-                    <span className="font-semibold text-white">{item.term}</span>
-                    <span className="text-zinc-400">{String(item.learned_as || "").replace(" -> ", " as ")}</span>
-                  </div>
-                )) : (
-                  <div className="rounded-lg bg-zinc-800 px-3 py-3 text-xs text-zinc-500">No recent learning records yet.</div>
-                )}
-              </div>
-            </div>
-          </Card>
         </div>
-        ) : null}
 
         <div className="space-y-3">
-          <SectionTitle title="Search Coverage" sub="How much WhatsApp memory can be retrieved by keyword search and semantic AI recall." />
+          <SectionTitle
+            icon={<Network className="h-4 w-4" strokeWidth={1.8} />}
+            title="Network Overlap"
+            sub="Helps a broker see whether 100 groups are actually 100 networks or the same people reposting everywhere."
+          />
           <Card className="p-4">
-            <div className="grid grid-cols-2 gap-3">
-              <Metric label="Messages" value={num(getNumber(coverage, "messages"))} sub="Raw WhatsApp messages stored" />
-              <Metric label="Indexed" value={num(getNumber(coverage, "indexed"))} sub="Rows placed into the text index" />
-              <Metric label="Searchable" value={num(getNumber(coverage, "searchable"))} sub="Records available to keyword search" />
-              <Metric label="Embeddings" value={num(getNumber(coverage, "embeddings"))} sub="Vector rows used for semantic recall" />
+            <div className="space-y-3">
+              {[...insights]
+                .sort((a, b) => b.overlapPct - a.overlapPct || b.uniqueMembers - a.uniqueMembers)
+                .slice(0, 8)
+                .map((group) => (
+                  <div key={group.key} className="rounded-md bg-black/30 px-3 py-2">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="truncate text-sm font-semibold text-white">{group.name}</div>
+                      <div className="font-mono text-xs text-amber-300">{pct(group.overlapPct)}</div>
+                    </div>
+                    <div className="mt-1 text-[11px] text-zinc-500">
+                      {num(group.duplicateMembers)} of {num(group.uniqueMembers)} members already appear in another loaded group.
+                    </div>
+                  </div>
+                ))}
+              {insights.length === 0 && <div className="text-sm text-zinc-500">No overlap data yet.</div>}
             </div>
-            <div className="mt-4 rounded-lg border border-[#3EE88A]/20 bg-[#3EE88A]/10 p-4">
-              <Label>Recall Ready</Label>
-              <div className="mt-1 text-4xl font-semibold text-[#3EE88A]">{recallReady}</div>
-              <div className="mt-1 text-xs leading-5 text-zinc-400">
-                Percentage of captured knowledge records that are in the searchable index. Embeddings can be lower because they are only needed for semantic AI recall, not basic keyword lookup.
+          </Card>
+
+          <SectionTitle
+            icon={<Users className="h-4 w-4" strokeWidth={1.8} />}
+            title="Latest Captured Posts"
+            sub="A quick sanity check that WhatsApp sync is still feeding the system."
+          />
+          <Card className="overflow-hidden">
+            {state.raw.slice(0, 8).map((message) => (
+              <div key={message.id} className="border-b border-white/[0.06] px-4 py-3 last:border-b-0">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="truncate text-xs font-semibold text-white">{groupName(message)}</div>
+                  <div className="shrink-0 font-mono text-[10px] text-zinc-500">{timeAgo(message.timestamp || message.created_at)}</div>
+                </div>
+                <div className="mt-1 line-clamp-2 text-xs leading-5 text-zinc-400">{cleanPreview(message.message) || "No text content"}</div>
               </div>
-            </div>
+            ))}
+            {state.raw.length === 0 && <div className="p-6 text-sm text-zinc-500">No latest posts loaded.</div>}
           </Card>
         </div>
       </section>
 
-      <div className="pb-4 text-center text-[10px] text-[#475569]">
-        Last updated {timeAgo(getString(capture, "last_message") || getString(network, "last_message"))} from {num(getNumber(capture, "messages_captured") || getNumber(network, "total_messages"))} captured messages.
-      </div>
+      <section className="grid gap-4 lg:grid-cols-3">
+        <Card className="p-4">
+          <SectionTitle icon={<ShieldCheck className="h-4 w-4" strokeWidth={1.8} />} title="Parser Controls" />
+          <p className="mt-3 text-xs leading-5 text-zinc-500">
+            Parser-on means PropAI can extract real estate opportunities from the group. Parser-off keeps the group visible for audit but stops market extraction.
+          </p>
+          <Link href="/settings/privacy" className="mt-4 inline-flex text-xs font-bold text-[#3EE88A] hover:text-white">
+            Open privacy settings
+          </Link>
+        </Card>
+        <Card className="p-4">
+          <SectionTitle title="Format Pressure" />
+          <p className="mt-3 text-xs leading-5 text-zinc-500">
+            Bad-format posts are intentionally separated from clean opportunities. This keeps Market Inbox useful and nudges brokers to post cleaner listings.
+          </p>
+          <Link href="/format-issues" className="mt-4 inline-flex text-xs font-bold text-[#3EE88A] hover:text-white">
+            Open format issues
+          </Link>
+        </Card>
+        <Card className="p-4">
+          <SectionTitle title="Market Inbox Output" />
+          <p className="mt-3 text-xs leading-5 text-zinc-500">
+            Clean group output should become broker/entity opportunities in Market Inbox. No free public feed: value starts after WhatsApp is connected.
+          </p>
+          <Link href="/inbox" className="mt-4 inline-flex text-xs font-bold text-[#3EE88A] hover:text-white">
+            Open market inbox
+          </Link>
+        </Card>
+      </section>
     </div>
   );
 }
