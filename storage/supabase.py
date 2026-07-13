@@ -771,7 +771,13 @@ class SupabaseStorage(Storage):
                           group_name: str = "", sender: str = "",
                           sender_phone: str = "", sender_jid: str = "",
                           source: str = "") -> list[RawMessage]:
-        query = self.client.table("raw_messages").select("*").order("timestamp", desc=True).limit(limit).offset(offset)
+        # Select only columns needed for RawMessage dataclass to avoid full row fetch
+        cols = (
+            "id, group_name, sender, sender_jid, sender_phone, message, message_type, "
+            "attachments, reply_context, timestamp, source, raw_payload, message_uid, "
+            "pipeline_version, synced_at, event_id, processed, processed_at, tenant_id, created_at"
+        )
+        query = self.client.table("raw_messages").select(cols).order("timestamp", desc=True).limit(limit).offset(offset)
         if group_name:
             query = query.eq("group_name", group_name)
         if sender:
