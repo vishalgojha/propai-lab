@@ -202,6 +202,8 @@ class _SupabaseDatabaseAdapter:
 
     def execute(self, sql: str, params: tuple[Any, ...] | list[Any] | None = None):
         rendered_sql, rendered_params = self._translate_sql(sql, params)
+        import logging
+        logging.info(f"propai_query_sql RPC - sql: {rendered_sql[:200]}... params: {rendered_params}")
         if self._is_query(rendered_sql):
             data = self._client.rpc(
                 "propai_query_sql",

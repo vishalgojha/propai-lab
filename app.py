@@ -10111,7 +10111,8 @@ def _safe_exec(fn, default=0):
 
     def _q(sql, params=None, default=0):
         try:
-            return db.execute(sql, params or ()).fetchone()
+            row = db.execute(sql, params or ()).fetchone()
+            return row[0] if row else default
         except Exception as e:
             import logging
             logging.error(f"query failed: {sql!r} — {e}")
