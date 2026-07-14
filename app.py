@@ -528,7 +528,6 @@ def _merge_observation(
                WHERE id = ?""",
             (observation_text, now, parsed_id, raw_id, existing["id"]),
         )
-        storage._commit()
     else:
         confidence = 1
         _count_other_brokers = storage.db.execute(
@@ -552,7 +551,6 @@ def _merge_observation(
             (entity_type, entity_name.strip(), norm_type, observation_text,
              confidence, broker_name, broker_phone or "", parsed_id, raw_id, now, now),
         )
-        storage._commit()
 
 
 def _get_relevant_observations(entity_names: list[str], limit: int = 10) -> list[dict]:
@@ -6480,6 +6478,20 @@ async def debug_sync_status_file():
     return _status_file_debug()
 
 
+@app.get("/api/debug/sync/connection")
+async def debug_sync_connection():
+    status = _status_file()
+    return {
+        "status_source": "memory" if _memory_status and not status.get("connection_state") else "file_or_memory",
+        "connection_state": status.get("connection_state"),
+        "connected": status.get("connected"),
+        "qr": status.get("qr"),
+        "qr_available": status.get("qr_available"),
+        "status_preview": {k: status[k] for k in list(status.keys())[:12]},
+        "computed_connection_details": _connection_details(),
+    }
+
+
 def _status_has_live_signal(status: dict | None) -> bool:
     if not status:
         return False
@@ -6627,7 +6639,6 @@ async def companion_save_config(req: CompanionConfigRequest):
             now,
         ),
     )
-    storage._commit()
     return await companion_config()
 
 
@@ -6764,7 +6775,6 @@ async def companion_webhook_receive(request: Request):
                             now_iso,
                         ),
                     )
-                    storage._commit()
                     processed.append({"type": "message_stored", "from": msg_from, "msg_type": msg_type})
                 except Exception as exc:
                     print(f"[waba-webhook] failed to store inbound message: {exc}", flush=True)
@@ -6803,7 +6813,6 @@ async def companion_webhook_receive(request: Request):
             now,
         ),
     )
-    storage._commit()
     return {"status": "received", "processed": processed}
 
 
@@ -6854,7 +6863,6 @@ def _waba_session_update(chat_id: str, direction: str = "inbound"):
                     "INSERT INTO waba_sessions (chat_id, last_user_at, session_active, created_at, updated_at) VALUES (?, ?, true, ?, ?)",
                     (chat_id, now.isoformat(), now.isoformat(), now.isoformat()),
                 )
-        storage._commit()
     except Exception as exc:
         print(f"[waba-session] failed to update session for {chat_id}: {exc}", flush=True)
 
@@ -6886,7 +6894,6 @@ def _waba_session_status(chat_id: str) -> dict:
                 storage.db.execute(
                     "UPDATE waba_sessions SET session_active = false WHERE chat_id = ?", (chat_id,)
                 )
-                storage._commit()
             except Exception:
                 pass
 
@@ -7011,7 +7018,6 @@ async def waba_send_message(req: WabaSendRequest, user: dict = Depends(require_u
                 now_iso,
             ),
         )
-        storage._commit()
     except Exception as exc:
         print(f"[waba-send] failed to store outbound message: {exc}", flush=True)
 
@@ -7117,7 +7123,6 @@ async def companion_add_team_member(req: CompanionTeamMemberRequest):
                VALUES (?,?,?,?,?,?,?)""",
             (cur.lastrowid, "team_member_registered", "team_member", str(cur.lastrowid), "logged", "{}", now),
         )
-        storage._commit()
     except Exception as exc:
         raise HTTPException(400, f"Could not add team member: {exc}")
     row = storage.db.execute("SELECT * FROM companion_team_members WHERE id = ?", (cur.lastrowid,)).fetchone()
@@ -7154,7 +7159,6 @@ async def companion_update_team_member(member_id: int, req: CompanionTeamMemberR
            VALUES (?,?,?,?,?,?,?)""",
         (member_id, "team_member_updated", "team_member", str(member_id), "logged", "{}", now),
     )
-    storage._commit()
     row = storage.db.execute("SELECT * FROM companion_team_members WHERE id = ?", (member_id,)).fetchone()
     if not row:
         raise HTTPException(404, "Team member not found")
@@ -7815,7 +7819,6 @@ async def create_observation_batch(req: BatchCreateRequest):
          file_obj.id, jsonl_path, json.dumps(stats),
          _iso_now(), _iso_now()),
     )
-    storage._commit()
     batch_db_id = cursor.lastrowid
 
     return BatchCreateResponse(
@@ -7898,7 +7901,6 @@ async def check_batch_status(batch_id: int):
          _iso_now(),
           batch_id),
     )
-    storage._commit()
     return {
         "status": new_status,
         "output_file_id": output_file_id,
@@ -7994,7 +7996,6 @@ async def apply_batch_results(batch_id: int):
            WHERE id = ?""",
         (now, batch_id),
     )
-    storage._commit()
     return {"merged": merged, "errors": errors, "total_lines": len(lines)}
 
 
