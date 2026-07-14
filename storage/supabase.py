@@ -1127,7 +1127,7 @@ class SupabaseStorage(Storage):
         tid = tenant_id or self._tenant_id
 
         query = self.client.table("parsed_output")\
-            .select("id,raw_message_id,message_type,intent,bhk,price,price_unit,area_sqft,furnishing,location_raw,building_name,landmark_name,micro_market,broker_name,broker_phone,profile_name,listing_index,confidence,summary_title,normalized_message,created_at")\
+            .select("id,raw_message_id,message_type,intent,bhk,price,price_unit,area_sqft,furnishing,location_raw,building_name,landmark_name,micro_market,broker_name,broker_phone,profile_name,listing_index,confidence,summary_title,created_at")\
             .gte("created_at", cutoff)\
             .order("created_at", desc=True)\
             .limit(max(5000, limit + offset))
