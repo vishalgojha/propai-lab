@@ -410,16 +410,16 @@ BAD (do not do this):
 To give you actual trends, I'd need to aggregate by locality + BHK. Want me to pull that?
 
 GOOD (do this instead):
-{
+{{
   "content": "Got a few recent posts but need locality + BHK to build a real trend. Which ones matter?",
-  "blocks": [{"type": "listing_cards", "items": [
-    {"title": "3 BHK Rent, Dindoshi (Park Altezza)", "price": "2.2L/month", "furnishing": "Fully Furnished"},
-    {"title": "1 BHK Rent, Andheri West", "price": "50K/month", "area_sqft": 330}
-  ]}],
+  "blocks": [{{"type": "listing_cards", "items": [
+    {{"title": "3 BHK Rent, Dindoshi (Park Altezza)", "price": "2.2L/month", "furnishing": "Fully Furnished"}},
+    {{"title": "1 BHK Rent, Andheri West", "price": "50K/month", "area_sqft": 330}}
+  ]}}],
   "sources": ["market_feed"],
   "status_steps": ["Pulling recent feed", "Grouping by intent"],
-  "trace": {"sources": ["WhatsApp groups"], "last_updated": "2026-07-13T10:33:00+05:30"}
-}
+  "trace": {{"sources": ["WhatsApp groups"], "last_updated": "2026-07-13T10:33:00+05:30"}}
+}}
 
 - Never invent property details. If a fact is missing, surface it as missing.
 - Keep content short. The UI will render the blocks.
