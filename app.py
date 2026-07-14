@@ -4347,14 +4347,13 @@ def _has_query_signals(text: str) -> bool:
         "flat", "apartment", "office", "shop", "property", "commercial",
         "listing", "listings", "properties", "deal", "requirement", "requirements",
         "show", "find", "search", "look", "need", "want",
-        "cr", "lakh", "lac", "l", "k", "thousand", "crore",
+        "cr", "lakh", "lac", "thousand", "crore",
         "bandra", "andheri", "juhu", "khar", "powai", "malad", "goregaon",
         "santacruz", "vile parle", "dadar", "worli", "lower parel", "bkc", "kalina",
         "lokhandwala", "pali hill", "chembur", "navi mumbai", "thane",
         "duplicate", "merge", "alias",
         "how many", "how much", "count ", "list ", "top ",
         "compare", "versus", "vs",
-        "who", "which", "what are", "what is", "tell me about",
     ]
     return any(kw in lowered for kw in query_keywords)
 
