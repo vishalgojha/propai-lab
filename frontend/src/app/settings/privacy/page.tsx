@@ -129,44 +129,46 @@ export default function PrivacyPage() {
               <p className="mt-1 text-xs">Groups appear here after the first successful sync.</p>
             </div>
           ) : (
-            <div className="space-y-3 max-h-96 overflow-y-auto">
-              {groups.map((group) => {
-                const excluded = excludedJids.includes(group.jid);
-                return (
-                  <div
-                    key={group.jid}
-                    className="flex items-center justify-between p-3 rounded-lg border border-white/10 hover:border-white/20 transition-colors"
-                  >
-                    <div className="flex items-center gap-3 min-w-0 flex-1">
-                      <div className="w-8 h-8 rounded-lg bg-zinc-800 flex items-center justify-center flex-shrink-0">
-                        <Users className="w-4 h-4 text-zinc-500" />
+            <>
+              <div className="space-y-3 max-h-96 overflow-y-auto">
+                {groups.map((group) => {
+                  const excluded = excludedJids.includes(group.jid);
+                  return (
+                    <div
+                      key={group.jid}
+                      className="flex items-center justify-between p-3 rounded-lg border border-white/10 hover:border-white/20 transition-colors"
+                    >
+                      <div className="flex items-center gap-3 min-w-0 flex-1">
+                        <div className="w-8 h-8 rounded-lg bg-zinc-800 flex items-center justify-center flex-shrink-0">
+                          <Users className="w-4 h-4 text-zinc-500" />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium text-white truncate">
+                            {group.name || "Unnamed Group"}
+                          </p>
+                          <p className="text-xs text-zinc-500 truncate">
+                            {group.participants} members · {group.parsed?.markets?.join(", ") || "No markets tagged"}
+                          </p>
+                        </div>
                       </div>
-                      <div className="min-w-0">
-                        <p className="text-sm font-medium text-white truncate">
-                          {group.name || "Unnamed Group"}
-                        </p>
-                        <p className="text-xs text-zinc-500 truncate">
-                          {group.participants} members · {group.parsed?.markets?.join(", ") || "No markets tagged"}
-                        </p>
-                      </div>
+                      <label className="relative inline-flex items-center cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={!excluded}
+                          onChange={(e) => handleExcludeToggle(group.jid, !e.target.checked)}
+                          disabled={saving}
+                          className="sr-only peer"
+                        />
+                        <div className="w-11 h-6 bg-zinc-700 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-400 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-400"></div>
+                      </label>
                     </div>
-                    <label className="relative inline-flex items-center cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={!excluded}
-                        onChange={(e) => handleExcludeToggle(group.jid, !e.target.checked)}
-                        disabled={saving}
-                        className="sr-only peer"
-                      />
-                      <div className="w-11 h-6 bg-zinc-700 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-400 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-400"></div>
-                    </label>
-                  </div>
-                );
-              })}
-            </div>
-            <p className="mt-4 text-xs text-zinc-500 text-center">
-              Unchecked = group is opted OUT (never parsed, never shared).
-            </p>
+                  );
+                })}
+              </div>
+              <p className="mt-4 text-xs text-zinc-500 text-center">
+                Unchecked = group is opted OUT (never parsed, never shared).
+              </p>
+            </>
           )}
         </div>
       </div>
