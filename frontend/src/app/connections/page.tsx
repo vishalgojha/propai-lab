@@ -19,7 +19,7 @@ type ConnectionPhase =
   | "error";
 
 function defaultConnectionError() {
-  return "Could not determine WhatsApp connection state. Refresh the QR code or reconnect WhatsApp.";
+  return "Could not determine WhatsApp connection state. Wait for a status update, or refresh the QR if it stays stuck.";
 }
 
 const DISCONNECT_REASONS: Record<string, string> = {
@@ -181,7 +181,7 @@ export default function ConnectionCenterPage() {
 
   const [phase, setPhase] = useState<ConnectionPhase>("loading");
   const [qrText, setQrText] = useState<string | null>(null);
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [errorMsg, setErrorMsg] = useState<string | null>(defaultConnectionError());
   const [phoneNumber, setPhoneNumber] = useState<string | null>(null);
   const [displayName, setDisplayName] = useState<string | null>(null);
   const [groups, setGroups] = useState<number | null>(null);
@@ -200,6 +200,7 @@ export default function ConnectionCenterPage() {
   const [recentlyProcessed1h, setRecentlyProcessed1h] = useState<number>(0);
   const [qrLoading, setQrLoading] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
+  const [showQrRecovery, setShowQrRecovery] = useState(false);
   const eventSourceRef = useRef<EventSource | null>(null);
   const wasEverConnectedRef = useRef(false);
   const reconnectAttempts = useRef(0);
@@ -260,7 +261,7 @@ export default function ConnectionCenterPage() {
   const handleDisconnected = useCallback((data: Record<string, unknown>) => {
     const reason = (data.reason as string) || "unknown";
     const specific = DISCONNECT_REASONS[String(reason)];
-    setPhase("error");
+    setPhase("reconnecting");
     setErrorMsg(specific || defaultConnectionError());
     setQrText(null);
   }, []);
@@ -269,10 +270,19 @@ export default function ConnectionCenterPage() {
   useEffect(() => {
     if (phase !== "loading") return;
     loadingFallback.current = setTimeout(() => {
-      setPhase("error");
+      setPhase((p) => (p === "connected" || p === "syncing" || p === "reconnecting" ? "reconnecting" : "error"));
       setErrorMsg(defaultConnectionError());
     }, 8000);
     return () => { if (loadingFallback.current) clearTimeout(loadingFallback.current); };
+  }, [phase]);
+
+  useEffect(() => {
+    if (phase !== "reconnecting") {
+      setShowQrRecovery(false);
+      return;
+    }
+    const timeout = setTimeout(() => setShowQrRecovery(true), 20000);
+    return () => clearTimeout(timeout);
   }, [phase]);
 
   const connectSSE = useCallback(() => {
@@ -305,12 +315,12 @@ export default function ConnectionCenterPage() {
         } else if (cs === "closed" || cs === "logged_out") {
           handleDisconnected({ reason: cs, ...data } as Record<string, unknown>);
         } else if (cs === "error") {
-          setPhase("error");
+          setPhase("reconnecting");
           setErrorMsg((data.error as string) || defaultConnectionError());
         } else if (cs === "unknown" || !cs) {
           // Only show movie quote on initial load; if we were connected, stay reconnecting
           if (!wasEverConnectedRef.current) {
-            setPhase("error");
+            setPhase("reconnecting");
             setErrorMsg(defaultConnectionError());
           }
         }
@@ -397,7 +407,7 @@ export default function ConnectionCenterPage() {
     setDisconnecting(true);
     try {
       await fetch("/api/sync/logout", { method: "POST" });
-      setPhase("error");
+      setPhase("reconnecting");
       setErrorMsg("Disconnected. You can reconnect below.");
       setPhoneNumber(null);
       setDisplayName(null);
@@ -489,44 +499,64 @@ export default function ConnectionCenterPage() {
               </div>
             )}
 
-            {phase === "reconnecting" && (
-              <div className="flex flex-col items-center py-12 text-center">
-                <div className="w-10 h-10 rounded-full border-2 border-zinc-600 border-t-amber-400 animate-spin" />
-                <div className="mt-4 text-sm font-semibold text-amber-400">Reconnecting<LoadingDots /></div>
-                <div className="mt-1 text-xs text-zinc-500">Trying to restore your WhatsApp session</div>
-              </div>
-            )}
-
-            {phase === "error" && (
+            {(phase === "error" || phase === "reconnecting") && (
               <div className="flex flex-col items-center py-12 text-center">
                 <div className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center mb-3">
-                  <MessageSquare className="w-5 h-5 text-zinc-400" strokeWidth={1.5} />
+                  {phase === "reconnecting" ? (
+                    <RefreshCw className="w-5 h-5 text-amber-400 animate-spin" strokeWidth={1.5} />
+                  ) : (
+                    <MessageSquare className="w-5 h-5 text-zinc-400" strokeWidth={1.5} />
+                  )}
                 </div>
-                <p className="text-sm text-zinc-300 italic max-w-md leading-relaxed">"{errorMsg || "Something went wrong"}"</p>
+                <p className="text-sm text-zinc-300 italic max-w-md leading-relaxed">
+                  {phase === "reconnecting"
+                    ? "Waiting for WhatsApp to reconnect."
+                    : errorMsg || defaultConnectionError()}
+                </p>
+                {phase === "reconnecting" && (
+                  <p className="mt-2 text-xs text-zinc-500 max-w-md">
+                    The session is still being monitored in the background. QR recovery will appear if the reconnect stays stuck.
+                  </p>
+                )}
                 <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
+                  {phase === "error" || showQrRecovery ? (
+                    <>
+                      <button
+                        onClick={fetchQR}
+                        disabled={qrLoading}
+                        className="rounded-lg bg-[#3EE88A] px-6 py-2.5 text-xs font-bold text-black min-h-[44px] disabled:opacity-50"
+                      >
+                        {qrLoading ? "Loading..." : "Scan QR Code"}
+                      </button>
+                      <button
+                        onClick={async () => {
+                          setQrLoading(true);
+                          try {
+                            await fetch("/api/sync/refresh-qr", { method: "POST" });
+                            await fetchQR();
+                          } catch {
+                            setErrorMsg("Could not refresh QR");
+                          } finally {
+                            setQrLoading(false);
+                          }
+                        }}
+                        disabled={qrLoading}
+                        className="rounded-lg border border-white/20 px-6 py-2.5 text-xs font-bold text-white min-h-[44px] disabled:opacity-50"
+                      >
+                        Force Fresh QR
+                      </button>
+                    </>
+                  ) : null}
                   <button
-                    onClick={fetchQR}
-                    disabled={qrLoading}
-                    className="rounded-lg bg-[#3EE88A] px-6 py-2.5 text-xs font-bold text-black min-h-[44px] disabled:opacity-50"
-                  >
-                    {qrLoading ? "Loading..." : "Scan QR Code"}
-                  </button>
-                  <button
-                    onClick={async () => {
-                      setQrLoading(true);
-                      try {
-                        await fetch("/api/sync/refresh-qr", { method: "POST" });
-                        await fetchQR();
-                      } catch {
-                        setErrorMsg("Could not refresh QR");
-                      } finally {
-                        setQrLoading(false);
-                      }
+                    onClick={() => {
+                      setPhase("loading");
+                      setErrorMsg(defaultConnectionError());
+                      void fetchStats();
+                      void fetchQR();
                     }}
-                    disabled={qrLoading}
                     className="rounded-lg border border-white/20 px-6 py-2.5 text-xs font-bold text-white min-h-[44px] disabled:opacity-50"
                   >
-                    Force Fresh QR
+                    Retry status
                   </button>
                 </div>
               </div>

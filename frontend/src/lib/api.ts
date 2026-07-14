@@ -202,6 +202,7 @@ export interface MarketAccessStatus {
   authenticated: boolean;
   tenant_id?: string;
   whatsapp_connected: boolean;
+  waba_configured?: boolean;
   initial_sync_complete?: boolean;
   privacy_receipt_complete?: boolean;
   excluded_groups_count?: number;
@@ -255,6 +256,19 @@ export function sendMessage(payload: SendMessageRequest) {
   });
 }
 
+export interface WabaSendRequest {
+  to: string;
+  text: string;
+  remote_jid?: string;
+}
+
+export function sendWabaMessage(payload: WabaSendRequest) {
+  return fetchJSON<any>("/waba/send", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
 export function getParsed(limit = 50, offset = 0) {
   return fetchJSON<ParsedObservation[]>(`/parsed?limit=${limit}&offset=${offset}`);
 }
@@ -292,7 +306,7 @@ export function getWhatsAppStatus() {
 }
 
 export function getMarketAccessStatus() {
-  return fetchJSON<MarketAccessStatus>("/market/access");
+  return fetchJSON<MarketAccessStatus>("/market/access", undefined, 8000);
 }
 
 export interface PrivacyReceiptStatus {
@@ -1016,6 +1030,23 @@ export function getAuditTimeline(limit = 50) {
 export interface AuditGroupsResponse {
   groups: AuditGroupCard[];
   total_unique_senders: number;
+  errors?: string[];
+}
+
+export interface AuditGroupOverlapPair {
+  group_a: { jid: string; name: string; senders: number };
+  group_b: { jid: string; name: string; senders: number };
+  shared_senders: number;
+  overlap_pct: number;
+  keep: { jid: string; name: string; senders: number };
+  skip: { jid: string; name: string; senders: number };
+  reason: string;
+}
+
+export interface AuditGroupOverlapResponse {
+  pairs: AuditGroupOverlapPair[];
+  groups: { jid: string; name: string; senders: number }[];
+  error?: string;
 }
 
 export function getAuditGroups(q = "", status = "") {
@@ -1035,6 +1066,10 @@ export function getAuditGroupTimeline(jid: string) {
 
 export function getAuditDuplicates() {
   return fetchJSON<any[]>("/audit/duplicates");
+}
+
+export function getAuditGroupOverlap(limit = 20) {
+  return fetchJSON<AuditGroupOverlapResponse>(`/audit/group-overlap?limit=${limit}`);
 }
 
 export function getAuditCaptureHealth() {

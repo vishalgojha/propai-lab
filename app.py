@@ -3045,6 +3045,10 @@ async def market_access_status(
     sync_ready = connected and _market_sync_ready(details)
     privacy_payload = _privacy_receipt_payload(details)
     privacy_ready = bool(privacy_payload["privacy_receipt_complete"])
+    if connected and sync_ready and not privacy_ready:
+        _mark_privacy_receipt_complete()
+        privacy_payload = _privacy_receipt_payload(details)
+        privacy_ready = bool(privacy_payload["privacy_receipt_complete"])
     paid_active = False
     trial_active = connected and sync_ready and privacy_ready
     unlocked = paid_active or trial_active
@@ -3061,10 +3065,14 @@ async def market_access_status(
         reason = "privacy_receipt"
         message = "Review group privacy once. Real-estate groups feed Shared Market; DMs and opted-out groups stay private."
 
+    # Check if WABA (WhatsApp Business API) is configured — allows outbound even without whatsmeow
+    waba_configured = bool(_companion_get_config_value("access_token", "WABA_ACCESS_TOKEN"))
+
     return {
         "authenticated": bool(user),
         "tenant_id": tenant_id,
         "whatsapp_connected": connected,
+        "waba_configured": waba_configured,
         "initial_sync_complete": sync_ready,
         "privacy_receipt_complete": privacy_ready,
         "excluded_groups_count": privacy_payload["excluded_groups_count"],
@@ -6703,6 +6711,123 @@ async def whatsapp_cloud_webhook_verify(request: Request):
 @app.post("/api/whatsapp/cloud/webhook")
 async def whatsapp_cloud_webhook_receive(request: Request):
     return await companion_webhook_receive(request)
+
+
+# ── WABA Outbound Messaging ───────────────────────────────────────
+
+async def _waba_send_message(to: str, text: str, msg_type: str = "text") -> dict:
+    """Send a message via WhatsApp Business API Graph endpoint.
+    `to` should be a phone number in format 919876543210 (no + or spaces).
+    Returns {success, message_id, error}."""
+    phone_number_id = _companion_get_config_value("phone_number_id", "WABA_PHONE_NUMBER_ID")
+    access_token = _companion_get_config_value("access_token", "WABA_ACCESS_TOKEN")
+    if not phone_number_id or not access_token:
+        return {"success": False, "error": "WABA not configured (phone_number_id or access_token missing)"}
+
+    # Normalize phone: strip +, spaces, leading 0
+    digits = to.replace("+", "").replace(" ", "").replace("-", "").strip()
+    if digits.startswith("0"):
+        digits = digits[1:]
+    if not digits.isdigit() or len(digits) < 10:
+        return {"success": False, "error": f"Invalid phone number: {to}"}
+
+    url = f"https://graph.facebook.com/v21.0/{phone_number_id}/messages"
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Content-Type": "application/json",
+    }
+    body = {
+        "messaging_product": "whatsapp",
+        "to": digits,
+        "type": msg_type,
+    }
+    if msg_type == "text":
+        body["text"] = {"body": text}
+    elif msg_type == "template":
+        body["template"] = text  # caller passes full template object
+    else:
+        body["text"] = {"body": text}
+
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.post(url, json=body, headers=headers)
+        data = resp.json() if resp.text else {}
+        if resp.status_code == 200 and data.get("messages"):
+            msg_id = data["messages"][0].get("id", "")
+            return {"success": True, "message_id": msg_id, "to": digits}
+        error_msg = data.get("error", {}).get("message", resp.text[:500])
+        return {"success": False, "error": error_msg, "status_code": resp.status_code, "response": data}
+    except Exception as exc:
+        return {"success": False, "error": str(exc)}
+
+
+class WabaSendRequest(BaseModel):
+    to: str  # phone number (digits, with or without +91)
+    text: str
+    remote_jid: str = ""  # optional: the JID of the conversation to store the message against
+
+
+@app.post("/api/waba/send")
+async def waba_send_message(req: WabaSendRequest, user: dict = Depends(require_user)):
+    text = req.text.strip()
+    if not text:
+        raise HTTPException(400, "text is required")
+    if not req.to:
+        raise HTTPException(400, "to (phone number) is required")
+
+    result = await _waba_send_message(req.to, text)
+
+    # Store outbound message in raw_messages so it appears in inbox
+    try:
+        now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        digits = req.to.replace("+", "").replace(" ", "").replace("-", "").strip()
+        if digits.startswith("0"):
+            digits = digits[1:]
+        sender_jid = f"{digits}@s.whatsapp.net"
+
+        storage.db.execute(
+            """INSERT INTO raw_messages
+               (group_name, sender, sender_jid, sender_phone, message, message_type,
+                source, timestamp, raw_payload, message_uid, synced_at, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                req.remote_jid or sender_jid,
+                "You",
+                sender_jid,
+                digits,
+                text,
+                "text",
+                "WABA_OUTBOUND",
+                now_iso,
+                json.dumps({"waba_message_id": result.get("message_id", ""), "to": digits}),
+                f"waba-{result.get('message_id', '') or int(time.time() * 1000)}",
+                now_iso,
+                now_iso,
+            ),
+        )
+        storage._commit()
+    except Exception as exc:
+        print(f"[waba-send] failed to store outbound message: {exc}", flush=True)
+
+    # Log activity
+    try:
+        storage.log_activity(
+            action="waba_message_sent" if result.get("success") else "waba_message_failed",
+            target_type="waba_outbound",
+            target_id=req.to,
+            status="sent" if result.get("success") else "failed",
+            details={
+                "to": req.to,
+                "text_preview": text[:200],
+                "message_id": result.get("message_id", ""),
+                "error": result.get("error", ""),
+            },
+        )
+    except Exception:
+        pass
+
+    status_code = 200 if result.get("success") else 502
+    return JSONResponse(status_code=status_code, content=result)
 
 
 @app.get("/api/companion/team")

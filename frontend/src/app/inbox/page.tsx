@@ -1057,6 +1057,10 @@ function InboxPageInner() {
     return activeAccessGate;
   }, [activeAccessGate, marketAccessError]);
 
+  const accessProbeFailed = Boolean(marketAccessError);
+  const whatsappDisconnected = marketAccess?.whatsapp_connected === false;
+  const connectionPending = loadingMarketAccess || accessProbeFailed || whatsappDisconnected;
+
   const groupedBrokerObservations = useMemo(() => {
     const groups = new Map<string, BrokerObservationGroup>();
     for (const obs of selectedBrokerObservations as BrokerObservationRow[]) {
@@ -1294,13 +1298,6 @@ function InboxPageInner() {
 
   // 1. Initial Load of Feed & Suggestions
   const loadFeed = useCallback(async (append = false, requestedOffset = offset) => {
-    if (marketAccess && !marketAccess.market_unlocked) {
-      setMessages([]);
-      setGroups([]);
-      setAllSuggestions([]);
-      setLoadingLeft(false);
-      return;
-    }
     setLoadingLeft(true);
     try {
       const threadMsgs = await api.getInboxThreads(PAGE_SIZE, requestedOffset);
@@ -1353,7 +1350,7 @@ function InboxPageInner() {
   const initialLoadDone = useRef(false);
   const prevOffsetRef = useRef(0);
   useEffect(() => {
-    if (loadingMarketAccess || (marketAccess && !marketAccess.market_unlocked)) return;
+    if (connectionPending) return;
     if (!initialLoadDone.current) {
       initialLoadDone.current = true;
       prevOffsetRef.current = offset;
@@ -1362,7 +1359,7 @@ function InboxPageInner() {
       prevOffsetRef.current = offset;
       loadFeed(isMobile && offset > 0);
     }
-  }, [isMobile, loadingMarketAccess, marketAccess, offset, loadFeed]);
+  }, [isMobile, connectionPending, offset, loadFeed]);
 
   // Fetch available slugs (saved views) for the inbox tabs
   useEffect(() => {
@@ -1390,7 +1387,7 @@ function InboxPageInner() {
   }, []);
 
   const loadBrokerFeed = useCallback(async () => {
-    if (marketAccess && !marketAccess.market_unlocked) {
+    if (connectionPending) {
       setBrokerFeed([]);
       return;
     }
@@ -1403,16 +1400,16 @@ function InboxPageInner() {
     } finally {
       setLoadingBrokerFeed(false);
     }
-  }, [marketAccess]);
+  }, [connectionPending]);
 
   // Load broker feed when switching to a slug whose view_type needs brokers feed
   useEffect(() => {
-    if (loadingMarketAccess || (marketAccess && !marketAccess.market_unlocked)) return;
+    if (connectionPending) return;
     const vt = activeSlug?.view_type;
     if (vt === "brokers" && brokerFeed.length === 0) {
       loadBrokerFeed();
     }
-  }, [activeSlug, brokerFeed.length, loadBrokerFeed, loadingMarketAccess, marketAccess]);
+  }, [activeSlug, brokerFeed.length, connectionPending, loadBrokerFeed]);
 
   // Scroll to bottom of conversation thread when new messages arrive
   useEffect(() => {
@@ -2081,6 +2078,7 @@ function InboxPageInner() {
   const replyFallbackPhone = normalizeRealPhone(resolveMessagePhone(selectedMsg) || phoneFromJid(selectedConversationJid));
   const replyDraftKey = selectedConversationJid ? `propai-inbox-draft:${selectedConversationJid}` : "";
   const whatsappConnected = marketAccess?.whatsapp_connected !== false;
+  const wabaConfigured = marketAccess?.waba_configured === true;
 
   useEffect(() => {
     setReplyError("");
@@ -2149,30 +2147,19 @@ function InboxPageInner() {
 
   const handleSendReply = useCallback(async () => {
     const text = replyText.trim();
-    if (!text || sendingReply || !selectedConversationJid || !canReplyWhatsApp || !whatsappConnected) return;
+    if (!text || sendingReply || !selectedConversationJid || !canReplyWhatsApp || (!whatsappConnected && !wabaConfigured)) return;
 
     setSendingReply(true);
     setReplyError("");
     setReplyStatus("");
 
-    const quoted = replyTargetMessage;
     const nowIso = new Date().toISOString();
 
     try {
-      await api.sendMessage({
-        remote_jid: selectedConversationJid,
+      await api.sendWabaMessage({
+        to: replyFallbackPhone || "",
         text,
-        ...(quoted?.id
-          ? {
-              quoted_message_id: String(quoted.id),
-              quoted_remote_jid:
-                (quoted.chat_id ||
-                  ("conversation_key" in quoted ? quoted.conversation_key : "") ||
-                  selectedConversationJid).trim(),
-              quoted_participant: quoted.sender_jid || quoted.sender_phone || "",
-              quoted_from_me: quoted.from_me === true || quoted.from_me === 1,
-            }
-          : {}),
+        remote_jid: selectedConversationJid,
       });
 
       const optimisticMessage: api.RawMessage = {
@@ -2196,7 +2183,7 @@ function InboxPageInner() {
         message: text,
         message_type: "text",
         timestamp: nowIso,
-        source: "propai-web",
+        source: "WABA_OUTBOUND",
         event_id: `local-${Date.now()}`,
         message_uid: `local-${Date.now()}`,
         raw_payload: JSON.stringify({ local: true, remote_jid: selectedConversationJid }),
@@ -2238,6 +2225,7 @@ function InboxPageInner() {
     selectedTitle,
     canReplyWhatsApp,
     whatsappConnected,
+    wabaConfigured,
   ]);
 
   // 3. Load Conversation Thread (Center Panel)
@@ -2800,47 +2788,27 @@ function InboxPageInner() {
           <div className="flex-1 overflow-y-auto divide-y divide-[rgba(255,255,255,0.04)]">
             {loadingMarketAccess ? (
               <div className="p-8 text-center text-xs text-zinc-500">Checking workspace access...</div>
-            ) : marketAccessError ? (
+            ) : connectionPending ? (
               <div className="p-5 text-center">
                 <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-lg border border-amber-500/30 bg-amber-500/10 text-amber-300">
                   <MessageSquare className="h-4 w-4" strokeWidth={1.6} />
                 </div>
-                <div className="text-sm font-bold text-white">{accessHealthGate.title}</div>
+                <div className="text-sm font-bold text-white">
+                  {whatsappDisconnected ? "Scan WhatsApp QR to continue" : accessHealthGate.title}
+                </div>
                 <p className="mx-auto mt-2 max-w-[260px] text-xs leading-relaxed text-zinc-500">
-                  {accessHealthGate.description}
+                  {whatsappDisconnected
+                    ? "Scan the QR code in Connection Center to unlock Market Inbox and WhatsApp Groups."
+                    : accessHealthGate.description}
                 </p>
                 <div className="mt-4 flex flex-col items-center gap-2 sm:flex-row sm:justify-center">
                   <Link
-                    href={accessHealthGate.primaryHref}
+                    href="/connections"
                     className="inline-flex h-9 items-center justify-center rounded-lg bg-[#3EE88A] px-4 text-xs font-bold text-black hover:bg-[#35d47c]"
                   >
-                    {accessHealthGate.primaryCta}
+                    Open QR
                   </Link>
-                  <Link
-                    href={accessHealthGate.secondaryHref}
-                    className="inline-flex h-9 items-center justify-center rounded-lg border border-white/10 bg-zinc-900 px-4 text-xs font-bold text-zinc-200 hover:border-[#3EE88A]/40 hover:text-[#3EE88A]"
-                  >
-                    {accessHealthGate.secondaryCta}
-                  </Link>
-                </div>
-              </div>
-            ) : marketAccess && !marketAccess.market_unlocked ? (
-              <div className="p-5 text-center">
-                <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-lg border border-[#3EE88A]/30 bg-[#3EE88A]/10 text-[#3EE88A]">
-                  <MessageSquare className="h-4 w-4" strokeWidth={1.6} />
-                </div>
-                <div className="text-sm font-bold text-white">{accessHealthGate.title}</div>
-                <p className="mx-auto mt-2 max-w-[260px] text-xs leading-relaxed text-zinc-500">
-                  {accessHealthGate.description}
-                </p>
-                <div className="mt-4 flex flex-col items-center gap-2 sm:flex-row sm:justify-center">
-                  <Link
-                    href={"primaryHref" in accessHealthGate ? accessHealthGate.primaryHref : accessHealthGate.href}
-                    className="inline-flex h-9 items-center justify-center rounded-lg bg-[#3EE88A] px-4 text-xs font-bold text-black hover:bg-[#35d47c]"
-                  >
-                    {"primaryCta" in accessHealthGate ? accessHealthGate.primaryCta : accessHealthGate.cta}
-                  </Link>
-                  {"secondaryHref" in accessHealthGate && (
+                  {!whatsappDisconnected && "secondaryHref" in accessHealthGate && (
                     <Link
                       href={accessHealthGate.secondaryHref}
                       className="inline-flex h-9 items-center justify-center rounded-lg border border-white/10 bg-zinc-900 px-4 text-xs font-bold text-zinc-200 hover:border-[#3EE88A]/40 hover:text-[#3EE88A]"
@@ -3018,50 +2986,33 @@ function InboxPageInner() {
 
         {/* ================= CENTER PANEL: CONVERSATION ================= */}
         <div className={`flex-1 min-w-0 w-full h-full min-h-0 flex flex-col bg-[#070b0e] overflow-hidden lg:w-auto ${isMobile && mobileView !== "conversation" ? "hidden" : ""}`}>
-          {marketAccessError ? (
-            <div className="flex flex-1 items-center justify-center px-6 text-center">
-              <div className="max-w-md">
-                <div className="mx-auto mb-5 flex h-12 w-12 items-center justify-center rounded-xl border border-amber-500/30 bg-amber-500/10 text-amber-300">
-                  <MessageSquare className="h-5 w-5" strokeWidth={1.6} />
-                </div>
-                <h3 className="text-lg font-bold text-white">{accessHealthGate.title}</h3>
-                <p className="mt-2 text-sm leading-relaxed text-zinc-500">
-                  {accessHealthGate.description}
-                </p>
-                <div className="mt-5 flex flex-col items-center justify-center gap-2 sm:flex-row">
-                  <Link
-                    href={accessHealthGate.primaryHref}
-                    className="inline-flex h-10 items-center justify-center rounded-lg bg-[#3EE88A] px-5 text-sm font-bold text-black hover:bg-[#35d47c]"
-                  >
-                    {accessHealthGate.primaryCta}
-                  </Link>
-                  <Link
-                    href={accessHealthGate.secondaryHref}
-                    className="inline-flex h-10 items-center justify-center rounded-lg border border-white/10 bg-zinc-900 px-5 text-sm font-bold text-zinc-200 hover:border-[#3EE88A]/40 hover:text-[#3EE88A]"
-                  >
-                    {accessHealthGate.secondaryCta}
-                  </Link>
-                </div>
-              </div>
+          {accessProbeFailed && (
+            <div className="border-b border-amber-500/20 bg-amber-500/5 px-4 py-3 text-xs text-amber-200">
+              {accessHealthGate.title}: {accessHealthGate.description}
             </div>
-          ) : marketAccess && !marketAccess.market_unlocked ? (
+          )}
+          {connectionPending ? (
             <div className="flex flex-1 items-center justify-center px-6 text-center">
               <div className="max-w-md">
                 <div className="mx-auto mb-5 flex h-12 w-12 items-center justify-center rounded-xl border border-[#3EE88A]/30 bg-[#3EE88A]/10 text-[#3EE88A]">
                   <MessageSquare className="h-5 w-5" strokeWidth={1.6} />
                 </div>
-                <h3 className="text-lg font-bold text-white">{accessHealthGate.title}</h3>
+                <h3 className="text-lg font-bold text-white">
+                  {whatsappDisconnected ? "Scan WhatsApp QR to continue" : accessHealthGate.title}
+                </h3>
                 <p className="mt-2 text-sm leading-relaxed text-zinc-500">
-                  {accessHealthGate.description}
+                  {whatsappDisconnected
+                    ? "Scan the QR code in Connection Center to unlock Market Inbox and WhatsApp Groups."
+                    : accessHealthGate.description}
                 </p>
                 <div className="mt-5 flex flex-col items-center justify-center gap-2 sm:flex-row">
                   <Link
-                    href={"primaryHref" in accessHealthGate ? accessHealthGate.primaryHref : accessHealthGate.href}
+                    href="/connections"
                     className="inline-flex h-10 items-center justify-center rounded-lg bg-[#3EE88A] px-5 text-sm font-bold text-black hover:bg-[#35d47c]"
                   >
-                    {"primaryCta" in accessHealthGate ? accessHealthGate.primaryCta : accessHealthGate.cta}
+                    Open QR
                   </Link>
-                  {"secondaryHref" in accessHealthGate && (
+                  {!whatsappDisconnected && "secondaryHref" in accessHealthGate && (
                     <Link
                       href={accessHealthGate.secondaryHref}
                       className="inline-flex h-10 items-center justify-center rounded-lg border border-white/10 bg-zinc-900 px-5 text-sm font-bold text-zinc-200 hover:border-[#3EE88A]/40 hover:text-[#3EE88A]"
@@ -3368,7 +3319,7 @@ function InboxPageInner() {
                     className={`hidden sm:inline-flex items-center rounded-full border px-2 py-1 text-[10px] font-bold uppercase tracking-wider ${
                       replyAccessLoading
                         ? "border-white/10 bg-white/5 text-zinc-500"
-                        : !whatsappConnected
+                        : !whatsappConnected && !wabaConfigured
                           ? "border-amber-500/20 bg-amber-500/10 text-amber-300"
                           : canReplyWhatsApp
                             ? "border-emerald-400/20 bg-emerald-400/10 text-emerald-300"
@@ -3378,7 +3329,7 @@ function InboxPageInner() {
                   >
                     {replyAccessLoading
                       ? "Checking access"
-                      : !whatsappConnected
+                      : !whatsappConnected && !wabaConfigured
                         ? "WhatsApp disconnected"
                         : canReplyWhatsApp
                         ? `Can send${currentTeamMember?.name ? ` · ${currentTeamMember.name}` : ""}`
@@ -3763,7 +3714,7 @@ function InboxPageInner() {
                       <div className="rounded-xl border border-white/10 bg-zinc-950 px-3 py-3 text-[11px] text-zinc-400">
                         Checking reply access...
                       </div>
-                    ) : !whatsappConnected ? (
+                    ) : !whatsappConnected && !wabaConfigured ? (
                       <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 px-3 py-3 text-[11px] text-amber-100">
                         <div className="font-semibold">WhatsApp is not connected yet.</div>
                         <div className="mt-1 text-amber-100/75">

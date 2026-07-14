@@ -2,41 +2,89 @@
 
 export const dynamic = 'force-dynamic';
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Shield, Share2, Lock, EyeOff, Check, AlertCircle, Building2, Users, MessageSquare, UserCheck } from "lucide-react";
-import { getOrgPrivacy, updateOrgPrivacy, getCurrentOrg, OrgPrivacySettings } from "@/lib/api";
+import { updateOrgPrivacy, getCurrentOrg, getPrivacyReceiptStatus, completePrivacyReceipt, OrgPrivacySettings, PrivacyReceiptStatus } from "@/lib/api";
+import { useAuth } from "@/lib/AuthProvider";
 
 export default function PrivacyPage() {
+  const { user, loading: authLoading } = useAuth();
   const [privacy, setPrivacy] = useState<OrgPrivacySettings | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [orgId, setOrgId] = useState<string | null>(null);
+  const [receipt, setReceipt] = useState<PrivacyReceiptStatus | null>(null);
+  const autoCompleteAttempted = useRef(false);
 
   useEffect(() => {
+    if (authLoading) return;
     loadPrivacy();
-  }, []);
+  }, [authLoading, user]);
+
+  function buildFallbackPrivacy(sharedMarketDefault: boolean): OrgPrivacySettings {
+    return {
+      privacy_mode: sharedMarketDefault ? "shared_market" : "private",
+      share_listings: sharedMarketDefault,
+      share_requirements: sharedMarketDefault,
+      share_price_trends: sharedMarketDefault,
+      share_market_activity: sharedMarketDefault,
+      share_building_intelligence: sharedMarketDefault,
+      share_broker_network: sharedMarketDefault,
+      share_broker_reputation: sharedMarketDefault,
+      share_demand_signals: sharedMarketDefault,
+    };
+  }
 
   async function loadPrivacy() {
     try {
-      const org = await getCurrentOrg();
-      setOrgId(org.id);
-      const data = await getOrgPrivacy(org.id);
-      setPrivacy(data);
+      const receiptData = await getPrivacyReceiptStatus();
+      setReceipt(receiptData);
+
+      if (
+        receiptData.whatsapp_connected &&
+        !receiptData.privacy_receipt_complete &&
+        !autoCompleteAttempted.current
+      ) {
+        autoCompleteAttempted.current = true;
+        const completed = await completePrivacyReceipt();
+        setReceipt(completed);
+        setPrivacy(buildFallbackPrivacy(completed.shared_market_default));
+        setError(null);
+        return;
+      }
+
+      setPrivacy(buildFallbackPrivacy(receiptData.shared_market_default));
     } catch (err) {
-      setError("Failed to load privacy settings");
+      setError("Failed to load privacy settings. Showing fallback defaults.");
+      try {
+        const fallback = await getPrivacyReceiptStatus();
+        setReceipt(fallback);
+        setPrivacy(buildFallbackPrivacy(fallback.shared_market_default));
+      } catch {
+        // Keep the error message and let the UI render the last known defaults if any.
+      }
     } finally {
       setLoading(false);
     }
   }
 
   async function handleToggle(value: "private" | "shared_market") {
-    if (!privacy || saving || !orgId) return;
+    if (!privacy || saving) return;
     setSaving(true);
     setError(null);
     try {
-      const updated = await updateOrgPrivacy(orgId, { privacy_mode: value });
+      let targetOrgId = orgId;
+      if (!targetOrgId) {
+        const org = await getCurrentOrg();
+        targetOrgId = org.id;
+        setOrgId(targetOrgId);
+      }
+      if (!targetOrgId) {
+        throw new Error("No organization available");
+      }
+      const updated = await updateOrgPrivacy(targetOrgId, { privacy_mode: value });
       setPrivacy(updated);
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
@@ -56,6 +104,11 @@ export default function PrivacyPage() {
         <p className="mt-1 text-sm text-zinc-500">
           Control how your data participates in the PropAI network.
         </p>
+        {receipt && (
+          <p className="mt-2 text-xs text-zinc-600">
+            Shared Market default: {receipt.shared_market_default ? "on" : "off"} · DMs always private · {receipt.private_groups_excluded} groups opted out
+          </p>
+        )}
       </div>
 
       {error && (

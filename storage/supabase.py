@@ -1040,7 +1040,7 @@ class SupabaseStorage(Storage):
             pass
 
         query = self.client.table("raw_messages").select(
-            "id,group_name,sender,sender_phone,sender_jid,timestamp,created_at,message_uid,body"
+            "id,group_name,sender,sender_phone,sender_jid,timestamp,created_at,message_uid,message"
         )\
             .order("timestamp", desc=True)\
             .limit(max(5000, limit + offset))
@@ -1141,7 +1141,7 @@ class SupabaseStorage(Storage):
         raw_map: dict[int, dict] = {}
         if raw_ids:
             raw_res = self.client.table("raw_messages").select(
-                "id,group_name,sender,sender_phone,sender_jid,timestamp,created_at,message_uid,body"
+                "id,group_name,sender,sender_phone,sender_jid,timestamp,created_at,message_uid,message"
             ).in_("id", raw_ids[:min(len(raw_ids), 10000)]).execute()
             for r in raw_res.data or []:
                 if r.get("id"):

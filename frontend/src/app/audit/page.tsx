@@ -12,6 +12,8 @@ type LoadState = {
   totalUniqueSenders: number;
   health: api.AuditCaptureHealth | null;
   excluded: string[];
+  duplicates: any[];
+  overlap: api.AuditGroupOverlapResponse | null;
   errors: string[];
 };
 
@@ -20,6 +22,8 @@ const emptyState: LoadState = {
   totalUniqueSenders: 0,
   health: null,
   excluded: [],
+  duplicates: [],
+  overlap: null,
   errors: [],
 };
 
@@ -84,10 +88,12 @@ export default function AuditPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [groupsResp, health, excluded] = await Promise.all([
+    const [groupsResp, health, excluded, duplicates, overlap] = await Promise.all([
       safe("group audit", () => api.getAuditGroups(), { groups: [] as api.AuditGroupCard[], total_unique_senders: 0 }),
       safe("capture health", () => api.getAuditCaptureHealth(), null as api.AuditCaptureHealth | null),
       safe("group controls", () => api.getExcludedGroups(), [] as string[]),
+      safe("duplicate groups", () => api.getAuditDuplicates(), [] as any[]),
+      safe("member overlap", () => api.getAuditGroupOverlap(), { pairs: [], groups: [] }),
     ]);
 
     const groupsData = groupsResp.value;
@@ -96,7 +102,9 @@ export default function AuditPage() {
       totalUniqueSenders: groupsData.total_unique_senders,
       health: health.value,
       excluded: excluded.value,
-      errors: [groupsResp.error, health.error, excluded.error].filter(Boolean) as string[],
+      duplicates: duplicates.value,
+      overlap: overlap.value,
+      errors: [groupsResp.error, health.error, excluded.error, duplicates.error, overlap.error].filter(Boolean) as string[],
     });
     setLoading(false);
   }, []);
@@ -120,6 +128,10 @@ export default function AuditPage() {
   const totalMessages = state.groups.reduce((sum, g) => sum + (g.messages || 0), 0);
   const totalObservations = state.groups.reduce((sum, g) => sum + (g.observations || 0), 0);
   const totalListings = state.groups.reduce((sum, g) => sum + (g.listings || 0), 0);
+  const lowCoverageGroups = state.groups.filter((g) => (g.coverage || 0) < 70).length;
+  const duplicateCount = state.duplicates.length;
+  const overlapPairs = state.overlap?.pairs || [];
+  const chaosScore = Math.min(100, Math.round((lowCoverageGroups * 10) + (duplicateCount * 12) + (state.groups.length > 0 ? Math.max(0, 40 - Math.round((totalObservations / Math.max(1, state.groups.length)) / 2)) : 40)));
 
   return (
     <div className="mx-auto max-w-7xl space-y-6 px-6 py-6 text-white">
@@ -166,6 +178,24 @@ export default function AuditPage() {
         <Metric label="Observations" value={num(totalObservations)} sub="Parsed opportunities extracted" />
         <Metric label="Listings" value={num(totalListings)} sub="Property listings identified" />
         <Metric label="Active Groups" value={num(state.groups.filter((g) => g.status === "live").length)} sub={`of ${state.groups.length} total groups`} />
+      </section>
+
+      <section className="grid gap-3 md:grid-cols-3">
+        <Metric
+          label="Chaos Score"
+          value={`${chaosScore}%`}
+          sub="Higher means more noise, duplication, and mixed-quality groups"
+        />
+        <Metric
+          label="Low Coverage Groups"
+          value={num(lowCoverageGroups)}
+          sub="Groups with weak extraction coverage"
+        />
+        <Metric
+          label="Duplicate Candidates"
+          value={num(duplicateCount)}
+          sub="Possible name-collision groups"
+        />
       </section>
 
       <section>
@@ -219,6 +249,85 @@ export default function AuditPage() {
               </button>
             </div>
           ))}
+        </Card>
+      </section>
+
+      <section>
+        <SectionTitle
+          icon={<AlertTriangle className="h-4 w-4" strokeWidth={1.8} />}
+          title="Duplicate Group Heat"
+          sub="These are likely collisions or mirrored group names that make the market noisier."
+        />
+        <Card className="mt-3 overflow-hidden">
+          {state.duplicates.length === 0 ? (
+            <div className="px-4 py-8 text-center text-sm text-zinc-500">
+              No duplicate candidates found yet. Once the group graph is healthy, this section will show overlapping groups.
+            </div>
+          ) : (
+            <div className="divide-y divide-white/10">
+              {state.duplicates.slice(0, 8).map((dup: any, index: number) => (
+                <div key={`${dup.group_a?.jid || index}-${dup.group_b?.jid || index}`} className="grid gap-3 px-4 py-3 md:grid-cols-[1.1fr_1.1fr_0.8fr]">
+                  <div>
+                    <div className="text-[10px] uppercase tracking-[0.16em] text-zinc-500">Group A</div>
+                    <div className="mt-1 text-sm font-semibold text-white">{dup.group_a?.name || dup.group_a?.jid || "Unknown"}</div>
+                    <div className="text-[11px] text-zinc-500">{dup.group_a?.jid || "—"}</div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] uppercase tracking-[0.16em] text-zinc-500">Group B</div>
+                    <div className="mt-1 text-sm font-semibold text-white">{dup.group_b?.name || dup.group_b?.jid || "Unknown"}</div>
+                    <div className="text-[11px] text-zinc-500">{dup.group_b?.jid || "—"}</div>
+                  </div>
+                  <div className="flex items-end md:justify-end">
+                    <span className="inline-flex rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-amber-200">
+                      {dup.match_type || "duplicate"}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
+      </section>
+
+      <section>
+        <SectionTitle
+          icon={<Eye className="h-4 w-4" strokeWidth={1.8} />}
+          title="Member Overlap Recommendations"
+          sub="PropAI can show which groups share the most members so you do not parse the same crowd twice."
+        />
+        <Card className="mt-3 overflow-hidden">
+          {overlapPairs.length === 0 ? (
+            <div className="px-4 py-8 text-center text-sm text-zinc-500">
+              No high-overlap group pairs found yet. Once more messages are captured, this will rank redundant groups by shared senders.
+            </div>
+          ) : (
+            <div className="divide-y divide-white/10">
+              {overlapPairs.slice(0, 8).map((pair, index) => (
+                <div key={`${pair.group_a.jid}-${pair.group_b.jid}-${index}`} className="grid gap-3 px-4 py-3 md:grid-cols-[1.1fr_1.1fr_0.8fr_0.9fr]">
+                  <div>
+                    <div className="text-[10px] uppercase tracking-[0.16em] text-zinc-500">Keep</div>
+                    <div className="mt-1 text-sm font-semibold text-white">{pair.keep.name}</div>
+                    <div className="text-[11px] text-zinc-500">{pair.keep.jid} · {num(pair.keep.senders)} senders</div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] uppercase tracking-[0.16em] text-zinc-500">Skip</div>
+                    <div className="mt-1 text-sm font-semibold text-white">{pair.skip.name}</div>
+                    <div className="text-[11px] text-zinc-500">{pair.skip.jid} · {num(pair.skip.senders)} senders</div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] uppercase tracking-[0.16em] text-zinc-500">Shared members</div>
+                    <div className="mt-1 text-xl font-bold text-[#3EE88A]">{num(pair.shared_senders)}</div>
+                    <div className="text-[11px] text-zinc-500">{pair.reason}</div>
+                  </div>
+                  <div className="flex items-end md:justify-end">
+                    <span className="inline-flex rounded-full border border-[#3EE88A]/30 bg-[#3EE88A]/10 px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-[#3EE88A]">
+                      {pair.overlap_pct}% overlap
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </Card>
       </section>
 

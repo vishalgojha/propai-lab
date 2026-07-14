@@ -15,6 +15,7 @@ import (
 	"syscall"
 	"time"
 
+	_ "github.com/lib/pq"
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/proto/waE2E"
 	"go.mau.fi/whatsmeow/proto/waWeb"
@@ -23,7 +24,6 @@ import (
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
 	waLog "go.mau.fi/whatsmeow/util/log"
-	_ "github.com/lib/pq"
 )
 
 var (
@@ -54,6 +54,7 @@ type Status struct {
 	TotalMessagesReceived int64  `json:"total_messages_received,omitempty"`
 	LastDisconnectAt      string `json:"last_disconnect_at,omitempty"`
 	SocketState           string `json:"socket_state,omitempty"`
+	HeartbeatAt           string `json:"heartbeat_at,omitempty"`
 }
 
 // ── Broker session ─────────────────────────────────────────────────────────
@@ -98,6 +99,9 @@ func (s *BrokerSession) setStatus(st Status) {
 	}
 	if st.LastDisconnectAt == "" {
 		st.LastDisconnectAt = cur.LastDisconnectAt
+	}
+	if st.HeartbeatAt == "" {
+		st.HeartbeatAt = cur.HeartbeatAt
 	}
 	st.ReconnectCount = s.reconnectCount
 	st.ConsecutiveFailures = s.reconnectFailures
@@ -325,6 +329,14 @@ func (sm *SessionManager) runSession(s *BrokerSession) {
 			s.reconnectFailures = 0
 		}
 
+		var heartbeatStop chan struct{}
+		stopHeartbeat := func() {
+			if heartbeatStop != nil {
+				close(heartbeatStop)
+				heartbeatStop = nil
+			}
+		}
+
 		if s.device.ID == nil {
 			// No session — QR pairing flow
 			s.reconnectFailures = 0
@@ -339,6 +351,7 @@ func (sm *SessionManager) runSession(s *BrokerSession) {
 				s.reconnectFailures++
 				continue
 			}
+			heartbeatStop = s.startHeartbeat()
 		outer:
 			for {
 				select {
@@ -353,10 +366,12 @@ func (sm *SessionManager) runSession(s *BrokerSession) {
 				case <-disconnected:
 					break outer
 				case <-s.ctx.Done():
+					stopHeartbeat()
 					s.client.Disconnect()
 					return
 				}
 			}
+			stopHeartbeat()
 			continue
 		} else {
 			// Existing session — connect directly
@@ -365,6 +380,7 @@ func (sm *SessionManager) runSession(s *BrokerSession) {
 				s.reconnectFailures++
 				continue
 			}
+			heartbeatStop = s.startHeartbeat()
 		}
 
 		s.reconnectFailures = 0
@@ -373,12 +389,35 @@ func (sm *SessionManager) runSession(s *BrokerSession) {
 		select {
 		case <-disconnected:
 		case <-s.ctx.Done():
+			stopHeartbeat()
 			if s.client != nil {
 				s.client.Disconnect()
 			}
 			return
 		}
+		stopHeartbeat()
 	}
+}
+
+func (s *BrokerSession) startHeartbeat() chan struct{} {
+	stop := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(15 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				cur := s.getStatus()
+				cur.HeartbeatAt = time.Now().UTC().Format(time.RFC3339)
+				s.setStatus(cur)
+			case <-stop:
+				return
+			case <-s.ctx.Done():
+				return
+			}
+		}
+	}()
+	return stop
 }
 
 // ── Event handler ──────────────────────────────────────────────────────────
@@ -467,12 +506,12 @@ func (sm *SessionManager) handleEvent(s *BrokerSession, evt interface{}) {
 	case *events.PushNameSetting:
 		cur := s.getStatus()
 		s.setStatus(Status{
-			Connected:      cur.Connected,
+			Connected:       cur.Connected,
 			ConnectionState: cur.ConnectionState,
-			PhoneNumber:    cur.PhoneNumber,
-			DisplayName:    v.Action.GetName(),
-			ConnectedSince: cur.ConnectedSince,
-			LastMessageAt:  cur.LastMessageAt,
+			PhoneNumber:     cur.PhoneNumber,
+			DisplayName:     v.Action.GetName(),
+			ConnectedSince:  cur.ConnectedSince,
+			LastMessageAt:   cur.LastMessageAt,
 		})
 
 	case *events.Message:
