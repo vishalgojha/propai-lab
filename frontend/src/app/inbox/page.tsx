@@ -1000,16 +1000,16 @@ function InboxPageInner() {
   }, []);
 
   const connectionLock = useMemo(() => {
-    return {
-      title: "WhatsApp is not connected",
-      description:
-        marketAccess?.message ||
-        "Wait for WhatsApp to reconnect. If it keeps failing, reopen QR pairing.",
-      primaryHref: "/connections",
-      primaryCta: "Open Connection Center",
-      secondaryHref: "/qr",
-      secondaryCta: "Open QR",
-    };
+return {
+        title: "WhatsApp not connected",
+        description:
+          marketAccess?.message ||
+          "Wait for WhatsApp to reconnect. If it keeps failing, reopen QR pairing.",
+        primaryHref: "/connections",
+        primaryCta: "Open Connection Center",
+        secondaryHref: "/connections",
+        secondaryCta: "Open Connections",
+      };
   }, [marketAccess]);
 
   const marketLock = useMemo(() => {
@@ -1052,8 +1052,8 @@ function InboxPageInner() {
         description: marketAccessError,
         primaryHref: "/connections",
         primaryCta: "Open Connection Center",
-        secondaryHref: "/qr",
-        secondaryCta: "Open QR",
+        secondaryHref: "/connections",
+        secondaryCta: "Open Connections",
       };
     }
     return activeAccessGate;
@@ -1190,7 +1190,6 @@ function InboxPageInner() {
   const msgParam = searchParams.get("message");
   const brokerParam = searchParams.get("broker");
   const observationParam = searchParams.get("observation");
-  const isWhatsAppGroupsSurface = searchParams.get("view") === "groups" || currentSlug === "groups";
 
   // Sync selected message to URL
   const updateUrlMessage = useCallback((conversationKey: string, msgId: number) => {
@@ -1323,6 +1322,16 @@ function InboxPageInner() {
       }
     } catch (e) {
       console.error("Failed to load feed:", e);
+      try {
+        const rawMsgs = await api.getRaw(PAGE_SIZE, requestedOffset);
+        setMessages((prev) => (append ? [...prev, ...rawMsgs] : rawMsgs));
+        if (!append) {
+          setGroups([]);
+          setAllSuggestions([]);
+        }
+      } catch (fallbackError) {
+        console.error("Failed to load raw inbox fallback:", fallbackError);
+      }
     } finally {
       setLoadingLeft(false);
     }
@@ -1937,7 +1946,7 @@ function InboxPageInner() {
       });
 
   const threadFallbackItems: ThreadFallbackItem[] = [
-    ...(isWhatsAppGroupsSurface
+    ...((searchParams.get("view") === "groups" || currentSlug === "groups")
       ? groupChats.map((chat) => ({
           key: String(chat.conversationKey || ""),
           title: chat.title,
@@ -2766,10 +2775,10 @@ function InboxPageInner() {
             <div className="flex items-center justify-between">
               <div>
                 <div className="text-sm font-bold tracking-wider text-white uppercase">
-                  {isWhatsAppGroupsSurface ? "WhatsApp Groups" : "Market Inbox"}
+                  {searchParams.get("view") === "groups" || currentSlug === "groups" ? "WhatsApp Groups" : "Market Inbox"}
                 </div>
                 <div className="hidden sm:block text-[10px] text-zinc-500 mt-0.5">
-                  {isWhatsAppGroupsSurface
+                  {(searchParams.get("view") === "groups" || currentSlug === "groups")
                     ? "Raw WhatsApp groups with inline PropAI composer"
                     : "WhatsApp conversations with PropAI memory"}
                 </div>
@@ -3780,10 +3789,10 @@ function InboxPageInner() {
                             Open Connection Center
                           </a>
                           <a
-                            href="/qr"
+                            href="/connections"
                             className="inline-flex h-8 items-center justify-center rounded-lg border border-white/10 bg-zinc-900 px-3 text-[10px] font-bold text-zinc-200 transition-colors hover:border-[#3EE88A]/40 hover:text-[#3EE88A]"
                           >
-                            Open QR
+                            Open Connections
                           </a>
                         </div>
                       </div>
