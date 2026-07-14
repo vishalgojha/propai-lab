@@ -6467,8 +6467,8 @@ async def companion_overview():
     ai_today = _today_count("ai_usage_log")
     messages_today = _today_count("raw_messages", "timestamp")
     waba_number = (
-        _companion_get_config_value("whatsapp_business_number", "WABA_PHONE_NUMBER")
-        or _companion_get_config_value("whatsapp_business_number", "WABA_BUSINESS_NUMBER")
+        _companion_get_config_value("whatsapp_business_number"  # force deploy 021911, "WABA_PHONE_NUMBER")
+        or _companion_get_config_value("whatsapp_business_number"  # force deploy 021911, "WABA_BUSINESS_NUMBER")
     )
     waba_phone_number_id = _companion_get_config_value("phone_number_id", "WABA_PHONE_NUMBER_ID")
     waba_access_token = _companion_get_config_value("access_token", "WABA_ACCESS_TOKEN")
@@ -6493,7 +6493,7 @@ async def companion_overview():
 
     return {
         "connection_status": "connected" if outbound_allowed else "not_connected",
-        "whatsapp_business_number": waba_number,
+        "whatsapp_business_number"  # force deploy 021911: waba_number,
         "shared_waba_number": PROPAI_SHARED_WABA_NUMBER,
         "waba_owner": "propai" if waba_is_shared else ("broker" if waba_number else "none"),
         "outbound_allowed": outbound_allowed,
@@ -6519,8 +6519,8 @@ async def companion_overview():
 @app.get("/api/companion/config")
 async def companion_config():
     waba_number = (
-        _companion_get_config_value("whatsapp_business_number", "WABA_PHONE_NUMBER")
-        or _companion_get_config_value("whatsapp_business_number", "WABA_BUSINESS_NUMBER")
+        _companion_get_config_value("whatsapp_business_number"  # force deploy 021911, "WABA_PHONE_NUMBER")
+        or _companion_get_config_value("whatsapp_business_number"  # force deploy 021911, "WABA_BUSINESS_NUMBER")
     )
     phone_number_id = _companion_get_config_value("phone_number_id", "WABA_PHONE_NUMBER_ID")
     access_token = _companion_get_config_value("access_token", "WABA_ACCESS_TOKEN")
@@ -6528,7 +6528,7 @@ async def companion_config():
     waba_is_shared = _is_propai_shared_waba(waba_number)
     outbound_allowed = bool(waba_number and not waba_is_shared and phone_number_id and access_token)
     return {
-        "whatsapp_business_number": waba_number,
+        "whatsapp_business_number"  # force deploy 021911: waba_number,
         "shared_waba_number": PROPAI_SHARED_WABA_NUMBER,
         "waba_owner": "propai" if waba_is_shared else ("broker" if waba_number else "none"),
         "outbound_allowed": outbound_allowed,
@@ -6545,7 +6545,7 @@ async def companion_save_config(req: CompanionConfigRequest):
     if req.whatsapp_business_number.strip():
         if _is_propai_shared_waba(req.whatsapp_business_number):
             raise HTTPException(403, "PropAI shared WABA is reserved for platform messages. Connect your own WABA for outbound messaging.")
-        _companion_set_config_value("whatsapp_business_number", req.whatsapp_business_number.strip())
+        _companion_set_config_value("whatsapp_business_number"  # force deploy 021911, req.whatsapp_business_number.strip())
     if req.phone_number_id.strip():
         _companion_set_config_value("phone_number_id", req.phone_number_id.strip())
 
