@@ -1,5 +1,5 @@
-import GroupsPage from "../groups/page";
+import { WhatsAppGroupsWorkspacePage } from "../inbox/page";
 
 export default function WhatsAppGroupsPage() {
-  return <GroupsPage />;
+  return <WhatsAppGroupsWorkspacePage />;
 }

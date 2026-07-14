@@ -4,7 +4,7 @@ export const dynamic = 'force-dynamic';
 
 import { useEffect, useState, useRef, useCallback, useMemo, Suspense, lazy } from "react";
 import nextDynamic from "next/dynamic";
-import { useSearchParams, useRouter } from "next/navigation";
+import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 import * as api from "@/lib/api";
 import WhatsAppMessage, { MessageEntity } from "@/components/WhatsAppMessage";
@@ -899,7 +899,11 @@ function BrokerTooltip({ name, phone, onContextMenu }: { name: string; phone: st
   );
 }
 
-function InboxPageInner() {
+interface InboxPageInnerProps {
+  defaultView?: string;
+}
+
+function InboxPageInner({ defaultView }: InboxPageInnerProps) {
   const router = useRouter();
   const isMobile = useIsMobile();
   const [mobileView, setMobileView] = useState<"list" | "conversation" | "analysis">("list");
@@ -1187,6 +1191,7 @@ return {
 
   // URL state for selected message
   const searchParams = useSearchParams();
+  const pathname = usePathname();
   const msgParam = searchParams.get("message");
   const brokerParam = searchParams.get("broker");
   const observationParam = searchParams.get("observation");
@@ -1385,15 +1390,17 @@ return {
       try {
         const data = (await api.getInboxSlugs()).filter((s) => s.view_type === "brokers" || s.slug === "brokers");
         setSlugs(data);
-        const viewFromUrl = searchParams.get("view");
+        const viewFromUrl = defaultView || searchParams.get("view");
+
         if (viewFromUrl === "groups") {
           setCurrentSlug("groups");
           return;
         }
-        if (viewFromUrl === "brokers" && data.some(s => s.slug === viewFromUrl)) {
+
+        if (viewFromUrl === "brokers" && data.some((s) => s.slug === viewFromUrl)) {
           setCurrentSlug(viewFromUrl);
-        } else if (data.length > 0 && !data.some(s => s.slug === currentSlug)) {
-          const def = data.find(s => s.is_default) || data[0];
+        } else if (data.length > 0 && !data.some((s) => s.slug === currentSlug)) {
+          const def = data.find((s) => s.is_default) || data[0];
           setCurrentSlug(def.slug);
         } else {
           setCurrentSlug("brokers");
@@ -1402,7 +1409,7 @@ return {
         console.error("Failed to load inbox slugs:", e);
       }
     })();
-  }, []);
+  }, [pathname, searchParams, currentSlug]);
 
   const loadBrokerFeed = useCallback(async () => {
     if (connectionPending) {
@@ -4630,6 +4637,14 @@ export default function BrokerWorkspacePage() {
   return (
     <Suspense fallback={<div className="flex-1 flex items-center justify-center text-zinc-500 text-sm">Loading...</div>}>
       <InboxPageInner />
+    </Suspense>
+  );
+}
+
+export function WhatsAppGroupsWorkspacePage() {
+  return (
+    <Suspense fallback={<div className="flex-1 flex items-center justify-center text-zinc-500 text-sm">Loading...</div>}>
+      <InboxPageInner defaultView="groups" />
     </Suspense>
   );
 }
