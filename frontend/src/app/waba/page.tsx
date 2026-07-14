@@ -1,9 +1,10 @@
 "use client";
 
-export const dynamic = 'force-dynamic';
+export const dynamic = "force-dynamic";
 
 import type { FormEvent } from "react";
 import { useEffect, useState } from "react";
+import { ExternalLink, Copy, Check, Eye, EyeOff } from "lucide-react";
 import {
   getCompanionConfig,
   saveCompanionConfig,
@@ -11,6 +12,57 @@ import {
 } from "@/lib/api";
 
 const PROPAI_WABA_NUMBER = "+9170210455254";
+const WEBHOOK_CALLBACK_URL = "https://api.propai.live/api/whatsapp/cloud/webhook";
+
+function CopyButton({ value }: { value: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      onClick={() => {
+        navigator.clipboard.writeText(value);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      }}
+      className="text-zinc-500 hover:text-[#3EE88A] transition-colors"
+      title="Copy"
+    >
+      {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+    </button>
+  );
+}
+
+function MaskedValue({ value, label }: { value: string; label: string }) {
+  const [show, setShow] = useState(false);
+  return (
+    <div className="flex items-center gap-2">
+      <div className="rounded-lg bg-zinc-800 px-3 py-2 text-sm text-white font-mono break-all flex-1 min-w-0">
+        {show ? value : value ? "••••••••••••••••" : "Not configured"}
+      </div>
+      <button
+        onClick={() => setShow(!show)}
+        className="text-zinc-500 hover:text-zinc-300 transition-colors"
+        title={show ? "Hide" : "Show"}
+      >
+        {show ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+      </button>
+      {value && <CopyButton value={value} />}
+    </div>
+  );
+}
+
+function MetaLink({ href, children }: { href: string; children: React.ReactNode }) {
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noreferrer"
+      className="inline-flex items-center gap-1 text-[#3EE88A] hover:underline text-xs"
+    >
+      {children}
+      <ExternalLink className="w-3 h-3" />
+    </a>
+  );
+}
 
 export default function WabaPage() {
   const [waba, setWaba] = useState<CompanionConfig | null>(null);
@@ -18,32 +70,29 @@ export default function WabaPage() {
   const [phoneNumberId, setPhoneNumberId] = useState("");
   const [accessToken, setAccessToken] = useState("");
   const [verifyToken, setVerifyToken] = useState("");
-  const [callbackUrl, setCallbackUrl] = useState("");
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState("");
-  const [useOwnWaba, setUseOwnWaba] = useState(false);
+  const [editing, setEditing] = useState(false);
 
   useEffect(() => {
-    getCompanionConfig().then((cfg) => {
-      setWaba(cfg);
-      if (cfg.outbound_allowed && cfg.whatsapp_business_number && cfg.whatsapp_business_number !== PROPAI_WABA_NUMBER) {
-        setUseOwnWaba(true);
-        const display = cfg.whatsapp_business_number.replace(/^\+91/, "");
-        setBusinessNumber(display);
-      }
-    }).catch(() => setWaba(null));
-    if (typeof window !== "undefined") {
-      setCallbackUrl(`${window.location.origin}/api/companion/webhook`);
-    }
+    getCompanionConfig()
+      .then((cfg) => {
+        setWaba(cfg);
+        if (cfg.outbound_allowed && cfg.whatsapp_business_number && cfg.whatsapp_business_number !== PROPAI_WABA_NUMBER) {
+          setBusinessNumber(cfg.whatsapp_business_number.replace(/^\+91/, ""));
+          setPhoneNumberId(cfg.phone_number_id || "");
+        }
+      })
+      .catch(() => setWaba(null));
   }, []);
 
   useEffect(() => {
-    if (!waba || useOwnWaba) return;
+    if (!waba || editing) return;
     if (waba.outbound_allowed && waba.whatsapp_business_number !== PROPAI_WABA_NUMBER) {
       setBusinessNumber(waba.whatsapp_business_number?.replace(/^\+91/, "") || "");
       setPhoneNumberId(waba.phone_number_id || "");
     }
-  }, [waba, useOwnWaba]);
+  }, [waba, editing]);
 
   async function handleSave(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -53,28 +102,27 @@ export default function WabaPage() {
     const form = new FormData(event.currentTarget);
     const raw = String(form.get("whatsapp_business_number") || "").trim();
     const cleaned = raw.replace(/^\+91/, "");
-    const nextBusinessNumber = useOwnWaba && cleaned ? `+91${cleaned}` : "";
-    const nextPhoneNumberId = useOwnWaba ? String(form.get("phone_number_id") || "").trim() : "";
-    const nextAccessToken = useOwnWaba ? String(form.get("access_token") || "").trim() : "";
-    const nextVerifyToken = useOwnWaba ? String(form.get("verify_token") || "").trim() : "";
+    const nextBusinessNumber = cleaned ? `+91${cleaned}` : "";
+    const nextPhoneNumberId = String(form.get("phone_number_id") || "").trim();
+    const nextAccessToken = String(form.get("access_token") || "").trim();
+    const nextVerifyToken = String(form.get("verify_token") || "").trim();
 
-    if (useOwnWaba) {
-      if (`+91${cleaned}` === PROPAI_WABA_NUMBER) {
-        setStatus("PropAI shared WABA is reserved for platform messages. Connect your own WABA for outbound messaging.");
-        setSaving(false);
-        return;
-      }
-      const missing = [
-        !cleaned ? "WhatsApp Business Number" : "",
-        !nextPhoneNumberId ? "Phone Number ID" : "",
-        !nextAccessToken && !waba?.has_access_token ? "Access Token" : "",
-        !nextVerifyToken && !waba?.has_verify_token ? "Webhook Verify Token" : "",
-      ].filter(Boolean);
-      if (missing.length) {
-        setStatus(`Missing: ${missing.join(", ")}`);
-        setSaving(false);
-        return;
-      }
+    if (`+91${cleaned}` === PROPAI_WABA_NUMBER) {
+      setStatus("PropAI shared WABA is reserved for platform messages.");
+      setSaving(false);
+      return;
+    }
+
+    const missing = [
+      !cleaned ? "WhatsApp Business Number" : "",
+      !nextPhoneNumberId ? "Phone Number ID" : "",
+      !nextAccessToken && !waba?.has_access_token ? "Access Token" : "",
+      !nextVerifyToken && !waba?.has_verify_token ? "Verify Token" : "",
+    ].filter(Boolean);
+    if (missing.length) {
+      setStatus(`Missing: ${missing.join(", ")}`);
+      setSaving(false);
+      return;
     }
 
     try {
@@ -87,75 +135,154 @@ export default function WabaPage() {
       setWaba(next);
       setAccessToken("");
       setVerifyToken("");
-      const [config] = await Promise.all([
-        getCompanionConfig().catch(() => null),
-      ]);
+      setEditing(false);
+      const config = await getCompanionConfig().catch(() => null);
       if (config) setWaba(config);
       setStatus("Configuration saved.");
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Could not save WhatsApp Business API details.");
+      setStatus(error instanceof Error ? error.message : "Could not save.");
     } finally {
       setSaving(false);
     }
   }
 
-  const wabaConnected = Boolean(waba?.outbound_allowed);
+  const isConfigured = Boolean(waba?.outbound_allowed);
+  const displayPhoneNumberId = waba?.phone_number_id || phoneNumberId;
 
   return (
     <div className="max-w-3xl mx-auto px-4 lg:px-0 py-8">
       <div className="mb-8">
         <h2 className="text-lg font-bold text-white">WhatsApp Business API</h2>
         <p className="mt-2 max-w-2xl text-sm text-zinc-500">
-          Configure your own WhatsApp Business API for broker-owned outbound messaging. PropAI's shared WABA is reserved for platform messages only.
+          Your WABA credentials, webhook URL, and direct links to your Meta dashboard.
         </p>
       </div>
 
-      {/* PropAI Shared WABA */}
-      <div className="rounded-2xl border border-[#3EE88A]/20 p-5 mb-4">
-        <div className="flex items-start gap-4">
-          <div className="w-2 h-2 rounded-full bg-[#3EE88A] mt-1.5 flex-shrink-0" />
-          <div>
-            <div className="text-sm font-bold text-white">PropAI Shared WABA</div>
-            <div className="mt-1 text-sm text-zinc-300">
-              <span className="text-zinc-500">Number:</span> {PROPAI_WABA_NUMBER}
-            </div>
-            <p className="mt-2 text-xs text-zinc-500">
-              This is PropAI's own WhatsApp Business account for system-owned messages.
-              Brokers cannot send outbound client or broker messages from this number.
-            </p>
-            <p className="mt-2 text-xs font-semibold text-[#3EE88A]">
-              For your personal outbound messaging, connect your own WABA below.
-            </p>
+      {/* ── Status Banner ─────────────────────────────────────── */}
+      {isConfigured ? (
+        <div className="rounded-2xl border border-[#3EE88A]/20 bg-[#3EE88A]/5 p-4 mb-6 flex items-center gap-3">
+          <div className="w-2 h-2 rounded-full bg-[#3EE88A] flex-shrink-0" />
+          <div className="text-sm text-[#3EE88A] font-semibold">WABA Connected</div>
+          <div className="text-xs text-zinc-400 ml-auto">{waba?.whatsapp_business_number}</div>
+        </div>
+      ) : (
+        <div className="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-4 mb-6 flex items-center gap-3">
+          <div className="w-2 h-2 rounded-full bg-amber-400 flex-shrink-0" />
+          <div className="text-sm text-amber-300 font-semibold">Not configured</div>
+          <div className="text-xs text-zinc-500 ml-auto">Add your WABA credentials below</div>
+        </div>
+      )}
+
+      {/* ── Webhook URL ───────────────────────────────────────── */}
+      <div className="rounded-2xl border border-white/10 mb-4">
+        <div className="px-5 py-3 border-b border-white/10 flex items-center justify-between">
+          <h3 className="text-sm font-bold text-white">Webhook Callback URL</h3>
+          <CopyButton value={WEBHOOK_CALLBACK_URL} />
+        </div>
+        <div className="px-5 py-4">
+          <div className="rounded-lg bg-zinc-800 px-3 py-2 text-sm text-white font-mono break-all select-all">
+            {WEBHOOK_CALLBACK_URL}
           </div>
+          <p className="mt-2 text-[11px] text-zinc-500">
+            Paste this in Meta App Dashboard →{" "}
+            <strong className="text-zinc-400">WhatsApp → Configuration → Webhook → Callback URL</strong>
+          </p>
+          <MetaLink href="https://developers.facebook.com/apps">
+            Open Meta App Dashboard
+          </MetaLink>
         </div>
       </div>
 
-      {/* Toggle own WABA */}
+      {/* ── Verify Token ──────────────────────────────────────── */}
+      <div className="rounded-2xl border border-white/10 mb-4">
+        <div className="px-5 py-3 border-b border-white/10">
+          <h3 className="text-sm font-bold text-white">Verify Token</h3>
+        </div>
+        <div className="px-5 py-4">
+          <MaskedValue value={waba?.verify_token_preview || ""} label="Verify Token" />
+          <p className="mt-2 text-[11px] text-zinc-500">
+            Set the same string in Meta App Dashboard →{" "}
+            <strong className="text-zinc-400">WhatsApp → Configuration → Webhook → Verify Token</strong>
+          </p>
+        </div>
+      </div>
+
+      {/* ── Access Token ──────────────────────────────────────── */}
+      <div className="rounded-2xl border border-white/10 mb-4">
+        <div className="px-5 py-3 border-b border-white/10">
+          <h3 className="text-sm font-bold text-white">Access Token</h3>
+        </div>
+        <div className="px-5 py-4">
+          <MaskedValue value={waba?.access_token_preview || ""} label="Access Token" />
+          <p className="mt-2 text-[11px] text-zinc-500">
+            Permanent token from Meta Developer Portal →{" "}
+            <strong className="text-zinc-400">WhatsApp → API Setup</strong>
+          </p>
+          <MetaLink href="https://developers.facebook.com/apps">
+            Open Meta Developer Portal
+          </MetaLink>
+        </div>
+      </div>
+
+      {/* ── Phone Number ID ───────────────────────────────────── */}
+      {displayPhoneNumberId && (
+        <div className="rounded-2xl border border-white/10 mb-4">
+          <div className="px-5 py-3 border-b border-white/10">
+            <h3 className="text-sm font-bold text-white">Phone Number ID</h3>
+          </div>
+          <div className="px-5 py-4">
+            <div className="rounded-lg bg-zinc-800 px-3 py-2 text-sm text-white font-mono break-all select-all flex items-center gap-2">
+              <span className="flex-1 min-w-0">{displayPhoneNumberId}</span>
+              <CopyButton value={displayPhoneNumberId} />
+            </div>
+            <div className="mt-3 flex flex-wrap gap-3">
+              <MetaLink href="https://business.facebook.com/wa/manage-phone-numbers">
+                Manage in Business Suite
+              </MetaLink>
+              <MetaLink href="https://developers.facebook.com/apps">
+                Developer Portal
+              </MetaLink>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Edit Credentials ──────────────────────────────────── */}
       <button
-        onClick={() => setUseOwnWaba(!useOwnWaba)}
-        className="w-full rounded-2xl border border-white/10 p-4 text-left transition-colors"
+        onClick={() => setEditing(!editing)}
+        className="w-full rounded-2xl border border-white/10 p-4 text-left transition-colors hover:bg-white/[0.02]"
       >
         <div className="flex items-center justify-between">
           <div>
-            <div className="text-sm font-bold text-white">Connect your own WABA</div>
+            <div className="text-sm font-bold text-white">
+              {isConfigured ? "Update WABA Credentials" : "Connect your WABA"}
+            </div>
             <p className="mt-1 text-xs text-zinc-500">
-              Use your own WhatsApp Business Account for broker-owned outbound messages and private client communication.
+              {isConfigured
+                ? "Update your phone number, tokens, or other WABA settings."
+                : "Add your WhatsApp Business API credentials to enable outbound messaging."}
             </p>
           </div>
-          <div className={`w-10 h-6 rounded-full transition-colors ${useOwnWaba ? "bg-[#3EE88A]" : "bg-zinc-700"} relative`}>
-            <div className={`w-4 h-4 rounded-full bg-white absolute top-1 transition-transform ${useOwnWaba ? "translate-x-5" : "translate-x-1"}`} />
+          <div
+            className={`w-10 h-6 rounded-full transition-colors ${
+              editing ? "bg-[#3EE88A]" : "bg-zinc-700"
+            } relative`}
+          >
+            <div
+              className={`w-4 h-4 rounded-full bg-white absolute top-1 transition-transform ${
+                editing ? "translate-x-5" : "translate-x-1"
+              }`}
+            />
           </div>
         </div>
       </button>
 
-      {useOwnWaba && (
-        <>
-          <div className="mt-4 rounded-2xl border border-white/10">
-            <div className="px-5 py-3 border-b border-white/10">
-              <h3 className="text-sm font-bold text-white">Your WABA Credentials</h3>
-            </div>
-            <div className="px-5 py-4">
-
+      {editing && (
+        <div className="mt-4 rounded-2xl border border-white/10">
+          <div className="px-5 py-3 border-b border-white/10">
+            <h3 className="text-sm font-bold text-white">WABA Credentials</h3>
+          </div>
+          <div className="px-5 py-4">
             <form onSubmit={handleSave} className="space-y-4">
               <div>
                 <label htmlFor="whatsapp_business_number" className="block text-xs font-medium text-zinc-400 mb-1">
@@ -175,7 +302,6 @@ export default function WabaPage() {
                     className="w-full rounded-r-lg border border-white/10 bg-zinc-800 px-3 py-2 text-sm text-white outline-none focus:border-[#3EE88A]"
                   />
                 </div>
-                <p className="mt-1 text-[11px] text-zinc-500">Enter the 10-digit number without +91.</p>
               </div>
 
               <div>
@@ -195,7 +321,7 @@ export default function WabaPage() {
                   <a href="https://business.facebook.com" target="_blank" rel="noreferrer" className="text-[#3EE88A] underline">
                     Meta Business Suite
                   </a>{" "}
-                  → WhatsApp Account → Phone Numbers.
+                  → WhatsApp → Phone Numbers
                 </p>
               </div>
 
@@ -213,30 +339,8 @@ export default function WabaPage() {
                   className="w-full rounded-lg border border-white/10 bg-zinc-800 px-3 py-2 text-sm text-white outline-none focus:border-[#3EE88A]"
                 />
                 {waba?.has_access_token && (
-                  <p className="mt-1 text-[11px] text-zinc-500">Token already saved. Leave blank to keep it.</p>
+                  <p className="mt-1 text-[11px] text-zinc-500">Token saved. Leave blank to keep it.</p>
                 )}
-                <details className="mt-2">
-                  <summary className="text-[11px] text-zinc-500 cursor-pointer hover:text-zinc-300">How to get your Permanent Access Token</summary>
-                  <div className="mt-2 text-[11px] text-zinc-500 space-y-1.5 pl-3 border-l border-white/10">
-                    <p>1. Go to the{" "}
-                      <a href="https://developers.facebook.com/apps" target="_blank" rel="noreferrer" className="text-[#3EE88A] underline">
-                        Meta Developer Portal
-                      </a>
-                    </p>
-                    <p>2. Select your WhatsApp Business App</p>
-                    <p>3. Go to <strong className="text-zinc-300">WhatsApp → API Setup</strong></p>
-                    <p>4. Find the <strong className="text-zinc-300">Temporary Access Token</strong> (valid for 24 hours)</p>
-                    <p>5. To make it permanent:</p>
-                    <p className="pl-3">— Go to{" "}
-                      <a href="https://developers.facebook.com/tools/accesstoken/" target="_blank" rel="noreferrer" className="text-[#3EE88A] underline">
-                        Tools → Access Token Tool
-                      </a>
-                    </p>
-                    <p className="pl-3">— Click <strong className="text-zinc-300">Extend Token</strong> on your temporary token</p>
-                    <p className="pl-3">— Copy the <strong className="text-zinc-300">extended token</strong> and paste it here</p>
-                    <p className="mt-2 text-zinc-600">This token never expires once extended.</p>
-                  </div>
-                </details>
               </div>
 
               <div>
@@ -248,24 +352,13 @@ export default function WabaPage() {
                   name="verify_token"
                   value={verifyToken}
                   onChange={(e) => setVerifyToken(e.target.value)}
-                  placeholder={waba?.has_verify_token ? "Leave blank to keep existing" : "Enter any random string"}
+                  placeholder={waba?.has_verify_token ? "Leave blank to keep existing" : "Any random string"}
                   type="password"
                   className="w-full rounded-lg border border-white/10 bg-zinc-800 px-3 py-2 text-sm text-white outline-none focus:border-[#3EE88A]"
                 />
                 {waba?.has_verify_token && (
-                  <p className="mt-1 text-[11px] text-zinc-500">Verify token already saved. Leave blank to keep it.</p>
+                  <p className="mt-1 text-[11px] text-zinc-500">Token saved. Leave blank to keep it.</p>
                 )}
-                <details className="mt-2">
-                  <summary className="text-[11px] text-zinc-500 cursor-pointer hover:text-zinc-300">What is a Verify Token?</summary>
-                  <div className="mt-2 text-[11px] text-zinc-500 space-y-1.5 pl-3 border-l border-white/10">
-                    <p>A Verify Token is a <strong className="text-zinc-300">random string you create</strong> — think of it as a password that Meta uses to verify your webhook endpoint.</p>
-                    <p>It can be anything: <code className="text-[#3EE88A]">propai-webhook-123</code>, <code className="text-[#3EE88A]">my-org-verify-456</code>, etc.</p>
-                    <p>You set the same string in two places:</p>
-                    <p className="pl-3">1. Here, in this field</p>
-                    <p className="pl-3">2. In the Meta App Dashboard under <strong className="text-zinc-300">WhatsApp → Configuration → Webhook → Verify Token</strong></p>
-                    <p>When Meta sends a verification request, PropAI's server responds with this token to confirm the webhook URL belongs to you.</p>
-                  </div>
-                </details>
               </div>
 
               <button
@@ -278,68 +371,37 @@ export default function WabaPage() {
             </form>
 
             {status && (
-              <div className={`mt-4 text-sm ${status.includes("Saved") || status.includes("saved") ? "text-[#3EE88A]" : "text-[#fca5a5]"}`}>
+              <div
+                className={`mt-4 text-sm ${
+                  status.includes("Saved") || status.includes("saved")
+                    ? "text-[#3EE88A]"
+                    : "text-[#fca5a5]"
+                }`}
+              >
                 {status}
               </div>
             )}
-            </div>
           </div>
-
-          {wabaConnected && (
-            <div className="mt-6 rounded-2xl border border-white/10">
-              <div className="px-5 py-3 border-b border-white/10">
-                <h3 className="text-sm font-bold text-white">Webhook Setup</h3>
-              </div>
-              <div className="px-5 py-4">
-              <p className="text-sm text-zinc-500 mb-3">
-                Add this Callback URL and your Verify Token in the Meta App Dashboard under{" "}
-                <strong className="text-zinc-300">WhatsApp → Configuration → Webhook</strong>.
-              </p>
-              <div className="space-y-3">
-                <div>
-                  <div className="text-xs font-medium text-zinc-400 mb-1">Callback URL</div>
-                  <div className="rounded-lg bg-zinc-800 px-3 py-2 text-sm text-white font-mono break-all select-all">
-                    {callbackUrl}
-                  </div>
-                </div>
-                <div>
-                  <div className="text-xs font-medium text-zinc-400 mb-1">Verify Token</div>
-                  <div className="rounded-lg bg-zinc-800 px-3 py-2 text-sm text-white font-mono break-all">
-                    {waba?.has_verify_token ? "•••••••• (saved)" : "Not configured"}
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-          )}
-        </>
+        </div>
       )}
 
+      {/* ── Quick Links ───────────────────────────────────────── */}
       <div className="mt-6 rounded-2xl border border-white/10">
         <div className="px-5 py-3 border-b border-white/10">
-          <h3 className="text-sm font-bold text-white">Need help?</h3>
+          <h3 className="text-sm font-bold text-white">Meta Dashboard Links</h3>
         </div>
-        <div className="px-5 py-4">
-        <div className="space-y-2 text-xs text-zinc-500">
-          <p>
-            <a href="https://developers.facebook.com/docs/whatsapp/cloud-api/get-started" target="_blank" rel="noreferrer" className="text-[#3EE88A] underline">
-              Meta WhatsApp Cloud API Docs
-            </a>
-          </p>
-          <p>
-            <a href="https://business.facebook.com" target="_blank" rel="noreferrer" className="text-[#3EE88A] underline">
-              Meta Business Suite
-            </a>
-          </p>
-          <p>
-            <a href="https://developers.facebook.com/apps" target="_blank" rel="noreferrer" className="text-[#3EE88A] underline">
-              Meta Developer Portal
-            </a>
-          </p>
+        <div className="px-5 py-4 space-y-2">
+          <MetaLink href="https://developers.facebook.com/apps">
+            Meta Developer Portal — App Settings
+          </MetaLink>
+          <MetaLink href="https://business.facebook.com">
+            Meta Business Suite — WhatsApp Manager
+          </MetaLink>
+          <MetaLink href="https://developers.facebook.com/docs/whatsapp/cloud-api/get-started">
+            WhatsApp Cloud API Documentation
+          </MetaLink>
         </div>
-      </div>
       </div>
     </div>
   );
 }
-

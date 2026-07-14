@@ -6692,6 +6692,19 @@ async def companion_webhook_receive(request: Request):
     return {"status": "received", "processed": processed}
 
 
+# ── WhatsApp Cloud API webhook aliases ────────────────────────────
+# Meta may be configured to hit /api/whatsapp/cloud/webhook; route to the same handlers.
+
+@app.get("/api/whatsapp/cloud/webhook")
+async def whatsapp_cloud_webhook_verify(request: Request):
+    return await companion_webhook_verify(request)
+
+
+@app.post("/api/whatsapp/cloud/webhook")
+async def whatsapp_cloud_webhook_receive(request: Request):
+    return await companion_webhook_receive(request)
+
+
 @app.get("/api/companion/team")
 async def companion_team():
     rows = storage.db.execute(
@@ -8499,7 +8512,11 @@ async def clear_allowlist():
 @app.get("/api/groups/excluded")
 async def get_excluded():
     """Return the current group opt-out list (JIDs that should NOT be parsed)."""
-    return load_excluded_groups()
+    try:
+        return load_excluded_groups()
+    except Exception as exc:
+        print(f"[groups/excluded] load failed: {exc}", flush=True)
+        return []
 
 
 @app.post("/api/groups/excluded")
@@ -8512,8 +8529,12 @@ async def set_excluded(request: Request):
     if not isinstance(body, list):
         raise HTTPException(400, "Expected a JSON array of strings")
     entries = [str(x).strip() for x in body if x and str(x).strip()]
-    save_excluded_groups(entries)
-    return {"status": "ok", "count": len(entries)}
+    try:
+        save_excluded_groups(entries)
+        return {"status": "ok", "count": len(entries)}
+    except Exception as exc:
+        print(f"[groups/excluded] save failed: {exc}", flush=True)
+        raise HTTPException(500, "Failed to save group controls")
 
 
 @app.get("/api/listings")
@@ -10050,16 +10071,21 @@ async def audit_groups_v2(q: str = "", status: str = ""):
         return []
 
     has_parsed = _table_exists("parsed_output")
+    errors: list[str] = []
 
     # ── Query 1: aggregate raw_messages by group_name ──
-    rm_rows = _audit_rows(
-        "SELECT group_name, COUNT(*) AS messages, "
-        "COUNT(DISTINCT sender) AS senders_count, "
-        "MAX(created_at) AS last_activity "
-        "FROM raw_messages "
-        "WHERE group_name IS NOT NULL AND group_name != '' "
-        "GROUP BY group_name"
-    )
+    try:
+        rm_rows = _audit_rows(
+            "SELECT group_name, COUNT(*) AS messages, "
+            "COUNT(DISTINCT sender) AS senders_count, "
+            "MAX(created_at) AS last_activity "
+            "FROM raw_messages "
+            "WHERE group_name IS NOT NULL AND group_name != '' "
+            "GROUP BY group_name"
+        )
+    except Exception as exc:
+        errors.append(f"raw_messages aggregate failed: {exc}")
+        rm_rows = []
 
     stats: dict[str, dict] = {}
     for row in rm_rows:
@@ -10098,30 +10124,33 @@ async def audit_groups_v2(q: str = "", status: str = ""):
 
     # ── Query 2: aggregate parsed_output by group_name ──
     if has_parsed and stats:
-        po_rows = _audit_rows(
-            "SELECT rm.group_name, "
-            "COUNT(*) AS observations, "
-            "SUM(CASE WHEN UPPER(po.intent) IN ('BUY','BUYER','REQUIREMENT','RENTAL_SEEKER','TENANT') THEN 1 ELSE 0 END) AS requirements, "
-            "SUM(CASE WHEN UPPER(po.intent) NOT IN ('BUY','BUYER','REQUIREMENT','RENTAL_SEEKER','TENANT') THEN 1 ELSE 0 END) AS listings, "
-            "COUNT(DISTINCT po.micro_market) FILTER (WHERE po.micro_market IS NOT NULL AND po.micro_market != '') AS markets_count, "
-            "SUM(CASE WHEN (po.location_raw IS NOT NULL AND po.location_raw != '') AND (po.micro_market IS NULL OR po.micro_market = '') THEN 1 ELSE 0 END) AS unknown_locations, "
-            "COUNT(DISTINCT COALESCE(po.broker_name, po.profile_name, rm.sender)) AS identities "
-            "FROM parsed_output po "
-            "JOIN raw_messages rm ON po.raw_message_id = rm.id "
-            "WHERE rm.group_name IS NOT NULL AND rm.group_name != '' "
-            "GROUP BY rm.group_name"
-        )
-        for row in po_rows:
-            gn = row[0] or ""
-            if gn not in stats:
-                continue
-            g = stats[gn]
-            g["observations"] = int(row[1] or 0)
-            g["requirements"] = int(row[2] or 0)
-            g["listings"] = int(row[3] or 0)
-            g["markets_count"] = int(row[4] or 0)
-            g["unknown_locations"] = int(row[5] or 0)
-            g["identities_count"] = int(row[6] or 0)
+        try:
+            po_rows = _audit_rows(
+                "SELECT rm.group_name, "
+                "COUNT(*) AS observations, "
+                "SUM(CASE WHEN UPPER(po.intent) IN ('BUY','BUYER','REQUIREMENT','RENTAL_SEEKER','TENANT') THEN 1 ELSE 0 END) AS requirements, "
+                "SUM(CASE WHEN UPPER(po.intent) NOT IN ('BUY','BUYER','REQUIREMENT','RENTAL_SEEKER','TENANT') THEN 1 ELSE 0 END) AS listings, "
+                "COUNT(DISTINCT CASE WHEN po.micro_market IS NOT NULL AND po.micro_market != '' THEN po.micro_market END) AS markets_count, "
+                "SUM(CASE WHEN (po.location_raw IS NOT NULL AND po.location_raw != '') AND (po.micro_market IS NULL OR po.micro_market = '') THEN 1 ELSE 0 END) AS unknown_locations, "
+                "COUNT(DISTINCT COALESCE(NULLIF(po.broker_name, ''), NULLIF(po.profile_name, ''), NULLIF(rm.sender, ''))) AS identities "
+                "FROM parsed_output po "
+                "JOIN raw_messages rm ON po.raw_message_id = rm.id "
+                "WHERE rm.group_name IS NOT NULL AND rm.group_name != '' "
+                "GROUP BY rm.group_name"
+            )
+            for row in po_rows:
+                gn = row[0] or ""
+                if gn not in stats:
+                    continue
+                g = stats[gn]
+                g["observations"] = int(row[1] or 0)
+                g["requirements"] = int(row[2] or 0)
+                g["listings"] = int(row[3] or 0)
+                g["markets_count"] = int(row[4] or 0)
+                g["unknown_locations"] = int(row[5] or 0)
+                g["identities_count"] = int(row[6] or 0)
+        except Exception as exc:
+            errors.append(f"parsed_output aggregate failed: {exc}")
 
     # ── Query 3: total unique senders across all groups ──
     total_unique_senders = 0
@@ -10176,19 +10205,20 @@ async def audit_groups_v2(q: str = "", status: str = ""):
             "parsed": parse_group_name(name),
         })
 
-    return {"groups": groups, "total_unique_senders": total_unique_senders}
+    return {"groups": groups, "total_unique_senders": total_unique_senders, "errors": errors}
 
 
 @app.get("/api/audit/groups/{jid}")
 async def audit_group_detail(jid: str):
     group_name = _group_jid_to_name(jid)
+    lookup_values = (jid, group_name)
 
     # Raw stats
     raw_info = storage.db.execute("""
         SELECT COUNT(*) as msg_count, MIN(created_at) as first_seen,
                MAX(created_at) as last_seen
-        FROM raw_messages WHERE group_name = ?
-    """, (jid,)).fetchone()
+        FROM raw_messages WHERE group_name = ? OR group_name = ?
+    """, lookup_values).fetchone()
 
     # Observation stats
     obs_rows = storage.db.execute("""
@@ -10196,32 +10226,32 @@ async def audit_group_detail(jid: str):
                p.bhk, p.price, p.price_unit, p.confidence, r.message, r.timestamp
         FROM parsed_output p
         JOIN raw_messages r ON r.id = p.raw_message_id
-        WHERE r.group_name = ?
+        WHERE r.group_name = ? OR r.group_name = ?
         ORDER BY r.created_at DESC LIMIT 50
-    """, (jid,)).fetchall()
+    """, lookup_values).fetchall()
 
     # Brokers seen
     broker_count = storage.db.execute("""
         SELECT COUNT(DISTINCT p.broker_name) FROM parsed_output p
         JOIN raw_messages r ON r.id = p.raw_message_id
-        WHERE r.group_name = ? AND p.broker_name IS NOT NULL AND p.broker_name != ''
-    """, (jid,)).fetchone()[0]
+        WHERE (r.group_name = ? OR r.group_name = ?) AND p.broker_name IS NOT NULL AND p.broker_name != ''
+    """, lookup_values).fetchone()[0]
 
     # Markets seen
     markets = storage.db.execute("""
         SELECT DISTINCT p.micro_market FROM parsed_output p
         JOIN raw_messages r ON r.id = p.raw_message_id
-        WHERE r.group_name = ? AND p.micro_market IS NOT NULL AND p.micro_market != ''
+        WHERE (r.group_name = ? OR r.group_name = ?) AND p.micro_market IS NOT NULL AND p.micro_market != ''
         ORDER BY p.micro_market
-    """, (jid,)).fetchall()
+    """, lookup_values).fetchall()
 
     # Buildings mentioned
     buildings = storage.db.execute("""
         SELECT DISTINCT p.building_name, COUNT(*) as occurrences FROM parsed_output p
         JOIN raw_messages r ON r.id = p.raw_message_id
-        WHERE r.group_name = ? AND p.building_name IS NOT NULL AND p.building_name != ''
+        WHERE (r.group_name = ? OR r.group_name = ?) AND p.building_name IS NOT NULL AND p.building_name != ''
         GROUP BY p.building_name ORDER BY occurrences DESC LIMIT 20
-    """, (jid,)).fetchall()
+    """, lookup_values).fetchall()
 
     # AI suggestions for this group
     suggestions = storage.db.execute("""
@@ -10235,15 +10265,15 @@ async def audit_group_detail(jid: str):
         SELECT COUNT(*) FROM resolver_decisions rd
         JOIN parsed_output p ON p.id = rd.parsed_id
         JOIN raw_messages r ON r.id = p.raw_message_id
-        WHERE r.group_name = ? AND rd.method != 'unresolved'
-    """, (jid,)).fetchone()[0]
+        WHERE (r.group_name = ? OR r.group_name = ?) AND rd.method != 'unresolved'
+    """, lookup_values).fetchone()[0]
 
     unresolved = storage.db.execute("""
         SELECT COUNT(*) FROM resolver_decisions rd
         JOIN parsed_output p ON p.id = rd.parsed_id
         JOIN raw_messages r ON r.id = p.raw_message_id
-        WHERE r.group_name = ? AND rd.method = 'unresolved'
-    """, (jid,)).fetchone()[0]
+        WHERE (r.group_name = ? OR r.group_name = ?) AND rd.method = 'unresolved'
+    """, lookup_values).fetchone()[0]
 
     total_resolved = resolved + unresolved
     quality_score = round(resolved / total_resolved * 100, 1) if total_resolved > 0 else 0
@@ -10278,12 +10308,14 @@ async def audit_group_detail(jid: str):
 async def audit_group_timeline(jid: str):
     """Per-group event timeline."""
     events = []
+    group_name = _group_jid_to_name(jid)
+    lookup_values = (jid, group_name)
 
     # Messages
     raw_rows = storage.db.execute("""
         SELECT created_at as ts, message_type, SUBSTR(message, 1, 60) as msg_preview
-        FROM raw_messages WHERE group_name = ? ORDER BY created_at DESC LIMIT 30
-    """, (jid,)).fetchall()
+        FROM raw_messages WHERE group_name = ? OR group_name = ? ORDER BY created_at DESC LIMIT 30
+    """, lookup_values).fetchall()
     for r in raw_rows:
         events.append({"ts": r["ts"], "label": "Message received (" + (r["msg_preview"] or "") + ")", "type": "message"})
 
@@ -10294,9 +10326,9 @@ async def audit_group_timeline(jid: str):
         FROM resolver_decisions rd
         JOIN parsed_output p ON p.id = rd.parsed_id
         JOIN raw_messages r ON r.id = p.raw_message_id
-        WHERE r.group_name = ? AND rd.method != 'unresolved'
+        WHERE (r.group_name = ? OR r.group_name = ?) AND rd.method != 'unresolved'
         ORDER BY rd.created_at DESC LIMIT 20
-    """, (jid,)).fetchall()
+    """, lookup_values).fetchall()
     for r in res_rows:
         events.append({"ts": r["ts"], "label": "Resolved: " + (r["resolved_to"] or "location"), "type": "resolve"})
 
@@ -10340,6 +10372,82 @@ async def audit_duplicates():
 
     # Also detect same-JID groups (shouldn't happen but guard)
     return dupes
+
+
+@app.get("/api/audit/group-overlap")
+async def audit_group_overlap(limit: int = 20):
+    """Rank groups by shared senders so users can avoid parsing duplicate groups."""
+    if not _table_exists("raw_messages"):
+        return {"pairs": [], "groups": []}
+
+    try:
+        rows = _audit_rows(
+            "SELECT group_name, sender "
+            "FROM raw_messages "
+            "WHERE COALESCE(group_name, '') != '' "
+            "  AND COALESCE(sender, '') != '' "
+            "GROUP BY group_name, sender"
+        )
+    except Exception as exc:
+        return {"pairs": [], "groups": [], "error": str(exc)}
+
+    from collections import defaultdict
+    sender_groups: dict[str, set[str]] = defaultdict(set)
+    group_senders: dict[str, set[str]] = defaultdict(set)
+
+    for row in rows:
+        group_name = str(row[0] or "").strip()
+        sender = str(row[1] or "").strip()
+        if not group_name or not sender:
+            continue
+        sender_groups[sender].add(group_name)
+        group_senders[group_name].add(sender)
+
+    pair_counts: dict[tuple[str, str], int] = defaultdict(int)
+    for groups in sender_groups.values():
+        if len(groups) < 2:
+            continue
+        ordered = sorted(groups)
+        for i, a in enumerate(ordered):
+            for b in ordered[i + 1:]:
+                pair_counts[(a, b)] += 1
+
+    pairs = []
+    for (group_a, group_b), shared in pair_counts.items():
+        a_total = len(group_senders.get(group_a, set()))
+        b_total = len(group_senders.get(group_b, set()))
+        if a_total == 0 or b_total == 0:
+            continue
+        overlap_pct = round((shared / max(1, min(a_total, b_total))) * 100, 1)
+        if shared < 2 and overlap_pct < 25:
+            continue
+        keep_group, skip_group = (group_a, group_b)
+        keep_total, skip_total = (a_total, b_total)
+        if b_total > a_total or (b_total == a_total and group_b < group_a):
+            keep_group, skip_group = group_b, group_a
+            keep_total, skip_total = b_total, a_total
+        pairs.append({
+            "group_a": {"jid": group_a, "name": _audit_group_display_name(group_a), "senders": a_total},
+            "group_b": {"jid": group_b, "name": _audit_group_display_name(group_b), "senders": b_total},
+            "shared_senders": shared,
+            "overlap_pct": overlap_pct,
+            "keep": {"jid": keep_group, "name": _audit_group_display_name(keep_group), "senders": keep_total},
+            "skip": {"jid": skip_group, "name": _audit_group_display_name(skip_group), "senders": skip_total},
+            "reason": "highest sender overlap",
+        })
+
+    pairs.sort(key=lambda p: (p["shared_senders"], p["overlap_pct"]), reverse=True)
+    return {
+        "pairs": pairs[: max(1, min(limit, 50))],
+        "groups": [
+            {
+                "jid": jid,
+                "name": _audit_group_display_name(jid),
+                "senders": len(senders),
+            }
+            for jid, senders in sorted(group_senders.items(), key=lambda item: len(item[1]), reverse=True)
+        ][: max(1, min(limit, 50))],
+    }
 
 
 @app.get("/api/audit/capture-health")
