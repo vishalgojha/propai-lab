@@ -347,7 +347,7 @@ class _RestClient:
             "Authorization": f"Bearer {key}",
             "Content-Type": "application/json",
         }
-        self._http = httpx.Client(timeout=30.0, headers=self._headers)
+        self._http = httpx.Client(timeout=60.0, headers=self._headers)
 
     def table(self, name: str):
         return _QueryBuilder(self, name)

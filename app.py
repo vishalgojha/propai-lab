@@ -9901,7 +9901,11 @@ async def audit_groups(q: str = "", status: str = ""):
 
 @app.get("/api/audit/groups")
 async def audit_groups_v2(q: str = "", status: str = ""):
-    """Fresh group audit backed by raw_messages and parsed_output only."""
+    """Fresh group audit backed by raw_messages and parsed_output only.
+
+    Uses SQL aggregation instead of fetching all rows into Python.
+    Returns ~163 rows (one per group) instead of 400K+ rows.
+    """
     day_ago = (datetime.utcnow() - timedelta(hours=24)).strftime("%Y-%m-%dT%H:%M:%SZ")
     query = (q or "").strip().lower()
 
@@ -9910,71 +9914,55 @@ async def audit_groups_v2(q: str = "", status: str = ""):
 
     has_parsed = _table_exists("parsed_output")
 
-    rm_res = storage.client.table("raw_messages").select(
-        "group_name,sender,created_at"
-    ).order("id", desc=True).limit(200000).execute()
-    rm_rows = rm_res.data or []
+    # ── Query 1: aggregate raw_messages by group_name ──
+    rm_rows = _audit_rows(
+        "SELECT group_name, COUNT(*) AS messages, "
+        "COUNT(DISTINCT sender) AS senders_count, "
+        "MAX(created_at) AS last_activity "
+        "FROM raw_messages "
+        "WHERE group_name IS NOT NULL AND group_name != '' "
+        "GROUP BY group_name"
+    )
 
     stats: dict[str, dict] = {}
-    for rm in rm_rows:
-        gn = rm.get("group_name") or ""
+    for row in rm_rows:
+        gn = row[0] or ""
         if not gn:
             continue
-        g = stats.setdefault(gn, {
-            "messages": 0, "senders": set(), "last_activity": "",
+        stats[gn] = {
+            "messages": int(row[1] or 0),
+            "senders_count": int(row[2] or 0),
+            "last_activity": row[3] or "",
             "observations": 0, "requirements": 0, "listings": 0,
-            "markets": set(), "unknown_locations": 0, "identities": set(),
-        })
-        g["messages"] += 1
-        sender = rm.get("sender") or ""
-        if sender:
-            g["senders"].add(sender)
-        ts = rm.get("created_at") or ""
-        if ts > g["last_activity"]:
-            g["last_activity"] = ts
+            "markets_count": 0, "unknown_locations": 0, "identities_count": 0,
+        }
 
-    if has_parsed:
-        po_res = storage.client.table("parsed_output").select(
-            "raw_message_id,intent,micro_market,broker_name,profile_name,location_raw"
-        ).order("id", desc=True).limit(200000).execute()
-        rm_id_to_gn: dict[int, str] = {}
-        rm_id_to_sender: dict[int, str] = {}
-        for rm in rm_rows:
-            rid = rm.get("id")
-            gn = rm.get("group_name") or ""
-            if rid and gn:
-                rm_id_to_gn[rid] = gn
-                rm_id_to_sender[rid] = rm.get("sender") or ""
-        po_raw_ids = set()
-        for po in po_res.data or []:
-            rid = po.get("raw_message_id")
-            gn = rm_id_to_gn.get(rid) if rid else None
-            if not gn or gn not in stats:
+    # ── Query 2: aggregate parsed_output by group_name ──
+    if has_parsed and stats:
+        po_rows = _audit_rows(
+            "SELECT rm.group_name, "
+            "COUNT(*) AS observations, "
+            "SUM(CASE WHEN UPPER(po.intent) IN ('BUY','BUYER','REQUIREMENT','RENTAL_SEEKER','TENANT') THEN 1 ELSE 0 END) AS requirements, "
+            "SUM(CASE WHEN UPPER(po.intent) NOT IN ('BUY','BUYER','REQUIREMENT','RENTAL_SEEKER','TENANT') THEN 1 ELSE 0 END) AS listings, "
+            "COUNT(DISTINCT po.micro_market) FILTER (WHERE po.micro_market IS NOT NULL AND po.micro_market != '') AS markets_count, "
+            "SUM(CASE WHEN (po.location_raw IS NOT NULL AND po.location_raw != '') AND (po.micro_market IS NULL OR po.micro_market = '') THEN 1 ELSE 0 END) AS unknown_locations, "
+            "COUNT(DISTINCT COALESCE(po.broker_name, po.profile_name, rm.sender)) AS identities "
+            "FROM parsed_output po "
+            "JOIN raw_messages rm ON po.raw_message_id = rm.id "
+            "WHERE rm.group_name IS NOT NULL AND rm.group_name != '' "
+            "GROUP BY rm.group_name"
+        )
+        for row in po_rows:
+            gn = row[0] or ""
+            if gn not in stats:
                 continue
             g = stats[gn]
-            po_raw_ids.add(rid)
-            g["observations"] += 1
-            intent = (po.get("intent") or "").upper()
-            if intent in ("BUY", "BUYER", "REQUIREMENT", "RENTAL_SEEKER", "TENANT"):
-                g["requirements"] += 1
-            else:
-                g["listings"] += 1
-            mm = (po.get("micro_market") or "").strip()
-            if mm:
-                g["markets"].add(mm)
-            lr = (po.get("location_raw") or "").strip()
-            if lr and not mm:
-                g["unknown_locations"] += 1
-            bn = (po.get("broker_name") or "").strip()
-            pn = (po.get("profile_name") or "").strip()
-            identity = bn or pn or rm_id_to_sender.get(rid, "")
-            if identity:
-                g["identities"].add(identity)
-        for rid, gn in rm_id_to_gn.items():
-            if rid not in po_raw_ids and gn in stats:
-                sender = rm_id_to_sender.get(rid, "")
-                if sender:
-                    stats[gn]["identities"].add(sender)
+            g["observations"] = int(row[1] or 0)
+            g["requirements"] = int(row[2] or 0)
+            g["listings"] = int(row[3] or 0)
+            g["markets_count"] = int(row[4] or 0)
+            g["unknown_locations"] = int(row[5] or 0)
+            g["identities_count"] = int(row[6] or 0)
 
     groups = []
     for gn, g in stats.items():
@@ -10008,10 +9996,10 @@ async def audit_groups_v2(q: str = "", status: str = ""):
             "observations": observations,
             "listings": g["listings"],
             "requirements": g["requirements"],
-            "markets_count": len(g["markets"]),
+            "markets_count": g["markets_count"],
             "unknown_locations": unknown_locations,
             "coverage": coverage,
-            "active_brokers": len(g["identities"]),
+            "active_brokers": g["identities_count"],
             "duplicate_pct": 0,
             "parsed": parse_group_name(name),
         })
