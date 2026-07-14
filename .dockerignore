@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 .git
 .github
 .agents
@@ -23,10 +22,6 @@ desktop/build/
 uvicorn.log
 test.mjs
 text.mjs
-=======
 .next
-node_modules
 tsconfig.tsbuildinfo
-*.log
 public/*.psd
->>>>>>> d6d6293 (Fix frontend build and layout wiring)
