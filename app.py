@@ -6078,13 +6078,7 @@ def _table_exists(table: str) -> bool:
         ).fetchone()
         return row is not None
     except Exception:
-        try:
-            return storage.db.execute(
-                "SELECT 1 FROM sqlite_master WHERE type IN ('table', 'view') AND name = ?",
-                (table,),
-            ).fetchone() is not None
-        except Exception:
-            return False
+        return False
 
 
 def _companion_get_config_value(key: str, env_key: str = "") -> str:

@@ -152,7 +152,7 @@ class _SupabaseDatabaseAdapter:
             else:
                 translated.append(ch)
 
-        # Apply SQLite-to-Postgres function translations
+        # Apply SQLite-to-Postgres function translations for RPC compatibility
         translated_sql = "".join(translated)
         # INSTR(haystack, needle) -> POSITION(needle IN haystack) or split_part for common '@' case
         # Handle INSTR(sender_jid, '@') pattern
@@ -492,7 +492,7 @@ class SupabaseStorage(Storage):
             res = self.client.table("user_profiles").insert(payload).execute()
         return res.data[0] if res and res.data else None
 
-    # ── Permission helpers (shared with SqliteStorage) ─────────────
+    # ── Permission helpers ──────────────────────────────────────────
 
     PERMISSION_LABELS: list[tuple[str, str]] = [
         ("view_inbox", "View Market Inbox"),

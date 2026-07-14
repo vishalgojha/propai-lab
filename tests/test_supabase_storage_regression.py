@@ -34,7 +34,7 @@ def test_startup_imports_match_app_dependencies():
     import storage.supabase  # noqa: F401
 
 
-def test_connection_details_is_safe_without_sqlite_storage(monkeypatch):
+def test_connection_details_is_safe_without_storage(monkeypatch):
     """The WhatsApp connection endpoint should not assume storage.db exists."""
     import app
     from types import SimpleNamespace

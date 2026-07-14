@@ -5,7 +5,6 @@ Uses rules for obvious cases, AI only for ambiguous ones.
 
 import re
 import os
-import sqlite3
 from pathlib import Path
 
 
@@ -74,11 +73,6 @@ def _open_db_handle(db_path: Path | str):
             return SupabaseStorage(supabase_url, supabase_key).db
         except Exception:
             return None
-    path = Path(db_path)
-    if path.exists():
-        db = sqlite3.connect(str(path))
-        db.row_factory = sqlite3.Row
-        return db
     return None
 
 

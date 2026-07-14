@@ -1,6 +1,5 @@
 import os
 import json
-import sqlite3
 import datetime
 import re
 from pathlib import Path
@@ -1052,13 +1051,7 @@ def execute_tool(name, args, sources, db_path=None):
 
     if name == "create_suggestion":
         try:
-            if hasattr(db_path, "execute"):
-                con = db_path
-            elif db_path and os.path.exists(db_path):
-                con = sqlite3.connect(db_path)
-                con.row_factory = sqlite3.Row
-            else:
-                con = _open_db()
+            con = db_path if hasattr(db_path, "execute") else _open_db()
             if con is None:
                 return "❌ Failed to create suggestion: Database not available"
             agent = args.get("agent", "user_request")

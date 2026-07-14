@@ -274,7 +274,7 @@ class LLMProvider:
 
 
 def dict_to_dataclass(cls, d):
-    """Convert a dict or sqlite3.Row to a dataclass, skipping unknown fields."""
+    """Convert a dict or row object to a dataclass, skipping unknown fields."""
     if hasattr(d, 'keys'):
         d = dict(d)
     field_names = {f.name for f in cls.__dataclass_fields__.values()}

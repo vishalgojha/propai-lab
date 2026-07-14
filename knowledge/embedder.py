@@ -8,7 +8,6 @@ import json
 import math
 import os
 import re
-import sqlite3
 from collections import Counter
 from pathlib import Path
 
@@ -18,7 +17,7 @@ class KnowledgeEmbedder:
 
     def __init__(self, db_path: Path | object):
         self.db_path = db_path
-        self._db: sqlite3.Connection | object | None = None
+        self._db: object | None = None
         self._vocab: dict[str, int] | None = None
         self._idf: dict[str, float] | None = None
 
@@ -35,8 +34,6 @@ class KnowledgeEmbedder:
 
                     self._db = SupabaseStorage(supabase_url, supabase_key).db
                     return self._db
-                self._db = sqlite3.connect(str(self.db_path), check_same_thread=False)
-                self._db.row_factory = sqlite3.Row
         return self._db
 
     def _tokenize(self, text: str) -> list[str]:

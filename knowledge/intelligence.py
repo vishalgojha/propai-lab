@@ -5,7 +5,6 @@ Analyzes knowledge records and surfaces actionable insights.
 
 import json
 import os
-import sqlite3
 from collections import Counter, defaultdict
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -16,7 +15,7 @@ class IntelligenceEngine:
 
     def __init__(self, db_path: Path | object):
         self.db_path = db_path
-        self._db: sqlite3.Connection | object | None = None
+        self._db: object | None = None
 
     @property
     def db(self):
@@ -31,8 +30,6 @@ class IntelligenceEngine:
 
                     self._db = SupabaseStorage(supabase_url, supabase_key).db
                     return self._db
-                self._db = sqlite3.connect(str(self.db_path), check_same_thread=False)
-                self._db.row_factory = sqlite3.Row
         return self._db
 
     def get_daily_digest(self, days: int = 1) -> dict:

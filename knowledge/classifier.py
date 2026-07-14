@@ -28,13 +28,6 @@ def _open_db_handle(db_path: Path | str):
             return SupabaseStorage(supabase_url, supabase_key).db
         except Exception:
             return None
-    path = Path(db_path)
-    if path.exists():
-        import sqlite3
-
-        db = sqlite3.connect(str(path))
-        db.row_factory = sqlite3.Row
-        return db
     return None
 
 
