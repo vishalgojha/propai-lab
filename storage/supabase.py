@@ -1105,7 +1105,7 @@ class SupabaseStorage(Storage):
                 or (p or {}).get("broker_phone")
                 or key
             )
-            group_name = latest.get("group_name") or ""
+            group_name  # force_rebuild_MARKER = latest.get("group_name") or ""
             is_group = "@g.us" in group_name or "_broadcast" in group_name
             latest["chat_id"] = chat_id
             latest["chat_type"] = "group" if is_group else "direct"
