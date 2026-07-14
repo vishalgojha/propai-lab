@@ -1107,7 +1107,6 @@ class SupabaseStorage(Storage):
             )
             group_name = latest.get("group_name") or ""
             is_group = "@g.us" in group_name or "_broadcast" in group_name
-            print(f"[DEBUG] group_name={group_name[:30]} is_group={is_group}", flush=True)
             latest["chat_id"] = chat_id
             latest["chat_type"] = "group" if is_group else "direct"
             latest["chat_name"] = conv_name
@@ -1201,13 +1200,15 @@ class SupabaseStorage(Storage):
             parsed, raw, phone, name, identity = latest
             conv_name = name or (phone and phone) or "Unknown broker"
             chat_id = phone or identity
+            raw_group = (raw or {}).get("group_name") or ""
+            is_group = "@g.us" in raw_group or "_broadcast" in raw_group
             raw_row = dict(raw)
             raw_row.update({
                 "chat_id": chat_id,
-                "chat_type": "direct",
+                "chat_type": "group" if is_group else "direct",
                 "chat_name": conv_name,
                 "conversation_key": identity,
-                "conversation_type": "direct",
+                "conversation_type": "group" if is_group else "direct",
                 "conversation_name": conv_name,
                 "message_count": bucket["message_count"],
                 "opportunity_count": bucket["message_count"],
