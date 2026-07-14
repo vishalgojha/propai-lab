@@ -5,6 +5,7 @@ export const dynamic = 'force-dynamic';
 import { Suspense, useEffect, useState, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
 import * as api from "@/lib/api";
+import { displayGroupName, resolveSenderName, displayPhone } from "@/lib/whatsapp-display";
 
 function timeAgo(ts: string) {
   if (!ts) return "";
@@ -118,9 +119,9 @@ function SearchContent() {
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-2">
                   <span className="px-2 py-0.5 bg-zinc-800 border border-white/10 rounded text-[10px] text-zinc-400">
-                    {r.group_name || "Direct Message"}
+                    {displayGroupName(r.group_name) || "Direct Message"}
                   </span>
-                  <span className="text-[10px] text-zinc-500">{r.sender}</span>
+                  <span className="text-[10px] text-zinc-500">{resolveSenderName(r)}</span>
                 </div>
                 <span className="text-[10px] text-zinc-500">{timeAgo(r.timestamp)}</span>
               </div>
@@ -133,7 +134,7 @@ function SearchContent() {
 
               {/* Footer */}
               <div className="flex items-center gap-4 mt-2 text-[10px] text-zinc-500">
-                {r.sender_phone && <span>📞 {r.sender_phone}</span>}
+                {r.sender_phone && <span>📞 {displayPhone(r.sender_phone)}</span>}
                 <span>ID: {r.id}</span>
               </div>
             </div>

@@ -2,6 +2,7 @@
 
 import { useMemo, useState, type ReactNode } from "react";
 import type { ChatResponse, WorkspaceBlock, WorkspaceBlockAction } from "@/lib/api";
+import { displayGroupName, resolveSenderName } from "@/lib/whatsapp-display";
 
 type Props = {
   response: ChatResponse;
@@ -396,8 +397,8 @@ function MessageBlock({ block, activeSource }: { block: WorkspaceBlock; activeSo
         {items.map((item, index) => (
           <div key={item.id || index} className="rounded-lg border border-white/10 bg-[#0b1016] p-3">
             <div className="text-[10px] text-zinc-500 flex flex-wrap gap-x-2 gap-y-1">
-              <span>{item.group_name || item.group || "WhatsApp"}</span>
-              <span>{item.sender || item.broker_name || "Unknown"}</span>
+              <span>{displayGroupName(item.group_name || item.group) || "WhatsApp"}</span>
+              <span>{resolveSenderName(item) || "Unknown"}</span>
               <span>{item.timestamp || item.when || ""}</span>
             </div>
             <div className="text-sm text-white mt-1 whitespace-pre-wrap">{item.message || item.body || item.text || "—"}</div>

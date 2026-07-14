@@ -9566,7 +9566,18 @@ def _group_jid_to_name(jid: str) -> str:
         pass
     if "@" not in value:
         return value[:80]
-    return value.split("@")[0][-8:]  # fallback: last 8 chars of JID
+    # For group JIDs, try to show a meaningful fallback
+    if value.endswith("@g.us"):
+        raw = value.split("@")[0]
+        suffix = raw[-4:] if len(raw) >= 4 else raw
+        return f"WhatsApp Group {suffix}" if suffix else "WhatsApp Group"
+    if value.endswith("@s.whatsapp.net") or value.endswith("@lid"):
+        raw = value.split("@")[0]
+        digits = raw.replace("-", "")
+        if len(digits) >= 10:
+            return f"+91 {digits[-10:][:5]} {digits[-10:][5:]}"
+        return "Unknown Contact"
+    return "Unknown"
 
 
 def _audit_row_value(row, key_or_idx, default=None):
@@ -12280,27 +12291,6 @@ async def get_current_member(x_team_member_id: int = Header(None)) -> dict:
     m["permission_keys"] = storage._perm_keys(m["permissions"])
     return m
 
-
-async def get_current_team_member(user: dict = Depends(require_user)) -> dict:
-    email = (user.get("email") or "").strip().lower()
-    phone = (user.get("phone") or "").strip()
-    member = storage.get_team_member_by_email(email) if email else None
-    if not member and phone:
-        members = storage.list_team_members()
-        normalized_phone = phone.replace("+", "")
-        member = next(
-            (
-                m
-                for m in members
-                if (m.get("phone") or "").strip().replace("+", "") == normalized_phone
-                and m.get("is_active")
-            ),
-            None,
-        )
-    if not member or not member.get("is_active"):
-        raise HTTPException(403, "No active team member is linked to this account")
-    member["permission_keys"] = storage._perm_keys(member["permissions"])
-    return member
 
 def check_permission(member: dict, perm_key: str):
     if perm_key not in member.get("permission_keys", []):

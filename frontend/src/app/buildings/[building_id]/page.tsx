@@ -5,6 +5,7 @@ import * as api from "@/lib/api";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import NotesPanel from "@/components/notes/NotesPanel";
+import { displayGroupName } from "@/lib/whatsapp-display";
 
 export default function BuildingProfilePage({ params }: { params: Promise<{ building_id: string }> }) {
   const { building_id } = use(params);
@@ -95,7 +96,7 @@ export default function BuildingProfilePage({ params }: { params: Promise<{ buil
               fallbackMentions.map((item) => (
                 <div key={item.id} className="rounded-xl bg-[#0a0f14] p-3">
                   <div className="flex items-center justify-between gap-2 text-[10px] text-zinc-500">
-                    <span className="truncate">{item.group_name || "Direct Message"}</span>
+                    <span className="truncate">{displayGroupName(item.group_name) || "Direct Message"}</span>
                     <span>{new Date(item.timestamp).toLocaleDateString("en-IN", { day: "2-digit", month: "short" })}</span>
                   </div>
                   <div className="mt-2 text-xs leading-relaxed text-white" dangerouslySetInnerHTML={{ __html: item.snippet }} />
@@ -288,7 +289,7 @@ export default function BuildingProfilePage({ params }: { params: Promise<{ buil
                   <span className="text-zinc-500 text-xs">{o.broker_name}</span>
                 </div>
                 <div className="text-zinc-500 text-xs">
-                  {o.group_name} • {o.created_at}
+                  {displayGroupName(o.group_name) || "Unknown Group"} • {o.created_at}
                 </div>
               </div>
             ))}

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { AlertTriangle, ExternalLink, RefreshCw } from "lucide-react";
 import * as api from "@/lib/api";
 import { classifyFormatIssue, formatIssueHref, type FormatIssue } from "@/lib/format-issues";
+import { displayGroupName, resolveSenderName } from "@/lib/whatsapp-display";
 
 type IssueRow = {
   message: api.RawMessage;
@@ -12,7 +13,7 @@ type IssueRow = {
 };
 
 function displaySource(message: api.RawMessage) {
-  return message.chat_name || message.conversation_name || message.group_name || message.sender || "WhatsApp";
+  return message.chat_name || message.conversation_name || displayGroupName(message.group_name) || resolveSenderName(message) || "WhatsApp";
 }
 
 function displayTime(value?: string) {
@@ -128,7 +129,7 @@ export default function FormatIssuesPage() {
               {rows.map(({ message, issue }) => (
                 <div key={message.id} className="grid gap-4 px-4 py-4 lg:grid-cols-[180px_1fr_160px]">
                   <div className="min-w-0">
-                    <div className="truncate text-sm font-bold text-white">{message.broker_name || message.sender || "Unknown sender"}</div>
+                    <div className="truncate text-sm font-bold text-white">{message.broker_name || resolveSenderName(message) || "Unknown sender"}</div>
                     <div className="mt-1 truncate text-xs text-zinc-500">{displaySource(message)}</div>
                     <div className="mt-1 text-xs text-zinc-600">{displayTime(message.timestamp || message.created_at)}</div>
                   </div>

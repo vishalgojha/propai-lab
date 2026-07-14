@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import * as api from "@/lib/api";
 import EntityProfileShell from "@/components/EntityProfileShell";
 import { labelFromSlug } from "@/lib/entity-links";
+import { displayGroupName } from "@/lib/whatsapp-display";
 
 export default function LocalityProfilePage() {
   const params = useParams<{ slug: string }>();
@@ -161,7 +162,7 @@ export default function LocalityProfilePage() {
               results.map((item) => (
                 <div key={item.id} className="rounded-xl bg-[#0a0f14] p-3">
                   <div className="flex items-center justify-between gap-2 text-[10px] text-zinc-500">
-                    <span className="truncate">{item.group_name || "Direct Message"}</span>
+                    <span className="truncate">{displayGroupName(item.group_name) || "Direct Message"}</span>
                     <span>{new Date(item.timestamp).toLocaleDateString("en-IN", { day: "2-digit", month: "short" })}</span>
                   </div>
                   <div className="mt-2 text-xs leading-relaxed text-white" dangerouslySetInnerHTML={{ __html: item.snippet }} />

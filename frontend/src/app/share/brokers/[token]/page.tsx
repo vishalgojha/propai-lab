@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import * as api from "@/lib/api";
 import Link from "next/link";
+import { displayGroupName } from "@/lib/whatsapp-display";
 
 function shortDate(ts?: string) {
   if (!ts) return "—";
@@ -105,7 +106,7 @@ export default function BrokerShareCardPage() {
               <div className="mt-3 space-y-2">
                 {(card.top_groups || []).map((group) => (
                   <div key={group.group_name} className="flex items-center justify-between gap-3 text-sm">
-                    <span className="truncate text-slate-100">{group.group_name}</span>
+                    <span className="truncate text-slate-100">{displayGroupName(group.group_name)}</span>
                     <span className="text-slate-400">{group.observation_count}</span>
                   </div>
                 ))}

@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import * as api from "@/lib/api";
 import { formatBrokerPrice } from "@/lib/format";
 import PromoteModal from "@/components/PromoteModal";
+import { displayGroupName } from "@/lib/whatsapp-display";
 
 function istDate(ts: string | null | undefined): string {
   if (!ts) return "";
@@ -119,7 +120,7 @@ export default function ObservationPage() {
           {listings.length > 0 && (
             <span className="text-[10px] text-[var(--text-muted)] font-mono">{listings.length} listing{listings.length !== 1 ? "s" : ""}</span>
           )}
-          <span className="text-xs text-[var(--text-muted)]">{raw.group_name || raw.source || ""}</span>
+          <span className="text-xs text-[var(--text-muted)]">{displayGroupName(raw.group_name) || raw.source || ""}</span>
           {listings.length > 0 && (
             <button
               onClick={() => setShowPromote(true)}

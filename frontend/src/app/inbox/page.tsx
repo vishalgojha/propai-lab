@@ -2057,7 +2057,7 @@ function InboxPageInner() {
       ? ""
       : resolveMessagePhone(selectedMsg)
       ? displayPhoneString(resolveMessagePhone(selectedMsg))
-      : selectedMsg?.sender || "";
+      : resolveMessageSenderName(selectedMsg) || selectedMsg?.sender || "";
   const selectedCount =
     selectedMsg && "message_count" in selectedMsg ? selectedMsg.message_count : conversationMessages.length;
   const isWhatsAppGroupsSurface = searchParams.get("view") === "groups" || currentSlug === "groups";
@@ -2962,7 +2962,7 @@ function InboxPageInner() {
                           <span className="text-[10px] font-bold text-white tabular-nums">{item.count}</span>
                         </div>
                         <div className="text-[10px] text-zinc-500 leading-relaxed truncate mb-1">
-                          {stripEmojis(item.latest.sender || item.subtitle)}
+                          {stripEmojis(resolveMessageSenderName(item.latest) || item.subtitle)}
                         </div>
                         <div className="text-[10px] text-zinc-400 leading-relaxed line-clamp-2">
                           {stripEmojis(item.latest.message) || "No text content"}

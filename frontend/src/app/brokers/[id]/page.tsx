@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import Link from "next/link";
 import * as api from "@/lib/api";
 import NotesPanel from "@/components/notes/NotesPanel";
+import { displayGroupName } from "@/lib/whatsapp-display";
 
 type BrokerStat = {
   observation_count: number;
@@ -304,7 +305,7 @@ export default function BrokerProfilePage() {
             {(broker.groups || []).slice(0, 12).map((group) => (
               <div key={group.group_name} className="bg-zinc-900 rounded px-3 py-2">
                 <div className="flex items-center justify-between gap-3">
-                  <div className="text-sm font-medium text-white truncate">{group.group_name}</div>
+                  <div className="text-sm font-medium text-white truncate">{displayGroupName(group.group_name)}</div>
                   <div className="text-[10px] text-zinc-500 whitespace-nowrap">{shortDate(group.last_seen_at)}</div>
                 </div>
                 <div className="text-[10px] text-zinc-500 mt-1">
@@ -361,7 +362,7 @@ export default function BrokerProfilePage() {
                   <span>{evidenceSummary(item)}</span>
                 </div>
                 <div className="text-xs text-zinc-500 mt-1">
-                  {[formatPrice(item.price, item.price_unit), item.furnishing, item.group_name, shortDate(item.seen_at || item.created_at)].filter(Boolean).join(" · ")}
+                  {[formatPrice(item.price, item.price_unit), item.furnishing, displayGroupName(item.group_name), shortDate(item.seen_at || item.created_at)].filter(Boolean).join(" · ")}
                 </div>
               </div>
             ))}

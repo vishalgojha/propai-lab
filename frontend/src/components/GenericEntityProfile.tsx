@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import * as api from "@/lib/api";
 import EntityProfileShell from "@/components/EntityProfileShell";
+import { displayGroupName, resolveSenderName } from "@/lib/whatsapp-display";
 
 type GenericEntityProfileProps = {
   entityType: string;
@@ -90,9 +91,9 @@ export default function GenericEntityProfile({
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="flex items-center gap-2 text-[10px] text-zinc-500">
                     <span className="rounded bg-zinc-800 px-2 py-0.5 text-zinc-400">
-                      {result.group_name || "Direct Message"}
+                      {displayGroupName(result.group_name) || "Direct Message"}
                     </span>
-                    <span>{result.sender}</span>
+                    <span>{resolveSenderName(result)}</span>
                   </div>
                   <span className="text-[10px] text-zinc-500">
                     {new Date(result.timestamp).toLocaleString("en-IN", {

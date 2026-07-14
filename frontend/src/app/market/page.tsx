@@ -5,6 +5,7 @@ export const dynamic = 'force-dynamic';
 import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import * as api from "@/lib/api";
+import { displayGroupName } from "@/lib/whatsapp-display";
 
 function MarketsContent() {
   const router = useRouter();
@@ -184,7 +185,7 @@ function MarketsContent() {
                     <div className="flex gap-1 flex-wrap">
                       {marketDetail.groups.map((g: any, i: number) => (
                         <span key={i} className="text-[10px] text-zinc-400 bg-white/5 px-2 py-0.5 rounded">
-                          {g.group_name?.slice(0, 25)}
+                          {displayGroupName(g.group_name)?.slice(0, 25)}
                         </span>
                       ))}
                     </div>
