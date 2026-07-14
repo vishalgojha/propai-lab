@@ -2246,31 +2246,22 @@ async def get_raw_messages(limit: int = 50, offset: int = 0,
     raw_ids = [row["id"] for row in payload]
     if raw_ids:
         try:
-            placeholders = ",".join("?" for _ in raw_ids)
-            parsed_rows = storage.db.execute(
-                f"""
-                SELECT raw_message_id, id AS parsed_id, intent,
-                       broker_name, broker_phone,
-                       building_name, micro_market, landmark_name, location_raw
-                FROM parsed_output
-                WHERE raw_message_id IN ({placeholders})
-                  AND (
-                    (broker_phone IS NOT NULL AND TRIM(broker_phone) != '')
-                    OR (broker_name IS NOT NULL AND TRIM(broker_name) != '')
-                    OR (building_name IS NOT NULL AND TRIM(building_name) != '')
-                    OR (micro_market IS NOT NULL AND TRIM(micro_market) != '')
-                    OR (landmark_name IS NOT NULL AND TRIM(landmark_name) != '')
-                    OR (location_raw IS NOT NULL AND TRIM(location_raw) != '')
-                  )
-                ORDER BY confidence DESC, id DESC
-                """,
-                raw_ids,
-            ).fetchall()
+            parsed_res = storage.client.table("parsed_output").select(
+                "raw_message_id,id,intent,broker_name,broker_phone,"
+                "building_name,micro_market,landmark_name,location_raw,confidence"
+            ).in_("raw_message_id", raw_ids).order("confidence", desc=True).order("id", desc=True).execute()
+            parsed_rows = parsed_res.data or []
             parsed_by_raw: dict[int, dict] = {}
             for row in parsed_rows:
-                raw_id = row["raw_message_id"]
-                if raw_id not in parsed_by_raw:
-                    parsed_by_raw[raw_id] = dict(row)
+                raw_id = row.get("raw_message_id")
+                if raw_id and raw_id not in parsed_by_raw:
+                    has_value = any(
+                        (row.get(f) or "").strip()
+                        for f in ("broker_phone","broker_name","building_name",
+                                  "micro_market","landmark_name","location_raw")
+                    )
+                    if has_value:
+                        parsed_by_raw[raw_id] = row
             for row in payload:
                 parsed = parsed_by_raw.get(row["id"])
                 if parsed:
@@ -9794,56 +9785,87 @@ async def audit_groups_v2(q: str = "", status: str = ""):
     if not _table_exists("raw_messages"):
         return []
 
-    if _table_exists("parsed_output"):
-        rows = _audit_rows("""
-            SELECT rm.group_name AS jid,
-                   COUNT(*) AS messages,
-                   COUNT(DISTINCT rm.sender) AS unique_senders,
-                   MAX(rm.created_at) AS last_activity,
-                   COUNT(po.id) AS observations,
-                   SUM(CASE WHEN upper(COALESCE(po.intent, '')) IN ('BUY','BUYER','REQUIREMENT','RENTAL_SEEKER','TENANT') THEN 1 ELSE 0 END) AS requirements,
-                   SUM(CASE WHEN po.id IS NOT NULL AND upper(COALESCE(po.intent, '')) NOT IN ('BUY','BUYER','REQUIREMENT','RENTAL_SEEKER','TENANT') THEN 1 ELSE 0 END) AS listings,
-                   COUNT(DISTINCT NULLIF(po.micro_market, '')) AS markets_count,
-                   SUM(CASE WHEN COALESCE(po.location_raw, '') != '' AND COALESCE(po.micro_market, '') = '' THEN 1 ELSE 0 END) AS unknown_locations,
-                   COUNT(DISTINCT COALESCE(NULLIF(po.broker_name, ''), NULLIF(po.profile_name, ''), NULLIF(rm.sender, ''))) AS active_brokers
-            FROM raw_messages rm
-            LEFT JOIN parsed_output po ON po.raw_message_id = rm.id
-            GROUP BY rm.group_name
-            ORDER BY messages DESC
-            LIMIT 1000
-        """)
-    else:
-        rows = _audit_rows("""
-            SELECT group_name AS jid,
-                   COUNT(*) AS messages,
-                   COUNT(DISTINCT sender) AS unique_senders,
-                   MAX(created_at) AS last_activity,
-                   0 AS observations,
-                   0 AS requirements,
-                   0 AS listings,
-                   0 AS markets_count,
-                   0 AS unknown_locations,
-                   0 AS active_brokers
-            FROM raw_messages
-            GROUP BY group_name
-            ORDER BY messages DESC
-            LIMIT 1000
-        """)
+    has_parsed = _table_exists("parsed_output")
+
+    rm_res = storage.client.table("raw_messages").select(
+        "group_name,sender,created_at"
+    ).order("id", desc=True).limit(200000).execute()
+    rm_rows = rm_res.data or []
+
+    stats: dict[str, dict] = {}
+    for rm in rm_rows:
+        gn = rm.get("group_name") or ""
+        if not gn:
+            continue
+        g = stats.setdefault(gn, {
+            "messages": 0, "senders": set(), "last_activity": "",
+            "observations": 0, "requirements": 0, "listings": 0,
+            "markets": set(), "unknown_locations": 0, "identities": set(),
+        })
+        g["messages"] += 1
+        sender = rm.get("sender") or ""
+        if sender:
+            g["senders"].add(sender)
+        ts = rm.get("created_at") or ""
+        if ts > g["last_activity"]:
+            g["last_activity"] = ts
+
+    if has_parsed:
+        po_res = storage.client.table("parsed_output").select(
+            "raw_message_id,intent,micro_market,broker_name,profile_name,location_raw"
+        ).order("id", desc=True).limit(200000).execute()
+        rm_id_to_gn: dict[int, str] = {}
+        rm_id_to_sender: dict[int, str] = {}
+        for rm in rm_rows:
+            rid = rm.get("id")
+            gn = rm.get("group_name") or ""
+            if rid and gn:
+                rm_id_to_gn[rid] = gn
+                rm_id_to_sender[rid] = rm.get("sender") or ""
+        po_raw_ids = set()
+        for po in po_res.data or []:
+            rid = po.get("raw_message_id")
+            gn = rm_id_to_gn.get(rid) if rid else None
+            if not gn or gn not in stats:
+                continue
+            g = stats[gn]
+            po_raw_ids.add(rid)
+            g["observations"] += 1
+            intent = (po.get("intent") or "").upper()
+            if intent in ("BUY", "BUYER", "REQUIREMENT", "RENTAL_SEEKER", "TENANT"):
+                g["requirements"] += 1
+            else:
+                g["listings"] += 1
+            mm = (po.get("micro_market") or "").strip()
+            if mm:
+                g["markets"].add(mm)
+            lr = (po.get("location_raw") or "").strip()
+            if lr and not mm:
+                g["unknown_locations"] += 1
+            bn = (po.get("broker_name") or "").strip()
+            pn = (po.get("profile_name") or "").strip()
+            identity = bn or pn or rm_id_to_sender.get(rid, "")
+            if identity:
+                g["identities"].add(identity)
+        for rid, gn in rm_id_to_gn.items():
+            if rid not in po_raw_ids and gn in stats:
+                sender = rm_id_to_sender.get(rid, "")
+                if sender:
+                    stats[gn]["identities"].add(sender)
 
     groups = []
-    for row in rows:
-        jid = str(row[0] or "")
-        name = _audit_group_display_name(jid)
-        messages = row[1] or 0
-        last_activity = str(row[3] or "")
-        observations = row[4] or 0
-        unknown_locations = row[8] or 0
+    for gn, g in stats.items():
+        name = _audit_group_display_name(gn)
+        messages = g["messages"]
+        last_activity = g["last_activity"]
+        observations = g["observations"]
+        unknown_locations = g["unknown_locations"]
         is_live = bool(last_activity and last_activity >= day_ago)
         coverage = round(((observations - unknown_locations) / max(1, observations)) * 100, 1) if observations else 0
         group_status = "live" if is_live else "inactive"
         health = "healthy" if is_live and unknown_locations == 0 else ("degraded" if is_live else "stale")
 
-        if query and query not in name.lower() and query not in jid.lower():
+        if query and query not in name.lower() and query not in gn.lower():
             continue
         if status == "live" and group_status != "live":
             continue
@@ -9853,7 +9875,7 @@ async def audit_groups_v2(q: str = "", status: str = ""):
             continue
 
         groups.append({
-            "jid": jid,
+            "jid": gn,
             "name": name,
             "status": group_status,
             "health": health,
@@ -9861,12 +9883,12 @@ async def audit_groups_v2(q: str = "", status: str = ""):
             "messages": messages,
             "last_activity": last_activity,
             "observations": observations,
-            "listings": row[6] or 0,
-            "requirements": row[5] or 0,
-            "markets_count": row[7] or 0,
+            "listings": g["listings"],
+            "requirements": g["requirements"],
+            "markets_count": len(g["markets"]),
             "unknown_locations": unknown_locations,
             "coverage": coverage,
-            "active_brokers": row[9] or 0,
+            "active_brokers": len(g["identities"]),
             "duplicate_pct": 0,
             "parsed": parse_group_name(name),
         })

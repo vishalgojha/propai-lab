@@ -1029,7 +1029,9 @@ class SupabaseStorage(Storage):
         except Exception:
             pass
 
-        query = self.client.table("raw_messages").select("*")\
+        query = self.client.table("raw_messages").select(
+            "id,group_name,sender,sender_phone,sender_jid,timestamp,created_at,message_uid,body,tenant_id"
+        )\
             .order("timestamp", desc=True)\
             .limit(max(5000, limit + offset))
         tid = tenant_id or self._tenant_id
@@ -1118,7 +1120,7 @@ class SupabaseStorage(Storage):
         tid = tenant_id or self._tenant_id
 
         query = self.client.table("parsed_output")\
-            .select("id,raw_message_id,message_type,intent,bhk,price,price_unit,area_sqft,furnishing,location_raw,building_name,landmark_name,micro_market,broker_name,broker_phone,profile_name,listing_index,confidence,summary_title,normalized_message,created_at,raw_messages(*)")\
+            .select("id,raw_message_id,message_type,intent,bhk,price,price_unit,area_sqft,furnishing,location_raw,building_name,landmark_name,micro_market,broker_name,broker_phone,profile_name,listing_index,confidence,summary_title,normalized_message,created_at")\
             .gte("created_at", cutoff)\
             .order("created_at", desc=True)\
             .limit(max(5000, limit + offset))
@@ -1128,9 +1130,19 @@ class SupabaseStorage(Storage):
         if not parsed_rows:
             return []
 
+        raw_ids = list({p["raw_message_id"] for p in parsed_rows if p.get("raw_message_id")})
+        raw_map: dict[int, dict] = {}
+        if raw_ids:
+            raw_res = self.client.table("raw_messages").select(
+                "id,group_name,sender,sender_phone,sender_jid,timestamp,created_at,message_uid,body"
+            ).in_("id", raw_ids[:min(len(raw_ids), 10000)]).execute()
+            for r in raw_res.data or []:
+                if r.get("id"):
+                    raw_map[r["id"]] = r
+
         grouped: dict[str, dict] = {}
         for parsed in parsed_rows:
-            raw = parsed.get("raw_messages") or {}
+            raw = raw_map.get(parsed.get("raw_message_id")) or {}
             if not _is_market_group_name(raw.get("group_name") or ""):
                 continue
 
