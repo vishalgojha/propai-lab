@@ -5486,6 +5486,28 @@ class SendMessageRequest(BaseModel):
     quoted_from_me: bool = False
 
 
+async def get_current_team_member(user: dict = Depends(require_user)) -> dict:
+    email = (user.get("email") or "").strip().lower()
+    phone = (user.get("phone") or "").strip()
+    member = storage.get_team_member_by_email(email) if email else None
+    if not member and phone:
+        members = storage.list_team_members()
+        normalized_phone = phone.replace("+", "")
+        member = next(
+            (
+                m
+                for m in members
+                if (m.get("phone") or "").strip().replace("+", "") == normalized_phone
+                and m.get("is_active")
+            ),
+            None,
+        )
+    if not member or not member.get("is_active"):
+        raise HTTPException(403, "No active team member is linked to this account")
+    member["permission_keys"] = storage._perm_keys(member["permissions"])
+    return member
+
+
 @app.post("/api/send")
 async def send_message(req: SendMessageRequest, member: dict = Depends(get_current_team_member)):
     check_permission(member, "reply_whatsapp")
@@ -10053,6 +10075,18 @@ async def audit_groups_v2(q: str = "", status: str = ""):
             g["markets_count"] = int(row[4] or 0)
             g["unknown_locations"] = int(row[5] or 0)
             g["identities_count"] = int(row[6] or 0)
+
+    # ── Query 3: total unique senders across all groups ──
+    total_unique_senders = 0
+    try:
+        sender_row = _audit_rows(
+            "SELECT COUNT(DISTINCT sender) FROM raw_messages "
+            "WHERE group_name IS NOT NULL AND group_name != ''"
+        )
+        if sender_row:
+            total_unique_senders = int(sender_row[0][0] or 0)
+    except Exception:
+        pass
 
     groups = []
     for gn, g in stats.items():
