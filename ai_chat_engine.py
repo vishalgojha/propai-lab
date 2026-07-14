@@ -319,16 +319,17 @@ def _read_prompt_file(name: str) -> str:
         return ""
 
 
-def build_conversational_system_prompt():
+def build_conversational_system_prompt(broker=None):
     """Minimal system prompt for pure conversation — no data, no tools, no JSON contract."""
     identity = _read_prompt_file("identity.md")
     now = datetime.datetime.now()
     time_str = now.strftime("%A, %d %B %Y at %I:%M %p IST")
+    broker_line = f"\nYou are currently talking to {broker['name']} ({broker['phone']}), a broker using PropAI." if broker and broker.get("name") else ""
     return f"""{identity or "You are PropAI, a Mumbai real-estate broker assistant."}
 
 Current date and time: {time_str}
 
-You are PropAI's conversational mode. Do NOT use any tools or search any databases.
+You are PropAI's conversational mode. Do NOT use any tools or search any databases.{broker_line}
 
 The user is just chatting. Respond naturally as a helpful broker assistant would — brief, warm, and human. No JSON, no structured output, no markdown unless the user asks for it.
 
@@ -338,17 +339,18 @@ If the user greets you, greet them back naturally. If they ask how you are, say 
 """
 
 
-def build_system_prompt(sources):
+def build_system_prompt(sources, broker=None):
     overview = build_overview(sources)
     identity = _read_prompt_file("identity.md")
     bootstrap = _read_prompt_file("bootstrap.md")
     now = datetime.datetime.now()
     time_str = now.strftime("%A, %d %B %Y at %I:%M %p IST")
+    broker_line = f"\nYou are currently talking to {broker['name']} ({broker['phone']}), a broker using PropAI." if broker and broker.get("name") else ""
     return f"""{identity or "You are PropAI, a Mumbai real-estate broker assistant."}
 
 {bootstrap}
 
-Current date and time: {time_str}
+Current date and time: {time_str}{broker_line}
 
 You are also PropAI's Dynamic AI Workspace for structured market database work.
 
@@ -1852,10 +1854,10 @@ def _default_db_path():
     return None
 
 
-def get_conversational_reply(messages, api_key=None, model=None):
+def get_conversational_reply(messages, api_key=None, model=None, broker=None):
     """Call the LLM purely conversationally — no tools, no data, no JSON contract."""
     client = get_client(api_key=api_key)
-    system_prompt = build_conversational_system_prompt()
+    system_prompt = build_conversational_system_prompt(broker=broker)
     msgs = [{"role": "system", "content": system_prompt}] + [
         m for m in messages if m.get("role") in ("user", "assistant")
     ]

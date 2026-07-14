@@ -3554,6 +3554,7 @@ class ChatRequest(BaseModel):
     api_key: str = ""
     model: str = ""
     session_id: str = ""
+    broker_phone: str = ""
 
 
 class SelfChatRequest(BaseModel):
@@ -5707,6 +5708,19 @@ async def ai_chat(req: ChatRequest):
     if route:
         return route
 
+    broker = None
+    if req.broker_phone:
+        try:
+            _bp = storage.get_user_profile(req.broker_phone)
+            if _bp and (_bp.get("first_name") or _bp.get("last_name")):
+                broker = {
+                    "name": f"{_bp.get('first_name', '')} {_bp.get('last_name', '')}".strip(),
+                    "phone": req.broker_phone,
+                    "city": _bp.get("city", ""),
+                }
+        except Exception:
+            pass
+
     # If no intent matched and no query signals → conversational reply (no tools)
     last_user = ""
     for msg in reversed(req.messages):
@@ -5722,7 +5736,7 @@ async def ai_chat(req: ChatRequest):
                     loop.run_in_executor(
                         None,
                         lambda: chat_engine.get_conversational_reply(
-                            req.messages, api_key=api_key, model=req.model.strip() or None
+                            req.messages, api_key=api_key, model=req.model.strip() or None, broker=broker
                         ),
                     ),
                     timeout=30,
@@ -5767,7 +5781,7 @@ async def ai_chat(req: ChatRequest):
     loop = asyncio.get_running_loop()
 
     def _call():
-        system_prompt = chat_engine.build_system_prompt(sources)
+        system_prompt = chat_engine.build_system_prompt(sources, broker=broker)
         context = memory.build_context()
         msgs = [
             {"role": "system", "content": system_prompt},

@@ -7,6 +7,7 @@ import { useEffect, useState, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
+import { useAuth } from "@/lib/AuthProvider";
 
 function buildChipLabels(s: api.ChatSuggestions | null): string[] {
   const chips: string[] = [];
@@ -29,16 +30,24 @@ function messageText(message: { content?: string; parts?: Array<{ type?: string;
 }
 
 export default function ChatPage() {
+  const { user } = useAuth();
   const [input, setInput] = useState("");
   const [suggestionsData, setSuggestionsData] = useState<api.ChatSuggestions | null>(null);
+  const [brokerPhone, setBrokerPhone] = useState("");
   const chatEndRef = useRef<HTMLDivElement>(null);
   const { messages, sendMessage, status, setMessages, error } = useChat({
-    transport: new DefaultChatTransport({ api: "/api/ai/chat" }),
+    transport: new DefaultChatTransport({ api: "/api/ai/chat", body: () => ({ broker_phone: brokerPhone }) }),
   });
 
   useEffect(() => {
     api.getChatSuggestions().then(setSuggestionsData).catch(() => {});
-  }, []);
+    const phone = user?.phone || "";
+    if (phone) {
+      api.getProfile(phone).then((profile: any) => {
+        if (profile?.phone) setBrokerPhone(profile.phone);
+      }).catch(() => {});
+    }
+  }, [user]);
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
