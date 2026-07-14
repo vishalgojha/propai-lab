@@ -6067,12 +6067,20 @@ def _count_table(table: str) -> int:
 
 def _table_exists(table: str) -> bool:
     try:
-        return storage.db.execute(
-            "SELECT 1 FROM sqlite_master WHERE type IN ('table', 'view') AND name = ?",
+        row = storage.db.execute(
+            "SELECT 1 FROM information_schema.tables "
+            "WHERE table_schema = 'public' AND table_name = ?",
             (table,),
-        ).fetchone() is not None
+        ).fetchone()
+        return row is not None
     except Exception:
-        return False
+        try:
+            return storage.db.execute(
+                "SELECT 1 FROM sqlite_master WHERE type IN ('table', 'view') AND name = ?",
+                (table,),
+            ).fetchone() is not None
+        except Exception:
+            return False
 
 
 def _companion_get_config_value(key: str, env_key: str = "") -> str:
@@ -6610,12 +6618,17 @@ async def sync_connection():
     last_finished = max((j.finished_at for j in jobs if j.finished_at), default=None)
     discovered_groups = len(jobs)
     historical_messages = 0
+    total_messages = 0
     try:
         historical_messages = storage.db.execute(
             "SELECT COUNT(*) AS c FROM raw_messages WHERE raw_payload LIKE '%\"source\":\"history_sync\"%' OR raw_payload LIKE '%\"source\": \"history_sync\"%'"
         ).fetchone()["c"]
     except Exception:
         historical_messages = 0
+    try:
+        total_messages = storage.db.execute("SELECT COUNT(*) AS c FROM raw_messages").fetchone()["c"]
+    except Exception:
+        total_messages = 0
     if details.get("total_groups") is None or discovered_groups > details.get("total_groups", 0):
         details["total_groups"] = discovered_groups
     details.update({
@@ -6627,7 +6640,7 @@ async def sync_connection():
         "last_sync": last_finished,
         "discovered_jobs": discovered_groups,
         "historical_messages": historical_messages,
-        "messages_found": 0,
+        "messages_found": total_messages,
         "top_message_groups": _top_message_groups(jobs),
     })
     return details
@@ -6820,6 +6833,11 @@ def _connection_details() -> dict:
         jobs = storage.get_sync_jobs(limit=500, source="whatsapp") if hasattr(storage, "get_sync_jobs") else []
         if jobs:
             last_finished = max((j.finished_at for j in jobs if getattr(j, "finished_at", None)), default=None)
+            msg_count = 0
+            try:
+                msg_count = storage.db.execute("SELECT COUNT(*) AS c FROM raw_messages").fetchone()["c"]
+            except Exception:
+                pass
             return {
                 "connected": True,
                 "connection_state": "open",
@@ -6830,7 +6848,7 @@ def _connection_details() -> dict:
                 "connected_since": last_finished,
                 "last_message_at": last_finished,
                 "total_groups": len(jobs),
-                "messages_captured": None,
+                "messages_captured": msg_count,
             }
     except Exception:
         pass
@@ -6901,6 +6919,21 @@ def _historical_sync_state(jobs) -> str:
 
 
 def _top_message_groups(jobs, limit: int = 5) -> list[dict]:
+    if not storage or not hasattr(storage, "db"):
+        return []
+    try:
+        rows = storage.db.execute(
+            "SELECT group_name, COUNT(*) AS c FROM raw_messages "
+            "WHERE COALESCE(group_name, '') != '' "
+            "GROUP BY group_name ORDER BY c DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+        return [
+            {"group_name": r["group_name"], "group_id": r["group_name"], "messages": r["c"]}
+            for r in rows
+        ]
+    except Exception:
+        pass
     ranked = sorted(
         jobs,
         key=lambda j: max(j.records_found or 0, j.records_processed or 0),
