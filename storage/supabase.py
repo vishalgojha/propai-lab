@@ -1105,11 +1105,13 @@ class SupabaseStorage(Storage):
                 or (p or {}).get("broker_phone")
                 or key
             )
+            group_name = latest.get("group_name") or ""
+            is_group = "@g.us" in group_name or "_broadcast" in group_name
             latest["chat_id"] = chat_id
-            latest["chat_type"] = "direct"
+            latest["chat_type"] = "group" if is_group else "direct"
             latest["chat_name"] = conv_name
             latest["conversation_key"] = key
-            latest["conversation_type"] = "direct"
+            latest["conversation_type"] = "group" if is_group else "direct"
             latest["conversation_name"] = conv_name
             latest["message_count"] = len(msgs)
             latest["latest_message_at"] = ts
