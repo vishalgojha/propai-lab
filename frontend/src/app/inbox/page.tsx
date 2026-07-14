@@ -1895,7 +1895,7 @@ return {
   );
 
   const groupChats = uniqueThreads
-    .filter((m) => m.conversation_type === "group")
+    .filter((m) => m.conversation_type === "group" || (m.group_name || "").includes("@g.us"))
     .map((m) => ({
       conversationKey: m.chat_id || m.conversation_key || m.group_name,
       rawGroupName: m.group_name,
