@@ -54,7 +54,10 @@ services:
       PROPAI_WEBHOOK_URL: https://api.propai.live/webhook
       PROPAI_API_URL: https://api.propai.live
       PROPAI_INSTANCE_NAME: propai-whatsmeow
+      STATUS_FILE: /data/status_default.json
       DATABASE_URL: postgres://postgres:${SUPABASE_DB_PASSWORD}@db.${SUPABASE_REF}.supabase.co:5432/postgres?sslmode=require
+    volumes:
+      - propai-data:/data
     depends_on:
       - api
     expose:

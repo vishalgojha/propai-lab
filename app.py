@@ -6412,7 +6412,7 @@ def _cache_connection_snapshot(status: dict | None) -> None:
 def _status_file() -> dict:
     # Prefer the file — ingestor writes synchronously, so it's always current.
     # Memory is a fallback for when no file exists yet.
-    candidates = [STATUS_FILE, PROJECT_DIR / "status.json"]
+    candidates = [STATUS_FILE, PROJECT_DIR / "status.json", Path("/data/status_default.json")]
     seen: set[str] = set()
     for path in candidates:
         key = str(path)
