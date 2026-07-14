@@ -43,13 +43,25 @@ W = 62
 
 
 def read_status() -> dict:
-    try:
-        if LOCAL_STATUS_FILE.exists():
-            data = json.loads(LOCAL_STATUS_FILE.read_text())
-            if isinstance(data, dict):
-                return data
-    except Exception:
-        pass
+    candidates = [
+        LOCAL_STATUS_FILE,
+        PROJECT_DIR / "status.json",
+        Path("/data/status.json"),
+        Path("/data/status_default.json"),
+    ]
+    seen: set[str] = set()
+    for path in candidates:
+        key = str(path)
+        if key in seen:
+            continue
+        seen.add(key)
+        try:
+            if path.exists():
+                data = json.loads(path.read_text())
+                if isinstance(data, dict):
+                    return data
+        except Exception:
+            continue
     return {}
 
 

@@ -30,7 +30,12 @@ class WhatsAppSource(BaseSource):
         """Read the ingestor status file."""
         if self._status:
             return self._status
-        candidates = [STATUS_FILE, PROJECT_DIR / "status.json"]
+        candidates = [
+            STATUS_FILE,
+            PROJECT_DIR / "status.json",
+            Path("/data/status.json"),
+            Path("/data/status_default.json"),
+        ]
         seen = set()
         for path in candidates:
             key = str(path)

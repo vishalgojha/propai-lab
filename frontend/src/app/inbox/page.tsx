@@ -1191,6 +1191,12 @@ return {
   const brokerParam = searchParams.get("broker");
   const observationParam = searchParams.get("observation");
 
+  useEffect(() => {
+    if (searchParams.get("view") === "groups") {
+      router.replace("/whatsapp-groups");
+    }
+  }, [searchParams, router]);
+
   // Sync selected message to URL
   const updateUrlMessage = useCallback((conversationKey: string, msgId: number) => {
     const url = new URL(window.location.href);

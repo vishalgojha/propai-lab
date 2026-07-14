@@ -6412,7 +6412,12 @@ def _cache_connection_snapshot(status: dict | None) -> None:
 def _status_file() -> dict:
     # Prefer the file — ingestor writes synchronously, so it's always current.
     # Memory is a fallback for when no file exists yet.
-    candidates = [STATUS_FILE, PROJECT_DIR / "status.json", Path("/data/status_default.json")]
+    candidates = [
+        STATUS_FILE,
+        PROJECT_DIR / "status.json",
+        Path("/data/status.json"),
+        Path("/data/status_default.json"),
+    ]
     seen: set[str] = set()
     for path in candidates:
         key = str(path)
@@ -6429,6 +6434,50 @@ def _status_file() -> dict:
     if _memory_status:
         return _memory_status
     return {"connection_state": "unknown", "connected": False}
+
+
+def _status_file_debug() -> dict:
+    candidates = [
+        STATUS_FILE,
+        PROJECT_DIR / "status.json",
+        Path("/data/status.json"),
+        Path("/data/status_default.json"),
+    ]
+    seen: set[str] = set()
+    candidate_results = []
+    for path in candidates:
+        key = str(path)
+        if key in seen:
+            continue
+        seen.add(key)
+        result = {
+            "path": key,
+            "exists": False,
+            "readable": False,
+            "parse_error": None,
+            "data_preview": None,
+        }
+        try:
+            if path.exists():
+                result["exists"] = True
+                content = path.read_text()
+                data = json.loads(content)
+                if isinstance(data, dict):
+                    result["readable"] = True
+                    result["data_preview"] = {k: data[k] for k in list(data.keys())[:8]}
+        except Exception as exc:
+            result["parse_error"] = str(exc)
+        candidate_results.append(result)
+    return {
+        "candidates": candidate_results,
+        "memory_status_available": bool(_memory_status),
+        "memory_status_preview": _memory_status if _memory_status else None,
+    }
+
+
+@app.get("/api/debug/sync/status-file")
+async def debug_sync_status_file():
+    return _status_file_debug()
 
 
 def _status_has_live_signal(status: dict | None) -> bool:
@@ -6467,8 +6516,8 @@ async def companion_overview():
     ai_today = _today_count("ai_usage_log")
     messages_today = _today_count("raw_messages", "timestamp")
     waba_number = (
-        _companion_get_config_value("whatsapp_business_number"  # force deploy 021911, "WABA_PHONE_NUMBER")
-        or _companion_get_config_value("whatsapp_business_number"  # force deploy 021911, "WABA_BUSINESS_NUMBER")
+        _companion_get_config_value("whatsapp_business_number", "WABA_PHONE_NUMBER")  # force deploy 021911
+        or _companion_get_config_value("whatsapp_business_number", "WABA_BUSINESS_NUMBER")
     )
     waba_phone_number_id = _companion_get_config_value("phone_number_id", "WABA_PHONE_NUMBER_ID")
     waba_access_token = _companion_get_config_value("access_token", "WABA_ACCESS_TOKEN")
@@ -6493,7 +6542,7 @@ async def companion_overview():
 
     return {
         "connection_status": "connected" if outbound_allowed else "not_connected",
-        "whatsapp_business_number"  # force deploy 021911: waba_number,
+        "whatsapp_business_number": waba_number,
         "shared_waba_number": PROPAI_SHARED_WABA_NUMBER,
         "waba_owner": "propai" if waba_is_shared else ("broker" if waba_number else "none"),
         "outbound_allowed": outbound_allowed,
@@ -6519,8 +6568,8 @@ async def companion_overview():
 @app.get("/api/companion/config")
 async def companion_config():
     waba_number = (
-        _companion_get_config_value("whatsapp_business_number"  # force deploy 021911, "WABA_PHONE_NUMBER")
-        or _companion_get_config_value("whatsapp_business_number"  # force deploy 021911, "WABA_BUSINESS_NUMBER")
+        _companion_get_config_value("whatsapp_business_number", "WABA_PHONE_NUMBER")  # force deploy 021911
+        or _companion_get_config_value("whatsapp_business_number", "WABA_BUSINESS_NUMBER")
     )
     phone_number_id = _companion_get_config_value("phone_number_id", "WABA_PHONE_NUMBER_ID")
     access_token = _companion_get_config_value("access_token", "WABA_ACCESS_TOKEN")
@@ -6528,7 +6577,7 @@ async def companion_config():
     waba_is_shared = _is_propai_shared_waba(waba_number)
     outbound_allowed = bool(waba_number and not waba_is_shared and phone_number_id and access_token)
     return {
-        "whatsapp_business_number"  # force deploy 021911: waba_number,
+        "whatsapp_business_number": waba_number,
         "shared_waba_number": PROPAI_SHARED_WABA_NUMBER,
         "waba_owner": "propai" if waba_is_shared else ("broker" if waba_number else "none"),
         "outbound_allowed": outbound_allowed,
@@ -6545,7 +6594,7 @@ async def companion_save_config(req: CompanionConfigRequest):
     if req.whatsapp_business_number.strip():
         if _is_propai_shared_waba(req.whatsapp_business_number):
             raise HTTPException(403, "PropAI shared WABA is reserved for platform messages. Connect your own WABA for outbound messaging.")
-        _companion_set_config_value("whatsapp_business_number"  # force deploy 021911, req.whatsapp_business_number.strip())
+        _companion_set_config_value("whatsapp_business_number", req.whatsapp_business_number.strip())  # force deploy 021911
     if req.phone_number_id.strip():
         _companion_set_config_value("phone_number_id", req.phone_number_id.strip())
 
