@@ -1201,6 +1201,7 @@ class SupabaseStorage(Storage):
             conv_name = name or (phone and phone) or "Unknown broker"
             chat_id = phone or identity
             raw_group = (raw or {}).get("group_name") or ""
+            # DEBUG_FORCE_GROUP: 165b86e
             is_group = "@g.us" in raw_group or "_broadcast" in raw_group
             raw_row = dict(raw)
             raw_row.update({
