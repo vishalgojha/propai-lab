@@ -14,6 +14,42 @@ _propai_data = os.path.realpath(os.path.join(_lab_dir, "..", "propai", "data"))
 DATA_DIR = _propai_data if os.path.isdir(_propai_data) else os.path.join(_lab_dir, "data")
 PROMPT_DIR = Path(_lab_dir) / "prompts"
 
+_CACHE_TTL = "1h"
+_CACHE_BOUNDARY = "\nCurrent date and time: "
+
+
+def _cached_system_blocks(system_prompt: str) -> list[dict]:
+    """Split a system prompt into cached (static) + dynamic content blocks.
+
+    Everything before ``_CACHE_BOUNDARY`` is static (identity, instructions,
+    JSON contract, examples).  Everything after is dynamic (timestamp, broker
+    identity, dataset row counts) and must NOT be cached.
+
+    Returns a list of ``{"type": "text", ...}`` content blocks suitable for
+    the ``content`` field of a system message.  Each block carries a
+    ``cache_control`` marker on the static portion so Doubleword's prompt
+    caching can reuse it across requests.
+    """
+    idx = system_prompt.find(_CACHE_BOUNDARY)
+    if idx < 0:
+        return [{"type": "text", "text": system_prompt, "cache_control": {"type": "ephemeral", "ttl": _CACHE_TTL}}]
+    static = system_prompt[:idx]
+    dynamic = system_prompt[idx:]  # includes the leading "\nCurrent date..."
+    return [
+        {"type": "text", "text": static, "cache_control": {"type": "ephemeral", "ttl": _CACHE_TTL}},
+        {"type": "text", "text": dynamic},
+    ]
+
+
+def _add_tool_cache_control(tools: list[dict]) -> list[dict]:
+    """Add ``cache_control`` to the last tool definition so all tools are cached."""
+    if not tools:
+        return tools
+    cached = [t.copy() for t in tools]
+    cached[-1] = {**cached[-1], "cache_control": {"type": "ephemeral", "ttl": _CACHE_TTL}}
+    return cached
+
+
 _client = None
 _supabase_storage = None
 
@@ -1858,7 +1894,7 @@ def get_conversational_reply(messages, api_key=None, model=None, broker=None):
     """Call the LLM purely conversationally — no tools, no data, no JSON contract."""
     client = get_client(api_key=api_key)
     system_prompt = build_conversational_system_prompt(broker=broker)
-    msgs = [{"role": "system", "content": system_prompt}] + [
+    msgs = [{"role": "system", "content": _cached_system_blocks(system_prompt)}] + [
         m for m in messages if m.get("role") in ("user", "assistant")
     ]
     resp = client.chat.completions.create(
@@ -1874,20 +1910,29 @@ def get_model_reply(messages, sources, api_key=None, db_path=None, model=None, m
     tools = _build_tools(sources)
     db_path = db_path or _default_db_path()
 
+    # Apply prompt caching: cache tool definitions + static system prompt
+    cached_tools = _add_tool_cache_control(tools)
+    cached_msgs = []
+    for m in messages:
+        if m.get("role") == "system" and isinstance(m.get("content"), str):
+            cached_msgs.append({**m, "content": _cached_system_blocks(m["content"])})
+        else:
+            cached_msgs.append(m)
+
     # Limit recursion depth
     if _depth >= max_tool_rounds:
-        # Force a text-only response
+        # Force a text-only response — no tools, but still cache the system prompt
         resp = client.chat.completions.create(
             model=model or MODEL,
-            messages=messages,
+            messages=cached_msgs,
             max_tokens=2000,
         )
         return resp.choices[0].message
 
     resp = client.chat.completions.create(
         model=model or MODEL,
-        messages=messages,
-        tools=tools,
+        messages=cached_msgs,
+        tools=cached_tools,
         tool_choice="auto",
     )
     msg = resp.choices[0].message
