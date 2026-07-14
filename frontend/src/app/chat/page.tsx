@@ -3,11 +3,12 @@
 export const dynamic = 'force-dynamic';
 
 import * as api from "@/lib/api";
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
 import { useAuth } from "@/lib/AuthProvider";
+import { Plus, MessageSquare, Trash2 } from "lucide-react";
 
 function buildChipLabels(s: api.ChatSuggestions | null): string[] {
   const chips: string[] = [];
@@ -29,18 +30,41 @@ function messageText(message: { content?: string; parts?: Array<{ type?: string;
     .join("");
 }
 
+function formatSessionTime(iso: string) {
+  const d = new Date(iso);
+  const now = new Date();
+  const diffMs = now.getTime() - d.getTime();
+  const diffMins = Math.floor(diffMs / 60000);
+  if (diffMins < 1) return "Just now";
+  if (diffMins < 60) return `${diffMins}m ago`;
+  const diffHrs = Math.floor(diffMins / 60);
+  if (diffHrs < 24) return `${diffHrs}h ago`;
+  const diffDays = Math.floor(diffHrs / 24);
+  if (diffDays < 7) return `${diffDays}d ago`;
+  return d.toLocaleDateString("en-IN", { day: "numeric", month: "short" });
+}
+
 export default function ChatPage() {
   const { user } = useAuth();
   const [input, setInput] = useState("");
   const [suggestionsData, setSuggestionsData] = useState<api.ChatSuggestions | null>(null);
   const [brokerPhone, setBrokerPhone] = useState("");
   const chatEndRef = useRef<HTMLDivElement>(null);
+
+  // Session state
+  const [sessionId, setSessionId] = useState<string>("");
+  const [sessions, setSessions] = useState<api.ChatSession[]>([]);
+  const [sessionsLoaded, setSessionsLoaded] = useState(false);
+
   const { messages, sendMessage, status, setMessages, error } = useChat({
-    transport: new DefaultChatTransport({ api: "/api/ai/chat", body: () => ({ broker_phone: brokerPhone }) }),
+    transport: new DefaultChatTransport({
+      api: "/api/ai/chat",
+      body: () => ({ broker_phone: brokerPhone, session_id: sessionId }),
+    }),
   });
 
+  // Load broker phone from profile
   useEffect(() => {
-    api.getChatSuggestions().then(setSuggestionsData).catch(() => {});
     const phone = user?.phone || "";
     if (phone) {
       api.getProfile(phone).then((profile: any) => {
@@ -49,19 +73,110 @@ export default function ChatPage() {
     }
   }, [user]);
 
+  // Load sessions once brokerPhone is available
+  const loadSessions = useCallback(async (phone: string) => {
+    try {
+      const data = await api.listChatSessions(phone);
+      setSessions(data);
+      return data;
+    } catch {
+      setSessions([]);
+      return [];
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!brokerPhone) return;
+    loadSessions(brokerPhone).then((data) => {
+      setSessionsLoaded(true);
+      // Auto-resume most recent session
+      if (data.length > 0 && !sessionId) {
+        const mostRecent = data[0];
+        setSessionId(mostRecent.id);
+        api.getChatSessionMessages(mostRecent.id).then((msgs) => {
+          setMessages(msgs.map((m) => ({
+            id: m.id,
+            role: m.role as "user" | "assistant",
+            content: m.content,
+          })));
+        }).catch(() => {});
+      }
+    });
+  }, [brokerPhone]);
+
+  // Load suggestions
+  useEffect(() => {
+    api.getChatSuggestions().then(setSuggestionsData).catch(() => {});
+  }, []);
+
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, status]);
 
+  // Create a new session
+  const handleNewChat = useCallback(async () => {
+    if (!brokerPhone) return;
+    try {
+      const session = await api.createChatSession(brokerPhone);
+      setSessionId(session.id);
+      setMessages([]);
+      const updated = await loadSessions(brokerPhone);
+      setSessions(updated);
+    } catch {}
+  }, [brokerPhone, loadSessions, setMessages]);
+
+  // Switch to an existing session
+  const handleSwitchSession = useCallback(async (id: string) => {
+    if (id === sessionId) return;
+    setSessionId(id);
+    try {
+      const msgs = await api.getChatSessionMessages(id);
+      setMessages(msgs.map((m) => ({
+        id: m.id,
+        role: m.role as "user" | "assistant",
+        content: m.content,
+      })));
+    } catch {
+      setMessages([]);
+    }
+  }, [sessionId, setMessages]);
+
+  // Delete a session
+  const handleDeleteSession = useCallback(async (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      await api.deleteChatSession(id);
+      const updated = await loadSessions(brokerPhone);
+      setSessions(updated);
+      if (id === sessionId) {
+        if (updated.length > 0) {
+          handleSwitchSession(updated[0].id);
+        } else {
+          handleNewChat();
+        }
+      }
+    } catch {}
+  }, [brokerPhone, sessionId, loadSessions, handleSwitchSession, handleNewChat]);
+
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!input.trim() || status === "submitted") return;
+    // Create session on first message if none exists
+    if (!sessionId && brokerPhone) {
+      api.createChatSession(brokerPhone, input.trim().slice(0, 80)).then((session) => {
+        setSessionId(session.id);
+        sendMessage({ text: input.trim() });
+        setInput("");
+        loadSessions(brokerPhone);
+      }).catch(() => {});
+      return;
+    }
     sendMessage({ text: input.trim() });
     setInput("");
   }
 
   return (
-    <div className="max-w-4xl mx-auto px-4 lg:px-0">
+    <div className="flex h-[calc(100dvh-160px)] lg:h-[calc(100vh-160px)] max-w-6xl mx-auto px-4 lg:px-0">
       <style>{`
         @keyframes typing-bounce {
           0%, 80%, 100% { transform: translateY(0); }
@@ -73,18 +188,63 @@ export default function ChatPage() {
         .typing-dot:nth-child(3) { animation-delay: 0s; }
       `}</style>
 
-      <div className="flex flex-col h-[calc(100dvh-160px)] lg:h-[calc(100vh-160px)]">
-        {messages.length > 0 && (
-          <div className="mb-3 flex justify-end">
+      {/* ═══════ Session Sidebar ═══════ */}
+      <aside className="hidden lg:flex w-52 flex-col border-r border-white/10 shrink-0 mr-4">
+        <div className="flex items-center justify-between px-3 pt-3 pb-2">
+          <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-[0.15em]">Chats</span>
+          <button
+            onClick={handleNewChat}
+            className="flex items-center gap-1 text-[10px] font-medium text-zinc-400 hover:text-white px-2 py-1 rounded-md hover:bg-white/5 transition-colors"
+          >
+            <Plus className="w-3 h-3" />
+            New
+          </button>
+        </div>
+        <div className="flex-1 overflow-y-auto px-1.5 pb-2 space-y-0.5">
+          {sessions.map((s) => (
             <button
-              onClick={() => setMessages([])}
-              disabled={status === "submitted" || status === "streaming"}
-              className="rounded-lg border border-white/10 px-3 py-1.5 text-xs font-medium text-zinc-400 hover:border-red-500/30 hover:text-red-200 disabled:opacity-40"
+              key={s.id}
+              onClick={() => handleSwitchSession(s.id)}
+              className={`w-full text-left px-2.5 py-2 rounded-lg text-xs transition-colors group flex items-start gap-2 ${
+                s.id === sessionId
+                  ? "bg-white/5 text-white"
+                  : "text-zinc-400 hover:text-white hover:bg-white/5"
+              }`}
             >
-              Clear chat
+              <MessageSquare className="w-3.5 h-3.5 mt-0.5 shrink-0 opacity-50" />
+              <div className="flex-1 min-w-0">
+                <div className="truncate leading-tight">{s.title}</div>
+                <div className="text-[10px] text-zinc-600 mt-0.5">{formatSessionTime(s.updated_at)}</div>
+              </div>
+              <button
+                onClick={(e) => handleDeleteSession(s.id, e)}
+                className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-red-500/10 hover:text-red-400 transition-all shrink-0"
+                title="Delete chat"
+              >
+                <Trash2 className="w-3 h-3" />
+              </button>
             </button>
-          </div>
-        )}
+          ))}
+          {sessionsLoaded && sessions.length === 0 && (
+            <div className="text-[11px] text-zinc-600 px-2.5 py-4 text-center">
+              No chats yet. Ask a question to start.
+            </div>
+          )}
+        </div>
+      </aside>
+
+      {/* ═══════ Chat Area ═══════ */}
+      <div className="flex-1 flex flex-col min-w-0">
+        {/* Mobile: new chat button */}
+        <div className="lg:hidden mb-3 flex justify-end">
+          <button
+            onClick={handleNewChat}
+            className="flex items-center gap-1.5 rounded-lg border border-white/10 px-3 py-1.5 text-xs font-medium text-zinc-400 hover:border-blue-500/30 hover:text-white"
+          >
+            <Plus className="w-3 h-3" />
+            New chat
+          </button>
+        </div>
 
         <div className="flex-1 overflow-y-auto space-y-3 mb-4 pr-2">
           {messages.length === 0 ? (

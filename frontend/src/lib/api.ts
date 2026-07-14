@@ -513,6 +513,40 @@ export function getChatSuggestions(): Promise<ChatSuggestions> {
   return fetchJSON<ChatSuggestions>("/chat/suggestions");
 }
 
+// ── AI Chat Sessions ──────────────────────────────────────────
+
+export interface ChatSession {
+  id: string;
+  broker_phone: string;
+  title: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ChatMessage {
+  id: string;
+  session_id: string;
+  role: "user" | "assistant" | "system";
+  content: string;
+  created_at: string;
+}
+
+export function listChatSessions(brokerPhone: string): Promise<ChatSession[]> {
+  return fetchJSON<ChatSession[]>(`/ai/chat/sessions?broker_phone=${encodeURIComponent(brokerPhone)}`);
+}
+
+export function createChatSession(brokerPhone: string, title = "New chat"): Promise<ChatSession> {
+  return fetchJSON<ChatSession>(`/ai/chat/sessions?broker_phone=${encodeURIComponent(brokerPhone)}&title=${encodeURIComponent(title)}`, { method: "POST" });
+}
+
+export function getChatSessionMessages(sessionId: string): Promise<ChatMessage[]> {
+  return fetchJSON<ChatMessage[]>(`/ai/chat/sessions/${sessionId}/messages`);
+}
+
+export function deleteChatSession(sessionId: string): Promise<{ ok: boolean }> {
+  return fetchJSON<{ ok: boolean }>(`/ai/chat/sessions/${sessionId}`, { method: "DELETE" });
+}
+
 export function getResolver(limit = 50, offset = 0, method?: string) {
   const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
   if (method) params.set("method", method);

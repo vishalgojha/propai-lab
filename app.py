@@ -4325,6 +4325,17 @@ def _get_casual_response(messages: list[dict]) -> dict | None:
 # Shared by WhatsApp self-chat, AI Chat, and Ask PropAI.
 # Returns a response dict if intent is matched, or None for LLM fallback.
 
+_CAPABILITY_SIGNALS = re.compile(
+    r"\b(what (?:can|do) you (?:access|see)|"
+    r"do you have (?:access to (?:the )?(?:database|data|system)|(?:a )?database (?:access|connection))|"
+    r"what (?:data|datasets?|tools?) (?:do you have|can you use|are available)|"
+    r"your (?:capabilities?|abilities|features?)|"
+    r"what are you able to|"
+    r"can you (?:access|write to|modify|delete) (?:the )?(?:database|data|system|tables?))\b",
+    re.IGNORECASE,
+)
+
+
 def _has_query_signals(text: str) -> bool:
     """Check whether text contains signals suggesting a data query (vs conversation)."""
     lowered = text.lower()
@@ -5688,6 +5699,36 @@ async def chat_suggestions():
     return result
 
 
+# ── AI Chat Sessions CRUD ──────────────────────────────────────
+
+@app.get("/api/ai/chat/sessions")
+async def list_chat_sessions(broker_phone: str = "", limit: int = 50):
+    if not broker_phone:
+        return []
+    return storage.list_chat_sessions(broker_phone, limit=limit)
+
+
+@app.post("/api/ai/chat/sessions")
+async def create_chat_session(broker_phone: str = "", title: str = "New chat"):
+    if not broker_phone:
+        raise HTTPException(400, "broker_phone required")
+    return storage.create_chat_session(broker_phone, title=title) or {}
+
+
+@app.get("/api/ai/chat/sessions/{session_id}/messages")
+async def get_chat_session_messages(session_id: str):
+    session = storage.get_chat_session(session_id)
+    if not session:
+        raise HTTPException(404, "Session not found")
+    return storage.get_chat_messages(session_id)
+
+
+@app.delete("/api/ai/chat/sessions/{session_id}")
+async def delete_chat_session(session_id: str):
+    storage.delete_chat_session(session_id)
+    return {"ok": True}
+
+
 @app.post("/api/ai/chat")
 async def ai_chat(req: ChatRequest):
     # Conversation memory (session-aware, not just message count)
@@ -5702,6 +5743,29 @@ async def ai_chat(req: ChatRequest):
         if content:
             if not memory.working or memory.working[-1].get("content") != content:
                 memory.add(role, content)
+
+    # Persist messages to DB if session_id provided
+    def _persist(role: str, content: str) -> None:
+        if not req.session_id or not content:
+            return
+        try:
+            storage.add_chat_message(req.session_id, role, content)
+            storage.touch_chat_session(req.session_id)
+        except Exception:
+            pass
+
+    # Auto-title: if this is the first user message, title the session
+    def _maybe_title(text: str) -> None:
+        if not req.session_id or not text:
+            return
+        try:
+            msgs = storage.get_chat_messages(req.session_id, limit=3)
+            user_msgs = [m for m in msgs if m.get("role") == "user"]
+            if len(user_msgs) <= 1:
+                title = text[:80].strip()
+                storage.update_chat_session_title(req.session_id, title)
+        except Exception:
+            pass
 
     # Route by intent
     route = _route_message_intent(req.messages)
@@ -5727,6 +5791,45 @@ async def ai_chat(req: ChatRequest):
         if msg.get("role") == "user":
             last_user = str(msg.get("content", "")).strip()
             break
+
+    # Capability questions → tool-enabled prompt, text-only mode (no tool calls)
+    if last_user and _CAPABILITY_SIGNALS.search(last_user):
+        api_key = req.api_key or DOUBLEWORD_API_KEY
+        if api_key:
+            try:
+                cap_sources = chat_engine.load_data()
+                cap_live = chat_engine.load_live_data(getattr(storage, "db", None))
+                cap_sources.update(cap_live)
+                if cap_sources:
+                    cap_msgs = [
+                        {"role": "system", "content": chat_engine.build_system_prompt(cap_sources, broker=broker)},
+                        {"role": "user", "content": last_user},
+                    ]
+                    loop = asyncio.get_running_loop()
+                    cap_reply = await asyncio.wait_for(
+                        loop.run_in_executor(
+                            None,
+                            lambda: chat_engine.get_model_reply(
+                                cap_msgs, cap_sources, api_key=api_key,
+                                model=req.model.strip() or None, max_tool_rounds=0,
+                            ),
+                        ),
+                        timeout=30,
+                    )
+                    text = (cap_reply.content or "").strip() or "I can help with that."
+                    _persist("user", last_user)
+                    _persist("assistant", text)
+                    _maybe_title(last_user)
+                    return {
+                        "content": text,
+                        "blocks": [{"type": "summary", "body": text}],
+                        "sources": list(cap_sources.keys()),
+                        "status_steps": [],
+                        "trace": {"route": "capability_llm"},
+                    }
+            except Exception:
+                pass  # fall through to conversational path
+
     if last_user and not _has_query_signals(last_user):
         api_key = req.api_key or DOUBLEWORD_API_KEY
         if api_key:
@@ -5742,6 +5845,9 @@ async def ai_chat(req: ChatRequest):
                     timeout=30,
                 )
                 text = (reply.content or "").strip() or "Hey! What can I help you with?"
+                _persist("user", last_user)
+                _persist("assistant", text)
+                _maybe_title(last_user)
                 return {
                     "content": text,
                     "blocks": [{"type": "greeting", "body": text}],
@@ -5801,6 +5907,9 @@ async def ai_chat(req: ChatRequest):
 
     try:
         response = await asyncio.wait_for(loop.run_in_executor(None, _call), timeout=90)
+        _persist("user", last_user)
+        _persist("assistant", response.get("content", ""))
+        _maybe_title(last_user)
         return response
     except asyncio.TimeoutError:
         return JSONResponse(

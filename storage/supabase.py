@@ -1821,6 +1821,66 @@ class SupabaseStorage(Storage):
     def get_ai_usage_stats(self, days: int = 1) -> dict:
         return {"requests": 0, "tokens": 0}
 
+    # ── AI Chat Sessions ──────────────────────────────────────
+
+    def list_chat_sessions(self, broker_phone: str, limit: int = 50) -> list[dict]:
+        res = (
+            self.client.table("ai_chat_sessions")
+            .select("*")
+            .eq("broker_phone", broker_phone)
+            .order("updated_at", desc=True)
+            .limit(limit)
+            .execute()
+        )
+        return res.data or []
+
+    def create_chat_session(self, broker_phone: str, title: str = "New chat") -> dict | None:
+        res = (
+            self.client.table("ai_chat_sessions")
+            .insert({"broker_phone": broker_phone, "title": title})
+            .execute()
+        )
+        return res.data[0] if res.data else None
+
+    def get_chat_session(self, session_id: str) -> dict | None:
+        res = (
+            self.client.table("ai_chat_sessions")
+            .select("*")
+            .eq("id", session_id)
+            .limit(1)
+            .execute()
+        )
+        return res.data[0] if res.data else None
+
+    def delete_chat_session(self, session_id: str) -> bool:
+        self.client.table("ai_chat_sessions").delete().eq("id", session_id).execute()
+        return True
+
+    def touch_chat_session(self, session_id: str) -> None:
+        self.client.table("ai_chat_sessions").update({"updated_at": "now()"}).eq("id", session_id).execute()
+
+    def update_chat_session_title(self, session_id: str, title: str) -> None:
+        self.client.table("ai_chat_sessions").update({"title": title}).eq("id", session_id).execute()
+
+    def add_chat_message(self, session_id: str, role: str, content: str) -> dict | None:
+        res = (
+            self.client.table("ai_chat_messages")
+            .insert({"session_id": session_id, "role": role, "content": content})
+            .execute()
+        )
+        return res.data[0] if res.data else None
+
+    def get_chat_messages(self, session_id: str, limit: int = 200) -> list[dict]:
+        res = (
+            self.client.table("ai_chat_messages")
+            .select("*")
+            .eq("session_id", session_id)
+            .order("created_at")
+            .limit(limit)
+            .execute()
+        )
+        return res.data or []
+
     # ── LLM Providers ──────────────────────────────────────────
 
     def get_llm_providers(self) -> list[LLMProvider]:

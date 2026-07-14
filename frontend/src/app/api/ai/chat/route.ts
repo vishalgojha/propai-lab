@@ -39,11 +39,11 @@ function textStream(content: string) {
   });
 }
 
-async function callFastAPI(messages: { role: string; content: string }[], brokerPhone: string = "") {
+async function callFastAPI(messages: { role: string; content: string }[], brokerPhone: string = "", sessionId: string = "") {
   const fastapi = await fetch(`${API_BASE}/api/ai/chat`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ messages, broker_phone: brokerPhone }),
+    body: JSON.stringify({ messages, broker_phone: brokerPhone, session_id: sessionId }),
   });
 
   const raw = await fastapi.text();
@@ -67,6 +67,7 @@ export async function POST(req: Request) {
   const body = await req.json();
   const messages = toBackendMessages((body.messages || []) as UIMessage[]);
   const brokerPhone = (body.broker_phone as string) || "";
+  const sessionId = (body.session_id as string) || "";
 
   if (!messages.length || messages[messages.length - 1].role !== "user") {
     return createUIMessageStreamResponse({
@@ -75,7 +76,7 @@ export async function POST(req: Request) {
   }
 
   try {
-    const result = await callFastAPI(messages, brokerPhone);
+    const result = await callFastAPI(messages, brokerPhone, sessionId);
     return createUIMessageStreamResponse({ stream: textStream(result.content) });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Chat API failed";
@@ -88,10 +89,11 @@ export async function PUT(req: Request) {
   const body = await req.json();
   const messages = (body.messages || []) as { role: string; content: string }[];
   const brokerPhone = (body.broker_phone as string) || "";
+  const sessionId = (body.session_id as string) || "";
 
   try {
     const filtered = messages.filter((m) => m.content && ["system", "user", "assistant"].includes(m.role));
-    const result = await callFastAPI(filtered, brokerPhone);
+    const result = await callFastAPI(filtered, brokerPhone, sessionId);
     return Response.json(result);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Chat API failed";

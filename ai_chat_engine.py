@@ -1875,7 +1875,7 @@ def get_model_reply(messages, sources, api_key=None, db_path=None, model=None, m
     db_path = db_path or _default_db_path()
 
     # Limit recursion depth
-    if _depth > max_tool_rounds:
+    if _depth >= max_tool_rounds:
         # Force a text-only response
         resp = client.chat.completions.create(
             model=model or MODEL,
