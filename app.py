@@ -6641,6 +6641,12 @@ async def companion_webhook_receive(request: Request):
                 pic_token = ""
                 media_id = ""
 
+                # Track 24h session window — user messaged us
+                try:
+                    _waba_session_update(msg_from, direction="inbound")
+                except Exception:
+                    pass
+
                 if msg_type == "image":
                     img = msg.get("image", {})
                     media_id = img.get("id", "")
@@ -6678,6 +6684,22 @@ async def companion_webhook_receive(request: Request):
                             elif msg_type == "text":
                                 processed.append({"type": "pic_token_received_no_image", "listing_id": listing_id, "pic_token": pic_token, "from": msg_from})
 
+        # Handle delivery status updates (sent / delivered / read)
+        for status in value.get("statuses", []):
+            status_id = status.get("id", "")
+            status_status = status.get("status", "")  # sent, delivered, read, failed
+            status_timestamp = status.get("timestamp", "")
+            if status_id and status_status:
+                try:
+                    storage.db.execute(
+                        """UPDATE raw_messages SET delivery_status = %s, delivery_updated_at = %s
+                           WHERE message_uid = %s OR message_uid LIKE %s""",
+                        (status_status, now, status_id, f"%{status_id}%"),
+                    )
+                    processed.append({"type": "delivery_status", "message_id": status_id, "status": status_status})
+                except Exception as exc:
+                    print(f"[waba-webhook] failed to update delivery status: {exc}", flush=True)
+
     storage.db.execute(
         """INSERT INTO companion_audit_log
            (action, target_type, target_id, status, details, created_at)
@@ -6711,6 +6733,87 @@ async def whatsapp_cloud_webhook_verify(request: Request):
 @app.post("/api/whatsapp/cloud/webhook")
 async def whatsapp_cloud_webhook_receive(request: Request):
     return await companion_webhook_receive(request)
+
+
+# ── WABA 24h Session Tracking ────────────────────────────────────
+
+def _waba_session_update(chat_id: str, direction: str = "inbound"):
+    """Update waba_sessions table. Inbound messages open the 24h window."""
+    now = datetime.now(timezone.utc)
+    try:
+        existing = storage.db.execute(
+            "SELECT chat_id, last_user_at FROM waba_sessions WHERE chat_id = ?", (chat_id,)
+        ).fetchone()
+
+        if direction == "inbound":
+            # User messaged us — open/refresh the 24h window
+            if existing:
+                storage.db.execute(
+                    "UPDATE waba_sessions SET last_user_at = ?, session_active = true, updated_at = ? WHERE chat_id = ?",
+                    (now.isoformat(), now.isoformat(), chat_id),
+                )
+            else:
+                storage.db.execute(
+                    "INSERT INTO waba_sessions (chat_id, last_user_at, session_active, created_at, updated_at) VALUES (?, ?, true, ?, ?)",
+                    (chat_id, now.isoformat(), now.isoformat(), now.isoformat()),
+                )
+        elif direction == "outbound":
+            # We sent a message — just update updated_at
+            if existing:
+                storage.db.execute(
+                    "UPDATE waba_sessions SET updated_at = ? WHERE chat_id = ?",
+                    (now.isoformat(), chat_id),
+                )
+            else:
+                storage.db.execute(
+                    "INSERT INTO waba_sessions (chat_id, last_user_at, session_active, created_at, updated_at) VALUES (?, ?, true, ?, ?)",
+                    (chat_id, now.isoformat(), now.isoformat(), now.isoformat()),
+                )
+        storage._commit()
+    except Exception as exc:
+        print(f"[waba-session] failed to update session for {chat_id}: {exc}", flush=True)
+
+
+def _waba_session_status(chat_id: str) -> dict:
+    """Check if a WABA 24h session is active for a given chat.
+    Returns {active, remaining_seconds, last_user_at, expired}."""
+    try:
+        row = storage.db.execute(
+            "SELECT last_user_at, session_active FROM waba_sessions WHERE chat_id = ?", (chat_id,)
+        ).fetchone()
+        if not row:
+            return {"active": False, "remaining_seconds": 0, "last_user_at": None, "expired": True}
+
+        last_user_at_str = row["last_user_at"]
+        if isinstance(last_user_at_str, str):
+            last_user_at = datetime.fromisoformat(last_user_at_str.replace("Z", "+00:00"))
+        else:
+            last_user_at = last_user_at_str
+
+        now = datetime.now(timezone.utc)
+        elapsed = (now - last_user_at).total_seconds()
+        remaining = max(0, 86400 - elapsed)  # 86400 = 24h in seconds
+        active = remaining > 0
+
+        if not active and row["session_active"]:
+            # Mark as expired
+            try:
+                storage.db.execute(
+                    "UPDATE waba_sessions SET session_active = false WHERE chat_id = ?", (chat_id,)
+                )
+                storage._commit()
+            except Exception:
+                pass
+
+        return {
+            "active": active,
+            "remaining_seconds": int(remaining),
+            "last_user_at": last_user_at_str,
+            "expired": not active,
+        }
+    except Exception as exc:
+        print(f"[waba-session] failed to check session for {chat_id}: {exc}", flush=True)
+        return {"active": False, "remaining_seconds": 0, "last_user_at": None, "expired": True}
 
 
 # ── WABA Outbound Messaging ───────────────────────────────────────
@@ -6775,6 +6878,23 @@ async def waba_send_message(req: WabaSendRequest, user: dict = Depends(require_u
     if not req.to:
         raise HTTPException(400, "to (phone number) is required")
 
+    # Check 24h session window
+    digits_raw = req.to.replace("+", "").replace(" ", "").replace("-", "").strip()
+    if digits_raw.startswith("0"):
+        digits_raw = digits_raw[1:]
+    chat_id = f"{digits_raw}@s.whatsapp.net"
+    session = _waba_session_status(chat_id)
+    if session.get("expired"):
+        return JSONResponse(
+            status_code=403,
+            content={
+                "success": False,
+                "error": "session_expired",
+                "message": "24-hour reply window has expired. The customer must message you first before you can send.",
+                "remaining_seconds": 0,
+            },
+        )
+
     result = await _waba_send_message(req.to, text)
 
     # Store outbound message in raw_messages so it appears in inbox
@@ -6788,8 +6908,8 @@ async def waba_send_message(req: WabaSendRequest, user: dict = Depends(require_u
         storage.db.execute(
             """INSERT INTO raw_messages
                (group_name, sender, sender_jid, sender_phone, message, message_type,
-                source, timestamp, raw_payload, message_uid, synced_at, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                source, timestamp, raw_payload, message_uid, delivery_status, synced_at, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 req.remote_jid or sender_jid,
                 "You",
@@ -6801,6 +6921,7 @@ async def waba_send_message(req: WabaSendRequest, user: dict = Depends(require_u
                 now_iso,
                 json.dumps({"waba_message_id": result.get("message_id", ""), "to": digits}),
                 f"waba-{result.get('message_id', '') or int(time.time() * 1000)}",
+                "sent" if result.get("success") else None,
                 now_iso,
                 now_iso,
             ),
@@ -6808,6 +6929,12 @@ async def waba_send_message(req: WabaSendRequest, user: dict = Depends(require_u
         storage._commit()
     except Exception as exc:
         print(f"[waba-send] failed to store outbound message: {exc}", flush=True)
+
+    # Track outbound in session
+    try:
+        _waba_session_update(chat_id, direction="outbound")
+    except Exception:
+        pass
 
     # Log activity
     try:
@@ -6828,6 +6955,40 @@ async def waba_send_message(req: WabaSendRequest, user: dict = Depends(require_u
 
     status_code = 200 if result.get("success") else 502
     return JSONResponse(status_code=status_code, content=result)
+
+
+@app.get("/api/waba/session/{chat_id:path}")
+async def waba_session_status(chat_id: str, user: dict = Depends(require_user)):
+    """Check 24h session window for a given chat_id (e.g. '919876543210@s.whatsapp.net')."""
+    return _waba_session_status(chat_id)
+
+
+@app.get("/api/waba/sessions")
+async def waba_sessions_bulk(user: dict = Depends(require_user)):
+    """Get all active session statuses. Returns list of {chat_id, active, remaining_seconds, last_user_at}."""
+    try:
+        rows = storage.db.execute(
+            "SELECT chat_id, last_user_at, session_active FROM waba_sessions WHERE session_active = true ORDER BY last_user_at DESC"
+        ).fetchall()
+        results = []
+        now = datetime.now(timezone.utc)
+        for row in rows:
+            last_user_at_str = row["last_user_at"]
+            if isinstance(last_user_at_str, str):
+                last_user_at = datetime.fromisoformat(last_user_at_str.replace("Z", "+00:00"))
+            else:
+                last_user_at = last_user_at_str
+            elapsed = (now - last_user_at).total_seconds()
+            remaining = max(0, 86400 - elapsed)
+            results.append({
+                "chat_id": row["chat_id"],
+                "active": remaining > 0,
+                "remaining_seconds": int(remaining),
+                "last_user_at": last_user_at_str,
+            })
+        return results
+    except Exception as exc:
+        return JSONResponse(status_code=500, content={"error": str(exc)})
 
 
 @app.get("/api/companion/team")
@@ -12956,3 +13117,146 @@ async def delete_note(
     storage.db.execute("DELETE FROM internal_notes WHERE id = ?", (note_id,))
     storage.db.commit()
     return {"ok": True}
+
+
+# ── Automated WABA Alerts ─────────────────────────────────────────
+
+async def _check_listing_alerts(listing_data: dict, raw_message_id: int = 0):
+    """Check a newly parsed listing against all active client_requirements.
+    For each match, send a WABA alert to the broker who owns the requirement.
+    Runs as a fire-and-forget background task."""
+    try:
+        intent = (listing_data.get("intent") or "").upper()
+        if not intent or intent not in ("SELL", "RENT", "RENTAL_SEEKER", "BUY", "BUYER"):
+            return
+
+        # Determine what type of requirement to match against
+        if intent in ("SELL", "RENT"):
+            listing_type = "SELL" if intent == "SELL" else "RENT"
+            requirement_intents = ("BUY", "BUYER") if listing_type == "SELL" else ("RENTAL_SEEKER",)
+        else:
+            return  # This is a requirement, not a listing
+
+        # Fetch all active requirements
+        requirements = storage.db.execute(
+            "SELECT * FROM client_requirements WHERE is_primary = true"
+        ).fetchall()
+
+        if not requirements:
+            return
+
+        matches_sent = 0
+        for req in requirements:
+            req_intent = (req.get("intent") or "").upper()
+            if req_intent not in requirement_intents:
+                continue
+
+            # Check BHK match
+            req_bhk = (req.get("bhk") or "").strip().upper()
+            listing_bhk = (listing_data.get("bhk") or "").strip().upper()
+            if req_bhk and listing_bhk and req_bhk != listing_bhk:
+                continue
+
+            # Check market/location match
+            req_market = (req.get("micro_market") or "").strip().lower()
+            listing_market = (listing_data.get("micro_market") or listing_data.get("area") or "").strip().lower()
+            if req_market and listing_market and req_market not in listing_market and listing_market not in req_market:
+                continue
+
+            # Check building match
+            req_building = (req.get("building_name") or "").strip().lower()
+            listing_building = (listing_data.get("building_name") or "").strip().lower()
+            if req_building and listing_building and req_building not in listing_building and listing_building not in req_building:
+                continue
+
+            # Check price range
+            req_price_min = req.get("price_min")
+            req_price_max = req.get("price_max")
+            listing_price = listing_data.get("price")
+            if listing_price and float(listing_price) > 0:
+                if req_price_max and float(req_price_max) > 0 and float(listing_price) > float(req_price_max):
+                    continue
+                if req_price_min and float(req_price_min) > 0 and float(listing_price) < float(req_price_min):
+                    continue
+
+            # It's a match — get broker phone from the requirement's client_id
+            client_id = req.get("client_id")
+            if not client_id:
+                continue
+
+            # Get broker/team member phone for this client
+            broker_phone = None
+            try:
+                # Check if client has a linked broker via chat_assignments or team_members
+                assignment = storage.db.execute(
+                    "SELECT tm.phone FROM chat_assignments ca JOIN team_members tm ON ca.team_member_id = tm.id WHERE ca.client_id = $1 AND tm.is_active = true LIMIT 1",
+                    (client_id,),
+                ).fetchone()
+                if assignment:
+                    broker_phone = assignment["phone"]
+            except Exception:
+                pass
+
+            if not broker_phone:
+                continue
+
+            # Format the alert message
+            price_str = ""
+            if listing_price and float(listing_price) > 0:
+                price_str = f"\n💰 Price: ₹{float(listing_price):,.0f}"
+
+            bhk_str = f"🏠 {listing_bhk}" if listing_bhk else ""
+            area_str = listing_data.get("area") or listing_data.get("micro_market") or ""
+            building_str = listing_data.get("building_name") or ""
+
+            location_parts = [p for p in [building_str, area_str] if p]
+            location_str = " · ".join(location_parts) if location_parts else ""
+
+            alert_text = f"""🔔 *New Listing Match!*
+
+{bhk_str}{' · ' + location_str if location_str else ''}{price_str}
+
+*{intent.title()}* — match for your requirement"""
+            if req.get("notes"):
+                alert_text += f"\n📝 {req['notes'][:100]}"
+
+            # Send via WABA
+            try:
+                result = await _waba_send_message(broker_phone, alert_text)
+                if result.get("success"):
+                    matches_sent += 1
+                    print(f"[waba-alert] sent match alert to {broker_phone} for requirement {req['id']}", flush=True)
+                else:
+                    print(f"[waba-alert] failed to send to {broker_phone}: {result.get('error', '')}", flush=True)
+            except Exception as exc:
+                print(f"[waba-alert] error sending to {broker_phone}: {exc}", flush=True)
+
+        if matches_sent > 0:
+            print(f"[waba-alert] sent {matches_sent} alerts for listing (raw_message_id={raw_message_id})", flush=True)
+
+    except Exception as exc:
+        print(f"[waba-alert] error in _check_listing_alerts: {exc}", flush=True)
+
+
+@app.get("/api/alerts/config")
+async def get_alerts_config(user: dict = Depends(require_user)):
+    """Get alert configuration and recent alert history."""
+    try:
+        requirements = storage.db.execute(
+            "SELECT * FROM client_requirements WHERE is_primary = true ORDER BY created_at DESC"
+        ).fetchall()
+
+        # Get recent WABA alerts from activity log
+        recent_alerts = storage.db.execute(
+            """SELECT * FROM activity_log
+               WHERE action LIKE 'waba%' OR action LIKE 'alert%'
+               ORDER BY created_at DESC LIMIT 20"""
+        ).fetchall()
+
+        return {
+            "requirements": [dict(r) for r in requirements],
+            "recent_alerts": [dict(a) for a in recent_alerts],
+            "waba_configured": bool(_companion_get_config_value("access_token", "WABA_ACCESS_TOKEN")),
+        }
+    except Exception as exc:
+        return JSONResponse(status_code=500, content={"error": str(exc)})

@@ -866,6 +866,27 @@ def _build_tools(sources):
                 },
             }
         },
+        {
+            "type": "function",
+            "function": {
+                "name": "send_whatsapp",
+                "description": "Send a WhatsApp message to a specific phone number. Use this to proactively message brokers or clients on behalf of the user when requested (e.g. 'send this requirement to broker X').",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "to_phone": {
+                            "type": "string",
+                            "description": "The phone number to send the message to (in 91XXXXXXXXXX format, no +)"
+                        },
+                        "text": {
+                            "type": "string",
+                            "description": "The message text to send"
+                        }
+                    },
+                    "required": ["to_phone", "text"]
+                }
+            }
+        },
     ]
     return tools
 
@@ -1803,6 +1824,76 @@ def execute_tool(name, args, sources, db_path=None):
         except Exception as e:
             return f"Error saving alias: {str(e)}"
         return f"Learned: '{alias}' = {canonical} unit. I'll remember this."
+
+    if name == "send_whatsapp":
+        to_phone = (args.get("to_phone") or "").strip()
+        text = args.get("text", "")
+        if not to_phone or not text:
+            return "Error: to_phone and text are required"
+        try:
+            import httpx
+            from config import SUPABASE_URL, SUPABASE_SERVICE_KEY
+            # Get WABA config from Supabase
+            async def get_config():
+                async with httpx.AsyncClient(timeout=10) as client:
+                    resp = await client.get(
+                        f"{SUPABASE_URL}/rest/v1/companion_config?select=*",
+                        headers={"apikey": SUPABASE_SERVICE_KEY, "Authorization": f"Bearer {SUPABASE_SERVICE_KEY}"}
+                    )
+                    return resp.json() if resp.status_code == 200 else []
+            # This is a synchronous function, so we can't use async. 
+            # We'll use a direct SQL query to get the config
+            import json
+            phone_number_id = None
+            access_token = None
+            
+            # Query the companion_config table directly via Supabase REST
+            # We'll need to use the storage module
+            from storage.supabase import SupabaseStorage
+            storage = SupabaseStorage()
+            config = storage.db.execute(
+                "SELECT * FROM companion_config WHERE key IN ('phone_number_id', 'access_token')"
+            ).fetchall()
+            for row in config:
+                if row["key"] == "phone_number_id":
+                    phone_number_id = row["value"]
+                elif row["key"] == "access_token":
+                    access_token = row["value"]
+            
+            if not phone_number_id or not access_token:
+                return "Error: WABA not configured (phone_number_id or access_token missing)"
+
+            # Normalize phone
+            digits = to_phone.replace("+", "").replace(" ", "").replace("-", "").strip()
+            if digits.startswith("0"):
+                digits = digits[1:]
+            if not digits.isdigit() or len(digits) < 10:
+                return f"Error: Invalid phone number: {to_phone}"
+
+            url = f"https://graph.facebook.com/v21.0/{phone_number_id}/messages"
+            headers = {
+                "Authorization": f"Bearer {access_token}",
+                "Content-Type": "application/json",
+            }
+            body = {
+                "messaging_product": "whatsapp",
+                "to": digits,
+                "type": "text",
+                "text": {"body": text},
+            }
+
+            # Use httpx synchronously
+            resp = httpx.post(url, json=body, headers=headers, timeout=30)
+            data = resp.json() if resp.text else {}
+            
+            if resp.status_code == 200 and data.get("messages"):
+                msg_id = data["messages"][0].get("id", "")
+                return f"✅ Message sent successfully (ID: {msg_id}) to {digits}"
+            else:
+                error_msg = data.get("error", {}).get("message", resp.text[:500])
+                return f"❌ Failed to send: {error_msg}"
+        except Exception as e:
+            return f"Error sending WhatsApp: {str(e)}"
 
     return f"Unknown tool: {name}"
 

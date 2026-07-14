@@ -81,6 +81,8 @@ export interface RawMessage {
   from_me?: boolean | number;
   synced_at: string;
   pipeline_version: string;
+  delivery_status?: string | null;
+  delivery_updated_at?: string | null;
 }
 
 export interface InboxThread extends RawMessage {
@@ -267,6 +269,21 @@ export function sendWabaMessage(payload: WabaSendRequest) {
     method: "POST",
     body: JSON.stringify(payload),
   });
+}
+
+export interface WabaSessionStatus {
+  active: boolean;
+  remaining_seconds: number;
+  last_user_at: string | null;
+  expired: boolean;
+}
+
+export function getWabaSessionStatus(chatId: string) {
+  return fetchJSON<WabaSessionStatus>(`/waba/session/${encodeURIComponent(chatId)}`);
+}
+
+export function getWabaSessionsBulk() {
+  return fetchJSON<Array<{ chat_id: string; active: boolean; remaining_seconds: number; last_user_at: string }>>("/waba/sessions");
 }
 
 export function getParsed(limit = 50, offset = 0) {

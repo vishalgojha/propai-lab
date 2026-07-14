@@ -935,6 +935,8 @@ function InboxPageInner() {
   const [replyStatus, setReplyStatus] = useState("");
   const [replyAccessLoading, setReplyAccessLoading] = useState(true);
   const [canReplyWhatsApp, setCanReplyWhatsApp] = useState(false);
+  const [sessionStatus, setSessionStatus] = useState<api.WabaSessionStatus | null>(null);
+  const [sessionCountdown, setSessionCountdown] = useState("");
   const [replyDraftLoadedKey, setReplyDraftLoadedKey] = useState("");
   const [currentTeamMember, setCurrentTeamMember] = useState<api.TeamMember | null>(null);
   const threadEndRef = useRef<HTMLDivElement>(null);
@@ -1188,6 +1190,7 @@ function InboxPageInner() {
   const msgParam = searchParams.get("message");
   const brokerParam = searchParams.get("broker");
   const observationParam = searchParams.get("observation");
+  const isWhatsAppGroupsSurface = searchParams.get("view") === "groups" || currentSlug === "groups";
 
   // Sync selected message to URL
   const updateUrlMessage = useCallback((conversationKey: string, msgId: number) => {
@@ -2057,7 +2060,6 @@ function InboxPageInner() {
       : resolveMessageSenderName(selectedMsg) || selectedMsg?.sender || "";
   const selectedCount =
     selectedMsg && "message_count" in selectedMsg ? selectedMsg.message_count : conversationMessages.length;
-  const isWhatsAppGroupsSurface = searchParams.get("view") === "groups" || currentSlug === "groups";
   const selectedConversationJid = useMemo(() => {
     if (!selectedMsg) return "";
     const candidate = (
@@ -2118,6 +2120,31 @@ function InboxPageInner() {
     const timer = window.setTimeout(() => setReplyStatus(""), 2500);
     return () => window.clearTimeout(timer);
   }, [replyStatus]);
+
+  // Session countdown timer — updates display every 60s
+  useEffect(() => {
+    if (!sessionStatus?.active || !sessionStatus.remaining_seconds) {
+      setSessionCountdown(sessionStatus?.expired ? "Session expired" : "");
+      return;
+    }
+    const updateCountdown = () => {
+      if (!sessionStatus?.remaining_seconds) return;
+      const now = Date.now();
+      const end = now + sessionStatus.remaining_seconds * 1000;
+      const remaining = Math.max(0, Math.floor((end - Date.now()) / 1000));
+      if (remaining <= 0) {
+        setSessionCountdown("Session expired");
+        setSessionStatus((prev) => prev ? { ...prev, active: false, expired: true, remaining_seconds: 0 } : prev);
+        return;
+      }
+      const hours = Math.floor(remaining / 3600);
+      const mins = Math.floor((remaining % 3600) / 60);
+      setSessionCountdown(`${hours}h ${mins}m remaining`);
+    };
+    updateCountdown();
+    const interval = window.setInterval(updateCountdown, 60000);
+    return () => window.clearInterval(interval);
+  }, [sessionStatus?.active, sessionStatus?.remaining_seconds]);
 
   useEffect(() => {
     let cancelled = false;
@@ -2263,6 +2290,18 @@ function InboxPageInner() {
       }));
       const chronologicalThread = (decoratedThread.length ? decoratedThread : msg.id ? [msg as api.RawMessage] : []).slice().reverse();
       setConversationMessages(chronologicalThread);
+
+      // Fetch 24h session status for direct conversations
+      if (chatId && chatId.includes("@s.whatsapp.net")) {
+        try {
+          const session = await api.getWabaSessionStatus(chatId);
+          setSessionStatus(session);
+        } catch {
+          setSessionStatus(null);
+        }
+      } else {
+        setSessionStatus(null);
+      }
 
       // Inactive group rows use a synthetic row; analyze the latest real thread item instead.
       const detailTarget = msg.id ? msg : chronologicalThread[chronologicalThread.length - 1];
@@ -3708,6 +3747,19 @@ function InboxPageInner() {
                         <div className="mt-0.5 line-clamp-2">
                           {(replyTargetMessage.message || "").trim() || "Selected conversation"}
                         </div>
+                      </div>
+                    )}
+                    {sessionCountdown && !isGroupConversationSelected && (
+                      <div className={`mb-2 rounded-xl px-3 py-2 text-[11px] ${
+                        sessionStatus?.expired
+                          ? "border border-red-500/20 bg-red-500/10 text-red-300"
+                          : sessionStatus && sessionStatus.remaining_seconds < 3600
+                            ? "border border-amber-500/20 bg-amber-500/10 text-amber-300"
+                            : "border border-emerald-500/20 bg-emerald-500/10 text-emerald-300"
+                      }`}>
+                        {sessionStatus?.expired
+                          ? "24h session expired — waiting for customer to message again"
+                          : `Reply window: ${sessionCountdown}`}
                       </div>
                     )}
                     {replyAccessLoading ? (
