@@ -6684,6 +6684,42 @@ async def companion_webhook_receive(request: Request):
                             elif msg_type == "text":
                                 processed.append({"type": "pic_token_received_no_image", "listing_id": listing_id, "pic_token": pic_token, "from": msg_from})
 
+                # Store ALL inbound messages in raw_messages (not just PIC tokens)
+                # so they appear in the inbox
+                try:
+                    contact = (value.get("contacts") or [{}])[0]
+                    sender_name = contact.get("profile", {}).get("name", "") if contact else ""
+                    now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+                    digits = msg_from.replace("+", "").replace(" ", "").replace("-", "").strip()
+                    if digits.startswith("0"):
+                        digits = digits[1:]
+                    sender_jid = f"{digits}@s.whatsapp.net"
+
+                    storage.db.execute(
+                        """INSERT INTO raw_messages
+                           (group_name, sender, sender_jid, sender_phone, message, message_type,
+                            source, timestamp, raw_payload, message_uid, synced_at, created_at)
+                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                        (
+                            sender_jid,
+                            sender_name or msg_from,
+                            sender_jid,
+                            digits,
+                            caption if caption else (msg.get("image", {}).get("caption", "") if msg_type == "image" else f"[{msg_type}]"),
+                            msg_type,
+                            "WABA_INBOUND",
+                            now_iso,
+                            json.dumps({"waba_message_id": msg_id, "from": msg_from}),
+                            f"waba-in-{msg_id}",
+                            now_iso,
+                            now_iso,
+                        ),
+                    )
+                    storage._commit()
+                    processed.append({"type": "message_stored", "from": msg_from, "msg_type": msg_type})
+                except Exception as exc:
+                    print(f"[waba-webhook] failed to store inbound message: {exc}", flush=True)
+
         # Handle delivery status updates (sent / delivered / read)
         for status in value.get("statuses", []):
             status_id = status.get("id", "")
@@ -7348,85 +7384,32 @@ def _connection_details() -> dict:
             stale["status_stale"] = True
             return stale
 
-    if not storage or not hasattr(storage, "db"):
-        return {
-            "connected": False,
-            "connection_state": "unknown",
-            "instance_name": "propai-whatsapp",
-            "device_name": "WhatsApp ingestor",
-        }
-
-    try:
-        jobs = storage.get_sync_jobs(limit=500, source="whatsapp") if hasattr(storage, "get_sync_jobs") else []
-        if jobs:
-            last_finished = max((j.finished_at for j in jobs if getattr(j, "finished_at", None)), default=None)
-            msg_count = 0
+    total_groups = 0
+    messages_captured = 0
+    if storage:
+        try:
+            jobs = storage.get_sync_jobs(limit=500, source="whatsapp") if hasattr(storage, "get_sync_jobs") else []
+            total_groups = len(jobs)
+        except Exception:
+            pass
+        if hasattr(storage, "db") and storage.db:
             try:
-                msg_count = storage.db.execute("SELECT COUNT(*) AS c FROM raw_messages").fetchone()["c"]
+                messages_captured = storage.db.execute("SELECT COUNT(*) AS c FROM raw_messages").fetchone()["c"]
             except Exception:
                 pass
-            return {
-                "connected": True,
-                "connection_state": "open",
-                "instance_name": "propai-whatsapp",
-                "device_name": "WhatsApp ingestor",
-                "phone_number": "",
-                "display_name": "",
-                "connected_since": last_finished,
-                "last_message_at": last_finished,
-                "total_groups": len(jobs),
-                "messages_captured": msg_count,
-            }
-    except Exception:
-        pass
 
-    try:
-        row = storage.db.execute(
-            """SELECT sender, raw_payload, timestamp, synced_at, created_at
-               FROM raw_messages
-               WHERE raw_payload LIKE '%"instance": "propai-whatsapp"%'
-                  OR raw_payload LIKE '%"instance":"propai-whatsapp"%'
-               ORDER BY id DESC LIMIT 1"""
-        ).fetchone()
-        total = storage.db.execute(
-            """SELECT COUNT(*) AS c
-               FROM raw_messages
-               WHERE raw_payload LIKE '%"instance": "propai-whatsapp"%'
-                  OR raw_payload LIKE '%"instance":"propai-whatsapp"%'"""
-        ).fetchone()["c"]
-        group_total = storage.db.execute(
-            """SELECT COUNT(*) AS c
-               FROM raw_messages
-               WHERE group_name LIKE '%@g.us'
-                 AND (raw_payload LIKE '%"instance": "propai-whatsapp"%'
-                  OR raw_payload LIKE '%"instance":"propai-whatsapp"%')"""
-        ).fetchone()["c"]
-    except Exception:
-        return {
-            "connected": False,
-            "connection_state": "unknown",
-            "instance_name": "propai-whatsapp",
-            "device_name": "WhatsApp ingestor",
-            "phone_number": "",
-            "display_name": "",
-            "connected_since": None,
-            "last_message_at": None,
-            "total_groups": 0,
-            "messages_captured": 0,
-        }
-
-    connected = total > 0
     return {
-        "connected": connected,
-        "connection_state": "open" if connected else "unknown",
+        "connected": False,
+        "connection_state": "unknown",
         "instance_name": "propai-whatsapp",
         "device_name": "WhatsApp ingestor",
         "phone_number": "",
         "display_name": "",
-        "connected_since": row["created_at"] if row else None,
-        "last_message_at": row["timestamp"] if row else None,
-        "total_groups": group_total,
-        "messages_captured": total,
+        "connected_since": None,
+        "last_message_at": None,
+        "total_groups": total_groups,
+        "messages_captured": messages_captured,
+        "status_stale": False,
     }
 
 
