@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import "./globals.css";
-import { getConnectionState, getWhatsAppStatus, getRaw, ConnectionState, WhatsAppStatus, searchMessages } from "@/lib/api";
+import { getConnectionState, getWhatsAppStatus, getRaw, ConnectionState, WhatsAppStatus, searchMessages, getCompanionConfig, CompanionConfig } from "@/lib/api";
 import { classifyFormatIssue } from "@/lib/format-issues";
 import {
   MessageSquare,
@@ -188,6 +188,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
   const [profile, setProfile] = useState<{ auth_user_id?: string; phone: string; first_name: string; last_name?: string; email?: string; city?: string } | null>(null);
   const [profileLoaded, setProfileLoaded] = useState(false);
   const [formatIssueCount, setFormatIssueCount] = useState(0);
+  const [wabaConfig, setWabaConfig] = useState<CompanionConfig | null>(null);
   const { signOut: authSignOut } = useAuth();
 
   // Read profile from localStorage
@@ -238,9 +239,10 @@ function AppShell({ children }: { children: React.ReactNode }) {
     if (authLoading || !user) return;
     const load = async () => {
       try {
-        const [c, w] = await Promise.all([getConnectionState(), getWhatsAppStatus()]);
+        const [c, w, cfg] = await Promise.all([getConnectionState(), getWhatsAppStatus(), getCompanionConfig().catch(() => null)]);
         setConn(c);
         setWhatsapp(w);
+        if (cfg) setWabaConfig(cfg);
       } catch {}
     };
     load();
@@ -473,6 +475,12 @@ function AppShell({ children }: { children: React.ReactNode }) {
           </div>
           {waConnected && whatsapp?.phone && (
             <span className="text-[10px] lg:text-[11px] text-zinc-500 font-mono truncate max-w-[120px] lg:max-w-none">{whatsapp.phone}</span>
+          )}
+          {wabaConfig?.outbound_allowed && (
+            <a href="/waba" className="flex items-center gap-1 text-[10px] lg:text-[11px] font-semibold text-emerald-300 hover:text-emerald-200 transition-colors" title="PropAI Official WABA — Connected">
+              <span className="w-1.5 h-1.5 lg:w-2 lg:h-2 rounded-full bg-emerald-400 animate-pulse" />
+              <span className="hidden md:inline">WABA Connected</span>
+            </a>
           )}
           <div className="flex-1" />
           <button
