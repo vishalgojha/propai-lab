@@ -736,25 +736,6 @@ def _build_tools(sources):
         {
             "type": "function",
             "function": {
-                "name": "find_duplicates",
-                "description": "Find potential duplicate listings, brokers, or buildings that may need merging",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "entity_type": {
-                            "type": "string",
-                            "enum": ["listings", "brokers", "buildings"],
-                            "description": "Type of entity to check for duplicates",
-                        },
-                        "limit": {"type": "integer", "description": "Max results (default 10)"},
-                    },
-                    "required": ["entity_type"],
-                },
-            }
-        },
-        {
-            "type": "function",
-            "function": {
                 "name": "search_raw_messages",
                 "description": "Search across all raw WhatsApp messages (groups and DMs). Returns matching messages with sender, group, timestamp. Use for finding specific conversations, mentions of buildings/brokers, or any text content.",
                 "parameters": {
@@ -1177,63 +1158,6 @@ def execute_tool(name, args, sources, db_path=None):
                 lines.append(f"• [ID {d['id']}] {d.get('intent','?')} | {d.get('broker_name','?')} | {d.get('micro_market','?')} | conf={d.get('confidence',0)}")
                 lines.append(f"  {msg}")
             return "\n".join(lines)
-        finally:
-            con.close()
-
-    if name == "find_duplicates":
-        con = _open_db()
-        if not con:
-            return "Database not available"
-        try:
-            entity_type = args.get("entity_type", "listings")
-            limit = args.get("limit", 10)
-            if entity_type == "brokers":
-                rows = con.execute("""
-                    SELECT a.id AS keep_id, b.id AS merge_id,
-                           a.canonical_name AS keep_name, b.canonical_name AS merge_name,
-                           a.primary_phone, a.observation_count
-                    FROM brokers a
-                    JOIN brokers b ON b.id > a.id
-                    WHERE a.primary_phone IS NOT NULL AND a.primary_phone != ''
-                      AND a.primary_phone = b.primary_phone
-                    ORDER BY a.observation_count DESC
-                    LIMIT ?
-                """, (limit,)).fetchall()
-                if rows:
-                    lines = [f"Found {len(rows)} potential broker merge:"]
-                    for r in rows:
-                        lines.append(f"• Keep '{r['keep_name']}' (ID {r['keep_id']}) ← Merge '{r['merge_name']}' (ID {r['merge_id']}) — Phone: {r['primary_phone']}")
-                    return "\n".join(lines)
-                return "No duplicate brokers found."
-            elif entity_type == "buildings":
-                rows = con.execute("""
-                    SELECT a.alias AS name_a, b.alias AS name_b,
-                           a.canonical AS canonical
-                    FROM building_aliases a
-                    JOIN building_aliases b ON b.canonical = a.canonical AND b.alias < a.alias
-                    LIMIT ?
-                """, (limit,)).fetchall()
-                if rows:
-                    lines = [f"Found {len(rows)} building alias groups:"]
-                    for r in rows:
-                        lines.append(f"• '{r['name_a']}' and '{r['name_b']}' → canonical: '{r['canonical']}'")
-                    return "\n".join(lines)
-                return "No building alias groups found."
-            else:
-                rows = con.execute("""
-                    SELECT fingerprint, intent, bhk, price, building_name,
-                           broker_name, location_label, observation_count
-                    FROM listings
-                    WHERE observation_count > 1
-                    ORDER BY observation_count DESC
-                    LIMIT ?
-                """, (limit,)).fetchall()
-                if rows:
-                    lines = [f"Found {len(rows)} listings with multiple observations (potential duplicates):"]
-                    for r in rows:
-                        lines.append(f"• {r['building_name'] or '?'} | {r['bhk'] or '?'} | ₹{r['price'] or '?'} | {r['broker_name'] or '?'} — seen {r['observation_count']}x")
-                    return "\n".join(lines)
-                return "No duplicate listings found."
         finally:
             con.close()
 

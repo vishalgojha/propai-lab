@@ -1040,13 +1040,10 @@ class SupabaseStorage(Storage):
             pass
 
         query = self.client.table("raw_messages").select(
-            "id,group_name,sender,sender_phone,sender_jid,timestamp,created_at,message_uid,body,tenant_id"
+            "id,group_name,sender,sender_phone,sender_jid,timestamp,created_at,message_uid,body"
         )\
             .order("timestamp", desc=True)\
             .limit(max(5000, limit + offset))
-        tid = tenant_id or self._tenant_id
-        if tid:
-            query = query.eq("tenant_id", tid)
 
         res = query.execute()
         rows = res.data if res.data else []

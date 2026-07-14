@@ -1011,11 +1011,16 @@ export function getAuditTimeline(limit = 50) {
   return fetchJSON<AuditTimelineEvent[]>(`/audit/timeline?limit=${limit}`);
 }
 
+export interface AuditGroupsResponse {
+  groups: AuditGroupCard[];
+  total_unique_senders: number;
+}
+
 export function getAuditGroups(q = "", status = "") {
   const params = new URLSearchParams();
   if (q) params.set("q", q);
   if (status) params.set("status", status);
-  return fetchJSON<AuditGroupCard[]>(`/audit/groups?${params}`);
+  return fetchJSON<AuditGroupsResponse>(`/audit/groups?${params}`);
 }
 
 export function getAuditGroupDetail(jid: string) {
@@ -1451,6 +1456,10 @@ export function updateOrgPrivacy(orgId: string, data: Partial<OrgPrivacySettings
     method: "PUT",
     body: JSON.stringify(data),
   });
+}
+
+export function getCurrentOrg() {
+  return fetchJSON<{ id: string; name?: string; slug?: string }>(`/orgs/current`);
 }
 
 

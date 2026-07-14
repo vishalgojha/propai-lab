@@ -916,6 +916,7 @@ function InboxPageInner() {
   const [loadingBrokerFeed, setLoadingBrokerFeed] = useState(false);
   const [marketAccess, setMarketAccess] = useState<api.MarketAccessStatus | null>(null);
   const [loadingMarketAccess, setLoadingMarketAccess] = useState(true);
+  const [marketAccessError, setMarketAccessError] = useState<string | null>(null);
   const [selectedBrokerObservations, setSelectedBrokerObservations] = useState<any[]>([]);
   const [loadingBrokerObs, setLoadingBrokerObs] = useState(false);
   const [opportunityFilter, setOpportunityFilter] = useState<OpportunityFilter>("all");
@@ -978,20 +979,14 @@ function InboxPageInner() {
       try {
         const access = await api.getMarketAccessStatus();
         if (!cancelled) setMarketAccess(access);
+        if (!cancelled) setMarketAccessError(null);
       } catch (e) {
         console.error("Failed to load market access:", e);
         if (!cancelled) {
-          setMarketAccess({
-            authenticated: false,
-            whatsapp_connected: false,
-            initial_sync_complete: false,
-            privacy_receipt_complete: false,
-            trial_active: false,
-            paid_active: false,
-            market_unlocked: false,
-            reason: "connect_whatsapp",
-            message: "Connect WhatsApp to unlock Market Inbox.",
-          });
+          setMarketAccess(null);
+          setMarketAccessError(
+            "Could not verify WhatsApp right now. Wait a moment, or open QR if it keeps failing."
+          );
         }
       } finally {
         if (!cancelled) setLoadingMarketAccess(false);
@@ -1002,12 +997,27 @@ function InboxPageInner() {
     };
   }, []);
 
+  const connectionLock = useMemo(() => {
+    return {
+      title: "WhatsApp is not connected",
+      description:
+        marketAccess?.message ||
+        "Wait for WhatsApp to reconnect. If it keeps failing, reopen QR pairing.",
+      primaryHref: "/connections",
+      primaryCta: "Open Connection Center",
+      secondaryHref: "/qr",
+      secondaryCta: "Open QR",
+    };
+  }, [marketAccess]);
+
   const marketLock = useMemo(() => {
     const reason = marketAccess?.reason || "connect_whatsapp";
     if (reason === "privacy_receipt") {
       return {
         title: "Finish group privacy review",
-        description: marketAccess?.message || "Review which WhatsApp groups PropAI can parse before opening the shared broker market.",
+        description:
+          marketAccess?.message ||
+          "Review which WhatsApp groups PropAI can parse before opening the shared broker market.",
         href: "/audit",
         cta: "Review Groups",
       };
@@ -1015,18 +1025,37 @@ function InboxPageInner() {
     if (reason === "sync_pending") {
       return {
         title: "Preparing your market feed",
-        description: marketAccess?.message || "WhatsApp is connected. PropAI is waiting for the first synced messages before opening Market Inbox.",
+        description:
+          marketAccess?.message ||
+          "WhatsApp is connected. PropAI is waiting for the first synced messages before opening Market Inbox.",
         href: "/audit",
         cta: "Open Audit",
       };
     }
     return {
       title: "Connect WhatsApp first",
-      description: marketAccess?.message || "Connect WhatsApp and start your trial to unlock your personalized broker market feed.",
+      description:
+        marketAccess?.message ||
+        "Connect WhatsApp and start your trial to unlock your personalized broker market feed.",
       href: "/connections",
       cta: "Connect WhatsApp",
     };
   }, [marketAccess]);
+
+  const activeAccessGate = marketAccess?.whatsapp_connected === false ? connectionLock : marketLock;
+  const accessHealthGate = useMemo(() => {
+    if (marketAccessError) {
+      return {
+        title: "Checking WhatsApp connection",
+        description: marketAccessError,
+        primaryHref: "/connections",
+        primaryCta: "Open Connection Center",
+        secondaryHref: "/qr",
+        secondaryCta: "Open QR",
+      };
+    }
+    return activeAccessGate;
+  }, [activeAccessGate, marketAccessError]);
 
   const groupedBrokerObservations = useMemo(() => {
     const groups = new Map<string, BrokerObservationGroup>();
@@ -2051,6 +2080,7 @@ function InboxPageInner() {
   }, [conversationMessages, selectedMsg]);
   const replyFallbackPhone = normalizeRealPhone(resolveMessagePhone(selectedMsg) || phoneFromJid(selectedConversationJid));
   const replyDraftKey = selectedConversationJid ? `propai-inbox-draft:${selectedConversationJid}` : "";
+  const whatsappConnected = marketAccess?.whatsapp_connected !== false;
 
   useEffect(() => {
     setReplyError("");
@@ -2119,7 +2149,7 @@ function InboxPageInner() {
 
   const handleSendReply = useCallback(async () => {
     const text = replyText.trim();
-    if (!text || sendingReply || !selectedConversationJid || !canReplyWhatsApp) return;
+    if (!text || sendingReply || !selectedConversationJid || !canReplyWhatsApp || !whatsappConnected) return;
 
     setSendingReply(true);
     setReplyError("");
@@ -2186,8 +2216,11 @@ function InboxPageInner() {
       }
       setReplyStatus("Message sent");
     } catch (e: any) {
-      setReplyError(e?.message || "Failed to send reply");
-      if (replyFallbackPhone) {
+      const message = e?.message || "Failed to send reply";
+      setReplyError(message);
+      if (/whatsapp|ingestor|connect/i.test(message)) {
+        setReplyStatus("WhatsApp is disconnected. Open QR to reconnect.");
+      } else if (replyFallbackPhone) {
         setReplyStatus("Send failed. Open WhatsApp to continue.");
       }
     } finally {
@@ -2204,6 +2237,7 @@ function InboxPageInner() {
     sendingReply,
     selectedTitle,
     canReplyWhatsApp,
+    whatsappConnected,
   ]);
 
   // 3. Load Conversation Thread (Center Panel)
@@ -2766,21 +2800,55 @@ function InboxPageInner() {
           <div className="flex-1 overflow-y-auto divide-y divide-[rgba(255,255,255,0.04)]">
             {loadingMarketAccess ? (
               <div className="p-8 text-center text-xs text-zinc-500">Checking workspace access...</div>
+            ) : marketAccessError ? (
+              <div className="p-5 text-center">
+                <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-lg border border-amber-500/30 bg-amber-500/10 text-amber-300">
+                  <MessageSquare className="h-4 w-4" strokeWidth={1.6} />
+                </div>
+                <div className="text-sm font-bold text-white">{accessHealthGate.title}</div>
+                <p className="mx-auto mt-2 max-w-[260px] text-xs leading-relaxed text-zinc-500">
+                  {accessHealthGate.description}
+                </p>
+                <div className="mt-4 flex flex-col items-center gap-2 sm:flex-row sm:justify-center">
+                  <Link
+                    href={accessHealthGate.primaryHref}
+                    className="inline-flex h-9 items-center justify-center rounded-lg bg-[#3EE88A] px-4 text-xs font-bold text-black hover:bg-[#35d47c]"
+                  >
+                    {accessHealthGate.primaryCta}
+                  </Link>
+                  <Link
+                    href={accessHealthGate.secondaryHref}
+                    className="inline-flex h-9 items-center justify-center rounded-lg border border-white/10 bg-zinc-900 px-4 text-xs font-bold text-zinc-200 hover:border-[#3EE88A]/40 hover:text-[#3EE88A]"
+                  >
+                    {accessHealthGate.secondaryCta}
+                  </Link>
+                </div>
+              </div>
             ) : marketAccess && !marketAccess.market_unlocked ? (
               <div className="p-5 text-center">
                 <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-lg border border-[#3EE88A]/30 bg-[#3EE88A]/10 text-[#3EE88A]">
                   <MessageSquare className="h-4 w-4" strokeWidth={1.6} />
                 </div>
-                <div className="text-sm font-bold text-white">{marketLock.title}</div>
+                <div className="text-sm font-bold text-white">{accessHealthGate.title}</div>
                 <p className="mx-auto mt-2 max-w-[260px] text-xs leading-relaxed text-zinc-500">
-                  {marketLock.description}
+                  {accessHealthGate.description}
                 </p>
-                <Link
-                  href={marketLock.href}
-                  className="mt-4 inline-flex h-9 items-center justify-center rounded-lg bg-[#3EE88A] px-4 text-xs font-bold text-black hover:bg-[#35d47c]"
-                >
-                  {marketLock.cta}
-                </Link>
+                <div className="mt-4 flex flex-col items-center gap-2 sm:flex-row sm:justify-center">
+                  <Link
+                    href={"primaryHref" in accessHealthGate ? accessHealthGate.primaryHref : accessHealthGate.href}
+                    className="inline-flex h-9 items-center justify-center rounded-lg bg-[#3EE88A] px-4 text-xs font-bold text-black hover:bg-[#35d47c]"
+                  >
+                    {"primaryCta" in accessHealthGate ? accessHealthGate.primaryCta : accessHealthGate.cta}
+                  </Link>
+                  {"secondaryHref" in accessHealthGate && (
+                    <Link
+                      href={accessHealthGate.secondaryHref}
+                      className="inline-flex h-9 items-center justify-center rounded-lg border border-white/10 bg-zinc-900 px-4 text-xs font-bold text-zinc-200 hover:border-[#3EE88A]/40 hover:text-[#3EE88A]"
+                    >
+                      {accessHealthGate.secondaryCta}
+                    </Link>
+                  )}
+                </div>
               </div>
             ) : loadingLeft && messages.length === 0 && groups.length === 0 ? (
               <div className="p-8 text-center text-xs text-zinc-500">Loading inbox feed...</div>
@@ -2950,22 +3018,58 @@ function InboxPageInner() {
 
         {/* ================= CENTER PANEL: CONVERSATION ================= */}
         <div className={`flex-1 min-w-0 w-full h-full min-h-0 flex flex-col bg-[#070b0e] overflow-hidden lg:w-auto ${isMobile && mobileView !== "conversation" ? "hidden" : ""}`}>
-          {marketAccess && !marketAccess.market_unlocked ? (
+          {marketAccessError ? (
+            <div className="flex flex-1 items-center justify-center px-6 text-center">
+              <div className="max-w-md">
+                <div className="mx-auto mb-5 flex h-12 w-12 items-center justify-center rounded-xl border border-amber-500/30 bg-amber-500/10 text-amber-300">
+                  <MessageSquare className="h-5 w-5" strokeWidth={1.6} />
+                </div>
+                <h3 className="text-lg font-bold text-white">{accessHealthGate.title}</h3>
+                <p className="mt-2 text-sm leading-relaxed text-zinc-500">
+                  {accessHealthGate.description}
+                </p>
+                <div className="mt-5 flex flex-col items-center justify-center gap-2 sm:flex-row">
+                  <Link
+                    href={accessHealthGate.primaryHref}
+                    className="inline-flex h-10 items-center justify-center rounded-lg bg-[#3EE88A] px-5 text-sm font-bold text-black hover:bg-[#35d47c]"
+                  >
+                    {accessHealthGate.primaryCta}
+                  </Link>
+                  <Link
+                    href={accessHealthGate.secondaryHref}
+                    className="inline-flex h-10 items-center justify-center rounded-lg border border-white/10 bg-zinc-900 px-5 text-sm font-bold text-zinc-200 hover:border-[#3EE88A]/40 hover:text-[#3EE88A]"
+                  >
+                    {accessHealthGate.secondaryCta}
+                  </Link>
+                </div>
+              </div>
+            </div>
+          ) : marketAccess && !marketAccess.market_unlocked ? (
             <div className="flex flex-1 items-center justify-center px-6 text-center">
               <div className="max-w-md">
                 <div className="mx-auto mb-5 flex h-12 w-12 items-center justify-center rounded-xl border border-[#3EE88A]/30 bg-[#3EE88A]/10 text-[#3EE88A]">
                   <MessageSquare className="h-5 w-5" strokeWidth={1.6} />
                 </div>
-                <h3 className="text-lg font-bold text-white">{marketLock.title}</h3>
+                <h3 className="text-lg font-bold text-white">{accessHealthGate.title}</h3>
                 <p className="mt-2 text-sm leading-relaxed text-zinc-500">
-                  {marketLock.description}
+                  {accessHealthGate.description}
                 </p>
-                <Link
-                  href={marketLock.href}
-                  className="mt-5 inline-flex h-10 items-center justify-center rounded-lg bg-[#3EE88A] px-5 text-sm font-bold text-black hover:bg-[#35d47c]"
-                >
-                  {marketLock.cta}
-                </Link>
+                <div className="mt-5 flex flex-col items-center justify-center gap-2 sm:flex-row">
+                  <Link
+                    href={"primaryHref" in accessHealthGate ? accessHealthGate.primaryHref : accessHealthGate.href}
+                    className="inline-flex h-10 items-center justify-center rounded-lg bg-[#3EE88A] px-5 text-sm font-bold text-black hover:bg-[#35d47c]"
+                  >
+                    {"primaryCta" in accessHealthGate ? accessHealthGate.primaryCta : accessHealthGate.cta}
+                  </Link>
+                  {"secondaryHref" in accessHealthGate && (
+                    <Link
+                      href={accessHealthGate.secondaryHref}
+                      className="inline-flex h-10 items-center justify-center rounded-lg border border-white/10 bg-zinc-900 px-5 text-sm font-bold text-zinc-200 hover:border-[#3EE88A]/40 hover:text-[#3EE88A]"
+                    >
+                      {accessHealthGate.secondaryCta}
+                    </Link>
+                  )}
+                </div>
               </div>
             </div>
           ) : activeSlug?.view_type === "brokers" && selectedBroker ? (
@@ -3264,15 +3368,19 @@ function InboxPageInner() {
                     className={`hidden sm:inline-flex items-center rounded-full border px-2 py-1 text-[10px] font-bold uppercase tracking-wider ${
                       replyAccessLoading
                         ? "border-white/10 bg-white/5 text-zinc-500"
-                        : canReplyWhatsApp
-                          ? "border-emerald-400/20 bg-emerald-400/10 text-emerald-300"
-                          : "border-amber-500/20 bg-amber-500/10 text-amber-300"
+                        : !whatsappConnected
+                          ? "border-amber-500/20 bg-amber-500/10 text-amber-300"
+                          : canReplyWhatsApp
+                            ? "border-emerald-400/20 bg-emerald-400/10 text-emerald-300"
+                            : "border-amber-500/20 bg-amber-500/10 text-amber-300"
                     }`}
                     title={currentTeamMember?.name ? `${currentTeamMember.name}` : undefined}
                   >
                     {replyAccessLoading
                       ? "Checking access"
-                      : canReplyWhatsApp
+                      : !whatsappConnected
+                        ? "WhatsApp disconnected"
+                        : canReplyWhatsApp
                         ? `Can send${currentTeamMember?.name ? ` · ${currentTeamMember.name}` : ""}`
                         : `View only${currentTeamMember?.name ? ` · ${currentTeamMember.name}` : ""}`}
                   </div>
@@ -3654,6 +3762,27 @@ function InboxPageInner() {
                     {replyAccessLoading ? (
                       <div className="rounded-xl border border-white/10 bg-zinc-950 px-3 py-3 text-[11px] text-zinc-400">
                         Checking reply access...
+                      </div>
+                    ) : !whatsappConnected ? (
+                      <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 px-3 py-3 text-[11px] text-amber-100">
+                        <div className="font-semibold">WhatsApp is not connected yet.</div>
+                        <div className="mt-1 text-amber-100/75">
+                          Wait for WhatsApp to reconnect. If it keeps failing, reopen QR pairing.
+                        </div>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          <a
+                            href="/connections"
+                            className="inline-flex h-8 items-center justify-center rounded-lg bg-[#3EE88A] px-3 text-[10px] font-bold text-black transition-colors hover:bg-[#35d47c]"
+                          >
+                            Open Connection Center
+                          </a>
+                          <a
+                            href="/qr"
+                            className="inline-flex h-8 items-center justify-center rounded-lg border border-white/10 bg-zinc-900 px-3 text-[10px] font-bold text-zinc-200 transition-colors hover:border-[#3EE88A]/40 hover:text-[#3EE88A]"
+                          >
+                            Open QR
+                          </a>
+                        </div>
                       </div>
                     ) : canReplyWhatsApp ? (
                       <>

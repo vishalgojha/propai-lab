@@ -10129,7 +10129,7 @@ async def audit_groups_v2(q: str = "", status: str = ""):
             "parsed": parse_group_name(name),
         })
 
-    return groups
+    return {"groups": groups, "total_unique_senders": total_unique_senders}
 
 
 @app.get("/api/audit/groups/{jid}")

@@ -4,7 +4,7 @@ export const dynamic = 'force-dynamic';
 
 import { useEffect, useState } from "react";
 import { Shield, Share2, Lock, EyeOff, Check, AlertCircle, Building2, Users, MessageSquare, UserCheck } from "lucide-react";
-import { getOrgPrivacy, updateOrgPrivacy, OrgPrivacySettings } from "@/lib/api";
+import { getOrgPrivacy, updateOrgPrivacy, getCurrentOrg, OrgPrivacySettings } from "@/lib/api";
 
 export default function PrivacyPage() {
   const [privacy, setPrivacy] = useState<OrgPrivacySettings | null>(null);
@@ -12,6 +12,7 @@ export default function PrivacyPage() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [orgId, setOrgId] = useState<string | null>(null);
 
   useEffect(() => {
     loadPrivacy();
@@ -19,8 +20,9 @@ export default function PrivacyPage() {
 
   async function loadPrivacy() {
     try {
-      const orgId = "00000000-0000-0000-0000-000000000010";
-      const data = await getOrgPrivacy(orgId);
+      const org = await getCurrentOrg();
+      setOrgId(org.id);
+      const data = await getOrgPrivacy(org.id);
       setPrivacy(data);
     } catch (err) {
       setError("Failed to load privacy settings");
@@ -30,11 +32,10 @@ export default function PrivacyPage() {
   }
 
   async function handleToggle(value: "private" | "shared_market") {
-    if (!privacy || saving) return;
+    if (!privacy || saving || !orgId) return;
     setSaving(true);
     setError(null);
     try {
-      const orgId = "00000000-0000-0000-0000-000000000010";
       const updated = await updateOrgPrivacy(orgId, { privacy_mode: value });
       setPrivacy(updated);
       setSaved(true);
