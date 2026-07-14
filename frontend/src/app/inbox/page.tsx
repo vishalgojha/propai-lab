@@ -928,6 +928,14 @@ function InboxPageInner() {
   // Center Panel States
   const [conversationMessages, setConversationMessages] = useState<api.RawMessage[]>([]);
   const [loadingConv, setLoadingConv] = useState(false);
+  const [replyText, setReplyText] = useState("");
+  const [sendingReply, setSendingReply] = useState(false);
+  const [replyError, setReplyError] = useState("");
+  const [replyStatus, setReplyStatus] = useState("");
+  const [replyAccessLoading, setReplyAccessLoading] = useState(true);
+  const [canReplyWhatsApp, setCanReplyWhatsApp] = useState(false);
+  const [replyDraftLoadedKey, setReplyDraftLoadedKey] = useState("");
+  const [currentTeamMember, setCurrentTeamMember] = useState<api.TeamMember | null>(null);
   const threadEndRef = useRef<HTMLDivElement>(null);
 
   const withThreadTimeout = async <T,>(promise: Promise<T>, ms = 8000): Promise<T> => {
@@ -1334,6 +1342,10 @@ function InboxPageInner() {
         const data = (await api.getInboxSlugs()).filter((s) => s.view_type === "brokers" || s.slug === "brokers");
         setSlugs(data);
         const viewFromUrl = searchParams.get("view");
+        if (viewFromUrl === "groups") {
+          setCurrentSlug("groups");
+          return;
+        }
         if (viewFromUrl === "brokers" && data.some(s => s.slug === viewFromUrl)) {
           setCurrentSlug(viewFromUrl);
         } else if (data.length > 0 && !data.some(s => s.slug === currentSlug)) {
@@ -1896,24 +1908,35 @@ function InboxPageInner() {
       });
 
   const threadFallbackItems: ThreadFallbackItem[] = [
-    ...(activeSlug?.view_type === "brokers" ? [] : groupChats.map((chat) => ({
-      key: String(chat.conversationKey || ""),
-      title: chat.title,
-      subtitle: chat.groupLabel && chat.groupLabel !== chat.title ? chat.groupLabel : "WhatsApp group",
-      latest: chat.latest,
-      count: chat.count,
-      type: "group" as const,
-    }))),
-    ...filteredDirectChats.map((chat) => ({
-      key: String(chat.senderKey || ""),
-      title: chat.name,
-      subtitle:
-        displayGroupName(chat.latest?.group_name)
-        || (resolveMessagePhone(chat.latest) ? displayPhoneString(resolveMessagePhone(chat.latest)) : "Broker evidence"),
-      latest: chat.latest,
-      count: chat.count,
-      type: "direct" as const,
-    })),
+    ...(isWhatsAppGroupsSurface
+      ? groupChats.map((chat) => ({
+          key: String(chat.conversationKey || ""),
+          title: chat.title,
+          subtitle: chat.groupLabel && chat.groupLabel !== chat.title ? chat.groupLabel : "WhatsApp group",
+          latest: chat.latest,
+          count: chat.count,
+          type: "group" as const,
+        }))
+      : [
+          ...(activeSlug?.view_type === "brokers" ? [] : groupChats.map((chat) => ({
+            key: String(chat.conversationKey || ""),
+            title: chat.title,
+            subtitle: chat.groupLabel && chat.groupLabel !== chat.title ? chat.groupLabel : "WhatsApp group",
+            latest: chat.latest,
+            count: chat.count,
+            type: "group" as const,
+          }))),
+          ...filteredDirectChats.map((chat) => ({
+            key: String(chat.senderKey || ""),
+            title: chat.name,
+            subtitle:
+              displayGroupName(chat.latest?.group_name)
+              || (resolveMessagePhone(chat.latest) ? displayPhoneString(resolveMessagePhone(chat.latest)) : "Broker evidence"),
+            latest: chat.latest,
+            count: chat.count,
+            type: "direct" as const,
+          })),
+        ]),
   ]
     .filter((item) => Boolean(item.key))
     .sort((a, b) => (messageDateValue(b.latest)?.getTime() || 0) - (messageDateValue(a.latest)?.getTime() || 0));
@@ -2008,6 +2031,180 @@ function InboxPageInner() {
       : selectedMsg?.sender || "";
   const selectedCount =
     selectedMsg && "message_count" in selectedMsg ? selectedMsg.message_count : conversationMessages.length;
+  const isWhatsAppGroupsSurface = searchParams.get("view") === "groups" || currentSlug === "groups";
+  const selectedConversationJid = useMemo(() => {
+    if (!selectedMsg) return "";
+    const candidate = (
+      selectedMsg.chat_id ||
+      ("conversation_key" in selectedMsg ? selectedMsg.conversation_key : "") ||
+      selectedMsg.sender_jid ||
+      (isRawWhatsAppId(selectedMsg.group_name) ? selectedMsg.group_name : "")
+    ).trim();
+    return candidate;
+  }, [selectedMsg]);
+  const replyTargetMessage = useMemo(() => {
+    if (!selectedMsg) return null;
+    const selectedId = selectedMsg.id;
+    const inThread = selectedId ? conversationMessages.find((item) => item.id === selectedId) : null;
+    if (inThread) return inThread;
+    return conversationMessages.length > 0 ? conversationMessages[conversationMessages.length - 1] : selectedMsg;
+  }, [conversationMessages, selectedMsg]);
+  const replyFallbackPhone = normalizeRealPhone(resolveMessagePhone(selectedMsg) || phoneFromJid(selectedConversationJid));
+  const replyDraftKey = selectedConversationJid ? `propai-inbox-draft:${selectedConversationJid}` : "";
+
+  useEffect(() => {
+    setReplyError("");
+    setReplyStatus("");
+  }, [selectedConversationJid]);
+
+  useEffect(() => {
+    if (!replyDraftKey) {
+      setReplyText("");
+      setReplyDraftLoadedKey("");
+      return;
+    }
+    try {
+      const stored = window.localStorage.getItem(replyDraftKey);
+      setReplyText(stored || "");
+    } catch {
+      setReplyText("");
+    }
+    setReplyDraftLoadedKey(replyDraftKey);
+  }, [replyDraftKey]);
+
+  useEffect(() => {
+    if (!replyDraftKey || replyDraftLoadedKey !== replyDraftKey) return;
+    try {
+      if (replyText.trim()) {
+        window.localStorage.setItem(replyDraftKey, replyText);
+      } else {
+        window.localStorage.removeItem(replyDraftKey);
+      }
+    } catch {
+      // Ignore local storage failures in private mode / restricted browsers.
+    }
+  }, [replyDraftKey, replyDraftLoadedKey, replyText]);
+
+  useEffect(() => {
+    if (!replyStatus) return;
+    const timer = window.setTimeout(() => setReplyStatus(""), 2500);
+    return () => window.clearTimeout(timer);
+  }, [replyStatus]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadReplyAccess = async () => {
+      setReplyAccessLoading(true);
+      try {
+        const member = await api.getCurrentTeamMember();
+        if (!cancelled) {
+          setCurrentTeamMember(member);
+          setCanReplyWhatsApp((member.permission_keys || []).includes("reply_whatsapp"));
+        }
+      } catch (e) {
+        console.error("Failed to load reply permissions:", e);
+        if (!cancelled) {
+          setCurrentTeamMember(null);
+          setCanReplyWhatsApp(false);
+        }
+      } finally {
+        if (!cancelled) setReplyAccessLoading(false);
+      }
+    };
+    void loadReplyAccess();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const handleSendReply = useCallback(async () => {
+    const text = replyText.trim();
+    if (!text || sendingReply || !selectedConversationJid || !canReplyWhatsApp) return;
+
+    setSendingReply(true);
+    setReplyError("");
+    setReplyStatus("");
+
+    const quoted = replyTargetMessage;
+    const nowIso = new Date().toISOString();
+
+    try {
+      await api.sendMessage({
+        remote_jid: selectedConversationJid,
+        text,
+        ...(quoted?.id
+          ? {
+              quoted_message_id: String(quoted.id),
+              quoted_remote_jid:
+                (quoted.chat_id ||
+                  ("conversation_key" in quoted ? quoted.conversation_key : "") ||
+                  selectedConversationJid).trim(),
+              quoted_participant: quoted.sender_jid || quoted.sender_phone || "",
+              quoted_from_me: quoted.from_me === true || quoted.from_me === 1,
+            }
+          : {}),
+      });
+
+      const optimisticMessage: api.RawMessage = {
+        id: Number(`${Date.now()}`),
+        chat_id: selectedConversationJid,
+        chat_type: selectedMsg?.chat_type || selectedMsg?.conversation_type || (isGroupConversationSelected ? "group" : "direct"),
+        chat_name: selectedMsg?.chat_name || selectedTitle || "",
+        conversation_type: selectedMsg?.conversation_type || selectedMsg?.chat_type || (isGroupConversationSelected ? "group" : "direct"),
+        conversation_key: selectedConversationJid,
+        conversation_name: selectedMsg?.conversation_name || selectedMsg?.chat_name || selectedTitle || "",
+        group_name: selectedMsg?.group_name || selectedConversationJid,
+        sender: "You",
+        sender_jid: selectedConversationJid,
+        sender_phone: replyFallbackPhone || "",
+        broker_name: selectedMsg?.broker_name || "",
+        broker_phone: replyFallbackPhone || "",
+        building_name: selectedMsg?.building_name || "",
+        micro_market: selectedMsg?.micro_market || "",
+        landmark_name: selectedMsg?.landmark_name || "",
+        parsed_intent: selectedMsg?.parsed_intent || "",
+        message: text,
+        message_type: "text",
+        timestamp: nowIso,
+        source: "propai-web",
+        event_id: `local-${Date.now()}`,
+        message_uid: `local-${Date.now()}`,
+        raw_payload: JSON.stringify({ local: true, remote_jid: selectedConversationJid }),
+        synced_at: nowIso,
+        pipeline_version: "propai-web-send",
+        from_me: true,
+        created_at: nowIso,
+      };
+      setConversationMessages((prev) => [...prev, optimisticMessage]);
+      setReplyText("");
+      if (replyDraftKey) {
+        try {
+          window.localStorage.removeItem(replyDraftKey);
+        } catch {
+          // Ignore local storage failures.
+        }
+      }
+      setReplyStatus("Message sent");
+    } catch (e: any) {
+      setReplyError(e?.message || "Failed to send reply");
+      if (replyFallbackPhone) {
+        setReplyStatus("Send failed. Open WhatsApp to continue.");
+      }
+    } finally {
+      setSendingReply(false);
+    }
+  }, [
+    isGroupConversationSelected,
+    replyFallbackPhone,
+    replyTargetMessage,
+    replyText,
+    replyDraftKey,
+    selectedConversationJid,
+    selectedMsg,
+    sendingReply,
+    selectedTitle,
+    canReplyWhatsApp,
+  ]);
 
   // 3. Load Conversation Thread (Center Panel)
   const selectConversation = async (msg: api.RawMessage | api.InboxThread) => {
@@ -2507,8 +2704,14 @@ function InboxPageInner() {
           <div className="p-3 sm:p-4 border-b border-white/10 space-y-2 sm:space-y-3">
             <div className="flex items-center justify-between">
               <div>
-                <div className="text-sm font-bold tracking-wider text-white uppercase">Market Inbox</div>
-                <div className="hidden sm:block text-[10px] text-zinc-500 mt-0.5">WhatsApp conversations with PropAI memory</div>
+                <div className="text-sm font-bold tracking-wider text-white uppercase">
+                  {isWhatsAppGroupsSurface ? "WhatsApp Groups" : "Market Inbox"}
+                </div>
+                <div className="hidden sm:block text-[10px] text-zinc-500 mt-0.5">
+                  {isWhatsAppGroupsSurface
+                    ? "Raw WhatsApp groups with inline PropAI composer"
+                    : "WhatsApp conversations with PropAI memory"}
+                </div>
               </div>
               <button
                 onClick={() => {
@@ -3057,6 +3260,22 @@ function InboxPageInner() {
                 </div>
 
                 <div className="flex items-center gap-1">
+                  <div
+                    className={`hidden sm:inline-flex items-center rounded-full border px-2 py-1 text-[10px] font-bold uppercase tracking-wider ${
+                      replyAccessLoading
+                        ? "border-white/10 bg-white/5 text-zinc-500"
+                        : canReplyWhatsApp
+                          ? "border-emerald-400/20 bg-emerald-400/10 text-emerald-300"
+                          : "border-amber-500/20 bg-amber-500/10 text-amber-300"
+                    }`}
+                    title={currentTeamMember?.name ? `${currentTeamMember.name}` : undefined}
+                  >
+                    {replyAccessLoading
+                      ? "Checking access"
+                      : canReplyWhatsApp
+                        ? `Can send${currentTeamMember?.name ? ` · ${currentTeamMember.name}` : ""}`
+                        : `View only${currentTeamMember?.name ? ` · ${currentTeamMember.name}` : ""}`}
+                  </div>
                   {!isGroupConversationSelected && resolveMessagePhone(selectedMsg) && (
                     <a
                       href={getWaLink(resolveMessagePhone(selectedMsg))}
@@ -3405,6 +3624,103 @@ function InboxPageInner() {
                     <div ref={threadEndRef} />
                   </div>
                 )}
+              </div>
+              <div className="border-t border-white/10 bg-black/90 px-4 py-3">
+                <div className="flex items-start gap-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="mb-2 flex items-center justify-between gap-3">
+                      <div className="text-[10px] font-bold uppercase tracking-[0.28em] text-zinc-500">
+                        Reply inside PropAI
+                      </div>
+                      <div className="text-[10px] text-zinc-500">
+                        {selectedConversationJid
+                          ? isGroupConversationSelected
+                            ? "Group reply"
+                            : "Direct reply"
+                          : "No destination"}
+                      </div>
+                    </div>
+
+                    {replyTargetMessage && (
+                      <div className="mb-2 rounded-xl border border-white/10 bg-zinc-950 px-3 py-2 text-[11px] text-zinc-400">
+                        <div className="font-semibold text-zinc-200">
+                          Replying to {resolveMessageSenderName(replyTargetMessage)}
+                        </div>
+                        <div className="mt-0.5 line-clamp-2">
+                          {(replyTargetMessage.message || "").trim() || "Selected conversation"}
+                        </div>
+                      </div>
+                    )}
+                    {replyAccessLoading ? (
+                      <div className="rounded-xl border border-white/10 bg-zinc-950 px-3 py-3 text-[11px] text-zinc-400">
+                        Checking reply access...
+                      </div>
+                    ) : canReplyWhatsApp ? (
+                      <>
+                        <textarea
+                          value={replyText}
+                          onChange={(e) => setReplyText(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" && !e.shiftKey) {
+                              e.preventDefault();
+                              void handleSendReply();
+                            }
+                          }}
+                          placeholder={
+                            selectedConversationJid
+                              ? "Type a reply. Shift+Enter adds a new line."
+                              : "Select a conversation to reply."
+                          }
+                          rows={3}
+                          disabled={sendingReply || !selectedConversationJid}
+                          className="w-full resize-none rounded-xl border border-white/10 bg-zinc-950 px-3 py-2.5 text-sm text-white placeholder-zinc-500 outline-none transition-colors focus:border-[#3EE88A]/50 focus:ring-1 focus:ring-[#3EE88A]/30 disabled:cursor-not-allowed disabled:opacity-60"
+                        />
+
+                        <div className="mt-2 flex items-center justify-between gap-3">
+                          <div className="min-h-[1rem] text-[11px]">
+                            {replyError ? (
+                              <span className="text-red-400">{replyError}</span>
+                            ) : replyStatus ? (
+                              <span className="text-[#3EE88A]">{replyStatus}</span>
+                            ) : selectedConversationJid ? (
+                              <span className="text-zinc-500">Replies are sent through the connected WhatsApp number.</span>
+                            ) : null}
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {replyFallbackPhone && (
+                              <a
+                                href={getWaLinkWithRecall(replyFallbackPhone, replyText || replyTargetMessage?.message || "")}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-white/10 bg-zinc-800 px-3 text-[11px] font-semibold text-zinc-200 transition-colors hover:border-[#3EE88A]/40 hover:text-[#3EE88A]"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <MessageSquare className="h-3.5 w-3.5" strokeWidth={1.8} />
+                                Open WhatsApp
+                              </a>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => void handleSendReply()}
+                              disabled={sendingReply || !replyText.trim() || !selectedConversationJid}
+                              className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-[#3EE88A] px-4 text-[11px] font-bold text-black transition-colors hover:bg-[#35d47c] disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              <Send className="h-3.5 w-3.5" />
+                              {sendingReply ? "Sending..." : "Send"}
+                            </button>
+                          </div>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 px-3 py-3 text-[11px] text-amber-100">
+                        <div className="font-semibold">Direct sending is disabled for your account.</div>
+                        <div className="mt-1 text-amber-100/75">
+                          You can still open WhatsApp and continue there, or ask an admin to grant Reply from WhatsApp.
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
               </div>
             </>
           ) : (

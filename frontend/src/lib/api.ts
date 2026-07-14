@@ -237,6 +237,22 @@ export function getChatMessages(chatId: string, limit = 300, offset = 0) {
   return fetchJSON<RawMessage[]>(`/chats/${encodeURIComponent(chatId)}/messages?${params.toString()}`);
 }
 
+export interface SendMessageRequest {
+  remote_jid: string;
+  text: string;
+  quoted_message_id?: string;
+  quoted_remote_jid?: string;
+  quoted_participant?: string;
+  quoted_from_me?: boolean;
+}
+
+export function sendMessage(payload: SendMessageRequest) {
+  return fetchJSON<any>("/send", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
 export function getParsed(limit = 50, offset = 0) {
   return fetchJSON<ParsedObservation[]>(`/parsed?limit=${limit}&offset=${offset}`);
 }
@@ -963,6 +979,7 @@ export interface AuditGroupCard {
   unknown_locations: number;
   coverage: number;
   active_brokers: number;
+  senders_count: number;
   duplicate_pct: number;
   parsed: { city?: string; area?: string };
 }
@@ -1346,6 +1363,14 @@ export async function getTeamMembers(): Promise<{ members: TeamMember[] }> {
   return res.json();
 }
 
+export async function getCurrentTeamMember(): Promise<TeamMember> {
+  const res = await fetch("/api/workspace/me", {
+    headers: { "Content-Type": "application/json" },
+  });
+  if (!res.ok) throw new Error("Failed to fetch current team member");
+  return res.json();
+}
+
 // ── Internal Notes ──────────────────────────────────────────────
 
 export interface Note {
@@ -1442,4 +1467,25 @@ export function setExcludedGroups(jids: string[]) {
   });
 }
 
+// ── System Usage ──────────────────────────────────────────────
+
+export interface UsageStats {
+  total_messages: number;
+  total_parsed: number;
+  total_listings: number;
+  total_requirements: number;
+  total_brokers: number;
+  total_buildings: number;
+  total_groups: number;
+  total_chat_sessions: number;
+  total_chat_messages: number;
+  ai_requests_today: number;
+  messages_today: number;
+  last_sync: string | null;
+  broker_phone: string | null;
+}
+
+export function getUsageStats() {
+  return fetchJSON<UsageStats>("/usage");
+}
 

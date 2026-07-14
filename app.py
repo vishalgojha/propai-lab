@@ -1911,18 +1911,21 @@ def _resolve_group_name(jid: str) -> str:
     # Group JIDs
     if jid.endswith("@g.us"):
         try:
-            job = storage.get_job_by_group_jid(jid)
-            if job and job.group_name and job.group_name != jid:
-                return job.group_name
+            if _table_exists("sync_jobs"):
+                row = storage.db.execute(
+                    "SELECT group_name FROM sync_jobs WHERE group_id = ? AND group_name IS NOT NULL AND group_name != '' LIMIT 1",
+                    (jid,),
+                ).fetchone()
+                if row and row[0] and row[0] != jid:
+                    return row[0]
         except Exception:
             pass
-        return jid
+        return _group_jid_to_name(jid)
     
     # DM JIDs (person JIDs) — empty string = direct conversation in inbox
     if jid.endswith("@s.whatsapp.net") or jid.endswith("@lid"):
         return ""
     
-    return jid
     return jid
 
 
@@ -5484,7 +5487,8 @@ class SendMessageRequest(BaseModel):
 
 
 @app.post("/api/send")
-async def send_message(req: SendMessageRequest):
+async def send_message(req: SendMessageRequest, member: dict = Depends(get_current_team_member)):
+    check_permission(member, "reply_whatsapp")
     text = req.text.strip()
     if not text:
         return JSONResponse(status_code=400, content={"success": False, "error": "text is required"})
@@ -5506,16 +5510,71 @@ async def send_message(req: SendMessageRequest):
         async with httpx.AsyncClient(timeout=30) as client:
             response = await client.post(f"{ingestor_url}/send-message", json=payload)
 
+        response_body = {}
+        if response.text:
+            try:
+                response_body = response.json()
+            except Exception:
+                response_body = {"raw": response.text[:1000]}
+
+        try:
+            storage.log_activity(
+                team_member_id=member["id"],
+                action="reply_whatsapp_sent" if response.status_code < 400 else "reply_whatsapp_failed",
+                target_type="whatsapp_conversation",
+                target_id=req.remote_jid,
+                details={
+                    "surface": "inbox",
+                    "reply_text": text[:500],
+                    "quoted_message_id": req.quoted_message_id or "",
+                    "quoted_remote_jid": req.quoted_remote_jid or "",
+                    "quoted_participant": req.quoted_participant or "",
+                    "quoted_from_me": bool(req.quoted_from_me),
+                    "transport_status_code": response.status_code,
+                    "transport_response": response_body,
+                },
+            )
+        except Exception as exc:
+            print(f"[activity-log] failed to record whatsapp reply: {exc}", flush=True)
+
         return JSONResponse(
             status_code=response.status_code,
-            content=response.json() if response.text else {"success": False, "error": "empty response"},
+            content=response_body if response.text else {"success": False, "error": "empty response"},
         )
     except httpx.ConnectError:
+        try:
+            storage.log_activity(
+                team_member_id=member["id"],
+                action="reply_whatsapp_failed",
+                target_type="whatsapp_conversation",
+                target_id=req.remote_jid,
+                details={
+                    "surface": "inbox",
+                    "reply_text": text[:500],
+                    "error": "Cannot reach WhatsApp ingestor",
+                },
+            )
+        except Exception as exc:
+            print(f"[activity-log] failed to record whatsapp reply error: {exc}", flush=True)
         return JSONResponse(
             status_code=502,
             content={"success": False, "error": "Cannot reach WhatsApp ingestor. Is WhatsApp connected?"},
         )
     except Exception as exc:
+        try:
+            storage.log_activity(
+                team_member_id=member["id"],
+                action="reply_whatsapp_failed",
+                target_type="whatsapp_conversation",
+                target_id=req.remote_jid,
+                details={
+                    "surface": "inbox",
+                    "reply_text": text[:500],
+                    "error": str(exc),
+                },
+            )
+        except Exception as log_exc:
+            print(f"[activity-log] failed to record whatsapp reply exception: {log_exc}", flush=True)
         return JSONResponse(
             status_code=500,
             content={"success": False, "error": str(exc)},
@@ -9428,9 +9487,19 @@ def _group_jid_to_name(jid: str) -> str:
     if not value:
         return "Unknown"
     try:
+        if _table_exists("sync_jobs"):
+            row = storage.db.execute(
+                "SELECT group_name FROM sync_jobs WHERE group_id = ? AND group_name IS NOT NULL AND group_name != '' LIMIT 1",
+                (value,),
+            ).fetchone()
+            if row:
+                return row[0]
+    except Exception:
+        pass
+    try:
         if _table_exists("source_sync_jobs"):
             row = storage.db.execute(
-                "SELECT group_name FROM source_sync_jobs WHERE group_id = ? AND group_name != '' LIMIT 1",
+                "SELECT group_name FROM source_sync_jobs WHERE group_id = ? AND group_name IS NOT NULL AND group_name != '' LIMIT 1",
                 (value,),
             ).fetchone()
             if row:
@@ -9936,6 +10005,28 @@ async def audit_groups_v2(q: str = "", status: str = ""):
             "markets_count": 0, "unknown_locations": 0, "identities_count": 0,
         }
 
+    # ── Query 1b: include groups from sync_jobs that have no raw_messages yet ──
+    try:
+        if _table_exists("sync_jobs"):
+            sj_rows = _audit_rows(
+                "SELECT group_id, group_name FROM sync_jobs "
+                "WHERE group_id IS NOT NULL AND group_id != '' "
+                "AND source = 'whatsapp'"
+            )
+            for row in sj_rows:
+                gid = row[0] or ""
+                gname = row[1] or ""
+                if gid and gid not in stats:
+                    stats[gid] = {
+                        "messages": 0,
+                        "senders_count": 0,
+                        "last_activity": "",
+                        "observations": 0, "requirements": 0, "listings": 0,
+                        "markets_count": 0, "unknown_locations": 0, "identities_count": 0,
+                    }
+    except Exception:
+        pass
+
     # ── Query 2: aggregate parsed_output by group_name ──
     if has_parsed and stats:
         po_rows = _audit_rows(
@@ -9999,6 +10090,7 @@ async def audit_groups_v2(q: str = "", status: str = ""):
             "unknown_locations": unknown_locations,
             "coverage": coverage,
             "active_brokers": g["identities_count"],
+            "senders_count": g["senders_count"],
             "duplicate_pct": 0,
             "parsed": parse_group_name(name),
         })
@@ -12118,6 +12210,28 @@ async def get_current_member(x_team_member_id: int = Header(None)) -> dict:
     m["permission_keys"] = storage._perm_keys(m["permissions"])
     return m
 
+
+async def get_current_team_member(user: dict = Depends(require_user)) -> dict:
+    email = (user.get("email") or "").strip().lower()
+    phone = (user.get("phone") or "").strip()
+    member = storage.get_team_member_by_email(email) if email else None
+    if not member and phone:
+        members = storage.list_team_members()
+        normalized_phone = phone.replace("+", "")
+        member = next(
+            (
+                m
+                for m in members
+                if (m.get("phone") or "").strip().replace("+", "") == normalized_phone
+                and m.get("is_active")
+            ),
+            None,
+        )
+    if not member or not member.get("is_active"):
+        raise HTTPException(403, "No active team member is linked to this account")
+    member["permission_keys"] = storage._perm_keys(member["permissions"])
+    return member
+
 def check_permission(member: dict, perm_key: str):
     if perm_key not in member.get("permission_keys", []):
         raise HTTPException(403, f"Missing permission: {perm_key}")
@@ -12140,6 +12254,11 @@ _PERMISSION_DEFS = [
 @app.get("/api/workspace/permissions")
 async def workspace_permissions():
     return {"permissions": _PERMISSION_DEFS}
+
+
+@app.get("/api/workspace/me")
+async def workspace_me(member: dict = Depends(get_current_team_member)):
+    return member
 
 
 @app.get("/api/workspace/members")
@@ -12488,6 +12607,45 @@ async def create_note(
     )
     storage.db.commit()
     return {"ok": True}
+
+
+@app.get("/api/usage")
+async def get_usage():
+    """System-wide usage stats for the sidebar page."""
+    stats = storage.get_stats()
+    groups = _count_table("source_sync_jobs")
+    chat_sessions = _count_table("ai_chat_sessions")
+    chat_messages = _count_table("ai_chat_messages")
+    ai_today = _today_count("ai_usage_log")
+    messages_today = _today_count("raw_messages", "timestamp")
+    last_sync_row = storage.db.execute(
+        "SELECT MAX(timestamp) AS ts FROM raw_messages"
+    ).fetchone()
+    last_sync = last_sync_row["ts"] if last_sync_row else None
+    broker_phone = None
+    try:
+        row = storage.db.execute(
+            "SELECT value FROM companion_config WHERE key = 'whatsapp_business_number'"
+        ).fetchone()
+        if row and row["value"]:
+            broker_phone = row["value"]
+    except Exception:
+        pass
+    return {
+        "total_messages": stats.get("total_messages", 0),
+        "total_parsed": stats.get("total_parsed", 0),
+        "total_listings": stats.get("total_listings", 0),
+        "total_requirements": stats.get("total_requirements", 0),
+        "total_brokers": stats.get("total_brokers", 0),
+        "total_buildings": stats.get("total_buildings", 0),
+        "total_groups": groups,
+        "total_chat_sessions": chat_sessions,
+        "total_chat_messages": chat_messages,
+        "ai_requests_today": ai_today,
+        "messages_today": messages_today,
+        "last_sync": last_sync,
+        "broker_phone": broker_phone,
+    }
 
 
 @app.delete("/api/notes/{note_id}")

@@ -42,6 +42,7 @@ const navSections = [
     title: "Market",
     items: [
       { href: "/inbox", label: "Market Inbox", icon: MessageSquare },
+      { href: "/whatsapp-groups", label: "WhatsApp Groups", icon: MessageSquare },
       { href: "/format-issues", label: "Format Issues", icon: AlertTriangle },
       { href: "/chat", label: "AI Chat", icon: Brain },
     ],
@@ -65,6 +66,7 @@ const navSections = [
       { href: "/waba", label: "WABA API", icon: Key },
       { href: "/workspace/llm-providers", label: "AI Providers", icon: Radar },
       { href: "/trainer", label: "AI Learning", icon: GraduationCap },
+      { href: "/usage", label: "Usage", icon: BarChart3 },
     ],
   },
 ];

@@ -531,6 +531,16 @@ class SupabaseStorage(Storage):
         except Exception:
             return None
 
+    def get_team_member_by_email(self, email: str) -> dict | None:
+        email = (email or "").strip().lower()
+        if not email:
+            return None
+        try:
+            res = self.client.table("team_members").select("*").ilike("email", email).limit(1).execute()
+            return res.data[0] if res.data else None
+        except Exception:
+            return None
+
     def create_team_member(self, name: str, email: str = "", phone: str = "",
                            role: str = "member", permission_keys: list[str] | None = None,
                            linked_broker_phone: str | None = None) -> dict:
@@ -1646,6 +1656,82 @@ class SupabaseStorage(Storage):
             "message_types": {},
         }
 
+    def log_activity(
+        self,
+        team_member_id: int,
+        action: str,
+        target_type: str = "",
+        target_id: str = "",
+        details: Any | None = None,
+        ip_address: str = "",
+    ) -> int:
+        parsed_details: dict[str, Any]
+        if isinstance(details, dict):
+            parsed_details = details
+        elif isinstance(details, str) and details:
+            try:
+                parsed_details = json.loads(details)
+            except Exception:
+                parsed_details = {"value": details}
+        else:
+            parsed_details = {}
+        payload = {
+            "team_member_id": team_member_id,
+            "action": action,
+            "target_type": target_type or "",
+            "target_id": target_id or "",
+            "details": parsed_details,
+            "ip_address": ip_address or "",
+        }
+        res = self.client.table("activity_log").insert(payload).execute()
+        if res.data:
+            try:
+                return int(res.data[0]["id"])
+            except Exception:
+                return 0
+        return 0
+
+    def list_activity(
+        self,
+        limit: int = 50,
+        offset: int = 0,
+        action: str = "",
+        team_member_id: int | None = None,
+    ) -> list[dict]:
+        try:
+            q = self.client.table("activity_log").select("*")
+            if action:
+                q = q.ilike("action", f"%{action}%")
+            if team_member_id:
+                q = q.eq("team_member_id", team_member_id)
+            res = q.order("created_at", desc=True).limit(limit).offset(offset).execute()
+            rows = res.data or []
+            member_ids = {int(row.get("team_member_id")) for row in rows if row.get("team_member_id") is not None}
+            member_map = {
+                int(m.get("id")): m
+                for m in self.list_team_members()
+                if m.get("id") is not None and int(m.get("id")) in member_ids
+            }
+            out: list[dict] = []
+            for row in rows:
+                details = row.get("details")
+                if isinstance(details, dict):
+                    details_value = json.dumps(details)
+                elif details is None:
+                    details_value = ""
+                else:
+                    details_value = str(details)
+                member = member_map.get(row.get("team_member_id")) or {}
+                out.append({
+                    **row,
+                    "details": details_value,
+                    "member_name": member.get("name") or "System",
+                    "member_role": member.get("role") or "",
+                })
+            return out
+        except Exception:
+            return []
+
     def dashboard_feed(self, limit: int = 20) -> list[dict]:
         res = self.client.table("parsed_output").select("*").order("created_at", desc=True).limit(limit).execute()
         return res.data
@@ -2310,5 +2396,3 @@ class SupabaseStorage(Storage):
         except Exception as e:
             print(f"Error getting broker summary: {e}")
             return empty
-
-

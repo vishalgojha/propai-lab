@@ -10,6 +10,7 @@ const navSections = [
     title: "Market",
     items: [
       { href: "/inbox", label: "Market Inbox" },
+      { href: "/whatsapp-groups", label: "WhatsApp Groups" },
       { href: "/format-issues", label: "Format Issues" },
       { href: "/chat", label: "AI Chat" },
     ],
@@ -33,6 +34,7 @@ const navSections = [
       { href: "/waba", label: "WABA API" },
       { href: "/workspace/llm-providers", label: "AI Providers" },
       { href: "/trainer", label: "AI Learning" },
+      { href: "/usage", label: "Usage" },
     ],
   },
 ];
