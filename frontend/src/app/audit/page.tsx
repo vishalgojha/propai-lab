@@ -107,13 +107,6 @@ function isListing(text: string) {
   return /\b(available|on rent|for rent|for sale|on sale|distress|outright|inspection|call|contact)\b/i.test(text);
 }
 
-function cleanPreview(value?: string) {
-  return String(value || "")
-    .replace(/[\p{Extended_Pictographic}\uFE0F]/gu, "")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
 function Card({ children, className = "" }: { children: ReactNode; className?: string }) {
   return <div className={`rounded-lg border border-white/10 bg-white/[0.025] ${className}`}>{children}</div>;
 }
@@ -397,21 +390,9 @@ export default function AuditPage() {
 
           <SectionTitle
             icon={<Users className="h-4 w-4" strokeWidth={1.8} />}
-            title="Latest Captured Posts"
-            sub="A quick sanity check that WhatsApp sync is still feeding the system."
+            title="Parser Controls"
+            sub="Parser-on means PropAI can extract real estate opportunities from the group."
           />
-          <Card className="overflow-hidden">
-            {state.raw.slice(0, 8).map((message) => (
-              <div key={message.id} className="border-b border-white/[0.06] px-4 py-3 last:border-b-0">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="truncate text-xs font-semibold text-white">{groupName(message)}</div>
-                  <div className="shrink-0 font-mono text-[10px] text-zinc-500">{timeAgo(message.timestamp || message.created_at)}</div>
-                </div>
-                <div className="mt-1 line-clamp-2 text-xs leading-5 text-zinc-400">{cleanPreview(message.message) || "No text content"}</div>
-              </div>
-            ))}
-            {state.raw.length === 0 && <div className="p-6 text-sm text-zinc-500">No latest posts loaded.</div>}
-          </Card>
         </div>
       </section>
 

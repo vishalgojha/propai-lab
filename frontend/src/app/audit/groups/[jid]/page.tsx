@@ -52,7 +52,6 @@ export default function GroupDetailPage() {
         <div>
           <a href="/audit" className="text-[10px] text-zinc-500 hover:text-white mb-1 block">← WhatsApp Audit</a>
           <h1 className="text-lg font-semibold">{group.name}</h1>
-          <div className="text-[11px] font-mono text-zinc-500">{group.jid}</div>
         </div>
         <div className="flex gap-3 items-center">
           <div className="text-right">
