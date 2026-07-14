@@ -163,6 +163,7 @@ export default function PrivacyPage() {
                   </div>
                 );
               })}
+            </div>
             <p className="mt-4 text-xs text-zinc-500 text-center">
               Unchecked = group is opted OUT (never parsed, never shared).
             </p>
