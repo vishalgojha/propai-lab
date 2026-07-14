@@ -2245,42 +2245,46 @@ async def get_raw_messages(limit: int = 50, offset: int = 0,
     payload = [asdict(r) for r in rows]
     raw_ids = [row["id"] for row in payload]
     if raw_ids:
-        placeholders = ",".join("?" for _ in raw_ids)
-        parsed_rows = storage.db.execute(
-            f"""
-            SELECT raw_message_id, id AS parsed_id, intent,
-                   broker_name, broker_phone,
-                   building_name, micro_market, landmark_name, location_raw
-            FROM parsed_output
-            WHERE raw_message_id IN ({placeholders})
-              AND (
-                (broker_phone IS NOT NULL AND TRIM(broker_phone) != '')
-                OR (broker_name IS NOT NULL AND TRIM(broker_name) != '')
-                OR (building_name IS NOT NULL AND TRIM(building_name) != '')
-                OR (micro_market IS NOT NULL AND TRIM(micro_market) != '')
-                OR (landmark_name IS NOT NULL AND TRIM(landmark_name) != '')
-                OR (location_raw IS NOT NULL AND TRIM(location_raw) != '')
-              )
-            ORDER BY confidence DESC, id DESC
-            """,
-            raw_ids,
-        ).fetchall()
-        parsed_by_raw: dict[int, dict] = {}
-        for row in parsed_rows:
-            raw_id = row["raw_message_id"]
-            if raw_id not in parsed_by_raw:
-                parsed_by_raw[raw_id] = dict(row)
-        for row in payload:
-            parsed = parsed_by_raw.get(row["id"])
-            if parsed:
-                row["broker_name"] = parsed.get("broker_name") or ""
-                row["broker_phone"] = parsed.get("broker_phone") or ""
-                row["parsed_id"] = parsed.get("parsed_id")
-                row["parsed_intent"] = parsed.get("intent") or ""
-                row["building_name"] = parsed.get("building_name") or ""
-                row["micro_market"] = parsed.get("micro_market") or ""
-                row["landmark_name"] = parsed.get("landmark_name") or ""
-                row["location_raw"] = parsed.get("location_raw") or ""
+        try:
+            placeholders = ",".join("?" for _ in raw_ids)
+            parsed_rows = storage.db.execute(
+                f"""
+                SELECT raw_message_id, id AS parsed_id, intent,
+                       broker_name, broker_phone,
+                       building_name, micro_market, landmark_name, location_raw
+                FROM parsed_output
+                WHERE raw_message_id IN ({placeholders})
+                  AND (
+                    (broker_phone IS NOT NULL AND TRIM(broker_phone) != '')
+                    OR (broker_name IS NOT NULL AND TRIM(broker_name) != '')
+                    OR (building_name IS NOT NULL AND TRIM(building_name) != '')
+                    OR (micro_market IS NOT NULL AND TRIM(micro_market) != '')
+                    OR (landmark_name IS NOT NULL AND TRIM(landmark_name) != '')
+                    OR (location_raw IS NOT NULL AND TRIM(location_raw) != '')
+                  )
+                ORDER BY confidence DESC, id DESC
+                """,
+                raw_ids,
+            ).fetchall()
+            parsed_by_raw: dict[int, dict] = {}
+            for row in parsed_rows:
+                raw_id = row["raw_message_id"]
+                if raw_id not in parsed_by_raw:
+                    parsed_by_raw[raw_id] = dict(row)
+            for row in payload:
+                parsed = parsed_by_raw.get(row["id"])
+                if parsed:
+                    row["broker_name"] = parsed.get("broker_name") or ""
+                    row["broker_phone"] = parsed.get("broker_phone") or ""
+                    row["parsed_id"] = parsed.get("parsed_id")
+                    row["parsed_intent"] = parsed.get("intent") or ""
+                    row["building_name"] = parsed.get("building_name") or ""
+                    row["micro_market"] = parsed.get("micro_market") or ""
+                    row["landmark_name"] = parsed.get("landmark_name") or ""
+                    row["location_raw"] = parsed.get("location_raw") or ""
+        except Exception as e:
+            import logging
+            logging.warning(f"[api/raw] parsed_output enrichment failed: {e}")
     return payload
 
 
@@ -4847,7 +4851,7 @@ def _requirement_match_response(args: dict) -> dict:
             JOIN raw_messages r ON r.id = p.raw_message_id
             WHERE {sql_where}
             GROUP BY r.id
-            ORDER BY COALESCE(datetime(r.timestamp), datetime(p.created_at), datetime(r.created_at)) DESC, p.id DESC
+            ORDER BY COALESCE(r.timestamp, p.created_at, r.created_at) DESC, p.id DESC
             LIMIT ?
             """,
             (*sql_params, max(limit * 3, limit)),

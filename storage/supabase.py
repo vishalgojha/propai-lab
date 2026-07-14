@@ -190,6 +190,20 @@ class _SupabaseDatabaseAdapter:
             translated_sql,
             flags=re.IGNORECASE,
         )
+        # datetime(expr) -> (expr)::timestamptz  (Postgres has no datetime() function)
+        translated_sql = re.sub(
+            r"datetime\(([^)]+)\)",
+            r"(\1)::timestamptz",
+            translated_sql,
+            flags=re.IGNORECASE,
+        )
+        # date(expr) -> (expr)::date  (normalize to Postgres cast)
+        translated_sql = re.sub(
+            r"(?<![:\w])date\(([^)]+)\)",
+            r"(\1)::date",
+            translated_sql,
+            flags=re.IGNORECASE,
+        )
         # Boolean literals
         translated_sql = translated_sql.replace("TRUE", "true").replace("FALSE", "false")
 
