@@ -3019,6 +3019,8 @@ async def dashboard_whatsapp_status():
         "profile": details.get("display_name") or "",
         "status": details.get("connection_state") or "",
         "state": details.get("connection_state") or "",
+        "status_stale": bool(details.get("status_stale")),
+        "connected_since": details.get("connected_since") or None,
     }
 
 
@@ -6361,6 +6363,43 @@ def _mask_secret(value: str = "") -> str:
 
 _memory_status: dict = {}
 _previous_status: dict = {}
+_last_live_connection_status: dict = {}
+_last_live_connection_seen_at: float = 0.0
+_CONNECTION_CACHE_GRACE_SECONDS = 90.0
+
+
+def _normalize_connection_snapshot(status: dict | None) -> dict:
+    status = status or {}
+    connected = bool(status.get("connected"))
+    connection_state = str(status.get("connection_state") or ("open" if connected else "unknown")).lower()
+    return {
+        "connected": connected,
+        "connection_state": connection_state,
+        "instance_name": status.get("instance") or status.get("instance_name") or "propai-whatsapp",
+        "device_name": status.get("device_name") or "WhatsApp ingestor",
+        "phone_number": _display_phone_from_whatsapp_id(status.get("phone_number") or ""),
+        "display_name": status.get("display_name") or "",
+        "connected_since": status.get("connected_since") or None,
+        "last_message_at": status.get("last_message_at") or None,
+        "total_groups": status.get("total_groups"),
+        "messages_captured": status.get("messages_captured"),
+        "status_stale": bool(status.get("status_stale")),
+    }
+
+
+def _should_cache_connection_snapshot(status: dict | None) -> bool:
+    if not status:
+        return False
+    state = str(status.get("connection_state") or "").lower()
+    return bool(status.get("connected")) or state in {"open", "qr", "connecting", "scanning", "reconnecting"}
+
+
+def _cache_connection_snapshot(status: dict | None) -> None:
+    global _last_live_connection_status, _last_live_connection_seen_at
+    if not _should_cache_connection_snapshot(status):
+        return
+    _last_live_connection_status = _normalize_connection_snapshot(status)
+    _last_live_connection_seen_at = time.time()
 
 def _status_file() -> dict:
     # Prefer the file — ingestor writes synchronously, so it's always current.
@@ -6919,6 +6958,7 @@ async def sync_status_update(request: Request):
         body = await request.json()
         _previous_status = _memory_status
         _memory_status = body
+        _cache_connection_snapshot(body)
         return {"ok": True}
     except Exception as e:
         return {"ok": False, "error": str(e)}
@@ -6998,20 +7038,16 @@ async def sync_connection_state():
 def _connection_details() -> dict:
     status = _status_file()
     if _status_has_live_signal(status):
-        connected = bool(status.get("connected"))
-        connection_state = str(status.get("connection_state") or ("open" if connected else "unknown")).lower()
-        return {
-            "connected": connected,
-            "connection_state": connection_state,
-            "instance_name": status.get("instance") or status.get("instance_name") or "propai-whatsapp",
-            "device_name": status.get("device_name") or "WhatsApp ingestor",
-            "phone_number": _display_phone_from_whatsapp_id(status.get("phone_number") or ""),
-            "display_name": status.get("display_name") or "",
-            "connected_since": status.get("connected_since") or None,
-            "last_message_at": status.get("last_message_at") or None,
-            "total_groups": status.get("total_groups"),
-            "messages_captured": status.get("messages_captured"),
-        }
+        _cache_connection_snapshot(status)
+        return _normalize_connection_snapshot(status)
+
+    cached = _last_live_connection_status if _last_live_connection_status else None
+    if cached and _last_live_connection_seen_at > 0:
+        age = time.time() - _last_live_connection_seen_at
+        if age <= _CONNECTION_CACHE_GRACE_SECONDS:
+            stale = dict(cached)
+            stale["status_stale"] = True
+            return stale
 
     if not storage or not hasattr(storage, "db"):
         return {

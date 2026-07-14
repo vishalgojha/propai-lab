@@ -215,7 +215,8 @@ function AppShell({ children }: { children: React.ReactNode }) {
     };
   }, [user?.id]);
 
-  const waConnected = conn?.connected;
+  const waConnected = conn?.connected ?? null;
+  const waStale = conn?.status_stale ?? false;
 
   useEffect(() => {
     if (authLoading) return;
@@ -410,25 +411,34 @@ function AppShell({ children }: { children: React.ReactNode }) {
             href="/connections"
             className="flex items-center gap-2.5 px-2.5 py-2.5 rounded-lg hover:bg-white/5 transition-colors group"
           >
-            {waConnected ? (
+            {waConnected === null ? (
               <div className="relative shrink-0">
-                <Wifi className="w-3.5 h-3.5 text-emerald-400" strokeWidth={1.5} />
-                <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse" />
+                <Wifi className="w-3.5 h-3.5 text-zinc-500" strokeWidth={1.5} />
+                <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 bg-zinc-500 rounded-full animate-pulse" />
+              </div>
+            ) : waConnected ? (
+              <div className="relative shrink-0">
+                <Wifi className={`w-3.5 h-3.5 ${waStale ? "text-amber-400" : "text-emerald-400"}`} strokeWidth={1.5} />
+                <span className={`absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full animate-pulse ${waStale ? "bg-amber-400" : "bg-emerald-400"}`} />
               </div>
             ) : (
               <WifiOff className="w-3.5 h-3.5 text-red-400 shrink-0" strokeWidth={1.5} />
             )}
             <div className="flex-1 min-w-0">
               <div className="text-[12px] font-semibold text-zinc-300 truncate">
-                {waConnected ? (whatsapp?.phone || "WhatsApp Connected") : "WhatsApp Disconnected"}
+                {waConnected === null
+                  ? "Checking WhatsApp"
+                  : waConnected
+                    ? (waStale ? (whatsapp?.phone || "WhatsApp Connected") : (whatsapp?.phone || "WhatsApp Connected"))
+                    : "WhatsApp Disconnected"}
               </div>
               {waConnected && whatsapp?.connected_since && (
                 <div className="text-[10px] text-zinc-500 truncate">
-                  Since {new Date(whatsapp.connected_since).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                  {waStale ? "Reconnecting quietly" : `Since ${new Date(whatsapp.connected_since).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`}
                 </div>
               )}
             </div>
-            <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${waConnected ? "bg-emerald-400" : "bg-red-400"}`} />
+            <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${waConnected === null ? "bg-zinc-500" : waConnected ? (waStale ? "bg-amber-400" : "bg-emerald-400") : "bg-red-400"}`} />
           </a>
         </div>
       </aside>
@@ -454,9 +464,11 @@ function AppShell({ children }: { children: React.ReactNode }) {
                 Offline
               </span>
             )}
-            <a href="/connections" className={`flex items-center gap-1 text-[11px] lg:text-[12px] font-semibold transition-colors ${waConnected ? "text-emerald-300" : "text-amber-300 hover:text-amber-200"}`}>
-              <span className={`w-1.5 h-1.5 lg:w-2 lg:h-2 rounded-full ${waConnected ? "bg-emerald-400 animate-pulse" : "bg-amber-400"}`} />
-              <span className="hidden sm:inline">{waConnected ? "Connected" : "Disconnected"}</span>
+            <a href="/connections" className={`flex items-center gap-1 text-[11px] lg:text-[12px] font-semibold transition-colors ${waConnected === null ? "text-zinc-400 hover:text-zinc-300" : waConnected ? (waStale ? "text-amber-300 hover:text-amber-200" : "text-emerald-300") : "text-amber-300 hover:text-amber-200"}`}>
+              <span className={`w-1.5 h-1.5 lg:w-2 lg:h-2 rounded-full ${waConnected === null ? "bg-zinc-500" : waConnected ? (waStale ? "bg-amber-400 animate-pulse" : "bg-emerald-400 animate-pulse") : "bg-amber-400"}`} />
+              <span className="hidden sm:inline">
+                {waConnected === null ? "Checking" : waConnected ? (waStale ? "Reconnecting" : "Connected") : "Disconnected"}
+              </span>
             </a>
           </div>
           {waConnected && whatsapp?.phone && (

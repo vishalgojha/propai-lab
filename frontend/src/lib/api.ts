@@ -185,6 +185,7 @@ export interface ListingRow {
 export interface ConnectionState {
   state: string;
   connected: boolean;
+  status_stale?: boolean;
 }
 
 export interface WhatsAppStatus {
@@ -194,6 +195,7 @@ export interface WhatsAppStatus {
   instance: string;
   state: string;
   connected_since: string;
+  status_stale?: boolean;
 }
 
 export interface MarketAccessStatus {
@@ -1497,4 +1499,3 @@ export interface UsageStats {
 export function getUsageStats() {
   return fetchJSON<UsageStats>("/usage");
 }
-
