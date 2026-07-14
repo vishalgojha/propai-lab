@@ -259,8 +259,24 @@ func (sm *SessionManager) saveDeviceJID(ctx context.Context, brokerID, deviceJID
 	return err
 }
 
-func (sm *SessionManager) deleteDeviceMapping(ctx context.Context, brokerID string) error {
-	_, err := sm.db.ExecContext(ctx, "DELETE FROM broker_whatsapp_devices WHERE broker_id=$1", brokerID)
+func (sm *SessionManager) deleteDeviceMapping(ctx context.Context, brokerID string, reason string) error {
+	// Look up the existing device_jid to log it in history
+	var deviceJID string
+	err := sm.db.QueryRowContext(ctx, "SELECT device_jid FROM broker_whatsapp_devices WHERE broker_id=$1", brokerID).Scan(&deviceJID)
+	if err != nil && err != sql.ErrNoRows {
+		log.Printf("[broker %s] error looking up device JID for history: %v", brokerID, err)
+	}
+
+	if deviceJID != "" {
+		_, err := sm.db.ExecContext(ctx,
+			"INSERT INTO broker_whatsapp_device_history (broker_id, device_jid, wiped_at, reason) VALUES ($1, $2, NOW(), $3)",
+			brokerID, deviceJID, reason)
+		if err != nil {
+			log.Printf("[broker %s] error writing to history table: %v", brokerID, err)
+		}
+	}
+
+	_, err = sm.db.ExecContext(ctx, "DELETE FROM broker_whatsapp_devices WHERE broker_id=$1", brokerID)
 	return err
 }
 
@@ -321,10 +337,15 @@ func (sm *SessionManager) runSession(s *BrokerSession) {
 		})
 
 		// Too many reconnect failures → clear device, force QR
-		if s.device.ID != nil && s.reconnectFailures >= 10 {
-			log.Printf("[broker %s] too many reconnect failures (%d), clearing device for fresh QR", s.brokerID, s.reconnectFailures)
+		// Tradeoff: Lower threshold (e.g. 10) triggers a full wipe fast but forces re-pairing (QR code).
+		// Higher threshold (e.g. 25-30) is better for high-traffic sessions with transient disconnects.
+		// MAX_RECONNECT_FAILURES is configurable via environment variable.
+		maxReconnectFailures := getEnvInt("MAX_RECONNECT_FAILURES", 10)
+		if s.device.ID != nil && s.reconnectFailures >= maxReconnectFailures {
+			log.Printf("[broker %s] SESSION_WIPED reason=max_reconnect_failures timestamp=%s reconnectFailures=%d reconnectCount=%d",
+				s.brokerID, time.Now().UTC().Format(time.RFC3339), s.reconnectFailures, s.reconnectCount)
 			s.clearDevice()
-			sm.deleteDeviceMapping(ctx, s.brokerID)
+			sm.deleteDeviceMapping(ctx, s.brokerID, "max_reconnect_failures")
 			s.device = sm.container.NewDevice()
 			s.reconnectFailures = 0
 		}
@@ -432,10 +453,11 @@ func (sm *SessionManager) handleEvent(s *BrokerSession, evt interface{}) {
 		s.setStatus(Status{Connected: false, ConnectionState: "scanning"})
 
 	case *events.LoggedOut:
-		log.Printf("[broker %s] logged out, clearing device", s.brokerID)
+		log.Printf("[broker %s] SESSION_WIPED reason=logged_out timestamp=%s reconnectFailures=%d reconnectCount=%d",
+			s.brokerID, time.Now().UTC().Format(time.RFC3339), s.reconnectFailures, s.reconnectCount)
 		s.setStatus(Status{Connected: false, ConnectionState: "logged_out", DisconnectReason: 401})
 		s.clearDevice()
-		sm.deleteDeviceMapping(context.Background(), s.brokerID)
+		sm.deleteDeviceMapping(context.Background(), s.brokerID, "logged_out")
 		s.device = nil
 		if s.disconnectOnce != nil {
 			s.disconnectOnce()
@@ -457,10 +479,11 @@ func (sm *SessionManager) handleEvent(s *BrokerSession, evt interface{}) {
 		}
 
 	case *events.StreamReplaced:
-		log.Printf("[broker %s] stream replaced by another instance, clearing device", s.brokerID)
+		log.Printf("[broker %s] SESSION_WIPED reason=stream_replaced timestamp=%s reconnectFailures=%d reconnectCount=%d",
+			s.brokerID, time.Now().UTC().Format(time.RFC3339), s.reconnectFailures, s.reconnectCount)
 		s.setStatus(Status{Connected: false, ConnectionState: "logged_out", DisconnectReason: 401})
 		s.clearDevice()
-		sm.deleteDeviceMapping(context.Background(), s.brokerID)
+		sm.deleteDeviceMapping(context.Background(), s.brokerID, "stream_replaced")
 		s.device = nil
 		if s.disconnectOnce != nil {
 			s.disconnectOnce()
@@ -759,9 +782,10 @@ func (sm *SessionManager) resetHandler(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "note": "no session to reset"})
 		return
 	}
-	log.Printf("[broker %s] reset requested via HTTP", brokerID)
+	log.Printf("[broker %s] SESSION_WIPED reason=http_reset timestamp=%s reconnectFailures=%d reconnectCount=%d",
+		brokerID, time.Now().UTC().Format(time.RFC3339), s.reconnectFailures, s.reconnectCount)
 	s.clearDevice()
-	sm.deleteDeviceMapping(context.Background(), brokerID)
+	sm.deleteDeviceMapping(context.Background(), brokerID, "http_reset")
 	s.device = sm.container.NewDevice()
 	s.reconnectFailures = 0
 	if s.disconnectOnce != nil {
@@ -1035,6 +1059,16 @@ func main() {
 		log.Fatalf("error creating mapping table: %v", err)
 	}
 
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS broker_whatsapp_device_history (
+		id SERIAL PRIMARY KEY,
+		broker_id TEXT NOT NULL,
+		device_jid TEXT NOT NULL,
+		wiped_at TIMESTAMPTZ DEFAULT NOW(),
+		reason TEXT NOT NULL
+	)`); err != nil {
+		log.Fatalf("error creating history table: %v", err)
+	}
+
 	// Create whatsmeow container (handles its own connection pooling)
 	ctx := context.Background()
 	container, err := sqlstore.New(ctx, "postgres", databaseURL, waLog.Noop)
@@ -1119,4 +1153,16 @@ func main() {
 	sm.mu.RUnlock()
 
 	server.Shutdown(ctxShutdown)
+}
+
+func getEnvInt(key string, fallback int) int {
+	val := os.Getenv(key)
+	if val == "" {
+		return fallback
+	}
+	var intVal int
+	if _, err := fmt.Sscanf(val, "%d", &intVal); err != nil {
+		return fallback
+	}
+	return intVal
 }

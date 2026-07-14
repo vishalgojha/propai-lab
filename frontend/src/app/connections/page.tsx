@@ -184,6 +184,7 @@ export default function ConnectionCenterPage() {
   const [errorMsg, setErrorMsg] = useState<string | null>(defaultConnectionError());
   const [phoneNumber, setPhoneNumber] = useState<string | null>(null);
   const [displayName, setDisplayName] = useState<string | null>(null);
+  const [wabaConfig, setWabaConfig] = useState<any>(null);
   const [groups, setGroups] = useState<number | null>(null);
   const [messages, setMessages] = useState<number | null>(null);
   const [lastSync, setLastSync] = useState<string | null>(null);
@@ -207,10 +208,11 @@ export default function ConnectionCenterPage() {
 
   const fetchStats = useCallback(async () => {
     try {
-      const [detail, stats, syncAct] = await Promise.all([
+      const [detail, stats, syncAct, waba] = await Promise.all([
         fetch("/api/sync/connection").then((r) => r.json()),
         fetch("/api/stats").then((r) => r.json()).catch(() => ({})),
         fetch("/api/dashboard/sync-activity").then((r) => r.json()).catch(() => ({})),
+        fetch("/api/companion/config").then((r) => r.json()).catch(() => ({})),
       ]);
       if (detail?.phone_number) setPhoneNumber(detail.phone_number);
       if (detail?.display_name) setDisplayName(detail.display_name);
@@ -246,6 +248,15 @@ export default function ConnectionCenterPage() {
         const extProgress = await fetch("/api/extraction/progress").then((r) => r.json());
         if (extProgress?.recently_processed_1h != null) setRecentlyProcessed1h(extProgress.recently_processed_1h);
       } catch { /* ignore */ }
+
+      // WABA config — shows when there's no live whatsmeow session
+      if (waba?.whatsapp_business_number) {
+        setWabaConfig(waba);
+        if (!displayName) {
+          // Derive a display name from the WABA number
+          setDisplayName(waba.whatsapp_business_number.startsWith("+") ? waba.whatsapp_business_number : `+${waba.whatsapp_business_number}`);
+        }
+      }
     } catch { /* ignore */ }
   }, []);
 

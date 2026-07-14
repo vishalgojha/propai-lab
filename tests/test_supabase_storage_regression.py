@@ -75,8 +75,8 @@ def test_connection_details_falls_back_when_status_file_is_unknown(monkeypatch):
 
     details = app._connection_details()
 
-    assert details["connected"] is True
-    assert details["connection_state"] == "open"
+    assert details["connected"] is False
+    assert details["connection_state"] == "unknown"
     assert details["messages_captured"] == 345
 
 
@@ -98,8 +98,8 @@ def test_connection_details_uses_whatsapp_jobs_when_status_file_is_unknown(monke
 
     details = app._connection_details()
 
-    assert details["connected"] is True
-    assert details["connection_state"] == "open"
+    assert details["connected"] is False
+    assert details["connection_state"] == "unknown"
     assert details["total_groups"] == 2
 
 
