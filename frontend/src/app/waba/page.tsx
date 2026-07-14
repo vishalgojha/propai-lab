@@ -341,6 +341,25 @@ export default function WabaPage() {
                 {waba?.has_access_token && (
                   <p className="mt-1 text-[11px] text-zinc-500">Token saved. Leave blank to keep it.</p>
                 )}
+                <div className="mt-3 rounded-lg bg-zinc-800/50 border border-white/5 p-3 space-y-2">
+                  <div className="text-[11px] font-semibold text-zinc-300">How to get your Permanent Access Token</div>
+                  <ol className="text-[11px] text-zinc-500 space-y-1.5 list-decimal pl-4">
+                    <li>
+                      Go to{" "}
+                      <a href="https://business.facebook.com/settings/system-users" target="_blank" rel="noreferrer" className="text-[#3EE88A] underline font-medium">
+                        Business Manager → System Users
+                      </a>
+                    </li>
+                    <li>Click <strong className="text-zinc-300">Add</strong> → name it (e.g. "PropAI") → role <strong className="text-zinc-300">Admin</strong></li>
+                    <li>Select the system user → <strong className="text-zinc-300">Assign Assets</strong> → choose your <strong className="text-zinc-300">WhatsApp Business Account</strong> → enable <strong className="text-zinc-300">Full Control</strong></li>
+                    <li>Click <strong className="text-zinc-300">Generate New Token</strong> → select your app → set expiration to <strong className="text-zinc-300">Never</strong></li>
+                    <li>Enable permissions: <code className="text-[#3EE88A]">whatsapp_business_management</code> and <code className="text-[#3EE88A]">whatsapp_business_messaging</code></li>
+                    <li>Click <strong className="text-zinc-300">Generate Token</strong> → copy it here</li>
+                  </ol>
+                  <div className="text-[10px] text-zinc-600">
+                    Do NOT use the temporary token from Developer Portal → API Setup. That expires in 24 hours.
+                  </div>
+                </div>
               </div>
 
               <div>
@@ -391,14 +410,17 @@ export default function WabaPage() {
           <h3 className="text-sm font-bold text-white">Meta Dashboard Links</h3>
         </div>
         <div className="px-5 py-4 space-y-2">
+          <MetaLink href="https://business.facebook.com/settings/system-users">
+            Business Manager — System Users (generate permanent token)
+          </MetaLink>
           <MetaLink href="https://developers.facebook.com/apps">
             Meta Developer Portal — App Settings
           </MetaLink>
           <MetaLink href="https://business.facebook.com">
             Meta Business Suite — WhatsApp Manager
           </MetaLink>
-          <MetaLink href="https://developers.facebook.com/docs/whatsapp/cloud-api/get-started">
-            WhatsApp Cloud API Documentation
+          <MetaLink href="https://developers.facebook.com/tools/debug/accesstoken">
+            Access Token Debugger (test your token)
           </MetaLink>
         </div>
       </div>
