@@ -10088,26 +10088,26 @@ async def audit_intelligence():
                 return default
         return default
 
-def _safe(r, idx=0, default=0):
-        if r is None or idx >= len(r):
+    def _safe(r, idx=0, default=0):
+            if r is None or idx >= len(r):
+                return default
+            value = r[idx]
+            if isinstance(default, (int, float)):
+                if isinstance(value, str):
+                    try:
+                        return float(value) if "." in value else int(value)
+                    except ValueError:
+                        return value
+                return _to_number(value, default)
+            return value
+
+
+    def _safe_exec(fn, default=0):
+        """Execute a function, return default on any exception."""
+        try:
+            return fn()
+        except Exception:
             return default
-        value = r[idx]
-        if isinstance(default, (int, float)):
-            if isinstance(value, str):
-                try:
-                    return float(value) if "." in value else int(value)
-                except ValueError:
-                    return value
-            return _to_number(value, default)
-        return value
-
-
-def _safe_exec(fn, default=0):
-    """Execute a function, return default on any exception."""
-    try:
-        return fn()
-    except Exception:
-        return default
 
     def _q(sql, params=None, default=0):
         try:
@@ -10189,7 +10189,7 @@ def _safe_exec(fn, default=0):
             "suggestions": [{"type": "audit_degraded", "message": str(reason)[:180], "count": 1}],
         }
 
-try:
+    try:
         # ── Network Overview ──
         total_groups = _safe_exec(lambda: _q("SELECT COUNT(DISTINCT group_name) FROM raw_messages"))
         total_raw = _safe_exec(lambda: _q("SELECT COUNT(*) FROM raw_messages"))
