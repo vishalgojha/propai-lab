@@ -2,190 +2,171 @@
 
 export const dynamic = 'force-dynamic';
 
-import { useEffect, useRef, useState } from "react";
-import { Shield, Share2, Lock, EyeOff, Check, AlertCircle, Building2, Users, MessageSquare, UserCheck } from "lucide-react";
-import { updateOrgPrivacy, getCurrentOrg, getPrivacyReceiptStatus, completePrivacyReceipt, OrgPrivacySettings, PrivacyReceiptStatus } from "@/lib/api";
+import { useEffect, useState } from "react";
+import { Shield, EyeOff, Check, Loader2, Users, MinusCircle } from "lucide-react";
+import { getPrivacyReceiptStatus, getExcludedGroups, setExcludedGroups, getGroups, PrivacyReceiptStatus } from "@/lib/api";
 import { useAuth } from "@/lib/AuthProvider";
+
+interface Group {
+  jid: string;
+  name: string;
+  participants: number;
+  parsed?: {
+    markets?: string[];
+    segments?: string[];
+  };
+}
 
 export default function PrivacyPage() {
   const { user, loading: authLoading } = useAuth();
-  const [privacy, setPrivacy] = useState<OrgPrivacySettings | null>(null);
+  const [receipt, setReceipt] = useState<PrivacyReceiptStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [orgId, setOrgId] = useState<string | null>(null);
-  const [receipt, setReceipt] = useState<PrivacyReceiptStatus | null>(null);
-  const autoCompleteAttempted = useRef(false);
+  const [saved, setSaved] = useState(false);
+  const [excludedJids, setExcludedJids] = useState<string[]>([]);
+  const [groups, setGroups] = useState<Group[]>([]);
+  const [groupsLoading, setGroupsLoading] = useState(true);
 
   useEffect(() => {
     if (authLoading) return;
-    loadPrivacy();
-  }, [authLoading, user]);
+    loadAll();
+  }, [authLoading]);
 
-  function buildFallbackPrivacy(sharedMarketDefault: boolean): OrgPrivacySettings {
-    return {
-      privacy_mode: sharedMarketDefault ? "shared_market" : "private",
-      share_listings: sharedMarketDefault,
-      share_requirements: sharedMarketDefault,
-      share_price_trends: sharedMarketDefault,
-      share_market_activity: sharedMarketDefault,
-      share_building_intelligence: sharedMarketDefault,
-      share_broker_network: sharedMarketDefault,
-      share_broker_reputation: sharedMarketDefault,
-      share_demand_signals: sharedMarketDefault,
-    };
-  }
-
-  async function loadPrivacy() {
+  async function loadAll() {
     try {
-      const receiptData = await getPrivacyReceiptStatus();
+      setLoading(true);
+      const [receiptData, excludedData, groupsData] = await Promise.all([
+        getPrivacyReceiptStatus(),
+        getExcludedGroups(),
+        getGroups(),
+      ]);
       setReceipt(receiptData);
-
-      if (
-        receiptData.whatsapp_connected &&
-        !receiptData.privacy_receipt_complete &&
-        !autoCompleteAttempted.current
-      ) {
-        autoCompleteAttempted.current = true;
-        const completed = await completePrivacyReceipt();
-        setReceipt(completed);
-        setPrivacy(buildFallbackPrivacy(completed.shared_market_default));
-        setError(null);
-        return;
-      }
-
-      setPrivacy(buildFallbackPrivacy(receiptData.shared_market_default));
-    } catch (err) {
-      setError("Failed to load privacy settings. Showing fallback defaults.");
-      try {
-        const fallback = await getPrivacyReceiptStatus();
-        setReceipt(fallback);
-        setPrivacy(buildFallbackPrivacy(fallback.shared_market_default));
-      } catch {
-        // Keep the error message and let the UI render the last known defaults if any.
-      }
+      setExcludedJids(excludedData || []);
+      setGroups(groupsData || []);
+    } catch (e) {
+      console.error("Failed to load privacy data:", e);
     } finally {
       setLoading(false);
+      setGroupsLoading(false);
     }
   }
 
-  async function handleToggle(value: "private" | "shared_market") {
-    if (!privacy || saving) return;
+  async function handleExcludeToggle(jid: string, checked: boolean) {
+    const newList = checked
+      ? [...excludedJids, jid]
+      : excludedJids.filter((j) => j !== jid);
     setSaving(true);
     setError(null);
     try {
-      let targetOrgId = orgId;
-      if (!targetOrgId) {
-        const org = await getCurrentOrg();
-        targetOrgId = org.id;
-        setOrgId(targetOrgId);
-      }
-      if (!targetOrgId) {
-        throw new Error("No organization available");
-      }
-      const updated = await updateOrgPrivacy(targetOrgId, { privacy_mode: value });
-      setPrivacy(updated);
+      await setExcludedGroups(newList);
+      setExcludedJids(newList);
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
-    } catch (err) {
-      setError("Failed to update privacy settings");
+    } catch (e) {
+      setError("Failed to update excluded groups");
+      console.error(e);
     } finally {
       setSaving(false);
     }
   }
 
-  if (loading) return <div className="p-8 text-zinc-500">Loading...</div>;
+  const sharedMarketDefault = receipt?.shared_market_default ?? true;
+  const privateGroupsExcluded = receipt?.private_groups_excluded ?? 0;
+  const marketGroupsDetected = receipt?.market_groups_detected ?? 0;
+
+  if (loading) {
+    return (
+      <div className="max-w-5xl mx-auto px-4 lg:px-6 pt-12 pb-12">
+        <div className="p-8 text-center text-zinc-500">
+          <Loader2 className="w-8 h-8 mx-auto animate-spin text-blue-400" />
+          <p className="mt-2 text-sm">Loading privacy settings...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-5xl mx-auto px-4 lg:px-6 pt-12 pb-12 space-y-6">
       <div className="mb-8">
         <h2 className="text-lg font-bold text-white">Privacy</h2>
         <p className="mt-1 text-sm text-zinc-500">
-          Control how your data participates in the PropAI network.
+          Control which WhatsApp groups contribute to the shared market intelligence.
         </p>
-        {receipt && (
-          <p className="mt-2 text-xs text-zinc-600">
-            Shared Market default: {receipt.shared_market_default ? "on" : "off"} · DMs always private · {receipt.private_groups_excluded} groups opted out
-          </p>
-        )}
+        <p className="mt-2 text-xs text-zinc-600">
+          Shared Market default: {sharedMarketDefault ? "on" : "off"} · DMs always private · {privateGroupsExcluded} of {marketGroupsDetected} groups opted out
+        </p>
       </div>
 
       {error && (
         <div className="rounded-lg bg-red-500/10 border border-red-500/20 p-3 text-sm text-red-400 flex items-center gap-2">
-          <AlertCircle className="w-4 h-4 shrink-0" />
+          <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
           {error}
         </div>
       )}
 
-      {/* Mode Selection */}
+      {/* Groups Sharing to the Network */}
       <div className="rounded-2xl border border-white/10 overflow-hidden">
-        <div className="px-6 py-4 border-b border-white/10">
-          <h3 className="text-sm font-bold text-white">Network Participation</h3>
-          <p className="mt-1 text-xs text-zinc-500">
-            Choose how your workspace interacts with the broker network
-          </p>
+        <div className="px-6 py-4 border-b border-white/10 flex items-center justify-between">
+          <div>
+            <h3 className="text-sm font-bold text-white flex items-center gap-2">
+              <Users className="w-4 h-4 text-emerald-400" />
+              Groups Sharing to the Network
+            </h3>
+            <p className="mt-1 text-xs text-zinc-500">
+              {marketGroupsDetected} real-estate groups detected · {privateGroupsExcluded} opted out
+            </p>
+          </div>
         </div>
         <div className="p-6">
-          <div className="grid md:grid-cols-2 gap-4">
-            {/* Broker Network (Default) */}
-            <button
-              onClick={() => handleToggle("shared_market")}
-              disabled={saving}
-              className={`relative p-4 rounded-xl border-2 transition-all text-left ${
-                privacy?.privacy_mode === "shared_market"
-                  ? "border-blue-400 bg-blue-400/5"
-                  : "border-white/10 hover:border-white/20"
-              }`}
-            >
-              {privacy?.privacy_mode === "shared_market" && (
-                <div className="absolute -top-2 -right-2 w-5 h-5 bg-blue-400 rounded-full flex items-center justify-center">
-                  <Check className="w-3 h-3 text-black" />
-                </div>
-              )}
-              <div className="flex items-center gap-3">
-                <Share2 className="w-5 h-5 text-blue-400 shrink-0" />
-                <div>
-                  <div className="font-semibold text-white">Broker Network</div>
-                  <div className="text-xs text-zinc-500">Default — Contribute to the shared market</div>
-                </div>
-              </div>
-              <div className="mt-3 text-xs text-zinc-500 space-y-1">
-                <p>• Listings, requirements, and market intelligence are shared</p>
-                <p>• Cross-network inventory visibility</p>
-                <p>• Broker reputation and demand signals</p>
-              </div>
-            </button>
-
-            {/* Private */}
-            <button
-              onClick={() => handleToggle("private")}
-              disabled={saving}
-              className={`relative p-4 rounded-xl border-2 transition-all text-left ${
-                privacy?.privacy_mode === "private"
-                  ? "border-emerald-400 bg-emerald-400/5"
-                  : "border-white/10 hover:border-white/20"
-              }`}
-            >
-              {privacy?.privacy_mode === "private" && (
-                <div className="absolute -top-2 -right-2 w-5 h-5 bg-emerald-400 rounded-full flex items-center justify-center">
-                  <Check className="w-3 h-3 text-black" />
-                </div>
-              )}
-              <div className="flex items-center gap-3">
-                <Lock className="w-5 h-5 text-emerald-400 shrink-0" />
-                <div>
-                  <div className="font-semibold text-white">Private</div>
-                  <div className="text-xs text-zinc-500">Premium — Nothing leaves your workspace</div>
-                </div>
-              </div>
-              <div className="mt-3 text-xs text-zinc-500 space-y-1">
-                <p>• All data stays within your organization</p>
-                <p>• No listings, requirements, or intelligence shared</p>
-                <p>• No cross-network visibility</p>
-              </div>
-            </button>
-          </div>
+          {groupsLoading ? (
+            <div className="text-center text-zinc-500 py-8">
+              <Loader2 className="w-8 h-8 mx-auto animate-spin text-blue-400" />
+            </div>
+          ) : groups.length === 0 ? (
+            <div className="text-center text-zinc-500 py-8">
+              <p>No real-estate groups detected yet.</p>
+              <p className="mt-1 text-xs">Groups appear here after the first successful sync.</p>
+            </div>
+          ) : (
+            <div className="space-y-3 max-h-96 overflow-y-auto">
+              {groups.map((group) => {
+                const excluded = excludedJids.includes(group.jid);
+                return (
+                  <div
+                    key={group.jid}
+                    className="flex items-center justify-between p-3 rounded-lg border border-white/10 hover:border-white/20 transition-colors"
+                  >
+                    <div className="flex items-center gap-3 min-w-0 flex-1">
+                      <div className="w-8 h-8 rounded-lg bg-zinc-800 flex items-center justify-center flex-shrink-0">
+                        <Users className="w-4 h-4 text-zinc-500" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-white truncate">
+                          {group.name || "Unnamed Group"}
+                        </p>
+                        <p className="text-xs text-zinc-500 truncate">
+                          {group.participants} members · {group.parsed?.markets?.join(", ") || "No markets tagged"}
+                        </p>
+                      </div>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={!excluded}
+                        onChange={(e) => handleExcludeToggle(group.jid, !e.target.checked)}
+                        disabled={saving}
+                        className="sr-only peer"
+                      />
+                      <div className="w-11 h-6 bg-zinc-700 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-400 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-400"></div>
+                    </label>
+                  </div>
+                );
+              })}
+            <p className="mt-4 text-xs text-zinc-500 text-center">
+              Unchecked = group is opted OUT (never parsed, never shared).
+            </p>
+          )}
         </div>
       </div>
 
