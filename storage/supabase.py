@@ -1107,6 +1107,7 @@ class SupabaseStorage(Storage):
             )
             group_name = latest.get("group_name") or ""
             is_group = "@g.us" in group_name or "_broadcast" in group_name
+            print(f"[DEBUG] group_name={group_name[:30]} is_group={is_group}", flush=True)
             latest["chat_id"] = chat_id
             latest["chat_type"] = "group" if is_group else "direct"
             latest["chat_name"] = conv_name
