@@ -835,7 +835,7 @@ class SupabaseStorage(Storage):
 
     def get_unprocessed_raw_messages(self, limit: int = 100) -> list[RawMessage]:
         res = self.client.table("raw_messages").select("*")\
-            .is_("processed", "false")\
+            .eq("processed", False)\
             .order("id", desc=False).limit(limit).execute()
         return [dict_to_dataclass(RawMessage, d) for d in res.data]
 
@@ -848,7 +848,7 @@ class SupabaseStorage(Storage):
 
     def count_unprocessed_raw(self) -> int:
         res = self.client.table("raw_messages").select("id", count="exact")\
-            .is_("processed", "false").execute()
+            .eq("processed", "false").execute()
         return res.count if hasattr(res, "count") else 0
 
     @staticmethod
@@ -1243,11 +1243,11 @@ class SupabaseStorage(Storage):
     PARSED_OUTPUT_COLUMNS = {
         "raw_message_id", "message_type", "intent", "principal",
         "bhk", "price", "price_unit", "area_sqft", "furnishing",
-        "location_raw", "location", "building_name", "landmark_name",
+        "location", "building_name", "landmark_name",
         "street_name", "area", "micro_market", "developer",
         "broker_name", "broker_phone", "profile_name", "listing_index",
         "forwarded", "confidence", "raw_payload", "created_at",
-        "summary_title", "normalized_message",
+        "summary_title", "reparsed_at", "event_id", "tenant_id",
     }
 
     def save_parsed(self, parsed: ParsedObservation) -> int:
@@ -1255,6 +1255,11 @@ class SupabaseStorage(Storage):
                 if v is not None and k in self.PARSED_OUTPUT_COLUMNS}
         data.pop("id", None)
         data.pop("embedding", None)
+        # Don't send created_at - let DB handle it (NOT NULL with default now())
+        data.pop("created_at", None)
+        # Fix boolean fields
+        if "forwarded" in data and isinstance(data["forwarded"], int):
+            data["forwarded"] = bool(data["forwarded"])
         for field in ("raw_payload", "location"):
             if isinstance(data.get(field), str):
                 try:
@@ -1281,6 +1286,47 @@ class SupabaseStorage(Storage):
     def get_parsed_by_message(self, raw_message_id: int) -> list[ParsedObservation]:
         res = self.client.table("parsed_output").select("*").eq("raw_message_id", raw_message_id).execute()
         return [dict_to_dataclass(ParsedObservation, d) for d in res.data]
+
+    def get_parsed_by_message(self, raw_message_id: int) -> list[ParsedObservation]:
+        res = self.client.table("parsed_output").select("*").eq("raw_message_id", raw_message_id).execute()
+        return [dict_to_dataclass(ParsedObservation, d) for d in res.data]
+
+    # ── Knowledge Records ────────────────────────────────────────────
+
+    def create_knowledge_record(self, data: dict) -> int:
+        """Create a new knowledge record. Returns the record ID."""
+        data = {k: v for k, v in data.items() if v is not None}
+        res = self.client.table("knowledge_records").insert(data).execute()
+        return res.data[0]["id"] if res.data else 0
+
+    def update_knowledge_record(self, record_id: int, updates: dict):
+        """Update a knowledge record by ID."""
+        updates = {k: v for k, v in updates.items() if v is not None}
+        self.client.table("knowledge_records").update(updates).eq("id", record_id).execute()
+
+    def bulk_add_knowledge_tags(self, record_id: int, tags: dict, source: str = "parser"):
+        """Add multiple tags to a knowledge record."""
+        if not tags:
+            return
+        records = []
+        for tag_type, values in tags.items():
+            if isinstance(values, (list, tuple)):
+                for value in values:
+                    records.append({
+                        "record_id": record_id,
+                        "tag_type": tag_type,
+                        "tag_value": str(value),
+                        "source": source,
+                    })
+            else:
+                records.append({
+                    "record_id": record_id,
+                    "tag_type": tag_type,
+                    "tag_value": str(values),
+                    "source": source,
+                })
+        if records:
+            self.client.table("knowledge_tags").upsert(records, on_conflict="record_id,tag_type,tag_value").execute()
 
     # ── Listings ─────────────────────────────────────────────────
 
