@@ -5,7 +5,7 @@ export const dynamic = 'force-dynamic';
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ChevronDown, Smartphone, Save, Users, CreditCard, Key, Settings, Mail, MapPin, User } from "lucide-react";
-import { getProfile, saveProfile } from "@/lib/api";
+import { getProfile, saveProfile, getCurrentOrg } from "@/lib/api";
 import { useAuth } from "@/lib/AuthProvider";
 
 const CITIES = [
@@ -30,6 +30,7 @@ export default function ProfilePage() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [dirty, setDirty] = useState(false);
+  const [org, setOrg] = useState<{ id: string; name?: string; slug?: string } | null>(null);
   const next = searchParams.get("next") || "";
 
   // Load profile from API on mount
@@ -78,6 +79,10 @@ export default function ProfilePage() {
     }).catch(() => setLoading(false));
     return () => { mounted = false; };
   }, [user]);
+
+  useEffect(() => {
+    getCurrentOrg().then(setOrg).catch(() => {});
+  }, []);
 
   const markDirty = () => setDirty(true);
 
@@ -256,6 +261,18 @@ export default function ProfilePage() {
                   <dt className="text-zinc-500">Role</dt>
                   <dd className="text-white font-medium">Owner</dd>
                 </div>
+                {org && (
+                  <div className="flex justify-between items-start gap-4">
+                    <dt className="text-zinc-500 shrink-0">Workspace ID</dt>
+                    <dd className="text-white font-mono text-[11px] text-right break-all">{org.id}</dd>
+                  </div>
+                )}
+                {org?.name && (
+                  <div className="flex justify-between">
+                    <dt className="text-zinc-500">Workspace</dt>
+                    <dd className="text-white font-medium">{org.name}</dd>
+                  </div>
+                )}
                 <div className="flex justify-between">
                   <dt className="text-zinc-500">Timezone</dt>
                   <dd className="text-white font-medium">Asia/Kolkata (IST)</dd>

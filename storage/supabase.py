@@ -517,9 +517,12 @@ class SupabaseStorage(Storage):
 
     # ── Team Members ───────────────────────────────────────────────
 
-    def list_team_members(self) -> list[dict]:
+    def list_team_members(self, org_id: str | None = None) -> list[dict]:
         try:
-            res = self.client.table("team_members").select("*").order("role", desc=False).order("name", desc=False).execute()
+            q = self.client.table("team_members").select("*")
+            if org_id:
+                q = q.eq("organization_id", org_id)
+            res = q.order("role", desc=False).order("name", desc=False).execute()
             return res.data if res.data else []
         except Exception:
             return []
@@ -531,19 +534,23 @@ class SupabaseStorage(Storage):
         except Exception:
             return None
 
-    def get_team_member_by_email(self, email: str) -> dict | None:
+    def get_team_member_by_email(self, email: str, org_id: str | None = None) -> dict | None:
         email = (email or "").strip().lower()
         if not email:
             return None
         try:
-            res = self.client.table("team_members").select("*").ilike("email", email).limit(1).execute()
+            q = self.client.table("team_members").select("*").ilike("email", email)
+            if org_id:
+                q = q.eq("organization_id", org_id)
+            res = q.limit(1).execute()
             return res.data[0] if res.data else None
         except Exception:
             return None
 
     def create_team_member(self, name: str, email: str = "", phone: str = "",
                            role: str = "member", permission_keys: list[str] | None = None,
-                           linked_broker_phone: str | None = None) -> dict:
+                           linked_broker_phone: str | None = None,
+                           organization_id: str | None = None) -> dict:
         permissions = self._perm_bitfield(permission_keys or [])
         payload = {
             "name": name.strip(),
@@ -552,6 +559,7 @@ class SupabaseStorage(Storage):
             "role": role,
             "permissions": permissions,
             "linked_broker_phone": linked_broker_phone,
+            "organization_id": organization_id or self.tenant_id,
         }
         res = self.client.table("team_members").insert(payload).execute()
         return res.data[0] if res and res.data else {}

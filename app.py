@@ -5569,12 +5569,16 @@ class SendMessageRequest(BaseModel):
     quoted_from_me: bool = False
 
 
-async def get_current_team_member(user: dict = Depends(require_user)) -> dict:
+async def get_current_team_member(
+    user: dict = Depends(require_user),
+    tenant_id: str | None = Depends(get_tenant_context),
+) -> dict:
     email = (user.get("email") or "").strip().lower()
     phone = (user.get("phone") or "").strip()
-    member = storage.get_team_member_by_email(email) if email else None
+    org_id = tenant_id
+    member = storage.get_team_member_by_email(email, org_id=org_id) if email else None
     if not member and phone:
-        members = storage.list_team_members()
+        members = storage.list_team_members(org_id=org_id)
         normalized_phone = phone.replace("+", "")
         member = next(
             (
@@ -5594,6 +5598,7 @@ async def get_current_team_member(user: dict = Depends(require_user)) -> dict:
                 phone=phone,
                 role="member",
                 permission_keys=["view_inbox", "reply_whatsapp"],
+                organization_id=org_id,
             )
         except Exception:
             raise HTTPException(403, "No active team member is linked to this account")
