@@ -217,6 +217,32 @@ function formatAgeShort(value?: string) {
   return `${months}mo`;
 }
 
+function toInboxThread(message: api.RawMessage): api.InboxThread {
+  const conversationType =
+    message.conversation_type ||
+    message.chat_type ||
+    (message.group_name && message.group_name !== "seed" && message.group_name !== "seed-bot" ? "group" : "direct");
+  const conversationKey = (
+    message.conversation_key ||
+    message.chat_id ||
+    message.sender_jid ||
+    message.group_name ||
+    ""
+  ).trim();
+
+  return {
+    ...message,
+    conversation_type: conversationType === "group" ? "group" : "direct",
+    conversation_key: conversationKey,
+    conversation_name: message.conversation_name || message.chat_name || message.group_name || message.sender || "Conversation",
+    message_count: message.message_count || 1,
+    chat_id: message.chat_id,
+    chat_type: message.chat_type,
+    chat_name: message.chat_name,
+    latest_message_at: message.latest_message_at,
+  } as api.InboxThread;
+}
+
 function normalizeMessageTimestamp(message?: Partial<api.RawMessage> | null) {
   if (!message) return "";
   const candidates = [
@@ -904,13 +930,14 @@ function InboxPageInner({ defaultView }: InboxPageInnerProps) {
   const [offset, setOffset] = useState(0);
   const [searchText, setSearchText] = useState("");
   const [slugs, setSlugs] = useState<api.SavedView[]>([]);
-  const [currentSlug, setCurrentSlug] = useState<string>("brokers");
+  const [currentSlug, setCurrentSlug] = useState<string>(defaultView === "groups" ? "groups" : "brokers");
   const activeSlug = useMemo(() => slugs.find(s => s.slug === currentSlug) || null, [slugs, currentSlug]);
   const [brokerFeed, setBrokerFeed] = useState<any[]>([]);
   const [loadingBrokerFeed, setLoadingBrokerFeed] = useState(false);
   const [marketAccess, setMarketAccess] = useState<api.MarketAccessStatus | null>(null);
   const [loadingMarketAccess, setLoadingMarketAccess] = useState(true);
   const [marketAccessError, setMarketAccessError] = useState<string | null>(null);
+  const [whatsappStatus, setWhatsappStatus] = useState<api.WhatsAppStatus | null>(null);
   const [selectedBrokerObservations, setSelectedBrokerObservations] = useState<any[]>([]);
   const [loadingBrokerObs, setLoadingBrokerObs] = useState(false);
   const [opportunityFilter, setOpportunityFilter] = useState<OpportunityFilter>("all");
@@ -982,6 +1009,40 @@ function InboxPageInner({ defaultView }: InboxPageInnerProps) {
     })();
     return () => {
       cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadWhatsAppStatus = async () => {
+      try {
+        const status = await api.getWhatsAppStatus();
+        if (!cancelled) setWhatsappStatus(status);
+      } catch (e) {
+        console.error("Failed to load WhatsApp status:", e);
+        if (!cancelled) setWhatsappStatus(null);
+      }
+    };
+
+    void loadWhatsAppStatus();
+    const interval = window.setInterval(() => {
+      void loadWhatsAppStatus();
+    }, 15000);
+    const onStatusUpdate = () => {
+      void loadWhatsAppStatus();
+    };
+    const onVisibilityChange = () => {
+      if (!document.hidden) void loadWhatsAppStatus();
+    };
+    window.addEventListener("propai_whatsapp_status_updated", onStatusUpdate);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+      window.removeEventListener("propai_whatsapp_status_updated", onStatusUpdate);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
     };
   }, []);
 
@@ -1178,6 +1239,7 @@ return {
   const msgParam = searchParams.get("message");
   const brokerParam = searchParams.get("broker");
   const observationParam = searchParams.get("observation");
+  const isGroupsView = defaultView === "groups" || searchParams.get("view") === "groups" || currentSlug === "groups";
 
   useEffect(() => {
     if (searchParams.get("view") === "groups") {
@@ -1318,7 +1380,8 @@ return {
       console.error("Failed to load feed:", e);
       try {
         const rawMsgs = await api.getRaw(PAGE_SIZE, requestedOffset);
-        setMessages((prev) => (append ? [...prev, ...rawMsgs] : rawMsgs));
+        const fallbackThreads = rawMsgs.map(toInboxThread);
+        setMessages((prev) => (append ? [...prev, ...fallbackThreads] : fallbackThreads));
         if (!append) {
           setGroups([]);
           setAllSuggestions([]);
@@ -2068,7 +2131,9 @@ return {
   }, [conversationMessages, selectedMsg]);
   const replyFallbackPhone = normalizeRealPhone(resolveMessagePhone(selectedMsg) || phoneFromJid(selectedConversationJid));
   const replyDraftKey = selectedConversationJid ? `propai-inbox-draft:${selectedConversationJid}` : "";
-  const whatsappConnected = marketAccess?.whatsapp_connected !== false;
+  const whatsappConnected = whatsappStatus
+    ? api.isLiveWhatsAppConnection(whatsappStatus)
+    : marketAccess?.whatsapp_connected !== false;
   const wabaConfigured = marketAccess?.waba_configured === true;
 
   useEffect(() => {
@@ -2742,10 +2807,10 @@ return {
             <div className="flex items-center justify-between">
               <div>
                 <div className="text-sm font-bold tracking-wider text-white uppercase">
-                  {searchParams.get("view") === "groups" || currentSlug === "groups" ? "WhatsApp Groups" : "Market Inbox"}
+                  {isGroupsView ? "WhatsApp Groups" : "Market Inbox"}
                 </div>
                 <div className="hidden sm:block text-[10px] text-zinc-500 mt-0.5">
-                  {(searchParams.get("view") === "groups" || currentSlug === "groups")
+                  {isGroupsView
                     ? "Raw WhatsApp groups with inline PropAI composer"
                     : "WhatsApp conversations with PropAI memory"}
                 </div>
@@ -2776,7 +2841,9 @@ return {
             <div className="flex gap-1 bg-zinc-900 p-0.5 rounded-lg border border-[rgba(255,255,255,0.03)]" style={{ gridTemplateColumns: `repeat(${Math.min(slugs.length, 5)}, 1fr)` }}>
               {slugs.length === 0 ? (
                 <>
-                  <div className="flex-1 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wider text-center text-zinc-500 bg-zinc-800">Brokers</div>
+                  <div className="flex-1 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wider text-center text-zinc-500 bg-zinc-800">
+                    {isGroupsView ? "Groups" : "Brokers"}
+                  </div>
                 </>
               ) : (
                 slugs.map((sv) => (

@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import "./globals.css";
-import { getConnectionState, getWhatsAppStatus, getRaw, ConnectionState, WhatsAppStatus, searchMessages, getCompanionConfig, CompanionConfig, getProfile } from "@/lib/api";
+import { getConnectionState, getWhatsAppStatus, getPhones, getRaw, ConnectionState, WhatsAppStatus, searchMessages, getCompanionConfig, CompanionConfig, getProfile, isLiveWhatsAppConnection, type Phone } from "@/lib/api";
 import { classifyFormatIssue } from "@/lib/format-issues";
 import {
   MessageSquare,
@@ -183,6 +183,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
   const { drawerOpen, setDrawerOpen, toggleDrawer, setLastTab } = useLayout();
   const [conn, setConn] = useState<ConnectionState | null>(null);
   const [whatsapp, setWhatsapp] = useState<WhatsAppStatus | null>(null);
+  const [phones, setPhones] = useState<Phone[]>([]);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [offline, setOffline] = useState(false);
   const [profile, setProfile] = useState<{ auth_user_id?: string; phone: string; first_name: string; last_name?: string; email?: string; city?: string } | null>(null);
@@ -240,8 +241,10 @@ function AppShell({ children }: { children: React.ReactNode }) {
     return () => { cancelled = true; };
   }, [user, profile]);
 
-  const waConnected = conn?.connected ?? null;
-  const waStale = conn?.status_stale ?? false;
+  const waLoaded = conn !== null || whatsapp !== null;
+  const waConnected = !waLoaded ? null : (isLiveWhatsAppConnection(conn) || isLiveWhatsAppConnection(whatsapp));
+  const waStale = Boolean(conn?.status_stale || whatsapp?.status_stale);
+  const waPhone = whatsapp?.phone || phones.find((phone) => isLiveWhatsAppConnection(phone))?.phone_number_live || phones.find((phone) => isLiveWhatsAppConnection(phone))?.phone_number || "";
 
   useEffect(() => {
     if (authLoading) return;
@@ -263,15 +266,23 @@ function AppShell({ children }: { children: React.ReactNode }) {
     if (authLoading || !user) return;
     const load = async () => {
       try {
-        const [c, w, cfg] = await Promise.all([getConnectionState(), getWhatsAppStatus(), getCompanionConfig().catch(() => null)]);
+        const [c, w, p, cfg] = await Promise.all([getConnectionState(), getWhatsAppStatus(), getPhones().catch(() => []), getCompanionConfig().catch(() => null)]);
         setConn(c);
         setWhatsapp(w);
+        setPhones(p);
         if (cfg) setWabaConfig(cfg);
       } catch {}
     };
     load();
     const t = setInterval(load, 15000);
-    return () => clearInterval(t);
+    const onStatusUpdate = () => {
+      void load();
+    };
+    window.addEventListener("propai_whatsapp_status_updated", onStatusUpdate);
+    return () => {
+      clearInterval(t);
+      window.removeEventListener("propai_whatsapp_status_updated", onStatusUpdate);
+    };
   }, [authLoading, user]);
 
   useEffect(() => {
@@ -497,8 +508,8 @@ function AppShell({ children }: { children: React.ReactNode }) {
               </span>
             </a>
           </div>
-          {waConnected && whatsapp?.phone && (
-            <span className="text-[10px] lg:text-[11px] text-zinc-500 font-mono truncate max-w-[120px] lg:max-w-none">{whatsapp.phone}</span>
+          {waConnected && waPhone && (
+            <span className="text-[10px] lg:text-[11px] text-zinc-500 font-mono truncate max-w-[120px] lg:max-w-none">{waPhone}</span>
           )}
           {wabaConfig?.outbound_allowed && (
             <a href="/waba" className="flex items-center gap-1 text-[10px] lg:text-[11px] font-semibold text-emerald-300 hover:text-emerald-200 transition-colors" title="PropAI Official WABA — Connected">

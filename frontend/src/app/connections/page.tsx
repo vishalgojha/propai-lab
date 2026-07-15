@@ -7,7 +7,7 @@ import QRCode from "qrcode";
 import { useRouter } from "next/navigation";
 import { Activity, Clock, Database, ImageUp, Inbox, List, LogOut, MessageSquare, Plus, RefreshCw, Shield, Smartphone, Trash2, AlertTriangle, Users, Zap, Lock, X } from "lucide-react";
 import { useAuth } from "@/lib/AuthProvider";
-import { getPhones, createPhone, deletePhone, resetPhone, disconnectPhone, connectPhone, fetchJSON, getQR, refreshQR, type Phone } from "@/lib/api";
+import { getPhones, getPhone, createPhone, deletePhone, resetPhone, disconnectPhone, connectPhone, fetchJSON, getQR, refreshQR, type Phone } from "@/lib/api";
 
 type HealthStatus = "healthy" | "warning" | "error";
 
@@ -253,6 +253,7 @@ function QRModal({ phone, open, onClose, onRefresh }: { phone: Phone; open: bool
         setConnected(true);
         setQrText(null);
         await onRefresh();
+        window.dispatchEvent(new Event("propai_whatsapp_status_updated"));
         return;
       }
       setError(res?.message || qrResult?.message || "QR not available yet. Try again in a moment.");
@@ -273,6 +274,7 @@ function QRModal({ phone, open, onClose, onRefresh }: { phone: Phone; open: bool
         setQrText(null);
         setError(null);
         await onRefresh();
+        window.dispatchEvent(new Event("propai_whatsapp_status_updated"));
       } else if (res?.qr) {
         setQrText(res.qr);
       } else {

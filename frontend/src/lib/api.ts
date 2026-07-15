@@ -200,6 +200,24 @@ export interface WhatsAppStatus {
   status_stale?: boolean;
 }
 
+type LiveConnectionLike = {
+  connected?: boolean | null;
+  state?: string | null;
+  connection_state?: string | null;
+  connected_since?: string | null;
+};
+
+export function isLiveWhatsAppConnection(status?: LiveConnectionLike | null) {
+  return Boolean(
+    status?.connected ||
+    status?.state === "open" ||
+    status?.state === "connected" ||
+    status?.connection_state === "open" ||
+    status?.connection_state === "connected" ||
+    status?.connected_since
+  );
+}
+
 export interface MarketAccessStatus {
   authenticated: boolean;
   tenant_id?: string;
@@ -1581,7 +1599,7 @@ export function getPhone(phoneId: number) {
   return fetchJSON<Phone>(`/phones/${phoneId}`);
 }
 
-export function createPhone(data: { phone_number: string; instance_name?: string }) {
+export function createPhone(data: { phone_number?: string; instance_name?: string }) {
   return fetchJSON<Phone>("/phones", {
     method: "POST",
     body: JSON.stringify(data),
