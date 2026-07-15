@@ -1317,7 +1317,9 @@ return {
       initialNavDone.current = true;
       const brokerParamName = stripEmojis(brokerParam).trim().toLowerCase();
       const brokerParamPhone = normalizeRealPhone(brokerParam);
+      const brokerParamKey = brokerParam.trim().toLowerCase();
       const broker = brokerFeed.find((b: any) =>
+        (brokerParamKey && String(b.identity_key || b.primary_phone || b.id || "").trim().toLowerCase() === brokerParamKey) ||
         (brokerParamPhone && normalizeRealPhone(b.primary_phone || "") === brokerParamPhone) ||
         b.primary_phone?.includes(brokerParam) ||
         brokerParam.includes(b.primary_phone || "") ||
@@ -1342,6 +1344,7 @@ return {
           const brokerName = details.parsed?.broker_name || details.parsed?.profile_name || details.raw?.sender;
           if (brokerPhone || brokerName) {
             const brokerInFeed = brokerFeed.find((b: any) =>
+              (brokerPhone && String(b.identity_key || b.primary_phone || b.id || "").trim().toLowerCase() === brokerPhone.toLowerCase()) ||
               (brokerPhone && b.primary_phone?.includes(brokerPhone)) ||
               (brokerPhone && brokerPhone.includes(b.primary_phone || "")) ||
               (brokerName && b.canonical_name?.toLowerCase().includes(brokerName.toLowerCase()))
@@ -1979,13 +1982,13 @@ return {
 
   // Apply search filter to broker feed and direct chats
   const filteredBrokerFeed = !query
-    ? brokerFeed.filter((b: any) => Number(b.group_evidence_count || 0) > 0)
+    ? brokerFeed
     : brokerFeed.filter((b: any) => {
-        if (Number(b.group_evidence_count || 0) <= 0) return false;
         const haystack = [
           b.canonical_name,
           b.name,
           b.primary_phone,
+          b.identity_key,
           b.latest_title,
           b.latest_intent,
           b.latest_micro_market,
@@ -2425,10 +2428,11 @@ return {
     setOpportunityFilter("all");
     const brokerPhone = normalizeRealPhone(broker.primary_phone || broker.phone || "");
     const brokerName = stripEmojis(broker.canonical_name || broker.name || "").trim();
-    if (brokerPhone) updateUrlBroker(brokerPhone);
-    else if (brokerName) updateUrlBroker(brokerName);
+    const brokerIdentityKey = (broker.identity_key || broker.id || broker.primary_phone || brokerPhone || brokerName || "").toString().trim();
+    if (brokerIdentityKey) updateUrlBroker(brokerIdentityKey);
     setSelectedBroker({
-      id: brokerPhone || broker.primary_phone || broker.identity_key || brokerName,
+      id: brokerIdentityKey || brokerPhone || broker.primary_phone || brokerName,
+      identity_key: brokerIdentityKey,
       phone: brokerPhone || broker.primary_phone || "",
       canonical_name: broker.canonical_name || broker.name || "",
       name: broker.canonical_name || broker.name || "",
@@ -2447,6 +2451,7 @@ return {
     setLoadingBrokerObs(true);
     try {
       const observationKeys = [
+        brokerIdentityKey,
         brokerPhone,
         broker.primary_phone,
         broker.phone,
@@ -2967,9 +2972,9 @@ return {
                 {activeSlug?.view_type === "brokers" && !loadingBrokerFeed &&
                   filteredBrokerFeed.map((b: any) => {
                     const isSelected =
-                      normalizeRealPhone(selectedBroker?.phone || selectedBroker?.id || "") === normalizeRealPhone(b.primary_phone || "") ||
-                      stripEmojis(selectedBroker?.canonical_name || selectedBroker?.name || "").trim().toLowerCase() ===
-                        stripEmojis(b.canonical_name || b.name || "").trim().toLowerCase();
+                      (selectedBroker?.identity_key && selectedBroker.identity_key === (b.identity_key || b.primary_phone || b.id)) ||
+                      (normalizeRealPhone(selectedBroker?.phone || selectedBroker?.id || "") === normalizeRealPhone(b.primary_phone || "")) ||
+                      (selectedBroker?.id && selectedBroker.id === (b.identity_key || b.primary_phone || b.id));
                     const menuOpen = openMenuBroker === b.primary_phone;
                     const isActiveNow = b.last_active && now - new Date(b.last_active).getTime() < 300000;
                     const latestIntent = b.latest_intent || (b.latest_title || "").match(/^(Sale|Rent|Lease|Buy|Requirement)/i)?.[1];
@@ -3236,6 +3241,52 @@ return {
                         ? `Latest feed match: ${stripEmojis(selectedBroker.latest_title)}`
                         : "This broker card has not resolved to parsed observations yet. The feed item is still usable for navigation and WhatsApp actions."}
                     </div>
+                    {selectedBroker.latest_title && (
+                      <div className="mx-auto mt-4 max-w-[520px] rounded-xl border border-white/10 bg-black/40 p-4 text-left">
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+                              Latest feed card
+                            </div>
+                            <div className="mt-1 text-sm font-bold text-white truncate">
+                              {stripEmojis(selectedBroker.latest_title)}
+                            </div>
+                          </div>
+                          <div className="flex shrink-0 flex-wrap items-center gap-2 text-[10px]">
+                            {selectedBroker.latest_intent && (
+                              <span className={`badge ${intentColor(selectedBroker.latest_intent)}`}>
+                                {intentLabel(selectedBroker.latest_intent)}
+                              </span>
+                            )}
+                            {selectedBroker.latest_micro_market && (
+                              <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-zinc-300">
+                                {selectedBroker.latest_micro_market}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <div className="mt-3 grid grid-cols-2 gap-3 text-[11px] text-zinc-500 sm:grid-cols-4">
+                          <div>
+                            <div className="text-zinc-600">Observations</div>
+                            <div className="mt-0.5 text-zinc-200">{selectedBroker.observation_count || 0}</div>
+                          </div>
+                          <div>
+                            <div className="text-zinc-600">Buildings</div>
+                            <div className="mt-0.5 text-zinc-200">{selectedBroker.building_count || 0}</div>
+                          </div>
+                          <div>
+                            <div className="text-zinc-600">Channels</div>
+                            <div className="mt-0.5 text-zinc-200">{(selectedBroker.channels || []).length || 0}</div>
+                          </div>
+                          <div>
+                            <div className="text-zinc-600">Last seen</div>
+                            <div className="mt-0.5 text-zinc-200">
+                              {selectedBroker.last_seen ? formatAgeShort(selectedBroker.last_seen) : "Unknown"}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                     {(selectedBroker.latest_intent || selectedBroker.latest_micro_market) && (
                       <div className="mt-4 flex flex-wrap items-center justify-center gap-2 text-[10px]">
                         {selectedBroker.latest_intent && (
