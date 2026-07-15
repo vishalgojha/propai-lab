@@ -1415,19 +1415,11 @@ export interface TeamMember {
 }
 
 export async function getTeamMembers(): Promise<{ members: TeamMember[] }> {
-  const res = await fetch("/api/workspace/members", {
-    headers: { "Content-Type": "application/json" },
-  });
-  if (!res.ok) throw new Error("Failed to fetch team members");
-  return res.json();
+  return fetchJSON<{ members: TeamMember[] }>("/workspace/members");
 }
 
 export async function getCurrentTeamMember(): Promise<TeamMember> {
-  const res = await fetch("/api/workspace/me", {
-    headers: { "Content-Type": "application/json" },
-  });
-  if (!res.ok) throw new Error("Failed to fetch current team member");
-  return res.json();
+  return fetchJSON<TeamMember>("/workspace/me");
 }
 
 // ── Internal Notes ──────────────────────────────────────────────

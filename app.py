@@ -11875,7 +11875,7 @@ def _get_client_store():
 
 @app.get("/api/clients")
 async def list_clients(q: str = "", limit: int = 20):
-    return _get_client_store().search_clients(q, limit)
+    return _get_client_store().get_clients(q)[:limit]
 
 
 @app.post("/api/clients")
