@@ -5951,10 +5951,11 @@ async def public_create_lead(req: PublicLeadRequest):
         return JSONResponse(status_code=400, content={"error": "Invalid client phone number"})
 
     # Look up listing to get broker_phone
-    listing = storage.db.query_one(
+    res = storage.db.execute(
         "SELECT id, broker_name, broker_phone, building_name, micro_market FROM listings WHERE id = $1",
         [req.listing_id]
     )
+    listing = res.fetchone()
     if not listing:
         return JSONResponse(status_code=404, content={"error": "Listing not found"})
 
@@ -5963,14 +5964,24 @@ async def public_create_lead(req: PublicLeadRequest):
         return JSONResponse(status_code=500, content={"error": "Listing has no broker phone"})
 
     # Resolve broker_id by matching broker_phone
-    broker = storage.db.query_one(
-        "SELECT id FROM brokers WHERE primary_phone = $1 OR primary_phone = $2",
-        [broker_phone, broker_phone.replace("+91", "").replace("+91 ", "").replace(" ", "")]
-    )
+    phone_variants = [
+        broker_phone,
+        broker_phone.replace("+91", "").replace("+91 ", "").replace(" ", ""),
+        "".join(ch for ch in broker_phone if ch.isdigit())
+    ]
+    broker = None
+    for variant in phone_variants:
+        res = storage.db.execute(
+            "SELECT id FROM brokers WHERE primary_phone = $1",
+            [variant]
+        )
+        broker = res.fetchone()
+        if broker:
+            break
     broker_id = broker["id"] if broker else None
 
     # Insert lead
-    lead = storage.db.execute_one(
+    res = storage.db.execute(
         """
         INSERT INTO leads (listing_id, broker_id, client_name, client_phone, message, source, status)
         VALUES ($1, $2, $3, $4, $5, 'www_portal', 'new')
@@ -5978,6 +5989,7 @@ async def public_create_lead(req: PublicLeadRequest):
         """,
         [req.listing_id, broker_id, req.client_name.strip(), norm_phone, (req.message or "").strip()]
     )
+    lead = res.fetchone()
 
     # Attempt notification (best-effort, don't fail the request)
     building_or_market = listing.get("building_name") or listing.get("micro_market") or "the listing"
