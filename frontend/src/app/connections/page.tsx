@@ -160,7 +160,7 @@ function isUnpairedPhone(phoneNumber?: string | null) {
   return !phoneNumber || phoneNumber.startsWith("Unpaired");
 }
 
-function CreatePhoneDialog({ open, onClose, onCreated }: { open: boolean; onClose: () => void; onCreated: () => void }) {
+function CreatePhoneDialog({ open, onClose, onCreated }: { open: boolean; onClose: () => void; onCreated: () => Promise<void> | void }) {
   const [instanceName, setInstanceName] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -171,7 +171,7 @@ function CreatePhoneDialog({ open, onClose, onCreated }: { open: boolean; onClos
     try {
       await createPhone({ instance_name: instanceName.trim() || undefined });
       setInstanceName("");
-      onCreated();
+      await onCreated();
       onClose();
     } catch (e: any) {
       setError(e?.message || "Failed to create phone");
@@ -217,7 +217,7 @@ function CreatePhoneDialog({ open, onClose, onCreated }: { open: boolean; onClos
   );
 }
 
-function QRModal({ phone, open, onClose }: { phone: Phone; open: boolean; onClose: () => void }) {
+function QRModal({ phone, open, onClose, onRefresh }: { phone: Phone; open: boolean; onClose: () => void; onRefresh: () => Promise<void> | void }) {
   const [qrText, setQrText] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -234,21 +234,22 @@ function QRModal({ phone, open, onClose }: { phone: Phone; open: boolean; onClos
         setConnected(true);
         setQrText(null);
         setError(null);
+        await onRefresh();
       } else if (res.qr) {
         setQrText(res.qr);
       } else if (res.qr_available === false) {
-        setError("QR expired. Refreshing...");
-        setTimeout(() => connectPhone(phone.id).then(() => fetchQR()).catch(() => {}), 500);
+        setError("QR expired. Restarting session...");
+        setTimeout(() => resetPhone(phone.id).then(() => fetchQR()).catch(() => {}), 500);
       } else {
-        setError("QR not available yet. Starting connection...");
-        setTimeout(() => connectPhone(phone.id).then(() => fetchQR()).catch(() => {}), 500);
+        setError("QR not available yet. Restarting session...");
+        setTimeout(() => resetPhone(phone.id).then(() => fetchQR()).catch(() => {}), 500);
       }
     } catch {
-      setError("Failed to fetch QR code");
+      setError("Failed to fetch QR code. Retry, or reset the phone if it stays stuck.");
     } finally {
       setLoading(false);
     }
-  }, [phone.id]);
+  }, [phone.id, onRefresh]);
 
   useEffect(() => {
     if (open) {
@@ -292,10 +293,11 @@ function QRModal({ phone, open, onClose }: { phone: Phone; open: boolean; onClos
 
   useEffect(() => {
     if (connected) {
+      onRefresh();
       const t = setTimeout(onClose, 2000);
       return () => clearTimeout(t);
     }
-  }, [connected, onClose]);
+  }, [connected, onClose, onRefresh]);
 
   if (!open) return null;
   return (
@@ -347,7 +349,7 @@ function QRModal({ phone, open, onClose }: { phone: Phone; open: boolean; onClos
   );
 }
 
-function PhoneCard({ phone, onRefresh, onShowQR }: { phone: Phone; onRefresh: () => void; onShowQR: (p: Phone) => void }) {
+function PhoneCard({ phone, onRefresh, onShowQR }: { phone: Phone; onRefresh: () => Promise<void> | void; onShowQR: (p: Phone) => void }) {
   const [actionLoading, setActionLoading] = useState<string | null>(null);
 
   const handleAction = async (action: string) => {
@@ -357,7 +359,7 @@ function PhoneCard({ phone, onRefresh, onShowQR }: { phone: Phone; onRefresh: ()
       else if (action === "reset") await resetPhone(phone.id);
       else if (action === "delete") await deletePhone(phone.id);
       else if (action === "connect") await connectPhone(phone.id);
-      onRefresh();
+      await onRefresh();
     } catch { /* ignore */ }
     setActionLoading(null);
   };
@@ -479,17 +481,19 @@ export default function ConnectionCenterPage() {
     } catch { /* ignore */ }
   }, []);
 
+  const refreshData = useCallback(async () => {
+    await Promise.all([fetchPhones(), fetchStats()]);
+  }, [fetchPhones, fetchStats]);
+
   useEffect(() => {
     if (!authLoading && user) {
-      fetchPhones();
-      fetchStats();
+      refreshData();
       const interval = setInterval(() => {
-        fetchPhones();
-        fetchStats();
-      }, 15000);
+        refreshData();
+      }, 8000);
       return () => clearInterval(interval);
     }
-  }, [authLoading, user, fetchPhones, fetchStats]);
+  }, [authLoading, user, refreshData]);
 
   if (authLoading || !user) return null;
 
@@ -534,7 +538,7 @@ export default function ConnectionCenterPage() {
           {/* Phone Cards */}
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
             {phones.map((phone) => (
-              <PhoneCard key={phone.id} phone={phone} onRefresh={fetchPhones} onShowQR={setQrPhone} />
+              <PhoneCard key={phone.id} phone={phone} onRefresh={refreshData} onShowQR={setQrPhone} />
             ))}
           </div>
 
@@ -585,8 +589,8 @@ export default function ConnectionCenterPage() {
         </>
       )}
 
-      <CreatePhoneDialog open={showCreate} onClose={() => setShowCreate(false)} onCreated={fetchPhones} />
-      {qrPhone && <QRModal phone={qrPhone} open={!!qrPhone} onClose={() => setQrPhone(null)} />}
+      <CreatePhoneDialog open={showCreate} onClose={() => setShowCreate(false)} onCreated={refreshData} />
+      {qrPhone && <QRModal phone={qrPhone} open={!!qrPhone} onClose={() => setQrPhone(null)} onRefresh={refreshData} />}
     </div>
   );
 }
