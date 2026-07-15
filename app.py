@@ -2446,6 +2446,28 @@ async def get_tenant_context(
         orgs = storage.get_user_organizations(user["id"])
         if orgs:
             tid = orgs[0]["id"]
+        else:
+            # Auto-create an organization for new signups
+            import re as _re, uuid as _uuid
+            email = user.get("email", "")
+            raw_name = (user.get("user_metadata") or {}).get("full_name", "") or email.split("@")[0]
+            slug = _re.sub(r"[^a-z0-9]+", "-", raw_name.lower()).strip("-") or "workspace"
+            if len(slug) > 40:
+                slug = slug[:40]
+            # Disambiguate with short uuid if slug already exists
+            existing = storage.get_organization_by_slug(slug)
+            if existing:
+                slug = f"{slug}-{_uuid.uuid4().hex[:6]}"
+            display_name = raw_name or email.split("@")[0] or "My Workspace"
+            org = storage.create_organization(name=display_name, slug=slug)
+            if org:
+                tid = org["id"]
+                storage.add_organization_member(tid, user["id"])
+                storage.create_team_member(
+                    name=display_name, email=email,
+                    organization_id=tid,
+                    permissions=["view_inbox", "reply_whatsapp"],
+                )
     # Always reset tenant context to avoid leaking a stale value from a
     # previous request on the same (global) storage singleton. Default to
     # the shared workspace so unauthenticated feed endpoints still scope
@@ -12835,7 +12857,11 @@ async def create_phone(
 
 
 @app.get("/api/phones/{phone_id}")
-async def get_phone(phone_id: int, user: dict = Depends(require_user)):
+async def get_phone(
+    phone_id: int,
+    user: dict = Depends(require_user),
+    tenant_id: str | None = Depends(get_tenant_context),
+):
     phone = storage.get_org_whatsapp_connection(phone_id)
     if not phone:
         raise HTTPException(404, "Phone not found")
@@ -12865,7 +12891,11 @@ async def get_phone(phone_id: int, user: dict = Depends(require_user)):
 
 
 @app.delete("/api/phones/{phone_id}")
-async def delete_phone(phone_id: int, user: dict = Depends(require_user)):
+async def delete_phone(
+    phone_id: int,
+    user: dict = Depends(require_user),
+    tenant_id: str | None = Depends(get_tenant_context),
+):
     phone = storage.get_org_whatsapp_connection(phone_id)
     if not phone:
         raise HTTPException(404, "Phone not found")
@@ -12883,7 +12913,11 @@ async def delete_phone(phone_id: int, user: dict = Depends(require_user)):
 
 
 @app.post("/api/phones/{phone_id}/reset")
-async def reset_phone(phone_id: int, user: dict = Depends(require_user)):
+async def reset_phone(
+    phone_id: int,
+    user: dict = Depends(require_user),
+    tenant_id: str | None = Depends(get_tenant_context),
+):
     phone = storage.get_org_whatsapp_connection(phone_id)
     if not phone:
         raise HTTPException(404, "Phone not found")
@@ -12900,7 +12934,11 @@ async def reset_phone(phone_id: int, user: dict = Depends(require_user)):
 
 
 @app.post("/api/phones/{phone_id}/disconnect")
-async def disconnect_phone(phone_id: int, user: dict = Depends(require_user)):
+async def disconnect_phone(
+    phone_id: int,
+    user: dict = Depends(require_user),
+    tenant_id: str | None = Depends(get_tenant_context),
+):
     phone = storage.get_org_whatsapp_connection(phone_id)
     if not phone:
         raise HTTPException(404, "Phone not found")
@@ -12917,7 +12955,11 @@ async def disconnect_phone(phone_id: int, user: dict = Depends(require_user)):
 
 
 @app.post("/api/phones/{phone_id}/connect")
-async def connect_phone(phone_id: int, user: dict = Depends(require_user)):
+async def connect_phone(
+    phone_id: int,
+    user: dict = Depends(require_user),
+    tenant_id: str | None = Depends(get_tenant_context),
+):
     phone = storage.get_org_whatsapp_connection(phone_id)
     if not phone:
         raise HTTPException(404, "Phone not found")
