@@ -737,7 +737,7 @@ def _infer_fitout_status(text: str, furnishing: str | None = None) -> str | None
             return "bare_shell"
     if re.search(r'\bplug\s*&\s*play\b|\bplug\s+and\s+play\b', lower):
         return "plug_and_play"
-    if re.search(r'\bwarm\s*shell\b|\bwarmshell\b', lower):
+    if "warm shell" in lower or "warmshell" in lower or "warmshell" in lower:
         return "warm_shell"
     if re.search(r'\bbare\s*shell\b', lower):
         return "bare_shell"
