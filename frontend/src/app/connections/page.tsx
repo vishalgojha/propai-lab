@@ -148,11 +148,16 @@ function formatTime(iso: string | null): string {
 
 function formatPhone(p: string) {
   if (!p) return "—";
+  if (p.startsWith("Unpaired")) return "New Phone";
   if (p.startsWith("+")) return p;
   const digits = p.replace(/\D/g, "");
   if (digits.length === 12) return `+${digits.slice(0, 2)} ${digits.slice(2)}`;
   if (digits.length === 10) return `+91 ${digits}`;
   return `+${digits}`;
+}
+
+function isUnpairedPhone(phoneNumber?: string | null) {
+  return !phoneNumber || phoneNumber.startsWith("Unpaired");
 }
 
 function CreatePhoneDialog({ open, onClose, onCreated }: { open: boolean; onClose: () => void; onCreated: () => void }) {
@@ -359,7 +364,7 @@ function PhoneCard({ phone, onRefresh, onShowQR }: { phone: Phone; onRefresh: ()
 
   const isConnected = phone.connected || phone.connection_state === "open";
   const phoneDisplay = phone.phone_number_live || phone.phone_number;
-  const isUnpaired = !isConnected && (!phone.phone_number || phone.phone_number === "Unpaired");
+  const isUnpaired = !isConnected && isUnpairedPhone(phone.phone_number);
   const health: HealthStatus = isConnected ? "healthy" : isUnpaired ? "warning" : "error";
 
   return (
