@@ -345,7 +345,19 @@ function AppShell({ children }: { children: React.ReactNode }) {
   const profileRequired = !profile && pathname !== "/profile";
 
   if (authLoading || !user || !profileLoaded) {
-    return null;
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-black text-white">
+        <div className="text-center">
+          <div className="mx-auto mb-3 h-10 w-10 animate-spin rounded-full border-2 border-white/10 border-t-[#3EE88A]" />
+          <div className="text-sm font-semibold">
+            {authLoading ? "Loading session..." : !user ? "Signing in..." : "Loading profile..."}
+          </div>
+          <div className="mt-1 text-xs text-zinc-500">
+            {authLoading ? "Verifying your workspace access." : !user ? "Redirecting to login." : "Preparing your workspace shell."}
+          </div>
+        </div>
+      </div>
+    );
   }
 
   return (
