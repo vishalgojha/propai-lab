@@ -2162,6 +2162,7 @@ def verify_supabase_token(token: str) -> dict | None:
             token,
             signing_key.key,
             algorithms=["ES256"],
+            audience="authenticated",
             options={"require": ["sub", "exp"]},
         )
         return payload
@@ -2219,6 +2220,7 @@ async def debug_auth(request: Request):
         try:
             signing_key = _jwks_client.get_signing_key_from_jwt(token)
             payload = pyjwt.decode(token, signing_key.key, algorithms=["ES256"],
+                                  audience="authenticated",
                                   options={"require": ["sub", "exp"]})
             result["diagnosis"] = "VALID: Token decoded successfully. Auth should be working."
             result["payload_sub"] = payload.get("sub")
