@@ -2826,7 +2826,16 @@ def _resolve_user_organization_id(user: dict) -> str | None:
     # Auto-create an organization for new signups
     import re as _re, uuid as _uuid
     email = user.get("email", "")
-    raw_name = (user.get("user_metadata") or {}).get("full_name", "") or email.split("@")[0]
+    metadata = user.get("user_metadata") or {}
+    workspace_name = (
+        metadata.get("workspace_name")
+        or metadata.get("agency_name")
+        or metadata.get("company_name")
+        or metadata.get("organization_name")
+        or metadata.get("full_name", "")
+        or email.split("@")[0]
+    )
+    raw_name = workspace_name or email.split("@")[0]
     slug = _re.sub(r"[^a-z0-9]+", "-", raw_name.lower()).strip("-") or "workspace"
     if len(slug) > 40:
         slug = slug[:40]
@@ -2995,7 +3004,10 @@ async def get_failed(limit: int = 50, offset: int = 0, user: dict = Depends(requ
 
 
 @app.get("/api/stats")
-async def get_stats(user: dict = Depends(require_user)):
+async def get_stats(
+    user: dict = Depends(require_user),
+    tenant_id: str | None = Depends(get_tenant_context),
+):
     return storage.get_stats()
 
 
@@ -3141,7 +3153,10 @@ async def dashboard_signals(user: dict = Depends(require_user)):
 
 
 @app.get("/api/dashboard/coverage")
-async def dashboard_coverage(user: dict = Depends(require_user)):
+async def dashboard_coverage(
+    user: dict = Depends(require_user),
+    tenant_id: str | None = Depends(get_tenant_context),
+):
     """Market memory: groups, messages stored, buildings, landmarks etc."""
     stats = storage.get_stats()
     cache = _load_evidence_cache()
@@ -3345,7 +3360,10 @@ async def get_market_detail(market_name: str, user: dict = Depends(require_user)
 
 
 @app.get("/api/dashboard/sync-activity")
-async def dashboard_sync_activity(user: dict = Depends(require_user)):
+async def dashboard_sync_activity(
+    user: dict = Depends(require_user),
+    tenant_id: str | None = Depends(get_tenant_context),
+):
     """Currently reading group and sync progress."""
     try:
         overall = get_scheduler().status().get("overall", "idle")
@@ -3371,11 +3389,11 @@ async def dashboard_sync_activity(user: dict = Depends(require_user)):
     raw_total = 0
     raw_processed = 0
     try:
-        raw_total = _raw_count_all()
-        raw_processed = _raw_count_processed()
+        raw_total = _raw_count_all(tenant_id)
+        raw_processed = _raw_count_processed(tenant_id)
     except Exception:
         pass
-    lag = _raw_extraction_lag()
+    lag = _raw_extraction_lag(tenant_id)
     return {
         "overall": overall,
         "total_jobs": len(all_jobs),
@@ -3391,10 +3409,13 @@ async def dashboard_sync_activity(user: dict = Depends(require_user)):
 
 
 @app.get("/api/extraction/progress")
-async def extraction_progress(user: dict = Depends(require_user)):
+async def extraction_progress(
+    user: dict = Depends(require_user),
+    tenant_id: str | None = Depends(get_tenant_context),
+):
     """Current extraction pipeline progress (async worker status)."""
-    total = _raw_count_all()
-    processed = _raw_count_processed()
+    total = _raw_count_all(tenant_id)
+    processed = _raw_count_processed(tenant_id)
     pending = total - processed
     # Recent activity window
     from datetime import timedelta
@@ -3407,7 +3428,7 @@ async def extraction_progress(user: dict = Depends(require_user)):
         recent_processed = res.count if hasattr(res, "count") else 0
     except Exception:
         pass
-    lag = _raw_extraction_lag()
+    lag = _raw_extraction_lag(tenant_id)
     return {
         "total_raw_messages": total,
         "processed": processed,
@@ -3418,24 +3439,30 @@ async def extraction_progress(user: dict = Depends(require_user)):
     }
 
 
-def _raw_count_all() -> int:
+def _raw_count_all(tenant_id: str | None = None) -> int:
     try:
-        res = storage.client.table("raw_messages").select("id", count="exact").execute()
+        query = storage.client.table("raw_messages").select("id", count="exact")
+        if tenant_id:
+            query = query.eq("tenant_id", tenant_id)
+        res = query.execute()
         return res.count if hasattr(res, "count") else 0
     except Exception:
         return 0
 
 
-def _raw_count_processed() -> int:
+def _raw_count_processed(tenant_id: str | None = None) -> int:
     try:
-        res = storage.client.table("raw_messages").select("id", count="exact")\
-            .eq("processed", True).execute()
+        query = storage.client.table("raw_messages").select("id", count="exact")\
+            .eq("processed", True)
+        if tenant_id:
+            query = query.eq("tenant_id", tenant_id)
+        res = query.execute()
         return res.count if hasattr(res, "count") else 0
     except Exception:
         return 0
 
 
-def _raw_extraction_lag() -> dict:
+def _raw_extraction_lag(tenant_id: str | None = None) -> dict:
     """Return a lightweight extraction lag snapshot for alerting/UI."""
     from datetime import timedelta
 
@@ -3447,20 +3474,29 @@ def _raw_extraction_lag() -> dict:
     oldest_pending_at = None
 
     try:
-        res = storage.client.table("raw_messages").select("created_at", count="exact")\
-            .eq("processed", False).lt("created_at", cutoff_15m).execute()
+        query = storage.client.table("raw_messages").select("created_at", count="exact")\
+            .eq("processed", False).lt("created_at", cutoff_15m)
+        if tenant_id:
+            query = query.eq("tenant_id", tenant_id)
+        res = query.execute()
         pending_over_15m = res.count if hasattr(res, "count") else 0
     except Exception:
         pass
     try:
-        res = storage.client.table("raw_messages").select("created_at", count="exact")\
-            .eq("processed", False).lt("created_at", cutoff_60m).execute()
+        query = storage.client.table("raw_messages").select("created_at", count="exact")\
+            .eq("processed", False).lt("created_at", cutoff_60m)
+        if tenant_id:
+            query = query.eq("tenant_id", tenant_id)
+        res = query.execute()
         pending_over_60m = res.count if hasattr(res, "count") else 0
     except Exception:
         pass
     try:
-        res = storage.client.table("raw_messages").select("created_at")\
-            .eq("processed", False).order("created_at", desc=False).limit(1).execute()
+        query = storage.client.table("raw_messages").select("created_at")\
+            .eq("processed", False).order("created_at", desc=False).limit(1)
+        if tenant_id:
+            query = query.eq("tenant_id", tenant_id)
+        res = query.execute()
         if res.data:
             oldest_pending_at = res.data[0].get("created_at")
     except Exception:
@@ -8055,6 +8091,25 @@ def _ingestor_urls() -> list[str]:
         if candidate and candidate not in urls:
             urls.append(candidate)
     return urls
+
+
+async def _first_ingestor_response(
+    method: str,
+    path: str,
+    *,
+    timeout: float = 10,
+    **kwargs,
+) -> tuple[str | None, httpx.Response | None]:
+    urls = _ingestor_urls()
+    if not urls:
+        return None, None
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        tasks = [client.request(method, f"{base_url}{path}", **kwargs) for base_url in urls]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+    for base_url, result in zip(urls, results):
+        if isinstance(result, httpx.Response) and result.status_code < 300:
+            return base_url, result
+    return None, None
 
 
 @app.post("/api/sync/refresh-qr")
@@ -13146,7 +13201,15 @@ async def list_organizations(
 
 
 @app.get("/api/orgs/current")
-async def current_organization(user: dict = Depends(require_user)):
+async def current_organization(
+    user: dict = Depends(require_user),
+    tenant_id: str | None = Depends(get_tenant_context),
+):
+    if not tenant_id:
+        raise HTTPException(404, "No organization found")
+    org = storage.get_organization(tenant_id)
+    if org:
+        return org
     orgs = storage.get_user_organizations(user["id"])
     if not orgs:
         raise HTTPException(404, "No organization found")
@@ -13452,16 +13515,10 @@ async def list_phones(
     org_id = tenant_id or DEFAULT_TENANT_ID
     phones = storage.list_org_whatsapp_connections(org_id)
     ingestor_statuses = {}
-    async with httpx.AsyncClient(timeout=5) as client:
-        for base_url in _ingestor_urls():
-            try:
-                resp = await client.get(f"{base_url}/list")
-                if resp.status_code == 200:
-                    for s in resp.json():
-                        ingestor_statuses[s.get("broker_id", "")] = s
-                    break
-            except httpx.RequestError:
-                continue
+    _, resp = await _first_ingestor_response("GET", "/list", timeout=5)
+    if resp is not None and resp.status_code == 200:
+        for s in resp.json():
+            ingestor_statuses[s.get("broker_id", "")] = s
     result = []
     for phone in phones:
         broker_id = phone.get("broker_id", "")
@@ -13484,27 +13541,33 @@ async def list_phones(
 async def create_phone(
     body: dict,
     user: dict = Depends(require_user),
+    tenant_id: str | None = Depends(get_tenant_context),
 ):
     try:
         import uuid as _uuid
-        phone_number = body.get("phone_number", "").strip() or f"Unpaired-{_uuid.uuid4().hex[:8]}"
+        phone_number = body.get("phone_number", "").strip()
         instance_name = body.get("instance_name", "").strip()
-        org_id = _resolve_user_organization_id(user) or DEFAULT_TENANT_ID
+        org_id = tenant_id or _resolve_user_organization_id(user) or DEFAULT_TENANT_ID
         count = storage.count_org_phones(org_id)
         if count >= 3:
             raise HTTPException(400, "Maximum 3 phones per organization")
+        if not phone_number:
+            placeholder = storage.get_org_placeholder_whatsapp_connection(org_id)
+            if placeholder:
+                updates: dict = {}
+                if instance_name and not placeholder.get("instance_name"):
+                    updates["instance_name"] = instance_name
+                if updates:
+                    updated = storage.update_org_whatsapp_connection(placeholder["id"], updates)
+                    if updated:
+                        placeholder = updated
+                return placeholder
+            phone_number = f"Unpaired-{_uuid.uuid4().hex[:8]}"
         broker_id = f"phone-{_uuid.uuid4().hex[:12]}"
         result = storage.add_org_whatsapp_connection(org_id, phone_number, instance_name, broker_id)
         if not result:
             raise HTTPException(400, "Failed to create phone")
-        async with httpx.AsyncClient(timeout=10) as client:
-            for base_url in _ingestor_urls():
-                try:
-                    resp = await client.post(f"{base_url}/connect?broker_id={broker_id}")
-                    if resp.status_code == 200:
-                        break
-                except httpx.RequestError:
-                    continue
+        await _first_ingestor_response("POST", "/connect", timeout=10, params={"broker_id": broker_id})
         return result
     except HTTPException:
         raise
@@ -13525,15 +13588,9 @@ async def get_phone(
         raise HTTPException(404, "Phone not found")
     broker_id = phone.get("broker_id", "")
     status = {}
-    async with httpx.AsyncClient(timeout=5) as client:
-        for base_url in _ingestor_urls():
-            try:
-                resp = await client.get(f"{base_url}/status?broker_id={broker_id}")
-                if resp.status_code == 200:
-                    status = resp.json()
-                    break
-            except httpx.RequestError:
-                continue
+    _, resp = await _first_ingestor_response("GET", "/status", timeout=5, params={"broker_id": broker_id})
+    if resp is not None and resp.status_code == 200:
+        status = resp.json()
     return {
         **phone,
         "connected": status.get("connected", False),
@@ -13559,13 +13616,7 @@ async def delete_phone(
         raise HTTPException(404, "Phone not found")
     broker_id = phone.get("broker_id", "")
     if broker_id:
-        async with httpx.AsyncClient(timeout=10) as client:
-            for base_url in _ingestor_urls():
-                try:
-                    await client.post(f"{base_url}/disconnect?broker_id={broker_id}")
-                    break
-                except httpx.RequestError:
-                    continue
+        await _first_ingestor_response("POST", "/disconnect", timeout=10, params={"broker_id": broker_id})
     ok = storage.remove_org_whatsapp_connection(phone_id)
     return {"ok": ok}
 
@@ -13580,14 +13631,9 @@ async def reset_phone(
     if not phone:
         raise HTTPException(404, "Phone not found")
     broker_id = phone.get("broker_id", "")
-    async with httpx.AsyncClient(timeout=10) as client:
-        for base_url in _ingestor_urls():
-            try:
-                resp = await client.post(f"{base_url}/reset?broker_id={broker_id}")
-                if resp.status_code == 200:
-                    return {"ok": True, "message": "Session cleared, QR should appear shortly"}
-            except httpx.RequestError:
-                continue
+    _, resp = await _first_ingestor_response("POST", "/reset", timeout=10, params={"broker_id": broker_id})
+    if resp is not None and resp.status_code == 200:
+        return {"ok": True, "message": "Session cleared, QR should appear shortly"}
     raise HTTPException(502, "Cannot reach ingestor")
 
 
@@ -13601,14 +13647,9 @@ async def disconnect_phone(
     if not phone:
         raise HTTPException(404, "Phone not found")
     broker_id = phone.get("broker_id", "")
-    async with httpx.AsyncClient(timeout=10) as client:
-        for base_url in _ingestor_urls():
-            try:
-                resp = await client.post(f"{base_url}/disconnect?broker_id={broker_id}")
-                if resp.status_code == 200:
-                    return {"ok": True, "message": "Phone disconnected"}
-            except httpx.RequestError:
-                continue
+    _, resp = await _first_ingestor_response("POST", "/disconnect", timeout=10, params={"broker_id": broker_id})
+    if resp is not None and resp.status_code == 200:
+        return {"ok": True, "message": "Phone disconnected"}
     raise HTTPException(502, "Cannot reach ingestor")
 
 
@@ -13622,14 +13663,9 @@ async def connect_phone(
     if not phone:
         raise HTTPException(404, "Phone not found")
     broker_id = phone.get("broker_id", "")
-    async with httpx.AsyncClient(timeout=10) as client:
-        for base_url in _ingestor_urls():
-            try:
-                resp = await client.post(f"{base_url}/connect?broker_id={broker_id}")
-                if resp.status_code == 200:
-                    return resp.json()
-            except httpx.RequestError:
-                continue
+    _, resp = await _first_ingestor_response("POST", "/connect", timeout=10, params={"broker_id": broker_id})
+    if resp is not None and resp.status_code == 200:
+        return resp.json()
     raise HTTPException(502, "Cannot reach ingestor")
 
 

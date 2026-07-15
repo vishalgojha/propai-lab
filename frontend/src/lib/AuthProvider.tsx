@@ -3,6 +3,7 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from "react";
 import { User, Session } from "@supabase/supabase-js";
 import { getUser, getSession, onAuthStateChange, signOut } from "@/lib/auth";
+import { getAuthMe, setActiveTenantId } from "@/lib/api";
 
 interface AuthContextType {
   user: User | null;
@@ -27,6 +28,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (mounted) {
         setSession(sessionData);
         setUser(userData);
+        if (!userData) {
+          setActiveTenantId(null);
+        }
+        if (userData) {
+          try {
+            const me = await getAuthMe();
+            if (mounted) {
+              setActiveTenantId(me.active_tenant || null);
+            }
+          } catch {
+            // Keep the last known tenant if the auth-me call fails.
+          }
+        }
         setLoading(false);
       }
     };
@@ -40,6 +54,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (event === "SIGNED_OUT") {
           setUser(null);
           setSession(null);
+          setActiveTenantId(null);
         }
       }
     });
@@ -54,12 +69,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const [sessionData, userData] = await Promise.all([getSession(), getUser()]);
     setSession(sessionData);
     setUser(userData);
+    if (!userData) {
+      setActiveTenantId(null);
+      return;
+    }
+    try {
+      const me = await getAuthMe();
+      setActiveTenantId(me.active_tenant || null);
+    } catch {
+      // leave tenant untouched if auth-me fails during refresh
+    }
   };
 
   const handleSignOut = async () => {
     await signOut();
     setUser(null);
     setSession(null);
+    setActiveTenantId(null);
   };
 
   return (

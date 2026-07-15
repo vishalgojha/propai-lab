@@ -251,7 +251,7 @@ export default function ProfilePage() {
             <section className="rounded-2xl border border-white/10 p-6">
               <h2 className="flex items-center gap-2 text-sm font-bold text-white mb-5">
                 <Settings className="w-4 h-4 text-emerald-400" />
-                Workspace
+                Agency / Workspace
               </h2>
               <dl className="space-y-3 text-sm">
                 <div className="flex justify-between">

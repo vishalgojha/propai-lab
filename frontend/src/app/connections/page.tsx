@@ -7,7 +7,7 @@ import QRCode from "qrcode";
 import { useRouter } from "next/navigation";
 import { Activity, Clock, Database, ImageUp, Inbox, List, LogOut, MessageSquare, Plus, RefreshCw, Shield, Smartphone, Trash2, AlertTriangle, Users, Zap, Lock, X } from "lucide-react";
 import { useAuth } from "@/lib/AuthProvider";
-import { getPhones, getPhone, createPhone, deletePhone, resetPhone, disconnectPhone, connectPhone, fetchJSON, getQR, refreshQR, getWhatsAppStatus, type Phone, type WhatsAppStatus } from "@/lib/api";
+import { getPhones, getPhone, createPhone, deletePhone, resetPhone, disconnectPhone, connectPhone, fetchJSON, getWhatsAppStatus, type Phone, type WhatsAppStatus } from "@/lib/api";
 
 type HealthStatus = "healthy" | "warning" | "error";
 
@@ -204,12 +204,12 @@ function CreatePhoneDialog({ open, onClose, onCreated }: { open: boolean; onClos
         <p className="text-xs text-zinc-500 mb-4">Create a new WhatsApp connection. The phone number will be detected automatically when you scan the QR code.</p>
         <div className="space-y-3">
           <div>
-            <label className="text-xs font-medium text-zinc-400 mb-1 block">Instance Name (optional)</label>
+            <label className="text-xs font-medium text-zinc-400 mb-1 block">Agency / Workspace Name (optional)</label>
             <input
               type="text"
               value={instanceName}
               onChange={(e) => setInstanceName(e.target.value)}
-              placeholder="e.g. Sales Team"
+              placeholder="e.g. Ananta Realty"
               className="w-full rounded-lg bg-zinc-800 border border-white/10 px-3 py-2.5 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-[#3EE88A]/50"
             />
           </div>
@@ -242,8 +242,8 @@ function QRModal({ phone, open, onClose, onRefresh }: { phone: Phone; open: bool
     setLoading(true);
     setError(null);
     try {
-      const res = await refreshQR();
-      const qrResult = await getQR();
+      const res = await connectPhone(phone.id);
+      const qrResult = await getPhone(phone.id);
       if (qrResult?.qr) {
         setQrText(qrResult.qr);
         setError(null);
@@ -262,13 +262,13 @@ function QRModal({ phone, open, onClose, onRefresh }: { phone: Phone; open: bool
     } finally {
       setLoading(false);
     }
-  }, [onRefresh]);
+  }, [onRefresh, phone.id]);
 
   const fetchQR = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await getQR();
+      const res = await getPhone(phone.id);
       if (res?.connected || res?.connection_state === "open" || res?.connected_since) {
         setConnected(true);
         setQrText(null);
@@ -286,7 +286,7 @@ function QRModal({ phone, open, onClose, onRefresh }: { phone: Phone; open: bool
     } finally {
       setLoading(false);
     }
-  }, [onRefresh, refreshSessionAndFetchQR]);
+  }, [onRefresh, phone.id, refreshSessionAndFetchQR]);
 
   useEffect(() => {
     if (open) {
@@ -317,7 +317,7 @@ function QRModal({ phone, open, onClose, onRefresh }: { phone: Phone; open: bool
       } catch {}
     }, 3000);
     return () => { if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; } };
-  }, [open, connected, phone.id]);
+  }, [open, connected, phone.id, qrText]);
 
   useEffect(() => {
     if (!canvasRef.current || !qrText) return;
@@ -463,10 +463,7 @@ function PhoneCard({ phone, onRefresh, onShowQR }: { phone: Phone; onRefresh: ()
 
 function LiveStatusCard({ status, onAddPhone }: { status: WhatsAppStatus | null; onAddPhone: () => void }) {
   const connected = Boolean(status?.connected || status?.state === "open" || status?.state === "connected" || status?.connected_since);
-  const phoneLabel = status?.phone ? formatPhone(status.phone) : "";
-  const headline = connected
-    ? (phoneLabel || "WhatsApp connected")
-    : (phoneLabel ? `Waiting to connect - ${phoneLabel}` : "Checking WhatsApp connection");
+  const headline = connected ? "WhatsApp connected" : "Checking WhatsApp connection";
 
   return (
     <div className="rounded-2xl border border-white/10 p-5 mb-8 bg-gradient-to-br from-emerald-500/5 via-transparent to-transparent">

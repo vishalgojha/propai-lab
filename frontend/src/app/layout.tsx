@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import "./globals.css";
-import { getConnectionState, getWhatsAppStatus, getPhones, getRaw, ConnectionState, WhatsAppStatus, searchMessages, getCompanionConfig, CompanionConfig, getProfile, isLiveWhatsAppConnection, type Phone } from "@/lib/api";
+import { getPhones, getRaw, searchMessages, getCompanionConfig, CompanionConfig, getProfile, isLiveWhatsAppConnection, type Phone } from "@/lib/api";
 import { classifyFormatIssue } from "@/lib/format-issues";
 import {
   MessageSquare,
@@ -181,8 +181,6 @@ function AppShell({ children }: { children: React.ReactNode }) {
   const { user, loading: authLoading } = useAuth();
   const isMobile = useIsMobile();
   const { drawerOpen, setDrawerOpen, toggleDrawer, setLastTab } = useLayout();
-  const [conn, setConn] = useState<ConnectionState | null>(null);
-  const [whatsapp, setWhatsapp] = useState<WhatsAppStatus | null>(null);
   const [phones, setPhones] = useState<Phone[]>([]);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [offline, setOffline] = useState(false);
@@ -241,10 +239,11 @@ function AppShell({ children }: { children: React.ReactNode }) {
     return () => { cancelled = true; };
   }, [user, profile]);
 
-  const waLoaded = conn !== null || whatsapp !== null;
-  const waConnected = !waLoaded ? null : (isLiveWhatsAppConnection(conn) || isLiveWhatsAppConnection(whatsapp));
-  const waStale = Boolean(conn?.status_stale || whatsapp?.status_stale);
-  const waPhone = whatsapp?.phone || phones.find((phone) => isLiveWhatsAppConnection(phone))?.phone_number_live || phones.find((phone) => isLiveWhatsAppConnection(phone))?.phone_number || "";
+  const livePhone = phones.find((phone) => isLiveWhatsAppConnection(phone)) || null;
+  const displayPhone = livePhone || phones[0] || null;
+  const waConnected = phones.length === 0 ? null : Boolean(livePhone);
+  const waStale = false;
+  const waPhone = displayPhone?.phone_number_live || displayPhone?.phone_number || "";
 
   useEffect(() => {
     if (authLoading) return;
@@ -266,9 +265,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
     if (authLoading || !user) return;
     const load = async () => {
       try {
-        const [c, w, p, cfg] = await Promise.all([getConnectionState(), getWhatsAppStatus(), getPhones().catch(() => []), getCompanionConfig().catch(() => null)]);
-        setConn(c);
-        setWhatsapp(w);
+        const [p, cfg] = await Promise.all([getPhones().catch(() => []), getCompanionConfig().catch(() => null)]);
         setPhones(p);
         if (cfg) setWabaConfig(cfg);
       } catch {}
@@ -466,12 +463,12 @@ function AppShell({ children }: { children: React.ReactNode }) {
                 {waConnected === null
                   ? "Checking WhatsApp"
                   : waConnected
-                    ? (waStale ? (whatsapp?.phone || "WhatsApp Connected") : (whatsapp?.phone || "WhatsApp Connected"))
+                    ? "WhatsApp Connected"
                     : "WhatsApp Disconnected"}
               </div>
-              {waConnected && whatsapp?.connected_since && (
+              {waConnected && livePhone?.connected_since && (
                 <div className="text-[10px] text-zinc-500 truncate">
-                  {waStale ? "Reconnecting quietly" : `Since ${new Date(whatsapp.connected_since).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`}
+                  Since {new Date(livePhone.connected_since).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                 </div>
               )}
             </div>
@@ -504,7 +501,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
             <a href="/connections" className={`flex items-center gap-1 text-[11px] lg:text-[12px] font-semibold transition-colors ${waConnected === null ? "text-zinc-400 hover:text-zinc-300" : waConnected ? (waStale ? "text-amber-300 hover:text-amber-200" : "text-emerald-300") : "text-amber-300 hover:text-amber-200"}`}>
               <span className={`w-1.5 h-1.5 lg:w-2 lg:h-2 rounded-full ${waConnected === null ? "bg-zinc-500" : waConnected ? (waStale ? "bg-amber-400 animate-pulse" : "bg-emerald-400 animate-pulse") : "bg-amber-400"}`} />
               <span className="hidden sm:inline">
-                {waConnected === null ? "Checking" : waConnected ? (waStale ? "Reconnecting" : "Connected") : "Disconnected"}
+                {waConnected === null ? "Checking" : waConnected ? "Connected" : "Disconnected"}
               </span>
             </a>
           </div>

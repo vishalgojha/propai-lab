@@ -16,6 +16,7 @@ function SignupContent() {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [fullName, setFullName] = useState("");
+  const [workspaceName, setWorkspaceName] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -48,7 +49,8 @@ function SignupContent() {
         email,
         password,
         `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}`,
-        fullName
+        fullName,
+        workspaceName.trim() || undefined,
       );
       setSuccess("Check your email to confirm your account");
       setTimeout(() => router.push(`/auth/login?next=${encodeURIComponent(next)}`), 2000);
@@ -104,6 +106,24 @@ function SignupContent() {
                   autoComplete="name"
                   className="w-full pl-10 pr-4 py-2.5 bg-zinc-800/50 border border-white/10 rounded-lg text-sm text-white placeholder-zinc-500 outline-none focus:border-emerald-400/50 focus:ring-1 focus:ring-emerald-400/50 transition-colors"
                   placeholder="John Doe"
+                  disabled={loading}
+                />
+              </div>
+            </div>
+
+            <div>
+              <label htmlFor="workspaceName" className="block text-[11px] font-semibold text-zinc-500 uppercase tracking-wider mb-1">
+                Agency / Workspace Name
+              </label>
+              <div className="relative mt-1">
+                <input
+                  id="workspaceName"
+                  type="text"
+                  value={workspaceName}
+                  onChange={(e) => setWorkspaceName(e.target.value)}
+                  autoComplete="organization"
+                  className="w-full px-4 py-2.5 bg-zinc-800/50 border border-white/10 rounded-lg text-sm text-white placeholder-zinc-500 outline-none focus:border-emerald-400/50 focus:ring-1 focus:ring-emerald-400/50 transition-colors"
+                  placeholder="Ananta Realty"
                   disabled={loading}
                 />
               </div>
@@ -185,7 +205,7 @@ function SignupContent() {
 
             <button
               type="submit"
-              disabled={loading || !email || !password || !confirmPassword || !fullName}
+              disabled={loading || !email || !password || !confirmPassword || !fullName || !workspaceName}
               className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-emerald-400 text-black rounded-lg text-sm font-bold min-h-[48px] disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
             >
               {loading ? (

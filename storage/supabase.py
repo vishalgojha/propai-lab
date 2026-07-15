@@ -786,11 +786,25 @@ class SupabaseStorage(Storage):
             .eq("organization_id", org_id).order("created_at", desc=False).execute()
         return res.data or []
 
+    def get_org_placeholder_whatsapp_connection(self, org_id: str) -> dict | None:
+        for row in self.list_org_whatsapp_connections(org_id):
+            phone_number = str(row.get("phone_number") or "").strip()
+            if not phone_number or phone_number.startswith("Unpaired"):
+                return row
+        return None
+
     def add_org_whatsapp_connection(self, org_id: str, phone_number: str, instance_name: str = "", broker_id: str = "") -> dict | None:
         data = {"organization_id": org_id, "phone_number": phone_number, "instance_name": instance_name}
         if broker_id:
             data["broker_id"] = broker_id
         res = self.client.table("org_whatsapp_connections").insert(data).execute()
+        return res.data[0] if res.data else None
+
+    def update_org_whatsapp_connection(self, conn_id: int, updates: dict) -> dict | None:
+        payload = {k: v for k, v in updates.items() if v is not None}
+        if not payload:
+            return self.get_org_whatsapp_connection(conn_id)
+        res = self.client.table("org_whatsapp_connections").update(payload).eq("id", conn_id).execute()
         return res.data[0] if res.data else None
 
     def remove_org_whatsapp_connection(self, conn_id: int) -> bool:

@@ -43,13 +43,22 @@ export async function signInWithMagicLink(email: string, redirectTo?: string) {
   return data;
 }
 
-export async function signUp(email: string, password: string, redirectTo?: string, fullName?: string) {
+export async function signUp(
+  email: string,
+  password: string,
+  redirectTo?: string,
+  fullName?: string,
+  workspaceName?: string,
+) {
   const { data, error } = await getSupabase().auth.signUp({
     email,
     password,
     options: {
       emailRedirectTo: redirectTo || `${window.location.origin}/auth/callback`,
-      data: fullName ? { full_name: fullName } : undefined,
+      data: {
+        ...(fullName ? { full_name: fullName } : {}),
+        ...(workspaceName ? { workspace_name: workspaceName } : {}),
+      },
     },
   });
   if (error) throw error;

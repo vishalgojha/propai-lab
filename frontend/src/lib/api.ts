@@ -2,18 +2,36 @@ import { getAccessToken } from "@/lib/auth";
 
 const BASE = "/api";
 const API_TIMEOUT_MS = 60000;
+const ACTIVE_TENANT_KEY = "propai_active_tenant";
+
+function readActiveTenantId(): string | null {
+  if (typeof window === "undefined") return null;
+  const value = window.localStorage.getItem(ACTIVE_TENANT_KEY);
+  return value && value.trim() ? value.trim() : null;
+}
+
+export function setActiveTenantId(tenantId: string | null | undefined) {
+  if (typeof window === "undefined") return;
+  if (tenantId && tenantId.trim()) {
+    window.localStorage.setItem(ACTIVE_TENANT_KEY, tenantId.trim());
+  } else {
+    window.localStorage.removeItem(ACTIVE_TENANT_KEY);
+  }
+}
 
 export async function fetchJSON<T>(url: string, init?: RequestInit, timeoutMs = API_TIMEOUT_MS): Promise<T> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const token = await getAccessToken();
+    const tenantId = readActiveTenantId();
     const res = await fetch(`${BASE}${url}`, {
       ...init,
       signal: init?.signal || controller.signal,
       headers: {
         "Content-Type": "application/json",
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(tenantId ? { "X-Tenant-Id": tenantId } : {}),
         ...init?.headers,
       },
     });
@@ -1531,6 +1549,31 @@ export function updateOrgPrivacy(orgId: string, data: Partial<OrgPrivacySettings
 
 export function getCurrentOrg() {
   return fetchJSON<{ id: string; name?: string; slug?: string }>(`/orgs/current`);
+}
+
+export interface AuthMeResponse {
+  authenticated: boolean;
+  user?: any;
+  organizations?: { id: string; name?: string; slug?: string }[];
+  active_tenant?: string | null;
+  is_super_admin?: boolean;
+}
+
+export function getAuthMe() {
+  return (async () => {
+    const token = await getAccessToken();
+    const res = await fetch(`${BASE}/auth/me`, {
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+    });
+    if (!res.ok) {
+      const body = await res.text();
+      throw new Error(`${res.status} ${res.statusText}: ${body || "Failed to load auth state"}`);
+    }
+    return (await res.json()) as AuthMeResponse;
+  })();
 }
 
 
