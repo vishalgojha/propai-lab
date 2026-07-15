@@ -66,7 +66,7 @@ class OnboardingProfile(BaseModel):
     email: str = ""
     city: str = ""
 
-from storage import Storage, SupabaseStorage, RawMessage, ParsedObservation, ResolverDecision, Evaluation, LLMProvider
+from storage import Storage, SupabaseStorage, RawMessage, ParsedObservation, ResolverDecision, Evaluation, LLMProvider, set_tenant_id, get_tenant_id
 from lab.embedding import create_engine, observation_text, pack_embedding, EmbeddingEngine
 from lab import ai_chat_engine as chat_engine
 from lab import multi_listing
