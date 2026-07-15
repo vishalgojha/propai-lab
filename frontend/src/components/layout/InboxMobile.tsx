@@ -6,18 +6,13 @@ import { X, ChevronLeft, ArrowUp } from "lucide-react";
 
 export function useMobileInbox() {
   const isMobile = useIsMobile();
-  const [mobileView, setMobileView] = useState<"list" | "conversation" | "analysis">("list");
+  const [mobileView, setMobileView] = useState<"list" | "conversation">("list");
 
   const showList = !isMobile || mobileView === "list";
   const showConversation = !isMobile || mobileView === "conversation";
-  const showAnalysis = !isMobile || mobileView === "analysis";
 
   const goToConversation = useCallback(() => {
     if (isMobile) setMobileView("conversation");
-  }, [isMobile]);
-
-  const goToAnalysis = useCallback(() => {
-    if (isMobile) setMobileView("analysis");
   }, [isMobile]);
 
   const goToList = useCallback(() => {
@@ -30,9 +25,7 @@ export function useMobileInbox() {
     setMobileView,
     showList,
     showConversation,
-    showAnalysis,
     goToConversation,
-    goToAnalysis,
     goToList,
   };
 }

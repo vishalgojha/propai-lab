@@ -17,7 +17,6 @@ import { entityProfileHref } from "@/lib/entity-links";
 import { classifyFormatIssue } from "@/lib/format-issues";
 import { useIsMobile } from "@/hooks/useMediaQuery";
 import { useInfiniteScroll } from "@/hooks/useInfiniteScroll";
-import InboxAIChat from "@/components/InboxAIChat";
 import {
   Users,
   User,
@@ -32,8 +31,6 @@ import {
   Calendar,
   MessageSquare,
   ClipboardList,
-  Maximize2,
-  Minimize2,
   EyeOff,
   Eye,
   TrendingUp,
@@ -42,13 +39,6 @@ import {
 } from "lucide-react";
 
 const PAGE_SIZE = 100;
-const RIGHT_TABS = [
-  { key: "analysis", label: "Analysis" },
-  { key: "broker", label: "Broker" },
-  { key: "market", label: "Market" },
-  { key: "ai", label: "AI Assistant" },
-  { key: "notes", label: "Notes" },
-] as const;
 
 type TrainingPrompt = {
   text: string;
@@ -906,7 +896,7 @@ interface InboxPageInnerProps {
 function InboxPageInner({ defaultView }: InboxPageInnerProps) {
   const router = useRouter();
   const isMobile = useIsMobile();
-  const [mobileView, setMobileView] = useState<"list" | "conversation" | "analysis">("list");
+  const [mobileView, setMobileView] = useState<"list" | "conversation">("list");
   // Left Panel States
   const [messages, setMessages] = useState<api.InboxThread[]>([]);
   const [groups, setGroups] = useState<any[]>([]);
@@ -959,18 +949,10 @@ function InboxPageInner({ defaultView }: InboxPageInnerProps) {
     }
   };
 
-  // Right Panel States
-  const [activeRightTab, setActiveRightTab] = useState<"analysis" | "broker" | "market" | "ai" | "notes">("analysis");
   const [selectedMsgDetails, setSelectedMsgDetails] = useState<any>(null);
-  const [loadingDetails, setLoadingDetails] = useState(false);
-  const [rightCollapsed, setRightCollapsed] = useState(false);
-  const [rightPoppedOut, setRightPoppedOut] = useState(false);
   const [selectedBroker, setSelectedBroker] = useState<any>(null);
-  const [loadingBroker, setLoadingBroker] = useState(false);
   const [selectedBuilding, setSelectedBuilding] = useState<any>(null);
-  const [loadingBuilding, setLoadingBuilding] = useState(false);
   const [priceStats, setPriceStats] = useState<any>(null);
-  const [loadingPriceStats, setLoadingPriceStats] = useState(false);
   const [allSuggestions, setAllSuggestions] = useState<any[]>([]);
 
   useEffect(() => {
@@ -1440,18 +1422,6 @@ return {
   useEffect(() => {
     threadEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [conversationMessages]);
-
-  useEffect(() => {
-    if (!rightPoppedOut) return;
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape" || event.key === "Enter") {
-        event.preventDefault();
-        setRightPoppedOut(false);
-      }
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [rightPoppedOut]);
 
   // Helper formatting functions
   const maskPhoneString = (phone: string) => {
@@ -2352,19 +2322,18 @@ return {
   // 3b. Select a specific message within the current conversation
   const selectMessage = useCallback((msg: api.RawMessage) => {
     setSelectedMsg(msg as any);
-    setActiveRightTab("analysis");
+    if (isMobile) setMobileView("conversation");
     loadMessageDetails(msg.id);
     updateUrlMessage((msg as any).chat_id || (msg as any).conversation_key || msg.group_name || "", msg.id);
     const el = messageRefs.current[msg.id];
     if (el) {
       el.scrollIntoView({ behavior: "smooth", block: "center" });
     }
-  }, [updateUrlMessage]);
+  }, [isMobile, updateUrlMessage]);
 
-  // 3c. Select a broker card -> show observations in center + profile in right panel
+  // 3c. Select a broker card -> show observations in the center workspace
   const selectBroker = useCallback(async (broker: any, focusObsRawId?: number) => {
-    if (isMobile) setMobileView(focusObsRawId ? "analysis" : "conversation");
-    setActiveRightTab(!focusObsRawId ? "broker" : "analysis");
+    if (isMobile) setMobileView("conversation");
     setOpportunityFilter("all");
     if (broker.primary_phone) updateUrlBroker(broker.primary_phone);
     setSelectedBroker({
@@ -2427,12 +2396,11 @@ return {
     return () => window.removeEventListener("keydown", handler);
   }, [flatBlocks, selectedMsg, selectMessage]);
 
-  // 4. Load Detailed Analysis, Broker, and Building (Right Panel)
+  // 4. Load detailed analysis, broker, and building data
   const loadMessageDetails = async (
     msgId: number,
     options: { setSelectedRaw?: boolean; preserveProfiles?: boolean } = {}
   ) => {
-    setLoadingDetails(true);
     if (!options.preserveProfiles) {
       setSelectedBroker(null);
       setSelectedBuilding(null);
@@ -2469,21 +2437,18 @@ return {
 
     } catch (e) {
       console.error("Failed to load message details:", e);
-    } finally {
-      setLoadingDetails(false);
     }
   };
 
   const selectBrokerObservation = (obs: any) => {
     const rawId = obs.latest_raw_message_id || obs.raw_message_id;
     if (!rawId) return;
-    setActiveRightTab("analysis");
+    if (isMobile) setMobileView("conversation");
     updateUrlObservation(rawId);
     loadMessageDetails(rawId, { setSelectedRaw: true, preserveProfiles: true });
   };
 
   const loadBrokerDetails = async (name: string, phone: string) => {
-    setLoadingBroker(true);
     try {
       const res = await api.findBroker(name, phone);
       if (res && res.broker_id) {
@@ -2492,25 +2457,19 @@ return {
       }
     } catch (e) {
       console.log("No canonical broker profile found or failed to load:", e);
-    } finally {
-      setLoadingBroker(false);
     }
   };
 
   const loadBuildingDetails = async (name: string) => {
-    setLoadingBuilding(true);
     try {
       const buildingData = await api.getBuildingProfile(name);
       setSelectedBuilding(buildingData);
     } catch (e) {
       console.log("Failed to load building profile:", e);
-    } finally {
-      setLoadingBuilding(false);
     }
   };
 
   const loadPriceStats = async (market: string, bhk: string, intent: string) => {
-    setLoadingPriceStats(true);
     try {
       const stats = await api.getPriceStats(market, bhk, intent);
       if (stats && !stats.error) {
@@ -2518,8 +2477,6 @@ return {
       }
     } catch (e) {
       console.log("Failed to load price stats:", e);
-    } finally {
-      setLoadingPriceStats(false);
     }
   };
 
@@ -3402,14 +3359,6 @@ return {
                       Open WhatsApp
                     </a>
                   )}
-                  {selectedBroker && (
-                    <button
-                      onClick={() => setActiveRightTab("broker")}
-                      className="px-2.5 py-1 bg-[#1e293b] text-zinc-300 hover:text-white rounded text-[10px] font-bold uppercase tracking-wider transition-colors touch-target"
-                    >
-                      View Broker Graph
-                    </button>
-                  )}
                 </div>
               </div>
 
@@ -3884,737 +3833,7 @@ return {
           )}
         </div>
 
-        {/* ================= RIGHT PANEL: INTELLIGENCE PANEL ================= */}
-        <div className={`h-full min-h-0 w-full shrink-0 lg:w-auto ${isMobile && mobileView !== "analysis" ? "hidden" : ""}`}>
-        {rightPoppedOut && (
-          <button
-            type="button"
-            aria-label="Close expanded intelligence panel"
-            onClick={() => setRightPoppedOut(false)}
-            className="fixed inset-0 z-40 bg-black/55 backdrop-blur-[1px]"
-          />
-        )}
-
-        <ResizablePanel
-          defaultWidth={384}
-          minWidth={280}
-          maxWidth={720}
-          storageKey="propai-inbox-right-width"
-          collapsed={rightCollapsed}
-          onCollapse={() => setRightCollapsed(true)}
-          onExpand={() => setRightCollapsed(false)}
-          mobile={isMobile}
-          presets={[
-            { label: "Compact", width: 280 },
-            { label: "Default", width: 384 },
-            { label: "Deep Analysis", width: 560 },
-          ]}
-          className={
-            rightPoppedOut
-              ? "fixed z-50 top-6 right-6 bottom-6 left-[28%] border border-white/10 rounded-2xl shadow-2xl bg-black/80"
-              : "h-full min-h-0 border-l border-white/10 bg-black/80"
-          }
-        >
-          <div className="flex flex-col h-full">
-          {/* Tab Switcher */}
-          <div className="flex border-b border-white/10 bg-[#070b0e]">
-            {isMobile && (
-              <button
-                onClick={() => setMobileView("list")}
-                className="px-3 py-3 text-zinc-400 hover:text-white border-r border-white/10 transition-colors"
-                aria-label="Close analysis"
-              >
-                <ChevronLeft className="w-4 h-4" />
-              </button>
-            )}
-            {RIGHT_TABS.map(({ key: tab, label }) => {
-              return (
-                <button
-                  key={tab}
-                  onClick={() => setActiveRightTab(tab)}
-                  className={`flex-1 py-3 text-xs font-bold text-center border-b-2 transition-colors ${
-                    activeRightTab === tab
-                      ? "border-[#3EE88A] text-[#3EE88A] bg-black/80/50"
-                      : "border-transparent text-zinc-500 hover:text-white"
-                  }`}
-                >
-                  {label}
-                </button>
-              );
-            })}
-            <button
-              onClick={() => setRightPoppedOut((prev) => !prev)}
-              className="px-3 py-3 text-zinc-500 hover:text-white border-l border-white/10 transition-colors"
-              title={rightPoppedOut ? "Dock panel (Esc/Enter)" : "Pop out panel"}
-            >
-              {rightPoppedOut ? (
-                <Minimize2 className="w-3.5 h-3.5" strokeWidth={1.7} />
-              ) : (
-                <Maximize2 className="w-3.5 h-3.5" strokeWidth={1.7} />
-              )}
-            </button>
-          </div>
-
-          {/* Details Scroll Area */}
-          <div className="flex-1 overflow-y-auto p-4 space-y-5">
-            {loadingDetails ? (
-              <div className="h-full flex items-center justify-center text-xs text-zinc-500">
-                Updating workspace intelligence...
-              </div>
-            ) : !selectedMsgDetails ? (
-              <div className="h-full flex items-center justify-center text-xs text-zinc-500 text-center p-6">
-                Select a message to view PropAI evidence and broker actions.
-              </div>
-            ) : (
-              <>
-                {/* ================= TAB 1: MESSAGE ANALYSIS ================= */}
-                {activeRightTab === "analysis" && (
-                  <div className="space-y-4 animate-fadeIn">
-                    
-                    {/* AI Signals & Alerts Section */}
-                    {signals.length > 0 && (
-                      <div className="space-y-2">
-                        <div className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">
-                          AI Signals & Notifications
-                        </div>
-                        {signals.map((s, idx) => {
-                          const bg = s.type === "alert" ? "bg-red-950/20 border-red-500/30 text-red-200" : s.type === "warning" ? "bg-amber-950/20 border-amber-500/30 text-amber-200" : "bg-blue-950/20 border-blue-500/30 text-blue-200";
-                          return (
-                            <div key={idx} className={`p-3 rounded-xl border text-xs leading-relaxed space-y-2 ${bg}`}>
-                              <div className="font-bold flex items-center gap-1.5">
-                                {s.type === "alert" ? "🚨" : s.type === "warning" ? "⚠️" : "💡"} {s.title}
-                              </div>
-                              <p className="text-[11px] text-zinc-400">{s.desc}</p>
-                              
-                              {/* Merge suggestion action trigger */}
-                              {s.actionSug && (
-                                <div className="flex gap-2 pt-1">
-                                  <button
-                                    onClick={() => handleApproveSuggestion(s.actionSug.id)}
-                                    className="px-2 py-1 bg-[#166534] text-green-100 hover:bg-[#15803d] rounded text-[10px] font-bold"
-                                  >
-                                    Approve Merge
-                                  </button>
-                                  <button
-                                    onClick={() => handleRejectSuggestion(s.actionSug.id)}
-                                    className="px-2 py-1 bg-red-950/40 text-red-200 border border-red-800/40 rounded text-[10px] font-bold"
-                                  >
-                                    Reject
-                                  </button>
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-
-                    {/* Raw Text Card */}
-                    <div className="bg-zinc-900 rounded-xl p-3.5 border border-white/5 space-y-1.5">
-                      <div className="flex justify-between items-center text-[10px] text-zinc-500 uppercase tracking-wider font-bold">
-                        <span>Original text</span>
-                        <button
-                          onClick={() => navigator.clipboard.writeText(selectedMsgDetails.raw?.message || "")}
-                          className="hover:text-white"
-                        >
-                          Copy
-                        </button>
-                      </div>
-                      <div className="text-xs text-zinc-300 whitespace-pre-wrap leading-relaxed">
-                        <WhatsAppMessage
-                          text={selectedMsgDetails.raw?.message || ""}
-                          sender={resolveMessageSenderName(selectedMsgDetails.raw)}
-                          senderPhone={resolveMessagePhone(selectedMsgDetails.raw)}
-                          entities={buildMessageEntities(selectedMsgDetails.raw, selectedMsgDetails)}
-                          onEntityClick={handleEntityClick}
-                        />
-                      </div>
-                    </div>
-
-                    {!selectedHasMarketContext && (
-                      <div className="bg-zinc-900 rounded-xl p-3.5 border border-white/5 space-y-3">
-                        <div className="text-[10px] text-zinc-500 uppercase tracking-wider font-bold">
-                          Conversation Context
-                        </div>
-                        <div className="space-y-2 text-xs">
-                          <div className="flex justify-between gap-3">
-                            <span className="text-zinc-500">Type</span>
-                            <span className="badge badge-blue">DIRECT MESSAGE</span>
-                          </div>
-                          <div className="flex justify-between gap-3">
-                            <span className="text-zinc-500">Sender</span>
-                            <span className="text-right font-semibold text-white">
-                              {resolveMessageSenderName(selectedMsgDetails.raw) || "Unknown contact"}
-                            </span>
-                          </div>
-                          {resolveMessagePhone(selectedMsgDetails.raw) && (
-                            <div className="flex justify-between gap-3">
-                              <span className="text-zinc-500">Phone</span>
-                              <span className="font-mono text-zinc-300">
-                                {displayPhoneString(resolveMessagePhone(selectedMsgDetails.raw))}
-                              </span>
-                            </div>
-                          )}
-                          <div className="rounded-lg bg-[#05070b] border border-white/5 p-3 text-[11px] leading-relaxed text-zinc-400">
-                            PropAI did not find enough property context in this message. It is kept as a conversation until it is linked to a broker, client, listing, or requirement.
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Structured Details Panel — Property-Type Aware */}
-                    {selectedHasMarketContext && (
-                      <div className="bg-zinc-900 rounded-xl p-3.5 border border-white/5 space-y-3">
-                        {selectedMsgDetails.parsed && Object.keys(selectedMsgDetails.parsed).length > 0 ? (
-                          <PropertyDetails parsed={selectedMsgDetails.parsed} />
-                        ) : (
-                          <div className="text-xs text-zinc-500 italic py-2">No property details found.</div>
-                        )}
-                      </div>
-                    )}
-
-                    {/* Extracted Listings as Individual WhatsApp-style Messages */}
-	                    {selectedHasMarketContext && selectedMsgDetails.listings && selectedMsgDetails.listings.length > 1 && (
-	                      <div className="bg-zinc-900 rounded-xl p-3.5 border border-white/5 space-y-2">
-                        <div className="flex items-center justify-between text-[10px] text-zinc-500 uppercase tracking-wider font-bold">
-                          <span>Extracted listings from this message</span>
-                          {waSenderPhone && (
-                            <a
-                              href={getWaLink(waSenderPhone)}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-[#166534] hover:bg-[#15803d] text-green-100"
-                              title="Open WhatsApp with this broker"
-                            >
-                              <MessageSquare className="w-3 h-3" strokeWidth={1.6} />
-                            </a>
-                          )}
-                        </div>
-                        <div className="space-y-2">
-                          {selectedMsgDetails.listings.map((listing: any, idx: number) => {
-                            const text = getListingPayloadText(listing) || selectedMsgDetails.raw?.message || "";
-                            const intentLabel = listing.intent || selectedMsgDetails.parsed?.intent || "TEXT";
-                            const intentColor =
-                              ({ SELL: "green", BUY: "purple", RENT: "yellow" } as Record<string, string>)[
-                                String(intentLabel).toUpperCase()
-                              ] || "blue";
-                            return (
-                              <div
-                                key={listing.id ?? idx}
-                                className="flex items-start justify-between gap-3 px-2.5 py-2 rounded-lg bg-[#05070b] border border-[rgba(255,255,255,0.05)]"
-                              >
-                                <div className="flex-1 text-xs text-zinc-300">
-                                  <div className="flex items-center gap-1.5 mb-1">
-                                    <span className={`badge badge-${intentColor} text-[8px]`}>
-                                      {intentLabel || "TEXT"}
-                                    </span>
-                                    {listing.bhk && (
-                                      <span className="text-[10px] text-white font-semibold">
-                                        {listing.bhk}
-                                      </span>
-                                    )}
-                                    {listing.area_sqft && (
-                                      <span className="text-[10px] text-zinc-400">
-                                        {listing.area_sqft.toLocaleString("en-IN")} sqft
-                                      </span>
-                                    )}
-                                    {listing.furnishing && (
-                                      <span className="text-[10px] text-zinc-400">{listing.furnishing}</span>
-                                    )}
-                                  </div>
-                                  <div className="text-[11px] text-zinc-300 whitespace-pre-wrap leading-relaxed">
-                                    <WhatsAppMessage
-                                      text={text}
-                                      entities={buildMessageEntities(selectedMsgDetails.raw, selectedMsgDetails)}
-                                      onEntityClick={handleEntityClick}
-                                    />
-                                  </div>
-                                </div>
-                                {waSenderPhone && (
-                                  <a
-                                    href={getWaLinkWithRecall(waSenderPhone, text)}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="mt-0.5 inline-flex items-center justify-center w-7 h-7 rounded-full bg-[#166534] hover:bg-[#15803d] text-green-100 shrink-0"
-                                    title="Message this broker on WhatsApp"
-                                  >
-                                    <MessageSquare className="w-3.5 h-3.5" strokeWidth={1.8} />
-                                  </a>
-                                )}
-                              </div>
-                            );
-                          })}
-                        </div>
-    </div>
-	                    )}
-
-	                    {/* Location Match Panel */}
-	                    {selectedHasMarketContext && (
-                      <div className="bg-zinc-900 rounded-xl p-3.5 border border-white/5 space-y-3">
-                        <div className="text-[10px] text-zinc-500 uppercase tracking-wider font-bold">
-                          Location Match
-                        </div>
-
-                        {selectedMsgDetails.resolver ? (
-                          <div className="space-y-2.5 text-xs">
-                            <div className="flex justify-between items-center">
-                              <span className="text-zinc-500">Status</span>
-                              <span className={`badge ${
-                                selectedMsgDetails.resolver.method === "resolved" ? "badge-green" : "badge-yellow"
-                              } font-bold`}>
-                                {selectedMsgDetails.resolver.method?.toUpperCase()}
-                              </span>
-                            </div>
-                            <div>
-                              <span className="text-[10px] text-zinc-500 block uppercase">Building</span>
-                              <span className="font-bold text-white block mt-0.5">
-                                {selectedMsgDetails.resolver.building_name || "—"}
-                              </span>
-                            </div>
-                            <div>
-                              <span className="text-[10px] text-zinc-500 block uppercase">Confidence Level</span>
-                              <div className="flex items-center gap-2 mt-1">
-                                <div className="flex-1 h-2 bg-[rgba(255,255,255,0.06)] rounded-full overflow-hidden">
-                                  <div
-                                    className="h-full bg-blue-500 rounded-full"
-                                    style={{ width: `${Math.round((selectedMsgDetails.resolver.final_confidence || 0) * 100)}%` }}
-                                  />
-                                </div>
-                                <span className="font-mono text-[10px] text-zinc-300 font-bold">
-                                  {Math.round((selectedMsgDetails.resolver.final_confidence || 0) * 100)}%
-                                </span>
-                              </div>
-                            </div>
-                            {selectedMsgDetails.resolver.method_detail && (
-                              <div>
-                                <span className="text-[10px] text-zinc-500 block uppercase">Match Notes</span>
-                                <span className="text-zinc-300 block mt-0.5 leading-relaxed text-[11px]">
-                                  {selectedMsgDetails.resolver.method_detail}
-                                </span>
-                              </div>
-                            )}
-                          </div>
-                        ) : (
-                          <div className="text-xs text-zinc-500 italic py-2">No location match recorded.</div>
-                        )}
-                      </div>
-                    )}
-
-                    {/* Price Stats Comparison Widget */}
-                    {priceStats && selectedMsgDetails.parsed?.price && (
-                      <div className="bg-zinc-900 rounded-xl p-3.5 border border-white/5 space-y-3">
-                        <div className="text-[10px] text-zinc-500 uppercase tracking-wider font-bold">
-                          Market Price Benchmarking
-                        </div>
-                        <div className="space-y-2 text-xs">
-                          <div className="text-[11px] text-zinc-400 font-bold">
-                            {selectedMsgDetails.parsed.bhk} in {selectedMsgDetails.parsed.micro_market}
-                          </div>
-                          <div className="flex justify-between text-[11px] border-b border-white/5 pb-1.5">
-                            <span className="text-zinc-500">Listing Price:</span>
-                            <span className="font-bold text-[#3EE88A]">{formatCurrency(selectedMsgDetails.parsed.price)}</span>
-                          </div>
-                          <div className="flex justify-between text-[11px]">
-                            <span className="text-zinc-500">Market Median:</span>
-                            <span className="font-semibold text-white">{formatCurrency(priceStats.median)}</span>
-                          </div>
-                          <div className="flex justify-between text-[11px]">
-                            <span className="text-zinc-500">25th Percentile (p25):</span>
-                            <span className="text-zinc-300">{formatCurrency(priceStats.p25)}</span>
-                          </div>
-                          <div className="flex justify-between text-[11px]">
-                            <span className="text-zinc-500">75th Percentile (p75):</span>
-                            <span className="text-zinc-300">{formatCurrency(priceStats.p75)}</span>
-                          </div>
-                          <div className="text-[10px] text-zinc-500 pt-1.5 italic text-center">
-                            Based on {priceStats.count} market listings
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Building Profile (inline in Analysis when resolved) */}
-                    {selectedBuilding && (
-                      <div className="bg-zinc-900 rounded-xl p-3.5 border border-white/5 space-y-3">
-                        <div className="flex items-center gap-2 text-[10px] text-zinc-500 uppercase tracking-wider font-bold">
-                          <Building2 className="w-3 h-3" strokeWidth={1.5} />
-                          <span>Building Profile</span>
-                        </div>
-                        <div className="space-y-2.5 text-xs">
-                          <div className="flex justify-between items-center">
-                            <span className="text-zinc-500">Building</span>
-                            <span className="font-bold text-white">{selectedBuilding.name || "—"}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-zinc-500">Database Observations</span>
-                            <span className="font-mono text-zinc-300 font-bold">{selectedBuilding.observation_count}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-zinc-500">Active Brokers</span>
-                            <span className="font-mono text-zinc-300 font-bold">{selectedBuilding.broker_count}</span>
-                          </div>
-                          {selectedBuilding.markets?.[0]?.micro_market && (
-                            <div className="flex justify-between">
-                              <span className="text-zinc-500">Micro Market</span>
-                              <span className="text-white font-semibold">{selectedBuilding.markets[0].micro_market}</span>
-                            </div>
-                          )}
-                          {selectedBuilding.landmarks?.length > 0 && (
-                            <div className="pt-1">
-                              <span className="text-[10px] text-zinc-500 block uppercase mb-1">Nearby Landmarks</span>
-                              <div className="flex flex-wrap gap-1">
-                                {selectedBuilding.landmarks.map((l: any, idx: number) => (
-                                  <span key={idx} className="bg-zinc-800 px-2 py-0.5 rounded text-[10px] text-zinc-300 border border-[rgba(255,255,255,0.03)]">{l.landmark_name}</span>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-                          {selectedBuilding.price_stats?.length > 0 && (
-                            <div className="pt-1">
-                              <span className="text-[10px] text-zinc-500 block uppercase mb-1">Price Benchmarks</span>
-                              <div className="space-y-1">
-                                {selectedBuilding.price_stats.map((s: any, idx: number) => (
-                                  <div key={idx} className="flex justify-between text-[11px] border-b border-white/5 pb-1 last:border-b-0 last:pb-0">
-                                    <span className="text-white">{s.bhk} - {s.intent?.toUpperCase()}</span>
-                                    <span className="text-[#3EE88A]">Avg: {formatCurrency(s.avg_price)}</span>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    )}
-
-                  </div>
-                )}
-
-                {/* ================= TAB 2: BROKER PROFILE ================= */}
-                {activeRightTab === "broker" && (
-                  <div className="space-y-4 animate-fadeIn">
-                    {loadingBroker ? (
-                      <div className="text-center text-xs text-zinc-500 py-8">Loading broker profile...</div>
-                    ) : !selectedBroker ? (
-                      <div className="text-center text-xs text-zinc-500 py-8">
-                        No broker profile found for this contact.
-                      </div>
-                    ) : (
-                      <div className="space-y-4 text-xs">
-                        
-                        {/* Broker Basic Info */}
-                        <div className="bg-zinc-900 rounded-xl p-4 border border-white/5 flex flex-col gap-2">
-                          <h4 className="text-sm font-bold text-white">{selectedBroker.name}</h4>
-                          
-                          <div className="flex items-center justify-between text-[11px] border-t border-white/5 pt-2.5">
-                            <span className="text-zinc-500">Primary Phone</span>
-                            <div className="flex items-center gap-2">
-                              <span className="font-mono text-zinc-300">
-                                {normalizeRealPhone(selectedBroker.phone)
-                                  ? revealedPhone[selectedBroker.phone]
-                                    ? displayPhoneString(selectedBroker.phone)
-                                    : maskPhoneString(selectedBroker.phone)
-                                  : "Phone unavailable"}
-                              </span>
-                              {normalizeRealPhone(selectedBroker.phone) && (
-                                <button
-                                  onClick={() => toggleRevealPhone(selectedBroker.phone)}
-                                  className="text-[9.5px] text-[#3EE88A] hover:underline"
-                                >
-                                  {revealedPhone[selectedBroker.phone] ? "Hide" : "Reveal"}
-                                </button>
-                              )}
-                            </div>
-                          </div>
-
-                          {selectedBroker.first_seen_at && (
-                            <div className="flex justify-between text-[11px]">
-                              <span className="text-zinc-500">First Seen</span>
-                              <span className="text-zinc-300">
-                                {new Date(selectedBroker.first_seen_at).toLocaleDateString("en-IN", {
-                                  day: "numeric",
-                                  month: "short",
-                                  year: "numeric"
-                                })}
-                              </span>
-                            </div>
-                          )}
-
-                          {selectedBroker.last_seen_at && (
-                            <div className="flex justify-between text-[11px]">
-                              <span className="text-zinc-500">Last Activity</span>
-                              <span className="text-zinc-300">
-                                {new Date(selectedBroker.last_seen_at).toLocaleDateString("en-IN", {
-                                  day: "numeric",
-                                  month: "short",
-                                  year: "numeric"
-                                })}
-                              </span>
-                            </div>
-                          )}
-
-                          {normalizeRealPhone(selectedBroker.phone) && (
-                            <div className="pt-2">
-                              <a
-                                href={getWaLink(selectedBroker.phone)}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="w-full py-1.5 bg-[#166534] hover:bg-[#15803d] text-green-100 rounded text-[10px] font-bold uppercase tracking-wider text-center block transition-colors"
-                              >
-                                Open WhatsApp
-                              </a>
-                            </div>
-                          )}
-                        </div>
-
-                        {/* Stats Grid */}
-                        <div className="grid grid-cols-2 gap-2 text-center">
-                          {[
-                            { label: "Observations", value: selectedBroker.observation_count },
-                            { label: "Market Posts", value: selectedBroker.listing_count },
-                            { label: "Coverage", value: selectedBroker.building_count ?? "—" },
-                            { label: "Active Days", value: selectedBroker.active_days_30 != null ? `${selectedBroker.active_days_30}/30` : "—" },
-                          ].map((stat) => (
-                            <div key={stat.label} className="bg-zinc-900 rounded-xl p-2.5 border border-white/5">
-                              <div className="text-sm font-bold text-white">{stat.value}</div>
-                              <div className="text-[9px] text-zinc-500 uppercase mt-0.5">{stat.label}</div>
-                            </div>
-                          ))}
-                        </div>
-
-                        {/* Aliases */}
-                        {selectedBroker.aliases?.length > 0 && (
-                          <div className="bg-zinc-900 rounded-xl p-3.5 border border-white/5 space-y-2">
-                            <div className="text-[10px] text-zinc-500 uppercase tracking-wider font-bold">
-                              Known Aliases
-                            </div>
-                            <div className="flex flex-wrap gap-1.5">
-                              {selectedBroker.aliases.map((a: any, idx: number) => (
-                                <span key={idx} className="bg-zinc-800 px-2 py-0.5 rounded text-[10px] text-zinc-300 border border-[rgba(255,255,255,0.03)]">
-                                  {a.alias}
-                                </span>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Top Micro-Markets */}
-                        {selectedBroker.markets?.length > 0 && (
-                          <div className="bg-zinc-900 rounded-xl p-3.5 border border-white/5 space-y-2">
-                            <div className="text-[10px] text-zinc-500 uppercase tracking-wider font-bold">
-                              Core Micro Markets
-                            </div>
-                            <div className="space-y-1.5">
-                              {selectedBroker.markets.slice(0, 3).map((m: any, idx: number) => (
-                                <div key={idx} className="flex justify-between items-center">
-                                  <span className="font-semibold text-zinc-300">{m.micro_market}</span>
-                                  <span className="text-[10px] text-zinc-500">
-                                    {m.listing_count} listings · {m.requirement_count} requirements
-                                  </span>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Top Buildings */}
-                        {selectedBroker.buildings?.length > 0 && (
-                          <div className="bg-zinc-900 rounded-xl p-3.5 border border-white/5 space-y-2">
-                            <div className="text-[10px] text-zinc-500 uppercase tracking-wider font-bold">
-                              Frequent Buildings
-                            </div>
-                            <div className="space-y-1.5">
-                              {selectedBroker.buildings.slice(0, 3).map((b: any, idx: number) => (
-                                <div key={idx} className="flex justify-between items-center">
-                                  <span className="font-semibold text-zinc-300">{b.building_name}</span>
-                                  <span className="text-[10px] text-zinc-500">
-                                    {b.listing_count} listings · {b.requirement_count} requirements
-                                  </span>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* ================= TAB 4: NOTES ================= */}
-                {activeRightTab === "notes" && (
-                  <NotesPanel
-                    entityType="chat"
-                    entityId={(() => {
-                      if (!selectedMsg) return "none";
-                      const msg = selectedMsg as any;
-                      return msg.chat_id || msg.conversation_key || msg.group_name || msg.sender_phone || String(msg.id);
-                    })()}
-                  />
-                )}
-
-                {/* ================= TAB 3: MARKET INTELLIGENCE ================= */}
-                {activeRightTab === "market" && (
-                  <div className="space-y-4 animate-fadeIn">
-                    {!selectedMsgDetails ? (
-                      <div className="h-full flex items-center justify-center text-xs text-zinc-500 text-center p-6">
-                        Select an observation to view market intelligence.
-                      </div>
-                    ) : (
-                      <div className="space-y-4 text-xs">
-                        {/* Broker Memory Card */}
-                        {selectedBroker && (
-                          <div className="bg-zinc-900 rounded-xl p-3.5 border border-white/5 space-y-2">
-                            <div className="flex items-center gap-2 text-[10px] text-zinc-500 uppercase tracking-wider font-bold">
-                              <User className="w-3 h-3" strokeWidth={1.5} />
-                              <span>Broker Memory</span>
-                            </div>
-                            <div className="grid grid-cols-2 gap-2">
-                              <div className="bg-zinc-800 rounded-lg p-2 text-center">
-                                <div className="text-sm font-bold text-white">{selectedBroker.observation_count || "—"}</div>
-                                <div className="text-[8px] text-zinc-500 uppercase">Observations</div>
-                              </div>
-                              <div className="bg-zinc-800 rounded-lg p-2 text-center">
-                                <div className="text-sm font-bold text-white">{selectedBroker.active_days_30 != null ? `${selectedBroker.active_days_30}/30` : "—"}</div>
-                                <div className="text-[8px] text-zinc-500 uppercase">Active Days</div>
-                              </div>
-                            </div>
-                            {selectedMsgDetails.parsed?.micro_market && (
-                              <div className="flex justify-between pt-1 border-t border-white/5">
-                                <span className="text-zinc-500">Primary Market</span>
-                                <span className="font-semibold text-white">{selectedMsgDetails.parsed.micro_market}</span>
-                              </div>
-                            )}
-                            {selectedMsgDetails.parsed?.building_name && (
-                              <div className="flex justify-between">
-                                <span className="text-zinc-500">Building</span>
-                                <span className="font-semibold text-white">{selectedMsgDetails.parsed.building_name}</span>
-                              </div>
-                            )}
-                            <div className="flex justify-between">
-                              <span className="text-zinc-500">Active Since</span>
-                              <span className="text-zinc-300">
-                                {selectedBroker.first_seen
-                                  ? new Date(selectedBroker.first_seen).toLocaleDateString("en-IN", { month: "short", year: "numeric" })
-                                  : "—"}
-                              </span>
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Similar Observations (same locality/intent) */}
-                        {selectedMsgDetails.parsed?.micro_market && (
-                          <div className="bg-zinc-900 rounded-xl p-3.5 border border-white/5 space-y-2">
-                            <div className="flex items-center gap-2 text-[10px] text-zinc-500 uppercase tracking-wider font-bold">
-                              <MapPin className="w-3 h-3" strokeWidth={1.5} />
-                              <span>Similar in {selectedMsgDetails.parsed.micro_market}</span>
-                            </div>
-                            <div className="flex items-center gap-1.5 text-[11px] text-zinc-400">
-                              <span>BHK:</span>
-                              <span className="font-semibold text-white">{selectedMsgDetails.parsed.bhk || "Any"}</span>
-                              <span className="mx-1">·</span>
-                              <span>Intent:</span>
-                              <span className="font-semibold text-white">{selectedMsgDetails.parsed.intent || "Any"}</span>
-                            </div>
-                            {/* Price comparison */}
-                            {priceStats && (
-                              <div className="bg-zinc-800 rounded-lg p-2.5 space-y-1.5 mt-1">
-                                <div className="flex justify-between">
-                                  <span className="text-zinc-500">This listing</span>
-                                  <span className="font-bold text-[#3EE88A]">{formatCurrency(selectedMsgDetails.parsed?.price)}</span>
-                                </div>
-                                <div className="flex justify-between">
-                                  <span className="text-zinc-500">Market median</span>
-                                  <span className="font-semibold text-white">{formatCurrency(priceStats.median)}</span>
-                                </div>
-                                {selectedMsgDetails.parsed?.price && priceStats.median && (
-                                  <div className="flex justify-between border-t border-white/5 pt-1.5">
-                                    <span className="text-zinc-500">vs Market</span>
-                                    <span className={`font-bold ${selectedMsgDetails.parsed.price > priceStats.median ? "text-red-400" : "text-[#3EE88A]"}`}>
-                                      {selectedMsgDetails.parsed.price > priceStats.median
-                                        ? `${Math.round((selectedMsgDetails.parsed.price / priceStats.median - 1) * 100)}% above`
-                                        : `${Math.round((1 - selectedMsgDetails.parsed.price / priceStats.median) * 100)}% below`}
-                                    </span>
-                                  </div>
-                                )}
-                                <div className="text-[9px] text-zinc-500 pt-1 text-center">
-                                  Based on {priceStats.count} similar listings
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        )}
-
-                        {/* Demand vs Supply Indicator */}
-                        <div className="bg-zinc-900 rounded-xl p-3.5 border border-white/5 space-y-2">
-                          <div className="flex items-center gap-2 text-[10px] text-zinc-500 uppercase tracking-wider font-bold">
-                            <TrendingUp className="w-3 h-3" strokeWidth={1.5} />
-                            <span>Activity Summary</span>
-                          </div>
-                          <div className="space-y-2 text-[11px]">
-                            <div className="flex justify-between">
-                              <span className="text-zinc-500">Total observations</span>
-                              <span className="font-semibold text-white">{selectedBrokerObservations.length}</span>
-                            </div>
-                            {(() => {
-                              const intents = selectedBrokerObservations.map((o: any) => (o.intent || "").toUpperCase());
-                              const sell = intents.filter((i: string) => i === "SELL" || i === "SALE").length;
-                              const rent = intents.filter((i: string) => i === "RENT").length;
-                              const buy = intents.filter((i: string) => i === "BUY" || i === "REQUIREMENT" || i === "WANTED").length;
-                              return (
-                                <>
-                                  {sell > 0 && <div className="flex justify-between"><span className="text-zinc-500">Sell/Lease posts</span><span className="text-white">{sell}</span></div>}
-                                  {rent > 0 && <div className="flex justify-between"><span className="text-zinc-500">Rent posts</span><span className="text-white">{rent}</span></div>}
-                                  {buy > 0 && <div className="flex justify-between"><span className="text-zinc-500">Requirements</span><span className="text-white">{buy}</span></div>}
-                                  <div className="pt-1 text-[9.5px] text-zinc-500 italic">
-                                    {sell + rent > buy ? "Supply-heavy — more listings than requirements" : buy > sell + rent ? "Demand-heavy — more requirements than listings" : "Balanced activity"}
-                                  </div>
-                                </>
-                              );
-                            })()}
-                          </div>
-                        </div>
-
-                        {/* Teaching & Merge Suggestions */}
-                        {allSuggestions.length > 0 && (
-                          <div className="bg-zinc-900 rounded-xl p-3.5 border border-[rgba(62,232,138,0.14)] space-y-2">
-                            <div className="flex items-center gap-2 text-[10px] text-[#3EE88A] uppercase tracking-wider font-bold">
-                              <Sparkles className="w-3 h-3" strokeWidth={1.7} />
-                              <span>Suggestions</span>
-                            </div>
-                            <div className="space-y-1.5">
-                              {allSuggestions.slice(0, 5).map((s: any, idx: number) => (
-                                <div key={idx} className="flex items-center justify-between bg-zinc-800 rounded-lg p-2">
-                                  <div className="flex-1 min-w-0">
-                                    <div className="text-[10px] text-zinc-300 truncate">{s.text || s.description}</div>
-                                    <div className="text-[8px] text-zinc-500 uppercase mt-0.5">{s.type}</div>
-                                  </div>
-                                  <div className="flex gap-1 shrink-0">
-                                    <button className="px-1.5 py-0.5 bg-[#166534] text-green-100 rounded text-[8px] font-bold">Accept</button>
-                                    <button className="px-1.5 py-0.5 bg-red-950/40 text-red-200 rounded text-[8px] font-bold">Reject</button>
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </>
-            )}
-          </div>
-          </div>
-        </ResizablePanel>
-      </div>
-
-        {/* ================= TAB: AI ASSISTANT ================= */}
-        {activeRightTab === "ai" ? (
-          <InboxAIChat
-            selectedMessage={selectedMsgDetails?.raw || selectedMsg}
-            context={selectedMsgDetails?.raw?.message || selectedMsgDetails?.raw?.text || ""}
-          />
-        ) : null}
+        {/* Right intelligence panel removed intentionally; rebuild this area when reintroduced. */}
         {/* Combined Localities Dialog */}
         {showCombinedLocalityDialog && (
           <CombinedLocalityDialog
