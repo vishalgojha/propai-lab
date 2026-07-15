@@ -12713,10 +12713,8 @@ async def list_phones():
 
 @app.post("/api/phones")
 async def create_phone(body: dict):
-    phone_number = body.get("phone_number", "").strip()
+    phone_number = body.get("phone_number", "").strip() or "Unpaired"
     instance_name = body.get("instance_name", "").strip()
-    if not phone_number:
-        raise HTTPException(400, "phone_number is required")
     orgs = storage.list_organizations(limit=1)
     org_id = orgs[0]["id"] if orgs else DEFAULT_TENANT_ID
     count = storage.count_org_phones(org_id)

@@ -156,21 +156,15 @@ function formatPhone(p: string) {
 }
 
 function CreatePhoneDialog({ open, onClose, onCreated }: { open: boolean; onClose: () => void; onCreated: () => void }) {
-  const [phoneNumber, setPhoneNumber] = useState("");
   const [instanceName, setInstanceName] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const handleSubmit = async () => {
-    if (!phoneNumber.trim()) {
-      setError("Phone number is required");
-      return;
-    }
     setLoading(true);
     setError(null);
     try {
-      await createPhone({ phone_number: phoneNumber.trim(), instance_name: instanceName.trim() || undefined });
-      setPhoneNumber("");
+      await createPhone({ instance_name: instanceName.trim() || undefined });
       setInstanceName("");
       onCreated();
       onClose();
@@ -189,18 +183,8 @@ function CreatePhoneDialog({ open, onClose, onCreated }: { open: boolean; onClos
           <h3 className="text-base font-bold text-white">Add Phone</h3>
           <button onClick={onClose} className="text-zinc-500 hover:text-white"><X className="w-5 h-5" /></button>
         </div>
-        <p className="text-xs text-zinc-500 mb-4">Create a new WhatsApp connection. The phone will start disconnected and need QR pairing.</p>
+        <p className="text-xs text-zinc-500 mb-4">Create a new WhatsApp connection. The phone number will be detected automatically when you scan the QR code.</p>
         <div className="space-y-3">
-          <div>
-            <label className="text-xs font-medium text-zinc-400 mb-1 block">Phone Number *</label>
-            <input
-              type="tel"
-              value={phoneNumber}
-              onChange={(e) => setPhoneNumber(e.target.value)}
-              placeholder="+91 98765 43210"
-              className="w-full rounded-lg bg-zinc-800 border border-white/10 px-3 py-2.5 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-[#3EE88A]/50"
-            />
-          </div>
           <div>
             <label className="text-xs font-medium text-zinc-400 mb-1 block">Instance Name (optional)</label>
             <input
@@ -217,7 +201,7 @@ function CreatePhoneDialog({ open, onClose, onCreated }: { open: boolean; onClos
           <button onClick={onClose} className="flex-1 rounded-lg border border-white/10 bg-zinc-800 text-zinc-300 px-4 py-2.5 text-xs font-bold min-h-[44px]">Cancel</button>
           <button
             onClick={handleSubmit}
-            disabled={loading || !phoneNumber.trim()}
+            disabled={loading}
             className="flex-1 rounded-lg bg-[#3EE88A] text-black px-4 py-2.5 text-xs font-bold min-h-[44px] disabled:opacity-50"
           >
             {loading ? "Creating..." : "Create Phone"}
@@ -322,7 +306,8 @@ function PhoneCard({ phone, onRefresh, onShowQR }: { phone: Phone; onRefresh: ()
 
   const isConnected = phone.connected || phone.connection_state === "open";
   const phoneDisplay = phone.phone_number_live || phone.phone_number;
-  const health: HealthStatus = isConnected ? "healthy" : phone.connection_state === "unknown" ? "warning" : "error";
+  const isUnpaired = !isConnected && (!phone.phone_number || phone.phone_number === "Unpaired");
+  const health: HealthStatus = isConnected ? "healthy" : isUnpaired ? "warning" : "error";
 
   return (
     <div className="rounded-2xl border border-white/10 p-5 space-y-4">
@@ -332,11 +317,14 @@ function PhoneCard({ phone, onRefresh, onShowQR }: { phone: Phone; onRefresh: ()
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <span className="text-sm font-bold text-white">{formatPhone(phoneDisplay)}</span>
+            <span className="text-sm font-bold text-white">{isUnpaired ? "New Phone" : formatPhone(phoneDisplay)}</span>
             <StatusDot status={health} />
           </div>
           {phone.instance_name && <div className="text-xs text-zinc-500">{phone.instance_name}</div>}
-          {!isConnected && phone.connection_state !== "unknown" && (
+          {isUnpaired && (
+            <div className="text-[11px] text-amber-400 mt-0.5">Scan QR to pair</div>
+          )}
+          {!isConnected && !isUnpaired && (
             <div className="text-[11px] text-amber-400 mt-0.5">Disconnected</div>
           )}
         </div>
