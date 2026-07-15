@@ -2321,6 +2321,13 @@ async def get_raw_message(raw_id: int):
 # ── Auth / Tenant helpers ──────────────────────────────────────────────
 
 SUPABASE_JWT_SECRET = os.getenv("SUPABASE_JWT_SECRET", "")
+if not SUPABASE_JWT_SECRET:
+    import warnings
+    warnings.warn(
+        "SUPABASE_JWT_SECRET is not set. JWT authentication will be disabled. "
+        "Set this in Coolify env store to enable auth.",
+        stacklevel=2,
+    )
 
 security_scheme = HTTPBearer(auto_error=False)
 
