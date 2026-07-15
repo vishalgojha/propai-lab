@@ -6021,17 +6021,24 @@ async def public_create_lead(req: PublicLeadRequest):
         f"is interested in your listing at {building_or_market}. "
         f"{(req.message or '').strip()}"
     )
-    notify_result = await _notify_broker_of_lead(broker_phone, notify_text)
+    notify_result = {"ok": False, "error": "not_attempted"}
+    try:
+        notify_result = await _notify_broker_of_lead(broker_phone, notify_text)
+    except Exception as exc:
+        notify_result = {"ok": False, "error": str(exc)}
 
-    if notify_result.get("ok"):
+    if notify_result and notify_result.get("ok"):
         storage.db.execute(
             "UPDATE leads SET status = 'notified' WHERE id = $1",
             [lead["id"]]
         )
     else:
+        error_msg = "Unknown error"
+        if notify_result:
+            error_msg = notify_result.get("error", "Unknown error")
         storage.db.execute(
             "UPDATE leads SET status = 'notify_failed', notify_error = $1 WHERE id = $2",
-            [notify_result.get("error", "Unknown error"), lead["id"]]
+            [error_msg, lead["id"]]
         )
 
     return {"lead_id": lead["id"], "status": "created"}
