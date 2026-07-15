@@ -7,7 +7,7 @@ import QRCode from "qrcode";
 import { useRouter } from "next/navigation";
 import { Activity, Clock, Database, ImageUp, Inbox, List, LogOut, MessageSquare, Plus, RefreshCw, Shield, Smartphone, Trash2, AlertTriangle, Users, Zap, Lock, X } from "lucide-react";
 import { useAuth } from "@/lib/AuthProvider";
-import { getPhones, getPhone, createPhone, deletePhone, resetPhone, disconnectPhone, connectPhone, fetchJSON, getQR, refreshQR, type Phone } from "@/lib/api";
+import { getPhones, getPhone, createPhone, deletePhone, resetPhone, disconnectPhone, connectPhone, fetchJSON, getQR, refreshQR, getWhatsAppStatus, type Phone, type WhatsAppStatus } from "@/lib/api";
 
 type HealthStatus = "healthy" | "warning" | "error";
 
@@ -461,6 +461,41 @@ function PhoneCard({ phone, onRefresh, onShowQR }: { phone: Phone; onRefresh: ()
   );
 }
 
+function LiveStatusCard({ status, onAddPhone }: { status: WhatsAppStatus | null; onAddPhone: () => void }) {
+  const connected = Boolean(status?.connected || status?.state === "open" || status?.state === "connected" || status?.connected_since);
+  const phoneLabel = status?.phone ? formatPhone(status.phone) : "";
+  const headline = connected
+    ? (phoneLabel || "WhatsApp connected")
+    : (phoneLabel ? `Waiting to connect - ${phoneLabel}` : "Checking WhatsApp connection");
+
+  return (
+    <div className="rounded-2xl border border-white/10 p-5 mb-8 bg-gradient-to-br from-emerald-500/5 via-transparent to-transparent">
+      <div className="flex items-center gap-3">
+        <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[#3EE88A]/10">
+          <Smartphone className="w-5 h-5 text-[#3EE88A]" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-bold text-white">{headline}</span>
+            <StatusDot status={connected ? "healthy" : "warning"} />
+          </div>
+          <div className="text-[11px] text-zinc-500 mt-0.5">
+            {connected ? "Live WhatsApp session detected" : "Live session state is being checked"}
+          </div>
+        </div>
+      </div>
+      <div className="mt-4">
+        <button
+          onClick={onAddPhone}
+          className="rounded-lg bg-[#3EE88A] text-black px-4 py-2.5 text-xs font-bold min-h-[44px]"
+        >
+          Add Phone
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function ConnectionCenterPage() {
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
@@ -472,6 +507,7 @@ export default function ConnectionCenterPage() {
   }, [user, authLoading, router]);
 
   const [phones, setPhones] = useState<Phone[]>([]);
+  const [liveStatus, setLiveStatus] = useState<WhatsAppStatus | null>(null);
   const [phonesLoading, setPhonesLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
   const [qrPhone, setQrPhone] = useState<Phone | null>(null);
@@ -485,6 +521,7 @@ export default function ConnectionCenterPage() {
   const [rawPending, setRawPending] = useState<number>(0);
   const [extractionPct, setExtractionPct] = useState<number>(0);
   const [recentlyProcessed1h, setRecentlyProcessed1h] = useState<number>(0);
+  const [extractionLag, setExtractionLag] = useState<any>(null);
 
   const fetchPhones = useCallback(async () => {
     try {
@@ -492,6 +529,13 @@ export default function ConnectionCenterPage() {
       setPhones(res.phones || []);
     } catch { /* ignore */ }
     setPhonesLoading(false);
+  }, []);
+
+  const fetchLiveStatus = useCallback(async () => {
+    try {
+      const status = await getWhatsAppStatus();
+      setLiveStatus(status);
+    } catch { /* ignore */ }
   }, []);
 
   const fetchStats = useCallback(async () => {
@@ -514,13 +558,14 @@ export default function ConnectionCenterPage() {
       try {
         const extProgress = await fetchJSON<any>("/extraction/progress");
         if (extProgress?.recently_processed_1h != null) setRecentlyProcessed1h(extProgress.recently_processed_1h);
+        if (extProgress?.lag != null) setExtractionLag(extProgress.lag);
       } catch { /* ignore */ }
     } catch { /* ignore */ }
   }, []);
 
   const refreshData = useCallback(async () => {
-    await Promise.all([fetchPhones(), fetchStats()]);
-  }, [fetchPhones, fetchStats]);
+    await Promise.all([fetchPhones(), fetchStats(), fetchLiveStatus()]);
+  }, [fetchPhones, fetchStats, fetchLiveStatus]);
 
   useEffect(() => {
     if (!authLoading && user) {
@@ -558,26 +603,37 @@ export default function ConnectionCenterPage() {
 
       {phonesLoading ? (
         <div className="flex items-center justify-center py-16 text-sm text-zinc-500">Loading phones...</div>
-      ) : phones.length === 0 ? (
-        <div className="rounded-2xl border border-white/10 p-12 text-center">
-          <Smartphone className="w-10 h-10 text-zinc-600 mx-auto mb-3" />
-          <p className="text-sm text-zinc-400">No phones connected yet.</p>
-          <p className="text-xs text-zinc-600 mt-1">Add a phone to start monitoring WhatsApp groups.</p>
-          <button
-            onClick={() => setShowCreate(true)}
-            className="mt-4 rounded-lg bg-[#3EE88A] text-black px-6 py-2.5 text-xs font-bold min-h-[44px]"
-          >
-            <Plus className="w-4 h-4 inline mr-1" /> Add Your First Phone
-          </button>
-        </div>
       ) : (
         <>
+          {phones.length === 0 && (
+            <LiveStatusCard status={liveStatus} onAddPhone={() => setShowCreate(true)} />
+          )}
           {/* Phone Cards */}
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
-            {phones.map((phone) => (
-              <PhoneCard key={phone.id} phone={phone} onRefresh={refreshData} onShowQR={setQrPhone} />
-            ))}
-          </div>
+          {phones.length > 0 && (
+            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
+              {phones.map((phone) => (
+                <PhoneCard key={phone.id} phone={phone} onRefresh={refreshData} onShowQR={setQrPhone} />
+              ))}
+            </div>
+          )}
+
+          {extractionLag && extractionLag.status !== "healthy" && (
+            <div className={`mb-6 rounded-2xl border p-4 ${extractionLag.status === "error" ? "border-red-500/30 bg-red-500/10" : "border-amber-500/30 bg-amber-500/10"}`}>
+              <div className="flex items-start gap-3">
+                <AlertTriangle className={`mt-0.5 h-4 w-4 ${extractionLag.status === "error" ? "text-red-300" : "text-amber-300"}`} />
+                <div className="flex-1">
+                  <div className={`text-sm font-semibold ${extractionLag.status === "error" ? "text-red-200" : "text-amber-200"}`}>
+                    Extraction backlog detected
+                  </div>
+                  <div className="mt-1 text-xs text-zinc-300">
+                    {extractionLag.pending_over_15m || 0} messages pending for more than 15m
+                    {extractionLag.pending_over_60m ? `, ${extractionLag.pending_over_60m} pending for more than 60m` : ""}
+                    {extractionLag.oldest_pending_age_minutes != null ? `, oldest pending ${formatDuration(extractionLag.oldest_pending_age_minutes * 60)} ago` : ""}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Aggregate Stats */}
           <div className="grid lg:grid-cols-2 gap-6 mb-8">

@@ -624,6 +624,8 @@ def parse_message(raw_text: str, profile_name: str | None = None) -> dict:
 
     if is_pre_launch:
         result["intent"] = "PRE-LAUNCH"
+    elif is_buy:
+        result["intent"] = "BUY"
     elif is_commercial and is_rent:
         result["intent"] = "COMMERCIAL"
     elif is_commercial:
@@ -2472,31 +2474,7 @@ async def get_tenant_context(
 ) -> str | None:
     tid = x_tenant_id
     if not tid and user:
-        orgs = storage.get_user_organizations(user["id"])
-        if orgs:
-            tid = orgs[0]["id"]
-        else:
-            # Auto-create an organization for new signups
-            import re as _re, uuid as _uuid
-            email = user.get("email", "")
-            raw_name = (user.get("user_metadata") or {}).get("full_name", "") or email.split("@")[0]
-            slug = _re.sub(r"[^a-z0-9]+", "-", raw_name.lower()).strip("-") or "workspace"
-            if len(slug) > 40:
-                slug = slug[:40]
-            # Disambiguate with short uuid if slug already exists
-            existing = storage.get_organization_by_slug(slug)
-            if existing:
-                slug = f"{slug}-{_uuid.uuid4().hex[:6]}"
-            display_name = raw_name or email.split("@")[0] or "My Workspace"
-            org = storage.create_organization(name=display_name, slug=slug)
-            if org:
-                tid = org["id"]
-                storage.add_organization_member(tid, user["id"])
-                storage.create_team_member(
-                    name=display_name, email=email,
-                    organization_id=tid,
-                    permission_keys=["view_inbox", "reply_whatsapp"],
-                )
+        tid = _resolve_user_organization_id(user)
     # Always reset tenant context to avoid leaking a stale value from a
     # previous request on the same (global) storage singleton. Default to
     # the shared workspace so unauthenticated feed endpoints still scope
@@ -2505,6 +2483,43 @@ async def get_tenant_context(
         tid = DEFAULT_TENANT_ID
     set_tenant_id(tid)
     return tid
+
+
+def _resolve_user_organization_id(user: dict) -> str | None:
+    orgs = storage.get_user_organizations(user["id"])
+    if orgs:
+        try:
+            for org in sorted(orgs, key=lambda o: o.get("created_at") or "", reverse=True):
+                phones = storage.list_org_whatsapp_connections(org["id"])
+                if phones:
+                    return org["id"]
+        except Exception:
+            pass
+        return orgs[0]["id"]
+
+    # Auto-create an organization for new signups
+    import re as _re, uuid as _uuid
+    email = user.get("email", "")
+    raw_name = (user.get("user_metadata") or {}).get("full_name", "") or email.split("@")[0]
+    slug = _re.sub(r"[^a-z0-9]+", "-", raw_name.lower()).strip("-") or "workspace"
+    if len(slug) > 40:
+        slug = slug[:40]
+    existing = storage.get_organization_by_slug(slug)
+    if existing:
+        slug = f"{slug}-{_uuid.uuid4().hex[:6]}"
+    display_name = raw_name or email.split("@")[0] or "My Workspace"
+    org = storage.create_organization(name=display_name, slug=slug)
+    if org:
+        tid = org["id"]
+        storage.add_organization_member(tid, user["id"])
+        storage.create_team_member(
+            name=display_name,
+            email=email,
+            organization_id=tid,
+            permission_keys=["view_inbox", "reply_whatsapp"],
+        )
+        return tid
+    return None
 
 
 async def require_tenant(
@@ -3034,6 +3049,7 @@ async def dashboard_sync_activity(user: dict = Depends(require_user)):
         raw_processed = _raw_count_processed()
     except Exception:
         pass
+    lag = _raw_extraction_lag()
     return {
         "overall": overall,
         "total_jobs": len(all_jobs),
@@ -3043,6 +3059,7 @@ async def dashboard_sync_activity(user: dict = Depends(require_user)):
             "processed": raw_processed,
             "pending": raw_total - raw_processed,
             "pct": round(raw_processed / raw_total * 100, 1) if raw_total else 0,
+            "lag": lag,
         },
     }
 
@@ -3064,12 +3081,14 @@ async def extraction_progress(user: dict = Depends(require_user)):
         recent_processed = res.count if hasattr(res, "count") else 0
     except Exception:
         pass
+    lag = _raw_extraction_lag()
     return {
         "total_raw_messages": total,
         "processed": processed,
         "pending": pending,
         "progress_pct": round(processed / total * 100, 1) if total else 0,
         "recently_processed_1h": recent_processed,
+        "lag": lag,
     }
 
 
@@ -3088,6 +3107,61 @@ def _raw_count_processed() -> int:
         return res.count if hasattr(res, "count") else 0
     except Exception:
         return 0
+
+
+def _raw_extraction_lag() -> dict:
+    """Return a lightweight extraction lag snapshot for alerting/UI."""
+    from datetime import timedelta
+
+    now = datetime.now(timezone.utc)
+    cutoff_15m = (now - timedelta(minutes=15)).isoformat()
+    cutoff_60m = (now - timedelta(hours=1)).isoformat()
+    pending_over_15m = 0
+    pending_over_60m = 0
+    oldest_pending_at = None
+
+    try:
+        res = storage.client.table("raw_messages").select("created_at", count="exact")\
+            .eq("processed", False).lt("created_at", cutoff_15m).execute()
+        pending_over_15m = res.count if hasattr(res, "count") else 0
+    except Exception:
+        pass
+    try:
+        res = storage.client.table("raw_messages").select("created_at", count="exact")\
+            .eq("processed", False).lt("created_at", cutoff_60m).execute()
+        pending_over_60m = res.count if hasattr(res, "count") else 0
+    except Exception:
+        pass
+    try:
+        res = storage.client.table("raw_messages").select("created_at")\
+            .eq("processed", False).order("created_at", desc=False).limit(1).execute()
+        if res.data:
+            oldest_pending_at = res.data[0].get("created_at")
+    except Exception:
+        pass
+
+    oldest_pending_age_minutes = None
+    if oldest_pending_at:
+        try:
+            oldest_dt = datetime.fromisoformat(str(oldest_pending_at).replace("Z", "+00:00"))
+            oldest_pending_age_minutes = max(0, int((now - oldest_dt).total_seconds() // 60))
+        except Exception:
+            oldest_pending_age_minutes = None
+
+    if pending_over_60m > 0:
+        status = "error"
+    elif pending_over_15m > 0:
+        status = "warning"
+    else:
+        status = "healthy"
+
+    return {
+        "status": status,
+        "pending_over_15m": pending_over_15m,
+        "pending_over_60m": pending_over_60m,
+        "oldest_pending_at": oldest_pending_at,
+        "oldest_pending_age_minutes": oldest_pending_age_minutes,
+    }
 
 
 @app.get("/api/dashboard/graph-growth")
@@ -12866,34 +12940,34 @@ async def list_phones(
 async def create_phone(
     body: dict,
     user: dict = Depends(require_user),
-    tenant_id: str | None = Depends(get_tenant_context),
 ):
-    import uuid as _uuid
-    phone_number = body.get("phone_number", "").strip() or f"Unpaired-{_uuid.uuid4().hex[:8]}"
-    instance_name = body.get("instance_name", "").strip()
-    org_id = tenant_id or DEFAULT_TENANT_ID
-    count = storage.count_org_phones(org_id)
-    if count >= 3:
-        raise HTTPException(400, "Maximum 3 phones per organization")
-    broker_id = f"phone-{_uuid.uuid4().hex[:12]}"
     try:
+        import uuid as _uuid
+        phone_number = body.get("phone_number", "").strip() or f"Unpaired-{_uuid.uuid4().hex[:8]}"
+        instance_name = body.get("instance_name", "").strip()
+        org_id = _resolve_user_organization_id(user) or DEFAULT_TENANT_ID
+        count = storage.count_org_phones(org_id)
+        if count >= 3:
+            raise HTTPException(400, "Maximum 3 phones per organization")
+        broker_id = f"phone-{_uuid.uuid4().hex[:12]}"
         result = storage.add_org_whatsapp_connection(org_id, phone_number, instance_name, broker_id)
+        if not result:
+            raise HTTPException(400, "Failed to create phone")
+        async with httpx.AsyncClient(timeout=10) as client:
+            for base_url in _ingestor_urls():
+                try:
+                    resp = await client.post(f"{base_url}/connect?broker_id={broker_id}")
+                    if resp.status_code == 200:
+                        break
+                except httpx.RequestError:
+                    continue
+        return result
+    except HTTPException:
+        raise
     except Exception as e:
-        # Handle unique constraint violations gracefully
         if "unique" in str(e).lower() or "duplicate" in str(e).lower():
             raise HTTPException(400, "A phone with this number already exists in your organization")
         raise HTTPException(500, f"Failed to create phone: {str(e)}")
-    if not result:
-        raise HTTPException(400, "Failed to create phone")
-    async with httpx.AsyncClient(timeout=10) as client:
-        for base_url in _ingestor_urls():
-            try:
-                resp = await client.post(f"{base_url}/connect?broker_id={broker_id}")
-                if resp.status_code == 200:
-                    break
-            except httpx.RequestError:
-                continue
-    return result
 
 
 @app.get("/api/phones/{phone_id}")

@@ -908,7 +908,7 @@ class SupabaseStorage(Storage):
 
     def count_unprocessed_raw(self) -> int:
         res = self.client.table("raw_messages").select("id", count="exact")\
-            .eq("processed", "false").execute()
+            .eq("processed", False).execute()
         return res.count if hasattr(res, "count") else 0
 
     @staticmethod

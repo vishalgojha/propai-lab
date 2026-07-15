@@ -8,6 +8,8 @@ PropAI is a broker-first market intelligence and workflow system.
 
 WhatsApp is the data source, not the product model. The product should turn noisy real-estate group activity into searchable broker entities, fresh opportunities, private workspace workflows, and AI/MCP tools.
 
+For the current WhatsApp parsing contract, see [WhatsApp Card Parser Spec](./whatsapp-card-parser-spec.md). That document is the latest agreed version for splitting WhatsApp posts into structured market cards.
+
 ## Product Layers
 
 ### 1. Raw WhatsApp Archive

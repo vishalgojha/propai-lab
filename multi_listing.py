@@ -1312,6 +1312,10 @@ def _parse_price_from_text(text: str) -> tuple[float | None, str | None]:
         elif unit_raw in ("k", "thousand"):
             return amount, "K"
         elif unit_raw in ("sqft", "sq ft", "sft"):
+            # Bare sqft numbers are usually areas, not prices.
+            # Only treat them as a price if the line explicitly says so.
+            if not re.search(r'\b(price|rent|cost|rate|asking)\b', text, re.I):
+                return None, None
             return amount, "abs"
     # Try per-sqft price format: "Cost N per sq ft", "For L&L N per sq ft"
     per_m = _PER_SQFT_RE.search(text)
@@ -1556,6 +1560,12 @@ def _split_commercial_floors(text: str) -> list[dict]:
     loc_raw = header_loc.get("location_raw") or overall_loc.get("location_raw") or (header_lines[0] if header_lines else None)
     # Prefer header-derived micro_market (less likely to be overwritten by street names)
     loc_micro_market = header_loc.get("micro_market") or overall_loc.get("micro_market")
+    if not loc_micro_market:
+        try:
+            from app import _infer_micro_market
+            loc_micro_market = _infer_micro_market(header_text) or _infer_micro_market(loc_raw)
+        except Exception:
+            pass
 
     # Extract broker info from the full message signature
     broker_name, broker_phone = _extract_broker_from_block(text)
