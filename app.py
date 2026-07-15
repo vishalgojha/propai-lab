@@ -5937,16 +5937,17 @@ async def public_create_lead(req: PublicLeadRequest):
     No auth required. Validates client_phone, looks up broker from listing,
     inserts lead, and attempts WhatsApp notification (best-effort).
     """
-    # Validate Indian mobile number (10 digits, optionally with +91/91/0)
-    digits = "".join(ch for ch in req.client_phone if ch.isdigit())
-    if len(digits) == 10:
-        norm_phone = "91" + digits
-    elif len(digits) == 11 and digits.startswith("0"):
-        norm_phone = "91" + digits[1:]
-    elif len(digits) == 12 and digits.startswith("91"):
-        norm_phone = digits
-    else:
-        return JSONResponse(status_code=400, content={"error": "Invalid client phone number"})
+    try:
+        # Validate Indian mobile number (10 digits, optionally with +91/91/0)
+        digits = "".join(ch for ch in req.client_phone if ch.isdigit())
+        if len(digits) == 10:
+            norm_phone = "91" + digits
+        elif len(digits) == 11 and digits.startswith("0"):
+            norm_phone = "91" + digits[1:]
+        elif len(digits) == 12 and digits.startswith("91"):
+            norm_phone = digits
+        else:
+            return JSONResponse(status_code=400, content={"error": "Invalid client phone number"})
 
     # Look up listing to get broker_phone
     res = storage.db.execute(
@@ -6047,6 +6048,9 @@ async def public_create_lead(req: PublicLeadRequest):
         pass
 
     return {"lead_id": lead["id"], "status": "created"}
+
+    except Exception as exc:
+        return JSONResponse(status_code=500, content={"error": f"Server error: {exc}"})
 
 
 def _send_url() -> str:
