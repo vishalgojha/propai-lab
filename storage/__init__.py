@@ -5,10 +5,11 @@ from lab.storage.base import (
     RawMessage, ParsedObservation, ResolverDecision,
     Evaluation, SyncJob, SyncCheckpoint, LLMProvider,
 )
-from lab.storage.supabase import SupabaseStorage
+from storage.supabase import SupabaseStorage, set_tenant_id, get_tenant_id
 
 __all__ = [
     "Storage", "SupabaseStorage",
     "RawMessage", "ParsedObservation", "ResolverDecision",
     "Evaluation", "SyncJob", "SyncCheckpoint", "LLMProvider",
+    "set_tenant_id", "get_tenant_id",
 ]

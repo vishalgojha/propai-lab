@@ -2486,7 +2486,7 @@ async def get_tenant_context(
     # to the correct organization.
     if not tid:
         tid = DEFAULT_TENANT_ID
-    storage.tenant_id = tid
+    set_tenant_id(tid)
     return tid
 
 

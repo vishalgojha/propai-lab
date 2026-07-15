@@ -1,5 +1,6 @@
 """Supabase implementation of the Storage interface."""
 
+import contextvars
 import json
 import os
 import re
@@ -9,6 +10,14 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 import httpx
+
+_tenant_id_var: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar("tenant_id", default=None)
+
+def get_tenant_id() -> Optional[str]:
+    return _tenant_id_var.get()
+
+def set_tenant_id(tid: Optional[str]):
+    _tenant_id_var.set(tid)
 
 from lab.storage.base import (
     Storage, RawMessage, ParsedObservation, Listing,
@@ -450,11 +459,12 @@ class SupabaseStorage(Storage):
 
     @property
     def tenant_id(self) -> str | None:
-        return self._tenant_id
+        return get_tenant_id() or self._tenant_id
 
     @tenant_id.setter
     def tenant_id(self, value: str | None):
         self._tenant_id = value
+        set_tenant_id(value)
 
     def close(self):
         pass
