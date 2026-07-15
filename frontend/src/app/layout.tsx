@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import "./globals.css";
-import { getConnectionState, getWhatsAppStatus, getRaw, ConnectionState, WhatsAppStatus, searchMessages, getCompanionConfig, CompanionConfig } from "@/lib/api";
+import { getConnectionState, getWhatsAppStatus, getRaw, ConnectionState, WhatsAppStatus, searchMessages, getCompanionConfig, CompanionConfig, getProfile } from "@/lib/api";
 import { classifyFormatIssue } from "@/lib/format-issues";
 import {
   MessageSquare,
@@ -191,7 +191,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
   const [wabaConfig, setWabaConfig] = useState<CompanionConfig | null>(null);
   const { signOut: authSignOut } = useAuth();
 
-  // Read profile from localStorage
+  // Read profile from localStorage; if missing, try to hydrate from server
   useEffect(() => {
     const readProfile = () => {
       const s = localStorage.getItem("propai_profile");
@@ -215,6 +215,30 @@ function AppShell({ children }: { children: React.ReactNode }) {
       window.removeEventListener("propai_profile_updated", readProfile);
     };
   }, [user?.id]);
+
+  // Hydrate localStorage profile from server when missing
+  useEffect(() => {
+    if (!user || profile) return;
+    const phone = user.phone || "";
+    if (!phone && !user.id) return;
+    let cancelled = false;
+    getProfile(phone, user.id).then((data: any) => {
+      if (cancelled) return;
+      if (data && data.first_name) {
+        const hydrated = {
+          auth_user_id: user.id,
+          phone: data.phone || phone,
+          first_name: data.first_name || "",
+          last_name: data.last_name || "",
+          email: data.email || user.email || "",
+          city: data.city || "",
+        };
+        localStorage.setItem("propai_profile", JSON.stringify(hydrated));
+        window.dispatchEvent(new Event("propai_profile_updated"));
+      }
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [user, profile]);
 
   const waConnected = conn?.connected ?? null;
   const waStale = conn?.status_stale ?? false;

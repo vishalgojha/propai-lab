@@ -1468,8 +1468,11 @@ export interface UserProfile {
   onboarding_complete: boolean;
 }
 
-export function getProfile(phone: string) {
-  return fetchJSON<UserProfile>(`/profile?phone=${encodeURIComponent(phone)}`);
+export function getProfile(phone: string, authUserId?: string) {
+  const params = new URLSearchParams();
+  if (phone) params.set("phone", phone);
+  if (authUserId) params.set("auth_user_id", authUserId);
+  return fetchJSON<UserProfile>(`/profile?${params.toString()}`);
 }
 
 export function saveProfile(phone: string, data: { first_name: string; last_name: string; email: string; city: string }) {

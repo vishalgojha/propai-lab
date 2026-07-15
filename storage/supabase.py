@@ -466,7 +466,16 @@ class SupabaseStorage(Storage):
         digits = "".join(ch for ch in phone if ch.isdigit())
         return digits[-10:] if len(digits) >= 10 else digits
 
-    def get_user_profile(self, phone: str) -> dict | None:
+    def get_user_profile(self, phone: str = "", auth_user_id: str = "") -> dict | None:
+        if auth_user_id:
+            try:
+                res = self.client.table("user_profiles").select("*").eq("auth_user_id", auth_user_id).limit(1).execute()
+                if res.data:
+                    return res.data[0]
+            except Exception:
+                pass
+        if not phone:
+            return None
         norm = self._normalize_phone(phone)
         try:
             res = self.client.table("user_profiles").select("*").eq("phone", norm).limit(1).execute()
@@ -474,7 +483,7 @@ class SupabaseStorage(Storage):
         except Exception:
             return None
 
-    def save_user_profile(self, phone: str, data: dict) -> dict | None:
+    def save_user_profile(self, phone: str, data: dict, auth_user_id: str = "") -> dict | None:
         norm = self._normalize_phone(phone)
         payload = {
             "phone": norm,
@@ -485,6 +494,8 @@ class SupabaseStorage(Storage):
             "onboarding_complete": True,
             "updated_at": "now()",
         }
+        if auth_user_id:
+            payload["auth_user_id"] = auth_user_id
         existing = self.get_user_profile(norm)
         if existing:
             res = self.client.table("user_profiles").update(payload).eq("phone", norm).execute()

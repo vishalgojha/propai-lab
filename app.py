@@ -11875,14 +11875,18 @@ async def health():
 # ── User Profile / Onboarding ─────────────────────────────────────
 
 @app.get("/api/profile")
-async def get_profile(phone: str, user: dict = Depends(require_user)):
-    profile = storage.get_user_profile(phone)
+async def get_profile(request: Request, user: dict = Depends(require_user)):
+    phone = request.query_params.get("phone", "")
+    auth_user_id = request.query_params.get("auth_user_id", "")
+    if not auth_user_id:
+        auth_user_id = user.get("sub", "")
+    profile = storage.get_user_profile(phone=phone, auth_user_id=auth_user_id)
     return profile or {}
 
 
 @app.post("/api/profile")
 async def save_profile(body: OnboardingProfile, phone: str, user: dict = Depends(require_user)):
-    profile = storage.save_user_profile(phone, body.model_dump())
+    profile = storage.save_user_profile(phone, body.model_dump(), auth_user_id=user.get("sub", ""))
     return profile or {"error": "failed to save"}
 
 

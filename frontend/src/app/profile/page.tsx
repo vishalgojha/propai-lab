@@ -64,12 +64,7 @@ export default function ProfilePage() {
     applyProfile(baseProfile);
     setHasStoredProfile(Boolean(localProfile?.auth_user_id === user?.id && localProfile?.first_name));
 
-    if (!baseProfile.phone) {
-      setLoading(false);
-      return () => { mounted = false; };
-    }
-
-    getProfile(baseProfile.phone).then((data: any) => {
+    getProfile(baseProfile.phone, user?.id).then((data: any) => {
       if (!mounted) return;
       if (data && data.first_name) {
         applyProfile({ ...baseProfile, ...data });
