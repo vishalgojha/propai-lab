@@ -5892,10 +5892,10 @@ async def public_listings(
                    l.pic_token, l.listing_source, l.first_seen, l.last_seen,
                    l.observation_count, l.group_count
             FROM listings l
-            JOIN brokers b ON l.broker_name = b.canonical_name
+            LEFT JOIN brokers b ON l.broker_name = b.canonical_name
             WHERE l.last_seen > now() - interval '30 days'
               AND l.observation_count >= 2
-              AND b.is_hidden = false
+              AND (b.is_hidden = false OR b.is_hidden IS NULL)
         """
         params = []
 
@@ -5958,25 +5958,20 @@ async def public_create_lead(req: PublicLeadRequest):
         return JSONResponse(status_code=404, content={"error": "Listing not found"})
 
     broker_phone = listing.get("broker_phone")
-    if not broker_phone:
-        return JSONResponse(status_code=500, content={"error": "Listing has no broker phone"})
+    broker_name = listing.get("broker_name")
 
-    # Resolve broker_id by matching broker_phone
-    phone_variants = [
-        broker_phone,
-        broker_phone.replace("+91", "").replace("+91 ", "").replace(" ", ""),
-        "".join(ch for ch in broker_phone if ch.isdigit())
-    ]
-    broker = None
-    for variant in phone_variants:
+    # If listing has no broker_phone, try to get it from brokers table via broker_name
+    if not broker_phone and broker_name:
         res = storage.db.execute(
-            "SELECT id FROM brokers WHERE primary_phone = $1",
-            [variant]
+            "SELECT primary_phone FROM brokers WHERE canonical_name = $1 AND is_hidden = false",
+            [broker_name]
         )
         broker = res.fetchone()
         if broker:
-            break
-    broker_id = broker["id"] if broker else None
+            broker_phone = broker.get("primary_phone")
+
+    if not broker_phone:
+        return JSONResponse(status_code=500, content={"error": "Listing has no broker phone"})
 
     # Insert lead
     res = storage.db.execute(
