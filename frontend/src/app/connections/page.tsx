@@ -148,7 +148,6 @@ function formatTime(iso: string | null): string {
 
 function formatPhone(p: string) {
   if (!p) return "—";
-  if (p.startsWith("Unpaired")) return "New Phone";
   if (p.startsWith("+")) return p;
   const digits = p.replace(/\D/g, "");
   if (digits.length === 12) return `+${digits.slice(0, 2)} ${digits.slice(2)}`;
@@ -156,8 +155,13 @@ function formatPhone(p: string) {
   return `+${digits}`;
 }
 
-function isUnpairedPhone(phoneNumber?: string | null) {
-  return !phoneNumber || phoneNumber.startsWith("Unpaired");
+function isPlaceholderPhone(phoneNumber?: string | null) {
+  if (!phoneNumber) return true;
+  const text = phoneNumber.trim();
+  if (!text) return true;
+  if (text.startsWith("Unpaired")) return true;
+  const digits = text.replace(/\D/g, "");
+  return digits.length < 10;
 }
 
 function CreatePhoneDialog({ open, onClose, onCreated }: { open: boolean; onClose: () => void; onCreated: () => Promise<void> | void }) {
@@ -305,7 +309,7 @@ function QRModal({ phone, open, onClose, onRefresh }: { phone: Phone; open: bool
       <div className="bg-zinc-900 border border-white/10 rounded-2xl p-6 w-full max-w-lg mx-4" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-base font-bold text-white">
-            {connected ? "Connected!" : `Scan QR — ${formatPhone(phone.phone_number)}`}
+            {connected ? "Connected!" : `Scan QR — ${isPlaceholderPhone(phone.phone_number) ? "New Phone" : formatPhone(phone.phone_number)}`}
           </h3>
           <button onClick={onClose} className="text-zinc-500 hover:text-white"><X className="w-5 h-5" /></button>
         </div>
@@ -366,7 +370,7 @@ function PhoneCard({ phone, onRefresh, onShowQR }: { phone: Phone; onRefresh: ()
 
   const isConnected = phone.connected || phone.connection_state === "open";
   const phoneDisplay = phone.phone_number_live || phone.phone_number;
-  const isUnpaired = !isConnected && isUnpairedPhone(phone.phone_number);
+  const isUnpaired = !isConnected && isPlaceholderPhone(phoneDisplay);
   const health: HealthStatus = isConnected ? "healthy" : isUnpaired ? "warning" : "error";
 
   return (
