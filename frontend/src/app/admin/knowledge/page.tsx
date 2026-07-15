@@ -5,6 +5,7 @@ export const dynamic = 'force-dynamic';
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Search, Filter, Database, Eye, Download, Upload, Trash2, RotateCcw } from "lucide-react";
+import { fetchJSON } from "@/lib/api";
 
 interface KnowledgeRecord {
   id: number;
@@ -55,14 +56,13 @@ export default function AdminKnowledgePage() {
     if (search.trim()) params.set("q", search.trim());
     if (filter !== "all") params.set("content_type", filter);
 
-    const res = await fetch(`/api/knowledge/records?${params.toString()}`);
-    const data = await res.json();
+    const data = await fetchJSON<KnowledgeRecord[]>(`/knowledge/records?${params.toString()}`);
     setRecords(data);
   };
 
   const fetchStats = async () => {
-    const res = await fetch("/api/knowledge/stats");
-    setStats(await res.json());
+    const data = await fetchJSON<Stats>("/knowledge/stats");
+    setStats(data);
   };
 
   useEffect(() => {

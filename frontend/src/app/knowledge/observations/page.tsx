@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { fetchJSON } from "@/lib/api";
 
 const copyToClipboard = async (text: string): Promise<boolean> => {
   try {
@@ -50,13 +51,10 @@ export default function KnowledgeObservationsPage() {
     if (brokerPhoneFilter) params.set("broker_phone", brokerPhoneFilter);
     params.set("limit", "100");
 
-    const [obsRes, statsRes] = await Promise.all([
-      fetch(`/api/knowledge/observations?${params.toString()}`),
-      fetch("/api/knowledge/observations/stats"),
+    const [obsData, statsData] = await Promise.all([
+      fetchJSON<KnowledgeObservation[]>(`/knowledge/observations?${params.toString()}`),
+      fetchJSON<Stats>("/knowledge/observations/stats"),
     ]);
-
-    const obsData = await obsRes.json() as KnowledgeObservation[];
-    const statsData = await statsRes.json() as Stats;
     setObservations(obsData);
     setStats(statsData);
     setLoading(false);

@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import { fetchJSON } from "@/lib/api";
 
 interface Client {
   id: number;
@@ -64,8 +65,7 @@ export default function AddToClientBucket({
 
   const fetchClients = async () => {
     try {
-      const res = await fetch(`/api/clients?q=${searchQuery}`);
-      const data = await res.json();
+      const data = await fetchJSON<Client[]>(`/clients?q=${searchQuery}`);
       setClients(data);
     } catch (e) {
       console.error("Failed to fetch clients:", e);
@@ -83,9 +83,8 @@ export default function AddToClientBucket({
 
     try {
       // Run matching against client's requirements
-      const res = await fetch("/api/clients/match", {
+      const data = await fetchJSON<any>("/clients/match", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           price: messageContext?.price,
           bhk: messageContext?.bhk,
@@ -96,7 +95,6 @@ export default function AddToClientBucket({
           intent: messageContext?.intent,
         }),
       });
-      const data = await res.json();
       setMatches(data.matches || []);
       setStep("confirm");
     } catch (e) {
@@ -110,12 +108,10 @@ export default function AddToClientBucket({
   const handleCreateClient = async () => {
     if (!newClientName.trim()) return;
     try {
-      const res = await fetch("/api/clients", {
+      const data = await fetchJSON<any>("/clients", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: newClientName }),
       });
-      const data = await res.json();
       const newClient = { id: data.id, name: newClientName };
       setClients([newClient, ...clients]);
       setSelectedClient(newClient);
@@ -131,9 +127,8 @@ export default function AddToClientBucket({
     if (!selectedClient) return;
     setLoading(true);
     try {
-      await fetch(`/api/clients/${selectedClient.id}/candidates`, {
+      await fetchJSON(`/clients/${selectedClient.id}/candidates`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           message_id: messageContext?.id,
           building_name: messageContext?.building_name,

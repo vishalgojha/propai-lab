@@ -2,25 +2,17 @@
 
 import React, { useState, useEffect } from "react";
 import { Eye, EyeOff, ArrowLeft, ChevronRight, User } from "lucide-react";
-
-function getAuthHeaders() {
-  return { "Content-Type": "application/json" };
-}
+import { fetchJSON } from "@/lib/api";
 
 async function fetchHiddenBrokers() {
-  const res = await fetch("/api/brokers/hidden", { headers: getAuthHeaders() });
-  if (!res.ok) throw new Error("Failed to fetch hidden brokers");
-  const data = await res.json();
+  const data = await fetchJSON<any>("/brokers/hidden");
   return data.brokers;
 }
 
 async function unhideBroker(phone: string) {
-  const res = await fetch(`/api/brokers/${encodeURIComponent(phone)}/unhide`, {
+  return fetchJSON<any>(`/brokers/${encodeURIComponent(phone)}/unhide`, {
     method: "POST",
-    headers: getAuthHeaders(),
   });
-  if (!res.ok) throw new Error("Failed to unhide broker");
-  return res.json();
 }
 
 export default function HiddenBrokersPage() {

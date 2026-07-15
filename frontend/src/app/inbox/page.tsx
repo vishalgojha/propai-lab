@@ -1812,7 +1812,7 @@ return {
     
     try {
       // First add to trainer if not already there
-      const existing = await fetch(`/api/trainer/terms?status=combined_locality`).then(r => r.json());
+      const existing = await api.fetchJSON<any[]>(`/trainer/terms?status=combined_locality`);
       const alreadyExists = existing.some((t: any) => t.term.toLowerCase() === surface.toLowerCase());
       
       let termId: number;
@@ -1822,9 +1822,8 @@ return {
       } else {
         // Add to trainer
         const context = selectedMsgDetails?.raw?.message?.slice(0, 120) || "";
-        const addRes = await fetch("/api/trainer/inline-resolve", {
+        const addData = await api.fetchJSON<any>("/trainer/inline-resolve", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             text: surface,
             raw_message_id: selectedMsg?.id,
@@ -1832,23 +1831,20 @@ return {
             expands_to: expandsTo,
           }),
         });
-        const addData = await addRes.json();
         if (!addData.status || addData.status === "error") {
           alert("Failed to save combined locality");
           return;
         }
         // Get the term ID
-        const termRes = await fetch(`/api/trainer/terms?status=combined_locality`);
-        const terms = await termRes.json();
+        const terms = await api.fetchJSON<any[]>(`/trainer/terms?status=combined_locality`);
         const term = terms.find((t: any) => t.term.toLowerCase() === surface.toLowerCase());
         termId = term?.id;
       }
       
       if (termId) {
         // Resolve with expands_to
-        await fetch(`/api/trainer/resolve`, {
+        await api.fetchJSON(`/trainer/resolve`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             term_id: termId,
             status: "combined_locality",

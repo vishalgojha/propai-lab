@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { Search, Calendar, User, Filter, ChevronLeft, ChevronRight } from "lucide-react";
+import { fetchJSON } from "@/lib/api";
 
 async function fetchActivity(limit: number, offset: number, action: string | null, memberId: number | null) {
     const params = new URLSearchParams();
@@ -10,9 +11,7 @@ async function fetchActivity(limit: number, offset: number, action: string | nul
     if (action) params.set("action", action);
     if (memberId) params.set("team_member_id", memberId.toString());
     
-    const res = await fetch(`/api/workspace/activity?${params.toString()}`);
-    if (!res.ok) throw new Error("Failed to fetch activity");
-    return res.json();
+    return fetchJSON<any>(`/workspace/activity?${params.toString()}`);
 }
 
 export default function ActivityPage() {

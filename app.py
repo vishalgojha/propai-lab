@@ -2124,7 +2124,7 @@ class IngestRequest(BaseModel):
 
 
 @app.post("/ingest")
-async def ingest(req: IngestRequest):
+async def ingest(req: IngestRequest, user: dict = Depends(require_user)):
     """Manually ingest a message for testing."""
     from lab.scheduler import PIPELINE_VERSION
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -2223,7 +2223,7 @@ class BatchIngestRequest(BaseModel):
 
 
 @app.post("/ingest/batch")
-async def ingest_batch(req: BatchIngestRequest):
+async def ingest_batch(req: BatchIngestRequest, user: dict = Depends(require_user)):
     results = []
     for item in req.messages:
         r = await ingest(IngestRequest(
@@ -2237,7 +2237,7 @@ async def ingest_batch(req: BatchIngestRequest):
 # ── Admin API endpoints ─────────────────────────────────────────
 
 @app.get("/api/raw")
-async def get_raw_messages(limit: int = 50, offset: int = 0,
+async def get_raw_messages(user: dict = Depends(require_user), limit: int = 50, offset: int = 0,
                            group_name: str = "", sender: str = "",
                            sender_phone: str = "", sender_jid: str = ""):
     rows = storage.get_raw_messages(limit, offset, group_name=group_name,
@@ -2281,7 +2281,7 @@ async def get_raw_messages(limit: int = 50, offset: int = 0,
 
 
 @app.get("/api/raw/{raw_id}")
-async def get_raw_message(raw_id: int):
+async def get_raw_message(raw_id: int, user: dict = Depends(require_user)):
     row = storage.get_raw_message(raw_id)
     if not row:
         raise HTTPException(404)
@@ -2401,26 +2401,26 @@ async def require_tenant(
 
 
 @app.get("/api/inbox/threads")
-async def inbox_threads(limit: int = 500, offset: int = 0,
+async def inbox_threads(user: dict = Depends(require_user), limit: int = 500, offset: int = 0,
                         tenant_id: str | None = Depends(get_tenant_context)):
     return storage.get_inbox_threads(limit, offset, tenant_id=tenant_id)
 
 
 @app.get("/api/chats")
-async def list_chats(limit: int = 500, offset: int = 0,
+async def list_chats(user: dict = Depends(require_user), limit: int = 500, offset: int = 0,
                      tenant_id: str | None = Depends(get_tenant_context)):
     return storage.get_chats(limit, offset, tenant_id=tenant_id)
 
 
 @app.get("/api/chats/{chat_id}/messages")
-async def chat_messages(chat_id: str, limit: int = 200, offset: int = 0,
+async def chat_messages(chat_id: str, user: dict = Depends(require_user), limit: int = 200, offset: int = 0,
                         tenant_id: str | None = Depends(get_tenant_context)):
     rows = storage.get_chat_messages(chat_id, limit, offset, tenant_id=tenant_id)
     return [asdict(r) for r in rows]
 
 
 @app.get("/api/chats/{chat_id}")
-async def get_chat(chat_id: str, tenant_id: str | None = Depends(get_tenant_context)):
+async def get_chat(chat_id: str, tenant_id: str | None = Depends(get_tenant_context), user: dict = Depends(require_user)):
     for chat in storage.get_chats(1000, 0, tenant_id=tenant_id):
         if str(chat.get("chat_id") or chat.get("conversation_key") or "") == chat_id:
             return chat
@@ -2436,7 +2436,7 @@ async def get_chat(chat_id: str, tenant_id: str | None = Depends(get_tenant_cont
 
 
 @app.get("/api/inbox/slugs")
-async def inbox_slugs():
+async def inbox_slugs(user: dict = Depends(require_user)):
     """Return saved inbox view configurations (slugs) for the tabs."""
     return [
         {"slug": "brokers", "label": "Brokers", "view_type": "brokers", "is_default": True},
@@ -2444,13 +2444,13 @@ async def inbox_slugs():
 
 
 @app.get("/api/inbox/views")
-async def get_saved_inbox_views():
+async def get_saved_inbox_views(user: dict = Depends(require_user)):
     """List all saved inbox views."""
     return storage.get_saved_inbox_views()
 
 
 @app.get("/api/inbox/views/{slug}")
-async def get_saved_inbox_view(slug: str):
+async def get_saved_inbox_view(slug: str, user: dict = Depends(require_user)):
     """Get a specific saved inbox view by slug."""
     view = storage.get_saved_inbox_view(slug)
     if view is None:
@@ -2460,9 +2460,10 @@ async def get_saved_inbox_view(slug: str):
 
 @app.post("/api/inbox/views")
 async def create_saved_inbox_view(
-    slug: str,
-    name: str,
-    filters: dict,
+    user: dict = Depends(require_user),
+    slug: str = "",
+    name: str = "",
+    filters: dict = {},
     description: str = "",
     is_default: bool = False,
     is_shared: bool = False,
@@ -2477,7 +2478,8 @@ async def create_saved_inbox_view(
 
 @app.put("/api/inbox/views/{slug}")
 async def update_saved_inbox_view(
-    slug: str,
+    user: dict = Depends(require_user),
+    slug: str = "",
     name: str | None = None,
     filters: dict | None = None,
     description: str | None = None,
@@ -2492,7 +2494,7 @@ async def update_saved_inbox_view(
 
 
 @app.delete("/api/inbox/views/{slug}")
-async def delete_saved_inbox_view(slug: str):
+async def delete_saved_inbox_view(slug: str, user: dict = Depends(require_user)):
     """Delete a saved inbox view."""
     ok = storage.delete_saved_inbox_view(slug)
     if not ok:
@@ -2501,12 +2503,13 @@ async def delete_saved_inbox_view(slug: str):
 
 
 @app.get("/api/parsed")
-async def get_parsed(limit: int = 50, offset: int = 0, intent: str = ""):
+async def get_parsed(limit: int = 50, offset: int = 0, intent: str = "", user: dict = Depends(require_user)):
     return storage.get_parsed(limit, offset, intent=intent)
 
 
 @app.get("/api/observations/feed")
 async def get_observations_feed(
+    user: dict = Depends(require_user),
     limit: int = 50, offset: int = 0,
     broker_key: str = "", intent: str = "",
     phone: str = "",
@@ -2517,6 +2520,7 @@ async def get_observations_feed(
 
 @app.get("/api/brokers/feed")
 async def get_brokers_feed(
+    user: dict = Depends(require_user),
     limit: int = 50, offset: int = 0,
     min_observations: int = 1,
     tenant_id: str | None = Depends(get_tenant_context),
@@ -2525,17 +2529,17 @@ async def get_brokers_feed(
 
 
 @app.get("/api/resolver")
-async def get_resolver_decisions(limit: int = 50, offset: int = 0, method: str = ""):
+async def get_resolver_decisions(limit: int = 50, offset: int = 0, method: str = "", user: dict = Depends(require_user)):
     return storage.get_resolver_decisions(limit, offset, method)
 
 
 @app.get("/api/failed")
-async def get_failed(limit: int = 50, offset: int = 0):
+async def get_failed(limit: int = 50, offset: int = 0, user: dict = Depends(require_user)):
     return storage.get_failed(limit, offset)
 
 
 @app.get("/api/stats")
-async def get_stats():
+async def get_stats(user: dict = Depends(require_user)):
     return storage.get_stats()
 
 
@@ -2558,7 +2562,7 @@ def _load_evidence_cache():
 
 
 @app.get("/api/dashboard/time-window")
-async def dashboard_time_window(window: str = "today"):
+async def dashboard_time_window(window: str = "today", user: dict = Depends(require_user)):
     """Dashboard metrics for a specific time window."""
     now = datetime.now(timezone.utc)
 
@@ -2645,7 +2649,7 @@ async def dashboard_time_window(window: str = "today"):
 
 
 @app.get("/api/dashboard/activity")
-async def dashboard_activity():
+async def dashboard_activity(user: dict = Depends(require_user)):
     """Today's market activity: messages, new sellers, buyers, rentals, etc."""
     today = _today_prefix()
     activity = storage.dashboard_activity(today)
@@ -2663,25 +2667,25 @@ async def dashboard_activity():
 
 
 @app.get("/api/dashboard/listings")
-async def dashboard_listings(limit: int = 20):
+async def dashboard_listings(limit: int = 20, user: dict = Depends(require_user)):
     """Recent listings (SELL/RENT/PRE-LAUNCH/COMMERCIAL)."""
     return storage.dashboard_listings(limit)
 
 
 @app.get("/api/dashboard/requirements")
-async def dashboard_requirements(limit: int = 20):
+async def dashboard_requirements(limit: int = 20, user: dict = Depends(require_user)):
     """Recent requirements (BUY/RENTAL_SEEKER)."""
     return storage.dashboard_requirements(limit)
 
 
 @app.get("/api/dashboard/signals")
-async def dashboard_signals():
+async def dashboard_signals(user: dict = Depends(require_user)):
     """Market signals and trends."""
     return storage.dashboard_signals()
 
 
 @app.get("/api/dashboard/coverage")
-async def dashboard_coverage():
+async def dashboard_coverage(user: dict = Depends(require_user)):
     """Market memory: groups, messages stored, buildings, landmarks etc."""
     stats = storage.get_stats()
     cache = _load_evidence_cache()
@@ -2713,7 +2717,7 @@ async def dashboard_coverage():
 
 
 @app.get("/api/action/dashboard")
-async def action_dashboard():
+async def action_dashboard(user: dict = Depends(require_user)):
     """Actionable dashboard — every metric answers 'so what?'"""
     stats = storage.get_stats()
     today = datetime.utcnow().strftime("%Y-%m-%d")
@@ -2795,24 +2799,24 @@ async def action_dashboard():
 
 
 @app.get("/api/dashboard/live-window")
-async def dashboard_live_window():
+async def dashboard_live_window(user: dict = Depends(require_user)):
     return business_window_status()
 
 
 @app.get("/api/dashboard/feed")
-async def dashboard_feed(limit: int = 20):
+async def dashboard_feed(limit: int = 20, user: dict = Depends(require_user)):
     """Live intelligence feed of latest messages."""
     return storage.dashboard_feed(limit)
 
 
 @app.get("/api/dashboard/heatmap")
-async def dashboard_heatmap():
+async def dashboard_heatmap(user: dict = Depends(require_user)):
     """Listings per micro market."""
     return storage.dashboard_heatmap()
 
 
 @app.get("/api/markets/{market_name:path}")
-async def get_market_detail(market_name: str):
+async def get_market_detail(market_name: str, user: dict = Depends(require_user)):
     name = market_name.strip()
     if not name:
         raise HTTPException(400, "Market name is required")
@@ -2885,7 +2889,7 @@ async def get_market_detail(market_name: str):
 
 
 @app.get("/api/dashboard/sync-activity")
-async def dashboard_sync_activity():
+async def dashboard_sync_activity(user: dict = Depends(require_user)):
     """Currently reading group and sync progress."""
     try:
         overall = get_scheduler().status().get("overall", "idle")
@@ -2929,7 +2933,7 @@ async def dashboard_sync_activity():
 
 
 @app.get("/api/extraction/progress")
-async def extraction_progress():
+async def extraction_progress(user: dict = Depends(require_user)):
     """Current extraction pipeline progress (async worker status)."""
     total = _raw_count_all()
     processed = _raw_count_processed()
@@ -2972,7 +2976,7 @@ def _raw_count_processed() -> int:
 
 
 @app.get("/api/dashboard/graph-growth")
-async def dashboard_graph_growth():
+async def dashboard_graph_growth(user: dict = Depends(require_user)):
     """Today's knowledge graph growth: new buildings, landmarks, etc."""
     today = _today_prefix()
     growth = storage.dashboard_growth(today)
@@ -3013,7 +3017,7 @@ async def dashboard_graph_growth():
 
 
 @app.get("/api/dashboard/whatsapp-status")
-async def dashboard_whatsapp_status():
+async def dashboard_whatsapp_status(user: dict = Depends(require_user)):
     """Detailed WhatsApp connection status."""
     details = _connection_details()
     phone = details.get("phone_number") or ""
@@ -3093,12 +3097,12 @@ async def market_access_status(
 
 
 @app.get("/api/privacy/receipt")
-async def get_privacy_receipt():
+async def get_privacy_receipt(user: dict = Depends(require_user)):
     return _privacy_receipt_payload()
 
 
 @app.post("/api/privacy/receipt/complete")
-async def complete_privacy_receipt():
+async def complete_privacy_receipt(user: dict = Depends(require_user)):
     details = _connection_details()
     if not details.get("connected"):
         raise HTTPException(400, "Connect WhatsApp before finishing privacy review")
@@ -3116,7 +3120,7 @@ class QueryRequest(BaseModel):
 
 
 @app.post("/api/ai/query")
-async def ai_query(req: QueryRequest):
+async def ai_query(req: QueryRequest, user: dict = Depends(require_user)):
     """Natural language query over observations using semantic search.
     Embeds the query text, finds nearest neighbours via cosine similarity.
     Returns matching observations with similarity scores.
@@ -3130,7 +3134,7 @@ async def ai_query(req: QueryRequest):
 
 
 @app.get("/api/ai/similar/{observation_id}")
-async def ai_similar(observation_id: int, k: int = 10):
+async def ai_similar(observation_id: int, k: int = 10, user: dict = Depends(require_user)):
     """Find observations semantically similar to a given observation."""
     detail = storage.get_observation_detail(observation_id)
     parsed = detail.get("parsed", {})
@@ -3143,7 +3147,7 @@ async def ai_similar(observation_id: int, k: int = 10):
 
 
 @app.get("/api/ai/explain/{observation_id}")
-async def ai_explain(observation_id: int):
+async def ai_explain(observation_id: int, user: dict = Depends(require_user)):
     """Deterministic explanation of why the parser classified an observation as it did."""
     detail = storage.get_observation_detail(observation_id)
     parsed = detail.get("parsed", {})
@@ -3223,7 +3227,7 @@ async def ai_explain(observation_id: int):
 
 
 @app.get("/api/ai/summary")
-async def ai_summary():
+async def ai_summary(user: dict = Depends(require_user)):
     """Daily market summary: what happened today across all observations."""
     today = _today_prefix()
     activity = storage.dashboard_activity(today)
@@ -3252,7 +3256,7 @@ async def ai_summary():
 
 
 @app.get("/api/ai/broker/{broker_name:path}")
-async def ai_broker(broker_name: str):
+async def ai_broker(broker_name: str, user: dict = Depends(require_user)):
     """Broker intelligence from aggregated observations."""
     observations = storage.get_observations_by_broker(broker_name)
     if not observations:
@@ -3291,7 +3295,7 @@ async def ai_broker(broker_name: str):
 
 
 @app.get("/api/ai/building/{building_name:path}")
-async def ai_building(building_name: str):
+async def ai_building(building_name: str, user: dict = Depends(require_user)):
     """Building memory from observations mentioning this building."""
     observations = storage.get_observations_by_building(building_name)
     if not observations:
@@ -3337,7 +3341,7 @@ class PromoteRequest(BaseModel):
 
 
 @app.get("/api/promote/config")
-async def promote_config():
+async def promote_config(user: dict = Depends(require_user)):
     has_meta_credentials = bool(
         os.getenv("META_ACCESS_TOKEN")
         and (os.getenv("META_PAGE_ID") or os.getenv("META_INSTAGRAM_BUSINESS_ID"))
@@ -3503,7 +3507,7 @@ def _ai_promote_with_key(system: str, prompt: str, api_key: str) -> str | None:
 
 
 @app.post("/api/promote/generate")
-async def promote_generate(req: PromoteRequest):
+async def promote_generate(req: PromoteRequest, user: dict = Depends(require_user)):
     detail = storage.get_observation_detail(req.observation_id)
     if not detail.get("parsed"):
         raise HTTPException(404, "Observation not found")
@@ -3556,7 +3560,7 @@ async def promote_generate(req: PromoteRequest):
 
 
 @app.get("/api/evaluations")
-async def get_evaluations(limit: int = 50, min_accuracy: float = 0.0):
+async def get_evaluations(limit: int = 50, min_accuracy: float = 0.0, user: dict = Depends(require_user)):
     rows = storage.get_evaluations(limit)
     if min_accuracy > 0.0:
         rows = [r for r in rows if r.get("accuracy_overall") is None or r["accuracy_overall"] >= min_accuracy]
@@ -5452,7 +5456,7 @@ WHATSAPP SELF-CHAT MODE:
 
 
 @app.post("/api/self-chat")
-async def self_chat(req: SelfChatRequest):
+async def self_chat(req: SelfChatRequest, user: dict = Depends(require_user)):
     text = req.text.strip()
     if not text:
         return {"reply": ""}
@@ -5670,7 +5674,7 @@ def _doubleword_error_response(exc: Exception) -> JSONResponse:
 
 
 @app.get("/api/ai/config")
-async def ai_config():
+async def ai_config(user: dict = Depends(require_user)):
     return {
         "has_server_key": bool(DOUBLEWORD_API_KEY),
         "base_url": chat_engine.BASE_URL,
@@ -5684,7 +5688,7 @@ _chip_cache: dict = {}
 _chip_cache_at: float = 0.0
 
 @app.get("/api/chat/suggestions")
-async def chat_suggestions():
+async def chat_suggestions(user: dict = Depends(require_user)):
     now = time.time()
     if _chip_cache and (now - _chip_cache_at) < 3600:
         return _chip_cache
@@ -5797,21 +5801,21 @@ async def chat_suggestions():
 # ── AI Chat Sessions CRUD ──────────────────────────────────────
 
 @app.get("/api/ai/chat/sessions")
-async def list_chat_sessions(broker_phone: str = "", limit: int = 50):
+async def list_chat_sessions(broker_phone: str = "", limit: int = 50, user: dict = Depends(require_user)):
     if not broker_phone:
         return []
     return storage.list_chat_sessions(broker_phone, limit=limit)
 
 
 @app.post("/api/ai/chat/sessions")
-async def create_chat_session(broker_phone: str = "", title: str = "New chat"):
+async def create_chat_session(broker_phone: str = "", title: str = "New chat", user: dict = Depends(require_user)):
     if not broker_phone:
         raise HTTPException(400, "broker_phone required")
     return storage.create_chat_session(broker_phone, title=title) or {}
 
 
 @app.get("/api/ai/chat/sessions/{session_id}/messages")
-async def get_chat_session_messages(session_id: str):
+async def get_chat_session_messages(session_id: str, user: dict = Depends(require_user)):
     session = storage.get_chat_session(session_id)
     if not session:
         raise HTTPException(404, "Session not found")
@@ -5819,13 +5823,13 @@ async def get_chat_session_messages(session_id: str):
 
 
 @app.delete("/api/ai/chat/sessions/{session_id}")
-async def delete_chat_session(session_id: str):
+async def delete_chat_session(session_id: str, user: dict = Depends(require_user)):
     storage.delete_chat_session(session_id)
     return {"ok": True}
 
 
 @app.post("/api/ai/chat")
-async def ai_chat(req: ChatRequest):
+async def ai_chat(req: ChatRequest, user: dict = Depends(require_user)):
     # Conversation memory (session-aware, not just message count)
     from ai_chat_engine import get_memory
     session_id = req.session_id or "default"
@@ -6016,7 +6020,7 @@ async def ai_chat(req: ChatRequest):
 
 
 @app.get("/api/ai/chat/overview")
-async def ai_chat_overview():
+async def ai_chat_overview(user: dict = Depends(require_user)):
     sources = chat_engine.load_data()
     live = chat_engine.load_live_data(getattr(storage, "db", None))
     sources.update(live)
@@ -6028,7 +6032,7 @@ async def ai_chat_overview():
 # ── Evidence Inspector ──────────────────────────────────────────
 
 @app.get("/api/observations/{obs_id}")
-async def get_observation(obs_id: int):
+async def get_observation(obs_id: int, user: dict = Depends(require_user)):
     """Return full pipeline for a single observation: raw → parsed → resolver → evaluation."""
     result = storage.get_observation_detail(obs_id)
     if not result.get("raw"):
@@ -6048,7 +6052,7 @@ class ReplayStats(BaseModel):
 
 
 @app.post("/api/replay")
-async def replay_all():
+async def replay_all(user: dict = Depends(require_user)):
     """Re-run all stored messages through the current resolver and return accuracy stats."""
     raws = storage.get_all_raw_for_replay()
 
@@ -6084,7 +6088,7 @@ async def replay_all():
 # IMPORTANT: static routes must come before /sources/{source_name}
 
 @app.get("/api/sources")
-async def list_sources():
+async def list_sources(user: dict = Depends(require_user)):
     """List all registered sources."""
     from lab.ingestion.registry import get_registry
     reg = get_registry()
@@ -6099,7 +6103,7 @@ async def list_sources():
 
 
 @app.get("/api/sources/status")
-async def scheduler_status():
+async def scheduler_status(user: dict = Depends(require_user)):
     """Return scheduler status and per-source summary."""
     scheduler = get_scheduler()
     st = scheduler.status()
@@ -6123,14 +6127,14 @@ async def scheduler_status():
 
 
 @app.get("/api/sources/jobs")
-async def list_jobs(source: str = "", status: str = "", limit: int = 50):
+async def list_jobs(source: str = "", status: str = "", limit: int = 50, user: dict = Depends(require_user)):
     """List sync jobs, optionally filtered by source and/or status."""
     jobs = storage.get_sync_jobs(limit=limit, source=source, status=status)
     return [asdict(j) for j in jobs]
 
 
 @app.get("/api/sources/jobs/{job_id}")
-async def get_job_detail(job_id: int):
+async def get_job_detail(job_id: int, user: dict = Depends(require_user)):
     """Get details for a specific sync job."""
     job = storage.get_sync_job(job_id)
     if not job:
@@ -6139,7 +6143,7 @@ async def get_job_detail(job_id: int):
 
 
 @app.post("/api/sources/stop")
-async def scheduler_stop():
+async def scheduler_stop(user: dict = Depends(require_user)):
     """Stop the sync scheduler."""
     scheduler = get_scheduler()
     scheduler.stop()
@@ -6147,7 +6151,7 @@ async def scheduler_stop():
 
 
 @app.post("/api/sources/{source_name}/sync")
-async def source_sync(source_name: str):
+async def source_sync(source_name: str, user: dict = Depends(require_user)):
     """Start sync for a specific source."""
     if source_name == "whatsapp":
         raise HTTPException(
@@ -6167,7 +6171,7 @@ async def source_sync(source_name: str):
 
 
 @app.get("/api/sources/{source_name}")
-async def get_source(source_name: str):
+async def get_source(source_name: str, user: dict = Depends(require_user)):
     """Get details for a specific source."""
     from lab.ingestion.registry import get_registry
     s = get_registry().get(source_name)
@@ -6481,12 +6485,12 @@ def _status_file_debug() -> dict:
 
 
 @app.get("/api/debug/sync/status-file")
-async def debug_sync_status_file():
+async def debug_sync_status_file(user: dict = Depends(require_user)):
     return _status_file_debug()
 
 
 @app.get("/api/debug/sync/connection")
-async def debug_sync_connection():
+async def debug_sync_connection(user: dict = Depends(require_user)):
     status = _status_file()
     return {
         "status_source": "memory" if _memory_status and not status.get("connection_state") else "file_or_memory",
@@ -6518,7 +6522,7 @@ def _today_count(table: str, column: str = "created_at", where: str = "1=1") -> 
 
 
 @app.get("/api/companion/overview")
-async def companion_overview():
+async def companion_overview(user: dict = Depends(require_user)):
     team_count = _count_table("companion_team_members")
     active_team = storage.db.execute(
         "SELECT COUNT(*) AS c FROM companion_team_members WHERE active = 1"
@@ -6585,7 +6589,7 @@ async def companion_overview():
 
 
 @app.get("/api/companion/config")
-async def companion_config():
+async def companion_config(user: dict = Depends(require_user)):
     waba_number = (
         _companion_get_config_value("whatsapp_business_number", "WABA_PHONE_NUMBER")  # force deploy 021911
         or _companion_get_config_value("whatsapp_business_number", "WABA_BUSINESS_NUMBER")
@@ -6609,7 +6613,7 @@ async def companion_config():
 
 
 @app.post("/api/companion/config")
-async def companion_save_config(req: CompanionConfigRequest):
+async def companion_save_config(req: CompanionConfigRequest, user: dict = Depends(require_user)):
     if req.whatsapp_business_number.strip():
         if _is_propai_shared_waba(req.whatsapp_business_number):
             raise HTTPException(403, "PropAI shared WABA is reserved for platform messages. Connect your own WABA for outbound messaging.")
@@ -7090,7 +7094,7 @@ async def waba_sessions_bulk(user: dict = Depends(require_user)):
 
 
 @app.get("/api/companion/team")
-async def companion_team():
+async def companion_team(user: dict = Depends(require_user)):
     rows = storage.db.execute(
         "SELECT * FROM companion_team_members ORDER BY active DESC, name COLLATE NOCASE"
     ).fetchall()
@@ -7098,7 +7102,7 @@ async def companion_team():
 
 
 @app.post("/api/companion/team")
-async def companion_add_team_member(req: CompanionTeamMemberRequest):
+async def companion_add_team_member(req: CompanionTeamMemberRequest, user: dict = Depends(require_user)):
     name = req.name.strip()
     mobile = _mobile_digits(req.mobile_number)
     if not name:
@@ -7137,7 +7141,7 @@ async def companion_add_team_member(req: CompanionTeamMemberRequest):
 
 
 @app.patch("/api/companion/team/{member_id}")
-async def companion_update_team_member(member_id: int, req: CompanionTeamMemberRequest):
+async def companion_update_team_member(member_id: int, req: CompanionTeamMemberRequest, user: dict = Depends(require_user)):
     if req.role not in COMPANION_ROLES:
         raise HTTPException(400, "Invalid role")
     mobile = _mobile_digits(req.mobile_number)
@@ -7173,17 +7177,17 @@ async def companion_update_team_member(member_id: int, req: CompanionTeamMemberR
 
 
 @app.get("/api/companion/roles")
-async def companion_roles():
+async def companion_roles(user: dict = Depends(require_user)):
     return COMPANION_ROLES
 
 
 @app.get("/api/companion/tools")
-async def companion_tools():
+async def companion_tools(user: dict = Depends(require_user)):
     return {"tools": COMPANION_TOOLS}
 
 
 @app.get("/api/companion/conversations")
-async def companion_conversations(limit: int = 20):
+async def companion_conversations(limit: int = 20, user: dict = Depends(require_user)):
     rows = storage.db.execute(
         """SELECT c.*, t.name AS team_member_name, t.role AS team_member_role
            FROM companion_conversations c
@@ -7196,7 +7200,7 @@ async def companion_conversations(limit: int = 20):
 
 
 @app.get("/api/companion/audit")
-async def companion_audit(limit: int = 30):
+async def companion_audit(limit: int = 30, user: dict = Depends(require_user)):
     rows = storage.db.execute(
         """SELECT a.*, t.name AS team_member_name
            FROM companion_audit_log a
@@ -7211,23 +7215,23 @@ async def companion_audit(limit: int = 30):
 # ── Backward-compatible aliases (old /api/sync/* routes) ─────────
 
 @app.post("/api/sync/start")
-async def sync_start_legacy():
+async def sync_start_legacy(user: dict = Depends(require_user)):
     """Legacy: start WhatsApp sync."""
     return await source_sync("whatsapp")
 
 
 @app.post("/api/sync/stop")
-async def sync_stop_legacy():
+async def sync_stop_legacy(user: dict = Depends(require_user)):
     return await scheduler_stop()
 
 
 @app.get("/api/sync/status")
-async def sync_status_legacy():
+async def sync_status_legacy(user: dict = Depends(require_user)):
     return await scheduler_status()
 
 
 @app.get("/api/sync/groups")
-async def sync_groups_legacy():
+async def sync_groups_legacy(user: dict = Depends(require_user)):
     """Legacy: list WhatsApp sync jobs as groups."""
     jobs = storage.get_sync_jobs(limit=500, source="whatsapp") if storage else []
     return [
@@ -7237,7 +7241,7 @@ async def sync_groups_legacy():
 
 
 @app.get("/api/sync/connection")
-async def sync_connection():
+async def sync_connection(user: dict = Depends(require_user)):
     """Check WhatsApp connection status."""
     details = _connection_details()
     jobs = storage.get_sync_jobs(limit=500, source="whatsapp") if storage else []
@@ -7273,7 +7277,7 @@ async def sync_connection():
 
 
 @app.get("/api/sync/qr")
-async def sync_qr():
+async def sync_qr(user: dict = Depends(require_user)):
     """Get QR code for WhatsApp login."""
     status = _status_file()
     qr = status.get("qr")
@@ -7306,7 +7310,7 @@ def _ingestor_urls() -> list[str]:
 
 
 @app.post("/api/sync/refresh-qr")
-async def sync_refresh_qr():
+async def sync_refresh_qr(user: dict = Depends(require_user)):
     """Force the ingestor to clear its session and generate a fresh QR code."""
     errors = []
     async with httpx.AsyncClient(timeout=10) as client:
@@ -7326,7 +7330,7 @@ async def sync_refresh_qr():
 
 
 @app.post("/api/sync/history-backfill")
-async def sync_history_backfill(limit: int = 25, count: int = 50):
+async def sync_history_backfill(limit: int = 25, count: int = 50, user: dict = Depends(require_user)):
     """Ask the WhatsApp phone for older messages before the latest known messages."""
     limit = max(1, min(int(limit or 25), 100))
     count = max(1, min(int(count or 50), 50))
@@ -7415,7 +7419,7 @@ async def sync_events():
 
 
 @app.post("/api/sync/logout")
-async def sync_logout():
+async def sync_logout(user: dict = Depends(require_user)):
     """Disconnect the WhatsApp session and clear stored credentials."""
     errors = []
     async with httpx.AsyncClient(timeout=10) as client:
@@ -7431,7 +7435,7 @@ async def sync_logout():
 
 
 @app.get("/api/sync/connection-state")
-async def sync_connection_state():
+async def sync_connection_state(user: dict = Depends(require_user)):
     """Get current connection state (open/connecting/closed)."""
     details = _connection_details()
     return {"state": details["connection_state"], "connected": details["connected"]}
@@ -7529,19 +7533,19 @@ def _top_message_groups(jobs, limit: int = 5) -> list[dict]:
 # ── Listing endpoints for frontend ───────────────────────────────
 
 @app.post("/api/rebuild-broker-graph")
-async def rebuild_broker_graph():
+async def rebuild_broker_graph(user: dict = Depends(require_user)):
     result = storage.rebuild_broker_graph()
     return result
 
 
 @app.post("/api/rebuild-observation-graph")
-async def rebuild_observation_graph():
+async def rebuild_observation_graph(user: dict = Depends(require_user)):
     result = storage.rebuild_observation_graph()
     return result
 
 
 @app.get("/api/brokers")
-async def list_brokers():
+async def list_brokers(user: dict = Depends(require_user)):
     storage.rebuild_broker_graph()
     rows = storage.db.execute("""
         SELECT id, canonical_name, primary_phone,
@@ -7654,6 +7658,7 @@ async def list_brokers():
 
 @app.get("/api/knowledge/observations")
 async def get_knowledge_observations(
+    user: dict = Depends(require_user),
     entity_type: str = "",
     entity_name: str = "",
     broker_phone: str = "",
@@ -7688,7 +7693,7 @@ async def get_knowledge_observations(
 
 
 @app.get("/api/knowledge/observations/stats")
-async def knowledge_observation_stats():
+async def knowledge_observation_stats(user: dict = Depends(require_user)):
     """Return aggregate stats about knowledge observations."""
     if storage is None:
         return {}
@@ -7795,7 +7800,7 @@ def _generate_batch_jsonl(max_messages: int = 0) -> tuple[list[dict], str]:
 
 
 @app.post("/api/knowledge/observations/batch")
-async def create_observation_batch(req: BatchCreateRequest):
+async def create_observation_batch(req: BatchCreateRequest, user: dict = Depends(require_user)):
     """Create a new batch observation extraction job."""
     if storage is None:
         return {"error": "storage not available"}
@@ -7845,7 +7850,7 @@ async def create_observation_batch(req: BatchCreateRequest):
 
 
 @app.get("/api/knowledge/observations/batches")
-async def list_observation_batches():
+async def list_observation_batches(user: dict = Depends(require_user)):
     """List all observation extraction batches."""
     if storage is None:
         return []
@@ -7861,7 +7866,7 @@ async def list_observation_batches():
 
 
 @app.get("/api/knowledge/observations/batches/{batch_id}")
-async def get_observation_batch(batch_id: int):
+async def get_observation_batch(batch_id: int, user: dict = Depends(require_user)):
     """Get a single batch record."""
     if storage is None:
         return {"error": "no storage"}
@@ -7878,7 +7883,7 @@ async def get_observation_batch(batch_id: int):
 
 
 @app.post("/api/knowledge/observations/batches/{batch_id}/check")
-async def check_batch_status(batch_id: int):
+async def check_batch_status(batch_id: int, user: dict = Depends(require_user)):
     """Poll doubleword.ai API for current batch status and update local DB."""
     if storage is None:
         return {"error": "no storage"}
@@ -7925,7 +7930,7 @@ async def check_batch_status(batch_id: int):
 
 
 @app.post("/api/knowledge/observations/batches/{batch_id}/apply")
-async def apply_batch_results(batch_id: int):
+async def apply_batch_results(batch_id: int, user: dict = Depends(require_user)):
     """Download completed batch results and merge into knowledge_observations."""
     if storage is None:
         return {"error": "no storage"}
@@ -8014,7 +8019,7 @@ async def apply_batch_results(batch_id: int):
 
 
 @app.get("/api/broker-summary")
-async def broker_summary(name: str = "", phone: str = ""):
+async def broker_summary(name: str = "", phone: str = "", user: dict = Depends(require_user)):
     """On-the-fly broker summary from listings table (no broker sync required)."""
     empty = {"total_listings": 0, "intents": {}, "top_bhk": [], "markets": [], "price_range_sale": "", "price_range_rent": ""}
     if not name and not phone:
@@ -8101,7 +8106,7 @@ async def broker_summary(name: str = "", phone: str = ""):
 
 
 @app.get("/api/brokers/find")
-async def find_broker(name: str = "", phone: str = ""):
+async def find_broker(name: str = "", phone: str = "", user: dict = Depends(require_user)):
     if not name and not phone:
         raise HTTPException(400, "name or phone is required")
     digits = re.sub(r"\D+", "", phone or "")
@@ -8121,7 +8126,7 @@ async def find_broker(name: str = "", phone: str = ""):
 
 
 @app.get("/api/brokers/{broker_id}")
-async def get_broker_profile(broker_id: int):
+async def get_broker_profile(broker_id: int, user: dict = Depends(require_user)):
     storage.rebuild_broker_graph()
     row = storage.db.execute("""
         SELECT id, canonical_name AS name, primary_phone AS phone,
@@ -8244,7 +8249,7 @@ async def get_broker_profile(broker_id: int):
 
 
 @app.get("/api/brokers/{broker_id}/share-card")
-async def get_broker_share_card(broker_id: int):
+async def get_broker_share_card(broker_id: int, user: dict = Depends(require_user)):
     storage.rebuild_broker_graph()
     row = storage.db.execute("""
         SELECT id, canonical_name AS name, primary_phone AS phone,
@@ -8314,7 +8319,7 @@ async def get_broker_share_card(broker_id: int):
 
 
 @app.post("/api/brokers/{broker_id}/share-card/snapshot")
-async def save_broker_share_card_snapshot(broker_id: int):
+async def save_broker_share_card_snapshot(broker_id: int, user: dict = Depends(require_user)):
     import hashlib
     storage.rebuild_broker_graph()
     row = storage.db.execute("""
@@ -8391,13 +8396,13 @@ async def save_broker_share_card_snapshot(broker_id: int):
 
 
 @app.post("/api/observations/{obs_id}/teach")
-async def teach_observation(obs_id: int, data: dict):
+async def teach_observation(obs_id: int, data: dict, user: dict = Depends(require_user)):
     result = storage.teach_observation(obs_id, data)
     return result
 
 
 @app.post("/api/brokers/{phone}/hide")
-async def hide_broker(phone: str):
+async def hide_broker(phone: str, user: dict = Depends(require_user)):
     result = storage.hide_broker(phone)
     if not result.get("success"):
         raise HTTPException(404, "Broker not found")
@@ -8405,7 +8410,7 @@ async def hide_broker(phone: str):
 
 
 @app.post("/api/brokers/{phone}/unhide")
-async def unhide_broker(phone: str):
+async def unhide_broker(phone: str, user: dict = Depends(require_user)):
     result = storage.unhide_broker(phone)
     if not result.get("success"):
         raise HTTPException(404, "Broker not found")
@@ -8413,7 +8418,7 @@ async def unhide_broker(phone: str):
 
 
 @app.get("/api/clients/{client_id}/messages")
-async def get_client_messages(client_id: int, limit: int = 100, offset: int = 0):
+async def get_client_messages(client_id: int, limit: int = 100, offset: int = 0, user: dict = Depends(require_user)):
     return storage.get_client_messages(client_id, limit, offset)
 
 
@@ -8437,17 +8442,17 @@ class SuggestionAction(BaseModel):
 
 
 @app.get("/api/suggestions")
-async def list_suggestions(status: str = "pending", limit: int = 50, offset: int = 0):
+async def list_suggestions(status: str = "pending", limit: int = 50, offset: int = 0, user: dict = Depends(require_user)):
     return storage.get_suggestions(status=status, limit=limit, offset=offset)
 
 
 @app.get("/api/suggestions/counts")
-async def suggestion_counts():
+async def suggestion_counts(user: dict = Depends(require_user)):
     return storage.get_suggestion_counts()
 
 
 @app.post("/api/suggestions/{sug_id}/{action}")
-async def act_on_suggestion(sug_id: int, action: str, request: Request):
+async def act_on_suggestion(sug_id: int, action: str, request: Request, user: dict = Depends(require_user)):
     if action not in ("approve", "reject", "ignore"):
         raise HTTPException(400, "action must be approve, reject, or ignore")
     status_map = {"approve": "approved", "reject": "rejected", "ignore": "ignored"}
@@ -8462,7 +8467,7 @@ async def act_on_suggestion(sug_id: int, action: str, request: Request):
 
 
 @app.post("/api/suggestions/batch")
-async def batch_suggestions(request: Request):
+async def batch_suggestions(request: Request, user: dict = Depends(require_user)):
     body = await request.json()
     ids = body.get("ids", [])
     action = body.get("action", "approve")
@@ -8475,17 +8480,17 @@ async def batch_suggestions(request: Request):
 
 
 @app.get("/api/suggestions/memory")
-async def suggestion_memory():
+async def suggestion_memory(user: dict = Depends(require_user)):
     return storage.get_ai_memory_stats()
 
 
 @app.get("/api/suggestions/usage")
-async def suggestion_usage(days: int = 1):
+async def suggestion_usage(days: int = 1, user: dict = Depends(require_user)):
     return storage.get_ai_usage_stats(days=days)
 
 
 @app.get("/api/price-stats")
-async def price_stats_endpoint(market: str = "", bhk: str = "", intent: str = "listing"):
+async def price_stats_endpoint(market: str = "", bhk: str = "", intent: str = "listing", user: dict = Depends(require_user)):
     if market and bhk:
         result = storage.get_price_stats(market, bhk, intent)
         return result or {"error": "not found"}
@@ -8496,7 +8501,7 @@ async def price_stats_endpoint(market: str = "", bhk: str = "", intent: str = "l
 
 
 @app.get("/api/enrichment-jobs/counts")
-async def enrichment_counts():
+async def enrichment_counts(user: dict = Depends(require_user)):
     counts = {}
     for status in ("pending", "running", "completed", "failed"):
         r = storage.db.execute(
@@ -8507,20 +8512,20 @@ async def enrichment_counts():
 
 
 @app.post("/api/aliases/scan")
-async def scan_aliases():
+async def scan_aliases(user: dict = Depends(require_user)):
     from agents.alias_learner import check_for_aliases
     check_for_aliases(storage)
     return {"status": "ok"}
 
 
 @app.post("/api/price-stats/recompute")
-async def recompute_price_stats():
+async def recompute_price_stats(user: dict = Depends(require_user)):
     storage.recompute_price_stats()
     return {"status": "ok"}
 
 
 @app.get("/api/buildings")
-async def list_buildings(limit: int = 100, offset: int = 0, status: str = ""):
+async def list_buildings(limit: int = 100, offset: int = 0, status: str = "", user: dict = Depends(require_user)):
     """List buildings from the knowledge graph."""
     where = ""
     params = []
@@ -8546,7 +8551,7 @@ async def list_buildings(limit: int = 100, offset: int = 0, status: str = ""):
 
 
 @app.get("/api/buildings/{building_id:path}")
-async def get_building_profile(building_id: str):
+async def get_building_profile(building_id: str, user: dict = Depends(require_user)):
     """Get full building profile by building_id (BLD-XXXXXXX) or canonical name."""
     # Try to find by building_id first
     if building_id.startswith("BLD-"):
@@ -8566,7 +8571,7 @@ async def get_building_profile(building_id: str):
 
 
 @app.post("/api/buildings/{building_id}/refresh")
-async def refresh_building(building_id: str, provider: str = ""):
+async def refresh_building(building_id: str, provider: str = "", user: dict = Depends(require_user)):
     """Trigger enrichment refresh for a building."""
     if building_id.startswith("BLD-"):
         building = storage.get_building(building_id=building_id)
@@ -8587,7 +8592,7 @@ async def refresh_building(building_id: str, provider: str = ""):
 
 
 @app.get("/api/buildings/{building_id}/aliases")
-async def get_building_aliases(building_id: str):
+async def get_building_aliases(building_id: str, user: dict = Depends(require_user)):
     """Get all aliases for a building."""
     if building_id.startswith("BLD-"):
         building = storage.get_building(building_id=building_id)
@@ -8602,7 +8607,7 @@ async def get_building_aliases(building_id: str):
 
 
 @app.post("/api/buildings/discover")
-async def discover_buildings():
+async def discover_buildings(user: dict = Depends(require_user)):
     """Discover canonical buildings from parsed observations."""
     from agents.building_enrichment.discovery import BuildingDiscovery
     discovery = BuildingDiscovery(storage)
@@ -8616,7 +8621,7 @@ async def discover_buildings():
 
 
 @app.post("/api/buildings/refresh-counts")
-async def refresh_building_counts():
+async def refresh_building_counts(user: dict = Depends(require_user)):
     """Recalculate observed_listings, observed_brokers, observed_requirements for all buildings."""
     storage.refresh_building_counts()
     total = storage.db.execute("SELECT COUNT(*) FROM buildings").fetchone()[0]
@@ -8625,14 +8630,14 @@ async def refresh_building_counts():
 
 
 @app.get("/api/buildings/enrichment/dashboard")
-async def building_enrichment_dashboard():
+async def building_enrichment_dashboard(user: dict = Depends(require_user)):
     """Get building enrichment dashboard stats."""
     stats = storage.get_building_enrichment_stats()
     return stats
 
 
 @app.get("/api/buildings/enrichment/jobs")
-async def building_enrichment_jobs(status: str = "", limit: int = 50):
+async def building_enrichment_jobs(status: str = "", limit: int = 50, user: dict = Depends(require_user)):
     """List building enrichment jobs."""
     if status:
         rows = storage.db.execute("""
@@ -8656,7 +8661,7 @@ async def building_enrichment_jobs(status: str = "", limit: int = 50):
 
 
 @app.get("/api/buildings/enrichment/history")
-async def building_enrichment_history(building_id: str = "", limit: int = 50):
+async def building_enrichment_history(building_id: str = "", limit: int = 50, user: dict = Depends(require_user)):
     """Get enrichment history."""
     if building_id:
         if building_id.startswith("BLD-"):
@@ -8686,7 +8691,7 @@ async def building_enrichment_history(building_id: str = "", limit: int = 50):
 
 
 @app.get("/api/igr/districts")
-async def igr_districts(rest_of_maharashtra: bool = True):
+async def igr_districts(rest_of_maharashtra: bool = True, user: dict = Depends(require_user)):
     """Get available IGR districts."""
     from agents.igr_scraper import IGRScraper
     scraper = IGRScraper()
@@ -8694,7 +8699,7 @@ async def igr_districts(rest_of_maharashtra: bool = True):
 
 
 @app.get("/api/igr/tahsils")
-async def igr_tahsils(district_code: str):
+async def igr_tahsils(district_code: str, user: dict = Depends(require_user)):
     """Get tahsils for a district."""
     from agents.igr_scraper import IGRScraper
     scraper = IGRScraper()
@@ -8702,7 +8707,7 @@ async def igr_tahsils(district_code: str):
 
 
 @app.get("/api/igr/villages")
-async def igr_villages(district_code: str, tahsil_code: str):
+async def igr_villages(district_code: str, tahsil_code: str, user: dict = Depends(require_user)):
     """Get villages for a tahsil."""
     from agents.igr_scraper import IGRScraper
     scraper = IGRScraper()
@@ -8711,6 +8716,7 @@ async def igr_villages(district_code: str, tahsil_code: str):
 
 @app.get("/api/igr/search")
 async def igr_search(
+    user: dict = Depends(require_user),
     district_code: str = "6",
     tahsil_code: str = "9 ",
     village: str = "",
@@ -8780,7 +8786,7 @@ async def igr_search(
 
 
 @app.get("/api/groups")
-async def list_groups():
+async def list_groups(user: dict = Depends(require_user)):
     jobs = storage.get_sync_jobs(limit=500, source="whatsapp")
     group_markets = storage.get_group_markets()
     allowlist = load_group_allowlist()
@@ -8816,13 +8822,13 @@ async def list_groups():
 
 
 @app.get("/api/groups/allowlist")
-async def get_allowlist():
+async def get_allowlist(user: dict = Depends(require_user)):
     """Return the current group allowlist."""
     return load_group_allowlist()
 
 
 @app.post("/api/groups/allowlist")
-async def set_allowlist(request: Request):
+async def set_allowlist(request: Request, user: dict = Depends(require_user)):
     """Set the group allowlist (JSON array of group JIDs or name substrings)."""
     try:
         body = await request.json()
@@ -8836,14 +8842,14 @@ async def set_allowlist(request: Request):
 
 
 @app.delete("/api/groups/allowlist")
-async def clear_allowlist():
+async def clear_allowlist(user: dict = Depends(require_user)):
     """Clear the group allowlist (track all groups)."""
     save_group_allowlist([])
     return {"status": "ok"}
 
 
 @app.get("/api/groups/excluded")
-async def get_excluded():
+async def get_excluded(user: dict = Depends(require_user)):
     """Return the current group opt-out list (JIDs that should NOT be parsed)."""
     try:
         return load_excluded_groups()
@@ -8853,7 +8859,7 @@ async def get_excluded():
 
 
 @app.post("/api/groups/excluded")
-async def set_excluded(request: Request):
+async def set_excluded(request: Request, user: dict = Depends(require_user)):
     """Set the group opt-out list (JSON array of group JIDs)."""
     try:
         body = await request.json()
@@ -8871,18 +8877,18 @@ async def set_excluded(request: Request):
 
 
 @app.get("/api/listings")
-async def list_listings(limit: int = 50, offset: int = 0):
+async def list_listings(limit: int = 50, offset: int = 0, user: dict = Depends(require_user)):
     return storage.get_listings(limit, offset)
 
 
 @app.get("/api/listings/{listing_id}/sources")
-async def get_listing_sources(listing_id: int):
+async def get_listing_sources(listing_id: int, user: dict = Depends(require_user)):
     """Get source observations that contributed to a listing."""
     return storage.get_listing_sources(listing_id)
 
 
 @app.get("/api/listings/{listing_id}/photos")
-async def list_listing_photos(listing_id: int):
+async def list_listing_photos(listing_id: int, user: dict = Depends(require_user)):
     """Get photos for a listing."""
     photos = storage.get_listing_photos(listing_id)
     return [{
@@ -8899,7 +8905,7 @@ async def list_listing_photos(listing_id: int):
 
 
 @app.get("/api/media/photos/{photo_id}")
-async def serve_listing_photo(photo_id: int):
+async def serve_listing_photo(photo_id: int, user: dict = Depends(require_user)):
     """Serve a listing photo file."""
     row = storage.db.execute(
         "SELECT * FROM listing_photos WHERE id = ?", (photo_id,)
@@ -8915,7 +8921,7 @@ async def serve_listing_photo(photo_id: int):
 
 
 @app.post("/api/listings/{listing_id}/photos")
-async def upload_listing_photo(listing_id: int, request: Request):
+async def upload_listing_photo(listing_id: int, request: Request, user: dict = Depends(require_user)):
     """Upload a photo for a listing (for testing/admin via multipart)."""
     pic_token = storage.get_or_create_pic_token(listing_id)
     if not pic_token:
@@ -8950,13 +8956,13 @@ async def upload_listing_photo(listing_id: int, request: Request):
 
 
 @app.get("/api/parsed/{parsed_id}/sources")
-async def get_parsed_sources(parsed_id: int):
+async def get_parsed_sources(parsed_id: int, user: dict = Depends(require_user)):
     """Get source observations that contributed to a parsed output."""
     return storage.get_parsed_sources(parsed_id)
 
 
 @app.get("/api/search")
-async def search_messages(q: str = ""):
+async def search_messages(q: str = "", user: dict = Depends(require_user)):
     if not q:
         return []
     q = q.strip()
@@ -9045,7 +9051,7 @@ async def search_messages(q: str = ""):
 
 
 @app.get("/api/search/raw")
-async def search_raw_messages(q: str = "", limit: int = 20, offset: int = 0):
+async def search_raw_messages(q: str = "", limit: int = 20, offset: int = 0, user: dict = Depends(require_user)):
     """Full-text search over raw messages using FTS5. Primary search path for knowledge OS."""
     if not q:
         return {"results": [], "count": 0}
@@ -9139,7 +9145,7 @@ async def search_raw_messages(q: str = "", limit: int = 20, offset: int = 0):
 
 
 @app.get("/api/search/raw/sender")
-async def search_raw_by_sender(sender: str = "", limit: int = 50):
+async def search_raw_by_sender(sender: str = "", limit: int = 50, user: dict = Depends(require_user)):
     """Search raw messages by sender name or phone."""
     if not sender:
         return {"results": [], "count": 0}
@@ -9178,7 +9184,7 @@ async def search_raw_by_sender(sender: str = "", limit: int = 50):
 
 
 @app.get("/api/search/raw/group")
-async def search_raw_by_group(group_jid: str = "", limit: int = 50):
+async def search_raw_by_group(group_jid: str = "", limit: int = 50, user: dict = Depends(require_user)):
     """Search raw messages by group JID or name."""
     if not group_jid:
         return {"results": [], "count": 0}
@@ -9217,12 +9223,12 @@ async def search_raw_by_group(group_jid: str = "", limit: int = 50):
 
 
 @app.get("/api/memory/jids")
-async def search_jid_memory(q: str = "", limit: int = 20):
+async def search_jid_memory(q: str = "", limit: int = 20, user: dict = Depends(require_user)):
     return storage.search_jid_memory(q, limit)
 
 
 @app.get("/api/memory/jids/{jid_key:path}")
-async def get_jid_memory_profile(jid_key: str):
+async def get_jid_memory_profile(jid_key: str, user: dict = Depends(require_user)):
     profile = storage.get_jid_profile(jid_key)
     if not profile:
         raise HTTPException(404, "JID profile not found")
@@ -9230,12 +9236,13 @@ async def get_jid_memory_profile(jid_key: str):
 
 
 @app.post("/api/memory/rebuild")
-async def rebuild_jid_memory(limit: int = 0):
+async def rebuild_jid_memory(limit: int = 0, user: dict = Depends(require_user)):
     return storage.rebuild_jid_memory(limit)
 
 
 @app.get("/api/search/listings")
 async def search_listings(
+    user: dict = Depends(require_user),
     intent: str = "", bhk: str = "", building: str = "", micro_market: str = "",
     price_max: float = 0, price_min: float = 0, furnishing: str = "", broker: str = "",
     sort_by: str = "last_seen", limit: int = 10, offset: int = 0,
@@ -9459,19 +9466,19 @@ async def search_listings(
 # ── Knowledge Trainer ──────────────────────────────────────────────
 
 @app.get("/api/trainer/terms")
-async def get_trainer_terms(status: str | None = None, limit: int = 100):
+async def get_trainer_terms(status: str | None = None, limit: int = 100, user: dict = Depends(require_user)):
     return storage.get_trainer_terms(status=status, limit=limit)
 
 @app.get("/api/trainer/stats")
-async def get_trainer_stats():
+async def get_trainer_stats(user: dict = Depends(require_user)):
     return storage.get_trainer_stats()
 
 @app.get("/api/trainer/discover")
-async def discover_unknown_terms(limit: int = 50):
+async def discover_unknown_terms(limit: int = 50, user: dict = Depends(require_user)):
     return storage.find_unknown_terms(limit=limit)
 
 @app.post("/api/trainer/resolve")
-async def resolve_trainer_term(request: Request):
+async def resolve_trainer_term(request: Request, user: dict = Depends(require_user)):
     body = await request.json()
     term_id = body.get("term_id")
     status = body.get("status")
@@ -9485,7 +9492,7 @@ async def resolve_trainer_term(request: Request):
     return {"status": "ok" if ok else "error"}
 
 @app.post("/api/trainer/batch")
-async def batch_trainer(request: Request):
+async def batch_trainer(request: Request, user: dict = Depends(require_user)):
     body = await request.json()
     items = body.get("items", [])
     for item in items:
@@ -9497,7 +9504,7 @@ async def batch_trainer(request: Request):
     return {"status": "ok", "count": len(items)}
 
 @app.post("/api/trainer/scan")
-async def scan_for_unknown():
+async def scan_for_unknown(user: dict = Depends(require_user)):
     """Scan raw messages for unknown terms and add to trainer queue."""
     import re
     unknowns = storage.find_unknown_terms(limit=100)
@@ -9526,7 +9533,7 @@ async def scan_for_unknown():
 
 
 @app.get("/api/trainer/candidates")
-async def list_learning_candidates(limit: int = 100, status: str = "candidate"):
+async def list_learning_candidates(limit: int = 100, status: str = "candidate", user: dict = Depends(require_user)):
     """List learning candidates — low-confidence phrases that may need human review."""
     try:
         where = "WHERE status = ?" if status else ""
@@ -9554,7 +9561,7 @@ async def list_learning_candidates(limit: int = 100, status: str = "candidate"):
 
 
 @app.post("/api/trainer/candidates/{candidate_id}/promote")
-async def promote_learning_candidate(candidate_id: int):
+async def promote_learning_candidate(candidate_id: int, user: dict = Depends(require_user)):
     """Promote a learning candidate to the knowledge trainer."""
     try:
         row = storage.db.execute(
@@ -9587,7 +9594,7 @@ async def promote_learning_candidate(candidate_id: int):
 
 
 @app.post("/api/trainer/inline-resolve")
-async def inline_trainer_resolve(request: Request):
+async def inline_trainer_resolve(request: Request, user: dict = Depends(require_user)):
     """Resolve a term directly from inline selection (bypass trainer queue if possible)."""
     body = await request.json()
     text = body.get("text", "").strip()
@@ -9627,7 +9634,7 @@ async def inline_trainer_resolve(request: Request):
 # ── Combined Locality Expansion Rules ─────────────────────────────
 
 @app.get("/api/trainer/combined-localities")
-async def list_combined_localities():
+async def list_combined_localities(user: dict = Depends(require_user)):
     """List all combined locality expansion rules."""
     rows = storage.db.execute("""
         SELECT id, surface, expands_to, created_at
@@ -9647,7 +9654,7 @@ async def list_combined_localities():
 # ── Trainer Localities API ────────────────────────────────────────
 
 @app.get("/api/trainer/localities")
-async def get_trainer_localities():
+async def get_trainer_localities(user: dict = Depends(require_user)):
     """Get known localities for the combined locality dialog."""
     rows = storage.db.execute("""
         SELECT canonical, COUNT(*) as cnt
@@ -9667,7 +9674,7 @@ async def get_trainer_localities():
 # ── Knowledge Records API ────────────────────────────────────────
 
 @app.get("/api/knowledge/records")
-async def get_knowledge_records(limit: int = 100, content_type: str | None = None):
+async def get_knowledge_records(limit: int = 100, content_type: str | None = None, user: dict = Depends(require_user)):
     """Get knowledge records with optional filtering."""
     source_filter = """
         is_valid = 1
@@ -9707,22 +9714,22 @@ async def get_knowledge_records(limit: int = 100, content_type: str | None = Non
     ]
 
 @app.get("/api/knowledge/search")
-async def search_knowledge(q: str, limit: int = 20, content_type: str | None = None):
+async def search_knowledge(q: str, limit: int = 20, content_type: str | None = None, user: dict = Depends(require_user)):
     """Search knowledge records using FTS5."""
     return storage.search_knowledge_records(q, limit=limit, content_type=content_type)
 
 @app.get("/api/knowledge/stats")
-async def get_knowledge_stats():
+async def get_knowledge_stats(user: dict = Depends(require_user)):
     """Get knowledge records statistics."""
     return storage.get_knowledge_stats()
 
 @app.get("/api/knowledge/embeddings/stats")
-async def get_embedding_stats():
+async def get_embedding_stats(user: dict = Depends(require_user)):
     """Get embedding statistics."""
     return storage.get_embedding_stats()
 
 @app.post("/api/knowledge/embeddings/embed-all")
-async def embed_all_records():
+async def embed_all_records(user: dict = Depends(require_user)):
     """Generate embeddings for all knowledge records."""
     from knowledge.embedder import get_embedder
     embedder = get_embedder(storage.db)
@@ -9730,12 +9737,12 @@ async def embed_all_records():
     return {"status": "ok", "embedded": count}
 
 @app.get("/api/knowledge/search/semantic")
-async def semantic_search(q: str, limit: int = 10):
+async def semantic_search(q: str, limit: int = 10, user: dict = Depends(require_user)):
     """Search knowledge records using semantic similarity."""
     return storage.search_knowledge_with_embeddings(q, limit=limit)
 
 @app.post("/api/knowledge/classify")
-async def classify_records(request: Request):
+async def classify_records(request: Request, user: dict = Depends(require_user)):
     """Classify unclassified knowledge records using AI."""
     from knowledge.classifier import classify_and_store
     body = await request.json() if request.headers.get("content-type") == "application/json" else {}
@@ -9744,7 +9751,7 @@ async def classify_records(request: Request):
     return {"status": "ok", **result}
 
 @app.post("/api/knowledge/classify/single")
-async def classify_single(request: Request):
+async def classify_single(request: Request, user: dict = Depends(require_user)):
     """Classify a single message."""
     from knowledge.classifier import classify
     body = await request.json()
@@ -9754,56 +9761,56 @@ async def classify_single(request: Request):
     return classify(message)
 
 @app.get("/api/knowledge/intelligence")
-async def get_intelligence_report():
+async def get_intelligence_report(user: dict = Depends(require_user)):
     """Generate a full intelligence report."""
     from knowledge.intelligence import get_engine
     engine = get_engine(storage.db)
     return engine.generate_full_report()
 
 @app.get("/api/knowledge/intelligence/digest")
-async def get_daily_digest(days: int = 7):
+async def get_daily_digest(days: int = 7, user: dict = Depends(require_user)):
     """Get daily digest of market activity."""
     from knowledge.intelligence import get_engine
     engine = get_engine(storage.db)
     return engine.get_daily_digest(days=days)
 
 @app.get("/api/knowledge/intelligence/prices")
-async def get_price_insights():
+async def get_price_insights(user: dict = Depends(require_user)):
     """Get price insights and patterns."""
     from knowledge.intelligence import get_engine
     engine = get_engine(storage.db)
     return engine.get_price_insights()
 
 @app.get("/api/knowledge/intelligence/coverage")
-async def get_market_coverage():
+async def get_market_coverage(user: dict = Depends(require_user)):
     """Get market coverage analysis."""
     from knowledge.intelligence import get_engine
     engine = get_engine(storage.db)
     return engine.get_market_coverage()
 
 @app.get("/api/knowledge/intelligence/brokers")
-async def get_broker_insights():
+async def get_broker_insights(user: dict = Depends(require_user)):
     """Get broker activity insights."""
     from knowledge.intelligence import get_engine
     engine = get_engine(storage.db)
     return engine.get_broker_insights()
 
 @app.get("/api/knowledge/intelligence/anomalies")
-async def get_anomalies():
+async def get_anomalies(user: dict = Depends(require_user)):
     """Detect anomalies in the data."""
     from knowledge.intelligence import get_engine
     engine = get_engine(storage.db)
     return engine.get_anomalies()
 
 @app.get("/api/knowledge/intelligence/actionable")
-async def get_actionable_insights():
+async def get_actionable_insights(user: dict = Depends(require_user)):
     """Get actionable insights for the broker."""
     from knowledge.intelligence import get_engine
     engine = get_engine(storage.db)
     return engine.get_actionable_insights()
 
 @app.get("/api/knowledge/aliases")
-async def get_knowledge_aliases(entity_type: str | None = None, limit: int = 100):
+async def get_knowledge_aliases(entity_type: str | None = None, limit: int = 100, user: dict = Depends(require_user)):
     """Get knowledge aliases."""
     if entity_type:
         rows = storage.db.execute("""
@@ -9829,7 +9836,7 @@ async def get_knowledge_aliases(entity_type: str | None = None, limit: int = 100
     return result
 
 @app.post("/api/knowledge/aliases")
-async def add_knowledge_alias(request: Request):
+async def add_knowledge_alias(request: Request, user: dict = Depends(require_user)):
     """Add a knowledge alias."""
     body = await request.json()
     alias = body.get("alias")
@@ -9841,12 +9848,12 @@ async def add_knowledge_alias(request: Request):
     return {"status": "ok" if ok else "error"}
 
 @app.get("/api/knowledge/learning-cards")
-async def get_learning_cards(status: str = "pending", limit: int = 100):
+async def get_learning_cards(status: str = "pending", limit: int = 100, user: dict = Depends(require_user)):
     """Get learning cards."""
     return storage.get_learning_cards(status=status, limit=limit)
 
 @app.post("/api/knowledge/learning-cards/{card_id}/resolve")
-async def resolve_learning_card(card_id: int, request: Request):
+async def resolve_learning_card(card_id: int, request: Request, user: dict = Depends(require_user)):
     """Resolve a learning card."""
     body = await request.json()
     resolved_type = body.get("resolved_type")
@@ -9857,7 +9864,7 @@ async def resolve_learning_card(card_id: int, request: Request):
     return {"status": "ok" if ok else "error"}
 
 @app.get("/api/knowledge/alias-intel/{alias}")
-async def get_entity_intel(alias: str):
+async def get_entity_intel(alias: str, user: dict = Depends(require_user)):
     """Get aggregated intel for a specific entity alias."""
     intel = storage.get_entity_intel(alias)
     if intel is None:
@@ -9876,7 +9883,7 @@ async def get_entity_intel(alias: str):
     }
 
 @app.get("/api/knowledge/{record_id}")
-async def get_knowledge_record(record_id: int):
+async def get_knowledge_record(record_id: int, user: dict = Depends(require_user)):
     """Get a single knowledge record."""
     record = storage.get_knowledge_record(record_id)
     if not record:
@@ -9884,7 +9891,7 @@ async def get_knowledge_record(record_id: int):
     return record
 
 @app.patch("/api/knowledge/{record_id}")
-async def update_knowledge_record(record_id: int, request: Request):
+async def update_knowledge_record(record_id: int, request: Request, user: dict = Depends(require_user)):
     """Update a knowledge record."""
     body = await request.json()
     ok = storage.update_knowledge_record(record_id, body)
@@ -9992,7 +9999,7 @@ def _audit_group_display_name(jid: str) -> str:
     return name
 
 @app.get("/api/audit/dashboard")
-async def audit_dashboard():
+async def audit_dashboard(user: dict = Depends(require_user)):
     now = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
     today_start = datetime.utcnow().strftime("%Y-%m-%dT00:00:00Z")
     five_min_ago = (datetime.utcnow() - timedelta(minutes=5)).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -10094,7 +10101,7 @@ async def audit_dashboard():
 
 
 @app.get("/api/audit/timeline")
-async def audit_timeline(limit: int = 50):
+async def audit_timeline(limit: int = 50, user: dict = Depends(require_user)):
     """Mixed operational events across the WhatsApp pipeline."""
     events = []
     day_ago = (datetime.utcnow() - timedelta(hours=24)).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -10222,7 +10229,7 @@ async def audit_timeline(limit: int = 50):
 
 
 @app.get("/api/audit/top-contributors")
-async def audit_top_contributors(limit: int = 10):
+async def audit_top_contributors(limit: int = 10, user: dict = Depends(require_user)):
     """Top WhatsApp groups by message volume today."""
     today_start = datetime.utcnow().strftime("%Y-%m-%dT00:00:00Z")
 
@@ -10247,7 +10254,7 @@ async def audit_top_contributors(limit: int = 10):
 
 
 @app.get("/api/audit/groups-legacy")
-async def audit_groups(q: str = "", status: str = ""):
+async def audit_groups(q: str = "", status: str = "", user: dict = Depends(require_user)):
     """Group explorer with stats per group."""
     day_ago = (datetime.utcnow() - timedelta(hours=24)).strftime("%Y-%m-%dT%H:%M:%SZ")
     week_ago = (datetime.utcnow() - timedelta(days=7)).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -10391,7 +10398,7 @@ async def audit_groups(q: str = "", status: str = ""):
 
 
 @app.get("/api/audit/groups")
-async def audit_groups_v2(q: str = "", status: str = ""):
+async def audit_groups_v2(q: str = "", status: str = "", user: dict = Depends(require_user)):
     """Fresh group audit backed by raw_messages and parsed_output only.
 
     Uses SQL aggregation instead of fetching all rows into Python.
@@ -10542,7 +10549,7 @@ async def audit_groups_v2(q: str = "", status: str = ""):
 
 
 @app.get("/api/audit/groups/{jid}")
-async def audit_group_detail(jid: str):
+async def audit_group_detail(jid: str, user: dict = Depends(require_user)):
     group_name = _group_jid_to_name(jid)
     lookup_values = (jid, group_name)
 
@@ -10638,7 +10645,7 @@ async def audit_group_detail(jid: str):
 
 
 @app.get("/api/audit/groups/{jid}/timeline")
-async def audit_group_timeline(jid: str):
+async def audit_group_timeline(jid: str, user: dict = Depends(require_user)):
     """Per-group event timeline."""
     events = []
     group_name = _group_jid_to_name(jid)
@@ -10670,7 +10677,7 @@ async def audit_group_timeline(jid: str):
 
 
 @app.get("/api/audit/duplicates")
-async def audit_duplicates():
+async def audit_duplicates(user: dict = Depends(require_user)):
     """Find potential duplicate groups (same or very similar name)."""
     jobs = storage.db.execute("""
         SELECT group_id, group_name, error, status FROM source_sync_jobs
@@ -10708,7 +10715,7 @@ async def audit_duplicates():
 
 
 @app.get("/api/audit/group-overlap")
-async def audit_group_overlap(limit: int = 20):
+async def audit_group_overlap(limit: int = 20, user: dict = Depends(require_user)):
     """Rank groups by shared senders so users can avoid parsing duplicate groups."""
     if not _table_exists("raw_messages"):
         return {"pairs": [], "groups": []}
@@ -10784,7 +10791,7 @@ async def audit_group_overlap(limit: int = 20):
 
 
 @app.get("/api/audit/capture-health")
-async def audit_capture_health():
+async def audit_capture_health(user: dict = Depends(require_user)):
     """Operational diagnostics for the ingestion pipeline."""
     now_dt = datetime.utcnow()
     today_start = now_dt.strftime("%Y-%m-%dT00:00:00Z")
@@ -10843,7 +10850,7 @@ async def audit_capture_health():
 
 
 @app.get("/api/audit/intelligence-legacy")
-async def audit_intelligence():
+async def audit_intelligence(user: dict = Depends(require_user)):
     """Network Intelligence Center — comprehensive broker network data."""
     db = storage.db
     today = datetime.utcnow().strftime("%Y-%m-%d")
@@ -11369,7 +11376,7 @@ async def audit_intelligence():
 
 
 @app.get("/api/audit/intelligence")
-async def audit_intelligence_v2():
+async def audit_intelligence_v2(user: dict = Depends(require_user)):
     """Fresh WhatsApp audit read model backed by current PropAI tables."""
     now_dt = datetime.utcnow()
     today = now_dt.strftime("%Y-%m-%d")
@@ -11638,7 +11645,7 @@ async def audit_intelligence_v2():
 
 
 @app.get("/api/audit/search-evidence")
-def audit_search_evidence(q: str = ""):
+def audit_search_evidence(user: dict = Depends(require_user), q: str = ""):
     """Exact evidence summary for a term in captured WhatsApp knowledge."""
     term = (q or "").strip()
     if not term:
@@ -11719,7 +11726,7 @@ def audit_search_evidence(q: str = ""):
     }
 
 @app.get("/api/events")
-async def event_stream(request: Request):
+async def event_stream(request: Request, user: dict = Depends(require_user)):
     """Server-Sent Events endpoint. Subscribe to pipeline events."""
     bus = get_bus()
     queue = bus.sse_queue()
@@ -11755,19 +11762,19 @@ async def health():
 # ── User Profile / Onboarding ─────────────────────────────────────
 
 @app.get("/api/profile")
-async def get_profile(phone: str):
+async def get_profile(phone: str, user: dict = Depends(require_user)):
     profile = storage.get_user_profile(phone)
     return profile or {}
 
 
 @app.post("/api/profile")
-async def save_profile(body: OnboardingProfile, phone: str):
+async def save_profile(body: OnboardingProfile, phone: str, user: dict = Depends(require_user)):
     profile = storage.save_user_profile(phone, body.model_dump())
     return profile or {"error": "failed to save"}
 
 
 @app.get("/api/key")
-async def api_key():
+async def api_key(user: dict = Depends(require_user)):
     key_path = Path(__file__).parent / ".api_key"
     token = key_path.read_text().strip() if key_path.exists() else ""
     return {"key": token, "path": str(key_path)}
@@ -11776,7 +11783,7 @@ async def api_key():
 # ── Legacy QR routes ─────────────────────────────────────────────
 
 @app.get("/qr")
-async def qr_page():
+async def qr_page(user: dict = Depends(require_user)):
     return HTMLResponse(
         """<!doctype html>
 <html lang="en">
@@ -11809,26 +11816,26 @@ async def qr_page():
 
 
 @app.get("/qr/image")
-async def qr_image():
+async def qr_image(user: dict = Depends(require_user)):
     return {"error": "qr_in_frontend", "message": "QR is displayed in the app dashboard. Open the Connections page in the PropAI frontend."}
 
 
 @app.get("/connect")
-async def connect_page():
+async def connect_page(user: dict = Depends(require_user)):
     return {"status": "ok", "frontend": f"{FRONTEND_URL}/settings", "message": f"Use the settings page at {FRONTEND_URL}/settings to connect WhatsApp"}
 
 
 # ── Requirement-Listing Matching ──────────────────────────────────
 
 @app.post("/api/requirements/match")
-async def match_requirements():
+async def match_requirements(user: dict = Depends(require_user)):
     """Run the matcher to compute requirement-listing matches."""
     total = storage.match_requirements()
     return {"matched": total}
 
 
 @app.get("/api/requirements/matches/summary")
-async def requirement_matches_summary():
+async def requirement_matches_summary(user: dict = Depends(require_user)):
     """Get match counts for all requirements (for table display)."""
     summary = storage.get_match_summary()
     # Build a lookup dict
@@ -11836,7 +11843,7 @@ async def requirement_matches_summary():
 
 
 @app.get("/api/requirements/{req_id}/matches")
-async def requirement_matches(req_id: int, limit: int = 20):
+async def requirement_matches(req_id: int, limit: int = 20, user: dict = Depends(require_user)):
     """Get matching listings for a specific requirement."""
     matches = storage.get_requirement_matches(req_id, limit=limit)
     return {"requirement_id": req_id, "matches": matches, "count": len(matches)}
@@ -11845,7 +11852,7 @@ async def requirement_matches(req_id: int, limit: int = 20):
 # ── Building Alias Engine ────────────────────────────────────────
 
 @app.post("/api/buildings/aliases/discover")
-async def discover_building_aliases(min_confidence: float = 0.7):
+async def discover_building_aliases(min_confidence: float = 0.7, user: dict = Depends(require_user)):
     """Discover new building alias candidates."""
     suggestions = storage.discover_alias_candidates(min_confidence=min_confidence)
     saved = storage.save_alias_suggestions(suggestions)
@@ -11853,14 +11860,14 @@ async def discover_building_aliases(min_confidence: float = 0.7):
 
 
 @app.get("/api/buildings/aliases/suggestions")
-async def get_alias_suggestions(status: str = "pending", limit: int = 50):
+async def get_alias_suggestions(status: str = "pending", limit: int = 50, user: dict = Depends(require_user)):
     """Get alias suggestions for review."""
     suggestions = storage.get_alias_suggestions(status=status, limit=limit)
     return {"suggestions": suggestions, "count": len(suggestions)}
 
 
 @app.post("/api/buildings/aliases/{suggestion_id}/review")
-async def review_alias_suggestion(suggestion_id: int, approved: bool):
+async def review_alias_suggestion(suggestion_id: int, approved: bool, user: dict = Depends(require_user)):
     """Approve or reject an alias suggestion."""
     success = storage.review_alias_suggestion(suggestion_id, approved)
     if not success:
@@ -11869,13 +11876,13 @@ async def review_alias_suggestion(suggestion_id: int, approved: bool):
 
 
 @app.get("/api/buildings/aliases/stats")
-async def alias_stats():
+async def alias_stats(user: dict = Depends(require_user)):
     """Get alias engine statistics."""
     return storage.get_alias_stats()
 
 
 @app.post("/api/buildings/aliases/normalize")
-async def normalize_building_name(name: str):
+async def normalize_building_name(name: str, user: dict = Depends(require_user)):
     """Normalize a building name using learned aliases."""
     normalized = storage.normalize_building_name(name)
     return {"original": name, "normalized": normalized, "changed": name != normalized}
@@ -11888,12 +11895,12 @@ def _get_client_store():
 
 
 @app.get("/api/clients")
-async def list_clients(q: str = "", limit: int = 20):
+async def list_clients(q: str = "", limit: int = 20, user: dict = Depends(require_user)):
     return _get_client_store().get_clients(q)[:limit]
 
 
 @app.post("/api/clients")
-async def create_client(body: dict):
+async def create_client(body: dict, user: dict = Depends(require_user)):
     name = body.get("name", "").strip()
     if not name:
         return JSONResponse(status_code=400, content={"error": "name_required"})
@@ -11902,7 +11909,7 @@ async def create_client(body: dict):
 
 
 @app.get("/api/clients/{client_id}")
-async def get_client(client_id: int):
+async def get_client(client_id: int, user: dict = Depends(require_user)):
     c = _get_client_store().get_client(client_id)
     if not c:
         return JSONResponse(status_code=404, content={"error": "not_found"})
@@ -11914,13 +11921,13 @@ async def get_client(client_id: int):
 
 
 @app.put("/api/clients/{client_id}")
-async def update_client(client_id: int, body: dict):
+async def update_client(client_id: int, body: dict, user: dict = Depends(require_user)):
     _get_client_store().update_client(client_id, **body)
     return {"ok": True}
 
 
 @app.post("/api/clients/{client_id}/aliases")
-async def add_client_alias(client_id: int, body: dict):
+async def add_client_alias(client_id: int, body: dict, user: dict = Depends(require_user)):
     alias = str(body.get("alias") or "").strip()
     if not alias:
         return JSONResponse(status_code=400, content={"error": "alias_required"})
@@ -11936,12 +11943,12 @@ async def add_client_alias(client_id: int, body: dict):
 
 
 @app.get("/api/clients/{client_id}/notes")
-async def list_client_notes(client_id: int, active_only: bool = True, limit: int = 100):
+async def list_client_notes(client_id: int, active_only: bool = True, limit: int = 100, user: dict = Depends(require_user)):
     return _get_client_store().get_client_notes(client_id, active_only=active_only, limit=max(1, min(limit, 500)))
 
 
 @app.post("/api/clients/{client_id}/notes")
-async def add_client_note(client_id: int, body: dict):
+async def add_client_note(client_id: int, body: dict, user: dict = Depends(require_user)):
     note = str(body.get("body") or "").strip()
     if not note:
         return JSONResponse(status_code=400, content={"error": "body_required"})
@@ -11959,7 +11966,7 @@ async def add_client_note(client_id: int, body: dict):
 
 
 @app.put("/api/clients/notes/{note_id}")
-async def update_client_note(note_id: int, body: dict):
+async def update_client_note(note_id: int, body: dict, user: dict = Depends(require_user)):
     note = str(body.get("body") or "").strip()
     if not note:
         return JSONResponse(status_code=400, content={"error": "body_required"})
@@ -11973,7 +11980,7 @@ async def update_client_note(note_id: int, body: dict):
 
 
 @app.post("/api/clients/{client_id}/requirements")
-async def add_requirement(client_id: int, body: dict):
+async def add_requirement(client_id: int, body: dict, user: dict = Depends(require_user)):
     intent = body.get("intent", "BUY").upper()
     rid = _get_client_store().add_client_requirement(
         client_id, intent,
@@ -11992,7 +11999,7 @@ async def add_requirement(client_id: int, body: dict):
 
 
 @app.get("/api/clients/{client_id}/candidates")
-async def list_candidates(client_id: int, status: str = None):
+async def list_candidates(client_id: int, status: str = None, user: dict = Depends(require_user)):
     rows = _get_client_store().get_client_candidates(client_id, status)
     for row in rows:
         row["availability"] = _get_client_store().estimate_candidate_availability(row)
@@ -12000,13 +12007,13 @@ async def list_candidates(client_id: int, status: str = None):
 
 
 @app.get("/api/my/requirements")
-async def list_my_requirements(limit: int = 200):
+async def list_my_requirements(limit: int = 200, user: dict = Depends(require_user)):
     reqs = _get_client_store().get_all_active_requirements()
     return reqs[:max(1, min(limit, 1000))]
 
 
 @app.get("/api/my/inventory")
-async def list_my_inventory(status: str = "", limit: int = 200):
+async def list_my_inventory(status: str = "", limit: int = 200, user: dict = Depends(require_user)):
     normalized_status = status.strip() or None
     rows = _get_client_store().get_all_active_candidates(normalized_status, max(1, min(limit, 1000)))
     for row in rows:
@@ -12015,7 +12022,7 @@ async def list_my_inventory(status: str = "", limit: int = 200):
 
 
 @app.post("/api/clients/{client_id}/candidates")
-async def add_candidate(client_id: int, body: dict):
+async def add_candidate(client_id: int, body: dict, user: dict = Depends(require_user)):
     cid = _get_client_store().add_property_candidate(
         client_id,
         listing_id=body.get("listing_id"),
@@ -12040,14 +12047,14 @@ async def add_candidate(client_id: int, body: dict):
 
 
 @app.put("/api/clients/candidates/{candidate_id}/status")
-async def update_candidate_status(candidate_id: int, body: dict):
+async def update_candidate_status(candidate_id: int, body: dict, user: dict = Depends(require_user)):
     status = body.get("status", "viewed")
     _get_client_store().update_candidate_status(candidate_id, status)
     return {"ok": True}
 
 
 @app.put("/api/clients/candidates/{candidate_id}/availability")
-async def update_candidate_availability(candidate_id: int, body: dict):
+async def update_candidate_availability(candidate_id: int, body: dict, user: dict = Depends(require_user)):
     status = body.get("availability_status", "unknown")
     _get_client_store().update_candidate_availability(candidate_id, status, body.get("availability_checked_at"))
     return {"ok": True}
@@ -12056,7 +12063,7 @@ async def update_candidate_availability(candidate_id: int, body: dict):
 # ── Match Clients ──────────────────────────────────────────────────
 
 @app.post("/api/clients/match")
-async def match_clients_to_listing(body: dict):
+async def match_clients_to_listing(body: dict, user: dict = Depends(require_user)):
     """Match a listing against all active client requirements."""
     price = body.get("price", 0)
     bhk = body.get("bhk", "")
@@ -12168,12 +12175,12 @@ async def match_clients_to_listing(body: dict):
 # ── Follow-ups ──────────────────────────────────────────────────────
 
 @app.get("/api/follow-ups")
-async def list_follow_ups(client_id: int = None, status: str = "pending"):
+async def list_follow_ups(client_id: int = None, status: str = "pending", user: dict = Depends(require_user)):
     return _get_client_store().get_follow_ups(client_id, status)
 
 
 @app.post("/api/follow-ups")
-async def create_follow_up(body: dict):
+async def create_follow_up(body: dict, user: dict = Depends(require_user)):
     fid = _get_client_store().create_follow_up(
         client_id=body.get("client_id"),
         message_id=body.get("message_id"),
@@ -12189,7 +12196,7 @@ async def create_follow_up(body: dict):
 
 
 @app.put("/api/follow-ups/{follow_up_id}/done")
-async def complete_follow_up(follow_up_id: int):
+async def complete_follow_up(follow_up_id: int, user: dict = Depends(require_user)):
     _get_client_store().complete_follow_up(follow_up_id)
     return {"ok": True}
 
@@ -12197,7 +12204,7 @@ async def complete_follow_up(follow_up_id: int):
 # ── AI Context Actions ─────────────────────────────────────────────
 
 @app.post("/api/actions/resolve-building")
-async def action_resolve_building(body: dict):
+async def action_resolve_building(body: dict, user: dict = Depends(require_user)):
     """Resolve a building name from selected text."""
     text = body.get("text", "")
     # Try to extract building name
@@ -12248,7 +12255,7 @@ async def action_resolve_building(body: dict):
 
 
 @app.post("/api/actions/forward-to-client")
-async def action_forward_to_client(body: dict):
+async def action_forward_to_client(body: dict, user: dict = Depends(require_user)):
     """Generate a clean client-friendly version of selected text."""
     text = body.get("text", "")
 
@@ -12274,7 +12281,7 @@ async def action_forward_to_client(body: dict):
 
 
 @app.post("/api/actions/summarize")
-async def action_summarize(body: dict):
+async def action_summarize(body: dict, user: dict = Depends(require_user)):
     """Summarize selected text using AI."""
     text = body.get("text", "")
     # Use the AI chat engine for summarization
@@ -12302,7 +12309,7 @@ async def action_summarize(body: dict):
 
 
 @app.post("/api/actions/ask-propai")
-async def action_ask_propai(body: dict):
+async def action_ask_propai(body: dict, user: dict = Depends(require_user)):
     """Ask PropAI about selected text with full context."""
     text = body.get("text", "")
     message_id = body.get("message_id")
@@ -12394,7 +12401,7 @@ async def current_organization(user: dict = Depends(require_user)):
 
 
 @app.get("/api/orgs/{org_id}")
-async def get_organization(org_id: str):
+async def get_organization(org_id: str, user: dict = Depends(require_user)):
     org = storage.get_organization(org_id)
     if not org:
         raise HTTPException(404, "Organization not found")
@@ -12402,7 +12409,7 @@ async def get_organization(org_id: str):
 
 
 @app.patch("/api/orgs/{org_id}")
-async def update_organization(org_id: str, body: dict):
+async def update_organization(org_id: str, body: dict, user: dict = Depends(require_user)):
     allowed = {"name", "privacy_mode", "share_listings", "share_requirements",
                "share_price_trends", "share_market_activity", "share_building_intelligence",
                "share_broker_network", "share_broker_reputation", "share_demand_signals",
@@ -12564,12 +12571,12 @@ async def update_organization_privacy(org_id: str, body: dict, user: dict = Depe
 
 
 @app.get("/api/orgs/{org_id}/members")
-async def list_members(org_id: str):
+async def list_members(org_id: str, user: dict = Depends(require_user)):
     return storage.list_organization_members(org_id)
 
 
 @app.post("/api/orgs/{org_id}/members")
-async def add_member(org_id: str, body: dict):
+async def add_member(org_id: str, body: dict, user: dict = Depends(require_user)):
     user_id = body.get("user_id")
     role_id = body.get("role_id")
     if not user_id:
@@ -12581,7 +12588,7 @@ async def add_member(org_id: str, body: dict):
 
 
 @app.delete("/api/orgs/{org_id}/members/{user_id}")
-async def remove_member(org_id: str, user_id: str):
+async def remove_member(org_id: str, user_id: str, user: dict = Depends(require_user)):
     ok = storage.remove_organization_member(org_id, user_id)
     if not ok:
         raise HTTPException(404, "Member not found")
@@ -12589,7 +12596,7 @@ async def remove_member(org_id: str, user_id: str):
 
 
 @app.patch("/api/orgs/{org_id}/members/{user_id}/role")
-async def update_member_role(org_id: str, user_id: str, body: dict):
+async def update_member_role(org_id: str, user_id: str, body: dict, user: dict = Depends(require_user)):
     role_id = body.get("role_id")
     if not role_id:
         raise HTTPException(400, "role_id is required")
@@ -12600,14 +12607,14 @@ async def update_member_role(org_id: str, user_id: str, body: dict):
 
 
 @app.get("/api/orgs/{org_id}/roles")
-async def list_org_roles(org_id: str):
+async def list_org_roles(org_id: str, user: dict = Depends(require_user)):
     system_roles = storage.list_roles(org_id=None)
     org_roles = storage.list_roles(org_id=org_id)
     return {"system_roles": system_roles, "org_roles": org_roles}
 
 
 @app.post("/api/orgs/{org_id}/roles")
-async def create_org_role(org_id: str, body: dict):
+async def create_org_role(org_id: str, body: dict, user: dict = Depends(require_user)):
     name = body.get("name")
     slug = body.get("slug")
     if not name or not slug:
@@ -12619,12 +12626,12 @@ async def create_org_role(org_id: str, body: dict):
 
 
 @app.get("/api/roles/{role_id}/permissions")
-async def get_role_permissions(role_id: int):
+async def get_role_permissions(role_id: int, user: dict = Depends(require_user)):
     return {"permissions": storage.get_role_permissions(role_id)}
 
 
 @app.put("/api/roles/{role_id}/permissions")
-async def set_role_permissions(role_id: int, body: dict):
+async def set_role_permissions(role_id: int, body: dict, user: dict = Depends(require_user)):
     keys = body.get("permissions", [])
     if not isinstance(keys, list):
         raise HTTPException(400, "permissions must be a list of keys")
@@ -12633,17 +12640,17 @@ async def set_role_permissions(role_id: int, body: dict):
 
 
 @app.get("/api/permissions")
-async def list_all_permissions():
+async def list_all_permissions(user: dict = Depends(require_user)):
     return {"permissions": storage.list_permissions()}
 
 
 @app.get("/api/orgs/{org_id}/whatsapp")
-async def list_org_whatsapp(org_id: str):
+async def list_org_whatsapp(org_id: str, user: dict = Depends(require_user)):
     return storage.list_org_whatsapp_connections(org_id)
 
 
 @app.post("/api/orgs/{org_id}/whatsapp")
-async def add_org_whatsapp(org_id: str, body: dict):
+async def add_org_whatsapp(org_id: str, body: dict, user: dict = Depends(require_user)):
     phone = body.get("phone_number")
     if not phone:
         raise HTTPException(400, "phone_number is required")
@@ -12667,7 +12674,7 @@ async def add_org_whatsapp(org_id: str, body: dict):
 
 
 @app.delete("/api/whatsapp/{conn_id}")
-async def remove_org_whatsapp(conn_id: int):
+async def remove_org_whatsapp(conn_id: int, user: dict = Depends(require_user)):
     row = storage.get_org_whatsapp_connection(conn_id)
     if not row:
         raise HTTPException(404, "Connection not found")
@@ -12685,7 +12692,7 @@ async def remove_org_whatsapp(conn_id: int):
 
 
 @app.get("/api/phones")
-async def list_phones():
+async def list_phones(user: dict = Depends(require_user)):
     orgs = storage.list_organizations(limit=1)
     org_id = orgs[0]["id"] if orgs else DEFAULT_TENANT_ID
     phones = storage.list_org_whatsapp_connections(org_id)
@@ -12719,7 +12726,7 @@ async def list_phones():
 
 
 @app.post("/api/phones")
-async def create_phone(body: dict):
+async def create_phone(body: dict, user: dict = Depends(require_user)):
     phone_number = body.get("phone_number", "").strip() or "Unpaired"
     instance_name = body.get("instance_name", "").strip()
     orgs = storage.list_organizations(limit=1)
@@ -12744,7 +12751,7 @@ async def create_phone(body: dict):
 
 
 @app.get("/api/phones/{phone_id}")
-async def get_phone(phone_id: int):
+async def get_phone(phone_id: int, user: dict = Depends(require_user)):
     phone = storage.get_org_whatsapp_connection(phone_id)
     if not phone:
         raise HTTPException(404, "Phone not found")
@@ -12774,7 +12781,7 @@ async def get_phone(phone_id: int):
 
 
 @app.delete("/api/phones/{phone_id}")
-async def delete_phone(phone_id: int):
+async def delete_phone(phone_id: int, user: dict = Depends(require_user)):
     phone = storage.get_org_whatsapp_connection(phone_id)
     if not phone:
         raise HTTPException(404, "Phone not found")
@@ -12792,7 +12799,7 @@ async def delete_phone(phone_id: int):
 
 
 @app.post("/api/phones/{phone_id}/reset")
-async def reset_phone(phone_id: int):
+async def reset_phone(phone_id: int, user: dict = Depends(require_user)):
     phone = storage.get_org_whatsapp_connection(phone_id)
     if not phone:
         raise HTTPException(404, "Phone not found")
@@ -12809,7 +12816,7 @@ async def reset_phone(phone_id: int):
 
 
 @app.post("/api/phones/{phone_id}/disconnect")
-async def disconnect_phone(phone_id: int):
+async def disconnect_phone(phone_id: int, user: dict = Depends(require_user)):
     phone = storage.get_org_whatsapp_connection(phone_id)
     if not phone:
         raise HTTPException(404, "Phone not found")
@@ -12826,7 +12833,7 @@ async def disconnect_phone(phone_id: int):
 
 
 @app.post("/api/phones/{phone_id}/connect")
-async def connect_phone(phone_id: int):
+async def connect_phone(phone_id: int, user: dict = Depends(require_user)):
     phone = storage.get_org_whatsapp_connection(phone_id)
     if not phone:
         raise HTTPException(404, "Phone not found")
@@ -12934,7 +12941,7 @@ _PERMISSION_DEFS = [
 
 
 @app.get("/api/workspace/permissions")
-async def workspace_permissions():
+async def workspace_permissions(user: dict = Depends(require_user)):
     return {"permissions": _PERMISSION_DEFS}
 
 
@@ -12997,7 +13004,7 @@ async def deactivate_team_member(member_id: int, member: dict = Depends(get_curr
 # ── Custom Team Roles ─────────────────────────────────────────────
 
 @app.get("/api/workspace/roles")
-async def list_team_roles():
+async def list_team_roles(user: dict = Depends(require_user)):
     return {"roles": storage.list_team_roles()}
 
 
@@ -13139,7 +13146,7 @@ async def release_chat(body: dict, member: dict = Depends(get_current_member)):
 
 
 @app.get("/api/workspace/llm-providers")
-async def list_llm_providers():
+async def list_llm_providers(user: dict = Depends(require_user)):
     providers = storage.get_llm_providers()
     # Mask API keys
     for p in providers:
@@ -13151,7 +13158,7 @@ async def list_llm_providers():
 
 
 @app.get("/api/workspace/llm-providers/active")
-async def get_active_llm_provider():
+async def get_active_llm_provider(user: dict = Depends(require_user)):
     provider = storage.get_active_llm_provider()
     if not provider:
         return {}
@@ -13161,7 +13168,7 @@ async def get_active_llm_provider():
 
 
 @app.post("/api/workspace/llm-providers")
-async def save_llm_provider(body: dict):
+async def save_llm_provider(body: dict, user: dict = Depends(require_user)):
     required = ("provider_name",)
     for k in required:
         if k not in body:
@@ -13184,7 +13191,7 @@ async def save_llm_provider(body: dict):
 
 
 @app.post("/api/workspace/llm-providers/test")
-async def test_llm_provider(body: dict):
+async def test_llm_provider(body: dict, user: dict = Depends(require_user)):
     api_key = str(body.get("api_key", "") or "")
     base_url = str(body.get("base_url", "") or "")
     model_name = str(body.get("model_name", "") or "")
@@ -13227,7 +13234,7 @@ async def test_llm_provider(body: dict):
 
 
 @app.delete("/api/workspace/llm-providers/{provider_id}")
-async def delete_llm_provider(provider_id: int):
+async def delete_llm_provider(provider_id: int, user: dict = Depends(require_user)):
     ok = storage.delete_llm_provider(provider_id)
     return {"deleted": ok}
 
@@ -13292,7 +13299,7 @@ async def create_note(
 
 
 @app.get("/api/usage")
-async def get_usage():
+async def get_usage(user: dict = Depends(require_user)):
     """System-wide usage stats for the sidebar page."""
     stats = storage.get_stats()
     groups = _count_table("source_sync_jobs")

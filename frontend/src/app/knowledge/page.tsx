@@ -3,6 +3,7 @@
 export const dynamic = 'force-dynamic';
 
 import { useEffect, useState } from "react";
+import { fetchJSON } from "@/lib/api";
 
 interface KnowledgeRecord {
   id: number;
@@ -45,8 +46,8 @@ export default function KnowledgePage() {
 
   useEffect(() => {
     Promise.all([
-      fetch("/api/knowledge/records?limit=100").then((r) => r.json()),
-      fetch("/api/knowledge/stats").then((r) => r.json()),
+      fetchJSON<KnowledgeRecord[]>("/knowledge/records?limit=100"),
+      fetchJSON<Stats>("/knowledge/stats"),
     ]).then(([r, s]) => {
       setRecords(r);
       setStats(s);
@@ -56,22 +57,21 @@ export default function KnowledgePage() {
 
   const handleSearch = async () => {
     if (!search.trim()) {
-      const res = await fetch("/api/knowledge/records?limit=100");
-      setRecords(await res.json());
+      const data = await fetchJSON<KnowledgeRecord[]>("/knowledge/records?limit=100");
+      setRecords(data);
       return;
     }
-    const res = await fetch(`/api/knowledge/search?q=${encodeURIComponent(search)}&limit=50`);
-    const data = await res.json();
+    const data = await fetchJSON<KnowledgeRecord[]>(`/knowledge/search?q=${encodeURIComponent(search)}&limit=50`);
     setRecords(data);
   };
 
   const handleFilter = async (f: string) => {
     setFilter(f);
     const url = f === "all"
-      ? "/api/knowledge/records?limit=100"
-      : `/api/knowledge/records?limit=100&content_type=${f}`;
-    const res = await fetch(url);
-    setRecords(await res.json());
+      ? "/knowledge/records?limit=100"
+      : `/knowledge/records?limit=100&content_type=${f}`;
+    const data = await fetchJSON<KnowledgeRecord[]>(url);
+    setRecords(data);
   };
 
   const getIntentColor = (intent: string) => {

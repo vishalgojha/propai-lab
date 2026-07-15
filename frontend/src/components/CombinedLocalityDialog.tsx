@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { fetchJSON } from "@/lib/api";
 
 interface LocalityOption {
   name: string;
@@ -31,15 +32,8 @@ export function CombinedLocalityDialog({
     
     const loadLocalities = async () => {
       try {
-        // Try to get localities from the API
-        const res = await fetch("/api/trainer/localities");
-        if (res.ok) {
-          const data = await res.json();
-          setLocalities(data.localities || []);
-        } else {
-          // Fallback to common Mumbai localities
-          setLocalities(getDefaultLocalities());
-        }
+        const data = await fetchJSON<any>("/trainer/localities");
+        setLocalities(data.localities || []);
       } catch {
         setLocalities(getDefaultLocalities());
       } finally {

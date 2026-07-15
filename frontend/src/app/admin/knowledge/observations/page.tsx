@@ -4,6 +4,7 @@ export const dynamic = 'force-dynamic';
 
 import { useEffect, useState } from "react";
 import { Search, Filter, Database, Eye, Copy, ClipboardCheck, Download, Upload, Trash2, RotateCcw, FileText } from "lucide-react";
+import { fetchJSON } from "@/lib/api";
 
 const copyToClipboard = async (text: string): Promise<boolean> => {
   try {
@@ -56,13 +57,10 @@ export default function AdminKnowledgeObservationsPage() {
     params.set("limit", PAGE_SIZE.toString());
     params.set("offset", ((page - 1) * PAGE_SIZE).toString());
 
-    const [obsRes, statsRes] = await Promise.all([
-      fetch(`/api/knowledge/observations?${params.toString()}`),
-      fetch("/api/knowledge/observations/stats"),
+    const [obsData, statsData] = await Promise.all([
+      fetchJSON<KnowledgeObservation[]>(`/knowledge/observations?${params.toString()}`),
+      fetchJSON<Stats>("/knowledge/observations/stats"),
     ]);
-
-    const obsData = await obsRes.json() as KnowledgeObservation[];
-    const statsData = await statsRes.json() as Stats;
     setObservations(obsData);
     setStats(statsData);
     setLoading(false);

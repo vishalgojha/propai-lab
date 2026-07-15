@@ -7,7 +7,7 @@ import QRCode from "qrcode";
 import { useRouter } from "next/navigation";
 import { Activity, Clock, Database, ImageUp, Inbox, List, LogOut, MessageSquare, Plus, RefreshCw, Shield, Smartphone, Trash2, AlertTriangle, Users, Zap, Lock, X } from "lucide-react";
 import { useAuth } from "@/lib/AuthProvider";
-import { getPhones, createPhone, deletePhone, resetPhone, disconnectPhone, connectPhone, type Phone } from "@/lib/api";
+import { getPhones, createPhone, deletePhone, resetPhone, disconnectPhone, connectPhone, fetchJSON, type Phone } from "@/lib/api";
 
 type HealthStatus = "healthy" | "warning" | "error";
 
@@ -400,8 +400,8 @@ export default function ConnectionCenterPage() {
   const fetchStats = useCallback(async () => {
     try {
       const [stats, syncAct] = await Promise.all([
-        fetch("/api/stats").then((r) => r.json()).catch(() => ({})),
-        fetch("/api/dashboard/sync-activity").then((r) => r.json()).catch(() => ({})),
+        fetchJSON<any>("/stats").catch(() => ({})),
+        fetchJSON<any>("/dashboard/sync-activity").catch(() => ({})),
       ]);
       if (stats?.total_parsed != null) setTotalParsed(stats.total_parsed);
       if (stats?.total_listings != null) setTotalListings(stats.total_listings);
@@ -415,7 +415,7 @@ export default function ConnectionCenterPage() {
         if (ext.pct != null) setExtractionPct(ext.pct);
       }
       try {
-        const extProgress = await fetch("/api/extraction/progress").then((r) => r.json());
+        const extProgress = await fetchJSON<any>("/extraction/progress");
         if (extProgress?.recently_processed_1h != null) setRecentlyProcessed1h(extProgress.recently_processed_1h);
       } catch { /* ignore */ }
     } catch { /* ignore */ }

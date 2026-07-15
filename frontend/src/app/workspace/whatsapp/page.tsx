@@ -2,22 +2,18 @@
 
 import React, { useState, useEffect } from "react";
 import { Phone, ShieldCheck, ShieldAlert, Save, RefreshCcw } from "lucide-react";
+import { fetchJSON } from "@/lib/api";
 
 async function fetchAccess() {
-    const res = await fetch("/api/workspace/whatsapp-access");
-    if (!res.ok) throw new Error("Failed to fetch access");
-    const data = await res.json();
+    const data = await fetchJSON<any>("/workspace/whatsapp-access");
     return data.access;
 }
 
 async function setAccess(payload: any) {
-    const res = await fetch("/api/workspace/whatsapp-access", {
+    return fetchJSON<any>("/workspace/whatsapp-access", {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
     });
-    if (!res.ok) throw new Error("Failed to update access");
-    return res.json();
 }
 
 export default function WhatsappAccessPage() {

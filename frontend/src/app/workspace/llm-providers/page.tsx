@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { Plus, Check, X, Play, AlertCircle, Globe, Zap } from "lucide-react";
+import { fetchJSON } from "@/lib/api";
 
 interface Provider {
   id: number;
@@ -11,16 +12,6 @@ interface Provider {
   base_url: string;
   model_name: string;
   is_active: number;
-}
-
-async function readResponseBody(res: Response) {
-  const text = await res.text();
-  if (!text) return null;
-  try {
-    return JSON.parse(text);
-  } catch {
-    return text;
-  }
 }
 
 const DEFAULT_PROVIDERS = [
@@ -56,23 +47,15 @@ export default function LLMProvidersPage() {
   async function loadProviders() {
     setLoading(true);
     try {
-      const [provRes, activeRes] = await Promise.all([
-        fetch("/api/workspace/llm-providers"),
-        fetch("/api/workspace/llm-providers/active"),
+      const [provData, activeData] = await Promise.all([
+        fetchJSON<any>("/workspace/llm-providers").catch(() => ({ providers: [] })),
+        fetchJSON<any>("/workspace/llm-providers/active").catch(() => null),
       ]);
-      const provData = await readResponseBody(provRes);
-      const activeData = await readResponseBody(activeRes);
-      if (!provRes.ok) {
-        throw new Error(
-          typeof provData === "string"
-            ? provData
-            : (provData as { detail?: string; message?: string; error?: string } | null)?.detail ||
-                (provData as { detail?: string; message?: string; error?: string } | null)?.message ||
-                (provData as { detail?: string; message?: string; error?: string } | null)?.error ||
-                "Failed to load providers"
-        );
+      if (provData && typeof provData === "object" && provData.providers) {
+        setProviders(provData.providers || []);
+      } else {
+        setProviders([]);
       }
-      setProviders((provData && typeof provData === "object" && "providers" in provData ? provData.providers : []) || []);
       setActiveProvider(activeData && typeof activeData === "object" ? activeData : null);
     } catch (e) {
       console.error(e);
@@ -85,20 +68,10 @@ export default function LLMProvidersPage() {
 
   async function handleSave() {
     try {
-      const res = await fetch("/api/workspace/llm-providers", {
+      await fetchJSON("/workspace/llm-providers", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(formData),
       });
-      if (!res.ok) {
-        const text = await res.text();
-        try {
-          const parsed = JSON.parse(text);
-          throw new Error(parsed.detail || parsed.message || parsed.error || text);
-        } catch {
-          throw new Error(text || "Failed to save");
-        }
-      }
       setIsAdding(false);
       setEditingProvider(null);
       loadProviders();
@@ -111,9 +84,8 @@ export default function LLMProvidersPage() {
     setTesting(true);
     setTestResult(null);
     try {
-      const res = await fetch("/api/workspace/llm-providers/test", {
+      const data = await fetchJSON<any>("/workspace/llm-providers/test", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           provider_name: formData.provider_name || editingProvider?.provider_name,
           provider_type: formData.provider_type || editingProvider?.provider_type || editingProvider?.provider_name,
@@ -122,11 +94,10 @@ export default function LLMProvidersPage() {
           model_name: formData.model_name || editingProvider?.model_name,
         }),
       });
-      const data = await readResponseBody(res);
       if (data && typeof data === "object") {
         setTestResult(data as { success: boolean; latency?: number; error?: string });
       } else {
-        setTestResult({ success: false, error: res.ok ? String(data) : `HTTP ${res.status}: ${res.statusText}` });
+        setTestResult({ success: false, error: "Invalid response" });
       }
     } catch (e) {
       setTestResult({ success: false, error: String(e) });
@@ -138,15 +109,10 @@ export default function LLMProvidersPage() {
   async function handleActivate(provider: Provider) {
     try {
       const { api_key, ...rest } = provider;
-      const res = await fetch("/api/workspace/llm-providers", {
+      await fetchJSON("/workspace/llm-providers", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ...rest, id: provider.id, is_active: true, api_key: "" }),
       });
-      if (!res.ok) {
-        const text = await res.text();
-        throw new Error(text || "Failed to activate provider");
-      }
       loadProviders();
     } catch (e) {
       alert(e instanceof Error ? e.message : "Error activating provider");
@@ -157,13 +123,9 @@ export default function LLMProvidersPage() {
     const ok = window.confirm(`Delete provider "${provider.provider_name}"?`);
     if (!ok) return;
     try {
-      const res = await fetch(`/api/workspace/llm-providers/${provider.id}`, {
+      await fetchJSON(`/workspace/llm-providers/${provider.id}`, {
         method: "DELETE",
       });
-      if (!res.ok) {
-        const text = await res.text();
-        throw new Error(text || "Failed to delete provider");
-      }
       if (editingProvider?.id === provider.id) {
         setEditingProvider(null);
       }

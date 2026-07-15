@@ -2,10 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { Plus, Trash2, Edit2, X, Shield } from "lucide-react";
-
-function getAuthHeaders() {
-  return { "Content-Type": "application/json" };
-}
+import { fetchJSON } from "@/lib/api";
 
 function normalizePhone(phone: string): string {
   const digits = phone.replace(/\D/g, "");
@@ -16,90 +13,53 @@ function normalizePhone(phone: string): string {
 }
 
 async function fetchMembers() {
-  const res = await fetch("/api/workspace/members", { headers: getAuthHeaders() });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ detail: "Failed to fetch members" }));
-    throw new Error(err.detail || "Failed to fetch members");
-  }
-  const data = await res.json();
+  const data = await fetchJSON<any>("/workspace/members");
   return data.members;
 }
 
 async function createMember(member: any) {
-  const res = await fetch("/api/workspace/members", {
-    method: "POST", headers: getAuthHeaders(),
+  return fetchJSON<any>("/workspace/members", {
+    method: "POST",
     body: JSON.stringify(member),
   });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ detail: "Failed to create member" }));
-    throw new Error(err.detail || "Failed to create member");
-  }
-  return res.json();
 }
 
 async function updateMember(id: number, member: any) {
-  const res = await fetch(`/api/workspace/members/${id}`, {
-    method: "PUT", headers: getAuthHeaders(),
+  return fetchJSON<any>(`/workspace/members/${id}`, {
+    method: "PUT",
     body: JSON.stringify(member),
   });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ detail: "Failed to update member" }));
-    throw new Error(err.detail || "Failed to update member");
-  }
-  return res.json();
 }
 
 async function deactivateMember(id: number) {
-  const res = await fetch(`/api/workspace/members/${id}`, {
-    method: "DELETE", headers: getAuthHeaders(),
+  return fetchJSON<any>(`/workspace/members/${id}`, {
+    method: "DELETE",
   });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ detail: "Failed to deactivate member" }));
-    throw new Error(err.detail || "Failed to deactivate member");
-  }
-  return res.json();
 }
 
 async function fetchRoles() {
-  const res = await fetch("/api/workspace/roles", { headers: getAuthHeaders() });
-  if (!res.ok) return [];
-  const data = await res.json();
+  const data = await fetchJSON<any>("/workspace/roles");
   return data.roles || [];
 }
 
 async function createRole(name: string, permission_keys: string[]) {
-  const res = await fetch("/api/workspace/roles", {
-    method: "POST", headers: getAuthHeaders(),
+  return fetchJSON<any>("/workspace/roles", {
+    method: "POST",
     body: JSON.stringify({ name, permission_keys }),
   });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ detail: "Failed to create role" }));
-    throw new Error(err.detail || "Failed to create role");
-  }
-  return res.json();
 }
 
 async function updateRole(roleId: number, data: { name?: string; permission_keys?: string[] }) {
-  const res = await fetch(`/api/workspace/roles/${roleId}`, {
-    method: "PUT", headers: getAuthHeaders(),
+  return fetchJSON<any>(`/workspace/roles/${roleId}`, {
+    method: "PUT",
     body: JSON.stringify(data),
   });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ detail: "Failed to update role" }));
-    throw new Error(err.detail || "Failed to update role");
-  }
-  return res.json();
 }
 
 async function deleteRole(roleId: number) {
-  const res = await fetch(`/api/workspace/roles/${roleId}`, {
-    method: "DELETE", headers: getAuthHeaders(),
+  return fetchJSON<any>(`/workspace/roles/${roleId}`, {
+    method: "DELETE",
   });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ detail: "Failed to delete role" }));
-    throw new Error(err.detail || "Failed to delete role");
-  }
-  return res.json();
 }
 
 const PERMISSION_DEFS = [

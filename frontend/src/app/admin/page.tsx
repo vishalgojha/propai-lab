@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Users, Shield, Database, Terminal, Wrench, ArrowLeft, Plus, Trash2, RefreshCw } from "lucide-react";
+import { fetchJSON } from "@/lib/api";
 
 interface SuperAdmin {
   id: number;
@@ -26,9 +27,7 @@ export default function AdminPage() {
 
   const fetchAdmins = async () => {
     try {
-      const res = await fetch("/api/admin/super-admins");
-      if (!res.ok) throw new Error("Failed to fetch");
-      const data = await res.json();
+      const data = await fetchJSON<SuperAdmin[]>("/admin/super-admins");
       setAdmins(data);
     } catch (e) {
       setError("Failed to load super admins");
@@ -44,12 +43,10 @@ export default function AdminPage() {
     if (!newUserId.trim()) return;
     setAdding(true);
     try {
-      const res = await fetch("/api/admin/super-admins", {
+      await fetchJSON("/admin/super-admins", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ user_id: newUserId.trim(), phone: newPhone.trim() }),
       });
-      if (!res.ok) throw new Error("Failed to add");
       await fetchAdmins();
       setNewUserId("");
       setNewPhone("");
@@ -63,8 +60,7 @@ export default function AdminPage() {
   const handleRemove = async (userId: string) => {
     if (!confirm("Remove this super admin?")) return;
     try {
-      const res = await fetch(`/api/admin/super-admins/${userId}`, { method: "DELETE" });
-      if (!res.ok) throw new Error("Failed to remove");
+      await fetchJSON(`/admin/super-admins/${userId}`, { method: "DELETE" });
       await fetchAdmins();
     } catch (e) {
       alert("Failed to remove super admin");

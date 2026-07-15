@@ -3,6 +3,7 @@
 export const dynamic = 'force-dynamic';
 
 import { useEffect, useState } from "react";
+import { fetchJSON } from "@/lib/api";
 
 interface TrainerTerm {
   id: number;
@@ -88,8 +89,8 @@ export default function TrainerPage() {
   const load = async () => {
     setLoading(true);
     const [termsRes, statsRes] = await Promise.all([
-      fetch(`/api/trainer/terms${filter ? `?status=${filter}` : ""}`).then(r => r.json()),
-      fetch("/api/trainer/stats").then(r => r.json()),
+      fetchJSON<any[]>(`/trainer/terms${filter ? `?status=${filter}` : ""}`),
+      fetchJSON<TrainerStats>("/trainer/stats"),
     ]);
     setTerms(termsRes);
     setStats(statsRes);
@@ -108,16 +109,14 @@ export default function TrainerPage() {
       setIncoming({ term, status: type, message_id: message || undefined });
       (async () => {
         try {
-          const res = await fetch("/api/trainer/inline-resolve", {
+          const data = await fetchJSON<any>("/trainer/inline-resolve", {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               text: term,
               status: type,
               raw_message_id: message ? parseInt(message) : null,
             }),
           });
-          const data = await res.json();
           setIncoming(prev => prev ? { ...prev, result: data.status === "ok" ? "added" : "error" } : null);
           load();
           // Clean URL
@@ -131,9 +130,8 @@ export default function TrainerPage() {
 
   const resolve = async (id: number, status: string, notes: string = "") => {
     setResolving(prev => new Set(prev).add(id));
-    await fetch("/api/trainer/resolve", {
+    await fetchJSON("/trainer/resolve", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ term_id: id, status, notes }),
     });
     setResolving(prev => { const next = new Set(prev); next.delete(id); return next; });
@@ -142,9 +140,8 @@ export default function TrainerPage() {
 
   const batchResolve = async (status: string) => {
     if (selected.size === 0) return;
-    await fetch("/api/trainer/batch", {
+    await fetchJSON("/trainer/batch", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ items: Array.from(selected).map(id => ({ term_id: id, status })) }),
     });
     setSelected(new Set());
@@ -153,7 +150,7 @@ export default function TrainerPage() {
 
   const scan = async () => {
     setScanning(true);
-    await fetch("/api/trainer/scan", { method: "POST" });
+    await fetchJSON("/trainer/scan", { method: "POST" });
     setScanning(false);
     load();
   };
