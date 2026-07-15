@@ -8333,7 +8333,7 @@ async def save_broker_share_card_snapshot(broker_id: int, user: dict = Depends(r
     if not row:
         raise HTTPException(404, "Broker not found")
 
-    token = hashlib.sha256(f"{broker_id}:{datetime.now(timezone.utc).isoformat()}:{uuid.uuid4()}".encode()).hexdigest()[:16]
+    token = hashlib.sha256(f"{broker_id}:{datetime.now(timezone.utc).isoformat()}:{uuid.uuid4()}".encode()).hexdigest()[:32]
 
     broker = dict(row)
     markets = [dict(r) for r in storage.db.execute("""
@@ -11756,7 +11756,7 @@ async def root():
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "db": SUPABASE_URL}
+    return {"status": "ok"}
 
 
 # ── User Profile / Onboarding ─────────────────────────────────────
