@@ -164,6 +164,15 @@ function isPlaceholderPhone(phoneNumber?: string | null) {
   return digits.length < 10;
 }
 
+function isConnectedPhone(status: Pick<Phone, "connected" | "connection_state" | "connected_since">) {
+  return Boolean(
+    status.connected ||
+    status.connection_state === "open" ||
+    status.connection_state === "connected" ||
+    status.connected_since
+  );
+}
+
 function CreatePhoneDialog({ open, onClose, onCreated }: { open: boolean; onClose: () => void; onCreated: () => Promise<void> | void }) {
   const [instanceName, setInstanceName] = useState("");
   const [loading, setLoading] = useState(false);
@@ -240,7 +249,7 @@ function QRModal({ phone, open, onClose, onRefresh }: { phone: Phone; open: bool
         setError(null);
         return;
       }
-      if (qrResult?.connected) {
+      if (qrResult?.connected || qrResult?.connection_state === "open" || qrResult?.connected_since) {
         setConnected(true);
         setQrText(null);
         await onRefresh();
@@ -259,7 +268,7 @@ function QRModal({ phone, open, onClose, onRefresh }: { phone: Phone; open: bool
     setError(null);
     try {
       const res = await getQR();
-      if (res?.connected) {
+      if (res?.connected || res?.connection_state === "open" || res?.connected_since) {
         setConnected(true);
         setQrText(null);
         setError(null);
@@ -296,7 +305,7 @@ function QRModal({ phone, open, onClose, onRefresh }: { phone: Phone; open: bool
     pollRef.current = setInterval(async () => {
       try {
         const res = await getPhone(phone.id);
-        if (res.connected) {
+        if (isConnectedPhone(res)) {
           setConnected(true);
           setQrText(null);
           if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
@@ -390,7 +399,7 @@ function PhoneCard({ phone, onRefresh, onShowQR }: { phone: Phone; onRefresh: ()
     setActionLoading(null);
   };
 
-  const isConnected = phone.connected || phone.connection_state === "open";
+  const isConnected = isConnectedPhone(phone);
   const phoneDisplay = phone.phone_number_live || phone.phone_number;
   const isUnpaired = !isConnected && isPlaceholderPhone(phoneDisplay);
   const health: HealthStatus = isConnected ? "healthy" : isUnpaired ? "warning" : "error";
@@ -523,7 +532,7 @@ export default function ConnectionCenterPage() {
 
   if (authLoading || !user) return null;
 
-  const connectedCount = phones.filter((p) => p.connected || p.connection_state === "open").length;
+  const connectedCount = phones.filter((p) => isConnectedPhone(p)).length;
   const totalMessages = phones.reduce((sum, p) => sum + (p.total_messages_received || 0), 0);
 
   return (
