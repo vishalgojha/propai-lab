@@ -12771,9 +12771,11 @@ async def remove_org_whatsapp(conn_id: int, user: dict = Depends(require_user)):
 
 
 @app.get("/api/phones")
-async def list_phones(user: dict = Depends(require_user)):
-    orgs = storage.list_organizations(limit=1)
-    org_id = orgs[0]["id"] if orgs else DEFAULT_TENANT_ID
+async def list_phones(
+    user: dict = Depends(require_user),
+    tenant_id: str | None = Depends(get_tenant_context),
+):
+    org_id = tenant_id or DEFAULT_TENANT_ID
     phones = storage.list_org_whatsapp_connections(org_id)
     ingestor_statuses = {}
     async with httpx.AsyncClient(timeout=5) as client:
@@ -12805,11 +12807,14 @@ async def list_phones(user: dict = Depends(require_user)):
 
 
 @app.post("/api/phones")
-async def create_phone(body: dict, user: dict = Depends(require_user)):
+async def create_phone(
+    body: dict,
+    user: dict = Depends(require_user),
+    tenant_id: str | None = Depends(get_tenant_context),
+):
     phone_number = body.get("phone_number", "").strip() or "Unpaired"
     instance_name = body.get("instance_name", "").strip()
-    orgs = storage.list_organizations(limit=1)
-    org_id = orgs[0]["id"] if orgs else DEFAULT_TENANT_ID
+    org_id = tenant_id or DEFAULT_TENANT_ID
     count = storage.count_org_phones(org_id)
     if count >= 3:
         raise HTTPException(400, "Maximum 3 phones per organization")

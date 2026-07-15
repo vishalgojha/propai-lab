@@ -64,6 +64,7 @@ class ParsedObservation:
     embedding: Optional[bytes] = None  # float32 numpy array packed via pack_embedding
     summary_title: Optional[str] = None
     normalized_message: Optional[str] = None
+    tenant_id: Optional[str] = None
 
 
 @dataclass

@@ -767,7 +767,10 @@ class SupabaseStorage(Storage):
         return bool(res.data)
 
     def get_org_whatsapp_connection(self, conn_id: int) -> dict | None:
-        res = self.client.table("org_whatsapp_connections").select("*").eq("id", conn_id).limit(1).execute()
+        query = self.client.table("org_whatsapp_connections").select("*").eq("id", conn_id).limit(1)
+        if self._tenant_id:
+            query = query.eq("organization_id", self._tenant_id)
+        res = query.execute()
         return res.data[0] if res.data else None
 
     def get_phone_broker_id(self, conn_id: int) -> str | None:
@@ -836,6 +839,8 @@ class SupabaseStorage(Storage):
             query = query.eq("sender_jid", sender_jid)
         if source:
             query = query.eq("source", source)
+        if self._tenant_id:
+            query = query.eq("tenant_id", self._tenant_id)
         res = query.execute()
         return [dict_to_dataclass(RawMessage, d) for d in res.data]
 
@@ -1257,6 +1262,8 @@ class SupabaseStorage(Storage):
         query = self.client.table("raw_messages").select("id", count="exact")
         if group_name:
             query = query.eq("group_name", group_name)
+        if self._tenant_id:
+            query = query.eq("tenant_id", self._tenant_id)
         res = query.execute()
         return res.count or 0
 
@@ -1289,6 +1296,8 @@ class SupabaseStorage(Storage):
                 except (json.JSONDecodeError, TypeError):
                     data[field] = {} if field == "raw_payload" else None
         data = _sanitize_parsed_payload(data)
+        if not data.get("tenant_id") and self._tenant_id:
+            data["tenant_id"] = self._tenant_id
         res = self.client.table("parsed_output").insert(data).execute()
         return res.data[0]["id"] if res.data else 0
 
@@ -1302,6 +1311,8 @@ class SupabaseStorage(Storage):
         query = self.client.table("parsed_output").select("*").order("created_at", desc=True).limit(limit).offset(offset)
         if intent:
             query = query.eq("intent", intent)
+        if self._tenant_id:
+            query = query.eq("tenant_id", self._tenant_id)
         res = query.execute()
         return [dict_to_dataclass(ParsedObservation, d) for d in res.data]
 
@@ -1359,6 +1370,8 @@ class SupabaseStorage(Storage):
             data["fingerprint"] = listing_fingerprint(data)
         if not data.get("location_label"):
             data["location_label"] = listing_label(data)
+        if not data.get("tenant_id") and self._tenant_id:
+            data["tenant_id"] = self._tenant_id
         res = self.client.table("listings").upsert(data, on_conflict="fingerprint").execute()
         return res.data[0]["id"] if res.data else 0
 
@@ -1377,11 +1390,16 @@ class SupabaseStorage(Storage):
             query = query.ilike("micro_market", f"%{micro_market}%")
         if broker:
             query = query.or_(f"broker_name.ilike.%{broker}%,broker_phone.ilike.%{broker}%")
+        if self._tenant_id:
+            query = query.eq("tenant_id", self._tenant_id)
         res = query.execute()
         return [dict_to_dataclass(Listing, d) for d in res.data]
 
     def get_listing_by_fingerprint(self, fingerprint: str) -> Listing | None:
-        res = self.client.table("listings").select("*").eq("fingerprint", fingerprint).limit(1).execute()
+        query = self.client.table("listings").select("*").eq("fingerprint", fingerprint).limit(1)
+        if self._tenant_id:
+            query = query.eq("tenant_id", self._tenant_id)
+        res = query.execute()
         if res.data:
             return dict_to_dataclass(Listing, res.data[0])
         return None
@@ -1399,11 +1417,16 @@ class SupabaseStorage(Storage):
         query = self.client.table("clients").select("*").order("created_at", desc=True)
         if search:
             query = query.or_(f"name.ilike.%{search}%,phone.ilike.%{search}%")
+        if self._tenant_id:
+            query = query.eq("tenant_id", self._tenant_id)
         res = query.execute()
         return res.data
 
     def get_client(self, client_id: int) -> dict | None:
-        res = self.client.table("clients").select("*").eq("id", client_id).limit(1).execute()
+        query = self.client.table("clients").select("*").eq("id", client_id).limit(1)
+        if self._tenant_id:
+            query = query.eq("tenant_id", self._tenant_id)
+        res = query.execute()
         return res.data[0] if res.data else None
 
     def create_client(self, name: str, phone: str = None, email: str = None, notes: str = "") -> int:
@@ -1414,12 +1437,16 @@ class SupabaseStorage(Storage):
             data["email"] = email
         if notes:
             data["notes"] = notes
+        if self._tenant_id:
+            data["tenant_id"] = self._tenant_id
         res = self.client.table("clients").insert(data).execute()
         return res.data[0]["id"] if res.data else 0
 
     # ── Brokers ──────────────────────────────────────────────────
 
     def save_broker(self, data: dict) -> dict:
+        if not data.get("tenant_id") and self._tenant_id:
+            data["tenant_id"] = self._tenant_id
         if data.get("identity_key"):
             existing = self.client.table("brokers").select("id").eq("identity_key", data["identity_key"]).limit(1).execute()
             if existing.data:
@@ -1432,11 +1459,16 @@ class SupabaseStorage(Storage):
         query = self.client.table("brokers").select("*").order("observation_count", desc=True).limit(limit).offset(offset)
         if search:
             query = query.or_(f"canonical_name.ilike.%{search}%,primary_phone.ilike.%{search}%")
+        if self._tenant_id:
+            query = query.eq("tenant_id", self._tenant_id)
         res = query.execute()
         return res.data
 
     def get_broker(self, broker_id: int) -> dict | None:
-        res = self.client.table("brokers").select("*").eq("id", broker_id).limit(1).execute()
+        query = self.client.table("brokers").select("*").eq("id", broker_id).limit(1)
+        if self._tenant_id:
+            query = query.eq("tenant_id", self._tenant_id)
+        res = query.execute()
         if not res.data:
             return None
         broker = res.data[0]
@@ -1471,6 +1503,8 @@ class SupabaseStorage(Storage):
     # ── Buildings ────────────────────────────────────────────────
 
     def save_building(self, data: dict) -> dict:
+        if not data.get("tenant_id") and self._tenant_id:
+            data["tenant_id"] = self._tenant_id
         if data.get("building_id"):
             existing = self.client.table("buildings").select("id").eq("building_id", data["building_id"]).limit(1).execute()
             if existing.data:
@@ -1483,11 +1517,16 @@ class SupabaseStorage(Storage):
         query = self.client.table("buildings").select("*").order("observed_listings", desc=True).limit(limit).offset(offset)
         if search:
             query = query.or_(f"canonical_name.ilike.%{search}%,micro_market.ilike.%{search}%")
+        if self._tenant_id:
+            query = query.eq("tenant_id", self._tenant_id)
         res = query.execute()
         return res.data
 
     def get_building(self, building_id: str) -> dict | None:
-        res = self.client.table("buildings").select("*").eq("building_id", building_id).limit(1).execute()
+        query = self.client.table("buildings").select("*").eq("building_id", building_id).limit(1)
+        if self._tenant_id:
+            query = query.eq("tenant_id", self._tenant_id)
+        res = query.execute()
         return res.data[0] if res.data else None
 
     # ── Resolver Decisions ───────────────────────────────────────
@@ -1631,27 +1670,37 @@ class SupabaseStorage(Storage):
     # ── Stats ────────────────────────────────────────────────────
 
     def get_stats(self) -> dict:
-        msgs = self.client.table("raw_messages").select("id", count="exact").execute()
-        parsed = self.client.table("parsed_output").select("id", count="exact").execute()
-        listings = self.client.table("listings").select("id", count="exact").execute()
-        brokers = self.client.table("brokers").select("id", count="exact").execute()
-        buildings = self.client.table("buildings").select("id", count="exact").execute()
+        msgs = self.client.table("raw_messages").select("id", count="exact")
+        parsed = self.client.table("parsed_output").select("id", count="exact")
+        listings = self.client.table("listings").select("id", count="exact")
+        brokers = self.client.table("brokers").select("id", count="exact")
+        buildings = self.client.table("buildings").select("id", count="exact")
         requirements = self.client.table("parsed_output").select("id", count="exact")\
-            .in_("intent", ["BUY", "BUYER", "REQUIREMENT", "RENTAL_SEEKER"]).execute()
+            .in_("intent", ["BUY", "BUYER", "REQUIREMENT", "RENTAL_SEEKER"])
+        if self._tenant_id:
+            msgs = msgs.eq("tenant_id", self._tenant_id)
+            parsed = parsed.eq("tenant_id", self._tenant_id)
+            listings = listings.eq("tenant_id", self._tenant_id)
+            brokers = brokers.eq("tenant_id", self._tenant_id)
+            buildings = buildings.eq("tenant_id", self._tenant_id)
+            requirements = requirements.eq("tenant_id", self._tenant_id)
         return {
-            "total_messages": msgs.count or 0,
-            "total_parsed": parsed.count or 0,
-            "total_listings": listings.count or 0,
-            "total_requirements": requirements.count or 0,
-            "total_brokers": brokers.count or 0,
-            "total_buildings": buildings.count or 0,
+            "total_messages": (msgs.execute().count or 0),
+            "total_parsed": (parsed.execute().count or 0),
+            "total_listings": (listings.execute().count or 0),
+            "total_requirements": (requirements.execute().count or 0),
+            "total_brokers": (brokers.execute().count or 0),
+            "total_buildings": (buildings.execute().count or 0),
         }
 
     # ── Observation Detail ───────────────────────────────────────
 
     def get_observation_detail(self, obs_id: int) -> dict:
         # Get all parsed outputs for this raw message (handles multi-listing messages)
-        parsed_res = self.client.table("parsed_output").select("*").eq("raw_message_id", obs_id).order("listing_index").execute()
+        parsed_query = self.client.table("parsed_output").select("*").eq("raw_message_id", obs_id).order("listing_index")
+        if self._tenant_id:
+            parsed_query = parsed_query.eq("tenant_id", self._tenant_id)
+        parsed_res = parsed_query.execute()
         if not parsed_res.data:
             return {}
         
@@ -1689,7 +1738,10 @@ class SupabaseStorage(Storage):
         }
 
     def source_summary(self) -> dict:
-        groups = self.client.table("raw_messages").select("group_name", count="exact").execute()
+        query = self.client.table("raw_messages").select("group_name", count="exact")
+        if self._tenant_id:
+            query = query.eq("tenant_id", self._tenant_id)
+        groups = query.execute()
         return {
             "total_groups": len(set(d.get("group_name") for d in groups.data)) if groups.data else 0,
             "total_messages": groups.count or 0,
@@ -1698,28 +1750,43 @@ class SupabaseStorage(Storage):
     # ── AI Layer ─────────────────────────────────────────────────
 
     def get_all_parsed_with_embeddings(self) -> list[dict]:
-        res = self.client.table("parsed_output").select("*").not_.is_("embedding", "null").limit(1000).execute()
+        query = self.client.table("parsed_output").select("*").not_.is_("embedding", "null").limit(1000)
+        if self._tenant_id:
+            query = query.eq("tenant_id", self._tenant_id)
+        res = query.execute()
         return res.data
 
     def knn_search(self, query_embedding: bytes, k: int = 10) -> list[dict]:
         return []
 
     def get_observations_by_broker(self, broker_name: str) -> list[dict]:
-        res = self.client.table("parsed_output").select("*").eq("broker_name", broker_name).limit(100).execute()
+        query = self.client.table("parsed_output").select("*").eq("broker_name", broker_name).limit(100)
+        if self._tenant_id:
+            query = query.eq("tenant_id", self._tenant_id)
+        res = query.execute()
         return res.data
 
     def get_observations_by_building(self, building_name: str) -> list[dict]:
-        res = self.client.table("parsed_output").select("*").eq("building_name", building_name).limit(100).execute()
+        query = self.client.table("parsed_output").select("*").eq("building_name", building_name).limit(100)
+        if self._tenant_id:
+            query = query.eq("tenant_id", self._tenant_id)
+        res = query.execute()
         return res.data
 
     def get_top_brokers_today(self, today_prefix: str, limit: int = 10) -> list[dict]:
-        res = self.client.table("brokers").select("*").order("observation_count", desc=True).limit(limit).execute()
+        query = self.client.table("brokers").select("*").order("observation_count", desc=True).limit(limit)
+        if self._tenant_id:
+            query = query.eq("tenant_id", self._tenant_id)
+        res = query.execute()
         return res.data
 
     # ── Dashboard ────────────────────────────────────────────────
 
     def dashboard_activity(self, today_prefix: str) -> dict:
-        today = self.client.table("raw_messages").select("id", count="exact").gte("created_at", today_prefix).execute()
+        query = self.client.table("raw_messages").select("id", count="exact").gte("created_at", today_prefix)
+        if self._tenant_id:
+            query = query.eq("tenant_id", self._tenant_id)
+        today = query.execute()
         return {
             "messages_today": today.count or 0,
             "message_types": {},
@@ -1802,18 +1869,27 @@ class SupabaseStorage(Storage):
             return []
 
     def dashboard_feed(self, limit: int = 20) -> list[dict]:
-        res = self.client.table("parsed_output").select("*").order("created_at", desc=True).limit(limit).execute()
+        query = self.client.table("parsed_output").select("*").order("created_at", desc=True).limit(limit)
+        if self._tenant_id:
+            query = query.eq("tenant_id", self._tenant_id)
+        res = query.execute()
         return res.data
 
     def dashboard_heatmap(self) -> list[dict]:
         return []
 
     def dashboard_listings(self, limit: int = 20) -> list[dict]:
-        res = self.client.table("listings").select("*").order("last_seen", desc=True).limit(limit).execute()
+        query = self.client.table("listings").select("*").order("last_seen", desc=True).limit(limit)
+        if self._tenant_id:
+            query = query.eq("tenant_id", self._tenant_id)
+        res = query.execute()
         return res.data
 
     def dashboard_requirements(self, limit: int = 20) -> list[dict]:
-        res = self.client.table("parsed_output").select("*").eq("intent", "REQUIREMENT").order("created_at", desc=True).limit(limit).execute()
+        query = self.client.table("parsed_output").select("*").eq("intent", "REQUIREMENT").order("created_at", desc=True).limit(limit)
+        if self._tenant_id:
+            query = query.eq("tenant_id", self._tenant_id)
+        res = query.execute()
         return res.data
 
     def dashboard_signals(self) -> list[dict]:
@@ -1909,19 +1985,31 @@ class SupabaseStorage(Storage):
 
     def message_count_today(self) -> int:
         today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-        res = self.client.table("raw_messages").select("id", count="exact").gte("created_at", today).execute()
+        query = self.client.table("raw_messages").select("id", count="exact").gte("created_at", today)
+        if self._tenant_id:
+            query = query.eq("tenant_id", self._tenant_id)
+        res = query.execute()
         return res.count or 0
 
     def broker_count(self) -> int:
-        res = self.client.table("brokers").select("id", count="exact").execute()
+        query = self.client.table("brokers").select("id", count="exact")
+        if self._tenant_id:
+            query = query.eq("tenant_id", self._tenant_id)
+        res = query.execute()
         return res.count or 0
 
     def listing_count(self) -> int:
-        res = self.client.table("listings").select("id", count="exact").execute()
+        query = self.client.table("listings").select("id", count="exact")
+        if self._tenant_id:
+            query = query.eq("tenant_id", self._tenant_id)
+        res = query.execute()
         return res.count or 0
 
     def building_count(self) -> int:
-        res = self.client.table("buildings").select("id", count="exact").execute()
+        query = self.client.table("buildings").select("id", count="exact")
+        if self._tenant_id:
+            query = query.eq("tenant_id", self._tenant_id)
+        res = query.execute()
         return res.count or 0
 
     # ── Suggestions (AI) ─────────────────────────────────────────
