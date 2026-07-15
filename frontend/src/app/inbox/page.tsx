@@ -39,6 +39,7 @@ import {
 } from "lucide-react";
 
 const PAGE_SIZE = 100;
+const BROKER_PAGE_SIZE = 25;
 
 type TrainingPrompt = {
   text: string;
@@ -934,6 +935,7 @@ function InboxPageInner({ defaultView }: InboxPageInnerProps) {
   const activeSlug = useMemo(() => slugs.find(s => s.slug === currentSlug) || null, [slugs, currentSlug]);
   const [brokerFeed, setBrokerFeed] = useState<any[]>([]);
   const [loadingBrokerFeed, setLoadingBrokerFeed] = useState(false);
+  const [brokerOffset, setBrokerOffset] = useState(0);
   const [marketAccess, setMarketAccess] = useState<api.MarketAccessStatus | null>(null);
   const [loadingMarketAccess, setLoadingMarketAccess] = useState(true);
   const [marketAccessError, setMarketAccessError] = useState<string | null>(null);
@@ -1196,7 +1198,8 @@ return {
       setActionMessage(`Hidden: ${res.broker_name}`);
       setActionUndo({ phone, name: res.broker_name });
       setBrokerFeed((prev) => prev.filter((b: any) => b.primary_phone !== phone));
-      if (selectedBroker?.id === phone) {
+      const selectedBrokerPhone = normalizeRealPhone(selectedBroker?.phone || selectedBroker?.id || "");
+      if (selectedBrokerPhone === normalizeRealPhone(phone)) {
         setSelectedBroker(null);
         setSelectedBrokerObservations([]);
         setSelectedMsgDetails(null);
@@ -1312,8 +1315,13 @@ return {
     if (initialNavDone.current) return;
     if (brokerParam && brokerFeed.length > 0) {
       initialNavDone.current = true;
+      const brokerParamName = stripEmojis(brokerParam).trim().toLowerCase();
+      const brokerParamPhone = normalizeRealPhone(brokerParam);
       const broker = brokerFeed.find((b: any) =>
-        b.primary_phone?.includes(brokerParam) || brokerParam.includes(b.primary_phone || "")
+        (brokerParamPhone && normalizeRealPhone(b.primary_phone || "") === brokerParamPhone) ||
+        b.primary_phone?.includes(brokerParam) ||
+        brokerParam.includes(b.primary_phone || "") ||
+        (brokerParamName && stripEmojis(b.canonical_name || b.name || "").trim().toLowerCase().includes(brokerParamName))
       );
       if (broker) {
         setCurrentSlug("brokers");
@@ -1457,30 +1465,40 @@ return {
     })();
   }, [pathname, searchParams, currentSlug]);
 
-  const loadBrokerFeed = useCallback(async () => {
+  const loadBrokerFeed = useCallback(async (requestedOffset = brokerOffset) => {
     if (connectionPending) {
       setBrokerFeed([]);
       return;
     }
     setLoadingBrokerFeed(true);
     try {
-      const data = await api.getBrokersFeed(100, 0);
+      const data = await api.getBrokersFeed(BROKER_PAGE_SIZE, requestedOffset);
       setBrokerFeed(data);
     } catch (e) {
       console.error("Failed to load broker feed:", e);
     } finally {
       setLoadingBrokerFeed(false);
     }
-  }, [connectionPending]);
+  }, [connectionPending, brokerOffset]);
 
   // Load broker feed when switching to a slug whose view_type needs brokers feed
+  const prevBrokerOffsetRef = useRef(0);
+  const brokerInitialLoadDone = useRef(false);
   useEffect(() => {
     if (connectionPending) return;
     const vt = activeSlug?.view_type;
-    if (vt === "brokers" && brokerFeed.length === 0) {
-      loadBrokerFeed();
+    if (vt !== "brokers") return;
+    if (!brokerInitialLoadDone.current) {
+      brokerInitialLoadDone.current = true;
+      prevBrokerOffsetRef.current = brokerOffset;
+      loadBrokerFeed(brokerOffset);
+      return;
     }
-  }, [activeSlug, brokerFeed.length, connectionPending, loadBrokerFeed]);
+    if (brokerOffset !== prevBrokerOffsetRef.current) {
+      prevBrokerOffsetRef.current = brokerOffset;
+      loadBrokerFeed(brokerOffset);
+    }
+  }, [activeSlug?.view_type, brokerOffset, connectionPending, loadBrokerFeed]);
 
   // Scroll to bottom of conversation thread when new messages arrive
   useEffect(() => {
@@ -2023,6 +2041,10 @@ return {
     .sort((a, b) => (messageDateValue(b.latest)?.getTime() || 0) - (messageDateValue(a.latest)?.getTime() || 0));
 
   const showThreadFallback = activeSlug?.view_type !== "brokers" || (!loadingBrokerFeed && filteredBrokerFeed.length === 0);
+  const isBrokerView = activeSlug?.view_type === "brokers";
+  const brokerHasMore = brokerFeed.length >= BROKER_PAGE_SIZE;
+  const brokerPage = Math.floor(brokerOffset / BROKER_PAGE_SIZE) + 1;
+  const messagePage = Math.floor(offset / PAGE_SIZE) + 1;
 
   const leftListEmpty = (() => {
     const vt = activeSlug?.view_type;
@@ -2401,21 +2423,50 @@ return {
   const selectBroker = useCallback(async (broker: any, focusObsRawId?: number) => {
     if (isMobile) setMobileView("conversation");
     setOpportunityFilter("all");
-    if (broker.primary_phone) updateUrlBroker(broker.primary_phone);
+    const brokerPhone = normalizeRealPhone(broker.primary_phone || broker.phone || "");
+    const brokerName = stripEmojis(broker.canonical_name || broker.name || "").trim();
+    if (brokerPhone) updateUrlBroker(brokerPhone);
+    else if (brokerName) updateUrlBroker(brokerName);
     setSelectedBroker({
-      id: broker.primary_phone,
-      phone: broker.primary_phone,
-      canonical_name: broker.canonical_name,
+      id: brokerPhone || broker.primary_phone || broker.identity_key || brokerName,
+      phone: brokerPhone || broker.primary_phone || "",
+      canonical_name: broker.canonical_name || broker.name || "",
+      name: broker.canonical_name || broker.name || "",
       building_count: broker.building_count || 0,
       active_days_30: broker.active_days_30 || 0,
       first_seen: broker.first_seen,
       last_seen: broker.last_active,
+      observation_count: broker.observation_count || broker.obs_count || 0,
+      latest_title: broker.latest_title || "",
+      latest_intent: broker.latest_intent || "",
+      latest_micro_market: broker.latest_micro_market || "",
+      channels: broker.channels || [],
     });
     if (!focusObsRawId) setSelectedMsgDetails(null);
     // Load observations for center timeline
     setLoadingBrokerObs(true);
     try {
-      const obs = await api.getObservationsFeed(50, 0, broker.primary_phone);
+      const observationKeys = [
+        brokerPhone,
+        broker.primary_phone,
+        broker.phone,
+        brokerName ? `name:${brokerName}` : "",
+        broker.canonical_name ? `name:${stripEmojis(broker.canonical_name).trim()}` : "",
+        broker.name ? `name:${stripEmojis(broker.name).trim()}` : "",
+      ].filter(Boolean) as string[];
+      let obs: any[] = [];
+      for (const key of observationKeys) {
+        try {
+          const rows = await api.getObservationsFeed(50, 0, key);
+          if (rows?.length) {
+            obs = rows;
+            break;
+          }
+          if (!obs.length) obs = rows;
+        } catch (err) {
+          console.log("Observation feed lookup failed for broker key:", key, err);
+        }
+      }
       setSelectedBrokerObservations(obs);
       const rawId = focusObsRawId || obs?.[0]?.latest_raw_message_id || obs?.[0]?.raw_message_id;
       if (rawId) {
@@ -2915,7 +2966,10 @@ return {
                 )}
                 {activeSlug?.view_type === "brokers" && !loadingBrokerFeed &&
                   filteredBrokerFeed.map((b: any) => {
-                    const isSelected = selectedBroker?.id === b.primary_phone;
+                    const isSelected =
+                      normalizeRealPhone(selectedBroker?.phone || selectedBroker?.id || "") === normalizeRealPhone(b.primary_phone || "") ||
+                      stripEmojis(selectedBroker?.canonical_name || selectedBroker?.name || "").trim().toLowerCase() ===
+                        stripEmojis(b.canonical_name || b.name || "").trim().toLowerCase();
                     const menuOpen = openMenuBroker === b.primary_phone;
                     const isActiveNow = b.last_active && now - new Date(b.last_active).getTime() < 300000;
                     const latestIntent = b.latest_intent || (b.latest_title || "").match(/^(Sale|Rent|Lease|Buy|Requirement)/i)?.[1];
@@ -3040,22 +3094,30 @@ return {
             <button
               onClick={() => {
                 resetSelectionForPageChange();
-                setOffset(Math.max(0, offset - PAGE_SIZE));
+                if (isBrokerView) {
+                  setBrokerOffset(Math.max(0, brokerOffset - BROKER_PAGE_SIZE));
+                } else {
+                  setOffset(Math.max(0, offset - PAGE_SIZE));
+                }
               }}
-              disabled={offset === 0}
+              disabled={isBrokerView ? brokerOffset === 0 : offset === 0}
               className="px-2 py-1 text-[10px] font-bold bg-zinc-800 text-zinc-400 border border-white/10 rounded disabled:opacity-30"
             >
               Prev
             </button>
             <span className="text-[10px] text-zinc-500">
-              Page {Math.floor(offset / PAGE_SIZE) + 1}
+              Page {isBrokerView ? brokerPage : messagePage}
             </span>
             <button
               onClick={() => {
                 resetSelectionForPageChange();
-                setOffset(offset + PAGE_SIZE);
+                if (isBrokerView) {
+                  setBrokerOffset(brokerOffset + BROKER_PAGE_SIZE);
+                } else {
+                  setOffset(offset + PAGE_SIZE);
+                }
               }}
-              disabled={messages.length < PAGE_SIZE}
+              disabled={isBrokerView ? !brokerHasMore : messages.length < PAGE_SIZE}
               className="px-2 py-1 text-[10px] font-bold bg-zinc-800 text-zinc-400 border border-white/10 rounded disabled:opacity-30"
             >
               Next
@@ -3164,7 +3226,31 @@ return {
                 {loadingBrokerObs ? (
                   <div className="p-8 text-center text-xs text-zinc-500">Loading observations...</div>
                 ) : groupedBrokerObservations.length === 0 ? (
-                  <div className="p-8 text-center text-xs text-zinc-500">No observations yet</div>
+                  <div className="rounded-xl border border-white/10 bg-zinc-950/60 p-5 text-center">
+                    <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-[#3EE88A]/10 text-[#3EE88A]">
+                      <ClipboardList className="h-5 w-5" strokeWidth={1.6} />
+                    </div>
+                    <div className="mt-3 text-sm font-semibold text-white">No observations yet</div>
+                    <div className="mx-auto mt-1 max-w-[360px] text-xs leading-relaxed text-zinc-500">
+                      {selectedBroker.latest_title
+                        ? `Latest feed match: ${stripEmojis(selectedBroker.latest_title)}`
+                        : "This broker card has not resolved to parsed observations yet. The feed item is still usable for navigation and WhatsApp actions."}
+                    </div>
+                    {(selectedBroker.latest_intent || selectedBroker.latest_micro_market) && (
+                      <div className="mt-4 flex flex-wrap items-center justify-center gap-2 text-[10px]">
+                        {selectedBroker.latest_intent && (
+                          <span className={`badge ${intentColor(selectedBroker.latest_intent)}`}>
+                            {intentLabel(selectedBroker.latest_intent)}
+                          </span>
+                        )}
+                        {selectedBroker.latest_micro_market && (
+                          <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-zinc-300">
+                            {selectedBroker.latest_micro_market}
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 ) : (
                   <>
                     <div className="sticky top-0 z-10 -mx-4 -mt-4 border-b border-white/10 bg-[#070b0e]/95 px-4 py-3 backdrop-blur">

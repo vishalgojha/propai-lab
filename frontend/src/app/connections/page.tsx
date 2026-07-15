@@ -161,6 +161,8 @@ function isPlaceholderPhone(phoneNumber?: string | null) {
   if (!text) return true;
   if (text.startsWith("Unpaired")) return true;
   const digits = text.replace(/\D/g, "");
+  if (digits.length === 10 && digits.startsWith("0")) return true;
+  if (digits.length === 10 && /^0+$/.test(digits)) return true;
   return digits.length < 10;
 }
 
@@ -256,7 +258,7 @@ function QRModal({ phone, open, onClose, onRefresh }: { phone: Phone; open: bool
         window.dispatchEvent(new Event("propai_whatsapp_status_updated"));
         return;
       }
-      setError(res?.message || qrResult?.message || "QR not available yet. Try again in a moment.");
+      setError((res as any)?.message || (qrResult as any)?.message || "QR not available yet. Try again in a moment.");
     } catch {
       setError("Failed to fetch QR code. Retry, or reset the phone if it stays stuck.");
     } finally {
@@ -278,7 +280,7 @@ function QRModal({ phone, open, onClose, onRefresh }: { phone: Phone; open: bool
       } else if (res?.qr) {
         setQrText(res.qr);
       } else {
-        setError(res?.message || "QR not available yet. Restarting session...");
+        setError((res as any)?.message || "QR not available yet. Restarting session...");
         setTimeout(() => refreshSessionAndFetchQR().catch(() => {}), 500);
       }
     } catch {
@@ -570,7 +572,14 @@ export default function ConnectionCenterPage() {
       const interval = setInterval(() => {
         refreshData();
       }, 8000);
-      return () => clearInterval(interval);
+      const onStatusUpdate = () => {
+        void refreshData();
+      };
+      window.addEventListener("propai_whatsapp_status_updated", onStatusUpdate);
+      return () => {
+        clearInterval(interval);
+        window.removeEventListener("propai_whatsapp_status_updated", onStatusUpdate);
+      };
     }
   }, [authLoading, user, refreshData]);
 

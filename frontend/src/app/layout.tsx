@@ -265,8 +265,11 @@ function AppShell({ children }: { children: React.ReactNode }) {
     if (authLoading || !user) return;
     const load = async () => {
       try {
-        const [p, cfg] = await Promise.all([getPhones().catch(() => []), getCompanionConfig().catch(() => null)]);
-        setPhones(p);
+        const [phonesRes, cfg] = await Promise.all([
+          getPhones().catch(() => ({ phones: [] as Phone[] })),
+          getCompanionConfig().catch(() => null),
+        ]);
+        setPhones(phonesRes.phones || []);
         if (cfg) setWabaConfig(cfg);
       } catch {}
     };

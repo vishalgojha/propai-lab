@@ -13515,7 +13515,7 @@ async def list_phones(
     org_id = tenant_id or DEFAULT_TENANT_ID
     phones = storage.list_org_whatsapp_connections(org_id)
     ingestor_statuses = {}
-    _, resp = await _first_ingestor_response("GET", "/list", timeout=5)
+    _, resp = await _first_ingestor_response("GET", "/list", timeout=2)
     if resp is not None and resp.status_code == 200:
         for s in resp.json():
             ingestor_statuses[s.get("broker_id", "")] = s
@@ -13562,7 +13562,9 @@ async def create_phone(
                     if updated:
                         placeholder = updated
                 return placeholder
-            phone_number = f"Unpaired-{_uuid.uuid4().hex[:8]}"
+            # Reserve a numeric placeholder that still looks phone-like to the DB,
+            # but stays visually distinct in the UI until WhatsApp fills the live number.
+            phone_number = f"{count:010d}"
         broker_id = f"phone-{_uuid.uuid4().hex[:12]}"
         result = storage.add_org_whatsapp_connection(org_id, phone_number, instance_name, broker_id)
         if not result:
@@ -13588,7 +13590,7 @@ async def get_phone(
         raise HTTPException(404, "Phone not found")
     broker_id = phone.get("broker_id", "")
     status = {}
-    _, resp = await _first_ingestor_response("GET", "/status", timeout=5, params={"broker_id": broker_id})
+    _, resp = await _first_ingestor_response("GET", "/status", timeout=2, params={"broker_id": broker_id})
     if resp is not None and resp.status_code == 200:
         status = resp.json()
     return {
