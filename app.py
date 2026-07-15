@@ -5884,8 +5884,7 @@ async def public_listings(
     """
     try:
         # Build query with filters
-        query = storage.db.query(
-            """
+        query = """
             SELECT l.id, l.fingerprint, l.intent, l.bhk, l.price, l.price_unit,
                    l.price_per_sqft, l.area_sqft, l.furnishing, l.location_label,
                    l.building_name, l.landmark_name, l.micro_market, l.street_name,
@@ -5897,8 +5896,7 @@ async def public_listings(
             WHERE l.last_seen > now() - interval '30 days'
               AND l.observation_count >= 2
               AND b.is_hidden = false
-            """
-        )
+        """
         params = []
 
         if micro_market:
@@ -5920,7 +5918,7 @@ async def public_listings(
         query += f" ORDER BY l.last_seen DESC LIMIT {limit} OFFSET {offset}"
 
         rows = storage.db.execute(query, params)
-        return {"listings": rows, "count": len(rows)}
+        return {"listings": rows.fetchall(), "count": len(rows.fetchall())}
     except Exception as exc:
         return JSONResponse(status_code=500, content={"error": str(exc)})
 
