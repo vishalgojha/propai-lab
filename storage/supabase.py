@@ -2300,7 +2300,14 @@ class SupabaseStorage(Storage):
         name_key = broker_key.replace("name:", "", 1).strip().lower()
 
         query = self.client.table("parsed_output")\
-            .select("id,raw_message_id,message_type,intent,bhk,price,price_unit,area_sqft,furnishing,location_raw,building_name,landmark_name,micro_market,broker_name,broker_phone,profile_name,listing_index,confidence,summary_title,normalized_message,created_at,raw_messages(*)")\
+            .select(
+                "id,raw_message_id,message_type,intent,asset_type,property_type,transaction_type,"
+                "bhk,configuration,price,price_unit,price_model,price_per_sqft,monthly_rent,total_asking_price,"
+                "area_sqft,furnishing,furnishing_canonical,location_raw,building_name,landmark_name,micro_market,"
+                "commercial_use_type,fitout_status,occupancy_type,floor_range,availability_status,possession_status,"
+                "possession_date,available_from,ready_by,construction_stage,launch_timeline,expected_possession,"
+                "broker_name,broker_phone,profile_name,listing_index,confidence,summary_title,normalized_message,created_at,raw_messages(*)"
+            )\
             .gte("created_at", cutoff)\
             .order("created_at", desc=True)\
             .limit(limit + offset)
@@ -2346,15 +2353,36 @@ class SupabaseStorage(Storage):
                 "summary_title": parsed.get("summary_title") or parsed.get("normalized_message") or raw.get("message") or "",
                 "observation_type": observation_type,
                 "intent": parsed.get("intent"),
+                "asset_type": parsed.get("asset_type"),
+                "property_type": parsed.get("property_type") or parsed.get("message_type"),
+                "transaction_type": parsed.get("transaction_type"),
                 "bhk": parsed.get("bhk"),
+                "configuration": parsed.get("configuration"),
                 "price": parsed.get("price"),
                 "price_unit": parsed.get("price_unit"),
+                "price_model": parsed.get("price_model"),
+                "price_per_sqft": parsed.get("price_per_sqft"),
+                "monthly_rent": parsed.get("monthly_rent"),
+                "total_asking_price": parsed.get("total_asking_price"),
                 "area_sqft": parsed.get("area_sqft"),
                 "furnishing": parsed.get("furnishing"),
+                "furnishing_canonical": parsed.get("furnishing_canonical"),
                 "property_type": parsed.get("message_type"),
                 "building_name": parsed.get("building_name"),
                 "micro_market": parsed.get("micro_market"),
                 "location_raw": parsed.get("location_raw"),
+                "commercial_use_type": parsed.get("commercial_use_type"),
+                "fitout_status": parsed.get("fitout_status"),
+                "occupancy_type": parsed.get("occupancy_type"),
+                "floor_range": parsed.get("floor_range"),
+                "availability_status": parsed.get("availability_status"),
+                "possession_status": parsed.get("possession_status"),
+                "possession_date": parsed.get("possession_date"),
+                "available_from": parsed.get("available_from"),
+                "ready_by": parsed.get("ready_by"),
+                "construction_stage": parsed.get("construction_stage"),
+                "launch_timeline": parsed.get("launch_timeline"),
+                "expected_possession": parsed.get("expected_possession"),
                 "listing_index": parsed.get("listing_index"),
                 "first_seen": seen_at,
                 "last_seen": seen_at,
