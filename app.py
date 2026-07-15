@@ -685,13 +685,23 @@ def parse_message(raw_text: str, profile_name: str | None = None) -> dict:
         result["bhk"] = None
 
     # ── 6. Extract price — with ambiguous-shorthand guard ─────────
+    price_from_explicit_line = False
     if result["price"] is None:
-        explicit_price_line = _RE.search(
-            r'(?im)^\s*(?:rent|rental|asking\s+price|price)\s*[:\-]\s*'
-            r'(?:rs\.?\s*|inr\s*|₹)?\s*([\d,]+(?:\.\d+)?)\s*'
-            r'(cr|crore|lacs?|lakhs?|l|k|thousand)?\b',
-            text,
-        )
+        explicit_price_line = None
+        for raw_line in text.splitlines():
+            line = sanitize_whatsapp_text(raw_line).strip()
+            if not line:
+                continue
+            if not re.search(r'\b(?:rent|rental|asking\s+price)\b', line, re.I):
+                continue
+            explicit_price_line = _RE.search(
+                r'(?i)\b(?:rent|rental|asking\s+price)\b\s*[:\-]\s*'
+                r'(?:rs\.?\s*|inr\s*|₹)?\s*([\d,]+(?:\.\d+)?)\s*'
+                r'(cr|crore|lacs?|lakhs?|l|k|thousand)?\b',
+                line,
+            )
+            if explicit_price_line:
+                break
         if explicit_price_line:
             amount = float(explicit_price_line.group(1).replace(",", ""))
             unit_raw = (explicit_price_line.group(2) or "").lower().rstrip("s")
@@ -705,8 +715,13 @@ def parse_message(raw_text: str, profile_name: str | None = None) -> dict:
                 result["price"] = amount
                 result["price_unit"] = "K"
             else:
-                result["price"] = amount
-                result["price_unit"] = "abs"
+                if amount >= 100000:
+                    result["price"] = round(amount / 100000, 2)
+                    result["price_unit"] = "Lac"
+                else:
+                    result["price"] = amount
+                    result["price_unit"] = "abs"
+            price_from_explicit_line = True
 
     # Check for broker shorthand "X.XX,/YY unit" before standard regex
     ambiguous_m = re.search(
@@ -760,7 +775,7 @@ def parse_message(raw_text: str, profile_name: str | None = None) -> dict:
                     import time
                     time.sleep(3)
 
-    if result.get("price") is None:
+    if result.get("price") is None and not price_from_explicit_line:
         price_match = _RE.search(
             r'(?:rs\.?\s*|inr\s*|₹)?\s*([\d,]+(?:\.\d+)?)\s*(cr|crore|lacs?|lakhs?|l|k|thousand)\b',
             lower,
@@ -5847,13 +5862,6 @@ async def send_message(req: SendMessageRequest, member: dict = Depends(get_curre
             status_code=500,
             content={"success": False, "error": str(exc)},
         )
-
-
-return JSONResponse(
-            status_code=500,
-            content={"success": False, "error": str(exc)},
-        )
-
 
 # ════════════════════════════════════════════════════════════════
 # Public API for www.propai.live (no auth required)

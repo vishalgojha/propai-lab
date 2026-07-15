@@ -451,6 +451,10 @@ def _parse_amount(value: str) -> float | None:
     cleaned = str(value or "").strip().replace(" ", "")
     if not cleaned:
         return None
+    # WhatsApp brokers often prefix prices with a dash for styling, e.g.
+    # "Price -11.50 cr". Treat that dash as punctuation, not a negative sign.
+    if cleaned.startswith("-") and len(cleaned) > 1 and cleaned[1].isdigit():
+        cleaned = cleaned[1:]
     if cleaned.count(",") == 1 and not any(sep in cleaned for sep in (".", ":", "-", "/")):
         left, right = cleaned.split(",", 1)
         if len(right) <= 2:
