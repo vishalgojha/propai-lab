@@ -4,6 +4,7 @@ Local Intelligence Lab — Webhook Receiver + Pipeline + Admin API.
 Flow:
   WhatsApp ingestor webhook → save raw → parse → resolve → store → evaluate
 """
+DEPLOY_BUILD_ID = "20250715-webhook-debug"
 import json
 import os
 import sys
@@ -1674,13 +1675,20 @@ async def webhook(request: Request):
 
     # ── Resolve tenant from broker_id ──────────────────────────────
     resolved_tenant_id = DEFAULT_TENANT_ID
+    print(f"[webhook-DEBUG build={DEPLOY_BUILD_ID}] event={event} instance={instance} webhook_broker_id={webhook_broker_id!r}", flush=True)
     if webhook_broker_id:
         try:
             conn = storage.get_org_whatsapp_connection_by_broker_id(webhook_broker_id)
+            print(f"[webhook-DEBUG] broker lookup result: {conn}", flush=True)
             if conn and conn.get("organization_id"):
                 resolved_tenant_id = conn["organization_id"]
+            else:
+                print(f"[webhook-DEBUG] broker lookup returned None or no org_id — falling back to DEFAULT", flush=True)
         except Exception as exc:
-            print(f"[webhook] tenant resolve error: {exc}", flush=True)
+            print(f"[webhook-DEBUG] tenant resolve ERROR: {type(exc).__name__}: {exc}", flush=True)
+    else:
+        print(f"[webhook-DEBUG] no broker_id in payload — using DEFAULT", flush=True)
+    print(f"[webhook-DEBUG] resolved_tenant_id={resolved_tenant_id}", flush=True)
 
     # ── Classify and route event ──────────────────────────────────
     try:
@@ -2246,6 +2254,17 @@ async def debug_auth(request: Request):
         except Exception as e:
             result["diagnosis"] = f"UNKNOWN_ERROR: {type(e).__name__}: {e}"
     return result
+
+
+@app.get("/debug/deploy")
+async def debug_deploy():
+    """Check which code version is running."""
+    return {
+        "build_id": DEPLOY_BUILD_ID,
+        "default_tenant_id": DEFAULT_TENANT_ID,
+        "has_get_conn_by_broker": hasattr(storage, 'get_org_whatsapp_connection_by_broker_id') if storage else False,
+        "storage_tenant_id": storage.tenant_id if storage else None,
+    }
 
 
 @app.post("/ingest")
