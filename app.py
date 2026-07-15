@@ -909,6 +909,8 @@ def parse_message(raw_text: str, profile_name: str | None = None) -> dict:
     result["property_type"] = property_type
     result["transaction_type"] = _infer_transaction_type(text)
     result["configuration"] = result.get("bhk")
+    if result["asset_type"] == "commercial":
+        result["configuration"] = None
 
     # ── 6. Extract price — with ambiguous-shorthand guard ─────────
     price_from_explicit_line = False

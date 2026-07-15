@@ -163,6 +163,7 @@ def test_lodha_supremus_office_card_parses_as_commercial():
     assert parsed["commercial_use_type"] == "office"
     assert parsed["fitout_status"] == "warm_shell"
     assert parsed["bhk"] is None
+    assert parsed["configuration"] is None
     assert parsed["building_name"] == "Lodha Supremus"
     assert parsed["area_sqft"] == 2742.0
     assert parsed["price"] == 15.0
