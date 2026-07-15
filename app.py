@@ -571,6 +571,145 @@ def _get_relevant_observations(entity_names: list[str], limit: int = 10) -> list
     return [dict(r) for r in rows]
 
 
+_FURNISHING_CANONICAL_PATTERNS = [
+    (re.compile(r'\b(fully\s+furnished|full\s+furnished|fully\s+fur|f\s*/\s*f|ff)\b', re.I), "fully_furnished"),
+    (re.compile(r'\b(semi\s+furnished|semi\s+fur|s\s*/\s*f|sf)\b', re.I), "semi_furnished"),
+    (re.compile(r'\b(unfurnished|un\s*furnished|u\s*/\s*f|uf)\b', re.I), "unfurnished"),
+    (re.compile(r'\b(plug\s*&\s*play|plug\s+and\s+play)\b', re.I), "plug_and_play"),
+    (re.compile(r'\b(bare\s+shell)\b', re.I), "bare_shell"),
+]
+
+
+def _normalize_furnishing_canonical(text: str) -> str | None:
+    for pattern, canonical in _FURNISHING_CANONICAL_PATTERNS:
+        if pattern.search(text):
+            return canonical
+    return None
+
+
+def _infer_transaction_type(text: str) -> str | None:
+    lower = text.lower()
+    if re.search(r'\b(for\s+rent|rent|rental|on\s+rent|for\s+lease|on\s+lease)\b', lower):
+        return "rent"
+    if re.search(r'\b(lease)\b', lower):
+        return "lease"
+    if re.search(r'\b(for\s+sale|sale|sell|selling|resale)\b', lower):
+        return "sale"
+    return None
+
+
+def _infer_asset_and_property_type(text: str, intent: str | None) -> tuple[str | None, str | None]:
+    lower = text.lower()
+    commercial_hint = bool(_RE.search(r'\b(commercial|office|shop|showroom|warehouse|godown|retail)\b', lower))
+    if intent == "COMMERCIAL" or commercial_hint:
+        if "office" in lower:
+            return "commercial", "office"
+        if "showroom" in lower:
+            return "commercial", "showroom"
+        if "shop" in lower or "retail" in lower:
+            return "commercial", "shop"
+        if "warehouse" in lower:
+            return "commercial", "warehouse"
+        if "godown" in lower:
+            return "commercial", "godown"
+        if "bare shell" in lower:
+            return "commercial", "bare_shell"
+        if "plug and play" in lower or "plug & play" in lower:
+            return "commercial", "plug_and_play"
+        return "commercial", "other"
+
+    if "villa" in lower or "bungalow" in lower:
+        return "residential", "villa"
+    if "plot" in lower or "land" in lower:
+        return "residential", "plot"
+    if "independent house" in lower or "independent home" in lower or "independent" in lower:
+        return "residential", "independent_house"
+    if "studio" in lower:
+        return "residential", "studio"
+    if "duplex" in lower:
+        return "residential", "duplex"
+    if "penthouse" in lower:
+        return "residential", "penthouse"
+    if "jodi" in lower:
+        return "residential", "jodi"
+    if _RE.search(r'\bflat\b|\bapartment\b|\bhome\b', lower) or _RE.search(r'\d+(?:\.\d+)?\s*bhk', lower):
+        return "residential", "apartment"
+    return "residential", None
+
+
+def _extract_timing_fields(text: str) -> dict:
+    lower = text.lower()
+    result = {
+        "availability_status": None,
+        "possession_status": None,
+        "possession_date": None,
+        "available_from": None,
+        "ready_by": None,
+        "construction_stage": None,
+        "launch_timeline": None,
+        "expected_possession": None,
+    }
+
+    available_from_m = re.search(r'(?im)\bavailable\s+from\b\s*[:\-]?\s*(.+)$', text)
+    if available_from_m:
+        raw = available_from_m.group(1).strip().strip("*_`~ ")
+        if raw:
+            result["available_from"] = raw
+            result["availability_status"] = "coming_soon"
+            result["possession_status"] = "Coming Soon"
+
+    possession_m = re.search(r'(?im)\bpossession\b\s*[:\-]?\s*(.+)$', text)
+    if possession_m:
+        raw = possession_m.group(1).strip().strip("*_`~ ")
+        if raw:
+            result["possession_date"] = raw
+            result["expected_possession"] = raw
+            result["construction_stage"] = "under_construction"
+            result["availability_status"] = result["availability_status"] or "under_construction"
+            result["possession_status"] = result["possession_status"] or "Under Construction"
+
+    if re.search(r'\bunder\s+construction\b', lower):
+        result["availability_status"] = result["availability_status"] or "under_construction"
+        result["construction_stage"] = result["construction_stage"] or "under_construction"
+        result["possession_status"] = result["possession_status"] or "Under Construction"
+    elif re.search(r'\bpre[-\s]?launch\b|\bnew\s+launch\b|\bupcoming\s+project\b', lower):
+        result["availability_status"] = result["availability_status"] or "coming_soon"
+        result["construction_stage"] = result["construction_stage"] or "pre_launch"
+        result["possession_status"] = result["possession_status"] or "Coming Soon"
+    elif re.search(r'\bready\s+to\s+move\b|\bimmediate\s+possession\b|\bready\b', lower):
+        result["availability_status"] = result["availability_status"] or "available"
+        result["construction_stage"] = result["construction_stage"] or "ready"
+        result["possession_status"] = result["possession_status"] or "Ready"
+
+    if re.search(r'\bavailable\b', lower) and not result["availability_status"]:
+        result["availability_status"] = "available"
+        result["possession_status"] = "Available"
+
+    ready_by_m = re.search(r'(?im)\bready\s+by\b\s*[:\-]?\s*(.+)$', text)
+    if ready_by_m:
+        raw = ready_by_m.group(1).strip().strip("*_`~ ")
+        if raw:
+            result["ready_by"] = raw
+            result["availability_status"] = result["availability_status"] or "coming_soon"
+
+    return result
+
+
+def _extract_price_per_sqft(text: str) -> float | None:
+    patterns = [
+        r'(?i)(?:rate|price|asking(?:\s+price)?|rent|cost)\s*[:\-]?\s*(?:rs\.?\s*|inr\s*|₹)?\s*([\d,]+(?:\.\d+)?)\s*(?:\/-\s*)?(?:psf|psft|per\s+sq\.?\s*ft|per\s+sqft|per\s+square\s+foot)\b',
+        r'(?i)(?:rs\.?\s*|inr\s*|₹)?\s*([\d,]+(?:\.\d+)?)\s*(?:\/-\s*)?(?:psf|psft|per\s+sq\.?\s*ft|per\s+sqft|per\s+square\s+foot)\b',
+    ]
+    for pattern in patterns:
+        m = re.search(pattern, text)
+        if m and m.group(1).strip():
+            try:
+                return float(m.group(1).replace(",", ""))
+            except ValueError:
+                continue
+    return None
+
+
 def parse_message(raw_text: str, profile_name: str | None = None) -> dict:
     """
     Parse a WhatsApp message into structured fields.
@@ -586,10 +725,16 @@ def parse_message(raw_text: str, profile_name: str | None = None) -> dict:
         "intent": None,
         "principal": None,
         "bhk": None,
+        "configuration": None,
         "price": None,
         "price_unit": None,
+        "price_model": None,
+        "price_per_sqft": None,
+        "monthly_rent": None,
+        "total_asking_price": None,
         "area_sqft": None,
         "furnishing": None,
+        "furnishing_canonical": None,
         "location_raw": None,
         "building_name": None,
         "landmark_name": None,
@@ -597,6 +742,24 @@ def parse_message(raw_text: str, profile_name: str | None = None) -> dict:
         "area": None,
         "micro_market": None,
         "developer": None,
+        "asset_type": None,
+        "property_type": None,
+        "transaction_type": None,
+        "availability_status": None,
+        "possession_status": None,
+        "possession_date": None,
+        "available_from": None,
+        "ready_by": None,
+        "construction_stage": None,
+        "launch_timeline": None,
+        "expected_possession": None,
+        "deposit": None,
+        "lock_in_period": None,
+        "notice_period": None,
+        "lease_term": None,
+        "recurring_charges": None,
+        "freehold_status": None,
+        "oc_status": None,
         "broker_name": None,
         "broker_phone": None,
         "forwarded": 0,
@@ -683,6 +846,13 @@ def parse_message(raw_text: str, profile_name: str | None = None) -> dict:
         # Commercial ads often contain words like "Studio" as part of branding.
         # Don't present those as residential unit types.
         result["bhk"] = None
+
+    # ── 5b. Residential/commercial schema map ───────────────────
+    asset_type, property_type = _infer_asset_and_property_type(text, result.get("intent"))
+    result["asset_type"] = asset_type
+    result["property_type"] = property_type
+    result["transaction_type"] = _infer_transaction_type(text)
+    result["configuration"] = result.get("bhk")
 
     # ── 6. Extract price — with ambiguous-shorthand guard ─────────
     price_from_explicit_line = False
@@ -811,6 +981,13 @@ def parse_message(raw_text: str, profile_name: str | None = None) -> dict:
                     result["price"] = amount
                     result["price_unit"] = "abs"
 
+    price_per_sqft = _extract_price_per_sqft(text)
+    if price_per_sqft is not None:
+        result["price_per_sqft"] = price_per_sqft
+        result["price_model"] = "psf"
+    elif result.get("price") is not None:
+        result["price_model"] = "total"
+
     # ── 7. Extract area sqft ────────────────────────────────────
     area_match = _RE.search(r'(\d+[\d,]*)\s*(sq\.?\s*ft|sqft|sft|sq\s*feet)', lower)
     if area_match and area_match.group(1).strip():
@@ -832,6 +1009,16 @@ def parse_message(raw_text: str, profile_name: str | None = None) -> dict:
         or _RE.search(r'(?<![a-z0-9])u\s*/\s*f(?![a-z0-9])|(?<![a-z0-9])uf(?![a-z0-9])', lower)
     ):
         result["furnishing"] = "Unfurnished"
+    result["furnishing_canonical"] = _normalize_furnishing_canonical(text) or _normalize_furnishing_canonical(result.get("furnishing") or "")
+
+    timing_fields = _extract_timing_fields(text)
+    result.update(timing_fields)
+    if result.get("transaction_type") == "rent" and result.get("price") is not None:
+        result["monthly_rent"] = result["price"]
+    elif result.get("transaction_type") == "sale" and result.get("price") is not None:
+        result["total_asking_price"] = result["price"]
+    elif result.get("transaction_type") == "lease" and result.get("price") is not None:
+        result["monthly_rent"] = result["price"]
 
     # ── 9. Location — structured parsing via location engine ────
     loc = parse_location(text)
@@ -5937,17 +6124,16 @@ async def public_create_lead(req: PublicLeadRequest):
     No auth required. Validates client_phone, looks up broker from listing,
     inserts lead, and attempts WhatsApp notification (best-effort).
     """
-    try:
-        # Validate Indian mobile number (10 digits, optionally with +91/91/0)
-        digits = "".join(ch for ch in req.client_phone if ch.isdigit())
-        if len(digits) == 10:
-            norm_phone = "91" + digits
-        elif len(digits) == 11 and digits.startswith("0"):
-            norm_phone = "91" + digits[1:]
-        elif len(digits) == 12 and digits.startswith("91"):
-            norm_phone = digits
-        else:
-            return JSONResponse(status_code=400, content={"error": "Invalid client phone number"})
+    # Validate Indian mobile number (10 digits, optionally with +91/91/0)
+    digits = "".join(ch for ch in req.client_phone if ch.isdigit())
+    if len(digits) == 10:
+        norm_phone = "91" + digits
+    elif len(digits) == 11 and digits.startswith("0"):
+        norm_phone = "91" + digits[1:]
+    elif len(digits) == 12 and digits.startswith("91"):
+        norm_phone = digits
+    else:
+        return JSONResponse(status_code=400, content={"error": "Invalid client phone number"})
 
     # Look up listing to get broker_phone
     res = storage.db.execute(
@@ -6048,9 +6234,6 @@ async def public_create_lead(req: PublicLeadRequest):
         pass
 
     return {"lead_id": lead["id"], "status": "created"}
-
-    except Exception as exc:
-        return JSONResponse(status_code=500, content={"error": f"Server error: {exc}"})
 
 
 def _send_url() -> str:

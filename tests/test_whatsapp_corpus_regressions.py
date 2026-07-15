@@ -139,6 +139,15 @@ _*(Serious Profile Required For Details)_*
 """
 
 
+RESIDENTIAL_RENTAL_WITH_AVAILABILITY = """\
+2 BHK on Rent
+Available from 15 Aug
+Semi Furnished
+Rent: ₹75,000
+Call/WhatsApp: 9876543210
+"""
+
+
 def _find_card(cards: list[dict], **criteria) -> dict:
     for card in cards:
         if all(card.get(key) == value for key, value in criteria.items()):
@@ -206,3 +215,16 @@ def test_premium_andheri_office_message_parses_as_one_office_card():
     assert parsed["price"] == 3.0
     assert parsed["price_unit"] == "Lac"
     assert parsed["micro_market"] == "Andheri West"
+
+
+def test_residential_schema_fields_are_normalized_without_blocking():
+    parsed = parse_message(RESIDENTIAL_RENTAL_WITH_AVAILABILITY)
+
+    assert parsed["asset_type"] == "residential"
+    assert parsed["property_type"] == "apartment"
+    assert parsed["transaction_type"] == "rent"
+    assert parsed["configuration"] == "2 BHK"
+    assert parsed["furnishing_canonical"] == "semi_furnished"
+    assert parsed["availability_status"] == "coming_soon"
+    assert parsed["available_from"] == "15 Aug"
+    assert parsed["price_model"] == "total"

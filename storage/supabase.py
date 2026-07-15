@@ -1307,12 +1307,18 @@ class SupabaseStorage(Storage):
 
     PARSED_OUTPUT_COLUMNS = {
         "raw_message_id", "message_type", "intent", "principal",
-        "bhk", "price", "price_unit", "area_sqft", "furnishing",
+        "bhk", "configuration", "price", "price_unit", "price_model",
+        "price_per_sqft", "monthly_rent", "total_asking_price",
+        "area_sqft", "furnishing", "furnishing_canonical",
         "location", "building_name", "landmark_name",
         "street_name", "area", "micro_market", "developer",
         "broker_name", "broker_phone", "profile_name", "listing_index",
         "forwarded", "confidence", "raw_payload", "created_at",
         "summary_title", "reparsed_at", "event_id", "tenant_id",
+        "asset_type", "property_type", "transaction_type",
+        "availability_status", "possession_status", "possession_date",
+        "available_from", "ready_by", "construction_stage",
+        "launch_timeline", "expected_possession",
     }
 
     def save_parsed(self, parsed: ParsedObservation) -> int:
