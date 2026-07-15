@@ -229,6 +229,10 @@ function QRModal({ phone, open, onClose, onRefresh }: { phone: Phone; open: bool
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  const resetSession = useCallback(async () => {
+    await resetPhone(phone.id);
+  }, [phone.id]);
+
   const fetchQR = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -243,17 +247,17 @@ function QRModal({ phone, open, onClose, onRefresh }: { phone: Phone; open: bool
         setQrText(res.qr);
       } else if (res.qr_available === false) {
         setError("QR expired. Restarting session...");
-        setTimeout(() => resetPhone(phone.id).then(() => fetchQR()).catch(() => {}), 500);
+        setTimeout(() => resetSession().then(() => fetchQR()).catch(() => {}), 500);
       } else {
         setError("QR not available yet. Restarting session...");
-        setTimeout(() => resetPhone(phone.id).then(() => fetchQR()).catch(() => {}), 500);
+        setTimeout(() => resetSession().then(() => fetchQR()).catch(() => {}), 500);
       }
     } catch {
       setError("Failed to fetch QR code. Retry, or reset the phone if it stays stuck.");
     } finally {
       setLoading(false);
     }
-  }, [phone.id, onRefresh]);
+  }, [phone.id, onRefresh, resetSession]);
 
   useEffect(() => {
     if (open) {
@@ -330,7 +334,7 @@ function QRModal({ phone, open, onClose, onRefresh }: { phone: Phone; open: bool
         {!connected && error && (
           <div className="flex flex-col items-center py-12 text-center">
             <p className="text-sm text-zinc-400">{error}</p>
-            <button onClick={fetchQR} disabled={loading} className="mt-4 rounded-lg bg-[#3EE88A] px-6 py-2.5 text-xs font-bold text-black min-h-[44px] disabled:opacity-50">
+            <button onClick={() => resetSession().then(() => fetchQR()).catch(() => {})} disabled={loading} className="mt-4 rounded-lg bg-[#3EE88A] px-6 py-2.5 text-xs font-bold text-black min-h-[44px] disabled:opacity-50">
               Retry
             </button>
           </div>
