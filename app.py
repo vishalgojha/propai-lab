@@ -2478,7 +2478,7 @@ async def get_tenant_context(
                 storage.create_team_member(
                     name=display_name, email=email,
                     organization_id=tid,
-                    permissions=["view_inbox", "reply_whatsapp"],
+                    permission_keys=["view_inbox", "reply_whatsapp"],
                 )
     # Always reset tenant context to avoid leaking a stale value from a
     # previous request on the same (global) storage singleton. Default to
