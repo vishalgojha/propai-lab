@@ -2140,6 +2140,7 @@ security_scheme = HTTPBearer(auto_error=False)
 def verify_supabase_token(token: str) -> dict | None:
     secret = SUPABASE_JWT_SECRET
     if not secret:
+        print("[auth] SUPABASE_JWT_SECRET is empty — rejecting all tokens", flush=True)
         return None
     try:
         payload = pyjwt.decode(
@@ -2147,7 +2148,13 @@ def verify_supabase_token(token: str) -> dict | None:
             options={"require": ["sub", "exp"]},
         )
         return payload
-    except Exception:
+    except pyjwt.ExpiredSignatureError:
+        return None
+    except pyjwt.InvalidSignatureError:
+        print("[auth] JWT signature mismatch — wrong SUPABASE_JWT_SECRET?", flush=True)
+        return None
+    except Exception as e:
+        print(f"[auth] JWT rejected: {type(e).__name__}: {e}", flush=True)
         return None
 
 
