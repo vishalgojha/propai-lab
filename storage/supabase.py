@@ -678,7 +678,7 @@ class SupabaseStorage(Storage):
 
     def get_user_organizations(self, user_id: str) -> list[dict]:
         res = self.client.table("organization_members").select("*, organizations(*)")\
-            .eq("user_id", user_id).is_("is_active", True).execute()
+            .eq("user_id", user_id).eq("is_active", True).execute()
         return [m["organizations"] for m in (res.data or []) if m.get("organizations")]
 
     # ── Multi-Tenant: Roles & Permissions ─────────────────────────
@@ -688,7 +688,7 @@ class SupabaseStorage(Storage):
         if org_id:
             q = q.eq("organization_id", org_id)
         else:
-            q = q.is_("organization_id", None)
+            q = q.is_("organization_id", "null")
         return q.order("name", asc=True).execute().data or []
 
     def get_role(self, role_id: int) -> dict | None:

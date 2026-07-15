@@ -5586,7 +5586,17 @@ async def get_current_team_member(user: dict = Depends(require_user)) -> dict:
             None,
         )
     if not member or not member.get("is_active"):
-        raise HTTPException(403, "No active team member is linked to this account")
+        name = (user.get("user_metadata", {}).get("full_name") or email or "User").strip()
+        try:
+            member = storage.create_team_member(
+                name=name,
+                email=email,
+                phone=phone,
+                role="member",
+                permission_keys=["view_inbox", "reply_whatsapp"],
+            )
+        except Exception:
+            raise HTTPException(403, "No active team member is linked to this account")
     member["permission_keys"] = storage._perm_keys(member["permissions"])
     return member
 
