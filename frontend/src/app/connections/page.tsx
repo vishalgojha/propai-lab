@@ -419,7 +419,7 @@ export default function ConnectionCenterPage() {
     try {
       await fetch("/api/sync/logout", { method: "POST" });
       setPhase("reconnecting");
-      setErrorMsg("Disconnected. You can reconnect below.");
+      setErrorMsg("Disconnected. Generating new QR code...");
       setPhoneNumber(null);
       setDisplayName(null);
       setGroups(null);
@@ -427,12 +427,13 @@ export default function ConnectionCenterPage() {
       setLastSync(null);
       setConnectedSince(null);
       setLastMessageAt(null);
+      setTimeout(() => fetchQR(), 2000);
     } catch {
       setErrorMsg("Failed to disconnect");
     } finally {
       setDisconnecting(false);
     }
-  }, []);
+  }, [fetchQR]);
 
   const connectionHealth: HealthStatus = phase === "connected" || phase === "syncing" ? "healthy" : phase === "reconnecting" ? "warning" : "error";
   const dbHealth: HealthStatus = totalParsed > 0 ? "healthy" : "warning";

@@ -7409,11 +7409,18 @@ async def sync_events():
 
 @app.post("/api/sync/logout")
 async def sync_logout():
-    """Log out the WhatsApp instance."""
-    return {
-        "status": "manual",
-        "message": "WhatsApp ingestor logout completed.",
-    }
+    """Disconnect the WhatsApp session and clear stored credentials."""
+    errors = []
+    async with httpx.AsyncClient(timeout=10) as client:
+        for base_url in _ingestor_urls():
+            try:
+                resp = await client.post(f"{base_url}/disconnect?broker_id=default")
+                if resp.status_code == 200:
+                    return {"ok": True, "message": "WhatsApp session disconnected"}
+                errors.append(f"{base_url}: {resp.status_code}")
+            except httpx.RequestError as e:
+                errors.append(f"{base_url}: {e}")
+    return {"ok": False, "message": "Cannot reach ingestor to disconnect", "errors": errors}
 
 
 @app.get("/api/sync/connection-state")
