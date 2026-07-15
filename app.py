@@ -1923,6 +1923,19 @@ def generate_summary_title(parsed: dict, raw_text: str = "") -> str | None:
     return " | ".join(pieces)
 
 
+def _parsed_display_label(parsed: dict) -> str:
+    if (parsed.get("asset_type") or "").lower() == "commercial":
+        label = parsed.get("commercial_use_type") or parsed.get("property_type") or "Commercial"
+        return str(label).replace("_", " ").title()
+    bhk = parsed.get("bhk")
+    if bhk:
+        return bhk
+    prop_type = parsed.get("property_type")
+    if prop_type:
+        return str(prop_type).replace("_", " ").title()
+    return "Property"
+
+
 def _demote_weak_property_parse(parsed: dict, raw_text: str = "") -> dict:
     """Keep casual/chatty messages searchable without turning them into listings."""
     if _parsed_has_market_anchor(parsed, raw_text):
@@ -3889,13 +3902,13 @@ def _promote_price(parsed: dict) -> str:
 
 
 def _promote_headline(parsed: dict, channel: str) -> str:
-    bhk = parsed.get("bhk", "Property")
+    label = _parsed_display_label(parsed)
     building = parsed.get("building_name", "")
     market = parsed.get("micro_market", "")
     price = _promote_price(parsed)
     location = market or parsed.get("location_raw", "")
     if channel == "whatsapp":
-        parts = [f"🏗️ {bhk}"]
+        parts = [f"🏗️ {label}"]
         if building:
             parts.append(f"at {building}")
         if location:
@@ -3904,7 +3917,7 @@ def _promote_headline(parsed: dict, channel: str) -> str:
             parts.append(f"| {price}")
         return " ".join(parts)
     if channel in ("facebook", "instagram"):
-        parts = [f"{bhk}"]
+        parts = [f"{label}"]
         if building:
             parts.append(f"at {building}")
         if location:
@@ -3916,7 +3929,7 @@ def _promote_headline(parsed: dict, channel: str) -> str:
 
 
 def _promote_whatsapp(parsed: dict, highlights: list[str]) -> str:
-    bhk = parsed.get("bhk", "")
+    label = _parsed_display_label(parsed)
     building = parsed.get("building_name", "")
     market = parsed.get("micro_market", "")
     price = _promote_price(parsed)
@@ -3929,7 +3942,7 @@ def _promote_whatsapp(parsed: dict, highlights: list[str]) -> str:
         lines.append(f"📍 {building}")
     if market:
         lines.append(f"📍 {market}")
-    detail_parts = [p for p in [bhk, area, furnish] if p]
+    detail_parts = [p for p in [label, area, furnish] if p]
     if detail_parts:
         lines.append(" | ".join(detail_parts))
     if price:
@@ -3947,13 +3960,13 @@ def _promote_whatsapp(parsed: dict, highlights: list[str]) -> str:
 
 
 def _promote_instagram(parsed: dict, highlights: list[str]) -> str:
-    bhk = parsed.get("bhk", "")
+    label = _parsed_display_label(parsed)
     building = parsed.get("building_name", "")
     market = parsed.get("micro_market", "")
     price = _promote_price(parsed)
     area = f"{parsed['area_sqft']:,} sqft" if parsed.get("area_sqft") else ""
     furnish = parsed.get("furnishing", "")
-    lines = [f"✨ {bhk}" + (f" at {building}" if building else "")]
+    lines = [f"✨ {label}" + (f" at {building}" if building else "")]
     if market:
         lines.append(f"📍 {market}")
     if price:
@@ -4048,7 +4061,7 @@ async def promote_generate(req: PromoteRequest, user: dict = Depends(require_use
         try:
             system = "You are a Mumbai real estate marketing assistant. Given property details, write a short promotional ad for the specified channel. Keep it under 120 words. Return only the ad body, no preamble."
             price_str = _promote_price(parsed)
-            detail_parts = [v for v in [parsed.get("bhk"), parsed.get("furnishing"), f"{parsed.get('area_sqft', '')} sqft" if parsed.get('area_sqft') else ""] if v]
+            detail_parts = [v for v in [_parsed_display_label(parsed), parsed.get("furnishing"), f"{parsed.get('area_sqft', '')} sqft" if parsed.get('area_sqft') else ""] if v]
             prompt = f"Channel: {req.channel}\nBuilding: {parsed.get('building_name', 'N/A')}\nLocation: {parsed.get('micro_market', parsed.get('location_raw', 'N/A'))}\nDetails: {' | '.join(detail_parts)}\nPrice: {price_str}\nBroker: {parsed.get('broker_name', 'N/A')}"
             loop = asyncio.get_running_loop()
             ai_body = await loop.run_in_executor(None, lambda: _ai_promote_with_key(system, prompt, promo_api_key))

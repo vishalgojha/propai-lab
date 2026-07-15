@@ -171,6 +171,15 @@ def test_lodha_supremus_office_card_parses_as_commercial():
     assert parsed["micro_market"] == "Worli"
 
 
+def test_lodha_supremus_commercial_promote_labels_use_use_type():
+    from app import _promote_headline
+
+    parsed = parse_message(LODHA_SUPREMUS_OFFICE)
+    headline = _promote_headline(parsed, "whatsapp")
+    assert "Office" in headline
+    assert "BHK" not in headline
+
+
 def test_requirement_messages_stay_requirement_first():
     assert _infer_intent_from_text(COMMERCIAL_REQUIREMENT) == "BUY"
 
