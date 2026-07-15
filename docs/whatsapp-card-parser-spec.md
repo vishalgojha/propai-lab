@@ -1,8 +1,8 @@
 # WhatsApp Card Parser Spec
 
 Status: latest agreed version
-Version: 1.0
-Date: 2026-07-15
+Version: 1.1
+Date: 2026-07-16
 
 This document captures the current agreed parsing model for broker WhatsApp messages. It is the latest working contract for structured WhatsApp extraction until explicitly replaced.
 
@@ -52,24 +52,34 @@ Rules:
 - repeated sightings should update `last_seen`
 - do not overwrite raw evidence timestamps
 
-## Required Card Fields
+## Schema Philosophy
 
-Every extracted card should aim to carry:
+The schema should be exhaustive but permissive.
+
+Rules:
+- create cards even when most fields are missing
+- never block on missing building, price, floor, furnishing, possession, or availability
+- keep raw text as evidence
+- normalize common broker wording into canonical enums
+- allow later enrichment from reposts or additional evidence
+- store `null` for unknown scalar fields and empty arrays for unknown multi-value fields
+
+## Shared Card Envelope
+
+Every extracted card should carry:
 
 - `card_id`
 - `raw_message_id`
 - `card_index`
 - `card_type`
-- `transaction_type` such as rent, sale, lease
-- `asset_type` such as commercial, residential
-- `property_type` such as office, shop, flat
+- `asset_type`
+- `transaction_type`
+- `property_type`
 - `building_name`
-- `location`
+- `project_name`
+- `location_raw`
 - `micro_market`
-- `configuration` or `bhk`
-- `area`
-- `price`
-- `price_model` such as total price, psf, psft, budget
+- `city`
 - `sender_name`
 - `sender_phone`
 - `sender_signature`
@@ -77,8 +87,184 @@ Every extracted card should aim to carry:
 - `first_seen`
 - `last_seen`
 - `confidence`
+- `raw_block_text`
+- `normalized_text`
+- `missing_fields`
+- `extracted_entities`
+- `highlights`
+
+## Residential Schema
+
+Residential should share one schema family for sale, rent, and lease.
+
+### Core residential fields
+
+- `configuration`
+- `tower_name`
+- `wing_name`
+- `locality`
+- `sub_locality`
+- `carpet_area_sqft`
+- `builtup_area_sqft`
+- `super_builtup_area_sqft`
+- `furnishing`
+- `floor`
+- `view`
+- `facing`
+- `parking`
+- `possession_status`
+- `availability_status`
+- `possession_date`
+- `available_from`
+- `ready_by`
+- `construction_stage`
+- `launch_timeline`
+- `expected_possession`
+
+### Residential rent fields
+
+- `monthly_rent`
+- `deposit`
+- `lock_in_period`
+- `notice_period`
+- `lease_term`
+- `rent_negotiable`
+
+### Residential sale fields
+
+- `total_asking_price`
+- `price_unit`
+- `price_model`
+- `price_per_sqft`
+- `negotiable`
+- `freehold_status`
+- `oc_status`
+- `recurring_charges`
+
+### Residential defaults
+
+- `maintenance` is not a core residential field
+- if a recurring charge is explicitly mentioned, keep it under `recurring_charges`
+- sale posts can still mention future possession and under-construction status
+- rent posts can still mention `available_from`
+
+## Commercial Schema
+
+Commercial is a sibling schema, not a strict subtype.
+
+### Core commercial fields
+
+- `configuration`
+- `tower_name`
+- `wing_name`
+- `locality`
+- `sub_locality`
+- `carpet_area_sqft`
+- `builtup_area_sqft`
+- `super_builtup_area_sqft`
+- `mezzanine_area_sqft`
+- `terrace_area_sqft`
+- `usable_area_sqft`
+- `furnishing`
+- `fitout_status`
+- `floor`
+- `floor_range`
+- `view`
+- `facing`
+- `parking`
+- `power_backup`
+- `washroom_count`
+- `pantry`
+- `ceiling_height`
+- `entry_type`
+- `availability_status`
+- `possession_date`
+- `available_from`
+- `ready_by`
+- `construction_stage`
+- `expected_possession`
+- `occupancy_type`
+- `commercial_use_type`
+- `tenant_name`
+
+### Commercial pricing fields
+
+- `total_asking_price`
+- `price_unit`
+- `price_model`
+- `price_per_sqft`
+- `rent_per_sqft`
+- `negotiable`
+- `deposit`
+- `recurring_charges`
+- `lock_in_period`
+- `lease_term`
+
+## Timing / Status Layer
+
+Timing should be shared across residential and commercial.
+
+Use these fields when the broker mentions availability or possession timing:
+
+- `availability_status` = `available | under_construction | coming_soon | occupied | immediate | on_request`
+- `construction_stage` = `under_construction | ready | new_launch | pre_launch | resale`
+- `possession_date`
+- `available_from`
+- `ready_by`
+- `launch_timeline`
+- `expected_possession`
+
+Examples:
+- `Possession Aug 2028` -> `construction_stage = under_construction`, `expected_possession = Aug 2028`
+- `Available from 15 Aug` -> `available_from = 15 Aug`
+
+## Furnishing Normalization
+
+Normalize broker wording into one canonical field.
+
+Canonical values:
+- `unfurnished`
+- `semi_furnished`
+- `fully_furnished`
+- `plug_and_play`
+- `bare_shell`
+- `other`
+- `unknown`
+
+Common variants:
+- `semi furnished`, `semi fur`, `sf`
+- `fully furnished`, `full furnished`, `fully fur`, `ff`
+- `unfurnished`, `uf`
+- `plug & play`, `plug and play`
+- `bare shell`
+
+Preserve the original wording in raw text or `extracted_entities`, but emit the canonical form in `furnishing`.
 
 ## Parsing Rules
+
+### Minimum creation threshold
+
+Create a card if the message is confidently a real estate post and contains at least one strong signal:
+
+- configuration
+- area
+- price
+- building/project name
+- explicit rent/sale/lease language
+
+### Never block on missing fields
+
+These must not prevent card creation:
+
+- building name
+- price
+- area
+- floor
+- furnishing
+- possession date
+- available from
+- tower / wing
+- parking
 
 ### Multi-listing messages
 
@@ -95,6 +281,7 @@ Typical block markers:
 ### Commercial inventory
 
 Commercial posts must infer:
+
 - `asset_type = Commercial`
 - `property_type = Office` when the block describes office space
 - `transaction_type = Rent` when the post is rental inventory
@@ -102,8 +289,9 @@ Commercial posts must infer:
 ### Price handling
 
 When the post says PSF or PSFT:
+
 - store the per-sq-ft rate as the primary pricing basis
-- expose a display price like `price_psf`
+- expose a display price like `price_per_sqft`
 - if area is known, compute the implied total ask separately
 
 ### Sender signature
