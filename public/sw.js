@@ -38,6 +38,11 @@ self.addEventListener("fetch", (event) => {
   const { request } = event;
   const url = new URL(request.url);
 
+  // SSE endpoints: bypass ServiceWorker entirely (streaming responses)
+  if (url.pathname.startsWith("/api/sync/events") || url.pathname.includes("/events")) {
+    return;
+  }
+
   // API requests: network-first, fallback to offline
   if (url.pathname.startsWith("/api/")) {
     event.respondWith(networkFirstWithFallback(request, "/offline.html"));
