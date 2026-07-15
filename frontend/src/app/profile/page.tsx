@@ -5,7 +5,7 @@ export const dynamic = 'force-dynamic';
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ChevronDown, Smartphone, Save, Users, CreditCard, Key, Settings, Mail, MapPin, User } from "lucide-react";
-import { getProfile, saveProfile, getCurrentOrg } from "@/lib/api";
+import { getProfile, saveProfile, getCurrentOrg, getPhones, isLiveWhatsAppConnection, updateOrganization, type Phone } from "@/lib/api";
 import { useAuth } from "@/lib/AuthProvider";
 
 const CITIES = [
@@ -27,10 +27,12 @@ export default function ProfilePage() {
   const [city, setCity] = useState("");
   const [cityOpen, setCityOpen] = useState(false);
   const [customCity, setCustomCity] = useState("");
+  const [workspaceName, setWorkspaceName] = useState("");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [org, setOrg] = useState<{ id: string; name?: string; slug?: string } | null>(null);
+  const [phones, setPhones] = useState<Phone[]>([]);
   const next = searchParams.get("next") || "";
 
   // Load profile from API on mount
@@ -58,7 +60,16 @@ export default function ProfilePage() {
       setLastName(data.last_name || "");
       setEmail(data.email || "");
       const c = data.city || "";
-      if (CITIES.includes(c)) { setCity(c); } else if (c) { setCity("__other__"); setCustomCity(c); }
+      if (CITIES.includes(c)) {
+        setCity(c);
+        setCustomCity("");
+      } else if (c) {
+        setCity("__other__");
+        setCustomCity(c);
+      } else {
+        setCity("");
+        setCustomCity("");
+      }
     };
 
     applyProfile(baseProfile);
@@ -76,7 +87,11 @@ export default function ProfilePage() {
   }, [user]);
 
   useEffect(() => {
-    getCurrentOrg().then(setOrg).catch(() => {});
+    getCurrentOrg().then((data) => {
+      setOrg(data);
+      setWorkspaceName(data?.name || "");
+    }).catch(() => {});
+    getPhones(false).then((data) => setPhones(data.phones || [])).catch(() => {});
   }, []);
 
   const markDirty = () => setDirty(true);
@@ -86,7 +101,8 @@ export default function ProfilePage() {
     if (!firstName.trim() || !email.trim()) return;
     setSaving(true);
     setSaved(false);
-    const finalCity = city === "__other__" ? customCity.trim() : city;
+    const finalCity = city === "__other__" ? customCity.trim() : (city || profile?.city || "");
+    const finalWorkspaceName = workspaceName.trim() || org?.name || "";
     const data = { first_name: firstName.trim(), last_name: lastName.trim(), email: email.trim(), city: finalCity };
     const localProfile = { auth_user_id: user?.id || "", phone: profile?.phone || "", ...data };
     localStorage.setItem("propai_profile", JSON.stringify(localProfile));
@@ -96,6 +112,12 @@ export default function ProfilePage() {
         try { await saveProfile(profile?.phone || "", data); } catch (err) {
           console.error("[profile] server save failed:", err);
         }
+      }
+      if (org?.id && finalWorkspaceName && finalWorkspaceName !== org.name) {
+        try { await updateOrganization(org.id, { name: finalWorkspaceName }); } catch (err) {
+          console.error("[profile] workspace save failed:", err);
+        }
+        setOrg((prev) => prev ? { ...prev, name: finalWorkspaceName } : prev);
       }
       setProfile(localProfile);
       setHasStoredProfile(true);
@@ -241,7 +263,13 @@ export default function ProfilePage() {
                   <label className="text-[11px] font-semibold text-zinc-500 uppercase tracking-wider">WhatsApp Number</label>
                   <div className="mt-1 flex items-center gap-2 rounded-lg border border-white/10 bg-zinc-800/50 px-3 py-2.5 text-sm text-zinc-300">
                     <Smartphone className="w-4 h-4 text-zinc-500 shrink-0" />
-                    <span className="font-mono text-white">{profile?.phone || "Added after WhatsApp connection"}</span>
+                    <span className="font-mono text-white">
+                      {(() => {
+                        const live = phones.find((p) => isLiveWhatsAppConnection(p));
+                        const candidate = live?.phone_number_live || live?.phone_number || profile?.phone || "";
+                        return candidate || "Not linked yet";
+                      })()}
+                    </span>
                   </div>
                 </div>
               </div>
@@ -253,6 +281,16 @@ export default function ProfilePage() {
                 <Settings className="w-4 h-4 text-emerald-400" />
                 Agency / Workspace
               </h2>
+              <div className="mb-4">
+                <label className="text-[11px] font-semibold text-zinc-500 uppercase tracking-wider">Agency / Workspace Name</label>
+                <input
+                  value={workspaceName}
+                  onChange={(e) => { setWorkspaceName(e.target.value); markDirty(); }}
+                  className="mt-1 w-full rounded-lg border border-white/10 bg-zinc-800/50 px-3 py-2.5 text-sm text-white placeholder-zinc-500 outline-none focus:border-emerald-500/50 transition-colors"
+                  placeholder="e.g. Ananta Realty"
+                />
+                <p className="mt-1 text-[11px] text-zinc-500">This is the workspace name shown across the app.</p>
+              </div>
               <dl className="space-y-3 text-sm">
                 <div className="flex justify-between">
                   <dt className="text-zinc-500">Role</dt>

@@ -1551,6 +1551,13 @@ export function getCurrentOrg() {
   return fetchJSON<{ id: string; name?: string; slug?: string }>(`/orgs/current`);
 }
 
+export function updateOrganization(orgId: string, data: { name?: string }) {
+  return fetchJSON<{ ok: boolean }>(`/orgs/${encodeURIComponent(orgId)}`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+}
+
 export interface AuthMeResponse {
   authenticated: boolean;
   user?: any;
