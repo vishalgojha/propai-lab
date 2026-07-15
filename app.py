@@ -685,6 +685,29 @@ def parse_message(raw_text: str, profile_name: str | None = None) -> dict:
         result["bhk"] = None
 
     # ── 6. Extract price — with ambiguous-shorthand guard ─────────
+    if result["price"] is None:
+        explicit_price_line = _RE.search(
+            r'(?im)^\s*(?:rent|rental|asking\s+price|price)\s*[:\-]\s*'
+            r'(?:rs\.?\s*|inr\s*|₹)?\s*([\d,]+(?:\.\d+)?)\s*'
+            r'(cr|crore|lacs?|lakhs?|l|k|thousand)?\b',
+            text,
+        )
+        if explicit_price_line:
+            amount = float(explicit_price_line.group(1).replace(",", ""))
+            unit_raw = (explicit_price_line.group(2) or "").lower().rstrip("s")
+            if unit_raw in ("cr", "crore"):
+                result["price"] = amount
+                result["price_unit"] = "Cr"
+            elif unit_raw in ("lac", "lakh", "l"):
+                result["price"] = amount
+                result["price_unit"] = "Lac"
+            elif unit_raw in ("k", "thousand"):
+                result["price"] = amount
+                result["price_unit"] = "K"
+            else:
+                result["price"] = amount
+                result["price_unit"] = "abs"
+
     # Check for broker shorthand "X.XX,/YY unit" before standard regex
     ambiguous_m = re.search(
         r'(\d+\.\d+)\s*,?\s*/\s*(\d{1,2})\s*'
@@ -5826,6 +5849,151 @@ async def send_message(req: SendMessageRequest, member: dict = Depends(get_curre
         )
 
 
+return JSONResponse(
+            status_code=500,
+            content={"success": False, "error": str(exc)},
+        )
+
+
+# ════════════════════════════════════════════════════════════════
+# Public API for www.propai.live (no auth required)
+# ════════════════════════════════════════════════════════════════
+
+@app.get("/public/listings")
+async def public_listings(
+    micro_market: str | None = None,
+    bhk: str | None = None,
+    intent: str | None = None,
+    min_price: float | None = None,
+    max_price: float | None = None,
+    limit: int = 20,
+    offset: int = 0,
+):
+    """
+    Public listings endpoint for www.propai.live.
+    No auth required. Filters: micro_market, bhk, intent, min_price, max_price.
+    Returns listings without broker_name/broker_phone.
+    """
+    try:
+        # Build query with filters
+        query = storage.db.query(
+            """
+            SELECT l.id, l.fingerprint, l.intent, l.bhk, l.price, l.price_unit,
+                   l.price_per_sqft, l.area_sqft, l.furnishing, l.location_label,
+                   l.building_name, l.landmark_name, l.micro_market, l.street_name,
+                   l.developer, l.floor_description, l.view, l.orientation,
+                   l.pic_token, l.listing_source, l.first_seen, l.last_seen,
+                   l.observation_count, l.group_count
+            FROM listings l
+            JOIN brokers b ON l.broker_name = b.canonical_name
+            WHERE l.last_seen > now() - interval '30 days'
+              AND l.observation_count >= 2
+              AND b.is_hidden = false
+            """
+        )
+        params = []
+
+        if micro_market:
+            params.append(micro_market)
+            query += f" AND l.micro_market = ${len(params)}"
+        if bhk:
+            params.append(bhk)
+            query += f" AND l.bhk = ${len(params)}"
+        if intent:
+            params.append(intent)
+            query += f" AND l.intent = ${len(params)}"
+        if min_price is not None:
+            params.append(min_price)
+            query += f" AND l.price >= ${len(params)}"
+        if max_price is not None:
+            params.append(max_price)
+            query += f" AND l.price <= ${len(params)}"
+
+        query += f" ORDER BY l.last_seen DESC LIMIT {limit} OFFSET {offset}"
+
+        rows = storage.db.execute(query, params)
+        return {"listings": rows, "count": len(rows)}
+    except Exception as exc:
+        return JSONResponse(status_code=500, content={"error": str(exc)})
+
+
+class PublicLeadRequest(BaseModel):
+    listing_id: int
+    client_name: str
+    client_phone: str
+    message: str | None = None
+
+
+@app.post("/public/leads")
+async def public_create_lead(req: PublicLeadRequest):
+    """
+    Create a lead from www.propai.live.
+    No auth required. Validates client_phone, looks up broker from listing,
+    inserts lead, and attempts WhatsApp notification (best-effort).
+    """
+    # Validate Indian mobile number (10 digits, optionally with +91/91/0)
+    digits = "".join(ch for ch in req.client_phone if ch.isdigit())
+    if len(digits) == 10:
+        norm_phone = "91" + digits
+    elif len(digits) == 11 and digits.startswith("0"):
+        norm_phone = "91" + digits[1:]
+    elif len(digits) == 12 and digits.startswith("91"):
+        norm_phone = digits
+    else:
+        return JSONResponse(status_code=400, content={"error": "Invalid client phone number"})
+
+    # Look up listing to get broker_phone
+    listing = storage.db.query_one(
+        "SELECT id, broker_name, broker_phone, building_name, micro_market FROM listings WHERE id = $1",
+        [req.listing_id]
+    )
+    if not listing:
+        return JSONResponse(status_code=404, content={"error": "Listing not found"})
+
+    broker_phone = listing.get("broker_phone")
+    if not broker_phone:
+        return JSONResponse(status_code=500, content={"error": "Listing has no broker phone"})
+
+    # Resolve broker_id by matching broker_phone
+    broker = storage.db.query_one(
+        "SELECT id FROM brokers WHERE primary_phone = $1 OR primary_phone = $2",
+        [broker_phone, broker_phone.replace("+91", "").replace("+91 ", "").replace(" ", "")]
+    )
+    broker_id = broker["id"] if broker else None
+
+    # Insert lead
+    lead = storage.db.execute_one(
+        """
+        INSERT INTO leads (listing_id, broker_id, client_name, client_phone, message, source, status)
+        VALUES ($1, $2, $3, $4, $5, 'www_portal', 'new')
+        RETURNING id, status, created_at
+        """,
+        [req.listing_id, broker_id, req.client_name.strip(), norm_phone, (req.message or "").strip()]
+    )
+
+    # Attempt notification (best-effort, don't fail the request)
+    building_or_market = listing.get("building_name") or listing.get("micro_market") or "the listing"
+    notify_text = (
+        f"New PropAI enquiry — {req.client_name.strip()} ({norm_phone}) "
+        f"is interested in your listing at {building_or_market}. "
+        f"{(req.message or '').strip()}"
+    )
+    notify_result = await _notify_broker_of_lead(broker_phone, notify_text)
+
+    if notify_result.get("ok"):
+        storage.db.execute(
+            "UPDATE leads SET status = 'notified' WHERE id = $1",
+            [lead["id"]]
+        )
+    else:
+        storage.db.execute(
+            "UPDATE leads SET status = 'notify_failed', notify_error = $1 WHERE id = $2",
+            [notify_result.get("error", "Unknown error"), lead["id"]]
+        )
+
+    return {"lead_id": lead["id"], "status": "created"}
+
+
 def _send_url() -> str:
     url = os.getenv("PROPAI_SEND_URL", "")
     if url:
@@ -5840,6 +6008,36 @@ def _send_url() -> str:
     except Exception:
         pass
     return "http://127.0.0.1:3001"
+
+
+async def _notify_broker_of_lead(broker_phone: str, text: str) -> dict:
+    """
+    Send a lead notification to a broker via whatsmeow ingestor.
+    This is a system call, not user-initiated, so no auth checks.
+    """
+    # Normalize phone to JID format
+    digits = "".join(ch for ch in broker_phone if ch.isdigit())
+    if not digits:
+        return {"ok": False, "error": "Invalid broker phone"}
+    # Ensure Indian format: 91XXXXXXXXXX
+    if len(digits) == 10:
+        digits = "91" + digits
+    elif len(digits) == 11 and digits.startswith("0"):
+        digits = "91" + digits[1:]
+    elif not digits.startswith("91"):
+        digits = "91" + digits[-10:]
+    remote_jid = f"{digits}@s.whatsapp.net"
+
+    payload = {"remoteJid": remote_jid, "text": text}
+    url = _send_url()
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.post(f"{url}/send-message", json=payload)
+            if resp.status_code < 300:
+                return {"ok": True, "status_code": resp.status_code}
+            return {"ok": False, "error": f"HTTP {resp.status_code}: {resp.text}"}
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
 
 
 def _doubleword_error_response(exc: Exception) -> JSONResponse:

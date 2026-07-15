@@ -332,6 +332,15 @@ def classify_message(text: str) -> str:
         if total_prices >= 2:
             return "multi"
 
+    freeform_blocks = _split_freeform_listing_blocks(text)
+    if len(freeform_blocks) >= 2:
+        parsed_freeform = sum(
+            1 for block in freeform_blocks
+            if _freeform_block_has_listing_core(block) or _freeform_block_looks_like_listing_start(block)
+        )
+        if parsed_freeform >= 2:
+            return "multi"
+
     if _MULTI_INDICATORS[2][1].search(lower):
         return "multi"
 
@@ -397,7 +406,7 @@ _AREA_RANGE_RE = re.compile(
     re.I,
 )
 _PRICE_ONLY_RE = re.compile(
-    r'(?:(?:cost|rate|price|rent|for\s+sale|for\s+(?:l\s*&?\s*l|lease|rent|leave\s+and\s+licence))\s*:?\s*)?'
+    r'(?:(?:@|cost|rate|price|rent|asking(?:\s+price)?|for\s+sale|for\s+(?:l\s*&?\s*l|lease|rent|leave\s+and\s+licence))\s*:?\s*)?'
     r'(?:rs\.?\s*|inr\s*|₹)?\s*([\d,.:/\-]+)\s*(?:\/-\s*)?(cr|crore|lac|lakh|l|lacs|lakhs|k|thousand|sqft|sq\s*ft|sft)\b',
     re.I,
 )
@@ -458,6 +467,88 @@ def _parse_amount(value: str) -> float | None:
 _NUMBERED_ANY_RE = re.compile(r'^\s*(?:[⭐*•-]\s*)?(?:\d{1,3})\s*[\).:-]\s*(.+)', re.I)
 _LOCATION_LINE_RE = re.compile(r'^\s*(?:📍|location\s*[:\-])\s*(.+)', re.I)
 _SIGNATURE_HINT_RE = re.compile(r'\b(?:for inspection|for details|contact|housen realtors|realtors|realty)\b', re.I)
+_FREEFORM_START_HINT_RE = re.compile(
+    r'\b(?:available|requirement|requirements|required|required for|wanted|need|looking\s+for|seeking|'
+    r'outrate|out\s*rate|option|available\s+for|direct\s+available|premium|urgent)\b',
+    re.I,
+)
+_FREEFORM_SIGNATURE_HINT_RE = re.compile(
+    r'\b(?:brokerage|direct listings|call|whatsapp|mobile|email|contact|regards|thanks|real estate|realty|properties)\b',
+    re.I,
+)
+
+
+def _freeform_block_looks_like_listing_start(block: str) -> bool:
+    clean = _clean_line_markup(block)
+    if _NUMBERED_LISTING_RE.match(clean):
+        return True
+    if clean.strip().startswith("📍"):
+        return True
+    if _FLOOR_LINE_RE.search(clean):
+        return True
+    if _FREEFORM_START_HINT_RE.search(clean):
+        return True
+    if _parse_bhk_from_text(clean):
+        return True
+    return False
+
+
+def _freeform_block_has_listing_core(block: str) -> bool:
+    clean = _clean_line_markup(block)
+    if _parse_bhk_from_text(clean):
+        return True
+    if _AREA_ONLY_RE.search(clean) or _AREA_RANGE_RE.search(clean):
+        return True
+    if _FLOOR_LINE_RE.search(clean):
+        return True
+    if _PRICE_ONLY_RE.search(clean) and not _FREEFORM_SIGNATURE_HINT_RE.search(clean):
+        return True
+    return False
+
+
+def _split_freeform_listing_blocks(text: str) -> list[str]:
+    """Split a free-form multi-listing message into card-sized blocks.
+
+    This is a conservative fallback for broker forwards that rely on blank
+    lines, signatures, and mixed title/detail lines instead of explicit
+    numbered or divider markers.
+    """
+    lines = [line.rstrip() for line in text.split("\n")]
+    blocks: list[list[str]] = []
+    current: list[str] = []
+    current_has_core = False
+
+    for raw_line in lines:
+        line = raw_line.strip()
+        if not line:
+            continue
+
+        is_start = _freeform_block_looks_like_listing_start(line)
+        is_signature = bool(_FREEFORM_SIGNATURE_HINT_RE.search(line)) and not is_start
+        has_core = _freeform_block_has_listing_core(line)
+
+        if not current:
+            current = [raw_line]
+            current_has_core = has_core
+            continue
+
+        if is_signature:
+            current.append(raw_line)
+            continue
+
+        if is_start and current_has_core:
+            blocks.append(current)
+            current = [raw_line]
+            current_has_core = has_core
+            continue
+
+        current.append(raw_line)
+        current_has_core = current_has_core or has_core
+
+    if current:
+        blocks.append(current)
+
+    return ["\n".join(block).strip() for block in blocks if any(line.strip() for line in block)]
 
 
 def _extract_building(text: str) -> str | None:
@@ -636,6 +727,14 @@ def _extract_building_name(text: str) -> str | None:
     """Extract building name from various patterns: 🏢 prefix, 🔹 name 🔹, or all-caps standalone line."""
     lines = text.split("\n")
     clean_lines = [l.strip().strip("🏢 *") for l in lines]
+
+    # Priority 0: explicit BLDG / Building / Project labels
+    for line in lines:
+        m = re.match(r'^\s*(?:bldg|building|project|complex|tower|wing)\s*[:\-]\s*(.+)', line, re.I)
+        if m:
+            name = m.group(1).strip().strip(" *-–.")
+            if name and len(name) >= 2 and not re.search(r'\b(rent|sale|commercial|office|shop|price|area|carpet|floor|parking)\b', name, re.I):
+                return _title_case_name(name)
 
     # Priority 1: 🏢 followed by a proper-looking building name
     for line in lines:
@@ -1299,12 +1398,14 @@ def _parse_price_from_text(text: str) -> tuple[float | None, str | None]:
         elif unit_raw in ("k", "thousand"):
             return amount, "K"
 
-    m = _PRICE_ONLY_RE.search(text)
-    if m:
+    for m in _PRICE_ONLY_RE.finditer(text):
         amount = _parse_amount(m.group(1))
         if amount is None:
-            return None, None
+            continue
         unit_raw = m.group(2).lower().rstrip("s")
+        line_start = text.rfind("\n", 0, m.start()) + 1
+        line_end = text.find("\n", m.end())
+        line = text[line_start: line_end if line_end != -1 else len(text)]
         if unit_raw in ("cr", "crore"):
             return amount, "Cr"
         elif unit_raw in ("lac", "lakh", "l"):
@@ -1314,8 +1415,8 @@ def _parse_price_from_text(text: str) -> tuple[float | None, str | None]:
         elif unit_raw in ("sqft", "sq ft", "sft"):
             # Bare sqft numbers are usually areas, not prices.
             # Only treat them as a price if the line explicitly says so.
-            if not re.search(r'\b(price|rent|cost|rate|asking)\b', text, re.I):
-                return None, None
+            if not re.search(r'\b(price|rent|cost|rate|asking)\b', line, re.I):
+                continue
             return amount, "abs"
     # Try per-sqft price format: "Cost N per sq ft", "For L&L N per sq ft"
     per_m = _PER_SQFT_RE.search(text)
@@ -1365,6 +1466,9 @@ def _parse_area_from_text(text: str) -> float | None:
         if scale and scale.lower().rstrip("s") in ("k", "thousand"):
             val *= 1000
         return val
+    rera_m = re.search(r'(\d[\d,.]*)\s*rera\s*carpet\b', text, re.I)
+    if rera_m:
+        return float(rera_m.group(1).replace(",", ""))
     # Try naked area: "5400 Retail", "1000 semi retail"
     naked_m = _AREA_NAKED_RE.search(text)
     if naked_m:
@@ -1900,6 +2004,20 @@ def parse_multi_message(
     if len(pin_blocks) >= 2:
         listings = []
         for block in pin_blocks:
+            block_ctx = dict(hier_ctx)
+            block_hier = extract_hierarchical_context(block)
+            block_ctx.update({k: v for k, v in block_hier.items() if v is not None})
+            parsed = _parse_divider_block(block, profile_name, hierarchical_ctx=block_ctx)
+            if parsed:
+                parsed = _enrich_listing_with_building_db(parsed, building_lookup_fn)
+                listings.append(parsed)
+        if len(listings) >= 2:
+            return listings
+
+    freeform_blocks = _split_freeform_listing_blocks(text)
+    if len(freeform_blocks) >= 2:
+        listings = []
+        for block in freeform_blocks:
             block_ctx = dict(hier_ctx)
             block_hier = extract_hierarchical_context(block)
             block_ctx.update({k: v for k, v in block_hier.items() if v is not None})
