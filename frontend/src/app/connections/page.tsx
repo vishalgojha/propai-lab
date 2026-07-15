@@ -7,7 +7,7 @@ import QRCode from "qrcode";
 import { useRouter } from "next/navigation";
 import { Activity, Clock, Database, ImageUp, Inbox, List, LogOut, MessageSquare, Plus, RefreshCw, Shield, Smartphone, Trash2, AlertTriangle, Users, Zap, Lock, X } from "lucide-react";
 import { useAuth } from "@/lib/AuthProvider";
-import { getPhones, createPhone, deletePhone, resetPhone, disconnectPhone, connectPhone, fetchJSON, type Phone } from "@/lib/api";
+import { getPhones, createPhone, deletePhone, resetPhone, disconnectPhone, connectPhone, fetchJSON, getQR, refreshQR, type Phone } from "@/lib/api";
 
 type HealthStatus = "healthy" | "warning" | "error";
 
@@ -229,35 +229,53 @@ function QRModal({ phone, open, onClose, onRefresh }: { phone: Phone; open: bool
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const resetSession = useCallback(async () => {
-    await resetPhone(phone.id);
-  }, [phone.id]);
+  const refreshSessionAndFetchQR = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await refreshQR();
+      const qrResult = await getQR();
+      if (qrResult?.qr) {
+        setQrText(qrResult.qr);
+        setError(null);
+        return;
+      }
+      if (qrResult?.connected) {
+        setConnected(true);
+        setQrText(null);
+        await onRefresh();
+        return;
+      }
+      setError(res?.message || qrResult?.message || "QR not available yet. Try again in a moment.");
+    } catch {
+      setError("Failed to fetch QR code. Retry, or reset the phone if it stays stuck.");
+    } finally {
+      setLoading(false);
+    }
+  }, [onRefresh]);
 
   const fetchQR = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await getPhone(phone.id);
-      if (res.connected) {
+      const res = await getQR();
+      if (res?.connected) {
         setConnected(true);
         setQrText(null);
         setError(null);
         await onRefresh();
-      } else if (res.qr) {
+      } else if (res?.qr) {
         setQrText(res.qr);
-      } else if (res.qr_available === false) {
-        setError("QR expired. Restarting session...");
-        setTimeout(() => resetSession().then(() => fetchQR()).catch(() => {}), 500);
       } else {
-        setError("QR not available yet. Restarting session...");
-        setTimeout(() => resetSession().then(() => fetchQR()).catch(() => {}), 500);
+        setError(res?.message || "QR not available yet. Restarting session...");
+        setTimeout(() => refreshSessionAndFetchQR().catch(() => {}), 500);
       }
     } catch {
       setError("Failed to fetch QR code. Retry, or reset the phone if it stays stuck.");
     } finally {
       setLoading(false);
     }
-  }, [phone.id, onRefresh, resetSession]);
+  }, [onRefresh, refreshSessionAndFetchQR]);
 
   useEffect(() => {
     if (open) {
@@ -334,7 +352,7 @@ function QRModal({ phone, open, onClose, onRefresh }: { phone: Phone; open: bool
         {!connected && error && (
           <div className="flex flex-col items-center py-12 text-center">
             <p className="text-sm text-zinc-400">{error}</p>
-            <button onClick={() => resetSession().then(() => fetchQR()).catch(() => {})} disabled={loading} className="mt-4 rounded-lg bg-[#3EE88A] px-6 py-2.5 text-xs font-bold text-black min-h-[44px] disabled:opacity-50">
+            <button onClick={() => refreshSessionAndFetchQR().catch(() => {})} disabled={loading} className="mt-4 rounded-lg bg-[#3EE88A] px-6 py-2.5 text-xs font-bold text-black min-h-[44px] disabled:opacity-50">
               Retry
             </button>
           </div>
@@ -347,7 +365,7 @@ function QRModal({ phone, open, onClose, onRefresh }: { phone: Phone; open: bool
               <li>Tap <strong className="text-white">Link a Device</strong> and scan this QR</li>
             </ol>
             <p className="mt-3 text-[11px] text-zinc-600">Waiting for scan... (auto-refreshes every 3s)</p>
-            <button onClick={fetchQR} disabled={loading} className="mt-3 rounded-lg border border-white/10 bg-zinc-800 text-zinc-300 px-6 py-2.5 text-xs font-bold min-h-[44px] disabled:opacity-50 w-full">
+            <button onClick={refreshSessionAndFetchQR} disabled={loading} className="mt-3 rounded-lg border border-white/10 bg-zinc-800 text-zinc-300 px-6 py-2.5 text-xs font-bold min-h-[44px] disabled:opacity-50 w-full">
               Refresh QR
             </button>
           </div>

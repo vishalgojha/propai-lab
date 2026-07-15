@@ -362,6 +362,10 @@ export function getQR() {
   return fetchJSON<any>("/sync/qr");
 }
 
+export function refreshQR() {
+  return fetchJSON<any>("/sync/refresh-qr", { method: "POST" });
+}
+
 export function logout() {
   return fetchJSON<any>("/sync/logout", { method: "POST" });
 }
