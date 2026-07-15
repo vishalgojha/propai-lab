@@ -773,6 +773,11 @@ class SupabaseStorage(Storage):
         res = query.execute()
         return res.data[0] if res.data else None
 
+    def get_org_whatsapp_connection_by_broker_id(self, broker_id: str) -> dict | None:
+        """Lookup phone connection by broker_id. No tenant scoping — used by webhook to resolve tenant."""
+        res = self.client.table("org_whatsapp_connections").select("organization_id, broker_id, phone_number, instance_name").eq("broker_id", broker_id).limit(1).execute()
+        return res.data[0] if res.data else None
+
     def get_phone_broker_id(self, conn_id: int) -> str | None:
         row = self.get_org_whatsapp_connection(conn_id)
         return row.get("broker_id") if row else None

@@ -97,6 +97,10 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
     if storage is None:
         storage = get_storage()
 
+    # Ensure tenant context is set for this extraction run
+    if ctx.get("tenant_id"):
+        storage.tenant_id = ctx["tenant_id"]
+
     from lab import multi_listing
     from evidence.parsers import parse as parse_message
     from lab.config import load_excluded_groups
@@ -137,7 +141,7 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
     org_privacy = {"privacy_mode": "private"}
     try:
         conv_type = classify_conversation(group_name, group, msg_text)
-        org_id = "00000000-0000-0000-0000-000000000010"
+        org_id = ctx.get("tenant_id") or storage._tenant_id or "00000000-0000-0000-0000-000000000010"
         org = storage.get_organization(org_id)
         if org:
             org_privacy = {

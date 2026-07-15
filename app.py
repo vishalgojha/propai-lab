@@ -1670,6 +1670,17 @@ async def webhook(request: Request):
     event = data.get("event", "")
     msg_data_for_instance = data.get("data", {}) if isinstance(data.get("data", {}), dict) else {}
     instance = data.get("instance") or msg_data_for_instance.get("instance") or "unknown"
+    webhook_broker_id = msg_data_for_instance.get("broker_id", "")
+
+    # ── Resolve tenant from broker_id ──────────────────────────────
+    resolved_tenant_id = DEFAULT_TENANT_ID
+    if webhook_broker_id:
+        try:
+            conn = storage.get_org_whatsapp_connection_by_broker_id(webhook_broker_id)
+            if conn and conn.get("organization_id"):
+                resolved_tenant_id = conn["organization_id"]
+        except Exception as exc:
+            print(f"[webhook] tenant resolve error: {exc}", flush=True)
 
     # ── Classify and route event ──────────────────────────────────
     try:
@@ -1748,13 +1759,13 @@ async def webhook(request: Request):
     except ImportError:
         PIPELINE_VERSION = "0.0.0"
     try:
-        storage.tenant_id = DEFAULT_TENANT_ID
+        storage.tenant_id = resolved_tenant_id
         now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         message_timestamp = _coerce_whatsapp_timestamp(
             msg_data.get("messageTimestamp") or msg_data.get("timestamp")
         ) or now
         raw_id = storage.save_raw_message(RawMessage(
-            tenant_id=DEFAULT_TENANT_ID,
+            tenant_id=resolved_tenant_id,
             group_name=raw_group_name,
             sender=sender,
             sender_jid=sender_jid,
@@ -1818,6 +1829,7 @@ async def webhook(request: Request):
             "message_uid": message_uid,
             "message_id": message_id,
             "msg": msg,
+            "tenant_id": resolved_tenant_id,
         })
     except Exception as exc:
         print(f"[webhook] schedule extraction error: {exc}", flush=True)
