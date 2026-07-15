@@ -6072,7 +6072,10 @@ async def _notify_broker_of_lead(broker_phone: str, text: str) -> dict:
     remote_jid = f"{digits}@s.whatsapp.net"
 
     payload = {"remoteJid": remote_jid, "text": text}
-    url = _send_url()
+    # Use INGESTOR_INTERNAL_URL env var (Coolify internal hostname)
+    url = os.getenv("INGESTOR_INTERNAL_URL", "").rstrip("/")
+    if not url:
+        url = _send_url()
     try:
         async with httpx.AsyncClient(timeout=10) as client:
             resp = await client.post(f"{url}/send-message", json=payload)
