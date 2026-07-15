@@ -1214,6 +1214,10 @@ async def lifespan(app: FastAPI):
         key_path.write_text(new_key)
         print(f"  Generated API key: {new_key}")
     print(f"  Lab DB: {SUPABASE_URL}")
+    if SUPABASE_JWT_SECRET:
+        print(f"  [auth] SUPABASE_JWT_SECRET loaded ({SUPABASE_JWT_SECRET_LEN} chars)")
+    else:
+        print("  [auth] WARNING: SUPABASE_JWT_SECRET is EMPTY — all requests will get 401")
     print(f"  Webhook: http://localhost:{PORT}/webhook")
     print(f"  Admin:   http://localhost:{PORT}/")
     yield
@@ -2126,6 +2130,7 @@ class IngestRequest(BaseModel):
 # ── Auth / Tenant helpers ──────────────────────────────────────────────
 
 SUPABASE_JWT_SECRET = os.getenv("SUPABASE_JWT_SECRET", "")
+SUPABASE_JWT_SECRET_LEN = len(SUPABASE_JWT_SECRET) if SUPABASE_JWT_SECRET else 0
 if not SUPABASE_JWT_SECRET:
     import warnings
     warnings.warn(
@@ -2162,9 +2167,11 @@ async def get_current_user(
     credentials: HTTPAuthorizationCredentials | None = Security(security_scheme),
 ) -> dict | None:
     if credentials is None:
+        print("[auth] No Bearer token in request", flush=True)
         return None
     payload = verify_supabase_token(credentials.credentials)
     if payload is None:
+        print(f"[auth] Token rejected (len={len(credentials.credentials)})", flush=True)
         return None
     return {
         "id": payload.get("sub"),
@@ -2177,6 +2184,42 @@ async def require_user(user: dict | None = Depends(get_current_user)) -> dict:
     if user is None:
         raise HTTPException(401, "Authentication required")
     return user
+
+
+@app.get("/debug/auth")
+async def debug_auth(request: Request):
+    """Diagnostic endpoint — no auth required. Shows exactly what's happening with JWT."""
+    import pyjwt as _jwt
+    auth_header = request.headers.get("authorization", "")
+    result = {
+        "jwt_secret_set": bool(SUPABASE_JWT_SECRET),
+        "jwt_secret_length": SUPABASE_JWT_SECRET_LEN,
+        "authorization_header_present": bool(auth_header),
+        "authorization_header_prefix": auth_header[:20] + "..." if len(auth_header) > 20 else auth_header,
+    }
+    if not auth_header:
+        result["diagnosis"] = "NO_TOKEN: Authorization header is missing. Frontend is not sending the token."
+    elif not auth_header.startswith("Bearer "):
+        result["diagnosis"] = f"BAD_FORMAT: Authorization header starts with '{auth_header[:10]}', expected 'Bearer ...'"
+    elif not SUPABASE_JWT_SECRET:
+        result["diagnosis"] = "NO_SECRET: Token is being sent but SUPABASE_JWT_SECRET is empty on the server."
+    else:
+        token = auth_header[7:]
+        try:
+            payload = _jwt.decode(token, SUPABASE_JWT_SECRET, algorithms=["HS256"],
+                                  options={"require": ["sub", "exp"]})
+            result["diagnosis"] = "VALID: Token decoded successfully. Auth should be working."
+            result["payload_sub"] = payload.get("sub")
+            result["payload_email"] = payload.get("email")
+        except _jwt.ExpiredSignatureError:
+            result["diagnosis"] = "EXPIRED: Token is valid but expired. User needs to re-login."
+        except _jwt.InvalidSignatureError:
+            result["diagnosis"] = "SIGNATURE_MISMATCH: SUPABASE_JWT_SECRET does not match the secret Supabase used to sign this token."
+        except _jwt.DecodeError as e:
+            result["diagnosis"] = f"DECODE_ERROR: Token is not valid JWT. {e}"
+        except Exception as e:
+            result["diagnosis"] = f"UNKNOWN_ERROR: {type(e).__name__}: {e}"
+    return result
 
 
 @app.post("/ingest")
