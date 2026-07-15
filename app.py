@@ -1213,11 +1213,14 @@ async def lifespan(app: FastAPI):
         new_key = str(uuid.uuid4())
         key_path.write_text(new_key)
         print(f"  Generated API key: {new_key}")
-    print(f"  Lab DB: {SUPABASE_URL}")
     if SUPABASE_JWT_SECRET:
-        print(f"  [auth] SUPABASE_JWT_SECRET loaded ({SUPABASE_JWT_SECRET_LEN} chars)")
+        print(f"  Lab DB: {SUPABASE_URL}")
     else:
-        print("  [auth] WARNING: SUPABASE_JWT_SECRET is EMPTY — all requests will get 401")
+        print(f"  Lab DB: {SUPABASE_URL}")
+    if _jwks_client:
+        print(f"  [auth] JWKS client ready — verifying ES256 tokens from {SUPABASE_URL}")
+    else:
+        print("  [auth] WARNING: JWKS client NOT initialized — auth disabled")
     print(f"  Webhook: http://localhost:{PORT}/webhook")
     print(f"  Admin:   http://localhost:{PORT}/")
     yield
@@ -2130,12 +2133,20 @@ class IngestRequest(BaseModel):
 # ── Auth / Tenant helpers ──────────────────────────────────────────────
 
 SUPABASE_JWT_SECRET = os.getenv("SUPABASE_JWT_SECRET", "")
-SUPABASE_JWT_SECRET_LEN = len(SUPABASE_JWT_SECRET) if SUPABASE_JWT_SECRET else 0
-if not SUPABASE_JWT_SECRET:
+SUPABASE_URL = os.getenv("SUPABASE_URL", "")
+
+# JWKS client for ES256 token verification (Supabase default)
+_jwks_client = None
+if SUPABASE_URL:
+    try:
+        _jwks_client = pyjwt.PyJWKClient(f"{SUPABASE_URL}/auth/v1/.well-known/jwks.json")
+        print(f"  [auth] JWKS client initialized from {SUPABASE_URL}", flush=True)
+    except Exception as e:
+        print(f"  [auth] WARNING: JWKS client init failed: {e}", flush=True)
+if not _jwks_client:
     import warnings
     warnings.warn(
-        "SUPABASE_JWT_SECRET is not set. JWT authentication will be disabled. "
-        "Set this in Coolify env store to enable auth.",
+        "Could not initialize JWKS client. JWT authentication will be disabled.",
         stacklevel=2,
     )
 
@@ -2143,20 +2154,21 @@ security_scheme = HTTPBearer(auto_error=False)
 
 
 def verify_supabase_token(token: str) -> dict | None:
-    secret = SUPABASE_JWT_SECRET
-    if not secret:
-        print("[auth] SUPABASE_JWT_SECRET is empty — rejecting all tokens", flush=True)
+    if not _jwks_client:
         return None
     try:
+        signing_key = _jwks_client.get_signing_key_from_jwt(token)
         payload = pyjwt.decode(
-            token, secret, algorithms=["HS256"],
+            token,
+            signing_key.key,
+            algorithms=["ES256"],
             options={"require": ["sub", "exp"]},
         )
         return payload
     except pyjwt.ExpiredSignatureError:
         return None
     except pyjwt.InvalidSignatureError:
-        print("[auth] JWT signature mismatch — wrong SUPABASE_JWT_SECRET?", flush=True)
+        print("[auth] JWT signature mismatch", flush=True)
         return None
     except Exception as e:
         print(f"[auth] JWT rejected: {type(e).__name__}: {e}", flush=True)
@@ -2191,8 +2203,8 @@ async def debug_auth(request: Request):
     """Diagnostic endpoint — no auth required. Shows exactly what's happening with JWT."""
     auth_header = request.headers.get("authorization", "")
     result = {
-        "jwt_secret_set": bool(SUPABASE_JWT_SECRET),
-        "jwt_secret_length": SUPABASE_JWT_SECRET_LEN,
+        "jwks_client_ready": bool(_jwks_client),
+        "supabase_url": SUPABASE_URL,
         "authorization_header_present": bool(auth_header),
         "authorization_header_prefix": auth_header[:20] + "..." if len(auth_header) > 20 else auth_header,
     }
@@ -2200,12 +2212,13 @@ async def debug_auth(request: Request):
         result["diagnosis"] = "NO_TOKEN: Authorization header is missing. Frontend is not sending the token."
     elif not auth_header.startswith("Bearer "):
         result["diagnosis"] = f"BAD_FORMAT: Authorization header starts with '{auth_header[:10]}', expected 'Bearer ...'"
-    elif not SUPABASE_JWT_SECRET:
-        result["diagnosis"] = "NO_SECRET: Token is being sent but SUPABASE_JWT_SECRET is empty on the server."
+    elif not _jwks_client:
+        result["diagnosis"] = "NO_JWKS_CLIENT: JWKS client not initialized. Check SUPABASE_URL env var."
     else:
         token = auth_header[7:]
         try:
-            payload = pyjwt.decode(token, SUPABASE_JWT_SECRET, algorithms=["HS256"],
+            signing_key = _jwks_client.get_signing_key_from_jwt(token)
+            payload = pyjwt.decode(token, signing_key.key, algorithms=["ES256"],
                                   options={"require": ["sub", "exp"]})
             result["diagnosis"] = "VALID: Token decoded successfully. Auth should be working."
             result["payload_sub"] = payload.get("sub")
@@ -2213,7 +2226,7 @@ async def debug_auth(request: Request):
         except pyjwt.ExpiredSignatureError:
             result["diagnosis"] = "EXPIRED: Token is valid but expired. User needs to re-login."
         except pyjwt.InvalidSignatureError:
-            result["diagnosis"] = "SIGNATURE_MISMATCH: SUPABASE_JWT_SECRET does not match the secret Supabase used to sign this token."
+            result["diagnosis"] = "SIGNATURE_MISMATCH: Token signature verification failed."
         except pyjwt.DecodeError as e:
             result["diagnosis"] = f"DECODE_ERROR: Token is not valid JWT. {e}"
         except Exception as e:
