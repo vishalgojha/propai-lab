@@ -1,0 +1,35 @@
+FROM node:20-bookworm-slim AS deps
+
+WORKDIR /app
+COPY apps/www/package.json ./
+# Cache bust: 2026-07-15-1
+ARG CACHE_BUST_DEPS=20260715-1
+RUN npm install
+
+FROM node:20-bookworm-slim AS builder
+
+WORKDIR /app
+ARG CACHE_BUST=20260715-1
+COPY --from=deps /app/node_modules ./node_modules
+
+COPY apps/www/ .
+
+RUN npm run build
+
+FROM node:20-bookworm-slim AS runner
+
+WORKDIR /app
+ARG CACHE_BUST_COPY=20260715-1
+ENV NODE_ENV=production
+ENV PORT=3000
+ENV HOSTNAME=0.0.0.0
+ENV NEXT_TELEMETRY_DISABLED=1
+
+COPY --from=builder /app/package.json ./package.json
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/public ./public
+COPY --from=builder /app/.next ./.next
+
+EXPOSE 3000
+
+CMD ["npm", "run", "start"]
