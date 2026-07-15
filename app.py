@@ -12868,15 +12868,21 @@ async def create_phone(
     user: dict = Depends(require_user),
     tenant_id: str | None = Depends(get_tenant_context),
 ):
-    phone_number = body.get("phone_number", "").strip() or "Unpaired"
+    import uuid as _uuid
+    phone_number = body.get("phone_number", "").strip() or f"Unpaired-{_uuid.uuid4().hex[:8]}"
     instance_name = body.get("instance_name", "").strip()
     org_id = tenant_id or DEFAULT_TENANT_ID
     count = storage.count_org_phones(org_id)
     if count >= 3:
         raise HTTPException(400, "Maximum 3 phones per organization")
-    import uuid as _uuid
     broker_id = f"phone-{_uuid.uuid4().hex[:12]}"
-    result = storage.add_org_whatsapp_connection(org_id, phone_number, instance_name, broker_id)
+    try:
+        result = storage.add_org_whatsapp_connection(org_id, phone_number, instance_name, broker_id)
+    except Exception as e:
+        # Handle unique constraint violations gracefully
+        if "unique" in str(e).lower() or "duplicate" in str(e).lower():
+            raise HTTPException(400, "A phone with this number already exists in your organization")
+        raise HTTPException(500, f"Failed to create phone: {str(e)}")
     if not result:
         raise HTTPException(400, "Failed to create phone")
     async with httpx.AsyncClient(timeout=10) as client:
