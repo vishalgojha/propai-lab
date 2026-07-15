@@ -1030,6 +1030,7 @@ return {
     };
   }, [marketAccess]);
 
+  const GATING_ENABLED = false; // Temporary bypass until billing/pricing access is finalized.
   const activeAccessGate = marketAccess?.whatsapp_connected === false ? connectionLock : marketLock;
   const accessHealthGate = useMemo(() => {
     if (marketAccessError) {
@@ -1047,7 +1048,7 @@ return {
 
   const accessProbeFailed = Boolean(marketAccessError);
   const whatsappDisconnected = marketAccess?.whatsapp_connected === false;
-  const connectionPending = loadingMarketAccess || accessProbeFailed || whatsappDisconnected;
+  const connectionPending = GATING_ENABLED && (loadingMarketAccess || accessProbeFailed || whatsappDisconnected);
 
   const groupedBrokerObservations = useMemo(() => {
     const groups = new Map<string, BrokerObservationGroup>();
@@ -2800,7 +2801,7 @@ return {
 
           {/* List Content */}
           <div className="flex-1 overflow-y-auto divide-y divide-[rgba(255,255,255,0.04)]">
-            {loadingMarketAccess ? (
+            {GATING_ENABLED && loadingMarketAccess ? (
               <div className="p-8 text-center text-xs text-zinc-500">Checking workspace access...</div>
             ) : connectionPending ? (
               <div className="p-5 text-center">
@@ -3000,7 +3001,7 @@ return {
 
         {/* ================= CENTER PANEL: CONVERSATION ================= */}
         <div className={`flex-1 min-w-0 w-full h-full min-h-0 flex flex-col bg-[#070b0e] overflow-hidden lg:w-auto ${isMobile && mobileView !== "conversation" ? "hidden" : ""}`}>
-          {accessProbeFailed && (
+          {GATING_ENABLED && accessProbeFailed && (
             <div className="border-b border-amber-500/20 bg-amber-500/5 px-4 py-3 text-xs text-amber-200">
               {accessHealthGate.title}: {accessHealthGate.description}
             </div>
