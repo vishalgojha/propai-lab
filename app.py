@@ -2123,6 +2123,55 @@ class IngestRequest(BaseModel):
     expected: Optional[dict] = None
 
 
+# ── Auth / Tenant helpers ──────────────────────────────────────────────
+
+SUPABASE_JWT_SECRET = os.getenv("SUPABASE_JWT_SECRET", "")
+if not SUPABASE_JWT_SECRET:
+    import warnings
+    warnings.warn(
+        "SUPABASE_JWT_SECRET is not set. JWT authentication will be disabled. "
+        "Set this in Coolify env store to enable auth.",
+        stacklevel=2,
+    )
+
+security_scheme = HTTPBearer(auto_error=False)
+
+
+def verify_supabase_token(token: str) -> dict | None:
+    secret = SUPABASE_JWT_SECRET
+    if not secret:
+        return None
+    try:
+        payload = pyjwt.decode(
+            token, secret, algorithms=["HS256"],
+            options={"require": ["sub", "exp"]},
+        )
+        return payload
+    except Exception:
+        return None
+
+
+async def get_current_user(
+    credentials: HTTPAuthorizationCredentials | None = Security(security_scheme),
+) -> dict | None:
+    if credentials is None:
+        return None
+    payload = verify_supabase_token(credentials.credentials)
+    if payload is None:
+        return None
+    return {
+        "id": payload.get("sub"),
+        "email": payload.get("email", ""),
+        "phone": payload.get("phone", ""),
+    }
+
+
+async def require_user(user: dict | None = Depends(get_current_user)) -> dict:
+    if user is None:
+        raise HTTPException(401, "Authentication required")
+    return user
+
+
 @app.post("/ingest")
 async def ingest(req: IngestRequest, user: dict = Depends(require_user)):
     """Manually ingest a message for testing."""
@@ -2316,55 +2365,6 @@ async def get_raw_message(raw_id: int, user: dict = Depends(require_user)):
         payload["landmark_name"] = parsed["landmark_name"] or ""
         payload["location_raw"] = parsed["location_raw"] or ""
     return payload
-
-
-# ── Auth / Tenant helpers ──────────────────────────────────────────────
-
-SUPABASE_JWT_SECRET = os.getenv("SUPABASE_JWT_SECRET", "")
-if not SUPABASE_JWT_SECRET:
-    import warnings
-    warnings.warn(
-        "SUPABASE_JWT_SECRET is not set. JWT authentication will be disabled. "
-        "Set this in Coolify env store to enable auth.",
-        stacklevel=2,
-    )
-
-security_scheme = HTTPBearer(auto_error=False)
-
-
-def verify_supabase_token(token: str) -> dict | None:
-    secret = SUPABASE_JWT_SECRET
-    if not secret:
-        return None
-    try:
-        payload = pyjwt.decode(
-            token, secret, algorithms=["HS256"],
-            options={"require": ["sub", "exp"]},
-        )
-        return payload
-    except Exception:
-        return None
-
-
-async def get_current_user(
-    credentials: HTTPAuthorizationCredentials | None = Security(security_scheme),
-) -> dict | None:
-    if credentials is None:
-        return None
-    payload = verify_supabase_token(credentials.credentials)
-    if payload is None:
-        return None
-    return {
-        "id": payload.get("sub"),
-        "email": payload.get("email", ""),
-        "phone": payload.get("phone", ""),
-    }
-
-
-async def require_user(user: dict | None = Depends(get_current_user)) -> dict:
-    if user is None:
-        raise HTTPException(401, "Authentication required")
-    return user
 
 
 # Shared default organization used when no tenant context is provided
