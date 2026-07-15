@@ -2,24 +2,30 @@ FROM node:20-bookworm-slim AS deps
 
 WORKDIR /app
 COPY apps/www/package.json ./
-# Cache bust: 2026-07-15-1
-ARG CACHE_BUST_DEPS=20260715-1
+# Cache bust: 2026-07-15-2
+ARG CACHE_BUST_DEPS=20260715-2
 RUN npm install
 
 FROM node:20-bookworm-slim AS builder
 
 WORKDIR /app
-ARG CACHE_BUST=20260715-1
+ARG CACHE_BUST=20260715-2
 COPY --from=deps /app/node_modules ./node_modules
 
-COPY apps/www/ .
+COPY apps/www/package.json ./
+COPY apps/www/next.config.js ./
+COPY apps/www/tailwind.config.js ./
+COPY apps/www/postcss.config.js ./
+COPY apps/www/tsconfig.json ./
+COPY apps/www/public ./public
+COPY apps/www/src ./src
 
-RUN mkdir -p ./public && npm run build
+RUN npm run build
 
 FROM node:20-bookworm-slim AS runner
 
 WORKDIR /app
-ARG CACHE_BUST_COPY=20260715-1
+ARG CACHE_BUST_COPY=20260715-2
 ENV NODE_ENV=production
 ENV PORT=3000
 ENV HOSTNAME=0.0.0.0
