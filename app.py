@@ -5959,16 +5959,46 @@ async def public_create_lead(req: PublicLeadRequest):
 
     broker_phone = listing.get("broker_phone")
     broker_name = listing.get("broker_name")
+    broker_id = None
 
     # If listing has no broker_phone, try to get it from brokers table via broker_name
     if not broker_phone and broker_name:
         res = storage.db.execute(
-            "SELECT primary_phone FROM brokers WHERE canonical_name = $1 AND is_hidden = false",
+            "SELECT id, primary_phone FROM brokers WHERE canonical_name = $1 AND is_hidden = false",
             [broker_name]
         )
         broker = res.fetchone()
         if broker:
             broker_phone = broker.get("primary_phone")
+            broker_id = broker.get("id")
+
+    # If still no broker_phone, try to find broker by name
+    if not broker_phone and broker_name:
+        res = storage.db.execute(
+            "SELECT id, primary_phone FROM brokers WHERE canonical_name = $1 AND is_hidden = false",
+            [broker_name]
+        )
+        broker = res.fetchone()
+        if broker:
+            broker_phone = broker.get("primary_phone")
+            broker_id = broker.get("id")
+
+    # Also try to resolve broker_id from broker_phone if we have it
+    if broker_phone and not broker_id:
+        phone_variants = [
+            broker_phone,
+            broker_phone.replace("+91", "").replace("+91 ", "").replace(" ", ""),
+            "".join(ch for ch in broker_phone if ch.isdigit())
+        ]
+        for variant in phone_variants:
+            res = storage.db.execute(
+                "SELECT id FROM brokers WHERE primary_phone = $1",
+                [variant]
+            )
+            broker = res.fetchone()
+            if broker:
+                broker_id = broker.get("id")
+                break
 
     if not broker_phone:
         return JSONResponse(status_code=500, content={"error": "Listing has no broker phone"})
