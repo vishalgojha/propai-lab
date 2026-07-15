@@ -216,19 +216,27 @@ function QRModal({ phone, open, onClose }: { phone: Phone; open: boolean; onClos
   const [qrText, setQrText] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [connected, setConnected] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const fetchQR = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
       const res = await getPhone(phone.id);
-      if (res.qr) {
+      if (res.connected) {
+        setConnected(true);
+        setQrText(null);
+        setError(null);
+      } else if (res.qr) {
         setQrText(res.qr);
-      } else if (res.connected) {
-        setError("Phone is already connected");
+      } else if (res.qr_available === false) {
+        setError("QR expired. Refreshing...");
+        setTimeout(() => connectPhone(phone.id).then(() => fetchQR()).catch(() => {}), 500);
       } else {
-        setError("QR not available yet. Try refreshing the connection.");
+        setError("QR not available yet. Starting connection...");
+        setTimeout(() => connectPhone(phone.id).then(() => fetchQR()).catch(() => {}), 500);
       }
     } catch {
       setError("Failed to fetch QR code");
@@ -238,9 +246,35 @@ function QRModal({ phone, open, onClose }: { phone: Phone; open: boolean; onClos
   }, [phone.id]);
 
   useEffect(() => {
-    if (open) fetchQR();
-    if (!open) setQrText(null);
+    if (open) {
+      setConnected(false);
+      fetchQR();
+    }
+    if (!open) {
+      setQrText(null);
+      setConnected(false);
+    }
   }, [open, fetchQR]);
+
+  useEffect(() => {
+    if (!open || connected) {
+      if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+      return;
+    }
+    pollRef.current = setInterval(async () => {
+      try {
+        const res = await getPhone(phone.id);
+        if (res.connected) {
+          setConnected(true);
+          setQrText(null);
+          if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+        } else if (res.qr && res.qr !== qrText) {
+          setQrText(res.qr);
+        }
+      } catch {}
+    }, 3000);
+    return () => { if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; } };
+  }, [open, connected, phone.id]);
 
   useEffect(() => {
     if (!canvasRef.current || !qrText) return;
@@ -251,20 +285,38 @@ function QRModal({ phone, open, onClose }: { phone: Phone; open: boolean; onClos
     });
   }, [qrText]);
 
+  useEffect(() => {
+    if (connected) {
+      const t = setTimeout(onClose, 2000);
+      return () => clearTimeout(t);
+    }
+  }, [connected, onClose]);
+
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
       <div className="bg-zinc-900 border border-white/10 rounded-2xl p-6 w-full max-w-lg mx-4" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-base font-bold text-white">Scan QR — {formatPhone(phone.phone_number)}</h3>
+          <h3 className="text-base font-bold text-white">
+            {connected ? "Connected!" : `Scan QR — ${formatPhone(phone.phone_number)}`}
+          </h3>
           <button onClick={onClose} className="text-zinc-500 hover:text-white"><X className="w-5 h-5" /></button>
         </div>
-        {loading && (
+        {connected && (
+          <div className="flex flex-col items-center py-12 text-center">
+            <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-emerald-400/10 mb-4">
+              <svg className="w-8 h-8 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+            </div>
+            <p className="text-sm text-emerald-400 font-semibold">WhatsApp connected successfully</p>
+            <p className="text-xs text-zinc-500 mt-1">Closing automatically...</p>
+          </div>
+        )}
+        {!connected && loading && (
           <div className="flex items-center justify-center py-16">
             <div className="w-8 h-8 rounded-full border-2 border-zinc-600 border-t-[#3EE88A] animate-spin" />
           </div>
         )}
-        {error && (
+        {!connected && error && (
           <div className="flex flex-col items-center py-12 text-center">
             <p className="text-sm text-zinc-400">{error}</p>
             <button onClick={fetchQR} disabled={loading} className="mt-4 rounded-lg bg-[#3EE88A] px-6 py-2.5 text-xs font-bold text-black min-h-[44px] disabled:opacity-50">
@@ -272,14 +324,15 @@ function QRModal({ phone, open, onClose }: { phone: Phone; open: boolean; onClos
             </button>
           </div>
         )}
-        {!loading && !error && qrText && (
+        {!connected && !loading && !error && qrText && (
           <div className="flex flex-col items-center">
             <canvas ref={canvasRef} className="rounded-xl border-[6px] border-white bg-white" style={{ width: "min(320px, 100%)", height: "min(320px, 100%)", aspectRatio: "1/1" }} />
             <ol className="mt-4 space-y-2 text-sm text-zinc-400 text-center">
               <li>Open <strong className="text-white">WhatsApp</strong> → <strong className="text-white">Settings</strong> → <strong className="text-white">Linked Devices</strong></li>
               <li>Tap <strong className="text-white">Link a Device</strong> and scan this QR</li>
             </ol>
-            <button onClick={fetchQR} disabled={loading} className="mt-4 rounded-lg border border-white/10 bg-zinc-800 text-zinc-300 px-6 py-2.5 text-xs font-bold min-h-[44px] disabled:opacity-50 w-full">
+            <p className="mt-3 text-[11px] text-zinc-600">Waiting for scan... (auto-refreshes every 3s)</p>
+            <button onClick={fetchQR} disabled={loading} className="mt-3 rounded-lg border border-white/10 bg-zinc-800 text-zinc-300 px-6 py-2.5 text-xs font-bold min-h-[44px] disabled:opacity-50 w-full">
               Refresh QR
             </button>
           </div>

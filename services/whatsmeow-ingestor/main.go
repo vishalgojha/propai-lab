@@ -514,17 +514,18 @@ func (sm *SessionManager) handleEvent(s *BrokerSession, evt interface{}) {
 		if displayName == "" {
 			displayName = s.client.Store.PushName
 		}
-		// Save the device JID mapping after successful pairing
 		jidStr := v.ID.String()
 		if err := sm.saveDeviceJID(context.Background(), s.brokerID, jidStr); err != nil {
 			log.Printf("[broker %s] error saving device mapping: %v", s.brokerID, err)
 		}
+		s.reconnectFailures = 0
+		s.reconnectCount = 0
 		s.setStatus(Status{
 			Connected: true, ConnectionState: "open", SocketState: "connected",
 			PhoneNumber: phone, DisplayName: displayName,
 			ConnectedSince: time.Now().UTC().Format(time.RFC3339),
 		})
-		log.Printf("[broker %s] paired — phone: %s, jid: %s", s.brokerID, phone, jidStr)
+		log.Printf("[broker %s] paired — phone: %s, jid: %s (failures reset)", s.brokerID, phone, jidStr)
 
 	case *events.PushNameSetting:
 		cur := s.getStatus()
