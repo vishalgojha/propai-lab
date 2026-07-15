@@ -2189,7 +2189,6 @@ async def require_user(user: dict | None = Depends(get_current_user)) -> dict:
 @app.get("/debug/auth")
 async def debug_auth(request: Request):
     """Diagnostic endpoint — no auth required. Shows exactly what's happening with JWT."""
-    import pyjwt as _jwt
     auth_header = request.headers.get("authorization", "")
     result = {
         "jwt_secret_set": bool(SUPABASE_JWT_SECRET),
@@ -2206,16 +2205,16 @@ async def debug_auth(request: Request):
     else:
         token = auth_header[7:]
         try:
-            payload = _jwt.decode(token, SUPABASE_JWT_SECRET, algorithms=["HS256"],
+            payload = pyjwt.decode(token, SUPABASE_JWT_SECRET, algorithms=["HS256"],
                                   options={"require": ["sub", "exp"]})
             result["diagnosis"] = "VALID: Token decoded successfully. Auth should be working."
             result["payload_sub"] = payload.get("sub")
             result["payload_email"] = payload.get("email")
-        except _jwt.ExpiredSignatureError:
+        except pyjwt.ExpiredSignatureError:
             result["diagnosis"] = "EXPIRED: Token is valid but expired. User needs to re-login."
-        except _jwt.InvalidSignatureError:
+        except pyjwt.InvalidSignatureError:
             result["diagnosis"] = "SIGNATURE_MISMATCH: SUPABASE_JWT_SECRET does not match the secret Supabase used to sign this token."
-        except _jwt.DecodeError as e:
+        except pyjwt.DecodeError as e:
             result["diagnosis"] = f"DECODE_ERROR: Token is not valid JWT. {e}"
         except Exception as e:
             result["diagnosis"] = f"UNKNOWN_ERROR: {type(e).__name__}: {e}"
