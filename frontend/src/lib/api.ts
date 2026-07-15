@@ -1634,8 +1634,11 @@ export interface Phone {
   total_messages_received: number;
 }
 
-export function getPhones() {
-  return fetchJSON<{ phones: Phone[] }>("/phones");
+export function getPhones(includeLive = true) {
+  const params = new URLSearchParams();
+  if (!includeLive) params.set("include_live", "false");
+  const qs = params.toString();
+  return fetchJSON<{ phones: Phone[] }>(`/phones${qs ? `?${qs}` : ""}`);
 }
 
 export function getPhone(phoneId: number) {

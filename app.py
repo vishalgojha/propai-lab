@@ -13511,14 +13511,16 @@ async def remove_org_whatsapp(conn_id: int, user: dict = Depends(require_user)):
 async def list_phones(
     user: dict = Depends(require_user),
     tenant_id: str | None = Depends(get_tenant_context),
+    include_live: bool = True,
 ):
     org_id = tenant_id or DEFAULT_TENANT_ID
     phones = storage.list_org_whatsapp_connections(org_id)
     ingestor_statuses = {}
-    _, resp = await _first_ingestor_response("GET", "/list", timeout=2)
-    if resp is not None and resp.status_code == 200:
-        for s in resp.json():
-            ingestor_statuses[s.get("broker_id", "")] = s
+    if include_live:
+        _, resp = await _first_ingestor_response("GET", "/list", timeout=2)
+        if resp is not None and resp.status_code == 200:
+            for s in resp.json():
+                ingestor_statuses[s.get("broker_id", "")] = s
     result = []
     for phone in phones:
         broker_id = phone.get("broker_id", "")

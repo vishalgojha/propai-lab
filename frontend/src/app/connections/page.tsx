@@ -523,11 +523,21 @@ export default function ConnectionCenterPage() {
   const [extractionLag, setExtractionLag] = useState<any>(null);
 
   const fetchPhones = useCallback(async () => {
+    let initialPhones: Phone[] = [];
     try {
-      const res = await getPhones();
-      setPhones(res.phones || []);
+      const res = await getPhones(false);
+      initialPhones = res.phones || [];
+      setPhones(initialPhones);
     } catch { /* ignore */ }
     setPhonesLoading(false);
+    if (initialPhones.length > 0) {
+      void Promise.allSettled(initialPhones.map((phone) => getPhone(phone.id))).then((results) => {
+        const hydrated = results.map((result, index) => (
+          result.status === "fulfilled" ? result.value : initialPhones[index]
+        ));
+        setPhones(hydrated);
+      });
+    }
   }, []);
 
   const fetchLiveStatus = useCallback(async () => {

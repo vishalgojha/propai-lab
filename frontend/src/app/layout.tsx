@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import "./globals.css";
-import { getPhones, getRaw, searchMessages, getCompanionConfig, CompanionConfig, getProfile, isLiveWhatsAppConnection, type Phone } from "@/lib/api";
+import { getPhones, getRaw, searchMessages, getCompanionConfig, CompanionConfig, getProfile, getWhatsAppStatus, isLiveWhatsAppConnection, type Phone, type WhatsAppStatus } from "@/lib/api";
 import { classifyFormatIssue } from "@/lib/format-issues";
 import {
   MessageSquare,
@@ -188,6 +188,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
   const [profileLoaded, setProfileLoaded] = useState(false);
   const [formatIssueCount, setFormatIssueCount] = useState(0);
   const [wabaConfig, setWabaConfig] = useState<CompanionConfig | null>(null);
+  const [liveStatus, setLiveStatus] = useState<WhatsAppStatus | null>(null);
   const { signOut: authSignOut } = useAuth();
 
   // Read profile from localStorage; if missing, try to hydrate from server
@@ -240,8 +241,8 @@ function AppShell({ children }: { children: React.ReactNode }) {
   }, [user, profile]);
 
   const livePhone = phones.find((phone) => isLiveWhatsAppConnection(phone)) || null;
-  const displayPhone = livePhone || phones[0] || null;
-  const waConnected = phones.length === 0 ? null : Boolean(livePhone);
+  const displayPhone = (liveStatus?.phone ? ({ phone_number_live: liveStatus.phone } as Phone) : null) || livePhone || phones[0] || null;
+  const waConnected = liveStatus ? isLiveWhatsAppConnection(liveStatus) : (phones.length === 0 ? null : Boolean(livePhone));
   const waStale = false;
   const waPhone = displayPhone?.phone_number_live || displayPhone?.phone_number || "";
 
@@ -265,12 +266,14 @@ function AppShell({ children }: { children: React.ReactNode }) {
     if (authLoading || !user) return;
     const load = async () => {
       try {
-        const [phonesRes, cfg] = await Promise.all([
-          getPhones().catch(() => ({ phones: [] as Phone[] })),
+        const [phonesRes, cfg, status] = await Promise.all([
+          getPhones(false).catch(() => ({ phones: [] as Phone[] })),
           getCompanionConfig().catch(() => null),
+          getWhatsAppStatus().catch(() => null),
         ]);
         setPhones(phonesRes.phones || []);
         if (cfg) setWabaConfig(cfg);
+        setLiveStatus(status);
       } catch {}
     };
     load();
