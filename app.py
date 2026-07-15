@@ -2183,6 +2183,24 @@ def verify_supabase_token(token: str) -> dict | None:
     except pyjwt.InvalidSignatureError:
         print("[auth] JWT signature mismatch", flush=True)
         return None
+    except pyjwt.PyJWKClientError as e:
+        if "kid" in str(e).lower() or "no key" in str(e).lower():
+            # JWT missing kid - try all JWKS keys
+            try:
+                keys = _jwks_client.get_keys()
+                for key in keys:
+                    try:
+                        payload = pyjwt.decode(
+                            token, key.key, algorithms=["ES256"],
+                            audience="authenticated", options={"require": ["sub", "exp"]}
+                        )
+                        return payload
+                    except Exception:
+                        continue
+            except Exception:
+                pass
+        print(f"[auth] JWT rejected: {type(e).__name__}: {e}", flush=True)
+        return None
     except Exception as e:
         print(f"[auth] JWT rejected: {type(e).__name__}: {e}", flush=True)
         return None
