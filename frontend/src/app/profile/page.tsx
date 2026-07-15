@@ -92,8 +92,10 @@ export default function ProfilePage() {
     localStorage.setItem("propai_profile", JSON.stringify(localProfile));
     window.dispatchEvent(new Event("propai_profile_updated"));
     try {
-      if (profile?.phone) {
-        try { await saveProfile(profile.phone, data); } catch {}
+      if (profile?.phone || user?.id) {
+        try { await saveProfile(profile?.phone || "", data); } catch (err) {
+          console.error("[profile] server save failed:", err);
+        }
       }
       setProfile(localProfile);
       setHasStoredProfile(true);

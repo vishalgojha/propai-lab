@@ -11885,7 +11885,8 @@ async def get_profile(request: Request, user: dict = Depends(require_user)):
 
 
 @app.post("/api/profile")
-async def save_profile(body: OnboardingProfile, phone: str, user: dict = Depends(require_user)):
+async def save_profile(body: OnboardingProfile, request: Request, user: dict = Depends(require_user)):
+    phone = request.query_params.get("phone", "")
     profile = storage.save_user_profile(phone, body.model_dump(), auth_user_id=user.get("sub", ""))
     return profile or {"error": "failed to save"}
 

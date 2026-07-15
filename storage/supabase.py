@@ -496,10 +496,17 @@ class SupabaseStorage(Storage):
         }
         if auth_user_id:
             payload["auth_user_id"] = auth_user_id
-        existing = self.get_user_profile(norm)
+        existing = None
+        if auth_user_id:
+            existing = self.get_user_profile(auth_user_id=auth_user_id)
+        if not existing and norm:
+            existing = self.get_user_profile(phone=norm)
         if existing:
-            res = self.client.table("user_profiles").update(payload).eq("phone", norm).execute()
+            update_where = ("auth_user_id", existing.get("auth_user_id")) if existing.get("auth_user_id") else ("phone", existing.get("phone", norm))
+            res = self.client.table("user_profiles").update(payload).eq(update_where[0], update_where[1]).execute()
         else:
+            if not norm and auth_user_id:
+                payload["phone"] = f"auth_{auth_user_id[:8]}"
             res = self.client.table("user_profiles").insert(payload).execute()
         return res.data[0] if res and res.data else None
 
