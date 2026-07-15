@@ -221,7 +221,10 @@ class _SupabaseDatabaseAdapter:
     @staticmethod
     def _is_query(sql: str) -> bool:
         head = re.sub(r"^\s*(?:--.*?\n|/\*.*?\*/\s*)*", "", sql, flags=re.S).lstrip().lower()
-        return head.startswith(("select", "with", "show", "values", "explain")) or " returning " in f" {head} "
+        # INSERT/UPDATE/DELETE with RETURNING should use propai_run_sql, not propai_query_sql
+        if head.startswith(("insert", "update", "delete")):
+            return False
+        return head.startswith(("select", "with", "show", "values", "explain"))
 
     def execute(self, sql: str, params: tuple[Any, ...] | list[Any] | None = None):
         rendered_sql, rendered_params = self._translate_sql(sql, params)
