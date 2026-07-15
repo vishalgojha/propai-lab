@@ -45,6 +45,7 @@ class ParsedObservation:
     price_unit: Optional[str] = None
     price_model: Optional[str] = None
     price_per_sqft: Optional[float] = None
+    rent_per_sqft: Optional[float] = None
     monthly_rent: Optional[float] = None
     total_asking_price: Optional[float] = None
     area_sqft: Optional[float] = None
@@ -61,6 +62,10 @@ class ParsedObservation:
     asset_type: Optional[str] = None
     property_type: Optional[str] = None
     transaction_type: Optional[str] = None
+    commercial_use_type: Optional[str] = None
+    fitout_status: Optional[str] = None
+    occupancy_type: Optional[str] = None
+    floor_range: Optional[str] = None
     availability_status: Optional[str] = None
     possession_status: Optional[str] = None
     possession_date: Optional[str] = None

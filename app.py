@@ -710,6 +710,57 @@ def _extract_price_per_sqft(text: str) -> float | None:
     return None
 
 
+def _infer_commercial_use_type(text: str) -> str | None:
+    lower = text.lower()
+    if "office" in lower:
+        return "office"
+    if "showroom" in lower or "flagship" in lower:
+        return "showroom"
+    if "shop" in lower or "retail" in lower:
+        return "shop"
+    if "warehouse" in lower:
+        return "warehouse"
+    if "godown" in lower:
+        return "godown"
+    return None
+
+
+def _infer_fitout_status(text: str, furnishing: str | None = None) -> str | None:
+    lower = text.lower()
+    if furnishing:
+        f = furnishing.lower()
+        if "fully" in f:
+            return "fully_furnished"
+        if "semi" in f:
+            return "semi_furnished"
+        if "unfurnished" in f:
+            return "bare_shell"
+    if re.search(r'\bplug\s*&\s*play\b|\bplug\s+and\s+play\b', lower):
+        return "plug_and_play"
+    if re.search(r'\bwarm\s*shell\b|\bwarmshell\b', lower):
+        return "warm_shell"
+    if re.search(r'\bbare\s*shell\b', lower):
+        return "bare_shell"
+    if re.search(r'\bfully\s+furnished\b|\bfully\s+fur\b|\bff\b', lower):
+        return "fully_furnished"
+    if re.search(r'\bsemi\s+furnished\b|\bsemi\s+fur\b|\bsf\b', lower):
+        return "semi_furnished"
+    return None
+
+
+def _infer_occupancy_type(text: str) -> str | None:
+    lower = text.lower()
+    if re.search(r'\bunder\s+construction\b', lower):
+        return "under_construction"
+    if re.search(r'\boccupied\b', lower):
+        return "occupied"
+    if re.search(r'\bvacant\b|\bempty\b', lower):
+        return "vacant"
+    if re.search(r'\bready\s+to\s+move\b|\bimmediate\s+possession\b', lower):
+        return "vacant"
+    return None
+
+
 def parse_message(raw_text: str, profile_name: str | None = None) -> dict:
     """
     Parse a WhatsApp message into structured fields.
@@ -745,6 +796,11 @@ def parse_message(raw_text: str, profile_name: str | None = None) -> dict:
         "asset_type": None,
         "property_type": None,
         "transaction_type": None,
+        "commercial_use_type": None,
+        "fitout_status": None,
+        "occupancy_type": None,
+        "floor_range": None,
+        "rent_per_sqft": None,
         "availability_status": None,
         "possession_status": None,
         "possession_date": None,
@@ -987,6 +1043,14 @@ def parse_message(raw_text: str, profile_name: str | None = None) -> dict:
         result["price_model"] = "psf"
     elif result.get("price") is not None:
         result["price_model"] = "total"
+
+    if result["asset_type"] == "commercial":
+        result["commercial_use_type"] = _infer_commercial_use_type(text)
+        result["fitout_status"] = _infer_fitout_status(text, result.get("furnishing"))
+        result["occupancy_type"] = _infer_occupancy_type(text)
+        result["floor_range"] = result.get("floor_range") or None
+        if result.get("price_per_sqft") is not None:
+            result["rent_per_sqft"] = result["price_per_sqft"]
 
     # ── 7. Extract area sqft ────────────────────────────────────
     area_match = _RE.search(r'(\d+[\d,]*)\s*(sq\.?\s*ft|sqft|sft|sq\s*feet)', lower)
@@ -2523,10 +2587,16 @@ async def ingest(req: IngestRequest, user: dict = Depends(require_user)):
         intent=parsed.get("intent"),
         principal=parsed.get("principal"),
         bhk=parsed.get("bhk"),
+        configuration=parsed.get("configuration"),
         price=parsed.get("price"),
         price_unit=parsed.get("price_unit"),
+        price_model=parsed.get("price_model"),
+        price_per_sqft=parsed.get("price_per_sqft"),
+        monthly_rent=parsed.get("monthly_rent"),
+        total_asking_price=parsed.get("total_asking_price"),
         area_sqft=parsed.get("area_sqft"),
         furnishing=parsed.get("furnishing"),
+        furnishing_canonical=parsed.get("furnishing_canonical"),
         location_raw=parsed.get("location_raw"),
         location=json.dumps(parsed.get("location")) if parsed.get("location") else None,
         building_name=parsed.get("building_name"),
@@ -2535,6 +2605,22 @@ async def ingest(req: IngestRequest, user: dict = Depends(require_user)):
         area=parsed.get("area"),
         micro_market=parsed.get("micro_market"),
         developer=parsed.get("developer"),
+        asset_type=parsed.get("asset_type"),
+        property_type=parsed.get("property_type"),
+        transaction_type=parsed.get("transaction_type"),
+        commercial_use_type=parsed.get("commercial_use_type"),
+        fitout_status=parsed.get("fitout_status"),
+        occupancy_type=parsed.get("occupancy_type"),
+        floor_range=parsed.get("floor_range"),
+        rent_per_sqft=parsed.get("rent_per_sqft"),
+        availability_status=parsed.get("availability_status"),
+        possession_status=parsed.get("possession_status"),
+        possession_date=parsed.get("possession_date"),
+        available_from=parsed.get("available_from"),
+        ready_by=parsed.get("ready_by"),
+        construction_stage=parsed.get("construction_stage"),
+        launch_timeline=parsed.get("launch_timeline"),
+        expected_possession=parsed.get("expected_possession"),
         broker_name=parsed.get("broker_name"),
         broker_phone=parsed.get("broker_phone"),
         forwarded=parsed.get("forwarded", 0),

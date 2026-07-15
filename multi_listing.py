@@ -941,6 +941,14 @@ def _parse_divider_block(
         # Listing source
         "listing_source": listing_source,
     }
+    result.update(_commercial_schema_fields(
+        block,
+        price_per_sqft=price_per_sqft,
+        floor_description=attrs.get("floor_description"),
+        furnishing=result.get("furnishing"),
+    ))
+    if result.get("asset_type") == "commercial":
+        result["bhk"] = None
     return result
 
 
@@ -1252,6 +1260,14 @@ def _parse_numbered_block(
         # Listing source
         "listing_source": listing_source,
     }
+    result.update(_commercial_schema_fields(
+        block,
+        price_per_sqft=price_per_sqft,
+        floor_description=attrs.get("floor_description"),
+        furnishing=result.get("furnishing"),
+    ))
+    if result.get("asset_type") == "commercial":
+        result["bhk"] = None
     return result
 
 
@@ -1500,6 +1516,79 @@ def _parse_furnishing_from_text(text: str) -> str | None:
     return None
 
 
+def _infer_commercial_use_type(text: str) -> str | None:
+    lower = text.lower()
+    if "office" in lower:
+        return "office"
+    if "showroom" in lower or "flagship" in lower:
+        return "showroom"
+    if "shop" in lower or "retail" in lower:
+        return "shop"
+    if "warehouse" in lower:
+        return "warehouse"
+    if "godown" in lower:
+        return "godown"
+    return None
+
+
+def _infer_fitout_status(text: str, furnishing: str | None = None) -> str | None:
+    lower = text.lower()
+    if furnishing:
+        f = furnishing.lower()
+        if "fully" in f:
+            return "fully_furnished"
+        if "semi" in f:
+            return "semi_furnished"
+        if "unfurnished" in f:
+            return "bare_shell"
+    if re.search(r'\bplug\s*&\s*play\b|\bplug\s+and\s+play\b', lower):
+        return "plug_and_play"
+    if re.search(r'\bwarm\s*shell\b|\bwarmshell\b', lower):
+        return "warm_shell"
+    if re.search(r'\bbare\s*shell\b', lower):
+        return "bare_shell"
+    if re.search(r'\bfully\s+furnished\b|\bfully\s+fur\b|\bff\b', lower):
+        return "fully_furnished"
+    if re.search(r'\bsemi\s+furnished\b|\bsemi\s+fur\b|\bsf\b', lower):
+        return "semi_furnished"
+    return None
+
+
+def _infer_occupancy_type(text: str) -> str | None:
+    lower = text.lower()
+    if re.search(r'\bunder\s+construction\b', lower):
+        return "under_construction"
+    if re.search(r'\boccupied\b', lower):
+        return "occupied"
+    if re.search(r'\bvacant\b|\bempty\b', lower):
+        return "vacant"
+    if re.search(r'\bready\s+to\s+move\b|\bimmediate\s+possession\b', lower):
+        return "vacant"
+    return None
+
+
+def _commercial_schema_fields(
+    text: str,
+    *,
+    price_per_sqft: float | None = None,
+    floor_description: str | None = None,
+    furnishing: str | None = None,
+) -> dict:
+    commercial_use_type = _infer_commercial_use_type(text)
+    fitout_status = _infer_fitout_status(text, furnishing=furnishing)
+    occupancy_type = _infer_occupancy_type(text)
+    is_commercial = bool(re.search(r'\b(commercial|office|shop|showroom|warehouse|godown|retail)\b', text, re.I))
+    return {
+        "asset_type": "commercial" if is_commercial else None,
+        "property_type": commercial_use_type if is_commercial else None,
+        "commercial_use_type": commercial_use_type if is_commercial else None,
+        "fitout_status": fitout_status if is_commercial else None,
+        "occupancy_type": occupancy_type if is_commercial else None,
+        "floor_range": floor_description if is_commercial else None,
+        "rent_per_sqft": price_per_sqft if is_commercial and price_per_sqft is not None else None,
+    }
+
+
 def _parse_bhk_from_text(text: str) -> str | None:
     range_match = re.search(r'(\d+(?:\.\d+)?\s*/\s*\d+(?:\.\d+)?)\s*bhk', text, re.I)
     if range_match:
@@ -1570,6 +1659,12 @@ def _lines_to_listings(
             # Listing source
             "listing_source": listing_source,
         }
+        result.update(_commercial_schema_fields(
+            line,
+            price_per_sqft=None,
+            floor_description=attrs.get("floor_description"),
+            furnishing=result.get("furnishing"),
+        ))
         results.append(result)
     return results
 
@@ -1791,6 +1886,12 @@ def _split_commercial_floors(text: str) -> list[dict]:
                 "wing_name": None,
                 "listing_source": None,
             }
+            result.update(_commercial_schema_fields(
+                "\n".join(block),
+                price_per_sqft=per_sqft_amount,
+                floor_description=clean_floor,
+                furnishing=None,
+            ))
             results.append(result)
 
     # Filter: only include listings with at least area or price

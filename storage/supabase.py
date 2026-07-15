@@ -1316,6 +1316,8 @@ class SupabaseStorage(Storage):
         "forwarded", "confidence", "raw_payload", "created_at",
         "summary_title", "reparsed_at", "event_id", "tenant_id",
         "asset_type", "property_type", "transaction_type",
+        "commercial_use_type", "fitout_status", "occupancy_type",
+        "floor_range", "rent_per_sqft",
         "availability_status", "possession_status", "possession_date",
         "available_from", "ready_by", "construction_stage",
         "launch_timeline", "expected_possession",
