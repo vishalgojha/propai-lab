@@ -12640,18 +12640,201 @@ async def add_org_whatsapp(org_id: str, body: dict):
     phone = body.get("phone_number")
     if not phone:
         raise HTTPException(400, "phone_number is required")
-    result = storage.add_org_whatsapp_connection(org_id, phone, body.get("instance_name", ""))
+    count = storage.count_org_phones(org_id)
+    if count >= 3:
+        raise HTTPException(400, "Maximum 3 phones per organization")
+    import uuid as _uuid
+    broker_id = f"phone-{_uuid.uuid4().hex[:12]}"
+    result = storage.add_org_whatsapp_connection(org_id, phone, body.get("instance_name", ""), broker_id)
     if not result:
         raise HTTPException(400, "Failed to add WhatsApp connection")
+    async with httpx.AsyncClient(timeout=10) as client:
+        for base_url in _ingestor_urls():
+            try:
+                resp = await client.post(f"{base_url}/connect?broker_id={broker_id}")
+                if resp.status_code == 200:
+                    break
+            except httpx.RequestError:
+                continue
     return result
 
 
 @app.delete("/api/whatsapp/{conn_id}")
 async def remove_org_whatsapp(conn_id: int):
-    ok = storage.remove_org_whatsapp_connection(conn_id)
-    if not ok:
+    row = storage.get_org_whatsapp_connection(conn_id)
+    if not row:
         raise HTTPException(404, "Connection not found")
-    return {"ok": True}
+    broker_id = row.get("broker_id", "")
+    if broker_id:
+        async with httpx.AsyncClient(timeout=10) as client:
+            for base_url in _ingestor_urls():
+                try:
+                    await client.post(f"{base_url}/disconnect?broker_id={broker_id}")
+                    break
+                except httpx.RequestError:
+                    continue
+    ok = storage.remove_org_whatsapp_connection(conn_id)
+    return {"ok": ok}
+
+
+@app.get("/api/phones")
+async def list_phones():
+    orgs = storage.list_organizations(limit=1)
+    org_id = orgs[0]["id"] if orgs else DEFAULT_TENANT_ID
+    phones = storage.list_org_whatsapp_connections(org_id)
+    ingestor_statuses = {}
+    async with httpx.AsyncClient(timeout=5) as client:
+        for base_url in _ingestor_urls():
+            try:
+                resp = await client.get(f"{base_url}/list")
+                if resp.status_code == 200:
+                    for s in resp.json():
+                        ingestor_statuses[s.get("broker_id", "")] = s
+                    break
+            except httpx.RequestError:
+                continue
+    result = []
+    for phone in phones:
+        broker_id = phone.get("broker_id", "")
+        status = ingestor_statuses.get(broker_id, {})
+        result.append({
+            **phone,
+            "connected": status.get("connected", False),
+            "connection_state": status.get("connection_state", "unknown"),
+            "phone_number_live": status.get("phone_number", ""),
+            "display_name": status.get("display_name", ""),
+            "connected_since": status.get("connected_since", ""),
+            "last_message_at": status.get("last_message_at", ""),
+            "qr_available": status.get("qr_available", False),
+            "total_messages_received": status.get("total_messages_received", 0),
+        })
+    return {"phones": result}
+
+
+@app.post("/api/phones")
+async def create_phone(body: dict):
+    phone_number = body.get("phone_number", "").strip()
+    instance_name = body.get("instance_name", "").strip()
+    if not phone_number:
+        raise HTTPException(400, "phone_number is required")
+    orgs = storage.list_organizations(limit=1)
+    org_id = orgs[0]["id"] if orgs else DEFAULT_TENANT_ID
+    count = storage.count_org_phones(org_id)
+    if count >= 3:
+        raise HTTPException(400, "Maximum 3 phones per organization")
+    import uuid as _uuid
+    broker_id = f"phone-{_uuid.uuid4().hex[:12]}"
+    result = storage.add_org_whatsapp_connection(org_id, phone_number, instance_name, broker_id)
+    if not result:
+        raise HTTPException(400, "Failed to create phone")
+    async with httpx.AsyncClient(timeout=10) as client:
+        for base_url in _ingestor_urls():
+            try:
+                resp = await client.post(f"{base_url}/connect?broker_id={broker_id}")
+                if resp.status_code == 200:
+                    break
+            except httpx.RequestError:
+                continue
+    return result
+
+
+@app.get("/api/phones/{phone_id}")
+async def get_phone(phone_id: int):
+    phone = storage.get_org_whatsapp_connection(phone_id)
+    if not phone:
+        raise HTTPException(404, "Phone not found")
+    broker_id = phone.get("broker_id", "")
+    status = {}
+    async with httpx.AsyncClient(timeout=5) as client:
+        for base_url in _ingestor_urls():
+            try:
+                resp = await client.get(f"{base_url}/status?broker_id={broker_id}")
+                if resp.status_code == 200:
+                    status = resp.json()
+                    break
+            except httpx.RequestError:
+                continue
+    return {
+        **phone,
+        "connected": status.get("connected", False),
+        "connection_state": status.get("connection_state", "unknown"),
+        "phone_number_live": status.get("phone_number", ""),
+        "display_name": status.get("display_name", ""),
+        "connected_since": status.get("connected_since", ""),
+        "last_message_at": status.get("last_message_at", ""),
+        "qr_available": status.get("qr_available", False),
+        "qr": status.get("qr", ""),
+        "total_messages_received": status.get("total_messages_received", 0),
+    }
+
+
+@app.delete("/api/phones/{phone_id}")
+async def delete_phone(phone_id: int):
+    phone = storage.get_org_whatsapp_connection(phone_id)
+    if not phone:
+        raise HTTPException(404, "Phone not found")
+    broker_id = phone.get("broker_id", "")
+    if broker_id:
+        async with httpx.AsyncClient(timeout=10) as client:
+            for base_url in _ingestor_urls():
+                try:
+                    await client.post(f"{base_url}/disconnect?broker_id={broker_id}")
+                    break
+                except httpx.RequestError:
+                    continue
+    ok = storage.remove_org_whatsapp_connection(phone_id)
+    return {"ok": ok}
+
+
+@app.post("/api/phones/{phone_id}/reset")
+async def reset_phone(phone_id: int):
+    phone = storage.get_org_whatsapp_connection(phone_id)
+    if not phone:
+        raise HTTPException(404, "Phone not found")
+    broker_id = phone.get("broker_id", "")
+    async with httpx.AsyncClient(timeout=10) as client:
+        for base_url in _ingestor_urls():
+            try:
+                resp = await client.post(f"{base_url}/reset?broker_id={broker_id}")
+                if resp.status_code == 200:
+                    return {"ok": True, "message": "Session cleared, QR should appear shortly"}
+            except httpx.RequestError:
+                continue
+    raise HTTPException(502, "Cannot reach ingestor")
+
+
+@app.post("/api/phones/{phone_id}/disconnect")
+async def disconnect_phone(phone_id: int):
+    phone = storage.get_org_whatsapp_connection(phone_id)
+    if not phone:
+        raise HTTPException(404, "Phone not found")
+    broker_id = phone.get("broker_id", "")
+    async with httpx.AsyncClient(timeout=10) as client:
+        for base_url in _ingestor_urls():
+            try:
+                resp = await client.post(f"{base_url}/disconnect?broker_id={broker_id}")
+                if resp.status_code == 200:
+                    return {"ok": True, "message": "Phone disconnected"}
+            except httpx.RequestError:
+                continue
+    raise HTTPException(502, "Cannot reach ingestor")
+
+
+@app.post("/api/phones/{phone_id}/connect")
+async def connect_phone(phone_id: int):
+    phone = storage.get_org_whatsapp_connection(phone_id)
+    if not phone:
+        raise HTTPException(404, "Phone not found")
+    broker_id = phone.get("broker_id", "")
+    async with httpx.AsyncClient(timeout=10) as client:
+        for base_url in _ingestor_urls():
+            try:
+                resp = await client.post(f"{base_url}/connect?broker_id={broker_id}")
+                if resp.status_code == 200:
+                    return resp.json()
+            except httpx.RequestError:
+                continue
+    raise HTTPException(502, "Cannot reach ingestor")
 
 
 @app.get("/api/admin/orgs")

@@ -744,18 +744,32 @@ class SupabaseStorage(Storage):
 
     def list_org_whatsapp_connections(self, org_id: str) -> list[dict]:
         res = self.client.table("org_whatsapp_connections").select("*")\
-            .eq("organization_id", org_id).execute()
+            .eq("organization_id", org_id).order("created_at", desc=False).execute()
         return res.data or []
 
-    def add_org_whatsapp_connection(self, org_id: str, phone_number: str, instance_name: str = "") -> dict | None:
-        res = self.client.table("org_whatsapp_connections").insert({
-            "organization_id": org_id, "phone_number": phone_number, "instance_name": instance_name
-        }).execute()
+    def add_org_whatsapp_connection(self, org_id: str, phone_number: str, instance_name: str = "", broker_id: str = "") -> dict | None:
+        data = {"organization_id": org_id, "phone_number": phone_number, "instance_name": instance_name}
+        if broker_id:
+            data["broker_id"] = broker_id
+        res = self.client.table("org_whatsapp_connections").insert(data).execute()
         return res.data[0] if res.data else None
 
     def remove_org_whatsapp_connection(self, conn_id: int) -> bool:
         res = self.client.table("org_whatsapp_connections").delete().eq("id", conn_id).execute()
         return bool(res.data)
+
+    def get_org_whatsapp_connection(self, conn_id: int) -> dict | None:
+        res = self.client.table("org_whatsapp_connections").select("*").eq("id", conn_id).limit(1).execute()
+        return res.data[0] if res.data else None
+
+    def get_phone_broker_id(self, conn_id: int) -> str | None:
+        row = self.get_org_whatsapp_connection(conn_id)
+        return row.get("broker_id") if row else None
+
+    def count_org_phones(self, org_id: str) -> int:
+        res = self.client.table("org_whatsapp_connections").select("id", count="exact")\
+            .eq("organization_id", org_id).execute()
+        return res.count if hasattr(res, "count") else 0
 
     # ── Raw Messages ─────────────────────────────────────────────
 

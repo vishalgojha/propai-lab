@@ -1543,3 +1543,56 @@ export interface UsageStats {
 export function getUsageStats() {
   return fetchJSON<UsageStats>("/usage");
 }
+
+// ── Phone Management ───────────────────────────────────────────────
+
+export interface Phone {
+  id: number;
+  organization_id: string;
+  phone_number: string;
+  instance_name: string;
+  broker_id: string;
+  is_active: boolean;
+  connected_at: string;
+  created_at: string;
+  connected: boolean;
+  connection_state: string;
+  phone_number_live: string;
+  display_name: string;
+  connected_since: string;
+  last_message_at: string;
+  qr_available: boolean;
+  qr?: string;
+  total_messages_received: number;
+}
+
+export function getPhones() {
+  return fetchJSON<{ phones: Phone[] }>("/phones");
+}
+
+export function getPhone(phoneId: number) {
+  return fetchJSON<Phone>(`/phones/${phoneId}`);
+}
+
+export function createPhone(data: { phone_number: string; instance_name?: string }) {
+  return fetchJSON<Phone>("/phones", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export function deletePhone(phoneId: number) {
+  return fetchJSON<{ ok: boolean }>(`/phones/${phoneId}`, { method: "DELETE" });
+}
+
+export function resetPhone(phoneId: number) {
+  return fetchJSON<{ ok: boolean; message: string }>(`/phones/${phoneId}/reset`, { method: "POST" });
+}
+
+export function disconnectPhone(phoneId: number) {
+  return fetchJSON<{ ok: boolean; message: string }>(`/phones/${phoneId}/disconnect`, { method: "POST" });
+}
+
+export function connectPhone(phoneId: number) {
+  return fetchJSON<Phone>(`/phones/${phoneId}/connect`, { method: "POST" });
+}

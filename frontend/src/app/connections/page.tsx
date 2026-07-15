@@ -5,31 +5,9 @@ export const dynamic = 'force-dynamic';
 import { useCallback, useEffect, useRef, useState } from "react";
 import QRCode from "qrcode";
 import { useRouter } from "next/navigation";
-import { Activity, Clock, Database, ImageUp, Inbox, List, LogOut, MessageSquare, RefreshCw, Shield, Smartphone, AlertTriangle, Users, Zap, Lock } from "lucide-react";
+import { Activity, Clock, Database, ImageUp, Inbox, List, LogOut, MessageSquare, Plus, RefreshCw, Shield, Smartphone, Trash2, AlertTriangle, Users, Zap, Lock, X } from "lucide-react";
 import { useAuth } from "@/lib/AuthProvider";
-
-type ConnectionPhase =
-  | "loading"
-  | "qr_ready"
-  | "qr_scanned"
-  | "authenticating"
-  | "connected"
-  | "syncing"
-  | "reconnecting"
-  | "error";
-
-function defaultConnectionError() {
-  return "Could not determine WhatsApp connection state. Wait for a status update, or refresh the QR if it stays stuck.";
-}
-
-const DISCONNECT_REASONS: Record<string, string> = {
-  "408": "QR expired — tap to refresh",
-  "429": "Too many attempts, please wait",
-  "401": "Session expired, please re-link",
-  "500": "Connection lost — unexpected error",
-  "logged_out": "WhatsApp logged out",
-  "closed": "Connection closed",
-};
+import { getPhones, createPhone, deletePhone, resetPhone, disconnectPhone, connectPhone, type Phone } from "@/lib/api";
 
 type HealthStatus = "healthy" | "warning" | "error";
 
@@ -168,28 +146,251 @@ function formatTime(iso: string | null): string {
   return d.toLocaleDateString();
 }
 
+function formatPhone(p: string) {
+  if (!p) return "—";
+  if (p.startsWith("+")) return p;
+  const digits = p.replace(/\D/g, "");
+  if (digits.length === 12) return `+${digits.slice(0, 2)} ${digits.slice(2)}`;
+  if (digits.length === 10) return `+91 ${digits}`;
+  return `+${digits}`;
+}
+
+function CreatePhoneDialog({ open, onClose, onCreated }: { open: boolean; onClose: () => void; onCreated: () => void }) {
+  const [phoneNumber, setPhoneNumber] = useState("");
+  const [instanceName, setInstanceName] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleSubmit = async () => {
+    if (!phoneNumber.trim()) {
+      setError("Phone number is required");
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      await createPhone({ phone_number: phoneNumber.trim(), instance_name: instanceName.trim() || undefined });
+      setPhoneNumber("");
+      setInstanceName("");
+      onCreated();
+      onClose();
+    } catch (e: any) {
+      setError(e?.message || "Failed to create phone");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
+      <div className="bg-zinc-900 border border-white/10 rounded-2xl p-6 w-full max-w-md mx-4" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-base font-bold text-white">Add Phone</h3>
+          <button onClick={onClose} className="text-zinc-500 hover:text-white"><X className="w-5 h-5" /></button>
+        </div>
+        <p className="text-xs text-zinc-500 mb-4">Create a new WhatsApp connection. The phone will start disconnected and need QR pairing.</p>
+        <div className="space-y-3">
+          <div>
+            <label className="text-xs font-medium text-zinc-400 mb-1 block">Phone Number *</label>
+            <input
+              type="tel"
+              value={phoneNumber}
+              onChange={(e) => setPhoneNumber(e.target.value)}
+              placeholder="+91 98765 43210"
+              className="w-full rounded-lg bg-zinc-800 border border-white/10 px-3 py-2.5 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-[#3EE88A]/50"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-zinc-400 mb-1 block">Instance Name (optional)</label>
+            <input
+              type="text"
+              value={instanceName}
+              onChange={(e) => setInstanceName(e.target.value)}
+              placeholder="e.g. Sales Team"
+              className="w-full rounded-lg bg-zinc-800 border border-white/10 px-3 py-2.5 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-[#3EE88A]/50"
+            />
+          </div>
+          {error && <p className="text-xs text-red-400">{error}</p>}
+        </div>
+        <div className="flex gap-3 mt-6">
+          <button onClick={onClose} className="flex-1 rounded-lg border border-white/10 bg-zinc-800 text-zinc-300 px-4 py-2.5 text-xs font-bold min-h-[44px]">Cancel</button>
+          <button
+            onClick={handleSubmit}
+            disabled={loading || !phoneNumber.trim()}
+            className="flex-1 rounded-lg bg-[#3EE88A] text-black px-4 py-2.5 text-xs font-bold min-h-[44px] disabled:opacity-50"
+          >
+            {loading ? "Creating..." : "Create Phone"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function QRModal({ phone, open, onClose }: { phone: Phone; open: boolean; onClose: () => void }) {
+  const [qrText, setQrText] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  const fetchQR = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await getPhone(phone.id);
+      if (res.qr) {
+        setQrText(res.qr);
+      } else if (res.connected) {
+        setError("Phone is already connected");
+      } else {
+        setError("QR not available yet. Try refreshing the connection.");
+      }
+    } catch {
+      setError("Failed to fetch QR code");
+    } finally {
+      setLoading(false);
+    }
+  }, [phone.id]);
+
+  useEffect(() => {
+    if (open) fetchQR();
+    if (!open) setQrText(null);
+  }, [open, fetchQR]);
+
+  useEffect(() => {
+    if (!canvasRef.current || !qrText) return;
+    QRCode.toCanvas(canvasRef.current, qrText, {
+      width: 320,
+      margin: 2,
+      color: { dark: "#000000", light: "#ffffff" },
+    });
+  }, [qrText]);
+
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
+      <div className="bg-zinc-900 border border-white/10 rounded-2xl p-6 w-full max-w-lg mx-4" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-base font-bold text-white">Scan QR — {formatPhone(phone.phone_number)}</h3>
+          <button onClick={onClose} className="text-zinc-500 hover:text-white"><X className="w-5 h-5" /></button>
+        </div>
+        {loading && (
+          <div className="flex items-center justify-center py-16">
+            <div className="w-8 h-8 rounded-full border-2 border-zinc-600 border-t-[#3EE88A] animate-spin" />
+          </div>
+        )}
+        {error && (
+          <div className="flex flex-col items-center py-12 text-center">
+            <p className="text-sm text-zinc-400">{error}</p>
+            <button onClick={fetchQR} disabled={loading} className="mt-4 rounded-lg bg-[#3EE88A] px-6 py-2.5 text-xs font-bold text-black min-h-[44px] disabled:opacity-50">
+              Retry
+            </button>
+          </div>
+        )}
+        {!loading && !error && qrText && (
+          <div className="flex flex-col items-center">
+            <canvas ref={canvasRef} className="rounded-xl border-[6px] border-white bg-white" style={{ width: "min(320px, 100%)", height: "min(320px, 100%)", aspectRatio: "1/1" }} />
+            <ol className="mt-4 space-y-2 text-sm text-zinc-400 text-center">
+              <li>Open <strong className="text-white">WhatsApp</strong> → <strong className="text-white">Settings</strong> → <strong className="text-white">Linked Devices</strong></li>
+              <li>Tap <strong className="text-white">Link a Device</strong> and scan this QR</li>
+            </ol>
+            <button onClick={fetchQR} disabled={loading} className="mt-4 rounded-lg border border-white/10 bg-zinc-800 text-zinc-300 px-6 py-2.5 text-xs font-bold min-h-[44px] disabled:opacity-50 w-full">
+              Refresh QR
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function PhoneCard({ phone, onRefresh, onShowQR }: { phone: Phone; onRefresh: () => void; onShowQR: (p: Phone) => void }) {
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
+
+  const handleAction = async (action: string) => {
+    setActionLoading(action);
+    try {
+      if (action === "disconnect") await disconnectPhone(phone.id);
+      else if (action === "reset") await resetPhone(phone.id);
+      else if (action === "delete") await deletePhone(phone.id);
+      else if (action === "connect") await connectPhone(phone.id);
+      onRefresh();
+    } catch { /* ignore */ }
+    setActionLoading(null);
+  };
+
+  const isConnected = phone.connected || phone.connection_state === "open";
+  const phoneDisplay = phone.phone_number_live || phone.phone_number;
+  const health: HealthStatus = isConnected ? "healthy" : phone.connection_state === "unknown" ? "warning" : "error";
+
+  return (
+    <div className="rounded-2xl border border-white/10 p-5 space-y-4">
+      <div className="flex items-center gap-3">
+        <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[#3EE88A]/10">
+          <Smartphone className="w-5 h-5 text-[#3EE88A]" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-bold text-white">{formatPhone(phoneDisplay)}</span>
+            <StatusDot status={health} />
+          </div>
+          {phone.instance_name && <div className="text-xs text-zinc-500">{phone.instance_name}</div>}
+          {!isConnected && phone.connection_state !== "unknown" && (
+            <div className="text-[11px] text-amber-400 mt-0.5">Disconnected</div>
+          )}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-0 text-center [&>*:nth-child(2n)]:border-l [&>*:nth-child(2n)]:border-white/10 [&>*:nth-child(n+3)]:border-t [&>*:nth-child(n+3)]:border-white/10">
+        <div className="py-2">
+          <div className="text-[11px] text-zinc-500 uppercase">Status</div>
+          <div className={`text-xs font-semibold ${isConnected ? "text-emerald-400" : "text-amber-400"}`}>{isConnected ? "Connected" : "Disconnected"}</div>
+        </div>
+        <div className="py-2">
+          <div className="text-[11px] text-zinc-500 uppercase">Last Active</div>
+          <div className="text-xs font-semibold text-white">{formatTime(phone.last_message_at)}</div>
+        </div>
+        <div className="py-2">
+          <div className="text-[11px] text-zinc-500 uppercase">Connected</div>
+          <div className="text-xs font-semibold text-white">{phone.connected_since ? formatTime(phone.connected_since) : "—"}</div>
+        </div>
+        <div className="py-2">
+          <div className="text-[11px] text-zinc-500 uppercase">Messages</div>
+          <div className="text-xs font-semibold text-white">{phone.total_messages_received?.toLocaleString() || "0"}</div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-4 gap-2">
+        <ActionButton icon={<ImageUp className="w-3.5 h-3.5" />} label="QR" onClick={() => onShowQR(phone)} />
+        <ActionButton
+          icon={isConnected ? <LogOut className="w-3.5 h-3.5" /> : <RefreshCw className="w-3.5 h-3.5" />}
+          label={isConnected ? "Disconnect" : "Connect"}
+          onClick={() => handleAction(isConnected ? "disconnect" : "connect")}
+          variant={isConnected ? "danger" : "primary"}
+        />
+        <ActionButton icon={<RefreshCw className="w-3.5 h-3.5" />} label="Reset" onClick={() => handleAction("reset")} />
+        <ActionButton icon={<Trash2 className="w-3.5 h-3.5" />} label="Delete" onClick={() => handleAction("delete")} variant="danger" />
+      </div>
+    </div>
+  );
+}
+
 export default function ConnectionCenterPage() {
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
 
-  // Redirect to login if not authenticated
   useEffect(() => {
     if (!authLoading && !user) {
       router.push("/auth/login?next=/connections");
     }
   }, [user, authLoading, router]);
 
-  const [phase, setPhase] = useState<ConnectionPhase>("loading");
-  const [qrText, setQrText] = useState<string | null>(null);
-  const [errorMsg, setErrorMsg] = useState<string | null>(defaultConnectionError());
-  const [phoneNumber, setPhoneNumber] = useState<string | null>(null);
-  const [displayName, setDisplayName] = useState<string | null>(null);
-  const [wabaConfig, setWabaConfig] = useState<any>(null);
-  const [groups, setGroups] = useState<number | null>(null);
-  const [messages, setMessages] = useState<number | null>(null);
-  const [lastSync, setLastSync] = useState<string | null>(null);
-  const [connectedSince, setConnectedSince] = useState<string | null>(null);
-  const [lastMessageAt, setLastMessageAt] = useState<string | null>(null);
+  const [phones, setPhones] = useState<Phone[]>([]);
+  const [phonesLoading, setPhonesLoading] = useState(true);
+  const [showCreate, setShowCreate] = useState(false);
+  const [qrPhone, setQrPhone] = useState<Phone | null>(null);
+
   const [totalParsed, setTotalParsed] = useState<number>(0);
   const [totalListings, setTotalListings] = useState<number>(0);
   const [totalRequirements, setTotalRequirements] = useState<number>(0);
@@ -199,43 +400,25 @@ export default function ConnectionCenterPage() {
   const [rawPending, setRawPending] = useState<number>(0);
   const [extractionPct, setExtractionPct] = useState<number>(0);
   const [recentlyProcessed1h, setRecentlyProcessed1h] = useState<number>(0);
-  const [qrLoading, setQrLoading] = useState(false);
-  const [disconnecting, setDisconnecting] = useState(false);
-  const [showQrRecovery, setShowQrRecovery] = useState(false);
-  const eventSourceRef = useRef<EventSource | null>(null);
-  const wasEverConnectedRef = useRef(false);
-  const reconnectAttempts = useRef(0);
+
+  const fetchPhones = useCallback(async () => {
+    try {
+      const res = await getPhones();
+      setPhones(res.phones || []);
+    } catch { /* ignore */ }
+    setPhonesLoading(false);
+  }, []);
 
   const fetchStats = useCallback(async () => {
     try {
-      const [detail, stats, syncAct, waba] = await Promise.all([
-        fetch("/api/sync/connection").then((r) => r.json()),
+      const [stats, syncAct] = await Promise.all([
         fetch("/api/stats").then((r) => r.json()).catch(() => ({})),
         fetch("/api/dashboard/sync-activity").then((r) => r.json()).catch(() => ({})),
-        fetch("/api/companion/config").then((r) => r.json()).catch(() => ({})),
       ]);
-      if (detail?.phone_number) setPhoneNumber(detail.phone_number);
-      if (detail?.display_name) setDisplayName(detail.display_name);
-      if (detail?.total_groups != null) setGroups(detail.total_groups);
-      if (detail?.messages_found != null) setMessages(detail.messages_found);
-      if (detail?.last_sync) setLastSync(detail.last_sync);
-      if (detail?.connected_since) setConnectedSince(detail.connected_since);
-      if (detail?.last_message_at) setLastMessageAt(detail.last_message_at);
-
-      // Bootstrap phase from the polling endpoint (reliable even if SSE is flaky)
-      if (detail?.connected || detail?.connection_state === "open") {
-        setPhase((p) => (p === "connected" || p === "syncing" ? p : "connected"));
-        wasEverConnectedRef.current = true;
-        reconnectAttempts.current = 0;
-      }
-
-      if (stats?.total_messages != null && !detail?.messages_found) setMessages(stats.total_messages);
       if (stats?.total_parsed != null) setTotalParsed(stats.total_parsed);
       if (stats?.total_listings != null) setTotalListings(stats.total_listings);
       if (stats?.total_requirements != null) setTotalRequirements(stats.total_requirements);
       if (stats?.total_brokers != null) setTotalBrokers(stats.total_brokers);
-
-      // Extraction pipeline progress
       const ext = syncAct?.extraction;
       if (ext) {
         if (ext.total_raw != null) setRawTotal(ext.total_raw);
@@ -243,396 +426,93 @@ export default function ConnectionCenterPage() {
         if (ext.pending != null) setRawPending(ext.pending);
         if (ext.pct != null) setExtractionPct(ext.pct);
       }
-      // Also try the dedicated extraction progress endpoint for recent activity
       try {
         const extProgress = await fetch("/api/extraction/progress").then((r) => r.json());
         if (extProgress?.recently_processed_1h != null) setRecentlyProcessed1h(extProgress.recently_processed_1h);
       } catch { /* ignore */ }
-
-      // WABA config — shows when there's no live whatsmeow session
-      if (waba?.whatsapp_business_number) {
-        setWabaConfig(waba);
-        if (!displayName) {
-          // Derive a display name from the WABA number
-          setDisplayName(waba.whatsapp_business_number.startsWith("+") ? waba.whatsapp_business_number : `+${waba.whatsapp_business_number}`);
-        }
-      }
     } catch { /* ignore */ }
   }, []);
 
-  const handleConnected = useCallback((data: Record<string, unknown>) => {
-    setPhase("connected");
-    wasEverConnectedRef.current = true;
-    reconnectAttempts.current = 0;
-    setPhoneNumber((data.phone_number as string) || null);
-    setDisplayName((data.display_name as string) || null);
-    fetchStats();
-  }, [fetchStats]);
-
-  const handleDisconnected = useCallback((data: Record<string, unknown>) => {
-    const reason = (data.reason as string) || "unknown";
-    const specific = DISCONNECT_REASONS[String(reason)];
-    setPhase("reconnecting");
-    setErrorMsg(specific || defaultConnectionError());
-    setQrText(null);
-  }, []);
-
-  const loadingFallback = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
-    if (phase !== "loading") return;
-    loadingFallback.current = setTimeout(() => {
-      setPhase((p) => (p === "connected" || p === "syncing" || p === "reconnecting" ? "reconnecting" : "error"));
-      setErrorMsg(defaultConnectionError());
-    }, 8000);
-    return () => { if (loadingFallback.current) clearTimeout(loadingFallback.current); };
-  }, [phase]);
-
-  useEffect(() => {
-    if (phase !== "reconnecting") {
-      setShowQrRecovery(false);
-      return;
+    if (!authLoading && user) {
+      fetchPhones();
+      fetchStats();
+      const interval = setInterval(() => {
+        fetchPhones();
+        fetchStats();
+      }, 15000);
+      return () => clearInterval(interval);
     }
-    const timeout = setTimeout(() => setShowQrRecovery(true), 20000);
-    return () => clearTimeout(timeout);
-  }, [phase]);
+  }, [authLoading, user, fetchPhones, fetchStats]);
 
-  const connectSSE = useCallback(() => {
-    if (eventSourceRef.current) eventSourceRef.current.close();
+  if (authLoading || !user) return null;
 
-    const es = new EventSource("/api/sync/events");
-    eventSourceRef.current = es;
-
-    // ── Heartbeat: SSE is alive, nothing to do ──
-    es.addEventListener("heartbeat", () => {
-      // If reconnecting and we get a heartbeat, the transport is back
-      setPhase((p) => {
-        if (p === "reconnecting") return "reconnecting"; // stay waiting for real state
-        return p;
-      });
-    });
-
-    // ── Status: periodic full state snapshot ──
-    es.addEventListener("status", (e) => {
-      try {
-        const data = JSON.parse(e.data);
-        const cs = data.connection_state || "";
-
-        if (cs === "open" && data.connected) {
-          handleConnected(data as Record<string, unknown>);
-        } else if (cs === "qr" && data.qr) {
-          setQrText(data.qr as string);
-          setPhase("qr_ready");
-          setErrorMsg(null);
-        } else if (cs === "closed" || cs === "logged_out") {
-          handleDisconnected({ reason: cs, ...data } as Record<string, unknown>);
-        } else if (cs === "error") {
-          setPhase("reconnecting");
-          setErrorMsg((data.error as string) || defaultConnectionError());
-        } else if (cs === "unknown" || !cs) {
-          // Only show movie quote on initial load; if we were connected, stay reconnecting
-          if (!wasEverConnectedRef.current) {
-            setPhase("reconnecting");
-            setErrorMsg(defaultConnectionError());
-          }
-        }
-      } catch { /* ignore */ }
-    });
-
-    es.addEventListener("connected", (e) => {
-      try {
-        const data = JSON.parse(e.data);
-        handleConnected(data as Record<string, unknown>);
-      } catch { /* ignore */ }
-    });
-
-    es.addEventListener("qr_ready", (e) => {
-      try {
-        const data = JSON.parse(e.data);
-        if (data.qr) {
-          setQrText(data.qr);
-          setPhase("qr_ready");
-          setErrorMsg(null);
-        }
-      } catch { /* ignore */ }
-    });
-
-    es.addEventListener("qr_scanned", () => {
-      setPhase("qr_scanned");
-      setQrText(null);
-      setTimeout(() => setPhase("authenticating"), 600);
-    });
-
-    es.addEventListener("disconnected", (e) => {
-      try {
-        const data = JSON.parse(e.data);
-        handleDisconnected(data as Record<string, unknown>);
-      } catch { /* ignore */ }
-    });
-
-    es.onerror = () => {
-      es.close();
-      if (wasEverConnectedRef.current) {
-        setPhase("reconnecting");
-        setErrorMsg(null);
-      }
-      // Exponential backoff: 2s, 4s, 8s, 16s, max 30s
-      reconnectAttempts.current += 1;
-      const delay = Math.min(2000 * Math.pow(2, reconnectAttempts.current - 1), 30000);
-      setTimeout(connectSSE, delay);
-    };
-  }, [handleConnected, handleDisconnected]);
-
-  useEffect(() => {
-    if (authLoading || !user) return;
-    connectSSE();
-    fetchStats(); // Bootstrap phase from polling endpoint (reliable even if SSE is flaky)
-    return () => {
-      if (eventSourceRef.current) eventSourceRef.current.close();
-    };
-  }, [authLoading, user, connectSSE, fetchStats]);
-
-  useEffect(() => {
-    if (authLoading || !user) return;
-    if (phase === "connected" || phase === "syncing") fetchStats();
-  }, [authLoading, user, phase, fetchStats]);
-
-  const fetchQR = useCallback(async () => {
-    setQrLoading(true);
-    setErrorMsg(null);
-    try {
-      const res = await fetch("/api/sync/qr").then((r) => r.json());
-      if (res?.qr) {
-        setQrText(res.qr);
-        setPhase("qr_ready");
-      } else {
-        setErrorMsg(res?.message || "No QR available");
-      }
-    } catch {
-      setErrorMsg("Could not fetch QR code");
-    } finally {
-      setQrLoading(false);
-    }
-  }, []);
-
-  const handleDisconnect = useCallback(async () => {
-    setDisconnecting(true);
-    try {
-      await fetch("/api/sync/logout", { method: "POST" });
-      setPhase("reconnecting");
-      setErrorMsg("Disconnected. Generating new QR code...");
-      setPhoneNumber(null);
-      setDisplayName(null);
-      setGroups(null);
-      setMessages(null);
-      setLastSync(null);
-      setConnectedSince(null);
-      setLastMessageAt(null);
-      setTimeout(() => fetchQR(), 2000);
-    } catch {
-      setErrorMsg("Failed to disconnect");
-    } finally {
-      setDisconnecting(false);
-    }
-  }, [fetchQR]);
-
-  const connectionHealth: HealthStatus = phase === "connected" || phase === "syncing" ? "healthy" : phase === "reconnecting" ? "warning" : "error";
-  const dbHealth: HealthStatus = totalParsed > 0 ? "healthy" : "warning";
-  const aiHealth: HealthStatus = totalListings > 0 ? "healthy" : "warning";
-  const realtimeHealth: HealthStatus = phase === "connected" ? "healthy" : phase === "reconnecting" ? "warning" : "error";
-
-  const isConnected = phase === "connected" || phase === "syncing";
-  const connectedSeconds = connectedSince ? Math.floor((Date.now() - new Date(connectedSince).getTime()) / 1000) : 0;
-
-  const displayPhone = phoneNumber || "WhatsApp Connected";
-  const formatPhone = (p: string) => {
-    if (p.startsWith("+")) return p;
-    const digits = p.replace(/\D/g, "");
-    if (digits.length === 12) return `+${digits.slice(0, 2)} ${digits.slice(2)}`;
-    if (digits.length === 10) return `+91 ${digits}`;
-    return `+${digits}`;
-  };
-
-  if (authLoading || !user) {
-    return null;
-  }
+  const connectedCount = phones.filter((p) => p.connected || p.connection_state === "open").length;
+  const totalMessages = phones.reduce((sum, p) => sum + (p.total_messages_received || 0), 0);
 
   return (
     <div className="max-w-6xl mx-auto px-4 lg:px-6 pt-12 pb-12">
-      <div className="mb-8">
-        <h2 className="text-lg font-bold text-white">Connect WhatsApp</h2>
-        <p className="mt-2 max-w-2xl text-sm text-zinc-500">
-          Monitor and manage your WhatsApp integration. All data is processed in real-time.
-        </p>
+      <div className="flex items-center justify-between mb-8">
+        <div>
+          <h2 className="text-lg font-bold text-white">WhatsApp Phones</h2>
+          <p className="mt-2 max-w-2xl text-sm text-zinc-500">
+            Manage your WhatsApp connections. Each phone runs its own session (max 3 per account).
+          </p>
+        </div>
+        {phones.length < 3 && (
+          <button
+            onClick={() => setShowCreate(true)}
+            className="flex items-center gap-2 rounded-lg bg-[#3EE88A] text-black px-4 py-2.5 text-xs font-bold min-h-[44px]"
+          >
+            <Plus className="w-4 h-4" /> Add Phone
+          </button>
+        )}
       </div>
 
-      {!isConnected ? (
-        <>
-          {/* ── Not Connected / QR / Error ── */}
-          <div className="rounded-2xl border border-white/10 bg-zinc-900 p-5">
-            {phase === "loading" && (
-              <div className="flex items-center justify-center py-16 text-sm text-zinc-500">Loading...</div>
-            )}
-
-            {phase === "qr_ready" && qrText && (
-              <div className="flex flex-col lg:flex-row items-start gap-6">
-                <div className="flex-shrink-0 w-full max-w-[360px] mx-auto lg:mx-0">
-                  <QRDisplay qrText={qrText} onRefresh={fetchQR} refreshing={qrLoading} />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <h4 className="text-sm font-bold text-white mb-3">How to connect</h4>
-                  <ol className="space-y-3 text-base text-zinc-400">
-                    <li className="flex items-start gap-2">
-                      <span className="flex-shrink-0 w-6 h-6 rounded-full bg-[#3EE88A]/10 text-[#3EE88A] flex items-center justify-center text-xs font-bold">1</span>
-                      <span>Open <strong className="text-white">WhatsApp</strong> on your phone</span>
-                    </li>
-                    <li className="flex items-start gap-2">
-                      <span className="flex-shrink-0 w-6 h-6 rounded-full bg-[#3EE88A]/10 text-[#3EE88A] flex items-center justify-center text-xs font-bold">2</span>
-                      <span>Go to <strong className="text-white">Settings</strong> → <strong className="text-white">Linked Devices</strong></span>
-                    </li>
-                    <li className="flex items-start gap-2">
-                      <span className="flex-shrink-0 w-6 h-6 rounded-full bg-[#3EE88A]/10 text-[#3EE88A] flex items-center justify-center text-xs font-bold">3</span>
-                      <span>Tap <strong className="text-white">Link a Device</strong></span>
-                    </li>
-                    <li className="flex items-start gap-2">
-                      <span className="flex-shrink-0 w-6 h-6 rounded-full bg-[#3EE88A]/10 text-[#3EE88A] flex items-center justify-center text-xs font-bold">4</span>
-                      <span>Scan this QR code with your phone</span>
-                    </li>
-                  </ol>
-                  <p className="mt-4 text-xs text-zinc-600">QR refreshes automatically if expired.</p>
-                </div>
-              </div>
-            )}
-
-            {(phase === "qr_scanned" || phase === "authenticating") && (
-              <div className="flex flex-col items-center py-12 text-center">
-                <div className="w-10 h-10 rounded-full border-2 border-zinc-600 border-t-[#3EE88A] animate-spin" />
-                <div className="mt-4 text-sm font-semibold text-white">Pairing with WhatsApp<LoadingDots /></div>
-                <div className="mt-1 text-xs text-zinc-500">Finishing secure connection<LoadingDots /></div>
-              </div>
-            )}
-
-            {(phase === "error" || phase === "reconnecting") && (
-              <div className="flex flex-col items-center py-12 text-center">
-                <div className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center mb-3">
-                  {phase === "reconnecting" ? (
-                    <RefreshCw className="w-5 h-5 text-amber-400 animate-spin" strokeWidth={1.5} />
-                  ) : (
-                    <MessageSquare className="w-5 h-5 text-zinc-400" strokeWidth={1.5} />
-                  )}
-                </div>
-                <p className="text-sm text-zinc-300 italic max-w-md leading-relaxed">
-                  {phase === "reconnecting"
-                    ? "Waiting for WhatsApp to reconnect."
-                    : errorMsg || defaultConnectionError()}
-                </p>
-                {phase === "reconnecting" && (
-                  <p className="mt-2 text-xs text-zinc-500 max-w-md">
-                    The session is still being monitored in the background. QR recovery will appear if the reconnect stays stuck.
-                  </p>
-                )}
-                <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
-                  {phase === "error" || showQrRecovery ? (
-                    <>
-                      <button
-                        onClick={fetchQR}
-                        disabled={qrLoading}
-                        className="rounded-lg bg-[#3EE88A] px-6 py-2.5 text-xs font-bold text-black min-h-[44px] disabled:opacity-50"
-                      >
-                        {qrLoading ? "Loading..." : "Scan QR Code"}
-                      </button>
-                      <button
-                        onClick={async () => {
-                          setQrLoading(true);
-                          try {
-                            await fetch("/api/sync/refresh-qr", { method: "POST" });
-                            await fetchQR();
-                          } catch {
-                            setErrorMsg("Could not refresh QR");
-                          } finally {
-                            setQrLoading(false);
-                          }
-                        }}
-                        disabled={qrLoading}
-                        className="rounded-lg border border-white/20 px-6 py-2.5 text-xs font-bold text-white min-h-[44px] disabled:opacity-50"
-                      >
-                        Force Fresh QR
-                      </button>
-                    </>
-                  ) : null}
-                  <button
-                    onClick={() => {
-                      setPhase("loading");
-                      setErrorMsg(defaultConnectionError());
-                      void fetchStats();
-                      void fetchQR();
-                    }}
-                    className="rounded-lg border border-white/20 px-6 py-2.5 text-xs font-bold text-white min-h-[44px] disabled:opacity-50"
-                  >
-                    Retry status
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-        </>
+      {phonesLoading ? (
+        <div className="flex items-center justify-center py-16 text-sm text-zinc-500">Loading phones...</div>
+      ) : phones.length === 0 ? (
+        <div className="rounded-2xl border border-white/10 p-12 text-center">
+          <Smartphone className="w-10 h-10 text-zinc-600 mx-auto mb-3" />
+          <p className="text-sm text-zinc-400">No phones connected yet.</p>
+          <p className="text-xs text-zinc-600 mt-1">Add a phone to start monitoring WhatsApp groups.</p>
+          <button
+            onClick={() => setShowCreate(true)}
+            className="mt-4 rounded-lg bg-[#3EE88A] text-black px-6 py-2.5 text-xs font-bold min-h-[44px]"
+          >
+            <Plus className="w-4 h-4 inline mr-1" /> Add Your First Phone
+          </button>
+        </div>
       ) : (
-        /* ── Connected Dashboard ── */
-        <div className="space-y-6">
+        <>
+          {/* Phone Cards */}
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
+            {phones.map((phone) => (
+              <PhoneCard key={phone.id} phone={phone} onRefresh={fetchPhones} onShowQR={setQrPhone} />
+            ))}
+          </div>
 
-          {/* ═══ Connection + Activity (side by side) ═══ */}
-          <div className="grid lg:grid-cols-2 gap-6">
-            <Section title="Connection">
-              <div className="flex items-center gap-4 mb-4">
-                <div className="flex h-14 w-14 items-center justify-center rounded-full bg-[#3EE88A]/10">
-                  <Smartphone className="w-6 h-6 text-[#3EE88A]" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="text-base font-bold text-white">{formatPhone(displayPhone)}</span>
-                    <StatusDot status="healthy" />
-                  </div>
-                  {displayName && <div className="text-xs text-zinc-500">{displayName}</div>}
-                </div>
-              </div>
+          {/* Aggregate Stats */}
+          <div className="grid lg:grid-cols-2 gap-6 mb-8">
+            <Section title="Summary">
               <div className="grid grid-cols-2 gap-0 [&>*:nth-child(2n)]:border-l [&>*:nth-child(2n)]:border-white/10 [&>*:nth-child(n+3)]:border-t [&>*:nth-child(n+3)]:border-white/10">
-                <StatBox icon={<Clock className="w-4 h-4 text-zinc-400" />} label="Connected" value={connectedSeconds ? formatDuration(connectedSeconds) : "—"} />
-                <StatBox icon={<Activity className="w-4 h-4 text-zinc-400" />} label="Last Activity" value={formatTime(lastMessageAt || lastSync)} />
-                <StatBox icon={<Users className="w-4 h-4 text-zinc-400" />} label="Connected Account" value={displayName || "—"} />
-                <StatBox icon={<Shield className="w-4 h-4 text-zinc-400" />} label="Status" value={connectionHealth === "healthy" ? "Healthy" : "Offline"} status={connectionHealth} />
+                <StatBox icon={<Smartphone className="w-4 h-4 text-zinc-400" />} label="Phones" value={`${connectedCount}/${phones.length}`} />
+                <StatBox icon={<MessageSquare className="w-4 h-4 text-zinc-400" />} label="Total Messages" value={totalMessages.toLocaleString()} />
+                <StatBox icon={<Zap className="w-4 h-4 text-zinc-400" />} label="AI Processed" value={totalParsed.toLocaleString()} />
+                <StatBox icon={<List className="w-4 h-4 text-zinc-400" />} label="Items Extracted" value={(totalListings + totalRequirements).toLocaleString()} />
               </div>
             </Section>
 
-            <Section title="Activity">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-0 [&>*:nth-child(2n)]:sm:border-l [&>*:nth-child(2n)]:border-white/10 [&>*:nth-child(n+3)]:border-t [&>*:nth-child(n+3)]:border-white/10">
-                <StatBox icon={<MessageSquare className="w-4 h-4 text-zinc-400" />} label="Total Messages" value={messages?.toLocaleString() || "—"} />
-                <StatBox icon={<Zap className="w-4 h-4 text-zinc-400" />} label="AI Processed" value={totalParsed?.toLocaleString() || "—"} />
-                <StatBox icon={<List className="w-4 h-4 text-zinc-400" />} label="Items Extracted" value={(totalListings + totalRequirements)?.toLocaleString() || "—"} />
-                <StatBox icon={<Users className="w-4 h-4 text-zinc-400" />} label="Brokers Identified" value={totalBrokers?.toLocaleString() || "—"} />
+            <Section title="System Health">
+              <div>
+                <HealthRow label="WhatsApp" status={connectedCount > 0 ? "healthy" : "error"} detail={`${connectedCount} connected`} />
+                <HealthRow label="Database" status="healthy" detail={`${totalParsed.toLocaleString()} messages processed`} />
+                <HealthRow label="Extraction" status={recentlyProcessed1h > 0 ? "healthy" : "warning"} detail={`${recentlyProcessed1h} in last hour`} />
               </div>
             </Section>
           </div>
 
-          {/* ═══ Coverage ═══ */}
-          <Section title="Coverage">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-0 [&>*:nth-child(2n)]:sm:border-l [&>*:nth-child(2n)]:border-white/10 [&>*:nth-child(n+3)]:border-t [&>*:nth-child(n+3)]:border-white/10">
-              <StatBox icon={<Users className="w-4 h-4 text-zinc-400" />} label="Groups Monitored" value={groups?.toLocaleString() || "—"} />
-              <StatBox icon={<MessageSquare className="w-4 h-4 text-zinc-400" />} label="Messages Captured" value={messages?.toLocaleString() || "—"} />
-              <StatBox icon={<Activity className="w-4 h-4 text-zinc-400" />} label="Broker Entities" value={totalBrokers?.toLocaleString() || "—"} />
-              <StatBox icon={<List className="w-4 h-4 text-zinc-400" />} label="Listings Extracted" value={totalListings?.toLocaleString() || "—"} />
-            </div>
-          </Section>
-
-          {/* ═══ System Health ═══ */}
-          <Section title="System Health">
-            <div>
-              <HealthRow label="WhatsApp Connection" status={connectionHealth} detail={`${displayPhone} (${displayName || "—"})`} />
-              <HealthRow label="Database" status={dbHealth} detail={`${messages?.toLocaleString() || "0"} messages stored`} />
-              <HealthRow label="AI Processing" status={aiHealth} detail={`${totalParsed?.toLocaleString() || "0"} messages processed`} />
-              <HealthRow label="Real-time Updates" status={realtimeHealth} detail={phase === "connected" ? "Active" : "Disconnected"} />
-            </div>
-          </Section>
-
-          {/* ═══ Extraction Pipeline ═══ */}
+          {/* Extraction Pipeline */}
           <Section title="Extraction Pipeline">
             <div className="space-y-4">
               <div className="grid grid-cols-3 gap-0 [&>*:nth-child(2n)]:border-l [&>*:nth-child(2n)]:border-white/10">
@@ -654,42 +534,13 @@ export default function ConnectionCenterPage() {
                   </div>
                 </div>
               )}
-              <div className="border-t border-white/[0.04] mx-4">
-                <HealthRow label="Recently Processed (1h)" status={recentlyProcessed1h > 0 ? "healthy" : "warning"} detail={`${recentlyProcessed1h} messages`} />
-              </div>
             </div>
           </Section>
-
-          {/* ═══ Quick Actions ═══ */}
-          <Section title="Quick Actions">
-            <div className="grid grid-cols-2 gap-3">
-              <ActionButton icon={<LogOut className="w-3.5 h-3.5" />} label="Disconnect" onClick={handleDisconnect} variant="danger" />
-              <ActionButton icon={<RefreshCw className="w-3.5 h-3.5" />} label="Refresh" onClick={fetchStats} />
-              <ActionButton icon={<ImageUp className="w-3.5 h-3.5" />} label="Re-sync" onClick={() => fetch("/api/sync/qr").catch(() => {})} />
-              <ActionButton icon={<Inbox className="w-3.5 h-3.5" />} label="Open Inbox" onClick={() => router.push("/inbox")} variant="primary" />
-            </div>
-          </Section>
-
-          {/* ═══ Recent Activity ═══ */}
-          <Section title="Recent Activity">
-            <div className="divide-y divide-white/[0.04]">
-              <ActivityItem icon={<Smartphone className="w-3 h-3 text-emerald-400" />} text="WhatsApp connected successfully" time={connectedSince ? formatTime(connectedSince) : "Just now"} />
-              {lastMessageAt && (
-                <ActivityItem icon={<MessageSquare className="w-3 h-3 text-zinc-400" />} text="Last message received" time={formatTime(lastMessageAt)} />
-              )}
-              {totalParsed > 0 && (
-                <ActivityItem icon={<Zap className="w-3 h-3 text-zinc-400" />} text={`AI processed ${totalParsed.toLocaleString()} messages`} time="—" />
-              )}
-              {(totalListings > 0 || totalRequirements > 0) && (
-                <ActivityItem icon={<List className="w-3 h-3 text-zinc-400" />} text={`${(totalListings + totalRequirements).toLocaleString()} items extracted (${totalListings} listings, ${totalRequirements} requirements)`} time="—" />
-              )}
-              {messages && messages > 0 && (
-                <ActivityItem icon={<Database className="w-3 h-3 text-zinc-400" />} text={`${messages.toLocaleString()} total messages in database`} time="—" />
-              )}
-            </div>
-          </Section>
-        </div>
+        </>
       )}
+
+      <CreatePhoneDialog open={showCreate} onClose={() => setShowCreate(false)} onCreated={fetchPhones} />
+      {qrPhone && <QRModal phone={qrPhone} open={!!qrPhone} onClose={() => setQrPhone(null)} />}
     </div>
   );
 }

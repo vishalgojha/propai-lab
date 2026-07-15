@@ -817,6 +817,16 @@ func (sm *SessionManager) disconnectHandler(w http.ResponseWriter, r *http.Reque
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
+func (sm *SessionManager) listHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	sessions := sm.List()
+	result := make([]Status, 0, len(sessions))
+	for _, s := range sessions {
+		result = append(result, s.getStatus())
+	}
+	json.NewEncoder(w).Encode(result)
+}
+
 func (sm *SessionManager) historyBackfillHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	brokerID := brokerIDFromRequest(r)
@@ -1120,6 +1130,7 @@ func main() {
 	mux.HandleFunc("/connect", sm.connectHandler)
 	mux.HandleFunc("/reset", sm.resetHandler)
 	mux.HandleFunc("/disconnect", sm.disconnectHandler)
+	mux.HandleFunc("/list", sm.listHandler)
 	mux.HandleFunc("/history/backfill", sm.historyBackfillHandler)
 
 	server := &http.Server{
