@@ -6027,19 +6027,24 @@ async def public_create_lead(req: PublicLeadRequest):
     except Exception as exc:
         notify_result = {"ok": False, "error": str(exc)}
 
-    if notify_result and notify_result.get("ok"):
-        storage.db.execute(
-            "UPDATE leads SET status = 'notified' WHERE id = $1",
-            [lead["id"]]
-        )
-    else:
-        error_msg = "Unknown error"
-        if notify_result:
-            error_msg = notify_result.get("error", "Unknown error")
-        storage.db.execute(
-            "UPDATE leads SET status = 'notify_failed', notify_error = $1 WHERE id = $2",
-            [error_msg, lead["id"]]
-        )
+    # Best-effort status update - don't fail the request if it fails
+    try:
+        if notify_result and notify_result.get("ok"):
+            storage.db.execute(
+                "UPDATE leads SET status = 'notified' WHERE id = $1",
+                [lead["id"]]
+            )
+        else:
+            error_msg = "Unknown error"
+            if notify_result:
+                error_msg = notify_result.get("error", "Unknown error")
+            storage.db.execute(
+                "UPDATE leads SET status = 'notify_failed', notify_error = $1 WHERE id = $2",
+                [error_msg, lead["id"]]
+            )
+    except Exception:
+        # Ignore update failures - lead was created successfully
+        pass
 
     return {"lead_id": lead["id"], "status": "created"}
 
