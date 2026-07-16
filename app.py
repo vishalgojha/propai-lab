@@ -2832,6 +2832,19 @@ def _resolve_user_organization_id(user: dict) -> str | None:
     return None
 
 
+def _resolve_active_organization_id(user: dict, tenant_id: str | None) -> str:
+    if tenant_id and tenant_id != DEFAULT_TENANT_ID:
+        try:
+            if storage.get_organization(tenant_id):
+                return tenant_id
+        except Exception:
+            pass
+    resolved = _resolve_user_organization_id(user)
+    if resolved:
+        return resolved
+    return tenant_id if tenant_id and tenant_id != DEFAULT_TENANT_ID else DEFAULT_TENANT_ID
+
+
 async def require_tenant(
     tenant_id: str | None = Depends(get_tenant_context),
 ) -> str:
@@ -8034,6 +8047,20 @@ async def sync_status_update(request: Request):
         _previous_status = _memory_status
         _memory_status = body
         _cache_connection_snapshot(body)
+        broker_id = str(body.get("broker_id") or "").strip()
+        phone_number = str(body.get("phone_number") or "").strip()
+        display_name = str(body.get("display_name") or "").strip()
+        connected = bool(body.get("connected"))
+        if storage and broker_id and (phone_number or display_name or connected):
+            updates: dict[str, object] = {"is_active": connected}
+            if phone_number:
+                updates["phone_number"] = phone_number
+            if display_name:
+                updates["instance_name"] = display_name
+            try:
+                storage.update_org_whatsapp_connection_by_broker_id(broker_id, updates)
+            except Exception as exc:
+                print(f"[sync/status] persist failed for broker {broker_id}: {exc}", flush=True)
         return {"ok": True}
     except Exception as e:
         return {"ok": False, "error": str(e)}
@@ -12494,6 +12521,8 @@ async def add_org_whatsapp(org_id: str, body: dict, user: dict = Depends(require
     phone = body.get("phone_number")
     if not phone:
         raise HTTPException(400, "phone_number is required")
+    if org_id == DEFAULT_TENANT_ID or not storage.get_organization(org_id):
+        org_id = _resolve_active_organization_id(user, org_id)
     count = storage.count_org_phones(org_id)
     if count >= 3:
         raise HTTPException(400, "Maximum 3 phones per organization")
@@ -12573,7 +12602,7 @@ async def create_phone(
         import uuid as _uuid
         phone_number = body.get("phone_number", "").strip()
         instance_name = body.get("instance_name", "").strip()
-        org_id = tenant_id or _resolve_user_organization_id(user) or DEFAULT_TENANT_ID
+        org_id = _resolve_active_organization_id(user, tenant_id)
         count = storage.count_org_phones(org_id)
         if count >= 3:
             raise HTTPException(400, "Maximum 3 phones per organization")

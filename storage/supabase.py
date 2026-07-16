@@ -813,6 +813,14 @@ class SupabaseStorage(Storage):
         res = self.client.table("org_whatsapp_connections").update(payload).eq("id", conn_id).execute()
         return res.data[0] if res.data else None
 
+    def update_org_whatsapp_connection_by_broker_id(self, broker_id: str, updates: dict) -> dict | None:
+        broker_id = (broker_id or "").strip()
+        payload = {k: v for k, v in updates.items() if v is not None}
+        if not broker_id or not payload:
+            return None
+        res = self.client.table("org_whatsapp_connections").update(payload).eq("broker_id", broker_id).execute()
+        return res.data[0] if res.data else None
+
     def remove_org_whatsapp_connection(self, conn_id: int) -> bool:
         res = self.client.table("org_whatsapp_connections").delete().eq("id", conn_id).execute()
         return bool(res.data)
