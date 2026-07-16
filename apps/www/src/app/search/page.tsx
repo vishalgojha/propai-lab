@@ -137,6 +137,25 @@ export default async function SearchPage({ searchParams }: { searchParams: Searc
               </div>
             )}
 
+            {state && state.localityUnmatched && (
+              <div className="rounded-2xl border border-amber-400/20 bg-amber-400/5 p-4 text-sm text-amber-200/90">
+                We don&apos;t track{" "}
+                <span className="font-medium text-amber-100">{state.parsed.query.replace(/\bbhk\b.*/i, "").trim() || "that locality"}</span>{" "}
+                yet, so we can&apos;t show listings there. We only cover these localities right now:
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {state.localitySuggestions.map((loc) => (
+                    <Link
+                      key={loc.slug}
+                      href={`/localities/${loc.slug}`}
+                      className="rounded-full border border-white/10 bg-zinc-900 px-3 py-1 text-xs text-zinc-200 hover:border-green-400/40 hover:text-white transition-colors"
+                    >
+                      {loc.locality}
+                    </Link>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {state && state.results.length > 0 ? (
               <>
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 lg:gap-6">
@@ -154,13 +173,22 @@ export default async function SearchPage({ searchParams }: { searchParams: Searc
                             {row.micro_market || "Market pending"}
                           </p>
                         </div>
-                        {row.micro_market && (
+                        {row.resultType === "locality" && row.micro_market && (
                           <Link
                             href={`/localities/${slugify(row.micro_market)}`}
                             className="inline-flex items-center gap-1 rounded-full border border-white/10 px-2.5 py-1 text-[11px] text-zinc-400 hover:border-green-400/30 hover:text-green-200 transition-colors"
                           >
                             <MapPin className="h-3.5 w-3.5" aria-hidden="true" />
                             Locality
+                          </Link>
+                        )}
+                        {row.resultType === "building" && row.building_name && (
+                          <Link
+                            href={`/buildings`}
+                            className="inline-flex items-center gap-1 rounded-full border border-white/10 px-2.5 py-1 text-[11px] text-zinc-400 hover:border-green-400/30 hover:text-green-200 transition-colors"
+                          >
+                            <MapPin className="h-3.5 w-3.5" aria-hidden="true" />
+                            Building
                           </Link>
                         )}
                       </div>

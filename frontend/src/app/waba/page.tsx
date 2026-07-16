@@ -73,17 +73,23 @@ export default function WabaPage() {
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState("");
   const [editing, setEditing] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     getCompanionConfig()
       .then((cfg) => {
         setWaba(cfg);
+        setLoadError(null);
         if (cfg.outbound_allowed && cfg.whatsapp_business_number && cfg.whatsapp_business_number !== PROPAI_WABA_NUMBER) {
           setBusinessNumber(cfg.whatsapp_business_number.replace(/^\+91/, ""));
           setPhoneNumberId(cfg.phone_number_id || "");
         }
       })
-      .catch(() => setWaba(null));
+      .catch((error) => {
+        setLoadError(error instanceof Error ? error.message : "Could not load WABA configuration.");
+      })
+      .finally(() => setLoading(false));
   }, []);
 
   useEffect(() => {
@@ -159,7 +165,20 @@ export default function WabaPage() {
       </div>
 
       {/* ── Status Banner ─────────────────────────────────────── */}
-      {isConfigured ? (
+      {loading ? (
+        <div className="rounded-2xl border border-white/10 p-4 mb-6 flex items-center gap-3">
+          <div className="w-2 h-2 rounded-full bg-zinc-500 animate-pulse flex-shrink-0" />
+          <div className="text-sm text-zinc-300 font-semibold">Checking WABA configuration</div>
+        </div>
+      ) : loadError ? (
+        <div className="rounded-2xl border border-white/10 p-4 mb-6 flex items-center gap-3">
+          <div className="w-2 h-2 rounded-full bg-zinc-500 flex-shrink-0" />
+          <div>
+            <div className="text-sm text-white font-semibold">WABA status unavailable</div>
+            <div className="mt-1 text-xs text-zinc-500">{loadError}</div>
+          </div>
+        </div>
+      ) : isConfigured ? (
         <div className="rounded-2xl border border-[#3EE88A]/20 bg-[#3EE88A]/5 p-4 mb-6 flex items-center gap-3">
           <div className="w-2 h-2 rounded-full bg-[#3EE88A] flex-shrink-0" />
           <div className="text-sm text-[#3EE88A] font-semibold">WABA Connected</div>

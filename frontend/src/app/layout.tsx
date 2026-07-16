@@ -266,7 +266,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
     const load = async () => {
       try {
         const [phonesRes, cfg, status] = await Promise.all([
-          getPhones(true, 7000).catch(() => ({ phones: [] as Phone[] })),
+          getPhones(false, 5000).catch(() => ({ phones: [] as Phone[] })),
           getCompanionConfig().catch(() => null),
           getWhatsAppStatus().catch(() => null),
         ]);

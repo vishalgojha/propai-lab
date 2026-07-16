@@ -33,6 +33,7 @@ var (
 	apiURL       = getEnv("PROPAI_API_URL", "https://api.propai.live")
 	instanceName = getEnv("PROPAI_INSTANCE_NAME", "propai-whatsmeow")
 	sendPort     = getEnv("PROPAI_SEND_PORT", "3001")
+	statusClient = &http.Client{Timeout: 5 * time.Second}
 )
 
 // ── Status ──────────────────────────────────────────────────────────────────
@@ -127,7 +128,7 @@ func (s *BrokerSession) setStatus(st Status) {
 
 func (s *BrokerSession) postStatus(st Status) {
 	b, _ := json.Marshal(st)
-	resp, err := http.Post(apiURL+"/api/sync/status", "application/json", strings.NewReader(string(b)))
+	resp, err := statusClient.Post(apiURL+"/api/sync/status", "application/json", strings.NewReader(string(b)))
 	if err != nil {
 		log.Printf("[broker %s] error posting status: %v", s.brokerID, err)
 		return
@@ -393,17 +394,11 @@ func (sm *SessionManager) runSession(s *BrokerSession) {
 			sm.handleEvent(s, evt)
 		})
 
-		// Too many reconnect failures → clear device, force QR
-		// Tradeoff: Lower threshold (e.g. 10) triggers a full wipe fast but forces re-pairing (QR code).
-		// Higher threshold (e.g. 25-30) is better for high-traffic sessions with transient disconnects.
-		// MAX_RECONNECT_FAILURES is configurable via environment variable.
+		// A network outage must never destroy valid WhatsApp credentials.
 		maxReconnectFailures := getEnvInt("MAX_RECONNECT_FAILURES", 10)
 		if s.device.ID != nil && s.reconnectFailures >= maxReconnectFailures {
-			log.Printf("[broker %s] SESSION_WIPED reason=max_reconnect_failures timestamp=%s reconnectFailures=%d reconnectCount=%d",
+			log.Printf("[broker %s] reconnect threshold reached; preserving session timestamp=%s reconnectFailures=%d reconnectCount=%d",
 				s.brokerID, time.Now().UTC().Format(time.RFC3339), s.reconnectFailures, s.reconnectCount)
-			s.clearDevice()
-			sm.deleteDeviceMapping(ctx, s.brokerID, "max_reconnect_failures")
-			s.device = sm.container.NewDevice()
 			s.reconnectFailures = 0
 		}
 
@@ -536,12 +531,9 @@ func (sm *SessionManager) handleEvent(s *BrokerSession, evt interface{}) {
 		}
 
 	case *events.StreamReplaced:
-		log.Printf("[broker %s] SESSION_WIPED reason=stream_replaced timestamp=%s reconnectFailures=%d reconnectCount=%d",
+		log.Printf("[broker %s] stream replaced; preserving credentials timestamp=%s reconnectFailures=%d reconnectCount=%d",
 			s.brokerID, time.Now().UTC().Format(time.RFC3339), s.reconnectFailures, s.reconnectCount)
-		s.setStatus(Status{Connected: false, ConnectionState: "logged_out", DisconnectReason: 401})
-		s.clearDevice()
-		sm.deleteDeviceMapping(context.Background(), s.brokerID, "stream_replaced")
-		s.device = nil
+		s.setStatus(Status{Connected: false, ConnectionState: "reconnecting", SocketState: "disconnected", LastDisconnectAt: time.Now().UTC().Format(time.RFC3339)})
 		if s.disconnectOnce != nil {
 			s.disconnectOnce()
 		}

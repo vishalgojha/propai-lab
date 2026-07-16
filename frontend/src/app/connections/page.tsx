@@ -7,7 +7,7 @@ import QRCode from "qrcode";
 import { useRouter } from "next/navigation";
 import { Activity, Clock, Database, ImageUp, Inbox, List, LogOut, MessageSquare, Plus, RefreshCw, Shield, Smartphone, Trash2, AlertTriangle, Users, Zap, Lock, X } from "lucide-react";
 import { useAuth } from "@/lib/AuthProvider";
-import { getPhones, getPhone, createPhone, deletePhone, resetPhone, disconnectPhone, connectPhone, fetchJSON, type Phone, type WhatsAppStatus } from "@/lib/api";
+import { getPhones, getPhone, createPhone, deletePhone, resetPhone, disconnectPhone, connectPhone, fetchJSON, isLiveWhatsAppConnection, type Phone, type WhatsAppStatus } from "@/lib/api";
 
 type HealthStatus = "healthy" | "warning" | "error";
 
@@ -171,17 +171,16 @@ function normalizePhoneDigits(value?: string | null) {
   return (value || "").replace(/\D/g, "");
 }
 
-function isConnectedPhone(status: Pick<Phone, "connected" | "connection_state" | "connected_since">) {
+function isConnectedPhone(status: Pick<Phone, "connected" | "connection_state">) {
   return Boolean(
     status.connected ||
     status.connection_state === "open" ||
-    status.connection_state === "connected" ||
-    status.connected_since
+    status.connection_state === "connected"
   );
 }
 
 function matchesLiveStatus(phone: Phone, status: WhatsAppStatus | null) {
-  if (!status || !api.isLiveWhatsAppConnection(status)) return false;
+  if (!status || !isLiveWhatsAppConnection(status)) return false;
   const liveDigits = normalizePhoneDigits(status.phone);
   if (!liveDigits) return false;
   const candidateDigits = [
@@ -493,9 +492,18 @@ function PhoneCard({
   };
 
   const isConnected = isConnectedPhone(phone) || matchesLiveStatus(phone, liveStatus);
+  const statusAvailable = phone.live_status_available !== false;
   const phoneDisplay = phone.phone_number_live || phone.phone_number;
   const isUnpaired = !isConnected && isPlaceholderPhone(phoneDisplay);
-  const health: HealthStatus = isConnected ? "healthy" : isUnpaired ? "warning" : "error";
+  const isReconnecting = statusAvailable && ["connecting", "reconnecting"].includes(phone.connection_state);
+  const statusLabel = isConnected
+    ? "Connected"
+    : !statusAvailable
+      ? "Checking"
+      : isReconnecting
+        ? "Reconnecting"
+        : "Disconnected";
+  const health: HealthStatus = isConnected ? "healthy" : (!statusAvailable || isUnpaired || isReconnecting) ? "warning" : "error";
 
   return (
     <div className="rounded-2xl border border-white/10 p-5 space-y-4">
@@ -513,7 +521,7 @@ function PhoneCard({
             <div className="text-[11px] text-amber-400 mt-0.5">Scan QR to pair</div>
           )}
           {!isConnected && !isUnpaired && (
-            <div className="text-[11px] text-amber-400 mt-0.5">Disconnected</div>
+            <div className="text-[11px] text-zinc-400 mt-0.5">{statusLabel}</div>
           )}
         </div>
       </div>
@@ -521,7 +529,7 @@ function PhoneCard({
       <div className="grid grid-cols-2 gap-0 text-center [&>*:nth-child(2n)]:border-l [&>*:nth-child(2n)]:border-white/10 [&>*:nth-child(n+3)]:border-t [&>*:nth-child(n+3)]:border-white/10">
         <div className="py-2">
           <div className="text-[11px] text-zinc-500 uppercase">Status</div>
-          <div className={`text-xs font-semibold ${isConnected ? "text-emerald-400" : "text-amber-400"}`}>{isConnected ? "Connected" : "Disconnected"}</div>
+          <div className={`text-xs font-semibold ${isConnected ? "text-emerald-400" : "text-zinc-300"}`}>{statusLabel}</div>
         </div>
         <div className="py-2">
           <div className="text-[11px] text-zinc-500 uppercase">Last Active</div>
@@ -639,19 +647,19 @@ export default function ConnectionCenterPage() {
   const [extractionLag, setExtractionLag] = useState<any>(null);
 
   const fetchPhones = useCallback(async () => {
-    let initialPhones: Phone[] = [];
     try {
-      // This page is the connection console, so prefer the live-merged view.
-      // The DB snapshot alone can lag behind the ingestor by a few seconds and
-      // briefly show a connected phone as disconnected after a refresh.
-      const res = await getPhones(true, 7000);
-      initialPhones = res.phones || [];
-      setPhones(initialPhones);
+      const persisted = await getPhones(false, 5000);
+      setPhones(persisted.phones || []);
       setPhonesError(null);
+      setPhonesLoading(false);
+
+      const live = await getPhones(true, 5000);
+      setPhones(live.phones || persisted.phones || []);
     } catch (error) {
       setPhonesError(error instanceof Error ? error.message : "Could not load phones right now.");
+    } finally {
+      setPhonesLoading(false);
     }
-    setPhonesLoading(false);
   }, []);
 
   const fetchLiveStatus = useCallback(async () => {

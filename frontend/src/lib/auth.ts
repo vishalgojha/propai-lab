@@ -8,6 +8,9 @@ if (!supabaseUrl || !supabaseAnonKey) {
 }
 
 let supabase: SupabaseClient | null = null;
+let cachedSession: Session | null = null;
+let sessionLoaded = false;
+let sessionRequest: Promise<Session | null> | null = null;
 
 function getSupabaseOrThrow(): SupabaseClient {
   if (!supabase) {
@@ -29,6 +32,8 @@ export function getSupabase(): SupabaseClient {
 export async function signInWithEmail(email: string, password: string) {
   const { data, error } = await getSupabase().auth.signInWithPassword({ email, password });
   if (error) throw error;
+  cachedSession = data.session;
+  sessionLoaded = true;
   return data;
 }
 
@@ -68,11 +73,23 @@ export async function signUp(
 export async function signOut() {
   const { error } = await getSupabase().auth.signOut();
   if (error) throw error;
+  cachedSession = null;
+  sessionLoaded = true;
 }
 
 export async function getSession(): Promise<Session | null> {
-  const { data } = await getSupabase().auth.getSession();
-  return data.session;
+  if (sessionLoaded) return cachedSession;
+  if (!sessionRequest) {
+    sessionRequest = getSupabase().auth.getSession().then(({ data, error }) => {
+      if (error) throw error;
+      cachedSession = data.session;
+      sessionLoaded = true;
+      return cachedSession;
+    }).finally(() => {
+      sessionRequest = null;
+    });
+  }
+  return sessionRequest;
 }
 
 export async function getUser(): Promise<User | null> {
@@ -81,7 +98,11 @@ export async function getUser(): Promise<User | null> {
 }
 
 export function onAuthStateChange(callback: (event: string, session: Session | null) => void) {
-  return getSupabase().auth.onAuthStateChange(callback);
+  return getSupabase().auth.onAuthStateChange((event, session) => {
+    cachedSession = session;
+    sessionLoaded = true;
+    callback(event, session);
+  });
 }
 
 export async function getAccessToken(): Promise<string | null> {

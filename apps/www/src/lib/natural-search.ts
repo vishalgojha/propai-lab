@@ -1,9 +1,10 @@
-import { getAllLocalities, type LocalitySummary } from "./localities";
+import { getAllBuildings, getAllLocalities, type BuildingSummary, type LocalitySummary } from "./localities";
 import { getServerSupabase, slugify } from "./supabase";
 
 export type ParsedNaturalSearch = {
   query: string;
   locality: string | null;
+  localityStated: boolean;
   bhk: number | null;
   intent: "rent" | "sale" | null;
   minPrice: number | null;
@@ -36,6 +37,7 @@ export type NaturalSearchResult = NaturalSearchRow & {
   score: number;
   priceLabel: string;
   matchedOn: string[];
+  resultType: "locality" | "building";
 };
 
 export type NaturalSearchState = {
@@ -44,6 +46,8 @@ export type NaturalSearchState = {
   totalScanned: number;
   suggestions: LocalitySummary[];
   hasData: boolean;
+  localityUnmatched: boolean;
+  localitySuggestions: LocalitySummary[];
 };
 
 const MONEY_UNITS: Record<string, number> = {
@@ -163,15 +167,44 @@ function findLocalityMatches(query: string, localities: LocalitySummary[]): Loca
       if (qSlug === locSlug || qText === locText) score = 100;
       else if (qSlug.includes(locSlug) || qText.includes(locText)) score = 80;
       else if (locSlug.includes(qSlug) && qSlug.length >= 3) score = 55;
-      else if (qText.split(" ").filter(Boolean).every((part) => locText.includes(part))) score = 40;
+      else if (
+        qText
+          .split(" ")
+          .filter((part) => part.length >= 3)
+          .every((part) => locText.includes(part))
+      ) {
+        score = 40;
+      }
       return { loc, score };
     })
     .filter((entry) => entry.score > 0)
-    .sort(
-      (a, b) => b.score - a.score || b.loc.listingCount - a.loc.listingCount,
-    )
+    .sort((a, b) => b.score - a.score || b.loc.listingCount - a.loc.listingCount)
     .slice(0, 3)
     .map((entry) => entry.loc);
+}
+
+// Detects whether the user actually named a locality in the query, even if it
+// didn't resolve to a known gazetteer entry. Compound forms ("Bandra East",
+// "Andheri West") are recognised as a base name + directional suffix so that a
+// stated locality is never silently discarded into a broad, locality-less search.
+function detectLocalityStated(query: string): boolean {
+  const qText = normalizeText(query);
+  const parts = qText.split(" ").filter(Boolean);
+  const directional = /\b(east|west|north|south|central|e|w|n|s)\b/;
+  const baseName =
+    /(bandra|andheri|goregaon|juhu|powai|khar|chembur|thane|navi|mumbai|delhi|bangalore|bengaluru|hyderabad|pune|chennai|kolkata|gurgaon|gurugram|noida)/;
+
+  // "in <locality>" / "at <locality>" / "near <locality>" prepositions
+  if (/\b(in|at|near|around|locality|area)\b/.test(qText)) return true;
+
+  // base name present, optionally followed by a directional suffix
+  for (let i = 0; i < parts.length; i += 1) {
+    if (baseName.test(parts[i])) {
+      const next = parts[i + 1];
+      if (!next || directional.test(next)) return true;
+    }
+  }
+  return false;
 }
 
 function parsedQueryTokens(query: string): string[] {
@@ -203,7 +236,7 @@ function parsedQueryTokens(query: string): string[] {
     .filter((token) => token.length >= 3 && !stopwords.has(token));
 }
 
-function parseSearchQuery(query: string, localities: LocalitySummary[]): ParsedNaturalSearch {
+export function parseSearchQuery(query: string, localities: LocalitySummary[]): ParsedNaturalSearch {
   const parsedBhk = parseBhk(query);
   const parsedIntent = parseIntent(query);
   const parsedFurnishing = parseFurnishing(query);
@@ -213,6 +246,7 @@ function parseSearchQuery(query: string, localities: LocalitySummary[]): ParsedN
   return {
     query,
     locality: matchedLocalities[0]?.locality ?? null,
+    localityStated: detectLocalityStated(query),
     bhk: parsedBhk,
     intent: parsedIntent,
     minPrice,
@@ -333,7 +367,7 @@ function scoreRow(row: NaturalSearchRow, parsed: ParsedNaturalSearch): { score: 
   return { score, matchedOn };
 }
 
-function matchesHardFilters(row: NaturalSearchRow, parsed: ParsedNaturalSearch): boolean {
+export function matchesHardFilters(row: NaturalSearchRow, parsed: ParsedNaturalSearch): boolean {
   if (parsed.locality && row.micro_market && slugify(row.micro_market) !== slugify(parsed.locality)) {
     return false;
   }
@@ -393,15 +427,34 @@ export async function searchNaturalLanguageListings(
   const db = getServerSupabase();
   const localities = await getAllLocalities();
   const parsed = parseSearchQuery(query, localities);
-  const suggestions = parsed.matchedLocalities.length > 0 ? parsed.matchedLocalities : localities.slice(0, 6);
+  const matchedSuggestions =
+    parsed.matchedLocalities.length > 0 ? parsed.matchedLocalities : localities.slice(0, 6);
+
+  // The user named a locality that we could not resolve to any tracked
+  // gazetteer entry. Do NOT silently fall back to a broad, locality-less
+  // search — that erodes trust by mixing unrelated localities. Surface a
+  // "no matches for that locality" state with honest suggestions instead.
+  if (parsed.localityStated && !parsed.locality) {
+    return {
+      parsed,
+      results: [],
+      totalScanned: 0,
+      suggestions: matchedSuggestions,
+      hasData: Boolean(db),
+      localityUnmatched: true,
+      localitySuggestions: localities.slice(0, 6),
+    };
+  }
 
   if (!db || !query.trim()) {
     return {
       parsed,
       results: [],
       totalScanned: 0,
-      suggestions,
+      suggestions: matchedSuggestions,
       hasData: Boolean(db),
+      localityUnmatched: false,
+      localitySuggestions: [],
     };
   }
 
@@ -426,17 +479,42 @@ export async function searchNaturalLanguageListings(
     return (data ?? []) as unknown as NaturalSearchRow[];
   };
 
-  let rows = await fetchRows(Boolean(parsed.locality));
-  if (rows.length === 0 && parsed.locality) {
-    rows = await fetchRows(false);
-  }
+  // When a locality matched, narrow at the DB layer AND enforce it as a hard
+  // filter below. Never broad-fetch just because narrow returned few rows.
+  const rows = await fetchRows(Boolean(parsed.locality));
+
+  // Build a set of known building names so we can classify a result as a
+  // building vs a locality (a building must never render as a "Locality" card).
+  const knownBuildings = await getAllBuildings(500);
+  const buildingNameSet = new Set(
+    knownBuildings.map((b: BuildingSummary) => slugify(b.name)).filter(Boolean),
+  );
+  const localitySlugSet = new Set(
+    localities.map((l: LocalitySummary) => l.slug).filter(Boolean),
+  );
+
+  const classify = (row: NaturalSearchRow): "locality" | "building" => {
+    const marketSlug = row.micro_market ? slugify(row.micro_market) : null;
+    if (marketSlug && localitySlugSet.has(marketSlug)) return "locality";
+    const buildingSlug = row.building_name ? slugify(row.building_name) : null;
+    if (buildingSlug && buildingNameSet.has(buildingSlug)) return "building";
+    // Default unknown market values to building only when they look like a
+    // building; otherwise keep "locality" so the chip is at least sensible.
+    return marketSlug ? "locality" : "building";
+  };
 
   const ranked = rows
     .filter((row) => matchesHardFilters(row, parsed))
     .map((row) => {
       const { score, matchedOn } = scoreRow(row, parsed);
       const priceLabel = formatPrice(row.price);
-      return { ...row, score, matchedOn, priceLabel };
+      return {
+        ...row,
+        score,
+        matchedOn,
+        priceLabel,
+        resultType: classify(row),
+      };
     })
     .sort((a, b) => b.score - a.score || (b.last_seen ? new Date(b.last_seen).getTime() : 0) - (a.last_seen ? new Date(a.last_seen).getTime() : 0))
     .slice(0, limit);
@@ -445,7 +523,9 @@ export async function searchNaturalLanguageListings(
     parsed,
     results: ranked,
     totalScanned: rows.length,
-    suggestions,
+    suggestions: matchedSuggestions,
     hasData: true,
+    localityUnmatched: false,
+    localitySuggestions: [],
   };
 }

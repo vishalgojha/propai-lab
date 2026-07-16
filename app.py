@@ -7078,6 +7078,7 @@ def _mask_secret(value: str = "") -> str:
 
 _memory_status: dict = {}
 _previous_status: dict = {}
+_broker_live_statuses: dict[str, tuple[dict, float]] = {}
 _last_live_connection_status: dict = {}
 _last_live_connection_seen_at: float = 0.0
 _CONNECTION_CACHE_GRACE_SECONDS = 90.0
@@ -7990,11 +7991,23 @@ async def _first_ingestor_response(
     if not urls:
         return None, None
     async with httpx.AsyncClient(timeout=timeout) as client:
-        tasks = [client.request(method, f"{base_url}{path}", **kwargs) for base_url in urls]
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-    for base_url, result in zip(urls, results):
-        if isinstance(result, httpx.Response) and result.status_code < 300:
-            return base_url, result
+        async def request_one(base_url: str) -> tuple[str, httpx.Response | None]:
+            try:
+                return base_url, await client.request(method, f"{base_url}{path}", **kwargs)
+            except httpx.RequestError:
+                return base_url, None
+
+        tasks = [asyncio.create_task(request_one(base_url)) for base_url in urls]
+        try:
+            for completed in asyncio.as_completed(tasks):
+                base_url, response = await completed
+                if response is not None and response.status_code < 300:
+                    return base_url, response
+        finally:
+            for task in tasks:
+                if not task.done():
+                    task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
     return None, None
 
 
@@ -8048,11 +8061,12 @@ async def sync_status_update(request: Request):
         _memory_status = body
         _cache_connection_snapshot(body)
         broker_id = str(body.get("broker_id") or "").strip()
+        if broker_id:
+            _broker_live_statuses[broker_id] = (body, time.time())
         phone_number = str(body.get("phone_number") or "").strip()
         display_name = str(body.get("display_name") or "").strip()
-        connected = bool(body.get("connected"))
-        if storage and broker_id and (phone_number or display_name or connected):
-            updates: dict[str, object] = {"is_active": connected}
+        if storage and broker_id and (phone_number or display_name):
+            updates: dict[str, object] = {"is_active": True}
             if phone_number:
                 updates["phone_number"] = phone_number
             if display_name:
@@ -12574,20 +12588,27 @@ async def list_phones(
         if resp is not None and resp.status_code == 200:
             for s in resp.json():
                 ingestor_statuses[s.get("broker_id", "")] = s
+        now = time.time()
+        for broker_id, (cached_status, seen_at) in _broker_live_statuses.items():
+            if broker_id not in ingestor_statuses and now - seen_at <= 45:
+                ingestor_statuses[broker_id] = cached_status
     result = []
     for phone in phones:
         broker_id = phone.get("broker_id", "")
-        status = ingestor_statuses.get(broker_id, {})
+        status = ingestor_statuses.get(broker_id)
+        has_live_status = status is not None
+        status = status or {}
         result.append({
             **phone,
-            "connected": status.get("connected", False),
+            "connected": bool(status.get("connected")) if has_live_status else None,
             "connection_state": status.get("connection_state", "unknown"),
-            "phone_number_live": status.get("phone_number", ""),
-            "display_name": status.get("display_name", ""),
+            "phone_number_live": status.get("phone_number") or phone.get("phone_number", ""),
+            "display_name": status.get("display_name") or phone.get("instance_name", ""),
             "connected_since": status.get("connected_since", ""),
             "last_message_at": status.get("last_message_at", ""),
             "qr_available": status.get("qr_available", False),
             "total_messages_received": status.get("total_messages_received", 0),
+            "live_status_available": has_live_status,
         })
     return {"phones": result}
 
@@ -12648,17 +12669,23 @@ async def get_phone(
     _, resp = await _first_ingestor_response("GET", "/status", timeout=2, params={"broker_id": broker_id})
     if resp is not None and resp.status_code == 200:
         status = resp.json()
+    elif broker_id in _broker_live_statuses:
+        cached_status, seen_at = _broker_live_statuses[broker_id]
+        if time.time() - seen_at <= 45:
+            status = cached_status
+    has_live_status = bool(status)
     return {
         **phone,
-        "connected": status.get("connected", False),
+        "connected": bool(status.get("connected")) if has_live_status else None,
         "connection_state": status.get("connection_state", "unknown"),
-        "phone_number_live": status.get("phone_number", ""),
-        "display_name": status.get("display_name", ""),
+        "phone_number_live": status.get("phone_number") or phone.get("phone_number", ""),
+        "display_name": status.get("display_name") or phone.get("instance_name", ""),
         "connected_since": status.get("connected_since", ""),
         "last_message_at": status.get("last_message_at", ""),
         "qr_available": status.get("qr_available", False),
         "qr": status.get("qr", ""),
         "total_messages_received": status.get("total_messages_received", 0),
+        "live_status_available": has_live_status,
     }
 
 

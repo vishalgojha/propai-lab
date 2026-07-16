@@ -231,8 +231,7 @@ export function isLiveWhatsAppConnection(status?: LiveConnectionLike | null) {
     status?.state === "open" ||
     status?.state === "connected" ||
     status?.connection_state === "open" ||
-    status?.connection_state === "connected" ||
-    status?.connected_since
+    status?.connection_state === "connected"
   );
 }
 
@@ -1577,7 +1576,8 @@ export interface Phone {
   is_active: boolean;
   connected_at: string;
   created_at: string;
-  connected: boolean;
+  connected: boolean | null;
+  live_status_available?: boolean;
   connection_state: string;
   phone_number_live: string;
   display_name: string;
