@@ -902,6 +902,16 @@ def parse_message(raw_text: str, profile_name: str | None = None) -> dict:
         result["configuration"] = None
 
     # ── 6. Extract price — with ambiguous-shorthand guard ─────────
+    # Normalize broker "colon-decimal" typos like "3:00 cr" → "3.00 cr" so the
+    # price regex doesn't match the trailing "00" as a standalone ₹0 amount.
+    text = re.sub(
+        r"(\d)\s*:\s*(\d+)\s*(cr|crore|lac|lakh|l|lacs|lakhs|k|thousand)\b",
+        lambda m: f"{m.group(1)}.{m.group(2)} {m.group(3)}",
+        text,
+        flags=re.I,
+    )
+    lower = text.lower()
+
     price_from_explicit_line = False
     if result["price"] is None:
         explicit_price_line = None
@@ -1571,8 +1581,6 @@ def _classify_webhook_event(event: str, data: dict) -> str:
         )
         if not has_text and not msg:
             return "system"
-        if msg and not msg.get("conversation") and not msg.get("extendedTextMessage"):
-            return "media"
     return base
 
 
@@ -1982,7 +1990,7 @@ async def webhook(request: Request):
         event_class = "system"
 
     if event_class != "message":
-        _handle_system_event(event_class, event, data, instance)
+        _handle_system_event(event_class, event, data, instance, resolved_tenant_id)
         return {"status": "event_handled", "event": event, "class": event_class}
 
     # ── Human message — Layer 1: Raw Storage only ─────────────────
@@ -1994,6 +2002,12 @@ async def webhook(request: Request):
         or msg.get("extendedTextMessage", {}).get("text", "")
         or msg.get("imageMessage", {}).get("caption", "")
         or msg.get("videoMessage", {}).get("caption", "")
+        or msg.get("documentMessage", {}).get("caption", "")
+        or msg.get("documentMessage", {}).get("fileName", "")
+        or ("[Voice message]" if msg.get("audioMessage") else "")
+        or ("[Image]" if msg.get("imageMessage") else "")
+        or ("[Video]" if msg.get("videoMessage") else "")
+        or ("[Document]" if msg.get("documentMessage") else "")
         or ""
     )
     if not msg_text.strip():
@@ -2061,11 +2075,26 @@ async def webhook(request: Request):
             sender_jid=sender_jid,
             sender_phone=sender_phone,
             message=msg_text,
-            message_type="text",
+            message_type=(
+                "image" if msg.get("imageMessage") else
+                "video" if msg.get("videoMessage") else
+                "audio" if msg.get("audioMessage") else
+                "document" if msg.get("documentMessage") else
+                "text"
+            ),
             attachments=json.dumps({
                 "image": bool(msg.get("imageMessage")),
                 "video": bool(msg.get("videoMessage")),
+                "audio": bool(msg.get("audioMessage")),
                 "document": bool(msg.get("documentMessage")),
+                "mime_type": (
+                    (msg.get("imageMessage") or {}).get("mimetype")
+                    or (msg.get("videoMessage") or {}).get("mimetype")
+                    or (msg.get("audioMessage") or {}).get("mimetype")
+                    or (msg.get("documentMessage") or {}).get("mimetype")
+                    or ""
+                ),
+                "file_name": (msg.get("documentMessage") or {}).get("fileName", ""),
             }),
             reply_context=json.dumps(
                 msg.get("extendedTextMessage", {}).get("contextInfo", {})
@@ -2133,9 +2162,29 @@ def _process_single_raw(raw_id: int, ctx: dict):
     process_raw_message(raw_id, ctx, storage=storage)
 
 
-def _handle_system_event(event_class: str, event: str, data: dict, instance: str):
+def _handle_system_event(event_class: str, event: str, data: dict, instance: str, tenant_id: str = DEFAULT_TENANT_ID):
     """Handle non-message webhook events (connection, QR, system, etc.)."""
     msg_data = data.get("data", data)
+    if event.startswith("WHATSAPP_") or event_class in {"presence", "call"}:
+        try:
+            storage.db.execute(
+                """INSERT INTO whatsapp_events
+                   (tenant_id, broker_id, event_type, chat_jid, sender_jid, message_ids, payload, occurred_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    tenant_id,
+                    (msg_data.get("broker_id", "") if isinstance(msg_data, dict) else ""),
+                    event,
+                    (msg_data.get("chat_jid", "") if isinstance(msg_data, dict) else ""),
+                    (msg_data.get("sender_jid", "") if isinstance(msg_data, dict) else ""),
+                    json.dumps(msg_data.get("message_ids", []) if isinstance(msg_data, dict) else []),
+                    json.dumps(data),
+                    _coerce_whatsapp_timestamp(msg_data.get("timestamp") if isinstance(msg_data, dict) else None)
+                    or datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                ),
+            )
+        except Exception as exc:
+            print(f"[webhook] whatsapp event persistence failed: {exc}", flush=True)
     if event_class == "qr":
         qr_code = msg_data if isinstance(msg_data, dict) else {}
         if not isinstance(msg_data, dict):
