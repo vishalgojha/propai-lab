@@ -1,7 +1,7 @@
-"use client";
-
 import { MapPin, ArrowRight, MessageSquare, Phone, Shield } from "lucide-react";
 import Link from "next/link";
+import LocalitySearch from "@/components/LocalitySearch";
+import { getAllLocalities } from "@/lib/localities";
 
 const howItWorksSteps = [
   {
@@ -42,7 +42,21 @@ const footerLinks = {
   ],
 };
 
-export default function WWWPage() {
+const fallbackLocalities = [
+  { name: "Bandra West", slug: "bandra-west", listingCount: 156 },
+  { name: "Whitefield", slug: "whitefield", listingCount: 203 },
+  { name: "Gachibowli", slug: "gachibowli", listingCount: 134 },
+  { name: "Andheri East", slug: "andheri-east", listingCount: 189 },
+  { name: "Koramangala", slug: "koramangala", listingCount: 112 },
+  { name: "Powai", slug: "powai", listingCount: 98 },
+  { name: "HSR Layout", slug: "hsr-layout", listingCount: 87 },
+  { name: "Juhu", slug: "juhu", listingCount: 76 },
+];
+
+export default async function WWWPage() {
+  const known = await getAllLocalities();
+  const hasData = known.length > 0;
+
   return (
     <div className="min-h-screen bg-black text-white">
       <header className="border-b border-white/[0.06] sticky top-0 bg-black/80 backdrop-blur z-50">
@@ -60,7 +74,7 @@ export default function WWWPage() {
               Broker login
             </Link>
             <Link
-              href={`https://app.propai.live/auth/signup`}
+              href="https://app.propai.live/auth/signup"
               className="px-4 py-2 bg-green-400 text-black text-sm font-semibold rounded-lg hover:bg-green-300 transition-colors min-w-[120px] text-center"
             >
               Get started
@@ -80,25 +94,7 @@ export default function WWWPage() {
               <p className="text-lg text-zinc-400 mb-8 max-w-2xl mx-auto">
                 PropAI reads WhatsApp broker groups so you get real, fresh listings — and a direct line to the broker.
               </p>
-              <div className="bg-zinc-900/50 border border-white/10 rounded-xl p-4 lg:p-6 max-w-md mx-auto">
-                <label htmlFor="locality-search" className="block text-sm font-medium text-zinc-400 mb-2">
-                  Search or browse by locality
-                </label>
-                <div className="relative">
-                  <MapPin className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500 w-5 h-5" aria-hidden="true" />
-                  <input
-                    type="search"
-                    id="locality-search"
-                    placeholder="e.g. Bandra West, Whitefield, Gachibowli…"
-                    className="w-full bg-black border border-white/10 rounded-lg pl-12 pr-4 py-3 text-white placeholder:text-zinc-500 focus:border-green-400 focus:outline-none focus:ring-1 focus:ring-green-400 text-[15px]"
-                    autoComplete="off"
-                  />
-                  <ArrowRight className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-500 w-5 h-5" aria-hidden="true" />
-                </div>
-                <p className="text-xs text-zinc-500 mt-2 text-center">
-                  Powered by live WhatsApp broker conversations
-                </p>
-              </div>
+              <LocalitySearch knownLocalities={known} />
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-6 max-w-5xl mx-auto">
@@ -139,37 +135,28 @@ export default function WWWPage() {
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-6">
-              {[
-                { name: "Bandra West", slug: "bandra-west", bhk: "1-4 BHK", price: "80L-15Cr", groups: 47, listings: 156, updated: "2h ago" },
-                { name: "Whitefield", slug: "whitefield", bhk: "2-4 BHK", price: "60L-3Cr", groups: 38, listings: 203, updated: "1h ago" },
-                { name: "Gachibowli", slug: "gachibowli", bhk: "2-3 BHK", price: "70L-4Cr", groups: 29, listings: 134, updated: "30m ago" },
-                { name: "Andheri East", slug: "andheri-east", bhk: "1-3 BHK", price: "50L-6Cr", groups: 41, listings: 189, updated: "45m ago" },
-                { name: "Koramangala", slug: "koramangala", bhk: "2-4 BHK", price: "90L-8Cr", groups: 33, listings: 112, updated: "2h ago" },
-                { name: "Powai", slug: "powai", bhk: "2-4 BHK", price: "80L-7Cr", groups: 26, listings: 98, updated: "1h ago" },
-                { name: "HSR Layout", slug: "hsr-layout", bhk: "2-3 BHK", price: "70L-5Cr", groups: 24, listings: 87, updated: "3h ago" },
-                { name: "Juhu", slug: "juhu", bhk: "2-5 BHK", price: "1.5Cr-25Cr", groups: 31, listings: 76, updated: "4h ago" },
-              ].map((loc) => (
-                <Link
-                  key={loc.slug}
-                  href={`/localities/${loc.slug}`}
-                  className="group bg-zinc-900/50 border border-white/10 rounded-xl p-5 lg:p-6 transition-colors hover:border-green-400/50 hover:bg-zinc-900"
-                >
-                  <div className="flex flex-col h-full">
-                    <div className="flex items-start justify-between gap-2 mb-3">
-                      <h3 className="text-lg font-semibold text-white group-hover:text-green-400 transition-colors">{loc.name}</h3>
-                      <span className="text-xs text-green-400 font-medium whitespace-nowrap">{loc.updated}</span>
+              {(hasData ? known.slice(0, 8) : fallbackLocalities).map((loc) => {
+                const slug = loc.slug;
+                const name = "locality" in loc ? loc.locality : loc.name;
+                const listingCount = loc.listingCount;
+                return (
+                  <Link
+                    key={slug}
+                    href={`/localities/${slug}`}
+                    className="group bg-zinc-900/50 border border-white/10 rounded-xl p-5 lg:p-6 transition-colors hover:border-green-400/50 hover:bg-zinc-900"
+                  >
+                    <div className="flex flex-col h-full">
+                      <div className="flex items-start justify-between gap-2 mb-3">
+                        <h3 className="text-lg font-semibold text-white group-hover:text-green-400 transition-colors">{name}</h3>
+                      </div>
+                      <p className="text-xs text-zinc-500 mt-auto flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-green-400" aria-hidden="true" />
+                        {listingCount} active listing{listingCount === 1 ? "" : "s"}
+                      </p>
                     </div>
-                    <div className="flex flex-wrap gap-2 mb-3">
-                      <span className="px-2 py-1 bg-zinc-800 border border-white/10 rounded text-xs text-zinc-400">{loc.bhk}</span>
-                      <span className="px-2 py-1 bg-zinc-800 border border-white/10 rounded text-xs text-zinc-400">{loc.price}</span>
-                    </div>
-                    <p className="text-xs text-zinc-500 mt-auto flex items-center gap-1">
-                      <span className="w-1.5 h-1.5 rounded-full bg-green-400" aria-hidden="true" />
-                      Seen in {loc.groups} broker groups · {loc.listings} active listings
-                    </p>
-                  </div>
-                </Link>
-              ))}
+                  </Link>
+                );
+              })}
             </div>
 
             <div className="text-center mt-10 lg:mt-16">
@@ -238,6 +225,23 @@ export default function WWWPage() {
                   <p className="text-[15px] text-zinc-400">{item.description}</p>
                 </div>
               ))}
+            </div>
+          </div>
+        </section>
+
+        <section className="py-16 lg:py-24 bg-black">
+          <div className="max-w-3xl mx-auto px-4 lg:px-6">
+            <div className="bg-zinc-900/50 border border-white/10 rounded-xl p-6 lg:p-8">
+              <h2 className="text-[20px] lg:text-[24px] font-semibold text-white mb-3">
+                Why we skip photos on purpose
+              </h2>
+              <p className="text-[15px] text-zinc-400 leading-relaxed">
+                This inventory moves fast. Message the broker directly and they&apos;ll
+                send you real, current photos and videos over WhatsApp — not stock
+                images from whenever the listing was first posted. Pre-loading static
+                photos would misrepresent what&apos;s actually available today, so we
+                keep the page fast and the media fresh, straight from the source.
+              </p>
             </div>
           </div>
         </section>

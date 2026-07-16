@@ -2,14 +2,14 @@ FROM node:20-bookworm-slim AS deps
 
 WORKDIR /app
 COPY apps/www/package.json ./
-# Cache bust: 2026-07-15-2
-ARG CACHE_BUST_DEPS=20260715-2
+# Cache bust: 2026-07-16-1
+ARG CACHE_BUST_DEPS=20260716-1
 RUN npm install
 
 FROM node:20-bookworm-slim AS builder
 
 WORKDIR /app
-ARG CACHE_BUST=20260715-2
+ARG CACHE_BUST=20260716-1
 COPY --from=deps /app/node_modules ./node_modules
 
 COPY apps/www/package.json ./
@@ -25,7 +25,7 @@ RUN npm run build
 FROM node:20-bookworm-slim AS runner
 
 WORKDIR /app
-ARG CACHE_BUST_COPY=20260715-2
+ARG CACHE_BUST_COPY=20260716-1
 ENV NODE_ENV=production
 ENV PORT=3000
 ENV HOSTNAME=0.0.0.0

@@ -34,6 +34,7 @@ node_modules/
 /.next/
 /out/
 /build
+apps/www/.next/
 src-tauri/target/
 src-tauri/node_modules/
 src-tauri/binaries/

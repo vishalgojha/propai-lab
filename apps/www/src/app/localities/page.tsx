@@ -1,0 +1,65 @@
+import Link from "next/link";
+import { ArrowRight } from "lucide-react";
+import { getAllLocalities } from "@/lib/localities";
+
+export const metadata = {
+  title: "All Localities — PropAI",
+  description:
+    "Browse every locality PropAI tracks, with live listing counts from WhatsApp broker networks.",
+};
+
+export default async function LocalitiesIndexPage() {
+  const localities = await getAllLocalities();
+
+  return (
+    <div className="min-h-screen bg-black text-white">
+      <main className="max-w-7xl mx-auto px-4 lg:px-6 py-10 lg:py-14">
+        <header className="mb-10">
+          <h1 className="text-[32px] lg:text-[44px] leading-[1.1] font-bold text-white mb-3">
+            All localities
+          </h1>
+          <p className="text-lg text-zinc-400 max-w-2xl">
+            {localities.length} localities tracked, with live listing counts from
+            WhatsApp broker conversations.
+          </p>
+        </header>
+
+        {localities.length === 0 ? (
+          <p className="text-zinc-400">
+            No localities indexed yet. Data is populated from live broker activity.
+          </p>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 lg:gap-6">
+            {localities.map((loc) => (
+              <Link
+                key={loc.slug}
+                href={`/localities/${loc.slug}`}
+                className="group bg-zinc-900/50 border border-white/10 rounded-xl p-5 lg:p-6 transition-colors hover:border-green-400/50 hover:bg-zinc-900"
+              >
+                <div className="flex flex-col h-full">
+                  <h3 className="text-lg font-semibold text-white group-hover:text-green-400 transition-colors mb-3">
+                    {loc.locality}
+                  </h3>
+                  <p className="text-xs text-zinc-500 mt-auto flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-green-400" aria-hidden="true" />
+                    {loc.listingCount} active listing{loc.listingCount === 1 ? "" : "s"}
+                  </p>
+                </div>
+              </Link>
+            ))}
+          </div>
+        )}
+
+        <div className="text-center mt-12">
+          <Link
+            href="/"
+            className="inline-flex items-center gap-2 px-6 py-3 bg-green-400 text-black text-sm font-semibold rounded-lg hover:bg-green-300 transition-colors"
+          >
+            Back to home
+            <ArrowRight className="w-4 h-4" aria-hidden="true" />
+          </Link>
+        </div>
+      </main>
+    </div>
+  );
+}

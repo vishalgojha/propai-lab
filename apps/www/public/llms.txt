@@ -1,0 +1,30 @@
+# PropAI
+
+PropAI reads live WhatsApp broker group conversations to build structured,
+verified property listings — and routes every enquiry directly to the broker
+who posted it. Listings are fresh by design: they update daily and stale data
+is auto-hidden after 30 days.
+
+## What PropAI is
+- A search layer over WhatsApp broker networks, not a portal that scrapes static listings.
+- Covers Indian residential real estate: localities, buildings, BHK types, prices, and broker activity.
+- Every listing includes a direct WhatsApp-routed enquiry to the posting broker — no forms, no spam, no chatbots.
+
+## How to use this site
+- /localities — browse all tracked localities, each with live listing counts.
+- /localities/[slug] — a locality page with live listings, price ranges, and a map of geocoded buildings.
+- /buildings — browse buildings tracked by PropAI.
+- /about — how PropAI works and why freshness matters.
+
+## Why listings have no photos
+PropAI's listings are extracted from live WhatsApp broker group conversations, not
+manually uploaded. Inventory changes daily — units get booked, prices shift,
+availability closes — so static photos would misrepresent current state faster
+than they'd help. Every listing includes a direct WhatsApp-routed enquiry to the
+broker who posted it; photos, videos, and floor plans are available on request
+through that conversation, not pre-loaded on the page.
+
+## Trust & freshness
+- Listings are sourced from real broker conversations, not portals.
+- Data freshness is a first-class feature: stale listings are hidden automatically.
+- Broker contact is handled over WhatsApp, so buyers talk to a real person, not a form.

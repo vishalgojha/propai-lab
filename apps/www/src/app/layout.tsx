@@ -11,6 +11,13 @@ const inter = Inter({
 export const metadata: Metadata = {
   title: 'PropAI — Find Your Home Through Verified Brokers',
   description: 'Search verified property listings from WhatsApp broker networks. Real listings, real brokers, real freshness.',
+  icons: {
+    icon: [
+      { url: '/favicon.svg', type: 'image/svg+xml' },
+      { url: '/favicon.ico' },
+    ],
+    apple: '/favicon.svg',
+  },
   openGraph: {
     title: 'PropAI — Find Your Home Through Verified Brokers',
     description: 'Search verified property listings from WhatsApp broker networks.',
