@@ -988,6 +988,7 @@ function InboxPageInner({ defaultView }: InboxPageInnerProps) {
   const [conversationMessages, setConversationMessages] = useState<api.RawMessage[]>([]);
   const [loadingConv, setLoadingConv] = useState(false);
   const [replyText, setReplyText] = useState("");
+  const [brokerReplyText, setBrokerReplyText] = useState("");
   const [sendingReply, setSendingReply] = useState(false);
   const [replyError, setReplyError] = useState("");
   const [replyStatus, setReplyStatus] = useState("");
@@ -2215,6 +2216,10 @@ return {
     return conversationMessages.length > 0 ? conversationMessages[conversationMessages.length - 1] : selectedMsg;
   }, [conversationMessages, selectedMsg]);
   const replyFallbackPhone = normalizeRealPhone(resolveMessagePhone(selectedMsg) || phoneFromJid(selectedConversationJid));
+  const brokerReplyPhone = normalizeRealPhone(selectedBroker?.phone || selectedMsgDetails?.parsed?.broker_phone || "");
+  const brokerReplyLink = brokerReplyPhone
+    ? getWaLinkWithRecall(brokerReplyPhone, brokerReplyText || selectedBroker?.latest_title || selectedMsgDetails?.raw?.message || "")
+    : "";
   const replyDraftKey = selectedConversationJid ? `propai-inbox-draft:${selectedConversationJid}` : "";
   const whatsappConnected = whatsappStatus
     ? api.isLiveWhatsAppConnection(whatsappStatus)
@@ -2225,6 +2230,10 @@ return {
     setReplyError("");
     setReplyStatus("");
   }, [selectedConversationJid]);
+
+  useEffect(() => {
+    setBrokerReplyText("");
+  }, [selectedBroker?.identity_key]);
 
   useEffect(() => {
     if (!replyDraftKey) {
@@ -3289,12 +3298,12 @@ return {
                   </div>
                   <div className="min-w-0">
                     <h3 className="text-sm font-bold text-white truncate max-w-[340px]">
-                      {selectedBroker.canonical_name || selectedBroker.name || selectedMsgDetails?.parsed?.broker_name || "Unknown Broker"}
+                      {selectedBroker.canonical_name || selectedBroker.name || selectedMsgDetails?.parsed?.broker_name || selectedMsgDetails?.parsed?.profile_name || "Broker"}
                     </h3>
                     <div className="text-[10px] text-zinc-500 flex items-center gap-2 mt-0.5 flex-wrap">
-                      <span className="truncate">{displayPhoneString(selectedBroker.phone) || "Phone unavailable"}</span>
+                      <span className="truncate">{displayPhoneString(selectedBroker.phone || selectedMsgDetails?.parsed?.broker_phone || "") || "Number not resolved"}</span>
                       <span>•</span>
-                      <span>{selectedBrokerObservations.length} opportunities</span>
+                      <span>{selectedBrokerObservations.length} posts</span>
                       {selectedBroker.building_count > 0 && (
                         <>
                           <span>•</span>
@@ -3333,16 +3342,16 @@ return {
                     <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-[#3EE88A]/10 text-[#3EE88A]">
                       <ClipboardList className="h-5 w-5" strokeWidth={1.6} />
                     </div>
-                    <div className="mt-3 text-sm font-semibold text-white">No observations yet</div>
+                    <div className="mt-3 text-sm font-semibold text-white">No matching posts yet</div>
                     <div className="mx-auto mt-1 max-w-[360px] text-xs leading-relaxed text-zinc-500">
                       {selectedBroker.latest_title
-                        ? `Latest feed match: ${stripEmojis(selectedBroker.latest_title)}`
-                        : "This broker card has not resolved to parsed observations yet. The feed item is still usable for navigation and WhatsApp actions."}
+                        ? "We found a recent post, but it has not been split into matching items yet."
+                        : "This broker card has not resolved to parsed posts yet. The feed item is still usable for navigation and WhatsApp actions."}
                     </div>
                     {selectedBroker.latest_title && (
                       <div className="mx-auto mt-4 max-w-[560px] text-left text-xs leading-relaxed text-zinc-500">
                         <div className="text-[10px] font-semibold uppercase tracking-wider text-zinc-600">
-                          Latest feed
+                          Latest match
                         </div>
                         <div className="mt-1 text-sm font-semibold text-zinc-200">
                           {stripEmojis(selectedBroker.latest_title)}
@@ -3358,7 +3367,7 @@ return {
                               {selectedBroker.latest_micro_market}
                             </span>
                           )}
-                          <span>{selectedBroker.observation_count || 0} observations</span>
+                          <span>{selectedBroker.observation_count || 0} posts</span>
                           <span>•</span>
                           <span>{selectedBroker.building_count || 0} buildings</span>
                           <span>•</span>
@@ -3560,6 +3569,45 @@ return {
                     );
                     })}
                   </>
+                )}
+              </div>
+              <div className="border-t border-white/10 bg-black/90 px-4 py-3">
+                <div className="mb-2 flex items-center justify-between gap-3">
+                  <div className="text-[10px] font-bold uppercase tracking-[0.28em] text-zinc-500">
+                    Quick note
+                  </div>
+                  <div className="text-[10px] text-zinc-500">
+                    {brokerReplyPhone ? "Draft a WhatsApp note" : "Number not resolved yet"}
+                  </div>
+                </div>
+                {brokerReplyPhone ? (
+                  <>
+                    <textarea
+                      value={brokerReplyText}
+                      onChange={(e) => setBrokerReplyText(e.target.value)}
+                      rows={3}
+                      placeholder="Write a short note, question, or follow-up..."
+                      className="w-full resize-none rounded-xl border border-white/10 bg-zinc-950 px-3 py-2.5 text-sm text-white placeholder-zinc-500 outline-none transition-colors focus:border-[#3EE88A]/50 focus:ring-1 focus:ring-[#3EE88A]/30"
+                    />
+                    <div className="mt-2 flex items-center justify-between gap-3">
+                      <div className="text-[11px] text-zinc-500">
+                        We’ll open WhatsApp with the drafted note prefilled.
+                      </div>
+                      <a
+                        href={brokerReplyLink}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-[#3EE88A] px-4 text-[11px] font-bold text-black transition-colors hover:bg-[#35d47c]"
+                      >
+                        <MessageSquare className="h-3.5 w-3.5" />
+                        Open WhatsApp
+                      </a>
+                    </div>
+                  </>
+                ) : (
+                  <div className="rounded-xl border border-white/10 bg-zinc-950 px-3 py-3 text-[11px] text-zinc-400">
+                    The broker number has not been resolved from the feed yet. Open a parsed post or direct chat to reply inline.
+                  </div>
                 )}
               </div>
             </>
