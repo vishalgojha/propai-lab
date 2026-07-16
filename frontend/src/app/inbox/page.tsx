@@ -1716,6 +1716,10 @@ return {
     if (brokerPhone) return brokerPhone;
     const direct = normalizeRealPhone(msg.sender_phone);
     if (direct) return direct;
+    const bodyPhone = extractPhoneFromText(
+      [msg.message, msg.raw_message, msg.summary_title].filter(Boolean).join("\n")
+    );
+    if (bodyPhone) return bodyPhone;
     return (
       phoneFromJid(msg.sender_jid) ||
       phoneFromJid(msg.group_name) ||
@@ -2257,6 +2261,9 @@ return {
       selectedMsgDetails?.parsed?.broker_phone,
       selectedMsgDetails?.raw?.broker_phone,
       selectedMsgDetails?.raw?.sender_phone,
+      selectedMsgDetails?.raw?.message ? extractPhoneFromText(selectedMsgDetails.raw.message) : "",
+      selectedMsgDetails?.raw?.raw_message ? extractPhoneFromText(selectedMsgDetails.raw.raw_message) : "",
+      selectedMsgDetails?.raw?.summary_title ? extractPhoneFromText(selectedMsgDetails.raw.summary_title) : "",
       selectedBroker?.identity_key,
       selectedBroker?.id,
       ...selectedBrokerObservations.flatMap((obs: BrokerObservationRow) => [
@@ -2276,6 +2283,9 @@ return {
     selectedMsgDetails?.parsed?.broker_phone,
     selectedMsgDetails?.raw?.broker_phone,
     selectedMsgDetails?.raw?.sender_phone,
+    selectedMsgDetails?.raw?.message,
+    selectedMsgDetails?.raw?.raw_message,
+    selectedMsgDetails?.raw?.summary_title,
     selectedBrokerObservations,
   ]);
   const replyFallbackPhone = normalizeRealPhone(
