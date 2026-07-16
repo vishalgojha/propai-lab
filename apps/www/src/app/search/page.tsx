@@ -11,6 +11,9 @@ export const metadata = {
   title: "Search Listings — PropAI",
   description:
     "Search live WhatsApp broker listings in plain English. Try queries like '3 BHK in Bandra West budget 2 to 3 lakh'.",
+  alternates: {
+    canonical: "/search",
+  },
 };
 
 type SearchParams = Promise<{ q?: string }>;

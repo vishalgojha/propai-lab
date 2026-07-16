@@ -9,6 +9,9 @@ export const metadata = {
   title: "Explore Live Data — PropAI",
   description:
     "Browse the live data PropAI has so far: localities, buildings, listings, brokers, and recent activity from WhatsApp networks.",
+  alternates: {
+    canonical: "/explore",
+  },
 };
 
 function timeAgo(value: string | null): string {
