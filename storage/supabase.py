@@ -1497,8 +1497,8 @@ class SupabaseStorage(Storage):
             broker_phone=obs.get("broker_phone"),
             latest_raw_message_id=obs.get("raw_message_id"),
             representative_raw_message_id=obs.get("raw_message_id"),
-            last_seen=obs.get("created_at") or "",
-            first_seen=obs.get("created_at") or "",
+            last_seen=obs.get("created_at") or None,
+            first_seen=obs.get("created_at") or None,
             observation_count=1,
         )
 
@@ -1517,10 +1517,11 @@ class SupabaseStorage(Storage):
         processed = 0
         for offset in range(0, max(limit, 1) if limit else 10_000_000, PAGE):
             res = (
-                self.client.table("parsed_observations")
+                self.client.table("parsed_output")
                 .select("*")
                 .order("id", desc=False)
-                .range(offset, offset + PAGE - 1)
+                .limit(PAGE)
+                .offset(offset)
                 .execute()
             )
             rows = res.data or []
@@ -1551,7 +1552,7 @@ class SupabaseStorage(Storage):
         fingerprint upsert dedupes against existing rows."""
         try:
             obs_res = (
-                self.client.table("parsed_observations")
+                self.client.table("parsed_output")
                 .select("*")
                 .eq("id", parsed_id)
                 .limit(1)
@@ -1574,7 +1575,7 @@ class SupabaseStorage(Storage):
             return 0
 
     def save_listing(self, listing: Listing) -> int:
-        data = {k: v for k, v in listing.__dict__.items() if v is not None}
+        data = {k: v for k, v in listing.__dict__.items() if v is not None and v != ""}
         data.pop("id", None)
         if not data.get("fingerprint"):
             data["fingerprint"] = listing_fingerprint(data)
@@ -1582,7 +1583,23 @@ class SupabaseStorage(Storage):
             data["location_label"] = listing_label(data)
         if not data.get("tenant_id") and self._tenant_id:
             data["tenant_id"] = self._tenant_id
-        res = self.client.table("listings").upsert(data, on_conflict="fingerprint").execute()
+        # Prefer a constraint-backed upsert; fall back to check-then-write when
+        # the listings table lacks a unique index on fingerprint (avoids 400).
+        try:
+            res = self.client.table("listings").upsert(data, on_conflict="fingerprint").execute()
+            if res.data:
+                return res.data[0]["id"]
+        except Exception:
+            pass
+        existing = self.get_listing_by_fingerprint(data["fingerprint"])
+        if existing and existing.id:
+            upd = {k: v for k, v in data.items() if k != "fingerprint"}
+            try:
+                self.client.table("listings").update(upd).eq("id", existing.id).execute()
+            except Exception:
+                pass
+            return existing.id
+        res = self.client.table("listings").insert(data).execute()
         return res.data[0]["id"] if res.data else 0
 
     def get_listings(self, limit: int = 50, offset: int = 0,
@@ -1613,9 +1630,6 @@ class SupabaseStorage(Storage):
         if res.data:
             return dict_to_dataclass(Listing, res.data[0])
         return None
-
-    def rebuild_listings(self):
-        pass
 
     # ── Clients ──────────────────────────────────────────────────
 
