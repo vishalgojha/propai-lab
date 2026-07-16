@@ -67,7 +67,7 @@ export default async function WWWPage() {
       <main id="main-content">
         <section className="relative pt-16 lg:pt-24 pb-16 lg:pb-24 overflow-hidden">
           <div className="max-w-7xl mx-auto px-4 lg:px-6">
-            <div className="text-center max-w-3xl mx-auto mb-10 lg:mb-16">
+            <div className="text-center max-w-5xl mx-auto mb-10 lg:mb-16">
               <h1 className="text-[32px] lg:text-[44px] leading-[1.1] font-bold text-white mb-6">
                 Find your home through{" "}
                 <span className="text-green-400">verified brokers</span>
@@ -94,7 +94,7 @@ export default async function WWWPage() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-6 max-w-5xl mx-auto">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-6 max-w-7xl mx-auto">
               {[
                 {
                   icon: MessageSquare,
