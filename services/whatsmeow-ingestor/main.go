@@ -9,6 +9,7 @@ import (
 	"log"
 	"math/rand"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"strings"
@@ -28,7 +29,7 @@ import (
 )
 
 var (
-	databaseURL  = getEnv("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/whatsmeow?sslmode=disable")
+	databaseURL  = resolveDatabaseURL()
 	webhookURL   = getEnv("PROPAI_WEBHOOK_URL", "https://api.propai.live/webhook")
 	apiURL       = getEnv("PROPAI_API_URL", "https://api.propai.live")
 	instanceName = getEnv("PROPAI_INSTANCE_NAME", "propai-whatsmeow")
@@ -1084,6 +1085,29 @@ func getEnv(key, fallback string) string {
 	return fallback
 }
 
+func resolveDatabaseURL() string {
+	for _, key := range []string{"DATABASE_URL", "SUPABASE_DATABASE_URL", "SUPABASE_DB_URL"} {
+		if value := strings.TrimSpace(os.Getenv(key)); value != "" {
+			return value
+		}
+	}
+
+	projectRef := strings.TrimSpace(os.Getenv("SUPABASE_REF"))
+	password := os.Getenv("SUPABASE_DB_PASSWORD")
+	if projectRef == "" || password == "" {
+		return ""
+	}
+
+	connection := &url.URL{
+		Scheme:   "postgres",
+		User:     url.UserPassword("postgres", password),
+		Host:     "db." + projectRef + ".supabase.co:5432",
+		Path:     "/postgres",
+		RawQuery: "sslmode=require",
+	}
+	return connection.String()
+}
+
 func parsePort(p string) int {
 	port := 3001
 	fmt.Sscanf(p, "%d", &port)
@@ -1105,6 +1129,9 @@ func marshalMessage(msg *waE2E.Message) json.RawMessage {
 
 func main() {
 	log.Printf("starting whatsmeow ingestor (instance: %s)", instanceName)
+	if databaseURL == "" {
+		log.Fatal("database configuration missing: set DATABASE_URL (recommended), SUPABASE_DATABASE_URL, SUPABASE_DB_URL, or both SUPABASE_REF and SUPABASE_DB_PASSWORD")
+	}
 
 	// Open DB connection for broker-device mapping
 	db, err := sql.Open("postgres", databaseURL)
