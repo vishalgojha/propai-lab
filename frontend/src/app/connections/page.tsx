@@ -11,6 +11,40 @@ import { getPhones, getPhone, createPhone, deletePhone, resetPhone, disconnectPh
 
 type HealthStatus = "healthy" | "warning" | "error";
 
+type ConnectionSnapshot = {
+  phones?: Phone[];
+  totalParsed?: number;
+  totalListings?: number;
+  totalRequirements?: number;
+  totalBrokers?: number;
+  rawTotal?: number;
+  rawProcessed?: number;
+  rawPending?: number;
+  extractionPct?: number;
+  recentlyProcessed1h?: number;
+};
+
+function connectionSnapshotKey() {
+  if (typeof window === "undefined") return "propai_connection_snapshot:server";
+  const tenant = window.localStorage.getItem("propai_active_tenant") || "default";
+  return `propai_connection_snapshot:${tenant}`;
+}
+
+function readConnectionSnapshot(): ConnectionSnapshot {
+  if (typeof window === "undefined") return {};
+  try {
+    return JSON.parse(window.localStorage.getItem(connectionSnapshotKey()) || "{}") as ConnectionSnapshot;
+  } catch {
+    return {};
+  }
+}
+
+function writeConnectionSnapshot(patch: ConnectionSnapshot) {
+  if (typeof window === "undefined") return;
+  const current = readConnectionSnapshot();
+  window.localStorage.setItem(connectionSnapshotKey(), JSON.stringify({ ...current, ...patch }));
+}
+
 function StatusDot({ status }: { status: HealthStatus }) {
   const colors = { healthy: "bg-emerald-400", warning: "bg-amber-400", error: "bg-red-400" };
   return <span className={`w-2 h-2 rounded-full ${colors[status]} shrink-0`} />;
@@ -626,35 +660,34 @@ export default function ConnectionCenterPage() {
     }
   }, [user, authLoading, router]);
 
-  const [phones, setPhones] = useState<Phone[]>([]);
+  const [cached] = useState<ConnectionSnapshot>(readConnectionSnapshot);
+  const [phones, setPhones] = useState<Phone[]>(() => cached.phones || []);
   const [liveStatus, setLiveStatus] = useState<WhatsAppStatus | null>(null);
-  const [phonesLoading, setPhonesLoading] = useState(true);
+  const [phonesLoading, setPhonesLoading] = useState(() => !cached.phones?.length);
   const [phonesError, setPhonesError] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [qrPhone, setQrPhone] = useState<Phone | null>(null);
   const [connectionAttempts, setConnectionAttempts] = useState<Record<number, ConnectionAttemptState>>({});
   const [now, setNow] = useState(() => Date.now());
 
-  const [totalParsed, setTotalParsed] = useState<number>(0);
-  const [totalListings, setTotalListings] = useState<number>(0);
-  const [totalRequirements, setTotalRequirements] = useState<number>(0);
-  const [totalBrokers, setTotalBrokers] = useState<number>(0);
-  const [rawTotal, setRawTotal] = useState<number>(0);
-  const [rawProcessed, setRawProcessed] = useState<number>(0);
-  const [rawPending, setRawPending] = useState<number>(0);
-  const [extractionPct, setExtractionPct] = useState<number>(0);
-  const [recentlyProcessed1h, setRecentlyProcessed1h] = useState<number>(0);
+  const [totalParsed, setTotalParsed] = useState<number>(() => cached.totalParsed || 0);
+  const [totalListings, setTotalListings] = useState<number>(() => cached.totalListings || 0);
+  const [totalRequirements, setTotalRequirements] = useState<number>(() => cached.totalRequirements || 0);
+  const [totalBrokers, setTotalBrokers] = useState<number>(() => cached.totalBrokers || 0);
+  const [rawTotal, setRawTotal] = useState<number>(() => cached.rawTotal || 0);
+  const [rawProcessed, setRawProcessed] = useState<number>(() => cached.rawProcessed || 0);
+  const [rawPending, setRawPending] = useState<number>(() => cached.rawPending || 0);
+  const [extractionPct, setExtractionPct] = useState<number>(() => cached.extractionPct || 0);
+  const [recentlyProcessed1h, setRecentlyProcessed1h] = useState<number>(() => cached.recentlyProcessed1h || 0);
   const [extractionLag, setExtractionLag] = useState<any>(null);
 
   const fetchPhones = useCallback(async () => {
     try {
-      const persisted = await getPhones(false, 5000);
-      setPhones(persisted.phones || []);
+      const response = await getPhones(true, 5000);
+      const nextPhones = response.phones || [];
+      setPhones(nextPhones);
+      writeConnectionSnapshot({ phones: nextPhones });
       setPhonesError(null);
-      setPhonesLoading(false);
-
-      const live = await getPhones(true, 5000);
-      setPhones(live.phones || persisted.phones || []);
     } catch (error) {
       setPhonesError(error instanceof Error ? error.message : "Could not load phones right now.");
     } finally {
@@ -675,22 +708,33 @@ export default function ConnectionCenterPage() {
         fetchJSON<any>("/stats", undefined, 8000).catch(() => ({})),
         fetchJSON<any>("/dashboard/sync-activity", undefined, 8000).catch(() => ({})),
       ]);
+      const snapshotPatch: ConnectionSnapshot = {};
       if (stats?.total_parsed != null) setTotalParsed(stats.total_parsed);
+      if (stats?.total_parsed != null) snapshotPatch.totalParsed = stats.total_parsed;
       if (stats?.total_listings != null) setTotalListings(stats.total_listings);
+      if (stats?.total_listings != null) snapshotPatch.totalListings = stats.total_listings;
       if (stats?.total_requirements != null) setTotalRequirements(stats.total_requirements);
+      if (stats?.total_requirements != null) snapshotPatch.totalRequirements = stats.total_requirements;
       if (stats?.total_brokers != null) setTotalBrokers(stats.total_brokers);
+      if (stats?.total_brokers != null) snapshotPatch.totalBrokers = stats.total_brokers;
       const ext = syncAct?.extraction;
       if (ext) {
         if (ext.total_raw != null) setRawTotal(ext.total_raw);
+        if (ext.total_raw != null) snapshotPatch.rawTotal = ext.total_raw;
         if (ext.processed != null) setRawProcessed(ext.processed);
+        if (ext.processed != null) snapshotPatch.rawProcessed = ext.processed;
         if (ext.pending != null) setRawPending(ext.pending);
+        if (ext.pending != null) snapshotPatch.rawPending = ext.pending;
         if (ext.pct != null) setExtractionPct(ext.pct);
+        if (ext.pct != null) snapshotPatch.extractionPct = ext.pct;
       }
       try {
         const extProgress = await fetchJSON<any>("/extraction/progress", undefined, 8000);
         if (extProgress?.recently_processed_1h != null) setRecentlyProcessed1h(extProgress.recently_processed_1h);
+        if (extProgress?.recently_processed_1h != null) snapshotPatch.recentlyProcessed1h = extProgress.recently_processed_1h;
         if (extProgress?.lag != null) setExtractionLag(extProgress.lag);
       } catch { /* ignore */ }
+      writeConnectionSnapshot(snapshotPatch);
     } catch { /* ignore */ }
   }, []);
 
@@ -711,9 +755,8 @@ export default function ConnectionCenterPage() {
 
   const refreshData = useCallback(() => {
     void fetchPhones();
-    void fetchStats();
     void fetchLiveStatus();
-  }, [fetchPhones, fetchStats, fetchLiveStatus]);
+  }, [fetchPhones, fetchLiveStatus]);
 
   const handleConnect = useCallback(async (phone: Phone): Promise<void> => {
     updateAttemptState(phone.id, (current) => ({
@@ -758,6 +801,13 @@ export default function ConnectionCenterPage() {
       };
     }
   }, [authLoading, user, refreshData]);
+
+  useEffect(() => {
+    if (authLoading || !user) return;
+    void fetchStats();
+    const interval = setInterval(() => void fetchStats(), 60000);
+    return () => clearInterval(interval);
+  }, [authLoading, user, fetchStats]);
 
   if (authLoading || !user) return null;
 

@@ -2996,7 +2996,7 @@ async def get_stats(
     user: dict = Depends(require_user),
     tenant_id: str | None = Depends(get_tenant_context),
 ):
-    return storage.get_stats()
+    return await asyncio.to_thread(storage.get_stats)
 
 
 # ── Market Intelligence Dashboard ────────────────────────────────
@@ -3360,7 +3360,7 @@ async def dashboard_sync_activity(
     jobs = []
     all_jobs = []
     try:
-        all_jobs = storage.get_sync_jobs(limit=500, source="whatsapp") if storage else []
+        all_jobs = await asyncio.to_thread(storage.get_sync_jobs, limit=500, source="whatsapp") if storage else []
         jobs = [j for j in all_jobs if getattr(j, "status", "") == "running"]
     except Exception as exc:
         print(f"[sync-activity] sync_jobs unavailable: {exc}", flush=True)
@@ -3377,11 +3377,13 @@ async def dashboard_sync_activity(
     raw_total = 0
     raw_processed = 0
     try:
-        raw_total = _raw_count_all(tenant_id)
-        raw_processed = _raw_count_processed(tenant_id)
+        raw_total, raw_processed = await asyncio.gather(
+            asyncio.to_thread(_raw_count_all, tenant_id),
+            asyncio.to_thread(_raw_count_processed, tenant_id),
+        )
     except Exception:
         pass
-    lag = _raw_extraction_lag(tenant_id)
+    lag = await asyncio.to_thread(_raw_extraction_lag, tenant_id)
     return {
         "overall": overall,
         "total_jobs": len(all_jobs),
@@ -3402,8 +3404,10 @@ async def extraction_progress(
     tenant_id: str | None = Depends(get_tenant_context),
 ):
     """Current extraction pipeline progress (async worker status)."""
-    total = _raw_count_all(tenant_id)
-    processed = _raw_count_processed(tenant_id)
+    total, processed = await asyncio.gather(
+        asyncio.to_thread(_raw_count_all, tenant_id),
+        asyncio.to_thread(_raw_count_processed, tenant_id),
+    )
     pending = total - processed
     # Recent activity window
     from datetime import timedelta
@@ -3416,7 +3420,7 @@ async def extraction_progress(
         recent_processed = res.count if hasattr(res, "count") else 0
     except Exception:
         pass
-    lag = _raw_extraction_lag(tenant_id)
+    lag = await asyncio.to_thread(_raw_extraction_lag, tenant_id)
     return {
         "total_raw_messages": total,
         "processed": processed,
@@ -3558,7 +3562,7 @@ async def dashboard_graph_growth(user: dict = Depends(require_user)):
 @app.get("/api/dashboard/whatsapp-status")
 async def dashboard_whatsapp_status(user: dict = Depends(require_user)):
     """Detailed WhatsApp connection status."""
-    details = _connection_details()
+    details = await asyncio.to_thread(_connection_details)
     phone = details.get("phone_number") or ""
     return {
         "connected": details.get("connected", False),
@@ -3583,20 +3587,23 @@ async def market_access_status(
 ):
     """Access gate for shared market intelligence.
 
-    Signup alone is not a trial. The market unlocks only after WhatsApp is
-    connected and at least one sync record exists. Billing can replace the
-    time-based trial flag later without changing the frontend contract.
+    Signup alone is not a trial. The market unlocks after the workspace has
+    synced data at least once and remains available during later WhatsApp
+    outages. Billing can replace this flag without changing the contract.
     """
-    details = _connection_details()
+    details = await asyncio.to_thread(_connection_details)
     connected = bool(details.get("connected"))
-    sync_ready = connected and _market_sync_ready(details)
+    sync_ready = await asyncio.to_thread(_market_sync_ready, details)
     paid_active = False
-    trial_active = connected and sync_ready
+    trial_active = sync_ready
     unlocked = paid_active or trial_active
 
     reason = "ready"
     message = "Market Inbox is available for this connected workspace."
-    if not connected:
+    if sync_ready and not connected:
+        reason = "offline_data_available"
+        message = "WhatsApp is temporarily disconnected. Previously synced market data remains available."
+    elif not connected:
         reason = "connect_whatsapp"
         message = "Connect WhatsApp and start your trial to unlock your personalized broker market feed."
     elif not sync_ready:
@@ -3604,7 +3611,7 @@ async def market_access_status(
         message = "WhatsApp is connected. PropAI is waiting for the first sync record before opening Market Inbox."
 
     # Check if WABA (WhatsApp Business API) is configured — allows outbound even without whatsmeow
-    waba_configured = bool(_companion_get_config_value("access_token", "WABA_ACCESS_TOKEN"))
+    waba_configured = bool(await asyncio.to_thread(_companion_get_config_value, "access_token", "WABA_ACCESS_TOKEN"))
 
     return {
         "authenticated": bool(user),
@@ -8072,7 +8079,11 @@ async def sync_status_update(request: Request):
             if display_name:
                 updates["instance_name"] = display_name
             try:
-                storage.update_org_whatsapp_connection_by_broker_id(broker_id, updates)
+                await asyncio.to_thread(
+                    storage.update_org_whatsapp_connection_by_broker_id,
+                    broker_id,
+                    updates,
+                )
             except Exception as exc:
                 print(f"[sync/status] persist failed for broker {broker_id}: {exc}", flush=True)
         return {"ok": True}
@@ -8154,7 +8165,7 @@ async def sync_logout(user: dict = Depends(require_user)):
 @app.get("/api/sync/connection-state")
 async def sync_connection_state(user: dict = Depends(require_user)):
     """Get current connection state (open/connecting/closed)."""
-    details = _connection_details()
+    details = await asyncio.to_thread(_connection_details)
     return {"state": details["connection_state"], "connected": details["connected"]}
 
 
@@ -12581,7 +12592,7 @@ async def list_phones(
     include_live: bool = True,
 ):
     org_id = tenant_id or DEFAULT_TENANT_ID
-    phones = storage.list_org_whatsapp_connections(org_id)
+    phones = await asyncio.to_thread(storage.list_org_whatsapp_connections, org_id)
     ingestor_statuses = {}
     if include_live:
         _, resp = await _first_ingestor_response("GET", "/list", timeout=2)
@@ -12661,7 +12672,7 @@ async def get_phone(
     user: dict = Depends(require_user),
     tenant_id: str | None = Depends(get_tenant_context),
 ):
-    phone = storage.get_org_whatsapp_connection(phone_id)
+    phone = await asyncio.to_thread(storage.get_org_whatsapp_connection, phone_id)
     if not phone:
         raise HTTPException(404, "Phone not found")
     broker_id = phone.get("broker_id", "")

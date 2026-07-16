@@ -365,7 +365,11 @@ class _RestClient:
             "Authorization": f"Bearer {key}",
             "Content-Type": "application/json",
         }
-        self._http = httpx.Client(timeout=60.0, headers=self._headers)
+        timeout_seconds = float(os.getenv("SUPABASE_HTTP_TIMEOUT_SECONDS", "8"))
+        self._http = httpx.Client(
+            timeout=httpx.Timeout(timeout_seconds, connect=min(3.0, timeout_seconds)),
+            headers=self._headers,
+        )
 
     def table(self, name: str):
         return _QueryBuilder(self, name)
@@ -403,13 +407,10 @@ class _RestClient:
             params.append(("limit", query._limit))
         if query._offset is not None:
             params.append(("offset", query._offset))
-        if query._count == "exact":
-            self._http.headers["Prefer"] = "count=exact"
-        else:
-            self._http.headers.pop("Prefer", None)
+        request_headers = {"Prefer": "count=exact"} if query._count == "exact" else None
 
         if query._op == "select":
-            res = self._http.get(url, params=params)
+            res = self._http.get(url, params=params, headers=request_headers)
         elif query._op in {"insert", "upsert"}:
             headers = {"Prefer": "return=representation"}
             if query._op == "upsert":
@@ -1762,28 +1763,27 @@ class SupabaseStorage(Storage):
     # ── Stats ────────────────────────────────────────────────────
 
     def get_stats(self) -> dict:
-        msgs = self.client.table("raw_messages").select("id", count="exact")
-        parsed = self.client.table("parsed_output").select("id", count="exact")
-        listings = self.client.table("listings").select("id", count="exact")
-        brokers = self.client.table("brokers").select("id", count="exact")
-        buildings = self.client.table("buildings").select("id", count="exact")
-        requirements = self.client.table("parsed_output").select("id", count="exact")\
-            .in_("intent", ["BUY", "BUYER", "REQUIREMENT", "RENTAL_SEEKER"])
-        if self._tenant_id:
-            msgs = msgs.eq("tenant_id", self._tenant_id)
-            parsed = parsed.eq("tenant_id", self._tenant_id)
-            listings = listings.eq("tenant_id", self._tenant_id)
-            brokers = brokers.eq("tenant_id", self._tenant_id)
-            buildings = buildings.eq("tenant_id", self._tenant_id)
-            requirements = requirements.eq("tenant_id", self._tenant_id)
-        return {
-            "total_messages": (msgs.execute().count or 0),
-            "total_parsed": (parsed.execute().count or 0),
-            "total_listings": (listings.execute().count or 0),
-            "total_requirements": (requirements.execute().count or 0),
-            "total_brokers": (brokers.execute().count or 0),
-            "total_buildings": (buildings.execute().count or 0),
-        }
+        tenant_id = self.tenant_id
+        tenant_clause = " WHERE tenant_id = ?" if tenant_id else ""
+        requirement_clause = (
+            tenant_clause + (" AND " if tenant_clause else " WHERE ")
+            + "intent IN ('BUY','BUYER','REQUIREMENT','RENTAL_SEEKER')"
+        )
+        sql = f"""
+            SELECT
+              (SELECT COUNT(*) FROM raw_messages{tenant_clause}) AS total_messages,
+              (SELECT COUNT(*) FROM parsed_output{tenant_clause}) AS total_parsed,
+              (SELECT COUNT(*) FROM listings{tenant_clause}) AS total_listings,
+              (SELECT COUNT(*) FROM parsed_output{requirement_clause}) AS total_requirements,
+              (SELECT COUNT(*) FROM brokers{tenant_clause}) AS total_brokers,
+              (SELECT COUNT(*) FROM buildings{tenant_clause}) AS total_buildings
+        """
+        params = [tenant_id] * 6 if tenant_id else []
+        row = self.db.execute(sql, params).fetchone() or {}
+        return {key: int(row.get(key) or 0) for key in (
+            "total_messages", "total_parsed", "total_listings",
+            "total_requirements", "total_brokers", "total_buildings",
+        )}
 
     # ── Observation Detail ───────────────────────────────────────
 

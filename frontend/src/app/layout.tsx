@@ -69,6 +69,17 @@ const navSections = [
   },
 ];
 
+function readCachedPhones(): Phone[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const tenant = window.localStorage.getItem("propai_active_tenant") || "default";
+    const snapshot = JSON.parse(window.localStorage.getItem(`propai_connection_snapshot:${tenant}`) || "{}");
+    return Array.isArray(snapshot?.phones) ? snapshot.phones : [];
+  } catch {
+    return [];
+  }
+}
+
 function PaletteModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<Record<string, any[]> | null>(null);
@@ -179,7 +190,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
   const { user, loading: authLoading, error: authError, refresh: refreshAuth } = useAuth();
   const isMobile = useIsMobile();
   const { drawerOpen, setDrawerOpen, toggleDrawer, setLastTab } = useLayout();
-  const [phones, setPhones] = useState<Phone[]>([]);
+  const [phones, setPhones] = useState<Phone[]>(readCachedPhones);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [offline, setOffline] = useState(false);
   const [profile, setProfile] = useState<{ auth_user_id?: string; phone: string; first_name: string; last_name?: string; email?: string; city?: string } | null>(null);
@@ -271,19 +282,16 @@ function AppShell({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (authLoading || !user) return;
     const load = async () => {
-      try {
-        const [phonesRes, cfg, status] = await Promise.all([
-          getPhones(true, 5000).catch(() => ({ phones: [] as Phone[] })),
-          getCompanionConfig().catch(() => null),
-          getWhatsAppStatus().catch(() => null),
-        ]);
-        setPhones(phonesRes.phones || []);
-        if (cfg) setWabaConfig(cfg);
-        setLiveStatus(status);
-      } catch {}
+      const [phonesRes, status] = await Promise.all([
+        getPhones(true, 5000).catch(() => null),
+        getWhatsAppStatus().catch(() => null),
+      ]);
+      if (phonesRes) setPhones(phonesRes.phones || []);
+      if (status) setLiveStatus(status);
     };
+    void getCompanionConfig().then(setWabaConfig).catch(() => {});
     load();
-    const t = setInterval(load, 15000);
+    const t = setInterval(load, 30000);
     const onStatusUpdate = () => {
       void load();
     };
