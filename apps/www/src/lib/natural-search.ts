@@ -544,7 +544,7 @@ export async function searchNaturalLanguageListings(
 
   // Build a set of known building names so we can classify a result as a
   // building vs a locality (a building must never render as a "Locality" card).
-  const knownBuildings = await getAllBuildings(500);
+  const knownBuildings = await getAllBuildings();
   const buildingNameSet = new Set(
     knownBuildings.map((b: BuildingSummary) => slugify(b.name)).filter(Boolean),
   );
