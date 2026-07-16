@@ -148,6 +148,22 @@ Call/WhatsApp: 9876543210
 """
 
 
+AGAMI_ETERNITY_OPTIONS = """\
+✨ 3 BHK FOR SALE | BANDRA EAST | AGAMI ETERNITY ✨
+🏢 Agami Eternity
+🏡 Option 1
+📐 940 Sq. Ft. Carpet
+🚗 1 Car Parking
+💰 ₹5.50 Cr
+🏡 Option 2
+📐 1,061 Sq. Ft. Carpet + Deck
+💰 ₹6.29 Cr
+📞 Advait Makhija
+Dreams2Realty
+📱 +91 9833223040
+"""
+
+
 def _find_card(cards: list[dict], **criteria) -> dict:
     for card in cards:
         if all(card.get(key) == value for key, value in criteria.items()):
@@ -208,6 +224,18 @@ def test_multi_option_broadcast_splits_into_multiple_cards():
     monte_430 = _find_card(cards, price=4.3, price_unit="Cr")
     monte_455 = _find_card(cards, price=4.55, price_unit="Cr")
     assert monte_430 != monte_455
+
+
+def test_explicit_option_markers_produce_complete_alternative_cards():
+    cards = parse_multi_message(AGAMI_ETERNITY_OPTIONS)
+
+    assert len(cards) == 2
+    option_1 = _find_card(cards, area_sqft=940.0, price=5.5, price_unit="Cr")
+    option_2 = _find_card(cards, area_sqft=1061.0, price=6.29, price_unit="Cr")
+    for card in (option_1, option_2):
+        assert card["bhk"] == "3 BHK"
+        assert card["building_name"] == "Agami Eternity"
+        assert card["broker_phone"] == "9833223040"
 
 
 def test_barudgar_properties_multi_forward_keeps_all_three_cards():
