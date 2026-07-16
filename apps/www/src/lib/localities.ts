@@ -1,4 +1,5 @@
 import { getServerSupabase, slugify } from "./supabase";
+import { getTitlesForRawMessageIds } from "./listing-titles";
 
 export type BuildingOnMap = {
   name: string;
@@ -453,9 +454,24 @@ export type BuildingListing = {
   price_unit: string | null;
   furnishing: string | null;
   intent: string | null;
+  micro_market: string | null;
+  view: string | null;
+  floor_description: string | null;
+  building_name: string | null;
   broker_name: string | null;
   broker_phone: string | null;
   last_seen: string | null;
+  title: string | null;
+  representative_raw_message_id: number | null;
+  latest_raw_message_id: number | null;
+};
+
+export type ListingDetail = BuildingListing & {
+  area_sqft: number | null;
+  landmark_name: string | null;
+  location_label: string | null;
+  buildingSlug: string | null;
+  localitySlug: string | null;
 };
 
 // A real building name is short and Proper-noun-like. Ingestion sometimes
@@ -554,16 +570,23 @@ export async function getBuildingListings(name: string): Promise<BuildingListing
     price_unit: string | null;
     furnishing: string | null;
     intent: string | null;
+    micro_market: string | null;
+    view: string | null;
+    floor_description: string | null;
+    building_name: string | null;
     broker_name: string | null;
     broker_phone: string | null;
     last_seen: string | null;
-    building_name: string | null;
+    representative_raw_message_id: number | null;
+    latest_raw_message_id: number | null;
   }> = [];
 
   for (let offset = 0; ; offset += PAGE) {
     const { data, error } = await db
       .from("listings")
-      .select("id, bhk, price, price_unit, furnishing, intent, broker_name, broker_phone, last_seen, building_name")
+      .select(
+        "id, bhk, price, price_unit, furnishing, intent, micro_market, view, floor_description, building_name, broker_name, broker_phone, last_seen, representative_raw_message_id, latest_raw_message_id",
+      )
       .eq("building_name", target)
       .order("last_seen", { ascending: false })
       .range(offset, offset + PAGE - 1);
@@ -576,6 +599,12 @@ export async function getBuildingListings(name: string): Promise<BuildingListing
     if (!data || data.length < PAGE) break;
   }
 
+  // Real titles are computed at ingestion time and stored on parsed_output,
+  // keyed by the raw WhatsApp message — not on the listings row itself.
+  const titleMap = await getTitlesForRawMessageIds(
+    all.flatMap((r) => [r.representative_raw_message_id, r.latest_raw_message_id]),
+  );
+
   return all.map((r) => ({
     id: r.id,
     bhk: r.bhk,
@@ -583,10 +612,73 @@ export async function getBuildingListings(name: string): Promise<BuildingListing
     price_unit: r.price_unit,
     furnishing: r.furnishing,
     intent: r.intent,
+    micro_market: r.micro_market,
+    view: r.view,
+    floor_description: r.floor_description,
+    building_name: r.building_name,
     broker_name: r.broker_name,
     broker_phone: r.broker_phone,
     last_seen: r.last_seen,
+    representative_raw_message_id: r.representative_raw_message_id,
+    latest_raw_message_id: r.latest_raw_message_id,
+    title:
+      (r.representative_raw_message_id != null ? titleMap.get(r.representative_raw_message_id) : null) ??
+      (r.latest_raw_message_id != null ? titleMap.get(r.latest_raw_message_id) : null) ??
+      null,
   }));
+}
+
+export async function getListingById(id: number): Promise<ListingDetail | null> {
+  const db = getServerSupabase();
+  if (!db || !Number.isFinite(id)) return null;
+
+  const { data, error } = await db
+    .from("listings")
+    .select(
+      "id, bhk, price, price_unit, area_sqft, furnishing, intent, location_label, landmark_name, micro_market, view, floor_description, broker_name, broker_phone, last_seen, building_name, representative_raw_message_id, latest_raw_message_id",
+    )
+    .eq("id", id)
+    .maybeSingle();
+
+  if (error || !data) {
+    if (error) console.error("getListingById error:", error.message);
+    return null;
+  }
+
+  const titleMap = await getTitlesForRawMessageIds([
+    data.representative_raw_message_id,
+    data.latest_raw_message_id,
+  ]);
+
+  const title =
+    (data.representative_raw_message_id != null ? titleMap.get(data.representative_raw_message_id) : null) ??
+    (data.latest_raw_message_id != null ? titleMap.get(data.latest_raw_message_id) : null) ??
+    null;
+
+  return {
+    id: data.id,
+    bhk: data.bhk,
+    price: data.price,
+    price_unit: data.price_unit,
+    area_sqft: data.area_sqft,
+    furnishing: data.furnishing,
+    intent: data.intent,
+    micro_market: data.micro_market,
+    view: data.view,
+    floor_description: data.floor_description,
+    building_name: data.building_name,
+    landmark_name: data.landmark_name,
+    location_label: data.location_label,
+    broker_name: data.broker_name,
+    broker_phone: data.broker_phone,
+    last_seen: data.last_seen,
+    title,
+    representative_raw_message_id: data.representative_raw_message_id,
+    latest_raw_message_id: data.latest_raw_message_id,
+    buildingSlug:
+      data.building_name && !isJunkBuildingName(data.building_name) ? slugify(data.building_name) : null,
+    localitySlug: data.micro_market ? slugify(data.micro_market) : null,
+  };
 }
 
 export async function matchLocalities(

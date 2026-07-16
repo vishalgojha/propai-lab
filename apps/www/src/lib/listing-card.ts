@@ -12,9 +12,19 @@ export type ListingCardFields = {
   building_name: string | null;
   landmark_name: string | null;
   location_label: string | null;
+  floor_description?: string | null;
+  view?: string | null;
+  title?: string | null;
   broker_name: string | null;
   broker_phone: string | null;
   last_seen: string | null;
+};
+
+// Structured spec entries so callers can render an icon per spec (bed count,
+// area, furnishing, floor...) instead of one flat "3 BHK · 850 sqft" string.
+export type ListingSpecItem = {
+  kind: "bhk" | "area" | "furnishing" | "floor" | "view";
+  label: string;
 };
 
 export type ListingCardViewModel = {
@@ -24,10 +34,12 @@ export type ListingCardViewModel = {
   isBuilding: boolean;
   priceLabel: string;
   specRow: string;
+  specItems: ListingSpecItem[];
   statusLabel: string;
   statusTone: "available" | "unconfirmed";
   updatedLabel: string;
   waLink: string | null;
+  href: string | null;
   brokerName: string | null;
 };
 
@@ -95,6 +107,10 @@ export function formatCardPrice(
 }
 
 function buildTitle(row: ListingCardFields): string {
+  // Prefer the real, regex/LLM-derived title computed at ingestion time.
+  if (row.title && row.title.trim()) {
+    return row.title.trim();
+  }
   if (row.building_name && row.building_name.trim()) {
     return row.building_name.trim();
   }
@@ -107,14 +123,28 @@ function buildTitle(row: ListingCardFields): string {
   return "Listing";
 }
 
-function buildSpecRow(row: ListingCardFields): string {
-  const parts: string[] = [];
-  if (row.bhk && row.bhk.trim()) parts.push(row.bhk.trim());
-  if (typeof row.area_sqft === "number" && row.area_sqft > 0) {
-    parts.push(`${row.area_sqft.toLocaleString("en-IN")} sqft`);
+function buildSpecItems(row: ListingCardFields): ListingSpecItem[] {
+  const items: ListingSpecItem[] = [];
+  if (row.bhk && row.bhk.trim()) {
+    items.push({ kind: "bhk", label: row.bhk.trim() });
   }
-  if (row.furnishing && row.furnishing.trim()) parts.push(row.furnishing.trim());
-  return parts.join(" · ");
+  if (typeof row.area_sqft === "number" && row.area_sqft > 0) {
+    items.push({ kind: "area", label: `${row.area_sqft.toLocaleString("en-IN")} sqft` });
+  }
+  if (row.furnishing && row.furnishing.trim()) {
+    items.push({ kind: "furnishing", label: row.furnishing.trim() });
+  }
+  if (row.floor_description && row.floor_description.trim()) {
+    items.push({ kind: "floor", label: row.floor_description.trim() });
+  }
+  if (row.view && row.view.trim()) {
+    items.push({ kind: "view", label: row.view.trim() });
+  }
+  return items;
+}
+
+function buildSpecRow(items: ListingSpecItem[]): string {
+  return items.map((i) => i.label).join(" · ");
 }
 
 function formatUpdated(iso: string | null): string {
@@ -143,17 +173,20 @@ export function toListingCardViewModel(
   const ownLocality = row.micro_market && row.micro_market.trim() ? row.micro_market.trim() : null;
   const locality = ownLocality ?? (fallbackLocality && fallbackLocality.trim() ? fallbackLocality.trim() : null);
   const hasLocality = Boolean(locality);
+  const specItems = buildSpecItems(row);
   return {
     title: buildTitle(row),
     locality,
     localitySlug: locality ? slugify(locality) : null,
     isBuilding,
     priceLabel: formatCardPrice(row.price, row.price_unit, row.intent),
-    specRow: buildSpecRow(row),
+    specRow: buildSpecRow(specItems),
+    specItems,
     statusLabel: hasLocality ? "Available" : "Locality unconfirmed",
     statusTone: hasLocality ? "available" : "unconfirmed",
     updatedLabel: formatUpdated(row.last_seen),
     waLink: waLinkFor(row.id),
+    href: row.id != null ? `/listings/${row.id}` : null,
     brokerName: row.broker_name && row.broker_name.trim() ? row.broker_name.trim() : null,
   };
 }

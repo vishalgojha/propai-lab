@@ -11,6 +11,7 @@ import { toListingCardViewModel, type ListingCardFields } from "@/lib/listing-ca
 import { slugify } from "@/lib/supabase";
 import SiteHeader from "@/components/SiteHeader";
 import SiteFooter from "@/components/SiteFooter";
+import ListingSpecs from "@/components/ListingSpecs";
 
 type Params = { params: Promise<{ slug: string }> };
 
@@ -113,8 +114,9 @@ export default async function BuildingPage({ params }: Params) {
               {listings.map((row) => {
                 const card = toListingCardViewModel(toCardFields(row), false, building.microMarket);
                 return (
-                  <article
+                  <Link
                     key={row.id}
+                    href={card.href ?? "#"}
                     className="group flex flex-col rounded-2xl border border-white/10 bg-zinc-950/90 p-5 transition-colors hover:border-green-400/40 hover:bg-zinc-900/90"
                   >
                     <div className="flex items-start justify-between gap-3 mb-3">
@@ -144,8 +146,8 @@ export default async function BuildingPage({ params }: Params) {
                       <span className="text-xl font-semibold text-white">{card.priceLabel}</span>
                     </div>
 
-                    {card.specRow && (
-                      <div className="mb-4 text-sm text-zinc-400">{card.specRow}</div>
+                    {card.specItems.length > 0 && (
+                      <ListingSpecs items={card.specItems} className="mb-4" />
                     )}
 
                     <div className="mt-auto space-y-2 text-sm text-zinc-400">
@@ -174,7 +176,7 @@ export default async function BuildingPage({ params }: Params) {
                         Broker contact soon
                       </span>
                     )}
-                  </article>
+                  </Link>
                 );
               })}
             </div>
