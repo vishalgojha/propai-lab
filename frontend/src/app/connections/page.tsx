@@ -641,7 +641,10 @@ export default function ConnectionCenterPage() {
   const fetchPhones = useCallback(async () => {
     let initialPhones: Phone[] = [];
     try {
-      const res = await getPhones(false, 7000);
+      // This page is the connection console, so prefer the live-merged view.
+      // The DB snapshot alone can lag behind the ingestor by a few seconds and
+      // briefly show a connected phone as disconnected after a refresh.
+      const res = await getPhones(true, 7000);
       initialPhones = res.phones || [];
       setPhones(initialPhones);
       setPhonesError(null);
