@@ -26,6 +26,7 @@ import (
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
 	waLog "go.mau.fi/whatsmeow/util/log"
+	"google.golang.org/protobuf/proto"
 )
 
 var (
@@ -173,6 +174,29 @@ type inboxThreadCursor struct {
 	SenderJID  string                 `json:"sender_jid"`
 	Timestamp  string                 `json:"timestamp"`
 	RawPayload map[string]interface{} `json:"raw_payload"`
+}
+
+type sendMessageRequest struct {
+	BrokerID          string `json:"brokerId"`
+	RemoteJID         string `json:"remoteJid"`
+	Text              string `json:"text"`
+	QuotedMessageID   string `json:"quotedMessageId"`
+	QuotedRemoteJID   string `json:"quotedRemoteJid"`
+	QuotedParticipant string `json:"quotedParticipant"`
+	QuotedFromMe      bool   `json:"quotedFromMe"`
+}
+
+type selfChatAgentRequest struct {
+	BrokerID  string `json:"broker_id"`
+	Text      string `json:"text"`
+	MessageID string `json:"message_id"`
+	SenderJID string `json:"sender_jid"`
+}
+
+type selfChatAgentResponse struct {
+	Reply   string `json:"reply"`
+	Error   string `json:"error"`
+	Message string `json:"message"`
 }
 
 func NewSessionManager(container *sqlstore.Container, db *sql.DB) *SessionManager {
@@ -600,7 +624,13 @@ func (sm *SessionManager) handleEvent(s *BrokerSession, evt interface{}) {
 
 func (sm *SessionManager) handleMessage(s *BrokerSession, evt *events.Message) {
 	info := evt.Info
-	if info.ID == "" || info.IsFromMe {
+	if info.ID == "" {
+		return
+	}
+	if info.IsFromMe {
+		if target, text, ok := selfChatCommand(s, evt); ok {
+			sm.handleSelfChatCommand(s, target, info.ID, text)
+		}
 		return
 	}
 
@@ -651,6 +681,98 @@ func (sm *SessionManager) handleMessage(s *BrokerSession, evt *events.Message) {
 		return
 	}
 	resp.Body.Close()
+}
+
+func selfChatCommand(s *BrokerSession, evt *events.Message) (types.JID, string, bool) {
+	if s == nil || s.client == nil || s.client.Store.ID == nil || evt == nil {
+		return types.EmptyJID, "", false
+	}
+	info := evt.Info
+	// DeviceSentMeta proves that the command came from another linked device.
+	// Locally generated bot replies do not have it, which prevents reply loops.
+	if !info.IsFromMe || info.IsGroup || info.DeviceSentMeta == nil {
+		return types.EmptyJID, "", false
+	}
+	own := s.client.Store.ID.ToNonAD()
+	destination, err := types.ParseJID(info.DeviceSentMeta.DestinationJID)
+	if err != nil || destination.ToNonAD() != own {
+		return types.EmptyJID, "", false
+	}
+	text := messageText(evt.Message)
+	if text == "" {
+		return types.EmptyJID, "", false
+	}
+	return own, text, true
+}
+
+func messageText(msg *waE2E.Message) string {
+	if msg == nil {
+		return ""
+	}
+	if text := strings.TrimSpace(msg.GetConversation()); text != "" {
+		return text
+	}
+	if text := strings.TrimSpace(msg.GetExtendedTextMessage().GetText()); text != "" {
+		return text
+	}
+	return ""
+}
+
+func (sm *SessionManager) handleSelfChatCommand(s *BrokerSession, target types.JID, messageID, text string) {
+	payload, _ := json.Marshal(selfChatAgentRequest{
+		BrokerID:  s.brokerID,
+		Text:      text,
+		MessageID: string(messageID),
+		SenderJID: target.String(),
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(
+		ctx,
+		http.MethodPost,
+		strings.TrimRight(apiURL, "/")+"/api/internal/self-chat",
+		strings.NewReader(string(payload)),
+	)
+	if err != nil {
+		log.Printf("[broker %s] self-chat request build failed: %v", s.brokerID, err)
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+	token := strings.TrimSpace(os.Getenv("PROPAI_INTERNAL_TOKEN"))
+	if token == "" {
+		token = strings.TrimSpace(os.Getenv("SUPABASE_SERVICE_KEY"))
+	}
+	if token != "" {
+		req.Header.Set("X-PropAI-Internal-Token", token)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		log.Printf("[broker %s] self-chat agent request failed: %v", s.brokerID, err)
+		return
+	}
+	defer resp.Body.Close()
+	var agentResponse selfChatAgentResponse
+	if err := json.NewDecoder(resp.Body).Decode(&agentResponse); err != nil {
+		log.Printf("[broker %s] self-chat agent response decode failed: %v", s.brokerID, err)
+		return
+	}
+	if resp.StatusCode >= 300 || strings.TrimSpace(agentResponse.Reply) == "" {
+		detail := agentResponse.Error
+		if detail == "" {
+			detail = agentResponse.Message
+		}
+		log.Printf("[broker %s] self-chat agent returned status=%d error=%s", s.brokerID, resp.StatusCode, detail)
+		return
+	}
+	sendCtx, sendCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer sendCancel()
+	if _, err := s.client.SendMessage(
+		sendCtx,
+		target,
+		&waE2E.Message{Conversation: proto.String(strings.TrimSpace(agentResponse.Reply))},
+	); err != nil {
+		log.Printf("[broker %s] self-chat reply send failed: %v", s.brokerID, err)
+	}
 }
 
 // ── HTTP handlers ──────────────────────────────────────────────────────────
@@ -869,6 +991,87 @@ func (sm *SessionManager) disconnectHandler(w http.ResponseWriter, r *http.Reque
 	sm.Remove(brokerID)
 	log.Printf("[broker %s] disconnected and removed", brokerID)
 	json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+}
+
+func (sm *SessionManager) connectedSession(brokerID string) (*BrokerSession, error) {
+	if brokerID != "" {
+		s := sm.Get(brokerID)
+		if s == nil {
+			return nil, fmt.Errorf("phone not found")
+		}
+		if s.client == nil || !s.client.IsConnected() || s.client.Store.ID == nil {
+			return nil, fmt.Errorf("phone is not connected")
+		}
+		return s, nil
+	}
+
+	var selected *BrokerSession
+	for _, s := range sm.List() {
+		if s.client == nil || !s.client.IsConnected() || s.client.Store.ID == nil {
+			continue
+		}
+		if selected != nil {
+			return nil, fmt.Errorf("multiple phones are connected; brokerId is required")
+		}
+		selected = s
+	}
+	if selected == nil {
+		return nil, fmt.Errorf("no connected phone")
+	}
+	return selected, nil
+}
+
+func (sm *SessionManager) sendMessageHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "POST required"})
+		return
+	}
+	var body sendMessageRequest
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "invalid JSON body"})
+		return
+	}
+	body.RemoteJID = strings.TrimSpace(body.RemoteJID)
+	body.Text = strings.TrimSpace(body.Text)
+	if body.RemoteJID == "" || body.Text == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "remoteJid and text are required"})
+		return
+	}
+	target, err := types.ParseJID(body.RemoteJID)
+	if err != nil || target.IsEmpty() {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "invalid remoteJid"})
+		return
+	}
+	session, err := sm.connectedSession(strings.TrimSpace(body.BrokerID))
+	if err != nil {
+		w.WriteHeader(http.StatusConflict)
+		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": err.Error()})
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+	result, err := session.client.SendMessage(
+		ctx,
+		target,
+		&waE2E.Message{Conversation: proto.String(body.Text)},
+	)
+	if err != nil {
+		w.WriteHeader(http.StatusBadGateway)
+		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": err.Error()})
+		return
+	}
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success":    true,
+		"message_id": result.ID,
+		"timestamp":  result.Timestamp.UTC().Format(time.RFC3339),
+		"broker_id":  session.brokerID,
+	})
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -1222,6 +1425,7 @@ func main() {
 	mux.HandleFunc("/connect", sm.connectHandler)
 	mux.HandleFunc("/reset", sm.resetHandler)
 	mux.HandleFunc("/disconnect", sm.disconnectHandler)
+	mux.HandleFunc("/send-message", sm.sendMessageHandler)
 	mux.HandleFunc("/list", sm.listHandler)
 	mux.HandleFunc("/history/backfill", sm.historyBackfillHandler)
 

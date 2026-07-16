@@ -1,6 +1,11 @@
 package main
 
-import "testing"
+import (
+	"testing"
+
+	"go.mau.fi/whatsmeow/proto/waE2E"
+	"google.golang.org/protobuf/proto"
+)
 
 func clearDatabaseEnvironment(t *testing.T) {
 	t.Helper()
@@ -40,5 +45,19 @@ func TestResolveDatabaseURLRequiresConfiguration(t *testing.T) {
 	clearDatabaseEnvironment(t)
 	if got := resolveDatabaseURL(); got != "" {
 		t.Fatalf("resolveDatabaseURL() = %q, want empty", got)
+	}
+}
+
+func TestMessageTextSupportsConversationAndExtendedText(t *testing.T) {
+	plain := &waE2E.Message{Conversation: proto.String("  plain command  ")}
+	if got := messageText(plain); got != "plain command" {
+		t.Fatalf("messageText(plain) = %q", got)
+	}
+
+	extended := &waE2E.Message{
+		ExtendedTextMessage: &waE2E.ExtendedTextMessage{Text: proto.String("  extended command  ")},
+	}
+	if got := messageText(extended); got != "extended command" {
+		t.Fatalf("messageText(extended) = %q", got)
 	}
 }

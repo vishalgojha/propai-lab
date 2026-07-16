@@ -38,6 +38,7 @@ Set these on each service in Coolify:
 | `PROPAI_WEBHOOK_URL` | `http://api:8000/webhook` |
 | `PROPAI_API_URL` | `http://api:8000` |
 | `PROPAI_INSTANCE_NAME` | `propai-whatsmeow` |
+| `SUPABASE_SERVICE_KEY` | Same service role key used by the API, for authenticated internal agent calls |
 | `DATABASE_URL` | Active Supabase Postgres connection string from the Supabase Connect panel |
 | `AUTH_DIR` | `/data/auth` |
 | `STATUS_FILE` | `/data/status.json` |

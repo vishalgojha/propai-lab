@@ -51,6 +51,8 @@ def _add_tool_cache_control(tools: list[dict]) -> list[dict]:
 
 
 _client = None
+_client_key = ""
+_client_base_url = ""
 _supabase_storage = None
 
 # ── Conversation Memory ────────────────────────────────────────
@@ -181,11 +183,14 @@ def get_memory(session_id: str) -> ConversationMemory:
     return _memory_store[session_id]
 
 
-def get_client(api_key=None):
-    global _client
+def get_client(api_key=None, base_url=None):
+    global _client, _client_key, _client_base_url
     key = api_key or os.environ.get("DOUBLEWORD_API_KEY", "")
-    if _client is None or _client.api_key != key:
-        _client = OpenAI(api_key=key, base_url=BASE_URL)
+    endpoint = (base_url or BASE_URL).rstrip("/")
+    if _client is None or _client_key != key or _client_base_url != endpoint:
+        _client = OpenAI(api_key=key, base_url=endpoint)
+        _client_key = key
+        _client_base_url = endpoint
     return _client
 
 
@@ -1910,8 +1915,8 @@ def get_conversational_reply(messages, api_key=None, model=None, broker=None):
     return resp.choices[0].message
 
 
-def get_model_reply(messages, sources, api_key=None, db_path=None, model=None, max_tool_rounds=5, _depth=0):
-    client = get_client(api_key=api_key)
+def get_model_reply(messages, sources, api_key=None, db_path=None, model=None, base_url=None, max_tool_rounds=5, _depth=0):
+    client = get_client(api_key=api_key, base_url=base_url)
     tools = _build_tools(sources)
     db_path = db_path or _default_db_path()
 
@@ -1981,6 +1986,15 @@ def get_model_reply(messages, sources, api_key=None, db_path=None, model=None, m
                 "tool_call_id": tc.id,
                 "content": result_str,
             })
-        return get_model_reply(messages, sources, api_key=api_key, db_path=db_path, model=model, max_tool_rounds=max_tool_rounds, _depth=_depth + 1)
+        return get_model_reply(
+            messages,
+            sources,
+            api_key=api_key,
+            db_path=db_path,
+            model=model,
+            base_url=base_url,
+            max_tool_rounds=max_tool_rounds,
+            _depth=_depth + 1,
+        )
 
     return msg
