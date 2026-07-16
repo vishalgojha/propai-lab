@@ -86,14 +86,8 @@ function intentLabel(intent?: string): string {
   }
 }
 
-function intentColor(intent?: string): string {
-  switch ((intent || "").toUpperCase()) {
-    case "SELL": case "SALE": case "LEASE": return "badge-green";
-    case "RENT": return "badge-blue";
-    case "BUY": case "REQUIREMENT": case "WANTED": return "badge-orange";
-    case "COMMERCIAL": return "badge-purple";
-    default: return "badge-gray";
-  }
+function intentColor(_intent?: string): string {
+  return "badge-neutral";
 }
 
 function observationTypeLabel(type?: string): string {
@@ -110,14 +104,8 @@ function observationTypeIcon(type?: string): string {
   }
 }
 
-function observationTypeColor(type?: string): string {
-  switch ((type || "").toUpperCase()) {
-    case "LISTING": return "badge-green";
-    case "REQUIREMENT": return "badge-blue";
-    case "MARKET_UPDATE": return "badge-purple";
-    case "INTRODUCTION": return "badge-orange";
-    default: return "badge-gray";
-  }
+function observationTypeColor(_type?: string): string {
+  return "badge-neutral";
 }
 
 function inferOpportunityKind(input: { intent?: string; observation_type?: string; text?: string }) {
@@ -163,16 +151,8 @@ function marketOpportunityLabel(input: { intent?: string; observation_type?: str
   return side ? `${side} ${kind}` : kind;
 }
 
-function marketOpportunityColor(label: string) {
-  const lower = label.toLowerCase();
-  if (lower.includes("requirement")) return lower.includes("rent") ? "badge-orange" : "badge-purple";
-  if (lower.includes("rent")) return "badge-blue";
-  if (lower.includes("sale")) return "badge-green";
-  return "badge-gray";
-}
-
-function marketOpportunityColorToken(label: string) {
-  return marketOpportunityColor(label).replace("badge-", "");
+function marketOpportunityColor(_label: string) {
+  return "badge-neutral";
 }
 
 function formatCurrency(val: number, unit?: string) {
@@ -1769,11 +1749,6 @@ return {
     if (intentUpper === "COMMERCIAL") return "Commercial";
     return intent || "";
   };
-
-  const intentBadgeColorFor = (intent?: string) =>
-    ({ SELL: "green", BUY: "purple", RENT: "yellow", COMMERCIAL: "orange" } as Record<string, string>)[
-      (intent || "").toUpperCase()
-    ] || "blue";
 
   const resolveMessageSenderName = (msg?: Partial<api.RawMessage> | null) => {
     if (!msg) return "";
@@ -3874,19 +3849,19 @@ return {
                                   const formatIssue = classifyFormatIssue(m);
                                   const suppressAsOpportunity = Boolean(formatIssue && formatIssue.severity === "high");
                                   const mBadges = (() => {
-                                    const badges: { label: string; color: string }[] = [];
+                                    const badges: { label: string }[] = [];
                                     if (suppressAsOpportunity) return badges;
                                     const intent = (m as api.InboxThread).parsed_intent || m.parsed_intent || inferredMessageIntent(m);
                                     const marketLabel = marketOpportunityLabel({ intent, text: m.message || "" });
                                     if (marketLabel && marketLabel !== "Market") {
-                                      badges.push({ label: marketLabel, color: marketOpportunityColorToken(marketLabel) });
+                                      badges.push({ label: marketLabel });
                                     }
                                     if (m.attachments) {
                                       try {
                                         const att = typeof m.attachments === "string" ? JSON.parse(m.attachments) : m.attachments;
-                                        if (att.image) badges.push({ label: "Image", color: "cyan" });
-                                        if (att.video) badges.push({ label: "Video", color: "pink" });
-                                        if (att.document) badges.push({ label: "Document", color: "orange" });
+                                        if (att.image) badges.push({ label: "Image" });
+                                        if (att.video) badges.push({ label: "Video" });
+                                        if (att.document) badges.push({ label: "Document" });
                                       } catch {}
                                     }
                                     return badges;
@@ -4008,7 +3983,7 @@ return {
                                           {mBadges.length > 0 && (
                                             <div className="mb-2 flex flex-wrap gap-1">
                                               {mBadges.map((b, bi) => (
-                                                <span key={bi} className={`badge badge-${b.color} text-[8px] px-1.5 py-0.5`}>
+                                                <span key={bi} className="badge badge-neutral text-[8px] px-1.5 py-0.5">
                                                   {b.label}
                                                 </span>
                                               ))}
@@ -4080,7 +4055,7 @@ return {
                                       <div className={`${listingChunks.length > 1 ? "hidden" : "flex"} items-center justify-end gap-2 pt-1.5 mt-1.5 border-t border-white/5`}>
                                         <div className="hidden">
                                           {mBadges.map((b, bi) => (
-                                            <span key={bi} className={`badge badge-${b.color} text-[8px] px-1 py-0`}>
+                                            <span key={bi} className="badge badge-neutral text-[8px] px-1 py-0">
                                               {b.label}
                                             </span>
                                           ))}

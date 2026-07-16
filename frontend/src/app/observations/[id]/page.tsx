@@ -29,11 +29,6 @@ function fmtArea(area: number | null | undefined): string | null {
   return `${area.toLocaleString("en-IN")} sqft`;
 }
 
-const intentBadge: Record<string, string> = {
-  SELL: "badge-green", BUY: "badge-purple", RENT: "badge-yellow",
-  COMMERCIAL: "badge-orange", "PRE-LAUNCH": "badge-red",
-};
-
 function ListingCard({ listing, idx }: { listing: any; idx: number }) {
   const details: string[] = [];
   if (listing.bhk) details.push(listing.bhk);
@@ -48,7 +43,7 @@ function ListingCard({ listing, idx }: { listing: any; idx: number }) {
           <span className="text-[10px] text-[var(--text-muted)] font-mono">#{listing.listing_index + 1}</span>
         )}
         {listing.intent && (
-          <span className={`badge ${intentBadge[listing.intent] || "badge-blue"}`}>{listing.intent}</span>
+          <span className="badge badge-neutral">{listing.intent}</span>
         )}
       </div>
       <div className="mt-1.5">

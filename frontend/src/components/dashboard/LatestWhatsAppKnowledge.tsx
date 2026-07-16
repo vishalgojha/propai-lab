@@ -3,12 +3,6 @@ interface LatestWhatsAppKnowledgeProps {
   onOpenInbox: () => void;
 }
 
-const badgeColorByIntent: Record<string, string> = {
-  SELL: "green",
-  BUY: "purple",
-  RENT: "yellow",
-};
-
 function cleanWhatsAppText(value = "") {
   return value
     .replace(/[*_~`]+/g, "")
@@ -108,7 +102,6 @@ function formatFeedMessage(raw = "") {
 
 function KnowledgeRow({ item, index }: { item: any; index: number }) {
   const intent = item.intent || "TEXT";
-  const color = badgeColorByIntent[intent] || "blue";
   const message = formatFeedMessage(item.message || "");
   const group = cleanGroupName(item.group_name || "");
   const broker = cleanBrokerName(item.broker_name || "");
@@ -117,7 +110,7 @@ function KnowledgeRow({ item, index }: { item: any; index: number }) {
   return (
     <div key={index} className="feed-item">
       <div className="feed-header">
-        <span className={`badge badge-${color}`}>{intent}</span>
+        <span className="badge badge-neutral">{intent}</span>
         <span className="font-semibold text-[#f0f6fc] text-xs">{broker}</span>
         {time && <span className="feed-time">{time}</span>}
         {group && <span className="feed-group">{group.slice(0, 28)}</span>}

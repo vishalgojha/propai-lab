@@ -31,7 +31,7 @@ export default function ObservationsPage() {
                 <td className="px-2.5 py-2 border-b border-white/10 max-w-[300px] truncate">{r.location_raw}</td>
                 <td className="px-2.5 py-2 border-b border-white/10">{r.building_name || "—"}</td>
                 <td className="px-2.5 py-2 border-b border-white/10">
-                  {r.confidence != null && <span className={`badge ${r.confidence > 0.7 ? "badge-green" : r.confidence > 0.3 ? "badge-yellow" : "badge-red"}`}>{(r.confidence * 100).toFixed(0)}%</span>}
+                  {r.confidence != null && <span className={`badge ${r.confidence > 0.7 ? "badge-success" : r.confidence > 0.3 ? "badge-neutral" : "badge-error"}`}>{(r.confidence * 100).toFixed(0)}%</span>}
                 </td>
               </tr>
             ))}

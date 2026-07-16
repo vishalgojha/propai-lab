@@ -94,7 +94,7 @@ export default function SettingsPage() {
               Used by AI Chat and optional promotion copy enhancement.
             </div>
           </div>
-          <span className={`badge ${doublewordKey || aiConfig?.has_server_key ? "badge-green" : "badge-gray"}`}>
+          <span className={`badge ${doublewordKey || aiConfig?.has_server_key ? "badge-success" : "badge-neutral"}`}>
             {doublewordKey ? "Browser key" : aiConfig?.has_server_key ? "Server key" : "No key"}
           </span>
         </div>

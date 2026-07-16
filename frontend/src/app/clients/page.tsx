@@ -6,6 +6,13 @@ import { useEffect, useMemo, useState } from "react";
 import * as api from "@/lib/api";
 import { Mail, Phone, Search, UserCheck } from "lucide-react";
 
+function clientStatusBadge(status?: string) {
+  const value = (status || "active").toLowerCase();
+  if (["active", "connected", "live"].includes(value)) return "badge-success";
+  if (["error", "failed", "disconnected"].includes(value)) return "badge-error";
+  return "badge-neutral";
+}
+
 export default function ClientsPage() {
   const [clients, setClients] = useState<api.Client[]>([]);
   const [query, setQuery] = useState("");
@@ -77,7 +84,9 @@ export default function ClientsPage() {
                   <div className="flex items-center gap-2">
                     <UserCheck className="h-4 w-4 shrink-0 text-[#3EE88A]" strokeWidth={1.5} />
                     <div className="truncate text-sm font-semibold text-white">{client.name}</div>
-                    <span className="badge badge-green text-[8px]">{client.status || "active"}</span>
+                    <span className={`badge text-[8px] ${clientStatusBadge(client.status)}`}>
+                      {client.status || "active"}
+                    </span>
                   </div>
                   <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-zinc-500">
                     {client.phone && (

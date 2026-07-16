@@ -118,13 +118,11 @@ body {
   font-weight: 600;
   line-height: 1.3;
 }
-.badge-green { background: rgba(62,232,138,0.12); color: #3EE88A; }
-.badge-red { background: rgba(239,68,68,0.12); color: #ef4444; }
-.badge-yellow { background: rgba(245,158,11,0.12); color: #f59e0b; }
-.badge-blue { background: rgba(59,130,246,0.12); color: #3b82f6; }
-.badge-gray { background: rgba(161,161,170,0.12); color: #a1a1aa; }
-.badge-purple { background: rgba(168,85,247,0.12); color: #a855f7; }
-.badge-orange { background: rgba(245,158,11,0.12); color: #f59e0b; }
+/* Do not add new badge colors here. Only neutral/success/error exist by
+   design — status is conveyed by icon or text, not by adding a new hue. */
+.badge-neutral { background: rgba(161,161,170,0.10); color: #a1a1aa; border: 1px solid rgba(161,161,170,0.2); }
+.badge-success { background: transparent; color: #3EE88A; border: 1px solid rgba(62,232,138,0.25); }
+.badge-error { background: transparent; color: #ef4444; border: 1px solid rgba(239,68,68,0.25); }
 
 /* ── Provenance badges ── */
 .prov { font-size: 9px; display: inline-block; margin-left: 4px; padding: 0 4px; border: 1px solid var(--color-border); border-radius: 3px; background: var(--color-bg-surface); white-space: nowrap; }

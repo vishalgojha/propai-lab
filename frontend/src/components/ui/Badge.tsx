@@ -1,23 +1,19 @@
 "use client";
 
 interface BadgeProps {
-  variant?: "green" | "red" | "yellow" | "blue" | "gray" | "purple" | "orange";
+  variant?: "neutral" | "success" | "error";
   children: string;
 }
 
-const variantMap: Record<string, string> = {
-  green: "badge-green",
-  red: "badge-red",
-  yellow: "badge-yellow",
-  blue: "badge-blue",
-  gray: "badge-gray",
-  purple: "badge-purple",
-  orange: "badge-orange",
+const variantMap: Record<NonNullable<BadgeProps["variant"]>, string> = {
+  neutral: "badge-neutral",
+  success: "badge-success",
+  error: "badge-error",
 };
 
-export function Badge({ variant = "gray", children }: BadgeProps) {
+export function Badge({ variant = "neutral", children }: BadgeProps) {
   return (
-    <span className={`badge ${variantMap[variant] || "badge-gray"}`}>
+    <span className={`badge ${variantMap[variant]}`}>
       {children}
     </span>
   );

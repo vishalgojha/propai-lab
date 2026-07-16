@@ -11,16 +11,16 @@ function fmtDate(s: string) {
 }
 
 const STATUS_BADGE: Record<string, string> = {
-  pending: "badge-yellow",
-  processing: "badge-blue",
-  completed: "badge-green",
-  applied: "badge-green",
-  failed: "badge-red",
-  cancelled: "badge-red",
+  pending: "badge-neutral",
+  processing: "badge-neutral",
+  completed: "badge-success",
+  applied: "badge-success",
+  failed: "badge-error",
+  cancelled: "badge-error",
 };
 
 function statusClass(s: string) {
-  return STATUS_BADGE[s] || "badge-yellow";
+  return STATUS_BADGE[s] || "badge-neutral";
 }
 
 export default function BatchesPage() {

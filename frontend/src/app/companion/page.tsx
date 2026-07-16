@@ -7,9 +7,9 @@ const roleOrder = ["administrator", "manager", "sales_agent", "read_only"];
 
 function statusBadge(status: string) {
   const value = (status || "").toLowerCase();
-  if (["connected", "configured", "ready", "healthy"].includes(value)) return "badge-green";
-  if (["not_connected", "not_configured", "missing"].includes(value)) return "badge-yellow";
-  return "badge-blue";
+  if (["connected", "configured", "ready", "healthy"].includes(value)) return "badge-success";
+  if (["not_connected", "not_configured", "missing", "failed", "error"].includes(value)) return "badge-error";
+  return "badge-neutral";
 }
 
 function formatLabel(value: string) {
@@ -155,10 +155,10 @@ export default function CompanionPage() {
             </div>
           </div>
           <div className="flex gap-2">
-            <span className={`badge ${overview?.waba?.has_access_token ? "badge-green" : "badge-yellow"}`}>
+            <span className={`badge ${overview?.waba?.has_access_token ? "badge-success" : "badge-error"}`}>
               Token {overview?.waba?.has_access_token ? "Saved" : "Missing"}
             </span>
-            <span className={`badge ${overview?.waba?.has_verify_token ? "badge-green" : "badge-yellow"}`}>
+            <span className={`badge ${overview?.waba?.has_verify_token ? "badge-success" : "badge-error"}`}>
               Webhook {overview?.waba?.has_verify_token ? "Ready" : "Not Ready"}
             </span>
           </div>
@@ -251,7 +251,7 @@ export default function CompanionPage() {
                         {member.assigned_markets.length ? member.assigned_markets.join(", ") : "All markets"}
                       </td>
                       <td className="px-2.5 py-2 border-b border-white/10">
-                        <button onClick={() => toggleMember(member)} className={`badge ${member.active ? "badge-green" : "badge-gray"}`}>
+                        <button onClick={() => toggleMember(member)} className={`badge ${member.active ? "badge-success" : "badge-neutral"}`}>
                           {member.active ? "Active" : "Paused"}
                         </button>
                       </td>
@@ -283,7 +283,7 @@ export default function CompanionPage() {
             <h3 className="text-sm font-bold text-white">Available Tools</h3>
             <div className="mt-3 flex flex-wrap gap-2">
               {tools.map((tool) => (
-                <span key={tool} className="badge badge-blue">{tool}</span>
+                <span key={tool} className="badge badge-neutral">{tool}</span>
               ))}
             </div>
           </div>

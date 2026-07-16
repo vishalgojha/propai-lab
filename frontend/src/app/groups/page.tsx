@@ -125,7 +125,7 @@ export default function GroupsPage() {
                       {[...(g.parsed?.markets || []), ...(g.parsed?.segments || [])].length === 0
                         ? "—"
                         : [...(g.parsed?.markets || []), ...(g.parsed?.segments || [])].map((tag: string) => (
-                            <span key={tag} className="badge badge-blue">
+                            <span key={tag} className="badge badge-neutral">
                               {tag}
                             </span>
                           ))}
@@ -133,7 +133,7 @@ export default function GroupsPage() {
                   </td>
                   <td className="px-2.5 py-2 border-b border-white/10">{g.participants ?? "—"}</td>
                   <td className="px-2.5 py-2 border-b border-white/10">
-                    <span className="badge badge-green">live</span>
+                    <span className="badge badge-success">live</span>
                   </td>
                 </tr>
               ))}

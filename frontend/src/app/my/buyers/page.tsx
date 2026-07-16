@@ -45,7 +45,7 @@ export default function MarketRequirementsPage() {
               <div className="flex items-start justify-between gap-4">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 text-[10px] text-zinc-500">
-                    <span className="badge badge-purple text-[8px]">MY REQUIREMENT</span>
+                    <span className="badge badge-neutral text-[8px]">MY REQUIREMENT</span>
                     <span>Client</span>
                     <span className="text-zinc-300 font-semibold">{req.client_name || "Unknown Client"}</span>
                   </div>
@@ -66,10 +66,10 @@ export default function MarketRequirementsPage() {
                     )}
                   </div>
                   <div className="mt-2 flex flex-wrap gap-2">
-                    {req.intent && <span className="badge badge-purple text-[9px]">{req.intent}</span>}
-                    {req.bhk && <span className="badge badge-blue text-[9px]">{req.bhk}</span>}
-                    {req.price && req.price_unit && <span className="badge badge-green text-[9px]">₹{req.price} {req.price_unit}</span>}
-                    {req.area_sqft && <span className="badge text-[9px] bg-[rgba(255,255,255,0.05)] text-zinc-400">{req.area_sqft} sqft</span>}
+                    {req.intent && <span className="badge badge-neutral text-[9px]">{req.intent}</span>}
+                    {req.bhk && <span className="badge badge-neutral text-[9px]">{req.bhk}</span>}
+                    {req.price && req.price_unit && <span className="badge badge-neutral text-[9px]">₹{req.price} {req.price_unit}</span>}
+                    {req.area_sqft && <span className="badge badge-neutral text-[9px]">{req.area_sqft} sqft</span>}
                   </div>
                   {req.location_raw && (
                     <div className="mt-1.5 flex items-center gap-1 text-[10px] text-zinc-500">
