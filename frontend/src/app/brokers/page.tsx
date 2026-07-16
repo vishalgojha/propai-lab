@@ -187,6 +187,10 @@ export default function BrokersPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    setQuery(new URLSearchParams(window.location.search).get("q") || "");
+  }, []);
+
+  useEffect(() => {
     api.getBrokers()
       .then((data) => {
         setBrokers(data || []);

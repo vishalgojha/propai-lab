@@ -39,6 +39,7 @@ const navSections = [
     title: "Market",
     items: [
       { href: "/inbox", label: "Market Inbox", icon: MessageSquare },
+      { href: "/brokers", label: "Broker Profiles", icon: Users },
       { href: "/whatsapp-groups", label: "WhatsApp Groups", icon: MessageSquare },
       { href: "/chat", label: "AI Chat", icon: Brain },
     ],

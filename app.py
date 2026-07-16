@@ -9045,6 +9045,12 @@ async def find_broker(name: str = "", phone: str = "", user: dict = Depends(requ
         "SELECT id FROM brokers WHERE identity_key = ?", (key,)
     ).fetchone()
     if not row:
+        # Parsed broker identities can arrive before the materialized broker graph is refreshed.
+        storage.rebuild_broker_graph()
+        row = storage.db.execute(
+            "SELECT id FROM brokers WHERE identity_key = ?", (key,)
+        ).fetchone()
+    if not row:
         raise HTTPException(404, "Broker not found")
     return {"broker_id": row["id"]}
 

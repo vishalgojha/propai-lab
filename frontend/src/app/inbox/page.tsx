@@ -2630,6 +2630,17 @@ return {
       latest_micro_market: broker.latest_micro_market || "",
       channels: broker.channels || [],
     });
+    api.findBroker(brokerName, brokerPhone || broker.primary_phone || broker.phone || "")
+      .then(({ broker_id }) => {
+        setSelectedBroker((current: any) =>
+          current?.identity_key === brokerIdentityKey
+            ? { ...current, profile_id: broker_id }
+            : current
+        );
+      })
+      .catch(() => {
+        // The directory remains available as a fallback for identities without enough parsed evidence.
+      });
     if (!focusObsRawId) setSelectedMsgDetails(null);
     // Load observations for center timeline
     setLoadingBrokerObs(true);
@@ -3434,6 +3445,14 @@ return {
                   </div>
                 </div>
                 <div className="flex items-center gap-1.5">
+                  <Link
+                    href={selectedBroker.profile_id
+                      ? `/brokers/${selectedBroker.profile_id}`
+                      : `/brokers?q=${encodeURIComponent(selectedBroker.canonical_name || selectedBroker.name || resolvedBrokerPhone || "")}`}
+                    className="flex h-7 items-center rounded border border-white/15 bg-white/[0.04] px-3 text-[10px] font-semibold text-zinc-200 hover:bg-white/[0.08]"
+                  >
+                    View profile
+                  </Link>
                   {resolvedBrokerPhone && (
                     <button
                       onClick={() => {
