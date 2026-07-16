@@ -9,16 +9,14 @@ type Props = {
   token: string | null;
 };
 
-function formatPrice(value: number | null): string {
+function formatPrice(value: number | null, unit?: string | null): string {
   if (value == null) return "—";
-  if (value >= 1_00_00_000) {
-    const cr = value / 1_00_00_000;
-    return `₹${cr % 1 === 0 ? cr : cr.toFixed(1)} Cr`;
-  }
-  if (value >= 1_00_000) {
-    const l = value / 1_00_000;
-    return `₹${l % 1 === 0 ? l : l.toFixed(1)} L`;
-  }
+  // value is in the unit's native scale (Cr / Lac / K / abs), not absolute rupees.
+  const u = (unit || "").toLowerCase();
+  if (u === "cr" || u === "crore") return `₹${value % 1 === 0 ? value : value.toFixed(2)} Cr`;
+  if (u === "lac" || u === "lakh") return `₹${value % 1 === 0 ? value : value.toFixed(1)} L`;
+  if (u === "k" || u === "thousand") return `₹${Math.round(value).toLocaleString("en-IN")}K`;
+  if (u === "abs") return `₹${Math.round(value).toLocaleString("en-IN")}`;
   return `₹${value.toLocaleString("en-IN")}`;
 }
 
@@ -75,8 +73,8 @@ export default function LocalityMap({ locality, buildings, token }: Props) {
         const priceText =
           b.minPrice != null && b.maxPrice != null
             ? b.minPrice === b.maxPrice
-              ? formatPrice(b.minPrice)
-              : `${formatPrice(b.minPrice)} – ${formatPrice(b.maxPrice)}`
+              ? formatPrice(b.minPrice, b.priceUnit)
+              : `${formatPrice(b.minPrice, b.priceUnit)} – ${formatPrice(b.maxPrice, b.priceUnit)}`
             : "Price on request";
 
         const html = `

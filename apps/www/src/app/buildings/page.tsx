@@ -22,6 +22,7 @@ export default async function BuildingsIndexPage() {
     listingCount: b.listingCount,
     minPrice: null,
     maxPrice: null,
+    priceUnit: null,
     bhkRange: null,
     address: b.address,
     developer: b.developer,
