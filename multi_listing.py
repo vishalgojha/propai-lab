@@ -1001,6 +1001,42 @@ def _normalize_indian_phone(value: str | None) -> str | None:
         return digits
     return None
 
+def _is_plausible_broker_name(name: str | None) -> bool:
+    """Reject names that are actually locality / data-field text leaked from a
+    broker signing off as 'Andheri East - 98765...' or similar."""
+    if not name:
+        return False
+    clean = name.strip()
+    if not clean or len(clean) < 2 or len(clean) > 40:
+        return False
+    low = clean.lower()
+    if low in _KNOWN_LOCALITIES:
+        return False
+    if any(kw in low for kw in
+           ("rent", "sale", "bhk", "sqft", "area", "floor", "parking",
+            "furnished", "possession", "deposit", "layout", "amenities",
+            "carpet", "immediate", "negotiable", "inspection", "details",
+            "contact", "call", "whatsapp", "conference", "workstation",
+            "cabin", "pantry", "washroom", "security", "backup", "lift",
+            "landmark", "station", "price", "asking", "location",
+            "commercial", "office", "shop", "coverage", "capacity",
+            "reception", "entrance", "building", "ground", "first",
+            "second", "third", "fourth", "fifth", "sixth", "seventh",
+            "eighth", "ninth", "tenth", "upper", "lower", "basement",
+            "dedicated", "visitor", "ample", "separate", "exclusive",
+            "ready", "restaurant", "east", "west", "north", "south",
+            "central", "suburb", "mumbai", "andheri", "bandra", "juhu",
+            "worli", "pali", "santacruz", "khar", "goregaon", "malad",
+            "kandivali", "borivali", "dahisar", "mira", "bhayandar",
+            "vasai", "virar", "thane", "vashi", "nerul", "belapur",
+            "kharghar", "panvel", "powai", "chembur", "ghatkopar",
+            "mulund", "bhandup", "vikhroli", "kanjurmarg", "kurla",
+            "wadala", "prabhadevi", "parel", "dadar", "mahim", "matunga",
+            "sion", "byculla", "colaba", "cuffe", "walkeshwar", "altamont")):
+        return False
+    return True
+
+
 def _extract_broker_from_block(text: str) -> tuple[str | None, str | None]:
     """Extract (broker_name, broker_phone) from the end of a block.
     
@@ -1027,17 +1063,17 @@ def _extract_broker_from_block(text: str) -> tuple[str | None, str | None]:
     # Check the phone line itself for name + phone (e.g. "JUNED MENK 9967252525")
     phone_line_clean = re.sub(r'[*_`~📞📱🔹📍💰🏢📍📐🔐]', '', lines[phone_line_idx]).strip()
     m = _CALL_NAME_CONTACT_RE.search(phone_line_clean)
-    if m:
+    if m and _is_plausible_broker_name(m.group(1).strip()):
         name = m.group(1).strip()
         phone = _normalize_indian_phone(m.group(2)) or phone
         return name, phone
     m = _BROKER_LINE_RE.search(phone_line_clean)
-    if m:
+    if m and _is_plausible_broker_name(m.group(1).strip()):
         name = m.group(1).strip()
         phone = _normalize_indian_phone(m.group(2)) or phone
         return name, phone
     m = _NAME_PHONE_RE.search(phone_line_clean)
-    if m:
+    if m and _is_plausible_broker_name(m.group(1).strip()):
         name = m.group(1).strip()
         phone = _normalize_indian_phone(m.group(2)) or phone
         return name, phone
@@ -1052,25 +1088,10 @@ def _extract_broker_from_block(text: str) -> tuple[str | None, str | None]:
 
         # Name-only all-caps line (not a data/location field)
         if not re.search(r'\d', clean_line):
-            low = clean_line.lower()
             if clean_line.isupper() and len(clean_line) >= 3 and len(clean_line) <= 40:
                 if clean_line.startswith('(') and clean_line.endswith(')'):
                     continue  # parenthesized location
-                if low in _KNOWN_LOCALITIES:
-                    continue  # known locality name
-                if not any(kw in low for kw in
-                    ("rent", "sale", "bhk", "sqft", "area", "floor", "parking",
-                     "furnished", "possession", "deposit", "layout", "amenities",
-                     "carpet", "immediate", "negotiable", "inspection", "details",
-                     "contact", "call", "whatsapp", "conference", "workstation",
-                     "cabin", "pantry", "washroom", "security", "backup", "lift",
-                     "landmark", "station", "price", "asking", "location",
-                     "commercial", "office", "shop", "coverage", "capacity",
-                     "reception", "entrance", "building", "ground", "first",
-                     "second", "third", "fourth", "fifth", "sixth", "seventh",
-                     "eighth", "ninth", "tenth", "upper", "lower", "basement",
-                     "dedicated", "visitor", "ample", "separate", "exclusive",
-                     "ready", "restaurant")):
+                if _is_plausible_broker_name(clean_line.title()):
                     name = clean_line.title()
                     break
 

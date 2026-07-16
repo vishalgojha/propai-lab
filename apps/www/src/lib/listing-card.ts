@@ -62,10 +62,15 @@ export function formatCardPrice(
 
   if (price == null) return "Price on request";
 
-  // Rentals are quoted per month.
+  // Rentals are quoted per month. price is stored in the unit's native scale
+  // (Cr/Lac/K/abs), so scale it to absolute rupees before formatting.
   if (intentKind === "rent") {
-    const rounded = Math.round(price);
-    return `₹${rounded.toLocaleString("en-IN")}/month`;
+    let abs = price;
+    if (unit === "cr") abs = price * 1_00_00_000;
+    else if (unit === "lac") abs = price * 1_00_000;
+    else if (unit === "k") abs = price * 1_000;
+    // unit === "abs" or null/unknown: treat as absolute rupees
+    return `₹${Math.round(abs).toLocaleString("en-IN")}/month`;
   }
 
   // price is stored in the unit's native scale (Cr/Lac/K/abs), so render it
@@ -128,8 +133,15 @@ export function waLinkFor(phone: string | null): string | null {
   return `https://wa.me/91${local}`;
 }
 
-export function toListingCardViewModel(row: ListingCardFields, isBuilding: boolean): ListingCardViewModel {
-  const locality = row.micro_market && row.micro_market.trim() ? row.micro_market.trim() : null;
+export function toListingCardViewModel(
+  row: ListingCardFields,
+  isBuilding: boolean,
+  fallbackLocality?: string | null,
+): ListingCardViewModel {
+  // On a building page, inherit the building's confirmed locality when the
+  // individual listing failed to resolve its own micro_market.
+  const ownLocality = row.micro_market && row.micro_market.trim() ? row.micro_market.trim() : null;
+  const locality = ownLocality ?? (fallbackLocality && fallbackLocality.trim() ? fallbackLocality.trim() : null);
   const hasLocality = Boolean(locality);
   return {
     title: buildTitle(row),

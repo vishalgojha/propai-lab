@@ -111,7 +111,7 @@ export default async function BuildingPage({ params }: Params) {
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4 lg:gap-6">
               {listings.map((row) => {
-                const card = toListingCardViewModel(toCardFields(row), false);
+                const card = toListingCardViewModel(toCardFields(row), false, building.microMarket);
                 return (
                   <article
                     key={row.id}
