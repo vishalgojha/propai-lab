@@ -4,6 +4,7 @@ import Link from "next/link";
 import { getLocalityData, getAllLocalities } from "@/lib/localities";
 import LocalityMapLoader from "@/components/LocalityMapLoader";
 import SiteHeader from "@/components/SiteHeader";
+import SiteFooter from "@/components/SiteFooter";
 import ListingCard, { LocalityBackLink } from "@/components/ListingCard";
 import { NoPhotosFaqJsonLd, NoPhotosFaq } from "@/components/NoPhotosFaq";
 
@@ -138,6 +139,7 @@ export default async function LocalityPage({ params }: Params) {
 
         <NoPhotosFaq />
       </main>
+      <SiteFooter />
     </div>
   );
 }

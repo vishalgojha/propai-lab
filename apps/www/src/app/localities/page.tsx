@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import { getAllLocalities } from "@/lib/localities";
 import SiteHeader from "@/components/SiteHeader";
+import SiteFooter from "@/components/SiteFooter";
 
 export const metadata = {
   title: "All Localities — PropAI",
@@ -62,6 +63,7 @@ export default async function LocalitiesIndexPage() {
           </Link>
         </div>
       </main>
+      <SiteFooter />
     </div>
   );
 }

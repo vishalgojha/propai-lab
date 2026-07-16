@@ -4,6 +4,7 @@ import { MapPin, ArrowRight, MessageSquare, Phone, Shield } from "lucide-react";
 import Link from "next/link";
 import LocalitySearch from "@/components/LocalitySearch";
 import SiteHeader from "@/components/SiteHeader";
+import SiteFooter from "@/components/SiteFooter";
 import { getAllLocalities } from "@/lib/localities";
 import { getPublicDataOverview } from "@/lib/public-data";
 
@@ -25,34 +26,15 @@ const howItWorksSteps = [
   },
 ];
 
-const footerLinks = {
-  browse: [
-    { label: "Search listings", href: "/search" },
-    { label: "All localities", href: "/localities" },
-    { label: "All buildings", href: "/buildings" },
-  ],
-  support: [
-    { label: "How it works", href: "#how-it-works" },
-    { label: "Live data", href: "#live-data" },
-    { label: "Why no photos", href: "#no-photos" },
-    { label: "Search tips", href: "/search" },
-  ],
-  company: [
-    { label: "About PropAI", href: "/about" },
-    { label: "Localities", href: "/localities" },
-    { label: "Buildings", href: "/buildings" },
-  ],
-};
-
 const fallbackLocalities = [
   { name: "Bandra West", slug: "bandra-west", listingCount: 156 },
-  { name: "Whitefield", slug: "whitefield", listingCount: 203 },
-  { name: "Gachibowli", slug: "gachibowli", listingCount: 134 },
+  { name: "Andheri West", slug: "andheri-west", listingCount: 189 },
   { name: "Andheri East", slug: "andheri-east", listingCount: 189 },
-  { name: "Koramangala", slug: "koramangala", listingCount: 112 },
   { name: "Powai", slug: "powai", listingCount: 98 },
-  { name: "HSR Layout", slug: "hsr-layout", listingCount: 87 },
   { name: "Juhu", slug: "juhu", listingCount: 76 },
+  { name: "Khar West", slug: "khar-west", listingCount: 64 },
+  { name: "Malad West", slug: "malad-west", listingCount: 58 },
+  { name: "Goregaon West", slug: "goregaon-west", listingCount: 51 },
 ];
 
 export default async function WWWPage() {
@@ -332,69 +314,7 @@ export default async function WWWPage() {
         </section>
       </main>
 
-      <footer className="border-t border-white/10 bg-black">
-        <div className="max-w-7xl mx-auto px-4 lg:px-6 py-12 lg:py-16">
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-8 lg:gap-12 mb-12">
-            <div className="lg:col-span-1">
-              <Link href="/" className="flex items-center gap-2 mb-6" aria-label="PropAI home">
-                <span className="text-xl font-bold tracking-tight">PropAI</span>
-              </Link>
-              <p className="text-[15px] text-zinc-500 max-w-xs">
-                PropAI reads WhatsApp broker groups so you get real, fresh listings — and a direct line to the broker.
-              </p>
-            </div>
-            <nav aria-label="Browse">
-              <h4 className="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-4">Browse</h4>
-              <ul className="space-y-3">
-                {footerLinks.browse.map((link) => (
-                  <li key={link.href}>
-                    <Link href={link.href} className="text-[15px] text-zinc-400 hover:text-white transition-colors">
-                      {link.label}
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            </nav>
-            <nav aria-label="Support">
-              <h4 className="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-4">Support</h4>
-              <ul className="space-y-3">
-                {footerLinks.support.map((link) => (
-                  <li key={link.href}>
-                    <Link href={link.href} className="text-[15px] text-zinc-400 hover:text-white transition-colors">
-                      {link.label}
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            </nav>
-            <nav aria-label="Company">
-              <h4 className="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-4">Company</h4>
-              <ul className="space-y-3">
-                {footerLinks.company.map((link) => (
-                  <li key={link.href}>
-                    <Link href={link.href} className="text-[15px] text-zinc-400 hover:text-white transition-colors">
-                      {link.label}
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            </nav>
-          </div>
-
-          <div className="pt-8 border-t border-white/10">
-            <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-              <p className="text-xs text-zinc-500">
-                PropAI reads WhatsApp broker groups to build structured property data. Listings are fresh, verified, and sourced directly from broker conversations.
-              </p>
-              <div className="flex items-center gap-6 text-xs text-zinc-500">
-                <Link href="/about" className="hover:text-white transition-colors">About</Link>
-                <Link href="/search" className="hover:text-white transition-colors">Search</Link>
-                <span>&copy; 2025 PropAI</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </footer>
+      <SiteFooter />
     </div>
   );
 }

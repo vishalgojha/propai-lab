@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ArrowRight, Mail, MessageSquare, Building2 } from "lucide-react";
 import SiteHeader from "@/components/SiteHeader";
+import SiteFooter from "@/components/SiteFooter";
 
 export const metadata = {
   title: "Contact PropAI — Reach the Team & List Your Inventory",
@@ -79,6 +80,7 @@ export default function ContactPage() {
           </Link>
         </div>
       </main>
+      <SiteFooter />
     </div>
   );
 }

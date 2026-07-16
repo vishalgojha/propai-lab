@@ -5,6 +5,7 @@ import { getAllLocalities } from "@/lib/localities";
 import { slugify } from "@/lib/supabase";
 import { toListingCardViewModel } from "@/lib/listing-card";
 import SiteHeader from "@/components/SiteHeader";
+import SiteFooter from "@/components/SiteFooter";
 import RequirementCapture from "@/components/RequirementCapture";
 
 export const dynamic = "force-dynamic";
@@ -296,6 +297,7 @@ export default async function SearchPage({ searchParams }: { searchParams: Searc
           </section>
         )}
       </main>
+      <SiteFooter />
     </div>
   );
 }
