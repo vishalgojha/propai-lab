@@ -239,8 +239,15 @@ function AppShell({ children }: { children: React.ReactNode }) {
   }, [user, profile]);
 
   const livePhone = phones.find((phone) => isLiveWhatsAppConnection(phone)) || null;
-  const displayPhone = (liveStatus?.phone ? ({ phone_number_live: liveStatus.phone } as Phone) : null) || livePhone || phones[0] || null;
-  const waConnected = liveStatus ? isLiveWhatsAppConnection(liveStatus) : (phones.length === 0 ? null : Boolean(livePhone));
+  const displayPhone = livePhone || phones[0] || (liveStatus?.phone ? ({ phone_number_live: liveStatus.phone } as Phone) : null);
+  const hasPerPhoneLiveStatus = phones.some((phone) => phone.live_status_available !== false);
+  const waConnected = livePhone
+    ? true
+    : hasPerPhoneLiveStatus
+      ? false
+      : liveStatus
+        ? isLiveWhatsAppConnection(liveStatus)
+        : null;
   const waStale = false;
   const waPhone = displayPhone?.phone_number_live || displayPhone?.phone_number || "";
 
@@ -266,7 +273,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
     const load = async () => {
       try {
         const [phonesRes, cfg, status] = await Promise.all([
-          getPhones(false, 5000).catch(() => ({ phones: [] as Phone[] })),
+          getPhones(true, 5000).catch(() => ({ phones: [] as Phone[] })),
           getCompanionConfig().catch(() => null),
           getWhatsAppStatus().catch(() => null),
         ]);
