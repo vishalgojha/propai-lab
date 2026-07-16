@@ -10959,6 +10959,17 @@ def _audit_intent_bucket(intent: str) -> str:
     return "listing"
 
 
+def _audit_timestamp(value) -> str:
+    """Return a consistently comparable UTC timestamp for audit read models."""
+    if value is None:
+        return ""
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return str(value)
+
+
 def _audit_group_display_name(jid: str) -> str:
     name = _group_jid_to_name(jid)
     if not name or name == jid:
@@ -11220,7 +11231,12 @@ async def audit_top_contributors(limit: int = 10, user: dict = Depends(require_u
 
 
 @app.get("/api/audit/groups")
-async def audit_groups_v2(q: str = "", status: str = "", user: dict = Depends(require_user)):
+async def audit_groups_v2(
+    q: str = "",
+    status: str = "",
+    user: dict = Depends(require_user),
+    tenant_id: str = Depends(require_tenant),
+):
     """Fresh group audit backed by raw_messages and parsed_output only.
 
     Uses SQL aggregation instead of fetching all rows into Python.
@@ -11230,7 +11246,7 @@ async def audit_groups_v2(q: str = "", status: str = "", user: dict = Depends(re
     query = (q or "").strip().lower()
 
     if not _table_exists("raw_messages"):
-        return []
+        return {"groups": [], "total_unique_senders": 0, "errors": []}
 
     has_parsed = _table_exists("parsed_output")
     errors: list[str] = []
@@ -11242,8 +11258,9 @@ async def audit_groups_v2(q: str = "", status: str = "", user: dict = Depends(re
             "COUNT(DISTINCT sender) AS senders_count, "
             "MAX(created_at) AS last_activity "
             "FROM raw_messages "
-            "WHERE group_name IS NOT NULL AND group_name != '' "
-            "GROUP BY group_name"
+            "WHERE tenant_id = ? AND group_name IS NOT NULL AND group_name != '' "
+            "GROUP BY group_name",
+            (tenant_id,),
         )
     except Exception as exc:
         errors.append(f"raw_messages aggregate failed: {exc}")
@@ -11262,28 +11279,6 @@ async def audit_groups_v2(q: str = "", status: str = "", user: dict = Depends(re
             "markets_count": 0, "unknown_locations": 0, "identities_count": 0,
         }
 
-    # ── Query 1b: include groups from sync_jobs that have no raw_messages yet ──
-    try:
-        if _table_exists("sync_jobs"):
-            sj_rows = _audit_rows(
-                "SELECT group_id, group_name FROM sync_jobs "
-                "WHERE group_id IS NOT NULL AND group_id != '' "
-                "AND source = 'whatsapp'"
-            )
-            for row in sj_rows:
-                gid = row[0] or ""
-                gname = row[1] or ""
-                if gid and gid not in stats:
-                    stats[gid] = {
-                        "messages": 0,
-                        "senders_count": 0,
-                        "last_activity": "",
-                        "observations": 0, "requirements": 0, "listings": 0,
-                        "markets_count": 0, "unknown_locations": 0, "identities_count": 0,
-                    }
-    except Exception:
-        pass
-
     # ── Query 2: aggregate parsed_output by group_name ──
     if has_parsed and stats:
         try:
@@ -11297,8 +11292,9 @@ async def audit_groups_v2(q: str = "", status: str = "", user: dict = Depends(re
                 "COUNT(DISTINCT COALESCE(NULLIF(po.broker_name, ''), NULLIF(po.profile_name, ''), NULLIF(rm.sender, ''))) AS identities "
                 "FROM parsed_output po "
                 "JOIN raw_messages rm ON po.raw_message_id = rm.id "
-                "WHERE rm.group_name IS NOT NULL AND rm.group_name != '' "
-                "GROUP BY rm.group_name"
+                "WHERE rm.tenant_id = ? AND rm.group_name IS NOT NULL AND rm.group_name != '' "
+                "GROUP BY rm.group_name",
+                (tenant_id,),
             )
             for row in po_rows:
                 gn = row[0] or ""
@@ -11319,7 +11315,8 @@ async def audit_groups_v2(q: str = "", status: str = "", user: dict = Depends(re
     try:
         sender_row = _audit_rows(
             "SELECT COUNT(DISTINCT sender) FROM raw_messages "
-            "WHERE group_name IS NOT NULL AND group_name != ''"
+            "WHERE tenant_id = ? AND group_name IS NOT NULL AND group_name != ''",
+            (tenant_id,),
         )
         if sender_row:
             total_unique_senders = int(sender_row[0][0] or 0)
@@ -11330,7 +11327,7 @@ async def audit_groups_v2(q: str = "", status: str = "", user: dict = Depends(re
     for gn, g in stats.items():
         name = _audit_group_display_name(gn)
         messages = g["messages"]
-        last_activity = g["last_activity"]
+        last_activity = _audit_timestamp(g["last_activity"])
         observations = g["observations"]
         unknown_locations = g["unknown_locations"]
         is_live = bool(last_activity and last_activity >= day_ago)
@@ -11499,13 +11496,18 @@ async def audit_group_timeline(jid: str, user: dict = Depends(require_user)):
 
 
 @app.get("/api/audit/duplicates")
-async def audit_duplicates(user: dict = Depends(require_user)):
+async def audit_duplicates(
+    user: dict = Depends(require_user),
+    tenant_id: str = Depends(require_tenant),
+):
     """Find potential duplicate groups (same or very similar name)."""
-    jobs = storage.db.execute("""
-        SELECT group_id, group_name, error, status FROM source_sync_jobs
-        WHERE group_name != '' AND group_name IS NOT NULL
-        ORDER BY group_name
-    """).fetchall()
+    jobs = _audit_rows(
+        "SELECT group_name AS group_id, group_name, '' AS error, 'captured' AS status "
+        "FROM raw_messages "
+        "WHERE tenant_id = ? AND COALESCE(group_name, '') != '' "
+        "GROUP BY group_name ORDER BY group_name",
+        (tenant_id,),
+    )
 
     from collections import defaultdict
     by_name = defaultdict(list)
@@ -11537,7 +11539,11 @@ async def audit_duplicates(user: dict = Depends(require_user)):
 
 
 @app.get("/api/audit/group-overlap")
-async def audit_group_overlap(limit: int = 20, user: dict = Depends(require_user)):
+async def audit_group_overlap(
+    limit: int = 20,
+    user: dict = Depends(require_user),
+    tenant_id: str = Depends(require_tenant),
+):
     """Rank groups by shared senders so users can avoid parsing duplicate groups."""
     if not _table_exists("raw_messages"):
         return {"pairs": [], "groups": []}
@@ -11548,7 +11554,9 @@ async def audit_group_overlap(limit: int = 20, user: dict = Depends(require_user
             "FROM raw_messages "
             "WHERE COALESCE(group_name, '') != '' "
             "  AND COALESCE(sender, '') != '' "
-            "GROUP BY group_name, sender"
+            "  AND tenant_id = ? "
+            "GROUP BY group_name, sender",
+            (tenant_id,),
         )
     except Exception as exc:
         return {"pairs": [], "groups": [], "error": str(exc)}
@@ -11613,37 +11621,52 @@ async def audit_group_overlap(limit: int = 20, user: dict = Depends(require_user
 
 
 @app.get("/api/audit/capture-health")
-async def audit_capture_health(user: dict = Depends(require_user)):
+async def audit_capture_health(
+    user: dict = Depends(require_user),
+    tenant_id: str = Depends(require_tenant),
+):
     """Operational diagnostics for the ingestion pipeline."""
     now_dt = datetime.utcnow()
     today_start = now_dt.strftime("%Y-%m-%dT00:00:00Z")
     five_min_ago = (now_dt - timedelta(minutes=5)).strftime("%Y-%m-%dT%H:%M:%SZ")
 
     errors: list[str] = []
+    row = None
+    try:
+        row = storage.db.execute(
+            "WITH scope AS (SELECT ?::uuid AS tenant_id, ?::timestamptz AS today_start) "
+            "SELECT "
+            "COUNT(*) AS total_raw, "
+            "COUNT(*) FILTER (WHERE rm.created_at >= scope.today_start) AS raw_today, "
+            "MAX(created_at) AS last_msg, "
+            "(SELECT COUNT(*) FROM parsed_output WHERE tenant_id = scope.tenant_id) AS total_parsed, "
+            "(SELECT COUNT(*) FROM parsed_output WHERE tenant_id = scope.tenant_id AND created_at >= scope.today_start) AS parsed_today, "
+            "(SELECT COUNT(*) FROM knowledge_records WHERE tenant_id = scope.tenant_id) AS total_kr, "
+            "(SELECT COUNT(*) FROM observations WHERE tenant_id = scope.tenant_id) AS total_obs, "
+            "(SELECT COUNT(*) FROM observation_evidence WHERE tenant_id = scope.tenant_id) AS total_oe, "
+            "(SELECT COUNT(*) FROM brokers WHERE tenant_id = scope.tenant_id) AS total_brokers, "
+            "(SELECT COUNT(*) FROM enrichment_jobs WHERE tenant_id = scope.tenant_id AND status = 'pending') AS pending_enrich, "
+            "(SELECT COUNT(*) FROM ai_suggestions WHERE tenant_id = scope.tenant_id AND status = 'pending') AS pending_ai "
+            "FROM raw_messages rm CROSS JOIN scope WHERE rm.tenant_id = scope.tenant_id "
+            "GROUP BY scope.tenant_id, scope.today_start",
+            (tenant_id, today_start),
+        ).fetchone()
+    except Exception as exc:
+        errors.append(f"capture metrics unavailable: {exc}")
 
-    def _q(sql: str, params=()):
-        try:
-            return storage.db.execute(sql, params).fetchone()[0]
-        except Exception as e:
-            err = f"audit_capture_health query failed: {sql!r} — {e}"
-            import logging
-            logging.error(err)
-            errors.append(err)
-            return None
+    total_raw = int(_audit_row_value(row, "total_raw", 0) or 0)
+    raw_today = int(_audit_row_value(row, "raw_today", 0) or 0)
+    total_parsed = int(_audit_row_value(row, "total_parsed", 0) or 0)
+    parsed_today = int(_audit_row_value(row, "parsed_today", 0) or 0)
+    total_kr = int(_audit_row_value(row, "total_kr", 0) or 0)
+    total_obs = int(_audit_row_value(row, "total_obs", 0) or 0)
+    total_oe = int(_audit_row_value(row, "total_oe", 0) or 0)
+    total_brokers = int(_audit_row_value(row, "total_brokers", 0) or 0)
+    last_msg = _audit_row_value(row, "last_msg")
+    pending_enrich = int(_audit_row_value(row, "pending_enrich", 0) or 0)
+    pending_ai = int(_audit_row_value(row, "pending_ai", 0) or 0)
 
-    total_raw      = _q("SELECT COUNT(*) FROM raw_messages") or 0
-    raw_today      = _q("SELECT COUNT(*) FROM raw_messages WHERE created_at >= ?", (today_start,)) or 0
-    total_parsed   = _q("SELECT COUNT(*) FROM parsed_output") or 0
-    parsed_today   = _q("SELECT COUNT(*) FROM parsed_output WHERE created_at >= ?", (today_start,)) or 0
-    total_kr       = _q("SELECT COUNT(*) FROM knowledge_records") or 0
-    total_obs      = _q("SELECT COUNT(*) FROM observations") or 0
-    total_oe       = _q("SELECT COUNT(*) FROM observation_evidence") or 0
-    total_brokers  = _q("SELECT COUNT(*) FROM brokers") or 0
-    last_msg       = _q("SELECT MAX(created_at) FROM raw_messages")
-    pending_enrich = _q("SELECT COUNT(*) FROM enrichment_jobs WHERE status = 'pending'") or 0
-    pending_ai     = _q("SELECT COUNT(*) FROM ai_suggestions WHERE status = 'pending'") or 0
-
-    webhook_ok = last_msg is not None and str(last_msg) >= five_min_ago
+    webhook_ok = bool(last_msg and _audit_timestamp(last_msg) >= five_min_ago)
     mins_today = max(1, now_dt.hour * 60 + now_dt.minute)
     msgs_per_min = round(raw_today / mins_today, 1)
     parser_success_rate = round(total_parsed / max(1, total_raw) * 100, 1)
@@ -11663,9 +11686,14 @@ async def audit_capture_health(user: dict = Depends(require_user)):
         },
         "msgs_per_min": msgs_per_min,
         "parser_success_rate": parser_success_rate,
-        "last_webhook": str(last_msg or "") if last_msg else "never",
+        "last_webhook": _audit_timestamp(last_msg) or "never",
         "webhook_ok": webhook_ok,
         "queue_backlog": (pending_enrich or 0) + (pending_ai or 0),
+        "pending_enrichment": pending_enrich,
+        "pending_ai_suggestions": pending_ai,
+        "total_msgs_today": raw_today,
+        "total_parsed_today": parsed_today,
+        "avg_process_secs": None,
         "errors": errors,
         "degraded": bool(errors),
     }
