@@ -152,13 +152,20 @@ export async function getLocalityData(rawSlug: string): Promise<LocalityData | n
 
   const listingMatch = distinctMarkets.find((m) => slugify(m) === slug);
 
-  const { data: knownPlaces } = await db
-    .from("buildings")
-    .select("micro_market")
-    .not("micro_market", "is", null);
+  // Paginate buildings (4k+ rows) — a bare select is capped at 1000 rows.
+  let knownPlaces: Array<{ micro_market: string | null }> = [];
+  for (let offset = 0; ; offset += 1000) {
+    const { data: page } = await db
+      .from("buildings")
+      .select("micro_market")
+      .not("micro_market", "is", null)
+      .range(offset, offset + 999);
+    knownPlaces = knownPlaces.concat((page ?? []) as typeof knownPlaces);
+    if (!page || page.length < 1000) break;
+  }
 
   const knownMarkets = Array.from(
-    new Set((knownPlaces ?? []).map((b) => (b.micro_market ?? "").trim()).filter(Boolean)),
+    new Set(knownPlaces.map((b) => (b.micro_market ?? "").trim()).filter(Boolean)),
   );
 
   const placeMatch = knownMarkets.find((m) => slugify(m) === slug);
@@ -327,16 +334,31 @@ export type BuildingSummary = {
   developer: string | null;
 };
 
-export async function getAllBuildings(limit = 200): Promise<BuildingSummary[]> {
+export async function getAllBuildings(limit = 5000): Promise<BuildingSummary[]> {
   const db = getServerSupabase();
   if (!db) return [];
 
-  const { data: buildings } = await db
-    .from("buildings")
-    .select("id, canonical_name, micro_market, latitude, longitude, address, developer")
-    .not("canonical_name", "is", null)
-    .order("canonical_name", { ascending: true })
-    .limit(limit);
+  // Paginate: buildings has ~4k rows, a bare select is capped at 1000.
+  let buildings: Array<{
+    id: number | null;
+    canonical_name: string | null;
+    micro_market: string | null;
+    latitude: number | null;
+    longitude: number | null;
+    address: string | null;
+    developer: string | null;
+  }> = [];
+  for (let offset = 0; ; offset += 1000) {
+    const { data: page } = await db
+      .from("buildings")
+      .select("id, canonical_name, micro_market, latitude, longitude, address, developer")
+      .not("canonical_name", "is", null)
+      .order("canonical_name", { ascending: true })
+      .range(offset, offset + 999);
+    buildings = buildings.concat((page ?? []) as typeof buildings);
+    if (!page || page.length < 1000) break;
+    if (buildings.length >= limit) break;
+  }
 
   const { data: listings } = await db
     .from("listings")
@@ -393,17 +415,35 @@ export async function getBuildingBySlug(rawSlug: string): Promise<BuildingDetail
   const slug = slugify(rawSlug);
   if (!db || !slug) return null;
 
-  const { data, error } = await db
-    .from("buildings")
-    .select("id, canonical_name, micro_market, latitude, longitude, address, developer, enrichment_confidence")
-    .not("canonical_name", "is", null);
-
-  if (error) {
-    console.error("getBuildingBySlug error:", error.message);
-    return null;
+  // Paginate: Supabase caps a single select at 1000 rows, but buildings has
+  // ~4k rows. Without paging we'd only ever scan the first page and miss
+  // most buildings (causing false 404s).
+  const PAGE = 1000;
+  let all: Array<{
+    canonical_name: string | null;
+    micro_market: string | null;
+    latitude: number | null;
+    longitude: number | null;
+    address: string | null;
+    developer: string | null;
+    enrichment_confidence: unknown;
+    id: number | null;
+  }> = [];
+  for (let offset = 0; ; offset += PAGE) {
+    const { data, error } = await db
+      .from("buildings")
+      .select("id, canonical_name, micro_market, latitude, longitude, address, developer, enrichment_confidence")
+      .not("canonical_name", "is", null)
+      .range(offset, offset + PAGE - 1);
+    if (error) {
+      console.error("getBuildingBySlug error:", error.message);
+      return null;
+    }
+    all = all.concat((data ?? []) as typeof all);
+    if (!data || data.length < PAGE) break;
   }
 
-  const match = (data ?? []).find((b) => slugify(b.canonical_name ?? "") === slug);
+  const match = all.find((b) => slugify(b.canonical_name ?? "") === slug);
   if (!match) return null;
 
   return {
