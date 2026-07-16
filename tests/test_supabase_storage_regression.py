@@ -112,6 +112,48 @@ def test_market_feed_endpoints_forward_the_active_tenant(monkeypatch):
     ]
 
 
+def test_find_broker_refreshes_stale_profile_graph(monkeypatch):
+    import app
+
+    class Result:
+        def __init__(self, row):
+            self.row = row
+
+        def fetchone(self):
+            return self.row
+
+    class FakeDB:
+        def __init__(self):
+            self.lookups = 0
+
+        def execute(self, query, params):
+            assert "FROM brokers" in query
+            assert params == ("name:sunil rajwani",)
+            self.lookups += 1
+            return Result(None if self.lookups == 1 else {"id": 73})
+
+    class FakeStorage:
+        def __init__(self):
+            self.db = FakeDB()
+            self.rebuilds = 0
+
+        def rebuild_broker_graph(self):
+            self.rebuilds += 1
+
+    fake_storage = FakeStorage()
+    monkeypatch.setattr(app, "storage", fake_storage)
+
+    result = asyncio.run(app.find_broker(
+        name="Sunil Rajwani",
+        phone="",
+        user={"id": "user-2"},
+    ))
+
+    assert result == {"broker_id": 73}
+    assert fake_storage.rebuilds == 1
+    assert fake_storage.db.lookups == 2
+
+
 def test_activity_log_uses_the_authenticated_member(monkeypatch):
     import app
 
