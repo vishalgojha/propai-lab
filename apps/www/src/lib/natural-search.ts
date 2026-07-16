@@ -5,6 +5,7 @@ export type ParsedNaturalSearch = {
   query: string;
   locality: string | null;
   localityStated: boolean;
+  statedLocalityText: string | null;
   bhk: number | null;
   intent: "rent" | "sale" | null;
   minPrice: number | null;
@@ -207,6 +208,52 @@ function detectLocalityStated(query: string): boolean {
   return false;
 }
 
+// Extracts the human-readable locality phrase the user stated, for display in
+// the "we don't track X yet" banner. Unlike detectLocalityStated (boolean),
+// this returns the actual phrase — e.g. "3 bhk in Bandra East" -> "Bandra East".
+// Extraction stops at the next stop token (bhk, budget keywords, end) so the
+// BHK/budget portion of the query is never captured as the locality.
+function extractStatedLocalityPhrase(query: string): string | null {
+  const qText = normalizeText(query);
+  const parts = qText.split(" ").filter(Boolean);
+  if (parts.length === 0) return null;
+
+  const directional = /\b(east|west|north|south|central)\b/;
+  const baseName =
+    /(bandra|andheri|goregaon|juhu|powai|khar|chembur|thane|navi|mumbai|delhi|bangalore|bengaluru|hyderabad|pune|chennai|kolkata|gurgaon|gurugram|noida)/;
+  const stopAfter = /\b(bhk|rk|studio|budget|under|below|max|upto|up to|within|less than|rent|rental|sale|sell|buy|buying|purchase|furnished|semi|unfurnished|sqft|sq\.?\s*ft|area)\b/;
+
+  // Case 1: "in/at/near <locality> [stop token | end]"
+  const prepMatch = qText.match(/\b(in|at|near|around|locality|area)\b\s+(.+)$/);
+  if (prepMatch) {
+    const after = prepMatch[2];
+    const cut = after.split(stopAfter)[0].trim();
+    const tokens = cut.split(" ").filter((t) => t.length > 0);
+    if (tokens.length > 0) {
+      return titleCase(tokens.join(" "));
+    }
+  }
+
+  // Case 2: base name (+ optional directional) without a preposition.
+  for (let i = 0; i < parts.length; i += 1) {
+    if (baseName.test(parts[i])) {
+      const captured = [parts[i]];
+      if (parts[i + 1] && directional.test(parts[i + 1])) captured.push(parts[i + 1]);
+      return titleCase(captured.join(" "));
+    }
+  }
+
+  return null;
+}
+
+function titleCase(value: string): string {
+  return value
+    .split(" ")
+    .filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(" ");
+}
+
 function parsedQueryTokens(query: string): string[] {
   const stopwords = new Set([
     "a",
@@ -247,6 +294,7 @@ export function parseSearchQuery(query: string, localities: LocalitySummary[]): 
     query,
     locality: matchedLocalities[0]?.locality ?? null,
     localityStated: detectLocalityStated(query),
+    statedLocalityText: extractStatedLocalityPhrase(query),
     bhk: parsedBhk,
     intent: parsedIntent,
     minPrice,

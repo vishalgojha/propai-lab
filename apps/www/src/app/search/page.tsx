@@ -130,7 +130,7 @@ export default async function SearchPage({ searchParams }: { searchParams: Searc
             {state && state.localityUnmatched && (
               <div className="rounded-2xl border border-amber-400/20 bg-amber-400/5 p-4 text-sm text-amber-200/90">
                 We don&apos;t track{" "}
-                <span className="font-medium text-amber-100">{state.parsed.query.replace(/\bbhk\b.*/i, "").trim() || "that locality"}</span>{" "}
+                <span className="font-medium text-amber-100">{state.parsed.statedLocalityText || "that locality"}</span>{" "}
                 yet, so we can&apos;t show listings there. We only cover these localities right now:
                 <div className="mt-3 flex flex-wrap gap-2">
                   {state.localitySuggestions.map((loc) => (

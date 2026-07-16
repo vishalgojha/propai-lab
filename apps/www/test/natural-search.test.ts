@@ -61,6 +61,24 @@ check('parses "3 bhk in bandra east" -> locality === "Bandra East"', () => {
   assert.equal(parsed.localityStated, true);
 });
 
+// 1b. Display-layer extraction: statedLocalityText captures the locality
+// phrase, NOT a mangled substring from the BHK/budget portion.
+check('statedLocalityText for "3 bhk in bandra east" === "Bandra East"', () => {
+  const parsed = parseSearchQuery("3 bhk in bandra east", gazetteer);
+  assert.equal(parsed.statedLocalityText, "Bandra East");
+  assert.notEqual(parsed.statedLocalityText, "3");
+});
+
+check('statedLocalityText for "2 bhk in goregaon west budget 2 lakh" === "Goregaon West"', () => {
+  const parsed = parseSearchQuery("2 bhk in goregaon west budget 2 lakh", gazetteer);
+  assert.equal(parsed.statedLocalityText, "Goregaon West");
+});
+
+check('statedLocalityText for "andheri east 1bhk" === "Andheri East" (no preposition)', () => {
+  const parsed = parseSearchQuery("andheri east 1bhk", gazetteer);
+  assert.equal(parsed.statedLocalityText, "Andheri East");
+});
+
 // 2. The hard filter actually enforces locality: a Bandra West row is rejected.
 check("matchesHardFilters rejects non-matching locality even when BHK matches", () => {
   const parsed = parseSearchQuery("3 bhk in bandra east", gazetteer);
