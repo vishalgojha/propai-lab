@@ -52,9 +52,10 @@ services:
       context: ../..
       dockerfile: services/whatsmeow-ingestor/Dockerfile
     environment:
-      PROPAI_WEBHOOK_URL: https://api.propai.live/webhook
-      PROPAI_API_URL: https://api.propai.live
+      PROPAI_WEBHOOK_URL: http://api:8000/webhook
+      PROPAI_API_URL: http://api:8000
       PROPAI_INSTANCE_NAME: propai-whatsmeow
+      SUPABASE_SERVICE_KEY: ${SUPABASE_SERVICE_KEY}
       STATUS_FILE: /data/status_default.json
       DATABASE_URL: postgres://postgres:${SUPABASE_DB_PASSWORD}@db.${SUPABASE_REF}.supabase.co:5432/postgres?sslmode=require
     volumes:

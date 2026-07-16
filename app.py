@@ -15,6 +15,7 @@ import re
 import base64
 import ast
 import subprocess
+import hmac
 import jwt as pyjwt
 from fnmatch import fnmatch
 from datetime import datetime, timedelta, timezone
@@ -4139,13 +4140,18 @@ class ChatRequest(BaseModel):
 
 class SelfChatRequest(BaseModel):
     text: str
-    messages: list = []
-    model: str = ""
     sender_jid: str = ""
     message_id: str = ""
     push_name: str = ""
     messages: list[dict] = []
     model: str = ""
+
+
+class InternalSelfChatRequest(BaseModel):
+    broker_id: str
+    text: str
+    message_id: str = ""
+    sender_jid: str = ""
 
 
 _LISTING_SEARCH_BLOCKERS = re.compile(
@@ -5947,10 +5953,23 @@ async def _run_workspace_agent(messages: list[dict], model: str = "", session_id
     memory.prune()
 
     api_key = DOUBLEWORD_API_KEY
+    base_url = "https://api.doubleword.ai/v1"
+    configured_model = model.strip()
+    if not api_key:
+        provider = await asyncio.to_thread(storage.get_active_llm_provider)
+        if provider:
+            api_key = (provider.api_key or "").strip()
+            base_url = (provider.base_url or base_url).strip().rstrip("/")
+            configured_model = configured_model or (provider.model_name or "").strip()
+            if (provider.provider_type or "").strip().lower() == "anthropic":
+                return {
+                    "error": "provider_not_openai_compatible",
+                    "message": "The active Anthropic endpoint is not OpenAI-compatible. Select OpenAI, OpenRouter, Doubleword, or a compatible custom provider for the WhatsApp agent.",
+                }
     if not api_key:
         return {
             "error": "api_key_required",
-            "message": "Set DOUBLEWORD_API_KEY so the WhatsApp self-chat agent can answer database questions.",
+            "message": "Activate an AI provider with an API key, or set DOUBLEWORD_API_KEY, so the WhatsApp agent can answer.",
         }
 
     sources = chat_engine.load_data()
@@ -5993,7 +6012,8 @@ WHATSAPP SELF-CHAT MODE:
             msgs,
             sources,
             api_key=api_key,
-            model=model.strip() or None,
+            model=configured_model or None,
+            base_url=base_url,
             max_tool_rounds=2,
         )
         if reply.content:
@@ -6011,6 +6031,42 @@ WHATSAPP SELF-CHAT MODE:
         return chat_engine.normalize_workspace_response(reply.content or "", sources)
 
     return await asyncio.wait_for(loop.run_in_executor(None, _call), timeout=90)
+
+
+@app.post("/api/internal/self-chat")
+async def internal_self_chat(req: InternalSelfChatRequest, request: Request):
+    expected_token = (
+        os.getenv("PROPAI_INTERNAL_TOKEN", "").strip()
+        or os.getenv("SUPABASE_SERVICE_KEY", "").strip()
+    )
+    supplied_token = request.headers.get("X-PropAI-Internal-Token", "").strip()
+    if not expected_token:
+        raise HTTPException(503, "Internal service authentication is not configured")
+    if not hmac.compare_digest(supplied_token, expected_token):
+        raise HTTPException(401, "Invalid internal service token")
+
+    connection = await asyncio.to_thread(
+        storage.get_org_whatsapp_connection_by_broker_id,
+        req.broker_id.strip(),
+    )
+    if not connection:
+        raise HTTPException(404, "Unknown WhatsApp connection")
+
+    text = req.text.strip()
+    if not text:
+        return {"reply": ""}
+
+    set_tenant_id(connection.get("organization_id") or DEFAULT_TENANT_ID)
+    try:
+        response = await _run_workspace_agent(
+            [{"role": "user", "content": text[:1800]}],
+            session_id=f"whatsmeow:{req.broker_id}",
+        )
+        if isinstance(response, dict) and response.get("error"):
+            return JSONResponse(status_code=503, content=response)
+        return {"reply": _workspace_response_to_whatsapp(response)}
+    except asyncio.TimeoutError:
+        return JSONResponse(status_code=504, content={"error": "agent_timeout"})
 
 
 @app.post("/api/self-chat")
@@ -6115,6 +6171,13 @@ async def send_message(req: SendMessageRequest, member: dict = Depends(get_curre
             "remoteJid": req.remote_jid,
             "text": text,
         }
+        org_id = member.get("organization_id")
+        if org_id:
+            connections = await asyncio.to_thread(storage.list_org_whatsapp_connections, org_id)
+            broker_ids = [str(row.get("broker_id") or "").strip() for row in connections]
+            broker_ids = [broker_id for broker_id in broker_ids if broker_id]
+            if len(broker_ids) == 1:
+                payload["brokerId"] = broker_ids[0]
         if req.quoted_message_id:
             payload["quotedMessageId"] = req.quoted_message_id
             payload["quotedRemoteJid"] = req.quoted_remote_jid or req.remote_jid
@@ -7460,6 +7523,8 @@ async def companion_webhook_receive(request: Request):
                 caption = ""
                 pic_token = ""
                 media_id = ""
+                stored_inbound = False
+                sender_name = ""
 
                 # Track 24h session window — user messaged us
                 try:
@@ -7535,9 +7600,23 @@ async def companion_webhook_receive(request: Request):
                             now_iso,
                         ),
                     )
+                    stored_inbound = True
                     processed.append({"type": "message_stored", "from": msg_from, "msg_type": msg_type})
                 except Exception as exc:
                     print(f"[waba-webhook] failed to store inbound message: {exc}", flush=True)
+
+                # Meta retries webhook deliveries. Only trigger the agent when the
+                # unique inbound row was inserted, otherwise one user message can
+                # receive multiple bot replies.
+                if stored_inbound and msg_type == "text" and caption.strip():
+                    asyncio.create_task(
+                        _handle_waba_agent_reply(
+                            to=msg_from,
+                            text=caption.strip(),
+                            inbound_message_id=msg_id,
+                            sender_name=sender_name or msg_from,
+                        )
+                    )
 
         # Handle delivery status updates (sent / delivered / read)
         for status in value.get("statuses", []):
@@ -7714,6 +7793,68 @@ async def _waba_send_message(to: str, text: str, msg_type: str = "text") -> dict
         return {"success": False, "error": error_msg, "status_code": resp.status_code, "response": data}
     except Exception as exc:
         return {"success": False, "error": str(exc)}
+
+
+async def _handle_waba_agent_reply(
+    to: str,
+    text: str,
+    inbound_message_id: str,
+    sender_name: str = "",
+) -> None:
+    """Run the workspace agent for one WABA message and send one reply."""
+    try:
+        response = await _run_workspace_agent(
+            [{"role": "user", "content": text[:1800]}],
+            session_id=f"waba:{to}",
+        )
+        if isinstance(response, dict) and response.get("error"):
+            raise RuntimeError(response.get("message") or response["error"])
+
+        reply = _workspace_response_to_whatsapp(response).strip()
+        if not reply:
+            raise RuntimeError("agent returned an empty reply")
+
+        result = await _waba_send_message(to, reply)
+        if not result.get("success"):
+            raise RuntimeError(result.get("error") or "WABA send failed")
+
+        now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        digits = re.sub(r"\D+", "", to)
+        sender_jid = f"{digits}@s.whatsapp.net"
+        storage.db.execute(
+            """INSERT INTO raw_messages
+               (group_name, sender, sender_jid, sender_phone, message, message_type,
+                source, timestamp, raw_payload, message_uid, delivery_status, synced_at, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                sender_jid,
+                "PropAI Agent",
+                sender_jid,
+                digits,
+                reply,
+                "text",
+                "WABA_OUTBOUND",
+                now_iso,
+                json.dumps({
+                    "waba_message_id": result.get("message_id", ""),
+                    "reply_to": inbound_message_id,
+                    "sender_name": sender_name,
+                }),
+                f"waba-{result.get('message_id') or uuid.uuid4()}",
+                "sent",
+                now_iso,
+                now_iso,
+            ),
+        )
+        try:
+            _waba_session_update(f"{digits}@s.whatsapp.net", direction="outbound")
+        except Exception:
+            pass
+    except Exception as exc:
+        print(
+            f"[waba-agent] reply failed inbound_message_id={inbound_message_id}: {exc}",
+            flush=True,
+        )
 
 
 class WabaSendRequest(BaseModel):
