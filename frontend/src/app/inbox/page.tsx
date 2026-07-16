@@ -2162,9 +2162,9 @@ return {
     const grouped: Record<string, api.RawMessage[]> = {};
     const dedupedMessages = Array.from(
       conversationMessages.reduce((map, message) => {
-        const dedupeText = normalizeMessageForDedupe(message.message);
         const senderKey = message.sender_jid || message.sender_phone || message.sender || "";
-        const key = `${senderKey}::${dedupeText || message.id}`;
+        const uniqueMessageKey = (message.message_uid || "").trim() || `id:${message.id}`;
+        const key = `${senderKey}::${uniqueMessageKey}`;
         const existing = map.get(key);
         if (!existing) {
           map.set(key, {
