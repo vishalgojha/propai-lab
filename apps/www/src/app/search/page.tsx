@@ -4,6 +4,7 @@ import { describeNaturalSearch, searchNaturalLanguageListings } from "@/lib/natu
 import { getAllLocalities } from "@/lib/localities";
 import { slugify } from "@/lib/supabase";
 import { toListingCardViewModel } from "@/lib/listing-card";
+import ListingSpecs from "@/components/ListingSpecs";
 import SiteHeader from "@/components/SiteHeader";
 import SiteFooter from "@/components/SiteFooter";
 import RequirementCapture from "@/components/RequirementCapture";
@@ -160,7 +161,7 @@ export default async function SearchPage({ searchParams }: { searchParams: Searc
                       <div className="flex items-start justify-between gap-3 mb-3">
                         <div className="min-w-0">
                           <h2 className="text-lg font-semibold text-white group-hover:text-green-300 transition-colors truncate">
-                            {card.title}
+                            <Link href={card.href ?? "#"}>{card.title}</Link>
                           </h2>
                           {card.locality && (
                             <Link
@@ -187,8 +188,8 @@ export default async function SearchPage({ searchParams }: { searchParams: Searc
                         <span className="text-xl font-semibold text-white">{card.priceLabel}</span>
                       </div>
 
-                      {card.specRow && (
-                        <div className="mb-4 text-sm text-zinc-400">{card.specRow}</div>
+                      {card.specItems.length > 0 && (
+                        <ListingSpecs items={card.specItems} className="mb-4" />
                       )}
 
                       <div className="mt-auto space-y-2 text-sm text-zinc-400">
