@@ -273,6 +273,38 @@ function messageTimeLabel(message?: Partial<api.RawMessage> | null) {
   return date ? date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "Time unavailable";
 }
 
+function rawSearchResultToMessage(result: api.RawSearchResult): api.RawMessage {
+  const groupName = (result.group_name || "").trim();
+  const senderPhone = (result.sender_phone || "").trim();
+  const sender = (result.sender || "").trim();
+  const isGroup = /@g\.us$/i.test(groupName);
+  const conversationName = groupName || sender || senderPhone || "Conversation";
+
+  return {
+    id: result.id,
+    group_name: isGroup ? groupName : "",
+    sender,
+    sender_phone: senderPhone,
+    chat_id: isGroup ? groupName : undefined,
+    chat_type: isGroup ? "group" : "direct",
+    chat_name: conversationName,
+    conversation_type: isGroup ? "group" : "direct",
+    conversation_key: isGroup ? groupName : "",
+    conversation_name: conversationName,
+    message: result.message || "",
+    message_type: "text",
+    timestamp: result.timestamp || "",
+    created_at: result.timestamp || "",
+    source: result.source || "",
+    event_id: `search-${result.id}`,
+    message_uid: `search-${result.id}`,
+    raw_payload: "",
+    synced_at: result.timestamp || "",
+    pipeline_version: "search-result",
+    from_me: false,
+  } as api.RawMessage;
+}
+
 function Field({ label, value, accent }: { label: string; value: React.ReactNode; accent?: boolean }) {
   if (!value) return null;
   return (
@@ -592,7 +624,7 @@ function splitDelimitedListingText(text?: string) {
 
   const rawLines = (text || "").split(/\r?\n/);
   const lines = rawLines.map((line) => line.trim()).filter(Boolean);
-  if (lines.length < 8) return [];
+  if (lines.length < 4) return [];
 
   const normalizeBoundaryLine = (line: string) => stripEmojis(line).replace(/^[^\p{L}\p{N}]+/u, "").trim();
   const hasPropertyDetails = (value: string) =>
@@ -930,6 +962,9 @@ function InboxPageInner({ defaultView }: InboxPageInnerProps) {
   const [loadingLeft, setLoadingLeft] = useState(false);
   const [offset, setOffset] = useState(0);
   const [searchText, setSearchText] = useState("");
+  const [searchResults, setSearchResults] = useState<api.RawSearchResult[]>([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchError, setSearchError] = useState("");
   const [slugs, setSlugs] = useState<api.SavedView[]>([]);
   const [currentSlug, setCurrentSlug] = useState<string>(defaultView === "groups" ? "groups" : "brokers");
   const activeSlug = useMemo(() => slugs.find(s => s.slug === currentSlug) || null, [slugs, currentSlug]);
@@ -988,6 +1023,40 @@ function InboxPageInner({ defaultView }: InboxPageInnerProps) {
     const timer = window.setInterval(() => setNow(Date.now()), 60000);
     return () => window.clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    const query = searchText.trim();
+    let cancelled = false;
+    if (!query) {
+      setSearchResults([]);
+      setSearchError("");
+      setSearchLoading(false);
+      return;
+    }
+
+    setSearchLoading(true);
+    setSearchError("");
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        try {
+          const result = await api.searchRawMessages(query, 25, 0);
+          if (cancelled) return;
+          setSearchResults(result.results || []);
+        } catch (e: any) {
+          if (cancelled) return;
+          setSearchResults([]);
+          setSearchError(e?.message || "Search failed");
+        } finally {
+          if (!cancelled) setSearchLoading(false);
+        }
+      })();
+    }, 250);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [searchText]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1923,6 +1992,7 @@ return {
 
   // 2. Compute Left Panel Grouped Lists
   const query = searchText.trim().toLowerCase();
+  const hasSearchQuery = query.length > 0;
 
   const filteredMessages = messages.filter((m) => {
     const haystack = [
@@ -2728,7 +2798,7 @@ return {
         parsed.micro_market,
         parsed.landmark_name,
         parsed.location_raw,
-        ...listings.flatMap((listing: any) => [
+        ...listings.flatMap((listing) => [
           listing.building_name,
           listing.micro_market,
           listing.landmark_name,
@@ -2779,18 +2849,6 @@ return {
   };
 
   const trainingPrompts = getTrainingPrompts();
-
-  const getListingPayloadText = (listing: any): string | null => {
-    if (!listing) return null;
-    const payload = listing.raw_payload;
-    if (!payload) return null;
-    try {
-      const parsed = typeof payload === "string" ? JSON.parse(payload) : payload;
-      return parsed?.full_text || parsed?.text || null;
-    } catch {
-      return null;
-    }
-  };
 
   const waSenderPhone =
     normalizeRealPhone(selectedMsgDetails?.parsed?.broker_phone) ||
@@ -2877,7 +2935,7 @@ return {
             
             <input
               type="text"
-              placeholder="Search"
+              placeholder="Search messages, brokers, localities"
               value={searchText}
               onChange={(e) => setSearchText(e.target.value)}
               className="w-full px-2.5 py-1.5 bg-zinc-900 border border-white/10 rounded-lg text-xs text-white focus:border-[#3EE88A] focus:outline-none transition-colors"
@@ -2946,6 +3004,56 @@ return {
                   )}
                 </div>
               </div>
+            ) : hasSearchQuery ? (
+              searchLoading ? (
+                <div className="p-8 text-center text-xs text-zinc-500">Searching messages...</div>
+              ) : searchError ? (
+                <div className="p-8 text-center text-xs text-red-400">{searchError}</div>
+              ) : searchResults.length === 0 ? (
+                <div className="p-8 text-center text-xs text-zinc-500">
+                  No messages found. Try a broker name, locality, or property keyword.
+                </div>
+              ) : (
+                searchResults.map((result) => {
+                  const item = rawSearchResultToMessage(result);
+                  const title = stripEmojis(result.group_name || result.sender || result.sender_phone || "Conversation");
+                  const subtitle = stripEmojis(
+                    result.group_name && /@g\.us$/i.test(result.group_name)
+                      ? "WhatsApp group"
+                      : result.sender_phone
+                        ? `Phone ending ${normalizeRealPhone(result.sender_phone).slice(-4) || "—"}`
+                        : result.sender || "Direct message"
+                  );
+                  const snippet = stripEmojis((result.snippet || result.message || "").replace(/<\/?mark>/gi, "").trim());
+                  return (
+                    <button
+                      key={result.id}
+                      onClick={() => {
+                        void selectConversation(item);
+                      }}
+                      className="w-full text-left p-2.5 lg:p-3 transition-colors select-none hover:bg-white/5"
+                    >
+                      <div className="flex items-center justify-between gap-2 mb-1">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <MessageSquare className="w-3.5 h-3.5 shrink-0 text-zinc-500" strokeWidth={1.5} />
+                          <span className="text-[12px] font-bold text-white truncate max-w-[190px]">
+                            {title || "WhatsApp message"}
+                          </span>
+                        </div>
+                        <span className="text-[10px] font-bold text-white tabular-nums">
+                          {messageTimeLabel(item)}
+                        </span>
+                      </div>
+                      <div className="text-[10px] text-zinc-500 leading-relaxed truncate mb-1">
+                        {subtitle}
+                      </div>
+                      <div className="text-[10px] text-zinc-400 leading-relaxed line-clamp-2">
+                        {snippet || "No text content"}
+                      </div>
+                    </button>
+                  );
+                })
+              )
             ) : loadingLeft && messages.length === 0 && groups.length === 0 ? (
               <div className="p-8 text-center text-xs text-zinc-500">Loading inbox feed...</div>
             ) : leftListEmpty ? (
@@ -2960,7 +3068,7 @@ return {
                   <div className="p-8 text-center text-xs text-zinc-500">Loading broker feed...</div>
                 )}
                 {activeSlug?.view_type === "brokers" && !loadingBrokerFeed &&
-                  filteredBrokerFeed.map((b: any) => {
+                  filteredBrokerFeed.map((b) => {
                     const isSelected =
                       (selectedBroker?.identity_key && selectedBroker.identity_key === (b.identity_key || b.primary_phone || b.id)) ||
                       (normalizeRealPhone(selectedBroker?.phone || selectedBroker?.id || "") === normalizeRealPhone(b.primary_phone || "")) ||
@@ -3232,63 +3340,32 @@ return {
                         : "This broker card has not resolved to parsed observations yet. The feed item is still usable for navigation and WhatsApp actions."}
                     </div>
                     {selectedBroker.latest_title && (
-                      <div className="mx-auto mt-4 max-w-[520px] rounded-xl border border-white/10 bg-black/40 p-4 text-left">
-                        <div className="flex items-center justify-between gap-3">
-                          <div className="min-w-0">
-                            <div className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
-                              Latest feed card
-                            </div>
-                            <div className="mt-1 text-sm font-bold text-white truncate">
-                              {stripEmojis(selectedBroker.latest_title)}
-                            </div>
-                          </div>
-                          <div className="flex shrink-0 flex-wrap items-center gap-2 text-[10px]">
-                            {selectedBroker.latest_intent && (
-                              <span className={`badge ${intentColor(selectedBroker.latest_intent)}`}>
-                                {intentLabel(selectedBroker.latest_intent)}
-                              </span>
-                            )}
-                            {selectedBroker.latest_micro_market && (
-                              <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-zinc-300">
-                                {selectedBroker.latest_micro_market}
-                              </span>
-                            )}
-                          </div>
+                      <div className="mx-auto mt-4 max-w-[560px] text-left text-xs leading-relaxed text-zinc-500">
+                        <div className="text-[10px] font-semibold uppercase tracking-wider text-zinc-600">
+                          Latest feed
                         </div>
-                        <div className="mt-3 grid grid-cols-2 gap-3 text-[11px] text-zinc-500 sm:grid-cols-4">
-                          <div>
-                            <div className="text-zinc-600">Observations</div>
-                            <div className="mt-0.5 text-zinc-200">{selectedBroker.observation_count || 0}</div>
-                          </div>
-                          <div>
-                            <div className="text-zinc-600">Buildings</div>
-                            <div className="mt-0.5 text-zinc-200">{selectedBroker.building_count || 0}</div>
-                          </div>
-                          <div>
-                            <div className="text-zinc-600">Channels</div>
-                            <div className="mt-0.5 text-zinc-200">{(selectedBroker.channels || []).length || 0}</div>
-                          </div>
-                          <div>
-                            <div className="text-zinc-600">Last seen</div>
-                            <div className="mt-0.5 text-zinc-200">
-                              {selectedBroker.last_seen ? formatAgeShort(selectedBroker.last_seen) : "Unknown"}
-                            </div>
-                          </div>
+                        <div className="mt-1 text-sm font-semibold text-zinc-200">
+                          {stripEmojis(selectedBroker.latest_title)}
                         </div>
-                      </div>
-                    )}
-                    {(selectedBroker.latest_intent || selectedBroker.latest_micro_market) && (
-                      <div className="mt-4 flex flex-wrap items-center justify-center gap-2 text-[10px]">
-                        {selectedBroker.latest_intent && (
-                          <span className={`badge ${intentColor(selectedBroker.latest_intent)}`}>
-                            {intentLabel(selectedBroker.latest_intent)}
-                          </span>
-                        )}
-                        {selectedBroker.latest_micro_market && (
-                          <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-zinc-300">
-                            {selectedBroker.latest_micro_market}
-                          </span>
-                        )}
+                        <div className="mt-2 flex flex-wrap items-center gap-2 text-[10px]">
+                          {selectedBroker.latest_intent && (
+                            <span className={`badge ${intentColor(selectedBroker.latest_intent)}`}>
+                              {intentLabel(selectedBroker.latest_intent)}
+                            </span>
+                          )}
+                          {selectedBroker.latest_micro_market && (
+                            <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-zinc-300">
+                              {selectedBroker.latest_micro_market}
+                            </span>
+                          )}
+                          <span>{selectedBroker.observation_count || 0} observations</span>
+                          <span>•</span>
+                          <span>{selectedBroker.building_count || 0} buildings</span>
+                          <span>•</span>
+                          <span>{(selectedBroker.channels || []).length || 0} channels</span>
+                          <span>•</span>
+                          <span>{selectedBroker.last_seen ? formatAgeShort(selectedBroker.last_seen) : "Unknown"}</span>
+                        </div>
                       </div>
                     )}
                   </div>

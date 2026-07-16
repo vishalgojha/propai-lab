@@ -59,11 +59,14 @@ export function classifyFormatIssue(message: Pick<RawMessage, "message">): Forma
   }
 
   if (!hasPropertySignal) {
-    return {
-      reason: "No property details",
-      detail: "No clear BHK, area, price, location, listing, or requirement signal was found.",
-      severity: "low",
-    };
+    if (lines.length <= 1 || compactText.length < 30) {
+      return {
+        reason: "No property details",
+        detail: "No clear property, listing, or requirement signal was found.",
+        severity: "low",
+      };
+    }
+    return null;
   }
 
   const hasRequirement = REQUIREMENT_RE.test(compactText);
@@ -81,22 +84,6 @@ export function classifyFormatIssue(message: Pick<RawMessage, "message">): Forma
       reason: "Too compressed",
       detail: "The post has property signals but not enough line breaks or boundaries to split safely.",
       severity: "high",
-    };
-  }
-
-  if (!PRICE_RE.test(compactText)) {
-    return {
-      reason: "Missing price",
-      detail: "A price, budget, rent, deposit, or quote is missing.",
-      severity: "medium",
-    };
-  }
-
-  if (!LOCATION_RE.test(compactText)) {
-    return {
-      reason: "Missing location",
-      detail: "A recognizable locality, road, or location marker is missing.",
-      severity: "medium",
     };
   }
 
