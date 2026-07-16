@@ -14,9 +14,11 @@ const LocalityMap = dynamic(() => import("./LocalityMap"), {
 export default function LocalityMapLoader({
   locality,
   buildings,
+  token,
 }: {
   locality: string;
   buildings: BuildingOnMap[];
+  token: string | null;
 }) {
-  return <LocalityMap locality={locality} buildings={buildings} />;
+  return <LocalityMap locality={locality} buildings={buildings} token={token} />;
 }

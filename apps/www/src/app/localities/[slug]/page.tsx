@@ -7,6 +7,12 @@ import SiteHeader from "@/components/SiteHeader";
 import ListingCard, { LocalityBackLink } from "@/components/ListingCard";
 import { NoPhotosFaqJsonLd, NoPhotosFaq } from "@/components/NoPhotosFaq";
 
+// Read at server runtime (Coolify injects env into the running container).
+// Passed to the client map so we don't depend on NEXT_PUBLIC_* build-time
+// inlining, which the Docker build stage doesn't receive.
+const MAPBOX_TOKEN =
+  process.env.NEXT_PUBLIC_MAPBOX_TOKEN || process.env.MAPBOX_TOKEN || null;
+
 type Params = { params: Promise<{ slug: string }> };
 
 export async function generateMetadata({ params }: Params) {
@@ -105,7 +111,7 @@ export default async function LocalityPage({ params }: Params) {
 
         {mapped.length > 0 && (
           <section className="mb-12" aria-label={`Map of ${data.locality}`}>
-            <LocalityMapLoader locality={data.locality} buildings={data.buildings} />
+            <LocalityMapLoader locality={data.locality} buildings={data.buildings} token={MAPBOX_TOKEN} />
             {data.unmappedCount > 0 && (
               <p className="mt-3 text-xs text-zinc-500 text-center">
                 Showing {mapped.length} of {data.buildings.length} buildings on the map.

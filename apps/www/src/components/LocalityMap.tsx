@@ -6,6 +6,7 @@ import type { BuildingOnMap } from "@/lib/localities";
 type Props = {
   locality: string;
   buildings: BuildingOnMap[];
+  token: string | null;
 };
 
 function formatPrice(value: number | null): string {
@@ -21,7 +22,7 @@ function formatPrice(value: number | null): string {
   return `₹${value.toLocaleString("en-IN")}`;
 }
 
-export default function LocalityMap({ locality, buildings }: Props) {
+export default function LocalityMap({ locality, buildings, token }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<unknown>(null);
 
@@ -34,9 +35,8 @@ export default function LocalityMap({ locality, buildings }: Props) {
     const container = containerRef.current;
     if (!container) return;
 
-    const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
     if (!token) {
-      console.warn("NEXT_PUBLIC_MAPBOX_TOKEN is not set — map cannot render.");
+      console.warn("MAPBOX_TOKEN is not set — map cannot render.");
       return;
     }
 
