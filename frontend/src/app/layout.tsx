@@ -266,7 +266,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
     const load = async () => {
       try {
         const [phonesRes, cfg, status] = await Promise.all([
-          getPhones(false, 12000).catch(() => ({ phones: [] as Phone[] })),
+          getPhones(false, 7000).catch(() => ({ phones: [] as Phone[] })),
           getCompanionConfig().catch(() => null),
           getWhatsAppStatus().catch(() => null),
         ]);
@@ -290,7 +290,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (authLoading || !user) return;
     let cancelled = false;
-    getRaw(150, 0)
+    getRaw(150, 0, undefined, undefined, undefined, undefined, 8000)
       .then((messages) => {
         if (!cancelled) setFormatIssueCount(messages.filter((message) => classifyFormatIssue(message)).length);
       })
@@ -369,16 +369,16 @@ function AppShell({ children }: { children: React.ReactNode }) {
     );
   }
 
-  if (authLoading || !user || !profileLoaded) {
+  if (authLoading || !user) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-black text-white">
         <div className="text-center">
           <div className="mx-auto mb-3 h-10 w-10 animate-spin rounded-full border-2 border-white/10 border-t-[#3EE88A]" />
           <div className="text-sm font-semibold">
-            {authLoading ? "Loading session..." : !user ? "Signing in..." : "Loading profile..."}
+            {authLoading ? "Loading session..." : "Signing in..."}
           </div>
           <div className="mt-1 text-xs text-zinc-500">
-            {authLoading ? "Verifying your workspace access." : !user ? "Redirecting to login." : "Preparing your workspace shell."}
+            {authLoading ? "Verifying your workspace access." : "Redirecting to login."}
           </div>
         </div>
       </div>

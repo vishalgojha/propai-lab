@@ -251,13 +251,21 @@ export interface MarketAccessStatus {
   message: string;
 }
 
-export function getRaw(limit = 50, offset = 0, group_name?: string, sender?: string, sender_phone?: string, sender_jid?: string) {
+export function getRaw(
+  limit = 50,
+  offset = 0,
+  group_name?: string,
+  sender?: string,
+  sender_phone?: string,
+  sender_jid?: string,
+  timeoutMs = 15000,
+) {
   const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
   if (group_name) params.set("group_name", group_name);
   if (sender) params.set("sender", sender);
   if (sender_phone) params.set("sender_phone", sender_phone);
   if (sender_jid) params.set("sender_jid", sender_jid);
-  return fetchJSON<RawMessage[]>(`/raw?${params.toString()}`);
+  return fetchJSON<RawMessage[]>(`/raw?${params.toString()}`, undefined, timeoutMs);
 }
 
 export function getInboxThreads(limit = 500, offset = 0) {
@@ -343,16 +351,16 @@ export function getDashboardHeatmap() {
   return fetchJSON<any[]>("/dashboard/heatmap");
 }
 
-export function getStats() {
-  return fetchJSON<any>("/stats");
+export function getStats(timeoutMs = 10000) {
+  return fetchJSON<any>("/stats", undefined, timeoutMs);
 }
 
-export function getSyncActivity() {
-  return fetchJSON<any>("/dashboard/sync-activity");
+export function getSyncActivity(timeoutMs = 10000) {
+  return fetchJSON<any>("/dashboard/sync-activity", undefined, timeoutMs);
 }
 
-export function getWhatsAppStatus() {
-  return fetchJSON<WhatsAppStatus>("/dashboard/whatsapp-status");
+export function getWhatsAppStatus(timeoutMs = 8000) {
+  return fetchJSON<WhatsAppStatus>("/dashboard/whatsapp-status", undefined, timeoutMs);
 }
 
 export function getMarketAccessStatus() {
@@ -928,8 +936,8 @@ export function getCompanionOverview() {
   return fetchJSON<CompanionOverview>("/companion/overview");
 }
 
-export function getCompanionConfig() {
-  return fetchJSON<CompanionConfig>("/companion/config");
+export function getCompanionConfig(timeoutMs = 8000) {
+  return fetchJSON<CompanionConfig>("/companion/config", undefined, timeoutMs);
 }
 
 export function saveCompanionConfig(config: CompanionConfigInput) {

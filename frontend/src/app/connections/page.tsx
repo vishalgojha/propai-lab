@@ -7,7 +7,7 @@ import QRCode from "qrcode";
 import { useRouter } from "next/navigation";
 import { Activity, Clock, Database, ImageUp, Inbox, List, LogOut, MessageSquare, Plus, RefreshCw, Shield, Smartphone, Trash2, AlertTriangle, Users, Zap, Lock, X } from "lucide-react";
 import { useAuth } from "@/lib/AuthProvider";
-import { getPhones, getPhone, createPhone, deletePhone, resetPhone, disconnectPhone, connectPhone, fetchJSON, getWhatsAppStatus, type Phone, type WhatsAppStatus } from "@/lib/api";
+import { getPhones, getPhone, createPhone, deletePhone, resetPhone, disconnectPhone, connectPhone, fetchJSON, type Phone, type WhatsAppStatus } from "@/lib/api";
 
 type HealthStatus = "healthy" | "warning" | "error";
 
@@ -620,7 +620,7 @@ export default function ConnectionCenterPage() {
   const fetchPhones = useCallback(async () => {
     let initialPhones: Phone[] = [];
     try {
-      const res = await getPhones(false, 12000);
+      const res = await getPhones(false, 7000);
       initialPhones = res.phones || [];
       setPhones(initialPhones);
       setPhonesError(null);
@@ -628,19 +628,11 @@ export default function ConnectionCenterPage() {
       setPhonesError(error instanceof Error ? error.message : "Could not load phones right now.");
     }
     setPhonesLoading(false);
-    if (initialPhones.length > 0) {
-      void Promise.allSettled(initialPhones.map((phone) => getPhone(phone.id))).then((results) => {
-        const hydrated = results.map((result, index) => (
-          result.status === "fulfilled" ? result.value : initialPhones[index]
-        ));
-        setPhones(hydrated);
-      });
-    }
   }, []);
 
   const fetchLiveStatus = useCallback(async () => {
     try {
-      const status = await getWhatsAppStatus();
+      const status = await fetchJSON<WhatsAppStatus>("/dashboard/whatsapp-status", undefined, 8000);
       setLiveStatus(status);
     } catch { /* ignore */ }
   }, []);
@@ -648,8 +640,8 @@ export default function ConnectionCenterPage() {
   const fetchStats = useCallback(async () => {
     try {
       const [stats, syncAct] = await Promise.all([
-        fetchJSON<any>("/stats").catch(() => ({})),
-        fetchJSON<any>("/dashboard/sync-activity").catch(() => ({})),
+        fetchJSON<any>("/stats", undefined, 8000).catch(() => ({})),
+        fetchJSON<any>("/dashboard/sync-activity", undefined, 8000).catch(() => ({})),
       ]);
       if (stats?.total_parsed != null) setTotalParsed(stats.total_parsed);
       if (stats?.total_listings != null) setTotalListings(stats.total_listings);
@@ -663,7 +655,7 @@ export default function ConnectionCenterPage() {
         if (ext.pct != null) setExtractionPct(ext.pct);
       }
       try {
-        const extProgress = await fetchJSON<any>("/extraction/progress");
+        const extProgress = await fetchJSON<any>("/extraction/progress", undefined, 8000);
         if (extProgress?.recently_processed_1h != null) setRecentlyProcessed1h(extProgress.recently_processed_1h);
         if (extProgress?.lag != null) setExtractionLag(extProgress.lag);
       } catch { /* ignore */ }
@@ -685,8 +677,10 @@ export default function ConnectionCenterPage() {
     });
   }, []);
 
-  const refreshData = useCallback(async () => {
-    await Promise.all([fetchPhones(), fetchStats(), fetchLiveStatus()]);
+  const refreshData = useCallback(() => {
+    void fetchPhones();
+    void fetchStats();
+    void fetchLiveStatus();
   }, [fetchPhones, fetchStats, fetchLiveStatus]);
 
   const handleConnect = useCallback(async (phone: Phone): Promise<void> => {
@@ -705,11 +699,8 @@ export default function ConnectionCenterPage() {
         lastOutcome: "connected",
         lastDurationSeconds: Math.max(0, Math.floor((Date.now() - startedAt) / 1000)),
       }));
-      void refreshData().then(() => {
-        window.dispatchEvent(new Event("propai_whatsapp_status_updated"));
-      }).catch(() => {
-        window.dispatchEvent(new Event("propai_whatsapp_status_updated"));
-      });
+      void refreshData();
+      window.dispatchEvent(new Event("propai_whatsapp_status_updated"));
     } catch {
       updateAttemptState(phone.id, (current) => ({
         ...current,
@@ -724,7 +715,7 @@ export default function ConnectionCenterPage() {
         refreshData();
       const interval = setInterval(() => {
         refreshData();
-      }, 8000);
+      }, 15000);
       const onStatusUpdate = () => {
         void refreshData();
       };

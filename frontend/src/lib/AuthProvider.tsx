@@ -36,32 +36,40 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const syncActiveTenant = async (currentUser: User | null) => {
+    if (!currentUser) {
+      setActiveTenantId(null);
+      return;
+    }
+    try {
+      const me = await getAuthMe();
+      setActiveTenantId(me.active_tenant || null);
+    } catch {
+      // Keep the last known tenant if the auth-me call fails.
+    }
+  };
+
   useEffect(() => {
     let mounted = true;
 
     const initAuth = async () => {
       try {
-        const [sessionData, userData] = await Promise.all([
-          withTimeout(getSession(), 15000, "session"),
-          withTimeout(getUser(), 15000, "session"),
-        ]);
+        const sessionData = await withTimeout(getSession(), 5000, "session");
         if (mounted) {
           setSession(sessionData);
-          setUser(userData);
+          setUser(sessionData?.user ?? null);
           setError(null);
-          if (!userData) {
-            setActiveTenantId(null);
-          }
-          if (userData) {
-            try {
-              const me = await getAuthMe();
-              if (mounted) {
-                setActiveTenantId(me.active_tenant || null);
-              }
-            } catch {
-              // Keep the last known tenant if the auth-me call fails.
-            }
-          }
+          setLoading(false);
+          void syncActiveTenant(sessionData?.user ?? null);
+          void withTimeout(getUser(), 10000, "user")
+            .then((userData) => {
+              if (!mounted) return;
+              setUser(userData ?? sessionData?.user ?? null);
+              void syncActiveTenant(userData ?? sessionData?.user ?? null);
+            })
+            .catch(() => {
+              // Keep the cached session and tenant if the live user lookup is slow.
+            });
         }
       } catch (err) {
         if (mounted) {
@@ -95,23 +103,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const refresh = async () => {
     try {
-      const [sessionData, userData] = await Promise.all([
-        withTimeout(getSession(), 15000, "session"),
-        withTimeout(getUser(), 15000, "session"),
-      ]);
+      const sessionData = await withTimeout(getSession(), 5000, "session");
       setSession(sessionData);
-      setUser(userData);
+      setUser(sessionData?.user ?? null);
       setError(null);
-      if (!userData) {
-        setActiveTenantId(null);
-        return;
-      }
-      try {
-        const me = await getAuthMe();
-        setActiveTenantId(me.active_tenant || null);
-      } catch {
-        // leave tenant untouched if auth-me fails during refresh
-      }
+      void syncActiveTenant(sessionData?.user ?? null);
+      void withTimeout(getUser(), 10000, "user")
+        .then((userData) => {
+          setUser(userData ?? sessionData?.user ?? null);
+          void syncActiveTenant(userData ?? sessionData?.user ?? null);
+        })
+        .catch(() => {
+          // Keep the cached session and tenant if the live user lookup is slow.
+        });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to verify your session right now.");
     }
