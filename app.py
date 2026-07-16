@@ -3571,10 +3571,41 @@ async def dashboard_graph_growth(user: dict = Depends(require_user)):
     }
 
 
+def _select_workspace_whatsapp_status(phones: list[dict], statuses: list[dict]) -> dict:
+    broker_ids = {str(phone.get("broker_id") or "") for phone in phones}
+    broker_ids.discard("")
+    owned_statuses = [
+        status
+        for status in statuses
+        if str(status.get("broker_id") or "") in broker_ids
+    ]
+    return next((status for status in owned_statuses if status.get("connected")), None) or (
+        owned_statuses[0] if owned_statuses else {}
+    )
+
+
 @app.get("/api/dashboard/whatsapp-status")
-async def dashboard_whatsapp_status(user: dict = Depends(require_user)):
-    """Detailed WhatsApp connection status."""
-    details = await asyncio.to_thread(_connection_details)
+async def dashboard_whatsapp_status(
+    user: dict = Depends(require_user),
+    tenant_id: str | None = Depends(get_tenant_context),
+):
+    """Return WhatsApp status for the authenticated workspace only."""
+    org_id = _resolve_active_organization_id(user, tenant_id)
+    phones = await asyncio.to_thread(storage.list_org_whatsapp_connections, org_id)
+    details: dict = {}
+    if phones:
+        statuses: list[dict] = []
+        _, resp = await _first_ingestor_response("GET", "/list", timeout=2)
+        if resp is not None and resp.status_code == 200:
+            statuses.extend(resp.json())
+        now = time.time()
+        statuses.extend(
+            status
+            for status, seen_at in _broker_live_statuses.values()
+            if now - seen_at <= 45
+        )
+        details = _select_workspace_whatsapp_status(phones, statuses)
+
     phone = details.get("phone_number") or ""
     return {
         "connected": details.get("connected", False),

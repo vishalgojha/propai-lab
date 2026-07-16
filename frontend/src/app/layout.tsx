@@ -267,6 +267,8 @@ function AppShell({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (authLoading || !user) return;
+    setPhones([]);
+    setLiveStatus(null);
     const load = async () => {
       const [phonesRes, status] = await Promise.all([
         getPhones(true, 5000).catch(() => null),

@@ -73,6 +73,30 @@ def test_tenant_context_accepts_a_users_own_tenant(monkeypatch):
     assert tenant_id == "org-3"
 
 
+def test_whatsapp_status_is_scoped_to_the_users_workspace():
+    """A global ingestor session must not leak into another workspace."""
+    import app
+
+    status = app._select_workspace_whatsapp_status(
+        [{"broker_id": "broker-owned"}],
+        [
+            {
+                "broker_id": "broker-other",
+                "connected": True,
+                "phone_number": "919820056180",
+            },
+            {
+                "broker_id": "broker-owned",
+                "connected": True,
+                "phone_number": "919999999774",
+            },
+        ],
+    )
+
+    assert status["connected"] is True
+    assert status["phone_number"] == "919999999774"
+
+
 def test_connection_details_is_safe_without_storage(monkeypatch):
     """The WhatsApp connection endpoint should not assume storage.db exists."""
     import app
