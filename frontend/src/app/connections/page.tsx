@@ -303,6 +303,7 @@ function QRModal({
   open,
   onClose,
   onRefresh,
+  onConnected,
   attemptState,
   now,
 }: {
@@ -310,6 +311,7 @@ function QRModal({
   open: boolean;
   onClose: () => void;
   onRefresh: () => Promise<void> | void;
+  onConnected: (phoneId: number) => void;
   attemptState: ConnectionAttemptState | null;
   now: number;
 }) {
@@ -327,18 +329,19 @@ function QRModal({
     setNotice(null);
     try {
       const qrResult = await getPhone(phone.id);
+      if (isConnectedPhone(qrResult)) {
+        setConnected(true);
+        setQrText(null);
+        setNotice(null);
+        onConnected(phone.id);
+        await onRefresh();
+        window.dispatchEvent(new Event("propai_whatsapp_status_updated"));
+        return;
+      }
       if (qrResult?.qr) {
         setQrText(qrResult.qr);
         setError(null);
         setNotice(null);
-        return;
-      }
-      if (qrResult?.connected || qrResult?.connection_state === "open" || qrResult?.connected_since) {
-        setConnected(true);
-        setQrText(null);
-        setNotice(null);
-        await onRefresh();
-        window.dispatchEvent(new Event("propai_whatsapp_status_updated"));
         return;
       }
       setNotice((qrResult as any)?.message || "QR not available yet. Waiting for the ingestor to generate it.");
@@ -347,7 +350,7 @@ function QRModal({
     } finally {
       setLoading(false);
     }
-  }, [onRefresh, phone.id]);
+  }, [onConnected, onRefresh, phone.id]);
 
   const refreshSessionAndFetchQR = useCallback(async () => {
     setLoading(true);
@@ -383,11 +386,23 @@ function QRModal({
     pollRef.current = setInterval(async () => {
       try {
         const res = await getPhone(phone.id);
-        if (isConnectedPhone(res)) {
+        let confirmedPhone = res;
+        if (!isConnectedPhone(res)) {
+          try {
+            const livePhones = await getPhones(true, 5000);
+            confirmedPhone = livePhones.phones.find((candidate) => candidate.id === phone.id) || res;
+          } catch {
+            // Keep polling the phone-specific status if the aggregate list is temporarily unavailable.
+          }
+        }
+        if (isConnectedPhone(confirmedPhone)) {
           setConnected(true);
           setQrText(null);
           setNotice(null);
           if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+          onConnected(phone.id);
+          await onRefresh();
+          window.dispatchEvent(new Event("propai_whatsapp_status_updated"));
         } else if (res.qr && res.qr !== qrText) {
           setQrText(res.qr);
           setNotice(null);
@@ -395,7 +410,7 @@ function QRModal({
       } catch {}
     }, 3000);
     return () => { if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; } };
-  }, [open, connected, phone.id, qrText]);
+  }, [open, connected, onConnected, onRefresh, phone.id, qrText]);
 
   useEffect(() => {
     if (attemptState?.lastOutcome === "failed" && !connected) {
@@ -415,11 +430,10 @@ function QRModal({
 
   useEffect(() => {
     if (connected) {
-      onRefresh();
-      const t = setTimeout(onClose, 2000);
+      const t = setTimeout(onClose, 3000);
       return () => clearTimeout(t);
     }
-  }, [connected, onClose, onRefresh]);
+  }, [connected, onClose]);
 
   if (!open) return null;
   return (
@@ -701,6 +715,7 @@ export default function ConnectionCenterPage() {
   const [extractionPct, setExtractionPct] = useState(0);
   const [recentlyProcessed1h, setRecentlyProcessed1h] = useState(0);
   const [extractionLag, setExtractionLag] = useState<any>(null);
+  const closeQRModal = useCallback(() => setQrPhone(null), []);
 
   const fetchPhones = useCallback(async () => {
     try {
@@ -796,29 +811,37 @@ export default function ConnectionCenterPage() {
     updateAttemptState(phone.id, (current) => ({
       attempts: current.attempts + 1,
       startedAt: new Date().toISOString(),
-      lastOutcome: current.lastOutcome,
-      lastDurationSeconds: current.lastDurationSeconds,
+      lastOutcome: null,
+      lastDurationSeconds: null,
     }));
-    const startedAt = Date.now();
     try {
       await connectPhone(phone.id);
       setQrPhone(phone);
-      updateAttemptState(phone.id, (current) => ({
-        ...current,
-        lastOutcome: "connected",
-        lastDurationSeconds: Math.max(0, Math.floor((Date.now() - startedAt) / 1000)),
-      }));
       void refreshData();
       window.dispatchEvent(new Event("propai_whatsapp_status_updated"));
     } catch (error) {
       updateAttemptState(phone.id, (current) => ({
         ...current,
+        startedAt: null,
         lastOutcome: "failed",
-        lastDurationSeconds: Math.max(0, Math.floor((Date.now() - startedAt) / 1000)),
+        lastDurationSeconds: current.startedAt
+          ? Math.max(0, Math.floor((Date.now() - new Date(current.startedAt).getTime()) / 1000))
+          : 0,
       }));
       throw error;
     }
   }, [refreshData, updateAttemptState]);
+
+  const handleConnectionConfirmed = useCallback((phoneId: number) => {
+    updateAttemptState(phoneId, (current) => ({
+      ...current,
+      startedAt: null,
+      lastOutcome: "connected",
+      lastDurationSeconds: current.startedAt
+        ? Math.max(0, Math.floor((Date.now() - new Date(current.startedAt).getTime()) / 1000))
+        : current.lastDurationSeconds,
+    }));
+  }, [updateAttemptState]);
 
   useEffect(() => {
       if (!authLoading && user) {
@@ -968,8 +991,9 @@ export default function ConnectionCenterPage() {
         <QRModal
           phone={qrPhone}
           open={!!qrPhone}
-          onClose={() => setQrPhone(null)}
+          onClose={closeQRModal}
           onRefresh={refreshData}
+          onConnected={handleConnectionConfirmed}
           attemptState={connectionAttempts[qrPhone.id] || null}
           now={now}
         />
