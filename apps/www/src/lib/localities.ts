@@ -8,6 +8,7 @@ export type BuildingOnMap = {
   listingCount: number;
   minPrice: number | null;
   maxPrice: number | null;
+  priceUnit: string | null;
   bhkRange: string | null;
   address: string | null;
   developer: string | null;
@@ -33,6 +34,7 @@ type ListingRow = {
   building_name: string | null;
   bhk: string | null;
   price: number | null;
+  price_unit: string | null;
   intent: string | null;
   micro_market: string | null;
 };
@@ -205,7 +207,7 @@ export async function getLocalityData(rawSlug: string): Promise<LocalityData | n
     for (let offset = 0; ; offset += PAGE) {
       const { data, error } = await db
         .from("listings")
-        .select("building_name, bhk, price, intent, micro_market")
+        .select("building_name, bhk, price, price_unit, intent, micro_market")
         .eq("micro_market", match)
         .range(offset, offset + PAGE - 1);
       if (error) return { data: null, error };
@@ -235,6 +237,7 @@ export async function getLocalityData(rawSlug: string): Promise<LocalityData | n
       name: string;
       count: number;
       prices: number[];
+      priceUnits: string[];
       bhks: Set<number>;
       bhkRaw: Set<string>;
     }
@@ -246,12 +249,14 @@ export async function getLocalityData(rawSlug: string): Promise<LocalityData | n
     const entry = agg.get(name) ?? {
       name,
       count: 0,
-      prices: [],
+      prices: [] as number[],
+      priceUnits: [] as string[],
       bhks: new Set<number>(),
       bhkRaw: new Set<string>(),
     };
     entry.count += 1;
     if (typeof row.price === "number") entry.prices.push(row.price);
+    if (row.price_unit) entry.priceUnits.push(String(row.price_unit));
     const parsed = parseBhkValues(row.bhk);
     if (parsed.length) parsed.forEach((n) => entry.bhks.add(n));
     const lbl = bhkLabel(row.bhk);
@@ -283,6 +288,15 @@ export async function getLocalityData(rawSlug: string): Promise<LocalityData | n
     if (latitude != null && longitude != null) mappedCount += 1;
     else unmappedCount += 1;
 
+    // Dominant price unit for this building's listings (price is stored in the
+    // unit's native scale, e.g. 5.5 Cr, not absolute rupees).
+    let priceUnit: string | null = null;
+    if (entry.priceUnits.length) {
+      const freq = new Map<string, number>();
+      for (const u of entry.priceUnits) freq.set(u, (freq.get(u) ?? 0) + 1);
+      priceUnit = [...freq.entries()].sort((a, b) => b[1] - a[1])[0][0];
+    }
+
     buildings.push({
       name: entry.name,
       id: null,
@@ -291,6 +305,7 @@ export async function getLocalityData(rawSlug: string): Promise<LocalityData | n
       listingCount: entry.count,
       minPrice: entry.prices.length ? Math.min(...entry.prices) : null,
       maxPrice: entry.prices.length ? Math.max(...entry.prices) : null,
+      priceUnit,
       bhkRange,
       address: null,
       developer: null,

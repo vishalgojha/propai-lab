@@ -68,20 +68,19 @@ export function formatCardPrice(
     return `₹${rounded.toLocaleString("en-IN")}/month`;
   }
 
+  // price is stored in the unit's native scale (Cr/Lac/K/abs), so render it
+  // directly — do NOT divide by a crore/lakh factor.
   if (unit === "cr") {
-    const cr = price / 1_00_00_000;
-    return `₹${cr % 1 === 0 ? cr : cr.toFixed(2)} Cr`;
+    return `₹${price % 1 === 0 ? price : price.toFixed(2)} Cr`;
   }
   if (unit === "lac") {
-    const lac = price / 1_00_000;
-    return `₹${lac % 1 === 0 ? lac : lac.toFixed(1)} Lakh`;
+    return `₹${price % 1 === 0 ? price : price.toFixed(1)} Lakh`;
   }
   if (unit === "k") {
     return `₹${Math.round(price).toLocaleString("en-IN")}K`;
   }
 
-  // "abs" (absolute rupees) or unknown unit — only render when the absolute
-  // value is plausibly a whole-currency amount; otherwise fall back.
+  // "abs" (absolute rupees) — render the whole-currency amount.
   if (unit === "abs") {
     return `₹${Math.round(price).toLocaleString("en-IN")}`;
   }
