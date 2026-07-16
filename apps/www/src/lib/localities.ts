@@ -385,19 +385,21 @@ export async function getAllBuildings(limit = 5000): Promise<BuildingSummary[]> 
     counts.set(name, (counts.get(name) ?? 0) + 1);
   }
 
-  return (buildings ?? []).map((b) => {
-    const name = (b.canonical_name ?? "").trim();
-    const geocoded = b.latitude != null && b.longitude != null;
-    return {
-      name,
-      id: b.id ?? null,
-      microMarket: (b.micro_market ?? "").trim() || null,
-      listingCount: counts.get(name.toLowerCase()) ?? 0,
-      geocoded,
-      address: (b.address ?? "").trim() || null,
-      developer: (b.developer ?? "").trim() || null,
-    };
-  });
+  return (buildings ?? [])
+    .filter((b) => !isJunkBuildingName(b.canonical_name ?? ""))
+    .map((b) => {
+      const name = (b.canonical_name ?? "").trim();
+      const geocoded = b.latitude != null && b.longitude != null;
+      return {
+        name,
+        id: b.id ?? null,
+        microMarket: (b.micro_market ?? "").trim() || null,
+        listingCount: counts.get(name.toLowerCase()) ?? 0,
+        geocoded,
+        address: (b.address ?? "").trim() || null,
+        developer: (b.developer ?? "").trim() || null,
+      };
+    });
 }
 
 export type BuildingDetail = {
@@ -422,6 +424,34 @@ export type BuildingListing = {
   broker_phone: string | null;
   last_seen: string | null;
 };
+
+// A real building name is short and Proper-noun-like. Ingestion sometimes
+// stores an entire message as building_name (e.g. "Available Commercial Space
+// For Rent at Near Pali Village..."), which then leaks into buildings.canonical_name
+// and renders as a garbage /buildings/[slug] page. Reject those as 404s.
+const JUNK_AD_PHRASES =
+  /\b(available|commercial space|for rent|for sale|on rent|on sale|outright|unfurnished|furnished|furnish|semi furnished|car parking|carpet|built up|super area|sq\.? ?ft|sqft|bhk|rent|sale|possession|resale)\b/i;
+const SOCIETY_WORDS =
+  /\b(society|chs|chsl|co[- ]?op|cooperative|housing|apartment|apartments|niwas|park|phase|tower|towers|complex|heights|residency|building|estate|enclave|gardens|residences|layout)\b/i;
+const JUNK_LEADING = /^[.\*◇\-_📍🔥]+/;
+
+export function isJunkBuildingName(name: string | null): boolean {
+  if (!name) return true;
+  const n = name.trim();
+  if (n.length < 3) return true;
+
+  const lower = n.toLowerCase();
+  // Legitimate building/society names are never junk.
+  if (SOCIETY_WORDS.test(lower)) return false;
+
+  const words = n.split(/\s+/).filter(Boolean);
+  const hasAd = JUNK_AD_PHRASES.test(lower);
+  // Reads like an ad sentence: an ad phrase present AND either many words or
+  // leading markdown/punctuation artifact.
+  if (hasAd && (words.length >= 5 || JUNK_LEADING.test(n))) return true;
+  if (JUNK_LEADING.test(n) && hasAd) return true;
+  return false;
+}
 
 export async function getBuildingBySlug(rawSlug: string): Promise<BuildingDetail | null> {
   const db = getServerSupabase();
@@ -458,6 +488,10 @@ export async function getBuildingBySlug(rawSlug: string): Promise<BuildingDetail
 
   const match = all.find((b) => slugify(b.canonical_name ?? "") === slug);
   if (!match) return null;
+
+  // Reject junk names (raw message text leaked as a building) — render 404
+  // instead of a garbage building page.
+  if (isJunkBuildingName(match.canonical_name ?? "")) return null;
 
   return {
     id: match.id ?? null,
