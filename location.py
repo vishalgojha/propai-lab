@@ -687,7 +687,7 @@ def parse_location(raw_text: str) -> StructuredLocation:
     for pattern, replacement in _LOCATION_ALIASES:
         normalized = normalized.replace(pattern, replacement)
 
-    loc.raw = extract_location_text(normalized) or ""
+    loc.raw = (extract_location_text(normalized) or "").title()
     if not loc.raw:
         return loc
 
