@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"hash/fnv"
 	"log"
 	"math/rand"
 	"net/http"
@@ -69,6 +70,7 @@ type BrokerSession struct {
 	cancel            context.CancelFunc
 	disconnected      chan struct{}
 	disconnectOnce    func() struct{}
+	lockConn          *sql.Conn
 	reconnectFailures int
 	reconnectCount    int
 	totalMessages     int64
@@ -141,6 +143,20 @@ func (s *BrokerSession) clearDevice() {
 	}
 }
 
+func (s *BrokerSession) releaseLock() {
+	if s.lockConn == nil {
+		return
+	}
+	key := brokerLockKey(s.brokerID)
+	if _, err := s.lockConn.ExecContext(context.Background(), "SELECT pg_advisory_unlock($1)", key); err != nil {
+		log.Printf("[broker %s] error releasing session lock: %v", s.brokerID, err)
+	}
+	if err := s.lockConn.Close(); err != nil {
+		log.Printf("[broker %s] error closing session lock connection: %v", s.brokerID, err)
+	}
+	s.lockConn = nil
+}
+
 // ── Session manager ────────────────────────────────────────────────────────
 
 type SessionManager struct {
@@ -183,18 +199,55 @@ func (sm *SessionManager) List() []*BrokerSession {
 
 func (sm *SessionManager) Remove(brokerID string) {
 	sm.mu.Lock()
-	defer sm.mu.Unlock()
+	session := sm.sessions[brokerID]
 	delete(sm.sessions, brokerID)
+	sm.mu.Unlock()
+	if session != nil {
+		session.releaseLock()
+	}
+}
+
+func brokerLockKey(brokerID string) int64 {
+	hasher := fnv.New64a()
+	_, _ = hasher.Write([]byte(brokerID))
+	return int64(hasher.Sum64() & ^(uint64(1) << 63))
+}
+
+func (sm *SessionManager) acquireBrokerLock(ctx context.Context, brokerID string) (*sql.Conn, bool, error) {
+	conn, err := sm.db.Conn(ctx)
+	if err != nil {
+		return nil, false, err
+	}
+	var locked bool
+	if err := conn.QueryRowContext(ctx, "SELECT pg_try_advisory_lock($1)", brokerLockKey(brokerID)).Scan(&locked); err != nil {
+		_ = conn.Close()
+		return nil, false, err
+	}
+	if !locked {
+		_ = conn.Close()
+		return nil, false, nil
+	}
+	return conn, true, nil
 }
 
 func (sm *SessionManager) StartOrGet(brokerID string) *BrokerSession {
 	sm.mu.Lock()
-	defer sm.mu.Unlock()
 	if existing, ok := sm.sessions[brokerID]; ok {
+		sm.mu.Unlock()
 		return existing
 	}
+	sm.mu.Unlock()
 
 	ctx := context.Background()
+	lockConn, locked, err := sm.acquireBrokerLock(ctx, brokerID)
+	if err != nil {
+		log.Printf("[broker %s] error acquiring session lock: %v", brokerID, err)
+		return nil
+	}
+	if !locked {
+		log.Printf("[broker %s] session lock already held by another ingestor instance", brokerID)
+		return nil
+	}
 
 	// Check if we have a stored device mapping
 	deviceJID, err := sm.lookupDeviceJID(ctx, brokerID)
@@ -218,7 +271,10 @@ func (sm *SessionManager) StartOrGet(brokerID string) *BrokerSession {
 	}
 
 	session := sm.newSession(brokerID, device)
+	session.lockConn = lockConn
+	sm.mu.Lock()
 	sm.sessions[brokerID] = session
+	sm.mu.Unlock()
 	go sm.runSession(session)
 	return session
 }
@@ -284,6 +340,7 @@ func (sm *SessionManager) deleteDeviceMapping(ctx context.Context, brokerID stri
 
 func (sm *SessionManager) runSession(s *BrokerSession) {
 	log.Printf("[broker %s] starting session goroutine", s.brokerID)
+	defer s.releaseLock()
 
 	for attempt := 0; ; attempt++ {
 		// Check if session was stopped externally
@@ -766,6 +823,11 @@ func (sm *SessionManager) connectHandler(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	session := sm.StartOrGet(brokerID)
+	if session == nil {
+		w.WriteHeader(http.StatusConflict)
+		json.NewEncoder(w).Encode(map[string]string{"error": "session is already active in another ingestor instance"})
+		return
+	}
 	status := session.getStatus()
 	json.NewEncoder(w).Encode(status)
 }
@@ -1115,7 +1177,17 @@ func main() {
 				db.Exec("DELETE FROM broker_whatsapp_devices WHERE broker_id=$1", brokerID)
 				continue
 			}
+			lockConn, locked, lockErr := sm.acquireBrokerLock(ctx, brokerID)
+			if lockErr != nil {
+				log.Printf("[broker %s] error acquiring session lock during restore: %v", brokerID, lockErr)
+				continue
+			}
+			if !locked {
+				log.Printf("[broker %s] skipping restore because another ingestor instance owns the lock", brokerID)
+				continue
+			}
 			session := sm.newSession(brokerID, device)
+			session.lockConn = lockConn
 			sm.mu.Lock()
 			sm.sessions[brokerID] = session
 			sm.mu.Unlock()
