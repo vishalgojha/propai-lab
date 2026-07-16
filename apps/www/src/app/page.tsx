@@ -27,7 +27,6 @@ const howItWorksSteps = [
 const footerLinks = {
   browse: [
     { label: "Search listings", href: "/search" },
-    { label: "Explore live data", href: "/explore" },
     { label: "All localities", href: "/localities" },
     { label: "All buildings", href: "/buildings" },
   ],
@@ -39,7 +38,6 @@ const footerLinks = {
   ],
   company: [
     { label: "About PropAI", href: "/about" },
-    { label: "Public data hub", href: "/explore" },
     { label: "Localities", href: "/localities" },
     { label: "Buildings", href: "/buildings" },
   ],
@@ -71,7 +69,6 @@ export default async function WWWPage() {
           <nav className="hidden lg:flex items-center gap-8">
             <Link href="/localities" className="text-[15px] text-zinc-400 hover:text-white transition-colors">Localities</Link>
             <Link href="/buildings" className="text-[15px] text-zinc-400 hover:text-white transition-colors">Buildings</Link>
-            <Link href="/explore" className="text-[15px] text-zinc-400 hover:text-white transition-colors">Explore</Link>
             <Link href="/about" className="text-[15px] text-zinc-400 hover:text-white transition-colors">About</Link>
           </nav>
           <div className="hidden lg:flex items-center gap-4">
@@ -102,10 +99,10 @@ export default async function WWWPage() {
               <LocalitySearch knownLocalities={known} />
               <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
                 <Link
-                  href="/explore"
+                  href="/localities"
                   className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-zinc-900/80 px-4 py-2 text-sm text-zinc-200 hover:border-green-400/40 hover:text-white transition-colors"
                 >
-                  Explore live data
+                  Browse localities
                   <ArrowRight className="w-4 h-4" aria-hidden="true" />
                 </Link>
                 <Link
@@ -224,10 +221,10 @@ export default async function WWWPage() {
 
             <div className="mt-8 flex justify-center">
               <Link
-                href="/explore"
+                href="/localities"
                 className="inline-flex items-center gap-2 rounded-full bg-green-400 px-5 py-3 text-sm font-semibold text-black hover:bg-green-300 transition-colors"
               >
-                Open the full data hub
+                Browse all localities
                 <ArrowRight className="w-4 h-4" aria-hidden="true" />
               </Link>
             </div>
@@ -370,11 +367,6 @@ export default async function WWWPage() {
             <nav aria-label="Browse">
               <h4 className="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-4">Browse</h4>
               <ul className="space-y-3">
-                <li>
-                  <Link href="/explore" className="text-[15px] text-zinc-400 hover:text-white transition-colors">
-                    Explore live data
-                  </Link>
-                </li>
                 {footerLinks.browse.map((link) => (
                   <li key={link.href}>
                     <Link href={link.href} className="text-[15px] text-zinc-400 hover:text-white transition-colors">
@@ -417,7 +409,6 @@ export default async function WWWPage() {
               </p>
               <div className="flex items-center gap-6 text-xs text-zinc-500">
                 <Link href="/about" className="hover:text-white transition-colors">About</Link>
-                <Link href="/explore" className="hover:text-white transition-colors">Explore</Link>
                 <Link href="/search" className="hover:text-white transition-colors">Search</Link>
                 <span>&copy; 2025 PropAI</span>
               </div>
