@@ -141,13 +141,22 @@ export async function getLocalityData(rawSlug: string): Promise<LocalityData | n
   // (known places we track, even if no listings yet). A slug that matches a
   // known place but has zero listings is a distinct case from a typo/garbage
   // slug — the page surfaces "no listings yet" rather than a bare 404.
-  const { data: markets } = await db
-    .from("listings")
-    .select("micro_market")
-    .not("micro_market", "is", null);
+  // Paginate: capped at 1000 rows otherwise. Without this, low-volume
+  // localities (e.g. Bandra East) would fail to resolve their detail page.
+  const PAGE = 1000;
+  let marketRows: Array<{ micro_market: string | null }> = [];
+  for (let offset = 0; ; offset += PAGE) {
+    const { data: page } = await db
+      .from("listings")
+      .select("micro_market")
+      .not("micro_market", "is", null)
+      .range(offset, offset + PAGE - 1);
+    marketRows = marketRows.concat((page ?? []) as typeof marketRows);
+    if (!page || page.length < PAGE) break;
+  }
 
   const distinctMarkets = Array.from(
-    new Set((markets ?? []).map((m) => (m.micro_market ?? "").trim()).filter(Boolean)),
+    new Set(marketRows.map((m) => (m.micro_market ?? "").trim()).filter(Boolean)),
   );
 
   const listingMatch = distinctMarkets.find((m) => slugify(m) === slug);
@@ -311,18 +320,27 @@ export async function getAllLocalities(): Promise<LocalitySummary[]> {
   const db = getServerSupabase();
   if (!db) return [];
 
-  const { data, error } = await db
-    .from("listings")
-    .select("micro_market")
-    .not("micro_market", "is", null);
-
-  if (error) {
-    console.error("getAllLocalities error:", error.message);
-    return [];
+  // Paginate: a bare select is capped at 1000 rows, which would drop
+  // low-volume localities (e.g. Bandra East with a handful of listings) from
+  // the locality list and search suggestions.
+  const PAGE = 1000;
+  let all: Array<{ micro_market: string | null }> = [];
+  for (let offset = 0; ; offset += PAGE) {
+    const { data, error } = await db
+      .from("listings")
+      .select("micro_market")
+      .not("micro_market", "is", null)
+      .range(offset, offset + PAGE - 1);
+    if (error) {
+      console.error("getAllLocalities error:", error.message);
+      return [];
+    }
+    all = all.concat((data ?? []) as typeof all);
+    if (!data || data.length < PAGE) break;
   }
 
   const counts = new Map<string, number>();
-  for (const row of data ?? []) {
+  for (const row of all) {
     const m = (row.micro_market ?? "").trim();
     if (!m) continue;
     counts.set(m, (counts.get(m) ?? 0) + 1);
