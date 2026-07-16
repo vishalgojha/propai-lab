@@ -1563,6 +1563,18 @@ export function getUsageStats() {
   return fetchJSON<UsageStats>("/usage");
 }
 
+export function logWorkspaceActivity(payload: {
+  action: string;
+  target_type?: string;
+  target_id?: string;
+  details?: Record<string, unknown>;
+}) {
+  return fetchJSON<{ id: number }>("/workspace/activity", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
 // ── Phone Management ───────────────────────────────────────────────
 
 export interface Phone {

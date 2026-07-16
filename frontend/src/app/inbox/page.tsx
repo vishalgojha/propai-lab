@@ -1251,7 +1251,6 @@ return {
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [actionUndo, setActionUndo] = useState<{phone: string; name: string} | null>(null);
   const [openMenuBroker, setOpenMenuBroker] = useState<string | null>(null);
-  const [expandedRawMessages, setExpandedRawMessages] = useState<Set<string>>(new Set());
   const autoSelectedThreadRef = useRef<string>("");
 
   const handleHideBroker = async (phone: string) => {
@@ -2289,9 +2288,6 @@ return {
     resolveMessagePhone(selectedMsg) || resolvedBrokerPhone || phoneFromJid(selectedConversationJid)
   );
   const brokerReplyPhone = resolvedBrokerPhone;
-  const brokerReplyLink = brokerReplyPhone
-    ? getWaLinkWithRecall(brokerReplyPhone, brokerReplyText || selectedBroker?.latest_title || selectedMsgDetails?.raw?.message || "")
-    : "";
   const replyDraftKey = selectedConversationJid ? `propai-inbox-draft:${selectedConversationJid}` : "";
   const whatsappConnected = whatsappStatus
     ? api.isLiveWhatsAppConnection(whatsappStatus)
@@ -2475,6 +2471,53 @@ return {
     wabaConfigured,
   ]);
 
+  const handleSendBrokerReply = useCallback(async () => {
+    const text = brokerReplyText.trim();
+    if (!text || sendingReply) return;
+    if (!brokerReplyPhone) {
+      setReplyError("This broker's phone number has not been resolved yet.");
+      return;
+    }
+    if (!canReplyWhatsApp) {
+      setReplyError("Your workspace role does not allow WhatsApp replies.");
+      return;
+    }
+    if (!whatsappConnected) {
+      setReplyError("Connect your WhatsApp phone before sending this message.");
+      return;
+    }
+
+    setSendingReply(true);
+    setReplyError("");
+    setReplyStatus("");
+    try {
+      await api.sendMessage({
+        remote_jid: `${brokerReplyPhone}@s.whatsapp.net`,
+        text,
+      });
+      setBrokerReplyText("");
+      setReplyStatus("Message sent and recorded in workspace activity");
+    } catch (error: unknown) {
+      setReplyError(error instanceof Error ? error.message : "Message could not be sent");
+    } finally {
+      setSendingReply(false);
+    }
+  }, [brokerReplyPhone, brokerReplyText, canReplyWhatsApp, sendingReply, whatsappConnected]);
+
+  const trackBrokerWhatsAppOpen = useCallback((phone: string, source: string) => {
+    void api.logWorkspaceActivity({
+      action: "broker_whatsapp_opened",
+      target_type: "broker",
+      target_id: phone,
+      details: {
+        source,
+        broker_name: selectedBroker?.canonical_name || selectedBroker?.name || "",
+      },
+    }).catch(() => {
+      // Tracking must never block the user's contact action.
+    });
+  }, [selectedBroker?.canonical_name, selectedBroker?.name]);
+
   // 3. Load Conversation Thread (Center Panel)
   const selectConversation = async (msg: api.RawMessage | api.InboxThread) => {
     if (isMobile) setMobileView("conversation");
@@ -2603,7 +2646,7 @@ return {
       let obs: any[] = [];
       for (const key of observationKeys) {
         try {
-          const rows = await api.getObservationsFeed(50, 0, key);
+          const rows = await api.getObservationsFeed(200, 0, key);
           if (rows?.length) {
             obs = rows;
             break;
@@ -3164,7 +3207,7 @@ return {
                         <button
                           onClick={() => selectBroker(b)}
                           className={`w-full text-left p-2.5 lg:p-3 transition-colors select-none ${
-                            isSelected ? "bg-[#3EE88A]/10 border-l-2 border-[#3EE88A]" : "hover:bg-white/5"
+                            isSelected ? "bg-white/[0.055] border-l border-white/40" : "hover:bg-white/[0.035]"
                           }`}
                         >
                           <div className="flex items-center justify-between mb-1">
@@ -3237,7 +3280,7 @@ return {
                         key={`${item.type}-${item.key}`}
                         onClick={() => selectConversation(item.latest)}
                         className={`w-full text-left p-2.5 lg:p-3 transition-colors select-none ${
-                          isSelected ? "bg-[#3EE88A]/10 border-l-2 border-[#3EE88A]" : "hover:bg-white/5"
+                          isSelected ? "bg-white/[0.055] border-l border-white/40" : "hover:bg-white/[0.035]"
                         }`}
                       >
                         <div className="flex items-center justify-between gap-2 mb-1">
@@ -3370,7 +3413,7 @@ return {
                       <ChevronLeft className="w-5 h-5" />
                     </button>
                   )}
-                  <div className="w-9 h-9 rounded-full bg-[#3EE88A]/10 text-[#3EE88A] flex items-center justify-center font-bold text-sm shadow-inner">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-md border border-white/10 bg-white/[0.035] text-zinc-300">
                     <User className="w-4 h-4" strokeWidth={1.5} />
                   </div>
                   <div className="min-w-0">
@@ -3380,7 +3423,7 @@ return {
                     <div className="text-[10px] text-zinc-500 flex items-center gap-2 mt-0.5 flex-wrap">
                       <span className="truncate">{displayPhoneString(resolvedBrokerPhone) || "Number not resolved"}</span>
                       <span>•</span>
-                      <span>{selectedBrokerObservations.length} posts</span>
+                      <span>{selectedBrokerObservations.length} market items</span>
                       {selectedBroker.building_count > 0 && (
                         <>
                           <span>•</span>
@@ -3393,8 +3436,11 @@ return {
                 <div className="flex items-center gap-1.5">
                   {resolvedBrokerPhone && (
                     <button
-                      onClick={() => window.open(getWaLink(resolvedBrokerPhone), '_blank')}
-                      className="h-7 px-3 rounded-md border border-white/10 bg-zinc-800 text-[#3EE88A] hover:text-white transition-colors text-[10px] font-bold flex items-center gap-1"
+                      onClick={() => {
+                        trackBrokerWhatsAppOpen(resolvedBrokerPhone, "broker_header");
+                        window.open(getWaLink(resolvedBrokerPhone), "_blank", "noopener,noreferrer");
+                      }}
+                      className="flex h-7 items-center gap-1 rounded border border-white/15 bg-white/[0.04] px-3 text-[10px] font-semibold text-zinc-200 hover:bg-white/[0.08]"
                     >
                       <MessageSquare className="w-3 h-3" strokeWidth={1.5} />
                       WhatsApp
@@ -3416,7 +3462,7 @@ return {
                   <div className="p-8 text-center text-xs text-zinc-500">Loading matched items...</div>
                 ) : groupedBrokerObservations.length === 0 ? (
                   <div className="rounded-xl border border-white/10 bg-zinc-950/60 p-5 text-center">
-                    <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-[#3EE88A]/10 text-[#3EE88A]">
+                    <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-md border border-white/10 bg-white/[0.035] text-zinc-400">
                       <ClipboardList className="h-5 w-5" strokeWidth={1.6} />
                     </div>
                     <div className="mt-3 text-sm font-semibold text-white">No matching items yet</div>
@@ -3457,7 +3503,7 @@ return {
                               {selectedBroker.latest_micro_market}
                             </span>
                           )}
-                          <span>{selectedBroker.observation_count || 0} posts</span>
+                          <span>{selectedBroker.observation_count || 0} market items</span>
                           <span>•</span>
                           <span>{selectedBroker.building_count || 0} buildings</span>
                           <span>•</span>
@@ -3470,7 +3516,7 @@ return {
                   </div>
                 ) : (
                   <>
-                    <div className="sticky top-0 z-10 -mx-4 -mt-4 border-b border-white/10 bg-[#070b0e]/95 px-4 py-3 backdrop-blur">
+                    <div className="sticky top-0 z-10 -mx-4 -mt-4 border-b border-white/10 bg-black/95 px-4 py-3 backdrop-blur">
                       <div className="flex items-center justify-between gap-3">
                         <div className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
                           {filteredBrokerObservationGroups.length} shown
@@ -3487,7 +3533,7 @@ return {
                               onClick={() => setOpportunityFilter(value)}
                               className={`h-7 rounded-md px-2.5 text-[10px] font-bold transition-colors ${
                                 opportunityFilter === value
-                                  ? "bg-[#3EE88A] text-black"
+                                  ? "bg-white text-black"
                                   : "text-zinc-500 hover:text-white"
                               }`}
                             >
@@ -3533,8 +3579,8 @@ return {
                         <button
                           type="button"
                           onClick={() => selectBrokerObservation(obs)}
-                          className={`w-full text-left border rounded-lg bg-zinc-950/70 overflow-hidden transition-colors hover:border-[#3EE88A]/35 ${
-                            isSelected ? "border-[#3EE88A]/60 ring-1 ring-[#3EE88A]/20" : "border-white/10"
+                          className={`w-full overflow-hidden rounded-md border bg-zinc-950/70 text-left transition-colors hover:border-white/25 ${
+                            isSelected ? "border-white/40 bg-white/[0.035]" : "border-white/10"
                           }`}
                         >
                           {/* Bubble Header — Primary Type */}
@@ -3556,7 +3602,7 @@ return {
                             <div className="flex items-center gap-1.5 mt-1.5 text-[11px] text-zinc-400">
                               {obs.property_type && <span className="font-medium text-zinc-300">{obs.property_type}</span>}
                               {obs.bhk && <><span className="text-zinc-700">·</span><span>{obs.bhk}</span></>}
-                              {obs.price != null && <><span className="text-zinc-700">·</span><span className="font-bold text-[#3EE88A]">{formatCurrency(obs.price, obs.price_unit)}</span></>}
+                              {obs.price != null && <><span className="text-zinc-700">·</span><span className="font-semibold text-white">{formatCurrency(obs.price, obs.price_unit)}</span></>}
                               {obs.micro_market && <><span className="text-zinc-700">·</span><span>{obs.micro_market}</span></>}
                               {obs.alternate_intent && (
                                 <span className="text-[9px] text-zinc-400 italic ml-1">
@@ -3630,33 +3676,6 @@ return {
                                 {dmCount > 0 && <span className="border border-[rgba(62,232,138,0.15)] text-[#3EE88A] px-1.5 py-0.5 rounded-full">{dmCount}dm</span>}
                               </div>
                             )}
-                            {/* Raw Message — always visible, truncate */}
-                            {obs.raw_message && (
-                              <div className="pt-1 border-t border-white/5">
-                                <div className="mb-1 text-[9px] font-semibold uppercase tracking-wider text-zinc-600">
-                                  Source excerpt
-                                </div>
-                                <div className="rounded-lg border border-white/5 bg-black/20 px-2.5 py-2">
-                                  <WhatsAppMessage
-                                    text={obs.raw_message}
-                                    sender={selectedBroker.canonical_name || selectedBroker.name || ""}
-                                    senderPhone={resolvedBrokerPhone || obs.broker_phone || ""}
-                                    truncate
-                                    maxLines={6}
-                                    flatMultiBlocks
-                                    className="text-[11px] text-zinc-300"
-                                  />
-                                </div>
-                                {obs.raw_message.length > 120 && !expandedRawMessages.has(group.key) && (
-                                  <button
-                                    onClick={(e) => { e.stopPropagation(); setExpandedRawMessages((prev) => { const next = new Set(prev); next.add(group.key); return next; }); }}
-                                    className="text-[9px] text-[#3EE88A] hover:underline mt-1"
-                                  >
-                                    Show more
-                                  </button>
-                                )}
-                              </div>
-                            )}
                           </div>
                           {/* WhatsApp CTA */}
                           {resolvedBrokerPhone && (
@@ -3668,7 +3687,8 @@ return {
                                 href={getWaLinkWithRecall(resolvedBrokerPhone, obs.raw_message || obs.summary_title || "")}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="flex items-center gap-1.5 text-[10px] font-semibold text-green-400 hover:text-green-300 transition-colors touch-target"
+                                onClick={() => trackBrokerWhatsAppOpen(resolvedBrokerPhone, "market_item")}
+                                className="flex items-center gap-1.5 text-[10px] font-semibold text-zinc-400 transition-colors hover:text-white touch-target"
                               >
                                 <MessageSquare className="w-3 h-3" strokeWidth={1.8} />
                                 <span>Contact on WhatsApp</span>
@@ -3685,10 +3705,10 @@ return {
               <div className="border-t border-white/10 bg-black/90 px-4 py-3">
                 <div className="mb-2 flex items-center justify-between gap-3">
                   <div className="text-[10px] font-bold uppercase tracking-[0.28em] text-zinc-500">
-                    Quick note
+                    Message broker
                   </div>
                   <div className="text-[10px] text-zinc-500">
-                    {brokerReplyPhone ? "Draft a WhatsApp note" : "Number not resolved yet"}
+                    {brokerReplyPhone ? displayPhoneString(brokerReplyPhone) : "Number not resolved yet"}
                   </div>
                 </div>
                 {brokerReplyPhone ? (
@@ -3698,22 +3718,26 @@ return {
                       onChange={(e) => setBrokerReplyText(e.target.value)}
                       rows={3}
                       placeholder="Write a short note, question, or follow-up..."
-                      className="w-full resize-none rounded-xl border border-white/10 bg-zinc-950 px-3 py-2.5 text-sm text-white placeholder-zinc-500 outline-none transition-colors focus:border-[#3EE88A]/50 focus:ring-1 focus:ring-[#3EE88A]/30"
+                      className="w-full resize-none rounded-md border border-white/10 bg-zinc-950 px-3 py-2.5 text-sm text-white placeholder-zinc-500 outline-none transition-colors focus:border-white/35"
                     />
                     <div className="mt-2 flex items-center justify-between gap-3">
                       <div className="text-[11px] text-zinc-500">
-                        We’ll open WhatsApp with the drafted note prefilled.
+                        {whatsappConnected
+                          ? "Sends inside PropAI and records the action in workspace analytics."
+                          : "Connect your WhatsApp phone to send from PropAI."}
                       </div>
-                      <a
-                        href={brokerReplyLink}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-[#3EE88A] px-4 text-[11px] font-bold text-black transition-colors hover:bg-[#35d47c]"
+                      <button
+                        type="button"
+                        onClick={() => void handleSendBrokerReply()}
+                        disabled={!brokerReplyText.trim() || sendingReply || !whatsappConnected || replyAccessLoading}
+                        className="inline-flex h-9 items-center gap-1.5 rounded bg-white px-4 text-[11px] font-semibold text-black transition-colors hover:bg-zinc-200 disabled:cursor-not-allowed disabled:bg-zinc-800 disabled:text-zinc-500"
                       >
                         <MessageSquare className="h-3.5 w-3.5" />
-                        Open WhatsApp
-                      </a>
+                        {sendingReply ? "Sending..." : "Send message"}
+                      </button>
                     </div>
+                    {replyError && <div className="mt-2 text-[11px] text-red-400">{replyError}</div>}
+                    {replyStatus && <div className="mt-2 text-[11px] text-zinc-300">{replyStatus}</div>}
                   </>
                 ) : (
                   <div className="rounded-xl border border-white/10 bg-zinc-950 px-3 py-3 text-[11px] text-zinc-400">

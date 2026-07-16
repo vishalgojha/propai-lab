@@ -73,6 +73,71 @@ def test_tenant_context_accepts_a_users_own_tenant(monkeypatch):
     assert tenant_id == "org-3"
 
 
+def test_market_feed_endpoints_forward_the_active_tenant(monkeypatch):
+    import app
+
+    calls = []
+
+    class FakeStorage:
+        def get_brokers_feed(self, limit, offset, min_observations, tenant_id):
+            calls.append(("brokers", limit, offset, min_observations, tenant_id))
+            return []
+
+        def get_observations_feed(self, limit, offset, broker_key, intent, tenant_id):
+            calls.append(("observations", limit, offset, broker_key, intent, tenant_id))
+            return []
+
+    monkeypatch.setattr(app, "storage", FakeStorage())
+
+    asyncio.run(app.get_brokers_feed(
+        user={"id": "user-2"},
+        limit=25,
+        offset=0,
+        min_observations=1,
+        tenant_id="org-2",
+    ))
+    asyncio.run(app.get_observations_feed(
+        user={"id": "user-2"},
+        limit=200,
+        offset=0,
+        broker_key="919999999999",
+        intent="",
+        phone="",
+        tenant_id="org-2",
+    ))
+
+    assert calls == [
+        ("brokers", 25, 0, 1, "org-2"),
+        ("observations", 200, 0, "919999999999", "", "org-2"),
+    ]
+
+
+def test_activity_log_uses_the_authenticated_member(monkeypatch):
+    import app
+
+    captured = {}
+
+    class FakeStorage:
+        def log_activity(self, **kwargs):
+            captured.update(kwargs)
+            return 41
+
+    monkeypatch.setattr(app, "storage", FakeStorage())
+
+    result = asyncio.run(app.log_activity(
+        body={
+            "team_member_id": 999,
+            "action": "broker_whatsapp_opened",
+            "target_type": "broker",
+            "target_id": "9999999999",
+        },
+        member={"id": 7},
+    ))
+
+    assert result == {"id": 41}
+    assert captured["team_member_id"] == 7
+
+
 def test_whatsapp_status_is_scoped_to_the_users_workspace():
     """A global ingestor session must not leak into another workspace."""
     import app
