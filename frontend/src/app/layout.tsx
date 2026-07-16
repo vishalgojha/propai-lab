@@ -178,7 +178,7 @@ function PaletteModal({ open, onClose }: { open: boolean; onClose: () => void })
 function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { user, loading: authLoading } = useAuth();
+  const { user, loading: authLoading, error: authError, refresh: refreshAuth } = useAuth();
   const isMobile = useIsMobile();
   const { drawerOpen, setDrawerOpen, toggleDrawer, setLastTab } = useLayout();
   const [phones, setPhones] = useState<Phone[]>([]);
@@ -248,12 +248,13 @@ function AppShell({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (authLoading) return;
+    if (authError) return;
     if (!user) {
       router.replace(`/auth/login?next=${encodeURIComponent(pathname || "/dashboard")}`);
       return;
     }
     if (!profileLoaded) return;
-  }, [authLoading, user, profileLoaded, pathname, router]);
+  }, [authLoading, authError, user, profileLoaded, pathname, router]);
 
   const handleSignOut = useCallback(async () => {
     localStorage.removeItem("propai_profile");
@@ -267,7 +268,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
     const load = async () => {
       try {
         const [phonesRes, cfg, status] = await Promise.all([
-          getPhones(false).catch(() => ({ phones: [] as Phone[] })),
+          getPhones(false, 12000).catch(() => ({ phones: [] as Phone[] })),
           getCompanionConfig().catch(() => null),
           getWhatsAppStatus().catch(() => null),
         ]);
@@ -343,6 +344,32 @@ function AppShell({ children }: { children: React.ReactNode }) {
   }, [drawerOpen]);
 
   const profileRequired = !profile && pathname !== "/profile";
+
+  if (authError) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-black text-white px-4">
+        <div className="max-w-md rounded-2xl border border-red-500/20 bg-red-500/10 p-6 text-center">
+          <div className="mx-auto mb-3 h-10 w-10 rounded-full border-2 border-red-400/30 border-t-red-400" />
+          <div className="text-sm font-semibold">Session check stalled</div>
+          <div className="mt-1 text-xs text-zinc-500">{authError}</div>
+          <div className="mt-4 flex items-center justify-center gap-3">
+            <button
+              onClick={() => void refreshAuth()}
+              className="rounded-lg bg-[#3EE88A] px-4 py-2.5 text-xs font-bold text-black min-h-[44px]"
+            >
+              Retry
+            </button>
+            <button
+              onClick={() => router.replace(`/auth/login?next=${encodeURIComponent(pathname || "/dashboard")}`)}
+              className="rounded-lg border border-white/10 bg-zinc-800 px-4 py-2.5 text-xs font-bold text-zinc-300 min-h-[44px]"
+            >
+              Go to login
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (authLoading || !user || !profileLoaded) {
     return (

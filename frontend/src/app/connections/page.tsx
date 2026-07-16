@@ -592,6 +592,7 @@ export default function ConnectionCenterPage() {
   const [phones, setPhones] = useState<Phone[]>([]);
   const [liveStatus, setLiveStatus] = useState<WhatsAppStatus | null>(null);
   const [phonesLoading, setPhonesLoading] = useState(true);
+  const [phonesError, setPhonesError] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [qrPhone, setQrPhone] = useState<Phone | null>(null);
   const [connectionAttempts, setConnectionAttempts] = useState<Record<number, ConnectionAttemptState>>({});
@@ -611,10 +612,13 @@ export default function ConnectionCenterPage() {
   const fetchPhones = useCallback(async () => {
     let initialPhones: Phone[] = [];
     try {
-      const res = await getPhones(false);
+      const res = await getPhones(false, 12000);
       initialPhones = res.phones || [];
       setPhones(initialPhones);
-    } catch { /* ignore */ }
+      setPhonesError(null);
+    } catch (error) {
+      setPhonesError(error instanceof Error ? error.message : "Could not load phones right now.");
+    }
     setPhonesLoading(false);
     if (initialPhones.length > 0) {
       void Promise.allSettled(initialPhones.map((phone) => getPhone(phone.id))).then((results) => {
@@ -705,8 +709,8 @@ export default function ConnectionCenterPage() {
   }, [refreshData, updateAttemptState]);
 
   useEffect(() => {
-    if (!authLoading && user) {
-      refreshData();
+      if (!authLoading && user) {
+        refreshData();
       const interval = setInterval(() => {
         refreshData();
       }, 8000);
@@ -749,7 +753,13 @@ export default function ConnectionCenterPage() {
         <div className="flex items-center justify-center py-16 text-sm text-zinc-500">Loading phones...</div>
       ) : (
         <>
-          {phones.length === 0 && (
+          {phonesError && (
+            <div className="mb-6 rounded-2xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
+              <div className="font-semibold">Phones are taking longer than usual to load</div>
+              <div className="mt-1 text-xs text-amber-100/80">{phonesError}</div>
+            </div>
+          )}
+          {phones.length === 0 && !phonesError && (
             <LiveStatusCard status={liveStatus} onAddPhone={() => setShowCreate(true)} />
           )}
           {/* Phone Cards */}

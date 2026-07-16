@@ -91,7 +91,7 @@ export default function ProfilePage() {
       setOrg(data);
       setWorkspaceName(data?.name || "");
     }).catch(() => {});
-    getPhones(false).then((data) => setPhones(data.phones || [])).catch(() => {});
+    getPhones(false, 12000).then((data) => setPhones(data.phones || [])).catch(() => {});
   }, []);
 
   const markDirty = () => setDirty(true);

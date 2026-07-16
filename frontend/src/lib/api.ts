@@ -1641,11 +1641,11 @@ export interface Phone {
   total_messages_received: number;
 }
 
-export function getPhones(includeLive = true) {
+export function getPhones(includeLive = true, timeoutMs = API_TIMEOUT_MS) {
   const params = new URLSearchParams();
   if (!includeLive) params.set("include_live", "false");
   const qs = params.toString();
-  return fetchJSON<{ phones: Phone[] }>(`/phones${qs ? `?${qs}` : ""}`);
+  return fetchJSON<{ phones: Phone[] }>(`/phones${qs ? `?${qs}` : ""}`, undefined, timeoutMs);
 }
 
 export function getPhone(phoneId: number) {
