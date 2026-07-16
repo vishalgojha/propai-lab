@@ -1,11 +1,20 @@
 package main
 
 import (
+	"io"
+	"net/http"
+	"strings"
 	"testing"
 
 	"go.mau.fi/whatsmeow/proto/waE2E"
 	"google.golang.org/protobuf/proto"
 )
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (fn roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return fn(req)
+}
 
 func clearDatabaseEnvironment(t *testing.T) {
 	t.Helper()
@@ -17,6 +26,54 @@ func clearDatabaseEnvironment(t *testing.T) {
 		"SUPABASE_DB_PASSWORD",
 	} {
 		t.Setenv(key, "")
+	}
+}
+
+func TestPostWebhookPayloadRejectsNonSuccessResponse(t *testing.T) {
+	previousClient := webhookHTTPClient
+	webhookHTTPClient = &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		if r.Header.Get("Content-Type") != "application/json" {
+			t.Fatalf("unexpected content type: %s", r.Header.Get("Content-Type"))
+		}
+		body, _ := io.ReadAll(r.Body)
+		if string(body) != `{"event":"test"}` {
+			t.Fatalf("unexpected payload: %s", body)
+		}
+		return &http.Response{
+			StatusCode: http.StatusServiceUnavailable,
+			Body:       io.NopCloser(strings.NewReader("try later")),
+			Header:     make(http.Header),
+		}, nil
+	})}
+	defer func() { webhookHTTPClient = previousClient }()
+
+	if err := postWebhookPayload([]byte(`{"event":"test"}`)); err == nil {
+		t.Fatal("expected non-2xx webhook response to fail")
+	}
+}
+
+func TestPostWebhookPayloadAcceptsSuccessResponse(t *testing.T) {
+	previousClient := webhookHTTPClient
+	webhookHTTPClient = &http.Client{Transport: roundTripFunc(func(_ *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusAccepted,
+			Body:       io.NopCloser(strings.NewReader("")),
+			Header:     make(http.Header),
+		}, nil
+	})}
+	defer func() { webhookHTTPClient = previousClient }()
+
+	if err := postWebhookPayload([]byte(`{"event":"test"}`)); err != nil {
+		t.Fatalf("postWebhookPayload() error = %v", err)
+	}
+}
+
+func TestMediaPathHelpers(t *testing.T) {
+	if got := extensionForMIME("image/jpeg; charset=binary"); got != ".jpg" {
+		t.Fatalf("extensionForMIME() = %q", got)
+	}
+	if got := safePathPart("group/name"); got == "group/name" {
+		t.Fatalf("safePathPart() did not escape slash: %q", got)
 	}
 }
 

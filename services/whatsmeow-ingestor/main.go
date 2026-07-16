@@ -163,10 +163,11 @@ func (s *BrokerSession) releaseLock() {
 // ── Session manager ────────────────────────────────────────────────────────
 
 type SessionManager struct {
-	mu        sync.RWMutex
-	sessions  map[string]*BrokerSession
-	container *sqlstore.Container
-	db        *sql.DB
+	mu         sync.RWMutex
+	deliveryMu sync.Mutex
+	sessions   map[string]*BrokerSession
+	container  *sqlstore.Container
+	db         *sql.DB
 }
 
 type inboxThreadCursor struct {
@@ -581,6 +582,7 @@ func (sm *SessionManager) handleEvent(s *BrokerSession, evt interface{}) {
 			ConnectedSince:  time.Now().UTC().Format(time.RFC3339),
 		})
 		log.Printf("[broker %s] connected to WhatsApp server (phone: %s)", s.brokerID, phone)
+		go sm.initializeConnectedSession(s)
 
 	case *events.PairSuccess:
 		phone := v.ID.User
@@ -617,7 +619,89 @@ func (sm *SessionManager) handleEvent(s *BrokerSession, evt interface{}) {
 
 	case *events.HistorySync:
 		go sm.handleHistorySync(s, v)
+
+	case *events.Receipt:
+		sm.queueWebhook(s.brokerID, fmt.Sprintf("receipt:%s:%d", s.brokerID, time.Now().UnixNano()), map[string]interface{}{
+			"event": "WHATSAPP_RECEIPT",
+			"data": map[string]interface{}{
+				"broker_id": s.brokerID, "chat_jid": v.Chat.String(), "sender_jid": v.Sender.String(),
+				"message_ids": v.MessageIDs, "receipt_type": string(v.Type), "timestamp": v.Timestamp.Unix(),
+			},
+		})
+
+	case *events.Contact:
+		sm.queueWebhook(s.brokerID, fmt.Sprintf("contact:%s:%s:%d", s.brokerID, v.JID.String(), v.Timestamp.Unix()), map[string]interface{}{
+			"event": "WHATSAPP_CONTACT_UPDATED",
+			"data":  map[string]interface{}{"broker_id": s.brokerID, "jid": v.JID.String(), "timestamp": v.Timestamp.Unix(), "contact": v.Action},
+		})
+
+	case *events.PushName:
+		sm.queueWebhook(s.brokerID, fmt.Sprintf("push-name:%s:%s:%s", s.brokerID, v.JID.String(), v.NewPushName), map[string]interface{}{
+			"event": "WHATSAPP_CONTACT_UPDATED",
+			"data":  map[string]interface{}{"broker_id": s.brokerID, "jid": v.JID.String(), "jid_alt": v.JIDAlt.String(), "push_name": v.NewPushName},
+		})
+
+	case *events.BusinessName:
+		sm.queueWebhook(s.brokerID, fmt.Sprintf("business-name:%s:%s:%s", s.brokerID, v.JID.String(), v.NewBusinessName), map[string]interface{}{
+			"event": "WHATSAPP_CONTACT_UPDATED",
+			"data":  map[string]interface{}{"broker_id": s.brokerID, "jid": v.JID.String(), "business_name": v.NewBusinessName},
+		})
+
+	case *events.JoinedGroup:
+		go sm.syncGroups(s)
+
+	case *events.GroupInfo:
+		go sm.syncGroups(s)
+
+	case *events.ChatPresence:
+		sm.queueWebhook(s.brokerID, fmt.Sprintf("chat-presence:%s:%s:%d", s.brokerID, v.Chat.String(), time.Now().UnixNano()), map[string]interface{}{
+			"event": "presence.update",
+			"data":  map[string]interface{}{"broker_id": s.brokerID, "chat_jid": v.Chat.String(), "sender_jid": v.Sender.String(), "state": string(v.State), "media": string(v.Media)},
+		})
 	}
+}
+
+func (sm *SessionManager) initializeConnectedSession(s *BrokerSession) {
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	if err := s.client.SendPresence(ctx, types.PresenceAvailable); err != nil {
+		log.Printf("[broker %s] send available presence failed: %v", s.brokerID, err)
+	}
+	sm.syncGroups(s)
+}
+
+func (sm *SessionManager) syncGroups(s *BrokerSession) {
+	if s == nil || s.client == nil || !s.client.IsConnected() {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	groups, err := s.client.GetJoinedGroups(ctx)
+	if err != nil {
+		log.Printf("[broker %s] group directory sync failed: %v", s.brokerID, err)
+		return
+	}
+	directory := make([]map[string]interface{}, 0, len(groups))
+	for _, group := range groups {
+		participants := make([]map[string]interface{}, 0, len(group.Participants))
+		for _, participant := range group.Participants {
+			participants = append(participants, map[string]interface{}{
+				"id": participant.JID.String(), "phone_jid": participant.PhoneNumber.String(),
+				"lid": participant.LID.String(), "display_name": participant.DisplayName,
+				"is_admin": participant.IsAdmin, "is_super_admin": participant.IsSuperAdmin,
+			})
+		}
+		directory = append(directory, map[string]interface{}{
+			"id": group.JID.String(), "name": group.Name, "topic": group.Topic,
+			"size": group.ParticipantCount, "participants": participants,
+			"is_announce": group.IsAnnounce, "is_locked": group.IsLocked,
+			"is_ephemeral": group.IsEphemeral, "disappearing_timer": group.DisappearingTimer,
+		})
+	}
+	sm.queueWebhook(s.brokerID, fmt.Sprintf("group-directory:%s:%d", s.brokerID, time.Now().Unix()/30), map[string]interface{}{
+		"event": "GROUPS_REFRESHED", "instance": instanceName, "groups": directory,
+		"data": map[string]interface{}{"broker_id": s.brokerID},
+	})
 }
 
 // ── Message handling ───────────────────────────────────────────────────────
@@ -650,17 +734,21 @@ func (sm *SessionManager) handleMessage(s *BrokerSession, evt *events.Message) {
 		"name": info.PushName,
 	}
 
+	payloadData := map[string]interface{}{
+		"key":              key,
+		"message":          marshalMessage(evt.Message),
+		"pushName":         info.PushName,
+		"messageTimestamp": info.Timestamp.Unix(),
+		"sender":           sender,
+		"instance":         instanceName,
+		"broker_id":        s.brokerID,
+	}
+	if media := sm.captureMedia(s, evt.Message, info.Chat.String(), info.ID); media != nil {
+		payloadData["media"] = media
+	}
 	payload := map[string]interface{}{
 		"event": "MESSAGES_UPSERT",
-		"data": map[string]interface{}{
-			"key":              key,
-			"message":          marshalMessage(evt.Message),
-			"pushName":         info.PushName,
-			"messageTimestamp": info.Timestamp.Unix(),
-			"sender":           sender,
-			"instance":         instanceName,
-			"broker_id":        s.brokerID,
-		},
+		"data":  payloadData,
 	}
 
 	cur := s.getStatus()
@@ -674,13 +762,17 @@ func (sm *SessionManager) handleMessage(s *BrokerSession, evt *events.Message) {
 		LastMessageAt:   info.Timestamp.Format(time.RFC3339),
 	})
 
-	b, _ := json.Marshal(payload)
-	resp, err := http.Post(webhookURL, "application/json", strings.NewReader(string(b)))
-	if err != nil {
-		log.Printf("[broker %s] error sending webhook: %v", s.brokerID, err)
+	eventID := fmt.Sprintf("message:%s:%s:%s", s.brokerID, info.Chat.String(), info.ID)
+	if !sm.queueWebhook(s.brokerID, eventID, payload) {
 		return
 	}
-	resp.Body.Close()
+	if strings.EqualFold(getEnv("PROPAI_MARK_MESSAGES_READ", "false"), "true") {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := s.client.MarkRead(ctx, []types.MessageID{info.ID}, info.Timestamp, info.Chat, info.Sender); err != nil {
+			log.Printf("[broker %s] mark read failed for %s: %v", s.brokerID, info.ID, err)
+		}
+	}
 }
 
 func selfChatCommand(s *BrokerSession, evt *events.Message) (types.JID, string, bool) {
@@ -719,6 +811,14 @@ func messageText(msg *waE2E.Message) string {
 }
 
 func (sm *SessionManager) handleSelfChatCommand(s *BrokerSession, target types.JID, messageID, text string) {
+	presenceCtx, presenceCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	_ = s.client.SendChatPresence(presenceCtx, target, types.ChatPresenceComposing, types.ChatPresenceMediaText)
+	presenceCancel()
+	defer func() {
+		pausedCtx, pausedCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer pausedCancel()
+		_ = s.client.SendChatPresence(pausedCtx, target, types.ChatPresencePaused, types.ChatPresenceMediaText)
+	}()
 	payload, _ := json.Marshal(selfChatAgentRequest{
 		BrokerID:  s.brokerID,
 		Text:      text,
@@ -882,15 +982,12 @@ func (sm *SessionManager) postWebMessage(s *BrokerSession, wmsg *waWeb.WebMessag
 			"conversationName": chatName,
 		},
 	}
-
-	b, _ := json.Marshal(payload)
-	resp, err := http.Post(webhookURL, "application/json", strings.NewReader(string(b)))
-	if err != nil {
-		log.Printf("[broker %s] error sending %s webhook: %v", s.brokerID, source, err)
-		return false
+	if media := sm.captureMedia(s, wmsg.GetMessage(), remoteJID, messageID); media != nil {
+		payload["data"].(map[string]interface{})["media"] = media
 	}
-	resp.Body.Close()
-	return true
+
+	eventID := fmt.Sprintf("message:%s:%s:%s", s.brokerID, remoteJID, messageID)
+	return sm.queueWebhook(s.brokerID, eventID, payload)
 }
 
 func brokerIDFromRequest(r *http.Request) string {
@@ -1056,10 +1153,25 @@ func (sm *SessionManager) sendMessageHandler(w http.ResponseWriter, r *http.Requ
 
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
+	message := &waE2E.Message{Conversation: proto.String(body.Text)}
+	if quotedID := strings.TrimSpace(body.QuotedMessageID); quotedID != "" {
+		remoteJID := strings.TrimSpace(body.QuotedRemoteJID)
+		if remoteJID == "" {
+			remoteJID = target.String()
+		}
+		message = &waE2E.Message{ExtendedTextMessage: &waE2E.ExtendedTextMessage{
+			Text: proto.String(body.Text),
+			ContextInfo: &waE2E.ContextInfo{
+				StanzaID: proto.String(quotedID), RemoteJID: proto.String(remoteJID),
+				Participant:   proto.String(strings.TrimSpace(body.QuotedParticipant)),
+				QuotedMessage: &waE2E.Message{Conversation: proto.String("")},
+			},
+		}}
+	}
 	result, err := session.client.SendMessage(
 		ctx,
 		target,
-		&waE2E.Message{Conversation: proto.String(body.Text)},
+		message,
 	)
 	if err != nil {
 		w.WriteHeader(http.StatusBadGateway)
@@ -1363,6 +1475,9 @@ func main() {
 	)`); err != nil {
 		log.Fatalf("error creating history table: %v", err)
 	}
+	if err := ensureWebhookOutbox(db); err != nil {
+		log.Fatalf("error creating webhook outbox: %v", err)
+	}
 
 	// Create whatsmeow container (handles its own connection pooling)
 	ctx := context.Background()
@@ -1372,6 +1487,9 @@ func main() {
 	}
 
 	sm := NewSessionManager(container, db)
+	dispatcherCtx, stopDispatcher := context.WithCancel(context.Background())
+	defer stopDispatcher()
+	sm.startWebhookDispatcher(dispatcherCtx)
 
 	// Load existing broker sessions from stored device mappings
 	rows, err := db.Query("SELECT broker_id, device_jid FROM broker_whatsapp_devices")

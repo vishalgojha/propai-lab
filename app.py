@@ -1584,6 +1584,52 @@ def _classify_webhook_event(event: str, data: dict) -> str:
     return base
 
 
+def _whatsapp_message_text(msg: dict) -> str:
+    """Keep every supported WhatsApp message in the raw stream, even without a caption."""
+    return (
+        msg.get("conversation", "")
+        or (msg.get("extendedTextMessage") or {}).get("text", "")
+        or (msg.get("imageMessage") or {}).get("caption", "")
+        or (msg.get("videoMessage") or {}).get("caption", "")
+        or (msg.get("documentMessage") or {}).get("caption", "")
+        or (msg.get("documentMessage") or {}).get("fileName", "")
+        or ("[Voice message]" if msg.get("audioMessage") else "")
+        or ("[Image]" if msg.get("imageMessage") else "")
+        or ("[Video]" if msg.get("videoMessage") else "")
+        or ("[Document]" if msg.get("documentMessage") else "")
+        or ("[Sticker]" if msg.get("stickerMessage") else "")
+        or ""
+    )
+
+
+def _whatsapp_message_type(msg: dict) -> str:
+    for message_type in ("image", "video", "audio", "document", "sticker"):
+        if msg.get(f"{message_type}Message"):
+            return message_type
+    return "text"
+
+
+def _whatsapp_attachment_metadata(msg: dict, media: dict | None = None) -> dict:
+    media = media or {}
+    typed = next(
+        (msg.get(f"{kind}Message") or {} for kind in ("image", "video", "audio", "document", "sticker")
+         if msg.get(f"{kind}Message")),
+        {},
+    )
+    return {
+        "image": bool(msg.get("imageMessage")),
+        "video": bool(msg.get("videoMessage")),
+        "audio": bool(msg.get("audioMessage")),
+        "document": bool(msg.get("documentMessage")),
+        "sticker": bool(msg.get("stickerMessage")),
+        "mime_type": typed.get("mimetype", ""),
+        "file_name": (msg.get("documentMessage") or {}).get("fileName", ""),
+        "storage_path": media.get("storage_path", ""),
+        "file_length": media.get("file_length"),
+        "capture_error": media.get("error", ""),
+    }
+
+
 def _is_blocked_whatsapp_conversation(jid: str) -> bool:
     jid = (jid or "").strip().lower()
     return (
@@ -1997,19 +2043,7 @@ async def webhook(request: Request):
     msg_data = data.get("data", data)
     key = msg_data.get("key", {})
     msg = msg_data.get("message", {})
-    msg_text = (
-        msg.get("conversation", "")
-        or msg.get("extendedTextMessage", {}).get("text", "")
-        or msg.get("imageMessage", {}).get("caption", "")
-        or msg.get("videoMessage", {}).get("caption", "")
-        or msg.get("documentMessage", {}).get("caption", "")
-        or msg.get("documentMessage", {}).get("fileName", "")
-        or ("[Voice message]" if msg.get("audioMessage") else "")
-        or ("[Image]" if msg.get("imageMessage") else "")
-        or ("[Video]" if msg.get("videoMessage") else "")
-        or ("[Document]" if msg.get("documentMessage") else "")
-        or ""
-    )
+    msg_text = _whatsapp_message_text(msg)
     if not msg_text.strip():
         return {"status": "ignored", "reason": "empty_message"}
 
@@ -2075,27 +2109,8 @@ async def webhook(request: Request):
             sender_jid=sender_jid,
             sender_phone=sender_phone,
             message=msg_text,
-            message_type=(
-                "image" if msg.get("imageMessage") else
-                "video" if msg.get("videoMessage") else
-                "audio" if msg.get("audioMessage") else
-                "document" if msg.get("documentMessage") else
-                "text"
-            ),
-            attachments=json.dumps({
-                "image": bool(msg.get("imageMessage")),
-                "video": bool(msg.get("videoMessage")),
-                "audio": bool(msg.get("audioMessage")),
-                "document": bool(msg.get("documentMessage")),
-                "mime_type": (
-                    (msg.get("imageMessage") or {}).get("mimetype")
-                    or (msg.get("videoMessage") or {}).get("mimetype")
-                    or (msg.get("audioMessage") or {}).get("mimetype")
-                    or (msg.get("documentMessage") or {}).get("mimetype")
-                    or ""
-                ),
-                "file_name": (msg.get("documentMessage") or {}).get("fileName", ""),
-            }),
+            message_type=_whatsapp_message_type(msg),
+            attachments=json.dumps(_whatsapp_attachment_metadata(msg, msg_data.get("media"))),
             reply_context=json.dumps(
                 msg.get("extendedTextMessage", {}).get("contextInfo", {})
                 or msg.get("imageMessage", {}).get("contextInfo", {})
@@ -2162,8 +2177,9 @@ def _process_single_raw(raw_id: int, ctx: dict):
     process_raw_message(raw_id, ctx, storage=storage)
 
 
-def _handle_system_event(event_class: str, event: str, data: dict, instance: str, tenant_id: str = DEFAULT_TENANT_ID):
+def _handle_system_event(event_class: str, event: str, data: dict, instance: str, tenant_id: str | None = None):
     """Handle non-message webhook events (connection, QR, system, etc.)."""
+    tenant_id = tenant_id or DEFAULT_TENANT_ID
     msg_data = data.get("data", data)
     if event.startswith("WHATSAPP_") or event_class in {"presence", "call"}:
         try:
