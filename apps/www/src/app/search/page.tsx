@@ -1,8 +1,9 @@
 import Link from "next/link";
-import { ArrowRight, MapPin, Search, Sparkles } from "lucide-react";
+import { ArrowRight, MapPin, MessageSquare, Search, Sparkles } from "lucide-react";
 import { describeNaturalSearch, searchNaturalLanguageListings } from "@/lib/natural-search";
 import { getAllLocalities } from "@/lib/localities";
 import { slugify } from "@/lib/supabase";
+import { toListingCardViewModel } from "@/lib/listing-card";
 import RequirementCapture from "@/components/RequirementCapture";
 
 export const dynamic = "force-dynamic";
@@ -17,10 +18,6 @@ export const metadata = {
 };
 
 type SearchParams = Promise<{ q?: string }>;
-
-function formatListingLocation(row: { building_name?: string | null; landmark_name?: string | null; location_label?: string | null; micro_market?: string | null }) {
-  return row.building_name || row.location_label || row.landmark_name || row.micro_market || "Listing";
-}
 
 function SearchForm({ query }: { query: string }) {
   return (
@@ -159,69 +156,55 @@ export default async function SearchPage({ searchParams }: { searchParams: Searc
             {state && state.results.length > 0 ? (
               <>
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 lg:gap-6">
-                  {state.results.map((row) => (
+                  {state.results.map((row) => {
+                    const card = toListingCardViewModel(row, row.resultType === "building");
+                    return (
                     <article
                       key={row.id}
-                      className="group rounded-2xl border border-white/10 bg-zinc-950/90 p-5 transition-colors hover:border-green-400/40 hover:bg-zinc-900/90"
+                      className="group flex flex-col rounded-2xl border border-white/10 bg-zinc-950/90 p-5 transition-colors hover:border-green-400/40 hover:bg-zinc-900/90"
                     >
                       <div className="flex items-start justify-between gap-3 mb-3">
-                        <div>
-                          <h2 className="text-lg font-semibold text-white group-hover:text-green-300 transition-colors">
-                            {formatListingLocation(row)}
+                        <div className="min-w-0">
+                          <h2 className="text-lg font-semibold text-white group-hover:text-green-300 transition-colors truncate">
+                            {card.title}
                           </h2>
-                          <p className="mt-1 text-sm text-zinc-500">
-                            {row.micro_market || "Market pending"}
-                          </p>
+                          {card.locality && (
+                            <Link
+                              href={`/localities/${card.localitySlug}`}
+                              className="mt-1 inline-flex items-center gap-1 rounded-full border border-white/10 px-2.5 py-1 text-[11px] text-zinc-400 hover:border-green-400/30 hover:text-green-200 transition-colors"
+                            >
+                              <MapPin className="h-3.5 w-3.5" aria-hidden="true" />
+                              {card.locality}
+                            </Link>
+                          )}
                         </div>
-                        {row.resultType === "locality" && row.micro_market && (
-                          <Link
-                            href={`/localities/${slugify(row.micro_market)}`}
-                            className="inline-flex items-center gap-1 rounded-full border border-white/10 px-2.5 py-1 text-[11px] text-zinc-400 hover:border-green-400/30 hover:text-green-200 transition-colors"
-                          >
-                            <MapPin className="h-3.5 w-3.5" aria-hidden="true" />
-                            Locality
-                          </Link>
-                        )}
-                        {row.resultType === "building" && row.building_name && (
-                          <Link
-                            href={`/buildings`}
-                            className="inline-flex items-center gap-1 rounded-full border border-white/10 px-2.5 py-1 text-[11px] text-zinc-400 hover:border-green-400/30 hover:text-green-200 transition-colors"
-                          >
-                            <MapPin className="h-3.5 w-3.5" aria-hidden="true" />
-                            Building
-                          </Link>
-                        )}
-                      </div>
-
-                      <div className="flex flex-wrap gap-2 mb-4">
-                        {row.bhk && (
-                          <span className="rounded-full border border-white/10 bg-zinc-900 px-3 py-1 text-xs text-zinc-300">
-                            {row.bhk}
-                          </span>
-                        )}
-                        <span className="rounded-full border border-white/10 bg-zinc-900 px-3 py-1 text-xs text-zinc-300">
-                          {row.priceLabel}
+                        <span
+                          className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-medium ${
+                            card.statusTone === "available"
+                              ? "border border-green-400/20 bg-green-400/10 text-green-300"
+                              : "border border-amber-400/20 bg-amber-400/10 text-amber-200"
+                          }`}
+                        >
+                          {card.statusLabel}
                         </span>
-                        {row.area_sqft != null && (
-                          <span className="rounded-full border border-white/10 bg-zinc-900 px-3 py-1 text-xs text-zinc-300">
-                            {row.area_sqft.toLocaleString("en-IN")} sqft
-                          </span>
-                        )}
-                        {row.furnishing && (
-                          <span className="rounded-full border border-white/10 bg-zinc-900 px-3 py-1 text-xs text-zinc-300">
-                            {row.furnishing}
-                          </span>
-                        )}
                       </div>
 
-                      <div className="space-y-2 text-sm text-zinc-400">
+                      <div className="mb-4 flex items-baseline gap-2">
+                        <span className="text-xl font-semibold text-white">{card.priceLabel}</span>
+                      </div>
+
+                      {card.specRow && (
+                        <div className="mb-4 text-sm text-zinc-400">{card.specRow}</div>
+                      )}
+
+                      <div className="mt-auto space-y-2 text-sm text-zinc-400">
                         <p className="break-words">
                           <span className="text-zinc-500">Broker:</span>{" "}
-                          {row.broker_name || "Unknown"}
+                          {card.brokerName || "Verified network"}
                         </p>
                         <p>
-                          <span className="text-zinc-500">Seen:</span>{" "}
-                          {row.last_seen ? new Date(row.last_seen).toLocaleString() : "Unknown"}
+                          <span className="text-zinc-500">Updated:</span>{" "}
+                          {card.updatedLabel}
                         </p>
                         {row.matchedOn.length > 0 && (
                           <p>
@@ -230,8 +213,26 @@ export default async function SearchPage({ searchParams }: { searchParams: Searc
                           </p>
                         )}
                       </div>
+
+                      {card.waLink ? (
+                        <a
+                          href={card.waLink}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="mt-4 inline-flex items-center justify-center gap-2 rounded-xl bg-green-400 px-4 py-2.5 text-sm font-semibold text-black transition-colors hover:bg-green-300"
+                        >
+                          <MessageSquare className="h-4 w-4" aria-hidden="true" />
+                          Contact Broker
+                        </a>
+                      ) : (
+                        <span className="mt-4 inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 px-4 py-2.5 text-sm text-zinc-500">
+                          <MessageSquare className="h-4 w-4" aria-hidden="true" />
+                          Broker contact soon
+                        </span>
+                      )}
                     </article>
-                  ))}
+                    );
+                  })}
                 </div>
               </>
             ) : (
