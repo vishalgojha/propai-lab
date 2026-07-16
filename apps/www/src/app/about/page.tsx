@@ -3,9 +3,9 @@ import { ArrowRight, MapPin, Building2 } from "lucide-react";
 import { getAllBuildings } from "@/lib/localities";
 
 export const metadata = {
-  title: "About PropAI — Verified Brokers, Fresh Listings",
+  title: "About PropAI — Real Listings from Mumbai's Broker WhatsApp Groups",
   description:
-    "PropAI reads WhatsApp broker groups to surface real, fresh property listings — and a direct line to the broker.",
+    "Most listings online are old. PropAI reads the WhatsApp groups where Mumbai's brokers actually work, shows how many groups corroborate each listing, and auto-hides anything untouched for 30 days. No stale photos — message the broker for current ones.",
 };
 
 export default async function AboutPage() {
@@ -26,20 +26,42 @@ export default async function AboutPage() {
           About <span className="text-green-400">PropAI</span>
         </h1>
 
-        <div className="space-y-6 text-[15px] lg:text-[17px] text-zinc-400 leading-relaxed">
+        <div className="space-y-8 text-[15px] lg:text-[17px] text-zinc-400 leading-relaxed">
           <p>
-            PropAI reads WhatsApp broker groups so you get real, fresh listings —
-            and a direct line to the broker who actually has the inventory.
-          </p>
-          <p id="freshness">
-            Listings update daily from live conversations. Stale data is
-            auto-hidden after 30 days, so what you see is what&apos;s actually
-            on the market right now.
+            Most property listings you find online are old. A broker posts a flat
+            in a WhatsApp group, it gets forwarded twenty times, and three weeks
+            later it&apos;s still floating around the internet — except it&apos;s
+            already been rented out.
           </p>
           <p>
-            Every enquiry goes straight to a real broker on WhatsApp. No chatbots,
-            no forms, no spam — just a direct conversation with someone who can
-            show you the home.
+            PropAI reads the WhatsApp groups where Mumbai&apos;s brokers actually
+            work. Every listing you see here came from a real broker, in a real
+            conversation, usually within the last few days. We show you how many
+            separate broker groups have mentioned it and when it was last seen —
+            so instead of trusting one listing, you&apos;re seeing what&apos;s
+            actually corroborated across the market right now. Anything untouched
+            for 30 days gets auto-hidden. What you see is what&apos;s live today,
+            not what was live sometime this month.
+          </p>
+          <div>
+            <h2 className="text-lg lg:text-xl font-semibold text-white mb-3">
+              Why there are no photos.
+            </h2>
+            <p>
+              This inventory turns over daily. A photo shot when a flat was first
+              listed is often wrong by the time you&apos;d see it — wrong
+              furnishing, wrong price, sometimes a different flat entirely. Instead
+              of stale photos, every listing routes straight to the broker who&apos;s
+              actually holding it — message them on WhatsApp and they&apos;ll send
+              you real, current photos, video walkthroughs, and tell you what&apos;s
+              actually still available.
+            </p>
+          </div>
+          <p>
+            <span className="text-white font-medium">Direct to broker, no middleman chatbot.</span>{" "}
+            Your enquiry goes straight to a real person who calls you back. No forms
+            that go nowhere, no chatbot standing between you and the person who has
+            the keys.
           </p>
           {buildings.length > 0 && (
             <p>
