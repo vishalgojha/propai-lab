@@ -4,15 +4,20 @@ export const dynamic = "force-dynamic";
 
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
-import { AlertTriangle, Eye, RefreshCw, ShieldCheck } from "lucide-react";
+import { AlertTriangle, Eye, RefreshCw } from "lucide-react";
 import * as api from "@/lib/api";
+
+type AuditDuplicate = {
+  group_a?: { jid?: string; name?: string };
+  group_b?: { jid?: string; name?: string };
+  match_type?: string;
+};
 
 type LoadState = {
   groups: api.AuditGroupCard[];
   totalUniqueSenders: number;
   health: api.AuditCaptureHealth | null;
-  excluded: string[];
-  duplicates: any[];
+  duplicates: AuditDuplicate[];
   overlap: api.AuditGroupOverlapResponse | null;
   errors: string[];
 };
@@ -21,7 +26,6 @@ const emptyState: LoadState = {
   groups: [],
   totalUniqueSenders: 0,
   health: null,
-  excluded: [],
   duplicates: [],
   overlap: null,
   errors: [],
@@ -49,10 +53,6 @@ function timeAgo(ts?: string) {
 
 function num(value?: number | string | null) {
   return Number(value || 0).toLocaleString("en-IN");
-}
-
-function pct(value?: number | string | null) {
-  return `${Math.round(Number(value || 0))}%`;
 }
 
 function Card({ children, className = "" }: { children: ReactNode; className?: string }) {
@@ -84,15 +84,13 @@ function SectionTitle({ icon, title, sub }: { icon?: ReactNode; title: string; s
 export default function AuditPage() {
   const [state, setState] = useState<LoadState>(emptyState);
   const [loading, setLoading] = useState(true);
-  const [savingJid, setSavingJid] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [groupsResp, health, excluded, duplicates, overlap] = await Promise.all([
+    const [groupsResp, health, duplicates, overlap] = await Promise.all([
       safe("group audit", () => api.getAuditGroups(), { groups: [] as api.AuditGroupCard[], total_unique_senders: 0 }),
       safe("capture health", () => api.getAuditCaptureHealth(), null as api.AuditCaptureHealth | null),
-      safe("group controls", () => api.getExcludedGroups(), [] as string[]),
-      safe("duplicate groups", () => api.getAuditDuplicates(), [] as any[]),
+      safe("duplicate groups", () => api.getAuditDuplicates(), [] as AuditDuplicate[]),
       safe("member overlap", () => api.getAuditGroupOverlap(), { pairs: [], groups: [] }),
     ]);
 
@@ -101,29 +99,19 @@ export default function AuditPage() {
       groups: groupsData.groups,
       totalUniqueSenders: groupsData.total_unique_senders,
       health: health.value,
-      excluded: excluded.value,
       duplicates: duplicates.value,
       overlap: overlap.value,
-      errors: [groupsResp.error, health.error, excluded.error, duplicates.error, overlap.error].filter(Boolean) as string[],
+      errors: [groupsResp.error, health.error, duplicates.error, overlap.error].filter(Boolean) as string[],
     });
     setLoading(false);
   }, []);
 
   useEffect(() => {
-    void load();
+    const timer = window.setTimeout(() => {
+      void load();
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [load]);
-
-  async function toggleGroup(jid: string, parserOff: boolean) {
-    if (!jid) return;
-    setSavingJid(jid);
-    const next = parserOff ? state.excluded.filter((item) => item !== jid) : [...state.excluded, jid];
-    try {
-      await api.setExcludedGroups(next);
-      setState((current) => ({ ...current, excluded: next }));
-    } finally {
-      setSavingJid("");
-    }
-  }
 
   const totalMessages = state.groups.reduce((sum, g) => sum + (g.messages || 0), 0);
   const totalObservations = state.groups.reduce((sum, g) => sum + (g.observations || 0), 0);
@@ -168,7 +156,7 @@ export default function AuditPage() {
 
       <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         <Metric label="Capture Status" value={state.health?.last_webhook ? "Live" : "No Data"} sub={`Last webhook ${timeAgo(state.health?.last_webhook)}`} />
-        <Metric label="Groups Monitored" value={num(state.groups.length)} sub={`${num(state.excluded.length)} parser opt-outs`} />
+        <Metric label="Groups Monitored" value={num(state.groups.length)} sub="All detected groups" />
         <Metric label="Messages Captured" value={num(totalMessages)} sub={`${num(state.health?.total_parsed_today)} parsed today`} />
         <Metric label="Parser Queue" value={num(state.health?.queue_backlog)} sub={`${num(state.health?.queue_backlog || 0)} pending`} />
       </section>
@@ -202,23 +190,22 @@ export default function AuditPage() {
         <SectionTitle
           icon={<Eye className="h-4 w-4" strokeWidth={1.8} />}
           title="Group Audit"
-          sub="Which groups create useful market signal, and which should stay parser-off."
+          sub="Which groups create useful market signal."
         />
         <Card className="mt-3 overflow-hidden">
-          <div className="grid grid-cols-[minmax(220px,1.4fr)_90px_90px_90px_92px_88px] gap-3 border-b border-white/10 px-4 py-2 text-[10px] font-bold uppercase tracking-wide text-zinc-500">
+          <div className="grid grid-cols-[minmax(220px,1.4fr)_90px_90px_90px_92px] gap-3 border-b border-white/10 px-4 py-2 text-[10px] font-bold uppercase tracking-wide text-zinc-500">
             <div>Group</div>
             <div>Signal</div>
             <div>Members</div>
             <div>Freshness</div>
             <div>Messages</div>
-            <div>Parser</div>
           </div>
           {state.groups.length === 0 ? (
             <div className="px-4 py-10 text-center text-sm text-zinc-500">
               No group data loaded yet. Once WhatsApp sync captures group messages, this page will populate.
             </div>
           ) : state.groups.map((group) => (
-            <div key={group.jid} className="grid grid-cols-[minmax(220px,1.4fr)_90px_90px_90px_92px_88px] gap-3 border-b border-white/[0.06] px-4 py-3 text-xs last:border-b-0">
+            <div key={group.jid} className="grid grid-cols-[minmax(220px,1.4fr)_90px_90px_90px_92px] gap-3 border-b border-white/[0.06] px-4 py-3 text-xs last:border-b-0">
               <div className="min-w-0">
                 <div className="truncate font-semibold text-white">{group.name}</div>
                 <div className="mt-1 line-clamp-1 text-[11px] text-zinc-500">
@@ -235,18 +222,6 @@ export default function AuditPage() {
               </div>
               <div className="text-zinc-400">{timeAgo(group.last_activity)}</div>
               <div className="font-mono font-semibold text-zinc-200">{num(group.messages)}</div>
-              <button
-                type="button"
-                disabled={savingJid === group.jid}
-                onClick={() => toggleGroup(group.jid, state.excluded.includes(group.jid))}
-                className={`rounded-md px-2 py-1 text-[10px] font-bold uppercase tracking-wide ${
-                  state.excluded.includes(group.jid)
-                    ? "border border-amber-500/30 bg-amber-500/10 text-amber-200"
-                    : "border border-[#3EE88A]/25 bg-[#3EE88A]/10 text-[#3EE88A]"
-                }`}
-              >
-                {state.excluded.includes(group.jid) ? "Off" : "On"}
-              </button>
             </div>
           ))}
         </Card>
@@ -265,7 +240,7 @@ export default function AuditPage() {
             </div>
           ) : (
             <div className="divide-y divide-white/10">
-              {state.duplicates.slice(0, 8).map((dup: any, index: number) => (
+              {state.duplicates.slice(0, 8).map((dup, index: number) => (
                 <div key={`${dup.group_a?.jid || index}-${dup.group_b?.jid || index}`} className="grid gap-3 px-4 py-3 md:grid-cols-[1.1fr_1.1fr_0.8fr]">
                   <div>
                     <div className="text-[10px] uppercase tracking-[0.16em] text-zinc-500">Group A</div>
@@ -331,15 +306,12 @@ export default function AuditPage() {
         </Card>
       </section>
 
-      <section className="grid gap-4 lg:grid-cols-3">
+      <section className="grid gap-4 lg:grid-cols-2">
         <Card className="p-4">
-          <SectionTitle icon={<ShieldCheck className="h-4 w-4" strokeWidth={1.8} />} title="Parser Controls" />
+          <SectionTitle title="Parser Controls" />
           <p className="mt-3 text-xs leading-5 text-zinc-500">
-            Parser-on means PropAI can extract real estate opportunities from the group. Parser-off keeps the group visible for audit but stops market extraction.
+            PropAI now parses broker groups directly. The old opt-out privacy workflow has been removed.
           </p>
-          <Link href="/settings/privacy" className="mt-4 inline-flex text-xs font-bold text-[#3EE88A] hover:text-white">
-            Open privacy settings
-          </Link>
         </Card>
         <Card className="p-4">
           <SectionTitle title="Format Pressure" />

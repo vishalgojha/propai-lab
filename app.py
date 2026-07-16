@@ -77,7 +77,7 @@ from lab.events import get_bus
 PROJECT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(PROJECT_DIR))
 
-from lab.config import HOST, PORT, FRONTEND_URL, DOUBLEWORD_API_KEY, ENABLE_AI_PROMO, ENABLE_META_PUBLISHING, STATUS_FILE, SUPABASE_URL, SUPABASE_SERVICE_KEY, load_group_allowlist, save_group_allowlist, load_excluded_groups, save_excluded_groups
+from lab.config import HOST, PORT, FRONTEND_URL, DOUBLEWORD_API_KEY, ENABLE_AI_PROMO, ENABLE_META_PUBLISHING, STATUS_FILE, SUPABASE_URL, SUPABASE_SERVICE_KEY, load_group_allowlist, save_group_allowlist
 from evidence.resolver import resolve, resolve_by_landmark, resolve_by_street
 from evidence.parsers import parse as broker_parse
 
@@ -113,18 +113,6 @@ _scheduler = None
 BUSINESS_TIMEZONE = "Asia/Kolkata"
 BUSINESS_START_HOUR = 10
 BUSINESS_END_HOUR = 19
-
-DEFAULT_ORG_PRIVACY = {
-    "privacy_mode": "shared_market",
-    "share_listings": True,
-    "share_requirements": True,
-    "share_price_trends": True,
-    "share_market_activity": True,
-    "share_building_intelligence": True,
-    "share_broker_network": True,
-    "share_broker_reputation": True,
-    "share_demand_signals": True,
-}
 
 GROUP_MARKET_KEYWORDS = {
     "Bandra": ["bandra", "bkc", "bks"],
@@ -1757,9 +1745,6 @@ def check_share_eligibility(parsed: dict, org_privacy: dict, conv_type: str) -> 
     if conv_type != CONV_TYPE_BROKER_GROUP:
         return False, f"conversation_type_{conv_type}"
 
-    if org_privacy.get("privacy_mode") != "shared_market":
-        return False, "privacy_mode_private"
-
     return True, "ok"
 
 
@@ -2024,8 +2009,6 @@ async def webhook(request: Request):
     group = key.get("remoteJid", "") or msg_data.get("from", "")
     if _is_blocked_whatsapp_conversation(group) or (sender_jid and _is_blocked_whatsapp_conversation(sender_jid)):
         return {"status": "ignored", "reason": "blocked_whatsapp_conversation", "jid": group}
-    if group in load_excluded_groups():
-        return {"status": "ignored", "reason": "group_opted_out", "jid": group}
     supplied_conversation_name = (
         msg_data.get("conversationName")
         or msg_data.get("chatName")
@@ -2398,16 +2381,8 @@ def should_share_to_market(
 ) -> bool:
     """
     Determine if a message/observation should contribute to the broker network.
-    Rules:
-    - Only broker_group conversations are eligible
-    - Workspace must be in 'shared_market' privacy mode
     """
-    # Only broker groups can contribute
     if conv_type != CONV_TYPE_BROKER_GROUP:
-        return False
-
-    # Workspace must be in shared mode
-    if org_privacy.get("privacy_mode") != "shared_market":
         return False
 
     return True
@@ -3596,21 +3571,14 @@ async def market_access_status(
     """Access gate for shared market intelligence.
 
     Signup alone is not a trial. The market unlocks only after WhatsApp is
-    connected, at least one sync record exists, and the group privacy review is
-    acknowledged. Billing can replace the time-based trial flag later without
-    changing the frontend contract.
+    connected and at least one sync record exists. Billing can replace the
+    time-based trial flag later without changing the frontend contract.
     """
     details = _connection_details()
     connected = bool(details.get("connected"))
     sync_ready = connected and _market_sync_ready(details)
-    privacy_payload = _privacy_receipt_payload(details)
-    privacy_ready = bool(privacy_payload["privacy_receipt_complete"])
-    if connected and sync_ready and not privacy_ready:
-        _mark_privacy_receipt_complete()
-        privacy_payload = _privacy_receipt_payload(details)
-        privacy_ready = bool(privacy_payload["privacy_receipt_complete"])
     paid_active = False
-    trial_active = connected and sync_ready and privacy_ready
+    trial_active = connected and sync_ready
     unlocked = paid_active or trial_active
 
     reason = "ready"
@@ -3621,9 +3589,6 @@ async def market_access_status(
     elif not sync_ready:
         reason = "sync_pending"
         message = "WhatsApp is connected. PropAI is waiting for the first sync record before opening Market Inbox."
-    elif not privacy_ready:
-        reason = "privacy_receipt"
-        message = "Review group privacy once. Real-estate groups feed Shared Market; DMs and opted-out groups stay private."
 
     # Check if WABA (WhatsApp Business API) is configured — allows outbound even without whatsmeow
     waba_configured = bool(_companion_get_config_value("access_token", "WABA_ACCESS_TOKEN"))
@@ -3634,35 +3599,14 @@ async def market_access_status(
         "whatsapp_connected": connected,
         "waba_configured": waba_configured,
         "initial_sync_complete": sync_ready,
-        "privacy_receipt_complete": privacy_ready,
-        "excluded_groups_count": privacy_payload["excluded_groups_count"],
-        "market_groups_detected": privacy_payload["market_groups_detected"],
         "trial_active": trial_active,
         "paid_active": paid_active,
         "market_unlocked": unlocked,
-        "trial_started_at": privacy_payload["completed_at"] if trial_active else None,
+        "trial_started_at": details.get("connected_since") if trial_active else None,
         "trial_ends_at": None,
         "reason": reason,
         "message": message,
     }
-
-
-@app.get("/api/privacy/receipt")
-async def get_privacy_receipt(user: dict = Depends(require_user)):
-    return _privacy_receipt_payload()
-
-
-@app.post("/api/privacy/receipt/complete")
-async def complete_privacy_receipt(user: dict = Depends(require_user)):
-    details = _connection_details()
-    if not details.get("connected"):
-        raise HTTPException(400, "Connect WhatsApp before finishing privacy review")
-    completed_at = _mark_privacy_receipt_complete()
-    payload = _privacy_receipt_payload(details)
-    payload["privacy_receipt_complete"] = True
-    payload["completed_at"] = completed_at
-    payload["message"] = "Review complete. Shared Market is on by default; DMs and opted-out groups stay private."
-    return payload
 
 
 class QueryRequest(BaseModel):
@@ -7101,19 +7045,6 @@ def _companion_set_config_value(key: str, value: str):
     storage.db.commit()
 
 
-PRIVACY_RECEIPT_KEY = "privacy_receipt_completed_at"
-
-
-def _privacy_receipt_completed_at() -> str:
-    return _companion_get_config_value(PRIVACY_RECEIPT_KEY)
-
-
-def _mark_privacy_receipt_complete() -> str:
-    completed_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    _companion_set_config_value(PRIVACY_RECEIPT_KEY, completed_at)
-    return completed_at
-
-
 def _market_sync_ready(details: dict) -> bool:
     captured = details.get("messages_captured")
     try:
@@ -7122,36 +7053,6 @@ def _market_sync_ready(details: dict) -> bool:
     except Exception:
         pass
     return _count_table("raw_messages") > 0
-
-
-def _privacy_receipt_payload(details: dict | None = None) -> dict:
-    details = details or _connection_details()
-    detected = 0
-    try:
-        if _table_exists("raw_messages"):
-            detected = storage.db.execute(
-                "SELECT COUNT(DISTINCT group_name) AS c FROM raw_messages WHERE COALESCE(group_name, '') != ''"
-            ).fetchone()["c"]
-    except Exception:
-        detected = 0
-    excluded = load_excluded_groups()
-    completed_at = _privacy_receipt_completed_at()
-    excluded_count = len(excluded)
-    return {
-        "whatsapp_connected": bool(details.get("connected")),
-        "privacy_receipt_complete": bool(completed_at),
-        "completed_at": completed_at or None,
-        "market_groups_detected": detected,
-        "private_groups_excluded": excluded_count,
-        "excluded_groups_count": excluded_count,
-        "direct_messages_private": True,
-        "shared_market_default": True,
-        "message": (
-            "Review complete. Shared Market is on by default; DMs and opted-out groups stay private."
-            if completed_at
-            else "Review your groups once. Real-estate groups feed Shared Market; DMs and opted-out groups stay private."
-        ),
-    }
 
 
 def _mask_secret(value: str = "") -> str:
@@ -9621,34 +9522,6 @@ async def clear_allowlist(user: dict = Depends(require_user)):
     """Clear the group allowlist (track all groups)."""
     save_group_allowlist([])
     return {"status": "ok"}
-
-
-@app.get("/api/groups/excluded")
-async def get_excluded(user: dict = Depends(require_user)):
-    """Return the current group opt-out list (JIDs that should NOT be parsed)."""
-    try:
-        return load_excluded_groups()
-    except Exception as exc:
-        print(f"[groups/excluded] load failed: {exc}", flush=True)
-        return []
-
-
-@app.post("/api/groups/excluded")
-async def set_excluded(request: Request, user: dict = Depends(require_user)):
-    """Set the group opt-out list (JSON array of group JIDs)."""
-    try:
-        body = await request.json()
-    except Exception:
-        raise HTTPException(400, "Invalid JSON")
-    if not isinstance(body, list):
-        raise HTTPException(400, "Expected a JSON array of strings")
-    entries = [str(x).strip() for x in body if x and str(x).strip()]
-    try:
-        save_excluded_groups(entries)
-        return {"status": "ok", "count": len(entries)}
-    except Exception as exc:
-        print(f"[groups/excluded] save failed: {exc}", flush=True)
-        raise HTTPException(500, "Failed to save group controls")
 
 
 @app.get("/api/listings")
@@ -12527,10 +12400,7 @@ async def get_organization(org_id: str, user: dict = Depends(require_user)):
 
 @app.patch("/api/orgs/{org_id}")
 async def update_organization(org_id: str, body: dict, user: dict = Depends(require_user)):
-    allowed = {"name", "privacy_mode", "share_listings", "share_requirements",
-               "share_price_trends", "share_market_activity", "share_building_intelligence",
-               "share_broker_network", "share_broker_reputation", "share_demand_signals",
-               "is_active"}
+    allowed = {"name", "is_active"}
     updates = {k: v for k, v in body.items() if k in allowed}
     if not updates:
         raise HTTPException(400, "No valid fields to update")
@@ -12538,84 +12408,6 @@ async def update_organization(org_id: str, body: dict, user: dict = Depends(requ
     if not ok:
         raise HTTPException(404, "Organization not found")
     return {"ok": True}
-
-
-@app.get("/api/orgs/{org_id}/privacy")
-async def get_organization_privacy(org_id: str, user: dict = Depends(require_user)):
-    org = storage.get_organization(org_id)
-    if not org:
-        raise HTTPException(404, "Organization not found")
-    # Check membership
-    members = storage.list_organization_members(org_id)
-    if not any(m["user_id"] == user["id"] for m in members):
-        raise HTTPException(403, "Not a member of this organization")
-    return {
-        "privacy_mode": org.get("privacy_mode") or DEFAULT_ORG_PRIVACY["privacy_mode"],
-        "share_listings": org.get("share_listings", DEFAULT_ORG_PRIVACY["share_listings"]),
-        "share_requirements": org.get("share_requirements", DEFAULT_ORG_PRIVACY["share_requirements"]),
-        "share_price_trends": org.get("share_price_trends", DEFAULT_ORG_PRIVACY["share_price_trends"]),
-        "share_market_activity": org.get("share_market_activity", DEFAULT_ORG_PRIVACY["share_market_activity"]),
-        "share_building_intelligence": org.get("share_building_intelligence", DEFAULT_ORG_PRIVACY["share_building_intelligence"]),
-        "share_broker_network": org.get("share_broker_network", DEFAULT_ORG_PRIVACY["share_broker_network"]),
-        "share_broker_reputation": org.get("share_broker_reputation", DEFAULT_ORG_PRIVACY["share_broker_reputation"]),
-        "share_demand_signals": org.get("share_demand_signals", DEFAULT_ORG_PRIVACY["share_demand_signals"]),
-    }
-
-
-@app.put("/api/orgs/{org_id}/privacy")
-async def update_organization_privacy(org_id: str, body: dict, user: dict = Depends(require_user)):
-    org = storage.get_organization(org_id)
-    if not org:
-        raise HTTPException(404, "Organization not found")
-    # Check membership and admin role
-    members = storage.list_organization_members(org_id)
-    member = next((m for m in members if m["user_id"] == user["id"]), None)
-    if not member:
-        raise HTTPException(403, "Not a member of this organization")
-    # Only admins/owners can change privacy settings
-    if member.get("role") not in ("owner", "admin"):
-        raise HTTPException(403, "Admin access required")
-
-    allowed = {"privacy_mode", "share_listings", "share_requirements",
-               "share_price_trends", "share_market_activity", "share_building_intelligence",
-               "share_broker_network", "share_broker_reputation", "share_demand_signals"}
-    updates = {k: v for k, v in body.items() if k in allowed}
-    if not updates:
-        raise HTTPException(400, "No valid privacy fields to update")
-
-    # Validate privacy_mode
-    if updates.get("privacy_mode") == "shared":
-        updates["privacy_mode"] = "shared_market"
-    if "privacy_mode" in updates and updates["privacy_mode"] not in ("private", "shared_market"):
-        raise HTTPException(400, "Invalid privacy_mode")
-
-    if updates.get("privacy_mode") == "shared_market":
-        for k, v in DEFAULT_ORG_PRIVACY.items():
-            if k.startswith("share_"):
-                updates[k] = v
-
-    # If switching to private, disable all sharing
-    if updates.get("privacy_mode") == "private":
-        for k in DEFAULT_ORG_PRIVACY:
-            if k.startswith("share_"):
-                updates[k] = False
-
-    ok = storage.update_organization(org_id, **updates)
-    if not ok:
-        raise HTTPException(404, "Organization not found")
-    updated = storage.get_organization(org_id) or {}
-    return {
-        "ok": True,
-        "privacy_mode": updated.get("privacy_mode") or DEFAULT_ORG_PRIVACY["privacy_mode"],
-        "share_listings": updated.get("share_listings", DEFAULT_ORG_PRIVACY["share_listings"]),
-        "share_requirements": updated.get("share_requirements", DEFAULT_ORG_PRIVACY["share_requirements"]),
-        "share_price_trends": updated.get("share_price_trends", DEFAULT_ORG_PRIVACY["share_price_trends"]),
-        "share_market_activity": updated.get("share_market_activity", DEFAULT_ORG_PRIVACY["share_market_activity"]),
-        "share_building_intelligence": updated.get("share_building_intelligence", DEFAULT_ORG_PRIVACY["share_building_intelligence"]),
-        "share_broker_network": updated.get("share_broker_network", DEFAULT_ORG_PRIVACY["share_broker_network"]),
-        "share_broker_reputation": updated.get("share_broker_reputation", DEFAULT_ORG_PRIVACY["share_broker_reputation"]),
-        "share_demand_signals": updated.get("share_demand_signals", DEFAULT_ORG_PRIVACY["share_demand_signals"]),
-    }
 
 
 @app.get("/api/orgs/{org_id}/members")

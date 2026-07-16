@@ -29,7 +29,6 @@ const navSections = [
       { href: "/audit", label: "WhatsApp Audit" },
       { href: "/profile", label: "My Profile" },
       { href: "/profile/team", label: "Team" },
-      { href: "/settings/privacy", label: "Privacy" },
       { href: "/profile/billing", label: "Billing" },
       { href: "/waba", label: "WABA API" },
       { href: "/workspace/llm-providers", label: "AI Providers" },

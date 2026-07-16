@@ -26,7 +26,6 @@ import {
   LogOut,
   Menu,
   X,
-  Shield,
   AlertTriangle,
 } from "lucide-react";
 import { AuthProvider, useAuth } from "@/lib/AuthProvider";
@@ -61,7 +60,6 @@ const navSections = [
       { href: "/audit", label: "WhatsApp Audit", icon: MessageSquare },
       { href: "/profile", label: "My Profile", icon: UserCheck },
       { href: "/profile/team", label: "Team", icon: UserCog },
-      { href: "/settings/privacy", label: "Privacy", icon: Shield },
       { href: "/profile/billing", label: "Billing", icon: TrendingUp },
       { href: "/waba", label: "WABA API", icon: Key },
       { href: "/workspace/llm-providers", label: "AI Providers", icon: Radar },

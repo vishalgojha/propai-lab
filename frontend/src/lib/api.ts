@@ -242,15 +242,12 @@ export interface MarketAccessStatus {
   whatsapp_connected: boolean;
   waba_configured?: boolean;
   initial_sync_complete?: boolean;
-  privacy_receipt_complete?: boolean;
-  excluded_groups_count?: number;
-  market_groups_detected?: number;
   trial_active: boolean;
   paid_active: boolean;
   market_unlocked: boolean;
   trial_started_at?: string | null;
   trial_ends_at?: string | null;
-  reason: "ready" | "connect_whatsapp" | "start_trial" | string;
+  reason: "ready" | "connect_whatsapp" | "sync_pending" | string;
   message: string;
 }
 
@@ -360,26 +357,6 @@ export function getWhatsAppStatus() {
 
 export function getMarketAccessStatus() {
   return fetchJSON<MarketAccessStatus>("/market/access", undefined, 8000);
-}
-
-export interface PrivacyReceiptStatus {
-  whatsapp_connected: boolean;
-  privacy_receipt_complete: boolean;
-  completed_at?: string | null;
-  market_groups_detected: number;
-  private_groups_excluded: number;
-  excluded_groups_count: number;
-  direct_messages_private: boolean;
-  shared_market_default: boolean;
-  message: string;
-}
-
-export function getPrivacyReceiptStatus() {
-  return fetchJSON<PrivacyReceiptStatus>("/privacy/receipt");
-}
-
-export function completePrivacyReceipt() {
-  return fetchJSON<PrivacyReceiptStatus>("/privacy/receipt/complete", { method: "POST" });
 }
 
 export function getSourceStatus() {
@@ -1522,31 +1499,6 @@ export function saveProfile(phone: string, data: { first_name: string; last_name
   });
 }
 
-// ── Organization Privacy Settings ──────────────────────────────────
-
-export interface OrgPrivacySettings {
-  privacy_mode: "private" | "shared_market";
-  share_listings: boolean;
-  share_requirements: boolean;
-  share_price_trends: boolean;
-  share_market_activity: boolean;
-  share_building_intelligence: boolean;
-  share_broker_network: boolean;
-  share_broker_reputation: boolean;
-  share_demand_signals: boolean;
-}
-
-export function getOrgPrivacy(orgId: string) {
-  return fetchJSON<OrgPrivacySettings>(`/orgs/${orgId}/privacy`);
-}
-
-export function updateOrgPrivacy(orgId: string, data: Partial<OrgPrivacySettings>) {
-  return fetchJSON<OrgPrivacySettings>(`/orgs/${orgId}/privacy`, {
-    method: "PUT",
-    body: JSON.stringify(data),
-  });
-}
-
 export function getCurrentOrg() {
   return fetchJSON<{ id: string; name?: string; slug?: string }>(`/orgs/current`);
 }
@@ -1583,19 +1535,6 @@ export function getAuthMe() {
   })();
 }
 
-
-// ── Group Opt-out (Parser Control) ──────────────────────────────────
-
-export function getExcludedGroups() {
-  return fetchJSON<string[]>("/groups/excluded");
-}
-
-export function setExcludedGroups(jids: string[]) {
-  return fetchJSON<{ status: string; count: number }>("/groups/excluded", {
-    method: "POST",
-    body: JSON.stringify(jids),
-  });
-}
 
 // ── System Usage ──────────────────────────────────────────────
 

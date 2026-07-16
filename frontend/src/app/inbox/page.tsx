@@ -1063,16 +1063,6 @@ return {
 
   const marketLock = useMemo(() => {
     const reason = marketAccess?.reason || "connect_whatsapp";
-    if (reason === "privacy_receipt") {
-      return {
-        title: "Finish group privacy review",
-        description:
-          marketAccess?.message ||
-          "Review which WhatsApp groups PropAI can parse before opening the shared broker market.",
-        href: "/audit",
-        cta: "Review Groups",
-      };
-    }
     if (reason === "sync_pending") {
       return {
         title: "Preparing your market feed",
