@@ -167,6 +167,10 @@ function isPlaceholderPhone(phoneNumber?: string | null) {
   return digits.length < 10;
 }
 
+function normalizePhoneDigits(value?: string | null) {
+  return (value || "").replace(/\D/g, "");
+}
+
 function isConnectedPhone(status: Pick<Phone, "connected" | "connection_state" | "connected_since">) {
   return Boolean(
     status.connected ||
@@ -174,6 +178,21 @@ function isConnectedPhone(status: Pick<Phone, "connected" | "connection_state" |
     status.connection_state === "connected" ||
     status.connected_since
   );
+}
+
+function matchesLiveStatus(phone: Phone, status: WhatsAppStatus | null) {
+  if (!status || !api.isLiveWhatsAppConnection(status)) return false;
+  const liveDigits = normalizePhoneDigits(status.phone);
+  if (!liveDigits) return false;
+  const candidateDigits = [
+    phone.phone_number_live,
+    phone.phone_number,
+    phone.display_name,
+    phone.instance_name,
+  ]
+    .map(normalizePhoneDigits)
+    .filter(Boolean);
+  return candidateDigits.includes(liveDigits);
 }
 
 function CreatePhoneDialog({ open, onClose, onCreated }: { open: boolean; onClose: () => void; onCreated: () => Promise<void> | void }) {
@@ -444,6 +463,7 @@ function QRModal({
 
 function PhoneCard({
   phone,
+  liveStatus,
   onRefresh,
   onShowQR,
   onConnect,
@@ -451,6 +471,7 @@ function PhoneCard({
   now,
 }: {
   phone: Phone;
+  liveStatus: WhatsAppStatus | null;
   onRefresh: () => Promise<void> | void;
   onShowQR: (p: Phone) => void;
   onConnect: (p: Phone) => Promise<void> | void;
@@ -471,7 +492,7 @@ function PhoneCard({
     setActionLoading(null);
   };
 
-  const isConnected = isConnectedPhone(phone);
+  const isConnected = isConnectedPhone(phone) || matchesLiveStatus(phone, liveStatus);
   const phoneDisplay = phone.phone_number_live || phone.phone_number;
   const isUnpaired = !isConnected && isPlaceholderPhone(phoneDisplay);
   const health: HealthStatus = isConnected ? "healthy" : isUnpaired ? "warning" : "error";
@@ -729,7 +750,7 @@ export default function ConnectionCenterPage() {
 
   if (authLoading || !user) return null;
 
-  const connectedCount = phones.filter((p) => isConnectedPhone(p)).length;
+  const connectedCount = phones.filter((p) => isConnectedPhone(p) || matchesLiveStatus(p, liveStatus)).length;
   const totalMessages = phones.reduce((sum, p) => sum + (p.total_messages_received || 0), 0);
 
   return (
@@ -771,6 +792,7 @@ export default function ConnectionCenterPage() {
                 <PhoneCard
                   key={phone.id}
                   phone={phone}
+                  liveStatus={liveStatus}
                   onRefresh={refreshData}
                   onShowQR={setQrPhone}
                   onConnect={handleConnect}

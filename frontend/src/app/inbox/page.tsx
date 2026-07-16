@@ -1605,6 +1605,11 @@ return {
     return (knownGroup?.name || "").trim();
   };
 
+  const isGroupJidLike = (value?: string) => {
+    const text = (value || "").trim();
+    return /@g\.us$/i.test(text) || /@newsletter$/i.test(text);
+  };
+
   const displayGroupName = (value?: string) => {
     const text = (value || "").trim();
     if (!text || text === "seed" || text === "seed-bot") return "";
@@ -1702,6 +1707,21 @@ return {
       phoneFromJid((msg as Partial<api.InboxThread>)?.chat_id) ||
       phoneFromJid((msg as Partial<api.InboxThread>)?.conversation_key)
     );
+  };
+
+  const isLikelyGroupConversation = (msg: Partial<api.InboxThread | api.RawMessage>) => {
+    const candidates = [
+      msg.group_name,
+      msg.chat_name,
+      msg.conversation_name,
+      msg.chat_id,
+      msg.conversation_key,
+      msg.sender_jid,
+    ]
+      .map((value) => (value || "").trim())
+      .filter(Boolean);
+    if (candidates.some(isGroupJidLike)) return true;
+    return candidates.some((value) => Boolean(resolveKnownGroupName(value)));
   };
 
   const inferredMessageIntent = (msg?: Partial<api.RawMessage> | null) => {
@@ -2020,7 +2040,7 @@ return {
   );
 
   const groupChats = uniqueThreads
-    .filter((m) => m.conversation_type === "group" || (m.group_name || "").includes("@g.us"))
+    .filter((m) => isLikelyGroupConversation(m))
     .map((m) => ({
       conversationKey: m.chat_id || m.conversation_key || m.group_name,
       rawGroupName: m.group_name,
@@ -2032,7 +2052,7 @@ return {
     .sort((a, b) => (messageDateValue(b.latest)?.getTime() || 0) - (messageDateValue(a.latest)?.getTime() || 0));
 
   const directChats = uniqueThreads
-    .filter((m) => m.conversation_type === "direct")
+    .filter((m) => !isLikelyGroupConversation(m))
     .map((m) => ({
       senderKey: m.chat_id || m.conversation_key,
       name: displayChatTitle(m),
@@ -2187,9 +2207,7 @@ return {
 
   const selectedTitle = selectedMsg ? displayChatTitle(selectedMsg) : "";
   const isGroupConversationSelected =
-    selectedMsg?.chat_type === "group" ||
-    selectedMsg?.conversation_type === "group" ||
-    (!!selectedMsg?.group_name && selectedMsg.group_name !== "seed" && selectedMsg.group_name !== "seed-bot");
+    Boolean(selectedMsg && isLikelyGroupConversation(selectedMsg));
   const selectedSubtitle =
     isGroupConversationSelected
       ? ""
@@ -2216,7 +2234,34 @@ return {
     return conversationMessages.length > 0 ? conversationMessages[conversationMessages.length - 1] : selectedMsg;
   }, [conversationMessages, selectedMsg]);
   const replyFallbackPhone = normalizeRealPhone(resolveMessagePhone(selectedMsg) || phoneFromJid(selectedConversationJid));
-  const brokerReplyPhone = normalizeRealPhone(selectedBroker?.phone || selectedMsgDetails?.parsed?.broker_phone || "");
+  const resolvedBrokerPhone = useMemo(() => {
+    const candidates = [
+      selectedBroker?.phone,
+      selectedMsgDetails?.parsed?.broker_phone,
+      selectedMsgDetails?.raw?.broker_phone,
+      selectedMsgDetails?.raw?.sender_phone,
+      selectedBroker?.identity_key,
+      selectedBroker?.id,
+      ...selectedBrokerObservations.flatMap((obs: BrokerObservationRow) => [
+        obs.broker_phone,
+        obs.broker_name,
+      ]),
+    ];
+    for (const candidate of candidates) {
+      const phone = normalizeRealPhone(candidate);
+      if (phone) return phone;
+    }
+    return "";
+  }, [
+    selectedBroker?.phone,
+    selectedBroker?.identity_key,
+    selectedBroker?.id,
+    selectedMsgDetails?.parsed?.broker_phone,
+    selectedMsgDetails?.raw?.broker_phone,
+    selectedMsgDetails?.raw?.sender_phone,
+    selectedBrokerObservations,
+  ]);
+  const brokerReplyPhone = resolvedBrokerPhone;
   const brokerReplyLink = brokerReplyPhone
     ? getWaLinkWithRecall(brokerReplyPhone, brokerReplyText || selectedBroker?.latest_title || selectedMsgDetails?.raw?.message || "")
     : "";
@@ -2495,14 +2540,14 @@ return {
   const selectBroker = useCallback(async (broker: any, focusObsRawId?: number) => {
     if (isMobile) setMobileView("conversation");
     setOpportunityFilter("all");
-    const brokerPhone = normalizeRealPhone(broker.primary_phone || broker.phone || "");
+    const brokerPhone = normalizeRealPhone(broker.primary_phone || broker.phone || broker.identity_key || broker.id || "");
     const brokerName = stripEmojis(broker.canonical_name || broker.name || "").trim();
     const brokerIdentityKey = (broker.identity_key || broker.id || broker.primary_phone || brokerPhone || brokerName || "").toString().trim();
     if (brokerIdentityKey) updateUrlBroker(brokerIdentityKey);
     setSelectedBroker({
       id: brokerIdentityKey || brokerPhone || broker.primary_phone || brokerName,
       identity_key: brokerIdentityKey,
-      phone: brokerPhone || broker.primary_phone || "",
+      phone: brokerPhone || broker.primary_phone || broker.phone || normalizeRealPhone(brokerIdentityKey) || "",
       canonical_name: broker.canonical_name || broker.name || "",
       name: broker.canonical_name || broker.name || "",
       building_count: broker.building_count || 0,
@@ -3301,7 +3346,7 @@ return {
                       {selectedBroker.canonical_name || selectedBroker.name || selectedMsgDetails?.parsed?.broker_name || selectedMsgDetails?.parsed?.profile_name || "Broker"}
                     </h3>
                     <div className="text-[10px] text-zinc-500 flex items-center gap-2 mt-0.5 flex-wrap">
-                      <span className="truncate">{displayPhoneString(selectedBroker.phone || selectedMsgDetails?.parsed?.broker_phone || "") || "Number not resolved"}</span>
+                      <span className="truncate">{displayPhoneString(resolvedBrokerPhone) || "Number not resolved"}</span>
                       <span>•</span>
                       <span>{selectedBrokerObservations.length} posts</span>
                       {selectedBroker.building_count > 0 && (
@@ -3314,9 +3359,9 @@ return {
                   </div>
                 </div>
                 <div className="flex items-center gap-1.5">
-                  {normalizeRealPhone(selectedBroker.phone) && (
+                  {resolvedBrokerPhone && (
                     <button
-                      onClick={() => window.open(getWaLink(selectedBroker.phone), '_blank')}
+                      onClick={() => window.open(getWaLink(resolvedBrokerPhone), '_blank')}
                       className="h-7 px-3 rounded-md border border-white/10 bg-zinc-800 text-[#3EE88A] hover:text-white transition-colors text-[10px] font-bold flex items-center gap-1"
                     >
                       <MessageSquare className="w-3 h-3" strokeWidth={1.5} />
@@ -3548,13 +3593,13 @@ return {
                             )}
                           </div>
                           {/* WhatsApp CTA */}
-                          {normalizeRealPhone(selectedBroker?.phone) && (
+                          {resolvedBrokerPhone && (
                             <div
                               className="border-t border-white/5 px-4 py-2 flex items-center gap-2"
                               onClick={(e) => e.stopPropagation()}
                             >
                               <a
-                                href={getWaLinkWithRecall(selectedBroker.phone, obs.raw_message || obs.summary_title || "")}
+                                href={getWaLinkWithRecall(resolvedBrokerPhone, obs.raw_message || obs.summary_title || "")}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="flex items-center gap-1.5 text-[10px] font-semibold text-green-400 hover:text-green-300 transition-colors touch-target"
