@@ -65,7 +65,7 @@ export default async function SearchPage({ searchParams }: { searchParams: Searc
    return (
     <div className="min-h-screen bg-black text-white">
       <SiteHeader />
-      <main className="max-w-7xl mx-auto px-4 lg:px-6 py-10 lg:py-14">
+      <main className="max-w-[1600px] mx-auto px-4 sm:px-8 xl:px-12 py-10 lg:py-14">
         <header className="max-w-5xl">
           <div className="inline-flex items-center gap-2 rounded-full border border-green-400/20 bg-green-400/10 px-3 py-1 text-xs font-medium text-green-300 mb-4">
             <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
@@ -148,7 +148,7 @@ export default async function SearchPage({ searchParams }: { searchParams: Searc
 
             {state && state.results.length > 0 ? (
               <>
-                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 lg:gap-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4 lg:gap-6">
                   {state.results.map((row) => {
                     const card = toListingCardViewModel(row, row.resultType === "building");
                     return (
@@ -229,7 +229,7 @@ export default async function SearchPage({ searchParams }: { searchParams: Searc
                 </div>
               </>
             ) : (
-              <div className="grid grid-cols-1 lg:grid-cols-[2fr_1fr] gap-6">
+              <div className="grid grid-cols-1 lg:grid-cols-[3fr_1fr] gap-6">
                 <RequirementCapture query={query} />
 
                 <aside className="rounded-3xl border border-white/10 bg-zinc-950/80 p-6 lg:p-8">
