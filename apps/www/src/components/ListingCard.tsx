@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { MapPin, Building2 } from "lucide-react";
 import type { BuildingOnMap } from "@/lib/localities";
+import { slugify } from "@/lib/supabase";
 
 function formatPrice(value: number | null): string {
   if (value == null) return "Price on request";
@@ -24,9 +25,13 @@ export default function ListingCard({ building }: { building: BuildingOnMap }) {
     : "Price on request";
 
   const geocoded = building.latitude != null && building.longitude != null;
+  const href = `/buildings/${slugify(building.name)}`;
 
   return (
-    <div className="group bg-zinc-900/50 border border-white/10 rounded-xl p-5 lg:p-6 transition-colors hover:border-green-400/50 hover:bg-zinc-900">
+    <Link
+      href={href}
+      className="group block bg-zinc-900/50 border border-white/10 rounded-xl p-5 lg:p-6 transition-colors hover:border-green-400/50 hover:bg-zinc-900"
+    >
       <div className="flex items-start justify-between gap-2 mb-3">
         <h3 className="text-lg font-semibold text-white group-hover:text-green-400 transition-colors">
           {building.name}
@@ -44,6 +49,10 @@ export default function ListingCard({ building }: { building: BuildingOnMap }) {
         )}
       </div>
 
+      {building.address && (
+        <p className="text-xs text-zinc-500 mb-3 line-clamp-1">{building.address}</p>
+      )}
+
       <div className="flex flex-wrap gap-2 mb-3">
         {building.bhkRange && (
           <span className="px-2 py-1 bg-zinc-800 border border-white/10 rounded text-xs text-zinc-400">
@@ -60,7 +69,7 @@ export default function ListingCard({ building }: { building: BuildingOnMap }) {
         {building.listingCount} active listing{building.listingCount === 1 ? "" : "s"}
         {geocoded ? " · plotted on map" : ""}
       </p>
-    </div>
+    </Link>
   );
 }
 

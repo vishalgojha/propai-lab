@@ -2,12 +2,15 @@ import { getServerSupabase, slugify } from "./supabase";
 
 export type BuildingOnMap = {
   name: string;
+  id: number | null;
   latitude: number | null;
   longitude: number | null;
   listingCount: number;
   minPrice: number | null;
   maxPrice: number | null;
   bhkRange: string | null;
+  address: string | null;
+  developer: string | null;
 };
 
 export type LocalityData = {
@@ -253,12 +256,15 @@ export async function getLocalityData(rawSlug: string): Promise<LocalityData | n
 
     buildings.push({
       name: entry.name,
+      id: null,
       latitude,
       longitude,
       listingCount: entry.count,
       minPrice: entry.prices.length ? Math.min(...entry.prices) : null,
       maxPrice: entry.prices.length ? Math.max(...entry.prices) : null,
       bhkRange,
+      address: null,
+      developer: null,
     });
   }
 
@@ -313,9 +319,12 @@ export async function getAllLocalities(): Promise<LocalitySummary[]> {
 
 export type BuildingSummary = {
   name: string;
+  id: number | null;
   microMarket: string | null;
   listingCount: number;
   geocoded: boolean;
+  address: string | null;
+  developer: string | null;
 };
 
 export async function getAllBuildings(limit = 200): Promise<BuildingSummary[]> {
@@ -324,7 +333,7 @@ export async function getAllBuildings(limit = 200): Promise<BuildingSummary[]> {
 
   const { data: buildings } = await db
     .from("buildings")
-    .select("canonical_name, micro_market, latitude, longitude")
+    .select("id, canonical_name, micro_market, latitude, longitude, address, developer")
     .not("canonical_name", "is", null)
     .order("canonical_name", { ascending: true })
     .limit(limit);
@@ -346,11 +355,99 @@ export async function getAllBuildings(limit = 200): Promise<BuildingSummary[]> {
     const geocoded = b.latitude != null && b.longitude != null;
     return {
       name,
+      id: b.id ?? null,
       microMarket: (b.micro_market ?? "").trim() || null,
       listingCount: counts.get(name.toLowerCase()) ?? 0,
       geocoded,
+      address: (b.address ?? "").trim() || null,
+      developer: (b.developer ?? "").trim() || null,
     };
   });
+}
+
+export type BuildingDetail = {
+  id: number | null;
+  name: string;
+  slug: string;
+  microMarket: string | null;
+  address: string | null;
+  developer: string | null;
+  geocoded: boolean;
+  enrichmentConfidence: number | null;
+};
+
+export type BuildingListing = {
+  id: number;
+  bhk: string | null;
+  price: number | null;
+  price_unit: string | null;
+  furnishing: string | null;
+  intent: string | null;
+  broker_name: string | null;
+  broker_phone: string | null;
+  last_seen: string | null;
+};
+
+export async function getBuildingBySlug(rawSlug: string): Promise<BuildingDetail | null> {
+  const db = getServerSupabase();
+  const slug = slugify(rawSlug);
+  if (!db || !slug) return null;
+
+  const { data, error } = await db
+    .from("buildings")
+    .select("id, canonical_name, micro_market, latitude, longitude, address, developer, enrichment_confidence")
+    .not("canonical_name", "is", null);
+
+  if (error) {
+    console.error("getBuildingBySlug error:", error.message);
+    return null;
+  }
+
+  const match = (data ?? []).find((b) => slugify(b.canonical_name ?? "") === slug);
+  if (!match) return null;
+
+  return {
+    id: match.id ?? null,
+    name: (match.canonical_name ?? "").trim(),
+    slug,
+    microMarket: (match.micro_market ?? "").trim() || null,
+    address: (match.address ?? "").trim() || null,
+    developer: (match.developer ?? "").trim() || null,
+    geocoded: match.latitude != null && match.longitude != null,
+    enrichmentConfidence:
+      typeof match.enrichment_confidence === "number" ? match.enrichment_confidence : null,
+  };
+}
+
+export async function getBuildingListings(name: string): Promise<BuildingListing[]> {
+  const db = getServerSupabase();
+  if (!db || !name.trim()) return [];
+
+  const { data, error } = await db
+    .from("listings")
+    .select("id, bhk, price, price_unit, furnishing, intent, broker_name, broker_phone, last_seen, building_name")
+    .order("last_seen", { ascending: false })
+    .limit(100);
+
+  if (error) {
+    console.error("getBuildingListings error:", error.message);
+    return [];
+  }
+
+  const target = name.trim().toLowerCase();
+  return (data ?? [])
+    .filter((r) => (r.building_name ?? "").trim().toLowerCase() === target)
+    .map((r) => ({
+      id: r.id,
+      bhk: r.bhk,
+      price: r.price,
+      price_unit: r.price_unit,
+      furnishing: r.furnishing,
+      intent: r.intent,
+      broker_name: r.broker_name,
+      broker_phone: r.broker_phone,
+      last_seen: r.last_seen,
+    }));
 }
 
 export async function matchLocalities(
