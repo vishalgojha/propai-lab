@@ -508,23 +508,34 @@ export async function searchNaturalLanguageListings(
 
   const fields = LISTING_FIELDS.join(", ");
 
-  const fetchRows = async (narrowed: boolean) => {
-    let queryBuilder = db
-      .from("listings")
-      .select(fields)
-      .order("last_seen", { ascending: false })
-      .limit(narrowed ? 300 : 400);
+  // Paginate the full table so NO matching listing is skipped. Supabase caps a
+  // single select at 1000 rows; a bare .limit(400) would never surface the
+  // 1001st+ listing. We apply the locality filter at the DB layer (when a
+  // locality matched) and run the remaining hard filters in-memory below.
+  const fetchRows = async (narrowed: boolean): Promise<NaturalSearchRow[]> => {
+    const out: NaturalSearchRow[] = [];
+    const PAGE = 1000;
+    for (let offset = 0; ; offset += PAGE) {
+      let qb = db
+        .from("listings")
+        .select(fields)
+        .order("last_seen", { ascending: false })
+        .range(offset, offset + PAGE - 1);
 
-    if (narrowed && parsed.locality) {
-      queryBuilder = queryBuilder.eq("micro_market", parsed.locality);
-    }
+      if (narrowed && parsed.locality) {
+        qb = qb.eq("micro_market", parsed.locality);
+      }
 
-    const { data, error } = await queryBuilder;
-    if (error) {
-      console.error("searchNaturalLanguageListings error:", error.message);
-      return [] as NaturalSearchRow[];
+      const { data, error } = await qb;
+      if (error) {
+        console.error("searchNaturalLanguageListings error:", error.message);
+        return out;
+      }
+      const page = (data ?? []) as unknown as NaturalSearchRow[];
+      out.push(...page);
+      if (page.length < PAGE) break;
     }
-    return (data ?? []) as unknown as NaturalSearchRow[];
+    return out;
   };
 
   // When a locality matched, narrow at the DB layer AND enforce it as a hard
