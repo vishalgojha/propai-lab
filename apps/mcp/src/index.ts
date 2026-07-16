@@ -8,12 +8,10 @@ import {
   createRequirementRecord,
   describeSearch,
   estimatePrice,
-  getBrokerActivity,
   getBuildingIntel,
   getFreshStream,
   getHotLeadTriage,
-  getListingById,
-  getMarketSummary,
+  fetchListingById,
   matchBuyerToInventory,
   getStaleLeadReactivation,
   buildPricingNegotiationBrief,
@@ -21,14 +19,14 @@ import {
   qualifyLead,
   saveListingRecord,
   scheduleFollowUp,
-  searchBrokers,
+  findBrokers,
   searchPublicListings,
   summarizeThread,
 } from "./data.ts";
 import { formatCurrencyCr, formatPerSqft, formatSqft, listingLine } from "./format.ts";
 import { registerMcpPrompts } from "./prompts.ts";
 import { registerMcpResources } from "./resources.ts";
-import { executeSmartSearch } from "./smartSearch.ts";
+import { executeMarketSearch } from "./marketSearch.ts";
 import { registerMarketTools } from "./tools/market.ts";
 import { registerListingTools } from "./tools/listing.ts";
 import { registerRequirementTools } from "./tools/requirement.ts";
@@ -39,8 +37,6 @@ import { registerInboxTools } from "./tools/inbox.ts";
 import { registerIntelligenceTools } from "./tools/intelligence.ts";
 import { registerContactTools } from "./tools/contact.ts";
 import type { ToolContext } from "./types.js";
-import { LISTING_CARDS_URI } from "./uiResources.ts";
-
 export const MCP_TOOL_NAMES = [
   // Domain-organized tools (primary)
   "market_search",
@@ -78,18 +74,7 @@ export const MCP_TOOL_NAMES = [
   // ChatGPT-compatible tools (OpenAI search/fetch contract)
   "search",
   "fetch",
-  // Legacy tools (backward compatible)
-  "smartSearch",
-  "getListing",
-  "searchBrokers",
-  "search_listings",
-  "search_requirements",
-  "match_listing_to_requirement",
-  "semantic_search",
-  "get_fresh_stream",
-  "broker_activity_legacy",
   "triage_hot_leads",
-  "market_summary_legacy",
   "price_estimate",
   "building_intel",
   "save_listing",
@@ -98,7 +83,6 @@ export const MCP_TOOL_NAMES = [
   "qualify_lead",
   "draft_broadcast",
   "draft_growth_asset",
-  "buyer_to_inventory_match",
   "match_requirement_to_broker",
   "pricing_negotiation_brief",
   "stale_lead_reactivation",
@@ -134,31 +118,6 @@ function noResults(label: string) {
   });
 }
 
-function listingCardPayload(row: Record<string, unknown>) {
-  const price = typeof row.price === "number" ? row.price : Number(row.price);
-  const priceCr = Number.isFinite(price) ? Number((price / 10_000_000).toFixed(2)) : null;
-  return {
-    id: row.source_message_id,
-    source_message_id: row.source_message_id,
-    title: row.title || row.description || "Property",
-    locality: row.sub_area || row.area || row.location,
-    location: row.location || row.sub_area || row.area,
-    source_group_name: row.source_group_name,
-    price: row.price,
-    price_cr: priceCr,
-    price_display: typeof row.price === "number" ? formatCurrencyCr(row.price) : null,
-    bhk: row.bhk,
-    property_type: row.property_type || row.listing_type,
-    area_sqft: row.size_sqft,
-    area_display: typeof row.size_sqft === "number" ? formatSqft(row.size_sqft) : null,
-    furnishing: row.furnishing,
-    broker_name: row.primary_contact_name,
-    broker_phone: row.primary_contact_number || row.primary_contact_wa,
-    raw_message: row.raw_message,
-    message_timestamp: row.message_timestamp,
-  };
-}
-
 export function createMcpServer(context: ToolContext = {}) {
   const server = new McpServer(
     {
@@ -170,7 +129,7 @@ export function createMcpServer(context: ToolContext = {}) {
         tools: {},
       },
       instructions:
-        "PropAI MCP is a WhatsApp-native real estate intelligence platform for Indian brokers. Tools are organized by domain:\n  • **market**: Search, summarize, stats, trends — general market queries\n  • **listing**: Get details, find similar, history, contact broker\n  • **requirement**: Search buyer/tenant requirements, match to inventory\n  • **broker**: Search, profile, activity, inventory\n  • **building**: Search, profile, inventory, requirements, market pulse\n  • **location**: Search, nearby, market analysis\n  • **conversation**: Search, timeline, summarize, reply\n  • **intel**: Ask questions, explain trends, compare entities\n  • **contact**: Search, call, WhatsApp\n\nUse `market_search` as your primary entry point for general queries. SmartSearch also accepts natural language like '3 BHK in Bandra West under 2 Cr'.",
+        "PropAI MCP is a WhatsApp-native real estate intelligence platform for Indian brokers. Tools are organized by domain:\n  • **market**: Search, summarize, stats, trends — general market queries\n  • **listing**: Get details, find similar, history, contact broker\n  • **requirement**: Search buyer/tenant requirements, match to inventory\n  • **broker**: Search, profile, activity, inventory\n  • **building**: Search, profile, inventory, requirements, market pulse\n  • **location**: Search, nearby, market analysis\n  • **conversation**: Search, timeline, summarize, reply\n  • **intel**: Ask questions, explain trends, compare entities\n  • **contact**: Search, call, WhatsApp\n\nUse `market_search` as your primary entry point for general queries. It also accepts natural language like '3 BHK in Bandra West under 2 Cr'.",
     },
   );
 
@@ -188,105 +147,7 @@ export function createMcpServer(context: ToolContext = {}) {
   registerIntelligenceTools(server, context);
   registerContactTools(server, context);
 
-  // ── Legacy tools (backward compatible) ──
-
-  server.registerTool("smartSearch", {
-    description:
-      "Search Mumbai real estate inventory, requirements, brokers, and market intelligence using natural language. This is the PRIMARY tool — always use it first when the user asks about properties, listings, requirements, market rates, localities, or broker information. It internally understands intent and returns the most relevant results.",
-    inputSchema: {
-      query: z.string().describe(
-        "Natural language query. Examples: '3 BHK for sale in Bandra under 8 crore', 'rental requirements in Khar West above 1 lakh', 'Which locality has the strongest rental demand?', 'brokers dealing in Powai', 'market rate for Kalpataru Magnus'"
-      ),
-      locality: z.string().optional().describe("Override locality (auto-extracted from query if not provided)"),
-      city: z.string().optional().describe("Override city (auto-extracted from query if not provided)"),
-      limit: z.number().default(20).describe("Max results to return (1-50)"),
-    },
-  }, async (input) => {
-    await logToolCall(brokerId(context), "smartSearch", input);
-    const result = await executeSmartSearch(input);
-
-    const items = Array.isArray(result.results) ? result.results : [];
-    const lines: string[] = [];
-    lines.push(result.explanation);
-    lines.push("");
-
-    if (result.intent === "listing_search" || result.intent === "fresh_stream") {
-      for (let i = 0; i < items.length; i++) {
-        const r = items[i] as Record<string, unknown>;
-        lines.push(listingLine(r as any, i));
-      }
-    } else if (result.intent === "requirement_search") {
-      for (let i = 0; i < items.length; i++) {
-        const r = items[i] as Record<string, unknown>;
-        lines.push(`${i + 1}. ${r.title || "Requirement"} — ${r.sub_area || r.area || r.location || "?"} — ${formatCurrencyCr(r.price as number)}`);
-      }
-    } else if (result.intent === "broker_search") {
-      for (let i = 0; i < items.length; i++) {
-        const r = items[i] as Record<string, unknown>;
-        lines.push(`${i + 1}. ${r.broker_name || "Unknown"} — ${r.city || ""} — ${r.agency || ""} — ${r.phone || ""}`);
-      }
-    }
-
-    lines.push("");
-    lines.push("── Suggested follow-ups ──");
-    for (const f of result.suggestedFollowUps) {
-      lines.push(`• ${f}`);
-    }
-
-    return textResponse(lines.join("\n"), result);
-  });
-
-  server.registerTool("getListing", {
-    description:
-      "Retrieve complete details for a specific listing by its source_message_id. Use this when you have a listing ID from a previous search result.",
-    inputSchema: {
-      listing_id: z.string().describe("The source_message_id of the listing"),
-    },
-  }, async (input) => {
-    await logToolCall(brokerId(context), "getListing", input);
-    const row = await getListingById(input.listing_id);
-    if (!row) {
-      return textResponse(`No listing found with id "${input.listing_id}".`);
-    }
-    const r = row as Record<string, unknown>;
-    const details = [
-      `Title: ${r.title || "N/A"}`,
-      `Type: ${r.listing_type || "N/A"}`,
-      `Locality: ${r.sub_area || r.area || r.location || "N/A"}`,
-      `Price: ${r.price != null ? formatCurrencyCr(r.price as number) : "N/A"}`,
-      `Area: ${r.size_sqft != null ? formatSqft(r.size_sqft as number) : "N/A"}`,
-      `BHK: ${r.bhk != null ? `${r.bhk} BHK` : "N/A"}`,
-      `Furnishing: ${r.furnishing || "N/A"}`,
-      `Contact: ${r.primary_contact_name || "N/A"} — ${r.primary_contact_number || "N/A"}`,
-      `Description: ${r.description || r.raw_message || "N/A"}`,
-      `Posted: ${r.message_timestamp ? new Date(String(r.message_timestamp)).toLocaleDateString("en-IN") : "N/A"}`,
-    ];
-
-    return textResponse(details.join("\n"), row);
-  });
-
-  server.registerTool("searchBrokers", {
-    description:
-      "Search brokers within the PropAI network by city, locality, or specialization.",
-    inputSchema: {
-      city: z.string().optional().describe("City to search (e.g. Mumbai, Pune)"),
-      locality: z.string().optional().describe("Specific locality (e.g. Bandra, Andheri)"),
-      specialization: z.string().optional().describe("Area of specialization (e.g. residential, commercial)"),
-      limit: z.number().default(20).describe("Max results"),
-    },
-  }, async (input) => {
-    await logToolCall(brokerId(context), "searchBrokers", input);
-    const rows = await searchBrokers(input);
-    if (!rows.length) {
-      return textResponse(`No brokers found in ${input.locality || input.city || "your search"} right now.`);
-    }
-
-    const lines = rows.map((r: Record<string, unknown>, i: number) =>
-      `${i + 1}. ${r.full_name || "Unknown"} — ${r.city || ""} — ${r.agency_name || ""} — ${r.phone || r.email || ""}`
-    );
-
-    return textResponse(`Found ${rows.length} broker(s):\n\n${lines.join("\n")}`, { results: rows });
-  });
+  // ── Additional tools ──
 
   server.registerTool(
     "draft_growth_asset",
@@ -437,44 +298,6 @@ export function createMcpServer(context: ToolContext = {}) {
   );
 
   server.registerTool(
-    "buyer_to_inventory_match",
-    {
-      description:
-        "Match a buyer brief to current inventory from the PropAI broker network, workspace CRM, or both, with explainable ranking.",
-      inputSchema: {
-        raw_text: z.string().optional().describe("Buyer brief or requirement note"),
-        locality: z.string().optional(),
-        city: z.string().optional(),
-        bhk: z.number().optional(),
-        max_budget_cr: z.number().optional(),
-        property_type: z.enum(["sale", "rent", "lease", "all"]).default("sale"),
-        source_mode: z.enum(["public", "workspace", "both"]).default("both"),
-        limit: z.number().default(8),
-      },
-    },
-    async (input) => {
-      const id = requireBrokerId(context);
-      await logToolCall(id, "buyer_to_inventory_match", input);
-      const result = await matchBuyerToInventory({ brokerId: id, ...input });
-
-      if (!result.items.length) {
-        return textResponse("No strong inventory matches found for this buyer brief yet.", result);
-      }
-
-      const lines = result.items.map((item, index) => {
-        const location = item.location ? ` in ${item.location}` : "";
-        const price = item.price != null ? `, approx ${formatCurrencyCr(item.price)}` : "";
-        return `${index + 1}. ${item.title}${location}${price} - score ${item.score}. Why: ${item.why.join(", ")}. Next: ${item.suggested_action}`;
-      });
-
-      return textResponse(
-        `Found ${result.items.length} ranked buyer-to-inventory matches:\n\n${lines.join("\n")}`,
-        result,
-      );
-    },
-  );
-
-  server.registerTool(
     "save_thread_requirement",
     {
       description:
@@ -591,33 +414,6 @@ export function createMcpServer(context: ToolContext = {}) {
   );
 
   server.registerTool(
-    "broker_activity_legacy",
-    {
-      description:
-        "Summarize the broker's recent PropAI activity: lead volume, active chats, follow-up queue, and top localities.",
-      inputSchema: {
-        days: z.number().default(7).describe("Look back window in days"),
-      },
-    },
-    async (input) => {
-      const id = requireBrokerId(context);
-      await logToolCall(id, "broker_activity_legacy", input);
-      const result = await getBrokerActivity({ brokerId: id, days: input.days });
-      const topLocalities = result.top_localities.length
-        ? result.top_localities.map((item) => `${item.locality} (${item.count})`).join(", ")
-        : "none yet";
-      const nextFollowUp = result.next_follow_up
-        ? `${result.next_follow_up.lead_name || "Unknown lead"} at ${result.next_follow_up.due_at}`
-        : "none scheduled";
-
-      return textResponse(
-        `Last ${result.days} days: ${result.leads_total} leads (${result.listings_total} listings, ${result.requirements_total} requirements), ${result.messages_total} messages across ${result.active_chats} chats, ${result.pending_follow_ups} pending follow-ups. Next follow-up: ${nextFollowUp}. Top localities: ${topLocalities}.`,
-        result,
-      );
-    },
-  );
-
-  server.registerTool(
     "create_requirement",
     {
       description:
@@ -707,34 +503,6 @@ export function createMcpServer(context: ToolContext = {}) {
       await logToolCall(id, "draft_broadcast", input);
       const message = buildBroadcastDraft(input);
       return textResponse(message, { draft: message });
-    },
-  );
-
-  server.registerTool(
-    "market_summary_legacy",
-    {
-      description:
-        "Summarize listing market activity for a locality, city, deal type, or BHK from PropAI's public stream.",
-      inputSchema: {
-        locality: z.string().optional(),
-        city: z.string().optional(),
-        property_type: z.enum(["sale", "rent", "lease", "all"]).default("all"),
-        bhk: z.number().optional(),
-        days: z.number().default(30),
-        limit: z.number().default(200),
-      },
-    },
-    async (input) => {
-      const id = requireBrokerId(context);
-      await logToolCall(id, "market_summary_legacy", input);
-      const result = await getMarketSummary(input);
-      const topLocalities = result.top_localities.length
-        ? result.top_localities.map((item) => `${item.locality} (${item.count})`).join(", ")
-        : "no strong locality cluster yet";
-      return textResponse(
-        `Market summary for the last ${result.days} days: ${result.listing_count} comparable listings, average ${result.avg_price_cr != null ? formatCurrencyCr(result.avg_price_cr) : "price unavailable"}, median ${result.median_price_cr != null ? formatCurrencyCr(result.median_price_cr) : "price unavailable"}, average ${result.avg_price_per_sqft != null ? `₹${result.avg_price_per_sqft.toLocaleString("en-IN")}/sqft` : "ppsf unavailable"}. Top localities: ${topLocalities}.`,
-        result,
-      );
     },
   );
 
@@ -882,219 +650,6 @@ export function createMcpServer(context: ToolContext = {}) {
   );
 
   server.registerTool(
-    "search_listings",
-    {
-      description:
-        "Search real estate listings from PropAI's live WhatsApp stream. Use when someone asks about available properties, flats, offices, or shops in a locality.",
-      _meta: {
-        ui: {
-          resourceUri: LISTING_CARDS_URI,
-          visibility: ["model", "app"],
-        },
-        "ui/resourceUri": LISTING_CARDS_URI,
-      },
-      inputSchema: {
-        locality: z.string().describe("Area name e.g. Bandra, Powai, Andheri").optional(),
-        city: z.string().describe("City e.g. Mumbai, Pune").optional(),
-        property_type: z.enum(["sale", "rent", "lease", "all"]).default("all"),
-        bhk: z.number().describe("Number of BHK e.g. 2, 3").optional(),
-        budget_min_cr: z.number().describe("Min budget in crores").optional(),
-        max_budget_cr: z.number().describe("Max budget in crores").optional(),
-        limit: z.number().default(10),
-      },
-    },
-    async (input) => {
-      await logToolCall(brokerId(context), "search_listings", input);
-      const rows = await searchPublicListings({ ...input, listingKind: "listing" });
-      if (!rows.length) return noResults("listings");
-
-      const place = [input.locality, input.city].filter(Boolean).join(", ") || "your search";
-      const lines = rows.map(listingLine);
-      const listingCards = rows.map((row) => listingCardPayload(row as Record<string, unknown>));
-      return {
-        content: [{ type: "text" as const, text: `Found ${rows.length} listings in ${place}:\n\n${lines.join("\n")}` }],
-        structuredContent: {
-          results: rows,
-          listing_cards: listingCards,
-        },
-        _meta: {
-          ui: {
-            resourceUri: LISTING_CARDS_URI,
-            visibility: ["model", "app"],
-          },
-          "ui/resourceUri": LISTING_CARDS_URI,
-          listings: listingCards,
-        },
-      } as any;
-    },
-  );
-
-  server.registerTool(
-    "search_requirements",
-    {
-      description:
-        "Find buyer/tenant requirements posted by brokers. Use when someone wants to know what buyers are looking for in a locality.",
-      inputSchema: {
-        locality: z.string().optional(),
-        city: z.string().optional(),
-        bhk: z.number().optional(),
-        budget_min_cr: z.number().optional(),
-        max_budget_cr: z.number().optional(),
-        limit: z.number().default(10),
-      },
-    },
-    async (input) => {
-      await logToolCall(brokerId(context), "search_requirements", input);
-      const rows = await searchPublicListings({ ...input, listingKind: "requirement" });
-      if (!rows.length) return noResults("requirements");
-
-      const summary = describeSearch(input);
-      const lines = rows.map(listingLine);
-      return textResponse(`Found ${rows.length} buyer/tenant requirements for ${summary}:\n\n${lines.join("\n")}`, {
-        results: rows,
-      });
-    },
-  );
-
-  server.registerTool(
-    "match_listing_to_requirement",
-    {
-      description:
-        "Find listings that match a specific requirement. Use when broker has a buyer and wants matching properties.",
-      inputSchema: {
-        locality: z.string().optional(),
-        bhk: z.number().optional(),
-        budget_min_cr: z.number().optional(),
-        budget_max_cr: z.number().optional(),
-        property_type: z.enum(["sale", "rent"]).default("sale"),
-      },
-    },
-    async (input) => {
-      await logToolCall(brokerId(context), "match_listing_to_requirement", input);
-      const rows = await searchPublicListings({
-        ...input,
-        max_budget_cr: input.budget_max_cr,
-        listingKind: "listing",
-        limit: 10,
-      });
-      if (!rows.length) return noResults("matching listings");
-
-      const summary = describeSearch(input);
-      const lines = rows.map(listingLine);
-      return textResponse(`Found ${rows.length} matching listings for ${summary}:\n\n${lines.join("\n")}`, {
-        results: rows,
-      });
-    },
-  );
-
-  server.registerTool(
-    "semantic_search",
-    {
-      description:
-        "Semantically search real estate listings using natural language. Use when someone describes what they want in plain English, e.g. 'a quiet 2BHK near the sea in Bandra with good ventilation under 3Cr'. Finds listings by meaning, not just keyword match.",
-      inputSchema: {
-        query: z.string().describe("Natural language description of what the user is looking for"),
-        locality: z.string().optional(),
-        bhk: z.string().optional(),
-        type: z.string().optional(),
-        threshold: z.number().default(0.55).describe("Similarity threshold (0-1, higher = stricter)"),
-        limit: z.number().default(10),
-      },
-    },
-    async (input) => {
-      await logToolCall(brokerId(context), "semantic_search", input);
-
-      const rawEmbedding = await generateEmbedding(input.query);
-      if (!rawEmbedding) {
-        return textResponse("Could not generate an embedding right now. Try the search_listings tool instead.");
-      }
-      const embedding: number[] = rawEmbedding;
-
-      const threshold = input.threshold ?? 0.55;
-      const limit = input.limit ?? 10;
-
-      async function fetchRowsWithEmbeddings() {
-        const results: Array<Record<string, unknown> & { similarity: number }> = [];
-        for (const table of [] as string[]) {
-          let offset = 0;
-          while (true) {
-            const { data: rows, error } = await supabase
-              .from(table as any)
-              .select("id, tenant_id, message_id, locality, bhk, price_numeric, price_label, type, raw_text, furnishing, embedding")
-              .not("embedding", "is", null)
-              .range(offset, offset + 200);
-            if (error) break;
-            if (!rows || rows.length === 0) break;
-
-            for (const row of rows) {
-              const vec = row.embedding as number[] | string | null;
-              if (!vec) continue;
-              const parsedVec = typeof vec === "string" ? JSON.parse(vec) as number[] : vec;
-              if (!Array.isArray(parsedVec) || parsedVec.length !== 768) continue;
-
-              if (input.locality && !String(row.locality || "").toLowerCase().includes(input.locality.toLowerCase())) continue;
-              if (input.bhk && String(row.bhk || "") !== String(input.bhk)) continue;
-              if (input.type && String(row.type || "").toLowerCase() !== input.type.toLowerCase()) continue;
-
-              let dot = 0, normA = 0, normB = 0;
-              for (let i = 0; i < 768; i++) {
-                dot += embedding[i] * parsedVec[i];
-                normA += embedding[i] * embedding[i];
-                normB += parsedVec[i] * parsedVec[i];
-              }
-              const sim = dot / (Math.sqrt(normA) * Math.sqrt(normB) || 1);
-
-              if (sim >= threshold) {
-                results.push({ ...row, similarity: sim });
-              }
-            }
-            offset += 200;
-          }
-        }
-        results.sort((a, b) => b.similarity - a.similarity);
-        return results.slice(0, limit);
-      }
-
-      const results = await fetchRowsWithEmbeddings();
-
-      if (!results.length) {
-        return textResponse(`No semantically matching listings found for "${input.query}". Try lowering the threshold or using the search_listings tool for keyword-based search.`, { results: [] });
-      }
-
-      const lines = results.map((r: any) =>
-        `${r.bhk || "?"}BHK ${r.locality || "?"} — ${r.price_label || "?"} (${r.type || "?"}${r.furnishing ? `, ${r.furnishing}` : ""}) — ${Math.round(r.similarity * 100)}% match`
-      );
-      return textResponse(`Found ${results.length} semantically matching listings for "${input.query}":\n\n${lines.join("\n")}`, {
-        results,
-      });
-    },
-  );
-
-  server.registerTool(
-    "get_fresh_stream",
-    {
-      description:
-        "Get the freshest listings and requirements from the last N hours. Use when broker wants to see what's new today.",
-      inputSchema: {
-        hours: z.number().default(6).describe("Last N hours"),
-        city: z.string().optional(),
-        limit: z.number().default(50),
-      },
-    },
-    async (input) => {
-      await logToolCall(brokerId(context), "get_fresh_stream", input);
-      const rows = await getFreshStream(input);
-      if (!rows.length) return noResults(`items from the last ${input.hours ?? 6} hours`);
-
-      const lines = rows.map(listingLine);
-      const place = input.city || "all cities";
-      return textResponse(`Fresh stream from the last ${input.hours ?? 6} hours in ${place}:\n\n${lines.join("\n")}`, {
-        results: rows,
-      });
-    },
-  );
-
-  server.registerTool(
     "building_intel",
     {
       description:
@@ -1181,7 +736,7 @@ export function createMcpServer(context: ToolContext = {}) {
   }, async (input) => {
     const id = brokerId(context);
     await logToolCall(id, "search", input);
-    const result = await executeSmartSearch(input);
+    const result = await executeMarketSearch(input);
 
     const items = Array.isArray(result.results) ? result.results : [];
     const intent = String(result.intent || "");
@@ -1225,7 +780,7 @@ export function createMcpServer(context: ToolContext = {}) {
       return { id: resultId, title };
     });
 
-    // Return both structuredContent (for OpenAI) and content (for MCP compatibility)
+    // Return both structuredContent and content for client display
     return {
       structuredContent: { results: searchResults },
       content: [{ type: "text" as const, text: JSON.stringify({ results: searchResults }) }],
@@ -1248,7 +803,7 @@ export function createMcpServer(context: ToolContext = {}) {
     try {
       switch (type) {
         case "listing": {
-          const result = await getListingById(value);
+          const result = await fetchListingById(value);
           if (!result) {
             return {
               structuredContent: { error: `Listing "${value}" not found.` },
@@ -1279,7 +834,7 @@ export function createMcpServer(context: ToolContext = {}) {
         }
 
         case "requirement": {
-          const result = await getListingById(value);
+          const result = await fetchListingById(value);
           if (!result) {
             return {
               structuredContent: { error: `Requirement "${value}" not found.` },
@@ -1305,7 +860,7 @@ export function createMcpServer(context: ToolContext = {}) {
         }
 
         case "broker": {
-          // Use searchBrokersData with the broker ID - need to search by ID
+          // Use findBrokersData with the broker ID - need to search by ID
           const { data, error } = await supabase
             .from("profiles")
             .select("id, full_name, phone, email, city, locations, agency_name, app_role")
@@ -1364,7 +919,7 @@ export function createMcpServer(context: ToolContext = {}) {
 
         case "market": {
           const query = decodeURIComponent(value);
-          const result = await executeSmartSearch({ query });
+          const result = await executeMarketSearch({ query });
           const lines = [
             String(result.explanation || `Market intelligence for ${query}`),
             "",
@@ -1422,7 +977,7 @@ export {
   formatPerSqft,
   formatSqft,
   listingLine,
-  getListingById,
-  searchBrokers,
-  executeSmartSearch,
+  fetchListingById,
+  findBrokers,
+  executeMarketSearch,
 };

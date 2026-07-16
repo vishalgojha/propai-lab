@@ -1,6 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { searchBrokers as searchBrokersData, getBrokerActivity, logToolCall } from "../data.ts";
+import { findBrokers as findBrokersData, getBrokerActivity, logToolCall } from "../data.ts";
 import type { ToolContext } from "../types.js";
 
 function textResponse(text: string, structured?: unknown) {
@@ -32,7 +32,7 @@ export function registerBrokerTools(server: McpServer, context: ToolContext) {
   }, async (input) => {
     const id = brokerId(context);
     await logToolCall(id, "broker_search", input);
-    const brokers = await searchBrokersData({
+    const brokers = await findBrokersData({
       locality: input.location,
       city: input.city,
       specialization: input.specialization,
@@ -54,7 +54,7 @@ export function registerBrokerTools(server: McpServer, context: ToolContext) {
   }, async (input) => {
     const id = brokerId(context);
     await logToolCall(id, "broker_profile", input);
-    const brokers = await searchBrokersData({ limit: 5 });
+    const brokers = await findBrokersData({ limit: 5 });
     const broker = brokers.find((b: any) =>
       (input.name && b.full_name?.toLowerCase().includes(input.name.toLowerCase())) ||
       (input.phone && b.phone?.includes(input.phone))

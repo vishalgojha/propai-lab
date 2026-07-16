@@ -1,1 +1,0 @@
-{"query": "create index if not exists idx_raw_messages_created_at on public.raw_messages using btree (created_at desc);"}

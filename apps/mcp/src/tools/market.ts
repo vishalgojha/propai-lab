@@ -1,7 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { getMarketSummary, logToolCall } from "../data.ts";
-import { executeSmartSearch } from "../smartSearch.ts";
+import { executeMarketSearch } from "../marketSearch.ts";
 import type { ToolContext } from "../types.js";
 
 function textResponse(text: string, structured?: unknown) {
@@ -27,7 +27,7 @@ export function registerMarketTools(server: McpServer, context: ToolContext) {
   }, async (input) => {
     const id = brokerId(context);
     await logToolCall(id, "market_search", input);
-    const result = await executeSmartSearch({ query: input.query, locality: input.location, city: input.city, limit: input.limit });
+    const result = await executeMarketSearch({ query: input.query, locality: input.location, city: input.city, limit: input.limit });
     const items = result.results || [];
     return textResponse(items.length ? `${items.length} result(s) for "${input.query}"` : 'No results found. Try a broader search.', result);
   });

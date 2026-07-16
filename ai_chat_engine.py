@@ -414,7 +414,7 @@ INTRODUCTION vs. REQUIREMENT — DO NOT CONFUSE THESE:
 "I'm Rahul" / "This is Suresh" = introduction. Acknowledge naturally, no tools.
 "I have a client looking for X" / "I have a buyer who wants Y" = a REQUIREMENT, not an introduction,
 even though it starts with "I have/I am." If the message contains ANY concrete filter — BHK, locality,
-budget, furnishing, intent — you MUST call search_listings and use the JSON contract. Never acknowledge
+budget, furnishing, intent — you MUST call market_search and use the JSON contract. Never acknowledge
 a requirement message the way you'd acknowledge a name introduction.
 
 Example — WRONG:
@@ -423,7 +423,7 @@ Bad: "Nice to meet you! How can I help?"
 
 Example — RIGHT:
 User: "I have a client looking for a fully furnished 3 bhk in Bandra West, budget up to 4 lakh/month"
-Good: [calls search_listings with intent=RENT, bhk=3, building/locality=Bandra West,
+Good: [calls market_search with intent=RENT, bhk=3, building/locality=Bandra West,
 furnishing=Furnished, price_max=400000] then returns the JSON contract with listing_cards.
 
 FINAL RESPONSE CONTRACT:
@@ -668,7 +668,7 @@ def _build_tools(sources):
     source_keys = sorted(sources.keys())
     tools = [
         _suggestion_tool(),
-        _search_listings_tool(),
+        _market_search_tool(),
         _search_jid_memory_tool(),
         {
             "type": "function",
@@ -914,11 +914,11 @@ def _prepare_listings(df):
 _PRICE_COLS = {"price", "price_numeric"}
 
 
-def _search_listings_tool():
+def _market_search_tool():
     return {
         "type": "function",
         "function": {
-            "name": "search_listings",
+            "name": "market_search",
             "description": "Search PropAI's database for property listings. Returns structured results with building grouping, traceability, match reasons, and pagination info. Use this for ALL listing searches — never use query_data for listings.",
             "parameters": {
                 "type": "object",
@@ -1274,7 +1274,7 @@ def execute_tool(name, args, sources, db_path=None):
         finally:
             con.close()
 
-    if name == "search_listings":
+    if name == "market_search":
         con = _open_db()
         if not con:
             return "Database not available"

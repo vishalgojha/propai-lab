@@ -754,7 +754,7 @@ export function chatAIChat(
   );
 }
 
-export function searchListings(params: {
+export function marketSearchListings(params: {
   intent?: string;
   bhk?: string;
   building?: string;
@@ -774,7 +774,7 @@ export function searchListings(params: {
       searchParams.set(k, String(v));
     }
   }
-  return fetchJSON<any>(`/search/listings?${searchParams}`);
+  return fetchJSON<any>(`/search/market?${searchParams}`);
 }
 
 export function getListingSources(listingId: number) {

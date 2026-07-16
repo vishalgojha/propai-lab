@@ -1,1 +1,0 @@
-{"query": "SELECT COUNT(*) FROM raw_messages; SELECT MAX(created_at) FROM raw_messages;"}

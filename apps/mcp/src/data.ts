@@ -1736,7 +1736,7 @@ export async function getBuildingIntel(input: {
   };
 }
 
-export async function getListingById(listingId: string) {
+export async function fetchListingById(listingId: string) {
   const parts = sourceIdParts(listingId);
   let query = supabase
     .from("parsed_output")
@@ -1757,7 +1757,7 @@ export async function getListingById(listingId: string) {
   return normalized.length ? normalized[0] : null;
 }
 
-export async function searchBrokers(input: {
+export async function findBrokers(input: {
   city?: string;
   locality?: string;
   specialization?: string;

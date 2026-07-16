@@ -50,29 +50,6 @@ export function registerMcpPrompts(server: McpServer) {
   );
 
   server.registerPrompt(
-    "buyer_to_inventory_match",
-    {
-      title: "Buyer to Inventory Match",
-      description: "Turn a buyer brief into ranked listing matches with reasons.",
-      argsSchema: {
-        brief: z.string().describe("Buyer requirement or search brief"),
-        source_mode: z.enum(["public", "workspace", "both"]).optional(),
-      },
-    },
-    async ({ brief, source_mode }) => ({
-      messages: [
-        {
-          role: "user",
-          content: {
-            type: "text",
-            text: `Match this buyer brief to inventory and rank the best options first. Brief: ${brief}. Source mode: ${source_mode || "both"}. Explain why each listing fits and what I should send first.`,
-          },
-        },
-      ],
-    }),
-  );
-
-  server.registerPrompt(
     "match_requirement_to_broker",
     {
       title: "Match Requirement to Broker",

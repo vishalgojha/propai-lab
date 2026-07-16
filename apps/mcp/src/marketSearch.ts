@@ -25,7 +25,7 @@ type ExtractedParams = {
   limit?: number;
 };
 
-type SmartSearchResult = {
+type MarketSearchResult = {
   intent: Intent;
   query: string;
   params: ExtractedParams;
@@ -226,14 +226,14 @@ function buildFollowUps(intent: Intent, params: ExtractedParams): string[] {
   return suggestions.slice(0, 4);
 }
 
-type SmartSearchInput = {
+type MarketSearchInput = {
   query: string;
   locality?: string;
   city?: string;
   limit?: number;
 };
 
-export async function executeSmartSearch(input: SmartSearchInput): Promise<SmartSearchResult> {
+export async function executeMarketSearch(input: MarketSearchInput): Promise<MarketSearchResult> {
   const query = input.query.trim();
   const intent = classifyIntent(query);
   const extracted = extractParams(query);

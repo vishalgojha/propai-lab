@@ -1,6 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { getListingById, searchBrokers as searchBrokersData, logToolCall } from "../data.ts";
+import { fetchListingById, findBrokers as findBrokersData, logToolCall } from "../data.ts";
 import type { ToolContext } from "../types.js";
 
 function textResponse(text: string, structured?: unknown) {
@@ -26,7 +26,7 @@ export function registerContactTools(server: McpServer, context: ToolContext) {
   }, async (input) => {
     const id = brokerId(context);
     await logToolCall(id, "contact_search", input);
-    const brokers = await searchBrokersData({ locality: input.location, city: input.city, specialization: input.specialization, limit: input.limit });
+    const brokers = await findBrokersData({ locality: input.location, city: input.city, specialization: input.specialization, limit: input.limit });
     if (!brokers.length) return textResponse("No contacts found.", { contacts: [] });
     const list = brokers.map((b: any) => `${b.full_name || "Unknown"}${b.phone ? ` · ${b.phone}` : ""}${b.locations?.length ? ` [${b.locations.join(", ")}]` : ""}`).join("\n");
     return textResponse(`${brokers.length} contact(s):\n${list}`, { contacts: brokers });
@@ -35,7 +35,7 @@ export function registerContactTools(server: McpServer, context: ToolContext) {
   server.registerTool("contact_call", {
     description: "Get the phone number for a broker contact",
     inputSchema: {
-      listing_id: z.string().optional().describe("Listing id returned by search_listings"),
+      listing_id: z.string().optional().describe("Listing id returned by listing_get"),
       name: z.string().optional().describe("Broker name"),
       phone: z.string().optional().describe("Broker phone number"),
     },
@@ -43,7 +43,7 @@ export function registerContactTools(server: McpServer, context: ToolContext) {
     const id = brokerId(context);
     await logToolCall(id, "contact_call", input);
     if (input.listing_id) {
-      const listing = await getListingById(input.listing_id);
+      const listing = await fetchListingById(input.listing_id);
       if (listing?.primary_contact_number || listing?.primary_contact_wa) {
         const phone = listing.primary_contact_number || listing.primary_contact_wa;
         return textResponse(`${listing.primary_contact_name || "Broker"}: ${phone}`, {
@@ -58,7 +58,7 @@ export function registerContactTools(server: McpServer, context: ToolContext) {
       return textResponse(`Contact: ${input.phone}`, { name: input.name || null, phone: input.phone });
     }
 
-    const brokers = await searchBrokersData({ limit: 10 });
+    const brokers = await findBrokersData({ limit: 10 });
     const broker = input.name ? brokers.find((b: any) => b.full_name?.toLowerCase().includes(input.name!.toLowerCase())) : null;
     if (!broker) return textResponse("Contact not found.", { contact: null });
     return textResponse(`${broker.full_name || "Contact"}: ${broker.phone || "No phone"}`, { name: broker.full_name, phone: broker.phone });
