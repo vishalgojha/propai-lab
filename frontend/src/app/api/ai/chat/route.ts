@@ -6,11 +6,16 @@ import {
 
 const API_BASE = process.env.LAB_API_BASE_URL || "http://localhost:8000";
 
-function extractText(message: UIMessage | Record<string, any>) {
-  if (typeof (message as any).content === "string") return (message as any).content;
-  const parts = Array.isArray((message as any).parts) ? (message as any).parts : [];
+type UIMessageLike = {
+  content?: string;
+  parts?: Array<{ type?: string; text?: string }>;
+};
+
+function extractText(message: UIMessage | UIMessageLike) {
+  if (typeof message.content === "string") return message.content;
+  const parts = Array.isArray(message.parts) ? message.parts : [];
   return parts
-    .map((part: any) => {
+    .map((part) => {
       if (part?.type === "text") return part.text || "";
       if (typeof part?.text === "string") return part.text;
       return "";
@@ -39,10 +44,13 @@ function textStream(content: string) {
   });
 }
 
-async function callFastAPI(messages: { role: string; content: string }[], brokerPhone: string = "", sessionId: string = "") {
+async function callFastAPI(messages: { role: string; content: string }[], brokerPhone: string = "", sessionId: string = "", authHeader = "") {
   const fastapi = await fetch(`${API_BASE}/api/ai/chat`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      ...(authHeader ? { Authorization: authHeader } : {}),
+    },
     body: JSON.stringify({ messages, broker_phone: brokerPhone, session_id: sessionId }),
   });
 
@@ -68,6 +76,7 @@ export async function POST(req: Request) {
   const messages = toBackendMessages((body.messages || []) as UIMessage[]);
   const brokerPhone = (body.broker_phone as string) || "";
   const sessionId = (body.session_id as string) || "";
+  const authHeader = req.headers.get("authorization") || "";
 
   if (!messages.length || messages[messages.length - 1].role !== "user") {
     return createUIMessageStreamResponse({
@@ -76,7 +85,7 @@ export async function POST(req: Request) {
   }
 
   try {
-    const result = await callFastAPI(messages, brokerPhone, sessionId);
+    const result = await callFastAPI(messages, brokerPhone, sessionId, authHeader);
     return createUIMessageStreamResponse({ stream: textStream(result.content) });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Chat API failed";
@@ -90,10 +99,11 @@ export async function PUT(req: Request) {
   const messages = (body.messages || []) as { role: string; content: string }[];
   const brokerPhone = (body.broker_phone as string) || "";
   const sessionId = (body.session_id as string) || "";
+  const authHeader = req.headers.get("authorization") || "";
 
   try {
     const filtered = messages.filter((m) => m.content && ["system", "user", "assistant"].includes(m.role));
-    const result = await callFastAPI(filtered, brokerPhone, sessionId);
+    const result = await callFastAPI(filtered, brokerPhone, sessionId, authHeader);
     return Response.json(result);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Chat API failed";

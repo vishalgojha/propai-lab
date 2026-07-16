@@ -3,6 +3,7 @@
 export const dynamic = 'force-dynamic';
 
 import * as api from "@/lib/api";
+import { getAccessToken } from "@/lib/auth";
 import { useEffect, useState, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useChat } from "@ai-sdk/react";
@@ -60,17 +61,29 @@ export default function ChatPage() {
     transport: new DefaultChatTransport({
       api: "/api/ai/chat",
       body: () => ({ broker_phone: brokerPhone, session_id: sessionId }),
+      headers: async () => {
+        const token = await getAccessToken();
+        return token ? { Authorization: `Bearer ${token}` } : {};
+      },
     }),
   });
 
   // Load broker phone from profile
   useEffect(() => {
     const phone = user?.phone || "";
-    if (phone) {
-      api.getProfile(phone).then((profile: any) => {
-        if (profile?.phone) setBrokerPhone(profile.phone);
-      }).catch(() => {});
-    }
+    if (!phone) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const profile = await api.getProfile(phone);
+        if (!cancelled && profile?.phone) setBrokerPhone(profile.phone);
+      } catch {
+        // Ignore profile hydration failures here.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [user]);
 
   // Load sessions once brokerPhone is available
@@ -87,22 +100,31 @@ export default function ChatPage() {
 
   useEffect(() => {
     if (!brokerPhone) return;
-    loadSessions(brokerPhone).then((data) => {
+    let cancelled = false;
+    void (async () => {
+      const data = await loadSessions(brokerPhone);
+      if (cancelled) return;
       setSessionsLoaded(true);
-      // Auto-resume most recent session
       if (data.length > 0 && !sessionId) {
         const mostRecent = data[0];
         setSessionId(mostRecent.id);
-        api.getChatSessionMessages(mostRecent.id).then((msgs) => {
+        try {
+          const msgs = await api.getChatSessionMessages(mostRecent.id);
+          if (cancelled) return;
           setMessages(msgs.map((m) => ({
             id: m.id,
             role: m.role as "user" | "assistant",
             content: m.content,
           })));
-        }).catch(() => {});
+        } catch {
+          // Ignore resume failures and start from an empty thread.
+        }
       }
-    });
-  }, [brokerPhone]);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [brokerPhone, loadSessions, sessionId, setMessages]);
 
   // Load suggestions
   useEffect(() => {
