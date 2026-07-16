@@ -93,13 +93,16 @@ check("updatedLabel is a date string, not 'Seen'", () => {
   assert.notEqual(vm.updatedLabel, "Unknown");
 });
 
-// wa.me CTA reuse consistent with Market Inbox.
-check("waLinkFor builds wa.me/91 + 10-digit local", () => {
-  assert.equal(waLinkFor("9123456789"), "https://wa.me/919123456789");
-  assert.equal(waLinkFor("+91 91234 56789"), "https://wa.me/919123456789");
+// Broker contact must not embed the phone in public HTML (DPDP Act 2023).
+// waLinkFor now returns a server route that resolves the phone server-side.
+check("waLinkFor returns the server redirect route (no phone in URL)", () => {
+  assert.equal(waLinkFor(123), "/contact-broker/123");
 });
-check("missing phone -> no wa link (no dead CTA)", () => {
-  const vm = toListingCardViewModel(base({ broker_phone: null }), false);
+check("waLinkFor(null) -> no link", () => {
+  assert.equal(waLinkFor(null), null);
+});
+check("missing listing id -> no wa link (no dead CTA)", () => {
+  const vm = toListingCardViewModel(base({ id: null as unknown as number }), false);
   assert.equal(vm.waLink, null);
 });
 
@@ -114,7 +117,7 @@ check('"3 bhk in bandra east" card has non-duplicated title + unit price + statu
   assert.notEqual(vm.title, vm.locality);
   assert.match(vm.priceLabel, /Cr$/);
   assert.equal(vm.statusLabel, "Available");
-  assert.equal(vm.waLink, "https://wa.me/919988776655");
+  assert.equal(vm.waLink, "/contact-broker/1");
 });
 
 console.log(`\n${passed} checks passed`);

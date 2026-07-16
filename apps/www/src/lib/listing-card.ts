@@ -124,13 +124,13 @@ function formatUpdated(iso: string | null): string {
   return date.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
 }
 
-// Shared wa.me deep-link logic, consistent with Market Inbox (frontend).
-export function waLinkFor(phone: string | null): string | null {
-  if (!phone) return null;
-  const digits = phone.replace(/\D/g, "");
-  const local = digits.endsWith("91") && digits.length > 10 ? digits.slice(-10) : digits.slice(-10);
-  if (local.length !== 10) return null;
-  return `https://wa.me/91${local}`;
+// Broker contact must NEVER embed the phone number in public HTML (DPDP Act
+// 2023 — phone is sensitive personal data). Instead we link to a server route
+// that resolves the phone server-side and 302-redirects to wa.me, so the raw
+// digits are never crawlable / exposed in the public DOM.
+export function waLinkFor(listingId: number | null): string | null {
+  if (listingId == null) return null;
+  return `/contact-broker/${listingId}`;
 }
 
 export function toListingCardViewModel(
@@ -153,7 +153,7 @@ export function toListingCardViewModel(
     statusLabel: hasLocality ? "Available" : "Locality unconfirmed",
     statusTone: hasLocality ? "available" : "unconfirmed",
     updatedLabel: formatUpdated(row.last_seen),
-    waLink: waLinkFor(row.broker_phone),
+    waLink: waLinkFor(row.id),
     brokerName: row.broker_name && row.broker_name.trim() ? row.broker_name.trim() : null,
   };
 }
