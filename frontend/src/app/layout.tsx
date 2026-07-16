@@ -194,7 +194,6 @@ function AppShell({ children }: { children: React.ReactNode }) {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [offline, setOffline] = useState(false);
   const [profile, setProfile] = useState<{ auth_user_id?: string; phone: string; first_name: string; last_name?: string; email?: string; city?: string } | null>(null);
-  const [profileLoaded, setProfileLoaded] = useState(false);
   const [formatIssueCount, setFormatIssueCount] = useState(0);
   const [wabaConfig, setWabaConfig] = useState<CompanionConfig | null>(null);
   const [liveStatus, setLiveStatus] = useState<WhatsAppStatus | null>(null);
@@ -214,7 +213,6 @@ function AppShell({ children }: { children: React.ReactNode }) {
       } else {
         setProfile(null);
       }
-      setProfileLoaded(true);
     };
     readProfile();
     window.addEventListener("storage", readProfile);
@@ -269,8 +267,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
       router.replace(`/auth/login?next=${encodeURIComponent(pathname || "/dashboard")}`);
       return;
     }
-    if (!profileLoaded) return;
-  }, [authLoading, authError, user, profileLoaded, pathname, router]);
+  }, [authLoading, authError, user, pathname, router]);
 
   const handleSignOut = useCallback(async () => {
     localStorage.removeItem("propai_profile");
@@ -355,8 +352,6 @@ function AppShell({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     document.body.classList.toggle("no-scroll", drawerOpen);
   }, [drawerOpen]);
-
-  const profileRequired = !profile && pathname !== "/profile";
 
   if (authError) {
     return (
@@ -585,22 +580,6 @@ function AppShell({ children }: { children: React.ReactNode }) {
 
         {/* Page content */}
         <div className="flex-1 min-h-0 overflow-y-auto text-white relative">
-          {profileRequired && (
-            <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-black/80 backdrop-blur-sm px-6">
-              <div className="max-w-sm text-center">
-                <div className="text-lg font-bold text-white mb-2">Profile incomplete</div>
-                <p className="text-sm text-zinc-400 leading-relaxed">
-                  You will not be able to access other pages unless the profile is fully done.
-                </p>
-                <a
-                  href="/profile"
-                  className="mt-5 inline-flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold rounded-lg transition-colors"
-                >
-                  Complete your profile
-                </a>
-              </div>
-            </div>
-          )}
           {children}
         </div>
       </main>

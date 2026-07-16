@@ -1,4 +1,4 @@
-const CACHE = "propai-v2";
+const CACHE = "propai-v3";
 const STATIC_ASSETS = [
   "/offline.html",
   "/pwa-192x192.png",
@@ -12,7 +12,7 @@ const STATIC_ASSETS = [
   "/manifest.json",
 ];
 
-const NAV_CACHE = "propai-nav-v2";
+const NAV_CACHE = "propai-nav-v3";
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -44,9 +44,9 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // Navigation requests: stale-while-revalidate for instant back/forward
+  // Never serve an obsolete authenticated app shell after a deployment.
   if (request.mode === "navigate") {
-    event.respondWith(staleWhileRevalidateNav(request));
+    event.respondWith(networkFirstNavigation(request));
     return;
   }
 
@@ -64,16 +64,15 @@ self.addEventListener("fetch", (event) => {
   event.respondWith(networkFirstWithFallback(request, "/offline.html"));
 });
 
-async function staleWhileRevalidateNav(request) {
+async function networkFirstNavigation(request) {
   const cache = await caches.open(NAV_CACHE);
-  const cached = await cache.match(request);
-  const fetchPromise = fetch(request)
-    .then((response) => {
-      if (response.ok) cache.put(request, response.clone());
-      return response;
-    })
-    .catch(() => cached);
-  return cached || fetchPromise;
+  try {
+    const response = await fetch(request);
+    if (response.ok) await cache.put(request, response.clone());
+    return response;
+  } catch {
+    return (await cache.match(request)) || (await caches.match("/offline.html")) || new Response("Offline", { status: 503 });
+  }
 }
 
 async function networkFirstWithFallback(request, fallbackUrl) {

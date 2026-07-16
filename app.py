@@ -60,7 +60,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 
 
-class OnboardingProfile(BaseModel):
+class ProfileUpdate(BaseModel):
     first_name: str
     last_name: str = ""
     email: str = ""
@@ -11788,7 +11788,7 @@ async def health():
     return {"status": "ok"}
 
 
-# ── User Profile / Onboarding ─────────────────────────────────────
+# ── User Profile ──────────────────────────────────────────────────
 
 @app.get("/api/profile")
 async def get_profile(request: Request, user: dict = Depends(require_user)):
@@ -11801,7 +11801,7 @@ async def get_profile(request: Request, user: dict = Depends(require_user)):
 
 
 @app.post("/api/profile")
-async def save_profile(body: OnboardingProfile, request: Request, user: dict = Depends(require_user)):
+async def save_profile(body: ProfileUpdate, request: Request, user: dict = Depends(require_user)):
     phone = request.query_params.get("phone", "")
     profile = storage.save_user_profile(phone, body.model_dump(), auth_user_id=user.get("sub", ""))
     return profile or {"error": "failed to save"}

@@ -511,7 +511,6 @@ class SupabaseStorage(Storage):
             "last_name": data.get("last_name", ""),
             "email": data.get("email", ""),
             "city": data.get("city", ""),
-            "onboarding_complete": True,
             "updated_at": "now()",
         }
         if auth_user_id:

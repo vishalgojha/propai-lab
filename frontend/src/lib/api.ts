@@ -1481,7 +1481,7 @@ export function deleteNote(noteId: number) {
   return fetchJSON<{ ok: boolean }>(`/notes/${noteId}`, { method: "DELETE" });
 }
 
-// ── User Profile / Onboarding ────────────────────────────────────
+// ── User Profile ─────────────────────────────────────────────────
 
 export interface UserProfile {
   phone: string;
@@ -1489,7 +1489,6 @@ export interface UserProfile {
   last_name: string;
   email: string;
   city: string;
-  onboarding_complete: boolean;
 }
 
 export function getProfile(phone: string, authUserId?: string) {
