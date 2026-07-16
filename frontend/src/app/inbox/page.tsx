@@ -3429,7 +3429,20 @@ return {
                           Latest item
                         </div>
                         <div className="mt-1 text-sm font-semibold text-zinc-200">
-                          {stripEmojis(selectedBroker.latest_title)}
+                          <WhatsAppMessage
+                            text={
+                              selectedMsgDetails?.raw?.message ||
+                              selectedMsgDetails?.raw?.raw_message ||
+                              selectedBroker.latest_title ||
+                              ""
+                            }
+                            sender={selectedMsgDetails?.raw?.sender || selectedBroker.canonical_name || selectedBroker.name || ""}
+                            senderPhone={resolvedBrokerPhone || selectedMsgDetails?.raw?.broker_phone || ""}
+                            truncate
+                            maxLines={6}
+                            flatMultiBlocks
+                            className="text-sm text-zinc-200"
+                          />
                         </div>
                         <div className="mt-2 flex flex-wrap items-center gap-2 text-[10px]">
                           {selectedBroker.latest_intent && (
@@ -3557,6 +3570,19 @@ return {
                                 {stripEmojis(obs.summary_title)}
                               </div>
                             )}
+                            {obs.raw_message && (
+                              <div className="rounded-xl border border-white/5 bg-white/[0.03] px-3 py-2">
+                                <WhatsAppMessage
+                                  text={obs.raw_message}
+                                  sender={selectedBroker.canonical_name || selectedBroker.name || ""}
+                                  senderPhone={resolvedBrokerPhone || obs.broker_phone || ""}
+                                  truncate
+                                  maxLines={8}
+                                  flatMultiBlocks
+                                  className="text-[11px] text-zinc-200"
+                                />
+                              </div>
+                            )}
                             {/* Key fields as inline chips */}
                             <div className="flex flex-wrap gap-1.5">
                               {obs.bhk && (
@@ -3608,8 +3634,16 @@ return {
                                 <div className="mb-1 text-[9px] font-semibold uppercase tracking-wider text-zinc-600">
                                   Source excerpt
                                 </div>
-                                <div className={`text-[11px] text-zinc-400 whitespace-pre-wrap leading-relaxed ${!expandedRawMessages.has(group.key) ? "line-clamp-2" : ""}`}>
-                                  {obs.raw_message}
+                                <div className="rounded-lg border border-white/5 bg-black/20 px-2.5 py-2">
+                                  <WhatsAppMessage
+                                    text={obs.raw_message}
+                                    sender={selectedBroker.canonical_name || selectedBroker.name || ""}
+                                    senderPhone={resolvedBrokerPhone || obs.broker_phone || ""}
+                                    truncate
+                                    maxLines={6}
+                                    flatMultiBlocks
+                                    className="text-[11px] text-zinc-300"
+                                  />
                                 </div>
                                 {obs.raw_message.length > 120 && !expandedRawMessages.has(group.key) && (
                                   <button
