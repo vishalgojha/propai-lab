@@ -2,15 +2,20 @@
 
 export const dynamic = 'force-dynamic';
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Mail, Lock, User, Loader2, AlertCircle, ArrowRight, Eye, EyeOff, CheckCircle } from "lucide-react";
 import { signUp } from "@/lib/auth";
 
+const AUTH_NEXT_KEY = "propai_auth_next";
+
 function SignupContent() {
   const router = useRouter();
-  const [next, setNext] = useState("/");
+  const [next] = useState(() => {
+    if (typeof window === "undefined") return "/";
+    return new URLSearchParams(window.location.search).get("next") || "/";
+  });
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -21,11 +26,6 @@ function SignupContent() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
-
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    setNext(params.get("next") || "/");
-  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -45,17 +45,18 @@ function SignupContent() {
     setLoading(true);
 
     try {
+      localStorage.setItem(AUTH_NEXT_KEY, next);
       await signUp(
         email,
         password,
-        `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}`,
+        `${window.location.origin}/auth/callback`,
         fullName,
         workspaceName.trim() || undefined,
       );
       setSuccess("Check your email to confirm your account");
       setTimeout(() => router.push(`/auth/login?next=${encodeURIComponent(next)}`), 2000);
-    } catch (e: any) {
-      setError(e.message || "Sign up failed");
+    } catch (error: unknown) {
+      setError(error instanceof Error ? error.message : "Sign up failed");
     } finally {
       setLoading(false);
     }

@@ -1,9 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Loader2, CheckCircle, AlertCircle, ArrowRight } from "lucide-react";
 import { getSupabase } from "@/lib/auth";
+
+const AUTH_NEXT_KEY = "propai_auth_next";
 
 export function CallbackClient() {
   const router = useRouter();
@@ -15,9 +18,13 @@ export function CallbackClient() {
     const handleCallback = async () => {
       const params = new URLSearchParams(window.location.search);
       const code = params.get("code");
-      const next = params.get("next") || "/";
       const error = params.get("error");
       const errorDescription = params.get("error_description");
+      const storedNext = window.localStorage.getItem(AUTH_NEXT_KEY) || "";
+      const next = params.get("next") || storedNext || "/";
+      if (storedNext) {
+        window.localStorage.removeItem(AUTH_NEXT_KEY);
+      }
 
       if (error) {
         setStatus("error");
@@ -49,9 +56,9 @@ export function CallbackClient() {
           router.push(next);
           router.refresh();
         }, 1500);
-      } catch (e: any) {
+      } catch (error: unknown) {
         setStatus("error");
-        setMessage(e.message || "Authentication failed");
+        setMessage(error instanceof Error ? error.message : "Authentication failed");
       }
     };
 
@@ -108,12 +115,12 @@ export function CallbackClient() {
             <ArrowRight className="w-4 h-4" />
             Try again
           </a>
-          <a
+          <Link
             href="/"
             className="px-4 py-2 border border-white/10 text-zinc-400 rounded-lg text-sm hover:bg-white/5 transition-colors"
           >
             Go home
-          </a>
+          </Link>
         </div>
       </div>
     </div>

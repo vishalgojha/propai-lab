@@ -1,9 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Loader2, CheckCircle, AlertCircle, ArrowRight } from "lucide-react";
 import { getSupabase } from "@/lib/auth";
+
+const AUTH_NEXT_KEY = "propai_auth_next";
 
 export const dynamic = "force-dynamic";
 
@@ -18,7 +21,11 @@ export default function AuthConfirmPage() {
       const tokenHash = params.get("token_hash");
       const type = params.get("type") || "email";
       const code = params.get("code");
-      const next = params.get("next") || "/";
+      const storedNext = window.localStorage.getItem(AUTH_NEXT_KEY) || "";
+      const next = params.get("next") || storedNext || "/";
+      if (storedNext) {
+        window.localStorage.removeItem(AUTH_NEXT_KEY);
+      }
       const error = params.get("error");
       const errorDescription = params.get("error_description");
 
@@ -34,12 +41,12 @@ export default function AuthConfirmPage() {
         if (code) {
           const { error } = await supabase.auth.exchangeCodeForSession(code);
           if (error) throw error;
-        } else if (tokenHash) {
-          const { error } = await supabase.auth.verifyOtp({
-            token_hash: tokenHash,
-            type: type as any,
-          });
-          if (error) throw error;
+          } else if (tokenHash) {
+            const { error } = await supabase.auth.verifyOtp({
+              token_hash: tokenHash,
+              type: type as "email" | "recovery" | "invite" | "email_change" | "phone_change" | "magiclink" | "signup",
+            });
+            if (error) throw error;
         } else {
           setStatus("error");
           setMessage("No confirmation token received");
@@ -52,9 +59,9 @@ export default function AuthConfirmPage() {
           router.push(next);
           router.refresh();
         }, 1200);
-      } catch (e: any) {
+      } catch (error: unknown) {
         setStatus("error");
-        setMessage(e.message || "Email confirmation failed");
+        setMessage(error instanceof Error ? error.message : "Email confirmation failed");
       }
     };
 
@@ -98,19 +105,19 @@ export default function AuthConfirmPage() {
         <h2 className="text-lg font-semibold text-white">Confirmation failed</h2>
         <p className="mt-2 text-sm text-zinc-500">{message || "This confirmation link could not be used."}</p>
         <div className="mt-6 flex gap-3 justify-center">
-          <a
+          <Link
             href="/auth/login"
             className="flex items-center gap-2 px-4 py-2 bg-emerald-400 text-black rounded-lg text-sm font-bold hover:bg-emerald-300 transition-colors"
           >
             <ArrowRight className="w-4 h-4" />
             Sign in
-          </a>
-          <a
+          </Link>
+          <Link
             href="/auth/signup"
             className="px-4 py-2 border border-white/10 text-zinc-400 rounded-lg text-sm hover:bg-white/5 transition-colors"
           >
             Sign up again
-          </a>
+          </Link>
         </div>
       </div>
     </div>

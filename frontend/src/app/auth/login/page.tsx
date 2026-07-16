@@ -8,9 +8,14 @@ import Link from "next/link";
 import { Mail, Lock, Eye, EyeOff, ArrowRight, AlertCircle, Loader2 } from "lucide-react";
 import { signInWithEmail, signInWithMagicLink, getSession } from "@/lib/auth";
 
+const AUTH_NEXT_KEY = "propai_auth_next";
+
 function LoginContent() {
   const router = useRouter();
-  const [next, setNext] = useState("/");
+  const [next] = useState(() => {
+    if (typeof window === "undefined") return "/";
+    return new URLSearchParams(window.location.search).get("next") || "/";
+  });
 
   const [mode, setMode] = useState<"email" | "magic">("email");
   const [email, setEmail] = useState("");
@@ -28,29 +33,26 @@ function LoginContent() {
       if (mode === "email") {
         await signInWithEmail(email, password);
       } else {
-        await signInWithMagicLink(email, `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}`);
+        localStorage.setItem(AUTH_NEXT_KEY, next);
+        await signInWithMagicLink(email, `${window.location.origin}/auth/callback`);
         alert("Magic link sent! Check your email.");
         return;
       }
 
       router.push(next);
       router.refresh();
-    } catch (e: any) {
-      setError(e.message || "Sign in failed");
+    } catch (error: unknown) {
+      setError(error instanceof Error ? error.message : "Sign in failed");
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const target = params.get("next") || "/";
-    setNext(target);
-
     getSession().then((session) => {
-      if (session) router.push(target);
+      if (session) router.push(next);
     });
-  }, [router]);
+  }, [next, router]);
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-black px-4 py-12">
@@ -168,7 +170,7 @@ function LoginContent() {
           </form>
 
           <div className="mt-6 text-center text-sm text-zinc-500">
-            Don't have an account?{" "}
+            Don&apos;t have an account?{" "}
             <Link href={`/auth/signup?next=${encodeURIComponent(next)}`} className="text-emerald-400 hover:text-emerald-300 font-medium">
               Sign up
             </Link>
