@@ -30,8 +30,16 @@
    --color-orange: #f59e0b
    --color-green: #3EE88A
    
-   BADGES - use semantic classes:
-   .badge-green, .badge-red, .badge-yellow, .badge-blue, .badge-purple, .badge-orange, .badge-gray
+   BADGES - only these semantic classes exist by design:
+   .badge-neutral, .badge-success, .badge-error
+   Do not add category or informational colors. Use neutral unless the state is
+   explicitly successful or erroneous. Badges are outlined, never saturated.
+
+   BUTTONS:
+   - Primary: flat white surface, black text, subtle zinc hover
+   - Secondary: transparent surface, white/10 border, zinc text
+   - Destructive: neutral by default; red border/text only on hover or error
+   - Prefer rounded-md. Do not use green as a generic action-button fill.
    
    SURFACES:
    --color-bg-base: #000000

@@ -104,8 +104,8 @@ body {
   color: #ffffff;
 }
 .sidebar-link.active {
-  background: rgba(62,232,138,0.08);
-  color: #3EE88A;
+  background: rgba(255,255,255,0.05);
+  color: #ffffff;
 }
 
 /* ── Badge variants ── */

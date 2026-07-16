@@ -154,7 +154,7 @@ function PaletteModal({ open, onClose }: { open: boolean; onClose: () => void })
                         else if (item.building_name) navigate(`/search?q=${encodeURIComponent(item.building_name)}`);
                         else if (item.broker_name) navigate(`/brokers?q=${encodeURIComponent(item.broker_name)}`);
                       }}
-                      className={`w-full text-left px-4 py-2 text-sm flex items-center gap-3 ${isSelected ? "bg-blue-500/10 text-white" : "text-zinc-400 hover:bg-white/5"}`}
+                      className={`flex w-full items-center gap-3 px-4 py-2 text-left text-sm ${isSelected ? "bg-white/5 text-white" : "text-zinc-400 hover:bg-white/5"}`}
                     >
                       <span className="text-xs text-zinc-500 w-4 text-right shrink-0">{globalIdx + 1}</span>
                       <span className="truncate">{item.name || item.micro_market || item.building_name || item.broker_name}</span>
@@ -354,14 +354,14 @@ function AppShell({ children }: { children: React.ReactNode }) {
   if (authError) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-black text-white px-4">
-        <div className="max-w-md rounded-2xl border border-red-500/20 bg-red-500/10 p-6 text-center">
+        <div className="max-w-md rounded-xl border border-red-500/30 bg-transparent p-6 text-center">
           <div className="mx-auto mb-3 h-10 w-10 rounded-full border-2 border-red-400/30 border-t-red-400" />
           <div className="text-sm font-semibold">Session check stalled</div>
           <div className="mt-1 text-xs text-zinc-500">{authError}</div>
           <div className="mt-4 flex items-center justify-center gap-3">
             <button
               onClick={() => void refreshAuth()}
-              className="rounded-lg bg-[#3EE88A] px-4 py-2.5 text-xs font-bold text-black min-h-[44px]"
+              className="min-h-[44px] rounded-md border border-white bg-white px-4 py-2.5 text-xs font-semibold text-black hover:bg-zinc-200"
             >
               Retry
             </button>
@@ -381,7 +381,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-black text-white">
         <div className="text-center">
-          <div className="mx-auto mb-3 h-10 w-10 animate-spin rounded-full border-2 border-white/10 border-t-[#3EE88A]" />
+          <div className="mx-auto mb-3 h-10 w-10 animate-spin rounded-full border-2 border-white/10 border-t-white" />
           <div className="text-sm font-semibold">
             {authLoading ? "Loading session..." : "Signing in..."}
           </div>
@@ -439,14 +439,14 @@ function AppShell({ children }: { children: React.ReactNode }) {
                         : "text-zinc-400 hover:text-white hover:bg-white/5"
                     }`}
                   >
-                    <Icon className={`w-3.5 h-3.5 shrink-0 ${active ? "text-blue-400" : ""}`} strokeWidth={1.5} />
+                    <Icon className={`w-3.5 h-3.5 shrink-0 ${active ? "text-white" : ""}`} strokeWidth={1.5} />
                     <span className="truncate">{item.label}</span>
                     {showFormatBadge && (
-                      <span className="ml-auto rounded-full border border-amber-500/20 bg-amber-500/10 px-1.5 py-0.5 text-[9px] font-bold text-amber-300">
+                      <span className="ml-auto rounded-md border border-white/10 bg-white/[0.03] px-1.5 py-0.5 text-[9px] font-semibold text-zinc-400">
                         {formatIssueCount > 99 ? "99+" : formatIssueCount}
                       </span>
                     )}
-                    {active && <div className={`${showFormatBadge ? "ml-1" : "ml-auto"} w-1 h-1 rounded-full bg-blue-400 shrink-0`} />}
+                    {active && <div className={`${showFormatBadge ? "ml-1" : "ml-auto"} h-1 w-1 shrink-0 rounded-full bg-white`} />}
                   </Link>
                 );
               })}
@@ -460,7 +460,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
             <div className="flex items-center gap-2">
               <button onClick={() => router.push("/profile")}
                 className="flex min-w-0 flex-1 items-center gap-3 px-2.5 py-2 rounded-lg hover:bg-white/5 transition-colors text-left">
-                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-400/10 text-emerald-400 text-xs font-bold shrink-0">
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-white/10 bg-white/[0.03] text-xs font-semibold text-zinc-300">
                   {profileIdentity.first_name?.charAt(0)?.toUpperCase() || "?"}
                 </div>
                 <div className="flex-1 min-w-0">
@@ -503,8 +503,8 @@ function AppShell({ children }: { children: React.ReactNode }) {
               </div>
             ) : waConnected ? (
               <div className="relative shrink-0">
-                <Wifi className={`w-3.5 h-3.5 ${waStale ? "text-amber-400" : "text-emerald-400"}`} strokeWidth={1.5} />
-                <span className={`absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full animate-pulse ${waStale ? "bg-amber-400" : "bg-emerald-400"}`} />
+                <Wifi className={`w-3.5 h-3.5 ${waStale ? "text-zinc-500" : "text-zinc-200"}`} strokeWidth={1.5} />
+                <span className={`absolute -top-0.5 -right-0.5 h-1.5 w-1.5 rounded-full ${waStale ? "bg-zinc-500" : "bg-zinc-200"}`} />
               </div>
             ) : (
               <WifiOff className="w-3.5 h-3.5 text-red-400 shrink-0" strokeWidth={1.5} />
@@ -523,7 +523,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
                 </div>
               )}
             </div>
-            <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${waConnected === null ? "bg-zinc-500" : waConnected ? (waStale ? "bg-amber-400" : "bg-emerald-400") : "bg-red-400"}`} />
+            <div className={`h-1.5 w-1.5 shrink-0 rounded-full ${waConnected === null ? "bg-zinc-500" : waConnected ? (waStale ? "bg-zinc-500" : "bg-zinc-200") : "bg-red-400"}`} />
           </a>
         </div>
       </aside>
@@ -549,8 +549,8 @@ function AppShell({ children }: { children: React.ReactNode }) {
                 Offline
               </span>
             )}
-            <a href="/connections" className={`flex items-center gap-1 text-[11px] lg:text-[12px] font-semibold transition-colors ${waConnected === null ? "text-zinc-400 hover:text-zinc-300" : waConnected ? (waStale ? "text-amber-300 hover:text-amber-200" : "text-emerald-300") : "text-amber-300 hover:text-amber-200"}`}>
-              <span className={`w-1.5 h-1.5 lg:w-2 lg:h-2 rounded-full ${waConnected === null ? "bg-zinc-500" : waConnected ? (waStale ? "bg-amber-400 animate-pulse" : "bg-emerald-400 animate-pulse") : "bg-amber-400"}`} />
+            <a href="/connections" className={`flex items-center gap-1 text-[11px] font-semibold transition-colors lg:text-[12px] ${waConnected === null ? "text-zinc-400 hover:text-zinc-300" : waConnected ? (waStale ? "text-zinc-400 hover:text-zinc-300" : "text-zinc-200") : "text-zinc-300 hover:text-white"}`}>
+              <span className={`h-1.5 w-1.5 rounded-full lg:h-2 lg:w-2 ${waConnected === null ? "bg-zinc-500" : waConnected ? (waStale ? "bg-zinc-500" : "bg-zinc-200") : "bg-red-400"}`} />
               <span className="hidden sm:inline">
                 {waConnected === null ? "Checking" : waConnected ? "Connected" : "Disconnected"}
               </span>
@@ -560,8 +560,8 @@ function AppShell({ children }: { children: React.ReactNode }) {
             <span className="text-[10px] lg:text-[11px] text-zinc-500 font-mono truncate max-w-[120px] lg:max-w-none">{waPhone}</span>
           )}
           {wabaConfig?.outbound_allowed && (
-            <a href="/waba" className="flex items-center gap-1 text-[10px] lg:text-[11px] font-semibold text-emerald-300 hover:text-emerald-200 transition-colors" title="PropAI Official WABA — Connected">
-              <span className="w-1.5 h-1.5 lg:w-2 lg:h-2 rounded-full bg-emerald-400 animate-pulse" />
+            <a href="/waba" className="flex items-center gap-1 text-[10px] font-semibold text-zinc-300 transition-colors hover:text-white lg:text-[11px]" title="PropAI Official WABA — Connected">
+              <span className="h-1.5 w-1.5 rounded-full bg-zinc-200 lg:h-2 lg:w-2" />
               <span className="hidden md:inline">WABA Connected</span>
             </a>
           )}

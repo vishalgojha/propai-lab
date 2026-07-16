@@ -48,7 +48,7 @@ function writeConnectionSnapshot(userId: string, patch: ConnectionSnapshot) {
 }
 
 function StatusDot({ status }: { status: HealthStatus }) {
-  const colors = { healthy: "bg-emerald-400", warning: "bg-amber-400", error: "bg-red-400" };
+  const colors = { healthy: "bg-zinc-200", warning: "bg-zinc-500", error: "bg-red-400" };
   return <span className={`w-2 h-2 rounded-full ${colors[status]} shrink-0`} />;
 }
 
@@ -71,7 +71,7 @@ function StatBox({ icon, label, value, status }: { icon: React.ReactNode; label:
 
 function HealthRow({ label, status, detail }: { label: string; status: HealthStatus; detail: string }) {
   const labels = { healthy: "Healthy", warning: "Warning", error: "Error" };
-  const colors = { healthy: "text-emerald-400", warning: "text-amber-400", error: "text-red-400" };
+  const colors = { healthy: "text-zinc-200", warning: "text-zinc-400", error: "text-red-400" };
   return (
     <div className="flex items-center justify-between py-2.5 border-b border-white/[0.04] last:border-0">
       <span className="text-xs text-zinc-400">{label}</span>
@@ -118,7 +118,7 @@ function QRDisplay({ qrText, onRefresh, refreshing }: { qrText: string; onRefres
       <button
         onClick={onRefresh}
         disabled={refreshing}
-        className="mt-3 rounded-lg bg-[#3EE88A] px-4 py-2.5 text-xs font-bold text-black min-h-[44px] disabled:opacity-50 w-full max-w-[360px]"
+        className="mt-3 min-h-[44px] w-full max-w-[360px] rounded-md border border-white bg-white px-4 py-2.5 text-xs font-semibold text-black hover:bg-zinc-200 disabled:opacity-50"
       >
         {refreshing ? "Refreshing..." : "Refresh QR"}
       </button>
@@ -137,7 +137,7 @@ function LoadingDots() {
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="rounded-2xl border border-white/10 overflow-hidden">
+    <div className="overflow-hidden rounded-xl border border-white/10">
       <div className="px-5 py-3 border-b border-white/10">
         <h3 className="text-sm font-bold text-white">{title}</h3>
       </div>
@@ -148,15 +148,15 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 
 function ActionButton({ icon, label, onClick, variant, disabled }: { icon: React.ReactNode; label: string; onClick: () => void; variant?: "primary" | "danger" | "default"; disabled?: boolean }) {
   const styles = {
-    primary: "bg-[#3EE88A] text-black hover:bg-[#3EE88A]/90",
-    danger: "border border-red-500/30 bg-red-500/10 text-red-300 hover:bg-red-500/20",
-    default: "border border-white/10 bg-zinc-800 text-zinc-300 hover:bg-zinc-700",
+    primary: "border border-white bg-white text-black hover:bg-zinc-200",
+    danger: "border border-white/10 bg-transparent text-zinc-400 hover:border-red-500/40 hover:text-red-300",
+    default: "border border-white/10 bg-transparent text-zinc-300 hover:bg-white/5 hover:text-white",
   };
   return (
     <button
       onClick={onClick}
       disabled={disabled}
-      className={`flex items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-xs font-bold min-h-[44px] transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${styles[variant || "default"]}`}
+      className={`flex min-h-[44px] items-center justify-center gap-2 rounded-md px-4 py-2.5 text-xs font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${styles[variant || "default"]}`}
     >
       {icon}
       {label}
@@ -267,17 +267,17 @@ function CreatePhoneDialog({ open, onClose, onCreated }: { open: boolean; onClos
               value={instanceName}
               onChange={(e) => setInstanceName(e.target.value)}
               placeholder="e.g. Ananta Realty"
-              className="w-full rounded-lg bg-zinc-800 border border-white/10 px-3 py-2.5 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-[#3EE88A]/50"
+              className="w-full rounded-lg border border-white/10 bg-zinc-800 px-3 py-2.5 text-sm text-white placeholder-zinc-600 focus:border-white/30 focus:outline-none"
             />
           </div>
           {error && <p className="text-xs text-red-400">{error}</p>}
         </div>
         <div className="flex gap-3 mt-6">
-          <button onClick={onClose} className="flex-1 rounded-lg border border-white/10 bg-zinc-800 text-zinc-300 px-4 py-2.5 text-xs font-bold min-h-[44px]">Cancel</button>
+          <button onClick={onClose} className="min-h-[44px] flex-1 rounded-md border border-white/10 bg-transparent px-4 py-2.5 text-xs font-semibold text-zinc-300 hover:bg-white/5">Cancel</button>
           <button
             onClick={handleSubmit}
             disabled={loading}
-            className="flex-1 rounded-lg bg-[#3EE88A] text-black px-4 py-2.5 text-xs font-bold min-h-[44px] disabled:opacity-50"
+            className="min-h-[44px] flex-1 rounded-md border border-white bg-white px-4 py-2.5 text-xs font-semibold text-black hover:bg-zinc-200 disabled:opacity-50"
           >
             {loading ? "Creating..." : "Create Phone"}
           </button>
@@ -444,7 +444,7 @@ function QRModal({
             {attemptState.lastOutcome && attemptState.lastDurationSeconds != null && (
               <div className="mt-1 flex items-center justify-between gap-3">
                 <span>Last result</span>
-                <span className={`font-semibold ${attemptState.lastOutcome === "connected" ? "text-emerald-400" : "text-red-400"}`}>
+                <span className={`font-semibold ${attemptState.lastOutcome === "connected" ? "text-zinc-200" : "text-red-400"}`}>
                   {attemptState.lastOutcome === "connected" ? "Connected" : "Failed"} in {formatDuration(attemptState.lastDurationSeconds)}
                 </span>
               </div>
@@ -452,28 +452,28 @@ function QRModal({
           </div>
         )}
         {!connected && notice && !error && !loading && (
-          <div className="mb-4 rounded-xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-xs text-amber-200">
+          <div className="mb-4 rounded-lg border border-white/10 bg-white/[0.03] px-4 py-3 text-xs text-zinc-400">
             {notice}
           </div>
         )}
         {connected && (
           <div className="flex flex-col items-center py-12 text-center">
-            <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-emerald-400/10 mb-4">
-              <svg className="w-8 h-8 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+            <div className="mb-4 inline-flex h-16 w-16 items-center justify-center rounded-xl border border-white/10 bg-white/[0.03]">
+              <svg className="h-8 w-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
             </div>
-            <p className="text-sm text-emerald-400 font-semibold">WhatsApp connected successfully</p>
+            <p className="text-sm font-semibold text-white">WhatsApp connected successfully</p>
             <p className="text-xs text-zinc-500 mt-1">Closing automatically...</p>
           </div>
         )}
         {!connected && loading && (
           <div className="flex items-center justify-center py-16">
-            <div className="w-8 h-8 rounded-full border-2 border-zinc-600 border-t-[#3EE88A] animate-spin" />
+            <div className="h-8 w-8 animate-spin rounded-full border-2 border-zinc-700 border-t-white" />
           </div>
         )}
         {!connected && error && (
           <div className="flex flex-col items-center py-12 text-center">
             <p className="text-sm text-zinc-400">{error}</p>
-            <button onClick={() => refreshSessionAndFetchQR().catch(() => {})} disabled={loading} className="mt-4 rounded-lg bg-[#3EE88A] px-6 py-2.5 text-xs font-bold text-black min-h-[44px] disabled:opacity-50">
+            <button onClick={() => refreshSessionAndFetchQR().catch(() => {})} disabled={loading} className="mt-4 min-h-[44px] rounded-md border border-white bg-white px-6 py-2.5 text-xs font-semibold text-black hover:bg-zinc-200 disabled:opacity-50">
               Retry
             </button>
           </div>
@@ -551,10 +551,10 @@ function PhoneCard({
   const health: HealthStatus = isConnected ? "healthy" : (!statusAvailable || isUnpaired || isReconnecting) ? "warning" : "error";
 
   return (
-    <div className="rounded-2xl border border-white/10 p-5 space-y-4">
+    <div className="space-y-4 rounded-xl border border-white/10 p-5">
       <div className="flex items-center gap-3">
-        <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[#3EE88A]/10">
-          <Smartphone className="w-5 h-5 text-[#3EE88A]" />
+        <div className="flex h-12 w-12 items-center justify-center rounded-lg border border-white/10 bg-white/[0.03]">
+          <Smartphone className="h-5 w-5 text-zinc-200" />
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
@@ -563,7 +563,7 @@ function PhoneCard({
           </div>
           {phone.instance_name && <div className="text-xs text-zinc-500">{phone.instance_name}</div>}
           {isUnpaired && (
-            <div className="text-[11px] text-amber-400 mt-0.5">Scan QR to pair</div>
+            <div className="mt-0.5 text-[11px] text-zinc-500">Scan QR to pair</div>
           )}
           {!isConnected && !isUnpaired && (
             <div className="text-[11px] text-zinc-400 mt-0.5">{statusLabel}</div>
@@ -574,7 +574,7 @@ function PhoneCard({
       <div className="grid grid-cols-2 gap-0 text-center [&>*:nth-child(2n)]:border-l [&>*:nth-child(2n)]:border-white/10 [&>*:nth-child(n+3)]:border-t [&>*:nth-child(n+3)]:border-white/10">
         <div className="py-2">
           <div className="text-[11px] text-zinc-500 uppercase">Status</div>
-          <div className={`text-xs font-semibold ${isConnected ? "text-emerald-400" : "text-zinc-300"}`}>{statusLabel}</div>
+          <div className="text-xs font-semibold text-zinc-300">{statusLabel}</div>
         </div>
         <div className="py-2">
           <div className="text-[11px] text-zinc-500 uppercase">Last Active</div>
@@ -606,7 +606,7 @@ function PhoneCard({
         {attemptState?.lastOutcome && attemptState.lastDurationSeconds != null && (
           <div className="mt-1 flex items-center justify-between gap-3">
             <span>Last result</span>
-            <span className={`font-semibold ${attemptState.lastOutcome === "connected" ? "text-emerald-400" : "text-red-400"}`}>
+            <span className={`font-semibold ${attemptState.lastOutcome === "connected" ? "text-zinc-200" : "text-red-400"}`}>
               {attemptState.lastOutcome === "connected" ? "Connected" : "Failed"} in {formatDuration(attemptState.lastDurationSeconds)}
             </span>
           </div>
@@ -630,7 +630,7 @@ function PhoneCard({
         <ActionButton icon={<RefreshCw className="w-3.5 h-3.5" />} label={actionLoading === "reset" ? "Resetting..." : "Reset"} onClick={() => handleAction("reset")} disabled={actionLoading !== null} />
         <ActionButton icon={<Trash2 className="w-3.5 h-3.5" />} label={actionLoading === "delete" ? "Deleting..." : "Delete"} onClick={() => handleAction("delete")} variant="danger" disabled={actionLoading !== null} />
       </div>
-      {actionMessage && <p className="text-xs text-emerald-400">{actionMessage}</p>}
+      {actionMessage && <p className="text-xs text-zinc-300">{actionMessage}</p>}
       {actionError && <p className="text-xs text-red-400">{actionError}</p>}
     </div>
   );
@@ -641,10 +641,10 @@ function LiveStatusCard({ status, onAddPhone }: { status: WhatsAppStatus | null;
   const headline = connected ? "WhatsApp connected" : "Checking WhatsApp connection";
 
   return (
-    <div className="rounded-2xl border border-white/10 p-5 mb-8 bg-gradient-to-br from-emerald-500/5 via-transparent to-transparent">
+    <div className="mb-8 rounded-xl border border-white/10 p-5">
       <div className="flex items-center gap-3">
-        <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[#3EE88A]/10">
-          <Smartphone className="w-5 h-5 text-[#3EE88A]" />
+        <div className="flex h-12 w-12 items-center justify-center rounded-lg border border-white/10 bg-white/[0.03]">
+          <Smartphone className="h-5 w-5 text-zinc-200" />
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
@@ -659,7 +659,7 @@ function LiveStatusCard({ status, onAddPhone }: { status: WhatsAppStatus | null;
       <div className="mt-4">
         <button
           onClick={onAddPhone}
-          className="rounded-lg bg-[#3EE88A] text-black px-4 py-2.5 text-xs font-bold min-h-[44px]"
+          className="min-h-[44px] rounded-md border border-white bg-white px-4 py-2.5 text-xs font-semibold text-black hover:bg-zinc-200"
         >
           Add Phone
         </button>
@@ -862,7 +862,7 @@ export default function ConnectionCenterPage() {
         {phones.length < 3 && (
           <button
             onClick={() => setShowCreate(true)}
-            className="flex items-center gap-2 rounded-lg bg-[#3EE88A] text-black px-4 py-2.5 text-xs font-bold min-h-[44px]"
+            className="flex min-h-[44px] items-center gap-2 rounded-md border border-white bg-white px-4 py-2.5 text-xs font-semibold text-black hover:bg-zinc-200"
           >
             <Plus className="w-4 h-4" /> Add Phone
           </button>
@@ -874,9 +874,9 @@ export default function ConnectionCenterPage() {
       ) : (
         <>
           {phonesError && (
-            <div className="mb-6 rounded-2xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
-              <div className="font-semibold">Phones are taking longer than usual to load</div>
-              <div className="mt-1 text-xs text-amber-100/80">{phonesError}</div>
+            <div className="mb-6 rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm text-zinc-300">
+              <div className="font-semibold text-white">Phones are taking longer than usual to load</div>
+              <div className="mt-1 text-xs text-zinc-500">{phonesError}</div>
             </div>
           )}
           {phones.length === 0 && !phonesError && (
@@ -900,11 +900,11 @@ export default function ConnectionCenterPage() {
           )}
 
           {extractionLag && extractionLag.status !== "healthy" && (
-            <div className={`mb-6 rounded-2xl border p-4 ${extractionLag.status === "error" ? "border-red-500/30 bg-red-500/10" : "border-amber-500/30 bg-amber-500/10"}`}>
+            <div className={`mb-6 rounded-xl border bg-transparent p-4 ${extractionLag.status === "error" ? "border-red-500/30" : "border-white/10"}`}>
               <div className="flex items-start gap-3">
-                <AlertTriangle className={`mt-0.5 h-4 w-4 ${extractionLag.status === "error" ? "text-red-300" : "text-amber-300"}`} />
+                <AlertTriangle className={`mt-0.5 h-4 w-4 ${extractionLag.status === "error" ? "text-red-300" : "text-zinc-500"}`} />
                 <div className="flex-1">
-                  <div className={`text-sm font-semibold ${extractionLag.status === "error" ? "text-red-200" : "text-amber-200"}`}>
+                  <div className={`text-sm font-semibold ${extractionLag.status === "error" ? "text-red-200" : "text-white"}`}>
                     Extraction backlog detected
                   </div>
                   <div className="mt-1 text-xs text-zinc-300">
@@ -953,7 +953,7 @@ export default function ConnectionCenterPage() {
                   </div>
                   <div className="h-2 rounded-full bg-zinc-800 overflow-hidden">
                     <div
-                      className="h-full rounded-full bg-[#3EE88A] transition-all duration-500"
+                      className="h-full rounded-full bg-zinc-200 transition-all duration-500"
                       style={{ width: `${Math.min(extractionPct, 100)}%` }}
                     />
                   </div>

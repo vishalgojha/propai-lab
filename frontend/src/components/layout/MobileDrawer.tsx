@@ -180,12 +180,12 @@ export function MobileDrawer({
                   >
                     <span>{item.label}</span>
                     {showFormatBadge && (
-                      <span className="float-right ml-2 rounded-full border border-amber-500/20 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-bold text-amber-300">
+                      <span className="float-right ml-2 rounded-md border border-white/10 bg-white/[0.03] px-1.5 py-0.5 text-[10px] font-semibold text-zinc-400">
                         {formatIssueCount > 99 ? "99+" : formatIssueCount}
                       </span>
                     )}
                     {active && (
-                      <span className="float-right mt-1 h-1.5 w-1.5 rounded-full bg-blue-400" />
+                      <span className="float-right mt-1 h-1.5 w-1.5 rounded-full bg-white" />
                     )}
                   </button>
                 );
@@ -202,7 +202,7 @@ export function MobileDrawer({
                 onClick={() => navigate("/profile")}
                 className="flex min-w-0 flex-1 items-center gap-3 rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-white/5"
               >
-                <div className="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-400/10 text-emerald-400 text-sm font-bold shrink-0">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-white/10 bg-white/[0.03] text-sm font-semibold text-zinc-300">
                   {profile.first_name?.charAt(0)?.toUpperCase() || "?"}
                 </div>
                 <div className="flex-1 min-w-0">
