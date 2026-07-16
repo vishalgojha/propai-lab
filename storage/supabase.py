@@ -2304,10 +2304,12 @@ class SupabaseStorage(Storage):
     # ── Observations / Brokers Feed ──────────────────────────────────────
 
     def get_observations_feed(self, limit: int = 50, offset: int = 0,
-                              broker_key: str = "", intent: str = "") -> list[dict]:
+                              broker_key: str = "", intent: str = "",
+                              tenant_id: str | None = None) -> list[dict]:
+        tid = tenant_id or self._tenant_id
         if broker_key:
             parsed_rows = self._get_parsed_observations_for_broker(
-                limit, offset, broker_key=broker_key, intent=intent
+                limit, offset, broker_key=broker_key, intent=intent, tenant_id=tid
             )
             if parsed_rows:
                 return parsed_rows
@@ -2317,7 +2319,7 @@ class SupabaseStorage(Storage):
                 """SELECT public.get_observations_feed(
                     $1, $2, $3, $4, $5::uuid
                 )""",
-                (limit, offset, broker_key, intent, self._tenant_id or None),
+                (limit, offset, broker_key, intent, tid or None),
             ).fetchone()
             if data:
                 val = data[0]
@@ -2339,12 +2341,13 @@ class SupabaseStorage(Storage):
 
         if broker_key:
             return self._get_parsed_observations_for_broker(
-                limit, offset, broker_key=broker_key, intent=intent
+                limit, offset, broker_key=broker_key, intent=intent, tenant_id=tid
             )
         return []
 
     def _get_parsed_observations_for_broker(self, limit: int = 50, offset: int = 0,
-                                            broker_key: str = "", intent: str = "") -> list[dict]:
+                                            broker_key: str = "", intent: str = "",
+                                            tenant_id: str | None = None) -> list[dict]:
         if not broker_key:
             return []
         cutoff = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
@@ -2362,9 +2365,10 @@ class SupabaseStorage(Storage):
             )\
             .gte("created_at", cutoff)\
             .order("created_at", desc=True)\
-            .limit(limit + offset)
-        if self._tenant_id:
-            query = query.eq("tenant_id", self._tenant_id)
+            .limit(max(5000, limit + offset))
+        tid = tenant_id or self._tenant_id
+        if tid:
+            query = query.eq("tenant_id", tid)
         if intent:
             query = query.eq("intent", intent.upper())
 
@@ -2455,9 +2459,13 @@ class SupabaseStorage(Storage):
         return result[offset:offset + limit]
 
     def get_brokers_feed(self, limit: int = 50, offset: int = 0,
-                         min_observations: int = 1) -> list[dict]:
+                         min_observations: int = 1,
+                         tenant_id: str | None = None) -> list[dict]:
+        tid = tenant_id or self._tenant_id
         try:
-            parsed_threads = self._get_parsed_market_threads(limit, offset, tenant_id=self._tenant_id)
+            parsed_threads = self._get_parsed_market_threads(
+                max(5000, limit + offset), 0, tenant_id=tid
+            )
             result = []
             for thread in parsed_threads:
                 identity = thread.get("conversation_key") or thread.get("chat_id") or ""
@@ -2487,14 +2495,44 @@ class SupabaseStorage(Storage):
                     ],
                 })
             if result:
-                return result
+                merged: dict[str, dict] = {}
+                for row in result:
+                    phone = _normalize_india_phone(row.get("primary_phone") or "")
+                    name = _clean_person_name(row.get("canonical_name") or "")
+                    name_key = re.sub(r"[^a-z0-9]+", " ", name.lower()).strip()
+                    key = phone or f"name:{name_key}"
+                    existing = merged.get(key)
+                    if not existing:
+                        row["identity_key"] = key
+                        row["primary_phone"] = phone or key
+                        merged[key] = row
+                        continue
+                    for field in (
+                        "observation_count", "obs_count", "listing_count",
+                        "requirement_count", "building_count",
+                    ):
+                        existing[field] = (existing.get(field) or 0) + (row.get(field) or 0)
+                    channels = {
+                        (item.get("type"), item.get("source")): item
+                        for item in [*(existing.get("channels") or []), *(row.get("channels") or [])]
+                    }
+                    existing["channels"] = list(channels.values())
+                    existing["group_evidence_count"] = len(existing["channels"])
+                    if str(row.get("last_active") or "") > str(existing.get("last_active") or ""):
+                        for field in ("last_active", "latest_title", "latest_intent", "latest_micro_market"):
+                            existing[field] = row.get(field)
+                rows = sorted(
+                    merged.values(),
+                    key=lambda item: item.get("last_active") or "",
+                    reverse=True,
+                )
+                return rows[offset:offset + limit]
         except Exception:
             pass
 
         try:
-            tid = self._tenant_id
-            # tenant_filter = "AND b.tenant_id = $4::uuid" if tid else ""
-            tenant_filter = ""
+            tid = tenant_id or self._tenant_id
+            tenant_filter = "AND b.tenant_id = $4::uuid" if tid else ""
             params = [min_observations, limit, offset]
             if tid:
                 params.append(tid)

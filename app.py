@@ -2979,9 +2979,16 @@ async def get_observations_feed(
     limit: int = 50, offset: int = 0,
     broker_key: str = "", intent: str = "",
     phone: str = "",
+    tenant_id: str | None = Depends(get_tenant_context),
 ):
     bk = broker_key or phone
-    return storage.get_observations_feed(limit, offset, broker_key=bk, intent=intent)
+    return storage.get_observations_feed(
+        limit,
+        offset,
+        broker_key=bk,
+        intent=intent,
+        tenant_id=tenant_id,
+    )
 
 
 @app.get("/api/brokers/feed")
@@ -2991,7 +2998,12 @@ async def get_brokers_feed(
     min_observations: int = 1,
     tenant_id: str | None = Depends(get_tenant_context),
 ):
-    return storage.get_brokers_feed(limit, offset, min_observations=min_observations)
+    return storage.get_brokers_feed(
+        limit,
+        offset,
+        min_observations=min_observations,
+        tenant_id=tenant_id,
+    )
 
 
 @app.get("/api/resolver")
@@ -13163,12 +13175,10 @@ async def list_activity(limit: int = 50, offset: int = 0,
 
 @app.post("/api/workspace/activity")
 async def log_activity(body: dict, member: dict = Depends(get_current_member)):
-    required = ("team_member_id", "action")
-    for k in required:
-        if k not in body:
-            raise HTTPException(400, f"{k} is required")
+    if not body.get("action"):
+        raise HTTPException(400, "action is required")
     ident = storage.log_activity(
-        team_member_id=body["team_member_id"],
+        team_member_id=member["id"],
         action=body["action"],
         target_type=body.get("target_type", ""),
         target_id=body.get("target_id", ""),
