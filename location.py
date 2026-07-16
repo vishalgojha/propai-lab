@@ -135,6 +135,36 @@ _COMMON_MUMBAI_LOCALITIES = frozenset({
     "carter road", "hill road", "linking road",
 })
 
+# Colloquial / abbreviated -> canonical micro_market. Applied as substring
+# substitutions inside parse_location so the deterministic resolver maps
+# common WhatsApp shorthand without an LLM call. Conservative, high-confidence.
+_LOCATION_ALIASES: list[tuple[str, str]] = [
+    ("jvpd", "juhu"),
+    ("versova", "andheri west"),
+    ("varsova", "andheri west"),
+    ("yari road", "andheri west"),
+    ("oshiwara", "andheri west"),
+    ("naupada thane", "thane"),
+    ("naupada", "thane"),
+    ("pokhran", "thane"),
+    ("bandra east", "bandra east"),
+    ("bandra west", "bandra west"),
+    ("goregaon east", "goregaon east"),
+    ("goregaon west", "goregaon west"),
+    ("andheri east", "andheri east"),
+    ("andheri west", "andheri west"),
+    ("khar west", "khar west"),
+    ("santacruz west", "santacruz west"),
+    ("malad west", "malad west"),
+    ("matunga west", "matunga west"),
+    ("kurla west", "kurla west"),
+    ("mahim west", "mahim west"),
+    ("dahisar west", "dahisar west"),
+    ("vile parle", "vile parle"),
+    ("new marine lines", "marine lines"),
+    ("marine lines", "marine lines"),
+]
+
 
 # ── Token match result ──
 
@@ -649,7 +679,15 @@ def parse_location(raw_text: str) -> StructuredLocation:
     """
     _load_evidence()
     loc = StructuredLocation()
-    loc.raw = extract_location_text(raw_text) or ""
+
+    # Apply colloquial/abbreviated -> canonical substitutions BEFORE extraction
+    # so localities embedded in the message prelude (e.g. "Yari Road ...",
+    # "Naupada Thane") are preserved by extract_location_text.
+    normalized = (raw_text or "").lower()
+    for pattern, replacement in _LOCATION_ALIASES:
+        normalized = normalized.replace(pattern, replacement)
+
+    loc.raw = extract_location_text(normalized) or ""
     if not loc.raw:
         return loc
 
