@@ -188,10 +188,23 @@ export async function getLocalityData(rawSlug: string): Promise<LocalityData | n
     };
   }
 
-  const { data: listings, error } = await db
-    .from("listings")
-    .select("building_name, bhk, price, intent, micro_market")
-    .eq("micro_market", match);
+  const { data: listings, error } = await (async () => {
+    // Paginate: a busy locality can have >1000 listings, and a bare select is
+    // capped at 1000 rows.
+    const PAGE = 1000;
+    let collected: ListingRow[] = [];
+    for (let offset = 0; ; offset += PAGE) {
+      const { data, error } = await db
+        .from("listings")
+        .select("building_name, bhk, price, intent, micro_market")
+        .eq("micro_market", match)
+        .range(offset, offset + PAGE - 1);
+      if (error) return { data: null, error };
+      collected = collected.concat((data ?? []) as ListingRow[]);
+      if (!data || data.length < PAGE) break;
+    }
+    return { data: collected, error: null };
+  })();
 
   if (error) {
     console.error("getLocalityData listings error:", error.message);
@@ -463,31 +476,50 @@ export async function getBuildingListings(name: string): Promise<BuildingListing
   const db = getServerSupabase();
   if (!db || !name.trim()) return [];
 
-  const { data, error } = await db
-    .from("listings")
-    .select("id, bhk, price, price_unit, furnishing, intent, broker_name, broker_phone, last_seen, building_name")
-    .order("last_seen", { ascending: false })
-    .limit(100);
+  // Filter at the DB layer (exact canonical name) and paginate past the 1000-row
+  // cap so a building with >100 listings shows them all.
+  const target = name.trim();
+  const PAGE = 1000;
+  let all: Array<{
+    id: number;
+    bhk: string | null;
+    price: number | null;
+    price_unit: string | null;
+    furnishing: string | null;
+    intent: string | null;
+    broker_name: string | null;
+    broker_phone: string | null;
+    last_seen: string | null;
+    building_name: string | null;
+  }> = [];
 
-  if (error) {
-    console.error("getBuildingListings error:", error.message);
-    return [];
+  for (let offset = 0; ; offset += PAGE) {
+    const { data, error } = await db
+      .from("listings")
+      .select("id, bhk, price, price_unit, furnishing, intent, broker_name, broker_phone, last_seen, building_name")
+      .eq("building_name", target)
+      .order("last_seen", { ascending: false })
+      .range(offset, offset + PAGE - 1);
+
+    if (error) {
+      console.error("getBuildingListings error:", error.message);
+      return [];
+    }
+    all = all.concat((data ?? []) as typeof all);
+    if (!data || data.length < PAGE) break;
   }
 
-  const target = name.trim().toLowerCase();
-  return (data ?? [])
-    .filter((r) => (r.building_name ?? "").trim().toLowerCase() === target)
-    .map((r) => ({
-      id: r.id,
-      bhk: r.bhk,
-      price: r.price,
-      price_unit: r.price_unit,
-      furnishing: r.furnishing,
-      intent: r.intent,
-      broker_name: r.broker_name,
-      broker_phone: r.broker_phone,
-      last_seen: r.last_seen,
-    }));
+  return all.map((r) => ({
+    id: r.id,
+    bhk: r.bhk,
+    price: r.price,
+    price_unit: r.price_unit,
+    furnishing: r.furnishing,
+    intent: r.intent,
+    broker_name: r.broker_name,
+    broker_phone: r.broker_phone,
+    last_seen: r.last_seen,
+  }));
 }
 
 export async function matchLocalities(
