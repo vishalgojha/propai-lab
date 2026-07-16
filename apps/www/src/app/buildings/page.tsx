@@ -3,6 +3,7 @@ import { ArrowRight } from "lucide-react";
 import { getAllBuildings, type BuildingOnMap } from "@/lib/localities";
 import ListingCard from "@/components/ListingCard";
 import SiteHeader from "@/components/SiteHeader";
+import SiteFooter from "@/components/SiteFooter";
 
 export const metadata = {
   title: "Buildings — PropAI",
@@ -60,6 +61,7 @@ export default async function BuildingsIndexPage() {
           </Link>
         </div>
       </main>
+      <SiteFooter />
     </div>
   );
 }

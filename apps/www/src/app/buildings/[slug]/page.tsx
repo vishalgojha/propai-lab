@@ -10,6 +10,7 @@ import {
 import { toListingCardViewModel, type ListingCardFields } from "@/lib/listing-card";
 import { slugify } from "@/lib/supabase";
 import SiteHeader from "@/components/SiteHeader";
+import SiteFooter from "@/components/SiteFooter";
 
 type Params = { params: Promise<{ slug: string }> };
 
@@ -180,6 +181,7 @@ export default async function BuildingPage({ params }: Params) {
           )}
         </section>
       </main>
+      <SiteFooter />
     </div>
   );
 }

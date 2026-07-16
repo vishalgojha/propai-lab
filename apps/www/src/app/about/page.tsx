@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ArrowRight, MapPin, Building2 } from "lucide-react";
 import { getAllBuildings } from "@/lib/localities";
 import SiteHeader from "@/components/SiteHeader";
+import SiteFooter from "@/components/SiteFooter";
 
 export const metadata = {
   title: "About PropAI — Real Listings from Mumbai's Broker WhatsApp Groups",
@@ -97,6 +98,7 @@ export default async function AboutPage() {
           </Link>
         </div>
       </main>
+      <SiteFooter />
     </div>
   );
 }
