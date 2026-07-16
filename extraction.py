@@ -410,6 +410,13 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
             print(f"  [extract] _process_observations error: {exc}", flush=True)
 
     # ── Mark processed ──────────────────────────────────────────────
+    if parsed_listings and not parsed_ids:
+        print(
+            f"  [extract] leaving raw message {raw_id} unprocessed: "
+            "all parsed_output inserts failed",
+            flush=True,
+        )
+        return
     try:
         storage.mark_raw_processed(raw_id)
     except Exception as exc:

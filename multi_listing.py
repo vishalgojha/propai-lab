@@ -445,6 +445,10 @@ _NUMBERED_LISTING_RE = re.compile(
     r'^\s*(?:[⭐*•-]\s*)?(\d{1,3})\s*[\).:-]\s+(.*)',
     re.I,
 )
+_OPTION_HEADER_RE = re.compile(
+    r'^\s*(?:[🏡🏢🔹▪️▫️*•-]\s*)?option\s*(?:no\.?\s*)?(\d{1,3}|[a-z])\b.*$',
+    re.I,
+)
 
 
 def _parse_amount(value: str) -> float | None:
@@ -646,6 +650,36 @@ def _split_numbered_blocks(text: str) -> list[str]:
         blocks.append(current)
 
     return ["\n".join(block) for block in blocks]
+
+
+def _split_option_blocks(text: str) -> list[str]:
+    """Split alternatives labelled ``Option 1``, ``Option 2``, etc.
+
+    Shared lines before the first option are copied into every block so each
+    alternative retains the project's BHK, intent, location, and building.
+    Contact details are normalized across parsed cards after splitting.
+    """
+    lines = [line.strip() for line in text.strip().split("\n") if line.strip()]
+    prefix: list[str] = []
+    blocks: list[list[str]] = []
+    current: list[str] | None = None
+
+    for line in lines:
+        if _OPTION_HEADER_RE.match(_clean_line_markup(line)):
+            if current is not None:
+                blocks.append(current)
+            current = [line]
+        elif current is None:
+            prefix.append(line)
+        else:
+            current.append(line)
+
+    if current is not None:
+        blocks.append(current)
+    if len(blocks) < 2:
+        return []
+
+    return ["\n".join([*prefix, *block]) for block in blocks]
 
 
 def _split_by_dividers(text: str) -> list[str]:
@@ -1954,6 +1988,14 @@ def _rank_split_strategies(text: str) -> list[dict]:
     """
     strategies: list[dict] = []
 
+    option_blocks = _split_option_blocks(text)
+    if len(option_blocks) >= 2:
+        strategies.append({
+            "name": "options",
+            "score": 110 + (len(option_blocks) * 3),
+            "blocks": option_blocks,
+        })
+
     numbered_blocks = _split_numbered_blocks(text)
     if len(numbered_blocks) >= 2:
         strategies.append({
@@ -2049,6 +2091,11 @@ def parse_multi_message(
             building_lookup_fn,
         )
         if len(listings) >= 2:
+            if strategy["name"] == "options":
+                broker_name, broker_phone = _extract_broker_from_block(text)
+                for listing in listings:
+                    listing["broker_name"] = listing.get("broker_name") or broker_name
+                    listing["broker_phone"] = listing.get("broker_phone") or broker_phone
             return listings
 
     # Try commercial floor-pricing split (early return - distinct format)
