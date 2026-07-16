@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { MapPin, ArrowRight, Search } from "lucide-react";
 import { slugify } from "@/lib/supabase";
 import type { LocalitySummary } from "@/lib/localities";
@@ -53,8 +54,16 @@ export default function LocalitySearch({ knownLocalities }: Props) {
       router.push(`/localities/${exact.slug}`);
       return;
     }
+    // Near-miss: route to the best suggestion (a locality that actually has
+    // inventory) rather than dead-ending on a non-exact name.
     if (suggestions.length > 0) {
       router.push(`/localities/${suggestions[0].slug}`);
+      return;
+    }
+    // No known localities available at all (e.g. data source slow/unavailable)
+    // — still give a forward path instead of a blank dead-end.
+    if (knownLocalities.length === 0) {
+      router.push("/localities");
       return;
     }
     setShowNoMatch(true);
@@ -129,26 +138,56 @@ export default function LocalitySearch({ knownLocalities }: Props) {
 
       {showNoMatch && (
         <div id="locality-nomatch" className="mt-3 text-sm text-zinc-400">
-          <p>
-            No exact match for{" "}
-            <span className="text-white">&quot;{value.trim()}&quot;</span>.
-          </p>
-          {suggestions.length === 0 && knownLocalities.length > 0 && (
-            <p className="mt-2">
-              Did you mean{" "}
-              {knownLocalities.slice(0, 3).map((loc, i) => (
-                <span key={loc.slug}>
-                  {i > 0 && (i === knownLocalities.slice(0, 3).length - 1 ? " or " : ", ")}
-                  <button
-                    type="button"
-                    onClick={() => router.push(`/localities/${loc.slug}`)}
-                    className="text-green-400 hover:underline"
-                  >
-                    {loc.locality}
-                  </button>
-                </span>
-              ))}
-              ?
+          {knownLocalities.length > 0 ? (
+            <>
+              <p>
+                No exact match for{" "}
+                <span className="text-white">&quot;{value.trim()}&quot;</span>.
+              </p>
+              <p className="mt-2">
+                {suggestions.length > 0 ? (
+                  <>
+                    Try{" "}
+                    <button
+                      type="button"
+                      onClick={() => router.push(`/localities/${suggestions[0].slug}`)}
+                      className="text-green-400 font-medium hover:underline"
+                    >
+                      {suggestions[0].locality}
+                    </button>{" "}
+                    — it has {suggestions[0].listingCount} live listing
+                    {suggestions[0].listingCount === 1 ? "" : "s"}.
+                  </>
+                ) : (
+                  <>Browse a locality with live listings instead:</>
+                )}
+              </p>
+              {suggestions.length === 0 && (
+                <ul className="mt-2 flex flex-col gap-1">
+                  {knownLocalities.slice(0, 5).map((loc) => (
+                    <li key={loc.slug}>
+                      <button
+                        type="button"
+                        onClick={() => router.push(`/localities/${loc.slug}`)}
+                        className="text-green-400 hover:underline"
+                      >
+                        {loc.locality}
+                      </button>{" "}
+                      <span className="text-zinc-500">
+                        ({loc.listingCount} listings)
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </>
+          ) : (
+            <p>
+              We couldn&apos;t load the locality list right now.{" "}
+              <Link href="/localities" className="text-green-400 hover:underline">
+                Browse all localities
+              </Link>{" "}
+              instead.
             </p>
           )}
         </div>
