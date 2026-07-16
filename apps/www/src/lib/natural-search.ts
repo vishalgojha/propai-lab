@@ -156,7 +156,7 @@ function parseBudget(query: string): { minPrice: number | null; maxPrice: number
   return { minPrice: null, maxPrice: null };
 }
 
-function findLocalityMatches(query: string, localities: LocalitySummary[]): LocalitySummary[] {
+export function findLocalityMatches(query: string, localities: LocalitySummary[]): LocalitySummary[] {
   const qSlug = slugify(query);
   const qText = normalizeText(query);
   return localities
