@@ -63,11 +63,17 @@ def _strip_icons(value: str = "") -> str:
 
 def _sanitize_parsed_payload(value: Any) -> Any:
     if isinstance(value, str):
-        return _strip_icons(value)
+        clean = _strip_icons(value).strip()
+        return clean if clean else None
     if isinstance(value, list):
         return [_sanitize_parsed_payload(item) for item in value]
     if isinstance(value, dict):
-        return {key: _sanitize_parsed_payload(item) for key, item in value.items()}
+        clean: dict[str, Any] = {}
+        for key, item in value.items():
+            sanitized = _sanitize_parsed_payload(item)
+            if sanitized is not None:
+                clean[key] = sanitized
+        return clean
     return value
 
 
@@ -1356,7 +1362,19 @@ class SupabaseStorage(Storage):
         data = _sanitize_parsed_payload(data)
         if not data.get("tenant_id") and self._tenant_id:
             data["tenant_id"] = self._tenant_id
-        res = self.client.table("parsed_output").insert(data).execute()
+        try:
+            res = self.client.table("parsed_output").insert(data).execute()
+        except Exception as exc:
+            print(f"[storage] save_parsed insert failed: {exc}", flush=True)
+            try:
+                print(
+                    "[storage] save_parsed payload="
+                    + json.dumps(data, default=str, ensure_ascii=False, sort_keys=True),
+                    flush=True,
+                )
+            except Exception:
+                print(f"[storage] save_parsed payload={data!r}", flush=True)
+            raise
         return res.data[0]["id"] if res.data else 0
 
     def get_parsed_by_raw(self, raw_id: int) -> Optional[ParsedObservation]:
