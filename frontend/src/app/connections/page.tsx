@@ -500,7 +500,6 @@ function PhoneCard({
   phone,
   liveStatus,
   onRefresh,
-  onShowQR,
   onConnect,
   attemptState,
   now,
@@ -508,23 +507,33 @@ function PhoneCard({
   phone: Phone;
   liveStatus: WhatsAppStatus | null;
   onRefresh: () => Promise<void> | void;
-  onShowQR: (p: Phone) => void;
   onConnect: (p: Phone) => Promise<void> | void;
   attemptState: ConnectionAttemptState | null;
   now: number;
 }) {
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [actionMessage, setActionMessage] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const handleAction = async (action: string) => {
     setActionLoading(action);
+    setActionMessage(null);
+    setActionError(null);
     try {
       if (action === "disconnect") await disconnectPhone(phone.id);
       else if (action === "reset") await resetPhone(phone.id);
       else if (action === "delete") await deletePhone(phone.id);
-      else if (action === "connect") await onConnect(phone);
+      else if (action === "connect" || action === "qr") await onConnect(phone);
       else await onRefresh();
-    } catch { /* ignore */ }
-    setActionLoading(null);
+      if (action !== "connect" && action !== "qr") {
+        setActionMessage(action === "delete" ? "Phone removed" : action === "reset" ? "Session reset" : "Phone disconnected");
+      }
+      await onRefresh();
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : `${action} failed`);
+    } finally {
+      setActionLoading(null);
+    }
   };
 
   const isConnected = isConnectedPhone(phone) || matchesLiveStatus(phone, liveStatus);
@@ -605,17 +614,24 @@ function PhoneCard({
       </div>
 
       <div className="grid grid-cols-4 gap-2">
-        <ActionButton icon={<ImageUp className="w-3.5 h-3.5" />} label="QR" onClick={() => onShowQR(phone)} />
+        <ActionButton
+          icon={<ImageUp className="w-3.5 h-3.5" />}
+          label={actionLoading === "qr" ? "Loading..." : "QR"}
+          onClick={() => handleAction("qr")}
+          disabled={actionLoading !== null}
+        />
         <ActionButton
           icon={isConnected ? <LogOut className="w-3.5 h-3.5" /> : <RefreshCw className="w-3.5 h-3.5" />}
           label={isConnected ? "Disconnect" : actionLoading === "connect" ? "Connecting..." : "Connect"}
           onClick={() => handleAction(isConnected ? "disconnect" : "connect")}
           variant={isConnected ? "danger" : "primary"}
-          disabled={actionLoading === "connect"}
+          disabled={actionLoading !== null}
         />
-        <ActionButton icon={<RefreshCw className="w-3.5 h-3.5" />} label="Reset" onClick={() => handleAction("reset")} />
-        <ActionButton icon={<Trash2 className="w-3.5 h-3.5" />} label="Delete" onClick={() => handleAction("delete")} variant="danger" />
+        <ActionButton icon={<RefreshCw className="w-3.5 h-3.5" />} label={actionLoading === "reset" ? "Resetting..." : "Reset"} onClick={() => handleAction("reset")} disabled={actionLoading !== null} />
+        <ActionButton icon={<Trash2 className="w-3.5 h-3.5" />} label={actionLoading === "delete" ? "Deleting..." : "Delete"} onClick={() => handleAction("delete")} variant="danger" disabled={actionLoading !== null} />
       </div>
+      {actionMessage && <p className="text-xs text-emerald-400">{actionMessage}</p>}
+      {actionError && <p className="text-xs text-red-400">{actionError}</p>}
     </div>
   );
 }
@@ -784,10 +800,10 @@ export default function ConnectionCenterPage() {
       lastOutcome: current.lastOutcome,
       lastDurationSeconds: current.lastDurationSeconds,
     }));
-    setQrPhone(phone);
     const startedAt = Date.now();
     try {
       await connectPhone(phone.id);
+      setQrPhone(phone);
       updateAttemptState(phone.id, (current) => ({
         ...current,
         lastOutcome: "connected",
@@ -795,12 +811,13 @@ export default function ConnectionCenterPage() {
       }));
       void refreshData();
       window.dispatchEvent(new Event("propai_whatsapp_status_updated"));
-    } catch {
+    } catch (error) {
       updateAttemptState(phone.id, (current) => ({
         ...current,
         lastOutcome: "failed",
         lastDurationSeconds: Math.max(0, Math.floor((Date.now() - startedAt) / 1000)),
       }));
+      throw error;
     }
   }, [refreshData, updateAttemptState]);
 
@@ -874,7 +891,6 @@ export default function ConnectionCenterPage() {
                   phone={phone}
                   liveStatus={liveStatus}
                   onRefresh={refreshData}
-                  onShowQR={setQrPhone}
                   onConnect={handleConnect}
                   attemptState={connectionAttempts[phone.id] || null}
                   now={now}

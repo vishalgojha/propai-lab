@@ -457,7 +457,7 @@ class SupabaseStorage(Storage):
             raise ValueError("SUPABASE_URL and SUPABASE_SERVICE_KEY required")
         self._client: Client = create_client(url, key)
         self._db = _SupabaseDatabaseAdapter(self._client)
-        self._tenant_id: str | None = None
+        self.__tenant_id_fallback: str | None = None
 
     @property
     def client(self) -> Client:
@@ -469,12 +469,20 @@ class SupabaseStorage(Storage):
 
     @property
     def tenant_id(self) -> str | None:
-        return get_tenant_id() or self._tenant_id
+        return get_tenant_id() or self.__tenant_id_fallback
 
     @tenant_id.setter
     def tenant_id(self, value: str | None):
-        self._tenant_id = value
         set_tenant_id(value)
+
+    @property
+    def _tenant_id(self) -> str | None:
+        """Compatibility for legacy methods that still read this attribute."""
+        return self.tenant_id
+
+    @_tenant_id.setter
+    def _tenant_id(self, value: str | None):
+        self.__tenant_id_fallback = value
 
     def close(self):
         pass
@@ -511,7 +519,7 @@ class SupabaseStorage(Storage):
             "last_name": data.get("last_name", ""),
             "email": data.get("email", ""),
             "city": data.get("city", ""),
-            "updated_at": "now()",
+            "updated_at": datetime.now(timezone.utc).isoformat(),
         }
         if auth_user_id:
             payload["auth_user_id"] = auth_user_id
@@ -795,7 +803,12 @@ class SupabaseStorage(Storage):
     def get_org_placeholder_whatsapp_connection(self, org_id: str) -> dict | None:
         for row in self.list_org_whatsapp_connections(org_id):
             phone_number = str(row.get("phone_number") or "").strip()
-            if not phone_number or phone_number.startswith("Unpaired"):
+            digits = "".join(ch for ch in phone_number if ch.isdigit())
+            if (
+                not phone_number
+                or phone_number.startswith("Unpaired")
+                or (len(digits) == 10 and digits.startswith("0"))
+            ):
                 return row
         return None
 
@@ -1131,7 +1144,7 @@ class SupabaseStorage(Storage):
             pass
 
         query = self.client.table("raw_messages").select(
-            "id,group_name,sender,sender_phone,sender_jid,timestamp,created_at,message_uid,message"
+            "id,tenant_id,group_name,sender,sender_phone,sender_jid,timestamp,created_at,message_uid,message"
         )\
             .order("timestamp", desc=True)\
             .limit(max(5000, limit + offset))
@@ -1206,6 +1219,11 @@ class SupabaseStorage(Storage):
             latest["conversation_name"] = conv_name
             latest["message_count"] = len(msgs)
             latest["latest_message_at"] = ts
+            latest["market_scope"] = (
+                "workspace"
+                if tenant_id and str(latest.get("tenant_id") or "") == str(tenant_id)
+                else "shared"
+            )
             if p:
                 for field in ("intent", "building_name", "micro_market", "landmark_name", "location_raw", "broker_name", "broker_phone"):
                     if p.get(field):
@@ -1316,6 +1334,7 @@ class SupabaseStorage(Storage):
                 "location_raw": parsed.get("location_raw"),
                 "summary_title": parsed.get("summary_title"),
                 "source_group_names": sorted(bucket["source_group_names"]),
+                "market_scope": "workspace",
             })
             threads.append(raw_row)
 

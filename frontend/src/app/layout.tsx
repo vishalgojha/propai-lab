@@ -187,6 +187,13 @@ function AppShell({ children }: { children: React.ReactNode }) {
   const [wabaConfig, setWabaConfig] = useState<CompanionConfig | null>(null);
   const [liveStatus, setLiveStatus] = useState<WhatsAppStatus | null>(null);
   const { signOut: authSignOut } = useAuth();
+  const fallbackFullName = String(user?.user_metadata?.full_name || user?.email?.split("@")[0] || "Account").trim();
+  const [fallbackFirstName = "Account", ...fallbackLastName] = fallbackFullName.split(/\s+/);
+  const profileIdentity = profile || {
+    first_name: fallbackFirstName,
+    last_name: fallbackLastName.join(" "),
+    city: "",
+  };
 
   // Read profile from localStorage; if missing, try to hydrate from server
   useEffect(() => {
@@ -218,7 +225,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
     const phone = user.phone || "";
     if (!phone && !user.id) return;
     let cancelled = false;
-    getProfile(phone, user.id).then((data: any) => {
+    getProfile().then((data: any) => {
       if (cancelled) return;
       if (data && data.first_name) {
         const hydrated = {
@@ -448,19 +455,19 @@ function AppShell({ children }: { children: React.ReactNode }) {
         </nav>
 
         {/* Profile Section */}
-        {profile && (
+        {user && (
           <div className="px-4 py-3 border-t border-white/5">
             <div className="flex items-center gap-2">
               <button onClick={() => router.push("/profile")}
                 className="flex min-w-0 flex-1 items-center gap-3 px-2.5 py-2 rounded-lg hover:bg-white/5 transition-colors text-left">
                 <div className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-400/10 text-emerald-400 text-xs font-bold shrink-0">
-                  {profile.first_name?.charAt(0)?.toUpperCase() || "?"}
+                  {profileIdentity.first_name?.charAt(0)?.toUpperCase() || "?"}
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="text-[12px] font-semibold text-white truncate">
-                    {profile.first_name}{profile.last_name ? ` ${profile.last_name}` : ""}
+                    {profileIdentity.first_name}{profileIdentity.last_name ? ` ${profileIdentity.last_name}` : ""}
                   </div>
-                  {profile.city && <div className="text-[10px] text-zinc-500 truncate">{profile.city}</div>}
+                  {profileIdentity.city && <div className="text-[10px] text-zinc-500 truncate">{profileIdentity.city}</div>}
                 </div>
               </button>
               <button

@@ -3252,6 +3252,11 @@ return {
                           </div>
                           <span className="text-[10px] font-bold text-white tabular-nums">{item.count}</span>
                         </div>
+                        {item.latest.market_scope === "shared" && (
+                          <div className="mb-1 inline-flex rounded border border-white/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-zinc-400">
+                            Shared market
+                          </div>
+                        )}
                         <div className="text-[10px] text-zinc-500 leading-relaxed truncate mb-1">
                           {stripEmojis(resolveMessageSenderName(item.latest) || item.subtitle)}
                         </div>

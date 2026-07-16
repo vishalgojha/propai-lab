@@ -11834,20 +11834,18 @@ async def health():
 # ── User Profile ──────────────────────────────────────────────────
 
 @app.get("/api/profile")
-async def get_profile(request: Request, user: dict = Depends(require_user)):
-    phone = request.query_params.get("phone", "")
-    auth_user_id = request.query_params.get("auth_user_id", "")
-    if not auth_user_id:
-        auth_user_id = user.get("id", "")
-    profile = storage.get_user_profile(phone=phone, auth_user_id=auth_user_id)
+async def get_profile(user: dict = Depends(require_user)):
+    profile = storage.get_user_profile(auth_user_id=user.get("id", ""))
     return profile or {}
 
 
 @app.post("/api/profile")
-async def save_profile(body: ProfileUpdate, request: Request, user: dict = Depends(require_user)):
-    phone = request.query_params.get("phone", "")
+async def save_profile(body: ProfileUpdate, user: dict = Depends(require_user)):
+    phone = user.get("phone", "")
     profile = storage.save_user_profile(phone, body.model_dump(), auth_user_id=user.get("id", ""))
-    return profile or {"error": "failed to save"}
+    if not profile:
+        raise HTTPException(500, "Profile could not be saved")
+    return profile
 
 
 @app.get("/api/key")
@@ -12691,11 +12689,13 @@ async def create_phone(
                     updated = storage.update_org_whatsapp_connection(placeholder["id"], updates)
                     if updated:
                         placeholder = updated
+                broker_id = placeholder.get("broker_id", "")
+                if broker_id:
+                    await _first_ingestor_response("POST", "/connect", timeout=10, params={"broker_id": broker_id})
                 return placeholder
-            # Reserve a numeric placeholder that still looks phone-like to the DB,
-            # but stays visually distinct in the UI until WhatsApp fills the live number.
-            phone_number = f"{count:010d}"
         broker_id = f"phone-{_uuid.uuid4().hex[:12]}"
+        if not phone_number:
+            phone_number = f"Unpaired:{broker_id}"
         result = storage.add_org_whatsapp_connection(org_id, phone_number, instance_name, broker_id)
         if not result:
             raise HTTPException(400, "Failed to create phone")

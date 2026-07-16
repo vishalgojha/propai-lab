@@ -72,10 +72,11 @@ export default function ChatPage() {
   useEffect(() => {
     const phone = user?.phone || "";
     if (!phone) return;
+    setBrokerPhone(phone);
     let cancelled = false;
     void (async () => {
       try {
-        const profile = await api.getProfile(phone);
+        const profile = await api.getProfile();
         if (!cancelled && profile?.phone) setBrokerPhone(profile.phone);
       } catch {
         // Ignore profile hydration failures here.

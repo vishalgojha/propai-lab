@@ -97,6 +97,23 @@ def test_whatsapp_status_is_scoped_to_the_users_workspace():
     assert status["phone_number"] == "919999999774"
 
 
+def test_legacy_storage_tenant_reads_use_request_context():
+    from storage.supabase import SupabaseStorage, set_tenant_id
+
+    storage = object.__new__(SupabaseStorage)
+    storage._SupabaseStorage__tenant_id_fallback = None
+    try:
+        set_tenant_id("org-request")
+        assert storage.tenant_id == "org-request"
+        assert storage._tenant_id == "org-request"
+
+        storage.tenant_id = "org-next"
+        assert storage._tenant_id == "org-next"
+        assert storage._SupabaseStorage__tenant_id_fallback is None
+    finally:
+        set_tenant_id(None)
+
+
 def test_connection_details_is_safe_without_storage(monkeypatch):
     """The WhatsApp connection endpoint should not assume storage.db exists."""
     import app

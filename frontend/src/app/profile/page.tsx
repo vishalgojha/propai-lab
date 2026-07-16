@@ -75,7 +75,7 @@ export default function ProfilePage() {
     applyProfile(baseProfile);
     setHasStoredProfile(Boolean(localProfile?.auth_user_id === user?.id && localProfile?.first_name));
 
-    getProfile(baseProfile.phone, user?.id).then((data: any) => {
+    getProfile().then((data: any) => {
       if (!mounted) return;
       if (data && data.first_name) {
         applyProfile({ ...baseProfile, ...data });
@@ -104,21 +104,22 @@ export default function ProfilePage() {
     const finalCity = city === "__other__" ? customCity.trim() : (city || profile?.city || "");
     const finalWorkspaceName = workspaceName.trim() || org?.name || "";
     const data = { first_name: firstName.trim(), last_name: lastName.trim(), email: email.trim(), city: finalCity };
-    const localProfile = { auth_user_id: user?.id || "", phone: profile?.phone || "", ...data };
-    localStorage.setItem("propai_profile", JSON.stringify(localProfile));
-    window.dispatchEvent(new Event("propai_profile_updated"));
     try {
+      let savedProfile = null;
       if (profile?.phone || user?.id) {
-        try { await saveProfile(profile?.phone || "", data); } catch (err) {
-          console.error("[profile] server save failed:", err);
-        }
+        savedProfile = await saveProfile(data);
       }
       if (org?.id && finalWorkspaceName && finalWorkspaceName !== org.name) {
-        try { await updateOrganization(org.id, { name: finalWorkspaceName }); } catch (err) {
-          console.error("[profile] workspace save failed:", err);
-        }
+        await updateOrganization(org.id, { name: finalWorkspaceName });
         setOrg((prev) => prev ? { ...prev, name: finalWorkspaceName } : prev);
       }
+      const localProfile = {
+        auth_user_id: user?.id || "",
+        phone: savedProfile?.phone || profile?.phone || "",
+        ...data,
+      };
+      localStorage.setItem("propai_profile", JSON.stringify(localProfile));
+      window.dispatchEvent(new Event("propai_profile_updated"));
       setProfile(localProfile);
       setHasStoredProfile(true);
       setSaved(true);
@@ -128,7 +129,9 @@ export default function ProfilePage() {
         return;
       }
       setTimeout(() => setSaved(false), 2000);
-    } catch { alert("Failed to save profile"); }
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Failed to save profile");
+    }
     finally { setSaving(false); }
   };
 

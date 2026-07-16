@@ -99,6 +99,8 @@ export interface RawMessage {
   from_me?: boolean | number;
   synced_at: string;
   pipeline_version: string;
+  tenant_id?: string;
+  market_scope?: "workspace" | "shared";
   delivery_status?: string | null;
   delivery_updated_at?: string | null;
 }
@@ -1491,15 +1493,12 @@ export interface UserProfile {
   city: string;
 }
 
-export function getProfile(phone: string, authUserId?: string) {
-  const params = new URLSearchParams();
-  if (phone) params.set("phone", phone);
-  if (authUserId) params.set("auth_user_id", authUserId);
-  return fetchJSON<UserProfile>(`/profile?${params.toString()}`);
+export function getProfile() {
+  return fetchJSON<UserProfile>("/profile");
 }
 
-export function saveProfile(phone: string, data: { first_name: string; last_name: string; email: string; city: string }) {
-  return fetchJSON<UserProfile>(`/profile?phone=${encodeURIComponent(phone)}`, {
+export function saveProfile(data: { first_name: string; last_name: string; email: string; city: string }) {
+  return fetchJSON<UserProfile>("/profile", {
     method: "POST",
     body: JSON.stringify(data),
   });
