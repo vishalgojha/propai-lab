@@ -1404,8 +1404,16 @@ class SupabaseStorage(Storage):
 
     def create_knowledge_record(self, data: dict) -> int:
         """Create a new knowledge record. Returns the record ID."""
-        data = {k: v for k, v in data.items() if v is not None}
-        res = self.client.table("knowledge_records").insert(data).execute()
+        normalized = {}
+        for key, value in data.items():
+            if value is None:
+                continue
+            if isinstance(value, str) and not value.strip():
+                if key == "message_timestamp":
+                    normalized[key] = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+                continue
+            normalized[key] = value
+        res = self.client.table("knowledge_records").insert(normalized).execute()
         return res.data[0]["id"] if res.data else 0
 
     def update_knowledge_record(self, record_id: int, updates: dict):

@@ -7996,34 +7996,6 @@ async def companion_audit(limit: int = 30, user: dict = Depends(require_user)):
     return [dict(row) for row in rows]
 
 
-# ── Backward-compatible aliases (old /api/sync/* routes) ─────────
-
-@app.post("/api/sync/start")
-async def sync_start_legacy(user: dict = Depends(require_user)):
-    """Legacy: start WhatsApp sync."""
-    return await source_sync("whatsapp")
-
-
-@app.post("/api/sync/stop")
-async def sync_stop_legacy(user: dict = Depends(require_user)):
-    return await scheduler_stop()
-
-
-@app.get("/api/sync/status")
-async def sync_status_legacy(user: dict = Depends(require_user)):
-    return await scheduler_status()
-
-
-@app.get("/api/sync/groups")
-async def sync_groups_legacy(user: dict = Depends(require_user)):
-    """Legacy: list WhatsApp sync jobs as groups."""
-    jobs = storage.get_sync_jobs(limit=500, source="whatsapp") if storage else []
-    return [
-        {f.name: getattr(j, f.name) for f in j.__dataclass_fields__.values()}
-        for j in jobs
-    ]
-
-
 @app.get("/api/sync/connection")
 async def sync_connection(user: dict = Depends(require_user)):
     """Check WhatsApp connection status."""
@@ -13239,75 +13211,6 @@ async def update_organization(org_id: str, body: dict, user: dict = Depends(requ
     return {"ok": True}
 
 
-@app.get("/api/internal/orgs/{org_id}/privacy-open-legacy")
-async def get_organization_privacy_open_legacy(org_id: str, user: dict = Depends(require_user)):
-    """Legacy internal privacy reader kept off the public API path."""
-    org = storage.get_organization(org_id)
-    if not org:
-        raise HTTPException(404, "Organization not found")
-    return {
-        "privacy_mode": org.get("privacy_mode") or DEFAULT_ORG_PRIVACY["privacy_mode"],
-        "share_listings": org.get("share_listings", DEFAULT_ORG_PRIVACY["share_listings"]),
-        "share_requirements": org.get("share_requirements", DEFAULT_ORG_PRIVACY["share_requirements"]),
-        "share_price_trends": org.get("share_price_trends", DEFAULT_ORG_PRIVACY["share_price_trends"]),
-        "share_market_activity": org.get("share_market_activity", DEFAULT_ORG_PRIVACY["share_market_activity"]),
-        "share_building_intelligence": org.get("share_building_intelligence", DEFAULT_ORG_PRIVACY["share_building_intelligence"]),
-        "share_broker_network": org.get("share_broker_network", DEFAULT_ORG_PRIVACY["share_broker_network"]),
-        "share_broker_reputation": org.get("share_broker_reputation", DEFAULT_ORG_PRIVACY["share_broker_reputation"]),
-        "share_demand_signals": org.get("share_demand_signals", DEFAULT_ORG_PRIVACY["share_demand_signals"]),
-    }
-
-
-@app.put("/api/internal/orgs/{org_id}/privacy-open-legacy")
-async def update_organization_privacy_open_legacy(org_id: str, body: dict, user: dict = Depends(require_user)):
-    """Legacy internal privacy writer kept off the public API path."""
-    org = storage.get_organization(org_id)
-    if not org:
-        raise HTTPException(404, "Organization not found")
-
-    allowed = {"privacy_mode", "share_listings", "share_requirements",
-               "share_price_trends", "share_market_activity",
-               "share_building_intelligence", "share_broker_network",
-               "share_broker_reputation", "share_demand_signals"}
-
-    updates = {k: v for k, v in body.items() if k in allowed}
-
-    if updates.get("privacy_mode") == "shared":
-        updates["privacy_mode"] = "shared_market"
-    if "privacy_mode" in updates and updates["privacy_mode"] not in ("private", "shared_market"):
-        raise HTTPException(400, "Invalid privacy_mode")
-    if updates.get("privacy_mode") == "shared_market":
-        for k, v in DEFAULT_ORG_PRIVACY.items():
-            if k.startswith("share_"):
-                updates[k] = v
-    if updates.get("privacy_mode") == "private":
-        for k in DEFAULT_ORG_PRIVACY:
-            if k.startswith("share_"):
-                updates[k] = False
-
-    if not updates:
-        raise HTTPException(400, "No valid privacy fields to update")
-
-    ok = storage.update_organization(org_id, **updates)
-    if not ok:
-        raise HTTPException(404, "Organization not found")
-
-    # Return updated settings
-    updated = storage.get_organization(org_id)
-    return {
-        "ok": True,
-        "privacy_mode": updated.get("privacy_mode") or DEFAULT_ORG_PRIVACY["privacy_mode"],
-        "share_listings": updated.get("share_listings", DEFAULT_ORG_PRIVACY["share_listings"]),
-        "share_requirements": updated.get("share_requirements", DEFAULT_ORG_PRIVACY["share_requirements"]),
-        "share_price_trends": updated.get("share_price_trends", DEFAULT_ORG_PRIVACY["share_price_trends"]),
-        "share_market_activity": updated.get("share_market_activity", DEFAULT_ORG_PRIVACY["share_market_activity"]),
-        "share_building_intelligence": updated.get("share_building_intelligence", DEFAULT_ORG_PRIVACY["share_building_intelligence"]),
-        "share_broker_network": updated.get("share_broker_network", DEFAULT_ORG_PRIVACY["share_broker_network"]),
-        "share_broker_reputation": updated.get("share_broker_reputation", DEFAULT_ORG_PRIVACY["share_broker_reputation"]),
-        "share_demand_signals": updated.get("share_demand_signals", DEFAULT_ORG_PRIVACY["share_demand_signals"]),
-    }
-
-
 @app.get("/api/orgs/{org_id}/privacy")
 async def get_organization_privacy(org_id: str, user: dict = Depends(require_user)):
     org = storage.get_organization(org_id)
@@ -13667,9 +13570,16 @@ async def connect_phone(
     if not phone:
         raise HTTPException(404, "Phone not found")
     broker_id = phone.get("broker_id", "")
+    if not broker_id:
+        raise HTTPException(400, "Phone is missing broker_id")
     _, resp = await _first_ingestor_response("POST", "/connect", timeout=10, params={"broker_id": broker_id})
     if resp is not None and resp.status_code == 200:
         return resp.json()
+    if resp is not None:
+        detail = resp.text.strip()
+        if not detail:
+            detail = f"Ingestor returned HTTP {resp.status_code}"
+        raise HTTPException(resp.status_code, detail)
     raise HTTPException(502, "Cannot reach ingestor")
 
 

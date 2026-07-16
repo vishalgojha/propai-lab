@@ -110,7 +110,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
-function ActionButton({ icon, label, onClick, variant }: { icon: React.ReactNode; label: string; onClick: () => void; variant?: "primary" | "danger" | "default" }) {
+function ActionButton({ icon, label, onClick, variant, disabled }: { icon: React.ReactNode; label: string; onClick: () => void; variant?: "primary" | "danger" | "default"; disabled?: boolean }) {
   const styles = {
     primary: "bg-[#3EE88A] text-black hover:bg-[#3EE88A]/90",
     danger: "border border-red-500/30 bg-red-500/10 text-red-300 hover:bg-red-500/20",
@@ -119,7 +119,8 @@ function ActionButton({ icon, label, onClick, variant }: { icon: React.ReactNode
   return (
     <button
       onClick={onClick}
-      className={`flex items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-xs font-bold min-h-[44px] transition-colors ${styles[variant || "default"]}`}
+      disabled={disabled}
+      className={`flex items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-xs font-bold min-h-[44px] transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${styles[variant || "default"]}`}
     >
       {icon}
       {label}
@@ -232,7 +233,28 @@ function CreatePhoneDialog({ open, onClose, onCreated }: { open: boolean; onClos
   );
 }
 
-function QRModal({ phone, open, onClose, onRefresh }: { phone: Phone; open: boolean; onClose: () => void; onRefresh: () => Promise<void> | void }) {
+type ConnectionAttemptState = {
+  attempts: number;
+  startedAt: string | null;
+  lastOutcome: "connected" | "failed" | null;
+  lastDurationSeconds: number | null;
+};
+
+function QRModal({
+  phone,
+  open,
+  onClose,
+  onRefresh,
+  attemptState,
+  now,
+}: {
+  phone: Phone;
+  open: boolean;
+  onClose: () => void;
+  onRefresh: () => Promise<void> | void;
+  attemptState: ConnectionAttemptState | null;
+  now: number;
+}) {
   const [qrText, setQrText] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -259,8 +281,8 @@ function QRModal({ phone, open, onClose, onRefresh }: { phone: Phone; open: bool
         return;
       }
       setError((res as any)?.message || (qrResult as any)?.message || "QR not available yet. Try again in a moment.");
-    } catch {
-      setError("Failed to fetch QR code. Retry, or reset the phone if it stays stuck.");
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Failed to fetch QR code. Retry, or reset the phone if it stays stuck.");
     } finally {
       setLoading(false);
     }
@@ -283,8 +305,8 @@ function QRModal({ phone, open, onClose, onRefresh }: { phone: Phone; open: bool
         setError((res as any)?.message || "QR not available yet. Restarting session...");
         setTimeout(() => refreshSessionAndFetchQR().catch(() => {}), 500);
       }
-    } catch {
-      setError("Failed to fetch QR code. Retry, or reset the phone if it stays stuck.");
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Failed to fetch QR code. Retry, or reset the phone if it stays stuck.");
     } finally {
       setLoading(false);
     }
@@ -348,6 +370,30 @@ function QRModal({ phone, open, onClose, onRefresh }: { phone: Phone; open: bool
           </h3>
           <button onClick={onClose} className="text-zinc-500 hover:text-white"><X className="w-5 h-5" /></button>
         </div>
+        {attemptState && (
+          <div className="mb-4 rounded-xl border border-white/10 bg-black/40 px-4 py-3 text-xs text-zinc-400">
+            <div className="flex items-center justify-between gap-3">
+              <span>Connection attempts</span>
+              <span className="font-semibold text-white">{attemptState.attempts}</span>
+            </div>
+            <div className="mt-1 flex items-center justify-between gap-3">
+              <span>Current attempt</span>
+              <span className="font-semibold text-white">
+                {attemptState.startedAt
+                  ? `${formatDuration(Math.max(0, Math.floor((now - new Date(attemptState.startedAt).getTime()) / 1000)))} elapsed`
+                  : "—"}
+              </span>
+            </div>
+            {attemptState.lastOutcome && attemptState.lastDurationSeconds != null && (
+              <div className="mt-1 flex items-center justify-between gap-3">
+                <span>Last result</span>
+                <span className={`font-semibold ${attemptState.lastOutcome === "connected" ? "text-emerald-400" : "text-red-400"}`}>
+                  {attemptState.lastOutcome === "connected" ? "Connected" : "Failed"} in {formatDuration(attemptState.lastDurationSeconds)}
+                </span>
+              </div>
+            )}
+          </div>
+        )}
         {connected && (
           <div className="flex flex-col items-center py-12 text-center">
             <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-emerald-400/10 mb-4">
@@ -388,7 +434,21 @@ function QRModal({ phone, open, onClose, onRefresh }: { phone: Phone; open: bool
   );
 }
 
-function PhoneCard({ phone, onRefresh, onShowQR }: { phone: Phone; onRefresh: () => Promise<void> | void; onShowQR: (p: Phone) => void }) {
+function PhoneCard({
+  phone,
+  onRefresh,
+  onShowQR,
+  onConnect,
+  attemptState,
+  now,
+}: {
+  phone: Phone;
+  onRefresh: () => Promise<void> | void;
+  onShowQR: (p: Phone) => void;
+  onConnect: (p: Phone) => Promise<void> | void;
+  attemptState: ConnectionAttemptState | null;
+  now: number;
+}) {
   const [actionLoading, setActionLoading] = useState<string | null>(null);
 
   const handleAction = async (action: string) => {
@@ -397,8 +457,8 @@ function PhoneCard({ phone, onRefresh, onShowQR }: { phone: Phone; onRefresh: ()
       if (action === "disconnect") await disconnectPhone(phone.id);
       else if (action === "reset") await resetPhone(phone.id);
       else if (action === "delete") await deletePhone(phone.id);
-      else if (action === "connect") await connectPhone(phone.id);
-      await onRefresh();
+      else if (action === "connect") await onConnect(phone);
+      else await onRefresh();
     } catch { /* ignore */ }
     setActionLoading(null);
   };
@@ -448,13 +508,37 @@ function PhoneCard({ phone, onRefresh, onShowQR }: { phone: Phone; onRefresh: ()
         </div>
       </div>
 
+      <div className="rounded-xl border border-white/10 bg-black/40 px-4 py-3 text-[11px] text-zinc-400">
+        <div className="flex items-center justify-between gap-3">
+          <span>Connection attempts</span>
+          <span className="font-semibold text-white">{attemptState?.attempts ?? 0}</span>
+        </div>
+        <div className="mt-1 flex items-center justify-between gap-3">
+          <span>Current attempt</span>
+          <span className="font-semibold text-white">
+            {attemptState?.startedAt
+              ? `${formatDuration(Math.max(0, Math.floor((now - new Date(attemptState.startedAt).getTime()) / 1000)))} elapsed`
+              : "—"}
+          </span>
+        </div>
+        {attemptState?.lastOutcome && attemptState.lastDurationSeconds != null && (
+          <div className="mt-1 flex items-center justify-between gap-3">
+            <span>Last result</span>
+            <span className={`font-semibold ${attemptState.lastOutcome === "connected" ? "text-emerald-400" : "text-red-400"}`}>
+              {attemptState.lastOutcome === "connected" ? "Connected" : "Failed"} in {formatDuration(attemptState.lastDurationSeconds)}
+            </span>
+          </div>
+        )}
+      </div>
+
       <div className="grid grid-cols-4 gap-2">
         <ActionButton icon={<ImageUp className="w-3.5 h-3.5" />} label="QR" onClick={() => onShowQR(phone)} />
         <ActionButton
           icon={isConnected ? <LogOut className="w-3.5 h-3.5" /> : <RefreshCw className="w-3.5 h-3.5" />}
-          label={isConnected ? "Disconnect" : "Connect"}
+          label={isConnected ? "Disconnect" : actionLoading === "connect" ? "Connecting..." : "Connect"}
           onClick={() => handleAction(isConnected ? "disconnect" : "connect")}
           variant={isConnected ? "danger" : "primary"}
+          disabled={actionLoading === "connect"}
         />
         <ActionButton icon={<RefreshCw className="w-3.5 h-3.5" />} label="Reset" onClick={() => handleAction("reset")} />
         <ActionButton icon={<Trash2 className="w-3.5 h-3.5" />} label="Delete" onClick={() => handleAction("delete")} variant="danger" />
@@ -510,6 +594,8 @@ export default function ConnectionCenterPage() {
   const [phonesLoading, setPhonesLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
   const [qrPhone, setQrPhone] = useState<Phone | null>(null);
+  const [connectionAttempts, setConnectionAttempts] = useState<Record<number, ConnectionAttemptState>>({});
+  const [now, setNow] = useState(() => Date.now());
 
   const [totalParsed, setTotalParsed] = useState<number>(0);
   const [totalListings, setTotalListings] = useState<number>(0);
@@ -572,9 +658,51 @@ export default function ConnectionCenterPage() {
     } catch { /* ignore */ }
   }, []);
 
+  useEffect(() => {
+    const interval = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const updateAttemptState = useCallback((phoneId: number, updater: (current: ConnectionAttemptState) => ConnectionAttemptState) => {
+    setConnectionAttempts((prev) => {
+      const current = prev[phoneId] || { attempts: 0, startedAt: null, lastOutcome: null, lastDurationSeconds: null };
+      return {
+        ...prev,
+        [phoneId]: updater(current),
+      };
+    });
+  }, []);
+
   const refreshData = useCallback(async () => {
     await Promise.all([fetchPhones(), fetchStats(), fetchLiveStatus()]);
   }, [fetchPhones, fetchStats, fetchLiveStatus]);
+
+  const handleConnect = useCallback(async (phone: Phone): Promise<void> => {
+    updateAttemptState(phone.id, (current) => ({
+      attempts: current.attempts + 1,
+      startedAt: new Date().toISOString(),
+      lastOutcome: current.lastOutcome,
+      lastDurationSeconds: current.lastDurationSeconds,
+    }));
+    setQrPhone(phone);
+    const startedAt = Date.now();
+    try {
+      await connectPhone(phone.id);
+      updateAttemptState(phone.id, (current) => ({
+        ...current,
+        lastOutcome: "connected",
+        lastDurationSeconds: Math.max(0, Math.floor((Date.now() - startedAt) / 1000)),
+      }));
+      await refreshData();
+      window.dispatchEvent(new Event("propai_whatsapp_status_updated"));
+    } catch {
+      updateAttemptState(phone.id, (current) => ({
+        ...current,
+        lastOutcome: "failed",
+        lastDurationSeconds: Math.max(0, Math.floor((Date.now() - startedAt) / 1000)),
+      }));
+    }
+  }, [refreshData, updateAttemptState]);
 
   useEffect(() => {
     if (!authLoading && user) {
@@ -628,7 +756,15 @@ export default function ConnectionCenterPage() {
           {phones.length > 0 && (
             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
               {phones.map((phone) => (
-                <PhoneCard key={phone.id} phone={phone} onRefresh={refreshData} onShowQR={setQrPhone} />
+                <PhoneCard
+                  key={phone.id}
+                  phone={phone}
+                  onRefresh={refreshData}
+                  onShowQR={setQrPhone}
+                  onConnect={handleConnect}
+                  attemptState={connectionAttempts[phone.id] || null}
+                  now={now}
+                />
               ))}
             </div>
           )}
@@ -699,7 +835,16 @@ export default function ConnectionCenterPage() {
       )}
 
       <CreatePhoneDialog open={showCreate} onClose={() => setShowCreate(false)} onCreated={refreshData} />
-      {qrPhone && <QRModal phone={qrPhone} open={!!qrPhone} onClose={() => setQrPhone(null)} onRefresh={refreshData} />}
+      {qrPhone && (
+        <QRModal
+          phone={qrPhone}
+          open={!!qrPhone}
+          onClose={() => setQrPhone(null)}
+          onRefresh={refreshData}
+          attemptState={connectionAttempts[qrPhone.id] || null}
+          now={now}
+        />
+      )}
     </div>
   );
 }

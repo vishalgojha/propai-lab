@@ -1816,7 +1816,8 @@ def execute_tool(name, args, sources, db_path=None):
             con = _open_db()
             if con:
                 con.execute(
-                    "INSERT OR REPLACE INTO price_unit_aliases (alias, canonical_unit) VALUES (?, ?)",
+                    "INSERT INTO price_unit_aliases (alias, canonical_unit) VALUES (?, ?) "
+                    "ON CONFLICT (alias) DO UPDATE SET canonical_unit = EXCLUDED.canonical_unit",
                     (alias.lower(), canonical)
                 )
                 con.commit()
