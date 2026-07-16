@@ -1086,14 +1086,20 @@ def _extract_broker_from_block(text: str) -> tuple[str | None, str | None]:
         if not clean_line:
             continue
 
-        # Name-only all-caps line (not a data/location field)
+        # Name line (not a data/location field). Accept all-caps OR
+        # title-case proper names (each word Capitalized), 2+ words.
         if not re.search(r'\d', clean_line):
-            if clean_line.isupper() and len(clean_line) >= 3 and len(clean_line) <= 40:
-                if clean_line.startswith('(') and clean_line.endswith(')'):
-                    continue  # parenthesized location
-                if _is_plausible_broker_name(clean_line.title()):
-                    name = clean_line.title()
-                    break
+            if clean_line.startswith('(') and clean_line.endswith(')'):
+                continue  # parenthesized location
+            words = clean_line.split()
+            is_name_shape = (
+                2 <= len(words) <= 4
+                and 3 <= len(clean_line) <= 40
+                and all(w[:1].isupper() and w[1:].islower() for w in words if len(w) > 1)
+            )
+            if (clean_line.isupper() or is_name_shape) and _is_plausible_broker_name(clean_line.title()):
+                name = clean_line.title()
+                break
 
     return name, phone
 
