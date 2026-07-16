@@ -705,8 +705,11 @@ export default function ConnectionCenterPage() {
         lastOutcome: "connected",
         lastDurationSeconds: Math.max(0, Math.floor((Date.now() - startedAt) / 1000)),
       }));
-      await refreshData();
-      window.dispatchEvent(new Event("propai_whatsapp_status_updated"));
+      void refreshData().then(() => {
+        window.dispatchEvent(new Event("propai_whatsapp_status_updated"));
+      }).catch(() => {
+        window.dispatchEvent(new Event("propai_whatsapp_status_updated"));
+      });
     } catch {
       updateAttemptState(phone.id, (current) => ({
         ...current,
