@@ -161,7 +161,7 @@ export default function SettingsPage() {
           <span className="text-lg font-bold">{connected ? "Connected" : "Disconnected"}</span>
         </div>
         <div className="mb-4 rounded-xl border border-white/10 bg-black/90 px-4 py-3 text-sm text-zinc-400">
-          WhatsApp pairing is now terminal-only. Run <span className="font-semibold text-white">propai connect</span> in your terminal to scan the QR there. This page only shows connection status.
+          Open the Connections page to pair WhatsApp. This settings page only shows connection status.
         </div>
 
         <div className="flex gap-2 mb-4">

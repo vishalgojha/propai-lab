@@ -1,7 +1,10 @@
+export const dynamic = "force-dynamic";
+
 import { MapPin, ArrowRight, MessageSquare, Phone, Shield } from "lucide-react";
 import Link from "next/link";
 import LocalitySearch from "@/components/LocalitySearch";
 import { getAllLocalities } from "@/lib/localities";
+import { getPublicDataOverview } from "@/lib/public-data";
 
 const howItWorksSteps = [
   {
@@ -23,22 +26,22 @@ const howItWorksSteps = [
 
 const footerLinks = {
   browse: [
+    { label: "Search listings", href: "/search" },
+    { label: "Explore live data", href: "/explore" },
     { label: "All localities", href: "/localities" },
-    { label: "By BHK", href: "/localities?bhk=2" },
-    { label: "Under 1Cr", href: "/localities?max_price=10000000" },
-    { label: "Ready to move", href: "/localities?possession=ready" },
+    { label: "All buildings", href: "/buildings" },
   ],
   support: [
     { label: "How it works", href: "#how-it-works" },
-    { label: "Data freshness", href: "/about#freshness" },
-    { label: "Privacy", href: "/privacy" },
-    { label: "Contact", href: "/contact" },
+    { label: "Live data", href: "#live-data" },
+    { label: "Why no photos", href: "#no-photos" },
+    { label: "Search tips", href: "/search" },
   ],
   company: [
     { label: "About PropAI", href: "/about" },
-    { label: "Broker network", href: "/brokers" },
-    { label: "Careers", href: "/careers" },
-    { label: "Press", href: "/press" },
+    { label: "Public data hub", href: "/explore" },
+    { label: "Localities", href: "/localities" },
+    { label: "Buildings", href: "/buildings" },
   ],
 };
 
@@ -55,6 +58,7 @@ const fallbackLocalities = [
 
 export default async function WWWPage() {
   const known = await getAllLocalities();
+  const overview = await getPublicDataOverview({ localities: known });
   const hasData = known.length > 0;
 
   return (
@@ -67,6 +71,7 @@ export default async function WWWPage() {
           <nav className="hidden lg:flex items-center gap-8">
             <Link href="/localities" className="text-[15px] text-zinc-400 hover:text-white transition-colors">Localities</Link>
             <Link href="/buildings" className="text-[15px] text-zinc-400 hover:text-white transition-colors">Buildings</Link>
+            <Link href="/explore" className="text-[15px] text-zinc-400 hover:text-white transition-colors">Explore</Link>
             <Link href="/about" className="text-[15px] text-zinc-400 hover:text-white transition-colors">About</Link>
           </nav>
           <div className="hidden lg:flex items-center gap-4">
@@ -95,6 +100,22 @@ export default async function WWWPage() {
                 PropAI reads WhatsApp broker groups so you get real, fresh listings — and a direct line to the broker.
               </p>
               <LocalitySearch knownLocalities={known} />
+              <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
+                <Link
+                  href="/explore"
+                  className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-zinc-900/80 px-4 py-2 text-sm text-zinc-200 hover:border-green-400/40 hover:text-white transition-colors"
+                >
+                  Explore live data
+                  <ArrowRight className="w-4 h-4" aria-hidden="true" />
+                </Link>
+                <Link
+                  href="/search"
+                  className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-zinc-900/80 px-4 py-2 text-sm text-zinc-200 hover:border-green-400/40 hover:text-white transition-colors"
+                >
+                  Search listings
+                  <ArrowRight className="w-4 h-4" aria-hidden="true" />
+                </Link>
+              </div>
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-6 max-w-5xl mx-auto">
@@ -121,6 +142,94 @@ export default async function WWWPage() {
                   <p className="text-[15px] text-zinc-400">{item.description}</p>
                 </div>
               ))}
+            </div>
+          </div>
+        </section>
+
+        <section id="live-data" className="py-16 lg:py-24 bg-zinc-950/60 border-y border-white/5">
+          <div className="max-w-7xl mx-auto px-4 lg:px-6">
+            <div className="text-center mb-10 lg:mb-12">
+              <h2 className="text-[20px] lg:text-[24px] font-semibold text-white mb-4">Live data at a glance</h2>
+              <p className="text-[15px] text-zinc-400 max-w-2xl mx-auto">
+                Everything we&apos;ve captured so far is public on www: localities, buildings, listings, and broker activity.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-2 lg:grid-cols-6 gap-3 lg:gap-4 mb-6">
+              {[
+                ["Localities", overview.counts.localities],
+                ["Buildings", overview.counts.buildings],
+                ["Listings", overview.counts.listings],
+                ["Brokers", overview.counts.brokers],
+                ["Raw messages", overview.counts.raw_messages],
+                ["Parsed records", overview.counts.parsed_observations],
+              ].map(([label, value]) => (
+                <div key={label as string} className="rounded-2xl border border-white/10 bg-black/70 p-4">
+                  <div className="text-3xl font-bold text-white">{(value as number).toLocaleString()}</div>
+                  <div className="mt-1 text-[10px] uppercase tracking-wider text-zinc-500">{label as string}</div>
+                </div>
+              ))}
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6">
+              <div className="rounded-3xl border border-white/10 bg-black/70 p-5 lg:p-6">
+                <div className="flex items-center justify-between gap-3 mb-4">
+                  <div>
+                    <h3 className="text-lg font-semibold text-white">Top localities</h3>
+                    <p className="text-sm text-zinc-500">By live listing count</p>
+                  </div>
+                  <Link href="/localities" className="text-sm text-zinc-400 hover:text-white transition-colors">
+                    View all
+                  </Link>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {overview.topLocalities.slice(0, 4).map((loc) => (
+                    <Link
+                      key={loc.slug}
+                      href={`/localities/${loc.slug}`}
+                      className="rounded-2xl border border-white/10 bg-zinc-950/80 p-4 hover:border-green-400/30 hover:bg-zinc-900 transition-colors"
+                    >
+                      <div className="text-white font-medium">{loc.locality}</div>
+                      <div className="mt-1 text-sm text-zinc-500">{loc.listingCount} active listing{loc.listingCount === 1 ? "" : "s"}</div>
+                    </Link>
+                  ))}
+                </div>
+              </div>
+
+              <div className="rounded-3xl border border-white/10 bg-black/70 p-5 lg:p-6">
+                <div className="flex items-center justify-between gap-3 mb-4">
+                  <div>
+                    <h3 className="text-lg font-semibold text-white">Top buildings</h3>
+                    <p className="text-sm text-zinc-500">By live listing count</p>
+                  </div>
+                  <Link href="/buildings" className="text-sm text-zinc-400 hover:text-white transition-colors">
+                    View all
+                  </Link>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {overview.topBuildings.slice(0, 4).map((building) => (
+                    <Link
+                      key={building.name}
+                      href={`/search?q=${encodeURIComponent(building.name)}`}
+                      className="rounded-2xl border border-white/10 bg-zinc-950/80 p-4 hover:border-green-400/30 hover:bg-zinc-900 transition-colors"
+                    >
+                      <div className="text-white font-medium">{building.name}</div>
+                      <div className="mt-1 text-sm text-zinc-500">{building.listingCount} listing{building.listingCount === 1 ? "" : "s"}</div>
+                      <div className="mt-1 text-xs text-zinc-500">{building.microMarket || "Market pending"}</div>
+                    </Link>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-8 flex justify-center">
+              <Link
+                href="/explore"
+                className="inline-flex items-center gap-2 rounded-full bg-green-400 px-5 py-3 text-sm font-semibold text-black hover:bg-green-300 transition-colors"
+              >
+                Open the full data hub
+                <ArrowRight className="w-4 h-4" aria-hidden="true" />
+              </Link>
             </div>
           </div>
         </section>
@@ -229,7 +338,7 @@ export default async function WWWPage() {
           </div>
         </section>
 
-        <section className="py-16 lg:py-24 bg-black">
+        <section id="no-photos" className="py-16 lg:py-24 bg-black">
           <div className="max-w-3xl mx-auto px-4 lg:px-6">
             <div className="bg-zinc-900/50 border border-white/10 rounded-xl p-6 lg:p-8">
               <h2 className="text-[20px] lg:text-[24px] font-semibold text-white mb-3">
@@ -261,6 +370,11 @@ export default async function WWWPage() {
             <nav aria-label="Browse">
               <h4 className="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-4">Browse</h4>
               <ul className="space-y-3">
+                <li>
+                  <Link href="/explore" className="text-[15px] text-zinc-400 hover:text-white transition-colors">
+                    Explore live data
+                  </Link>
+                </li>
                 {footerLinks.browse.map((link) => (
                   <li key={link.href}>
                     <Link href={link.href} className="text-[15px] text-zinc-400 hover:text-white transition-colors">
@@ -302,8 +416,9 @@ export default async function WWWPage() {
                 PropAI reads WhatsApp broker groups to build structured property data. Listings are fresh, verified, and sourced directly from broker conversations.
               </p>
               <div className="flex items-center gap-6 text-xs text-zinc-500">
-                <Link href="/privacy" className="hover:text-white transition-colors">Privacy</Link>
-                <Link href="/terms" className="hover:text-white transition-colors">Terms</Link>
+                <Link href="/about" className="hover:text-white transition-colors">About</Link>
+                <Link href="/explore" className="hover:text-white transition-colors">Explore</Link>
+                <Link href="/search" className="hover:text-white transition-colors">Search</Link>
                 <span>&copy; 2025 PropAI</span>
               </div>
             </div>

@@ -17,8 +17,13 @@ export default function LocalitySearch({ knownLocalities }: Props) {
   const [suggestions, setSuggestions] = useState<LocalitySummary[]>([]);
   const [showNoMatch, setShowNoMatch] = useState(false);
 
+  function hasPropertySignals(next: string) {
+    return /\b\d+(?:\.\d+)?\s*bhk\b|\b(budget|under|below|max|upto|up to|rent|rental|sale|sell|buy|furnished|furnishing|office|shop|showroom|commercial)\b|₹|\b(?:cr|crore|crores|l|lac|lakh|lakhs|k)\b/i.test(next);
+  }
+
   function updateSuggestions(next: string) {
     const q = slugify(next);
+    const natural = hasPropertySignals(next);
     if (!q) {
       setSuggestions([]);
       setShowNoMatch(false);
@@ -42,22 +47,25 @@ export default function LocalitySearch({ knownLocalities }: Props) {
       .map((s) => s.loc);
 
     setSuggestions(scored);
-    setShowNoMatch(scored.length === 0);
+    setShowNoMatch(scored.length === 0 && !natural);
   }
 
   function submit() {
     const trimmed = value.trim();
     if (!trimmed) return;
+    const natural = hasPropertySignals(trimmed);
     const slug = slugify(trimmed);
     const exact = knownLocalities.find((l) => l.slug === slug);
-    if (exact) {
+    if (exact && !natural) {
       router.push(`/localities/${exact.slug}`);
       return;
     }
-    // Near-miss: route to the best suggestion (a locality that actually has
-    // inventory) rather than dead-ending on a non-exact name.
-    if (suggestions.length > 0) {
+    if (!natural && suggestions.length > 0) {
       router.push(`/localities/${suggestions[0].slug}`);
+      return;
+    }
+    if (natural || suggestions.length === 0) {
+      router.push(`/search?q=${encodeURIComponent(trimmed)}`);
       return;
     }
     // No known localities available at all (e.g. data source slow/unavailable)
@@ -77,16 +85,16 @@ export default function LocalitySearch({ knownLocalities }: Props) {
   }
 
   return (
-    <div className="bg-zinc-900/50 border border-white/10 rounded-2xl p-4 lg:p-6 max-w-xl mx-auto">
+    <div className="max-w-3xl mx-auto rounded-[28px] border border-white/10 bg-zinc-950/90 p-5 lg:p-8 shadow-[0_25px_80px_rgba(0,0,0,0.45)]">
       <label
         htmlFor="locality-search"
-        className="block text-sm font-medium text-zinc-400 mb-2"
+        className="block text-sm font-medium text-zinc-400 mb-3"
       >
-        Search or browse by locality
+        Search localities or describe what you need
       </label>
       <div className="relative">
         <MapPin
-          className="absolute left-5 top-1/2 -translate-y-1/2 text-zinc-500 w-6 h-6"
+          className="absolute left-5 top-1/2 -translate-y-1/2 text-zinc-500 w-5 h-5"
           aria-hidden="true"
         />
         <input
@@ -99,20 +107,25 @@ export default function LocalitySearch({ knownLocalities }: Props) {
             if (showNoMatch && e.target.value.trim()) setShowNoMatch(false);
           }}
           onKeyDown={onKeyDown}
-          placeholder="e.g. Andheri West, Whitefield, Gachibowli…"
-          className="w-full bg-black border border-white/10 rounded-xl pl-14 pr-16 py-5 text-white placeholder:text-zinc-500 focus:border-green-400 focus:outline-none focus:ring-1 focus:ring-green-400 text-lg lg:text-xl"
+          placeholder="e.g. 3 BHK in Bandra West budget 2 to 3 lakh"
+          className="w-full bg-black/80 border border-white/10 rounded-2xl pl-14 pr-24 py-5 lg:py-6 text-white placeholder:text-zinc-500 focus:border-green-400 focus:outline-none focus:ring-1 focus:ring-green-400 text-[16px] lg:text-lg"
           autoComplete="off"
           aria-describedby={showNoMatch ? "locality-nomatch" : undefined}
         />
         <button
           type="button"
           onClick={submit}
-          aria-label="Search locality"
-          className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center justify-center w-11 h-11 rounded-lg bg-green-400 text-black hover:bg-green-300 transition-colors"
+          aria-label="Search listings"
+          className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center justify-center h-11 px-4 rounded-xl bg-green-400 text-black hover:bg-green-300 transition-colors font-semibold text-sm"
         >
-          <ArrowRight className="w-5 h-5" aria-hidden="true" />
+          Search
+          <ArrowRight className="w-4 h-4 ml-2" aria-hidden="true" />
         </button>
       </div>
+
+      <p className="mt-3 text-xs text-zinc-500">
+        Try a locality name, building, broker, or a full request like “3 BHK in Bandra West budget 2 to 3 lakh”.
+      </p>
 
       {suggestions.length > 0 && value.trim() && (
         <ul className="mt-3 rounded-xl border border-white/10 bg-zinc-950 divide-y divide-white/5 overflow-hidden">

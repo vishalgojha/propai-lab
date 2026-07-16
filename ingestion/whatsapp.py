@@ -7,12 +7,12 @@ via GROUPS_REFRESHED webhook) and provides empty historical records
 import json
 import logging
 import os
-from typing import Iterator, Optional
-from datetime import datetime, timezone
+from pathlib import Path
+from typing import Iterator
 
 from lab.config import STATUS_FILE, PROJECT_DIR
 from lab.ingestion.base import BaseSource, SyncJob, SourceRecord
-from lab.storage import SupabaseStorage, SyncJob as StorageSyncJob
+from lab.storage import SupabaseStorage
 
 logger = logging.getLogger(__name__)
 

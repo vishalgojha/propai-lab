@@ -17,7 +17,6 @@
     "storage",
     "app.py",
     "config.py",
-    "connect.py",
     "embedding.py",
     "events.py",
     "location.py",
@@ -38,7 +37,7 @@
     "!*.db-wal"
   ],
   "scripts": {
-    "start": "propai connect",
+    "start": "propai start",
     "dashboard": "propai dashboard",
     "doctor": "propai doctor"
   },

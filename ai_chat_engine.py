@@ -1831,18 +1831,7 @@ def execute_tool(name, args, sources, db_path=None):
         if not to_phone or not text:
             return "Error: to_phone and text are required"
         try:
-            import httpx
             from config import SUPABASE_URL, SUPABASE_SERVICE_KEY
-            # Get WABA config from Supabase
-            async def get_config():
-                async with httpx.AsyncClient(timeout=10) as client:
-                    resp = await client.get(
-                        f"{SUPABASE_URL}/rest/v1/companion_config?select=*",
-                        headers={"apikey": SUPABASE_SERVICE_KEY, "Authorization": f"Bearer {SUPABASE_SERVICE_KEY}"}
-                    )
-                    return resp.json() if resp.status_code == 200 else []
-            # This is a synchronous function, so we can't use async. 
-            # We'll use a direct SQL query to get the config
             import json
             phone_number_id = None
             access_token = None

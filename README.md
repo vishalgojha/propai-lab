@@ -68,7 +68,7 @@ Shared volume `propai-data` persists data across restarts.
 
 ```bash
 ./propai install    # Install Python + frontend deps
-./propai connect    # Start API (port 8000), frontend (port 3000)
+./propai start      # Start API (port 8000), frontend (port 3000)
 ```
 
 Local services run on:

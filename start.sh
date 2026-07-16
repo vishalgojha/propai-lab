@@ -2,4 +2,4 @@
 set -euo pipefail
 
 cd "$(dirname "$0")"
-exec ./propai connect
+exec ./propai start
