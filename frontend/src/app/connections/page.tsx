@@ -258,29 +258,32 @@ function QRModal({
   const [qrText, setQrText] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [connected, setConnected] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const refreshSessionAndFetchQR = useCallback(async () => {
+  const fetchQR = useCallback(async () => {
     setLoading(true);
     setError(null);
+    setNotice(null);
     try {
-      const res = await connectPhone(phone.id);
       const qrResult = await getPhone(phone.id);
       if (qrResult?.qr) {
         setQrText(qrResult.qr);
         setError(null);
+        setNotice(null);
         return;
       }
       if (qrResult?.connected || qrResult?.connection_state === "open" || qrResult?.connected_since) {
         setConnected(true);
         setQrText(null);
+        setNotice(null);
         await onRefresh();
         window.dispatchEvent(new Event("propai_whatsapp_status_updated"));
         return;
       }
-      setError((res as any)?.message || (qrResult as any)?.message || "QR not available yet. Try again in a moment.");
+      setNotice((qrResult as any)?.message || "QR not available yet. Waiting for the ingestor to generate it.");
     } catch (error) {
       setError(error instanceof Error ? error.message : "Failed to fetch QR code. Retry, or reset the phone if it stays stuck.");
     } finally {
@@ -288,29 +291,20 @@ function QRModal({
     }
   }, [onRefresh, phone.id]);
 
-  const fetchQR = useCallback(async () => {
+  const refreshSessionAndFetchQR = useCallback(async () => {
     setLoading(true);
     setError(null);
+    setNotice(null);
     try {
-      const res = await getPhone(phone.id);
-      if (res?.connected || res?.connection_state === "open" || res?.connected_since) {
-        setConnected(true);
-        setQrText(null);
-        setError(null);
-        await onRefresh();
-        window.dispatchEvent(new Event("propai_whatsapp_status_updated"));
-      } else if (res?.qr) {
-        setQrText(res.qr);
-      } else {
-        setError((res as any)?.message || "QR not available yet. Restarting session...");
-        setTimeout(() => refreshSessionAndFetchQR().catch(() => {}), 500);
-      }
+      await resetPhone(phone.id);
+      await new Promise((resolve) => setTimeout(resolve, 1200));
+      await fetchQR();
     } catch (error) {
-      setError(error instanceof Error ? error.message : "Failed to fetch QR code. Retry, or reset the phone if it stays stuck.");
+      setError(error instanceof Error ? error.message : "Failed to refresh the session. Retry, or reset the phone if it stays stuck.");
     } finally {
       setLoading(false);
     }
-  }, [onRefresh, phone.id, refreshSessionAndFetchQR]);
+  }, [fetchQR, phone.id]);
 
   useEffect(() => {
     if (open) {
@@ -334,14 +328,23 @@ function QRModal({
         if (isConnectedPhone(res)) {
           setConnected(true);
           setQrText(null);
+          setNotice(null);
           if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
         } else if (res.qr && res.qr !== qrText) {
           setQrText(res.qr);
+          setNotice(null);
         }
       } catch {}
     }, 3000);
     return () => { if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; } };
   }, [open, connected, phone.id, qrText]);
+
+  useEffect(() => {
+    if (attemptState?.lastOutcome === "failed" && !connected) {
+      setError(`Connection attempt failed after ${attemptState.lastDurationSeconds ?? 0}s. Retry or refresh the session.`);
+      setLoading(false);
+    }
+  }, [attemptState?.lastDurationSeconds, attemptState?.lastOutcome, connected]);
 
   useEffect(() => {
     if (!canvasRef.current || !qrText) return;
@@ -392,6 +395,11 @@ function QRModal({
                 </span>
               </div>
             )}
+          </div>
+        )}
+        {!connected && notice && !error && !loading && (
+          <div className="mb-4 rounded-xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-xs text-amber-200">
+            {notice}
           </div>
         )}
         {connected && (
