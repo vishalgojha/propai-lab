@@ -3,6 +3,7 @@ import { MapPin, Building2 } from "lucide-react";
 import Link from "next/link";
 import { getLocalityData, getAllLocalities } from "@/lib/localities";
 import LocalityMapLoader from "@/components/LocalityMapLoader";
+import SiteHeader from "@/components/SiteHeader";
 import ListingCard, { LocalityBackLink } from "@/components/ListingCard";
 import { NoPhotosFaqJsonLd, NoPhotosFaq } from "@/components/NoPhotosFaq";
 
@@ -32,6 +33,7 @@ export default async function LocalityPage({ params }: Params) {
     const suggestions = (await getAllLocalities()).slice(0, 5);
     return (
       <div className="min-h-screen bg-black text-white">
+        <SiteHeader />
         <main className="max-w-3xl mx-auto px-4 lg:px-6 py-16 lg:py-24">
           <NoPhotosFaqJsonLd />
           <div className="mb-8">
@@ -76,6 +78,7 @@ export default async function LocalityPage({ params }: Params) {
 
   return (
     <div className="min-h-screen bg-black text-white">
+      <SiteHeader />
       <main className="max-w-7xl mx-auto px-4 lg:px-6 py-10 lg:py-14">
         <NoPhotosFaqJsonLd />
         <div className="mb-8">

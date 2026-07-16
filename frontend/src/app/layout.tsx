@@ -69,17 +69,6 @@ const navSections = [
   },
 ];
 
-function readCachedPhones(): Phone[] {
-  if (typeof window === "undefined") return [];
-  try {
-    const tenant = window.localStorage.getItem("propai_active_tenant") || "default";
-    const snapshot = JSON.parse(window.localStorage.getItem(`propai_connection_snapshot:${tenant}`) || "{}");
-    return Array.isArray(snapshot?.phones) ? snapshot.phones : [];
-  } catch {
-    return [];
-  }
-}
-
 function PaletteModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<Record<string, any[]> | null>(null);
@@ -190,7 +179,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
   const { user, loading: authLoading, error: authError, refresh: refreshAuth } = useAuth();
   const isMobile = useIsMobile();
   const { drawerOpen, setDrawerOpen, toggleDrawer, setLastTab } = useLayout();
-  const [phones, setPhones] = useState<Phone[]>(readCachedPhones);
+  const [phones, setPhones] = useState<Phone[]>([]);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [offline, setOffline] = useState(false);
   const [profile, setProfile] = useState<{ auth_user_id?: string; phone: string; first_name: string; last_name?: string; email?: string; city?: string } | null>(null);

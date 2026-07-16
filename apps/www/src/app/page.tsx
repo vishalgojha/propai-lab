@@ -3,6 +3,7 @@ export const dynamic = "force-dynamic";
 import { MapPin, ArrowRight, MessageSquare, Phone, Shield } from "lucide-react";
 import Link from "next/link";
 import LocalitySearch from "@/components/LocalitySearch";
+import SiteHeader from "@/components/SiteHeader";
 import { getAllLocalities } from "@/lib/localities";
 import { getPublicDataOverview } from "@/lib/public-data";
 
@@ -61,29 +62,7 @@ export default async function WWWPage() {
 
   return (
     <div className="min-h-screen bg-black text-white">
-      <header className="border-b border-white/[0.06] sticky top-0 bg-black/80 backdrop-blur z-50">
-        <div className="max-w-7xl mx-auto px-4 lg:px-6 h-16 flex items-center justify-between">
-          <Link href="/" className="flex items-center gap-2" aria-label="PropAI home">
-            <span className="text-xl font-bold tracking-tight">PropAI</span>
-          </Link>
-          <nav className="hidden lg:flex items-center gap-8">
-            <Link href="/localities" className="text-[15px] text-zinc-400 hover:text-white transition-colors">Localities</Link>
-            <Link href="/buildings" className="text-[15px] text-zinc-400 hover:text-white transition-colors">Buildings</Link>
-            <Link href="/about" className="text-[15px] text-zinc-400 hover:text-white transition-colors">About</Link>
-          </nav>
-          <div className="hidden lg:flex items-center gap-4">
-            <Link href="https://app.propai.live/auth/login" className="text-[15px] text-zinc-400 hover:text-white transition-colors">
-              Broker login
-            </Link>
-            <Link
-              href="https://app.propai.live/auth/signup"
-              className="px-4 py-2 bg-green-400 text-black text-sm font-semibold rounded-lg hover:bg-green-300 transition-colors min-w-[120px] text-center"
-            >
-              Get started
-            </Link>
-          </div>
-        </div>
-      </header>
+      <SiteHeader />
 
       <main id="main-content">
         <section className="relative pt-16 lg:pt-24 pb-16 lg:pb-24 overflow-hidden">

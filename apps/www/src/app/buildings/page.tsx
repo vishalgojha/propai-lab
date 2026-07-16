@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ArrowRight, MapPin, Building2 } from "lucide-react";
 import { getAllBuildings } from "@/lib/localities";
+import SiteHeader from "@/components/SiteHeader";
 
 export const metadata = {
   title: "Buildings — PropAI",
@@ -13,14 +14,8 @@ export default async function BuildingsIndexPage() {
 
   return (
     <div className="min-h-screen bg-black text-white">
+      <SiteHeader />
       <main className="max-w-7xl mx-auto px-4 lg:px-6 py-10 lg:py-14">
-        <Link
-          href="/"
-          className="inline-flex items-center gap-2 text-sm text-zinc-400 hover:text-white transition-colors mb-8"
-        >
-          <span aria-hidden="true">←</span> Back to home
-        </Link>
-
         <header className="mb-10">
           <h1 className="text-[32px] lg:text-[44px] leading-[1.1] font-bold text-white mb-3">
             Buildings

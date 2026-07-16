@@ -2773,13 +2773,20 @@ async def get_tenant_context(
     user: dict | None = Depends(get_current_user),
     x_tenant_id: str | None = Header(None),
 ) -> str | None:
-    tid = x_tenant_id
-    if not tid and user:
-        tid = _resolve_user_organization_id(user)
-    # Always reset tenant context to avoid leaking a stale value from a
-    # previous request on the same (global) storage singleton. Default to
-    # the shared workspace so unauthenticated feed endpoints still scope
-    # to the correct organization.
+    # Never trust a browser tenant header without verifying membership.
+    # A stale localStorage value from another login must not cross tenants.
+    set_tenant_id(None)
+    tid = None
+    if user:
+        orgs = await asyncio.to_thread(storage.get_user_organizations, user["id"])
+        allowed_ids = {str(org.get("id")) for org in orgs if org.get("id")}
+        requested_id = str(x_tenant_id or "").strip()
+        if requested_id and requested_id in allowed_ids:
+            tid = requested_id
+        else:
+            tid = await asyncio.to_thread(_resolve_user_organization_id, user)
+    # Public endpoints use the shared feed, but authenticated users never
+    # inherit an arbitrary or stale shared tenant from the request header.
     if not tid:
         tid = DEFAULT_TENANT_ID
     set_tenant_id(tid)
@@ -2835,7 +2842,12 @@ def _resolve_user_organization_id(user: dict) -> str | None:
 def _resolve_active_organization_id(user: dict, tenant_id: str | None) -> str:
     if tenant_id and tenant_id != DEFAULT_TENANT_ID:
         try:
-            if storage.get_organization(tenant_id):
+            user_org_ids = {
+                str(org.get("id"))
+                for org in storage.get_user_organizations(user["id"])
+                if org.get("id")
+            }
+            if tenant_id in user_org_ids:
                 return tenant_id
         except Exception:
             pass
@@ -11795,7 +11807,7 @@ async def get_profile(request: Request, user: dict = Depends(require_user)):
     phone = request.query_params.get("phone", "")
     auth_user_id = request.query_params.get("auth_user_id", "")
     if not auth_user_id:
-        auth_user_id = user.get("sub", "")
+        auth_user_id = user.get("id", "")
     profile = storage.get_user_profile(phone=phone, auth_user_id=auth_user_id)
     return profile or {}
 
@@ -11803,7 +11815,7 @@ async def get_profile(request: Request, user: dict = Depends(require_user)):
 @app.post("/api/profile")
 async def save_profile(body: ProfileUpdate, request: Request, user: dict = Depends(require_user)):
     phone = request.query_params.get("phone", "")
-    profile = storage.save_user_profile(phone, body.model_dump(), auth_user_id=user.get("sub", ""))
+    profile = storage.save_user_profile(phone, body.model_dump(), auth_user_id=user.get("id", ""))
     return profile or {"error": "failed to save"}
 
 

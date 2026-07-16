@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import { getAllLocalities } from "@/lib/localities";
+import SiteHeader from "@/components/SiteHeader";
 
 export const metadata = {
   title: "All Localities — PropAI",
@@ -13,6 +14,7 @@ export default async function LocalitiesIndexPage() {
 
   return (
     <div className="min-h-screen bg-black text-white">
+      <SiteHeader />
       <main className="max-w-7xl mx-auto px-4 lg:px-6 py-10 lg:py-14">
         <header className="mb-10">
           <h1 className="text-[32px] lg:text-[44px] leading-[1.1] font-bold text-white mb-3">
@@ -52,10 +54,10 @@ export default async function LocalitiesIndexPage() {
 
         <div className="text-center mt-12">
           <Link
-            href="/"
+            href="/buildings"
             className="inline-flex items-center gap-2 px-6 py-3 bg-green-400 text-black text-sm font-semibold rounded-lg hover:bg-green-300 transition-colors"
           >
-            Back to home
+            Browse buildings
             <ArrowRight className="w-4 h-4" aria-hidden="true" />
           </Link>
         </div>

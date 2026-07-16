@@ -41,6 +41,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setActiveTenantId(null);
       return;
     }
+    // Never send a tenant selected by a previously signed-in account.
+    setActiveTenantId(null);
     try {
       const me = await getAuthMe();
       setActiveTenantId(me.active_tenant || null);

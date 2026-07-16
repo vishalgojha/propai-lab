@@ -5,6 +5,8 @@ These tests cover the startup failure where Python resolved the local
 `supabase/` directory instead of a client package, causing app import to crash.
 """
 
+import asyncio
+
 import httpx
 
 
@@ -32,6 +34,43 @@ def test_startup_imports_match_app_dependencies():
     assert LLMProvider is not None
 
     import storage.supabase  # noqa: F401
+
+
+def test_tenant_context_rejects_another_users_tenant(monkeypatch):
+    """A stale or forged browser tenant header must not cross organizations."""
+    import app
+
+    class FakeStorage:
+        def get_user_organizations(self, user_id):
+            assert user_id == "user-2"
+            return [{"id": "org-2"}]
+
+    monkeypatch.setattr(app, "storage", FakeStorage())
+    monkeypatch.setattr(app, "_resolve_user_organization_id", lambda user: "org-2")
+
+    tenant_id = asyncio.run(app.get_tenant_context(
+        user={"id": "user-2", "email": "user2@example.com"},
+        x_tenant_id="org-1",
+    ))
+
+    assert tenant_id == "org-2"
+
+
+def test_tenant_context_accepts_a_users_own_tenant(monkeypatch):
+    import app
+
+    class FakeStorage:
+        def get_user_organizations(self, user_id):
+            return [{"id": "org-2"}, {"id": "org-3"}]
+
+    monkeypatch.setattr(app, "storage", FakeStorage())
+
+    tenant_id = asyncio.run(app.get_tenant_context(
+        user={"id": "user-2", "email": "user2@example.com"},
+        x_tenant_id="org-3",
+    ))
+
+    assert tenant_id == "org-3"
 
 
 def test_connection_details_is_safe_without_storage(monkeypatch):
