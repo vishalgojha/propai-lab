@@ -316,10 +316,10 @@ export default function AuditPage() {
         <Card className="p-4">
           <SectionTitle title="Format Pressure" />
           <p className="mt-3 text-xs leading-5 text-zinc-500">
-            Bad-format posts are intentionally separated from clean opportunities. This keeps Market Inbox useful and nudges brokers to post cleaner listings.
+            Posts that need more detail stay visible in Market Inbox with inline tags showing what is missing.
           </p>
-          <Link href="/format-issues" className="mt-4 inline-flex text-xs font-bold text-[#3EE88A] hover:text-white">
-            Open format issues
+          <Link href="/inbox" className="mt-4 inline-flex text-xs font-bold text-[#3EE88A] hover:text-white">
+            Review in market inbox
           </Link>
         </Card>
         <Card className="p-4">

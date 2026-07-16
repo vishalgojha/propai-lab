@@ -12,7 +12,6 @@ import { getPhones, getPhone, createPhone, deletePhone, resetPhone, disconnectPh
 type HealthStatus = "healthy" | "warning" | "error";
 
 type ConnectionSnapshot = {
-  phones?: Phone[];
   totalParsed?: number;
   totalListings?: number;
   totalRequirements?: number;
@@ -34,7 +33,12 @@ function readConnectionSnapshot(userId: string): ConnectionSnapshot {
   const key = connectionSnapshotKey(userId);
   if (!key) return {};
   try {
-    return JSON.parse(window.localStorage.getItem(key) || "{}") as ConnectionSnapshot;
+    const snapshot = JSON.parse(window.localStorage.getItem(key) || "{}") as ConnectionSnapshot & { phones?: unknown };
+    if ("phones" in snapshot) {
+      delete snapshot.phones;
+      window.localStorage.setItem(key, JSON.stringify(snapshot));
+    }
+    return snapshot;
   } catch {
     return {};
   }
@@ -703,7 +707,6 @@ export default function ConnectionCenterPage() {
       const response = await getPhones(true, 5000);
       const nextPhones = response.phones || [];
       setPhones(nextPhones);
-      writeConnectionSnapshot(user?.id || "", { phones: nextPhones });
       setPhonesError(null);
     } catch (error) {
       setPhonesError(error instanceof Error ? error.message : "Could not load phones right now.");
@@ -758,10 +761,6 @@ export default function ConnectionCenterPage() {
   useEffect(() => {
     if (!user?.id) return;
     const cached = readConnectionSnapshot(user.id);
-    if (cached.phones?.length) {
-      setPhones(cached.phones);
-      setPhonesLoading(false);
-    }
     if (cached.totalParsed != null) setTotalParsed(cached.totalParsed);
     if (cached.totalListings != null) setTotalListings(cached.totalListings);
     if (cached.totalRequirements != null) setTotalRequirements(cached.totalRequirements);

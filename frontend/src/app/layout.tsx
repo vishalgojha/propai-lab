@@ -4,8 +4,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import "./globals.css";
-import { getPhones, getRaw, searchMessages, getCompanionConfig, CompanionConfig, getProfile, getWhatsAppStatus, isLiveWhatsAppConnection, type Phone, type WhatsAppStatus } from "@/lib/api";
-import { classifyFormatIssue } from "@/lib/format-issues";
+import { getPhones, searchMessages, getCompanionConfig, CompanionConfig, getProfile, getWhatsAppStatus, isLiveWhatsAppConnection, type Phone, type WhatsAppStatus } from "@/lib/api";
 import {
   MessageSquare,
   BarChart3,
@@ -26,7 +25,6 @@ import {
   LogOut,
   Menu,
   X,
-  AlertTriangle,
 } from "lucide-react";
 import { AuthProvider, useAuth } from "@/lib/AuthProvider";
 import { LayoutProvider, useLayout } from "@/hooks/useLayout";
@@ -42,7 +40,6 @@ const navSections = [
     items: [
       { href: "/inbox", label: "Market Inbox", icon: MessageSquare },
       { href: "/whatsapp-groups", label: "WhatsApp Groups", icon: MessageSquare },
-      { href: "/format-issues", label: "Format Issues", icon: AlertTriangle },
       { href: "/chat", label: "AI Chat", icon: Brain },
     ],
   },
@@ -183,7 +180,6 @@ function AppShell({ children }: { children: React.ReactNode }) {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [offline, setOffline] = useState(false);
   const [profile, setProfile] = useState<{ auth_user_id?: string; phone: string; first_name: string; last_name?: string; email?: string; city?: string } | null>(null);
-  const [formatIssueCount, setFormatIssueCount] = useState(0);
   const [wabaConfig, setWabaConfig] = useState<CompanionConfig | null>(null);
   const [liveStatus, setLiveStatus] = useState<WhatsAppStatus | null>(null);
   const { signOut: authSignOut } = useAuth();
@@ -297,21 +293,6 @@ function AppShell({ children }: { children: React.ReactNode }) {
     };
   }, [authLoading, user]);
 
-  useEffect(() => {
-    if (authLoading || !user) return;
-    let cancelled = false;
-    getRaw(150, 0, undefined, undefined, undefined, undefined, 8000)
-      .then((messages) => {
-        if (!cancelled) setFormatIssueCount(messages.filter((message) => classifyFormatIssue(message)).length);
-      })
-      .catch(() => {
-        if (!cancelled) setFormatIssueCount(0);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [authLoading, user]);
-
   // PWA manifest link (static in RootLayout, this is for dynamic fallback)
   useEffect(() => {
     if (!document.querySelector('link[rel="manifest"]')) {
@@ -401,7 +382,6 @@ function AppShell({ children }: { children: React.ReactNode }) {
         open={drawerOpen}
         onClose={() => setDrawerOpen(false)}
         onOpenPalette={() => setPaletteOpen(true)}
-        formatIssueCount={formatIssueCount}
       />
 
       {/* ═══════ Sidebar (desktop) ═══════ */}
@@ -427,7 +407,6 @@ function AppShell({ children }: { children: React.ReactNode }) {
                {section.items.map((item) => {
                 const active = pathname === item.href || (item.href !== "/" && pathname.startsWith(item.href));
                 const Icon = item.icon;
-                const showFormatBadge = item.href === "/format-issues" && formatIssueCount > 0;
                 return (
                   <Link
                     key={item.href}
@@ -441,12 +420,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
                   >
                     <Icon className={`w-3.5 h-3.5 shrink-0 ${active ? "text-white" : ""}`} strokeWidth={1.5} />
                     <span className="truncate">{item.label}</span>
-                    {showFormatBadge && (
-                      <span className="ml-auto rounded-md border border-white/10 bg-white/[0.03] px-1.5 py-0.5 text-[9px] font-semibold text-zinc-400">
-                        {formatIssueCount > 99 ? "99+" : formatIssueCount}
-                      </span>
-                    )}
-                    {active && <div className={`${showFormatBadge ? "ml-1" : "ml-auto"} h-1 w-1 shrink-0 rounded-full bg-white`} />}
+                    {active && <div className="ml-auto h-1 w-1 shrink-0 rounded-full bg-white" />}
                   </Link>
                 );
               })}

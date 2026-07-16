@@ -14,7 +14,7 @@ const CombinedLocalityDialog = nextDynamic(() => import("@/components/CombinedLo
 const AddToClientBucket = nextDynamic(() => import("@/components/AddToClientBucket"), { ssr: false });
 import ResizablePanel from "@/components/ResizablePanel";
 import { entityProfileHref } from "@/lib/entity-links";
-import { classifyFormatIssue } from "@/lib/format-issues";
+import { classifyFormatIssue, type FormatIssue } from "@/lib/format-issues";
 import { useIsMobile } from "@/hooks/useMediaQuery";
 import { useInfiniteScroll } from "@/hooks/useInfiniteScroll";
 import {
@@ -653,6 +653,28 @@ function splitDelimitedListingText(text?: string) {
       return [index === 0 ? intro : "", ...chunk].filter(Boolean).join("\n");
     })
     .filter((chunk) => chunk.split("\n").map((line) => line.trim()).filter(Boolean).length >= 3);
+}
+
+function formatIssueTag(label: string) {
+  return /^(?:Add|Separate)\b/i.test(label) ? label : `Missing ${label.toLowerCase()}`;
+}
+
+function MissingDetailsNotice({ issue }: { issue: FormatIssue }) {
+  return (
+    <div className="mb-2 rounded-md border border-white/10 bg-white/[0.025] px-2.5 py-2 text-left">
+      <div className="text-[10px] font-semibold text-zinc-300">Needs details</div>
+      <div className="mt-0.5 text-[10px] leading-relaxed text-zinc-500">{issue.detail}</div>
+      {issue.missing.length > 0 && (
+        <div className="mt-2 flex flex-wrap gap-1">
+          {issue.missing.map((label) => (
+            <span key={label} className="badge badge-neutral px-1.5 py-0.5 text-[8px]">
+              {formatIssueTag(label)}
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 type EntityDetailShape = {
@@ -3890,21 +3912,8 @@ return {
                                             : ""
                                       }`}
                                     >
-                                      {suppressAsOpportunity ? (
-                                        <div className="rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-3 text-xs text-amber-100">
-                                          <div className="font-bold">{formatIssue?.reason || "Format issue"}</div>
-                                          <div className="mt-1 text-[11px] leading-relaxed text-amber-100/75">
-                                            This post needs better structure before it becomes a market opportunity.
-                                          </div>
-                                          <Link
-                                            href="/format-issues"
-                                            className="mt-2 inline-flex font-bold text-[#3EE88A] hover:underline"
-                                            onClick={(e) => e.stopPropagation()}
-                                          >
-                                            Open in Format Issues
-                                          </Link>
-                                        </div>
-                                      ) : listingChunks.length > 1 ? (
+                                      {formatIssue && <MissingDetailsNotice issue={formatIssue} />}
+                                      {listingChunks.length > 1 ? (
                                         <div className="space-y-2">
                                           <div className="flex items-center justify-between gap-2 text-[10px] text-zinc-500">
                                             <div className="min-w-0">
@@ -4000,19 +4009,6 @@ return {
                                             />
                                           </div>
                                           <MoneySignalChips text={m.message || ""} label={mBadges[0]?.label} />
-                                          {formatIssue && (
-                                            <div className="mt-2 rounded-md border border-amber-500/20 bg-amber-500/10 px-2.5 py-2 text-[10px] leading-relaxed text-amber-200">
-                                              <div className="font-bold">{formatIssue.reason}</div>
-                                              <div className="mt-0.5 text-amber-100/75">{formatIssue.detail}</div>
-                                              <Link
-                                                href="/format-issues"
-                                                className="mt-1 inline-flex font-bold text-[#3EE88A] hover:underline"
-                                                onClick={(e) => e.stopPropagation()}
-                                              >
-                                                Open in Format Issues
-                                              </Link>
-                                            </div>
-                                          )}
                                         </div>
                                       )}
                                       {(m.duplicate_count || 0) > 1 && (

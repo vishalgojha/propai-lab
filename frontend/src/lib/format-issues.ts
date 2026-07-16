@@ -12,6 +12,7 @@ export type FormatIssue = {
   reason: FormatIssueReason;
   detail: string;
   severity: "high" | "medium" | "low";
+  missing: string[];
 };
 
 const URL_RE = /\b(?:https?:\/\/|www\.|instagram\.com|fb\.com|facebook\.com|youtu\.be|youtube\.com|t\.me|wa\.me|chat\.whatsapp\.com)\b/i;
@@ -42,7 +43,12 @@ function propertySignalCount(text: string) {
 export function classifyFormatIssue(message: Pick<RawMessage, "message">): FormatIssue | null {
   const text = (message.message || "").trim();
   if (!text) {
-    return { reason: "No property details", detail: "Empty message body.", severity: "low" };
+    return {
+      reason: "No property details",
+      detail: "Empty message body.",
+      severity: "low",
+      missing: ["Property type", "Location", "Price", "Listing or requirement"],
+    };
   }
 
   const lines = meaningfulLines(text);
@@ -55,6 +61,7 @@ export function classifyFormatIssue(message: Pick<RawMessage, "message">): Forma
       reason: "Only external link",
       detail: "External links are not enough for PropAI to create a clean market opportunity.",
       severity: "high",
+      missing: ["Property details", "Location", "Price"],
     };
   }
 
@@ -64,6 +71,7 @@ export function classifyFormatIssue(message: Pick<RawMessage, "message">): Forma
         reason: "No property details",
         detail: "No clear property, listing, or requirement signal was found.",
         severity: "low",
+        missing: ["Property type", "Location", "Price", "Listing or requirement"],
       };
     }
     return null;
@@ -76,6 +84,7 @@ export function classifyFormatIssue(message: Pick<RawMessage, "message">): Forma
       reason: "Mixed listing + requirement",
       detail: "Listing and requirement language appears in the same compressed post.",
       severity: "high",
+      missing: ["Separate listing and requirement"],
     };
   }
 
@@ -84,16 +93,23 @@ export function classifyFormatIssue(message: Pick<RawMessage, "message">): Forma
       reason: "Too compressed",
       detail: "The post has property signals but not enough line breaks or boundaries to split safely.",
       severity: "high",
+      missing: ["Add line breaks", "Separate each property"],
+    };
+  }
+
+  const missing: string[] = [];
+  if (!PRICE_RE.test(compactText)) missing.push("Price");
+  if (!LOCATION_RE.test(compactText)) missing.push("Location");
+  if (!hasRequirement && !hasListing) missing.push("Listing or requirement");
+
+  if (missing.length > 0) {
+    return {
+      reason: missing.includes("Price") ? "Missing price" : "Missing location",
+      detail: `Add ${missing.join(", ").toLowerCase()} to improve matching.`,
+      severity: "low",
+      missing,
     };
   }
 
   return null;
-}
-
-export function formatIssueHref(message: Partial<RawMessage>) {
-  const conversation = message.chat_id || message.conversation_key || message.group_name || message.sender_phone || "";
-  const params = new URLSearchParams();
-  if (conversation) params.set("conversation", conversation);
-  if (message.id) params.set("message", String(message.id));
-  return `/inbox${params.toString() ? `?${params.toString()}` : ""}`;
 }
