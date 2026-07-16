@@ -1474,6 +1474,105 @@ class SupabaseStorage(Storage):
 
     # ── Listings ─────────────────────────────────────────────────
 
+    def _listing_from_parsed(
+        self, obs: dict, resolver: Optional[dict]
+    ) -> Listing:
+        """Build a Listing from a parsed_observation (+ optional resolver
+        decision). The resolver's resolved building/micro_market win when the
+        parse was unresolved, so listings inherit confirmed locality."""
+        micro_market = (resolver or {}).get("micro_market") or obs.get("micro_market")
+        building_name = (resolver or {}).get("building_name") or obs.get("building_name")
+        return Listing(
+            intent=obs.get("intent"),
+            bhk=obs.get("bhk"),
+            price=obs.get("price"),
+            price_unit=obs.get("price_unit"),
+            area_sqft=obs.get("area_sqft"),
+            furnishing=obs.get("furnishing"),
+            location_label=micro_market or obs.get("location_raw"),
+            building_name=building_name,
+            landmark_name=obs.get("landmark_name"),
+            micro_market=micro_market,
+            broker_name=obs.get("broker_name"),
+            broker_phone=obs.get("broker_phone"),
+            latest_raw_message_id=obs.get("raw_message_id"),
+            representative_raw_message_id=obs.get("raw_message_id"),
+            last_seen=obs.get("created_at") or "",
+            first_seen=obs.get("created_at") or "",
+            observation_count=1,
+        )
+
+    def rebuild_listings(self, limit: int = 0):
+        """Bridge parsed_observations (+ resolver_decisions) into the `listings`
+        table. Idempotent: each observation upserts via save_listing's
+        fingerprint dedup, so re-running only updates existing rows and never
+        creates duplicates. Call without limit to rebuild everything, or pass a
+        recent cutoff by feeding only new observations.
+
+        This is the missing link between the parser (extraction.py, which is
+        multi-listing aware via multi_listing.parse_multi_message) and the
+        `listings` table that www reads.
+        """
+        PAGE = 500
+        processed = 0
+        for offset in range(0, max(limit, 1) if limit else 10_000_000, PAGE):
+            res = (
+                self.client.table("parsed_observations")
+                .select("*")
+                .order("id", desc=False)
+                .range(offset, offset + PAGE - 1)
+                .execute()
+            )
+            rows = res.data or []
+            if not rows:
+                break
+            for obs in rows:
+                try:
+                    resolver = None
+                    try:
+                        r = self.get_resolver_by_parsed(obs["id"])
+                        resolver = r.__dict__ if r else None
+                    except Exception:
+                        resolver = None
+                    listing = self._listing_from_parsed(obs, resolver)
+                    self.save_listing(listing)
+                    processed += 1
+                except Exception as exc:
+                    print(f"[rebuild_listings] skip obs {obs.get('id')}: {exc}", flush=True)
+            if limit and processed >= limit:
+                break
+            if len(rows) < PAGE:
+                break
+        return processed
+
+    def upsert_listing_from_parsed(self, parsed_id: int) -> int:
+        """Incrementally push a single parsed_observation (+ its resolver
+        decision) into `listings`. Safe to call on every new observation — the
+        fingerprint upsert dedupes against existing rows."""
+        try:
+            obs_res = (
+                self.client.table("parsed_observations")
+                .select("*")
+                .eq("id", parsed_id)
+                .limit(1)
+                .execute()
+            )
+            rows = obs_res.data or []
+            if not rows:
+                return 0
+            obs = rows[0]
+            resolver = None
+            try:
+                r = self.get_resolver_by_parsed(parsed_id)
+                resolver = r.__dict__ if r else None
+            except Exception:
+                resolver = None
+            listing = self._listing_from_parsed(obs, resolver)
+            return self.save_listing(listing)
+        except Exception as exc:
+            print(f"[upsert_listing_from_parsed] parsed {parsed_id}: {exc}", flush=True)
+            return 0
+
     def save_listing(self, listing: Listing) -> int:
         data = {k: v for k, v in listing.__dict__.items() if v is not None}
         data.pop("id", None)

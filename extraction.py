@@ -309,6 +309,12 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
         try:
             parsed_id = storage.save_parsed(obs)
             parsed_ids.append(parsed_id)
+            # Bridge parsed observation → listings (www reads `listings`).
+            # Fingerprint upsert dedupes against existing rows.
+            try:
+                storage.upsert_listing_from_parsed(parsed_id)
+            except Exception as lexc:
+                print(f"  [extract] upsert_listing error: {lexc}", flush=True)
         except Exception as exc:
             print(f"  [extract] save_parsed error: {exc}", flush=True)
             continue
