@@ -1610,6 +1610,10 @@ return {
     return /@g\.us$/i.test(text) || /@newsletter$/i.test(text);
   };
 
+  const conversationTypeFor = (msg: Partial<api.InboxThread | api.RawMessage>) => {
+    return ((msg.chat_type || msg.conversation_type || "") as string).trim().toLowerCase();
+  };
+
   const displayGroupName = (value?: string) => {
     const text = (value || "").trim();
     if (!text || text === "seed" || text === "seed-bot") return "";
@@ -1628,8 +1632,19 @@ return {
     const rawConversation = conversationName || msg.group_name;
     const brokerName = (msg.broker_name || "").trim();
     if (brokerName) return brokerName;
+    const explicitType = conversationTypeFor(msg);
+    const isExplicitDirect = explicitType === "direct";
+    const isExplicitGroup = explicitType === "group";
+    if (isExplicitDirect) {
+      const sender = (msg.sender || "").trim();
+      const phone = resolveMessagePhone(msg);
+      if (isRawWhatsAppId(sender)) return displayPhoneString(phone) || "Direct Message";
+      if (sender && sender.toLowerCase() !== "unknown") return sender;
+      return displayPhoneString(phone) || "Direct Message";
+    }
     const knownGroupName = resolveKnownGroupName(rawConversation);
-    if (knownGroupName && msg.conversation_type !== "direct" && msg.chat_type !== "direct") return knownGroupName;
+    if (knownGroupName && !isExplicitDirect) return knownGroupName;
+    if (isExplicitGroup && rawConversation) return displayGroupName(rawConversation);
     const sender = (msg.sender || "").trim();
     const phone = resolveMessagePhone(msg);
     if (isRawWhatsAppId(sender)) return displayPhoneString(phone) || "Direct Message";
@@ -1710,6 +1725,9 @@ return {
   };
 
   const isLikelyGroupConversation = (msg: Partial<api.InboxThread | api.RawMessage>) => {
+    const explicitType = conversationTypeFor(msg);
+    if (explicitType === "direct") return false;
+    if (explicitType === "group") return true;
     const candidates = [
       msg.group_name,
       msg.chat_name,
@@ -2233,7 +2251,6 @@ return {
     if (inThread) return inThread;
     return conversationMessages.length > 0 ? conversationMessages[conversationMessages.length - 1] : selectedMsg;
   }, [conversationMessages, selectedMsg]);
-  const replyFallbackPhone = normalizeRealPhone(resolveMessagePhone(selectedMsg) || phoneFromJid(selectedConversationJid));
   const resolvedBrokerPhone = useMemo(() => {
     const candidates = [
       selectedBroker?.phone,
@@ -2261,6 +2278,9 @@ return {
     selectedMsgDetails?.raw?.sender_phone,
     selectedBrokerObservations,
   ]);
+  const replyFallbackPhone = normalizeRealPhone(
+    resolveMessagePhone(selectedMsg) || resolvedBrokerPhone || phoneFromJid(selectedConversationJid)
+  );
   const brokerReplyPhone = resolvedBrokerPhone;
   const brokerReplyLink = brokerReplyPhone
     ? getWaLinkWithRecall(brokerReplyPhone, brokerReplyText || selectedBroker?.latest_title || selectedMsgDetails?.raw?.message || "")
@@ -3381,22 +3401,22 @@ return {
               {/* Observation Timeline */}
               <div className="flex-1 overflow-y-auto p-4 space-y-4">
                 {loadingBrokerObs ? (
-                  <div className="p-8 text-center text-xs text-zinc-500">Loading observations...</div>
+                  <div className="p-8 text-center text-xs text-zinc-500">Loading matched items...</div>
                 ) : groupedBrokerObservations.length === 0 ? (
                   <div className="rounded-xl border border-white/10 bg-zinc-950/60 p-5 text-center">
                     <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-[#3EE88A]/10 text-[#3EE88A]">
                       <ClipboardList className="h-5 w-5" strokeWidth={1.6} />
                     </div>
-                    <div className="mt-3 text-sm font-semibold text-white">No matching posts yet</div>
+                    <div className="mt-3 text-sm font-semibold text-white">No matching items yet</div>
                     <div className="mx-auto mt-1 max-w-[360px] text-xs leading-relaxed text-zinc-500">
                       {selectedBroker.latest_title
                         ? "We found a recent post, but it has not been split into matching items yet."
-                        : "This broker card has not resolved to parsed posts yet. The feed item is still usable for navigation and WhatsApp actions."}
+                        : "This broker card has not resolved to parsed items yet. The feed item is still usable for navigation and WhatsApp actions."}
                     </div>
                     {selectedBroker.latest_title && (
                       <div className="mx-auto mt-4 max-w-[560px] text-left text-xs leading-relaxed text-zinc-500">
                         <div className="text-[10px] font-semibold uppercase tracking-wider text-zinc-600">
-                          Latest match
+                          Latest item
                         </div>
                         <div className="mt-1 text-sm font-semibold text-zinc-200">
                           {stripEmojis(selectedBroker.latest_title)}
@@ -3556,7 +3576,7 @@ return {
                               )}
                               {group.observations.length > 1 && (
                                 <span className="text-[9px] text-zinc-500 px-1 py-0.5">
-                                  Extracted {group.observations.length} items
+                                  Linked {group.observations.length} items
                                 </span>
                               )}
                             </div>
@@ -4116,6 +4136,22 @@ return {
                             className="inline-flex h-8 items-center justify-center rounded-lg border border-white/10 bg-zinc-900 px-3 text-[10px] font-bold text-zinc-200 transition-colors hover:border-[#3EE88A]/40 hover:text-[#3EE88A]"
                           >
                             Open Connections
+                          </a>
+                        </div>
+                      </div>
+                    ) : !canReplyWhatsApp ? (
+                      <div className="rounded-xl border border-white/10 bg-zinc-950 px-3 py-3 text-[11px] text-zinc-400">
+                        <div className="font-semibold text-white">Reply access is disabled for your role.</div>
+                        <div className="mt-1 text-zinc-500">
+                          This composer needs the <span className="font-mono text-zinc-300">reply_whatsapp</span> permission.
+                          Ask an owner or admin to enable it in Team roles.
+                        </div>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          <a
+                            href="/team"
+                            className="inline-flex h-8 items-center justify-center rounded-lg bg-[#3EE88A] px-3 text-[10px] font-bold text-black transition-colors hover:bg-[#35d47c]"
+                          >
+                            Open Team Roles
                           </a>
                         </div>
                       </div>
