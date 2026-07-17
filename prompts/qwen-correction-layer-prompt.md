@@ -24,9 +24,9 @@ Rules:
   listing headline, a location phrase, or a fragment like "+balcony" or a
   fragment starting with a symbol/dash. If you cannot identify a real building
   name, return null, not the closest-sounding phrase.
-- price and price_unit: only set price_unit to "Lac" or "Cr" if RAW_TEXT
-  actually uses those units. If RAW_TEXT gives a plain rupee figure (₹75,000),
-  price_unit must be null.
+- price and price_unit: preserve the unit used in RAW_TEXT, including valid Indian
+  forms such as "Lakh", "Lakhs", "Lac", "Lacs", "Crore", "Crores", or "Cr".
+  If RAW_TEXT gives a plain rupee figure (₹75,000), price_unit must be null.
 - Do not touch fields that are correct just because you technically could
   rephrase them.
 
