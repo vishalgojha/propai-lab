@@ -89,10 +89,10 @@ storage: Storage | None = None
 
 # Keep webhook extraction off the request path without allowing message bursts
 # to create an unbounded number of threads that starve API health/auth routes.
-_EXTRACTION_WORKERS = max(1, int(os.getenv("WEBHOOK_EXTRACTION_WORKERS", "1")))
+_EXTRACTION_WORKERS = max(1, int(os.getenv("WEBHOOK_EXTRACTION_WORKERS", "8")))
 _EXTRACTION_PENDING_LIMIT = max(
     _EXTRACTION_WORKERS,
-    int(os.getenv("WEBHOOK_EXTRACTION_PENDING_LIMIT", "8")),
+    int(os.getenv("WEBHOOK_EXTRACTION_PENDING_LIMIT", "64")),
 )
 _EXTRACTION_EXECUTOR = ThreadPoolExecutor(
     max_workers=_EXTRACTION_WORKERS,
@@ -2179,11 +2179,10 @@ async def webhook(request: Request):
         "tenant_id": resolved_tenant_id,
     }
     if not _schedule_raw_extraction(raw_id, extraction_ctx):
-        print(
-            f"[webhook] extraction deferred raw_id={raw_id}: queue full; "
-            "message remains unprocessed",
-            flush=True,
-        )
+        # Slot pool saturated: retry with backoff (self-healing) instead of
+        # dropping. If retries exhaust, the message remains processed=False and
+        # the poll-based extraction_worker picks it up — never silently lost.
+        _retry_schedule_raw_extraction(raw_id, extraction_ctx)
 
     return {"status": "ok", "raw_id": raw_id, "message": "saved"}
 
@@ -2210,6 +2209,33 @@ def _schedule_raw_extraction(raw_id: int, ctx: dict) -> bool:
 
     future.add_done_callback(release_slot)
     return True
+
+
+# When the in-memory slot pool is saturated (a burst exceeding the pending
+# limit), the message is NOT dropped — it stays processed=False in the DB and
+# the poll-based extraction_worker would normally catch it. To stay resilient
+# even if that worker isn't running, we retry the in-memory schedule after a
+# short backoff so the burst drains as slots free up.
+def _retry_schedule_raw_extraction(raw_id: int, ctx: dict, attempt: int = 0):
+    if _schedule_raw_extraction(raw_id, ctx):
+        return
+    if attempt >= 5:
+        # Exhausted retries: leave it for the poll worker (processed=False).
+        print(
+            f"[webhook] extraction deferred raw_id={raw_id}: queue saturated; "
+            "message stays unprocessed for poll worker",
+            flush=True,
+        )
+        return
+    try:
+        loop = asyncio.get_running_loop()
+        loop.call_later(0.5 * (attempt + 1), _retry_schedule_raw_extraction, raw_id, ctx, attempt + 1)
+    except Exception:
+        print(
+            f"[webhook] extraction deferred raw_id={raw_id}: queue saturated; "
+            "message stays unprocessed for poll worker",
+            flush=True,
+        )
 
 
 def _process_single_raw(raw_id: int, ctx: dict):

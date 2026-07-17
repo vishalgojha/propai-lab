@@ -18,7 +18,7 @@ import traceback
 from extraction import get_storage, process_raw_message
 
 POLL_INTERVAL = int(os.getenv("EXTRACTION_WORKER_POLL_SECONDS", "5"))
-BATCH_SIZE = int(os.getenv("EXTRACTION_WORKER_BATCH_SIZE", "10"))
+BATCH_SIZE = int(os.getenv("EXTRACTION_WORKER_BATCH_SIZE", "50"))
 
 
 def row_value(row, key: str, default=None):
