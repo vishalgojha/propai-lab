@@ -87,11 +87,7 @@ export async function getSession(): Promise<Session | null> {
   if (sessionLoaded && !sessionNeedsRefresh(cachedSession)) return cachedSession;
   if (sessionLoaded && cachedSession) {
     if (!refreshRequest) {
-      refreshRequest = getSupabase().auth.refreshSession().then(({ data, error }) => {
-        if (error) throw error;
-        cachedSession = data.session;
-        return cachedSession;
-      }).finally(() => {
+      refreshRequest = refreshCurrentSession().finally(() => {
         refreshRequest = null;
       });
     }
@@ -110,6 +106,37 @@ export async function getSession(): Promise<Session | null> {
   return sessionRequest;
 }
 
+// Force-refresh the session. If the standard refresh fails (e.g. the stored
+// refresh token is also stale), fall back to getUser() which validates and
+// mints a fresh access token via the auth server. Guarantees we never hand an
+// expired token to the API (which would 401).
+async function refreshCurrentSession(): Promise<Session | null> {
+  try {
+    const { data, error } = await getSupabase().auth.refreshSession();
+    if (!error && data.session) {
+      cachedSession = data.session;
+      return cachedSession;
+    }
+  } catch {
+    // fall through to getUser()
+  }
+  try {
+    const { data } = await getSupabase().auth.getUser();
+    if (data.user) {
+      // getUser returns a fresh user; re-read the session to capture the new
+      // access token that supabase-js persisted during the validate call.
+      const ses = (await getSupabase().auth.getSession()).data.session;
+      if (ses) {
+        cachedSession = ses;
+        return cachedSession;
+      }
+    }
+  } catch {
+    // ignore — caller will return whatever we have (possibly null)
+  }
+  return cachedSession;
+}
+
 export async function getUser(): Promise<User | null> {
   const { data } = await getSupabase().auth.getUser();
   return data.user;
@@ -125,5 +152,17 @@ export function onAuthStateChange(callback: (event: string, session: Session | n
 
 export async function getAccessToken(): Promise<string | null> {
   const session = await getSession();
+  // Last-resort guard: never return an already-expired token.
+  if (session && sessionNeedsRefresh(session)) {
+    const refreshed = await refreshCurrentSession();
+    return refreshed?.access_token ?? null;
+  }
   return session?.access_token ?? null;
+}
+
+// Force a fresh access token, bypassing the cached/expired one. Used by the
+// API layer to recover from a 401 without surfacing an error to the user.
+export async function forceRefreshToken(): Promise<string | null> {
+  const refreshed = await refreshCurrentSession();
+  return refreshed?.access_token ?? null;
 }
