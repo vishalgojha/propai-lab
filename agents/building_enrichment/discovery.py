@@ -125,12 +125,24 @@ class BuildingDiscovery:
         Returns:
             List of discovered buildings with metadata
         """
-        # Get all building names from parsed_output
+        # Get all building names from parsed_output.
+        # primary_market = the MOST FREQUENT (not just first) distinct
+        # micro_market for that building, so a specific sub-area (e.g.
+        # "Thane West") wins over a coarse one ("Thane") when it dominates.
         rows = self.storage.db.execute("""
             SELECT building_name, COUNT(*) as obs_count,
                    COUNT(DISTINCT micro_market) as markets,
                    COUNT(DISTINCT broker_name) as brokers,
                    GROUP_CONCAT(DISTINCT micro_market) as market_list,
+                   (
+                     SELECT micro_market
+                     FROM parsed_output p2
+                     WHERE LOWER(p2.building_name) = LOWER(parsed_output.building_name)
+                       AND micro_market IS NOT NULL AND micro_market != ''
+                     GROUP BY micro_market
+                     ORDER BY COUNT(*) DESC
+                     LIMIT 1
+                   ) as primary_market,
                    MIN(created_at) as first_seen,
                    MAX(created_at) as last_seen
             FROM parsed_output
@@ -172,8 +184,10 @@ class BuildingDiscovery:
                 continue
 
             # Create new building
+            # Prefer the dominant (most frequent) market computed in SQL;
+            # fall back to the first listed market if the subquery returned none.
             micro_markets = [m.strip() for m in (r["market_list"] or "").split(",") if m.strip()]
-            primary_market = micro_markets[0] if micro_markets else None
+            primary_market = (r.get("primary_market") or "").strip() or (micro_markets[0] if micro_markets else None)
 
             result = self.storage.create_building(
                 canonical_name=canonical,
