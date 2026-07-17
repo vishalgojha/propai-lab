@@ -11,7 +11,7 @@ import { toListingCardViewModel, type ListingCardFields } from "@/lib/listing-ca
 import { slugify } from "@/lib/supabase";
 import SiteHeader from "@/components/SiteHeader";
 import SiteFooter from "@/components/SiteFooter";
-import ListingSpecs from "@/components/ListingSpecs";
+import ListingTile from "@/components/ListingTile";
 
 type Params = { params: Promise<{ slug: string }> };
 
@@ -113,71 +113,7 @@ export default async function BuildingPage({ params }: Params) {
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4 lg:gap-6">
               {listings.map((row) => {
                 const card = toListingCardViewModel(toCardFields(row), false, building.microMarket);
-                return (
-                  <Link
-                    key={row.id}
-                    href={card.href ?? "#"}
-                    className="group flex flex-col rounded-2xl border border-white/10 bg-zinc-950/90 p-5 transition-colors hover:border-green-400/40 hover:bg-zinc-900/90"
-                  >
-                    <div className="flex items-start justify-between gap-3 mb-3">
-                      <div className="min-w-0">
-                        <h3 className="text-lg font-semibold text-white group-hover:text-green-300 transition-colors truncate">
-                          {card.title}
-                        </h3>
-                        {card.locality && (
-                          <span className="mt-1 inline-flex items-center gap-1 rounded-full border border-white/10 px-2.5 py-1 text-[11px] text-zinc-400">
-                            <MapPin className="h-3.5 w-3.5" aria-hidden="true" />
-                            {card.locality}
-                          </span>
-                        )}
-                      </div>
-                      <span
-                        className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-medium ${
-                          card.statusTone === "available"
-                            ? "border border-green-400/20 bg-green-400/10 text-green-300"
-                            : "border border-amber-400/20 bg-amber-400/10 text-amber-200"
-                        }`}
-                      >
-                        {card.statusLabel}
-                      </span>
-                    </div>
-
-                    <div className="mb-4">
-                      <span className="text-xl font-semibold text-white">{card.priceLabel}</span>
-                    </div>
-
-                    {card.specItems.length > 0 && (
-                      <ListingSpecs items={card.specItems} className="mb-4" />
-                    )}
-
-                    <div className="mt-auto space-y-2 text-sm text-zinc-400">
-                      <p className="break-words">
-                        <span className="text-zinc-500">Broker:</span>{" "}
-                        {card.brokerName || "Verified network"}
-                      </p>
-                      <p>
-                        <span className="text-zinc-500">Updated:</span> {card.updatedLabel}
-                      </p>
-                    </div>
-
-                    {card.waLink ? (
-                      <a
-                        href={card.waLink}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="mt-4 inline-flex items-center justify-center gap-2 rounded-xl bg-green-400 px-4 py-2.5 text-sm font-semibold text-black transition-colors hover:bg-green-300"
-                      >
-                        <MessageSquare className="h-4 w-4" aria-hidden="true" />
-                        Contact Broker
-                      </a>
-                    ) : (
-                      <span className="mt-4 inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 px-4 py-2.5 text-sm text-zinc-500">
-                        <MessageSquare className="h-4 w-4" aria-hidden="true" />
-                        Broker contact soon
-                      </span>
-                    )}
-                  </Link>
-                );
+                return <ListingTile key={row.id} card={card} buildingName={building.name} />;
               })}
             </div>
           )}
