@@ -93,7 +93,7 @@ export function InboxAIChat({ context, selectedMessage, onClose }: InboxAIChatPr
               <div key={idx} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
                 <div className={`max-w-[85%] rounded-2xl px-4 py-3 ${msg.role === "user" ? "bg-emerald-400 text-black" : "border border-white/10"}`}>
                   {msg.blocks ? (
-                    <AIWorkspace response={{ blocks: msg.blocks, content: msg.content }} />
+                    <AIWorkspace response={{ blocks: msg.blocks, content: msg.content, sources: [] }} />
                   ) : (
                     <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
                   )}
@@ -150,7 +150,7 @@ export function InboxAIChat({ context, selectedMessage, onClose }: InboxAIChatPr
           <div key={idx} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
             <div className={`max-w-[85%] rounded-2xl px-4 py-3 ${msg.role === "user" ? "bg-emerald-400 text-black" : "border border-white/10"}`}>
               {msg.blocks ? (
-                <AIWorkspace response={{ blocks: msg.blocks, content: msg.content }} />
+                <AIWorkspace response={{ blocks: msg.blocks, content: msg.content, sources: [] }} />
               ) : (
                 <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
               )}

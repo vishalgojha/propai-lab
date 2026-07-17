@@ -1,10 +1,10 @@
-import { tool } from "ai";
+import { tool, zodSchema } from "ai";
 import { z } from "zod";
 
 export const getOverviewTool = tool({
   description: "Get an overview of all available datasets (schema, row counts, sample values)",
-  parameters: z.object({}),
-  execute: async () => {
+  inputSchema: zodSchema<Record<string, never>>(z.object({})),
+  execute: async (): Promise<any> => {
     const { supabaseAdmin } = await import("@/lib/supabase-admin");
 
     const sources = [

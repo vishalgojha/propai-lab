@@ -1,18 +1,18 @@
 import {
   createUIMessageStream,
   createUIMessageStreamResponse,
-  type UIMessage,
 } from "ai";
 
 const API_BASE = process.env.LAB_API_BASE_URL || "http://localhost:8000";
 
-type UIMessageLike = {
+type IncomingMessage = {
+  role: string;
   content?: string;
   parts?: Array<{ type?: string; text?: string }>;
 };
 
-function extractText(message: UIMessage | UIMessageLike) {
-  if (typeof message.content === "string") return message.content;
+function extractText(message: IncomingMessage): string {
+  if (typeof message.content === "string" && message.content) return message.content;
   const parts = Array.isArray(message.parts) ? message.parts : [];
   return parts
     .map((part) => {
@@ -24,7 +24,7 @@ function extractText(message: UIMessage | UIMessageLike) {
     .trim();
 }
 
-function toBackendMessages(messages: UIMessage[]) {
+function toBackendMessages(messages: IncomingMessage[]) {
   return messages
     .map((message) => ({
       role: message.role,
@@ -73,7 +73,7 @@ async function callFastAPI(messages: { role: string; content: string }[], broker
 
 export async function POST(req: Request) {
   const body = await req.json();
-  const messages = toBackendMessages((body.messages || []) as UIMessage[]);
+  const messages = toBackendMessages((body.messages || []) as IncomingMessage[]);
   const brokerPhone = (body.broker_phone as string) || "";
   const sessionId = (body.session_id as string) || "";
   const authHeader = req.headers.get("authorization") || "";

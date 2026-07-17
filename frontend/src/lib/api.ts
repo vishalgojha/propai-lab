@@ -1259,6 +1259,7 @@ export interface ClientMessage {
   message: string;
   timestamp: string;
   group_name: string;
+  direction?: string;
   broker_name?: string;
   broker_phone?: string;
 }
@@ -1448,6 +1449,17 @@ export function teachObservation(obsId: number, payload: any) {
   });
 }
 
+export interface ObservationBatch {
+  id: number;
+  status: string;
+  created_at?: string | null;
+  total_requests?: number;
+  completed_count?: number;
+  failed_count?: number;
+  batch_api_id?: string | null;
+  error_message?: string | null;
+}
+
 export function createObservationBatch(data: any) {
   return fetchJSON<any>("/observations/batch", {
     method: "POST",
@@ -1455,23 +1467,36 @@ export function createObservationBatch(data: any) {
   });
 }
 
-export function listObservationBatches(limit = 20, offset = 0) {
-  return fetchJSON<any[]>(`/observations/batches?limit=${limit}&offset=${offset}`);
+export function listObservationBatches(limit = 20, offset = 0): Promise<ObservationBatch[]> {
+  return fetchJSON<ObservationBatch[]>(`/observations/batches?limit=${limit}&offset=${offset}`);
 }
 
-export function checkBatchStatus(batchId: string) {
+export function checkBatchStatus(batchId: number | string) {
   return fetchJSON<any>(`/observations/batches/${batchId}/status`);
 }
 
-export function applyBatchResults(batchId: string, data: any) {
+export function applyBatchResults(batchId: number | string, data: any = {}) {
   return fetchJSON<any>(`/observations/batches/${batchId}/apply`, {
     method: "POST",
     body: JSON.stringify(data),
   });
 }
 
-export function getBrokerShareCardSnapshot(phone: string) {
-  return fetchJSON<any>(`/brokers/${phone}/share-card-snapshot`);
+export interface BrokerShareCardSnapshot {
+  broker_name: string | null;
+  phone_display?: string | null;
+  total_observations?: number;
+  supply_count?: number;
+  demand_count?: number;
+  first_seen?: string | null;
+  last_active?: string | null;
+  generated_at?: string | null;
+  top_markets?: Array<{ micro_market: string; observation_count: number }> | null;
+  top_groups?: Array<{ group_name: string; observation_count: number }> | null;
+}
+
+export function getBrokerShareCardSnapshot(phone: string): Promise<BrokerShareCardSnapshot> {
+  return fetchJSON<BrokerShareCardSnapshot>(`/brokers/${phone}/share-card-snapshot`);
 }
 
 export interface TeamMember {
