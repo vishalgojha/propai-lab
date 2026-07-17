@@ -96,3 +96,48 @@ def test_audit_insights_is_tenant_scoped(monkeypatch):
     assert result["markets"][0]["name"] == "Bandra West"
     assert result["brokers"][0]["groups"] == 3
     assert result["exclusive_members"]["Bandra Brokers"] == 7
+
+
+def test_phone_list_resolves_authenticated_workspace(monkeypatch):
+    seen = []
+
+    class Storage:
+        def list_org_whatsapp_connections(self, org_id):
+            seen.append(org_id)
+            return [{"id": 13, "broker_id": "phone-real", "phone_number": "919820056180"}]
+
+    monkeypatch.setattr(app, "storage", Storage())
+    monkeypatch.setattr(app, "_resolve_active_organization_id", lambda user, tenant_id: "workspace-real")
+
+    result = asyncio.run(app.list_phones(
+        user={"id": "user"}, tenant_id=app.DEFAULT_TENANT_ID, include_live=False,
+    ))
+
+    assert seen == ["workspace-real"]
+    assert result["phones"][0]["phone_number"] == "919820056180"
+
+
+def test_create_phone_reuses_workspace_placeholder(monkeypatch):
+    connection_calls = []
+
+    class Storage:
+        def list_org_whatsapp_connections(self, org_id):
+            return [{"id": 19, "broker_id": "phone-placeholder", "phone_number": "Unpaired:phone-placeholder", "instance_name": ""}]
+
+        def update_org_whatsapp_connection(self, conn_id, updates):
+            return None
+
+    async def ingestor(method, path, **kwargs):
+        connection_calls.append((method, path, kwargs))
+        return None, None
+
+    monkeypatch.setattr(app, "storage", Storage())
+    monkeypatch.setattr(app, "_resolve_active_organization_id", lambda user, tenant_id: "workspace-real")
+    monkeypatch.setattr(app, "_first_ingestor_response", ingestor)
+
+    result = asyncio.run(app.create_phone(
+        {"instance_name": ""}, user={"id": "user"}, tenant_id="workspace-real",
+    ))
+
+    assert result["id"] == 19
+    assert connection_calls[0][2]["params"]["broker_id"] == "phone-placeholder"

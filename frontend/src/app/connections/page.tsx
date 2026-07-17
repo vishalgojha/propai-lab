@@ -719,15 +719,31 @@ export default function ConnectionCenterPage() {
 
   const fetchPhones = useCallback(async () => {
     try {
-      const response = await getPhones(true, 5000);
+      const response = await getPhones(true, 15000);
       const nextPhones = response.phones || [];
       setPhones(nextPhones);
+      if (user?.id && nextPhones.length > 0) {
+        localStorage.setItem(`propai_phones:${user.id}`, JSON.stringify(nextPhones));
+      }
       setPhonesError(null);
     } catch (error) {
       setPhonesError(error instanceof Error ? error.message : "Could not load phones right now.");
     } finally {
       setPhonesLoading(false);
     }
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    const hydrateTimer = window.setTimeout(() => {
+      try {
+        const cached = JSON.parse(localStorage.getItem(`propai_phones:${user.id}`) || "[]") as Phone[];
+        if (cached.length > 0) setPhones(cached);
+      } catch {
+        // A corrupt local snapshot must not block the live request.
+      }
+    }, 0);
+    return () => window.clearTimeout(hydrateTimer);
   }, [user?.id]);
 
   const fetchLiveStatus = useCallback(async () => {

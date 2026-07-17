@@ -12958,7 +12958,7 @@ async def list_phones(
     tenant_id: str | None = Depends(get_tenant_context),
     include_live: bool = True,
 ):
-    org_id = tenant_id or DEFAULT_TENANT_ID
+    org_id = _resolve_active_organization_id(user, tenant_id)
     phones = await asyncio.to_thread(storage.list_org_whatsapp_connections, org_id)
     ingestor_statuses = {}
     if include_live:
@@ -13002,11 +13002,12 @@ async def create_phone(
         phone_number = body.get("phone_number", "").strip()
         instance_name = body.get("instance_name", "").strip()
         org_id = _resolve_active_organization_id(user, tenant_id)
-        count = storage.count_org_phones(org_id)
-        if count >= 3:
-            raise HTTPException(400, "Maximum 3 phones per organization")
+        existing_phones = await asyncio.to_thread(storage.list_org_whatsapp_connections, org_id)
         if not phone_number:
-            placeholder = storage.get_org_placeholder_whatsapp_connection(org_id)
+            placeholder = next((row for row in existing_phones if (
+                not str(row.get("phone_number") or "").strip()
+                or str(row.get("phone_number") or "").startswith("Unpaired")
+            )), None)
             if placeholder:
                 updates: dict = {}
                 if instance_name and not placeholder.get("instance_name"):
@@ -13019,6 +13020,8 @@ async def create_phone(
                 if broker_id:
                     await _first_ingestor_response("POST", "/connect", timeout=10, params={"broker_id": broker_id})
                 return placeholder
+        if len(existing_phones) >= 3:
+            raise HTTPException(400, "Maximum 3 phones per organization")
         broker_id = f"phone-{_uuid.uuid4().hex[:12]}"
         if not phone_number:
             phone_number = f"Unpaired:{broker_id}"
