@@ -36,7 +36,7 @@ def test_capture_health_uses_one_tenant_scoped_query(monkeypatch):
             }])
 
     monkeypatch.setattr(app, "storage", SimpleNamespace(db=Database()))
-    result = asyncio.run(app.audit_capture_health(user={"id": "user"}, tenant_id="tenant"))
+    result = app.audit_capture_health(user={"id": "user"}, tenant_id="tenant")
 
     assert len(calls) == 1
     assert calls[0][1][0] == "tenant"
@@ -57,7 +57,7 @@ def test_duplicate_audit_reads_current_tenant_messages(monkeypatch):
         ]
 
     monkeypatch.setattr(app, "_audit_rows", rows)
-    result = asyncio.run(app.audit_duplicates(user={"id": "user"}, tenant_id="tenant"))
+    result = app.audit_duplicates(user={"id": "user"}, tenant_id="tenant")
 
     assert len(result) == 1
     assert calls[0][1] == ("tenant",)
@@ -69,6 +69,17 @@ def test_audit_timestamp_normalizes_datetime_values():
     from datetime import datetime, timezone
 
     assert app._audit_timestamp(datetime(2026, 7, 17, 4, 30, tzinfo=timezone.utc)) == "2026-07-17T04:30:00Z"
+
+
+def test_audit_group_display_name_does_not_query_storage(monkeypatch):
+    class Database:
+        def execute(self, *_args, **_kwargs):
+            raise AssertionError("display formatting must not query the database")
+
+    monkeypatch.setattr(app, "storage", SimpleNamespace(db=Database()))
+
+    assert app._audit_group_display_name("Bandra Brokers") == "Bandra Brokers"
+    assert app._audit_group_display_name("120363123456789@g.us") == "WhatsApp Group 6789"
 
 
 def test_audit_insights_is_tenant_scoped(monkeypatch):
@@ -87,7 +98,7 @@ def test_audit_insights_is_tenant_scoped(monkeypatch):
     monkeypatch.setattr(app, "_table_exists", lambda table: True)
     monkeypatch.setattr(app, "_audit_rows", rows)
 
-    result = asyncio.run(app.audit_insights(user={"id": "user"}, tenant_id="tenant-a"))
+    result = app.audit_insights(user={"id": "user"}, tenant_id="tenant-a")
 
     assert len(calls) == 4
     assert all("tenant" in sql.lower() for sql, _ in calls)
