@@ -496,14 +496,14 @@ function AppShell({ children }: { children: React.ReactNode }) {
               </div>
             ) : waConnected ? (
               <div className="relative shrink-0">
-                <Wifi className={`w-3.5 h-3.5 ${waStale ? "text-zinc-500" : "text-zinc-200"}`} strokeWidth={1.5} />
-                <span className={`absolute -top-0.5 -right-0.5 h-1.5 w-1.5 rounded-full ${waStale ? "bg-zinc-500" : "bg-zinc-200"}`} />
+                <Wifi className={`w-3.5 h-3.5 ${waStale ? "text-zinc-500" : "text-[#3EE88A]"}`} strokeWidth={1.5} />
+                <span className={`absolute -top-0.5 -right-0.5 h-1.5 w-1.5 rounded-full ${waStale ? "bg-zinc-500" : "bg-[#3EE88A]"}`} />
               </div>
             ) : (
               <WifiOff className="w-3.5 h-3.5 text-red-400 shrink-0" strokeWidth={1.5} />
             )}
             <div className="flex-1 min-w-0">
-              <div className="text-[12px] font-semibold text-zinc-300 truncate">
+              <div className={`truncate text-[12px] font-semibold ${waConnected && !waStale ? "text-[#3EE88A]" : "text-zinc-300"}`}>
                 {waConnected === null
                   ? "Checking WhatsApp"
                   : waConnected
@@ -516,7 +516,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
                 </div>
               )}
             </div>
-            <div className={`h-1.5 w-1.5 shrink-0 rounded-full ${waConnected === null ? "bg-zinc-500" : waConnected ? (waStale ? "bg-zinc-500" : "bg-zinc-200") : "bg-red-400"}`} />
+            <div className={`h-1.5 w-1.5 shrink-0 rounded-full ${waConnected === null ? "bg-zinc-500" : waConnected ? (waStale ? "bg-zinc-500" : "bg-[#3EE88A]") : "bg-red-400"}`} />
           </a>
         </div>
       </aside>
@@ -524,7 +524,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
       {/* ═══════ Main Content ═══════ */}
       <main className="flex-1 flex flex-col overflow-hidden bg-black min-w-0">
         {/* ═══ Top Bar ═══ */}
-        <div className="flex items-center gap-2 px-2 lg:px-5 py-1.5 lg:py-2 border-b border-white/5 bg-black/80 min-h-[40px] lg:min-h-[44px]">
+        <div className="flex items-center gap-2 border-b border-white/5 bg-black/80 px-2 py-1.5 lg:min-h-[44px] lg:px-5 lg:py-2">
           {/* Hamburger (mobile) */}
           <button
             onClick={toggleDrawer}
@@ -535,29 +535,35 @@ function AppShell({ children }: { children: React.ReactNode }) {
           </button>
 
           {/* Connection status */}
-          <div className="flex items-center gap-1.5 min-w-0">
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1">
             {offline && (
               <span className="flex items-center gap-1 text-[10px] text-red-400 font-semibold">
                 <WifiOff className="w-3 h-3" strokeWidth={1.5} />
                 Offline
               </span>
             )}
-            <a href="/connections" className={`flex items-center gap-1 text-[11px] font-semibold transition-colors lg:text-[12px] ${waConnected === null ? "text-zinc-400 hover:text-zinc-300" : waConnected ? (waStale ? "text-zinc-400 hover:text-zinc-300" : "text-zinc-200") : "text-zinc-300 hover:text-white"}`}>
-              <span className={`h-1.5 w-1.5 rounded-full lg:h-2 lg:w-2 ${waConnected === null ? "bg-zinc-500" : waConnected ? (waStale ? "bg-zinc-500" : "bg-zinc-200") : "bg-red-400"}`} />
-              <span className="hidden sm:inline">
-                {waConnected === null ? "Checking" : waConnected ? "Connected" : "Disconnected"}
+            <a href="/connections" className={`flex shrink-0 items-center gap-1 text-[10px] font-semibold transition-colors sm:text-[11px] lg:text-[12px] ${waConnected === null ? "text-zinc-400 hover:text-zinc-300" : waConnected ? (waStale ? "text-zinc-400 hover:text-zinc-300" : "text-[#3EE88A] hover:text-[#74f0a5]") : "text-zinc-300 hover:text-white"}`}>
+              <span className={`h-1.5 w-1.5 rounded-full lg:h-2 lg:w-2 ${waConnected === null ? "bg-zinc-500" : waConnected ? (waStale ? "bg-zinc-500" : "bg-[#3EE88A]") : "bg-red-400"}`} />
+              <span>
+                {waConnected === null ? "Checking" : waConnected ? "Connected" : "Connect WhatsApp"}
               </span>
             </a>
+            {waConnected && waPhone && (
+              <a
+                href="/connections"
+                className="shrink-0 font-mono text-[9px] text-zinc-400 transition-colors hover:text-white sm:text-[10px] lg:text-[11px]"
+                title="Manage connected WhatsApp number"
+              >
+                {waPhone}
+              </a>
+            )}
+            {wabaConfig?.outbound_allowed && (
+              <a href="/waba" className="flex shrink-0 items-center gap-1 text-[10px] font-semibold text-[#3EE88A] transition-colors hover:text-[#74f0a5] lg:text-[11px]" title="PropAI Official WABA — Connected">
+                <span className="h-1.5 w-1.5 rounded-full bg-[#3EE88A] lg:h-2 lg:w-2" />
+                <span>WABA Connected</span>
+              </a>
+            )}
           </div>
-          {waConnected && waPhone && (
-            <span className="text-[10px] lg:text-[11px] text-zinc-500 font-mono truncate max-w-[120px] lg:max-w-none">{waPhone}</span>
-          )}
-          {wabaConfig?.outbound_allowed && (
-            <a href="/waba" className="flex items-center gap-1 text-[10px] font-semibold text-zinc-300 transition-colors hover:text-white lg:text-[11px]" title="PropAI Official WABA — Connected">
-              <span className="h-1.5 w-1.5 rounded-full bg-zinc-200 lg:h-2 lg:w-2" />
-              <span className="hidden md:inline">WABA Connected</span>
-            </a>
-          )}
           <div className="flex-1" />
           <button
             onClick={handleSignOut}
