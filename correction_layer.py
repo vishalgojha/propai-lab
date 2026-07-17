@@ -128,6 +128,8 @@ def _validate_response(payload: Any, draft: dict[str, Any]) -> dict[str, Any]:
                 raise CorrectionError(f"{field} must be numeric or null")
         elif value is not None and not isinstance(value, str):
             raise CorrectionError(f"{field} must be a string or null")
+    if payload["price_unit"] not in {None, "Lac", "Cr"}:
+        raise CorrectionError("price_unit must be Lac, Cr, or null")
     unchanged_flags = [field for field in corrected_fields if payload[field] == draft[field]]
     if unchanged_flags:
         raise CorrectionError(f"Fields flagged as corrected but unchanged: {unchanged_flags}")
@@ -154,21 +156,47 @@ def _cost(input_tokens: int, output_tokens: int) -> float:
 
 def _select_candidates(storage: SupabaseStorage, limit: int, threshold: float) -> list[dict[str, Any]]:
     columns = ",".join(("id", "raw_message_id", "listing_index", "confidence", *CORRECTABLE_FIELDS))
-    columns += ",raw_messages!inner(message)"
+    fetch_limit = max(20, limit * 2)
+    candidates: list[dict[str, Any]] = []
+    seen: set[int] = set()
     clauses = [f"and(corrected_at.is.null,confidence.lt.{threshold})"]
     clauses.extend(
         f"and(corrected_at.is.null,{field}.is.null)" for field in PARTIAL_SIGNAL_FIELDS
     )
-    fetch_limit = max(100, limit * 5)
-    response = (
-        storage.client.table("parsed_output")
-        .select(columns)
-        .or_(",".join(clauses))
-        .order("created_at")
-        .limit(fetch_limit)
+
+    # Separate indexed reads avoid a broad OR plus embedded join across the full table.
+    for clause in clauses:
+        response = (
+            storage.client.table("parsed_output")
+            .select(columns)
+            .or_(clause)
+            .order("created_at")
+            .limit(fetch_limit)
+            .execute()
+        )
+        for row in response.data:
+            row_id = int(row["id"])
+            if row_id not in seen and _needs_correction(row, threshold):
+                candidates.append(row)
+                seen.add(row_id)
+                if len(candidates) >= limit:
+                    break
+        if len(candidates) >= limit:
+            break
+
+    raw_ids = sorted({int(row["raw_message_id"]) for row in candidates})
+    if not raw_ids:
+        return []
+    raw_response = (
+        storage.client.table("raw_messages")
+        .select("id,message")
+        .in_("id", raw_ids)
         .execute()
     )
-    return [row for row in response.data if _needs_correction(row, threshold)][:limit]
+    raw_by_id = {int(row["id"]): row.get("message") for row in raw_response.data}
+    for row in candidates:
+        row["raw_messages"] = {"message": raw_by_id.get(int(row["raw_message_id"]))}
+    return candidates
 
 
 def _existing_correction(
@@ -243,7 +271,8 @@ def _call_model(raw_text: str, draft: dict[str, Any]) -> tuple[dict[str, Any], i
         f"{json.dumps(draft, ensure_ascii=False, separators=(',', ':'))}"
     )
     client = get_client(api_key=DOUBLEWORD_API_KEY)
-    response = client.chat.completions.create(
+    timeout_seconds = float(os.getenv("AI_CORRECTION_API_TIMEOUT_SECONDS", "120"))
+    response = client.with_options(timeout=timeout_seconds, max_retries=0).chat.completions.create(
         model=MODEL,
         temperature=0,
         response_format={"type": "json_object"},
@@ -290,10 +319,13 @@ def run_corrections(
     max_calls = _env_int("AI_CORRECTION_MAX_CALLS_PER_RUN", DEFAULT_MAX_CALLS)
     storage = storage or SupabaseStorage(SUPABASE_URL, SUPABASE_SERVICE_KEY)
     summary = RunSummary()
-    candidates = _select_candidates(storage, limit, threshold)
-    summary.selected_count = len(candidates)
+    run_cache: dict[tuple[str, int], dict[str, Any]] = {}
 
     try:
+        logger.info("Selecting up to %s correction candidates", limit)
+        candidates = _select_candidates(storage, limit, threshold)
+        summary.selected_count = len(candidates)
+        logger.info("Selected %s correction candidates", len(candidates))
         for index, row in enumerate(candidates, 1):
             raw = row.get("raw_messages") or {}
             raw_text = raw.get("message") if isinstance(raw, dict) else None
@@ -301,7 +333,11 @@ def run_corrections(
                 raise CorrectionError(f"Record {row['id']} has no raw source text")
             draft = _draft(row)
             correction_hash = _raw_hash(raw_text)
-            reused = _existing_correction(storage, correction_hash, int(row.get("listing_index") or 0))
+            listing_index = int(row.get("listing_index") or 0)
+            cache_key = (correction_hash, listing_index)
+            reused = run_cache.get(cache_key)
+            if reused is None:
+                reused = _existing_correction(storage, correction_hash, listing_index)
             if reused:
                 payload = {field: reused.get(field) for field in CORRECTABLE_FIELDS}
                 payload["corrected_fields"] = [
@@ -317,11 +353,12 @@ def run_corrections(
                     summary.skipped_count += len(candidates) - summary.processed_count
                     logger.warning("Correction call cap reached (%s); stopping run", max_calls)
                     break
-                payload, input_tokens, output_tokens = _call_model(raw_text, draft)
                 summary.api_calls += 1
+                payload, input_tokens, output_tokens = _call_model(raw_text, draft)
                 summary.input_tokens += input_tokens
                 summary.output_tokens += output_tokens
                 summary.estimated_cost_usd = _cost(summary.input_tokens, summary.output_tokens)
+                run_cache[cache_key] = payload
                 source = "Doubleword"
 
             changes = {field: payload[field] for field in payload["corrected_fields"]}
