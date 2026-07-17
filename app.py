@@ -2556,9 +2556,22 @@ security_scheme = HTTPBearer(auto_error=False)
 
 
 def verify_supabase_token(token: str) -> dict | None:
-    if not _jwks_client:
-        return None
     try:
+        algorithm = pyjwt.get_unverified_header(token).get("alg")
+        if algorithm == "HS256":
+            if not SUPABASE_JWT_SECRET:
+                print("[auth] HS256 token received but JWT secret is not configured", flush=True)
+                return None
+            return pyjwt.decode(
+                token,
+                SUPABASE_JWT_SECRET,
+                algorithms=["HS256"],
+                audience="authenticated",
+                options={"require": ["sub", "exp"]},
+            )
+        if algorithm != "ES256" or not _jwks_client:
+            print(f"[auth] Unsupported JWT algorithm: {algorithm}", flush=True)
+            return None
         signing_key = _jwks_client.get_signing_key_from_jwt(token)
         payload = pyjwt.decode(
             token,
