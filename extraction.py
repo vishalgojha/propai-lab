@@ -102,7 +102,7 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
         storage.tenant_id = ctx["tenant_id"]
 
     from lab import multi_listing
-    from evidence.parsers import parse as parse_message
+    from lab.location import enrich_parsed_location
     from lab.config import load_excluded_groups
 
     msg_text = ctx["msg_text"]
@@ -121,7 +121,7 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
     # Re-import app-level helpers (they depend on app.py globals)
     from app import (
         classify_conversation, generate_summary_title,
-        compute_embedding, resolve_parsed,
+        compute_embedding, resolve_parsed, parse_message,
         _parsed_source_text, _demote_weak_property_parse,
         _parsed_has_market_anchor, _attribution_suffix,
         _process_observations, check_share_eligibility,
@@ -216,7 +216,8 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
     market_listings = []
     for pl in parsed_listings:
         source_text = _parsed_source_text(pl, msg_text)
-        cleaned = _demote_weak_property_parse(pl, source_text)
+        enriched = enrich_parsed_location(pl, source_text, fallback_text=msg_text)
+        cleaned = _demote_weak_property_parse(enriched, source_text)
         if _parsed_has_market_anchor(cleaned, source_text):
             market_listings.append(cleaned)
     parsed_listings = [_sanitize_parsed_listing(pl) for pl in market_listings]
@@ -278,6 +279,23 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
         if isinstance(parsed.get("raw_payload"), dict):
             block_text = parsed["raw_payload"].get("full_text")
         source_text = block_text or msg_text
+
+        # Resolver evidence can supply a canonical building market that the
+        # text parser cannot. Persist it on parsed_output before listings are
+        # materialized so every downstream surface sees the same locality.
+        try:
+            resolver_result = resolve_parsed(parsed, source_text)
+            for field in (
+                "building_name", "landmark_name", "street_name",
+                "project_name", "developer_name", "micro_market",
+            ):
+                parsed_field = "developer" if field == "developer_name" else field
+                if not parsed.get(parsed_field) and resolver_result.get(field):
+                    parsed[parsed_field] = resolver_result[field]
+        except Exception as exc:
+            print(f"  [extract] resolve_parsed error: {exc}", flush=True)
+            resolver_result = {}
+
         obs = ParsedObservation(
             raw_message_id=raw_id,
             listing_index=idx,
@@ -309,12 +327,6 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
         try:
             parsed_id = storage.save_parsed(obs)
             parsed_ids.append(parsed_id)
-            # Bridge parsed observation → listings (www reads `listings`).
-            # Fingerprint upsert dedupes against existing rows.
-            try:
-                storage.upsert_listing_from_parsed(parsed_id)
-            except Exception as lexc:
-                print(f"  [extract] upsert_listing error: {lexc}", flush=True)
         except Exception as exc:
             print(f"  [extract] save_parsed error: {exc}", flush=True)
             continue
@@ -350,12 +362,7 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
                 pass
 
         # ── Resolve ──────────────────────────────────────────────
-        try:
-            resolver_result = resolve_parsed(parsed, source_text)
-            resolver_result["parsed_id"] = parsed_id
-        except Exception as exc:
-            print(f"  [extract] resolve_parsed error: {exc}", flush=True)
-            resolver_result = {"parsed_id": parsed_id}
+        resolver_result["parsed_id"] = parsed_id
 
         dec = ResolverDecision(
             parsed_id=parsed_id,
@@ -381,6 +388,13 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
             storage.save_resolver_decision(dec)
         except Exception as exc:
             print(f"  [extract] save_resolver_decision error: {exc}", flush=True)
+
+        # Bridge the fully enriched observation to listings only after the
+        # resolver pass. Fingerprint upsert keeps retries idempotent.
+        try:
+            storage.upsert_listing_from_parsed(parsed_id)
+        except Exception as lexc:
+            print(f"  [extract] upsert_listing error: {lexc}", flush=True)
 
     # ── Publish events ─────────────────────────────────────────────
     try:

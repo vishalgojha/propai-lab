@@ -1688,7 +1688,7 @@ def _lines_to_listings(
         listing_source = detect_listing_source(line)
 
         result: dict = {
-            "intent": "listing",
+            "intent": section_intent or _infer_intent_from_text(line),
             "principal": None,
             "bhk": bhk,
             "price": price,
@@ -1749,8 +1749,12 @@ def _extract_location_from_text(text: str) -> dict:
             result["landmark_name"] = loc.locality
         if loc.building:
             result["building_name"] = loc.building
-        if loc.micro_market:
-            result["micro_market"] = loc.micro_market
+        market = loc.micro_market
+        if not market and loc.locality:
+            from lab.location import infer_unique_micro_market
+            market = infer_unique_micro_market(loc.locality)
+        if market:
+            result["micro_market"] = market
         if loc.street:
             result["street_name"] = loc.street
     return result

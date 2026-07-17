@@ -5,8 +5,11 @@ These tests pin the agreed parser contract on real broker messages instead of sy
 toy strings.
 """
 
-from app import parse_message
-from multi_listing import _infer_intent_from_text, parse_multi_message
+import evidence.resolver
+
+from app import parse_message, resolve_parsed
+from location import enrich_parsed_location, parse_location
+from multi_listing import _infer_intent_from_text, _lines_to_listings, parse_multi_message
 
 
 LODHA_SUPREMUS_OFFICE = """\
@@ -270,3 +273,69 @@ def test_residential_schema_fields_are_normalized_without_blocking():
     assert parsed["availability_status"] == "coming_soon"
     assert parsed["available_from"] == "15 Aug"
     assert parsed["price_model"] == "total"
+
+
+def test_known_locality_is_promoted_to_micro_market():
+    location = parse_location("3 BHK for rent in Bandra West")
+
+    assert location.locality == "Bandra West"
+    assert location.micro_market == "Bandra West"
+
+
+def test_location_enrichment_uses_only_unambiguous_full_message_fallback():
+    enriched = enrich_parsed_location(
+        {"intent": "SELL", "building_name": "Agami Eternity"},
+        "Agami Eternity",
+        fallback_text="3 BHK for sale in Bandra East",
+    )
+    ambiguous = enrich_parsed_location(
+        {"intent": "BUY"},
+        "Requirement",
+        fallback_text="Looking in Bandra West or Khar West",
+    )
+
+    assert enriched["micro_market"] == "Bandra East"
+    assert ambiguous.get("micro_market") is None
+
+
+def test_generic_multi_listing_lines_emit_canonical_intent():
+    cards = _lines_to_listings(
+        "3 BHK | 1200 sqft | 5 Cr",
+        section_intent=None,
+        section_furnish=None,
+        shared_building=None,
+        profile_name=None,
+    )
+
+    assert len(cards) == 1
+    assert cards[0]["intent"] == "SELL"
+
+
+def test_primary_building_resolution_preserves_registry_micro_market(monkeypatch):
+    monkeypatch.setattr(
+        evidence.resolver,
+        "CACHE",
+        {
+            "buildings": {
+                "agami eternity": {
+                    "building_id": 99,
+                    "canonical_name": "Agami Eternity",
+                    "area": "Bandra East",
+                }
+            }
+        },
+    )
+    monkeypatch.setattr(evidence.resolver, "_load_registry", lambda: None)
+    monkeypatch.setattr(
+        evidence.resolver,
+        "resolve",
+        lambda *_args: (99, 0.95, "exact_name"),
+    )
+
+    resolved = resolve_parsed(
+        {"building_name": "Agami Eternity", "confidence": 0.9},
+        "Agami Eternity available for sale",
+    )
+
+    assert resolved["building_name"] == "Agami Eternity"
+    assert resolved["micro_market"] == "Bandra East"

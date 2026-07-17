@@ -1227,6 +1227,7 @@ def resolve_parsed(parsed: dict, raw_text: str) -> dict:
         "project_id": None,
         "project_name": None,
         "developer_name": parsed.get("developer"),
+        "micro_market": parsed.get("micro_market"),
         "parser_confidence": parsed.get("confidence", 0.0),
         "resolver_confidence": 0.0,
         "final_confidence": 0.0,
@@ -1368,9 +1369,11 @@ def resolve_parsed(parsed: dict, raw_text: str) -> dict:
             _load_registry()
             buildings = R4_CACHE.get("buildings", {})
             b_name = None
+            b_area = None
             for cname, info in buildings.items():
                 if info["building_id"] == bid:
                     b_name = info["canonical_name"]
+                    b_area = info.get("area")
                     break
             candidates.append({
                 "building_id": bid,
@@ -1381,7 +1384,7 @@ def resolve_parsed(parsed: dict, raw_text: str) -> dict:
                 "landmark_id": result.get("landmark_id"),
                 "landmark_name": result.get("landmark_name"),
                 "distance_m": None,
-                "micro_market": area or None,
+                "micro_market": b_area or area or None,
             })
             seen_bids.add(bid)
 
@@ -1406,6 +1409,7 @@ def resolve_parsed(parsed: dict, raw_text: str) -> dict:
 
             result["building_id"] = winner["building_id"]
             result["building_name"] = winner["building_name"]
+            result["micro_market"] = winner.get("micro_market") or result.get("micro_market")
             result["resolver_confidence"] = max(c["confidence"] for c in candidates if c["building_id"] == bid) if bid else 0.0
             result["final_confidence"] = round(
                 result["parser_confidence"] * 0.3 + result["resolver_confidence"] * 0.7, 2
