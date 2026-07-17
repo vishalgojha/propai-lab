@@ -62,8 +62,13 @@ function intentValue(intent: string | null): "rent" | "sale" | "commercial" | nu
 }
 
 // Renders an explicit, buyer-readable price with a unit. Never a bare number.
-// Unit is derived from price_unit + intent; if the unit isn't reliably known
-// we show "Price on request" rather than guessing a lakh/crore scale.
+//
+// Ingestion stores prices inconsistently by unit:
+//   - "cr" / "k": the number is ABSOLUTE rupees with a leftover unit
+//     (e.g. 26600000 with unit "cr" => ₹2.66 Cr; 85000 "k" rent => ₹85,000/mo).
+//   - "lac": the number is already in lakh-scale (e.g. 110000 => ₹110,000 Lakh).
+//   - "abs": absolute rupees.
+// We normalise each to a readable, grouped amount in the appropriate unit.
 export function formatCardPrice(
   price: number | null,
   priceUnit: string | null,
@@ -71,39 +76,40 @@ export function formatCardPrice(
 ): string {
   const unit = normalizeUnit(priceUnit);
   const intentKind = intentValue(intent);
+  const perMonth = intentKind === "rent";
 
   if (price == null) return "Price on request";
 
-  // Rentals are quoted per month. price is stored in the unit's native scale
-  // (Cr/Lac/K/abs), so scale it to absolute rupees before formatting.
-  if (intentKind === "rent") {
+  const grouped = (n: number) => Math.round(n).toLocaleString("en-IN");
+
+  if (perMonth) {
+    // Rentals are per month. "cr" is absolute-stored (divide to crore-scale
+    // then to rupees); "k" is usually absolute rupees already, but a small "k"
+    // value (e.g. 85) means thousands -> 85,000. "lac" is lakh-scale.
     let abs = price;
-    if (unit === "cr") abs = price * 1_00_00_000;
+    if (unit === "cr") abs = price > 1000 ? price / 1_00_00_000 : price;
     else if (unit === "lac") abs = price * 1_00_000;
-    else if (unit === "k") abs = price * 1_000;
-    // unit === "abs" or null/unknown: treat as absolute rupees
-    return `₹${Math.round(abs).toLocaleString("en-IN")}/month`;
+    else if (unit === "k") abs = price > 1000 ? price : price * 1_000;
+    return `₹${grouped(abs)}/month`;
   }
 
-  // price is stored in the unit's native scale (Cr/Lac/K/abs), so render it
-  // directly — do NOT divide by a crore/lakh factor.
+  // Sale / commercial
   if (unit === "cr") {
-    return `₹${price % 1 === 0 ? price : price.toFixed(2)} Cr`;
+    // Most "cr" values are native-scale (2.5 => ₹2.5 Cr); large values are
+    // absolute rupees mis-tagged as crore (85000000 => ₹8.5 Cr).
+    const cr = price > 1000 ? price / 1_00_00_000 : price;
+    return `₹${cr % 1 === 0 ? cr : cr.toFixed(2)} Cr`;
   }
   if (unit === "lac") {
-    return `₹${price % 1 === 0 ? price : price.toFixed(1)} Lakh`;
+    const v = price % 1 === 0 ? price : price.toFixed(1);
+    return `₹${v} Lakh`;
   }
   if (unit === "k") {
-    return `₹${Math.round(price).toLocaleString("en-IN")}K`;
+    const abs = price > 1000 ? price : price * 1_000;
+    return `₹${grouped(abs)}`;
   }
-
-  // "abs" (absolute rupees) — render the whole-currency amount.
-  if (unit === "abs") {
-    return `₹${Math.round(price).toLocaleString("en-IN")}`;
-  }
-
-  // No usable unit: do not invent a scale.
-  return "Price on request";
+  // "abs" or unknown — render the grouped whole amount.
+  return `₹${grouped(price)}`;
 }
 
 function buildTitle(row: ListingCardFields): string {
@@ -163,6 +169,21 @@ export function waLinkFor(listingId: number | null): string | null {
   return `/contact-broker/${listingId}`;
 }
 
+// Broker names are sometimes stored as raw phone numbers (e.g. "+91 9920993025"
+// or "9930079206"). Never surface those in the public card DOM — mask them so
+// the number is not crawlable / exposed (DPDP Act 2023). The real contact path
+// is the /contact-broker/{id} redirect, which the server controls.
+const PHONEISH = /[0-9]/;
+export function safeBrokerName(raw: string | null): string | null {
+  if (!raw || !raw.trim()) return null;
+  const v = raw.trim();
+  // If it's mostly digits / a phone-shaped string, don't show it.
+  const digitRatio = (v.match(/[0-9]/g) || []).length / Math.max(v.replace(/\s/g, "").length, 1);
+  if (digitRatio > 0.5 || /^\+?\d[\d\s().-]{6,}$/.test(v)) return null;
+  if (/wa\.me|whatsapp/i.test(v)) return null;
+  return v;
+}
+
 export function toListingCardViewModel(
   row: ListingCardFields,
   isBuilding: boolean,
@@ -187,6 +208,6 @@ export function toListingCardViewModel(
     updatedLabel: formatUpdated(row.last_seen),
     waLink: waLinkFor(row.id),
     href: row.id != null ? `/listings/${row.id}` : null,
-    brokerName: row.broker_name && row.broker_name.trim() ? row.broker_name.trim() : null,
+    brokerName: safeBrokerName(row.broker_name),
   };
 }
