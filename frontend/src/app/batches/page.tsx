@@ -3,7 +3,8 @@
 import { useEffect, useState, useCallback } from "react";
 import * as api from "@/lib/api";
 
-function fmtDate(s: string) {
+function fmtDate(s: string | null | undefined) {
+  if (!s) return "—";
   try {
     const d = new Date(s);
     return Number.isNaN(d.getTime()) ? s : d.toLocaleString();

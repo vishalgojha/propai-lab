@@ -26,7 +26,7 @@ async function buildBrokerCache(): Promise<void> {
   }
 
   try {
-    const brokers = await getBrokersFeed(500, 0, 1); // Get more brokers, min 1 observation
+    const brokers = await getBrokersFeed(500, 0); // Get more brokers
     const newCache = new Map<string, BrokerIdentity>();
 
     for (const b of brokers) {

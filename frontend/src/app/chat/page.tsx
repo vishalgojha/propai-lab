@@ -24,11 +24,19 @@ function buildChipLabels(s: api.ChatSuggestions | null): string[] {
   return chips;
 }
 
-function messageText(message: { content?: string; parts?: Array<{ type?: string; text?: string }> }) {
+function messageText(message: { parts?: Array<{ type?: string; text?: string }>; content?: string }) {
   if (typeof message.content === "string" && message.content) return message.content;
   return (message.parts || [])
     .map((part) => (part?.type === "text" ? part.text || "" : ""))
     .join("");
+}
+
+function toUIMessage(m: { id: string; role: "user" | "assistant"; content: string }) {
+  return {
+    id: m.id,
+    role: m.role,
+    parts: [{ type: "text" as const, text: m.content }],
+  };
 }
 
 function formatSessionTime(iso: string) {
@@ -62,8 +70,10 @@ export default function ChatPage() {
       api: "/api/ai/chat",
       body: () => ({ broker_phone: brokerPhone, session_id: sessionId }),
       headers: async () => {
+        const headers: Record<string, string> = {};
         const token = await getAccessToken();
-        return token ? { Authorization: `Bearer ${token}` } : {};
+        if (token) headers.Authorization = `Bearer ${token}`;
+        return headers;
       },
     }),
   });
@@ -112,11 +122,7 @@ export default function ChatPage() {
         try {
           const msgs = await api.getChatSessionMessages(mostRecent.id);
           if (cancelled) return;
-          setMessages(msgs.map((m) => ({
-            id: m.id,
-            role: m.role as "user" | "assistant",
-            content: m.content,
-          })));
+          setMessages(msgs.map((m) => toUIMessage({ id: m.id, role: m.role as "user" | "assistant", content: m.content })));
         } catch {
           // Ignore resume failures and start from an empty thread.
         }
@@ -154,11 +160,7 @@ export default function ChatPage() {
     setSessionId(id);
     try {
       const msgs = await api.getChatSessionMessages(id);
-      setMessages(msgs.map((m) => ({
-        id: m.id,
-        role: m.role as "user" | "assistant",
-        content: m.content,
-      })));
+      setMessages(msgs.map((m) => toUIMessage({ id: m.id, role: m.role as "user" | "assistant", content: m.content })));
     } catch {
       setMessages([]);
     }

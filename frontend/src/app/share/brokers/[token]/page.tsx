@@ -6,14 +6,14 @@ import * as api from "@/lib/api";
 import Link from "next/link";
 import { displayGroupName } from "@/lib/whatsapp-display";
 
-function shortDate(ts?: string) {
+function shortDate(ts?: string | null) {
   if (!ts) return "—";
   const d = new Date(ts);
   if (Number.isNaN(d.getTime())) return "—";
   return d.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
 }
 
-function Stats({ label, value }: { label: string; value: string | number }) {
+function Stats({ label, value }: { label: string; value: string | number | null | undefined }) {
   return (
     <div className="rounded-2xl bg-white/6 border border-white/8 px-4 py-3 backdrop-blur-sm">
       <div className="text-2xl font-semibold text-white">{value}</div>

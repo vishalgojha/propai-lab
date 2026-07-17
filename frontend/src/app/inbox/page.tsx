@@ -1718,7 +1718,7 @@ return {
     const direct = normalizeRealPhone(msg.sender_phone);
     if (direct) return direct;
     const bodyPhone = extractPhoneFromText(
-      [msg.message, msg.raw_message, msg.summary_title].filter(Boolean).join("\n")
+      [msg.message].filter(Boolean).join("\n")
     );
     if (bodyPhone) return bodyPhone;
     return (
@@ -2933,7 +2933,7 @@ return {
         parsed.micro_market,
         parsed.landmark_name,
         parsed.location_raw,
-        ...listings.flatMap((listing) => [
+        ...listings.flatMap((listing: any) => [
           listing.building_name,
           listing.micro_market,
           listing.landmark_name,

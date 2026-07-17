@@ -3,6 +3,7 @@
 export const dynamic = 'force-dynamic';
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { Search, Filter, Database, Eye, Copy, ClipboardCheck, Download, Upload, Trash2, RotateCcw, FileText } from "lucide-react";
 import { fetchJSON } from "@/lib/api";
 
