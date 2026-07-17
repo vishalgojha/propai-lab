@@ -128,8 +128,6 @@ def _validate_response(payload: Any, draft: dict[str, Any]) -> dict[str, Any]:
                 raise CorrectionError(f"{field} must be numeric or null")
         elif value is not None and not isinstance(value, str):
             raise CorrectionError(f"{field} must be a string or null")
-    if payload["price_unit"] not in {None, "Lac", "Cr"}:
-        raise CorrectionError("price_unit must be Lac, Cr, or null")
     unchanged_flags = [field for field in corrected_fields if payload[field] == draft[field]]
     if unchanged_flags:
         raise CorrectionError(f"Fields flagged as corrected but unchanged: {unchanged_flags}")

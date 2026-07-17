@@ -30,13 +30,13 @@ def test_validation_rejects_unchanged_corrected_field():
         layer._validate_response(payload, draft)
 
 
-def test_validation_rejects_noncanonical_price_unit():
+@pytest.mark.parametrize("unit", ["Lakh", "Lakhs", "Lac", "Crore", "Cr"])
+def test_validation_preserves_indian_price_unit(unit):
     draft = {field: None for field in layer.CORRECTABLE_FIELDS}
     payload = valid_payload(draft, ["price_unit"])
-    payload["price_unit"] = "Lakhs"
+    payload["price_unit"] = unit
 
-    with pytest.raises(layer.CorrectionError, match="price_unit must be"):
-        layer._validate_response(payload, draft)
+    assert layer._validate_response(payload, draft)["price_unit"] == unit
 
 
 def test_write_updates_only_flagged_fields():
