@@ -16,6 +16,7 @@ RUN pip install --no-cache-dir \
     apscheduler pyjwt python-dotenv \
     python-multipart cryptography boto3 \
     "pydantic[email]" fastapi_sso \
+    orjson \
     supabase
 
 # Copy the whole gateway package so `deploy.coolify.litellm.hooks` is importable.
