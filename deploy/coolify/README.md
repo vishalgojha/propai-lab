@@ -26,6 +26,9 @@ Set these on each service in Coolify:
 |----------|-------|
 | `SUPABASE_URL` | Your Supabase project URL |
 | `SUPABASE_SERVICE_KEY` | Supabase service role key |
+| `DOUBLEWORD_API_URL` | `https://api.doubleword.ai/v1` |
+| `DOUBLEWORD_API_KEY` | Active Doubleword inference key |
+| `DOUBLEWORD_MODEL` | `Qwen/Qwen3.6-35B-A3B-FP8` |
 | `FRONTEND_URL` | `https://app.propai.live` |
 | `STATUS_FILE` | `/data/status.json` |
 | `LAB_HOST` | `0.0.0.0` |
