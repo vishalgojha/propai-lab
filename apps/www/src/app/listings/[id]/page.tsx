@@ -19,6 +19,8 @@ function toCardFields(row: NonNullable<Awaited<ReturnType<typeof getListingById>
     area_sqft: row.area_sqft,
     furnishing: row.furnishing,
     intent: row.intent,
+    asset_type: row.asset_type,
+    property_type: row.property_type,
     micro_market: row.micro_market,
     building_name: row.building_name,
     landmark_name: row.landmark_name,

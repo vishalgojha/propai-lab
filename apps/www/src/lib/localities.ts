@@ -37,6 +37,8 @@ type ListingRow = {
   price: number | null;
   price_unit: string | null;
   intent: string | null;
+  asset_type: string | null;
+  property_type: string | null;
   micro_market: string | null;
 };
 
@@ -208,7 +210,7 @@ export async function getLocalityData(rawSlug: string): Promise<LocalityData | n
     for (let offset = 0; ; offset += PAGE) {
       const { data, error } = await db
         .from("listings")
-        .select("building_name, bhk, price, price_unit, intent, micro_market")
+        .select("building_name, bhk, price, price_unit, intent, asset_type, property_type, micro_market")
         .eq("micro_market", match)
         .range(offset, offset + PAGE - 1);
       if (error) return { data: null, error };
@@ -454,6 +456,8 @@ export type BuildingListing = {
   price_unit: string | null;
   furnishing: string | null;
   intent: string | null;
+  asset_type: string | null;
+  property_type: string | null;
   micro_market: string | null;
   view: string | null;
   floor_description: string | null;
@@ -570,6 +574,8 @@ export async function getBuildingListings(name: string): Promise<BuildingListing
     price_unit: string | null;
     furnishing: string | null;
     intent: string | null;
+    asset_type: string | null;
+    property_type: string | null;
     micro_market: string | null;
     view: string | null;
     floor_description: string | null;
@@ -585,7 +591,7 @@ export async function getBuildingListings(name: string): Promise<BuildingListing
     const { data, error } = await db
       .from("listings")
       .select(
-        "id, bhk, price, price_unit, furnishing, intent, micro_market, view, floor_description, building_name, broker_name, broker_phone, last_seen, representative_raw_message_id, latest_raw_message_id",
+        "id, bhk, price, price_unit, furnishing, intent, asset_type, property_type, micro_market, view, floor_description, building_name, broker_name, broker_phone, last_seen, representative_raw_message_id, latest_raw_message_id",
       )
       .eq("building_name", target)
       .order("last_seen", { ascending: false })
@@ -612,6 +618,8 @@ export async function getBuildingListings(name: string): Promise<BuildingListing
     price_unit: r.price_unit,
     furnishing: r.furnishing,
     intent: r.intent,
+    asset_type: r.asset_type,
+    property_type: r.property_type,
     micro_market: r.micro_market,
     view: r.view,
     floor_description: r.floor_description,
@@ -635,7 +643,7 @@ export async function getListingById(id: number): Promise<ListingDetail | null> 
   const { data, error } = await db
     .from("listings")
     .select(
-      "id, bhk, price, price_unit, area_sqft, furnishing, intent, location_label, landmark_name, micro_market, view, floor_description, broker_name, broker_phone, last_seen, building_name, representative_raw_message_id, latest_raw_message_id",
+      "id, bhk, price, price_unit, area_sqft, furnishing, intent, asset_type, property_type, location_label, landmark_name, micro_market, view, floor_description, broker_name, broker_phone, last_seen, building_name, representative_raw_message_id, latest_raw_message_id",
     )
     .eq("id", id)
     .maybeSingle();
@@ -663,6 +671,8 @@ export async function getListingById(id: number): Promise<ListingDetail | null> 
     area_sqft: data.area_sqft,
     furnishing: data.furnishing,
     intent: data.intent,
+    asset_type: data.asset_type,
+    property_type: data.property_type,
     micro_market: data.micro_market,
     view: data.view,
     floor_description: data.floor_description,

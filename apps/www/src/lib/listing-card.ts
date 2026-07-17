@@ -8,10 +8,12 @@ export type ListingCardFields = {
   area_sqft: number | null;
   furnishing: string | null;
   intent: string | null;
+  asset_type: string | null;
+  property_type: string | null;
   micro_market: string | null;
   building_name: string | null;
-  landmark_name: string | null;
-  location_label: string | null;
+  landmark_name?: string | null;
+  location_label?: string | null;
   floor_description?: string | null;
   view?: string | null;
   title?: string | null;
@@ -38,6 +40,7 @@ export type ListingCardViewModel = {
   statusLabel: string;
   statusTone: "available" | "unconfirmed";
   updatedLabel: string;
+  assetTypeLabel: string | null;
   waLink: string | null;
   href: string | null;
   brokerName: string | null;
@@ -58,6 +61,22 @@ function intentValue(intent: string | null): "rent" | "sale" | "commercial" | nu
   if (i === "rent" || i === "rental" || i === "lease") return "rent";
   if (i === "sell" || i === "sale" || i === "resale" || i === "buy" || i === "purchase") return "sale";
   if (i === "commercial") return "commercial";
+  return null;
+}
+
+// Human-readable residential/commercial label for a listing card. Prefers the
+// parsed asset_type (residential | commercial); falls back to the intent when
+// asset_type is missing so historical rows still get a sensible badge.
+export function assetTypeLabel(
+  assetType: string | null,
+  intent: string | null,
+): string | null {
+  const a = (assetType || "").trim().toLowerCase();
+  if (a === "commercial") return "Commercial";
+  if (a === "residential") return "Residential";
+  const i = intentValue(intent);
+  if (i === "commercial") return "Commercial";
+  if (i === "rent" || i === "sale") return "Residential";
   return null;
 }
 
@@ -206,6 +225,7 @@ export function toListingCardViewModel(
     statusLabel: hasLocality ? "Available" : "Locality unconfirmed",
     statusTone: hasLocality ? "available" : "unconfirmed",
     updatedLabel: formatUpdated(row.last_seen),
+    assetTypeLabel: assetTypeLabel(row.asset_type, row.intent),
     waLink: waLinkFor(row.id),
     href: row.id != null ? `/listings/${row.id}` : null,
     brokerName: safeBrokerName(row.broker_name),

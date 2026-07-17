@@ -94,6 +94,12 @@ class Listing:
     id: int = 0
     fingerprint: str = ""
     intent: Optional[str] = None
+    asset_type: Optional[str] = None
+    property_type: Optional[str] = None
+    transaction_type: Optional[str] = None
+    commercial_use_type: Optional[str] = None
+    fitout_status: Optional[str] = None
+    occupancy_type: Optional[str] = None
     bhk: Optional[str] = None
     price: Optional[float] = None
     price_unit: Optional[str] = None

@@ -20,16 +20,46 @@ export const metadata = {
   },
 };
 
-type SearchParams = Promise<{ q?: string }>;
+type SearchParams = Promise<{ q?: string; asset?: string }>;
 
-function SearchForm({ query }: { query: string }) {
+const ASSET_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: "", label: "All" },
+  { value: "residential", label: "Residential" },
+  { value: "commercial", label: "Commercial" },
+];
+
+function SearchForm({ query, asset }: { query: string; asset: string }) {
   return (
     <form action="/search" method="get" className="w-full">
       <div className="relative rounded-[28px] border border-white/10 bg-zinc-950/90 p-4 lg:p-5 shadow-[0_25px_80px_rgba(0,0,0,0.45)]">
         <div className="absolute inset-0 rounded-[28px] bg-gradient-to-br from-green-400/10 via-transparent to-transparent pointer-events-none" />
-        <label htmlFor="natural-search" className="block text-sm font-medium text-zinc-400 mb-3">
-          Search in plain English
-        </label>
+        <div className="flex items-center justify-between mb-3">
+          <label htmlFor="natural-search" className="block text-sm font-medium text-zinc-400">
+            Search in plain English
+          </label>
+          <div className="flex items-center gap-1 rounded-full border border-white/10 bg-black/60 p-1">
+            {ASSET_OPTIONS.map((opt) => {
+              const active = asset === opt.value;
+              return (
+                <label
+                  key={opt.value}
+                  className={`cursor-pointer select-none rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                    active ? "bg-green-400 text-black" : "text-zinc-400 hover:text-white"
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="asset"
+                    value={opt.value}
+                    defaultChecked={active}
+                    className="sr-only"
+                  />
+                  {opt.label}
+                </label>
+              );
+            })}
+          </div>
+        </div>
         <div className="relative">
           <Search className="absolute left-5 top-1/2 -translate-y-1/2 h-5 w-5 text-zinc-500" aria-hidden="true" />
           <input
@@ -58,9 +88,11 @@ function SearchForm({ query }: { query: string }) {
 }
 
 export default async function SearchPage({ searchParams }: { searchParams: SearchParams }) {
-  const { q = "" } = await searchParams;
+  const { q = "", asset: assetParam = "" } = await searchParams;
   const query = q.trim();
-  const state = query ? await searchNaturalLanguageListings(query) : null;
+  const asset =
+    assetParam === "residential" || assetParam === "commercial" ? assetParam : null;
+  const state = query ? await searchNaturalLanguageListings(query, 24, asset) : null;
   const knownLocalities = await getAllLocalities();
   const summary = state?.parsed ? describeNaturalSearch(state.parsed) : "";
 
@@ -81,7 +113,7 @@ export default async function SearchPage({ searchParams }: { searchParams: Searc
           </p>
 
           <div className="mt-8 max-w-2xl">
-            <SearchForm query={query} />
+            <SearchForm query={query} asset={assetParam} />
           </div>
 
           {!query && (
@@ -112,6 +144,11 @@ export default async function SearchPage({ searchParams }: { searchParams: Searc
               {summary && (
                 <span className="rounded-full border border-green-400/20 bg-green-400/10 px-3 py-1 text-green-200">
                   {summary}
+                </span>
+              )}
+              {asset && (
+                <span className="rounded-full border border-green-400/20 bg-green-400/10 px-3 py-1 text-green-200 capitalize">
+                  {asset}
                 </span>
               )}
             </div>

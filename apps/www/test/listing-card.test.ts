@@ -17,6 +17,8 @@ function base(over: Partial<ListingCardFields>): ListingCardFields {
     area_sqft: 1450,
     furnishing: "Semi-furnished",
     intent: "sell",
+    asset_type: null,
+    property_type: null,
     micro_market: "Bandra East",
     building_name: null,
     landmark_name: null,

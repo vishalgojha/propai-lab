@@ -8,6 +8,7 @@ export type ParsedNaturalSearch = {
   statedLocalityText: string | null;
   bhk: number | null;
   intent: "rent" | "sale" | null;
+  asset: "residential" | "commercial" | null;
   minPrice: number | null;
   maxPrice: number | null;
   furnishing: "furnished" | "semi-furnished" | "unfurnished" | null;
@@ -18,6 +19,8 @@ export type ParsedNaturalSearch = {
 export type NaturalSearchRow = {
   id: number;
   intent: string | null;
+  asset_type: string | null;
+  property_type: string | null;
   bhk: string | null;
   price: number | null;
   price_unit: string | null;
@@ -66,6 +69,8 @@ const MONEY_UNITS: Record<string, number> = {
 const LISTING_FIELDS = [
   "id",
   "intent",
+  "asset_type",
+  "property_type",
   "bhk",
   "price",
   "price_unit",
@@ -127,6 +132,22 @@ function parseFurnishing(query: string): ParsedNaturalSearch["furnishing"] {
   if (/\bfully\s+furnished\b|\bfull\s*furn\b|\bff\b/.test(lower)) return "furnished";
   if (/\bsemi\s+furnished\b|\bsemi\s*fur\b|\bsf\b/.test(lower)) return "semi-furnished";
   if (/\bunfurnished\b|\bnon[-\s]?furnished\b/.test(lower)) return "unfurnished";
+  return null;
+}
+
+// Detect an explicit residential/commercial intent from the query. Commercial
+// cues mirror the ingestion keyword set (office/shop/showroom/warehouse/godown/
+// retail). Absent those, we don't force a bucket — most queries are residential.
+function parseAsset(query: string): "residential" | "commercial" | null {
+  const lower = query.toLowerCase();
+  if (
+    /\b(commercial|office|shop|showroom|warehouse|godown|retail|co[- ]?working|coworking|industrial|factory|plot|land)\b/.test(lower)
+  ) {
+    return "commercial";
+  }
+  if (/\b(residential|apartment|flat|house|villa|society|residence)\b/.test(lower)) {
+    return "residential";
+  }
   return null;
 }
 
@@ -287,6 +308,7 @@ export function parseSearchQuery(query: string, localities: LocalitySummary[]): 
   const parsedBhk = parseBhk(query);
   const parsedIntent = parseIntent(query);
   const parsedFurnishing = parseFurnishing(query);
+  const parsedAsset = parseAsset(query);
   const { minPrice, maxPrice } = parseBudget(query);
   const matchedLocalities = findLocalityMatches(query, localities);
 
@@ -297,6 +319,7 @@ export function parseSearchQuery(query: string, localities: LocalitySummary[]): 
     statedLocalityText: extractStatedLocalityPhrase(query),
     bhk: parsedBhk,
     intent: parsedIntent,
+    asset: parsedAsset,
     minPrice,
     maxPrice,
     furnishing: parsedFurnishing,
@@ -372,6 +395,14 @@ function scoreRow(row: NaturalSearchRow, parsed: ParsedNaturalSearch): { score: 
     }
   }
 
+  if (parsed.asset) {
+    const rowAsset = (row.asset_type || "").toLowerCase();
+    if (rowAsset === parsed.asset) {
+      score += 25;
+      matchedOn.push(parsed.asset);
+    }
+  }
+
   if (parsed.furnishing) {
     const furnishingText = normalizeText(row.furnishing || "");
     const matches =
@@ -430,6 +461,11 @@ export function matchesHardFilters(row: NaturalSearchRow, parsed: ParsedNaturalS
     if (rowIntent != null && rowIntent !== parsed.intent) return false;
   }
 
+  if (parsed.asset) {
+    const rowAsset = (row.asset_type || "").toLowerCase();
+    if (rowAsset && rowAsset !== parsed.asset) return false;
+  }
+
   if (parsed.furnishing) {
     const furnishingText = normalizeText(row.furnishing || "");
     const matches =
@@ -453,6 +489,7 @@ export function describeNaturalSearch(parsed: ParsedNaturalSearch): string {
   if (parsed.bhk != null) parts.push(parsed.bhk === 0 ? "Studio" : `${parsed.bhk} BHK`);
   if (parsed.locality) parts.push(parsed.locality);
   if (parsed.intent) parts.push(parsed.intent === "rent" ? "rentals" : "sale");
+  if (parsed.asset) parts.push(parsed.asset);
   if (parsed.minPrice != null || parsed.maxPrice != null) {
     const min = formatPrice(parsed.minPrice);
     const max = formatPrice(parsed.maxPrice);
@@ -471,10 +508,13 @@ export function describeNaturalSearch(parsed: ParsedNaturalSearch): string {
 export async function searchNaturalLanguageListings(
   query: string,
   limit = 24,
+  asset: "residential" | "commercial" | null = null,
 ): Promise<NaturalSearchState> {
   const db = getServerSupabase();
   const localities = await getAllLocalities();
   const parsed = parseSearchQuery(query, localities);
+  // An explicit UI toggle (asset) overrides whatever the query text implied.
+  if (asset) parsed.asset = asset;
   const matchedSuggestions =
     parsed.matchedLocalities.length > 0 ? parsed.matchedLocalities : localities.slice(0, 6);
 
@@ -524,6 +564,10 @@ export async function searchNaturalLanguageListings(
 
       if (narrowed && parsed.locality) {
         qb = qb.eq("micro_market", parsed.locality);
+      }
+
+      if (parsed.asset) {
+        qb = qb.eq("asset_type", parsed.asset);
       }
 
       const { data, error } = await qb;

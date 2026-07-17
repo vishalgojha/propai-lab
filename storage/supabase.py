@@ -1484,6 +1484,12 @@ class SupabaseStorage(Storage):
         building_name = (resolver or {}).get("building_name") or obs.get("building_name")
         return Listing(
             intent=obs.get("intent"),
+            asset_type=obs.get("asset_type"),
+            property_type=obs.get("property_type"),
+            transaction_type=obs.get("transaction_type"),
+            commercial_use_type=obs.get("commercial_use_type"),
+            fitout_status=obs.get("fitout_status"),
+            occupancy_type=obs.get("occupancy_type"),
             bhk=obs.get("bhk"),
             price=obs.get("price"),
             price_unit=obs.get("price_unit"),
