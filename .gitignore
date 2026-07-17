@@ -6,6 +6,7 @@ __pycache__/
 .api_key
 *.pem
 *.log
+ai_correction_status.json
 
 # Local databases and state
 lab.db

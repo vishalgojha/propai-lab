@@ -12,8 +12,10 @@ The scheduler is resumable, rate-limited, and never blocks live ingestion.
 
 import json
 import logging
+import os
 import sys
 import threading
+from dataclasses import asdict
 from datetime import datetime, timezone
 from queue import Queue, Empty
 from typing import Optional
@@ -29,6 +31,81 @@ PIPELINE_VERSION = "1.0.0"
 
 # Max concurrent sync jobs
 MAX_WORKERS = 3
+
+
+class PeriodicCorrectionRunner:
+    """Run the post-parse correction pass every two hours without retries."""
+
+    def __init__(self):
+        self._stop = threading.Event()
+        self._thread: Optional[threading.Thread] = None
+
+    def start(self) -> None:
+        enabled = os.getenv("AI_CORRECTION_SCHEDULE_ENABLED", "true").lower() == "true"
+        if not enabled or (self._thread and self._thread.is_alive()):
+            return
+        self._thread = threading.Thread(
+            target=self._loop,
+            daemon=True,
+            name="ai-correction-scheduler",
+        )
+        self._thread.start()
+
+    def stop(self) -> None:
+        self._stop.set()
+
+    def _loop(self) -> None:
+        initial_delay = max(0, int(os.getenv("AI_CORRECTION_INITIAL_DELAY_SECONDS", "60")))
+        interval = max(300, int(os.getenv("AI_CORRECTION_INTERVAL_SECONDS", "7200")))
+        if self._stop.wait(initial_delay):
+            return
+        while not self._stop.is_set():
+            self._run_cycle()
+            self._stop.wait(interval)
+
+    def _run_cycle(self) -> None:
+        from correction_layer import (
+            RunSummary,
+            claim_scheduled_run,
+            finish_scheduled_run,
+            run_corrections,
+        )
+        from storage.supabase import SupabaseStorage
+
+        storage = SupabaseStorage()
+        try:
+            run_id = claim_scheduled_run(storage)
+        except Exception:
+            logger.exception("AI correction cycle could not claim a run slot")
+            return
+        if run_id is None:
+            logger.info("AI correction cycle already claimed by another worker")
+            return
+
+        limit = max(1, int(os.getenv("AI_CORRECTION_SCHEDULE_LIMIT", "500")))
+        threshold = float(os.getenv("AI_CORRECTION_CONFIDENCE_THRESHOLD", "0.7"))
+        summary = RunSummary()
+        try:
+            summary = run_corrections(
+                limit=limit,
+                dry_run=False,
+                threshold=threshold,
+                storage=storage,
+            )
+        except Exception as exc:
+            summary.status = "failed"
+            summary.error = str(exc)
+            logger.exception("AI correction cycle failed; next cycle will run normally")
+        finally:
+            try:
+                finish_scheduled_run(storage, run_id, summary)
+            except Exception:
+                logger.exception("Could not persist AI correction run summary")
+        logger.info("AI correction cycle summary: %s", json.dumps(asdict(summary), default=str))
+
+
+_periodic_correction_runner = PeriodicCorrectionRunner()
+_periodic_correction_runner.start()
 
 
 def get_app_storage():
