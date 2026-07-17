@@ -11053,10 +11053,17 @@ def _audit_timestamp(value) -> str:
 
 
 def _audit_group_display_name(jid: str) -> str:
-    name = _group_jid_to_name(jid)
-    if not name or name == jid:
-        return _group_jid_to_name(jid)
-    return name
+    """Format an already-loaded group identifier without another DB query."""
+    value = str(jid or "").strip()
+    if not value:
+        return "Unknown group"
+    if "@" not in value:
+        return value[:80]
+    if value.endswith("@g.us"):
+        raw = value.split("@", 1)[0]
+        suffix = raw[-4:] if len(raw) >= 4 else raw
+        return f"WhatsApp Group {suffix}" if suffix else "WhatsApp Group"
+    return "Unknown group"
 
 @app.get("/api/audit/dashboard")
 async def audit_dashboard(user: dict = Depends(require_user)):
@@ -11313,7 +11320,7 @@ async def audit_top_contributors(limit: int = 10, user: dict = Depends(require_u
 
 
 @app.get("/api/audit/groups")
-async def audit_groups_v2(
+def audit_groups_v2(
     q: str = "",
     status: str = "",
     user: dict = Depends(require_user),
@@ -11578,7 +11585,7 @@ async def audit_group_timeline(jid: str, user: dict = Depends(require_user)):
 
 
 @app.get("/api/audit/duplicates")
-async def audit_duplicates(
+def audit_duplicates(
     user: dict = Depends(require_user),
     tenant_id: str = Depends(require_tenant),
 ):
@@ -11621,7 +11628,7 @@ async def audit_duplicates(
 
 
 @app.get("/api/audit/group-overlap")
-async def audit_group_overlap(
+def audit_group_overlap(
     limit: int = 20,
     user: dict = Depends(require_user),
     tenant_id: str = Depends(require_tenant),
@@ -11703,7 +11710,7 @@ async def audit_group_overlap(
 
 
 @app.get("/api/audit/capture-health")
-async def audit_capture_health(
+def audit_capture_health(
     user: dict = Depends(require_user),
     tenant_id: str = Depends(require_tenant),
 ):
@@ -12051,7 +12058,7 @@ async def audit_intelligence_v2(user: dict = Depends(require_user)):
 
 
 @app.get("/api/audit/insights")
-async def audit_insights(
+def audit_insights(
     user: dict = Depends(require_user),
     tenant_id: str = Depends(require_tenant),
 ):
