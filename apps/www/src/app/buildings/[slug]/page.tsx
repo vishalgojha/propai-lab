@@ -35,6 +35,8 @@ function toCardFields(row: BuildingListing): ListingCardFields {
     area_sqft: null,
     furnishing: row.furnishing,
     intent: row.intent,
+    asset_type: row.asset_type,
+    property_type: row.property_type,
     micro_market: null,
     building_name: null,
     landmark_name: null,

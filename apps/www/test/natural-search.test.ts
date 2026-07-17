@@ -31,6 +31,8 @@ function makeRow(over: Partial<NaturalSearchRow>): NaturalSearchRow {
     price_unit: "l",
     area_sqft: 1200,
     furnishing: "furnished",
+    asset_type: null,
+    property_type: null,
     location_label: null,
     building_name: null,
     landmark_name: null,

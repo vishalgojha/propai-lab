@@ -56,6 +56,11 @@ export default function ListingTile({
         >
           {card.statusLabel}
         </span>
+        {card.assetTypeLabel && (
+          <span className="absolute left-3 top-3 rounded-full border border-white/15 bg-black/50 px-2.5 py-1 text-[11px] font-medium text-zinc-100 backdrop-blur">
+            {card.assetTypeLabel}
+          </span>
+        )}
         {card.locality && (
           <span className="absolute bottom-3 left-3 inline-flex items-center gap-1 rounded-full bg-black/50 px-2.5 py-1 text-[11px] text-zinc-200 backdrop-blur">
             <MapPin className="h-3.5 w-3.5" aria-hidden="true" />
