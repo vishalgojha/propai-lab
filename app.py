@@ -17,6 +17,8 @@ import ast
 import subprocess
 import hmac
 import jwt as pyjwt
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from fnmatch import fnmatch
 from datetime import datetime, timedelta, timezone
 
@@ -84,6 +86,19 @@ from evidence.parsers import parse as broker_parse
 
 # ── Global storage (lazy-initialized, wired in lifespan) ────────
 storage: Storage | None = None
+
+# Keep webhook extraction off the request path without allowing message bursts
+# to create an unbounded number of threads that starve API health/auth routes.
+_EXTRACTION_WORKERS = max(1, int(os.getenv("WEBHOOK_EXTRACTION_WORKERS", "1")))
+_EXTRACTION_PENDING_LIMIT = max(
+    _EXTRACTION_WORKERS,
+    int(os.getenv("WEBHOOK_EXTRACTION_PENDING_LIMIT", "8")),
+)
+_EXTRACTION_EXECUTOR = ThreadPoolExecutor(
+    max_workers=_EXTRACTION_WORKERS,
+    thread_name_prefix="propai-extract",
+)
+_EXTRACTION_SLOTS = threading.BoundedSemaphore(_EXTRACTION_PENDING_LIMIT)
 
 # ── Media storage for listing photos ──────────────────────────
 MEDIA_DIR = PROJECT_DIR / "media" / "listing_photos"
@@ -2148,33 +2163,61 @@ async def webhook(request: Request):
         print(f"[webhook] bus publish error: {exc}", flush=True)
 
     # ── Schedule async extraction in background ───────────────────
-    try:
-        loop = asyncio.get_running_loop()
-        loop.run_in_executor(None, _process_single_raw, raw_id, {
-            "sender_name": sender_name,
-            "push_name": push_name,
-            "sender_jid": sender_jid,
-            "sender_phone": sender_phone,
-            "group": group,
-            "group_name": group_name,
-            "msg_text": msg_text,
-            "instance": instance,
-            "is_dm": is_dm,
-            "message_uid": message_uid,
-            "message_id": message_id,
-            "msg": msg,
-            "tenant_id": resolved_tenant_id,
-        })
-    except Exception as exc:
-        print(f"[webhook] schedule extraction error: {exc}", flush=True)
+    extraction_ctx = {
+        "sender_name": sender_name,
+        "push_name": push_name,
+        "sender_jid": sender_jid,
+        "sender_phone": sender_phone,
+        "group": group,
+        "group_name": group_name,
+        "msg_text": msg_text,
+        "instance": instance,
+        "is_dm": is_dm,
+        "message_uid": message_uid,
+        "message_id": message_id,
+        "msg": msg,
+        "tenant_id": resolved_tenant_id,
+    }
+    if not _schedule_raw_extraction(raw_id, extraction_ctx):
+        print(
+            f"[webhook] extraction deferred raw_id={raw_id}: queue full; "
+            "message remains unprocessed",
+            flush=True,
+        )
 
     return {"status": "ok", "raw_id": raw_id, "message": "saved"}
+
+
+def _schedule_raw_extraction(raw_id: int, ctx: dict) -> bool:
+    if not _EXTRACTION_SLOTS.acquire(blocking=False):
+        return False
+    try:
+        loop = asyncio.get_running_loop()
+        future = loop.run_in_executor(_EXTRACTION_EXECUTOR, _process_single_raw, raw_id, ctx)
+    except Exception as exc:
+        _EXTRACTION_SLOTS.release()
+        print(f"[webhook] schedule extraction error: {exc}", flush=True)
+        return False
+
+    def release_slot(completed):
+        _EXTRACTION_SLOTS.release()
+        try:
+            error = completed.exception()
+        except Exception as exc:
+            error = exc
+        if error:
+            print(f"[webhook] extraction error raw_id={raw_id}: {error}", flush=True)
+
+    future.add_done_callback(release_slot)
+    return True
 
 
 def _process_single_raw(raw_id: int, ctx: dict):
     """Thin wrapper — delegates to the shared extraction module."""
     from extraction import process_raw_message
-    process_raw_message(raw_id, ctx, storage=storage)
+    # Each worker owns its Supabase client. Sharing the request client's mutable
+    # tenant context across extraction threads can leak state between workspaces.
+    process_raw_message(raw_id, ctx)
 
 
 def _handle_system_event(event_class: str, event: str, data: dict, instance: str, tenant_id: str | None = None):

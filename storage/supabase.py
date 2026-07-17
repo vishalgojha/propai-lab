@@ -1758,6 +1758,8 @@ class SupabaseStorage(Storage):
     def save_resolver_decision(self, dec: ResolverDecision) -> int:
         data = {k: v for k, v in dec.__dict__.items() if v is not None}
         data.pop("id", None)
+        if not data.get("created_at"):
+            data.pop("created_at", None)
         res = self.client.table("resolver_decisions").insert(data).execute()
         return res.data[0]["id"] if res.data else 0
 
