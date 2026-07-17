@@ -4,334 +4,226 @@ export const dynamic = "force-dynamic";
 
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
-import { AlertTriangle, Eye, RefreshCw } from "lucide-react";
+import { ArrowUpRight, CircleDot, Network, RefreshCw, Sparkles, Users } from "lucide-react";
 import * as api from "@/lib/api";
 
-type AuditDuplicate = {
-  group_a?: { jid?: string; name?: string };
-  group_b?: { jid?: string; name?: string };
-  match_type?: string;
-};
-
-type LoadState = {
+type Duplicate = { group_a?: { jid?: string; name?: string }; group_b?: { jid?: string; name?: string }; match_type?: string };
+type State = {
   groups: api.AuditGroupCard[];
-  totalUniqueSenders: number;
+  uniqueMembers: number;
   health: api.AuditCaptureHealth | null;
-  duplicates: AuditDuplicate[];
-  overlap: api.AuditGroupOverlapResponse | null;
+  duplicates: Duplicate[];
+  overlap: api.AuditGroupOverlapResponse;
+  insights: api.AuditInsights;
   errors: string[];
 };
 
-const emptyState: LoadState = {
-  groups: [],
-  totalUniqueSenders: 0,
-  health: null,
-  duplicates: [],
-  overlap: null,
-  errors: [],
+const emptyInsights: api.AuditInsights = { daily_flow: [], markets: [], brokers: [], exclusive_members: {} };
+const emptyState: State = {
+  groups: [], uniqueMembers: 0, health: null, duplicates: [],
+  overlap: { pairs: [], groups: [] }, insights: emptyInsights, errors: [],
 };
 
-async function safe<T>(label: string, fn: () => Promise<T>, fallback: T): Promise<{ value: T; error?: string }> {
-  try {
-    return { value: await fn() };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    return { value: fallback, error: `${label}: ${message}` };
-  }
+async function safe<T>(label: string, work: () => Promise<T>, fallback: T) {
+  try { return { value: await work(), error: "" }; }
+  catch (error) { return { value: fallback, error: `${label}: ${error instanceof Error ? error.message : String(error)}` }; }
 }
 
-function timeAgo(ts?: string) {
-  if (!ts) return "never";
-  const ms = new Date(ts).getTime();
-  if (Number.isNaN(ms)) return "unknown";
-  const secs = Math.max(0, Math.floor((Date.now() - ms) / 1000));
-  if (secs < 60) return "just now";
-  if (secs < 3600) return `${Math.floor(secs / 60)}m ago`;
-  if (secs < 86400) return `${Math.floor(secs / 3600)}h ago`;
-  return `${Math.floor(secs / 86400)}d ago`;
-}
-
-function num(value?: number | string | null) {
-  return Number(value || 0).toLocaleString("en-IN");
+function num(value?: number | string | null) { return Number(value || 0).toLocaleString("en-IN"); }
+function ago(value?: string) {
+  if (!value) return "never";
+  const stamp = new Date(value).getTime();
+  if (Number.isNaN(stamp)) return "unknown";
+  const minutes = Math.max(0, Math.floor((Date.now() - stamp) / 60000));
+  if (minutes < 1) return "now";
+  if (minutes < 60) return `${minutes}m`;
+  if (minutes < 1440) return `${Math.floor(minutes / 60)}h`;
+  return `${Math.floor(minutes / 1440)}d`;
 }
 
 function Card({ children, className = "" }: { children: ReactNode; className?: string }) {
-  return <div className={`rounded-lg border border-white/10 bg-white/[0.025] ${className}`}>{children}</div>;
+  return <div className={`border border-white/10 bg-[#090909] ${className}`}>{children}</div>;
 }
 
-function Metric({ label, value, sub }: { label: string; value: ReactNode; sub?: ReactNode }) {
+function Kicker({ children }: { children: ReactNode }) {
+  return <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-zinc-500">{children}</div>;
+}
+
+function QualityRing({ score }: { score: number }) {
+  const safeScore = Math.max(0, Math.min(100, score));
   return (
-    <Card className="p-4">
-      <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-500">{label}</div>
-      <div className="mt-1 text-2xl font-bold tabular-nums text-white">{value}</div>
-      {sub ? <div className="mt-1 text-[11px] leading-4 text-zinc-500">{sub}</div> : null}
-    </Card>
+    <div className="relative grid h-12 w-12 shrink-0 place-items-center rounded-full" style={{ background: `conic-gradient(#e4e4e7 ${safeScore * 3.6}deg, #27272a 0deg)` }}>
+      <div className="grid h-10 w-10 place-items-center rounded-full bg-[#090909] text-[11px] font-semibold tabular-nums text-zinc-200">{safeScore}</div>
+    </div>
   );
 }
 
-function SectionTitle({ icon, title, sub }: { icon?: ReactNode; title: string; sub?: string }) {
+function SignalTrace({ points }: { points: api.AuditInsights["daily_flow"] }) {
+  const values = points.map((item) => item.posts);
+  const max = Math.max(1, ...values);
+  const coords = values.map((value, index) => `${8 + (index * 84) / Math.max(1, values.length - 1)},${72 - (value / max) * 56}`).join(" ");
   return (
-    <div className="flex items-start gap-2">
-      {icon ? <div className="mt-0.5 text-[#3EE88A]">{icon}</div> : null}
-      <div>
-        <h2 className="text-sm font-bold text-white">{title}</h2>
-        {sub ? <p className="mt-1 text-xs leading-5 text-zinc-500">{sub}</p> : null}
+    <div className="mt-5">
+      <svg viewBox="0 0 100 82" preserveAspectRatio="none" className="h-28 w-full overflow-visible" aria-label="Seven day opportunity flow">
+        <defs><linearGradient id="flow" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#fafafa" stopOpacity=".16"/><stop offset="1" stopColor="#fafafa" stopOpacity="0"/></linearGradient></defs>
+        {[16, 44, 72].map((y) => <line key={y} x1="0" x2="100" y1={y} y2={y} stroke="#27272a" strokeWidth=".35" />)}
+        {coords ? <><polygon points={`8,76 ${coords} 92,76`} fill="url(#flow)"/><polyline points={coords} fill="none" stroke="#e4e4e7" strokeWidth="1.2" vectorEffect="non-scaling-stroke"/></> : null}
+      </svg>
+      <div className="grid grid-cols-7 text-center text-[9px] uppercase tracking-wide text-zinc-600">
+        {points.map((item) => <span key={item.date}>{new Date(item.date).toLocaleDateString("en-IN", { weekday: "short" })}</span>)}
       </div>
+    </div>
+  );
+}
+
+function NetworkMap({ groups, pairs }: { groups: api.AuditGroupCard[]; pairs: api.AuditGroupOverlapPair[] }) {
+  const nodes = groups.slice(0, 7);
+  const positions = [[50, 50], [20, 24], [80, 22], [15, 70], [84, 72], [50, 10], [50, 88]];
+  const byJid = new Map(nodes.map((group, index) => [group.jid, positions[index]]));
+  return (
+    <div className="relative mt-4 min-h-72 overflow-hidden border-t border-white/[0.06] bg-[radial-gradient(circle_at_center,rgba(255,255,255,0.045),transparent_55%)]">
+      <svg viewBox="0 0 100 100" className="absolute inset-0 h-full w-full" aria-label="WhatsApp group overlap network">
+        {pairs.slice(0, 10).map((pair) => {
+          const a = byJid.get(pair.group_a.jid); const b = byJid.get(pair.group_b.jid);
+          return a && b ? <line key={`${pair.group_a.jid}-${pair.group_b.jid}`} x1={a[0]} y1={a[1]} x2={b[0]} y2={b[1]} stroke="#52525b" strokeOpacity={Math.max(.18, pair.overlap_pct / 100)} strokeWidth={Math.max(.35, pair.overlap_pct / 35)} /> : null;
+        })}
+      </svg>
+      {nodes.map((group, index) => {
+        const [left, top] = positions[index];
+        return (
+          <div key={group.jid} className="absolute -translate-x-1/2 -translate-y-1/2 text-center" style={{ left: `${left}%`, top: `${top}%` }}>
+            <div className={`mx-auto grid rounded-full border bg-black text-xs font-semibold ${index === 0 ? "h-16 w-16 border-white/40 text-white" : "h-11 w-11 border-white/15 text-zinc-300"} place-items-center`}>
+              {num(group.senders_count)}
+            </div>
+            <div className="mt-1 max-w-28 truncate text-[9px] text-zinc-500">{group.name}</div>
+          </div>
+        );
+      })}
+      {nodes.length === 0 ? <div className="absolute inset-0 grid place-items-center text-xs text-zinc-600">Network appears after group messages are captured.</div> : null}
     </div>
   );
 }
 
 export default function AuditPage() {
-  const [state, setState] = useState<LoadState>(emptyState);
+  const [state, setState] = useState<State>(emptyState);
   const [loading, setLoading] = useState(true);
-
   const load = useCallback(async () => {
     setLoading(true);
-    const [groupsResp, health, duplicates, overlap] = await Promise.all([
-      safe("group audit", () => api.getAuditGroups(), { groups: [] as api.AuditGroupCard[], total_unique_senders: 0 }),
-      safe("capture health", () => api.getAuditCaptureHealth(), null as api.AuditCaptureHealth | null),
-      safe("duplicate groups", () => api.getAuditDuplicates(), [] as AuditDuplicate[]),
-      safe("member overlap", () => api.getAuditGroupOverlap(), { pairs: [], groups: [] }),
+    const [groups, health, duplicates, overlap, insights] = await Promise.all([
+      safe("groups", () => api.getAuditGroups(), { groups: [], total_unique_senders: 0 } as api.AuditGroupsResponse),
+      safe("capture", () => api.getAuditCaptureHealth(), null),
+      safe("duplicates", () => api.getAuditDuplicates(), []),
+      safe("overlap", () => api.getAuditGroupOverlap(), { pairs: [], groups: [] } as api.AuditGroupOverlapResponse),
+      safe("insights", () => api.getAuditInsights(), emptyInsights),
     ]);
-
-    const groupsData = groupsResp.value;
     setState({
-      groups: groupsData.groups,
-      totalUniqueSenders: groupsData.total_unique_senders,
-      health: health.value,
-      duplicates: duplicates.value,
-      overlap: overlap.value,
-      errors: [groupsResp.error, health.error, duplicates.error, overlap.error].filter(Boolean) as string[],
+      groups: groups.value.groups, uniqueMembers: groups.value.total_unique_senders,
+      health: health.value, duplicates: duplicates.value, overlap: overlap.value, insights: insights.value,
+      errors: [groups.error, health.error, duplicates.error, overlap.error, insights.error].filter(Boolean),
     });
     setLoading(false);
   }, []);
-
   useEffect(() => {
-    const timer = window.setTimeout(() => {
-      void load();
-    }, 0);
+    const timer = window.setTimeout(() => { void load(); }, 0);
     return () => window.clearTimeout(timer);
   }, [load]);
 
-  const totalMessages = state.groups.reduce((sum, g) => sum + (g.messages || 0), 0);
-  const totalObservations = state.groups.reduce((sum, g) => sum + (g.observations || 0), 0);
-  const totalListings = state.groups.reduce((sum, g) => sum + (g.listings || 0), 0);
-  const lowCoverageGroups = state.groups.filter((g) => (g.coverage || 0) < 70).length;
-  const duplicateCount = state.duplicates.length;
-  const overlapPairs = state.overlap?.pairs || [];
-  const chaosScore = Math.min(100, Math.round((lowCoverageGroups * 10) + (duplicateCount * 12) + (state.groups.length > 0 ? Math.max(0, 40 - Math.round((totalObservations / Math.max(1, state.groups.length)) / 2)) : 40)));
+  const listings = state.groups.reduce((sum, group) => sum + group.listings, 0);
+  const requirements = state.groups.reduce((sum, group) => sum + group.requirements, 0);
+  const active = state.groups.filter((group) => group.status === "live").length;
+  const bestGroups = [...state.groups].map((group) => ({
+    ...group,
+    exclusive: state.insights.exclusive_members[group.jid] || state.insights.exclusive_members[group.name] || 0,
+    score: Math.round(Math.min(100, (group.coverage * .45) + (Math.min(1, group.observations / Math.max(1, group.messages)) * 35) + (group.status === "live" ? 20 : 0))),
+  })).sort((a, b) => b.score - a.score).slice(0, 6);
+  const today = state.insights.daily_flow.at(-1);
+  const topMarket = state.insights.markets[0];
+  const redundant = state.overlap.pairs.filter((pair) => pair.overlap_pct >= 60);
 
   return (
-    <div className="mx-auto max-w-7xl space-y-6 px-6 py-6 text-white">
-      <div className="flex flex-wrap items-start justify-between gap-4">
+    <main className="mx-auto max-w-[1500px] space-y-5 px-4 py-5 text-white sm:px-6">
+      <header className="flex flex-wrap items-end justify-between gap-4 border-b border-white/10 pb-5">
         <div>
-          <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-zinc-500">WhatsApp Audit</div>
-          <h1 className="mt-2 text-2xl font-bold tracking-tight">Group Intelligence</h1>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-400">
-            What your WhatsApp groups are producing: opportunities, members, signals, and parser controls.
-          </p>
+          <Kicker>WhatsApp intelligence</Kicker>
+          <h1 className="mt-2 text-3xl font-semibold tracking-[-0.04em] sm:text-4xl">Your market, decoded.</h1>
+          <p className="mt-2 max-w-2xl text-sm text-zinc-500">Reach, signal quality and market movement across every group PropAI monitors.</p>
         </div>
-        <button
-          type="button"
-          onClick={load}
-          disabled={loading}
-          className="inline-flex items-center gap-2 rounded-md border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-bold text-zinc-200 hover:bg-white/[0.08] disabled:opacity-50"
-        >
-          <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} strokeWidth={1.8} />
-          Refresh
+        <button type="button" onClick={load} disabled={loading} className="inline-flex items-center gap-2 rounded-md border border-white/15 bg-white px-3 py-2 text-xs font-semibold text-black transition hover:bg-zinc-200 disabled:opacity-50">
+          <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} /> Refresh intelligence
         </button>
-      </div>
+      </header>
 
-      {state.errors.length > 0 && (
-        <Card className="border-amber-500/20 bg-amber-500/10 p-4">
-          <div className="flex gap-2 text-sm font-bold text-amber-100">
-            <AlertTriangle className="h-4 w-4" strokeWidth={1.8} />
-            Some endpoints returned errors.
-          </div>
-          <div className="mt-2 space-y-1 text-xs text-amber-100/75">
-            {state.errors.slice(0, 3).map((error) => <div key={error}>{error}</div>)}
+      {state.errors.length ? <div className="border border-red-500/25 bg-red-500/[0.04] px-4 py-3 text-xs text-red-300">Some intelligence is temporarily unavailable: {state.errors.join(" · ")}</div> : null}
+
+      <section className="grid gap-4 xl:grid-cols-[1.5fr_.9fr]">
+        <Card className="relative overflow-hidden p-6 sm:p-8">
+          <div className="absolute right-0 top-0 h-48 w-48 bg-[radial-gradient(circle,rgba(255,255,255,.07),transparent_65%)]" />
+          <Kicker>Today&apos;s brief</Kicker>
+          <p className="mt-5 max-w-4xl text-2xl font-medium leading-tight tracking-[-0.035em] text-zinc-100 sm:text-4xl">
+            PropAI found <span className="text-white">{num(today?.posts || state.health?.total_parsed_today)}</span> market posts from a network of <span className="text-white">{num(state.uniqueMembers)}</span> participants across <span className="text-white">{num(active)}</span> active groups.
+          </p>
+          <div className="mt-8 grid grid-cols-2 gap-px border border-white/10 bg-white/10 sm:grid-cols-4">
+            {[["Listings", listings], ["Requirements", requirements], ["Markets", state.insights.markets.length], ["Parser ready", `${Math.round(state.health?.parser_success_rate || 0)}%`]].map(([label, value]) => (
+              <div key={label} className="bg-[#090909] p-4"><Kicker>{label}</Kicker><div className="mt-2 text-xl font-semibold tabular-nums">{typeof value === "number" ? num(value) : value}</div></div>
+            ))}
           </div>
         </Card>
-      )}
-
-      <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-        <Metric label="Capture Status" value={state.health?.last_webhook ? "Live" : "No Data"} sub={`Last webhook ${timeAgo(state.health?.last_webhook)}`} />
-        <Metric label="Groups Monitored" value={num(state.groups.length)} sub="All detected groups" />
-        <Metric label="Messages Captured" value={num(totalMessages)} sub={`${num(state.health?.total_parsed_today)} parsed today`} />
-        <Metric label="Parser Queue" value={num(state.health?.queue_backlog)} sub={`${num(state.health?.queue_backlog || 0)} pending`} />
-      </section>
-
-      <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-        <Metric label="Unique Members" value={num(state.totalUniqueSenders)} sub="Total unique senders across all groups" />
-        <Metric label="Observations" value={num(totalObservations)} sub="Parsed opportunities extracted" />
-        <Metric label="Listings" value={num(totalListings)} sub="Property listings identified" />
-        <Metric label="Active Groups" value={num(state.groups.filter((g) => g.status === "live").length)} sub={`of ${state.groups.length} total groups`} />
-      </section>
-
-      <section className="grid gap-3 md:grid-cols-3">
-        <Metric
-          label="Chaos Score"
-          value={`${chaosScore}%`}
-          sub="Higher means more noise, duplication, and mixed-quality groups"
-        />
-        <Metric
-          label="Low Coverage Groups"
-          value={num(lowCoverageGroups)}
-          sub="Groups with weak extraction coverage"
-        />
-        <Metric
-          label="Duplicate Candidates"
-          value={num(duplicateCount)}
-          sub="Possible name-collision groups"
-        />
-      </section>
-
-      <section>
-        <SectionTitle
-          icon={<Eye className="h-4 w-4" strokeWidth={1.8} />}
-          title="Group Audit"
-          sub="Which groups create useful market signal."
-        />
-        <Card className="mt-3 overflow-hidden">
-          <div className="grid grid-cols-[minmax(220px,1.4fr)_90px_90px_90px_92px] gap-3 border-b border-white/10 px-4 py-2 text-[10px] font-bold uppercase tracking-wide text-zinc-500">
-            <div>Group</div>
-            <div>Signal</div>
-            <div>Members</div>
-            <div>Freshness</div>
-            <div>Messages</div>
-          </div>
-          {state.groups.length === 0 ? (
-            <div className="px-4 py-10 text-center text-sm text-zinc-500">
-              No group data loaded yet. Once WhatsApp sync captures group messages, this page will populate.
-            </div>
-          ) : state.groups.map((group) => (
-            <div key={group.jid} className="grid grid-cols-[minmax(220px,1.4fr)_90px_90px_90px_92px] gap-3 border-b border-white/[0.06] px-4 py-3 text-xs last:border-b-0">
-              <div className="min-w-0">
-                <div className="truncate font-semibold text-white">{group.name}</div>
-                <div className="mt-1 line-clamp-1 text-[11px] text-zinc-500">
-                  {num(group.observations)} observations · {num(group.markets_count)} markets
-                </div>
-              </div>
-              <div>
-                <div className="font-mono font-semibold text-[#3EE88A]">{num(group.listings)}</div>
-                <div className="text-[10px] text-zinc-500">{num(group.requirements)} reqs</div>
-              </div>
-              <div>
-                <div className="font-mono font-semibold text-white">{num(group.senders_count)}</div>
-                <div className="text-[10px] text-zinc-500">{num(group.active_brokers)} brokers</div>
-              </div>
-              <div className="text-zinc-400">{timeAgo(group.last_activity)}</div>
-              <div className="font-mono font-semibold text-zinc-200">{num(group.messages)}</div>
-            </div>
-          ))}
+        <Card className="p-5">
+          <div className="flex items-center justify-between"><div><Kicker>Opportunity flow</Kicker><div className="mt-2 text-sm text-zinc-300">Last seven days</div></div><CircleDot className="h-4 w-4 text-zinc-600" /></div>
+          <SignalTrace points={state.insights.daily_flow} />
+          <div className="mt-3 flex justify-between border-t border-white/10 pt-4 text-xs"><span className="text-zinc-500">Peak market</span><span className="font-medium text-zinc-200">{topMarket?.name || "Building signal"}</span></div>
         </Card>
       </section>
 
-      <section>
-        <SectionTitle
-          icon={<AlertTriangle className="h-4 w-4" strokeWidth={1.8} />}
-          title="Duplicate Group Heat"
-          sub="These are likely collisions or mirrored group names that make the market noisier."
-        />
-        <Card className="mt-3 overflow-hidden">
-          {state.duplicates.length === 0 ? (
-            <div className="px-4 py-8 text-center text-sm text-zinc-500">
-              No duplicate candidates found yet. Once the group graph is healthy, this section will show overlapping groups.
-            </div>
-          ) : (
-            <div className="divide-y divide-white/10">
-              {state.duplicates.slice(0, 8).map((dup, index: number) => (
-                <div key={`${dup.group_a?.jid || index}-${dup.group_b?.jid || index}`} className="grid gap-3 px-4 py-3 md:grid-cols-[1.1fr_1.1fr_0.8fr]">
-                  <div>
-                    <div className="text-[10px] uppercase tracking-[0.16em] text-zinc-500">Group A</div>
-                    <div className="mt-1 text-sm font-semibold text-white">{dup.group_a?.name || dup.group_a?.jid || "Unknown"}</div>
-                    <div className="text-[11px] text-zinc-500">{dup.group_a?.jid || "—"}</div>
-                  </div>
-                  <div>
-                    <div className="text-[10px] uppercase tracking-[0.16em] text-zinc-500">Group B</div>
-                    <div className="mt-1 text-sm font-semibold text-white">{dup.group_b?.name || dup.group_b?.jid || "Unknown"}</div>
-                    <div className="text-[11px] text-zinc-500">{dup.group_b?.jid || "—"}</div>
-                  </div>
-                  <div className="flex items-end md:justify-end">
-                    <span className="inline-flex rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-amber-200">
-                      {dup.match_type || "duplicate"}
-                    </span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
+      <section className="grid gap-4 xl:grid-cols-[1.15fr_.85fr]">
+        <Card className="p-5">
+          <div className="flex items-start justify-between"><div><Kicker>Network map</Kicker><h2 className="mt-2 text-lg font-semibold">Where your reach overlaps</h2><p className="mt-1 text-xs text-zinc-500">Each node is a group. The number is unique WhatsApp participants; stronger lines mean more shared participants.</p></div><Network className="h-5 w-5 text-zinc-600" /></div>
+          <NetworkMap groups={[...state.groups].sort((a, b) => b.senders_count - a.senders_count)} pairs={state.overlap.pairs} />
+          <div className="grid grid-cols-3 gap-px border border-white/10 bg-white/10 text-center">
+            {[["Unique reach", state.uniqueMembers], ["Shared pairs", state.overlap.pairs.length], ["High redundancy", redundant.length]].map(([label, value]) => <div key={label} className="bg-[#090909] px-3 py-3"><div className="text-lg font-semibold">{num(value)}</div><div className="text-[10px] text-zinc-500">{label}</div></div>)}
+          </div>
+        </Card>
+
+        <Card className="overflow-hidden">
+          <div className="border-b border-white/10 p-5"><Kicker>Best groups</Kicker><h2 className="mt-2 text-lg font-semibold">Signal worth watching</h2></div>
+          <div className="divide-y divide-white/[0.07]">
+            {bestGroups.map((group, index) => <Link href={`/audit/groups/${encodeURIComponent(group.jid)}`} key={group.jid} className="flex items-center gap-4 p-4 transition hover:bg-white/[0.03]">
+              <div className="w-5 text-xs tabular-nums text-zinc-600">{String(index + 1).padStart(2, "0")}</div>
+              <QualityRing score={group.score} />
+              <div className="min-w-0 flex-1"><div className="truncate text-sm font-medium text-zinc-100">{group.name}</div><div className="mt-1 text-[11px] text-zinc-500">{num(group.observations)} posts · {num(group.senders_count)} participants · {num(group.exclusive)} exclusive</div></div>
+              <ArrowUpRight className="h-4 w-4 text-zinc-700" />
+            </Link>)}
+            {!bestGroups.length ? <div className="p-8 text-center text-xs text-zinc-600">Group scores appear after capture starts.</div> : null}
+          </div>
         </Card>
       </section>
 
-      <section>
-        <SectionTitle
-          icon={<Eye className="h-4 w-4" strokeWidth={1.8} />}
-          title="Member Overlap Recommendations"
-          sub="PropAI can show which groups share the most members so you do not parse the same crowd twice."
-        />
-        <Card className="mt-3 overflow-hidden">
-          {overlapPairs.length === 0 ? (
-            <div className="px-4 py-8 text-center text-sm text-zinc-500">
-              No high-overlap group pairs found yet. Once more messages are captured, this will rank redundant groups by shared senders.
-            </div>
-          ) : (
-            <div className="divide-y divide-white/10">
-              {overlapPairs.slice(0, 8).map((pair, index) => (
-                <div key={`${pair.group_a.jid}-${pair.group_b.jid}-${index}`} className="grid gap-3 px-4 py-3 md:grid-cols-[1.1fr_1.1fr_0.8fr_0.9fr]">
-                  <div>
-                    <div className="text-[10px] uppercase tracking-[0.16em] text-zinc-500">Keep</div>
-                    <div className="mt-1 text-sm font-semibold text-white">{pair.keep.name}</div>
-                    <div className="text-[11px] text-zinc-500">{pair.keep.jid} · {num(pair.keep.senders)} senders</div>
-                  </div>
-                  <div>
-                    <div className="text-[10px] uppercase tracking-[0.16em] text-zinc-500">Skip</div>
-                    <div className="mt-1 text-sm font-semibold text-white">{pair.skip.name}</div>
-                    <div className="text-[11px] text-zinc-500">{pair.skip.jid} · {num(pair.skip.senders)} senders</div>
-                  </div>
-                  <div>
-                    <div className="text-[10px] uppercase tracking-[0.16em] text-zinc-500">Shared members</div>
-                    <div className="mt-1 text-xl font-bold text-[#3EE88A]">{num(pair.shared_senders)}</div>
-                    <div className="text-[11px] text-zinc-500">{pair.reason}</div>
-                  </div>
-                  <div className="flex items-end md:justify-end">
-                    <span className="inline-flex rounded-full border border-[#3EE88A]/30 bg-[#3EE88A]/10 px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-[#3EE88A]">
-                      {pair.overlap_pct}% overlap
-                    </span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
+      <section className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
+        <Card className="overflow-hidden">
+          <div className="border-b border-white/10 p-5"><Kicker>Market pulse</Kicker><h2 className="mt-2 text-lg font-semibold">Where activity is concentrating</h2></div>
+          <div className="divide-y divide-white/[0.07]">{state.insights.markets.slice(0, 6).map((market, index) => <div key={market.name} className="grid grid-cols-[24px_1fr_auto] items-center gap-3 px-5 py-3"><span className="text-[10px] text-zinc-600">{index + 1}</span><div><div className="text-sm font-medium">{market.name}</div><div className="mt-1 text-[10px] text-zinc-500">{num(market.brokers)} brokers · {num(market.requirements)} requirements</div></div><div className="text-right"><div className="text-sm font-semibold tabular-nums">{num(market.posts)}</div><div className="text-[9px] text-zinc-600">posts</div></div></div>)}</div>
+        </Card>
+
+        <Card className="overflow-hidden">
+          <div className="border-b border-white/10 p-5"><Kicker>Broker leaderboard</Kicker><h2 className="mt-2 text-lg font-semibold">Most useful contributors</h2></div>
+          <div className="divide-y divide-white/[0.07]">{state.insights.brokers.slice(0, 6).map((broker, index) => <div key={`${broker.name}-${index}`} className="flex items-center gap-3 px-5 py-3"><div className="grid h-8 w-8 place-items-center border border-white/10 text-[10px] text-zinc-400">{broker.name.slice(0, 2).toUpperCase()}</div><div className="min-w-0 flex-1"><div className="truncate text-sm font-medium">{broker.name}</div><div className="mt-1 text-[10px] text-zinc-500">{num(broker.groups)} groups · {num(broker.markets)} markets · active {ago(broker.last_seen)}</div></div><div className="text-sm font-semibold tabular-nums">{num(broker.posts)}</div></div>)}</div>
+        </Card>
+
+        <Card className="p-5 lg:col-span-2 xl:col-span-1">
+          <div className="flex items-start justify-between"><div><Kicker>PropAI recommendations</Kicker><h2 className="mt-2 text-lg font-semibold">Make the network sharper</h2></div><Sparkles className="h-4 w-4 text-zinc-600" /></div>
+          <div className="mt-5 space-y-3">
+            <div className="border-l border-white/20 pl-4"><div className="text-sm font-medium">Prioritise {bestGroups[0]?.name || "your strongest group"}</div><p className="mt-1 text-xs leading-5 text-zinc-500">It currently has the best balance of freshness, extraction coverage and useful market posts.</p></div>
+            <div className="border-l border-white/20 pl-4"><div className="text-sm font-medium">Review {num(redundant.length)} redundant group pairs</div><p className="mt-1 text-xs leading-5 text-zinc-500">These groups share over 60% of their active participants. Lower-priority duplicates can be muted.</p></div>
+            <div className="border-l border-white/20 pl-4"><div className="text-sm font-medium">Follow demand in {topMarket?.name || "your top market"}</div><p className="mt-1 text-xs leading-5 text-zinc-500">{num(topMarket?.requirements)} active requirements are visible against {num(topMarket?.listings)} listings.</p></div>
+          </div>
+          <Link href="/inbox" className="mt-6 inline-flex items-center gap-2 rounded-md border border-white/15 px-3 py-2 text-xs font-semibold text-zinc-200 hover:bg-white/[0.05]">Open market inbox <ArrowUpRight className="h-3.5 w-3.5" /></Link>
         </Card>
       </section>
 
       <section className="grid gap-4 lg:grid-cols-2">
-        <Card className="p-4">
-          <SectionTitle title="Parser Controls" />
-          <p className="mt-3 text-xs leading-5 text-zinc-500">
-            PropAI now parses broker groups directly. The old opt-out privacy workflow has been removed.
-          </p>
-        </Card>
-        <Card className="p-4">
-          <SectionTitle title="Format Pressure" />
-          <p className="mt-3 text-xs leading-5 text-zinc-500">
-            Posts that need more detail stay visible in Market Inbox with inline tags showing what is missing.
-          </p>
-          <Link href="/inbox" className="mt-4 inline-flex text-xs font-bold text-[#3EE88A] hover:text-white">
-            Review in market inbox
-          </Link>
-        </Card>
-        <Card className="p-4">
-          <SectionTitle title="Market Inbox Output" />
-          <p className="mt-3 text-xs leading-5 text-zinc-500">
-            Clean group output should become broker/entity opportunities in Market Inbox. No free public feed: value starts after WhatsApp is connected.
-          </p>
-          <Link href="/inbox" className="mt-4 inline-flex text-xs font-bold text-[#3EE88A] hover:text-white">
-            Open market inbox
-          </Link>
-        </Card>
+        <Card className="p-5"><div className="flex gap-3"><Users className="mt-0.5 h-4 w-4 text-zinc-500"/><div><Kicker>What member overlap means</Kicker><p className="mt-2 text-sm leading-6 text-zinc-400">It counts the same WhatsApp participants appearing across multiple groups. It is not your total broker count. Exclusive members only appear in one monitored group and represent reach you would lose by leaving it.</p></div></div></Card>
+        <Card className="p-5"><Kicker>Capture health</Kicker><div className="mt-3 flex items-center justify-between"><div><div className="text-sm font-medium">{state.health?.degraded ? "Needs attention" : "Pipeline is healthy"}</div><div className="mt-1 text-xs text-zinc-500">Last WhatsApp event {ago(state.health?.last_webhook)} · {num(state.health?.queue_backlog)} queued</div></div><div className={`h-2 w-2 rounded-full ${state.health?.degraded ? "bg-red-500" : "bg-[#3EE88A]"}`} /></div></Card>
       </section>
-    </div>
+    </main>
   );
 }

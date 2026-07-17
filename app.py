@@ -11968,6 +11968,80 @@ async def audit_intelligence_v2(user: dict = Depends(require_user)):
     }
 
 
+@app.get("/api/audit/insights")
+async def audit_insights(
+    user: dict = Depends(require_user),
+    tenant_id: str = Depends(require_tenant),
+):
+    """Compact, tenant-scoped intelligence used by the broker audit dashboard."""
+    week_ago = (datetime.utcnow() - timedelta(days=6)).strftime("%Y-%m-%dT00:00:00Z")
+
+    flow_rows = _audit_rows(
+        "SELECT date(rm.created_at) AS day, COUNT(po.id) AS posts, "
+        "SUM(CASE WHEN UPPER(COALESCE(po.intent, '')) IN "
+        "('BUY','BUYER','REQUIREMENT','RENTAL_SEEKER','TENANT') THEN 1 ELSE 0 END) AS requirements, "
+        "SUM(CASE WHEN UPPER(COALESCE(po.intent, '')) NOT IN "
+        "('BUY','BUYER','REQUIREMENT','RENTAL_SEEKER','TENANT') THEN 1 ELSE 0 END) AS listings "
+        "FROM raw_messages rm JOIN parsed_output po ON po.raw_message_id = rm.id "
+        "WHERE rm.tenant_id = ? AND rm.created_at >= ? "
+        "GROUP BY date(rm.created_at) ORDER BY day",
+        (tenant_id, week_ago),
+    ) if _table_exists("raw_messages") and _table_exists("parsed_output") else []
+
+    market_rows = _audit_rows(
+        "SELECT po.micro_market, COUNT(*) AS posts, "
+        "SUM(CASE WHEN UPPER(COALESCE(po.intent, '')) IN "
+        "('BUY','BUYER','REQUIREMENT','RENTAL_SEEKER','TENANT') THEN 1 ELSE 0 END) AS requirements, "
+        "SUM(CASE WHEN UPPER(COALESCE(po.intent, '')) NOT IN "
+        "('BUY','BUYER','REQUIREMENT','RENTAL_SEEKER','TENANT') THEN 1 ELSE 0 END) AS listings, "
+        "COUNT(DISTINCT COALESCE(NULLIF(po.broker_phone, ''), NULLIF(po.broker_name, ''), rm.sender)) AS brokers "
+        "FROM parsed_output po JOIN raw_messages rm ON po.raw_message_id = rm.id "
+        "WHERE rm.tenant_id = ? AND COALESCE(po.micro_market, '') != '' "
+        "GROUP BY po.micro_market ORDER BY posts DESC LIMIT 8",
+        (tenant_id,),
+    ) if _table_exists("raw_messages") and _table_exists("parsed_output") else []
+
+    broker_rows = _audit_rows(
+        "SELECT canonical_name, observation_count, listing_count, requirement_count, "
+        "group_count, market_count, last_seen_at FROM brokers "
+        "WHERE tenant_id = ? ORDER BY observation_count DESC LIMIT 8",
+        (tenant_id,),
+    ) if _table_exists("brokers") else []
+
+    exclusive_rows = _audit_rows(
+        "WITH memberships AS ("
+        "SELECT sender, COUNT(DISTINCT group_name) AS group_count "
+        "FROM raw_messages WHERE tenant_id = ? AND COALESCE(group_name, '') != '' GROUP BY sender), "
+        "exclusive AS ("
+        "SELECT rm.group_name, COUNT(DISTINCT rm.sender) AS exclusive_members "
+        "FROM raw_messages rm JOIN memberships m ON m.sender = rm.sender "
+        "WHERE rm.tenant_id = ? AND m.group_count = 1 GROUP BY rm.group_name) "
+        "SELECT group_name, exclusive_members FROM exclusive "
+        "ORDER BY exclusive_members DESC LIMIT 12",
+        (tenant_id, tenant_id),
+    ) if _table_exists("raw_messages") else []
+
+    return {
+        "daily_flow": [
+            {"date": str(r[0]), "posts": r[1] or 0, "requirements": r[2] or 0, "listings": r[3] or 0}
+            for r in flow_rows
+        ],
+        "markets": [
+            {"name": r[0], "posts": r[1] or 0, "requirements": r[2] or 0, "listings": r[3] or 0, "brokers": r[4] or 0}
+            for r in market_rows
+        ],
+        "brokers": [
+            {"name": r[0] or "Unknown broker", "posts": r[1] or 0, "listings": r[2] or 0,
+             "requirements": r[3] or 0, "groups": r[4] or 0, "markets": r[5] or 0,
+             "last_seen": _audit_timestamp(r[6])}
+            for r in broker_rows
+        ],
+        "exclusive_members": {
+            str(r[0]): int(r[1] or 0) for r in exclusive_rows
+        },
+    }
+
+
 @app.get("/api/audit/search-evidence")
 def audit_search_evidence(user: dict = Depends(require_user), q: str = ""):
     """Exact evidence summary for a term in captured WhatsApp knowledge."""

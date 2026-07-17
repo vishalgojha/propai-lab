@@ -1053,6 +1053,7 @@ export interface AuditCaptureHealth {
   pending_ai_suggestions: number;
   total_msgs_today: number;
   total_parsed_today: number;
+  degraded?: boolean;
 }
 
 export interface AuditTopContributor {
@@ -1117,6 +1118,17 @@ export function getAuditGroupOverlap(limit = 20) {
 
 export function getAuditCaptureHealth() {
   return fetchJSON<AuditCaptureHealth>("/audit/capture-health");
+}
+
+export interface AuditInsights {
+  daily_flow: { date: string; posts: number; requirements: number; listings: number }[];
+  markets: { name: string; posts: number; requirements: number; listings: number; brokers: number }[];
+  brokers: { name: string; posts: number; listings: number; requirements: number; groups: number; markets: number; last_seen: string }[];
+  exclusive_members: Record<string, number>;
+}
+
+export function getAuditInsights() {
+  return fetchJSON<AuditInsights>("/audit/insights");
 }
 
 export interface AuditLatestRecord {

@@ -69,3 +69,30 @@ def test_audit_timestamp_normalizes_datetime_values():
     from datetime import datetime, timezone
 
     assert app._audit_timestamp(datetime(2026, 7, 17, 4, 30, tzinfo=timezone.utc)) == "2026-07-17T04:30:00Z"
+
+
+def test_audit_insights_is_tenant_scoped(monkeypatch):
+    calls = []
+    result_sets = iter([
+        [("2026-07-17", 12, 4, 8)],
+        [("Bandra West", 9, 3, 6, 5)],
+        [("Broker One", 14, 10, 4, 3, 2, "2026-07-17T05:00:00Z")],
+        [("Bandra Brokers", 7)],
+    ])
+
+    def rows(sql, params=()):
+        calls.append((sql, params))
+        return next(result_sets)
+
+    monkeypatch.setattr(app, "_table_exists", lambda table: True)
+    monkeypatch.setattr(app, "_audit_rows", rows)
+
+    result = asyncio.run(app.audit_insights(user={"id": "user"}, tenant_id="tenant-a"))
+
+    assert len(calls) == 4
+    assert all("tenant" in sql.lower() for sql, _ in calls)
+    assert all("tenant-a" in params for _, params in calls)
+    assert result["daily_flow"][0]["posts"] == 12
+    assert result["markets"][0]["name"] == "Bandra West"
+    assert result["brokers"][0]["groups"] == 3
+    assert result["exclusive_members"]["Bandra Brokers"] == 7
