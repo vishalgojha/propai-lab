@@ -11,6 +11,12 @@ let supabase: SupabaseClient | null = null;
 let cachedSession: Session | null = null;
 let sessionLoaded = false;
 let sessionRequest: Promise<Session | null> | null = null;
+let refreshRequest: Promise<Session | null> | null = null;
+
+function sessionNeedsRefresh(session: Session | null): boolean {
+  if (!session?.expires_at) return false;
+  return session.expires_at <= Math.floor(Date.now() / 1000) + 30;
+}
 
 function getSupabaseOrThrow(): SupabaseClient {
   if (!supabase) {
@@ -78,7 +84,19 @@ export async function signOut() {
 }
 
 export async function getSession(): Promise<Session | null> {
-  if (sessionLoaded) return cachedSession;
+  if (sessionLoaded && !sessionNeedsRefresh(cachedSession)) return cachedSession;
+  if (sessionLoaded && cachedSession) {
+    if (!refreshRequest) {
+      refreshRequest = getSupabase().auth.refreshSession().then(({ data, error }) => {
+        if (error) throw error;
+        cachedSession = data.session;
+        return cachedSession;
+      }).finally(() => {
+        refreshRequest = null;
+      });
+    }
+    return refreshRequest;
+  }
   if (!sessionRequest) {
     sessionRequest = getSupabase().auth.getSession().then(({ data, error }) => {
       if (error) throw error;
