@@ -6,17 +6,10 @@ WORKDIR /app
 # litellm (proxy entrypoint ships with base package) + supabase callback dep.
 # Avoid the heavy [proxy] extra (orjson/rust) to keep the build reliable on
 # the Coolify host's non-BuildKit Docker.
-# Explicit proxy deps (avoid litellm[proxy] which pulls orjson and fails to
-# build from sdist on hosts without rustc). The proxy imports all of these;
-# orjson is optional and skipped safely.
-RUN pip install --no-cache-dir \
-    "litellm" \
-    fastapi uvicorn websockets backoff \
-    apscheduler pyjwt python-dotenv \
-    python-multipart cryptography boto3 \
-    "pydantic[email]" fastapi_sso \
-    orjson \
-    supabase
+# Use the official proxy extras — it pins every proxy dependency (orjson,
+# pydantic_settings, fastapi, etc.) at compatible versions. On python:3.12
+# all of these have prebuilt wheels, so no rust/sdist build is needed.
+RUN pip install --no-cache-dir "litellm[proxy]" supabase
 
 # Copy the whole gateway package so `deploy.coolify.litellm.hooks` is importable.
 COPY deploy/coolify/litellm/ /app/deploy/coolify/litellm/
