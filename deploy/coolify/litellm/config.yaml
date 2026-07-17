@@ -89,6 +89,12 @@ model_list:
   # hosted embeddings. Services must not request model "embeddings" yet.
 
   # ---- Concrete fallback deployments (referenced above) ----
+  - model_name: doubleword-prod
+    litellm_params:
+      model: openai/Qwen/Qwen3.6-35B-A3B-FP8
+      api_base: ${DOUBLEWORD_API_URL}
+      api_key: ${DOUBLEWORD_API_KEY}
+
   - model_name: gemini-flash
     litellm_params:
       model: gemini/gemini-2.0-flash
