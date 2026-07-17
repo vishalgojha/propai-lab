@@ -271,17 +271,34 @@ function AppShell({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (authLoading || !user) return;
-    setPhones([]);
-    setLiveStatus(null);
+    const phoneCacheKey = `propai_phones:${user.id}`;
+    const wabaCacheKey = `propai_waba:${user.id}`;
+    const hydrateTimer = window.setTimeout(() => {
+      try {
+        const cachedPhones = JSON.parse(localStorage.getItem(phoneCacheKey) || "[]") as Phone[];
+        if (cachedPhones.length > 0) setPhones(cachedPhones);
+        const cachedWaba = JSON.parse(localStorage.getItem(wabaCacheKey) || "null") as CompanionConfig | null;
+        if (cachedWaba?.outbound_allowed) setWabaConfig(cachedWaba);
+      } catch {
+        // Ignore invalid snapshots and continue with live status checks.
+      }
+      setLiveStatus(null);
+    }, 0);
     const load = async () => {
       const [phonesRes, status] = await Promise.all([
-        getPhones(true, 5000).catch(() => null),
+        getPhones(true, 15000).catch(() => null),
         getWhatsAppStatus().catch(() => null),
       ]);
-      if (phonesRes) setPhones(phonesRes.phones || []);
+      if (phonesRes) {
+        setPhones(phonesRes.phones || []);
+        if (phonesRes.phones?.length) localStorage.setItem(phoneCacheKey, JSON.stringify(phonesRes.phones));
+      }
       if (status) setLiveStatus(status);
     };
-    void getCompanionConfig().then(setWabaConfig).catch(() => {});
+    void getCompanionConfig(15000).then((config) => {
+      setWabaConfig(config);
+      if (config.outbound_allowed) localStorage.setItem(wabaCacheKey, JSON.stringify(config));
+    }).catch(() => {});
     load();
     const t = setInterval(load, 30000);
     const onStatusUpdate = () => {
@@ -289,6 +306,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
     };
     window.addEventListener("propai_whatsapp_status_updated", onStatusUpdate);
     return () => {
+      window.clearTimeout(hydrateTimer);
       clearInterval(t);
       window.removeEventListener("propai_whatsapp_status_updated", onStatusUpdate);
     };
