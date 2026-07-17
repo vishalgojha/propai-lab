@@ -1,4 +1,4 @@
-import { getAccessToken } from "@/lib/auth";
+import { getAccessToken, forceRefreshToken } from "@/lib/auth";
 
 const BASE = "/api";
 const API_TIMEOUT_MS = 60000;
@@ -20,6 +20,15 @@ export function setActiveTenantId(tenantId: string | null | undefined) {
 }
 
 export async function fetchJSON<T>(url: string, init?: RequestInit, timeoutMs = API_TIMEOUT_MS): Promise<T> {
+  return fetchJSONWithRetry<T>(url, init, timeoutMs, false);
+}
+
+async function fetchJSONWithRetry<T>(
+  url: string,
+  init: RequestInit | undefined,
+  timeoutMs: number,
+  retried: boolean,
+): Promise<T> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -35,6 +44,25 @@ export async function fetchJSON<T>(url: string, init?: RequestInit, timeoutMs = 
         ...init?.headers,
       },
     });
+    if (res.status === 401 && !retried) {
+      // Token likely expired between acquisition and send — force a refresh
+      // and retry once with the fresh token before surfacing the error.
+      const fresh = await forceRefreshToken();
+      if (fresh) {
+        const retryRes = await fetch(`${BASE}${url}`, {
+          ...init,
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${fresh}`,
+            ...(tenantId ? { "X-Tenant-Id": tenantId } : {}),
+            ...init?.headers,
+          },
+        });
+        if (retryRes.ok) {
+          return await parseJSONBody<T>(retryRes, url);
+        }
+      }
+    }
     if (!res.ok) {
       const body = await res.text();
       let message = body.trim();
@@ -48,13 +76,7 @@ export async function fetchJSON<T>(url: string, init?: RequestInit, timeoutMs = 
       }
       throw new Error(`${res.status} ${res.statusText}: ${message}`);
     }
-    const body = await res.text();
-    if (!body) return undefined as T;
-    try {
-      return JSON.parse(body) as T;
-    } catch {
-      throw new Error(`Expected JSON from ${url}, got: ${body.slice(0, 200)}`);
-    }
+    return await parseJSONBody<T>(res, url);
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError") {
       throw new Error(`Request timed out: ${url}`);
@@ -62,6 +84,16 @@ export async function fetchJSON<T>(url: string, init?: RequestInit, timeoutMs = 
     throw error;
   } finally {
     clearTimeout(timeout);
+  }
+}
+
+async function parseJSONBody<T>(res: Response, url: string): Promise<T> {
+  const body = await res.text();
+  if (!body) return undefined as T;
+  try {
+    return JSON.parse(body) as T;
+  } catch {
+    throw new Error(`Expected JSON from ${url}, got: ${body.slice(0, 200)}`);
   }
 }
 
