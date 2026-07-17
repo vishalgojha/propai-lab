@@ -1,9 +1,32 @@
 from app import (
     _classify_webhook_event,
+    _process_single_raw,
+    _schedule_raw_extraction,
     _whatsapp_attachment_metadata,
     _whatsapp_message_text,
     _whatsapp_message_type,
 )
+
+
+def test_full_extraction_queue_defers_without_starting_work(monkeypatch):
+    class FullQueue:
+        def acquire(self, blocking=False):
+            assert blocking is False
+            return False
+
+    monkeypatch.setattr("app._EXTRACTION_SLOTS", FullQueue())
+    assert _schedule_raw_extraction(42, {"tenant_id": "workspace"}) is False
+
+
+def test_extraction_worker_uses_an_isolated_storage_client(monkeypatch):
+    calls = []
+
+    def process(raw_id, ctx, storage=None):
+        calls.append((raw_id, ctx, storage))
+
+    monkeypatch.setattr("extraction.process_raw_message", process)
+    _process_single_raw(42, {"tenant_id": "workspace"})
+    assert calls == [(42, {"tenant_id": "workspace"}, None)]
 
 
 def test_captionless_media_remains_a_message_event():

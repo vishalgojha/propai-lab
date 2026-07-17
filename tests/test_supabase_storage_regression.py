@@ -522,3 +522,27 @@ def test_supabase_storage_parsed_and_listing_writes():
     assert f'"location_label": "{expected_label}"' in requests[2]["body"]
     assert requests[3]["method"] == "GET"
     assert requests[3]["url"] == "https://example.supabase.co/rest/v1/listings?select=%2A&fingerprint=eq.fp&limit=1"
+
+
+def test_resolver_decision_uses_database_timestamp_default():
+    from lab.storage.base import ResolverDecision
+    from storage.supabase import SupabaseStorage, create_client
+
+    requests = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request.content.decode())
+        return httpx.Response(201, json=[{"id": 31}])
+
+    client = create_client("https://example.supabase.co", "service-key")
+    client._http = httpx.Client(
+        transport=httpx.MockTransport(handler),
+        base_url="https://example.supabase.co",
+    )
+    storage = SupabaseStorage("https://example.supabase.co", "service-key")
+    storage._client = client
+
+    decision_id = storage.save_resolver_decision(ResolverDecision(parsed_id=11))
+
+    assert decision_id == 31
+    assert '"created_at"' not in requests[0]
