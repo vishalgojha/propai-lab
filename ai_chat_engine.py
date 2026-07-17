@@ -1908,7 +1908,7 @@ def get_conversational_reply(messages, api_key=None, model=None, broker=None):
         m for m in messages if m.get("role") in ("user", "assistant")
     ]
     resp = client.chat.completions.create(
-        model=model or MODEL,
+        model=model or "chat",
         messages=msgs,
         max_tokens=1000,
     )
@@ -1933,14 +1933,14 @@ def get_model_reply(messages, sources, api_key=None, db_path=None, model=None, b
     if _depth >= max_tool_rounds:
         # Force a text-only response — no tools, but still cache the system prompt
         resp = client.chat.completions.create(
-            model=model or MODEL,
+            model=model or "chat",
             messages=cached_msgs,
             max_tokens=2000,
         )
         return resp.choices[0].message
 
     resp = client.chat.completions.create(
-        model=model or MODEL,
+        model=model or "chat",
         messages=cached_msgs,
         tools=cached_tools,
         tool_choice="auto",

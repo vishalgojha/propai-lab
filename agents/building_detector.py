@@ -13,10 +13,13 @@ Every LLM answer is stored in building_aliases for future free resolution.
 """
 
 import json
+import logging
 import os
 from datetime import datetime, timezone, timedelta
 from typing import TYPE_CHECKING
 from openai import OpenAI
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from lab.storage.base import Storage
@@ -145,7 +148,7 @@ def _call_llm(raw_message: str, location_raw: str, micro_market: str) -> dict | 
     user_text = f"Message: {raw_message}\nLocation: {location_raw}\nMarket: {micro_market}"
     try:
         resp = client.chat.completions.create(
-            model=MODEL,
+            model=os.environ.get("LLM_TASK_MODEL", "extraction"),
             messages=[
                 {"role": "system", "content": BUILDING_SYSTEM_PROMPT},
                 {"role": "user", "content": user_text},
@@ -158,9 +161,12 @@ def _call_llm(raw_message: str, location_raw: str, micro_market: str) -> dict | 
         result = json.loads(text)
         if result.get("building_name") and result.get("confidence", 0) >= 0.80:
             return result
-    except Exception:
         return None
-    return None
+    except Exception as exc:
+        logger.warning(
+            "building_detector LLM call failed (task_type=extraction): %s", exc
+        )
+        return None
 
 
 def _make_suggestion(parsed_id: int, building_name: str,

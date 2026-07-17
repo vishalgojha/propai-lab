@@ -1,0 +1,115 @@
+# LiteLLM Proxy configuration — PropAI shared LLM gateway
+# ---------------------------------------------------------------
+# Every PropAI service calls this proxy (OpenAI-compatible) instead of
+# hitting any provider directly. Each caller passes `model=<task_type>`
+# (e.g. "chat", "extraction", "classification", "batch") and LiteLLM
+# routes that task_type to its configured provider group.
+#
+# Callers must NOT hardcode provider/model choices. To change routing,
+# edit this file (or the provider keys in Coolify) — no app code changes.
+#
+# ToS / commercial-use check status (free tiers change terms often — re-check):
+#   groq          — checked 2026-07-17, free tier permits commercial use (usage capped)
+#   gemini / nvidia-nim / cerebras / mistral / openrouter — NOT YET CHECKED (2026-07-17)
+#                    DO NOT enable for production traffic until ToS verified.
+#   doubleword    — paid, primary chat provider, always allowed.
+#
+# NOTE: free-tier provider keys are optional. If a key is absent the
+# deployment is inert and the fallback chain simply skips it. Until keys
+# are added (as Coolify secrets) only `doubleword-prod` is active, so all
+# task types route to Doubleword. This is safe-by-default.
+
+litellm_settings:
+  telemetry: false
+  # Custom handler writes one structured row per request into
+  # public.llm_routing_log (Supabase). See hooks.py.
+  callbacks:
+    - deploy.coolify.litellm.hooks.CustomLogger
+
+router_settings:
+  # On 429 / 5xx, retry the next provider in the group's fallback list,
+  # then cool it down so we don't hammer a throttled provider.
+  num_retries: 3
+  timeout: 60
+  retry_after: 5
+  cooldown_time: 30
+  # Per-task_type fallback chains. The first model is the primary; on
+  # failure (429/5xx) LiteLLM tries the next, cooling down failures.
+  fallbacks:
+    - chat: [doubleword-prod]
+    - extraction: [gemini-flash, nvidia-nim, cerebras, mistral, openrouter-free, doubleword-prod]
+    - classification: [gemini-flash, nvidia-nim, cerebras, mistral, openrouter-free, doubleword-prod]
+    - batch: [doubleword-prod]
+
+# ---- Model groups (one per task_type) --------------------------------
+# Callers reference these names as `model=`. Each maps to a concrete
+# provider deployment. The fallback chains above decide what happens on
+# failure.
+model_list:
+  # task_type: chat — customer-facing WhatsApp. ALWAYS Doubleword.
+  - model_name: chat
+    litellm_params:
+      model: openai/Qwen/Qwen3.6-35B-A3B-FP8
+      api_base: ${DOUBLEWORD_API_URL}
+      api_key: ${DOUBLEWORD_API_KEY}
+
+  # task_type: extraction — micro_market resolver, building detector.
+  # Primary is the free pool (groq); chain handled by router fallbacks.
+  - model_name: extraction
+    litellm_params:
+      model: groq/llama-3.3-70b-versatile
+      api_key: ${GROQ_API_KEY}
+
+  # task_type: classification — knowledge/classifier.py. Shares free pool.
+  - model_name: classification
+    litellm_params:
+      model: groq/llama-3.3-70b-versatile
+      api_key: ${GROQ_API_KEY}
+
+  # task_type: batch — Doubleword Batch API jobs in app.py. Paid/Batch.
+  - model_name: batch
+    litellm_params:
+      model: openai/Qwen/Qwen3.6-35B-A3B-FP8
+      api_base: ${DOUBLEWORD_API_URL}
+      api_key: ${DOUBLEWORD_API_KEY}
+
+  # task_type: default — Doubleword-only catch-all for existing workloads
+  # (knowledge classifier, correction layer) that we route through the
+  # gateway for unified logging without changing provider/quality yet.
+  # Free-tier migration for these can be enabled later by pointing them
+  # at the "classification" group once ToS is cleared.
+  - model_name: default
+    litellm_params:
+      model: openai/Qwen/Qwen3.6-35B-A3B-FP8
+      api_base: ${DOUBLEWORD_API_URL}
+      api_key: ${DOUBLEWORD_API_KEY}
+
+  # task_type: embeddings — RESERVED. PropAI uses LOCAL embeddings
+  # (TF-IDF / FastEmbed); no provider call today. Slot kept for future
+  # hosted embeddings. Services must not request model "embeddings" yet.
+
+  # ---- Concrete fallback deployments (referenced above) ----
+  - model_name: gemini-flash
+    litellm_params:
+      model: gemini/gemini-2.0-flash
+      api_key: ${GEMINI_API_KEY}
+
+  - model_name: nvidia-nim
+    litellm_params:
+      model: nvidia_nim/nv-mistralai/mistral-nemotron-nano-12b-instruct
+      api_key: ${NVIDIA_API_KEY}
+
+  - model_name: cerebras
+    litellm_params:
+      model: cerebras/llama-3.3-70b
+      api_key: ${CEREBRAS_API_KEY}
+
+  - model_name: mistral
+    litellm_params:
+      model: mistral/mistral-large-latest
+      api_key: ${MISTRAL_API_KEY}
+
+  - model_name: openrouter-free
+    litellm_params:
+      model: openrouter/meta-llama/llama-3.3-70b-instruct:free
+      api_key: ${OPENROUTER_API_KEY}

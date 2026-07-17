@@ -121,7 +121,7 @@ Example response:
     for attempt in range(3):  # Retry up to 3 times
         try:
             resp = client.chat.completions.create(
-                model=MODEL,
+                model=os.environ.get("LLM_TASK_MODEL", "default"),
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.1,
                 max_tokens=300,

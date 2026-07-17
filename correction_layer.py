@@ -271,7 +271,7 @@ def _call_model(raw_text: str, draft: dict[str, Any]) -> tuple[dict[str, Any], i
     client = get_client(api_key=DOUBLEWORD_API_KEY)
     timeout_seconds = float(os.getenv("AI_CORRECTION_API_TIMEOUT_SECONDS", "120"))
     response = client.with_options(timeout=timeout_seconds, max_retries=0).chat.completions.create(
-        model=MODEL,
+        model=os.environ.get("LLM_TASK_MODEL", "default"),
         temperature=0,
         response_format={"type": "json_object"},
         messages=[

@@ -13,11 +13,14 @@ Every LLM answer is stored in location_aliases for future free resolution.
 
 import csv
 import json
+import logging
 import os
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING
 from openai import OpenAI
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from lab.storage.base import Storage
@@ -205,7 +208,7 @@ def _call_llm(raw_message: str, location_raw: str) -> dict | None:
     user_text = f"Message: {raw_message}\nLocation: {location_raw}"
     try:
         resp = client.chat.completions.create(
-            model=MODEL,
+            model=os.environ.get("LLM_TASK_MODEL", "extraction"),
             messages=[
                 {"role": "system", "content": LOCATION_SYSTEM_PROMPT},
                 {"role": "user", "content": user_text},
@@ -218,9 +221,12 @@ def _call_llm(raw_message: str, location_raw: str) -> dict | None:
         result = json.loads(text)
         if result.get("micro_market") and result.get("confidence", 0) >= 0.80:
             return result
-    except Exception:
         return None
-    return None
+    except Exception as exc:
+        logger.warning(
+            "location_resolver LLM call failed (task_type=extraction): %s", exc
+        )
+        return None
 
 
 def _make_location_suggestion(parsed_id: int, micro_market: str,

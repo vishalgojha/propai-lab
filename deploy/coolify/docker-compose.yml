@@ -1,4 +1,27 @@
 services:
+  # Shared LLM gateway (LiteLLM proxy). All PropAI services route their
+  # OpenAI-compatible calls here instead of hitting providers directly.
+  # Exposes an OpenAI-compatible endpoint on :4000 (internal only).
+  litellm-gateway:
+    build:
+      context: ../..
+      dockerfile: deploy/coolify/litellm/Dockerfile
+    environment:
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY}
+      SUPABASE_URL: ${SUPABASE_URL}
+      SUPABASE_SERVICE_KEY: ${SUPABASE_SERVICE_KEY}
+      DOUBLEWORD_API_URL: ${DOUBLEWORD_API_URL}
+      DOUBLEWORD_API_KEY: ${DOUBLEWORD_API_KEY}
+      GROQ_API_KEY: ${GROQ_API_KEY}
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      NVIDIA_API_KEY: ${NVIDIA_API_KEY}
+      CEREBRAS_API_KEY: ${CEREBRAS_API_KEY}
+      MISTRAL_API_KEY: ${MISTRAL_API_KEY}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
+    expose:
+      - "4000"
+    restart: unless-stopped
+
   api:
     build:
       context: ../..
@@ -11,14 +34,16 @@ services:
       SUPABASE_URL: ${SUPABASE_URL}
       SUPABASE_SERVICE_KEY: ${SUPABASE_SERVICE_KEY}
       SUPABASE_JWT_SECRET: ${SUPABASE_JWT_SECRET}
-      DOUBLEWORD_API_URL: ${DOUBLEWORD_API_URL}
-      DOUBLEWORD_API_KEY: ${DOUBLEWORD_API_KEY}
+      DOUBLEWORD_API_URL: http://litellm-gateway:4000
+      DOUBLEWORD_API_KEY: ${LITELLM_MASTER_KEY}
       DOUBLEWORD_MODEL: ${DOUBLEWORD_MODEL}
       FRONTEND_URL: https://app.propai.live
     volumes:
       - propai-data:/data
     expose:
       - "8000"
+    depends_on:
+      - litellm-gateway
     restart: unless-stopped
 
   app:
@@ -77,11 +102,15 @@ services:
     environment:
       SUPABASE_URL: ${SUPABASE_URL}
       SUPABASE_SERVICE_KEY: ${SUPABASE_SERVICE_KEY}
+      DOUBLEWORD_API_URL: http://litellm-gateway:4000
+      DOUBLEWORD_API_KEY: ${LITELLM_MASTER_KEY}
+      DOUBLEWORD_MODEL: ${DOUBLEWORD_MODEL}
       FRONTEND_URL: https://app.propai.live
       EXTRACTION_WORKER_BATCH_SIZE: 10
       EXTRACTION_WORKER_POLL_SECONDS: 5
     depends_on:
       - api
+      - litellm-gateway
     restart: unless-stopped
 
 volumes:
