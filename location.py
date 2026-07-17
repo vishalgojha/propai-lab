@@ -18,10 +18,13 @@ Output: {
 
 from __future__ import annotations
 
+import logging
 import math
 import re
 from difflib import SequenceMatcher
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 # ── Spatial relation patterns (ordered longest-first for greedy match) ──
 
@@ -132,7 +135,16 @@ _COMMON_MUMBAI_LOCALITIES = frozenset({
     "goregaon west", "worli", "parel", "lower parel", "dadar", "powai",
     "versova", "vile parle", "chembur", "mahalaxmi", "prabhadevi",
     "oshiwara", "lokhandwala", "mount mary", "pali hill", "turner road",
-    "carter road", "hill road", "linking road",
+    "carter road", "hill road", "linking road", "kandivali", "borivali",
+    "dahisar", "mira road", "bhayandar", "vasai", "virar", "thane",
+    "dombivli", "kalyan", "ambernath", "badlapur", "ulhasnagar",
+    "navi mumbai", "nerul", "vashi", "panvel", "kurla", "ghatkopar",
+    "marine lines", "colaba", "churchgate", "fort", "byculla", "mahim",
+    "matunga", "sion", "wadala", "tardeo", "warden road", "cuffe parade",
+})
+
+_NON_MARKET_LOCATION_NAMES = frozenset({
+    "carter road", "hill road", "linking road", "turner road",
 })
 
 # Colloquial / abbreviated -> canonical micro_market. Applied as substring
@@ -280,9 +292,81 @@ def _load_evidence():
         _localities.update(_micro_markets)
         _localities.update(_COMMON_MUMBAI_LOCALITIES)
         _evidence_loaded = True
-    except Exception:
+    except Exception as exc:
         _localities.update(_COMMON_MUMBAI_LOCALITIES)
-        pass
+        _evidence_loaded = True
+        logger.warning("Location evidence registry could not be loaded: %s", exc)
+
+
+def _canonical_micro_market(value: str | None) -> str | None:
+    """Return a stable display name for a known Mumbai micro-market."""
+    normalized = re.sub(r"\s+", " ", (value or "").strip().lower())
+    if (
+        normalized not in _COMMON_MUMBAI_LOCALITIES
+        or normalized in _NON_MARKET_LOCATION_NAMES
+    ):
+        return None
+    if normalized == "bkc":
+        return "BKC"
+    return normalized.title()
+
+
+def infer_unique_micro_market(text: str | None) -> str | None:
+    """Resolve a market only when the text names one unambiguous locality."""
+    normalized = f" {(text or '').lower()} "
+    for pattern, replacement in _LOCATION_ALIASES:
+        normalized = normalized.replace(pattern, replacement)
+
+    matches: set[str] = set()
+    for locality in sorted(_COMMON_MUMBAI_LOCALITIES, key=len, reverse=True):
+        if re.search(rf"(?<!\w){re.escape(locality)}(?!\w)", normalized):
+            canonical = _canonical_micro_market(locality)
+            if canonical:
+                matches.add(canonical)
+
+    # Avoid treating a broad parent as a second market (Bandra + Bandra West).
+    specific = {
+        match for match in matches
+        if not any(other != match and other.lower().startswith(match.lower() + " ") for other in matches)
+    }
+    return next(iter(specific)) if len(specific) == 1 else None
+
+
+def enrich_parsed_location(
+    parsed: dict,
+    source_text: str | None,
+    fallback_text: str | None = None,
+) -> dict:
+    """Fill missing structured location fields without overwriting parser output."""
+    result = dict(parsed)
+    primary_text = (
+        result.get("location_raw")
+        or result.get("building_name")
+        or source_text
+        or ""
+    )
+    loc = parse_location(primary_text)
+
+    if not result.get("location_raw") and loc.raw:
+        result["location_raw"] = loc.raw
+    if not result.get("location") and loc.raw:
+        result["location"] = loc.to_dict()
+    if not result.get("building_name") and loc.building:
+        result["building_name"] = loc.building
+    if not result.get("landmark_name") and loc.landmark:
+        result["landmark_name"] = loc.landmark
+    if not result.get("street_name") and loc.street:
+        result["street_name"] = loc.street
+
+    market = loc.micro_market or _canonical_micro_market(loc.locality)
+    if not market:
+        market = infer_unique_micro_market(source_text)
+    if not market and fallback_text:
+        market = infer_unique_micro_market(fallback_text)
+    if not result.get("micro_market") and market:
+        result["micro_market"] = market
+
+    return result
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -812,6 +896,9 @@ def parse_location(raw_text: str) -> StructuredLocation:
             loc.micro_market = t.value
         elif t.kind == "locality" and not loc.locality:
             loc.locality = t.value
+            canonical_market = _canonical_micro_market(t.value)
+            if canonical_market and not loc.micro_market:
+                loc.micro_market = canonical_market
         elif t.kind == "landmark" and not loc.landmark:
             loc.landmark = t.value
             # Enrich micro_market from landmark meta
@@ -823,6 +910,8 @@ def parse_location(raw_text: str) -> StructuredLocation:
                 loc.locality = mm.split()[0]
         elif t.kind == "building" and not loc.building:
             loc.building = t.value
+            if t.meta.get("area") and not loc.micro_market:
+                loc.micro_market = t.meta["area"]
         elif t.kind == "transit_landmark" and not loc.transit_landmark:
             loc.transit_landmark = t.value
         elif t.kind == "spatial_relation" and not loc.spatial_relation:
