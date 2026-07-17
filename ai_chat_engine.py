@@ -8,7 +8,7 @@ from openai import OpenAI
 import time
 
 MODEL = os.getenv("DOUBLEWORD_MODEL", "Qwen/Qwen3.6-35B-A3B-FP8")
-BASE_URL = "https://api.doubleword.ai/v1"
+BASE_URL = os.getenv("DOUBLEWORD_API_URL", "https://api.doubleword.ai/v1")
 _lab_dir = os.path.realpath(os.path.dirname(os.path.abspath(__file__)))
 _propai_data = os.path.realpath(os.path.join(_lab_dir, "..", "propai", "data"))
 DATA_DIR = _propai_data if os.path.isdir(_propai_data) else os.path.join(_lab_dir, "data")
