@@ -22,6 +22,15 @@ create index if not exists idx_parsed_output_correction_hash
     on public.parsed_output (correction_hash)
     where corrected_at is not null;
 
+create index if not exists idx_parsed_output_uncorrected_partial
+    on public.parsed_output (created_at)
+    where corrected_at is null and (
+        location_raw is null
+        or building_name is null
+        or price is null
+        or price_unit is null
+    );
+
 create table if not exists public.ai_correction_runs (
     id bigint generated always as identity primary key,
     run_slot timestamptz unique,
