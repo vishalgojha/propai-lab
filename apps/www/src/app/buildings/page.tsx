@@ -11,6 +11,11 @@ export const metadata = {
     "Browse buildings tracked by PropAI, with listing counts from WhatsApp broker networks.",
 };
 
+// Building list is large (4k+ rows) and changes gradually; ISR caches the page
+// for 5 min so navigation is instant instead of re-scanning on every click.
+export const revalidate = 300;
+
+
 export default async function BuildingsIndexPage() {
   const buildings = await getAllBuildings();
 

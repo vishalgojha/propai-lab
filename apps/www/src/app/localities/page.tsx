@@ -10,6 +10,11 @@ export const metadata = {
     "Browse every locality PropAI tracks, with live listing counts from WhatsApp broker networks.",
 };
 
+// Locality list changes gradually; ISR caches the page for 5 min so navigation
+// is instant instead of re-scanning the localities table on every click.
+export const revalidate = 300;
+
+
 export default async function LocalitiesIndexPage() {
   const localities = await getAllLocalities();
 

@@ -10,7 +10,10 @@ import SiteHeader from "@/components/SiteHeader";
 import SiteFooter from "@/components/SiteFooter";
 import RequirementCapture from "@/components/RequirementCapture";
 
-export const dynamic = "force-dynamic";
+// Locality/building lists change gradually; a few minutes of staleness is fine
+// and avoids re-scanning the full tables on every navigation. ISR caches the
+// rendered page for 5 min so link clicks feel instant.
+export const revalidate = 300;
 
 export const metadata = {
   title: "Search Listings — PropAI",
