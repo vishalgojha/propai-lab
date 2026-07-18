@@ -12,6 +12,7 @@ import { slugify } from "@/lib/supabase";
 import SiteHeader from "@/components/SiteHeader";
 import SiteFooter from "@/components/SiteFooter";
 import ListingTile from "@/components/ListingTile";
+import { ShortlistProvider } from "@/components/ShortlistProvider";
 
 type Params = { params: Promise<{ slug: string }> };
 
@@ -60,9 +61,10 @@ export default async function BuildingPage({ params }: Params) {
   const listings = await getBuildingListings(building.name);
 
   return (
-    <div className="min-h-screen bg-black text-white">
-      <SiteHeader />
-      <main className="max-w-[1600px] mx-auto px-4 lg:px-6 py-10 lg:py-14">
+    <ShortlistProvider>
+      <div className="min-h-screen bg-black text-white">
+        <SiteHeader />
+        <main className="max-w-[1600px] mx-auto px-4 lg:px-6 py-10 lg:py-14">
         <div className="mb-8">
           <Link
             href="/buildings"
@@ -127,6 +129,7 @@ export default async function BuildingPage({ params }: Params) {
         </section>
       </main>
       <SiteFooter />
-    </div>
+      </div>
+    </ShortlistProvider>
   );
 }

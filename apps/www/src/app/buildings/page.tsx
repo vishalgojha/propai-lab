@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import { getAllBuildings, type BuildingOnMap } from "@/lib/localities";
 import ListingCard from "@/components/ListingCard";
+import BuildingsExplorer from "@/components/BuildingsExplorer";
 import SiteHeader from "@/components/SiteHeader";
 import SiteFooter from "@/components/SiteFooter";
 
@@ -15,10 +16,8 @@ export const metadata = {
 // for 5 min so navigation is instant instead of re-scanning on every click.
 export const revalidate = 300;
 
-
 export default async function BuildingsIndexPage() {
   const buildings = await getAllBuildings();
-
   const cards: BuildingOnMap[] = buildings.map((b) => ({
     name: b.name,
     id: b.id,
@@ -43,19 +42,11 @@ export default async function BuildingsIndexPage() {
           </h1>
           <p className="text-lg text-zinc-400 max-w-2xl">
             {buildings.length} buildings tracked by PropAI, with live listing
-            counts from broker conversations.
+            counts from broker conversations. Search to jump straight to a building.
           </p>
         </header>
 
-        {buildings.length === 0 ? (
-          <p className="text-zinc-400">No buildings indexed yet.</p>
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 lg:gap-6">
-            {cards.map((b) => (
-              <ListingCard key={b.name} building={b} />
-            ))}
-          </div>
-        )}
+        <BuildingsExplorer buildings={cards} />
 
         <div className="text-center mt-12">
           <Link
