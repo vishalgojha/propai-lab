@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { JsonLd, buildRealEstateListing, buildBreadcrumb, getSiteUrl } from "@/lib/seo";
 import {
   MapPin,
   MessageSquare,
@@ -97,9 +98,43 @@ export default async function ListingPage({ params }: Params) {
   const isRent = /month/i.test(card.priceLabel);
   const dealType = isRent ? "For rent" : "For sale";
 
+  const siteUrl = getSiteUrl();
+  const listingUrl = `${siteUrl}/listings/${numericId}`;
+  const priceUnit = (listing.price_unit || "").toLowerCase();
+  let priceINR: number | null = null;
+  if (typeof listing.price === "number" && !Number.isNaN(listing.price)) {
+    if (priceUnit.includes("cr")) priceINR = listing.price * 1_00_00_000;
+    else if (priceUnit.includes("lac") || priceUnit.includes("lakh")) priceINR = listing.price * 1_00_000;
+    else if (priceUnit.includes("k")) priceINR = listing.price * 1_000;
+    else priceINR = listing.price;
+  }
+  const listingSchema = buildRealEstateListing({
+    url: listingUrl,
+    id: numericId,
+    title: card.title || `${listing.bhk || ""} ${listing.property_type || "property"} in ${card.locality || "Mumbai"}`.trim(),
+    description: `${dealType} — ${card.title || "property"} in ${card.locality || "Mumbai"}. Listed via live WhatsApp broker network, routed directly to the posting broker.`,
+    price: priceINR,
+    priceCurrency: "INR",
+    dealType,
+    bedrooms: listing.bhk,
+    areaSqft: typeof listing.area_sqft === "number" ? listing.area_sqft : null,
+    locality: card.locality,
+    brokerName: card.brokerName,
+    datePosted: listing.last_seen,
+  });
+  const breadcrumbSchema = buildBreadcrumb(siteUrl, [
+    { name: "Home", url: "/" },
+    ...(card.locality && card.localitySlug
+      ? [{ name: card.locality, url: `/localities/${card.localitySlug}` }]
+      : []),
+    { name: card.title || `Listing ${numericId}`, url: `/listings/${numericId}` },
+  ]);
+
   return (
     <div className="min-h-screen bg-black text-white">
       <SiteHeader />
+      <JsonLd data={listingSchema} />
+      <JsonLd data={breadcrumbSchema} />
       <main className="mx-auto max-w-5xl px-4 py-8 lg:px-6 lg:py-12">
         <button
           onClick={() => history.back()}

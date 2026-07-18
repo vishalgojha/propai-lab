@@ -7,6 +7,7 @@ import SiteHeader from "@/components/SiteHeader";
 import SiteFooter from "@/components/SiteFooter";
 import ListingCard, { LocalityBackLink } from "@/components/ListingCard";
 import { NoPhotosFaqJsonLd, NoPhotosFaq } from "@/components/NoPhotosFaq";
+import { JsonLd, buildLocalBusiness, buildBreadcrumb, getSiteUrl } from "@/lib/seo";
 
 // Read at server runtime (Coolify injects env into the running container).
 // Passed to the client map so we don't depend on NEXT_PUBLIC_* build-time
@@ -36,6 +37,20 @@ export default async function LocalityPage({ params }: Params) {
   const data = await getLocalityData(slug);
   if (!data) notFound();
 
+  const siteUrl = getSiteUrl();
+  const localityUrl = `${siteUrl}/localities/${data.slug}`;
+  const localitySchema = buildLocalBusiness({
+    url: localityUrl,
+    name: data.locality,
+    description: `Live ${data.locality} property listings, price ranges, and broker activity sourced from WhatsApp broker conversations on PropAI.`,
+    listingCount: data.totalListings,
+  });
+  const breadcrumbSchema = buildBreadcrumb(siteUrl, [
+    { name: "Home", url: "/" },
+    { name: "Localities", url: "/localities" },
+    { name: data.locality, url: `/localities/${data.slug}` },
+  ]);
+
   const mapped = data.buildings.filter(
     (b) => b.latitude != null && b.longitude != null,
   );
@@ -46,6 +61,8 @@ export default async function LocalityPage({ params }: Params) {
     return (
       <div className="min-h-screen bg-black text-white">
         <SiteHeader />
+        <JsonLd data={localitySchema} />
+        <JsonLd data={breadcrumbSchema} />
         <main className="max-w-3xl mx-auto px-4 lg:px-6 py-16 lg:py-24">
           <NoPhotosFaqJsonLd />
           <div className="mb-8">
@@ -91,6 +108,8 @@ export default async function LocalityPage({ params }: Params) {
   return (
     <div className="min-h-screen bg-black text-white">
       <SiteHeader />
+      <JsonLd data={localitySchema} />
+      <JsonLd data={breadcrumbSchema} />
       <main className="max-w-[1600px] mx-auto px-4 lg:px-6 py-10 lg:py-14">
         <NoPhotosFaqJsonLd />
         <div className="mb-8">
