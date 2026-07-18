@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { MapPin, MessageSquare, BedDouble, Ruler, Sofa, Building2, Eye, Home, Building, ShieldCheck, Clock, Flag, Tag } from "lucide-react";
+import { MapPin, MessageSquare, BedDouble, Ruler, Sofa, Building2, Eye, Home, Building, ShieldCheck, Tag } from "lucide-react";
 import type { ListingCardViewModel, ListingSpecItem } from "@/lib/listing-card";
 
 const SPEC_ICONS: Record<ListingSpecItem["kind"], typeof BedDouble> = {
@@ -37,12 +37,6 @@ export default function ListingTile({
   buildingName?: string | null;
   footerNote?: string | null;
 }) {
-  const initials = (card.title || buildingName || "PR")
-    .split(/\s+/)
-    .slice(0, 2)
-    .map((w) => w[0]?.toUpperCase() ?? "")
-    .join("");
-
   const isRent = /month/i.test(card.priceLabel) || card.statusLabel.toLowerCase().includes("rent");
   const dealType = isRent ? "For Rent" : "For Sale";
 
@@ -51,51 +45,41 @@ export default function ListingTile({
       href={card.href ?? "#"}
       className="group flex flex-col overflow-hidden rounded-2xl border border-white/10 bg-zinc-950/90 transition-colors hover:border-green-400/40 hover:bg-zinc-900/90"
     >
-      {/* Photo placeholder hero */}
-      <div className="relative h-40 w-full bg-gradient-to-br from-green-500/20 via-zinc-900 to-zinc-950">
-        <div className="absolute inset-0 flex items-center justify-center">
-          <span className="text-4xl font-bold tracking-wider text-white/15">{initials}</span>
-        </div>
-        {card.assetTypeLabel && (
-          <span className="absolute left-3 top-3 inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-black/55 px-2.5 py-1 text-[11px] font-medium text-zinc-100 backdrop-blur">
-            <KindIcon kind={card.assetTypeLabel} className="h-3 w-3" />
-            {card.assetTypeLabel}
-          </span>
-        )}
-        <span
-          className={`absolute right-3 top-3 rounded-full px-2.5 py-1 text-[11px] font-medium ${
-            card.statusTone === "available"
-              ? "border border-green-400/20 bg-green-400/10 text-green-300"
-              : "border border-amber-400/20 bg-amber-400/10 text-amber-200"
-          }`}
-        >
-          {card.statusLabel}
-        </span>
-        {card.locality && (
-          <span className="absolute bottom-3 left-3 inline-flex items-center gap-1 rounded-full bg-black/55 px-2.5 py-1 text-[11px] text-zinc-200 backdrop-blur">
-            <MapPin className="h-3.5 w-3.5" aria-hidden="true" />
-            {card.locality}
-          </span>
-        )}
-      </div>
-
       <div className="flex flex-1 flex-col p-5">
-        <div className="mb-2 flex items-center gap-2">
+        {/* Top row: badges (no image placeholder — that space is reused below) */}
+        <div className="mb-3 flex flex-wrap items-center gap-2">
           <span className="rounded-md bg-white/5 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-zinc-400">
             {dealType}
           </span>
           {card.assetTypeLabel && (
-            <span className="rounded-md bg-green-400/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-green-300">
+            <span className="inline-flex items-center gap-1.5 rounded-md bg-green-400/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-green-300">
+              <KindIcon kind={card.assetTypeLabel} className="h-3 w-3" />
               {card.assetTypeLabel}
             </span>
           )}
+          <span
+            className={`ml-auto inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium ${
+              card.statusTone === "available"
+                ? "border border-green-400/20 bg-green-400/10 text-green-300"
+                : "border border-amber-400/20 bg-amber-400/10 text-amber-200"
+            }`}
+          >
+            {card.statusLabel}
+          </span>
         </div>
 
         <h3 className="truncate text-lg font-semibold text-white transition-colors group-hover:text-green-300">
           {card.title}
         </h3>
 
-        <div className="mt-2">
+        {card.locality && (
+          <p className="mt-1 inline-flex items-center gap-1 truncate text-sm text-zinc-400">
+            <MapPin className="h-3.5 w-3.5 shrink-0 text-green-400" aria-hidden="true" />
+            {card.locality}
+          </p>
+        )}
+
+        <div className="mt-3">
           <span className="text-xl font-semibold text-white">{card.priceLabel}</span>
         </div>
 
