@@ -89,13 +89,19 @@ def main():
     hidden_count = defaultdict(int)
 
     for table in TABLES:
-        # distinct raw values + counts
+        # distinct raw values + counts — paginate, supabase caps a bare
+        # select at 1000 rows so we must page to get true counts.
+        rows = []
         try:
-            res = client.table(table).select("micro_market").execute()
+            for offset in range(0, 1_000_000, 1000):
+                res = client.table(table).select("micro_market").range(offset, offset + 999).execute()
+                page = res.data or []
+                rows.extend(page)
+                if len(page) < 1000:
+                    break
         except Exception as e:
             print(f"  (skip {table}: {e})")
             continue
-        rows = res.data or []
         counts = defaultdict(int)
         for r in rows:
             mm = r.get("micro_market")
