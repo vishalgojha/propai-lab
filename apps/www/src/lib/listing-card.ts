@@ -37,10 +37,11 @@ export type ListingCardViewModel = {
   priceLabel: string;
   specRow: string;
   specItems: ListingSpecItem[];
-  statusLabel: string;
-  statusTone: "available" | "unconfirmed";
-  updatedLabel: string;
-  assetTypeLabel: string | null;
+    statusLabel: string;
+    statusTone: "available" | "unconfirmed";
+    updatedLabel: string;
+    freshnessLabel: string;
+    assetTypeLabel: string | null;
   waLink: string | null;
   href: string | null;
   brokerName: string | null;
@@ -204,6 +205,27 @@ function formatUpdated(iso: string | null): string {
   return date.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
 }
 
+// Relative freshness for the card ("Today 2:30 PM", "Yesterday", "3d ago",
+// or an absolute date for older listings). Backs the "freshness" claim with a
+// real timestamp instead of a vague label.
+function formatFreshness(iso: string | null): string {
+  if (!iso) return "Recently";
+  const date = new Date(iso);
+  const ms = date.getTime();
+  if (!Number.isFinite(ms)) return "Recently";
+  const now = Date.now();
+  const diffMs = now - ms;
+  const dayMs = 24 * 60 * 60 * 1000;
+  if (diffMs < 0) return "Just now";
+  if (diffMs < dayMs) {
+    const time = date.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", hour12: true });
+    return diffMs < 60 * 60 * 1000 ? "Just now" : `Today ${time}`;
+  }
+  if (diffMs < 2 * dayMs) return "Yesterday";
+  if (diffMs < 7 * dayMs) return `${Math.floor(diffMs / dayMs)}d ago`;
+  return date.toLocaleDateString("en-IN", { day: "numeric", month: "short" });
+}
+
 // Broker contact must NEVER embed the phone number in public HTML (DPDP Act
 // 2023 — phone is sensitive personal data). Instead we link to a server route
 // that resolves the phone server-side and 302-redirects to wa.me, so the raw
@@ -262,6 +284,7 @@ export function toListingCardViewModel(
     statusLabel: hasLocality ? "Available" : "Locality unconfirmed",
     statusTone: hasLocality ? "available" : "unconfirmed",
     updatedLabel: formatUpdated(row.last_seen),
+    freshnessLabel: formatFreshness(row.last_seen),
     assetTypeLabel: assetTypeLabel(row.asset_type, row.intent),
     waLink: waLinkFor(row.id),
     href: row.id != null ? `/listings/${row.id}` : null,

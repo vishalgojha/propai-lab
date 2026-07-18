@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 import Link from "next/link";
-import { MapPin, MessageSquare, BedDouble, Ruler, Sofa, Building2, Eye, Home, Building, ShieldCheck, Tag, Check } from "lucide-react";
+import { MapPin, MessageSquare, BedDouble, Ruler, Sofa, Building2, Eye, Home, Building, ShieldCheck, Tag, Check, Clock } from "lucide-react";
 import type { ListingCardViewModel, ListingSpecItem } from "@/lib/listing-card";
 import { useShortlist } from "@/components/ShortlistProvider";
 import { useAnalytics } from "@/lib/useAnalytics";
@@ -96,7 +96,7 @@ export default function ListingTile({
         </button>
       )}
 
-      <div className="flex flex-1 flex-col p-6 min-h-[330px]">
+      <div className="flex flex-1 flex-col p-6 min-h-[330px] text-left">
         {/* Top row: badges (no image placeholder — that space is reused below) */}
         <div className="mb-4 flex flex-wrap items-center gap-2.5">
           <span className="rounded-md bg-white/5 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-400">
@@ -129,6 +129,11 @@ export default function ListingTile({
             {card.locality}
           </p>
         )}
+
+        <p className="mt-2 inline-flex items-center gap-1.5 text-xs text-zinc-500">
+          <Clock className="h-3.5 w-3.5 shrink-0 text-green-400" aria-hidden="true" />
+          {card.freshnessLabel}
+        </p>
 
         <div className="mt-4">
           <span className="text-xl font-semibold text-white">{card.priceLabel}</span>
