@@ -173,11 +173,12 @@ func (s *BrokerSession) releaseLock() {
 // ── Session manager ────────────────────────────────────────────────────────
 
 type SessionManager struct {
-	mu         sync.RWMutex
-	deliveryMu sync.Mutex
-	sessions   map[string]*BrokerSession
-	container  *sqlstore.Container
-	db         *sql.DB
+	mu           sync.RWMutex
+	deliveryMu   sync.Mutex
+	deliveryWake chan struct{}
+	sessions     map[string]*BrokerSession
+	container    *sqlstore.Container
+	db           *sql.DB
 }
 
 type inboxThreadCursor struct {
@@ -212,9 +213,10 @@ type selfChatAgentResponse struct {
 
 func NewSessionManager(container *sqlstore.Container, db *sql.DB) *SessionManager {
 	return &SessionManager{
-		sessions:  make(map[string]*BrokerSession),
-		container: container,
-		db:        db,
+		sessions:     make(map[string]*BrokerSession),
+		deliveryWake: make(chan struct{}, 1),
+		container:    container,
+		db:           db,
 	}
 }
 

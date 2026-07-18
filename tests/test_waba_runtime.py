@@ -17,6 +17,15 @@ def test_shared_waba_is_available_to_super_admin(monkeypatch):
         def is_super_admin(user_id):
             return user_id == "super-user"
 
+        @staticmethod
+        def get_user_organizations(_user_id):
+            return [{"id": "org-broker"}]
+
+        @staticmethod
+        def get_org_waba_connection(org_id):
+            assert org_id == "org-broker"
+            return None
+
     monkeypatch.setattr(app, "storage", Storage())
     monkeypatch.setattr(
         app,
@@ -24,12 +33,17 @@ def test_shared_waba_is_available_to_super_admin(monkeypatch):
         lambda key, _env_key="": values.get(key, ""),
     )
 
-    super_config = asyncio.run(app.companion_config(user={"id": "super-user"}))
-    broker_config = asyncio.run(app.companion_config(user={"id": "broker-user"}))
+    super_config = asyncio.run(app.companion_config(user={"id": "super-user"}, tenant_id="org-admin"))
+    broker_config = asyncio.run(app.companion_config(user={"id": "broker-user"}, tenant_id="org-broker"))
 
     assert super_config["waba_owner"] == "propai"
     assert super_config["outbound_allowed"] is True
     assert broker_config["outbound_allowed"] is False
+    assert broker_config["whatsapp_business_number"] == ""
+    assert broker_config["phone_number_id"] == ""
+    assert broker_config["access_token_preview"] == ""
+    assert broker_config["verify_token_preview"] == ""
+    assert broker_config["webhook_callback_url"].endswith("/org-broker")
 
 
 def test_waba_webhook_stores_inbound_message_once(monkeypatch):
@@ -59,7 +73,14 @@ def test_waba_webhook_stores_inbound_message_once(monkeypatch):
                 }],
             }
 
-    monkeypatch.setattr(app, "storage", SimpleNamespace(db=Database()))
+    monkeypatch.setattr(
+        app,
+        "storage",
+        SimpleNamespace(
+            db=Database(),
+            get_org_waba_connection_by_phone_number_id=lambda _phone_id: None,
+        ),
+    )
     monkeypatch.setattr(app, "_waba_session_update", lambda *_args, **_kwargs: None)
 
     result = asyncio.run(app.companion_webhook_receive(Request()))
@@ -71,3 +92,42 @@ def test_waba_webhook_stores_inbound_message_once(monkeypatch):
         "from": "919999999999",
         "msg_type": "text",
     }]
+
+
+def test_workspace_waba_webhook_resolves_by_phone_number_id(monkeypatch):
+    workspace = {
+        "organization_id": "org-one",
+        "phone_number_id": "workspace-phone-id",
+        "access_token": "workspace-token",
+        "verify_token": "workspace-verify",
+        "is_active": True,
+    }
+    monkeypatch.setattr(
+        app,
+        "storage",
+        SimpleNamespace(
+            get_org_waba_connection_by_phone_number_id=lambda phone_id: (
+                workspace if phone_id == "workspace-phone-id" else None
+            )
+        ),
+    )
+
+    body = {
+        "entry": [{
+            "changes": [{
+                "value": {
+                    "metadata": {"phone_number_id": "workspace-phone-id"},
+                    "messages": [],
+                }
+            }]
+        }]
+    }
+    values, org_id = asyncio.run(app._resolve_waba_webhook_config(body))
+
+    assert values["access_token"] == "workspace-token"
+    assert org_id == "org-one"
+
+
+def test_propai_shared_waba_number_is_valid_indian_mobile():
+    assert app.PROPAI_SHARED_WABA_NUMBER == "+917021045254"
+    assert app._mobile_digits(app.PROPAI_SHARED_WABA_NUMBER) == "7021045254"

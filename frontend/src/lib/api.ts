@@ -954,6 +954,8 @@ export interface CompanionOverview {
 }
 
 export interface CompanionConfig {
+  is_super_admin?: boolean;
+  can_manage_platform?: boolean;
   whatsapp_business_number: string;
   shared_waba_number?: string;
   waba_owner?: "propai" | "broker" | "none";
@@ -963,6 +965,7 @@ export interface CompanionConfig {
   access_token_preview: string;
   has_verify_token: boolean;
   verify_token_preview: string;
+  webhook_callback_url?: string;
 }
 
 export interface CompanionConfigInput {
