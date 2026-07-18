@@ -45,7 +45,7 @@ export default function ListingTile({
       href={card.href ?? "#"}
       className="group flex flex-col overflow-hidden rounded-2xl border border-white/10 bg-zinc-950/90 transition-colors hover:border-green-400/40 hover:bg-zinc-900/90"
     >
-      <div className="flex flex-1 flex-col p-5">
+      <div className="flex flex-1 flex-col p-5 min-h-[300px]">
         {/* Top row: badges (no image placeholder — that space is reused below) */}
         <div className="mb-3 flex flex-wrap items-center gap-2">
           <span className="rounded-md bg-white/5 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-zinc-400">
