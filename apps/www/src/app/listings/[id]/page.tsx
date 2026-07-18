@@ -270,7 +270,7 @@ export default async function ListingPage({ params }: Params) {
                     Broker contact coming soon
                   </span>
                 )}
-                {/* Phone is resolved server-side via /contact-broker/{id} (DPDP-safe:
+                {/* Phone is resolved server-side via /api/contact-broker/{id} (DPDP-safe:
                     raw digits are never rendered into public HTML). */}
                 {card.waLink && (
                   <a
