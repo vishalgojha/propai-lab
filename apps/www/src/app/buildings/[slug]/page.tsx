@@ -15,6 +15,11 @@ import ListingTile from "@/components/ListingTile";
 
 type Params = { params: Promise<{ slug: string }> };
 
+// ISR: cache the rendered building page for 5 min. Inventory updates
+// gradually, so a few minutes of staleness is fine and avoids re-querying
+// Supabase on every request.
+export const revalidate = 300;
+
 export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const { slug } = await params;
   const building = await getBuildingBySlug(slug);

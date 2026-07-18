@@ -7,7 +7,7 @@ import type { BuildingOnMap } from "@/lib/localities";
 const LocalityMap = dynamic(() => import("./LocalityMap"), {
   ssr: false,
   loading: () => (
-    <div className="w-full h-[420px] lg:h-[480px] rounded-xl border border-white/10 bg-zinc-900/50 animate-pulse" />
+    <div className="w-full h-[280px] lg:h-[320px] rounded-xl border border-white/10 bg-zinc-900/50 animate-pulse" />
   ),
 });
 

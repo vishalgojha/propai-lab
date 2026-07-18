@@ -16,6 +16,11 @@ const MAPBOX_TOKEN =
 
 type Params = { params: Promise<{ slug: string }> };
 
+// These pages aggregate live WhatsApp inventory that updates gradually; a few
+// minutes of staleness is acceptable and avoids re-scanning the full listings/
+// buildings tables on every request. ISR caches the rendered page for 5 min.
+export const revalidate = 300;
+
 export async function generateMetadata({ params }: Params) {
   const { slug } = await params;
   const data = await getLocalityData(slug);
@@ -101,43 +106,46 @@ export default async function LocalityPage({ params }: Params) {
             {data.buildings.length} building{data.buildings.length === 1 ? "" : "s"},
             sourced from live WhatsApp broker conversations.
           </p>
-          {mapped.length === 0 && (
-            <p className="mt-3 inline-flex items-center gap-2 text-sm text-zinc-500">
-              <MapPin className="w-4 h-4" aria-hidden="true" />
-              Map view unavailable — location data still being enriched for this
-              locality. Showing listing cards below.
+        {mapped.length === 0 && (
+          <p className="mt-3 inline-flex items-center gap-2 text-sm text-zinc-500">
+            <MapPin className="w-4 h-4" aria-hidden="true" />
+            Map view unavailable — location data still being enriched for this
+            locality. Showing listing cards below.
+          </p>
+        )}
+      </header>
+
+      <section aria-label="Buildings in this locality">
+        <h2 className="text-[20px] lg:text-[24px] font-semibold text-white mb-6">
+          Buildings
+        </h2>
+        {data.buildings.length === 0 ? (
+          <p className="text-zinc-400">No buildings with listings yet for this locality.</p>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 lg:gap-6">
+            {data.buildings.map((b) => (
+              <ListingCard key={b.name} building={b} />
+            ))}
+          </div>
+        )}
+      </section>
+
+      {mapped.length > 0 && (
+        <section className="mt-12" aria-label={`Map of ${data.locality}`}>
+          <h2 className="text-[18px] lg:text-[20px] font-semibold text-white mb-4">
+            Map
+          </h2>
+          <LocalityMapLoader locality={data.locality} buildings={data.buildings} token={MAPBOX_TOKEN} />
+          {data.unmappedCount > 0 && (
+            <p className="mt-3 text-xs text-zinc-500 text-center">
+              Showing {mapped.length} of {data.buildings.length} buildings on the map.
+              {data.unmappedCount} more are listed above.
             </p>
           )}
-        </header>
-
-        {mapped.length > 0 && (
-          <section className="mb-12" aria-label={`Map of ${data.locality}`}>
-            <LocalityMapLoader locality={data.locality} buildings={data.buildings} token={MAPBOX_TOKEN} />
-            {data.unmappedCount > 0 && (
-              <p className="mt-3 text-xs text-zinc-500 text-center">
-                Showing {mapped.length} of {data.buildings.length} buildings on the map.
-                {data.unmappedCount} more are listed below.
-              </p>
-            )}
-          </section>
-        )}
-
-        <section aria-label="Buildings in this locality">
-          <h2 className="text-[20px] lg:text-[24px] font-semibold text-white mb-6">
-            Buildings
-          </h2>
-          {data.buildings.length === 0 ? (
-            <p className="text-zinc-400">No buildings with listings yet for this locality.</p>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 lg:gap-6">
-              {data.buildings.map((b) => (
-                <ListingCard key={b.name} building={b} />
-              ))}
-            </div>
-          )}
         </section>
+      )}
 
-        <NoPhotosFaq />
+      <NoPhotosFaq />
       </main>
       <SiteFooter />
     </div>
