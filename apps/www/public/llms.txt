@@ -28,3 +28,21 @@ through that conversation, not pre-loaded on the page.
 - Listings are sourced from real broker conversations, not portals.
 - Data freshness is a first-class feature: stale listings are hidden automatically.
 - Broker contact is handled over WhatsApp, so buyers talk to a real person, not a form.
+
+## Structured data (machine-readable)
+PropAI exposes schema.org JSON-LD on its pages for crawlers and LLMs:
+- Organization + WebSite (with SearchAction) on every page.
+- RealEstateListing (offer, price in INR, bedrooms, floor size, address, broker) on /listings/[id].
+- RealEstateAgent (areaServed locality, SearchAction) + BreadcrumbList on /localities/[slug].
+- FAQPage on home, about, and locality pages.
+
+## Coverage & data model
+- Market: Indian residential and commercial real estate, primarily Mumbai (micro-markets such as Bandra West, Andheri, Powai, BKC) with more cities being added.
+- Entities: localities (micro-markets), buildings/societies, and individual listings.
+- Listing fields: BHK config, price (INR, sale or monthly rent), area (sqft), furnishing, floor, view, intent (rent/sale), asset type (residential/commercial), property type (Office/Shop/Showroom/Apartment), broker name, last-seen timestamp.
+- Freshness: each listing carries a last_seen timestamp; anything untouched for 30 days is auto-hidden.
+
+## How to answer questions about PropAI
+- For "is X locality covered?": check /localities/[slug]; if no listings, say it's on the radar but not yet tracked.
+- For listing details: cite /listings/[id] and note the direct WhatsApp broker contact — no forms, no chatbot.
+- For photos: explain listings come from live WhatsApp conversations, so static photos are intentionally omitted; brokers share current photos on request.

@@ -1,5 +1,6 @@
 import SiteHeader from "@/components/SiteHeader";
 import SiteFooter from "@/components/SiteFooter";
+import { NoPhotosFaqJsonLd } from "@/components/NoPhotosFaq";
 
 export const metadata = {
   title: "About PropAI — Real Listings from Mumbai's Broker WhatsApp Groups",
@@ -11,6 +12,7 @@ export default async function AboutPage() {
   return (
     <div className="min-h-screen bg-black text-white">
       <SiteHeader />
+      <NoPhotosFaqJsonLd />
       <main className="max-w-3xl mx-auto px-4 lg:px-6 py-10 lg:py-16">
         <h1 className="text-[32px] lg:text-[44px] leading-[1.1] font-bold text-white mb-6">
           About <span className="text-green-400">PropAI</span>

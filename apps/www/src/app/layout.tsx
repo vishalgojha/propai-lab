@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next';
 import { Inter } from 'next/font/google';
 import './globals.css';
 import { getSiteUrl } from '@/lib/site';
+import { JsonLd, buildOrganization, buildWebSite } from '@/lib/seo';
 
 const inter = Inter({
   subsets: ['latin'],
@@ -58,6 +59,8 @@ export default function WWWLayout({
     <html lang="en" className={`${inter.variable} antialiased`}>
       <body className="bg-black text-white font-sans min-h-screen">
         {children}
+        <JsonLd data={buildOrganization({ url: getSiteUrl() })} />
+        <JsonLd data={buildWebSite(getSiteUrl())} />
       </body>
     </html>
   );

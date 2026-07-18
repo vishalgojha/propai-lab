@@ -9,6 +9,7 @@ import { MapPin, MessageSquare, Phone, Shield } from "lucide-react";
 import Link from "next/link";
 import HomeSearch from "@/components/HomeSearch";
 import SiteHeader from "@/components/SiteHeader";
+import { NoPhotosFaqJsonLd } from "@/components/NoPhotosFaq";
 import SiteFooter from "@/components/SiteFooter";
 import { ShortlistProvider } from "@/components/ShortlistProvider";
 import ShortlistBar from "@/components/ShortlistBar";
@@ -52,6 +53,7 @@ export default async function WWWPage() {
   return (
     <div className="min-h-screen bg-black text-white">
       <SiteHeader />
+      <NoPhotosFaqJsonLd />
 
       <main id="main-content">
        <ShortlistProvider>

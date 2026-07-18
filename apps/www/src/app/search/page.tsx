@@ -11,6 +11,7 @@ import SiteFooter from "@/components/SiteFooter";
 import { ShortlistProvider } from "@/components/ShortlistProvider";
 import ShortlistBar from "@/components/ShortlistBar";
 import RequirementCapture from "@/components/RequirementCapture";
+import { NOINDEX } from "@/lib/seo";
 
 // Locality/building lists change gradually; a few minutes of staleness is fine
 // and avoids re-scanning the full tables on every navigation. ISR caches the
@@ -21,6 +22,7 @@ export const metadata = {
   title: "Search Listings — PropAI",
   description:
     "Search live WhatsApp broker listings in plain English. Try queries like '3 BHK in Bandra West budget 2 to 3 lakh'.",
+  robots: NOINDEX,
   alternates: {
     canonical: "/search",
   },
