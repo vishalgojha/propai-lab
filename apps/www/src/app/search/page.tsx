@@ -68,22 +68,36 @@ export default async function SearchPage({ searchParams }: { searchParams: Searc
           </div>
 
           {!query && (
-            <div className="mt-8 flex flex-wrap gap-2">
-              {[
-                "3 BHK in Bandra West budget 2 to 3 lakh",
-                "2 BHK in Andheri West under 2 lakh",
-                "Fully furnished rental in Powai",
-                "Offices in BKC",
-              ].map((example) => (
-                <Link
-                  key={example}
-                  href={`/search?q=${encodeURIComponent(example)}`}
-                  className="rounded-full border border-white/10 bg-zinc-900/70 px-4 py-2 text-sm text-zinc-300 hover:border-green-400/40 hover:text-white transition-colors"
-                >
-                  {example}
-                </Link>
-              ))}
-            </div>
+            <>
+              <div className="mt-8 flex flex-wrap gap-2">
+                {[
+                  "3 BHK in Bandra West budget 2 to 3 lakh",
+                  "2 BHK in Andheri West under 2 lakh",
+                  "Fully furnished rental in Powai",
+                  "Offices in BKC",
+                ].map((example) => (
+                  <Link
+                    key={example}
+                    href={`/search?q=${encodeURIComponent(example)}`}
+                    className="rounded-full border border-white/10 bg-zinc-900/70 px-4 py-2 text-sm text-zinc-300 hover:border-green-400/40 hover:text-white transition-colors"
+                  >
+                    {example}
+                  </Link>
+                ))}
+              </div>
+
+              <div className="mt-8 rounded-2xl border border-white/10 bg-zinc-900/40 p-5 lg:p-6">
+                <h2 className="text-sm font-semibold text-white mb-3">Search tips</h2>
+                <ul className="grid gap-2 text-sm text-zinc-400 sm:grid-cols-2">
+                  <li>• Type the way you&apos;d ask a broker — plain English works.</li>
+                  <li>• Add a locality: &ldquo;in Bandra West&rdquo;, &ldquo;near Andheri&rdquo;.</li>
+                  <li>• Set a budget: &ldquo;budget 2 to 3 lakh&rdquo; or &ldquo;under 2 lakh&rdquo;.</li>
+                  <li>• Specify config: &ldquo;2 BHK&rdquo;, &ldquo;3 BHK furnished&rdquo;.</li>
+                  <li>• Pick residential or commercial from the toggle above.</li>
+                  <li>• Stuck? Try a building or society name directly.</li>
+                </ul>
+              </div>
+            </>
           )}
         </header>
 
