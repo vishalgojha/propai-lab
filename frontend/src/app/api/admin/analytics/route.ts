@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabase-admin";
+import { getSupabaseAdmin } from "@/lib/supabase-admin";
 
 const ADMIN_EMAIL = "vishal@chaoscraftlabs.com";
 
@@ -8,7 +8,7 @@ async function isAuthorized(req: NextRequest): Promise<boolean> {
   const authHeader = req.headers.get("authorization") || "";
   const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : null;
   if (!token) return false;
-  const { data, error } = await supabaseAdmin.auth.getUser(token);
+  const { data, error } = await getSupabaseAdmin().auth.getUser(token);
   if (error || !data.user) return false;
   return data.user.email === ADMIN_EMAIL;
 }
@@ -23,7 +23,7 @@ export async function GET(req: NextRequest) {
 
   const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
 
-  const { data, error } = await supabaseAdmin
+  const { data, error } = await getSupabaseAdmin()
     .from("web_analytics")
     .select("event, asset, query, visitor_id, created_at")
     .gte("created_at", since);
