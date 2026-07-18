@@ -9,15 +9,17 @@
 # edit this file (or the provider keys in Coolify) — no app code changes.
 #
 # ToS / commercial-use check status (free tiers change terms often — re-check):
-#   groq          — checked 2026-07-17, free tier permits commercial use (usage capped)
+#   groq          — checked 2026-07-17, free tier permits commercial use (usage capped). ACTIVE.
 #   gemini / nvidia-nim / cerebras / mistral / openrouter — NOT YET CHECKED (2026-07-17)
-#                    DO NOT enable for production traffic until ToS verified.
-#   doubleword    — paid, primary chat provider, always allowed.
+#                    DO NOT enable for production traffic until ToS verified. Defined in
+#                    model_list but not in any active fallback chain yet.
+#   doubleword    — paid, primary chat provider, always allowed. ACTIVE.
 #
-# NOTE: free-tier provider keys are optional. If a key is absent the
-# deployment is inert and the fallback chain simply skips it. Until keys
-# are added (as Coolify secrets) only `doubleword-prod` is active, so all
-# task types route to Doubleword. This is safe-by-default.
+# Active providers today: Groq (extraction/classification primary) + Doubleword
+# (chat/batch/default primary, and the fallback for extraction/classification).
+# Other free-tier providers are wired in model_list but inert until their keys
+# are added as Coolify secrets AND their ToS is verified. Safe-by-default:
+# missing keys are skipped, so traffic falls through to Doubleword.
 
 litellm_settings:
   telemetry: false
@@ -35,10 +37,15 @@ router_settings:
   cooldown_time: 30
   # Per-task_type fallback chains. The first model is the primary; on
   # failure (429/5xx) LiteLLM tries the next, cooling down failures.
+  # Active providers today: Groq (free tier, commercial use permitted) and
+  # Doubleword (paid, always allowed). Gemini/NIM/Cerebras/Mistral/OpenRouter
+  # entries remain defined in model_list but are NOT in any active chain yet
+  # (keys not provisioned + ToS not verified) — see header. Add their keys as
+  # Coolify secrets and extend these chains once ToS is cleared.
   fallbacks:
     - chat: [doubleword-prod]
-    - extraction: [gemini-flash, nvidia-nim, cerebras, mistral, openrouter-free, doubleword-prod]
-    - classification: [gemini-flash, nvidia-nim, cerebras, mistral, openrouter-free, doubleword-prod]
+    - extraction: [groq, doubleword-prod]
+    - classification: [groq, doubleword-prod]
     - batch: [doubleword-prod]
 
 # ---- Model groups (one per task_type) --------------------------------
