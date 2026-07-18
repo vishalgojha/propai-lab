@@ -27,7 +27,9 @@ except Exception:  # pragma: no cover
 
 def _client() -> "Client | None":
     url = os.environ.get("SUPABASE_URL")
-    key = os.environ.get("SUPABASE_SERVICE_KEY")
+    # Gateway env uses SUPABASE_SERVICE_ROLE_KEY (www/api use the same);
+    # fall back to SUPABASE_SERVICE_KEY for older setups.
+    key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or os.environ.get("SUPABASE_SERVICE_KEY")
     if not url or not key or create_client is None:
         return None
     return create_client(url, key)
