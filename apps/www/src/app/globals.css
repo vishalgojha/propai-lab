@@ -15,6 +15,15 @@ html {
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* Defensive guard: ensure the document is always scrollable even if a
+   third-party script (analytics, chat widget, consent banner) toggles
+   overflow on <html>/<body>. Page itself never needs scroll-locking. */
+html,
+body {
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
 body {
   background-color: #000;
   color: #fff;
