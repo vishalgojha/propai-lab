@@ -26,6 +26,7 @@ Set these on each service in Coolify:
 |----------|-------|
 | `SUPABASE_URL` | Your Supabase project URL |
 | `SUPABASE_SERVICE_KEY` | Supabase service role key |
+| `PROPAI_INTERNAL_TOKEN` | Shared random secret for API ↔ WhatsMeow internal calls (set the same value on API, ingestor, and alert job) |
 | `DOUBLEWORD_API_URL` | `https://api.doubleword.ai/v1` |
 | `DOUBLEWORD_API_KEY` | Active Doubleword inference key |
 | `DOUBLEWORD_MODEL` | `Qwen/Qwen3.6-35B-A3B-FP8` |
@@ -42,6 +43,7 @@ Set these on each service in Coolify:
 | `PROPAI_API_URL` | `http://api:8000` |
 | `PROPAI_INSTANCE_NAME` | `propai-whatsmeow` |
 | `SUPABASE_SERVICE_KEY` | Same service role key used by the API, for authenticated internal agent calls |
+| `PROPAI_INTERNAL_TOKEN` | Same shared internal service secret used by the API |
 | `DATABASE_URL` | Active Supabase Postgres connection string from the Supabase Connect panel |
 | `AUTH_DIR` | `/data/auth` |
 | `STATUS_FILE` | `/data/status.json` |

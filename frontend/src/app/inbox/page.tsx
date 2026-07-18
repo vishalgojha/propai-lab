@@ -961,17 +961,18 @@ function InboxPageInner({ defaultView }: InboxPageInnerProps) {
   // Left Panel States
   const [messages, setMessages] = useState<api.InboxThread[]>([]);
   const [groups, setGroups] = useState<any[]>([]);
-  const [loadingLeft, setLoadingLeft] = useState(false);
+  const [loadingLeft, setLoadingLeft] = useState(true);
   const [offset, setOffset] = useState(0);
   const [searchText, setSearchText] = useState("");
   const [searchResults, setSearchResults] = useState<api.RawSearchResult[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchError, setSearchError] = useState("");
   const [slugs, setSlugs] = useState<api.SavedView[]>([]);
+  const [loadingSlugs, setLoadingSlugs] = useState(true);
   const [currentSlug, setCurrentSlug] = useState<string>(defaultView === "groups" ? "groups" : "brokers");
   const activeSlug = useMemo(() => slugs.find(s => s.slug === currentSlug) || null, [slugs, currentSlug]);
   const [brokerFeed, setBrokerFeed] = useState<any[]>([]);
-  const [loadingBrokerFeed, setLoadingBrokerFeed] = useState(false);
+  const [loadingBrokerFeed, setLoadingBrokerFeed] = useState(defaultView !== "groups");
   const [brokerOffset, setBrokerOffset] = useState(0);
   const [marketAccess, setMarketAccess] = useState<api.MarketAccessStatus | null>(null);
   const [loadingMarketAccess, setLoadingMarketAccess] = useState(true);
@@ -979,6 +980,8 @@ function InboxPageInner({ defaultView }: InboxPageInnerProps) {
   const [whatsappStatus, setWhatsappStatus] = useState<api.WhatsAppStatus | null>(null);
   const [selectedBrokerObservations, setSelectedBrokerObservations] = useState<any[]>([]);
   const [loadingBrokerObs, setLoadingBrokerObs] = useState(false);
+  const [brokerObsError, setBrokerObsError] = useState("");
+  const brokerObservationRequestRef = useRef<AbortController | null>(null);
   const [opportunityFilter, setOpportunityFilter] = useState<OpportunityFilter>("all");
   const [now, setNow] = useState(() => Date.now());
 
@@ -1024,7 +1027,12 @@ function InboxPageInner({ defaultView }: InboxPageInnerProps) {
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 60000);
-    return () => window.clearInterval(timer);
+    return () => {
+      window.clearInterval(timer);
+      const activeRequest = brokerObservationRequestRef.current;
+      brokerObservationRequestRef.current = null;
+      activeRequest?.abort();
+    };
   }, []);
 
   useEffect(() => {
@@ -1392,6 +1400,22 @@ return {
           // brokers slug might not exist yet; ensure it's set
         }
         selectBroker(broker);
+      } else {
+        // A deep-linked broker does not need to be present on the current
+        // feed page. Resolve the canonical identity directly so name-only
+        // brokers remain usable while the left list paginates independently.
+        const fallbackName = brokerParam.replace(/^name:/i, "").trim();
+        selectBroker({
+          id: brokerParam,
+          identity_key: brokerParam,
+          primary_phone: brokerParamPhone || brokerParam,
+          canonical_name: fallbackName || (brokerParamPhone ? `+91 ${brokerParamPhone}` : "Broker"),
+          observation_count: 0,
+          listing_count: 0,
+          requirement_count: 0,
+          building_count: 0,
+          channels: [],
+        });
       }
     } else if (observationParam && Number(observationParam) > 0) {
       initialNavDone.current = true;
@@ -1504,30 +1528,32 @@ return {
 
   // Fetch available slugs (saved views) for the inbox tabs
   useEffect(() => {
-    (async () => {
+    let cancelled = false;
+    void (async () => {
+      setLoadingSlugs(true);
       try {
         const data = (await api.getInboxSlugs()).filter((s) => s.view_type === "brokers" || s.slug === "brokers");
+        if (cancelled) return;
         setSlugs(data);
         const viewFromUrl = defaultView || searchParams.get("view");
-
-        if (viewFromUrl === "groups") {
-          setCurrentSlug("groups");
-          return;
-        }
-
-        if (viewFromUrl === "brokers" && data.some((s) => s.slug === viewFromUrl)) {
-          setCurrentSlug(viewFromUrl);
-        } else if (data.length > 0 && !data.some((s) => s.slug === currentSlug)) {
-          const def = data.find((s) => s.is_default) || data[0];
-          setCurrentSlug(def.slug);
-        } else {
-          setCurrentSlug("brokers");
-        }
+        setCurrentSlug((previousSlug) => {
+          if (viewFromUrl === "groups") return "groups";
+          if (viewFromUrl === "brokers" && data.some((s) => s.slug === viewFromUrl)) return viewFromUrl;
+          if (data.length > 0 && !data.some((s) => s.slug === previousSlug)) {
+            return (data.find((s) => s.is_default) || data[0]).slug;
+          }
+          return "brokers";
+        });
       } catch (e) {
         console.error("Failed to load inbox slugs:", e);
+      } finally {
+        if (!cancelled) setLoadingSlugs(false);
       }
     })();
-  }, [pathname, searchParams, currentSlug]);
+    return () => {
+      cancelled = true;
+    };
+  }, [defaultView, pathname, searchParams]);
 
   const loadBrokerFeed = useCallback(async (requestedOffset = brokerOffset) => {
     if (connectionPending) {
@@ -1550,8 +1576,8 @@ return {
   const brokerInitialLoadDone = useRef(false);
   useEffect(() => {
     if (connectionPending) return;
-    const vt = activeSlug?.view_type;
-    if (vt !== "brokers") return;
+    const brokerViewActive = activeSlug?.view_type === "brokers" || (!activeSlug && currentSlug === "brokers");
+    if (!brokerViewActive) return;
     if (!brokerInitialLoadDone.current) {
       brokerInitialLoadDone.current = true;
       prevBrokerOffsetRef.current = brokerOffset;
@@ -1562,7 +1588,7 @@ return {
       prevBrokerOffsetRef.current = brokerOffset;
       loadBrokerFeed(brokerOffset);
     }
-  }, [activeSlug?.view_type, brokerOffset, connectionPending, loadBrokerFeed]);
+  }, [activeSlug, brokerOffset, connectionPending, currentSlug, loadBrokerFeed]);
 
   // Scroll to bottom of conversation thread when new messages arrive
   useEffect(() => {
@@ -2142,17 +2168,20 @@ return {
     .filter((item) => Boolean(item.key))
     .sort((a, b) => (messageDateValue(b.latest)?.getTime() || 0) - (messageDateValue(a.latest)?.getTime() || 0));
 
-  const showThreadFallback = activeSlug?.view_type !== "brokers" || (!loadingBrokerFeed && filteredBrokerFeed.length === 0);
-  const isBrokerView = activeSlug?.view_type === "brokers";
+  const isBrokerView = activeSlug?.view_type === "brokers" || (!activeSlug && currentSlug === "brokers");
+  const showThreadFallback = !isBrokerView || (!loadingBrokerFeed && filteredBrokerFeed.length === 0);
   const brokerHasMore = brokerFeed.length >= BROKER_PAGE_SIZE;
   const brokerPage = Math.floor(brokerOffset / BROKER_PAGE_SIZE) + 1;
   const messagePage = Math.floor(offset / PAGE_SIZE) + 1;
 
   const leftListEmpty = (() => {
-    const vt = activeSlug?.view_type;
-    if (vt === "brokers") return filteredBrokerFeed.length === 0 && threadFallbackItems.length === 0;
+    if (loadingSlugs || loadingLeft || (isBrokerView && loadingBrokerFeed)) return false;
+    if (isBrokerView) return filteredBrokerFeed.length === 0 && threadFallbackItems.length === 0;
     return threadFallbackItems.length === 0;
   })();
+  const initialLeftPanelLoading = isBrokerView
+    ? brokerFeed.length === 0 && (loadingBrokerFeed || loadingSlugs)
+    : threadFallbackItems.length === 0 && loadingLeft;
 
   const groupedConversationMessages: [string, api.RawMessage[][]][] = (() => {
     const grouped: Record<string, api.RawMessage[]> = {};
@@ -2265,6 +2294,7 @@ return {
       ...selectedBrokerObservations.flatMap((obs: BrokerObservationRow) => [
         obs.broker_phone,
         obs.broker_name,
+        extractPhoneFromText(obs.raw_message),
       ]),
     ];
     for (const candidate of candidates) {
@@ -2642,31 +2672,21 @@ return {
         // The directory remains available as a fallback for identities without enough parsed evidence.
       });
     if (!focusObsRawId) setSelectedMsgDetails(null);
-    // Load observations for center timeline
+    // Load observations for center timeline. One broker selection maps to one
+    // canonical request; equivalent phone/name retries previously multiplied
+    // slow scans and left the UI spinning for minutes.
+    brokerObservationRequestRef.current?.abort();
+    const request = new AbortController();
+    brokerObservationRequestRef.current = request;
+    setBrokerObsError("");
+    setSelectedBrokerObservations([]);
     setLoadingBrokerObs(true);
     try {
-      const observationKeys = [
-        brokerIdentityKey,
-        brokerPhone,
-        broker.primary_phone,
-        broker.phone,
-        brokerName ? `name:${brokerName}` : "",
-        broker.canonical_name ? `name:${stripEmojis(broker.canonical_name).trim()}` : "",
-        broker.name ? `name:${stripEmojis(broker.name).trim()}` : "",
-      ].filter(Boolean) as string[];
-      let obs: any[] = [];
-      for (const key of observationKeys) {
-        try {
-          const rows = await api.getObservationsFeed(200, 0, key);
-          if (rows?.length) {
-            obs = rows;
-            break;
-          }
-          if (!obs.length) obs = rows;
-        } catch (err) {
-          console.log("Observation feed lookup failed for broker key:", key, err);
-        }
-      }
+      const observationKey = brokerPhone
+        || (/^name:/i.test(brokerIdentityKey) ? brokerIdentityKey : "")
+        || (brokerName ? `name:${brokerName}` : brokerIdentityKey);
+      const obs = await api.getObservationsFeed(200, 0, observationKey, request.signal);
+      if (request.signal.aborted || brokerObservationRequestRef.current !== request) return;
       setSelectedBrokerObservations(obs);
       const rawId = focusObsRawId || obs?.[0]?.latest_raw_message_id || obs?.[0]?.raw_message_id;
       if (rawId) {
@@ -2674,10 +2694,15 @@ return {
         loadMessageDetails(rawId, { setSelectedRaw: true, preserveProfiles: true });
       }
     } catch (e) {
+      if (request.signal.aborted || brokerObservationRequestRef.current !== request) return;
       console.error("Failed to load broker observations:", e);
       setSelectedBrokerObservations([]);
+      setBrokerObsError("Market items could not be loaded. Please retry.");
     } finally {
-      setLoadingBrokerObs(false);
+      if (brokerObservationRequestRef.current === request) {
+        setLoadingBrokerObs(false);
+        brokerObservationRequestRef.current = null;
+      }
     }
   }, [updateUrlBroker, updateUrlObservation]);
 
@@ -3189,20 +3214,20 @@ return {
                   );
                 })
               )
-            ) : loadingLeft && messages.length === 0 && groups.length === 0 ? (
+            ) : initialLeftPanelLoading ? (
               <div className="p-8 text-center text-xs text-zinc-500">Loading inbox feed...</div>
             ) : leftListEmpty ? (
               <div className="p-8 text-center text-xs text-zinc-500">
-                {activeSlug?.view_type === "brokers"
+                {isBrokerView
                   ? "No broker entities extracted from group messages yet."
                   : "No chats found"}
               </div>
             ) : (
               <>
-                {activeSlug?.view_type === "brokers" && loadingBrokerFeed && (
-                  <div className="p-8 text-center text-xs text-zinc-500">Loading broker feed...</div>
+                {isBrokerView && loadingBrokerFeed && brokerFeed.length > 0 && (
+                  <div className="px-3 py-2 text-center text-[10px] text-zinc-600">Refreshing broker feed...</div>
                 )}
-                {activeSlug?.view_type === "brokers" && !loadingBrokerFeed &&
+                {isBrokerView &&
                   filteredBrokerFeed.map((b) => {
                     const isSelected =
                       (selectedBroker?.identity_key && selectedBroker.identity_key === (b.identity_key || b.primary_phone || b.id)) ||
@@ -3434,7 +3459,11 @@ return {
                     <div className="text-[10px] text-zinc-500 flex items-center gap-2 mt-0.5 flex-wrap">
                       <span className="truncate">{displayPhoneString(resolvedBrokerPhone) || "Number not resolved"}</span>
                       <span>•</span>
-                      <span>{selectedBrokerObservations.length} market items</span>
+                      <span>
+                        {loadingBrokerObs
+                          ? (selectedBroker.observation_count || 0)
+                          : selectedBrokerObservations.length} market items
+                      </span>
                       {selectedBroker.building_count > 0 && (
                         <>
                           <span>•</span>
@@ -3478,7 +3507,21 @@ return {
               {/* Observation Timeline */}
               <div className="flex-1 overflow-y-auto p-4 space-y-4">
                 {loadingBrokerObs ? (
-                  <div className="p-8 text-center text-xs text-zinc-500">Loading matched items...</div>
+                  <div className="p-8 text-center text-xs text-zinc-500">Cleaning up this broker&apos;s market items...</div>
+                ) : brokerObsError ? (
+                  <div className="rounded-xl border border-amber-500/20 bg-amber-500/[0.06] p-5 text-center">
+                    <div className="text-sm font-semibold text-amber-200">Market items did not load</div>
+                    <div className="mx-auto mt-1 max-w-[360px] text-xs leading-relaxed text-zinc-500">
+                      Your broker card is safe. Retry the item lookup without leaving Market Inbox.
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => void selectBroker(selectedBroker)}
+                      className="mt-4 h-8 rounded-md border border-white/15 bg-white/[0.06] px-3 text-[11px] font-semibold text-white hover:bg-white/[0.1]"
+                    >
+                      Retry
+                    </button>
+                  </div>
                 ) : groupedBrokerObservations.length === 0 ? (
                   <div className="rounded-xl border border-white/10 bg-zinc-950/60 p-5 text-center">
                     <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-md border border-white/10 bg-white/[0.035] text-zinc-400">
@@ -3760,7 +3803,7 @@ return {
                   </>
                 ) : (
                   <div className="rounded-xl border border-white/10 bg-zinc-950 px-3 py-3 text-[11px] text-zinc-400">
-                    The broker number has not been resolved from the feed yet. Open a parsed post or direct chat to reply inline.
+                    No WhatsApp number was found in this broker&apos;s captured evidence yet. You can keep reviewing the clean market items above; PropAI will link the number automatically when it appears in a future post.
                   </div>
                 )}
               </div>

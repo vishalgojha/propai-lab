@@ -1,6 +1,9 @@
 import asyncio
 from types import SimpleNamespace
 
+import httpx
+import pytest
+
 import app
 
 
@@ -109,6 +112,60 @@ def test_audit_insights_is_tenant_scoped(monkeypatch):
     assert result["exclusive_members"]["Bandra Brokers"] == 7
 
 
+def test_audit_groups_uses_named_columns_from_supabase_json_rows(monkeypatch):
+    """JSONB key order must never be mistaken for SQL select order."""
+    calls = []
+    result_sets = iter([
+        [{
+            "last_activity": "2026-07-18T12:00:00Z",
+            "group_name": "Bandra Brokers",
+            "senders_count": 4,
+            "messages": 12,
+        }],
+        [{
+            "unknown_locations": 1,
+            "markets_count": 2,
+            "listings": 6,
+            "group_name": "Bandra Brokers",
+            "requirements": 2,
+            "observations": 8,
+            "identities": 4,
+        }],
+        [{"total_unique_senders": 4}],
+    ])
+
+    def rows(sql, params=()):
+        calls.append((sql, params))
+        return next(result_sets)
+
+    monkeypatch.setattr(app, "_table_exists", lambda table: True)
+    monkeypatch.setattr(app, "_audit_rows", rows)
+
+    result = app.audit_groups_v2(user={"id": "user"}, tenant_id="tenant-a")
+
+    assert len(calls) == 3
+    assert result["total_unique_senders"] == 4
+    assert result["groups"][0]["name"] == "Bandra Brokers"
+    assert result["groups"][0]["messages"] == 12
+    assert result["groups"][0]["observations"] == 8
+    assert result["groups"][0]["active_brokers"] == 4
+
+
+def test_audit_overlap_uses_named_columns_from_supabase_json_rows(monkeypatch):
+    monkeypatch.setattr(app, "_table_exists", lambda table: True)
+    monkeypatch.setattr(app, "_audit_rows", lambda *_args, **_kwargs: [
+        {"sender": "broker-1", "group_name": "Group A"},
+        {"group_name": "Group B", "sender": "broker-1"},
+        {"sender": "broker-2", "group_name": "Group A"},
+        {"group_name": "Group B", "sender": "broker-2"},
+    ])
+
+    result = app.audit_group_overlap(user={"id": "user"}, tenant_id="tenant-a")
+
+    assert result["pairs"][0]["shared_senders"] == 2
+    assert {item["name"] for item in result["groups"]} == {"Group A", "Group B"}
+
+
 def test_phone_list_resolves_authenticated_workspace(monkeypatch):
     seen = []
 
@@ -117,8 +174,12 @@ def test_phone_list_resolves_authenticated_workspace(monkeypatch):
             seen.append(org_id)
             return [{"id": 13, "broker_id": "phone-real", "phone_number": "919820056180"}]
 
+    async def inline_to_thread(function, *args, **kwargs):
+        return function(*args, **kwargs)
+
     monkeypatch.setattr(app, "storage", Storage())
     monkeypatch.setattr(app, "_resolve_active_organization_id", lambda user, tenant_id: "workspace-real")
+    monkeypatch.setattr(app.asyncio, "to_thread", inline_to_thread)
 
     result = asyncio.run(app.list_phones(
         user={"id": "user"}, tenant_id=app.DEFAULT_TENANT_ID, include_live=False,
@@ -142,9 +203,17 @@ def test_create_phone_reuses_workspace_placeholder(monkeypatch):
         connection_calls.append((method, path, kwargs))
         return None, None
 
+    async def allow_phone_management(user, org_id, permission):
+        assert (user["id"], org_id, permission) == ("user", "workspace-real", "manage_whatsapp")
+
+    async def inline_to_thread(function, *args, **kwargs):
+        return function(*args, **kwargs)
+
     monkeypatch.setattr(app, "storage", Storage())
     monkeypatch.setattr(app, "_resolve_active_organization_id", lambda user, tenant_id: "workspace-real")
     monkeypatch.setattr(app, "_first_ingestor_response", ingestor)
+    monkeypatch.setattr(app, "_require_org_permission", allow_phone_management)
+    monkeypatch.setattr(app.asyncio, "to_thread", inline_to_thread)
 
     result = asyncio.run(app.create_phone(
         {"instance_name": ""}, user={"id": "user"}, tenant_id="workspace-real",
@@ -152,3 +221,122 @@ def test_create_phone_reuses_workspace_placeholder(monkeypatch):
 
     assert result["id"] == 19
     assert connection_calls[0][2]["params"]["broker_id"] == "phone-placeholder"
+
+
+def test_phone_list_marks_missing_session_as_stopped_when_ingestor_is_reachable(monkeypatch):
+    class Storage:
+        def list_org_whatsapp_connections(self, org_id):
+            assert org_id == "workspace-real"
+            return [{"id": 13, "broker_id": "phone-real", "phone_number": "919820056180"}]
+
+    async def ingestor(method, path, **kwargs):
+        assert (method, path) == ("GET", "/list")
+        return "http://ingestor:3001", httpx.Response(200, json=[])
+
+    async def inline_to_thread(function, *args, **kwargs):
+        return function(*args, **kwargs)
+
+    monkeypatch.setattr(app, "storage", Storage())
+    monkeypatch.setattr(app, "_resolve_active_organization_id", lambda user, tenant_id: "workspace-real")
+    monkeypatch.setattr(app, "_first_ingestor_response", ingestor)
+    monkeypatch.setattr(app, "_broker_live_statuses", {})
+    monkeypatch.setattr(app.asyncio, "to_thread", inline_to_thread)
+
+    result = asyncio.run(app.list_phones(
+        user={"id": "user"}, tenant_id="workspace-real", include_live=True,
+    ))
+
+    phone = result["phones"][0]
+    assert phone["connected"] is False
+    assert phone["connection_state"] == "stopped"
+    assert phone["live_status_available"] is True
+    assert phone["live_status_error"] == ""
+
+
+def test_phone_list_exposes_ingestor_auth_configuration_error(monkeypatch):
+    class Storage:
+        def list_org_whatsapp_connections(self, org_id):
+            return [{"id": 13, "broker_id": "phone-real", "phone_number": "919820056180"}]
+
+    async def ingestor(method, path, **kwargs):
+        return "http://ingestor:3001", httpx.Response(401, json={"error": "invalid token"})
+
+    async def inline_to_thread(function, *args, **kwargs):
+        return function(*args, **kwargs)
+
+    monkeypatch.setattr(app, "storage", Storage())
+    monkeypatch.setattr(app, "_resolve_active_organization_id", lambda user, tenant_id: "workspace-real")
+    monkeypatch.setattr(app, "_first_ingestor_response", ingestor)
+    monkeypatch.setattr(app, "_broker_live_statuses", {})
+    monkeypatch.setattr(app.asyncio, "to_thread", inline_to_thread)
+
+    result = asyncio.run(app.list_phones(
+        user={"id": "user"}, tenant_id="workspace-real", include_live=True,
+    ))
+
+    phone = result["phones"][0]
+    assert phone["connected"] is None
+    assert phone["connection_state"] == "unavailable"
+    assert phone["live_status_available"] is False
+    assert "PROPAI_INTERNAL_TOKEN" in phone["live_status_error"]
+
+
+def test_delete_phone_removes_ingestor_session_and_workspace_record(monkeypatch):
+    calls = []
+
+    class Storage:
+        def remove_org_whatsapp_connection(self, phone_id):
+            calls.append(("storage-delete", phone_id))
+            return True
+
+    async def allow_phone_management(user, org_id, permission):
+        assert (org_id, permission) == ("workspace-real", "manage_whatsapp")
+
+    async def scoped_phone(phone_id, org_id):
+        return {"id": phone_id, "organization_id": org_id, "broker_id": "phone-real"}
+
+    async def ingestor(method, path, **kwargs):
+        calls.append((method, path, kwargs["params"]["broker_id"]))
+        return "http://ingestor:3001", httpx.Response(200, json={"ok": True})
+
+    async def inline_to_thread(function, *args, **kwargs):
+        return function(*args, **kwargs)
+
+    monkeypatch.setattr(app, "storage", Storage())
+    monkeypatch.setattr(app, "_resolve_active_organization_id", lambda user, tenant_id: "workspace-real")
+    monkeypatch.setattr(app, "_require_org_permission", allow_phone_management)
+    monkeypatch.setattr(app, "_scoped_phone", scoped_phone)
+    monkeypatch.setattr(app, "_first_ingestor_response", ingestor)
+    monkeypatch.setattr(app.asyncio, "to_thread", inline_to_thread)
+
+    result = asyncio.run(app.delete_phone(
+        13, user={"id": "user"}, tenant_id="workspace-real",
+    ))
+
+    assert result == {"ok": True}
+    assert calls == [
+        ("POST", "/delete-session", "phone-real"),
+        ("storage-delete", 13),
+    ]
+
+
+def test_connect_phone_maps_ingestor_unauthorized_to_dependency_error(monkeypatch):
+    async def allow_phone_management(user, org_id, permission):
+        return None
+
+    async def scoped_phone(phone_id, org_id):
+        return {"id": phone_id, "organization_id": org_id, "broker_id": "phone-real"}
+
+    async def ingestor(method, path, **kwargs):
+        return "http://ingestor:3001", httpx.Response(401, json={"error": "invalid token"})
+
+    monkeypatch.setattr(app, "_resolve_active_organization_id", lambda user, tenant_id: "workspace-real")
+    monkeypatch.setattr(app, "_require_org_permission", allow_phone_management)
+    monkeypatch.setattr(app, "_scoped_phone", scoped_phone)
+    monkeypatch.setattr(app, "_first_ingestor_response", ingestor)
+
+    with pytest.raises(app.HTTPException) as exc:
+        asyncio.run(app.connect_phone(13, user={"id": "user"}, tenant_id="workspace-real"))
+
+    assert exc.value.status_code == 502
+    assert "PROPAI_INTERNAL_TOKEN" in exc.value.detail

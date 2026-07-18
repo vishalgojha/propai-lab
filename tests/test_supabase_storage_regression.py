@@ -112,6 +112,203 @@ def test_market_feed_endpoints_forward_the_active_tenant(monkeypatch):
     ]
 
 
+def test_market_broker_feed_prefers_database_aggregation():
+    from storage.supabase import SupabaseStorage, set_tenant_id
+
+    calls = []
+
+    class FakeClient:
+        def rpc(self, name, params):
+            calls.append((name, params))
+            return [{
+                "identity_key": "name:deepak jagasia",
+                "canonical_name": "Deepak Jagasia",
+                "observation_count": 7,
+            }]
+
+    storage = object.__new__(SupabaseStorage)
+    storage._client = FakeClient()
+    storage._SupabaseStorage__tenant_id_fallback = None
+    try:
+        set_tenant_id("org-2")
+        result = storage.get_brokers_feed(25, 0, min_observations=1)
+    finally:
+        set_tenant_id(None)
+
+    assert result[0]["identity_key"] == "name:deepak jagasia"
+    assert calls == [(
+        "get_market_brokers_feed",
+        {
+            "p_limit": 25,
+            "p_offset": 0,
+            "p_min_observations": 1,
+            "p_tenant_id": "org-2",
+        },
+    )]
+
+
+def test_market_identity_links_name_only_rows_to_one_phone():
+    from storage.supabase import _resolve_market_identity
+
+    identity, phone = _resolve_market_identity(
+        "",
+        "Deepak Jagasia",
+        {"deepak jagasia": {"9222772277"}},
+    )
+
+    assert identity == "9222772277"
+    assert phone == "9222772277"
+
+
+def test_market_identity_does_not_merge_an_ambiguous_name():
+    from storage.supabase import _resolve_market_identity
+
+    identity, phone = _resolve_market_identity(
+        "",
+        "Amit Shah",
+        {"amit shah": {"9820011111", "9820022222"}},
+    )
+
+    assert identity == "name:amit shah"
+    assert phone == ""
+
+
+def test_parsed_market_fallback_merges_phone_and_name_rows():
+    from types import SimpleNamespace
+    from storage.supabase import SupabaseStorage
+
+    parsed_rows = [
+        {
+            "id": 1,
+            "raw_message_id": 101,
+            "intent": "SELL",
+            "broker_name": "Deepak Jagasia",
+            "broker_phone": "9222772277",
+            "created_at": "2026-07-18T10:00:00+00:00",
+            "summary_title": "First listing",
+        },
+        {
+            "id": 2,
+            "raw_message_id": 102,
+            "intent": "SELL",
+            "profile_name": "Deepak Jagasia",
+            "created_at": "2026-07-18T11:00:00+00:00",
+            "summary_title": "Latest listing",
+        },
+    ]
+    raw_rows = [
+        {"id": 101, "group_name": "Juhu Brokers", "sender": "Deepak Jagasia", "timestamp": "2026-07-18T10:00:00+00:00"},
+        {"id": 102, "group_name": "Juhu Brokers", "sender": "Deepak Jagasia", "timestamp": "2026-07-18T11:00:00+00:00"},
+    ]
+
+    class FakeQuery:
+        def __init__(self, rows):
+            self.rows = rows
+
+        def __getattr__(self, _name):
+            return lambda *args, **kwargs: self
+
+        def execute(self):
+            return SimpleNamespace(data=self.rows)
+
+    class FakeClient:
+        def table(self, name):
+            return FakeQuery(parsed_rows if name == "parsed_output" else raw_rows)
+
+    storage = object.__new__(SupabaseStorage)
+    storage._client = FakeClient()
+    storage._SupabaseStorage__tenant_id_fallback = None
+
+    result = storage._get_parsed_market_threads(25, 0)
+
+    assert len(result) == 1
+    assert result[0]["conversation_key"] == "9222772277"
+    assert result[0]["broker_phone"] == "9222772277"
+    assert result[0]["message_count"] == 2
+
+
+def test_phone_observation_fallback_includes_linked_name_only_rows():
+    from types import SimpleNamespace
+    from storage.supabase import SupabaseStorage
+
+    def parsed_row(row_id, phone):
+        return {
+            "id": row_id,
+            "raw_message_id": 100 + row_id,
+            "intent": "SELL",
+            "broker_name": "Deepak Jagasia",
+            "broker_phone": phone,
+            "created_at": f"2026-07-18T1{row_id}:00:00+00:00",
+            "raw_messages": {
+                "group_name": "Juhu Brokers",
+                "sender": "Deepak Jagasia",
+                "message": f"Listing {row_id}",
+                "timestamp": f"2026-07-18T1{row_id}:00:00+00:00",
+            },
+        }
+
+    class FakeQuery:
+        def __getattr__(self, _name):
+            return lambda *args, **kwargs: self
+
+        def execute(self):
+            return SimpleNamespace(data=[parsed_row(1, "9222772277"), parsed_row(2, "")])
+
+    class FakeClient:
+        def table(self, _name):
+            return FakeQuery()
+
+    storage = object.__new__(SupabaseStorage)
+    storage._client = FakeClient()
+    storage._SupabaseStorage__tenant_id_fallback = None
+
+    result = storage._get_parsed_observations_for_broker(
+        25,
+        0,
+        broker_key="9222772277",
+    )
+
+    assert len(result) == 2
+    assert {row["broker_key"] for row in result} == {"9222772277"}
+    assert {row["broker_phone"] for row in result} == {"9222772277"}
+
+
+def test_name_identity_observation_lookup_is_one_database_request():
+    from storage.supabase import SupabaseStorage, set_tenant_id
+
+    calls = []
+
+    class FakeClient:
+        def rpc(self, name, params):
+            calls.append((name, params))
+            return []
+
+    storage = object.__new__(SupabaseStorage)
+    storage._client = FakeClient()
+    storage._SupabaseStorage__tenant_id_fallback = None
+    try:
+        set_tenant_id("org-2")
+        result = storage.get_observations_feed(
+            200,
+            0,
+            broker_key="name:deepak jagasia",
+        )
+    finally:
+        set_tenant_id(None)
+
+    assert result == []
+    assert calls == [(
+        "get_market_observations_feed",
+        {
+            "p_limit": 200,
+            "p_offset": 0,
+            "p_broker_key": "name:deepak jagasia",
+            "p_intent": "",
+            "p_tenant_id": "org-2",
+        },
+    )]
+
+
 def test_find_broker_refreshes_stale_profile_graph(monkeypatch):
     import app
 

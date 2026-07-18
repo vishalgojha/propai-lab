@@ -111,7 +111,7 @@ Set as a Coolify scheduled task:
 ```
 python deploy/coolify/litellm/alert.py
 ```
-with env: `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `INGESTOR_INTERNAL_URL`,
+with env: `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `PROPAI_INTERNAL_TOKEN`, `INGESTOR_INTERNAL_URL`,
 `ALERT_WHATSAPP_NUMBERS` (comma-separated), optional `ALERT_WINDOW_MINUTES`,
 `ALERT_MIN_CALLS`, `ALERT_MAX_FAILURE_RATE`.
 

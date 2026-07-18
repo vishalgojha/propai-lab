@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/hmac"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -130,7 +131,16 @@ func (s *BrokerSession) setStatus(st Status) {
 
 func (s *BrokerSession) postStatus(st Status) {
 	b, _ := json.Marshal(st)
-	resp, err := statusClient.Post(apiURL+"/api/sync/status", "application/json", strings.NewReader(string(b)))
+	req, err := http.NewRequest(http.MethodPost, apiURL+"/api/sync/status", strings.NewReader(string(b)))
+	if err != nil {
+		log.Printf("[broker %s] error building status request: %v", s.brokerID, err)
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if token := internalServiceToken(); token != "" {
+		req.Header.Set("X-PropAI-Internal-Token", token)
+	}
+	resp, err := statusClient.Do(req)
 	if err != nil {
 		log.Printf("[broker %s] error posting status: %v", s.brokerID, err)
 		return
@@ -1000,8 +1010,53 @@ func brokerIDFromRequest(r *http.Request) string {
 	return "default"
 }
 
+func internalServiceToken() string {
+	if token := strings.TrimSpace(os.Getenv("PROPAI_INTERNAL_TOKEN")); token != "" {
+		return token
+	}
+	return strings.TrimSpace(os.Getenv("SUPABASE_SERVICE_KEY"))
+}
+
+func validInternalRequest(r *http.Request) bool {
+	expected := internalServiceToken()
+	supplied := strings.TrimSpace(r.Header.Get("X-PropAI-Internal-Token"))
+	return expected != "" && supplied != "" && hmac.Equal([]byte(supplied), []byte(expected))
+}
+
+func internalOnly(next http.HandlerFunc, allowPublicLiveness bool) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if allowPublicLiveness && r.Method == http.MethodGet && r.URL.Query().Get("broker_id") == "" && !validInternalRequest(r) {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "instance": instanceName})
+			return
+		}
+		if internalServiceToken() == "" {
+			http.Error(w, `{"error":"internal service authentication is not configured"}`, http.StatusServiceUnavailable)
+			return
+		}
+		if !validInternalRequest(r) {
+			http.Error(w, `{"error":"invalid internal service token"}`, http.StatusUnauthorized)
+			return
+		}
+		next(w, r)
+	}
+}
+
+func requireMethod(w http.ResponseWriter, r *http.Request, method string) bool {
+	if r.Method == method {
+		return true
+	}
+	w.Header().Set("Allow", method)
+	w.WriteHeader(http.StatusMethodNotAllowed)
+	json.NewEncoder(w).Encode(map[string]string{"error": method + " required"})
+	return false
+}
+
 func (sm *SessionManager) healthHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+	if !requireMethod(w, r, http.MethodGet) {
+		return
+	}
 	brokerID := r.URL.Query().Get("broker_id")
 	if brokerID == "all" {
 		sessions := sm.List()
@@ -1028,6 +1083,9 @@ func (sm *SessionManager) healthHandler(w http.ResponseWriter, r *http.Request) 
 
 func (sm *SessionManager) connectHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+	if !requireMethod(w, r, http.MethodPost) {
+		return
+	}
 	brokerID := brokerIDFromRequest(r)
 	if brokerID == "" {
 		w.WriteHeader(http.StatusBadRequest)
@@ -1046,6 +1104,9 @@ func (sm *SessionManager) connectHandler(w http.ResponseWriter, r *http.Request)
 
 func (sm *SessionManager) resetHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+	if !requireMethod(w, r, http.MethodPost) {
+		return
+	}
 	brokerID := brokerIDFromRequest(r)
 	if brokerID == "" {
 		w.WriteHeader(http.StatusBadRequest)
@@ -1071,6 +1132,9 @@ func (sm *SessionManager) resetHandler(w http.ResponseWriter, r *http.Request) {
 
 func (sm *SessionManager) disconnectHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+	if !requireMethod(w, r, http.MethodPost) {
+		return
+	}
 	brokerID := brokerIDFromRequest(r)
 	if brokerID == "" {
 		w.WriteHeader(http.StatusBadRequest)
@@ -1087,6 +1151,47 @@ func (sm *SessionManager) disconnectHandler(w http.ResponseWriter, r *http.Reque
 	}
 	sm.Remove(brokerID)
 	log.Printf("[broker %s] disconnected and removed", brokerID)
+	json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+}
+
+func (sm *SessionManager) deleteSessionHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if !requireMethod(w, r, http.MethodPost) {
+		return
+	}
+	brokerID := brokerIDFromRequest(r)
+	if brokerID == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "broker_id is required"})
+		return
+	}
+
+	if session := sm.Get(brokerID); session != nil {
+		if session.cancel != nil {
+			session.cancel()
+		}
+		session.clearDevice()
+		sm.Remove(brokerID)
+	} else if deviceJID, err := sm.lookupDeviceJID(context.Background(), brokerID); err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "failed to look up stored WhatsApp session"})
+		return
+	} else if deviceJID != "" {
+		if jid, parseErr := types.ParseJID(deviceJID); parseErr == nil {
+			if device, getErr := sm.container.GetDevice(context.Background(), jid); getErr == nil && device != nil {
+				if deleteErr := device.Delete(context.Background()); deleteErr != nil {
+					log.Printf("[broker %s] error deleting inactive device: %v", brokerID, deleteErr)
+				}
+			}
+		}
+	}
+
+	if err := sm.deleteDeviceMapping(context.Background(), brokerID, "http_delete"); err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "failed to delete stored WhatsApp session"})
+		return
+	}
+	log.Printf("[broker %s] session and device mapping deleted", brokerID)
 	json.NewEncoder(w).Encode(map[string]bool{"ok": true})
 }
 
@@ -1190,6 +1295,9 @@ func (sm *SessionManager) sendMessageHandler(w http.ResponseWriter, r *http.Requ
 
 func (sm *SessionManager) listHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+	if !requireMethod(w, r, http.MethodGet) {
+		return
+	}
 	sessions := sm.List()
 	result := make([]Status, 0, len(sessions))
 	for _, s := range sessions {
@@ -1200,6 +1308,9 @@ func (sm *SessionManager) listHandler(w http.ResponseWriter, r *http.Request) {
 
 func (sm *SessionManager) historyBackfillHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+	if !requireMethod(w, r, http.MethodPost) {
+		return
+	}
 	brokerID := brokerIDFromRequest(r)
 	s := sm.Get(brokerID)
 	if s == nil || s.client == nil || !s.client.IsConnected() {
@@ -1539,13 +1650,14 @@ func main() {
 
 	// HTTP server
 	mux := http.NewServeMux()
-	mux.HandleFunc("/health", sm.healthHandler)
-	mux.HandleFunc("/connect", sm.connectHandler)
-	mux.HandleFunc("/reset", sm.resetHandler)
-	mux.HandleFunc("/disconnect", sm.disconnectHandler)
-	mux.HandleFunc("/send-message", sm.sendMessageHandler)
-	mux.HandleFunc("/list", sm.listHandler)
-	mux.HandleFunc("/history/backfill", sm.historyBackfillHandler)
+	mux.HandleFunc("/health", internalOnly(sm.healthHandler, true))
+	mux.HandleFunc("/connect", internalOnly(sm.connectHandler, false))
+	mux.HandleFunc("/reset", internalOnly(sm.resetHandler, false))
+	mux.HandleFunc("/disconnect", internalOnly(sm.disconnectHandler, false))
+	mux.HandleFunc("/delete-session", internalOnly(sm.deleteSessionHandler, false))
+	mux.HandleFunc("/send-message", internalOnly(sm.sendMessageHandler, false))
+	mux.HandleFunc("/list", internalOnly(sm.listHandler, false))
+	mux.HandleFunc("/history/backfill", internalOnly(sm.historyBackfillHandler, false))
 
 	server := &http.Server{
 		Addr:    ":" + sendPort,

@@ -5,7 +5,7 @@ export const dynamic = 'force-dynamic';
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Users, Shield, Database, Terminal, Wrench, ArrowLeft, Plus, Trash2, RefreshCw } from "lucide-react";
+import { Shield, Database, Terminal, Wrench, ArrowLeft, Plus, Smartphone } from "lucide-react";
 import { fetchJSON } from "@/lib/api";
 
 interface SuperAdmin {
@@ -158,6 +158,17 @@ export default function AdminPage() {
           Developer Tools
         </h2>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <Link
+            href="/admin/whatsapp"
+            className="block p-4 rounded-xl border border-white/10 hover:border-emerald-400/30 transition-colors"
+          >
+            <div className="flex items-center gap-3 mb-2">
+              <Smartphone className="w-5 h-5 text-emerald-400" />
+              <span className="font-medium text-white">WhatsApp Sessions</span>
+            </div>
+            <p className="text-xs text-zinc-500">Control every workspace phone, connection state, and self-chat assistant</p>
+          </Link>
+
           <Link
             href="/admin/knowledge"
             className="block p-4 rounded-xl border border-white/10 hover:border-emerald-400/30 transition-colors"

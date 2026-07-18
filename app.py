@@ -2980,7 +2980,8 @@ def _resolve_user_organization_id(user: dict) -> str | None:
     org = storage.create_organization(name=display_name, slug=slug)
     if org:
         tid = org["id"]
-        storage.add_organization_member(tid, user["id"])
+        owner_role = storage.get_system_role("owner")
+        storage.add_organization_member(tid, user["id"], owner_role.get("id") if owner_role else None)
         storage.create_team_member(
             name=display_name,
             email=email,
@@ -3007,6 +3008,23 @@ def _resolve_active_organization_id(user: dict, tenant_id: str | None) -> str:
     if resolved:
         return resolved
     return tenant_id if tenant_id and tenant_id != DEFAULT_TENANT_ID else DEFAULT_TENANT_ID
+
+
+async def _require_org_permission(user: dict, org_id: str, permission_key: str) -> None:
+    if await asyncio.to_thread(storage.is_super_admin, user["id"]):
+        return
+    allowed = await asyncio.to_thread(
+        storage.user_has_org_permission, user["id"], org_id, permission_key
+    )
+    if not allowed:
+        raise HTTPException(403, f"Missing permission: {permission_key}")
+
+
+async def _scoped_phone(phone_id: int, org_id: str) -> dict:
+    phone = await asyncio.to_thread(storage.get_whatsapp_connection_unscoped, phone_id)
+    if not phone or str(phone.get("organization_id")) != str(org_id):
+        raise HTTPException(404, "Phone not found")
+    return phone
 
 
 async def require_tenant(
@@ -6214,6 +6232,10 @@ async def internal_self_chat(req: InternalSelfChatRequest, request: Request):
     )
     if not connection:
         raise HTTPException(404, "Unknown WhatsApp connection")
+    if not connection.get("is_active", True):
+        raise HTTPException(403, "WhatsApp connection is inactive")
+    if not connection.get("self_chat_enabled", True):
+        raise HTTPException(403, "Self-chat assistant is disabled for this phone")
 
     text = req.text.strip()
     if not text:
@@ -6280,6 +6302,7 @@ class SendMessageRequest(BaseModel):
     quoted_remote_jid: str = ""
     quoted_participant: str = ""
     quoted_from_me: bool = False
+    broker_id: str = ""
 
 
 async def get_current_team_member(
@@ -6337,10 +6360,30 @@ async def send_message(req: SendMessageRequest, member: dict = Depends(get_curre
         org_id = member.get("organization_id")
         if org_id:
             connections = await asyncio.to_thread(storage.list_org_whatsapp_connections, org_id)
-            broker_ids = [str(row.get("broker_id") or "").strip() for row in connections]
-            broker_ids = [broker_id for broker_id in broker_ids if broker_id]
-            if len(broker_ids) == 1:
-                payload["brokerId"] = broker_ids[0]
+            connections = [row for row in connections if row.get("is_active", True)]
+            explicit_access = await asyncio.to_thread(
+                storage.get_member_whatsapp_access, member["id"], org_id
+            )
+            if explicit_access:
+                allowed_numbers = {
+                    str(row.get("whatsapp_number") or "")
+                    for row in explicit_access if row.get("can_send")
+                }
+                connections = [
+                    row for row in connections
+                    if str(row.get("phone_number") or "") in allowed_numbers
+                ]
+            requested_broker_id = req.broker_id.strip()
+            if requested_broker_id:
+                connections = [
+                    row for row in connections
+                    if str(row.get("broker_id") or "") == requested_broker_id
+                ]
+            if not connections:
+                raise HTTPException(403, "No WhatsApp phone is available for this team member")
+            selected_broker_id = str(connections[0].get("broker_id") or "").strip()
+            if selected_broker_id:
+                payload["brokerId"] = selected_broker_id
         if req.quoted_message_id:
             payload["quotedMessageId"] = req.quoted_message_id
             payload["quotedRemoteJid"] = req.quoted_remote_jid or req.remote_jid
@@ -6348,7 +6391,9 @@ async def send_message(req: SendMessageRequest, member: dict = Depends(get_curre
             payload["quotedFromMe"] = req.quoted_from_me
 
         async with httpx.AsyncClient(timeout=30) as client:
-            response = await client.post(f"{ingestor_url}/send-message", json=payload)
+            response = await client.post(
+                f"{ingestor_url}/send-message", json=payload, headers=_ingestor_auth_headers()
+            )
 
         response_body = {}
         if response.text:
@@ -6647,7 +6692,9 @@ async def _notify_broker_of_lead(broker_phone: str, text: str) -> dict:
         url = _send_url()
     try:
         async with httpx.AsyncClient(timeout=10) as client:
-            resp = await client.post(f"{url}/send-message", json=payload)
+            resp = await client.post(
+                f"{url}/send-message", json=payload, headers=_ingestor_auth_headers()
+            )
             if resp.status_code < 300:
                 return {"ok": True, "status_code": resp.status_code}
             return {"ok": False, "error": f"HTTP {resp.status_code}: {resp.text}"}
@@ -7521,7 +7568,13 @@ async def companion_overview(user: dict = Depends(require_user)):
     waba_access_token = _companion_get_config_value("access_token", "WABA_ACCESS_TOKEN")
     waba_verify_token = _companion_get_config_value("verify_token", "WABA_VERIFY_TOKEN")
     waba_is_shared = _is_propai_shared_waba(waba_number)
-    outbound_allowed = bool(waba_number and not waba_is_shared and waba_phone_number_id and waba_access_token)
+    is_super_admin = storage.is_super_admin(user["id"])
+    outbound_allowed = bool(
+        waba_number
+        and waba_phone_number_id
+        and waba_access_token
+        and (not waba_is_shared or is_super_admin)
+    )
     webhook_health = "ready" if waba_verify_token else "not_configured"
     token_status = "configured" if waba_access_token else "missing"
 
@@ -7573,7 +7626,13 @@ async def companion_config(user: dict = Depends(require_user)):
     access_token = _companion_get_config_value("access_token", "WABA_ACCESS_TOKEN")
     verify_token = _companion_get_config_value("verify_token", "WABA_VERIFY_TOKEN")
     waba_is_shared = _is_propai_shared_waba(waba_number)
-    outbound_allowed = bool(waba_number and not waba_is_shared and phone_number_id and access_token)
+    is_super_admin = storage.is_super_admin(user["id"])
+    outbound_allowed = bool(
+        waba_number
+        and phone_number_id
+        and access_token
+        and (not waba_is_shared or is_super_admin)
+    )
     return {
         "whatsapp_business_number": waba_number,
         "shared_waba_number": PROPAI_SHARED_WABA_NUMBER,
@@ -7590,7 +7649,10 @@ async def companion_config(user: dict = Depends(require_user)):
 @app.post("/api/companion/config")
 async def companion_save_config(req: CompanionConfigRequest, user: dict = Depends(require_user)):
     if req.whatsapp_business_number.strip():
-        if _is_propai_shared_waba(req.whatsapp_business_number):
+        if (
+            _is_propai_shared_waba(req.whatsapp_business_number)
+            and not storage.is_super_admin(user["id"])
+        ):
             raise HTTPException(403, "PropAI shared WABA is reserved for platform messages. Connect your own WABA for outbound messaging.")
         _companion_set_config_value("whatsapp_business_number", req.whatsapp_business_number.strip())  # force deploy 021911
     if req.phone_number_id.strip():
@@ -7743,11 +7805,12 @@ async def companion_webhook_receive(request: Request):
                         digits = digits[1:]
                     sender_jid = f"{digits}@s.whatsapp.net"
 
-                    storage.db.execute(
+                    inserted = storage.db.execute(
                         """INSERT INTO raw_messages
                            (group_name, sender, sender_jid, sender_phone, message, message_type,
                             source, timestamp, raw_payload, message_uid, synced_at, created_at)
-                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                           ON CONFLICT DO NOTHING""",
                         (
                             sender_jid,
                             sender_name or msg_from,
@@ -7762,9 +7825,12 @@ async def companion_webhook_receive(request: Request):
                             now_iso,
                             now_iso,
                         ),
-                    )
-                    stored_inbound = True
-                    processed.append({"type": "message_stored", "from": msg_from, "msg_type": msg_type})
+                    ).rowcount
+                    stored_inbound = inserted > 0
+                    if stored_inbound:
+                        processed.append({"type": "message_stored", "from": msg_from, "msg_type": msg_type})
+                    else:
+                        processed.append({"type": "duplicate_message_ignored", "from": msg_from, "msg_type": msg_type})
                 except Exception as exc:
                     print(f"[waba-webhook] failed to store inbound message: {exc}", flush=True)
 
@@ -7789,8 +7855,8 @@ async def companion_webhook_receive(request: Request):
             if status_id and status_status:
                 try:
                     storage.db.execute(
-                        """UPDATE raw_messages SET delivery_status = %s, delivery_updated_at = %s
-                           WHERE message_uid = %s OR message_uid LIKE %s""",
+                        """UPDATE raw_messages SET delivery_status = ?, delivery_updated_at = ?
+                           WHERE message_uid = ? OR message_uid LIKE ?""",
                         (status_status, now, status_id, f"%{status_id}%"),
                     )
                     processed.append({"type": "delivery_status", "message_id": status_id, "status": status_status})
@@ -8334,6 +8400,14 @@ def _ingestor_urls() -> list[str]:
     return urls
 
 
+def _ingestor_auth_headers() -> dict[str, str]:
+    token = (
+        os.getenv("PROPAI_INTERNAL_TOKEN", "").strip()
+        or os.getenv("SUPABASE_SERVICE_KEY", "").strip()
+    )
+    return {"X-PropAI-Internal-Token": token} if token else {}
+
+
 async def _first_ingestor_response(
     method: str,
     path: str,
@@ -8344,10 +8418,14 @@ async def _first_ingestor_response(
     urls = _ingestor_urls()
     if not urls:
         return None, None
+    request_headers = {**_ingestor_auth_headers(), **(kwargs.pop("headers", {}) or {})}
+    first_failure: tuple[str | None, httpx.Response | None] = (None, None)
     async with httpx.AsyncClient(timeout=timeout) as client:
         async def request_one(base_url: str) -> tuple[str, httpx.Response | None]:
             try:
-                return base_url, await client.request(method, f"{base_url}{path}", **kwargs)
+                return base_url, await client.request(
+                    method, f"{base_url}{path}", headers=request_headers, **kwargs
+                )
             except httpx.RequestError:
                 return base_url, None
 
@@ -8357,12 +8435,31 @@ async def _first_ingestor_response(
                 base_url, response = await completed
                 if response is not None and response.status_code < 300:
                     return base_url, response
+                if response is not None and first_failure[1] is None:
+                    first_failure = (base_url, response)
         finally:
             for task in tasks:
                 if not task.done():
                     task.cancel()
             await asyncio.gather(*tasks, return_exceptions=True)
-    return None, None
+    return first_failure
+
+
+def _ingestor_failure_message(response: httpx.Response | None) -> str:
+    if response is None:
+        return "WhatsApp service is unavailable. Try again in a moment."
+    if response.status_code == 401:
+        return "WhatsApp service authentication failed. PROPAI_INTERNAL_TOKEN must match on the API and ingestor services."
+    if response.status_code == 503:
+        return "WhatsApp service authentication is not configured on the ingestor."
+    if response.status_code == 409:
+        return "This phone session is active on another ingestor instance. Redeploy the ingestor once, then retry."
+    try:
+        payload = response.json()
+        detail = str(payload.get("error") or payload.get("detail") or "").strip()
+    except (ValueError, AttributeError):
+        detail = ""
+    return detail or f"WhatsApp service returned HTTP {response.status_code}."
 
 
 @app.post("/api/sync/refresh-qr")
@@ -8372,7 +8469,9 @@ async def sync_refresh_qr(user: dict = Depends(require_user)):
     async with httpx.AsyncClient(timeout=10) as client:
         for base_url in _ingestor_urls():
             try:
-                resp = await client.post(f"{base_url}/reset?broker_id=default")
+                resp = await client.post(
+                    f"{base_url}/reset?broker_id=default", headers=_ingestor_auth_headers()
+                )
                 if resp.status_code == 200:
                     return {
                         "ok": True,
@@ -8397,6 +8496,7 @@ async def sync_history_backfill(limit: int = 25, count: int = 50, user: dict = D
                 resp = await client.post(
                     f"{base_url}/history/backfill",
                     params={"broker_id": "default", "limit": limit, "count": count},
+                    headers=_ingestor_auth_headers(),
                 )
                 payload = resp.json() if resp.headers.get("content-type", "").startswith("application/json") else {"message": resp.text}
                 return {"ok": resp.status_code < 300, "status_code": resp.status_code, "ingestor_url": base_url, **payload}
@@ -8409,6 +8509,15 @@ async def sync_history_backfill(limit: int = 25, count: int = 50, user: dict = D
 async def sync_status_update(request: Request):
     """Receive connection status from the WhatsApp ingestor."""
     global _memory_status, _previous_status
+    expected_token = (
+        os.getenv("PROPAI_INTERNAL_TOKEN", "").strip()
+        or os.getenv("SUPABASE_SERVICE_KEY", "").strip()
+    )
+    supplied_token = request.headers.get("X-PropAI-Internal-Token", "").strip()
+    if not expected_token:
+        raise HTTPException(503, "Internal service authentication is not configured")
+    if not hmac.compare_digest(supplied_token, expected_token):
+        raise HTTPException(401, "Invalid internal service token")
     try:
         body = await request.json()
         _previous_status = _memory_status
@@ -8500,7 +8609,9 @@ async def sync_logout(user: dict = Depends(require_user)):
     async with httpx.AsyncClient(timeout=10) as client:
         for base_url in _ingestor_urls():
             try:
-                resp = await client.post(f"{base_url}/disconnect?broker_id=default")
+                resp = await client.post(
+                    f"{base_url}/disconnect?broker_id=default", headers=_ingestor_auth_headers()
+                )
                 if resp.status_code == 200:
                     return {"ok": True, "message": "WhatsApp session disconnected"}
                 errors.append(f"{base_url}: {resp.status_code}")
@@ -10997,13 +11108,13 @@ def _group_jid_to_name(jid: str) -> str:
 def _audit_row_value(row, key_or_idx, default=None):
     if row is None:
         return default
-    try:
-        return row[key_or_idx]
-    except Exception:
+    keys = key_or_idx if isinstance(key_or_idx, (tuple, list)) else (key_or_idx,)
+    for key in keys:
         try:
-            return row[int(key_or_idx)]
+            return row[key]
         except Exception:
-            return default
+            continue
+    return default
 
 
 def _audit_scalar(sql: str, params=(), default=0):
@@ -11361,13 +11472,15 @@ def audit_groups_v2(
 
     stats: dict[str, dict] = {}
     for row in rm_rows:
-        gn = row[0] or ""
+        # Supabase's SQL bridge serializes rows through JSONB. JSON object key
+        # order is not a SQL column-order contract, so always read by alias.
+        gn = _audit_row_value(row, ("group_name", 0), "") or ""
         if not gn:
             continue
         stats[gn] = {
-            "messages": int(row[1] or 0),
-            "senders_count": int(row[2] or 0),
-            "last_activity": row[3] or "",
+            "messages": int(_audit_row_value(row, ("messages", 1), 0) or 0),
+            "senders_count": int(_audit_row_value(row, ("senders_count", 2), 0) or 0),
+            "last_activity": _audit_row_value(row, ("last_activity", 3), "") or "",
             "observations": 0, "requirements": 0, "listings": 0,
             "markets_count": 0, "unknown_locations": 0, "identities_count": 0,
         }
@@ -11390,16 +11503,16 @@ def audit_groups_v2(
                 (tenant_id,),
             )
             for row in po_rows:
-                gn = row[0] or ""
+                gn = _audit_row_value(row, ("group_name", 0), "") or ""
                 if gn not in stats:
                     continue
                 g = stats[gn]
-                g["observations"] = int(row[1] or 0)
-                g["requirements"] = int(row[2] or 0)
-                g["listings"] = int(row[3] or 0)
-                g["markets_count"] = int(row[4] or 0)
-                g["unknown_locations"] = int(row[5] or 0)
-                g["identities_count"] = int(row[6] or 0)
+                g["observations"] = int(_audit_row_value(row, ("observations", 1), 0) or 0)
+                g["requirements"] = int(_audit_row_value(row, ("requirements", 2), 0) or 0)
+                g["listings"] = int(_audit_row_value(row, ("listings", 3), 0) or 0)
+                g["markets_count"] = int(_audit_row_value(row, ("markets_count", 4), 0) or 0)
+                g["unknown_locations"] = int(_audit_row_value(row, ("unknown_locations", 5), 0) or 0)
+                g["identities_count"] = int(_audit_row_value(row, ("identities", 6), 0) or 0)
         except Exception as exc:
             errors.append(f"parsed_output aggregate failed: {exc}")
 
@@ -11407,12 +11520,14 @@ def audit_groups_v2(
     total_unique_senders = 0
     try:
         sender_row = _audit_rows(
-            "SELECT COUNT(DISTINCT sender) FROM raw_messages "
+            "SELECT COUNT(DISTINCT sender) AS total_unique_senders FROM raw_messages "
             "WHERE tenant_id = ? AND group_name IS NOT NULL AND group_name != ''",
             (tenant_id,),
         )
         if sender_row:
-            total_unique_senders = int(sender_row[0][0] or 0)
+            total_unique_senders = int(
+                _audit_row_value(sender_row[0], ("total_unique_senders", 0), 0) or 0
+            )
     except Exception:
         pass
 
@@ -11659,8 +11774,8 @@ def audit_group_overlap(
     group_senders: dict[str, set[str]] = defaultdict(set)
 
     for row in rows:
-        group_name = str(row[0] or "").strip()
-        sender = str(row[1] or "").strip()
+        group_name = str(_audit_row_value(row, ("group_name", 0), "") or "").strip()
+        sender = str(_audit_row_value(row, ("sender", 1), "") or "").strip()
         if not group_name or not sender:
             continue
         sender_groups[sender].add(group_name)
@@ -12116,21 +12231,41 @@ def audit_insights(
 
     return {
         "daily_flow": [
-            {"date": str(r[0]), "posts": r[1] or 0, "requirements": r[2] or 0, "listings": r[3] or 0}
+            {
+                "date": str(_audit_row_value(r, ("day", 0), "")),
+                "posts": _audit_row_value(r, ("posts", 1), 0) or 0,
+                "requirements": _audit_row_value(r, ("requirements", 2), 0) or 0,
+                "listings": _audit_row_value(r, ("listings", 3), 0) or 0,
+            }
             for r in flow_rows
         ],
         "markets": [
-            {"name": r[0], "posts": r[1] or 0, "requirements": r[2] or 0, "listings": r[3] or 0, "brokers": r[4] or 0}
+            {
+                "name": _audit_row_value(r, ("micro_market", 0), ""),
+                "posts": _audit_row_value(r, ("posts", 1), 0) or 0,
+                "requirements": _audit_row_value(r, ("requirements", 2), 0) or 0,
+                "listings": _audit_row_value(r, ("listings", 3), 0) or 0,
+                "brokers": _audit_row_value(r, ("brokers", 4), 0) or 0,
+            }
             for r in market_rows
         ],
         "brokers": [
-            {"name": r[0] or "Unknown broker", "posts": r[1] or 0, "listings": r[2] or 0,
-             "requirements": r[3] or 0, "groups": r[4] or 0, "markets": r[5] or 0,
-             "last_seen": _audit_timestamp(r[6])}
+            {
+                "name": _audit_row_value(r, ("canonical_name", 0), "") or "Unknown broker",
+                "posts": _audit_row_value(r, ("observation_count", 1), 0) or 0,
+                "listings": _audit_row_value(r, ("listing_count", 2), 0) or 0,
+                "requirements": _audit_row_value(r, ("requirement_count", 3), 0) or 0,
+                "groups": _audit_row_value(r, ("group_count", 4), 0) or 0,
+                "markets": _audit_row_value(r, ("market_count", 5), 0) or 0,
+                "last_seen": _audit_timestamp(_audit_row_value(r, ("last_seen_at", 6))),
+            }
             for r in broker_rows
         ],
         "exclusive_members": {
-            str(r[0]): int(r[1] or 0) for r in exclusive_rows
+            str(_audit_row_value(r, ("group_name", 0), "")): int(
+                _audit_row_value(r, ("exclusive_members", 1), 0) or 0
+            )
+            for r in exclusive_rows
         },
     }
 
@@ -12998,6 +13133,10 @@ async def list_all_permissions(user: dict = Depends(require_user)):
 
 @app.get("/api/orgs/{org_id}/whatsapp")
 async def list_org_whatsapp(org_id: str, user: dict = Depends(require_user)):
+    active_org_id = _resolve_active_organization_id(user, org_id)
+    if org_id != DEFAULT_TENANT_ID and str(org_id) != str(active_org_id) and not storage.is_super_admin(user["id"]):
+        raise HTTPException(404, "Organization not found")
+    org_id = active_org_id
     return storage.list_org_whatsapp_connections(org_id)
 
 
@@ -13008,6 +13147,7 @@ async def add_org_whatsapp(org_id: str, body: dict, user: dict = Depends(require
         raise HTTPException(400, "phone_number is required")
     if org_id == DEFAULT_TENANT_ID or not storage.get_organization(org_id):
         org_id = _resolve_active_organization_id(user, org_id)
+    await _require_org_permission(user, org_id, "manage_whatsapp")
     count = storage.count_org_phones(org_id)
     if count >= 3:
         raise HTTPException(400, "Maximum 3 phones per organization")
@@ -13019,7 +13159,9 @@ async def add_org_whatsapp(org_id: str, body: dict, user: dict = Depends(require
     async with httpx.AsyncClient(timeout=10) as client:
         for base_url in _ingestor_urls():
             try:
-                resp = await client.post(f"{base_url}/connect?broker_id={broker_id}")
+                resp = await client.post(
+                    f"{base_url}/connect?broker_id={broker_id}", headers=_ingestor_auth_headers()
+                )
                 if resp.status_code == 200:
                     break
             except httpx.RequestError:
@@ -13029,15 +13171,18 @@ async def add_org_whatsapp(org_id: str, body: dict, user: dict = Depends(require
 
 @app.delete("/api/whatsapp/{conn_id}")
 async def remove_org_whatsapp(conn_id: int, user: dict = Depends(require_user)):
-    row = storage.get_org_whatsapp_connection(conn_id)
+    row = storage.get_whatsapp_connection_unscoped(conn_id)
     if not row:
         raise HTTPException(404, "Connection not found")
+    await _require_org_permission(user, str(row["organization_id"]), "manage_whatsapp")
     broker_id = row.get("broker_id", "")
     if broker_id:
         async with httpx.AsyncClient(timeout=10) as client:
             for base_url in _ingestor_urls():
                 try:
-                    await client.post(f"{base_url}/disconnect?broker_id={broker_id}")
+                    await client.post(
+                        f"{base_url}/disconnect?broker_id={broker_id}", headers=_ingestor_auth_headers()
+                    )
                     break
                 except httpx.RequestError:
                     continue
@@ -13054,11 +13199,25 @@ async def list_phones(
     org_id = _resolve_active_organization_id(user, tenant_id)
     phones = await asyncio.to_thread(storage.list_org_whatsapp_connections, org_id)
     ingestor_statuses = {}
+    ingestor_reachable = False
+    ingestor_error = ""
     if include_live:
         _, resp = await _first_ingestor_response("GET", "/list", timeout=2)
         if resp is not None and resp.status_code == 200:
-            for s in resp.json():
-                ingestor_statuses[s.get("broker_id", "")] = s
+            ingestor_reachable = True
+            try:
+                statuses = resp.json()
+            except ValueError:
+                statuses = []
+                ingestor_reachable = False
+                ingestor_error = "WhatsApp service returned an invalid status response."
+            for s in statuses if isinstance(statuses, list) else []:
+                if isinstance(s, dict):
+                    ingestor_statuses[s.get("broker_id", "")] = s
+        elif resp is not None:
+            ingestor_error = _ingestor_failure_message(resp)
+        else:
+            ingestor_error = _ingestor_failure_message(None)
         now = time.time()
         for broker_id, (cached_status, seen_at) in _broker_live_statuses.items():
             if broker_id not in ingestor_statuses and now - seen_at <= 45:
@@ -13067,12 +13226,16 @@ async def list_phones(
     for phone in phones:
         broker_id = phone.get("broker_id", "")
         status = ingestor_statuses.get(broker_id)
-        has_live_status = status is not None
+        # A successful /list response with no matching session is a known
+        # stopped state, not an endlessly pending status check.
+        has_live_status = ingestor_reachable or status is not None
         status = status or {}
         result.append({
             **phone,
             "connected": bool(status.get("connected")) if has_live_status else None,
-            "connection_state": status.get("connection_state", "unknown"),
+            "connection_state": status.get(
+                "connection_state", "stopped" if ingestor_reachable else "unavailable"
+            ),
             "phone_number_live": status.get("phone_number") or phone.get("phone_number", ""),
             "display_name": status.get("display_name") or phone.get("instance_name", ""),
             "connected_since": status.get("connected_since", ""),
@@ -13080,6 +13243,7 @@ async def list_phones(
             "qr_available": status.get("qr_available", False),
             "total_messages_received": status.get("total_messages_received", 0),
             "live_status_available": has_live_status,
+            "live_status_error": "" if has_live_status else ingestor_error,
         })
     return {"phones": result}
 
@@ -13095,6 +13259,7 @@ async def create_phone(
         phone_number = body.get("phone_number", "").strip()
         instance_name = body.get("instance_name", "").strip()
         org_id = _resolve_active_organization_id(user, tenant_id)
+        await _require_org_permission(user, org_id, "manage_whatsapp")
         existing_phones = await asyncio.to_thread(storage.list_org_whatsapp_connections, org_id)
         if not phone_number:
             placeholder = next((row for row in existing_phones if (
@@ -13137,12 +13302,11 @@ async def get_phone(
     user: dict = Depends(require_user),
     tenant_id: str | None = Depends(get_tenant_context),
 ):
-    phone = await asyncio.to_thread(storage.get_org_whatsapp_connection, phone_id)
-    if not phone:
-        raise HTTPException(404, "Phone not found")
+    org_id = _resolve_active_organization_id(user, tenant_id)
+    phone = await _scoped_phone(phone_id, org_id)
     broker_id = phone.get("broker_id", "")
     status = {}
-    _, resp = await _first_ingestor_response("GET", "/status", timeout=2, params={"broker_id": broker_id})
+    _, resp = await _first_ingestor_response("GET", "/health", timeout=2, params={"broker_id": broker_id})
     if resp is not None and resp.status_code == 200:
         status = resp.json()
     elif broker_id in _broker_live_statuses:
@@ -13165,20 +13329,54 @@ async def get_phone(
     }
 
 
+@app.patch("/api/phones/{phone_id}")
+async def update_phone(
+    phone_id: int,
+    body: dict,
+    user: dict = Depends(require_user),
+    tenant_id: str | None = Depends(get_tenant_context),
+):
+    org_id = _resolve_active_organization_id(user, tenant_id)
+    await _require_org_permission(user, org_id, "manage_whatsapp")
+    await _scoped_phone(phone_id, org_id)
+    allowed = {"instance_name", "self_chat_enabled"}
+    updates = {key: body[key] for key in allowed if key in body}
+    if "instance_name" in updates:
+        updates["instance_name"] = str(updates["instance_name"]).strip()[:100]
+    if "self_chat_enabled" in updates and not isinstance(updates["self_chat_enabled"], bool):
+        raise HTTPException(400, "self_chat_enabled must be a boolean")
+    if not updates:
+        raise HTTPException(400, "No valid fields to update")
+    updates["updated_at"] = datetime.now(timezone.utc).isoformat()
+    result = await asyncio.to_thread(storage.update_org_whatsapp_connection, phone_id, updates)
+    if not result:
+        raise HTTPException(404, "Phone not found")
+    return result
+
+
 @app.delete("/api/phones/{phone_id}")
 async def delete_phone(
     phone_id: int,
     user: dict = Depends(require_user),
     tenant_id: str | None = Depends(get_tenant_context),
 ):
-    phone = storage.get_org_whatsapp_connection(phone_id)
-    if not phone:
-        raise HTTPException(404, "Phone not found")
+    org_id = _resolve_active_organization_id(user, tenant_id)
+    await _require_org_permission(user, org_id, "manage_whatsapp")
+    phone = await _scoped_phone(phone_id, org_id)
     broker_id = phone.get("broker_id", "")
     if broker_id:
-        await _first_ingestor_response("POST", "/disconnect", timeout=10, params={"broker_id": broker_id})
-    ok = storage.remove_org_whatsapp_connection(phone_id)
-    return {"ok": ok}
+        _, cleanup_response = await _first_ingestor_response(
+            "POST", "/delete-session", timeout=10, params={"broker_id": broker_id}
+        )
+        # Support a rolling deploy where the API is newer than the ingestor.
+        if cleanup_response is not None and cleanup_response.status_code == 404:
+            await _first_ingestor_response(
+                "POST", "/disconnect", timeout=10, params={"broker_id": broker_id}
+            )
+    ok = await asyncio.to_thread(storage.remove_org_whatsapp_connection, phone_id)
+    if not ok:
+        raise HTTPException(500, "Phone could not be removed from the workspace")
+    return {"ok": True}
 
 
 @app.post("/api/phones/{phone_id}/reset")
@@ -13187,9 +13385,9 @@ async def reset_phone(
     user: dict = Depends(require_user),
     tenant_id: str | None = Depends(get_tenant_context),
 ):
-    phone = storage.get_org_whatsapp_connection(phone_id)
-    if not phone:
-        raise HTTPException(404, "Phone not found")
+    org_id = _resolve_active_organization_id(user, tenant_id)
+    await _require_org_permission(user, org_id, "manage_whatsapp")
+    phone = await _scoped_phone(phone_id, org_id)
     broker_id = phone.get("broker_id", "")
     _, resp = await _first_ingestor_response("POST", "/reset", timeout=10, params={"broker_id": broker_id})
     if resp is not None and resp.status_code == 200:
@@ -13203,9 +13401,9 @@ async def disconnect_phone(
     user: dict = Depends(require_user),
     tenant_id: str | None = Depends(get_tenant_context),
 ):
-    phone = storage.get_org_whatsapp_connection(phone_id)
-    if not phone:
-        raise HTTPException(404, "Phone not found")
+    org_id = _resolve_active_organization_id(user, tenant_id)
+    await _require_org_permission(user, org_id, "manage_whatsapp")
+    phone = await _scoped_phone(phone_id, org_id)
     broker_id = phone.get("broker_id", "")
     _, resp = await _first_ingestor_response("POST", "/disconnect", timeout=10, params={"broker_id": broker_id})
     if resp is not None and resp.status_code == 200:
@@ -13219,21 +13417,121 @@ async def connect_phone(
     user: dict = Depends(require_user),
     tenant_id: str | None = Depends(get_tenant_context),
 ):
-    phone = storage.get_org_whatsapp_connection(phone_id)
-    if not phone:
-        raise HTTPException(404, "Phone not found")
+    org_id = _resolve_active_organization_id(user, tenant_id)
+    await _require_org_permission(user, org_id, "manage_whatsapp")
+    phone = await _scoped_phone(phone_id, org_id)
     broker_id = phone.get("broker_id", "")
     if not broker_id:
         raise HTTPException(400, "Phone is missing broker_id")
     _, resp = await _first_ingestor_response("POST", "/connect", timeout=10, params={"broker_id": broker_id})
     if resp is not None and resp.status_code == 200:
         return resp.json()
-    if resp is not None:
-        detail = resp.text.strip()
-        if not detail:
-            detail = f"Ingestor returned HTTP {resp.status_code}"
-        raise HTTPException(resp.status_code, detail)
-    raise HTTPException(502, "Cannot reach ingestor")
+    # Never proxy an ingestor 401 as an API 401: the browser would incorrectly
+    # refresh the user's Supabase session.  Ingestor failures are dependencies.
+    raise HTTPException(502, _ingestor_failure_message(resp))
+
+
+async def _admin_whatsapp_session(phone: dict, live_status: dict | None = None) -> dict:
+    broker_id = str(phone.get("broker_id") or "").strip()
+    status: dict = live_status or {}
+    if broker_id and live_status is None:
+        _, response = await _first_ingestor_response(
+            "GET", "/health", timeout=2, params={"broker_id": broker_id}
+        )
+        if response is not None and response.status_code == 200:
+            status = response.json()
+    return {
+        **phone,
+        "connected": bool(status.get("connected")),
+        "connection_state": status.get("connection_state", "unknown"),
+        "phone_number_live": status.get("phone_number") or phone.get("phone_number", ""),
+        "display_name": status.get("display_name") or phone.get("instance_name", ""),
+        "connected_since": status.get("connected_since", ""),
+        "last_message_at": status.get("last_message_at", ""),
+        "qr_available": status.get("qr_available", False),
+        "total_messages_received": status.get("total_messages_received", 0),
+        "live_status_available": bool(status),
+    }
+
+
+@app.get("/api/admin/whatsapp/sessions")
+async def admin_list_whatsapp_sessions(user: dict = Depends(require_user)):
+    if not await asyncio.to_thread(storage.is_super_admin, user["id"]):
+        raise HTTPException(403, "Super admin access required")
+    phones = await asyncio.to_thread(storage.list_all_whatsapp_connections)
+    statuses: dict[str, dict] = {}
+    _, response = await _first_ingestor_response("GET", "/list", timeout=3)
+    if response is not None and response.status_code == 200:
+        statuses = {
+            str(row.get("broker_id") or ""): row
+            for row in response.json() if row.get("broker_id")
+        }
+    sessions = [
+        await _admin_whatsapp_session(
+            phone, statuses.get(str(phone.get("broker_id") or ""), {})
+        )
+        for phone in phones
+    ]
+    return {"sessions": sessions}
+
+
+@app.patch("/api/admin/whatsapp/sessions/{phone_id}")
+async def admin_update_whatsapp_session(
+    phone_id: int, body: dict, user: dict = Depends(require_user)
+):
+    if not await asyncio.to_thread(storage.is_super_admin, user["id"]):
+        raise HTTPException(403, "Super admin access required")
+    phone = await asyncio.to_thread(storage.get_whatsapp_connection_unscoped, phone_id)
+    if not phone:
+        raise HTTPException(404, "Phone not found")
+    allowed = {"instance_name", "is_active", "self_chat_enabled"}
+    updates = {key: body[key] for key in allowed if key in body}
+    for key in ("is_active", "self_chat_enabled"):
+        if key in updates and not isinstance(updates[key], bool):
+            raise HTTPException(400, f"{key} must be a boolean")
+    if "instance_name" in updates:
+        updates["instance_name"] = str(updates["instance_name"]).strip()[:100]
+    if not updates:
+        raise HTTPException(400, "No valid fields to update")
+    updates["updated_at"] = datetime.now(timezone.utc).isoformat()
+    result = await asyncio.to_thread(storage.update_org_whatsapp_connection, phone_id, updates)
+    if updates.get("is_active") is False:
+        broker_id = str(phone.get("broker_id") or "").strip()
+        if broker_id:
+            await _first_ingestor_response(
+                "POST", "/disconnect", timeout=10, params={"broker_id": broker_id}
+            )
+    return await _admin_whatsapp_session(result or phone)
+
+
+@app.post("/api/admin/whatsapp/sessions/{phone_id}/{action}")
+async def admin_control_whatsapp_session(
+    phone_id: int, action: str, user: dict = Depends(require_user)
+):
+    if not await asyncio.to_thread(storage.is_super_admin, user["id"]):
+        raise HTTPException(403, "Super admin access required")
+    if action not in {"connect", "disconnect", "reset"}:
+        raise HTTPException(400, "Unsupported WhatsApp action")
+    phone = await asyncio.to_thread(storage.get_whatsapp_connection_unscoped, phone_id)
+    if not phone:
+        raise HTTPException(404, "Phone not found")
+    broker_id = str(phone.get("broker_id") or "").strip()
+    if not broker_id:
+        raise HTTPException(400, "Phone is missing broker_id")
+    _, response = await _first_ingestor_response(
+        "POST", f"/{action}", timeout=10, params={"broker_id": broker_id}
+    )
+    if response is None:
+        raise HTTPException(502, "Cannot reach ingestor")
+    if response.status_code >= 400:
+        raise HTTPException(response.status_code, response.text or "Ingestor action failed")
+    if action == "connect" and not phone.get("is_active", True):
+        phone = await asyncio.to_thread(
+            storage.update_org_whatsapp_connection,
+            phone_id,
+            {"is_active": True, "updated_at": datetime.now(timezone.utc).isoformat()},
+        ) or phone
+    return await _admin_whatsapp_session(phone)
 
 
 @app.get("/api/admin/orgs")
@@ -13458,14 +13756,24 @@ async def log_activity(body: dict, member: dict = Depends(get_current_member)):
 
 
 @app.get("/api/workspace/whatsapp-access")
-async def list_whatsapp_access(member: dict = Depends(get_current_member)):
-    rows = storage.list_whatsapp_access()
+async def list_whatsapp_access(
+    user: dict = Depends(require_user),
+    tenant_id: str | None = Depends(get_tenant_context),
+):
+    org_id = _resolve_active_organization_id(user, tenant_id)
+    await _require_org_permission(user, org_id, "manage_whatsapp")
+    rows = await asyncio.to_thread(storage.list_whatsapp_access, org_id)
     return {"access": rows}
 
 
 @app.put("/api/workspace/whatsapp-access")
-async def set_whatsapp_access(body: dict, member: dict = Depends(get_current_member)):
-    check_permission(member, "add_team_members")
+async def set_whatsapp_access(
+    body: dict,
+    user: dict = Depends(require_user),
+    tenant_id: str | None = Depends(get_tenant_context),
+):
+    org_id = _resolve_active_organization_id(user, tenant_id)
+    await _require_org_permission(user, org_id, "manage_whatsapp")
     required = ("team_member_id", "whatsapp_number")
     for k in required:
         if k not in body:
@@ -13475,7 +13783,10 @@ async def set_whatsapp_access(body: dict, member: dict = Depends(get_current_mem
         whatsapp_number=body["whatsapp_number"],
         can_send=body.get("can_send", False),
         can_view_messages=body.get("can_view_messages", True),
+        org_id=org_id,
     )
+    if not result:
+        raise HTTPException(404, "Team member or WhatsApp phone not found")
     return result
 
 
