@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ArrowRight, Search, MapPin } from "lucide-react";
+import type { LocalitySummary } from "@/lib/localities";
 
 type LocalitySuggestion = { locality: string; slug: string; listingCount: number };
 
@@ -11,10 +12,12 @@ export default function SearchBox({
   query,
   asset,
   localities,
+  onSubmit,
 }: {
   query: string;
   asset: string;
-  localities: LocalitySuggestion[];
+  localities: LocalitySummary[];
+  onSubmit?: (next: { q: string; asset: string }) => void;
 }) {
   const router = useRouter();
   const [value, setValue] = useState(query);
@@ -56,6 +59,12 @@ export default function SearchBox({
   function submitSearch(override?: string) {
     const q = (override ?? value).trim();
     setOpen(false);
+    // When used inline (e.g. homepage), let the parent handle the search so
+    // results render in place instead of navigating to /search.
+    if (onSubmit) {
+      onSubmit({ q, asset });
+      return;
+    }
     const params = new URLSearchParams();
     if (q) params.set("q", q);
     if (asset) params.set("asset", asset);
@@ -124,6 +133,10 @@ export default function SearchBox({
                     defaultChecked={activeOpt}
                     className="sr-only"
                     onChange={() => {
+                      if (onSubmit) {
+                        onSubmit({ q: value.trim(), asset: opt.value });
+                        return;
+                      }
                       const params = new URLSearchParams();
                       if (value.trim()) params.set("q", value.trim());
                       if (opt.value) params.set("asset", opt.value);
