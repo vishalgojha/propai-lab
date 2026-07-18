@@ -1,4 +1,4 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import { Inter } from 'next/font/google';
 import './globals.css';
 import { getSiteUrl } from '@/lib/site';
@@ -33,6 +33,20 @@ export const metadata: Metadata = {
     images: ['/opengraph-image'],
   },
   robots: 'index, follow',
+  manifest: '/manifest.webmanifest',
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'black-translucent',
+    title: 'PropAI',
+  },
+};
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 5,
+  viewportFit: 'cover',
+  themeColor: '#000000',
 };
 
 export default function WWWLayout({
