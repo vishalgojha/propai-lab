@@ -25,7 +25,7 @@
 #     GEMINI_API_KEY        -> gemini-flash
 #     NVIDIA_API_KEY        -> nvidia-nim
 #     CEREBRAS_API_KEY      -> cerebras
-#     MISTRAL_API_KEY       -> mistral
+#     (MISTRAL_API_KEY -> mistral: EXCLUDED, free-tier context window too small)
 #     (OPENROUTER_API_KEY -> openrouter-free: EXCLUDED, unreliable free tier)
 #     (DOUBLEWORD_API_URL + DOUBLEWORD_API_KEY already set -> doubleword-prod)
 # Missing key => that hop is skipped (safe-by-default), traffic -> next hop.
@@ -51,8 +51,8 @@ router_settings:
   # safe fallback for every task type. Add keys one by one (see header).
   fallbacks:
     - chat: [doubleword-prod]
-    - extraction: [groq, gemini-flash, nvidia-nim, cerebras, mistral, doubleword-prod]
-    - classification: [groq, gemini-flash, nvidia-nim, cerebras, mistral, doubleword-prod]
+    - extraction: [groq, gemini-flash, nvidia-nim, cerebras, doubleword-prod]
+    - classification: [groq, gemini-flash, nvidia-nim, cerebras, doubleword-prod]
     - batch: [doubleword-prod]
 
 # ---- Model groups (one per task_type) --------------------------------
@@ -125,10 +125,13 @@ model_list:
       model: cerebras/llama-3.3-70b
       api_key: ${CEREBRAS_API_KEY}
 
-  - model_name: mistral
-    litellm_params:
-      model: mistral/mistral-large-latest
-      api_key: ${MISTRAL_API_KEY}
+  # Mistral excluded — free tier context window too small for our extraction
+  # payloads. Kept for reference; not in any active chain. Re-enable by
+  # uncommenting + adding MISTRAL_API_KEY + restoring in the chains above.
+  # - model_name: mistral
+  #   litellm_params:
+  #     model: mistral/mistral-large-latest
+  #     api_key: ${MISTRAL_API_KEY}
 
   # OpenRouter free tier excluded — unreliable in practice (frequent 429/
   # empty responses). Kept here for reference; not in any active chain.
