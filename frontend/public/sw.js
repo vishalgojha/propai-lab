@@ -1,4 +1,4 @@
-const CACHE = "propai-v3";
+const CACHE = "propai-v4";
 const STATIC_ASSETS = [
   "/offline.html",
   "/pwa-192x192.png",
@@ -11,8 +11,6 @@ const STATIC_ASSETS = [
   "/apple-touch-icon.png",
   "/manifest.json",
 ];
-
-const NAV_CACHE = "propai-nav-v3";
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -28,7 +26,7 @@ self.addEventListener("activate", (event) => {
   event.waitUntil(
     (async () => {
       const keys = await caches.keys();
-      await Promise.all(keys.filter((k) => k !== CACHE && k !== NAV_CACHE).map((k) => caches.delete(k)));
+      await Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)));
     })()
   );
   self.clients.claim();
@@ -44,9 +42,10 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // Never serve an obsolete authenticated app shell after a deployment.
+  // Authenticated pages include user-specific navigation and deployment-specific
+  // chunk URLs. They must always come from the network, never an old app shell.
   if (request.mode === "navigate") {
-    event.respondWith(networkFirstNavigation(request));
+    event.respondWith(networkOnlyNavigation(request));
     return;
   }
 
@@ -64,14 +63,11 @@ self.addEventListener("fetch", (event) => {
   event.respondWith(networkFirstWithFallback(request, "/offline.html"));
 });
 
-async function networkFirstNavigation(request) {
-  const cache = await caches.open(NAV_CACHE);
+async function networkOnlyNavigation(request) {
   try {
-    const response = await fetch(request);
-    if (response.ok) await cache.put(request, response.clone());
-    return response;
+    return await fetch(request, { cache: "no-store" });
   } catch {
-    return (await cache.match(request)) || (await caches.match("/offline.html")) || new Response("Offline", { status: 503 });
+    return (await caches.match("/offline.html")) || new Response("Offline", { status: 503 });
   }
 }
 

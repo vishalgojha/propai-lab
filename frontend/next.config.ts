@@ -24,6 +24,18 @@ const nextConfig: NextConfig = {
   async headers() {
     return [
       {
+        // The authenticated app shell contains deployment-specific chunk URLs and
+        // user-specific navigation. Never let the CDN retain it across releases.
+        // Hashed Next assets, API routes and public files are excluded below.
+        source: "/((?!api(?:/|$)|_next(?:/|$)|sw\\.js$|manifest\\.json$|.*\\.[^/]+$).*)",
+        headers: [
+          {
+            key: "Cache-Control",
+            value: "private, no-store, no-cache, must-revalidate, max-age=0",
+          },
+        ],
+      },
+      {
         source: "/sw.js",
         headers: [
           { key: "Cache-Control", value: "no-cache, must-revalidate" },
