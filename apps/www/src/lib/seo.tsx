@@ -166,3 +166,32 @@ export const NOINDEX: Metadata["robots"] = {
   index: false,
   follow: true,
 };
+
+// Lightweight shape of LocalityData used only for copy generation.
+type LocalityCopy = {
+  locality: string;
+  totalListings: number;
+  buildings: Array<{ name: string }>;
+  saleCount: number;
+  rentCount: number;
+  priceRangeLabel: string | null;
+  topBhk: string | null;
+};
+
+// Human-readable locality description for GEO/AEO + on-page E-E-A-T copy.
+export function buildLocalityDescription(data: LocalityCopy): string {
+  const name = data.locality;
+  const n = data.totalListings;
+  const parts: string[] = [
+    `${name} has ${n} active listing${n === 1 ? "" : "s"} sourced from live WhatsApp broker conversations`,
+  ];
+  const configs: string[] = [];
+  if (data.saleCount > 0) configs.push(`${data.saleCount} for sale`);
+  if (data.rentCount > 0) configs.push(`${data.rentCount} for rent`);
+  if (configs.length) parts.push(`(${configs.join(", ")})`);
+  parts.push(`across ${data.buildings.length} building${data.buildings.length === 1 ? "" : "s"}`);
+  if (data.priceRangeLabel) parts.push(`with prices typically ranging ${data.priceRangeLabel}`);
+  if (data.topBhk) parts.push(`and ${data.topBhk} homes most common`);
+  parts.push(".");
+  return parts.join(" ");
+}

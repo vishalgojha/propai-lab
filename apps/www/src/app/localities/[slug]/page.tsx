@@ -7,7 +7,7 @@ import SiteHeader from "@/components/SiteHeader";
 import SiteFooter from "@/components/SiteFooter";
 import ListingCard, { LocalityBackLink } from "@/components/ListingCard";
 import { NoPhotosFaqJsonLd, NoPhotosFaq } from "@/components/NoPhotosFaq";
-import { JsonLd, buildLocalBusiness, buildBreadcrumb, getSiteUrl } from "@/lib/seo";
+import { JsonLd, buildLocalBusiness, buildBreadcrumb, getSiteUrl, buildLocalityDescription } from "@/lib/seo";
 
 // Read at server runtime (Coolify injects env into the running container).
 // Passed to the client map so we don't depend on NEXT_PUBLIC_* build-time
@@ -28,7 +28,9 @@ export async function generateMetadata({ params }: Params) {
   if (!data) return { title: "Locality not found — PropAI" };
   return {
     title: `${data.locality} — Properties & Brokers | PropAI`,
-    description: `Live ${data.locality} listings, price ranges, and broker activity sourced from WhatsApp broker conversations.`,
+    description: data.hasListings
+      ? buildLocalityDescription(data)
+      : `Live ${data.locality} listings, price ranges, and broker activity sourced from WhatsApp broker conversations.`,
   };
 }
 
@@ -116,15 +118,20 @@ export default async function LocalityPage({ params }: Params) {
           <LocalityBackLink />
         </div>
 
-        <header className="mb-8">
+        <header className="mb-10">
           <h1 className="text-[32px] lg:text-[44px] leading-[1.1] font-bold text-white mb-3">
             {data.locality}
           </h1>
           <p className="text-lg text-zinc-400 max-w-2xl">
-            {data.totalListings} active listing{data.totalListings === 1 ? "" : "s"} across{" "}
-            {data.buildings.length} building{data.buildings.length === 1 ? "" : "s"},
-            sourced from live WhatsApp broker conversations.
+            {buildLocalityDescription(data)}
           </p>
+          <div className="mt-6 flex flex-wrap gap-3">
+            <TrustStat label="Active listings" value={data.totalListings} />
+            <TrustStat label="Buildings" value={data.buildings.length} />
+            {data.saleCount > 0 && <TrustStat label="For sale" value={data.saleCount} />}
+            {data.rentCount > 0 && <TrustStat label="For rent" value={data.rentCount} />}
+            {data.priceRangeLabel && <TrustStat label="Price range" value={data.priceRangeLabel} />}
+          </div>
         {mapped.length === 0 && (
           <p className="mt-3 inline-flex items-center gap-2 text-sm text-zinc-500">
             <MapPin className="w-4 h-4" aria-hidden="true" />
@@ -167,6 +174,19 @@ export default async function LocalityPage({ params }: Params) {
       <NoPhotosFaq />
       </main>
       <SiteFooter />
+    </div>
+  );
+}
+
+// Small E-E-A-T stat chip shown on locality pages — concrete, sourced numbers
+// that build trust with both users and LLM citation.
+function TrustStat({ label, value }: { label: string; value: number | string }) {
+  return (
+    <div className="rounded-xl border border-white/10 bg-zinc-900/50 px-4 py-3">
+      <div className="text-[20px] lg:text-[22px] font-semibold text-white leading-none">
+        {typeof value === "number" ? value.toLocaleString("en-IN") : value}
+      </div>
+      <div className="mt-1 text-xs text-zinc-400">{label}</div>
     </div>
   );
 }
