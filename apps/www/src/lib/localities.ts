@@ -24,6 +24,10 @@ export type LocalityData = {
   unmappedCount: number;
   totalListings: number;
   hasListings: boolean;
+  rentCount: number;
+  saleCount: number;
+  priceRangeLabel: string | null;
+  topBhk: string | null;
 };
 
 export type LocalitySummary = {
@@ -143,6 +147,10 @@ export async function getLocalityData(rawSlug: string): Promise<LocalityData | n
       unmappedCount: 0,
       totalListings: 0,
       hasListings: false,
+      rentCount: 0,
+      saleCount: 0,
+      priceRangeLabel: null,
+      topBhk: null,
     };
   }
 
@@ -228,6 +236,10 @@ export async function getLocalityData(rawSlug: string): Promise<LocalityData | n
       unmappedCount: 0,
       totalListings: 0,
       hasListings: false,
+      rentCount: 0,
+      saleCount: 0,
+      priceRangeLabel: null,
+      topBhk: null,
     };
   }
 
@@ -257,6 +269,55 @@ export async function getLocalityData(rawSlug: string): Promise<LocalityData | n
   }
 
   const rows = (listings ?? []) as ListingRow[];
+
+  // Derive a human-friendly price range + config mix for the locality
+  // description and E-E-A-T trust block. Prices are stored in native units, so
+  // we normalize everything to absolute INR before taking min/max.
+  const priceToInr = (value: number | null, unit: string | null): number | null => {
+    if (value == null) return null;
+    const u = (unit || "").toLowerCase().trim();
+    if (u === "cr" || u === "crore" || u === "crores") return value * 1_00_00_000;
+    if (u === "l" || u === "lac" || u === "lakh" || u === "lakhs") return value * 1_00_000;
+    if (u === "k" || u === "thousand") return value * 1_000;
+    if (u === "abs" || u === "inr") return value;
+    return value; // fallback: treat as absolute INR
+  };
+
+  const inrLabel = (value: number): string => {
+    if (value >= 1_00_00_000) {
+      const cr = value / 1_00_00_000;
+      return `₹${cr % 1 === 0 ? cr : cr.toFixed(1)} Cr`;
+    }
+    if (value >= 1_00_000) {
+      const l = value / 1_00_000;
+      return `₹${l % 1 === 0 ? l : l.toFixed(1)} L`;
+    }
+    return `₹${value.toLocaleString("en-IN")}`;
+  };
+
+  let rentCount = 0;
+  let saleCount = 0;
+  const inrPrices: number[] = [];
+  const bhkFreq = new Map<number, number>();
+  for (const r of rows) {
+    const i = (r.intent || "").toLowerCase();
+    if (i === "rent" || i === "rental" || i === "lease") rentCount += 1;
+    else if (i === "sale" || i === "sell" || i === "buy") saleCount += 1;
+    const inr = priceToInr(r.price, r.price_unit);
+    if (inr != null) inrPrices.push(inr);
+    for (const n of parseBhkValues(r.bhk)) bhkFreq.set(n, (bhkFreq.get(n) ?? 0) + 1);
+  }
+  const priceRangeLabel =
+    inrPrices.length >= 2
+      ? `${inrLabel(Math.min(...inrPrices))}–${inrLabel(Math.max(...inrPrices))}`
+      : inrPrices.length === 1
+        ? inrLabel(inrPrices[0])
+        : null;
+  const topBhk =
+    bhkFreq.size > 0
+      ? `${[...bhkFreq.entries()].sort((a, b) => b[1] - a[1])[0][0]} BHK`
+      : null;
+
 
   const buildingNames = Array.from(
     new Set(rows.map((r) => r.building_name?.trim()).filter(Boolean) as string[]),
@@ -365,6 +426,10 @@ export async function getLocalityData(rawSlug: string): Promise<LocalityData | n
     unmappedCount,
     totalListings: rows.length,
     hasListings: rows.length > 0,
+    rentCount,
+    saleCount,
+    priceRangeLabel,
+    topBhk,
   };
 }
 

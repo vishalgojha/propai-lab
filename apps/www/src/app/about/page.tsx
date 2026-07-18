@@ -1,6 +1,8 @@
 import SiteHeader from "@/components/SiteHeader";
 import SiteFooter from "@/components/SiteFooter";
 import { NoPhotosFaqJsonLd } from "@/components/NoPhotosFaq";
+import { getPublicDataOverview } from "@/lib/public-data";
+import { getAllLocalities } from "@/lib/localities";
 
 export const metadata = {
   title: "About PropAI — Real Listings from Mumbai's Broker WhatsApp Groups",
@@ -9,6 +11,8 @@ export const metadata = {
 };
 
 export default async function AboutPage() {
+  const known = await getAllLocalities();
+  const overview = await getPublicDataOverview({ localities: known });
   return (
     <div className="min-h-screen bg-black text-white">
       <SiteHeader />
@@ -56,8 +60,33 @@ export default async function AboutPage() {
             the keys.
           </p>
         </div>
+
+        <div className="mt-10 grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <AboutStat label="Live listings tracked" value={overview.counts.listings} />
+          <AboutStat label="Brokers in network" value={overview.counts.brokers} />
+          <AboutStat label="Localities covered" value={overview.counts.localities} />
+          <AboutStat
+            label="Records parsed"
+            value={overview.counts.parsed_observations}
+          />
+        </div>
+        <p className="mt-4 text-sm text-zinc-500">
+          These numbers are pulled live from the same broker conversations powering
+          every listing on this site. They update as brokers post.
+        </p>
       </main>
       <SiteFooter />
+    </div>
+  );
+}
+
+function AboutStat({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-2xl border border-white/10 bg-zinc-900/50 p-4 text-center">
+      <div className="text-2xl font-bold text-white leading-none">
+        {value.toLocaleString("en-IN")}
+      </div>
+      <div className="mt-2 text-xs text-zinc-400">{label}</div>
     </div>
   );
 }

@@ -101,6 +101,23 @@ export default async function WWWPage() {
           </div>
         </section>
 
+        <section className="py-10 lg:py-14 border-b border-white/5">
+          <div className="max-w-[1600px] mx-auto px-4 lg:px-6">
+            <p className="text-center text-sm text-zinc-500 mb-6">
+              Real estate intelligence, sourced from live broker activity — not portals
+            </p>
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-6 max-w-4xl mx-auto">
+              <TrustStat label="Live listings tracked" value={overview.counts.listings} />
+              <TrustStat label="Brokers in network" value={overview.counts.brokers} />
+              <TrustStat label="Localities covered" value={overview.counts.localities} />
+              <TrustStat
+                label="Daily refresh"
+                value={`${overview.counts.parsed_observations.toLocaleString()}+ records`}
+              />
+            </div>
+          </div>
+        </section>
+
         <section id="live-data" className="py-16 lg:py-24 bg-zinc-950/60 border-y border-white/5">
           <div className="max-w-[1600px] mx-auto px-4 lg:px-6">
             <div className="text-center mb-10 lg:mb-12">
@@ -288,6 +305,17 @@ export default async function WWWPage() {
       </main>
 
       <SiteFooter />
+    </div>
+  );
+}
+
+function TrustStat({ label, value }: { label: string; value: number | string }) {
+  return (
+    <div className="rounded-2xl border border-white/10 bg-zinc-900/50 p-5 text-center">
+      <div className="text-2xl lg:text-3xl font-bold text-white leading-none">
+        {typeof value === "number" ? value.toLocaleString("en-IN") : value}
+      </div>
+      <div className="mt-2 text-xs text-zinc-400">{label}</div>
     </div>
   );
 }
