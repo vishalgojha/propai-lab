@@ -8,6 +8,8 @@ import ListingTile from "@/components/ListingTile";
 import SearchBox from "@/components/SearchBox";
 import SiteHeader from "@/components/SiteHeader";
 import SiteFooter from "@/components/SiteFooter";
+import { ShortlistProvider } from "@/components/ShortlistProvider";
+import ShortlistBar from "@/components/ShortlistBar";
 import RequirementCapture from "@/components/RequirementCapture";
 
 // Locality/building lists change gradually; a few minutes of staleness is fine
@@ -47,6 +49,7 @@ export default async function SearchPage({ searchParams }: { searchParams: Searc
    return (
     <div className="min-h-screen bg-black text-white">
       <SiteHeader />
+      <ShortlistProvider>
       <main className="max-w-[1600px] mx-auto px-4 sm:px-8 xl:px-12 py-10 lg:py-14">
         <header className="max-w-5xl">
           <div className="inline-flex items-center gap-2 rounded-full border border-green-400/20 bg-green-400/10 px-3 py-1 text-xs font-medium text-green-300 mb-4">
@@ -228,6 +231,8 @@ export default async function SearchPage({ searchParams }: { searchParams: Searc
           </section>
         )}
       </main>
+      <ShortlistBar />
+      </ShortlistProvider>
       <SiteFooter />
     </div>
   );

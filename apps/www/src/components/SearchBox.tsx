@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ArrowRight, Search, MapPin } from "lucide-react";
 import type { LocalitySummary } from "@/lib/localities";
+import { useAnalytics } from "@/lib/useAnalytics";
 
 type LocalitySuggestion = { locality: string; slug: string; listingCount: number };
 
@@ -26,6 +27,7 @@ export default function SearchBox({
   const [justTyped, setJustTyped] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const { track } = useAnalytics();
 
   const suggestions = useMemo(() => {
     const q = value.trim().toLowerCase();
@@ -69,6 +71,7 @@ export default function SearchBox({
     if (q) params.set("q", q);
     if (asset) params.set("asset", asset);
     const qs = params.toString();
+    track("search", { query: q, asset });
     router.push(qs ? `/search?${qs}` : "/search");
   }
 
