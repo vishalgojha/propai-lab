@@ -1,8 +1,10 @@
 package main
 
 import (
+	"encoding/json"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -116,5 +118,52 @@ func TestMessageTextSupportsConversationAndExtendedText(t *testing.T) {
 	}
 	if got := messageText(extended); got != "extended command" {
 		t.Fatalf("messageText(extended) = %q", got)
+	}
+}
+
+func TestInternalOnlyRejectsMissingToken(t *testing.T) {
+	t.Setenv("PROPAI_INTERNAL_TOKEN", "expected-token")
+	called := false
+	handler := internalOnly(func(w http.ResponseWriter, _ *http.Request) {
+		called = true
+		w.WriteHeader(http.StatusNoContent)
+	}, false)
+
+	recorder := httptest.NewRecorder()
+	handler(recorder, httptest.NewRequest(http.MethodPost, "/connect", nil))
+	if recorder.Code != http.StatusUnauthorized || called {
+		t.Fatalf("status=%d called=%v", recorder.Code, called)
+	}
+}
+
+func TestInternalOnlyAcceptsValidToken(t *testing.T) {
+	t.Setenv("PROPAI_INTERNAL_TOKEN", "expected-token")
+	handler := internalOnly(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}, false)
+
+	request := httptest.NewRequest(http.MethodPost, "/connect", nil)
+	request.Header.Set("X-PropAI-Internal-Token", "expected-token")
+	recorder := httptest.NewRecorder()
+	handler(recorder, request)
+	if recorder.Code != http.StatusNoContent {
+		t.Fatalf("status=%d", recorder.Code)
+	}
+}
+
+func TestHealthAllowsMinimalPublicLiveness(t *testing.T) {
+	t.Setenv("PROPAI_INTERNAL_TOKEN", "expected-token")
+	handler := internalOnly(func(http.ResponseWriter, *http.Request) {
+		t.Fatal("protected health handler should not run")
+	}, true)
+
+	recorder := httptest.NewRecorder()
+	handler(recorder, httptest.NewRequest(http.MethodGet, "/health", nil))
+	var body map[string]interface{}
+	if err := json.NewDecoder(recorder.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	if recorder.Code != http.StatusOK || body["ok"] != true || body["broker_id"] != nil {
+		t.Fatalf("status=%d body=%v", recorder.Code, body)
 	}
 }

@@ -85,6 +85,27 @@ def _clean_person_name(name: str = "") -> str:
     return clean
 
 
+def _market_name_key(name: str = "") -> str:
+    """Return the conservative comparison key used for market identities."""
+    clean = _clean_person_name(name)
+    return re.sub(r"[\W_]+", " ", clean.casefold(), flags=re.UNICODE).strip()
+
+
+def _resolve_market_identity(
+    phone: str,
+    name: str,
+    phones_by_name: dict[str, set[str]],
+) -> tuple[str, str]:
+    """Link a name-only row only when that name has one unambiguous phone."""
+    normalized_phone = _normalize_india_phone(phone)
+    name_key = _market_name_key(name)
+    if not normalized_phone and name_key:
+        candidates = phones_by_name.get(name_key, set())
+        if len(candidates) == 1:
+            normalized_phone = next(iter(candidates))
+    return normalized_phone or f"name:{name_key}", normalized_phone
+
+
 def _normalize_india_phone(value: str = "") -> str:
     raw = (value or "").strip()
     if not raw or re.search(r"[xX*•]", raw):
@@ -734,6 +755,24 @@ class SupabaseStorage(Storage):
             .eq("user_id", user_id).eq("is_active", True).execute()
         return [m["organizations"] for m in (res.data or []) if m.get("organizations")]
 
+    def get_user_organization_membership(self, user_id: str, org_id: str) -> dict | None:
+        res = self.client.table("organization_members").select("*")\
+            .eq("user_id", user_id).eq("organization_id", org_id)\
+            .eq("is_active", True).limit(1).execute()
+        return res.data[0] if res.data else None
+
+    def get_system_role(self, slug: str) -> dict | None:
+        res = self.client.table("roles").select("*").eq("slug", slug)\
+            .is_("organization_id", "null").limit(1).execute()
+        return res.data[0] if res.data else None
+
+    def user_has_org_permission(self, user_id: str, org_id: str, permission_key: str) -> bool:
+        membership = self.get_user_organization_membership(user_id, org_id)
+        role_id = membership.get("role_id") if membership else None
+        if not role_id:
+            return False
+        return permission_key in self.get_role_permissions(int(role_id))
+
     # ── Multi-Tenant: Roles & Permissions ─────────────────────────
 
     def list_roles(self, org_id: str | None = None) -> list[dict]:
@@ -800,6 +839,12 @@ class SupabaseStorage(Storage):
             .eq("organization_id", org_id).order("created_at", desc=False).execute()
         return res.data or []
 
+    def list_all_whatsapp_connections(self) -> list[dict]:
+        res = self.client.table("org_whatsapp_connections")\
+            .select("*, organizations(id,name,slug,is_active)")\
+            .order("created_at", desc=False).execute()
+        return res.data or []
+
     def get_org_placeholder_whatsapp_connection(self, org_id: str) -> dict | None:
         for row in self.list_org_whatsapp_connections(org_id):
             phone_number = str(row.get("phone_number") or "").strip()
@@ -836,7 +881,10 @@ class SupabaseStorage(Storage):
 
     def remove_org_whatsapp_connection(self, conn_id: int) -> bool:
         res = self.client.table("org_whatsapp_connections").delete().eq("id", conn_id).execute()
-        return bool(res.data)
+        # PostgREST may legitimately return an empty body for DELETE even when
+        # the row was removed.  Verify absence instead of treating the response
+        # representation as the success signal.
+        return bool(res.data) or self.get_whatsapp_connection_unscoped(conn_id) is None
 
     def get_org_whatsapp_connection(self, conn_id: int) -> dict | None:
         query = self.client.table("org_whatsapp_connections").select("*").eq("id", conn_id).limit(1)
@@ -845,10 +893,84 @@ class SupabaseStorage(Storage):
         res = query.execute()
         return res.data[0] if res.data else None
 
+    def get_whatsapp_connection_unscoped(self, conn_id: int) -> dict | None:
+        res = self.client.table("org_whatsapp_connections").select("*")\
+            .eq("id", conn_id).limit(1).execute()
+        return res.data[0] if res.data else None
+
     def get_org_whatsapp_connection_by_broker_id(self, broker_id: str) -> dict | None:
         """Lookup phone connection by broker_id. No tenant scoping — used by webhook to resolve tenant."""
-        res = self.client.table("org_whatsapp_connections").select("organization_id, broker_id, phone_number, instance_name").eq("broker_id", broker_id).limit(1).execute()
+        res = self.client.table("org_whatsapp_connections").select("organization_id, broker_id, phone_number, instance_name, is_active, self_chat_enabled").eq("broker_id", broker_id).limit(1).execute()
         return res.data[0] if res.data else None
+
+    def list_whatsapp_access(self, org_id: str) -> list[dict]:
+        members = self.list_team_members(org_id=org_id)
+        phones = self.list_org_whatsapp_connections(org_id)
+        member_ids = [member["id"] for member in members if member.get("id") is not None]
+        explicit: dict[tuple[int, str], dict] = {}
+        if member_ids:
+            res = self.client.table("team_member_whatsapp_access").select("*")\
+                .in_("team_member_id", member_ids).execute()
+            explicit = {
+                (int(row["team_member_id"]), str(row.get("whatsapp_number") or "")): row
+                for row in (res.data or [])
+            }
+
+        matrix: list[dict] = []
+        for member in members:
+            permission_keys = self._perm_keys(int(member.get("permissions") or 0))
+            for phone in phones:
+                number = str(phone.get("phone_number") or "")
+                row = explicit.get((int(member["id"]), number))
+                matrix.append({
+                    "id": row.get("id") if row else None,
+                    "team_member_id": member["id"],
+                    "member_name": member.get("name") or member.get("email") or "Team member",
+                    "member_email": member.get("email") or "",
+                    "whatsapp_connection_id": phone.get("id"),
+                    "whatsapp_number": number,
+                    "instance_name": phone.get("instance_name") or "",
+                    "broker_id": phone.get("broker_id") or "",
+                    "can_send": bool(row.get("can_send")) if row else "reply_whatsapp" in permission_keys,
+                    "can_view_messages": bool(row.get("can_view_messages")) if row else "view_inbox" in permission_keys,
+                    "is_explicit": row is not None,
+                })
+        return matrix
+
+    def set_whatsapp_access(self, team_member_id: int, whatsapp_number: str,
+                            can_send: bool = False, can_view_messages: bool = True,
+                            org_id: str | None = None) -> dict | None:
+        member = self.get_team_member(team_member_id)
+        if not member or (org_id and str(member.get("organization_id")) != str(org_id)):
+            return None
+        if org_id:
+            valid_numbers = {
+                str(phone.get("phone_number") or "")
+                for phone in self.list_org_whatsapp_connections(org_id)
+            }
+            if whatsapp_number not in valid_numbers:
+                return None
+        payload = {
+            "team_member_id": team_member_id,
+            "whatsapp_number": whatsapp_number,
+            "can_send": bool(can_send),
+            "can_view_messages": bool(can_view_messages),
+        }
+        res = self.client.table("team_member_whatsapp_access").upsert(
+            payload, on_conflict="team_member_id,whatsapp_number"
+        ).execute()
+        return res.data[0] if res.data else None
+
+    def get_member_whatsapp_access(self, team_member_id: int, org_id: str) -> list[dict]:
+        numbers = {
+            str(phone.get("phone_number") or "")
+            for phone in self.list_org_whatsapp_connections(org_id)
+        }
+        if not numbers:
+            return []
+        res = self.client.table("team_member_whatsapp_access").select("*")\
+            .eq("team_member_id", team_member_id).in_("whatsapp_number", list(numbers)).execute()
+        return res.data or []
 
     def get_phone_broker_id(self, conn_id: int) -> str | None:
         row = self.get_org_whatsapp_connection(conn_id)
@@ -1258,7 +1380,8 @@ class SupabaseStorage(Storage):
                 if r.get("id"):
                     raw_map[r["id"]] = r
 
-        grouped: dict[str, dict] = {}
+        market_rows: list[tuple[dict, dict, str, str]] = []
+        phones_by_name: dict[str, set[str]] = defaultdict(set)
         for parsed in parsed_rows:
             raw = raw_map.get(parsed.get("raw_message_id")) or {}
             if not _is_market_group_name(raw.get("group_name") or ""):
@@ -1277,7 +1400,14 @@ class SupabaseStorage(Storage):
             if not phone and not name:
                 continue
 
-            identity = phone or f"name:{name.lower()}"
+            market_rows.append((parsed, raw, phone, name))
+            name_key = _market_name_key(name)
+            if phone and name_key:
+                phones_by_name[name_key].add(phone)
+
+        grouped: dict[str, dict] = {}
+        for parsed, raw, phone, name in market_rows:
+            identity, resolved_phone = _resolve_market_identity(phone, name, phones_by_name)
             ts = raw.get("timestamp") or parsed.get("created_at") or raw.get("created_at") or ""
             bucket = grouped.setdefault(identity, {
                 "latest": None,
@@ -1298,7 +1428,7 @@ class SupabaseStorage(Storage):
                 bucket["source_group_names"].add(raw.get("group_name"))
 
             if not bucket["latest"] or str(ts) > str(bucket["latest_ts"]):
-                bucket["latest"] = (parsed, raw, phone, name, identity)
+                bucket["latest"] = (parsed, raw, resolved_phone, name, identity)
                 bucket["latest_ts"] = ts
 
         threads: list[dict] = []
@@ -2428,10 +2558,31 @@ class SupabaseStorage(Storage):
                               broker_key: str = "", intent: str = "",
                               tenant_id: str | None = None) -> list[dict]:
         tid = tenant_id or self._tenant_id
+        # Preferred path: filter the canonical phone/name identity inside
+        # Postgres before LIMIT.  This avoids downloading thousands of parsed
+        # rows and retrying equivalent name keys in application code.
+        try:
+            rows = self.client.rpc("get_market_observations_feed", {
+                "p_limit": limit,
+                "p_offset": offset,
+                "p_broker_key": broker_key,
+                "p_intent": intent,
+                "p_tenant_id": tid or None,
+            })
+            if isinstance(rows, list) and (rows or not broker_key):
+                return rows
+        except Exception:
+            # Backward-compatible during rolling deploys before the migration
+            # has reached the database.
+            pass
+
         if broker_key:
-            parsed_rows = self._get_parsed_observations_for_broker(
-                limit, offset, broker_key=broker_key, intent=intent, tenant_id=tid
-            )
+            try:
+                parsed_rows = self._get_parsed_observations_for_broker(
+                    limit, offset, broker_key=broker_key, intent=intent, tenant_id=tid
+                )
+            except Exception:
+                parsed_rows = []
             if parsed_rows:
                 return parsed_rows
 
@@ -2461,9 +2612,12 @@ class SupabaseStorage(Storage):
             pass
 
         if broker_key:
-            return self._get_parsed_observations_for_broker(
-                limit, offset, broker_key=broker_key, intent=intent, tenant_id=tid
-            )
+            try:
+                return self._get_parsed_observations_for_broker(
+                    limit, offset, broker_key=broker_key, intent=intent, tenant_id=tid
+                )
+            except Exception:
+                return []
         return []
 
     def _get_parsed_observations_for_broker(self, limit: int = 50, offset: int = 0,
@@ -2493,7 +2647,8 @@ class SupabaseStorage(Storage):
         if intent:
             query = query.eq("intent", intent.upper())
 
-        result = []
+        candidates: list[tuple[dict, dict, str, str]] = []
+        phones_by_name: dict[str, set[str]] = defaultdict(set)
         for parsed in (query.execute().data or []):
             raw = parsed.get("raw_messages") or {}
             if not _is_market_group_name(raw.get("group_name") or ""):
@@ -2508,10 +2663,20 @@ class SupabaseStorage(Storage):
                 or _clean_person_name(parsed.get("profile_name") or "")
                 or _clean_person_name(raw.get("sender") or "")
             )
+            candidates.append((parsed, raw, phone, name))
+            candidate_name_key = _market_name_key(name)
+            if phone and candidate_name_key:
+                phones_by_name[candidate_name_key].add(phone)
+
+        result = []
+        requested_name_key = _market_name_key(name_key)
+        for parsed, raw, phone, name in candidates:
+            candidate_name_key = _market_name_key(name)
+            identity, resolved_phone = _resolve_market_identity(phone, name, phones_by_name)
             if normalized_key:
-                if phone != normalized_key:
+                if resolved_phone != normalized_key:
                     continue
-            elif name_key and name.lower() != name_key:
+            elif requested_name_key and candidate_name_key != requested_name_key:
                 continue
             else:
                 continue
@@ -2526,7 +2691,7 @@ class SupabaseStorage(Storage):
             result.append({
                 "id": parsed.get("id"),
                 "fingerprint": f"parsed:{parsed.get('id')}",
-                "broker_key": phone or f"name:{name.lower()}",
+                "broker_key": identity,
                 "summary_title": parsed.get("summary_title") or parsed.get("normalized_message") or raw.get("message") or "",
                 "observation_type": observation_type,
                 "intent": parsed.get("intent"),
@@ -2574,7 +2739,7 @@ class SupabaseStorage(Storage):
                 "raw_message": raw.get("message") or "",
                 "raw_sender": raw.get("sender") or name,
                 "broker_name": name,
-                "broker_phone": phone,
+                "broker_phone": resolved_phone,
             })
 
         return result[offset:offset + limit]
@@ -2583,6 +2748,22 @@ class SupabaseStorage(Storage):
                          min_observations: int = 1,
                          tenant_id: str | None = None) -> list[dict]:
         tid = tenant_id or self._tenant_id
+        # Aggregate before pagination in Postgres.  Ordering is deterministic
+        # (last_active DESC, identity_key ASC), so active ingestion can add new
+        # activity without randomly reshuffling tied broker cards.
+        try:
+            rows = self.client.rpc("get_market_brokers_feed", {
+                "p_limit": limit,
+                "p_offset": offset,
+                "p_min_observations": min_observations,
+                "p_tenant_id": tid or None,
+            })
+            if isinstance(rows, list):
+                return rows
+        except Exception:
+            # Preserve availability while API and migration roll out.
+            pass
+
         try:
             parsed_threads = self._get_parsed_market_threads(
                 max(5000, limit + offset), 0, tenant_id=tid

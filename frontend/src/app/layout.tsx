@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import "./globals.css";
-import { getPhones, searchMessages, getCompanionConfig, CompanionConfig, getProfile, getWhatsAppStatus, isLiveWhatsAppConnection, type Phone, type WhatsAppStatus } from "@/lib/api";
+import { getPhones, searchMessages, getAuthMe, getCompanionConfig, CompanionConfig, getProfile, getWhatsAppStatus, isLiveWhatsAppConnection, type Phone, type WhatsAppStatus } from "@/lib/api";
 import {
   MessageSquare,
   BarChart3,
@@ -24,6 +24,7 @@ import {
   Key,
   LogOut,
   Menu,
+  ShieldCheck,
   X,
 } from "lucide-react";
 import { AuthProvider, useAuth } from "@/lib/AuthProvider";
@@ -33,8 +34,6 @@ import { BottomNav } from "@/components/layout/BottomNav";
 import { MobileDrawer } from "@/components/layout/MobileDrawer";
 import { InstallPrompt } from "@/components/layout/InstallPrompt";
 import { ServiceWorkerRegister } from "@/components/layout/ServiceWorkerRegister";
-
-const ADMIN_EMAIL = "vishal@chaoscraftlabs.com";
 
 const baseNavSections = [
   {
@@ -70,8 +69,10 @@ const baseNavSections = [
 ];
 
 const adminNavSection = {
-  title: "Admin",
+  title: "Platform",
   items: [
+    { href: "/admin", label: "Super Admin", icon: ShieldCheck },
+    { href: "/admin/whatsapp", label: "WhatsApp Sessions", icon: Wifi },
     { href: "/admin/analytics", label: "Site Analytics", icon: BarChart3 },
   ],
 };
@@ -192,6 +193,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
   const [profile, setProfile] = useState<{ auth_user_id?: string; phone: string; first_name: string; last_name?: string; email?: string; city?: string } | null>(null);
   const [wabaConfig, setWabaConfig] = useState<CompanionConfig | null>(null);
   const [liveStatus, setLiveStatus] = useState<WhatsAppStatus | null>(null);
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const { signOut: authSignOut } = useAuth();
   const fallbackFullName = String(user?.user_metadata?.full_name || user?.email?.split("@")[0] || "Account").trim();
   const [fallbackFirstName = "Account", ...fallbackLastName] = fallbackFullName.split(/\s+/);
@@ -270,6 +272,22 @@ function AppShell({ children }: { children: React.ReactNode }) {
       return;
     }
   }, [authLoading, authError, user, pathname, router]);
+
+  useEffect(() => {
+    if (authLoading || !user) {
+      setIsSuperAdmin(false);
+      return;
+    }
+    let cancelled = false;
+    void getAuthMe()
+      .then((authState) => {
+        if (!cancelled) setIsSuperAdmin(authState.is_super_admin === true);
+      })
+      .catch(() => {
+        if (!cancelled) setIsSuperAdmin(false);
+      });
+    return () => { cancelled = true; };
+  }, [authLoading, user?.id]);
 
   const handleSignOut = useCallback(async () => {
     localStorage.removeItem("propai_profile");
@@ -402,7 +420,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
     );
   }
 
-  const navSections = user?.email === ADMIN_EMAIL
+  const navSections = isSuperAdmin
     ? [...baseNavSections, adminNavSection]
     : baseNavSections;
 
@@ -414,6 +432,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
         open={drawerOpen}
         onClose={() => setDrawerOpen(false)}
         onOpenPalette={() => setPaletteOpen(true)}
+        isSuperAdmin={isSuperAdmin}
       />
 
       {/* ═══════ Sidebar (desktop) ═══════ */}

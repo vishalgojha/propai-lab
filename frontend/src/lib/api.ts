@@ -30,7 +30,14 @@ async function fetchJSONWithRetry<T>(
   retried: boolean,
 ): Promise<T> {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  let timedOut = false;
+  const abortFromCaller = () => controller.abort(init?.signal?.reason);
+  if (init?.signal?.aborted) abortFromCaller();
+  else init?.signal?.addEventListener("abort", abortFromCaller, { once: true });
+  const timeout = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, timeoutMs);
   try {
     const token = await getAccessToken();
     const tenantId = readActiveTenantId();
@@ -51,6 +58,7 @@ async function fetchJSONWithRetry<T>(
       if (fresh) {
         const retryRes = await fetch(`${BASE}${url}`, {
           ...init,
+          signal: controller.signal,
           headers: {
             "Content-Type": "application/json",
             Authorization: `Bearer ${fresh}`,
@@ -79,11 +87,12 @@ async function fetchJSONWithRetry<T>(
     return await parseJSONBody<T>(res, url);
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError") {
-      throw new Error(`Request timed out: ${url}`);
+      throw new Error(timedOut ? `Request timed out: ${url}` : `Request cancelled: ${url}`);
     }
     throw error;
   } finally {
     clearTimeout(timeout);
+    init?.signal?.removeEventListener("abort", abortFromCaller);
   }
 }
 
@@ -1422,10 +1431,10 @@ export function getClientMessages(clientId: number) {
   return fetchJSON<ClientMessagesResponse>(`/clients/${clientId}/messages`);
 }
 
-export function getObservationsFeed(limit = 50, offset = 0, phone?: string) {
+export function getObservationsFeed(limit = 50, offset = 0, brokerKey?: string, signal?: AbortSignal) {
   const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
-  if (phone) params.set("phone", phone);
-  return fetchJSON<any[]>(`/observations/feed?${params.toString()}`);
+  if (brokerKey) params.set("broker_key", brokerKey);
+  return fetchJSON<any[]>(`/observations/feed?${params.toString()}`, { signal }, 15000);
 }
 
 export function hideBroker(phone: string) {
@@ -1653,10 +1662,12 @@ export interface Phone {
   instance_name: string;
   broker_id: string;
   is_active: boolean;
+  self_chat_enabled: boolean;
   connected_at: string;
   created_at: string;
   connected: boolean | null;
   live_status_available?: boolean;
+  live_status_error?: string;
   connection_state: string;
   phone_number_live: string;
   display_name: string;
@@ -1699,4 +1710,40 @@ export function disconnectPhone(phoneId: number) {
 
 export function connectPhone(phoneId: number) {
   return fetchJSON<Phone>(`/phones/${phoneId}/connect`, { method: "POST" });
+}
+
+export function updatePhone(phoneId: number, data: { instance_name?: string; self_chat_enabled?: boolean }) {
+  return fetchJSON<Phone>(`/phones/${phoneId}`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+}
+
+export interface AdminWhatsAppSession extends Phone {
+  organizations?: {
+    id: string;
+    name: string;
+    slug: string;
+    is_active: boolean;
+  } | null;
+}
+
+export function getAdminWhatsAppSessions() {
+  return fetchJSON<{ sessions: AdminWhatsAppSession[] }>("/admin/whatsapp/sessions");
+}
+
+export function updateAdminWhatsAppSession(
+  phoneId: number,
+  data: { instance_name?: string; is_active?: boolean; self_chat_enabled?: boolean },
+) {
+  return fetchJSON<AdminWhatsAppSession>(`/admin/whatsapp/sessions/${phoneId}`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+}
+
+export function controlAdminWhatsAppSession(phoneId: number, action: "connect" | "disconnect" | "reset") {
+  return fetchJSON<AdminWhatsAppSession>(`/admin/whatsapp/sessions/${phoneId}/${action}`, {
+    method: "POST",
+  });
 }

@@ -1,115 +1,157 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
-import { Phone, ShieldCheck, ShieldAlert, Save, RefreshCcw } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Eye, MessageSquareText, Phone, RefreshCcw } from "lucide-react";
 import { fetchJSON } from "@/lib/api";
 
-async function fetchAccess() {
-    const data = await fetchJSON<any>("/workspace/whatsapp-access");
-    return data.access;
+interface WhatsAppAccessRule {
+  id: number | null;
+  team_member_id: number;
+  member_name: string;
+  member_email: string;
+  whatsapp_connection_id: number;
+  whatsapp_number: string;
+  instance_name: string;
+  broker_id: string;
+  can_send: boolean;
+  can_view_messages: boolean;
+  is_explicit: boolean;
 }
 
-async function setAccess(payload: any) {
-    return fetchJSON<any>("/workspace/whatsapp-access", {
+function Toggle({ checked, disabled, label, onChange }: { checked: boolean; disabled: boolean; label: string; onChange: () => void }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={label}
+      disabled={disabled}
+      onClick={onChange}
+      className={`relative h-6 w-11 shrink-0 rounded-full transition-colors disabled:opacity-50 ${checked ? "bg-emerald-500" : "bg-zinc-700"}`}
+    >
+      <span className={`absolute top-1 h-4 w-4 rounded-full bg-white transition-transform ${checked ? "translate-x-6" : "translate-x-1"}`} />
+    </button>
+  );
+}
+
+export default function WhatsAppAccessPage() {
+  const [rules, setRules] = useState<WhatsAppAccessRule[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [savingKey, setSavingKey] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const loadAccess = useCallback(async () => {
+    setLoading(true);
+    try {
+      const data = await fetchJSON<{ access: WhatsAppAccessRule[] }>("/workspace/whatsapp-access");
+      setRules(data.access || []);
+      setError(null);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not load WhatsApp access");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => void loadAccess(), 0);
+    return () => window.clearTimeout(timer);
+  }, [loadAccess]);
+
+  const members = useMemo(() => {
+    const grouped = new Map<number, { name: string; email: string; rules: WhatsAppAccessRule[] }>();
+    for (const rule of rules) {
+      const current = grouped.get(rule.team_member_id) || { name: rule.member_name, email: rule.member_email, rules: [] };
+      current.rules.push(rule);
+      grouped.set(rule.team_member_id, current);
+    }
+    return Array.from(grouped.entries());
+  }, [rules]);
+
+  async function updateRule(rule: WhatsAppAccessRule, field: "can_send" | "can_view_messages") {
+    const key = `${rule.team_member_id}:${rule.whatsapp_connection_id}:${field}`;
+    setSavingKey(key);
+    setError(null);
+    const next = { ...rule, [field]: !rule[field], is_explicit: true };
+    setRules((current) => current.map((item) =>
+      item.team_member_id === rule.team_member_id && item.whatsapp_connection_id === rule.whatsapp_connection_id ? next : item
+    ));
+    try {
+      await fetchJSON("/workspace/whatsapp-access", {
         method: "PUT",
-        body: JSON.stringify(payload),
-    });
-}
-
-export default function WhatsappAccessPage() {
-    const [accessList, setAccessList] = useState<any[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [saving, setSaving] = useState(false);
-
-    useEffect(() => {
-        loadAccess();
-    }, []);
-
-    async function loadAccess() {
-        setLoading(true);
-        try {
-            const data = await fetchAccess();
-            setAccessList(data);
-        } catch (e) {
-            console.error(e);
-        } finally {
-            setLoading(false);
-        }
+        body: JSON.stringify({
+          team_member_id: next.team_member_id,
+          whatsapp_number: next.whatsapp_number,
+          can_send: next.can_send,
+          can_view_messages: next.can_view_messages,
+        }),
+      });
+    } catch (caught) {
+      setRules((current) => current.map((item) =>
+        item.team_member_id === rule.team_member_id && item.whatsapp_connection_id === rule.whatsapp_connection_id ? rule : item
+      ));
+      setError(caught instanceof Error ? caught.message : "Could not save access rule");
+    } finally {
+      setSavingKey(null);
     }
+  }
 
-    async function handleToggleSend(id: number, memberId: number, phone: string, current: boolean) {
-        setSaving(true);
-        try {
-            await setAccess({
-                team_member_id: memberId,
-                whatsapp_number: phone,
-                can_send: !current,
-                can_view_messages: true,
-            });
-            await loadAccess();
-        } catch (e) {
-            alert("Error updating send permission");
-        } finally {
-            setSaving(false);
-        }
-    }
-
-    if (loading) return <div className="p-8 text-gray-400">Loading WhatsApp access...</div>;
-
-    return (
-        <div className="p-8 max-w-4xl mx-auto">
-            <div className="flex justify-between items-center mb-8">
-                <div>
-                    <h1 className="text-2xl font-bold text-white">WhatsApp Access Control</h1>
-                    <p className="text-gray-400 text-sm">Define who can send messages through connected numbers</p>
-                </div>
-                <button 
-                    onClick={loadAccess}
-                    className="flex items-center gap-2 bg-[#161b22] border border-white/10 text-gray-400 hover:text-white px-3 py-1.5 rounded-lg text-xs transition-colors"
-                >
-                    <RefreshCcw size={14} /> Refresh
-                </button>
-            </div>
-
-            <div className="grid gap-4">
-                {accessList.length === 0 ? (
-                    <div className="bg-zinc-900 border border-white/10 rounded-xl p-12 text-center text-gray-500">
-                        No WhatsApp access rules defined.
-                    </div>
-                ) : (
-                    accessList.map(acc => (
-                        <div key={acc.id} className="bg-zinc-900 border border-white/10 rounded-xl p-4 flex items-center justify-between hover:border-blue-500/30 transition-colors">
-                            <div className="flex items-center gap-4">
-                                <div className="w-10 h-10 rounded-full bg-blue-900/20 flex items-center justify-center text-blue-400">
-                                    <Phone size={18} />
-                                </div>
-                                <div>
-                                    <div className="text-white font-medium">{acc.member_name}</div>
-                                    <div className="text-gray-500 text-xs font-mono">{acc.whatsapp_number}</div>
-                                </div>
-                            </div>
-                            <div className="flex items-center gap-6">
-                                <div className="flex items-center gap-2">
-                                    <span className="text-[10px] text-gray-500 uppercase font-bold tracking-wider">Can Send</span>
-                                    <button 
-                                        onClick={() => handleToggleSend(acc.id, acc.team_member_id, acc.whatsapp_number, !!acc.can_send)}
-                                        disabled={saving}
-                                        className={`p-1 rounded transition-colors ${acc.can_send ? 'text-green-400 bg-green-400/10' : 'text-gray-600 bg-gray-800'}`}
-                                    >
-                                        {acc.can_send ? <ShieldCheck size={18} /> : <ShieldAlert size={18} />}
-                                    </button>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                    <span className="text-[10px] text-gray-500 uppercase font-bold tracking-wider">Can View</span>
-                                    <div className={`p-1 rounded ${acc.can_view_messages ? 'text-green-400 bg-green-400/10' : 'text-gray-600 bg-gray-800'}`}>
-                                        <ShieldCheck size={18} />
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    ))
-                )}
-            </div>
+  return (
+    <main className="mx-auto max-w-6xl p-6 md:p-8">
+      <div className="mb-8 flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-white">WhatsApp Access</h1>
+          <p className="mt-1 max-w-2xl text-sm text-zinc-400">Choose which connected number each team member can use to view conversations or send replies from Market Inbox.</p>
         </div>
-    );
+        <button onClick={() => void loadAccess()} disabled={loading} className="flex min-h-10 items-center gap-2 rounded-lg border border-white/10 bg-zinc-900 px-3 text-xs font-semibold text-zinc-300 hover:text-white disabled:opacity-50">
+          <RefreshCcw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} /> Refresh
+        </button>
+      </div>
+
+      {error && <div className="mb-5 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">{error}</div>}
+      {loading && rules.length === 0 ? (
+        <div className="rounded-xl border border-white/10 bg-zinc-950 p-12 text-center text-sm text-zinc-500">Loading team and phones…</div>
+      ) : members.length === 0 ? (
+        <div className="rounded-xl border border-white/10 bg-zinc-950 p-12 text-center">
+          <Phone className="mx-auto h-8 w-8 text-zinc-600" />
+          <p className="mt-3 text-sm text-zinc-400">Connect a WhatsApp phone and add team members to configure access.</p>
+        </div>
+      ) : (
+        <div className="space-y-5">
+          {members.map(([memberId, member]) => (
+            <section key={memberId} className="overflow-hidden rounded-xl border border-white/10 bg-zinc-950">
+              <div className="border-b border-white/10 px-5 py-4">
+                <div className="font-semibold text-white">{member.name}</div>
+                {member.email && <div className="mt-0.5 text-xs text-zinc-500">{member.email}</div>}
+              </div>
+              <div className="divide-y divide-white/10">
+                {member.rules.map((rule) => {
+                  return (
+                    <div key={rule.whatsapp_connection_id} className="grid gap-4 px-5 py-4 md:grid-cols-[1fr_auto_auto] md:items-center md:gap-8">
+                      <div className="flex min-w-0 items-center gap-3">
+                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-white/[0.04]"><Phone className="h-4 w-4 text-zinc-300" /></div>
+                        <div className="min-w-0">
+                          <div className="truncate text-sm font-medium text-white">{rule.instance_name || "WhatsApp phone"}</div>
+                          <div className="truncate font-mono text-xs text-zinc-500">{rule.whatsapp_number}</div>
+                        </div>
+                      </div>
+                      <div className="flex items-center justify-between gap-3 md:min-w-40">
+                        <span className="flex items-center gap-2 text-xs text-zinc-400"><Eye className="h-4 w-4" /> View</span>
+                        <Toggle checked={rule.can_view_messages} disabled={savingKey !== null} label={`Allow ${member.name} to view messages from ${rule.whatsapp_number}`} onChange={() => void updateRule(rule, "can_view_messages")} />
+                      </div>
+                      <div className="flex items-center justify-between gap-3 md:min-w-40">
+                        <span className="flex items-center gap-2 text-xs text-zinc-400"><MessageSquareText className="h-4 w-4" /> Send</span>
+                        <Toggle checked={rule.can_send} disabled={savingKey !== null} label={`Allow ${member.name} to send from ${rule.whatsapp_number}`} onChange={() => void updateRule(rule, "can_send")} />
+                      </div>
+                      {rule.is_explicit && <div className="text-[10px] uppercase tracking-wide text-zinc-600 md:col-span-3">Custom phone rule</div>}
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+          ))}
+        </div>
+      )}
+    </main>
+  );
 }

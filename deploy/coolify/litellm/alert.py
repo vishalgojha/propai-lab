@@ -47,6 +47,13 @@ def send_whatsapp(text: str) -> None:
     if not base:
         print("ALERT (no INGESTOR_INTERNAL_URL):", text)
         return
+    internal_token = (
+        os.getenv("PROPAI_INTERNAL_TOKEN", "").strip()
+        or os.getenv("SUPABASE_SERVICE_KEY", "").strip()
+    )
+    if not internal_token:
+        print("ALERT (no internal service token configured):", text)
+        return
     for num in numbers:
         digits = "".join(c for c in num if c.isdigit())
         if len(digits) == 10:
@@ -58,6 +65,7 @@ def send_whatsapp(text: str) -> None:
             httpx.post(
                 f"{base}/send-message",
                 json={"remoteJid": remote_jid, "text": text},
+                headers={"X-PropAI-Internal-Token": internal_token},
                 timeout=10,
             )
         except Exception as exc:

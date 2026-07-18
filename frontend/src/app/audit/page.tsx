@@ -139,6 +139,9 @@ export default function AuditPage() {
   const today = state.insights.daily_flow.at(-1);
   const topMarket = state.insights.markets[0];
   const redundant = state.overlap.pairs.filter((pair) => pair.overlap_pct >= 60);
+  const initialLoading = loading && state.groups.length === 0 && state.health === null;
+  const coreUnavailable = state.groups.length === 0
+    && state.errors.some((error) => error.startsWith("groups:"));
 
   return (
     <main className="mx-auto max-w-[1500px] space-y-5 px-4 py-5 text-white sm:px-6">
@@ -155,6 +158,16 @@ export default function AuditPage() {
 
       {state.errors.length ? <div className="border border-red-500/25 bg-red-500/[0.04] px-4 py-3 text-xs text-red-300">Some intelligence is temporarily unavailable: {state.errors.join(" · ")}</div> : null}
 
+      {initialLoading ? (
+        <Card className="grid min-h-72 place-items-center p-8 text-center">
+          <div><RefreshCw className="mx-auto h-5 w-5 animate-spin text-zinc-500" /><div className="mt-3 text-sm font-medium text-zinc-300">Loading your WhatsApp intelligence…</div><div className="mt-1 text-xs text-zinc-600">Reading groups, participants and market signals.</div></div>
+        </Card>
+      ) : coreUnavailable ? (
+        <Card className="grid min-h-72 place-items-center p-8 text-center">
+          <div className="max-w-lg"><div className="text-lg font-semibold text-zinc-100">Market intelligence could not be loaded</div><p className="mt-2 text-sm leading-6 text-zinc-500">The dashboard has not received group data, so PropAI will not show misleading zero counts.</p><button type="button" onClick={() => void load()} disabled={loading} className="mt-5 inline-flex items-center gap-2 rounded-md bg-white px-3 py-2 text-xs font-semibold text-black disabled:opacity-50"><RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} /> Try again</button></div>
+        </Card>
+      ) : (
+      <>
       <section className="grid gap-4 xl:grid-cols-[1.5fr_.9fr]">
         <Card className="relative overflow-hidden p-6 sm:p-8">
           <div className="absolute right-0 top-0 h-48 w-48 bg-[radial-gradient(circle,rgba(255,255,255,.07),transparent_65%)]" />
@@ -224,6 +237,8 @@ export default function AuditPage() {
         <Card className="p-5"><div className="flex gap-3"><Users className="mt-0.5 h-4 w-4 text-zinc-500"/><div><Kicker>What member overlap means</Kicker><p className="mt-2 text-sm leading-6 text-zinc-400">It counts the same WhatsApp participants appearing across multiple groups. It is not your total broker count. Exclusive members only appear in one monitored group and represent reach you would lose by leaving it.</p></div></div></Card>
         <Card className="p-5"><Kicker>Capture health</Kicker><div className="mt-3 flex items-center justify-between"><div><div className="text-sm font-medium">{state.health?.degraded ? "Needs attention" : "Pipeline is healthy"}</div><div className="mt-1 text-xs text-zinc-500">Last WhatsApp event {ago(state.health?.last_webhook)} · {num(state.health?.queue_backlog)} queued</div></div><div className={`h-2 w-2 rounded-full ${state.health?.degraded ? "bg-red-500" : "bg-[#3EE88A]"}`} /></div></Card>
       </section>
+      </>
+      )}
     </main>
   );
 }

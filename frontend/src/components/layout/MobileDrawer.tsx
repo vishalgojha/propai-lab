@@ -5,7 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { LogOut, X, Search } from "lucide-react";
 import { useAuth } from "@/lib/AuthProvider";
 
-const navSections = [
+const baseNavSections = [
   {
     title: "Market",
     items: [
@@ -42,16 +42,31 @@ export function MobileDrawer({
   open,
   onClose,
   onOpenPalette,
+  isSuperAdmin,
 }: {
   open: boolean;
   onClose: () => void;
   onOpenPalette: () => void;
+  isSuperAdmin: boolean;
 }) {
   const pathname = usePathname();
   const router = useRouter();
   const { signOut, user } = useAuth();
   const overlayRef = useRef<HTMLDivElement>(null);
   const [profile, setProfile] = useState<{ auth_user_id?: string; phone: string; first_name: string; last_name?: string; city?: string } | null>(null);
+  const navSections = isSuperAdmin
+    ? [
+        ...baseNavSections,
+        {
+          title: "Platform",
+          items: [
+            { href: "/admin", label: "Super Admin" },
+            { href: "/admin/whatsapp", label: "WhatsApp Sessions" },
+            { href: "/admin/analytics", label: "Site Analytics" },
+          ],
+        },
+      ]
+    : baseNavSections;
 
   useEffect(() => {
     const readProfile = () => {

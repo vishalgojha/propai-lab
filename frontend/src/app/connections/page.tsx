@@ -7,7 +7,7 @@ import QRCode from "qrcode";
 import { useRouter } from "next/navigation";
 import { Activity, Clock, Database, ImageUp, Inbox, List, LogOut, MessageSquare, Plus, RefreshCw, Shield, Smartphone, Trash2, AlertTriangle, Users, Zap, Lock, X } from "lucide-react";
 import { useAuth } from "@/lib/AuthProvider";
-import { getPhones, getPhone, createPhone, deletePhone, resetPhone, disconnectPhone, connectPhone, fetchJSON, isLiveWhatsAppConnection, type Phone, type WhatsAppStatus } from "@/lib/api";
+import { getPhones, getPhone, createPhone, deletePhone, resetPhone, disconnectPhone, connectPhone, updatePhone, fetchJSON, isLiveWhatsAppConnection, type Phone, type WhatsAppStatus } from "@/lib/api";
 
 type HealthStatus = "healthy" | "warning" | "error";
 
@@ -519,6 +519,7 @@ function PhoneCard({
   liveStatus,
   onRefresh,
   onConnect,
+  onDeleted,
   attemptState,
   now,
 }: {
@@ -526,6 +527,7 @@ function PhoneCard({
   liveStatus: WhatsAppStatus | null;
   onRefresh: () => Promise<void> | void;
   onConnect: (p: Phone) => Promise<void> | void;
+  onDeleted: (phoneId: number) => void;
   attemptState: ConnectionAttemptState | null;
   now: number;
 }) {
@@ -540,15 +542,24 @@ function PhoneCard({
     try {
       if (action === "disconnect") await disconnectPhone(phone.id);
       else if (action === "reset") await resetPhone(phone.id);
-      else if (action === "delete") await deletePhone(phone.id);
-      else if (action === "connect" || action === "qr") await onConnect(phone);
+      else if (action === "delete") {
+        const result = await deletePhone(phone.id);
+        if (!result.ok) throw new Error("Phone could not be removed");
+        onDeleted(phone.id);
+      } else if (action === "self-chat") {
+        await updatePhone(phone.id, { self_chat_enabled: !phone.self_chat_enabled });
+        setActionMessage(phone.self_chat_enabled ? "Self-chat assistant disabled" : "Self-chat assistant enabled");
+      } else if (action === "connect" || action === "qr") await onConnect(phone);
       else await onRefresh();
-      if (action !== "connect" && action !== "qr") {
+      if (!["connect", "qr", "self-chat"].includes(action)) {
         setActionMessage(action === "delete" ? "Phone removed" : action === "reset" ? "Session reset" : "Phone disconnected");
       }
       await onRefresh();
     } catch (error) {
       setActionError(error instanceof Error ? error.message : `${action} failed`);
+      // A cached card may refer to a connection already removed server-side.
+      // Refresh even after a failed action so stale phones disappear.
+      await onRefresh();
     } finally {
       setActionLoading(null);
     }
@@ -562,7 +573,7 @@ function PhoneCard({
   const statusLabel = isConnected
     ? "Connected"
     : !statusAvailable
-      ? "Checking"
+      ? "Service unavailable"
       : isReconnecting
         ? "Reconnecting"
         : "Disconnected";
@@ -585,6 +596,9 @@ function PhoneCard({
           )}
           {!isConnected && !isUnpaired && (
             <div className="text-[11px] text-zinc-400 mt-0.5">{statusLabel}</div>
+          )}
+          {!statusAvailable && phone.live_status_error && (
+            <div className="mt-0.5 text-[11px] text-red-300">{phone.live_status_error}</div>
           )}
         </div>
       </div>
@@ -609,6 +623,23 @@ function PhoneCard({
       </div>
 
       <div className="rounded-xl border border-white/10 bg-black/40 px-4 py-3 text-[11px] text-zinc-400">
+        <div className="mb-3 flex items-center justify-between gap-3 border-b border-white/10 pb-3">
+          <div>
+            <div className="font-semibold text-white">Self-chat assistant</div>
+            <div className="mt-0.5 text-zinc-500">Message your own number to ask PropAI</div>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={phone.self_chat_enabled !== false}
+            aria-label="Toggle self-chat assistant"
+            onClick={() => handleAction("self-chat")}
+            disabled={actionLoading !== null}
+            className={`relative h-6 w-11 shrink-0 rounded-full transition-colors disabled:opacity-50 ${phone.self_chat_enabled !== false ? "bg-emerald-500" : "bg-zinc-700"}`}
+          >
+            <span className={`absolute top-1 h-4 w-4 rounded-full bg-white transition-transform ${phone.self_chat_enabled !== false ? "translate-x-6" : "translate-x-1"}`} />
+          </button>
+        </div>
         <div className="flex items-center justify-between gap-3">
           <span>Connection attempts</span>
           <span className="font-semibold text-white">{attemptState?.attempts ?? 0}</span>
@@ -722,7 +753,7 @@ export default function ConnectionCenterPage() {
       const response = await getPhones(true, 15000);
       const nextPhones = response.phones || [];
       setPhones(nextPhones);
-      if (user?.id && nextPhones.length > 0) {
+      if (user?.id) {
         localStorage.setItem(`propai_phones:${user.id}`, JSON.stringify(nextPhones));
       }
       setPhonesError(null);
@@ -731,7 +762,7 @@ export default function ConnectionCenterPage() {
     } finally {
       setPhonesLoading(false);
     }
-  }, [user?.id]);
+  }, [user]);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -859,6 +890,17 @@ export default function ConnectionCenterPage() {
     }));
   }, [updateAttemptState]);
 
+  const handlePhoneDeleted = useCallback((phoneId: number) => {
+    setPhones((current) => {
+      const next = current.filter((phone) => phone.id !== phoneId);
+      if (user?.id) {
+        localStorage.setItem(`propai_phones:${user.id}`, JSON.stringify(next));
+      }
+      return next;
+    });
+    setQrPhone((current) => (current?.id === phoneId ? null : current));
+  }, [user]);
+
   useEffect(() => {
       if (!authLoading && user) {
         refreshData();
@@ -930,6 +972,7 @@ export default function ConnectionCenterPage() {
                   liveStatus={liveStatus}
                   onRefresh={refreshData}
                   onConnect={handleConnect}
+                  onDeleted={handlePhoneDeleted}
                   attemptState={connectionAttempts[phone.id] || null}
                   now={now}
                 />
