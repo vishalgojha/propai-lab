@@ -1,5 +1,3 @@
-import Link from "next/link";
-import { ArrowRight } from "lucide-react";
 import SiteHeader from "@/components/SiteHeader";
 import SiteFooter from "@/components/SiteFooter";
 
@@ -55,16 +53,6 @@ export default async function AboutPage() {
             that go nowhere, no chatbot standing between you and the person who has
             the keys.
           </p>
-        </div>
-
-        <div className="mt-12">
-          <Link
-            href="/localities"
-            className="inline-flex items-center gap-2 px-6 py-3 bg-green-400 text-black text-sm font-semibold rounded-lg hover:bg-green-300 transition-colors"
-          >
-            Browse localities
-            <ArrowRight className="w-4 h-4" aria-hidden="true" />
-          </Link>
         </div>
       </main>
       <SiteFooter />

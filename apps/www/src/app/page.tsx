@@ -5,7 +5,7 @@
 // stay dynamic without re-querying on each visit.
 export const revalidate = 300;
 
-import { MapPin, ArrowRight, MessageSquare, Phone, Shield } from "lucide-react";
+import { MapPin, MessageSquare, Phone, Shield } from "lucide-react";
 import Link from "next/link";
 import HomeSearch from "@/components/HomeSearch";
 import SiteHeader from "@/components/SiteHeader";
@@ -66,22 +66,9 @@ export default async function WWWPage() {
                 PropAI reads WhatsApp broker groups so you get real, fresh residential and commercial listings — and a direct line to the broker.
               </p>
               <HomeSearch localities={known} />
-              <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
-                <Link
-                  href="/localities"
-                  className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-zinc-900/80 px-4 py-2 text-sm text-zinc-200 hover:border-green-400/40 hover:text-white transition-colors"
-                >
-                  Browse localities
-                  <ArrowRight className="w-4 h-4" aria-hidden="true" />
-                </Link>
-                <Link
-                  href="/search"
-                  className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-zinc-900/80 px-4 py-2 text-sm text-zinc-200 hover:border-green-400/40 hover:text-white transition-colors"
-                >
-                  Search listings
-                  <ArrowRight className="w-4 h-4" aria-hidden="true" />
-                </Link>
-              </div>
+              <p className="mt-6 text-center text-sm text-zinc-500">
+                Try searching a locality, building, or &ldquo;2 BHK in Bandra&rdquo;.
+              </p>
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-6 max-w-[1600px] mx-auto">
@@ -144,9 +131,6 @@ export default async function WWWPage() {
                     <h3 className="text-lg font-semibold text-white">Top localities</h3>
                     <p className="text-sm text-zinc-500">By live listing count</p>
                   </div>
-                  <Link href="/localities" className="text-sm text-zinc-400 hover:text-white transition-colors">
-                    View all
-                  </Link>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {overview.topLocalities.slice(0, 4).map((loc) => (
@@ -168,9 +152,6 @@ export default async function WWWPage() {
                     <h3 className="text-lg font-semibold text-white">Top buildings</h3>
                     <p className="text-sm text-zinc-500">By live listing count</p>
                   </div>
-                  <Link href="/localities" className="text-sm text-zinc-400 hover:text-white transition-colors">
-                    View all
-                  </Link>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {overview.topBuildings.slice(0, 4).map((building) => (
@@ -186,16 +167,6 @@ export default async function WWWPage() {
                   ))}
                 </div>
               </div>
-            </div>
-
-            <div className="mt-8 flex justify-center">
-              <Link
-                href="/localities"
-                className="inline-flex items-center gap-2 rounded-full bg-green-400 px-5 py-3 text-sm font-semibold text-black hover:bg-green-300 transition-colors"
-              >
-                Browse all localities
-                <ArrowRight className="w-4 h-4" aria-hidden="true" />
-              </Link>
             </div>
           </div>
         </section>
@@ -232,16 +203,6 @@ export default async function WWWPage() {
                   </Link>
                 );
               })}
-            </div>
-
-            <div className="text-center mt-10 lg:mt-16">
-              <Link
-                href="/localities"
-                className="inline-flex items-center gap-2 px-6 py-3 bg-green-400 text-black text-sm font-semibold rounded-lg hover:bg-green-300 transition-colors"
-              >
-                View all localities
-                <ArrowRight className="w-4 h-4" aria-hidden="true" />
-              </Link>
             </div>
           </div>
         </section>

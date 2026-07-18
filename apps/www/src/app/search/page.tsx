@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowRight, Sparkles } from "lucide-react";
+import { Sparkles } from "lucide-react";
 import { describeNaturalSearch, searchNaturalLanguageListings } from "@/lib/natural-search";
 import { getAllLocalities } from "@/lib/localities";
 import { slugify } from "@/lib/supabase";
@@ -172,22 +172,6 @@ export default async function SearchPage({ searchParams }: { searchParams: Searc
                   <p className="text-sm text-zinc-400">
                     We keep the request attached to your timeline and follow up when matching inventory appears.
                   </p>
-                  <div className="mt-5 flex flex-col gap-2">
-                    <Link
-                      href="/localities"
-                      className="inline-flex items-center justify-between rounded-2xl border border-white/10 bg-zinc-900/80 px-4 py-3 text-sm text-zinc-200 hover:border-green-400/40 transition-colors"
-                    >
-                      Browse all localities
-                      <ArrowRight className="h-4 w-4 text-zinc-500" aria-hidden="true" />
-                    </Link>
-                    <Link
-                      href="/localities"
-                      className="inline-flex items-center justify-between rounded-2xl border border-white/10 bg-zinc-900/80 px-4 py-3 text-sm text-zinc-200 hover:border-green-400/40 transition-colors"
-                      >
-                      Browse localities
-                      <ArrowRight className="h-4 w-4 text-zinc-500" aria-hidden="true" />
-                    </Link>
-                  </div>
                   <div className="mt-6 rounded-2xl border border-white/10 bg-black/70 p-4 text-sm text-zinc-400">
                     If a match lands inside your timeline, the requirement can be routed to a broker and/or sent back to you for follow-up.
                   </div>

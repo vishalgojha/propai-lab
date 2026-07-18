@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowRight, Search } from "lucide-react";
+import { Search } from "lucide-react";
 import SiteHeader from "@/components/SiteHeader";
 import SiteFooter from "@/components/SiteFooter";
 
@@ -24,13 +24,6 @@ export default function NotFound() {
             >
               <Search className="w-4 h-4" aria-hidden="true" />
               Search listings
-            </Link>
-            <Link
-              href="/localities"
-              className="inline-flex items-center gap-2 px-6 py-3 border border-white/15 text-white text-sm font-semibold rounded-lg hover:border-white/30 transition-colors"
-            >
-              Browse localities
-              <ArrowRight className="w-4 h-4" aria-hidden="true" />
             </Link>
           </div>
         </div>
