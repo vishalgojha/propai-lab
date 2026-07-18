@@ -1,6 +1,5 @@
 import Link from "next/link";
-import { ArrowRight, MapPin, Building2 } from "lucide-react";
-import { getAllBuildings } from "@/lib/localities";
+import { ArrowRight } from "lucide-react";
 import SiteHeader from "@/components/SiteHeader";
 import SiteFooter from "@/components/SiteFooter";
 
@@ -11,9 +10,6 @@ export const metadata = {
 };
 
 export default async function AboutPage() {
-  const buildings = await getAllBuildings(6);
-  const geocodedCount = buildings.filter((b) => b.geocoded).length;
-
   return (
     <div className="min-h-screen bg-black text-white">
       <SiteHeader />
@@ -59,33 +55,6 @@ export default async function AboutPage() {
             that go nowhere, no chatbot standing between you and the person who has
             the keys.
           </p>
-          {buildings.length > 0 && (
-            <p>
-              Today we track {buildings.length} buildings
-              {geocodedCount > 0 ? ` (${geocodedCount} geocoded)` : ""} and counting,
-              sourced entirely from broker activity.
-            </p>
-          )}
-        </div>
-
-        <div className="mt-12 grid grid-cols-1 sm:grid-cols-2 gap-4">
-          {buildings.length > 0 &&
-            buildings.map((b) => (
-              <div
-                key={b.name}
-                className="flex items-center justify-between gap-2 bg-zinc-900/50 border border-white/10 rounded-xl p-4"
-              >
-                <span className="flex items-center gap-2 text-white">
-                  {b.geocoded ? (
-                    <MapPin className="w-4 h-4 text-green-400" aria-hidden="true" />
-                  ) : (
-                    <Building2 className="w-4 h-4 text-zinc-500" aria-hidden="true" />
-                  )}
-                  {b.name}
-                </span>
-                <span className="text-xs text-zinc-500">{b.microMarket ?? "—"}</span>
-              </div>
-            ))}
         </div>
 
         <div className="mt-12">
