@@ -53,7 +53,7 @@ export default async function WWWPage() {
 
       <main id="main-content">
         <section className="relative pt-16 lg:pt-24 pb-16 lg:pb-24 overflow-hidden">
-          <div className="max-w-7xl mx-auto px-4 lg:px-6">
+          <div className="max-w-[1600px] mx-auto px-4 lg:px-6">
             <div className="text-center max-w-5xl mx-auto mb-10 lg:mb-16">
               <h1 className="text-[32px] lg:text-[44px] leading-[1.1] font-bold text-white mb-6">
                 Find your property through{" "}
@@ -81,7 +81,7 @@ export default async function WWWPage() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-6 max-w-7xl mx-auto">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-6 max-w-[1600px] mx-auto">
               {[
                 {
                   icon: MessageSquare,
@@ -110,7 +110,7 @@ export default async function WWWPage() {
         </section>
 
         <section id="live-data" className="py-16 lg:py-24 bg-zinc-950/60 border-y border-white/5">
-          <div className="max-w-7xl mx-auto px-4 lg:px-6">
+          <div className="max-w-[1600px] mx-auto px-4 lg:px-6">
             <div className="text-center mb-10 lg:mb-12">
               <h2 className="text-[20px] lg:text-[24px] font-semibold text-white mb-4">Live data at a glance</h2>
               <p className="text-[15px] text-zinc-400 max-w-2xl mx-auto">
@@ -198,7 +198,7 @@ export default async function WWWPage() {
         </section>
 
         <section id="localities" className="py-16 lg:py-24 bg-zinc-950/50">
-          <div className="max-w-7xl mx-auto px-4 lg:px-6">
+          <div className="max-w-[1600px] mx-auto px-4 lg:px-6">
             <div className="text-center mb-12 lg:mb-16">
               <h2 className="text-[20px] lg:text-[24px] font-semibold text-white mb-4">Browse by locality</h2>
               <p className="text-[15px] text-zinc-400 max-w-2xl mx-auto">
@@ -244,7 +244,7 @@ export default async function WWWPage() {
         </section>
 
         <section id="how-it-works" className="py-16 lg:py-24 bg-black">
-          <div className="max-w-7xl mx-auto px-4 lg:px-6">
+          <div className="max-w-[1600px] mx-auto px-4 lg:px-6">
             <div className="text-center mb-12 lg:mb-16">
               <h2 className="text-[20px] lg:text-[24px] font-semibold text-white mb-4">How it works</h2>
               <p className="text-[15px] text-zinc-400 max-w-2xl mx-auto">
@@ -265,7 +265,7 @@ export default async function WWWPage() {
         </section>
 
         <section className="py-16 lg:py-24 bg-zinc-950/50">
-          <div className="max-w-7xl mx-auto px-4 lg:px-6">
+          <div className="max-w-[1600px] mx-auto px-4 lg:px-6">
             <div className="text-center mb-12 lg:mb-16">
               <h2 className="text-[20px] lg:text-[24px] font-semibold text-white mb-4">Why PropAI?</h2>
               <p className="text-[15px] text-zinc-400 max-w-2xl mx-auto">
