@@ -533,6 +533,10 @@ const SOCIETY_WORDS =
 const BROKER_NAME_PHRASES =
   /\b(real estate|realtor|broker|broking|properties|property consultant|consultant|ventures|realty)\b/i;
 const JUNK_LEADING = /^[.\*◇\-_📍🔥]+/;
+// Pure ad/bhk/area fragments with no proper-noun building name, e.g.
+// "1bhk", "2.5bhk", "1rk", "1850 carpet", "3.5 Bhk".
+const PURE_FRAGMENT =
+  /^\s*(?:[0-9]+(\.[0-9]+)?\s*(?:bhk|rk|bhk\+bhk|jodi)?\s*|[0-9,]+\s*(?:carpet|sqft|sq\.?\s*ft|sqm|area)?\s*|bhk\s*[\+/]?\s*bhk\s*)*$/i;
 
 export function isJunkBuildingName(name: string | null): boolean {
   if (!name) return true;
@@ -540,6 +544,8 @@ export function isJunkBuildingName(name: string | null): boolean {
   if (n.length < 3) return true;
 
   const lower = n.toLowerCase();
+  // Pure BHK / area fragments are never buildings.
+  if (PURE_FRAGMENT.test(n)) return true;
   // Broker / agency names are never buildings — exclude them outright, even
   // though some (e.g. "estate") overlap with legitimate society suffixes.
   if (BROKER_NAME_PHRASES.test(lower)) return true;
@@ -548,10 +554,10 @@ export function isJunkBuildingName(name: string | null): boolean {
 
   const words = n.split(/\s+/).filter(Boolean);
   const hasAd = JUNK_AD_PHRASES.test(lower);
-  // Reads like an ad sentence: an ad phrase present AND either many words or
-  // leading markdown/punctuation artifact.
-  if (hasAd && (words.length >= 5 || JUNK_LEADING.test(n))) return true;
-  if (JUNK_LEADING.test(n) && hasAd) return true;
+  // Reads like an ad sentence: an ad phrase present AND (many words, a leading
+  // markdown/punctuation artifact, or just a short ad fragment like
+  // "2bhk flat on rent" / "3bhk apt").
+  if (hasAd && (words.length >= 3 || JUNK_LEADING.test(n))) return true;
   return false;
 }
 
