@@ -64,13 +64,13 @@ export default function SearchBox({
   }
 
   function onKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    // Only intercept navigation keys when the dropdown is actually open.
+    // Otherwise let the keys through (arrow keys / space scroll the page,
+    // Enter submits the form) so keyboard scrolling isn't blocked.
+    if (!open) return;
+
     if (e.key === "ArrowDown") {
       e.preventDefault();
-      if (!open && suggestions.length) {
-        setOpen(true);
-        setActive(0);
-        return;
-      }
       setActive((i) => Math.min(i + 1, suggestions.length - 1));
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
@@ -155,6 +155,7 @@ export default function SearchBox({
               onFocus={() => {
                 if (suggestions.length) setOpen(true);
               }}
+              onBlur={() => setOpen(false)}
               onKeyDown={onKeyDown}
             />
             <button
