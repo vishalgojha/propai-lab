@@ -51,11 +51,11 @@ export default async function WWWPage() {
           <div className="max-w-7xl mx-auto px-4 lg:px-6">
             <div className="text-center max-w-5xl mx-auto mb-10 lg:mb-16">
               <h1 className="text-[32px] lg:text-[44px] leading-[1.1] font-bold text-white mb-6">
-                Find your home through{" "}
+                Find your property through{" "}
                 <span className="text-green-400">verified brokers</span>
               </h1>
               <p className="text-lg text-zinc-400 mb-8 max-w-2xl mx-auto">
-                PropAI reads WhatsApp broker groups so you get real, fresh listings — and a direct line to the broker.
+                PropAI reads WhatsApp broker groups so you get real, fresh residential and commercial listings — and a direct line to the broker.
               </p>
               <LocalitySearch knownLocalities={known} />
               <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
