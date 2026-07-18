@@ -34,7 +34,9 @@ import { MobileDrawer } from "@/components/layout/MobileDrawer";
 import { InstallPrompt } from "@/components/layout/InstallPrompt";
 import { ServiceWorkerRegister } from "@/components/layout/ServiceWorkerRegister";
 
-const navSections = [
+const ADMIN_EMAIL = "vishal@chaoscraftlabs.com";
+
+const baseNavSections = [
   {
     title: "Market",
     items: [
@@ -66,6 +68,13 @@ const navSections = [
     ],
   },
 ];
+
+const adminNavSection = {
+  title: "Admin",
+  items: [
+    { href: "/admin/analytics", label: "Site Analytics", icon: BarChart3 },
+  ],
+};
 
 function PaletteModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [query, setQuery] = useState("");
@@ -392,6 +401,10 @@ function AppShell({ children }: { children: React.ReactNode }) {
       </div>
     );
   }
+
+  const navSections = user?.email === ADMIN_EMAIL
+    ? [...baseNavSections, adminNavSection]
+    : baseNavSections;
 
   return (
     <div className="flex h-screen overflow-hidden bg-black">
