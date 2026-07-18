@@ -506,6 +506,75 @@ export function describeNaturalSearch(parsed: ParsedNaturalSearch): string {
   return parts.join(" • ");
 }
 
+// Recency-ranked browse scoped to a single asset type. Used when a user lands on
+// /search?asset=commercial (or selects Commercial on the homepage) with no
+// free-text query, so they see relevant listings immediately instead of being
+// forced into a second search step.
+async function browseByAsset(
+  db: NonNullable<ReturnType<typeof getServerSupabase>>,
+  asset: "residential" | "commercial",
+  limit: number,
+  localities: LocalitySummary[],
+  matchedSuggestions: LocalitySummary[],
+): Promise<NaturalSearchState> {
+  const fields = LISTING_FIELDS.join(", ");
+  const rows: NaturalSearchRow[] = [];
+  const PAGE = 1000;
+  for (let offset = 0; ; offset += PAGE) {
+    const { data, error } = await db
+      .from("listings")
+      .select(fields)
+      .eq("asset_type", asset)
+      .order("last_seen", { ascending: false })
+      .range(offset, offset + PAGE - 1);
+    if (error) {
+      console.error("browseByAsset error:", error.message);
+      break;
+    }
+    rows.push(...((data ?? []) as unknown as NaturalSearchRow[]));
+    if ((data ?? []).length < PAGE) break;
+  }
+
+  const knownBuildings = await getAllBuildings();
+  const buildingNameSet = new Set(
+    knownBuildings.map((b: BuildingSummary) => slugify(b.name)).filter(Boolean),
+  );
+  const localitySlugSet = new Set(
+    localities.map((l: LocalitySummary) => l.slug).filter(Boolean),
+  );
+
+  const classify = (row: NaturalSearchRow): "locality" | "building" => {
+    const marketSlug = row.micro_market ? slugify(row.micro_market) : null;
+    if (marketSlug && localitySlugSet.has(marketSlug)) return "locality";
+    const buildingSlug = row.building_name ? slugify(row.building_name) : null;
+    if (buildingSlug && buildingNameSet.has(buildingSlug)) return "building";
+    return marketSlug ? "locality" : "building";
+  };
+
+  const ranked = rows
+    .slice(0, limit)
+    .map((row) => {
+      const priceLabel = formatPrice(row.price);
+      return {
+        ...row,
+        score: 0,
+        matchedOn: ["asset"],
+        priceLabel,
+        resultType: classify(row),
+      };
+    });
+
+  return {
+    parsed: { query: "", locality: null, localityStated: false, statedLocalityText: null, bhk: null, intent: null, asset, minPrice: null, maxPrice: null, furnishing: null, tokens: [], matchedLocalities: [] },
+    results: ranked,
+    totalScanned: rows.length,
+    suggestions: matchedSuggestions,
+    hasData: true,
+    localityUnmatched: false,
+    localitySuggestions: [],
+  };
+}
+
 export async function searchNaturalLanguageListings(
   query: string,
   limit = 24,
@@ -535,7 +604,27 @@ export async function searchNaturalLanguageListings(
     };
   }
 
-  if (!db || !query.trim()) {
+  if (!db) {
+    return {
+      parsed,
+      results: [],
+      totalScanned: 0,
+      suggestions: matchedSuggestions,
+      hasData: false,
+      localityUnmatched: false,
+      localitySuggestions: [],
+    };
+  }
+
+  // Browsing by asset type with no free-text query (e.g. /search?asset=commercial)
+  // should show that asset's live listings directly — not an empty state that
+  // forces a second search. Treat it as a recency-ranked browse, scoped to the
+  // selected asset type.
+  if (!query.trim() && parsed.asset) {
+    return await browseByAsset(db, parsed.asset, limit, localities, matchedSuggestions);
+  }
+
+  if (!query.trim()) {
     return {
       parsed,
       results: [],
