@@ -96,12 +96,14 @@ export default function ProfilePage() {
 
   const markDirty = () => setDirty(true);
 
+  const finalCity = city === "__other__" ? customCity.trim() : (city || profile?.city || "");
+  const cityMissing = !finalCity;
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!firstName.trim() || !email.trim()) return;
+    if (!firstName.trim() || !email.trim() || cityMissing) return;
     setSaving(true);
     setSaved(false);
-    const finalCity = city === "__other__" ? customCity.trim() : (city || profile?.city || "");
     const finalWorkspaceName = workspaceName.trim() || org?.name || "";
     const data = { first_name: firstName.trim(), last_name: lastName.trim(), email: email.trim(), city: finalCity };
     try {
@@ -154,7 +156,7 @@ export default function ProfilePage() {
             <button
               type="submit"
               form="profile-form"
-              disabled={saving || !firstName.trim() || !email.trim() || (!dirty && hasStoredProfile && !next)}
+              disabled={saving || !firstName.trim() || !email.trim() || cityMissing || (!dirty && hasStoredProfile && !next)}
               className="flex items-center gap-2 px-4 py-2 bg-emerald-400 text-black rounded-lg text-sm font-bold min-h-[40px] disabled:opacity-50 transition-opacity shrink-0"
             >
               <Save className="w-4 h-4" />
@@ -211,7 +213,7 @@ export default function ProfilePage() {
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="text-[11px] font-semibold text-zinc-500 uppercase tracking-wider">City</label>
+                  <label className="text-[11px] font-semibold text-zinc-500 uppercase tracking-wider">City *</label>
                   <div className="relative mt-1">
                     <button
                       type="button"
