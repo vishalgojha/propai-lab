@@ -26,7 +26,7 @@
 #     NVIDIA_API_KEY        -> nvidia-nim
 #     CEREBRAS_API_KEY      -> cerebras
 #     MISTRAL_API_KEY       -> mistral
-#     OPENROUTER_API_KEY    -> openrouter-free
+#     (OPENROUTER_API_KEY -> openrouter-free: EXCLUDED, unreliable free tier)
 #     (DOUBLEWORD_API_URL + DOUBLEWORD_API_KEY already set -> doubleword-prod)
 # Missing key => that hop is skipped (safe-by-default), traffic -> next hop.
 
@@ -51,8 +51,8 @@ router_settings:
   # safe fallback for every task type. Add keys one by one (see header).
   fallbacks:
     - chat: [doubleword-prod]
-    - extraction: [groq, gemini-flash, nvidia-nim, cerebras, mistral, openrouter-free, doubleword-prod]
-    - classification: [groq, gemini-flash, nvidia-nim, cerebras, mistral, openrouter-free, doubleword-prod]
+    - extraction: [groq, gemini-flash, nvidia-nim, cerebras, mistral, doubleword-prod]
+    - classification: [groq, gemini-flash, nvidia-nim, cerebras, mistral, doubleword-prod]
     - batch: [doubleword-prod]
 
 # ---- Model groups (one per task_type) --------------------------------
@@ -130,7 +130,11 @@ model_list:
       model: mistral/mistral-large-latest
       api_key: ${MISTRAL_API_KEY}
 
-  - model_name: openrouter-free
-    litellm_params:
-      model: openrouter/meta-llama/llama-3.3-70b-instruct:free
-      api_key: ${OPENROUTER_API_KEY}
+  # OpenRouter free tier excluded — unreliable in practice (frequent 429/
+  # empty responses). Kept here for reference; not in any active chain.
+  # Re-enable by uncommenting + adding OPENROUTER_API_KEY + restoring it in
+  # the extraction/classification fallback lists above.
+  # - model_name: openrouter-free
+  #   litellm_params:
+  #     model: openrouter/meta-llama/llama-3.3-70b-instruct:free
+  #     api_key: ${OPENROUTER_API_KEY}
