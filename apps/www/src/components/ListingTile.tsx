@@ -41,10 +41,17 @@ export default function ListingTile({
   const dealType = isRent ? "For Rent" : "For Sale";
 
   return (
-    <Link
-      href={card.href ?? "#"}
-      className="group flex flex-col overflow-hidden rounded-2xl border border-white/10 bg-zinc-950/90 transition-colors hover:border-green-400/40 hover:bg-zinc-900/90"
-    >
+    <div className="group relative flex flex-col overflow-hidden rounded-2xl border border-white/10 bg-zinc-950/90 transition-colors hover:border-green-400/40 hover:bg-zinc-900/90">
+      {/* Stretched link makes the whole card clickable to the listing, while
+          the Contact button (z-10) stays an independent, working link. */}
+      {card.href && (
+        <Link
+          href={card.href}
+          className="absolute inset-0 z-0"
+          aria-label={card.title}
+        />
+      )}
+
       <div className="flex flex-1 flex-col p-5 min-h-[300px]">
         {/* Top row: badges (no image placeholder — that space is reused below) */}
         <div className="mb-3 flex flex-wrap items-center gap-2">
@@ -98,14 +105,25 @@ export default function ListingTile({
             )}
             {card.brokerName || "Verified network"}
           </span>
-          <span className="inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-green-400 px-3 py-2 text-xs font-semibold text-black transition-colors group-hover:bg-green-300">
-            <MessageSquare className="h-3.5 w-3.5" aria-hidden="true" />
-            Contact
-          </span>
+          {card.waLink ? (
+            <a
+              href={card.waLink}
+              onClick={(e) => e.stopPropagation()}
+              className="relative z-10 inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-green-400 px-3 py-2 text-xs font-semibold text-black transition-colors hover:bg-green-300"
+            >
+              <MessageSquare className="h-3.5 w-3.5" aria-hidden="true" />
+              Contact
+            </a>
+          ) : (
+            <span className="inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-zinc-700 px-3 py-2 text-xs font-semibold text-zinc-300">
+              <MessageSquare className="h-3.5 w-3.5" aria-hidden="true" />
+              Contact
+            </span>
+          )}
         </div>
 
         {footerNote && <p className="mt-3 truncate text-[11px] text-zinc-500">{footerNote}</p>}
       </div>
-    </Link>
+    </div>
   );
 }

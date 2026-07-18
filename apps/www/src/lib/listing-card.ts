@@ -206,13 +206,13 @@ function formatUpdated(iso: string | null): string {
 // digits are never crawlable / exposed in the public DOM.
 export function waLinkFor(listingId: number | null): string | null {
   if (listingId == null) return null;
-  return `/contact-broker/${listingId}`;
+  return `/api/contact-broker/${listingId}`;
 }
 
 // Broker names are sometimes stored as raw phone numbers (e.g. "+91 9920993025"
 // or "9930079206"). Never surface those in the public card DOM — mask them so
 // the number is not crawlable / exposed (DPDP Act 2023). The real contact path
-// is the /contact-broker/{id} redirect, which the server controls.
+// is the /api/contact-broker/{id} redirect, which the server controls.
 const PHONEISH = /[0-9]/;
 export function safeBrokerName(raw: string | null): string | null {
   if (!raw || !raw.trim()) return null;
