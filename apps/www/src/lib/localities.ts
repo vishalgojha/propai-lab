@@ -86,7 +86,11 @@ async function fetchBuildingsForNames(
     .in("canonical_name", originals);
 
   for (const row of direct ?? []) {
-    result.set((row.canonical_name ?? "").trim().toLowerCase(), row);
+    const name = (row.canonical_name ?? "").trim();
+    // Skip broker/agency names mistakenly stored as buildings — they render
+    // as cards that 404 on /buildings/<slug>.
+    if (isJunkBuildingName(name)) continue;
+    result.set(name.toLowerCase(), row);
   }
 
   // 2) fallback via building_name_aliases
@@ -276,6 +280,9 @@ export async function getLocalityData(rawSlug: string): Promise<LocalityData | n
   for (const row of rows) {
     const name = (row.building_name ?? "").trim();
     if (!name) continue;
+    // Skip broker/agency names stored as building_name — they produce cards
+    // that 404 on /buildings/<slug> (e.g. "OM Sai Real Estate").
+    if (isJunkBuildingName(name)) continue;
     const entry = agg.get(name) ?? {
       name,
       count: 0,
@@ -521,6 +528,10 @@ const JUNK_AD_PHRASES =
   /\b(available|commercial space|for rent|for sale|on rent|on sale|outright|unfurnished|furnished|furnish|semi furnished|car parking|carpet|built up|super area|sq\.? ?ft|sqft|bhk|rent|sale|possession|resale)\b/i;
 const SOCIETY_WORDS =
   /\b(society|chs|chsl|co[- ]?op|cooperative|housing|apartment|apartments|niwas|park|phase|tower|towers|complex|heights|residency|building|estate|enclave|gardens|residences|layout)\b/i;
+// Broker / agency names mistakenly stored as building_name. These should never
+// render as a building card (clicking them 404s on /buildings/<slug>).
+const BROKER_NAME_PHRASES =
+  /\b(real estate|realtor|broker|broking|properties|property consultant|consultant|ventures|realty)\b/i;
 const JUNK_LEADING = /^[.\*◇\-_📍🔥]+/;
 
 export function isJunkBuildingName(name: string | null): boolean {
@@ -529,6 +540,9 @@ export function isJunkBuildingName(name: string | null): boolean {
   if (n.length < 3) return true;
 
   const lower = n.toLowerCase();
+  // Broker / agency names are never buildings — exclude them outright, even
+  // though some (e.g. "estate") overlap with legitimate society suffixes.
+  if (BROKER_NAME_PHRASES.test(lower)) return true;
   // Legitimate building/society names are never junk.
   if (SOCIETY_WORDS.test(lower)) return false;
 
