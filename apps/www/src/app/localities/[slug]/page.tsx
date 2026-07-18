@@ -130,7 +130,6 @@ export default async function LocalityPage({ params }: Params) {
             <TrustStat label="Buildings" value={data.buildings.length} />
             {data.saleCount > 0 && <TrustStat label="For sale" value={data.saleCount} />}
             {data.rentCount > 0 && <TrustStat label="For rent" value={data.rentCount} />}
-            {data.priceRangeLabel && <TrustStat label="Price range" value={data.priceRangeLabel} />}
           </div>
         {mapped.length === 0 && (
           <p className="mt-3 inline-flex items-center gap-2 text-sm text-zinc-500">

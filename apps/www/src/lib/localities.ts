@@ -26,7 +26,6 @@ export type LocalityData = {
   hasListings: boolean;
   rentCount: number;
   saleCount: number;
-  priceRangeLabel: string | null;
   topBhk: string | null;
 };
 
@@ -149,7 +148,6 @@ export async function getLocalityData(rawSlug: string): Promise<LocalityData | n
       hasListings: false,
       rentCount: 0,
       saleCount: 0,
-      priceRangeLabel: null,
       topBhk: null,
     };
   }
@@ -238,7 +236,6 @@ export async function getLocalityData(rawSlug: string): Promise<LocalityData | n
       hasListings: false,
       rentCount: 0,
       saleCount: 0,
-      priceRangeLabel: null,
       topBhk: null,
     };
   }
@@ -270,57 +267,17 @@ export async function getLocalityData(rawSlug: string): Promise<LocalityData | n
 
   const rows = (listings ?? []) as ListingRow[];
 
-  // Derive a human-friendly price range + config mix for the locality
-  // description and E-E-A-T trust block. Prices are stored in native units, so
-  // we normalize everything to absolute INR. Source data is dirty (mixed unit
-  // scales, null units, occasional garbage values), so we: (a) only trust rows
-  // with a known unit, and (b) clamp to a Mumbai-plausible band, then take the
-  // 2nd–98th percentile to avoid edge outliers in the displayed range.
-  const priceToInr = (value: number | null, unit: string | null): number | null => {
-    if (value == null) return null;
-    const u = (unit || "").trim().toLowerCase();
-    if (u === "cr" || u === "crore" || u === "crores") return value * 1_00_00_000;
-    if (u === "l" || u === "lac" || u === "lakh" || u === "lakhs") return value * 1_00_000;
-    if (u === "k" || u === "thousand") return value * 1_000;
-    if (u === "abs" || u === "inr") return value;
-    return null; // unknown / null unit — skip rather than guess
-  };
-
-  const inrLabel = (value: number): string => {
-    if (value >= 1_00_00_000) {
-      const cr = value / 1_00_00_000;
-      return `₹${cr % 1 === 0 ? cr : cr.toFixed(1)} Cr`;
-    }
-    if (value >= 1_00_000) {
-      const l = value / 1_00_000;
-      return `₹${l % 1 === 0 ? l : l.toFixed(1)} L`;
-    }
-    return `₹${value.toLocaleString("en-IN")}`;
-  };
-
-  const PRICE_FLOOR = 5_00_000; // ₹5 L — below this is almost certainly dirty
-  const PRICE_CEIL = 200_00_00_000; // ₹200 Cr — above this is almost certainly dirty
-
+  // Derive a config mix for the locality description (buyers/renters already
+  // know typical price bands, so we deliberately do NOT surface a derived price
+  // range — source data is too dirty to summarise reliably).
   let rentCount = 0;
   let saleCount = 0;
-  const inrPrices: number[] = [];
   const bhkFreq = new Map<number, number>();
   for (const r of rows) {
     const i = (r.intent || "").toLowerCase();
     if (i === "rent" || i === "rental" || i === "lease") rentCount += 1;
     else if (i === "sale" || i === "sell" || i === "buy") saleCount += 1;
-    const inr = priceToInr(r.price, r.price_unit);
-    if (inr != null && inr >= PRICE_FLOOR && inr <= PRICE_CEIL) inrPrices.push(inr);
     for (const n of parseBhkValues(r.bhk)) bhkFreq.set(n, (bhkFreq.get(n) ?? 0) + 1);
-  }
-  let priceRangeLabel: string | null = null;
-  if (inrPrices.length >= 2) {
-    inrPrices.sort((a, b) => a - b);
-    const loIdx = Math.min(inrPrices.length - 1, Math.floor(inrPrices.length * 0.02));
-    const hiIdx = Math.max(0, Math.ceil(inrPrices.length * 0.98) - 1);
-    priceRangeLabel = `${inrLabel(inrPrices[loIdx])}–${inrLabel(inrPrices[hiIdx])}`;
-  } else if (inrPrices.length === 1) {
-    priceRangeLabel = inrLabel(inrPrices[0]);
   }
   const topBhk =
     bhkFreq.size > 0
@@ -437,7 +394,6 @@ export async function getLocalityData(rawSlug: string): Promise<LocalityData | n
     hasListings: rows.length > 0,
     rentCount,
     saleCount,
-    priceRangeLabel,
     topBhk,
   };
 }
