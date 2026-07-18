@@ -18,6 +18,7 @@ import {
   Phone,
   ArrowLeft,
   ChevronRight,
+  Tag,
 } from "lucide-react";
 import { getListingById } from "@/lib/localities";
 import { toListingCardViewModel, type ListingCardFields, type ListingSpecItem } from "@/lib/listing-card";
@@ -33,6 +34,7 @@ const SPEC_ICONS: Record<ListingSpecItem["kind"], typeof BedDouble> = {
   furnishing: Sofa,
   floor: Building2,
   view: Eye,
+  type: Tag,
 };
 
 const KindIcon = ({ kind, className }: { kind: string | null; className?: string }) =>

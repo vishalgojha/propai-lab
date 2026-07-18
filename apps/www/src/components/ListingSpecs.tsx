@@ -1,4 +1,4 @@
-import { BedDouble, Ruler, Sofa, Building2, Eye } from "lucide-react";
+import { BedDouble, Ruler, Sofa, Building2, Eye, Tag } from "lucide-react";
 import type { ListingSpecItem } from "@/lib/listing-card";
 
 const ICONS: Record<ListingSpecItem["kind"], typeof BedDouble> = {
@@ -7,6 +7,7 @@ const ICONS: Record<ListingSpecItem["kind"], typeof BedDouble> = {
   furnishing: Sofa,
   floor: Building2,
   view: Eye,
+  type: Tag,
 };
 
 export default function ListingSpecs({

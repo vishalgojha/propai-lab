@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { MapPin, MessageSquare, BedDouble, Ruler, Sofa, Building2, Eye, Home, Building, ShieldCheck, Clock, Flag } from "lucide-react";
+import { MapPin, MessageSquare, BedDouble, Ruler, Sofa, Building2, Eye, Home, Building, ShieldCheck, Clock, Flag, Tag } from "lucide-react";
 import type { ListingCardViewModel, ListingSpecItem } from "@/lib/listing-card";
 
 const SPEC_ICONS: Record<ListingSpecItem["kind"], typeof BedDouble> = {
@@ -8,6 +8,7 @@ const SPEC_ICONS: Record<ListingSpecItem["kind"], typeof BedDouble> = {
   furnishing: Sofa,
   floor: Building2,
   view: Eye,
+  type: Tag,
 };
 
 const KindIcon = ({ kind, className }: { kind: string | null; className?: string }) =>
