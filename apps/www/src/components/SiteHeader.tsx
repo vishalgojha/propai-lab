@@ -13,16 +13,16 @@ const NAV_LINKS = [
 
 function Wordmark() {
   return (
-    <span className="flex items-center gap-2">
+    <span className="flex items-center gap-2.5">
       <span
         aria-hidden="true"
-        className="grid h-7 w-7 place-items-center rounded-[10px] bg-[#090d12] ring-1 ring-white/10"
+        className="grid h-10 w-10 place-items-center rounded-[12px] bg-[#090d12] ring-1 ring-white/10"
       >
-        <svg viewBox="0 0 64 64" className="h-4 w-4" fill="none" aria-hidden="true">
+        <svg viewBox="0 0 64 64" className="h-6 w-6" fill="none" aria-hidden="true">
           <path d="M37 6L18 35h13L27 58l19-29H33L37 6Z" fill="#3EE88A" />
         </svg>
       </span>
-      <span className="text-lg font-bold tracking-tight text-white">
+      <span className="text-2xl font-bold tracking-tight text-white">
         Prop<span className="text-[#3EE88A]">AI</span>
       </span>
     </span>
@@ -39,7 +39,7 @@ export default function SiteHeader({ backHref, backLabel }: SiteHeaderProps) {
 
   return (
     <header className="border-b border-white/[0.06] sticky top-0 bg-black/80 backdrop-blur z-50">
-      <div className="max-w-7xl mx-auto px-4 lg:px-6 h-16 flex items-center justify-between">
+      <div className="max-w-[1600px] mx-auto px-4 lg:px-6 h-20 flex items-center justify-between">
         <div className="flex items-center gap-4">
           <Link href="/" aria-label="PropAI home" className="flex items-center" onClick={() => setOpen(false)}>
             <Wordmark />
@@ -104,7 +104,7 @@ export default function SiteHeader({ backHref, backLabel }: SiteHeaderProps) {
       {/* Mobile dropdown */}
       {open && (
         <div className="lg:hidden border-t border-white/[0.06] bg-black/95 backdrop-blur">
-          <nav className="max-w-7xl mx-auto px-4 py-3 flex flex-col" aria-label="Mobile">
+          <nav className="max-w-[1600px] mx-auto px-4 py-3 flex flex-col" aria-label="Mobile">
             {NAV_LINKS.map((link) => (
               <Link
                 key={link.href}
