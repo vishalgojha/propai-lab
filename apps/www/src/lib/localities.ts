@@ -1,5 +1,6 @@
 import { getServerSupabase, slugify } from "./supabase";
 import { getTitlesForRawMessageIds } from "./listing-titles";
+import { canonicalLocality } from "./locality-canon";
 
 export type BuildingOnMap = {
   name: string;
@@ -141,13 +142,14 @@ export async function getLocalityData(rawSlug: string): Promise<LocalityData | n
     };
   }
 
-  // Resolve slug back to an actual micro_market value (slug is lossy).
-  // We check two sources: listings (active inventory) and buildings
-  // (known places we track, even if no listings yet). A slug that matches a
-  // known place but has zero listings is a distinct case from a typo/garbage
-  // slug — the page surfaces "no listings yet" rather than a bare 404.
+  // Resolve slug back to a canonical locality. The stored micro_market
+  // values are dirty (case dupes, non-place buckets, ambiguous parents), so we
+  // run every raw value through the canonical map and match the requested slug
+  // against the *canonical* slug. This merges "Bandra Bkc"/"Bandra BKC", hides
+  // internal buckets, and applies confirmed implied-direction rules — without
+  // needing a backfill first.
   // Paginate: capped at 1000 rows otherwise. Without this, low-volume
-  // localities (e.g. Bandra East) would fail to resolve their detail page.
+  // localities would fail to resolve their detail page.
   const PAGE = 1000;
   let marketRows: Array<{ micro_market: string | null }> = [];
   for (let offset = 0; ; offset += PAGE) {
@@ -160,11 +162,22 @@ export async function getLocalityData(rawSlug: string): Promise<LocalityData | n
     if (!page || page.length < PAGE) break;
   }
 
-  const distinctMarkets = Array.from(
-    new Set(marketRows.map((m) => (m.micro_market ?? "").trim()).filter(Boolean)),
-  );
+  // canonical slug -> { label, public, standalonePage, rawValues }
+  const byCanonical = new Map<
+    string,
+    { label: string; public: boolean; standalonePage: boolean; raw: Set<string> }
+  >();
+  for (const row of marketRows) {
+    const raw = (row.micro_market ?? "").trim();
+    if (!raw) continue;
+    const c = canonicalLocality(raw);
+    if (!c.public || !c.slug) continue;
+    const existing = byCanonical.get(c.slug);
+    if (existing) existing.raw.add(raw);
+    else byCanonical.set(c.slug, { label: c.label, public: c.public, standalonePage: c.standalonePage, raw: new Set([raw]) });
+  }
 
-  const listingMatch = distinctMarkets.find((m) => slugify(m) === slug);
+  const listingCanon = byCanonical.get(slug);
 
   // Paginate buildings (4k+ rows) — a bare select is capped at 1000 rows.
   let knownPlaces: Array<{ micro_market: string | null }> = [];
@@ -178,21 +191,33 @@ export async function getLocalityData(rawSlug: string): Promise<LocalityData | n
     if (!page || page.length < 1000) break;
   }
 
-  const knownMarkets = Array.from(
-    new Set(knownPlaces.map((b) => (b.micro_market ?? "").trim()).filter(Boolean)),
-  );
+  const knownCanon = new Map<string, { label: string; standalonePage: boolean; raw: Set<string> }>();
+  for (const row of knownPlaces) {
+    const raw = (row.micro_market ?? "").trim();
+    if (!raw) continue;
+    const c = canonicalLocality(raw);
+    if (!c.public || !c.slug) continue;
+    const existing = knownCanon.get(c.slug);
+    if (existing) existing.raw.add(raw);
+    else knownCanon.set(c.slug, { label: c.label, standalonePage: c.standalonePage, raw: new Set([raw]) });
+  }
 
-  const placeMatch = knownMarkets.find((m) => slugify(m) === slug);
+  const placeCanon = knownCanon.get(slug);
 
   // True 404 case: not a known place at all (typo / garbage slug).
-  if (!listingMatch && !placeMatch) return null;
+  if (!listingCanon && !placeCanon) return null;
 
-  const match = listingMatch ?? placeMatch!;
+  const canon = listingCanon ?? placeCanon!;
+
+  // Generic parents (Andheri, Dadar, ...) are confirmed ambiguous — they get
+  // NO standalone detail page (surfaced only via general search) to avoid
+  // Bandra-BKC-style confusion. Return 404 for their slug.
+  if (!canon.standalonePage) return null;
 
   // Known place, but zero active listings — distinct from a 404 typo.
-  if (!listingMatch) {
+  if (!listingCanon) {
     return {
-      locality: match,
+      locality: canon.label,
       slug,
       buildings: [],
       mappedCount: 0,
@@ -204,14 +229,16 @@ export async function getLocalityData(rawSlug: string): Promise<LocalityData | n
 
   const { data: listings, error } = await (async () => {
     // Paginate: a busy locality can have >1000 listings, and a bare select is
-    // capped at 1000 rows.
+    // capped at 1000 rows. Query across every raw micro_market value that maps
+    // to this canonical (e.g. "Bandra Bkc" + "Bandra BKC" both -> Bandra East).
+    const rawValues = Array.from(listingCanon.raw);
     const PAGE = 1000;
     let collected: ListingRow[] = [];
     for (let offset = 0; ; offset += PAGE) {
       const { data, error } = await db
         .from("listings")
         .select("building_name, bhk, price, price_unit, intent, asset_type, property_type, micro_market")
-        .eq("micro_market", match)
+        .in("micro_market", rawValues)
         .range(offset, offset + PAGE - 1);
       if (error) return { data: null, error };
       collected = collected.concat((data ?? []) as ListingRow[]);
@@ -324,7 +351,7 @@ export async function getLocalityData(rawSlug: string): Promise<LocalityData | n
   });
 
   return {
-    locality: match,
+    locality: canon.label,
     slug,
     buildings,
     mappedCount,
@@ -357,18 +384,26 @@ export async function getAllLocalities(): Promise<LocalitySummary[]> {
     if (!data || data.length < PAGE) break;
   }
 
-  const counts = new Map<string, number>();
+  // Aggregate by canonical locality. Case dupes ("Bandra Bkc"/"Bandra BKC")
+  // merge; hidden internal buckets drop; generic ambiguous parents (Andheri,
+  // Dadar, ...) are excluded from the browse list (no standalone page) but
+  // remain reachable via general search.
+  const counts = new Map<string, { label: string; count: number }>();
   for (const row of all) {
-    const m = (row.micro_market ?? "").trim();
-    if (!m) continue;
-    counts.set(m, (counts.get(m) ?? 0) + 1);
+    const raw = (row.micro_market ?? "").trim();
+    if (!raw) continue;
+    const c = canonicalLocality(raw);
+    if (!c.public || !c.standalonePage || !c.slug) continue;
+    const existing = counts.get(c.slug);
+    if (existing) existing.count += 1;
+    else counts.set(c.slug, { label: c.label, count: 1 });
   }
 
   return Array.from(counts.entries())
-    .map(([locality, listingCount]) => ({
-      locality,
-      slug: slugify(locality),
-      listingCount,
+    .map(([slug, { label, count }]) => ({
+      locality: label,
+      slug,
+      listingCount: count,
     }))
     .sort((a, b) => b.listingCount - a.listingCount);
 }

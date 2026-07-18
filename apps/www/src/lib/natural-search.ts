@@ -1,4 +1,5 @@
 import { getAllBuildings, getAllLocalities, type BuildingSummary, type LocalitySummary } from "./localities";
+import { canonicalLocality } from "./locality-canon";
 import { getServerSupabase, slugify } from "./supabase";
 
 export type ParsedNaturalSearch = {
@@ -178,11 +179,11 @@ function parseBudget(query: string): { minPrice: number | null; maxPrice: number
 }
 
 export function findLocalityMatches(query: string, localities: LocalitySummary[]): LocalitySummary[] {
-  const qSlug = slugify(query);
+  const qSlug = canonicalLocality(query).slug;
   const qText = normalizeText(query);
   return localities
     .map((loc) => {
-      const locSlug = slugify(loc.locality);
+      const locSlug = canonicalLocality(loc.locality).slug;
       const locText = normalizeText(loc.locality);
       let score = 0;
       if (!locSlug) return { loc, score };
@@ -371,7 +372,7 @@ function scoreRow(row: NaturalSearchRow, parsed: ParsedNaturalSearch): { score: 
   let score = 0;
   const text = rowSearchText(row);
 
-  if (parsed.locality && row.micro_market && slugify(row.micro_market) === slugify(parsed.locality)) {
+  if (parsed.locality && row.micro_market && canonicalLocality(row.micro_market).slug === canonicalLocality(parsed.locality).slug) {
     score += 80;
     matchedOn.push(parsed.locality);
   }
@@ -563,7 +564,18 @@ export async function searchNaturalLanguageListings(
         .range(offset, offset + PAGE - 1);
 
       if (narrowed && parsed.locality) {
-        qb = qb.eq("micro_market", parsed.locality);
+        // parsed.locality is a canonical label; match every raw micro_market
+        // value that resolves to it (e.g. "Bandra Bkc" + "Bandra East").
+        const targetSlug = canonicalLocality(parsed.locality).slug;
+        const rawValues = Array.from(
+          new Set(
+            localities
+              .map((l) => l.locality)
+              .filter((raw) => canonicalLocality(raw).slug === targetSlug),
+          ),
+        );
+        if (rawValues.length > 0) qb = qb.in("micro_market", rawValues);
+        else qb = qb.eq("micro_market", parsed.locality);
       }
 
       if (parsed.asset) {
