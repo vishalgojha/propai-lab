@@ -316,6 +316,32 @@ func (sm *SessionManager) StartOrGet(brokerID string) *BrokerSession {
 	return session
 }
 
+func (sm *SessionManager) restoreSessionWhenAvailable(brokerID string) {
+	for attempt := 1; ; attempt++ {
+		if sm.Get(brokerID) != nil {
+			return
+		}
+		deviceJID, err := sm.lookupDeviceJID(context.Background(), brokerID)
+		if err == nil && deviceJID == "" {
+			log.Printf("[broker %s] restore cancelled because the saved mapping was removed", brokerID)
+			return
+		}
+		if err == nil {
+			if session := sm.StartOrGet(brokerID); session != nil {
+				log.Printf("[broker %s] session restored after deployment handoff", brokerID)
+				return
+			}
+		} else {
+			log.Printf("[broker %s] restore lookup failed: %v", brokerID, err)
+		}
+		delay := time.Duration(attempt*2) * time.Second
+		if delay > 30*time.Second {
+			delay = 30 * time.Second
+		}
+		time.Sleep(delay)
+	}
+}
+
 func (sm *SessionManager) newSession(brokerID string, device *store.Device) *BrokerSession {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &BrokerSession{
@@ -1660,7 +1686,8 @@ func main() {
 				continue
 			}
 			if !locked {
-				log.Printf("[broker %s] skipping restore because another ingestor instance owns the lock", brokerID)
+				log.Printf("[broker %s] deployment handoff pending because another ingestor instance owns the lock", brokerID)
+				go sm.restoreSessionWhenAvailable(brokerID)
 				continue
 			}
 			session := sm.newSession(brokerID, device)
