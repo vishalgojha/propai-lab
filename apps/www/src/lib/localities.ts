@@ -272,15 +272,18 @@ export async function getLocalityData(rawSlug: string): Promise<LocalityData | n
 
   // Derive a human-friendly price range + config mix for the locality
   // description and E-E-A-T trust block. Prices are stored in native units, so
-  // we normalize everything to absolute INR before taking min/max.
+  // we normalize everything to absolute INR. Source data is dirty (mixed unit
+  // scales, null units, occasional garbage values), so we: (a) only trust rows
+  // with a known unit, and (b) clamp to a Mumbai-plausible band, then take the
+  // 2nd–98th percentile to avoid edge outliers in the displayed range.
   const priceToInr = (value: number | null, unit: string | null): number | null => {
     if (value == null) return null;
-    const u = (unit || "").toLowerCase().trim();
+    const u = (unit || "").trim().toLowerCase();
     if (u === "cr" || u === "crore" || u === "crores") return value * 1_00_00_000;
     if (u === "l" || u === "lac" || u === "lakh" || u === "lakhs") return value * 1_00_000;
     if (u === "k" || u === "thousand") return value * 1_000;
     if (u === "abs" || u === "inr") return value;
-    return value; // fallback: treat as absolute INR
+    return null; // unknown / null unit — skip rather than guess
   };
 
   const inrLabel = (value: number): string => {
@@ -295,6 +298,9 @@ export async function getLocalityData(rawSlug: string): Promise<LocalityData | n
     return `₹${value.toLocaleString("en-IN")}`;
   };
 
+  const PRICE_FLOOR = 5_00_000; // ₹5 L — below this is almost certainly dirty
+  const PRICE_CEIL = 200_00_00_000; // ₹200 Cr — above this is almost certainly dirty
+
   let rentCount = 0;
   let saleCount = 0;
   const inrPrices: number[] = [];
@@ -304,15 +310,18 @@ export async function getLocalityData(rawSlug: string): Promise<LocalityData | n
     if (i === "rent" || i === "rental" || i === "lease") rentCount += 1;
     else if (i === "sale" || i === "sell" || i === "buy") saleCount += 1;
     const inr = priceToInr(r.price, r.price_unit);
-    if (inr != null) inrPrices.push(inr);
+    if (inr != null && inr >= PRICE_FLOOR && inr <= PRICE_CEIL) inrPrices.push(inr);
     for (const n of parseBhkValues(r.bhk)) bhkFreq.set(n, (bhkFreq.get(n) ?? 0) + 1);
   }
-  const priceRangeLabel =
-    inrPrices.length >= 2
-      ? `${inrLabel(Math.min(...inrPrices))}–${inrLabel(Math.max(...inrPrices))}`
-      : inrPrices.length === 1
-        ? inrLabel(inrPrices[0])
-        : null;
+  let priceRangeLabel: string | null = null;
+  if (inrPrices.length >= 2) {
+    inrPrices.sort((a, b) => a - b);
+    const loIdx = Math.min(inrPrices.length - 1, Math.floor(inrPrices.length * 0.02));
+    const hiIdx = Math.max(0, Math.ceil(inrPrices.length * 0.98) - 1);
+    priceRangeLabel = `${inrLabel(inrPrices[loIdx])}–${inrLabel(inrPrices[hiIdx])}`;
+  } else if (inrPrices.length === 1) {
+    priceRangeLabel = inrLabel(inrPrices[0]);
+  }
   const topBhk =
     bhkFreq.size > 0
       ? `${[...bhkFreq.entries()].sort((a, b) => b[1] - a[1])[0][0]} BHK`
