@@ -116,8 +116,7 @@ model_list:
 
   - model_name: nvidia-nim
     litellm_params:
-      model: nvidia/nemotron-3-ultra-550b-a55b
-      api_base: https://integrate.api.nvidia.com/v1
+      model: nvidia_nim/nemotron-3-ultra-550b-a55b
       api_key: ${NVIDIA_API_KEY}
 
   - model_name: cerebras
