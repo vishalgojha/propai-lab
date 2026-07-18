@@ -26,10 +26,19 @@ self.addEventListener("activate", (event) => {
   event.waitUntil(
     (async () => {
       const keys = await caches.keys();
-      await Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)));
+      const staleKeys = keys.filter((key) => key !== CACHE);
+      await Promise.all(staleKeys.map((key) => caches.delete(key)));
+      await self.clients.claim();
+
+      // Existing tabs are still executing the previous release's JavaScript, so
+      // they cannot listen for this worker's controllerchange event. On upgrades,
+      // navigate them once through the new network-only navigation handler.
+      if (staleKeys.length > 0) {
+        const windows = await self.clients.matchAll({ type: "window" });
+        await Promise.all(windows.map((client) => client.navigate(client.url)));
+      }
     })()
   );
-  self.clients.claim();
 });
 
 self.addEventListener("fetch", (event) => {
