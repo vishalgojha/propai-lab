@@ -6211,7 +6211,15 @@ WHATSAPP SELF-CHAT MODE:
             )
         return chat_engine.normalize_workspace_response(reply.content or "", sources)
 
-    return await asyncio.wait_for(loop.run_in_executor(None, _call), timeout=90)
+    # run_in_executor does not propagate contextvars by itself. Preserve the
+    # organization selected by the self-chat control plane so tools and storage
+    # reads inside the model loop stay scoped to the broker's workspace.
+    import contextvars
+    request_context = contextvars.copy_context()
+    return await asyncio.wait_for(
+        loop.run_in_executor(None, request_context.run, _call),
+        timeout=90,
+    )
 
 
 @app.post("/api/internal/self-chat")

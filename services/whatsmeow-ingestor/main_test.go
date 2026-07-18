@@ -8,7 +8,11 @@ import (
 	"strings"
 	"testing"
 
+	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/proto/waE2E"
+	"go.mau.fi/whatsmeow/store"
+	"go.mau.fi/whatsmeow/types"
+	"go.mau.fi/whatsmeow/types/events"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -118,6 +122,57 @@ func TestMessageTextSupportsConversationAndExtendedText(t *testing.T) {
 	}
 	if got := messageText(extended); got != "extended command" {
 		t.Fatalf("messageText(extended) = %q", got)
+	}
+}
+
+func TestPairedQRSessionIsKeptAlive(t *testing.T) {
+	if !shouldRetryQRPairing(nil) || !shouldRetryQRPairing(&store.Device{}) {
+		t.Fatal("unpaired devices must retry QR pairing")
+	}
+	jid := types.NewJID("919773757759", types.DefaultUserServer)
+	if shouldRetryQRPairing(&store.Device{ID: &jid}) {
+		t.Fatal("paired QR session must stay connected instead of being recreated")
+	}
+}
+
+func TestOwnWhatsAppJIDAcceptsPhoneAndLIDAddresses(t *testing.T) {
+	phone := types.NewJID("919773757759", types.DefaultUserServer)
+	phone.Device = 41
+	lid := types.NewJID("123456789012345", types.HiddenUserServer)
+	session := &BrokerSession{client: &whatsmeow.Client{Store: &store.Device{ID: &phone, LID: lid}}}
+
+	if !isOwnWhatsAppJID(session, phone.ToNonAD()) {
+		t.Fatal("own phone-number JID was not recognized")
+	}
+	if !isOwnWhatsAppJID(session, lid) {
+		t.Fatal("own LID was not recognized")
+	}
+	other := types.NewJID("919999999999", types.DefaultUserServer)
+	if isOwnWhatsAppJID(session, other) {
+		t.Fatal("unrelated phone was incorrectly recognized as self-chat")
+	}
+}
+
+func TestSelfChatCommandAcceptsOwnLIDAndRejectsLocalBotEcho(t *testing.T) {
+	phone := types.NewJID("919773757759", types.DefaultUserServer)
+	lid := types.NewJID("123456789012345", types.HiddenUserServer)
+	session := &BrokerSession{client: &whatsmeow.Client{Store: &store.Device{ID: &phone, LID: lid}}}
+	evt := &events.Message{
+		Info: types.MessageInfo{
+			MessageSource:  types.MessageSource{IsFromMe: true},
+			ID:             "human-command",
+			DeviceSentMeta: &types.DeviceSentMeta{DestinationJID: lid.String()},
+		},
+		Message: &waE2E.Message{Conversation: proto.String("find options")},
+	}
+
+	target, text, ok := selfChatCommand(session, evt)
+	if !ok || target != lid || text != "find options" {
+		t.Fatalf("selfChatCommand() = target %s text %q ok %v", target, text, ok)
+	}
+	evt.Info.DeviceSentMeta = nil
+	if _, _, ok := selfChatCommand(session, evt); ok {
+		t.Fatal("locally generated bot echo must not trigger another self-chat reply")
 	}
 }
 

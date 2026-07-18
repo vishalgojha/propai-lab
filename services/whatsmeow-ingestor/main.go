@@ -379,6 +379,7 @@ func (sm *SessionManager) runSession(s *BrokerSession) {
 	log.Printf("[broker %s] starting session goroutine", s.brokerID)
 	defer s.releaseLock()
 
+sessionLoop:
 	for attempt := 0; ; attempt++ {
 		// Check if session was stopped externally
 		select {
@@ -461,27 +462,34 @@ func (sm *SessionManager) runSession(s *BrokerSession) {
 				continue
 			}
 			heartbeatStop = s.startHeartbeat()
-		outer:
+		qrLoop:
 			for {
 				select {
 				case evt, ok := <-qrChan:
 					if !ok {
-						break outer
+						break qrLoop
 					}
 					if evt.Event == "code" {
 						s.setStatus(Status{Connected: false, ConnectionState: "qr", QR: evt.Code, QRAvailable: true})
 						fmt.Printf("[broker %s] QR: %s\n", s.brokerID, evt.Code)
 					}
 				case <-disconnected:
-					break outer
+					stopHeartbeat()
+					continue sessionLoop
 				case <-s.ctx.Done():
 					stopHeartbeat()
 					s.client.Disconnect()
 					return
 				}
 			}
-			stopHeartbeat()
-			continue
+			// A successful pair closes the QR channel while keeping the socket
+			// authenticated. Do not disconnect that brand-new client: wait for its
+			// normal disconnect event below. If pairing ended without credentials,
+			// start a fresh QR attempt instead.
+			if shouldRetryQRPairing(s.device) {
+				stopHeartbeat()
+				continue sessionLoop
+			}
 		} else {
 			// Existing session — connect directly
 			if err := s.client.Connect(); err != nil {
@@ -506,6 +514,10 @@ func (sm *SessionManager) runSession(s *BrokerSession) {
 		}
 		stopHeartbeat()
 	}
+}
+
+func shouldRetryQRPairing(device *store.Device) bool {
+	return device == nil || device.ID == nil
 }
 
 func (s *BrokerSession) startHeartbeat() chan struct{} {
@@ -795,16 +807,30 @@ func selfChatCommand(s *BrokerSession, evt *events.Message) (types.JID, string, 
 	if !info.IsFromMe || info.IsGroup || info.DeviceSentMeta == nil {
 		return types.EmptyJID, "", false
 	}
-	own := s.client.Store.ID.ToNonAD()
 	destination, err := types.ParseJID(info.DeviceSentMeta.DestinationJID)
-	if err != nil || destination.ToNonAD() != own {
+	if err != nil || !isOwnWhatsAppJID(s, destination) {
 		return types.EmptyJID, "", false
 	}
 	text := messageText(evt.Message)
 	if text == "" {
 		return types.EmptyJID, "", false
 	}
-	return own, text, true
+	return destination.ToNonAD(), text, true
+}
+
+func isOwnWhatsAppJID(s *BrokerSession, candidate types.JID) bool {
+	if s == nil || s.client == nil || s.client.Store.ID == nil || candidate.IsEmpty() {
+		return false
+	}
+	candidate = candidate.ToNonAD()
+	if candidate == s.client.Store.ID.ToNonAD() {
+		return true
+	}
+	// WhatsApp increasingly addresses direct chats with LIDs. A self-chat sent
+	// from the phone therefore carries the account LID as its destination even
+	// though the paired device ID is the phone-number JID.
+	accountLID := s.client.Store.GetLID()
+	return !accountLID.IsEmpty() && candidate == accountLID.ToNonAD()
 }
 
 func messageText(msg *waE2E.Message) string {
