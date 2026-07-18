@@ -1,4 +1,9 @@
-export const dynamic = "force-dynamic";
+// The homepage aggregates live WhatsApp inventory (locality/building/listing/
+// broker counts + recent activity) that updates gradually. A few minutes of
+// staleness is fine and avoids re-scanning the DB on every request (and any
+// CDN/proxy caching). ISR re-renders every 5 minutes, so the public counters
+// stay dynamic without re-querying on each visit.
+export const revalidate = 300;
 
 import { MapPin, ArrowRight, MessageSquare, Phone, Shield } from "lucide-react";
 import Link from "next/link";
