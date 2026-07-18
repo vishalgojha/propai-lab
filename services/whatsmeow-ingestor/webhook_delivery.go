@@ -9,6 +9,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"sync"
 	"time"
 )
 
@@ -24,6 +25,13 @@ const webhookOutboxDDL = `CREATE TABLE IF NOT EXISTS whatsapp_webhook_outbox (
 )`
 
 var webhookHTTPClient = &http.Client{Timeout: 15 * time.Second}
+
+type queuedWebhookEvent struct {
+	id       int64
+	brokerID string
+	payload  []byte
+	attempts int
+}
 
 func (sm *SessionManager) queueWebhook(brokerID, eventID string, payload map[string]interface{}) bool {
 	encoded, err := json.Marshal(payload)
@@ -42,7 +50,10 @@ func (sm *SessionManager) queueWebhook(brokerID, eventID string, payload map[str
 		log.Printf("[broker %s] webhook enqueue failed: %v", brokerID, err)
 		return false
 	}
-	go sm.flushWebhookOutbox()
+	select {
+	case sm.deliveryWake <- struct{}{}:
+	default:
+	}
 	return true
 }
 
@@ -50,9 +61,12 @@ func (sm *SessionManager) startWebhookDispatcher(ctx context.Context) {
 	go func() {
 		ticker := time.NewTicker(3 * time.Second)
 		defer ticker.Stop()
+		sm.flushWebhookOutbox()
 		for {
 			select {
 			case <-ticker.C:
+				sm.flushWebhookOutbox()
+			case <-sm.deliveryWake:
 				sm.flushWebhookOutbox()
 			case <-ctx.Done():
 				return
@@ -65,56 +79,121 @@ func (sm *SessionManager) flushWebhookOutbox() {
 	sm.deliveryMu.Lock()
 	defer sm.deliveryMu.Unlock()
 
-	rows, err := sm.db.QueryContext(context.Background(), `
+	const batchSize = 100
+	queued, err := sm.claimWebhookOutbox(batchSize)
+	if err != nil {
+		log.Printf("webhook outbox claim failed: %v", err)
+		return
+	}
+	if len(queued) == 0 {
+		return
+	}
+
+	concurrency := getEnvInt("WEBHOOK_DELIVERY_CONCURRENCY", 10)
+	if concurrency < 1 {
+		concurrency = 1
+	}
+	if concurrency > 32 {
+		concurrency = 32
+	}
+	sem := make(chan struct{}, concurrency)
+	var wg sync.WaitGroup
+	for _, item := range queued {
+		item := item
+		sem <- struct{}{}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			defer func() { <-sem }()
+			sm.deliverQueuedWebhook(item)
+		}()
+	}
+	wg.Wait()
+	if len(queued) == batchSize {
+		select {
+		case sm.deliveryWake <- struct{}{}:
+		default:
+		}
+	}
+}
+
+func (sm *SessionManager) claimWebhookOutbox(limit int) ([]queuedWebhookEvent, error) {
+	tx, err := sm.db.BeginTx(context.Background(), nil)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+
+	rows, err := tx.QueryContext(context.Background(), `
 		SELECT id, broker_id, payload, attempts
 		FROM whatsapp_webhook_outbox
 		WHERE next_attempt_at <= NOW()
-		ORDER BY id
-		LIMIT 50`)
+		ORDER BY
+			CASE
+				WHEN payload->>'event' IN ('MESSAGES_UPSERT', 'MESSAGES_SET', 'messages.upsert') THEN 0
+				WHEN attempts = 0 THEN 1
+				ELSE 2
+			END,
+			next_attempt_at,
+			id
+		LIMIT $1
+		FOR UPDATE SKIP LOCKED`, limit)
 	if err != nil {
-		log.Printf("webhook outbox query failed: %v", err)
-		return
+		return nil, err
 	}
-	defer rows.Close()
-
-	type queuedEvent struct {
-		id       int64
-		brokerID string
-		payload  []byte
-		attempts int
-	}
-	queued := make([]queuedEvent, 0, 50)
+	queued := make([]queuedWebhookEvent, 0, limit)
 	for rows.Next() {
-		var item queuedEvent
+		var item queuedWebhookEvent
 		if err := rows.Scan(&item.id, &item.brokerID, &item.payload, &item.attempts); err != nil {
 			log.Printf("webhook outbox scan failed: %v", err)
 			continue
 		}
 		queued = append(queued, item)
 	}
-
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if len(queued) == 0 {
+		if err := tx.Commit(); err != nil {
+			return nil, err
+		}
+		return queued, nil
+	}
 	for _, item := range queued {
-		err := postWebhookPayload(item.payload)
-		if err == nil {
-			if _, deleteErr := sm.db.ExecContext(context.Background(),
-				"DELETE FROM whatsapp_webhook_outbox WHERE id=$1", item.id); deleteErr != nil {
-				log.Printf("[broker %s] webhook outbox delete failed: %v", item.brokerID, deleteErr)
-			}
-			continue
-		}
-		attempts := item.attempts + 1
-		delaySeconds := 1 << min(attempts, 8)
-		_, updateErr := sm.db.ExecContext(context.Background(), `
+		if _, err := tx.ExecContext(context.Background(), `
 			UPDATE whatsapp_webhook_outbox
-			SET attempts=$2,
-				next_attempt_at=NOW() + ($3 * INTERVAL '1 second'),
-				last_error=$4
-			WHERE id=$1`, item.id, attempts, delaySeconds, err.Error())
-		if updateErr != nil {
-			log.Printf("[broker %s] webhook outbox retry update failed: %v", item.brokerID, updateErr)
-		} else {
-			log.Printf("[broker %s] webhook delivery failed (attempt %d): %v", item.brokerID, attempts, err)
+			SET next_attempt_at = NOW() + INTERVAL '60 seconds'
+			WHERE id = $1`, item.id); err != nil {
+			return nil, err
 		}
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return queued, nil
+}
+
+func (sm *SessionManager) deliverQueuedWebhook(item queuedWebhookEvent) {
+	err := postWebhookPayload(item.payload)
+	if err == nil {
+		if _, deleteErr := sm.db.ExecContext(context.Background(),
+			"DELETE FROM whatsapp_webhook_outbox WHERE id=$1", item.id); deleteErr != nil {
+			log.Printf("[broker %s] webhook outbox delete failed: %v", item.brokerID, deleteErr)
+		}
+		return
+	}
+	attempts := item.attempts + 1
+	delaySeconds := 1 << min(attempts, 8)
+	_, updateErr := sm.db.ExecContext(context.Background(), `
+		UPDATE whatsapp_webhook_outbox
+		SET attempts=$2,
+			next_attempt_at=NOW() + ($3 * INTERVAL '1 second'),
+			last_error=$4
+		WHERE id=$1`, item.id, attempts, delaySeconds, err.Error())
+	if updateErr != nil {
+		log.Printf("[broker %s] webhook outbox retry update failed: %v", item.brokerID, updateErr)
+	} else {
+		log.Printf("[broker %s] webhook delivery failed (attempt %d): %v", item.brokerID, attempts, err)
 	}
 }
 

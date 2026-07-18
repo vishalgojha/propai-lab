@@ -903,6 +903,33 @@ class SupabaseStorage(Storage):
         res = self.client.table("org_whatsapp_connections").select("organization_id, broker_id, phone_number, instance_name, is_active, self_chat_enabled").eq("broker_id", broker_id).limit(1).execute()
         return res.data[0] if res.data else None
 
+    def get_org_waba_connection(self, org_id: str) -> dict | None:
+        """Return the server-only Cloud API connection for one workspace."""
+        res = self.client.table("org_waba_connections").select("*")\
+            .eq("organization_id", org_id).limit(1).execute()
+        return res.data[0] if res.data else None
+
+    def get_org_waba_connection_by_phone_number_id(self, phone_number_id: str) -> dict | None:
+        """Resolve an incoming Meta webhook to its owning workspace."""
+        phone_number_id = str(phone_number_id or "").strip()
+        if not phone_number_id:
+            return None
+        res = self.client.table("org_waba_connections").select("*")\
+            .eq("phone_number_id", phone_number_id).eq("is_active", True).limit(1).execute()
+        return res.data[0] if res.data else None
+
+    def upsert_org_waba_connection(self, org_id: str, values: dict) -> dict | None:
+        """Create or update a workspace Cloud API connection without crossing tenants."""
+        payload = {
+            "organization_id": org_id,
+            **{key: value for key, value in values.items() if value is not None},
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+        res = self.client.table("org_waba_connections").upsert(
+            payload, on_conflict="organization_id"
+        ).execute()
+        return res.data[0] if res.data else None
+
     def list_whatsapp_access(self, org_id: str) -> list[dict]:
         members = self.list_team_members(org_id=org_id)
         phones = self.list_org_whatsapp_connections(org_id)

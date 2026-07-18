@@ -11,7 +11,7 @@ import {
   type CompanionConfig,
 } from "@/lib/api";
 
-const PROPAI_WABA_NUMBER = "+9170210455254";
+const PROPAI_WABA_NUMBER = "+917021045254";
 const WEBHOOK_CALLBACK_URL = "https://api.propai.live/api/whatsapp/cloud/webhook";
 
 function CopyButton({ value }: { value: string }) {
@@ -81,7 +81,7 @@ export default function WabaPage() {
       .then((cfg) => {
         setWaba(cfg);
         setLoadError(null);
-        if (cfg.outbound_allowed && cfg.whatsapp_business_number && cfg.whatsapp_business_number !== PROPAI_WABA_NUMBER) {
+        if (cfg.whatsapp_business_number) {
           setBusinessNumber(cfg.whatsapp_business_number.replace(/^\+91/, ""));
           setPhoneNumberId(cfg.phone_number_id || "");
         }
@@ -94,7 +94,7 @@ export default function WabaPage() {
 
   useEffect(() => {
     if (!waba || editing) return;
-    if (waba.outbound_allowed && waba.whatsapp_business_number !== PROPAI_WABA_NUMBER) {
+    if (waba.whatsapp_business_number) {
       setBusinessNumber(waba.whatsapp_business_number?.replace(/^\+91/, "") || "");
       setPhoneNumberId(waba.phone_number_id || "");
     }
@@ -113,7 +113,7 @@ export default function WabaPage() {
     const nextAccessToken = String(form.get("access_token") || "").trim();
     const nextVerifyToken = String(form.get("verify_token") || "").trim();
 
-    if (`+91${cleaned}` === PROPAI_WABA_NUMBER) {
+    if (!waba?.is_super_admin && `+91${cleaned}` === PROPAI_WABA_NUMBER) {
       setStatus("PropAI shared WABA is reserved for platform messages.");
       setSaving(false);
       return;
@@ -154,15 +154,36 @@ export default function WabaPage() {
 
   const isConfigured = Boolean(waba?.outbound_allowed);
   const displayPhoneNumberId = waba?.phone_number_id || phoneNumberId;
+  const callbackUrl = waba?.webhook_callback_url || WEBHOOK_CALLBACK_URL;
+  const isSuperAdmin = Boolean(waba?.is_super_admin);
 
   return (
     <div className="max-w-3xl mx-auto px-4 lg:px-0 py-8">
       <div className="mb-8">
         <h2 className="text-lg font-bold text-white">WhatsApp Business API</h2>
         <p className="mt-2 max-w-2xl text-sm text-zinc-500">
-          Your WABA credentials, webhook URL, and direct links to your Meta dashboard.
+          {isSuperAdmin
+            ? "Manage PropAI's shared WhatsApp Business API connection."
+            : "Use the PropAI assistant, or connect your own WABA for your workspace only."}
         </p>
       </div>
+
+      {!loading && !isSuperAdmin && (
+        <div className="rounded-2xl border border-[#3EE88A]/20 bg-[#3EE88A]/5 p-5 mb-6">
+          <div className="text-sm font-bold text-white">Use PropAI on WhatsApp</div>
+          <p className="mt-2 text-sm text-zinc-400">
+            Save <strong className="text-white">+91 70210 45254</strong> and message your requirement or listing. PropAI uses your signed-in workspace data; platform credentials stay private.
+          </p>
+          <a
+            href="https://wa.me/917021045254"
+            target="_blank"
+            rel="noreferrer"
+            className="mt-4 inline-flex min-h-[44px] items-center rounded-lg bg-[#3EE88A] px-4 py-2 text-sm font-bold text-black"
+          >
+            Message PropAI
+          </a>
+        </div>
+      )}
 
       {/* ── Status Banner ─────────────────────────────────────── */}
       {loading ? (
@@ -196,11 +217,11 @@ export default function WabaPage() {
       <div className="rounded-2xl border border-white/10 mb-4">
         <div className="px-5 py-3 border-b border-white/10 flex items-center justify-between">
           <h3 className="text-sm font-bold text-white">Webhook Callback URL</h3>
-          <CopyButton value={WEBHOOK_CALLBACK_URL} />
+          <CopyButton value={callbackUrl} />
         </div>
         <div className="px-5 py-4">
           <div className="rounded-lg bg-zinc-800 px-3 py-2 text-sm text-white font-mono break-all select-all">
-            {WEBHOOK_CALLBACK_URL}
+            {callbackUrl}
           </div>
           <p className="mt-2 text-[11px] text-zinc-500">
             Paste this in Meta App Dashboard →{" "}
@@ -212,8 +233,8 @@ export default function WabaPage() {
         </div>
       </div>
 
-      {/* ── Verify Token ──────────────────────────────────────── */}
-      <div className="rounded-2xl border border-white/10 mb-4">
+      {/* Platform secret previews are never returned to broker accounts. */}
+      {isSuperAdmin && <div className="rounded-2xl border border-white/10 mb-4">
         <div className="px-5 py-3 border-b border-white/10">
           <h3 className="text-sm font-bold text-white">Verify Token</h3>
         </div>
@@ -224,10 +245,10 @@ export default function WabaPage() {
             <strong className="text-zinc-400">WhatsApp → Configuration → Webhook → Verify Token</strong>
           </p>
         </div>
-      </div>
+      </div>}
 
       {/* ── Access Token ──────────────────────────────────────── */}
-      <div className="rounded-2xl border border-white/10 mb-4">
+      {isSuperAdmin && <div className="rounded-2xl border border-white/10 mb-4">
         <div className="px-5 py-3 border-b border-white/10">
           <h3 className="text-sm font-bold text-white">Access Token</h3>
         </div>
@@ -241,7 +262,16 @@ export default function WabaPage() {
             Open Meta Developer Portal
           </MetaLink>
         </div>
-      </div>
+      </div>}
+
+      {!isSuperAdmin && isConfigured && (
+        <div className="rounded-2xl border border-white/10 mb-4 px-5 py-4">
+          <div className="text-sm font-bold text-white">Workspace credentials saved securely</div>
+          <p className="mt-1 text-xs text-zinc-500">
+            Access and verify tokens are stored server-side and are never sent back to the browser.
+          </p>
+        </div>
+      )}
 
       {/* ── Phone Number ID ───────────────────────────────────── */}
       {displayPhoneNumberId && (
@@ -274,12 +304,14 @@ export default function WabaPage() {
         <div className="flex items-center justify-between">
           <div>
             <div className="text-sm font-bold text-white">
-              {isConfigured ? "Update WABA Credentials" : "Connect your WABA"}
+              {isSuperAdmin
+                ? "Update PropAI WABA Credentials"
+                : isConfigured ? "Update workspace WABA" : "Connect your own WABA"}
             </div>
             <p className="mt-1 text-xs text-zinc-500">
               {isConfigured
-                ? "Update your phone number, tokens, or other WABA settings."
-                : "Add your WhatsApp Business API credentials to enable outbound messaging."}
+                ? "Update this connection without exposing saved tokens."
+                : "Optional: add a number owned by your business. It will be isolated to this workspace."}
             </p>
           </div>
           <div
@@ -299,7 +331,9 @@ export default function WabaPage() {
       {editing && (
         <div className="mt-4 rounded-2xl border border-white/10">
           <div className="px-5 py-3 border-b border-white/10">
-            <h3 className="text-sm font-bold text-white">WABA Credentials</h3>
+            <h3 className="text-sm font-bold text-white">
+              {isSuperAdmin ? "PropAI platform credentials" : "Your workspace credentials"}
+            </h3>
           </div>
           <div className="px-5 py-4">
             <form onSubmit={handleSave} className="space-y-4">

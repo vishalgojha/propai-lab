@@ -2041,7 +2041,9 @@ async def webhook(request: Request):
     resolved_tenant_id = DEFAULT_TENANT_ID
     if webhook_broker_id:
         try:
-            conn = storage.get_org_whatsapp_connection_by_broker_id(webhook_broker_id)
+            conn = await asyncio.to_thread(
+                storage.get_org_whatsapp_connection_by_broker_id, webhook_broker_id
+            )
             if conn and conn.get("organization_id"):
                 resolved_tenant_id = conn["organization_id"]
         except Exception as exc:
@@ -2055,7 +2057,29 @@ async def webhook(request: Request):
         event_class = "system"
 
     if event_class != "message":
-        _handle_system_event(event_class, event, data, instance, resolved_tenant_id)
+        # A full group directory can contain hundreds of entries. It is
+        # recoverable and must not hold the durable message outbox behind a
+        # long series of Supabase calls.
+        if event_class == "group":
+            asyncio.create_task(
+                asyncio.to_thread(
+                    _handle_system_event,
+                    event_class,
+                    event,
+                    data,
+                    instance,
+                    resolved_tenant_id,
+                )
+            )
+        else:
+            await asyncio.to_thread(
+                _handle_system_event,
+                event_class,
+                event,
+                data,
+                instance,
+                resolved_tenant_id,
+            )
         return {"status": "event_handled", "event": event, "class": event_class}
 
     # ── Human message — Layer 1: Raw Storage only ─────────────────
@@ -2083,28 +2107,32 @@ async def webhook(request: Request):
         or msg_data.get("conversation_name")
         or ""
     ).strip()
-    group_name = supplied_conversation_name or _resolve_group_name(group)
+    group_name = supplied_conversation_name or await asyncio.to_thread(_resolve_group_name, group)
     is_dm = str(group).endswith("@s.whatsapp.net") or str(group).endswith("@lid")
     raw_group_name = "" if is_dm else group_name
     if supplied_conversation_name and str(group).endswith("@g.us"):
         try:
-            storage.upsert_sync_job(
-                source="whatsapp",
-                instance=instance or msg_data.get("instance", ""),
-                group_id=group,
-                group_name=supplied_conversation_name,
-                status="complete",
+            await asyncio.to_thread(
+                storage.upsert_sync_job,
+                "whatsapp",
+                instance or msg_data.get("instance", ""),
+                group,
+                supplied_conversation_name,
+                0,
+                "complete",
             )
         except Exception as exc:
             print(f"[webhook] group name upsert error: {exc}", flush=True)
 
     # Generate stable message UID for dedup
     message_id = msg_data.get("key", {}).get("id") or msg_data.get("id") or str(uuid.uuid4())
-    message_uid = f"{group}:{message_id}"
+    # The same WhatsApp group message can be captured by multiple customer
+    # phones. Deduplicate within one connection, never across workspaces.
+    message_uid = f"{webhook_broker_id or resolved_tenant_id}:{group}:{message_id}"
 
     # Check for duplicate before writing
     try:
-        existing = storage.get_raw_by_uid(message_uid)
+        existing = await asyncio.to_thread(storage.get_raw_by_uid, message_uid)
         if existing:
             return {"status": "duplicate", "raw_id": existing.id, "message": "already_saved"}
     except Exception:
@@ -2116,12 +2144,11 @@ async def webhook(request: Request):
     except ImportError:
         PIPELINE_VERSION = "0.0.0"
     try:
-        storage.tenant_id = resolved_tenant_id
         now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         message_timestamp = _coerce_whatsapp_timestamp(
             msg_data.get("messageTimestamp") or msg_data.get("timestamp")
         ) or now
-        raw_id = storage.save_raw_message(RawMessage(
+        raw = RawMessage(
             tenant_id=resolved_tenant_id,
             group_name=raw_group_name,
             sender=sender,
@@ -2143,7 +2170,17 @@ async def webhook(request: Request):
             pipeline_version=PIPELINE_VERSION,
             synced_at=now,
             processed=False,
-        ))
+        )
+
+        def save_scoped_raw() -> int:
+            previous = get_tenant_id()
+            try:
+                set_tenant_id(resolved_tenant_id)
+                return storage.save_raw_message(raw)
+            finally:
+                set_tenant_id(previous)
+
+        raw_id = await asyncio.to_thread(save_scoped_raw)
     except Exception as exc:
         print(f"[webhook] save_raw_message error: {exc}", flush=True)
         return {"error": f"save_raw_message: {exc}", "status": "failed"}
@@ -7313,7 +7350,7 @@ class CompanionConfigRequest(BaseModel):
     clear_verify_token: bool = False
 
 
-PROPAI_SHARED_WABA_NUMBER = "+9170210455254"
+PROPAI_SHARED_WABA_NUMBER = "+917021045254"
 
 
 def _mobile_digits(value: str = "") -> str:
@@ -7552,7 +7589,10 @@ def _today_count(table: str, column: str = "created_at", where: str = "1=1") -> 
 
 
 @app.get("/api/companion/overview")
-async def companion_overview(user: dict = Depends(require_user)):
+async def companion_overview(
+    user: dict = Depends(require_user),
+    tenant_id: str | None = Depends(get_tenant_context),
+):
     team_count = _count_table("companion_team_members")
     active_team = storage.db.execute(
         "SELECT COUNT(*) AS c FROM companion_team_members WHERE active = 1"
@@ -7568,20 +7608,22 @@ async def companion_overview(user: dict = Depends(require_user)):
     outbound_today = _today_count("companion_messages", where="direction = 'outbound'")
     ai_today = _today_count("ai_usage_log")
     messages_today = _today_count("raw_messages", "timestamp")
-    waba_number = (
-        _companion_get_config_value("whatsapp_business_number", "WABA_PHONE_NUMBER")  # force deploy 021911
-        or _companion_get_config_value("whatsapp_business_number", "WABA_BUSINESS_NUMBER")
-    )
-    waba_phone_number_id = _companion_get_config_value("phone_number_id", "WABA_PHONE_NUMBER_ID")
-    waba_access_token = _companion_get_config_value("access_token", "WABA_ACCESS_TOKEN")
-    waba_verify_token = _companion_get_config_value("verify_token", "WABA_VERIFY_TOKEN")
+    is_super_admin = await asyncio.to_thread(storage.is_super_admin, user["id"])
+    if is_super_admin:
+        waba_values = _platform_waba_values()
+    else:
+        org_id = _resolve_active_organization_id(user, tenant_id)
+        waba_values = await _workspace_waba_values(org_id)
+    waba_number = str(waba_values.get("whatsapp_business_number") or "")
+    waba_phone_number_id = str(waba_values.get("phone_number_id") or "")
+    waba_access_token = str(waba_values.get("access_token") or "")
+    waba_verify_token = str(waba_values.get("verify_token") or "")
     waba_is_shared = _is_propai_shared_waba(waba_number)
-    is_super_admin = storage.is_super_admin(user["id"])
     outbound_allowed = bool(
         waba_number
         and waba_phone_number_id
         and waba_access_token
-        and (not waba_is_shared or is_super_admin)
+        and (is_super_admin or not waba_is_shared)
     )
     webhook_health = "ready" if waba_verify_token else "not_configured"
     token_status = "configured" if waba_access_token else "missing"
@@ -7624,57 +7666,154 @@ async def companion_overview(user: dict = Depends(require_user)):
     }
 
 
-@app.get("/api/companion/config")
-async def companion_config(user: dict = Depends(require_user)):
-    waba_number = (
-        _companion_get_config_value("whatsapp_business_number", "WABA_PHONE_NUMBER")  # force deploy 021911
-        or _companion_get_config_value("whatsapp_business_number", "WABA_BUSINESS_NUMBER")
-    )
-    phone_number_id = _companion_get_config_value("phone_number_id", "WABA_PHONE_NUMBER_ID")
-    access_token = _companion_get_config_value("access_token", "WABA_ACCESS_TOKEN")
-    verify_token = _companion_get_config_value("verify_token", "WABA_VERIFY_TOKEN")
-    waba_is_shared = _is_propai_shared_waba(waba_number)
-    is_super_admin = storage.is_super_admin(user["id"])
-    outbound_allowed = bool(
-        waba_number
-        and phone_number_id
-        and access_token
-        and (not waba_is_shared or is_super_admin)
-    )
+def _platform_waba_values() -> dict:
     return {
-        "whatsapp_business_number": waba_number,
-        "shared_waba_number": PROPAI_SHARED_WABA_NUMBER,
-        "waba_owner": "propai" if waba_is_shared else ("broker" if waba_number else "none"),
-        "outbound_allowed": outbound_allowed,
-        "phone_number_id": phone_number_id,
-        "has_access_token": bool(access_token),
-        "access_token_preview": _mask_secret(access_token),
-        "has_verify_token": bool(verify_token),
-        "verify_token_preview": _mask_secret(verify_token),
+        "whatsapp_business_number": (
+            _companion_get_config_value("whatsapp_business_number", "WABA_PHONE_NUMBER")
+            or _companion_get_config_value("whatsapp_business_number", "WABA_BUSINESS_NUMBER")
+        ),
+        "phone_number_id": _companion_get_config_value("phone_number_id", "WABA_PHONE_NUMBER_ID"),
+        "access_token": _companion_get_config_value("access_token", "WABA_ACCESS_TOKEN"),
+        "verify_token": _companion_get_config_value("verify_token", "WABA_VERIFY_TOKEN"),
     }
 
 
+def _waba_callback_url(org_id: str | None = None) -> str:
+    base = os.getenv("PUBLIC_API_URL", "https://api.propai.live").rstrip("/")
+    path = "/api/whatsapp/cloud/webhook"
+    return f"{base}{path}/{org_id}" if org_id else f"{base}{path}"
+
+
+async def _workspace_waba_values(org_id: str) -> dict:
+    getter = getattr(storage, "get_org_waba_connection", None)
+    if not getter:
+        return {}
+    try:
+        return await asyncio.to_thread(getter, org_id) or {}
+    except Exception as exc:
+        # During a rolling deploy the API may start before the migration lands.
+        print(f"[waba-config] workspace lookup failed org={org_id}: {exc}", flush=True)
+        return {}
+
+
+async def _companion_config_for(user: dict, tenant_id: str | None) -> dict:
+    is_super_admin = await asyncio.to_thread(storage.is_super_admin, user["id"])
+    if is_super_admin:
+        values = _platform_waba_values()
+        number = values["whatsapp_business_number"]
+        configured = bool(number and values["phone_number_id"] and values["access_token"])
+        return {
+            "is_super_admin": True,
+            "can_manage_platform": True,
+            "whatsapp_business_number": number,
+            "shared_waba_number": PROPAI_SHARED_WABA_NUMBER,
+            "waba_owner": "propai" if number else "none",
+            "outbound_allowed": configured,
+            "phone_number_id": values["phone_number_id"],
+            "has_access_token": bool(values["access_token"]),
+            "access_token_preview": _mask_secret(values["access_token"]),
+            "has_verify_token": bool(values["verify_token"]),
+            "verify_token_preview": _mask_secret(values["verify_token"]),
+            "webhook_callback_url": _waba_callback_url(),
+        }
+
+    org_id = _resolve_active_organization_id(user, tenant_id)
+    values = await _workspace_waba_values(org_id)
+    number = str(values.get("whatsapp_business_number") or "")
+    configured = bool(
+        values.get("is_active", True)
+        and number
+        and values.get("phone_number_id")
+        and values.get("access_token")
+    )
+    return {
+        "is_super_admin": False,
+        "can_manage_platform": False,
+        "whatsapp_business_number": number,
+        "shared_waba_number": PROPAI_SHARED_WABA_NUMBER,
+        "waba_owner": "broker" if number else "none",
+        "outbound_allowed": configured,
+        "phone_number_id": str(values.get("phone_number_id") or ""),
+        "has_access_token": bool(values.get("access_token")),
+        "access_token_preview": "",
+        "has_verify_token": bool(values.get("verify_token")),
+        "verify_token_preview": "",
+        "webhook_callback_url": _waba_callback_url(org_id),
+    }
+
+
+@app.get("/api/companion/config")
+async def companion_config(
+    user: dict = Depends(require_user),
+    tenant_id: str | None = Depends(get_tenant_context),
+):
+    return await _companion_config_for(user, tenant_id)
+
+
 @app.post("/api/companion/config")
-async def companion_save_config(req: CompanionConfigRequest, user: dict = Depends(require_user)):
-    if req.whatsapp_business_number.strip():
-        if (
-            _is_propai_shared_waba(req.whatsapp_business_number)
-            and not storage.is_super_admin(user["id"])
-        ):
-            raise HTTPException(403, "PropAI shared WABA is reserved for platform messages. Connect your own WABA for outbound messaging.")
-        _companion_set_config_value("whatsapp_business_number", req.whatsapp_business_number.strip())  # force deploy 021911
-    if req.phone_number_id.strip():
-        _companion_set_config_value("phone_number_id", req.phone_number_id.strip())
+async def companion_save_config(
+    req: CompanionConfigRequest,
+    user: dict = Depends(require_user),
+    tenant_id: str | None = Depends(get_tenant_context),
+):
+    is_super_admin = await asyncio.to_thread(storage.is_super_admin, user["id"])
+    org_id = None if is_super_admin else _resolve_active_organization_id(user, tenant_id)
+    if org_id:
+        await _require_org_permission(user, org_id, "manage_whatsapp")
 
-    if req.clear_access_token:
-        _companion_set_config_value("access_token", "")
-    elif req.access_token.strip():
-        _companion_set_config_value("access_token", req.access_token.strip())
+    requested_number = req.whatsapp_business_number.strip()
+    if requested_number and _is_propai_shared_waba(requested_number) and not is_super_admin:
+        raise HTTPException(
+            403,
+            "PropAI shared WABA is reserved for the assistant. Connect a number owned by your workspace.",
+        )
 
-    if req.clear_verify_token:
-        _companion_set_config_value("verify_token", "")
-    elif req.verify_token.strip():
-        _companion_set_config_value("verify_token", req.verify_token.strip())
+    if is_super_admin:
+        if requested_number:
+            _companion_set_config_value("whatsapp_business_number", requested_number)
+        if req.phone_number_id.strip():
+            _companion_set_config_value("phone_number_id", req.phone_number_id.strip())
+        if req.clear_access_token:
+            _companion_set_config_value("access_token", "")
+        elif req.access_token.strip():
+            _companion_set_config_value("access_token", req.access_token.strip())
+        if req.clear_verify_token:
+            _companion_set_config_value("verify_token", "")
+        elif req.verify_token.strip():
+            _companion_set_config_value("verify_token", req.verify_token.strip())
+    else:
+        current = await _workspace_waba_values(org_id)
+        values = {
+            "whatsapp_business_number": requested_number or current.get("whatsapp_business_number"),
+            "phone_number_id": req.phone_number_id.strip() or current.get("phone_number_id"),
+            "access_token": (
+                "" if req.clear_access_token else req.access_token.strip() or current.get("access_token")
+            ),
+            "verify_token": (
+                "" if req.clear_verify_token else req.verify_token.strip() or current.get("verify_token")
+            ),
+            "is_active": True,
+        }
+        missing = [
+            label
+            for key, label in (
+                ("whatsapp_business_number", "WhatsApp Business Number"),
+                ("phone_number_id", "Phone Number ID"),
+                ("access_token", "Access Token"),
+                ("verify_token", "Verify Token"),
+            )
+            if not values.get(key)
+        ]
+        if missing:
+            raise HTTPException(400, f"Missing: {', '.join(missing)}")
+        upsert = getattr(storage, "upsert_org_waba_connection", None)
+        if not upsert:
+            raise HTTPException(503, "Workspace WABA storage is not available")
+        try:
+            await asyncio.to_thread(upsert, org_id, values)
+        except Exception as exc:
+            print(f"[waba-config] workspace save failed org={org_id}: {exc}", flush=True)
+            raise HTTPException(503, "Could not save workspace WABA configuration") from exc
 
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     storage.db.execute(
@@ -7683,8 +7822,8 @@ async def companion_save_config(req: CompanionConfigRequest, user: dict = Depend
            VALUES (?,?,?,?,?,?)""",
         (
             "waba_config_updated",
-            "companion_config",
-            "waba",
+            "org_waba_connection" if org_id else "companion_config",
+            org_id or "platform",
             "logged",
             json.dumps({
                 "business_number_set": bool(req.whatsapp_business_number.strip()),
@@ -7695,7 +7834,7 @@ async def companion_save_config(req: CompanionConfigRequest, user: dict = Depend
             now,
         ),
     )
-    return await companion_config()
+    return await _companion_config_for(user, tenant_id)
 
 
 @app.get("/api/companion/webhook")
@@ -7709,9 +7848,9 @@ async def companion_webhook_verify(request: Request):
     raise HTTPException(403, "Webhook verify token does not match")
 
 
-async def _download_waba_media(media_id: str) -> dict | None:
+async def _download_waba_media(media_id: str, access_token: str = "") -> dict | None:
     """Download media from WhatsApp Business API. Returns {filename, filepath, mime_type} or None."""
-    access_token = _companion_get_config_value("access_token", "WABA_ACCESS_TOKEN")
+    access_token = access_token or _companion_get_config_value("access_token", "WABA_ACCESS_TOKEN")
     if not access_token:
         return None
     try:
@@ -7740,9 +7879,58 @@ async def _download_waba_media(media_id: str) -> dict | None:
         return None
 
 
-@app.post("/api/companion/webhook")
-async def companion_webhook_receive(request: Request):
-    body = await request.json()
+async def _resolve_waba_webhook_config(body: dict, org_id: str | None = None) -> tuple[dict, str | None]:
+    phone_number_id = ""
+    sender_phone = ""
+    for entry in body.get("entry", []) if isinstance(body, dict) else []:
+        for change in entry.get("changes", []):
+            value = change.get("value") or {}
+            metadata = value.get("metadata") or {}
+            phone_number_id = str(metadata.get("phone_number_id") or "").strip()
+            messages = value.get("messages") or []
+            if messages and not sender_phone:
+                sender_phone = re.sub(r"\D+", "", str(messages[0].get("from") or ""))
+            if phone_number_id:
+                break
+    if org_id:
+        values = await _workspace_waba_values(org_id)
+        if not values or str(values.get("phone_number_id") or "") != phone_number_id:
+            raise HTTPException(403, "Webhook phone number does not belong to this workspace")
+        return values, org_id
+    getter = getattr(storage, "get_org_waba_connection_by_phone_number_id", None)
+    if getter and phone_number_id:
+        try:
+            values = await asyncio.to_thread(getter, phone_number_id)
+            if values:
+                return values, str(values.get("organization_id") or "") or None
+        except Exception as exc:
+            print(f"[waba-webhook] workspace resolve failed: {exc}", flush=True)
+    # The shared PropAI number is an assistant entry point. Map the sender's
+    # verified profile back to their workspace so agent reads stay tenant-safe.
+    if sender_phone:
+        try:
+            profile = await asyncio.to_thread(storage.get_user_profile, sender_phone, "")
+            auth_user_id = str((profile or {}).get("auth_user_id") or "")
+            if auth_user_id:
+                orgs = await asyncio.to_thread(storage.get_user_organizations, auth_user_id)
+                active = next((row for row in orgs if row.get("id")), None)
+                if active:
+                    return _platform_waba_values(), str(active["id"])
+        except Exception as exc:
+            print(f"[waba-webhook] shared sender workspace resolve failed: {exc}", flush=True)
+    return _platform_waba_values(), None
+
+
+async def _process_companion_webhook(
+    body: dict,
+    org_id: str | None = None,
+    resolved_config: dict | None = None,
+):
+    waba_config, resolved_tenant_id = (
+        (resolved_config, org_id)
+        if resolved_config is not None
+        else await _resolve_waba_webhook_config(body, org_id)
+    )
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     processed = []
 
@@ -7781,7 +7969,9 @@ async def companion_webhook_receive(request: Request):
                         listing_data = storage.get_listing_by_pic_token(pic_token)
                         if listing_data:
                             if msg_type == "image" and media_id:
-                                dl = await _download_waba_media(media_id)
+                                dl = await _download_waba_media(
+                                    media_id, str(waba_config.get("access_token") or "")
+                                )
                                 if dl:
                                     contact = (value.get("contacts") or [{}])[0]
                                     sender_name = contact.get("profile", {}).get("name", "") if contact else ""
@@ -7815,11 +8005,12 @@ async def companion_webhook_receive(request: Request):
 
                     inserted = storage.db.execute(
                         """INSERT INTO raw_messages
-                           (group_name, sender, sender_jid, sender_phone, message, message_type,
+                           (tenant_id, group_name, sender, sender_jid, sender_phone, message, message_type,
                             source, timestamp, raw_payload, message_uid, synced_at, created_at)
-                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                            ON CONFLICT DO NOTHING""",
                         (
+                            resolved_tenant_id or DEFAULT_TENANT_ID,
                             sender_jid,
                             sender_name or msg_from,
                             sender_jid,
@@ -7852,6 +8043,8 @@ async def companion_webhook_receive(request: Request):
                             text=caption.strip(),
                             inbound_message_id=msg_id,
                             sender_name=sender_name or msg_from,
+                            waba_config=waba_config,
+                            tenant_id=resolved_tenant_id,
                         )
                     )
 
@@ -7892,6 +8085,11 @@ async def companion_webhook_receive(request: Request):
     return {"status": "received", "processed": processed}
 
 
+@app.post("/api/companion/webhook")
+async def companion_webhook_receive(request: Request):
+    return await _process_companion_webhook(await request.json())
+
+
 # ── WhatsApp Cloud API webhook aliases ────────────────────────────
 # Meta may be configured to hit /api/whatsapp/cloud/webhook; route to the same handlers.
 
@@ -7903,6 +8101,27 @@ async def whatsapp_cloud_webhook_verify(request: Request):
 @app.post("/api/whatsapp/cloud/webhook")
 async def whatsapp_cloud_webhook_receive(request: Request):
     return await companion_webhook_receive(request)
+
+
+@app.get("/api/whatsapp/cloud/webhook/{org_id}")
+async def whatsapp_workspace_cloud_webhook_verify(org_id: str, request: Request):
+    values = await _workspace_waba_values(org_id)
+    expected = str(values.get("verify_token") or "")
+    mode = request.query_params.get("hub.mode", "")
+    supplied = request.query_params.get("hub.verify_token", "")
+    challenge = request.query_params.get("hub.challenge", "")
+    if mode == "subscribe" and expected and hmac.compare_digest(supplied, expected):
+        return Response(content=challenge, media_type="text/plain")
+    raise HTTPException(403, "Webhook verify token does not match")
+
+
+@app.post("/api/whatsapp/cloud/webhook/{org_id}")
+async def whatsapp_workspace_cloud_webhook_receive(org_id: str, request: Request):
+    body = await request.json()
+    values, resolved_org_id = await _resolve_waba_webhook_config(body, org_id)
+    return await _process_companion_webhook(
+        body, org_id=resolved_org_id, resolved_config=values
+    )
 
 
 # ── WABA 24h Session Tracking ────────────────────────────────────
@@ -7986,12 +8205,18 @@ def _waba_session_status(chat_id: str) -> dict:
 
 # ── WABA Outbound Messaging ───────────────────────────────────────
 
-async def _waba_send_message(to: str, text: str, msg_type: str = "text") -> dict:
+async def _waba_send_message(
+    to: str,
+    text: str,
+    msg_type: str = "text",
+    waba_config: dict | None = None,
+) -> dict:
     """Send a message via WhatsApp Business API Graph endpoint.
     `to` should be a phone number in format 919876543210 (no + or spaces).
     Returns {success, message_id, error}."""
-    phone_number_id = _companion_get_config_value("phone_number_id", "WABA_PHONE_NUMBER_ID")
-    access_token = _companion_get_config_value("access_token", "WABA_ACCESS_TOKEN")
+    values = waba_config or _platform_waba_values()
+    phone_number_id = str(values.get("phone_number_id") or "")
+    access_token = str(values.get("access_token") or "")
     if not phone_number_id or not access_token:
         return {"success": False, "error": "WABA not configured (phone_number_id or access_token missing)"}
 
@@ -8037,12 +8262,16 @@ async def _handle_waba_agent_reply(
     text: str,
     inbound_message_id: str,
     sender_name: str = "",
+    waba_config: dict | None = None,
+    tenant_id: str | None = None,
 ) -> None:
     """Run the workspace agent for one WABA message and send one reply."""
     try:
+        previous_tenant = get_tenant_id()
+        set_tenant_id(tenant_id or DEFAULT_TENANT_ID)
         response = await _run_workspace_agent(
             [{"role": "user", "content": text[:1800]}],
-            session_id=f"waba:{to}",
+            session_id=f"waba:{tenant_id or DEFAULT_TENANT_ID}:{to}",
         )
         if isinstance(response, dict) and response.get("error"):
             raise RuntimeError(response.get("message") or response["error"])
@@ -8051,7 +8280,7 @@ async def _handle_waba_agent_reply(
         if not reply:
             raise RuntimeError("agent returned an empty reply")
 
-        result = await _waba_send_message(to, reply)
+        result = await _waba_send_message(to, reply, waba_config=waba_config)
         if not result.get("success"):
             raise RuntimeError(result.get("error") or "WABA send failed")
 
@@ -8060,10 +8289,11 @@ async def _handle_waba_agent_reply(
         sender_jid = f"{digits}@s.whatsapp.net"
         storage.db.execute(
             """INSERT INTO raw_messages
-               (group_name, sender, sender_jid, sender_phone, message, message_type,
+               (tenant_id, group_name, sender, sender_jid, sender_phone, message, message_type,
                 source, timestamp, raw_payload, message_uid, delivery_status, synced_at, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
+                tenant_id or DEFAULT_TENANT_ID,
                 sender_jid,
                 "PropAI Agent",
                 sender_jid,
@@ -8092,6 +8322,9 @@ async def _handle_waba_agent_reply(
             f"[waba-agent] reply failed inbound_message_id={inbound_message_id}: {exc}",
             flush=True,
         )
+    finally:
+        if 'previous_tenant' in locals():
+            set_tenant_id(previous_tenant)
 
 
 class WabaSendRequest(BaseModel):
@@ -8101,7 +8334,11 @@ class WabaSendRequest(BaseModel):
 
 
 @app.post("/api/waba/send")
-async def waba_send_message(req: WabaSendRequest, user: dict = Depends(require_user)):
+async def waba_send_message(
+    req: WabaSendRequest,
+    user: dict = Depends(require_user),
+    tenant_id: str | None = Depends(get_tenant_context),
+):
     text = req.text.strip()
     if not text:
         raise HTTPException(400, "text is required")
@@ -8125,7 +8362,17 @@ async def waba_send_message(req: WabaSendRequest, user: dict = Depends(require_u
             },
         )
 
-    result = await _waba_send_message(req.to, text)
+    is_super_admin = await asyncio.to_thread(storage.is_super_admin, user["id"])
+    org_id = _resolve_active_organization_id(user, tenant_id)
+    if not is_super_admin:
+        await _require_org_permission(user, org_id, "reply_whatsapp")
+        waba_config = await _workspace_waba_values(org_id)
+        if not waba_config:
+            raise HTTPException(409, "Connect your workspace WABA before sending")
+    else:
+        waba_config = _platform_waba_values()
+
+    result = await _waba_send_message(req.to, text, waba_config=waba_config)
 
     # Store outbound message in raw_messages so it appears in inbox
     try:
@@ -8137,10 +8384,11 @@ async def waba_send_message(req: WabaSendRequest, user: dict = Depends(require_u
 
         storage.db.execute(
             """INSERT INTO raw_messages
-               (group_name, sender, sender_jid, sender_phone, message, message_type,
+               (tenant_id, group_name, sender, sender_jid, sender_phone, message, message_type,
                 source, timestamp, raw_payload, message_uid, delivery_status, synced_at, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
+                org_id,
                 req.remote_jid or sender_jid,
                 "You",
                 sender_jid,

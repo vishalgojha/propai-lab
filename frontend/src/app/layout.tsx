@@ -304,8 +304,10 @@ function AppShell({ children }: { children: React.ReactNode }) {
       try {
         const cachedPhones = JSON.parse(localStorage.getItem(phoneCacheKey) || "[]") as Phone[];
         if (cachedPhones.length > 0) setPhones(cachedPhones);
-        const cachedWaba = JSON.parse(localStorage.getItem(wabaCacheKey) || "null") as CompanionConfig | null;
-        if (cachedWaba?.outbound_allowed) setWabaConfig(cachedWaba);
+        // WABA responses may contain admin-only previews. Never retain them in
+        // browser storage across users, role changes, or workspace switches.
+        localStorage.removeItem(wabaCacheKey);
+        setWabaConfig(null);
       } catch {
         // Ignore invalid snapshots and continue with live status checks.
       }
@@ -324,7 +326,6 @@ function AppShell({ children }: { children: React.ReactNode }) {
     };
     void getCompanionConfig(15000).then((config) => {
       setWabaConfig(config);
-      if (config.outbound_allowed) localStorage.setItem(wabaCacheKey, JSON.stringify(config));
     }).catch(() => {});
     load();
     const t = setInterval(load, 30000);
@@ -589,10 +590,10 @@ function AppShell({ children }: { children: React.ReactNode }) {
                 {waPhone}
               </a>
             )}
-            {wabaConfig?.outbound_allowed && (
-              <a href="/waba" className="flex shrink-0 items-center gap-1 text-[10px] font-semibold text-[#3EE88A] transition-colors hover:text-[#74f0a5] lg:text-[11px]" title="PropAI Official WABA — Connected">
+            {(wabaConfig?.outbound_allowed || wabaConfig?.shared_waba_number) && (
+              <a href="/waba" className="flex shrink-0 items-center gap-1 text-[10px] font-semibold text-[#3EE88A] transition-colors hover:text-[#74f0a5] lg:text-[11px]" title={wabaConfig?.outbound_allowed ? "Workspace WABA connected" : "Message the PropAI assistant on WhatsApp"}>
                 <span className="h-1.5 w-1.5 rounded-full bg-[#3EE88A] lg:h-2 lg:w-2" />
-                <span>WABA Connected</span>
+                <span>{wabaConfig?.outbound_allowed ? "WABA Connected" : "PropAI WABA"}</span>
               </a>
             )}
           </div>
