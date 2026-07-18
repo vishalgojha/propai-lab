@@ -10,6 +10,8 @@ import Link from "next/link";
 import HomeSearch from "@/components/HomeSearch";
 import SiteHeader from "@/components/SiteHeader";
 import SiteFooter from "@/components/SiteFooter";
+import { ShortlistProvider } from "@/components/ShortlistProvider";
+import ShortlistBar from "@/components/ShortlistBar";
 import { getAllLocalities } from "@/lib/localities";
 import { getPublicDataOverview } from "@/lib/public-data";
 
@@ -52,6 +54,7 @@ export default async function WWWPage() {
       <SiteHeader />
 
       <main id="main-content">
+       <ShortlistProvider>
         <section className="relative pt-16 lg:pt-24 pb-16 lg:pb-24 overflow-hidden">
           <div className="max-w-[1600px] mx-auto px-4 lg:px-6">
             <div className="text-center max-w-5xl mx-auto mb-10 lg:mb-16">
@@ -317,6 +320,8 @@ export default async function WWWPage() {
             </div>
           </div>
         </section>
+       <ShortlistBar />
+       </ShortlistProvider>
       </main>
 
       <SiteFooter />

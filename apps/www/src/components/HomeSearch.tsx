@@ -7,6 +7,7 @@ import ListingTile from "@/components/ListingTile";
 import { ArrowRight } from "lucide-react";
 import type { LocalitySummary } from "@/lib/localities";
 import type { ListingCardViewModel } from "@/lib/listing-card";
+import { useAnalytics } from "@/lib/useAnalytics";
 
 type ResultItem = {
   card: ListingCardViewModel;
@@ -32,6 +33,7 @@ export default function HomeSearch({
 }) {
   const [asset, setAsset] = useState("");
   const [results, setResults] = useState<ResultItem[] | null>(null);
+  const { track } = useAnalytics();
   const [summary, setSummary] = useState("");
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
@@ -55,6 +57,7 @@ export default function HomeSearch({
       setLocality(data.locality && data.localitySlug ? { name: data.locality, slug: data.localitySlug } : null);
       setLocalityUnmatched(data.localityUnmatched);
       setLocalitySuggestions(data.localitySuggestions);
+      track("search", { query: data.query, asset: data.asset ?? next.asset });
     } catch {
       setResults([]);
     } finally {
