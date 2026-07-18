@@ -7,7 +7,7 @@ export const revalidate = 300;
 
 import { MapPin, ArrowRight, MessageSquare, Phone, Shield } from "lucide-react";
 import Link from "next/link";
-import LocalitySearch from "@/components/LocalitySearch";
+import SearchBox from "@/components/SearchBox";
 import SiteHeader from "@/components/SiteHeader";
 import SiteFooter from "@/components/SiteFooter";
 import { getAllLocalities } from "@/lib/localities";
@@ -62,7 +62,7 @@ export default async function WWWPage() {
               <p className="text-lg text-zinc-400 mb-8 max-w-2xl mx-auto">
                 PropAI reads WhatsApp broker groups so you get real, fresh residential and commercial listings — and a direct line to the broker.
               </p>
-              <LocalitySearch knownLocalities={known} />
+              <SearchBox query="" asset="" localities={known} />
               <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
                 <Link
                   href="/localities"

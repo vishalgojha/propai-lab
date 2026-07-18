@@ -64,27 +64,34 @@ export default function SearchBox({
   }
 
   function onKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
-    // Only intercept navigation keys when the dropdown is actually open.
-    // Otherwise let the keys through (arrow keys / space scroll the page,
-    // Enter submits the form) so keyboard scrolling isn't blocked.
-    if (!open) return;
+    // Arrow/escape navigation only matters while the dropdown is open.
+    if (open) {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setActive((i) => Math.min(i + 1, suggestions.length - 1));
+        return;
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setActive((i) => Math.max(i - 1, 0));
+        return;
+      } else if (e.key === "Escape") {
+        setOpen(false);
+        return;
+      }
+    }
 
-    if (e.key === "ArrowDown") {
-      e.preventDefault();
-      setActive((i) => Math.min(i + 1, suggestions.length - 1));
-    } else if (e.key === "ArrowUp") {
-      e.preventDefault();
-      setActive((i) => Math.max(i - 1, 0));
-    } else if (e.key === "Enter") {
-      // Enter on a highlighted suggestion -> go to that locality page.
+    // Enter always submits the search (highlighted suggestion jumps to its
+    // locality page; otherwise run the natural-language search). This keeps
+    // the button + Enter keyboard-accessible regardless of dropdown state.
+    if (e.key === "Enter") {
       if (open && active >= 0 && suggestions[active]) {
         e.preventDefault();
         router.push(`/localities/${suggestions[active].slug}`);
         setOpen(false);
+      } else {
+        e.preventDefault();
+        submitSearch();
       }
-      // Otherwise let the form submit the natural-language search.
-    } else if (e.key === "Escape") {
-      setOpen(false);
     }
   }
 
