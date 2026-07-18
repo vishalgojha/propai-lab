@@ -174,7 +174,6 @@ type LocalityCopy = {
   buildings: Array<{ name: string }>;
   saleCount: number;
   rentCount: number;
-  priceRangeLabel: string | null;
   topBhk: string | null;
 };
 
@@ -190,8 +189,7 @@ export function buildLocalityDescription(data: LocalityCopy): string {
   if (data.rentCount > 0) configs.push(`${data.rentCount} for rent`);
   if (configs.length) parts.push(`(${configs.join(", ")})`);
   parts.push(`across ${data.buildings.length} building${data.buildings.length === 1 ? "" : "s"}`);
-  if (data.priceRangeLabel) parts.push(`with prices typically ranging ${data.priceRangeLabel}`);
-  if (data.topBhk) parts.push(`and ${data.topBhk} homes most common`);
+  if (data.topBhk) parts.push(`with ${data.topBhk} homes most common`);
   parts.push(".");
   return parts.join(" ");
 }
