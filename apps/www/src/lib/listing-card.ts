@@ -25,7 +25,7 @@ export type ListingCardFields = {
 // Structured spec entries so callers can render an icon per spec (bed count,
 // area, furnishing, floor...) instead of one flat "3 BHK · 850 sqft" string.
 export type ListingSpecItem = {
-  kind: "bhk" | "area" | "furnishing" | "floor" | "view";
+  kind: "bhk" | "area" | "furnishing" | "floor" | "view" | "type";
   label: string;
 };
 
@@ -136,11 +136,27 @@ function buildTitle(row: ListingCardFields): string {
   if (row.title && row.title.trim()) {
     return row.title.trim();
   }
-  if (row.building_name && row.building_name.trim()) {
-    return row.building_name.trim();
+  const ptype = (row.property_type || "").trim();
+  const isCommercial = (row.asset_type || "").trim().toLowerCase() === "commercial";
+  const building = row.building_name && row.building_name.trim();
+  const locality = row.micro_market && row.micro_market.trim();
+
+  // For commercial listings the property type (Office / Shop / Showroom /
+  // Warehouse / Plot ...) is the most meaningful descriptor — lead with it so
+  // the card immediately says what it is, instead of a garbled building_name.
+  if (isCommercial && ptype && /[a-z]/i.test(ptype)) {
+    const cap = ptype.charAt(0).toUpperCase() + ptype.slice(1);
+    if (building && !/^(sq\.?\s*ft|multiple options|carpet|na\b)/i.test(building)) {
+      return `${cap} — ${building}`;
+    }
+    if (locality) return `${cap} in ${locality}`;
+    return cap;
+  }
+
+  if (building) {
+    return building;
   }
   const bhk = (row.bhk || "").trim();
-  const locality = row.micro_market && row.micro_market.trim();
   if (bhk && locality) return `${bhk} — ${locality}`;
   if (bhk) return bhk;
   if (locality) return locality;
@@ -150,6 +166,11 @@ function buildTitle(row: ListingCardFields): string {
 
 function buildSpecItems(row: ListingCardFields): ListingSpecItem[] {
   const items: ListingSpecItem[] = [];
+  const ptype = (row.property_type || "").trim();
+  if (ptype && /[a-z]/i.test(ptype)) {
+    const cap = ptype.charAt(0).toUpperCase() + ptype.slice(1);
+    items.push({ kind: "type", label: cap });
+  }
   if (row.bhk && row.bhk.trim()) {
     items.push({ kind: "bhk", label: row.bhk.trim() });
   }
