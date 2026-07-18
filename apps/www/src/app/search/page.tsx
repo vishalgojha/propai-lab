@@ -181,10 +181,10 @@ export default async function SearchPage({ searchParams }: { searchParams: Searc
                       <ArrowRight className="h-4 w-4 text-zinc-500" aria-hidden="true" />
                     </Link>
                     <Link
-                      href="/buildings"
+                      href="/localities"
                       className="inline-flex items-center justify-between rounded-2xl border border-white/10 bg-zinc-900/80 px-4 py-3 text-sm text-zinc-200 hover:border-green-400/40 transition-colors"
                       >
-                      Browse buildings
+                      Browse localities
                       <ArrowRight className="h-4 w-4 text-zinc-500" aria-hidden="true" />
                     </Link>
                   </div>

@@ -4,7 +4,6 @@ const FOOTER_LINKS = {
   browse: [
     { label: "Search listings", href: "/search" },
     { label: "All localities", href: "/localities" },
-    { label: "All buildings", href: "/buildings" },
   ],
   support: [
     { label: "How it works", href: "/about#how-it-works" },
@@ -15,7 +14,6 @@ const FOOTER_LINKS = {
     { label: "About PropAI", href: "/about" },
     { label: "Contact", href: "/contact" },
     { label: "Localities", href: "/localities" },
-    { label: "Buildings", href: "/buildings" },
   ],
 };
 

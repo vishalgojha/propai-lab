@@ -67,10 +67,10 @@ export default async function BuildingPage({ params }: Params) {
         <main className="max-w-[1600px] mx-auto px-4 lg:px-6 py-10 lg:py-14">
         <div className="mb-8">
           <Link
-            href="/buildings"
+            href="/localities"
             className="inline-flex items-center gap-2 text-sm text-zinc-400 hover:text-white transition-colors"
           >
-            <span aria-hidden="true">←</span> All buildings
+            <span aria-hidden="true">←</span> All localities
           </Link>
         </div>
 

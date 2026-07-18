@@ -168,7 +168,7 @@ export default async function WWWPage() {
                     <h3 className="text-lg font-semibold text-white">Top buildings</h3>
                     <p className="text-sm text-zinc-500">By live listing count</p>
                   </div>
-                  <Link href="/buildings" className="text-sm text-zinc-400 hover:text-white transition-colors">
+                  <Link href="/localities" className="text-sm text-zinc-400 hover:text-white transition-colors">
                     View all
                   </Link>
                 </div>

@@ -60,10 +60,10 @@ export default async function LocalitiesIndexPage() {
 
         <div className="text-center mt-12">
           <Link
-            href="/buildings"
+            href="/search"
             className="inline-flex items-center gap-2 px-6 py-3 bg-green-400 text-black text-sm font-semibold rounded-lg hover:bg-green-300 transition-colors"
           >
-            Browse buildings
+            Search listings
             <ArrowRight className="w-4 h-4" aria-hidden="true" />
           </Link>
         </div>
