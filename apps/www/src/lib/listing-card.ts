@@ -102,13 +102,17 @@ export function formatCardPrice(
   const grouped = (n: number) => Math.round(n).toLocaleString("en-IN");
 
   if (perMonth) {
-    // Rentals are per month. "cr" is absolute-stored (divide to crore-scale
-    // then to rupees); "k" is usually absolute rupees already, but a small "k"
-    // value (e.g. 85) means thousands -> 85,000. "lac" is lakh-scale.
+    // Rentals are quoted per month. Stored numbers use the natural unit:
+    // "cr" = crores/month, "lac" = lakhs/month, "k" = thousands/month,
+    // "abs" = absolute rupees/month. Multiply up to rupees.
     let abs = price;
-    if (unit === "cr") abs = price > 1000 ? price / 1_00_00_000 : price;
+    if (unit === "cr") abs = price * 1_00_00_000;
     else if (unit === "lac") abs = price * 1_00_000;
-    else if (unit === "k") abs = price > 1000 ? price : price * 1_000;
+    else if (unit === "k") abs = price * 1_000;
+    // Guard against implausible monthly rents (e.g. mis-stored "abs" values
+    // like 12 or 185 rupees). Anything under ₹1,000/month is not a real Mumbai
+    // rent — fall back rather than show a clearly-wrong number.
+    if (abs < 1000) return "Price on request";
     return `₹${grouped(abs)}/month`;
   }
 
@@ -209,6 +213,16 @@ export function waLinkFor(listingId: number | null): string | null {
   return `/api/contact-broker/${listingId}`;
 }
 
+// Strips decorative emoji / pictographs from display strings (broker names
+// pulled from WhatsApp display names often contain ✨ ⚔️ 🕉️ etc.). Display-only
+// cleanup — stored data is untouched.
+const EMOJI_RE =
+  /[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2190}-\u{21FF}\u{2B00}-\u{2BFF}\u{FE00}-\u{FE0F}\u{1F1E6}-\u{1F1FF}\u{1F3FB}-\u{1F3FF}\u200d]/gu;
+export function stripEmoji(value: string | null): string | null {
+  if (!value) return value;
+  return value.replace(EMOJI_RE, "").replace(/\s{2,}/g, " ").trim() || null;
+}
+
 // Broker names are sometimes stored as raw phone numbers (e.g. "+91 9920993025"
 // or "9930079206"). Never surface those in the public card DOM — mask them so
 // the number is not crawlable / exposed (DPDP Act 2023). The real contact path
@@ -216,7 +230,9 @@ export function waLinkFor(listingId: number | null): string | null {
 const PHONEISH = /[0-9]/;
 export function safeBrokerName(raw: string | null): string | null {
   if (!raw || !raw.trim()) return null;
-  const v = raw.trim();
+  const cleaned = stripEmoji(raw);
+  if (!cleaned) return null;
+  const v = cleaned.trim();
   // If it's mostly digits / a phone-shaped string, don't show it.
   const digitRatio = (v.match(/[0-9]/g) || []).length / Math.max(v.replace(/\s/g, "").length, 1);
   if (digitRatio > 0.5 || /^\+?\d[\d\s().-]{6,}$/.test(v)) return null;

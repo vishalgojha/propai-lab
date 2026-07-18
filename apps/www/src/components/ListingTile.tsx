@@ -52,14 +52,14 @@ export default function ListingTile({
         />
       )}
 
-      <div className="flex flex-1 flex-col p-5 min-h-[300px]">
+      <div className="flex flex-1 flex-col p-6 min-h-[330px]">
         {/* Top row: badges (no image placeholder — that space is reused below) */}
-        <div className="mb-3 flex flex-wrap items-center gap-2">
-          <span className="rounded-md bg-white/5 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-zinc-400">
+        <div className="mb-4 flex flex-wrap items-center gap-2.5">
+          <span className="rounded-md bg-white/5 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-400">
             {dealType}
           </span>
           {card.assetTypeLabel && (
-            <span className="inline-flex items-center gap-1.5 rounded-md bg-green-400/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-green-300">
+            <span className="inline-flex items-center gap-1.5 rounded-md bg-green-400/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-green-300">
               <KindIcon kind={card.assetTypeLabel} className="h-3 w-3" />
               {card.assetTypeLabel}
             </span>
@@ -80,25 +80,25 @@ export default function ListingTile({
         </h3>
 
         {card.locality && (
-          <p className="mt-1 inline-flex items-center gap-1 truncate text-sm text-zinc-400">
+          <p className="mt-2 inline-flex items-center gap-1.5 truncate text-sm text-zinc-400">
             <MapPin className="h-3.5 w-3.5 shrink-0 text-green-400" aria-hidden="true" />
             {card.locality}
           </p>
         )}
 
-        <div className="mt-3">
+        <div className="mt-4">
           <span className="text-xl font-semibold text-white">{card.priceLabel}</span>
         </div>
 
         {card.specItems.length > 0 && (
-          <div className="mt-4 flex flex-wrap gap-2">
+          <div className="mt-5 flex flex-wrap gap-2.5">
             {card.specItems.map((s, i) => (
               <SpecChip key={i} item={s} />
             ))}
           </div>
         )}
 
-        <div className="mt-auto flex items-center justify-between gap-3 pt-5">
+        <div className="mt-auto flex items-center justify-between gap-3 pt-6">
           <span className="inline-flex items-center gap-1.5 truncate text-sm text-zinc-400">
             {card.brokerName && (
               <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-green-400" aria-hidden="true" />
@@ -109,13 +109,13 @@ export default function ListingTile({
             <a
               href={card.waLink}
               onClick={(e) => e.stopPropagation()}
-              className="relative z-10 inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-green-400 px-3 py-2 text-xs font-semibold text-black transition-colors hover:bg-green-300"
+              className="relative z-10 inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-green-400 px-4 py-2.5 text-xs font-semibold text-black transition-colors hover:bg-green-300"
             >
               <MessageSquare className="h-3.5 w-3.5" aria-hidden="true" />
               Contact
             </a>
           ) : (
-            <span className="inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-zinc-700 px-3 py-2 text-xs font-semibold text-zinc-300">
+            <span className="inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-zinc-700 px-4 py-2.5 text-xs font-semibold text-zinc-300">
               <MessageSquare className="h-3.5 w-3.5" aria-hidden="true" />
               Contact
             </span>
