@@ -20,3 +20,10 @@ export function getSupabaseAdmin(): SupabaseClient {
   });
   return client;
 }
+
+// Backward-compatible accessor: `supabaseAdmin.from(...)` etc. still work, but
+// the underlying client is only created on first use (avoids build-time throws).
+export const supabaseAdmin: SupabaseClient = new Proxy(
+  {} as SupabaseClient,
+  { get: (_t, prop) => getSupabaseAdmin()[prop as keyof SupabaseClient] },
+);
