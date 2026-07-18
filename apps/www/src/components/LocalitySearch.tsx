@@ -196,11 +196,8 @@ export default function LocalitySearch({ knownLocalities }: Props) {
             </>
           ) : (
             <p>
-              We couldn&apos;t load the locality list right now.{" "}
-              <Link href="/localities" className="text-green-400 hover:underline">
-                Browse all localities
-              </Link>{" "}
-              instead.
+              We couldn&apos;t load the locality list right now. Please try searching
+              directly above.
             </p>
           )}
         </div>

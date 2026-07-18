@@ -4,7 +4,6 @@ import { useState } from "react";
 import Link from "next/link";
 import SearchBox from "@/components/SearchBox";
 import ListingTile from "@/components/ListingTile";
-import { ArrowRight } from "lucide-react";
 import type { LocalitySummary } from "@/lib/localities";
 import type { ListingCardViewModel } from "@/lib/listing-card";
 import { useAnalytics } from "@/lib/useAnalytics";
@@ -143,15 +142,6 @@ export default function HomeSearch({
             <div className="rounded-2xl border border-white/10 bg-zinc-950/80 p-6 text-sm text-zinc-400">
               No live listings matched yet. We&apos;ll keep this request on file and
               follow up when matching inventory appears.
-              <div className="mt-4">
-                <Link
-                  href="/localities"
-                  className="inline-flex items-center justify-between rounded-2xl border border-white/10 bg-zinc-900/80 px-4 py-3 text-sm text-zinc-200 hover:border-green-400/40 transition-colors"
-                >
-                  Browse all localities
-                  <ArrowRight className="h-4 w-4 text-zinc-500" aria-hidden="true" />
-                </Link>
-              </div>
             </div>
           )}
         </section>
