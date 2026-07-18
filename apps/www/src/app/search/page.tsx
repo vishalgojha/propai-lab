@@ -40,6 +40,9 @@ export default async function SearchPage({ searchParams }: { searchParams: Searc
   const state = query ? await searchNaturalLanguageListings(query, 24, asset) : null;
   const knownLocalities = await getAllLocalities();
   const summary = state?.parsed ? describeNaturalSearch(state.parsed) : "";
+  // Results render whenever a search/browse produced a state — including an
+  // asset-only browse like /search?asset=commercial (no free-text query).
+  const hasResults = Boolean(state);
 
    return (
     <div className="min-h-screen bg-black text-white">
@@ -81,11 +84,15 @@ export default async function SearchPage({ searchParams }: { searchParams: Searc
           )}
         </header>
 
-        {query ? (
+        {hasResults ? (
           <section className="mt-10 space-y-6">
             <div className="flex flex-wrap items-center gap-2 text-sm">
-              <span className="text-zinc-500">Searching for:</span>
-              <span className="rounded-full border border-white/10 bg-zinc-900 px-3 py-1 text-zinc-200">{query}</span>
+              {query && (
+                <>
+                  <span className="text-zinc-500">Searching for:</span>
+                  <span className="rounded-full border border-white/10 bg-zinc-900 px-3 py-1 text-zinc-200">{query}</span>
+                </>
+              )}
               {summary && (
                 <span className="rounded-full border border-green-400/20 bg-green-400/10 px-3 py-1 text-green-200">
                   {summary}
@@ -95,6 +102,9 @@ export default async function SearchPage({ searchParams }: { searchParams: Searc
                 <span className="rounded-full border border-green-400/20 bg-green-400/10 px-3 py-1 text-green-200 capitalize">
                   {asset}
                 </span>
+              )}
+              {!query && asset && (
+                <span className="text-zinc-500">Showing {asset} listings</span>
               )}
             </div>
 
