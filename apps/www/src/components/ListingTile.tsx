@@ -96,7 +96,7 @@ export default function ListingTile({
         </button>
       )}
 
-      <div className="flex flex-1 flex-col p-6 min-h-[330px] text-left">
+      <div className="flex flex-1 flex-col p-7 min-h-[360px] items-start text-left">
         {/* Top row: badges (no image placeholder — that space is reused below) */}
         <div className="mb-4 flex flex-wrap items-center gap-2.5">
           <span className="rounded-md bg-white/5 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-400">
@@ -119,24 +119,24 @@ export default function ListingTile({
           </span>
         </div>
 
-        <h3 className="truncate text-lg font-semibold text-white transition-colors group-hover:text-green-300">
+        <h3 className="truncate text-xl font-semibold text-white transition-colors group-hover:text-green-300">
           {card.title}
         </h3>
 
         {card.locality && (
-          <p className="mt-2 inline-flex items-center gap-1.5 truncate text-sm text-zinc-400">
+          <p className="mt-2 inline-flex items-center gap-1.5 truncate text-sm text-zinc-400 text-left">
             <MapPin className="h-3.5 w-3.5 shrink-0 text-green-400" aria-hidden="true" />
             {card.locality}
           </p>
         )}
 
-        <p className="mt-2 inline-flex items-center gap-1.5 text-xs text-zinc-500">
+        <p className="mt-2 inline-flex items-center gap-1.5 text-xs text-zinc-500 text-left">
           <Clock className="h-3.5 w-3.5 shrink-0 text-green-400" aria-hidden="true" />
           {card.freshnessLabel}
         </p>
 
         <div className="mt-4">
-          <span className="text-xl font-semibold text-white">{card.priceLabel}</span>
+          <span className="text-2xl font-semibold text-white">{card.priceLabel}</span>
         </div>
 
         {card.specItems.length > 0 && (
@@ -157,6 +157,8 @@ export default function ListingTile({
           {card.waLink ? (
             <a
               href={card.waLink}
+              target="_blank"
+              rel="noopener noreferrer"
               onClick={(e) => {
                 e.stopPropagation();
                 track("contact_click", { listingId });
