@@ -234,7 +234,7 @@ function matchesLiveStatus(phone: Phone, status: WhatsAppStatus | null) {
   return candidateDigits.includes(liveDigits);
 }
 
-function CreatePhoneDialog({ open, onClose, onCreated }: { open: boolean; onClose: () => void; onCreated: () => Promise<void> | void }) {
+function CreatePhoneDialog({ open, onClose, onCreated }: { open: boolean; onClose: () => void; onCreated: (phone: Phone) => void }) {
   const [instanceName, setInstanceName] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -243,9 +243,9 @@ function CreatePhoneDialog({ open, onClose, onCreated }: { open: boolean; onClos
     setLoading(true);
     setError(null);
     try {
-      await createPhone({ instance_name: instanceName.trim() || undefined });
+      const phone = await createPhone({ instance_name: instanceName.trim() || undefined });
       setInstanceName("");
-      await onCreated();
+      onCreated(phone);
       onClose();
     } catch (e: any) {
       setError(e?.message || "Failed to create phone");
@@ -854,6 +854,23 @@ export default function ConnectionCenterPage() {
     void fetchLiveStatus();
   }, [fetchPhones, fetchLiveStatus]);
 
+  const handlePhoneCreated = useCallback((created: Phone) => {
+    setPhones((current) => {
+      const next = current.some((phone) => phone.id === created.id)
+        ? current.map((phone) => (phone.id === created.id ? { ...phone, ...created } : phone))
+        : [...current, created];
+      if (user?.id) {
+        localStorage.setItem(`propai_phones:${user.id}`, JSON.stringify(next));
+      }
+      return next;
+    });
+    setPhonesLoading(false);
+    setPhonesError(null);
+    // Creation already succeeded. Refresh live status in the background so a
+    // slow status endpoint cannot turn success into a misleading 500 error.
+    refreshData();
+  }, [refreshData, user?.id]);
+
   const handleConnect = useCallback(async (phone: Phone): Promise<void> => {
     updateAttemptState(phone.id, (current) => ({
       attempts: current.attempts + 1,
@@ -1045,7 +1062,7 @@ export default function ConnectionCenterPage() {
         </>
       )}
 
-      <CreatePhoneDialog open={showCreate} onClose={() => setShowCreate(false)} onCreated={refreshData} />
+      <CreatePhoneDialog open={showCreate} onClose={() => setShowCreate(false)} onCreated={handlePhoneCreated} />
       {qrPhone && (
         <QRModal
           phone={qrPhone}
