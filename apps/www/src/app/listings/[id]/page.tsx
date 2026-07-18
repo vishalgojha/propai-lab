@@ -1,14 +1,46 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { MapPin, MessageSquare, ShieldCheck, Clock } from "lucide-react";
+import {
+  MapPin,
+  MessageSquare,
+  ShieldCheck,
+  Clock,
+  BedDouble,
+  Ruler,
+  Sofa,
+  Building2,
+  Eye,
+  Home,
+  Building,
+  Flag,
+  Target,
+  Phone,
+  ArrowLeft,
+  ChevronRight,
+} from "lucide-react";
 import { getListingById } from "@/lib/localities";
-import { toListingCardViewModel, type ListingCardFields } from "@/lib/listing-card";
+import { toListingCardViewModel, type ListingCardFields, type ListingSpecItem } from "@/lib/listing-card";
 import SiteHeader from "@/components/SiteHeader";
 import SiteFooter from "@/components/SiteFooter";
 import ListingSpecs from "@/components/ListingSpecs";
 
 type Params = { params: Promise<{ id: string }> };
+
+const SPEC_ICONS: Record<ListingSpecItem["kind"], typeof BedDouble> = {
+  bhk: BedDouble,
+  area: Ruler,
+  furnishing: Sofa,
+  floor: Building2,
+  view: Eye,
+};
+
+const KindIcon = ({ kind, className }: { kind: string | null; className?: string }) =>
+  kind === "Commercial" ? (
+    <Building className={className} strokeWidth={1.75} aria-hidden="true" />
+  ) : (
+    <Home className={className} strokeWidth={1.75} aria-hidden="true" />
+  );
 
 function toCardFields(row: NonNullable<Awaited<ReturnType<typeof getListingById>>>): ListingCardFields {
   return {
@@ -55,112 +87,206 @@ export default async function ListingPage({ params }: Params) {
   if (!listing) notFound();
 
   const card = toListingCardViewModel(toCardFields(listing), false);
+  const brokerInitials = (card.brokerName || "PR")
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((w) => w[0]?.toUpperCase() ?? "")
+    .join("");
+  const isRent = /month/i.test(card.priceLabel);
+  const dealType = isRent ? "For rent" : "For sale";
 
   return (
     <div className="min-h-screen bg-black text-white">
       <SiteHeader />
-      <main className="max-w-4xl mx-auto px-4 lg:px-6 py-10 lg:py-14">
-        <div className="mb-8 flex flex-wrap items-center gap-2 text-sm text-zinc-400">
-          {listing.buildingSlug ? (
-            <Link href={`/buildings/${listing.buildingSlug}`} className="hover:text-white transition-colors">
-              {listing.building_name}
-            </Link>
-          ) : (
-            <Link href="/search" className="hover:text-white transition-colors">
-              ← All listings
-            </Link>
-          )}
-          {listing.localitySlug && (
+      <main className="mx-auto max-w-5xl px-4 py-8 lg:px-6 lg:py-12">
+        <button
+          onClick={() => history.back()}
+          className="mb-5 inline-flex items-center gap-1.5 text-sm font-medium text-zinc-400 transition-colors hover:text-white"
+        >
+          <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+          Back to listings
+        </button>
+
+        <div className="mb-6 flex flex-wrap items-center gap-1.5 text-xs text-zinc-500">
+          <Link href="/search" className="hover:text-white transition-colors">
+            Home
+          </Link>
+          <ChevronRight className="h-3 w-3" aria-hidden="true" />
+          {card.locality && (
             <>
-              <span aria-hidden="true">/</span>
-              <Link href={`/localities/${listing.localitySlug}`} className="hover:text-white transition-colors">
-                {listing.micro_market}
+              <Link
+                href={`/localities/${card.localitySlug}`}
+                className="hover:text-white transition-colors"
+              >
+                {card.locality}
               </Link>
+              <ChevronRight className="h-3 w-3" aria-hidden="true" />
             </>
           )}
+          <span className="text-zinc-400">{listing.building_name || card.title}</span>
         </div>
 
-        <div className="rounded-3xl border border-white/10 bg-zinc-950/90 p-6 lg:p-10">
-          <div className="flex items-start justify-between gap-4 flex-wrap mb-4">
-            <h1 className="text-[28px] lg:text-[38px] leading-[1.1] font-bold text-white max-w-2xl">
-              {card.title}
-            </h1>
-            <span
-              className={`shrink-0 rounded-full px-3 py-1 text-xs font-medium ${
-                card.statusTone === "available"
-                  ? "border border-green-400/20 bg-green-400/10 text-green-300"
-                  : "border border-amber-400/20 bg-amber-400/10 text-amber-200"
-              }`}
-            >
-              {card.statusLabel}
-            </span>
-          </div>
-
-          {card.locality && (
-            <Link
-              href={`/localities/${card.localitySlug}`}
-              className="inline-flex items-center gap-1 rounded-full border border-white/10 px-2.5 py-1 text-[11px] text-zinc-400 hover:border-green-400/30 hover:text-green-200 transition-colors mb-6"
-            >
-              <MapPin className="h-3.5 w-3.5" aria-hidden="true" />
-              {card.locality}
-            </Link>
-          )}
-
-          <div className="mb-6">
-            <span className="text-3xl lg:text-4xl font-semibold text-white">{card.priceLabel}</span>
-          </div>
-
-          {card.specItems.length > 0 && (
-            <ListingSpecs items={card.specItems} className="mb-8 text-base" />
-          )}
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
-            <div className="rounded-2xl border border-white/10 bg-black/60 p-5">
-              <div className="flex items-center gap-2 text-sm text-zinc-500 mb-2">
-                <ShieldCheck className="h-4 w-4" aria-hidden="true" />
-                Broker
+        <div className="grid grid-cols-1 gap-7 lg:grid-cols-[1fr_300px]">
+          {/* Main column */}
+          <div>
+            {/* Media hero */}
+            <div className="relative flex h-64 w-full items-center justify-center overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-br from-green-500/15 via-zinc-900 to-zinc-950">
+              <KindIcon
+                kind={card.assetTypeLabel}
+                className="h-16 w-16 text-zinc-700"
+              />
+              <div className="absolute left-3 top-3">
+                {card.assetTypeLabel && (
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-black/55 px-2.5 py-1 text-[11px] font-medium text-zinc-100 backdrop-blur">
+                    <KindIcon kind={card.assetTypeLabel} className="h-3 w-3" />
+                    {card.assetTypeLabel}
+                  </span>
+                )}
               </div>
-              <p className="text-white font-medium break-words">{card.brokerName || "Verified network"}</p>
-            </div>
-            <div className="rounded-2xl border border-white/10 bg-black/60 p-5">
-              <div className="flex items-center gap-2 text-sm text-zinc-500 mb-2">
-                <Clock className="h-4 w-4" aria-hidden="true" />
-                Last updated
+              <div className="absolute right-3 top-3">
+                <span
+                  className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${
+                    card.statusTone === "available"
+                      ? "border border-green-400/20 bg-green-400/10 text-green-300"
+                      : "border border-amber-400/20 bg-amber-400/10 text-amber-200"
+                  }`}
+                >
+                  {card.statusLabel}
+                </span>
               </div>
-              <p className="text-white font-medium">{card.updatedLabel}</p>
             </div>
+
+            {/* Header */}
+            <div className="mt-6 flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <div className="flex items-center gap-1.5 text-sm text-zinc-400">
+                  <MapPin className="h-3.5 w-3.5" aria-hidden="true" />
+                  <span>
+                    {card.locality}
+                    {listing.micro_market && listing.micro_market !== card.locality
+                      ? ` · ${listing.micro_market}`
+                      : ""}
+                  </span>
+                </div>
+                <h1 className="mt-1 text-[28px] font-bold leading-[1.15] text-white lg:text-[34px]">
+                  {listing.building_name || card.title}
+                </h1>
+              </div>
+              <div className="text-right">
+                <div className="text-3xl font-semibold text-white lg:text-4xl">{card.priceLabel}</div>
+                <span className="mt-1 inline-block rounded-md bg-green-400/10 px-2 py-0.5 text-xs font-semibold text-green-300">
+                  {dealType}
+                </span>
+              </div>
+            </div>
+
+            {/* Specs grid */}
+            {card.specItems.length > 0 && (
+              <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3">
+                {card.specItems.map((s, i) => {
+                  const Icon = SPEC_ICONS[s.kind] ?? BedDouble;
+                  return (
+                    <div
+                      key={`${s.kind}-${i}`}
+                      className="flex items-center gap-3 rounded-xl border border-white/10 bg-zinc-950/90 p-3.5"
+                    >
+                      <Icon className="h-4 w-4 shrink-0 text-green-400" aria-hidden="true" />
+                      <div>
+                        <div className="text-[10px] uppercase tracking-wide text-zinc-500">{s.kind}</div>
+                        <div className="text-sm font-semibold text-white">{s.label}</div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Description */}
+            {listing.location_label && (
+              <div className="mt-7">
+                <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-zinc-400">
+                  About this listing
+                </h2>
+                <p className="text-sm leading-relaxed text-zinc-300">{listing.location_label}</p>
+              </div>
+            )}
+
+            {/* Landmarks / nearby */}
+            {card.locality && (
+              <div className="mt-7">
+                <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-zinc-400">
+                  Nearby
+                </h2>
+                <ul className="space-y-1.5">
+                  <li className="flex items-center gap-2 text-sm text-zinc-300">
+                    <Building2 className="h-3.5 w-3.5 text-zinc-500" aria-hidden="true" />
+                    {card.locality}
+                  </li>
+                </ul>
+              </div>
+            )}
           </div>
 
-          {listing.location_label && (
-            <p className="text-sm text-zinc-400 mb-8">{listing.location_label}</p>
-          )}
+          {/* Sidebar */}
+          <aside className="relative">
+            <div className="sticky top-6 rounded-2xl border border-white/10 bg-zinc-950/90 p-5">
+              <button
+                className="absolute right-3 top-3 inline-flex h-6 w-6 items-center justify-center rounded-md text-zinc-500 transition-colors hover:border-white/20 hover:bg-white/5 hover:text-amber-400"
+                aria-label="Report incorrect information for this listing"
+                title="Report incorrect info"
+              >
+                <Flag className="h-3 w-3" strokeWidth={2} aria-hidden="true" />
+              </button>
 
-          <div className="flex flex-wrap gap-3">
-            {card.waLink ? (
-              <a
-                href={card.waLink}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center justify-center gap-2 rounded-xl bg-green-400 px-6 py-3 text-sm font-semibold text-black transition-colors hover:bg-green-300"
-              >
-                <MessageSquare className="h-4 w-4" aria-hidden="true" />
-                Contact Broker on WhatsApp
-              </a>
-            ) : (
-              <span className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 px-6 py-3 text-sm text-zinc-500">
-                <MessageSquare className="h-4 w-4" aria-hidden="true" />
-                Broker contact coming soon
-              </span>
-            )}
-            {listing.buildingSlug && (
-              <Link
-                href={`/buildings/${listing.buildingSlug}`}
-                className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 px-6 py-3 text-sm font-medium text-zinc-200 hover:border-green-400/40 hover:text-white transition-colors"
-              >
-                See other listings in {listing.building_name}
-              </Link>
-            )}
-          </div>
+              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-green-400/15 text-lg font-bold text-green-300">
+                {brokerInitials}
+              </div>
+              <div className="mt-3 flex items-center justify-center gap-1.5 text-center text-base font-semibold text-white">
+                {card.brokerName || "Verified network"}
+                {card.brokerName && (
+                  <ShieldCheck className="h-4 w-4 shrink-0 text-green-400" aria-hidden="true" />
+                )}
+              </div>
+              <div className="mt-1 text-center text-xs text-zinc-500">
+                Active listings on PropAI
+              </div>
+
+              <div className="mt-5 flex flex-col gap-2.5">
+                {card.waLink ? (
+                  <a
+                    href={card.waLink}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center justify-center gap-2 rounded-xl bg-green-400 px-5 py-3 text-sm font-semibold text-black transition-colors hover:bg-green-300"
+                  >
+                    <MessageSquare className="h-4 w-4" aria-hidden="true" />
+                    Contact on WhatsApp
+                  </a>
+                ) : (
+                  <span className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 px-5 py-3 text-sm text-zinc-500">
+                    <MessageSquare className="h-4 w-4" aria-hidden="true" />
+                    Broker contact coming soon
+                  </span>
+                )}
+                {/* Phone is resolved server-side via /contact-broker/{id} (DPDP-safe:
+                    raw digits are never rendered into public HTML). */}
+                {card.waLink && (
+                  <a
+                    href={card.waLink}
+                    className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 px-5 py-3 text-sm font-medium text-zinc-200 transition-colors hover:border-green-400/40 hover:text-white"
+                  >
+                    <Phone className="h-4 w-4" aria-hidden="true" />
+                    Show phone number
+                  </a>
+                )}
+              </div>
+
+              <p className="mt-4 text-[11px] leading-relaxed text-zinc-500">
+                Listing sourced from verified broker WhatsApp networks and refreshed continuously by
+                PropAI.
+              </p>
+            </div>
+          </aside>
         </div>
 
         <p className="mt-6 text-xs text-zinc-600">
