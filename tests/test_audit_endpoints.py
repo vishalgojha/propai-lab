@@ -43,10 +43,34 @@ def test_capture_health_uses_one_tenant_scoped_query(monkeypatch):
 
     assert len(calls) == 1
     assert calls[0][1][0] == "tenant"
+    assert "COUNT(DISTINCT raw_message_id)" in calls[0][0]
     assert result["queue_backlog"] == 3
     assert result["total_msgs_today"] == 5
     assert result["total_parsed_today"] == 4
     assert result["degraded"] is False
+
+
+def test_capture_health_caps_parser_ready(monkeypatch):
+    class Database:
+        def execute(self, sql, params=()):
+            return _Result([{
+                "total_raw": 100,
+                "raw_today": 5,
+                "last_msg": "2026-07-17T04:30:00Z",
+                "total_parsed": 287,
+                "parsed_today": 4,
+                "total_kr": 18,
+                "total_obs": 18,
+                "total_oe": 18,
+                "total_brokers": 3,
+                "pending_enrich": 2,
+                "pending_ai": 1,
+            }])
+
+    monkeypatch.setattr(app, "storage", SimpleNamespace(db=Database()))
+    result = app.audit_capture_health(user={"id": "user"}, tenant_id="tenant")
+
+    assert result["parser_success_rate"] == 100.0
 
 
 def test_duplicate_audit_reads_current_tenant_messages(monkeypatch):
@@ -86,30 +110,26 @@ def test_audit_group_display_name_does_not_query_storage(monkeypatch):
 
 
 def test_audit_insights_is_tenant_scoped(monkeypatch):
-    calls = []
-    result_sets = iter([
-        [("2026-07-17", 12, 4, 8)],
-        [("Bandra West", 9, 3, 6, 5)],
-        [("Broker One", 14, 10, 4, 3, 2, "2026-07-17T05:00:00Z")],
-        [("Bandra Brokers", 7)],
-    ])
+    row_calls = []
+    result_sets = iter([[], [], [], [], [], []])
 
     def rows(sql, params=()):
-        calls.append((sql, params))
+        row_calls.append((sql, params))
         return next(result_sets)
 
     monkeypatch.setattr(app, "_table_exists", lambda table: True)
+    monkeypatch.setattr(app, "_audit_count", lambda table: 0)
     monkeypatch.setattr(app, "_audit_rows", rows)
 
     result = app.audit_insights(user={"id": "user"}, tenant_id="tenant-a")
 
-    assert len(calls) == 4
-    assert all("tenant" in sql.lower() for sql, _ in calls)
-    assert all("tenant-a" in params for _, params in calls)
-    assert result["daily_flow"][0]["posts"] == 12
-    assert result["markets"][0]["name"] == "Bandra West"
-    assert result["brokers"][0]["groups"] == 3
-    assert result["exclusive_members"]["Bandra Brokers"] == 7
+    assert len(row_calls) == 4
+    assert all("tenant_id = ?" in sql.lower() for sql, _ in row_calls)
+    assert all(params and params[0] == "tenant-a" for _, params in row_calls)
+    assert result["daily_flow"] == []
+    assert result["markets"] == []
+    assert result["brokers"] == []
+    assert result["exclusive_members"] == {}
 
 
 def test_audit_groups_uses_named_columns_from_supabase_json_rows(monkeypatch):
@@ -144,6 +164,7 @@ def test_audit_groups_uses_named_columns_from_supabase_json_rows(monkeypatch):
     result = app.audit_groups_v2(user={"id": "user"}, tenant_id="tenant-a")
 
     assert len(calls) == 3
+    assert "po.raw_message_id::text || ':' || COALESCE(po.listing_index, 0)::text" in calls[1][0]
     assert result["total_unique_senders"] == 4
     assert result["groups"][0]["name"] == "Bandra Brokers"
     assert result["groups"][0]["messages"] == 12

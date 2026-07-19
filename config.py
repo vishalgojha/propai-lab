@@ -42,30 +42,9 @@ if not DOUBLEWORD_API_KEY and _DW_KEY_FILE.exists():
     except (json.JSONDecodeError, OSError):
         pass
 
-# Group allowlist — only track these WhatsApp groups
-# File: config.py's directory /group_allowlist.json — array of group JIDs or name substrings
+# Group opt-out list — these WhatsApp groups are not parsed
+# File: config.py's directory /group_exclude.json — array of group JIDs or name substrings
 # If empty or missing, ALL groups are tracked.
-GROUP_ALLOWLIST_PATH = LAB_DIR / "group_allowlist.json"
-
-def load_group_allowlist() -> list[str]:
-    if not GROUP_ALLOWLIST_PATH.exists():
-        return []
-    import json
-    try:
-        raw = json.loads(GROUP_ALLOWLIST_PATH.read_text())
-        if isinstance(raw, list):
-            return [str(x).strip() for x in raw if x]
-        return []
-    except (json.JSONDecodeError, OSError):
-        return []
-
-def save_group_allowlist(entries: list[str]):
-    import json
-    GROUP_ALLOWLIST_PATH.write_text(json.dumps(entries, indent=2))
-
-
-# Group opt-out — groups that should NOT be parsed
-# File: config.py's directory /group_exclude.json — array of group JIDs
 GROUP_EXCLUDE_PATH = LAB_DIR / "group_exclude.json"
 
 def load_excluded_groups() -> list[str]:
@@ -83,6 +62,15 @@ def load_excluded_groups() -> list[str]:
 def save_excluded_groups(entries: list[str]):
     import json
     GROUP_EXCLUDE_PATH.write_text(json.dumps(entries, indent=2))
+
+
+# Backward-compatible aliases for older callers.
+def load_group_allowlist() -> list[str]:
+    return load_excluded_groups()
+
+
+def save_group_allowlist(entries: list[str]):
+    save_excluded_groups(entries)
 
 # Feature flags
 ENABLE_AI_PROMO = os.getenv("ENABLE_AI_PROMO", "false").lower() == "true"

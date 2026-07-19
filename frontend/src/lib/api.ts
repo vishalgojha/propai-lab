@@ -824,21 +824,6 @@ export function getDashboardSignals() {
   return fetchJSON<any>("/dashboard/signals");
 }
 
-export function getAllowlist() {
-  return fetchJSON<string[]>("/groups/allowlist");
-}
-
-export function setAllowlist(entries: string[]) {
-  return fetchJSON<any>("/groups/allowlist", {
-    method: "POST",
-    body: JSON.stringify(entries),
-  });
-}
-
-export function clearAllowlist() {
-  return fetchJSON<any>("/groups/allowlist", { method: "DELETE" });
-}
-
 // ── AI Suggestions ──────────────────────────────────────────────
 
 export function getSuggestions(status = "pending", limit = 50, offset = 0) {
@@ -1085,6 +1070,8 @@ export interface AuditGroupCard {
   senders_count: number;
   duplicate_pct: number;
   parsed: { city?: string; area?: string };
+  allowed?: boolean;
+  excluded?: boolean;
 }
 
 export interface AuditCaptureHealth {
@@ -1098,6 +1085,14 @@ export interface AuditCaptureHealth {
   total_msgs_today: number;
   total_parsed_today: number;
   degraded?: boolean;
+  stage?: {
+    raw_messages: number;
+    parsed_output: number;
+    knowledge_records: number;
+    observations: number;
+    observation_evidence: number;
+    brokers: number;
+  };
 }
 
 export interface AuditTopContributor {
@@ -1162,6 +1157,33 @@ export function getAuditGroupOverlap(limit = 20) {
 
 export function getAuditCaptureHealth() {
   return fetchJSON<AuditCaptureHealth>("/audit/capture-health");
+}
+
+export function getOptOutList() {
+  return fetchJSON<string[]>("/groups/opt-out");
+}
+
+export function setOptOutList(entries: string[]) {
+  return fetchJSON<any>("/groups/opt-out", {
+    method: "POST",
+    body: JSON.stringify(entries),
+  });
+}
+
+export function clearOptOutList() {
+  return fetchJSON<any>("/groups/opt-out", { method: "DELETE" });
+}
+
+export function getAllowlist() {
+  return getOptOutList();
+}
+
+export function setAllowlist(entries: string[]) {
+  return setOptOutList(entries);
+}
+
+export function clearAllowlist() {
+  return clearOptOutList();
 }
 
 export interface AuditInsights {

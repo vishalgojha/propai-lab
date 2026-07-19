@@ -6,6 +6,7 @@ These tests cover the startup failure where Python resolved the local
 """
 
 import asyncio
+from types import SimpleNamespace
 
 import httpx
 
@@ -273,6 +274,84 @@ def test_phone_observation_fallback_includes_linked_name_only_rows():
     assert {row["broker_phone"] for row in result} == {"9222772277"}
 
 
+def test_observation_detail_dedupes_repeated_listings():
+    from types import SimpleNamespace
+    from storage.supabase import SupabaseStorage
+
+    parsed_rows = [
+        {
+            "id": 1,
+            "raw_message_id": 101,
+            "listing_index": 0,
+            "intent": "SELL",
+            "bhk": "3 BHK",
+            "price": 9500000,
+            "price_unit": "₹",
+            "area_sqft": 1200,
+            "furnishing": "Furnished",
+            "building_name": "Ekta Meadows",
+            "landmark_name": "Near National Park",
+            "micro_market": "Andheri West",
+            "location_raw": "Andheri West",
+            "summary_title": "3 BHK | Ekta Meadows | ₹95L",
+            "created_at": "2026-07-19T10:00:00Z",
+        },
+        {
+            "id": 2,
+            "raw_message_id": 101,
+            "listing_index": 0,
+            "intent": "SELL",
+            "bhk": "3 BHK",
+            "price": 9500000,
+            "price_unit": "₹",
+            "area_sqft": 1200,
+            "furnishing": "Furnished",
+            "building_name": "Ekta Meadows",
+            "landmark_name": "Near National Park",
+            "micro_market": "Andheri West",
+            "location_raw": "Andheri West",
+            "summary_title": "3 BHK | Ekta Meadows | ₹95L",
+            "created_at": "2026-07-19T10:01:00Z",
+        },
+    ]
+
+    class FakeQuery:
+        def __init__(self, table_name):
+            self.table_name = table_name
+
+        def select(self, *args, **kwargs):
+            return self
+
+        def eq(self, *args, **kwargs):
+            return self
+
+        def order(self, *args, **kwargs):
+            return self
+
+        def limit(self, *args, **kwargs):
+            return self
+
+        def execute(self):
+            if self.table_name == "parsed_output":
+                return SimpleNamespace(data=parsed_rows)
+            if self.table_name == "raw_messages":
+                return SimpleNamespace(data=[{"id": 101, "message": "x"}])
+            return SimpleNamespace(data=[])
+
+    class FakeClient:
+        def table(self, name):
+            return FakeQuery(name)
+
+    storage = object.__new__(SupabaseStorage)
+    storage._client = FakeClient()
+    storage._SupabaseStorage__tenant_id_fallback = None
+
+    result = storage.get_observation_detail(101)
+
+    assert len(result["listings"]) == 1
+    assert result["listings"][0]["times_seen"] == 2
+
+
 def test_name_identity_observation_lookup_is_one_database_request():
     from storage.supabase import SupabaseStorage, set_tenant_id
 
@@ -416,6 +495,67 @@ def test_legacy_storage_tenant_reads_use_request_context():
         assert storage._SupabaseStorage__tenant_id_fallback is None
     finally:
         set_tenant_id(None)
+
+
+def test_inbox_threads_fallback_stays_tenant_scoped(monkeypatch):
+    from storage.supabase import SupabaseStorage
+
+    calls = []
+
+    class Query:
+        def __init__(self, table_name: str):
+            self.table_name = table_name
+
+        def select(self, *args, **kwargs):
+            calls.append(("select", self.table_name, args, kwargs))
+            return self
+
+        def order(self, *args, **kwargs):
+            calls.append(("order", self.table_name, args, kwargs))
+            return self
+
+        def limit(self, *args, **kwargs):
+            calls.append(("limit", self.table_name, args, kwargs))
+            return self
+
+        def eq(self, *args, **kwargs):
+            calls.append(("eq", self.table_name, args, kwargs))
+            return self
+
+        def in_(self, *args, **kwargs):
+            calls.append(("in_", self.table_name, args, kwargs))
+            return self
+
+        def execute(self):
+            calls.append(("execute", self.table_name, (), {}))
+            return SimpleNamespace(data=[{
+                "id": 1,
+                "tenant_id": "tenant-a",
+                "group_name": "Royal Realtors @g.us",
+                "sender": "Broker One",
+                "sender_phone": "919820000000",
+                "sender_jid": "919820000000@s.whatsapp.net",
+                "timestamp": "2026-07-19T04:00:00Z",
+                "created_at": "2026-07-19T04:00:00Z",
+                "message_uid": "uid-1",
+                "message": "Hello",
+                "raw_payload": {},
+            }])
+
+    class Client:
+        def table(self, name):
+            calls.append(("table", name, (), {}))
+            return Query(name)
+
+    storage = object.__new__(SupabaseStorage)
+    storage._SupabaseStorage__tenant_id_fallback = None
+    storage._client = Client()
+    storage._get_parsed_market_threads = lambda *args, **kwargs: []
+
+    threads = storage.get_inbox_threads(limit=10, offset=0, tenant_id="tenant-a")
+
+    assert threads and threads[0]["tenant_id"] == "tenant-a"
+    assert ("eq", "raw_messages", ("tenant_id", "tenant-a"), {}) in calls
 
 
 def test_connection_details_is_safe_without_storage(monkeypatch):

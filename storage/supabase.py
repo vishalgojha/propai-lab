@@ -132,6 +132,143 @@ def _is_market_group_name(group_name: str = "") -> bool:
     )
 
 
+def _is_market_group_row(row: dict) -> bool:
+    """Return true only when the raw message is provably from a group chat.
+
+    Older rows sometimes stored the group *title* in ``group_name`` and direct
+    chats stored the contact name there as well.  Treating every non-JID title
+    as a group leaked personal conversations into Market Inbox.  Prefer the
+    canonical WhatsApp remote JID (raw payload/message_uid), and only fall back
+    to an explicit @g.us group_name.
+    """
+    group_name = (row.get("group_name") or "").strip()
+    if not group_name or group_name in ("seed", "seed-bot", "status@broadcast", "broadcast"):
+        return False
+    if group_name.endswith("@g.us"):
+        return True
+    payload = row.get("raw_payload")
+    if isinstance(payload, str):
+        try:
+            payload = json.loads(payload)
+        except Exception:
+            payload = {}
+    payload = payload if isinstance(payload, dict) else {}
+    key = payload.get("key") if isinstance(payload.get("key"), dict) else {}
+    remote = key.get("remoteJid") or payload.get("remoteJid") or ""
+    if isinstance(payload.get("data"), dict):
+        dkey = payload["data"].get("key") if isinstance(payload["data"].get("key"), dict) else {}
+        remote = remote or dkey.get("remoteJid") or payload["data"].get("remoteJid") or ""
+    uid = (row.get("message_uid") or "").split(":", 1)[0]
+    return str(remote).endswith("@g.us") or uid.endswith("@g.us")
+
+
+def _observation_fingerprint(row: dict) -> str:
+    payload = {
+        "intent": row.get("intent") or row.get("observation_type") or "",
+        "bhk": row.get("bhk") or row.get("configuration") or "",
+        "price": row.get("price") or row.get("monthly_rent") or row.get("total_asking_price") or "",
+        "area_sqft": row.get("area_sqft") or "",
+        "furnishing": row.get("furnishing") or row.get("furnishing_canonical") or "",
+        "building_name": row.get("building_name") or "",
+        "landmark_name": row.get("landmark_name") or "",
+        "micro_market": row.get("micro_market") or "",
+        "location_raw": row.get("location_raw") or "",
+        "broker_phone": row.get("broker_phone") or "",
+        "broker_name": row.get("broker_name") or row.get("profile_name") or "",
+        "summary_title": row.get("summary_title") or row.get("normalized_message") or row.get("message") or "",
+    }
+    return listing_fingerprint(payload, raw_sender=row.get("raw_sender") or row.get("sender") or "", group_name=row.get("group_name") or "")
+
+
+def _merge_observation_rows(rows: list[dict]) -> list[dict]:
+    merged: dict[str, dict] = {}
+    order: list[str] = []
+    for row in rows:
+        raw_id = row.get("raw_message_id") or row.get("id") or ""
+        listing_index = row.get("listing_index")
+        key = f"{raw_id}:{listing_index if listing_index is not None else ''}:{_observation_fingerprint(row)}"
+        existing = merged.get(key)
+        if not existing:
+            copy = dict(row)
+            copy["times_seen"] = int(copy.get("times_seen") or 1)
+            evidence = copy.get("evidence_list")
+            if isinstance(evidence, list):
+                copy["evidence_list"] = list(evidence)
+            elif evidence:
+                copy["evidence_list"] = [evidence]
+            else:
+                copy["evidence_list"] = []
+            merged[key] = copy
+            order.append(key)
+            continue
+
+        existing["times_seen"] = int(existing.get("times_seen") or 1) + int(row.get("times_seen") or 1)
+
+        existing_ts = str(existing.get("last_seen") or existing.get("created_at") or "")
+        row_ts = str(row.get("last_seen") or row.get("created_at") or "")
+        if row_ts and row_ts >= existing_ts:
+            for field in (
+                "id",
+                "latest_raw_message_id",
+                "latest_parsed_id",
+                "raw_message_id",
+                "summary_title",
+                "observation_type",
+                "intent",
+                "asset_type",
+                "property_type",
+                "transaction_type",
+                "bhk",
+                "configuration",
+                "price",
+                "price_unit",
+                "price_model",
+                "price_per_sqft",
+                "monthly_rent",
+                "total_asking_price",
+                "area_sqft",
+                "furnishing",
+                "furnishing_canonical",
+                "building_name",
+                "micro_market",
+                "landmark_name",
+                "location_raw",
+                "commercial_use_type",
+                "fitout_status",
+                "occupancy_type",
+                "floor_range",
+                "availability_status",
+                "possession_status",
+                "possession_date",
+                "available_from",
+                "ready_by",
+                "construction_stage",
+                "launch_timeline",
+                "expected_possession",
+                "listing_index",
+                "first_seen",
+                "last_seen",
+                "raw_message",
+                "raw_sender",
+                "broker_name",
+                "broker_phone",
+            ):
+                if row.get(field) not in (None, ""):
+                    existing[field] = row[field]
+
+        if row.get("evidence_list"):
+            evidence = existing.setdefault("evidence_list", [])
+            for item in row.get("evidence_list") or []:
+                if item not in evidence:
+                    evidence.append(item)
+
+        if row.get("first_seen") and (not existing.get("first_seen") or str(row["first_seen"]) < str(existing["first_seen"])):
+            existing["first_seen"] = row["first_seen"]
+        if row.get("last_seen") and (not existing.get("last_seen") or str(row["last_seen"]) > str(existing["last_seen"])):
+            existing["last_seen"] = row["last_seen"]
+    return [merged[key] for key in order]
+
+
 @dataclass
 class _APIResponse:
     data: list[dict]
@@ -515,10 +652,15 @@ class SupabaseStorage(Storage):
         digits = "".join(ch for ch in phone if ch.isdigit())
         return digits[-10:] if len(digits) >= 10 else digits
 
-    def get_user_profile(self, phone: str = "", auth_user_id: str = "") -> dict | None:
+    def get_user_profile(self, phone: str = "", auth_user_id: str = "", tenant_id: str | None = None) -> dict | None:
+        tid = tenant_id or self._tenant_id
         if auth_user_id:
             try:
-                res = self.client.table("user_profiles").select("*").eq("auth_user_id", auth_user_id).limit(1).execute()
+                q = self.client.table("user_profiles").select("*").eq("auth_user_id", auth_user_id)
+                if tid:
+                    q = q.eq("tenant_id", tid)
+                q = q.limit(1)
+                res = q.execute()
                 if res.data:
                     return res.data[0]
             except Exception:
@@ -527,12 +669,17 @@ class SupabaseStorage(Storage):
             return None
         norm = self._normalize_phone(phone)
         try:
-            res = self.client.table("user_profiles").select("*").eq("phone", norm).limit(1).execute()
+            q = self.client.table("user_profiles").select("*").eq("phone", norm)
+            if tid:
+                q = q.eq("tenant_id", tid)
+            q = q.limit(1)
+            res = q.execute()
             return res.data[0] if res.data else None
         except Exception:
             return None
 
-    def save_user_profile(self, phone: str, data: dict, auth_user_id: str = "") -> dict | None:
+    def save_user_profile(self, phone: str, data: dict, auth_user_id: str = "", tenant_id: str | None = None) -> dict | None:
+        tid = tenant_id or self._tenant_id
         norm = self._normalize_phone(phone)
         payload = {
             "phone": norm,
@@ -544,14 +691,19 @@ class SupabaseStorage(Storage):
         }
         if auth_user_id:
             payload["auth_user_id"] = auth_user_id
+        if tid:
+            payload["tenant_id"] = tid
         existing = None
         if auth_user_id:
-            existing = self.get_user_profile(auth_user_id=auth_user_id)
+            existing = self.get_user_profile(auth_user_id=auth_user_id, tenant_id=tid)
         if not existing and norm:
-            existing = self.get_user_profile(phone=norm)
+            existing = self.get_user_profile(phone=norm, tenant_id=tid)
         if existing:
             update_where = ("auth_user_id", existing.get("auth_user_id")) if existing.get("auth_user_id") else ("phone", existing.get("phone", norm))
-            res = self.client.table("user_profiles").update(payload).eq(update_where[0], update_where[1]).execute()
+            uq = self.client.table("user_profiles").update(payload).eq(update_where[0], update_where[1])
+            if tid:
+                uq = uq.eq("tenant_id", tid)
+            res = uq.execute()
         else:
             if not norm and auth_user_id:
                 payload["phone"] = f"auth_{auth_user_id[:8]}"
@@ -1293,10 +1445,12 @@ class SupabaseStorage(Storage):
             pass
 
         query = self.client.table("raw_messages").select(
-            "id,tenant_id,group_name,sender,sender_phone,sender_jid,timestamp,created_at,message_uid,message"
+            "id,tenant_id,group_name,sender,sender_phone,sender_jid,timestamp,created_at,message_uid,message,raw_payload"
         )\
             .order("timestamp", desc=True)\
             .limit(max(5000, limit + offset))
+        if tenant_id:
+            query = query.eq("tenant_id", tenant_id)
 
         res = query.execute()
         rows = res.data if res.data else []
@@ -1327,7 +1481,7 @@ class SupabaseStorage(Storage):
 
         groups: dict[str, list[dict]] = {}
         for row in rows:
-            if not _is_market_group_name(row.get("group_name") or ""):
+            if not _is_market_group_row(row):
                 continue
             key = broker_key(row)
             groups.setdefault(key, []).append(row)
@@ -1358,7 +1512,7 @@ class SupabaseStorage(Storage):
                 or (p or {}).get("broker_phone")
                 or key
             )
-            group_name  # force_rebuild_MARKER = latest.get("group_name") or ""
+            group_name = latest.get("group_name") or ""
             is_group = "@g.us" in group_name or "_broadcast" in group_name
             latest["chat_id"] = chat_id
             latest["chat_type"] = "group" if is_group else "direct"
@@ -1400,9 +1554,12 @@ class SupabaseStorage(Storage):
         raw_ids = list({p["raw_message_id"] for p in parsed_rows if p.get("raw_message_id")})
         raw_map: dict[int, dict] = {}
         if raw_ids:
-            raw_res = self.client.table("raw_messages").select(
-                "id,group_name,sender,sender_phone,sender_jid,timestamp,created_at,message_uid,message"
-            ).in_("id", raw_ids[:min(len(raw_ids), 10000)]).execute()
+            raw_query = self.client.table("raw_messages").select(
+                "id,group_name,sender,sender_phone,sender_jid,timestamp,created_at,message_uid,message,raw_payload"
+            ).in_("id", raw_ids[:min(len(raw_ids), 10000)])
+            if tid:
+                raw_query = raw_query.eq("tenant_id", tid)
+            raw_res = raw_query.execute()
             for r in raw_res.data or []:
                 if r.get("id"):
                     raw_map[r["id"]] = r
@@ -1411,7 +1568,7 @@ class SupabaseStorage(Storage):
         phones_by_name: dict[str, set[str]] = defaultdict(set)
         for parsed in parsed_rows:
             raw = raw_map.get(parsed.get("raw_message_id")) or {}
-            if not _is_market_group_name(raw.get("group_name") or ""):
+            if not _is_market_group_row(raw):
                 continue
 
             phone = (
@@ -2092,7 +2249,7 @@ class SupabaseStorage(Storage):
         if not parsed_res.data:
             return {}
         
-        parsed_rows = parsed_res.data
+        parsed_rows = _merge_observation_rows(parsed_res.data or [])
         first_parsed = parsed_rows[0] if parsed_rows else None
         
         # Get raw message
@@ -2454,97 +2611,153 @@ class SupabaseStorage(Storage):
 
     # ── AI Chat Sessions ──────────────────────────────────────
 
-    def list_chat_sessions(self, broker_phone: str, limit: int = 50) -> list[dict]:
-        res = (
+    def list_chat_sessions(self, broker_phone: str, limit: int = 50, tenant_id: str | None = None) -> list[dict]:
+        tid = tenant_id or self._tenant_id
+        q = (
             self.client.table("ai_chat_sessions")
             .select("*")
             .eq("broker_phone", broker_phone)
-            .order("updated_at", desc=True)
-            .limit(limit)
-            .execute()
         )
+        if tid:
+            q = q.eq("tenant_id", tid)
+        q = q.order("updated_at", desc=True).limit(limit)
+        res = q.execute()
         return res.data or []
 
-    def create_chat_session(self, broker_phone: str, title: str = "New chat") -> dict | None:
+    def create_chat_session(self, broker_phone: str, title: str = "New chat", tenant_id: str | None = None) -> dict | None:
+        tid = tenant_id or self._tenant_id
+        payload = {"broker_phone": broker_phone, "title": title}
+        if tid:
+            payload["tenant_id"] = tid
         res = (
             self.client.table("ai_chat_sessions")
-            .insert({"broker_phone": broker_phone, "title": title})
+            .insert(payload)
             .execute()
         )
         return res.data[0] if res.data else None
 
-    def get_chat_session(self, session_id: str) -> dict | None:
-        res = (
+    def get_chat_session(self, session_id: str, tenant_id: str | None = None) -> dict | None:
+        tid = tenant_id or self._tenant_id
+        q = (
             self.client.table("ai_chat_sessions")
             .select("*")
             .eq("id", session_id)
-            .limit(1)
-            .execute()
         )
+        if tid:
+            q = q.eq("tenant_id", tid)
+        q = q.limit(1)
+        res = q.execute()
         return res.data[0] if res.data else None
 
-    def delete_chat_session(self, session_id: str) -> bool:
-        self.client.table("ai_chat_sessions").delete().eq("id", session_id).execute()
+    def delete_chat_session(self, session_id: str, tenant_id: str | None = None) -> bool:
+        tid = tenant_id or self._tenant_id
+        q = self.client.table("ai_chat_sessions").delete().eq("id", session_id)
+        if tid:
+            q = q.eq("tenant_id", tid)
+        q.execute()
         return True
 
-    def touch_chat_session(self, session_id: str) -> None:
-        self.client.table("ai_chat_sessions").update({"updated_at": "now()"}).eq("id", session_id).execute()
+    def touch_chat_session(self, session_id: str, tenant_id: str | None = None) -> None:
+        tid = tenant_id or self._tenant_id
+        q = self.client.table("ai_chat_sessions").update({"updated_at": "now()"}).eq("id", session_id)
+        if tid:
+            q = q.eq("tenant_id", tid)
+        q.execute()
 
-    def update_chat_session_title(self, session_id: str, title: str) -> None:
-        self.client.table("ai_chat_sessions").update({"title": title}).eq("id", session_id).execute()
+    def update_chat_session_title(self, session_id: str, title: str, tenant_id: str | None = None) -> None:
+        tid = tenant_id or self._tenant_id
+        q = self.client.table("ai_chat_sessions").update({"title": title}).eq("id", session_id)
+        if tid:
+            q = q.eq("tenant_id", tid)
+        q.execute()
 
-    def add_chat_message(self, session_id: str, role: str, content: str) -> dict | None:
+    def add_chat_message(self, session_id: str, role: str, content: str, tenant_id: str | None = None) -> dict | None:
+        tid = tenant_id or self._tenant_id
+        payload = {"session_id": session_id, "role": role, "content": content}
+        if tid:
+            payload["tenant_id"] = tid
         res = (
             self.client.table("ai_chat_messages")
-            .insert({"session_id": session_id, "role": role, "content": content})
+            .insert(payload)
             .execute()
         )
         return res.data[0] if res.data else None
 
-    def get_chat_messages(self, session_id: str, limit: int = 200) -> list[dict]:
-        res = (
+    def get_chat_messages(self, session_id: str, limit: int = 200, tenant_id: str | None = None) -> list[dict]:
+        tid = tenant_id or self._tenant_id
+        q = (
             self.client.table("ai_chat_messages")
             .select("*")
             .eq("session_id", session_id)
-            .order("created_at")
-            .limit(limit)
-            .execute()
         )
+        if tid:
+            q = q.eq("tenant_id", tid)
+        q = q.order("created_at").limit(limit)
+        res = q.execute()
         return res.data or []
 
     # ── LLM Providers ──────────────────────────────────────────
 
-    def get_llm_providers(self) -> list[LLMProvider]:
-        res = self.client.table("llm_providers").select("*").order("is_active", desc=True).order("provider_name").execute()
+    def get_llm_providers(self, tenant_id: str | None = None) -> list[LLMProvider]:
+        tid = tenant_id or self._tenant_id
+        q = self.client.table("llm_providers").select("*")
+        if tid:
+            q = q.eq("tenant_id", tid)
+        q = q.order("is_active", desc=True).order("provider_name")
+        res = q.execute()
         return [dict_to_dataclass(LLMProvider, r) for r in res.data]
 
-    def get_active_llm_provider(self) -> Optional[LLMProvider]:
-        res = self.client.table("llm_providers").select("*").eq("is_active", 1).limit(1).execute()
+    def get_active_llm_provider(self, tenant_id: str | None = None) -> Optional[LLMProvider]:
+        tid = tenant_id or self._tenant_id
+        q = self.client.table("llm_providers").select("*").eq("is_active", 1)
+        if tid:
+            q = q.eq("tenant_id", tid)
+        q = q.limit(1)
+        res = q.execute()
         return dict_to_dataclass(LLMProvider, res.data[0]) if res.data else None
 
-    def save_llm_provider(self, provider: LLMProvider) -> int:
+    def save_llm_provider(self, provider: LLMProvider, tenant_id: str | None = None) -> int:
+        tid = tenant_id or self._tenant_id
         data = {k: v for k, v in provider.__dict__.items() if v is not None}
         data.pop("created_at", None)
         data.pop("updated_at", None)
+        if tid:
+            data["tenant_id"] = tid
         if provider.id:
             data.pop("id", None)
             if not provider.api_key or "****" in provider.api_key:
-                existing = self.client.table("llm_providers").select("api_key").eq("id", provider.id).execute()
+                eq = self.client.table("llm_providers").select("api_key").eq("id", provider.id)
+                if tid:
+                    eq = eq.eq("tenant_id", tid)
+                existing = eq.execute()
                 if existing.data and existing.data[0].get("api_key"):
                     data["api_key"] = existing.data[0]["api_key"]
             if provider.is_active:
-                self.client.table("llm_providers").update({"is_active": 0}).neq("id", provider.id).execute()
-            self.client.table("llm_providers").update(data).eq("id", provider.id).execute()
+                du = self.client.table("llm_providers").update({"is_active": 0}).neq("id", provider.id)
+                if tid:
+                    du = du.eq("tenant_id", tid)
+                du.execute()
+            up = self.client.table("llm_providers").update(data).eq("id", provider.id)
+            if tid:
+                up = up.eq("tenant_id", tid)
+            up.execute()
             return provider.id
         else:
             data.pop("id", None)
             if provider.is_active:
-                self.client.table("llm_providers").update({"is_active": 0}).neq("id", 0).execute()
+                da = self.client.table("llm_providers").update({"is_active": 0})
+                if tid:
+                    da = da.eq("tenant_id", tid)
+                da.execute()
             res = self.client.table("llm_providers").insert(data).execute()
             return res.data[0]["id"] if res.data else 0
 
-    def delete_llm_provider(self, provider_id: int) -> bool:
-        res = self.client.table("llm_providers").delete().eq("id", provider_id).execute()
+    def delete_llm_provider(self, provider_id: int, tenant_id: str | None = None) -> bool:
+        tid = tenant_id or self._tenant_id
+        q = self.client.table("llm_providers").delete().eq("id", provider_id)
+        if tid:
+            q = q.eq("tenant_id", tid)
+        res = q.execute()
         return len(res.data) > 0
 
     # ── Observation Graph ────────────────────────────────────────────────
@@ -2611,7 +2824,7 @@ class SupabaseStorage(Storage):
             except Exception:
                 parsed_rows = []
             if parsed_rows:
-                return parsed_rows
+                return _merge_observation_rows(parsed_rows)
 
         try:
             data = self.db.execute(
@@ -2634,7 +2847,7 @@ class SupabaseStorage(Storage):
                     r.setdefault("raw_message", "")
                     r.setdefault("raw_sender", "")
                 if rows:
-                    return rows
+                    return _merge_observation_rows(rows)
         except Exception:
             pass
 
@@ -2678,7 +2891,7 @@ class SupabaseStorage(Storage):
         phones_by_name: dict[str, set[str]] = defaultdict(set)
         for parsed in (query.execute().data or []):
             raw = parsed.get("raw_messages") or {}
-            if not _is_market_group_name(raw.get("group_name") or ""):
+            if not _is_market_group_row(raw):
                 continue
             phone = (
                 _normalize_india_phone(parsed.get("broker_phone") or "")
@@ -2769,7 +2982,7 @@ class SupabaseStorage(Storage):
                 "broker_phone": resolved_phone,
             })
 
-        return result[offset:offset + limit]
+        return _merge_observation_rows(result[offset:offset + limit])
 
     def get_brokers_feed(self, limit: int = 50, offset: int = 0,
                          min_observations: int = 1,
@@ -2921,19 +3134,74 @@ class SupabaseStorage(Storage):
         except Exception:
             return []
 
-    def get_saved_inbox_views(self) -> list[dict]:
+    def get_saved_inbox_views(self, tenant_id: str | None = None) -> list[dict]:
         try:
-            res = self.client.table("saved_inbox_views")\
-                .select("id, slug, name, description, filters, is_default, is_shared, created_at, updated_at")\
-                .order("is_default", desc=True)\
-                .order("name", desc=False)\
-                .execute()
+            tid = tenant_id or self._tenant_id
+            q = self.client.table("saved_inbox_views")\
+                .select("id, slug, name, description, filters, is_default, is_shared, created_at, updated_at")
+            if tid:
+                q = q.eq("tenant_id", tid)
+            q = q.order("is_default", desc=True).order("name", desc=False)
+            res = q.execute()
             return res.data if res.data else []
         except Exception:
             return []
 
-    def get_building_profile(self, building_db_id: int) -> dict:
-        """Get full building profile with stats."""
+    def get_saved_inbox_view(self, slug: str, tenant_id: str | None = None) -> dict | None:
+        tid = tenant_id or self._tenant_id
+        try:
+            q = self.client.table("saved_inbox_views").select("*").eq("slug", slug)
+            if tid:
+                q = q.eq("tenant_id", tid)
+            q = q.limit(1)
+            res = q.execute()
+            return res.data[0] if res.data else None
+        except Exception:
+            return None
+
+    def create_saved_inbox_view(self, slug: str, name: str, filters: dict, description: str = "", is_default: bool = False, is_shared: bool = False, tenant_id: str | None = None) -> int | None:
+        tid = tenant_id or self._tenant_id
+        payload = {
+            "slug": slug,
+            "name": name,
+            "description": description,
+            "filters": filters or {},
+            "is_default": bool(is_default),
+            "is_shared": bool(is_shared),
+        }
+        if tid:
+            payload["tenant_id"] = tid
+        res = self.client.table("saved_inbox_views").insert(payload).execute()
+        return res.data[0]["id"] if res.data else None
+
+    def update_saved_inbox_view(self, slug: str, name: str | None = None, filters: dict | None = None, description: str | None = None, is_default: bool | None = None, is_shared: bool | None = None, tenant_id: str | None = None) -> bool:
+        tid = tenant_id or self._tenant_id
+        payload: dict = {"updated_at": datetime.now(timezone.utc).isoformat()}
+        if name is not None:
+            payload["name"] = name
+        if filters is not None:
+            payload["filters"] = filters
+        if description is not None:
+            payload["description"] = description
+        if is_default is not None:
+            payload["is_default"] = bool(is_default)
+        if is_shared is not None:
+            payload["is_shared"] = bool(is_shared)
+        q = self.client.table("saved_inbox_views").update(payload).eq("slug", slug)
+        if tid:
+            q = q.eq("tenant_id", tid)
+        res = q.execute()
+        return bool(res.data)
+
+    def delete_saved_inbox_view(self, slug: str, tenant_id: str | None = None) -> bool:
+        tid = tenant_id or self._tenant_id
+        q = self.client.table("saved_inbox_views").delete().eq("slug", slug)
+        if tid:
+            q = q.eq("tenant_id", tid)
+        res = q.execute()
+        return bool(res.data)
+
+
         try:
             # Get building by database ID
             building_res = self.client.table("buildings").select("*").eq("id", building_db_id).limit(1).execute()

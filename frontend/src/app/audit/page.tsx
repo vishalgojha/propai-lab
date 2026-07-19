@@ -6,6 +6,7 @@ import { useCallback, useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { ArrowUpRight, CircleDot, Network, RefreshCw, Sparkles, Users } from "lucide-react";
 import * as api from "@/lib/api";
+import { cleanGroupName } from "@/lib/whatsapp-display";
 
 type Duplicate = { group_a?: { jid?: string; name?: string }; group_b?: { jid?: string; name?: string }; match_type?: string };
 type State = {
@@ -95,7 +96,7 @@ function NetworkMap({ groups, pairs }: { groups: api.AuditGroupCard[]; pairs: ap
             <div className={`mx-auto grid rounded-full border bg-black text-xs font-semibold ${index === 0 ? "h-16 w-16 border-white/40 text-white" : "h-11 w-11 border-white/15 text-zinc-300"} place-items-center`}>
               {num(group.senders_count)}
             </div>
-            <div className="mt-1 max-w-28 truncate text-[9px] text-zinc-500">{group.name}</div>
+            <div className="mt-1 max-w-28 truncate text-[9px] text-zinc-500">{cleanGroupName(group.name)}</div>
           </div>
         );
       })}
@@ -131,6 +132,8 @@ export default function AuditPage() {
   const listings = state.groups.reduce((sum, group) => sum + group.listings, 0);
   const requirements = state.groups.reduce((sum, group) => sum + group.requirements, 0);
   const active = state.groups.filter((group) => group.status === "live").length;
+  const brokersAcrossGroups = state.groups.reduce((sum, group) => sum + (group.active_brokers || 0), 0);
+  const brokersOverall = state.health?.stage?.brokers ?? 0;
   const bestGroups = [...state.groups].map((group) => ({
     ...group,
     exclusive: state.insights.exclusive_members[group.jid] || state.insights.exclusive_members[group.name] || 0,
@@ -175,11 +178,14 @@ export default function AuditPage() {
           <p className="mt-5 max-w-4xl text-2xl font-medium leading-tight tracking-[-0.035em] text-zinc-100 sm:text-4xl">
             PropAI found <span className="text-white">{num(today?.posts || state.health?.total_parsed_today)}</span> market posts from a network of <span className="text-white">{num(state.uniqueMembers)}</span> participants across <span className="text-white">{num(active)}</span> active groups.
           </p>
-          <div className="mt-8 grid grid-cols-2 gap-px border border-white/10 bg-white/10 sm:grid-cols-4">
-            {[["Listings", listings], ["Requirements", requirements], ["Markets", state.insights.markets.length], ["Parser ready", `${Math.round(state.health?.parser_success_rate || 0)}%`]].map(([label, value]) => (
+          <div className="mt-8 grid grid-cols-2 gap-px border border-white/10 bg-white/10 lg:grid-cols-3">
+            {[["Listings", listings], ["Requirements", requirements], ["Markets", state.insights.markets.length], ["Brokers overall", brokersOverall], ["Broker appearances", brokersAcrossGroups], ["Parser ready", `${Math.min(100, Math.round(state.health?.parser_success_rate || 0))}%`]].map(([label, value]) => (
               <div key={label} className="bg-[#090909] p-4"><Kicker>{label}</Kicker><div className="mt-2 text-xl font-semibold tabular-nums">{typeof value === "number" ? num(value) : value}</div></div>
             ))}
           </div>
+          <p className="mt-3 text-xs leading-5 text-zinc-500">
+            “Brokers overall” is the unique network total. “Broker appearances” is the sum across groups, so you can compare deduped coverage against raw repetition.
+          </p>
         </Card>
         <Card className="p-5">
           <div className="flex items-center justify-between"><div><Kicker>Opportunity flow</Kicker><div className="mt-2 text-sm text-zinc-300">Last seven days</div></div><CircleDot className="h-4 w-4 text-zinc-600" /></div>
@@ -203,7 +209,7 @@ export default function AuditPage() {
             {bestGroups.map((group, index) => <Link href={`/audit/groups/${encodeURIComponent(group.jid)}`} key={group.jid} className="flex items-center gap-4 p-4 transition hover:bg-white/[0.03]">
               <div className="w-5 text-xs tabular-nums text-zinc-600">{String(index + 1).padStart(2, "0")}</div>
               <QualityRing score={group.score} />
-              <div className="min-w-0 flex-1"><div className="truncate text-sm font-medium text-zinc-100">{group.name}</div><div className="mt-1 text-[11px] text-zinc-500">{num(group.observations)} posts · {num(group.senders_count)} participants · {num(group.exclusive)} exclusive</div></div>
+              <div className="min-w-0 flex-1"><div className="truncate text-sm font-medium text-zinc-100">{cleanGroupName(group.name)}</div><div className="mt-1 text-[11px] text-zinc-500">{num(group.observations)} posts · {num(group.senders_count)} participants · {num(group.exclusive)} exclusive</div></div>
               <ArrowUpRight className="h-4 w-4 text-zinc-700" />
             </Link>)}
             {!bestGroups.length ? <div className="p-8 text-center text-xs text-zinc-600">Group scores appear after capture starts.</div> : null}

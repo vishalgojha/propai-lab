@@ -80,7 +80,7 @@ from lab.events import get_bus
 PROJECT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(PROJECT_DIR))
 
-from lab.config import HOST, PORT, FRONTEND_URL, DOUBLEWORD_API_KEY, ENABLE_AI_PROMO, ENABLE_META_PUBLISHING, STATUS_FILE, SUPABASE_URL, SUPABASE_SERVICE_KEY, load_group_allowlist, save_group_allowlist
+from lab.config import HOST, PORT, FRONTEND_URL, DOUBLEWORD_API_KEY, ENABLE_AI_PROMO, ENABLE_META_PUBLISHING, STATUS_FILE, SUPABASE_URL, SUPABASE_SERVICE_KEY, load_excluded_groups, save_excluded_groups, load_group_allowlist, save_group_allowlist
 from evidence.resolver import resolve, resolve_by_landmark, resolve_by_street
 from evidence.parsers import parse as broker_parse
 
@@ -3116,15 +3116,15 @@ async def inbox_slugs(user: dict = Depends(require_user)):
 
 
 @app.get("/api/inbox/views")
-async def get_saved_inbox_views(user: dict = Depends(require_user)):
+async def get_saved_inbox_views(user: dict = Depends(require_user), tenant_id: str | None = Depends(get_tenant_context)):
     """List all saved inbox views."""
-    return storage.get_saved_inbox_views()
+    return storage.get_saved_inbox_views(tenant_id=tenant_id)
 
 
 @app.get("/api/inbox/views/{slug}")
-async def get_saved_inbox_view(slug: str, user: dict = Depends(require_user)):
+async def get_saved_inbox_view(slug: str, user: dict = Depends(require_user), tenant_id: str | None = Depends(get_tenant_context)):
     """Get a specific saved inbox view by slug."""
-    view = storage.get_saved_inbox_view(slug)
+    view = storage.get_saved_inbox_view(slug, tenant_id=tenant_id)
     if view is None:
         raise HTTPException(status_code=404, detail="View not found")
     return view
@@ -3133,6 +3133,7 @@ async def get_saved_inbox_view(slug: str, user: dict = Depends(require_user)):
 @app.post("/api/inbox/views")
 async def create_saved_inbox_view(
     user: dict = Depends(require_user),
+    tenant_id: str | None = Depends(get_tenant_context),
     slug: str = "",
     name: str = "",
     filters: dict = {},
@@ -3142,7 +3143,7 @@ async def create_saved_inbox_view(
 ):
     """Create a new saved inbox view."""
     try:
-        view_id = storage.create_saved_inbox_view(slug, name, filters, description, is_default, is_shared)
+        view_id = storage.create_saved_inbox_view(slug, name, filters, description, is_default, is_shared, tenant_id=tenant_id)
         return {"id": view_id, "slug": slug, "name": name}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -3151,6 +3152,7 @@ async def create_saved_inbox_view(
 @app.put("/api/inbox/views/{slug}")
 async def update_saved_inbox_view(
     user: dict = Depends(require_user),
+    tenant_id: str | None = Depends(get_tenant_context),
     slug: str = "",
     name: str | None = None,
     filters: dict | None = None,
@@ -3159,16 +3161,16 @@ async def update_saved_inbox_view(
     is_shared: bool | None = None,
 ):
     """Update a saved inbox view."""
-    ok = storage.update_saved_inbox_view(slug, name, filters, description, is_default, is_shared)
+    ok = storage.update_saved_inbox_view(slug, name, filters, description, is_default, is_shared, tenant_id=tenant_id)
     if not ok:
         raise HTTPException(status_code=404, detail="View not found")
     return {"ok": True, "slug": slug}
 
 
 @app.delete("/api/inbox/views/{slug}")
-async def delete_saved_inbox_view(slug: str, user: dict = Depends(require_user)):
+async def delete_saved_inbox_view(slug: str, user: dict = Depends(require_user), tenant_id: str | None = Depends(get_tenant_context)):
     """Delete a saved inbox view."""
-    ok = storage.delete_saved_inbox_view(slug)
+    ok = storage.delete_saved_inbox_view(slug, tenant_id=tenant_id)
     if not ok:
         raise HTTPException(status_code=404, detail="View not found")
     return {"ok": True, "slug": slug}
@@ -6910,35 +6912,35 @@ async def chat_suggestions(user: dict = Depends(require_user)):
 # ── AI Chat Sessions CRUD ──────────────────────────────────────
 
 @app.get("/api/ai/chat/sessions")
-async def list_chat_sessions(broker_phone: str = "", limit: int = 50, user: dict = Depends(require_user)):
+async def list_chat_sessions(broker_phone: str = "", limit: int = 50, user: dict = Depends(require_user), tenant_id: str | None = Depends(get_tenant_context)):
     if not broker_phone:
         return []
-    return storage.list_chat_sessions(broker_phone, limit=limit)
+    return storage.list_chat_sessions(broker_phone, limit=limit, tenant_id=tenant_id)
 
 
 @app.post("/api/ai/chat/sessions")
-async def create_chat_session(broker_phone: str = "", title: str = "New chat", user: dict = Depends(require_user)):
+async def create_chat_session(broker_phone: str = "", title: str = "New chat", user: dict = Depends(require_user), tenant_id: str | None = Depends(get_tenant_context)):
     if not broker_phone:
         raise HTTPException(400, "broker_phone required")
-    return storage.create_chat_session(broker_phone, title=title) or {}
+    return storage.create_chat_session(broker_phone, title=title, tenant_id=tenant_id) or {}
 
 
 @app.get("/api/ai/chat/sessions/{session_id}/messages")
-async def get_chat_session_messages(session_id: str, user: dict = Depends(require_user)):
-    session = storage.get_chat_session(session_id)
+async def get_chat_session_messages(session_id: str, user: dict = Depends(require_user), tenant_id: str | None = Depends(get_tenant_context)):
+    session = storage.get_chat_session(session_id, tenant_id=tenant_id)
     if not session:
         raise HTTPException(404, "Session not found")
-    return storage.get_chat_messages(session_id)
+    return storage.get_chat_messages(session_id, tenant_id=tenant_id)
 
 
 @app.delete("/api/ai/chat/sessions/{session_id}")
-async def delete_chat_session(session_id: str, user: dict = Depends(require_user)):
-    storage.delete_chat_session(session_id)
+async def delete_chat_session(session_id: str, user: dict = Depends(require_user), tenant_id: str | None = Depends(get_tenant_context)):
+    storage.delete_chat_session(session_id, tenant_id=tenant_id)
     return {"ok": True}
 
 
 @app.post("/api/ai/chat")
-async def ai_chat(req: ChatRequest, user: dict = Depends(require_user)):
+async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_id: str | None = Depends(get_tenant_context)):
     # Conversation memory (session-aware, not just message count)
     from ai_chat_engine import get_memory
     session_id = req.session_id or "default"
@@ -6957,8 +6959,8 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user)):
         if not req.session_id or not content:
             return
         try:
-            storage.add_chat_message(req.session_id, role, content)
-            storage.touch_chat_session(req.session_id)
+            storage.add_chat_message(req.session_id, role, content, tenant_id=tenant_id)
+            storage.touch_chat_session(req.session_id, tenant_id=tenant_id)
         except Exception:
             pass
 
@@ -6967,11 +6969,11 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user)):
         if not req.session_id or not text:
             return
         try:
-            msgs = storage.get_chat_messages(req.session_id, limit=3)
+            msgs = storage.get_chat_messages(req.session_id, limit=3, tenant_id=tenant_id)
             user_msgs = [m for m in msgs if m.get("role") == "user"]
             if len(user_msgs) <= 1:
                 title = text[:80].strip()
-                storage.update_chat_session_title(req.session_id, title)
+                storage.update_chat_session_title(req.session_id, title, tenant_id=tenant_id)
         except Exception:
             pass
 
@@ -6983,7 +6985,7 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user)):
     broker = None
     if req.broker_phone:
         try:
-            _bp = storage.get_user_profile(req.broker_phone)
+            _bp = storage.get_user_profile(req.broker_phone, tenant_id=tenant_id)
             if _bp and (_bp.get("first_name") or _bp.get("last_name")):
                 broker = {
                     "name": f"{_bp.get('first_name', '')} {_bp.get('last_name', '')}".strip(),
@@ -10237,7 +10239,7 @@ async def igr_search(
 async def list_groups(user: dict = Depends(require_user)):
     jobs = storage.get_sync_jobs(limit=500, source="whatsapp")
     group_markets = storage.get_group_markets()
-    allowlist = load_group_allowlist()
+    opt_out_list = load_excluded_groups()
     groups = []
     for j in jobs:
         try:
@@ -10251,10 +10253,10 @@ async def list_groups(user: dict = Depends(require_user)):
         derived = group_markets.get(j.group_name) or []
         merged_markets = list(dict.fromkeys([*parsed.get("markets", []), *derived]))
         enriched = {**parsed, "markets": merged_markets}
-        allowed = any(
-            entry.lower() in j.group_name.lower()
-            for entry in allowlist
-        ) if allowlist else True
+        excluded = any(
+            entry.lower() in j.group_name.lower() or entry.lower() == str(j.group_id).lower()
+            for entry in opt_out_list
+        ) if opt_out_list else False
         groups.append({
             "jid": j.group_id,
             "name": j.group_name,
@@ -10264,20 +10266,21 @@ async def list_groups(user: dict = Depends(require_user)):
             "records_processed": j.records_processed or 0,
             "status": j.status,
             "error": j.error,
-            "allowed": allowed,
+            "allowed": not excluded,
+            "excluded": excluded,
         })
     return sorted(groups, key=lambda g: g["name"].lower())
 
 
-@app.get("/api/groups/allowlist")
-async def get_allowlist(user: dict = Depends(require_user)):
-    """Return the current group allowlist."""
-    return load_group_allowlist()
+@app.get("/api/groups/opt-out")
+async def get_opt_out_list(user: dict = Depends(require_user)):
+    """Return the current group opt-out list."""
+    return load_excluded_groups()
 
 
-@app.post("/api/groups/allowlist")
-async def set_allowlist(request: Request, user: dict = Depends(require_user)):
-    """Set the group allowlist (JSON array of group JIDs or name substrings)."""
+@app.post("/api/groups/opt-out")
+async def set_opt_out_list(request: Request, user: dict = Depends(require_user)):
+    """Set the group opt-out list (JSON array of group JIDs or name substrings)."""
     try:
         body = await request.json()
     except Exception:
@@ -10285,14 +10288,41 @@ async def set_allowlist(request: Request, user: dict = Depends(require_user)):
     if not isinstance(body, list):
         raise HTTPException(400, "Expected a JSON array of strings")
     entries = [str(x).strip() for x in body if x and str(x).strip()]
-    save_group_allowlist(entries)
+    save_excluded_groups(entries)
+    return {"status": "ok", "count": len(entries)}
+
+
+@app.delete("/api/groups/opt-out")
+async def clear_opt_out_list(user: dict = Depends(require_user)):
+    """Clear the group opt-out list (track all groups)."""
+    save_excluded_groups([])
+    return {"status": "ok"}
+
+
+@app.get("/api/groups/allowlist")
+async def get_allowlist(user: dict = Depends(require_user)):
+    """Backward-compatible alias for the group opt-out list."""
+    return load_excluded_groups()
+
+
+@app.post("/api/groups/allowlist")
+async def set_allowlist(request: Request, user: dict = Depends(require_user)):
+    """Backward-compatible alias for the group opt-out list."""
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(400, "Invalid JSON")
+    if not isinstance(body, list):
+        raise HTTPException(400, "Expected a JSON array of strings")
+    entries = [str(x).strip() for x in body if x and str(x).strip()]
+    save_excluded_groups(entries)
     return {"status": "ok", "count": len(entries)}
 
 
 @app.delete("/api/groups/allowlist")
 async def clear_allowlist(user: dict = Depends(require_user)):
-    """Clear the group allowlist (track all groups)."""
-    save_group_allowlist([])
+    """Backward-compatible alias for clearing the group opt-out list."""
+    save_excluded_groups([])
     return {"status": "ok"}
 
 
@@ -11832,11 +11862,11 @@ def audit_groups_v2(
         try:
             po_rows = _audit_rows(
                 "SELECT rm.group_name, "
-                "COUNT(*) AS observations, "
-                "SUM(CASE WHEN UPPER(po.intent) IN ('BUY','BUYER','REQUIREMENT','RENTAL_SEEKER','TENANT') THEN 1 ELSE 0 END) AS requirements, "
-                "SUM(CASE WHEN UPPER(po.intent) NOT IN ('BUY','BUYER','REQUIREMENT','RENTAL_SEEKER','TENANT') THEN 1 ELSE 0 END) AS listings, "
+                "COUNT(DISTINCT rm.id) AS observations, "
+                "COUNT(DISTINCT CASE WHEN UPPER(po.intent) IN ('BUY','BUYER','REQUIREMENT','RENTAL_SEEKER','TENANT') THEN (po.raw_message_id::text || ':' || COALESCE(po.listing_index, 0)::text) END) AS requirements, "
+                "COUNT(DISTINCT CASE WHEN po.id IS NOT NULL AND UPPER(po.intent) NOT IN ('BUY','BUYER','REQUIREMENT','RENTAL_SEEKER','TENANT') THEN (po.raw_message_id::text || ':' || COALESCE(po.listing_index, 0)::text) END) AS listings, "
                 "COUNT(DISTINCT CASE WHEN po.micro_market IS NOT NULL AND po.micro_market != '' THEN po.micro_market END) AS markets_count, "
-                "SUM(CASE WHEN (po.location_raw IS NOT NULL AND po.location_raw != '') AND (po.micro_market IS NULL OR po.micro_market = '') THEN 1 ELSE 0 END) AS unknown_locations, "
+                "COUNT(DISTINCT CASE WHEN (po.location_raw IS NOT NULL AND po.location_raw != '') AND (po.micro_market IS NULL OR po.micro_market = '') THEN (po.raw_message_id::text || ':' || COALESCE(po.listing_index, 0)::text) END) AS unknown_locations, "
                 "COUNT(DISTINCT COALESCE(NULLIF(po.broker_name, ''), NULLIF(po.profile_name, ''), NULLIF(rm.sender, ''))) AS identities "
                 "FROM parsed_output po "
                 "JOIN raw_messages rm ON po.raw_message_id = rm.id "
@@ -12201,8 +12231,8 @@ def audit_capture_health(
             "COUNT(*) AS total_raw, "
             "COUNT(*) FILTER (WHERE rm.created_at >= scope.today_start) AS raw_today, "
             "MAX(created_at) AS last_msg, "
-            "(SELECT COUNT(*) FROM parsed_output WHERE tenant_id = scope.tenant_id) AS total_parsed, "
-            "(SELECT COUNT(*) FROM parsed_output WHERE tenant_id = scope.tenant_id AND created_at >= scope.today_start) AS parsed_today, "
+            "(SELECT COUNT(DISTINCT raw_message_id) FROM parsed_output WHERE tenant_id = scope.tenant_id) AS total_parsed, "
+            "(SELECT COUNT(DISTINCT raw_message_id) FROM parsed_output WHERE tenant_id = scope.tenant_id AND created_at >= scope.today_start) AS parsed_today, "
             "(SELECT COUNT(*) FROM knowledge_records WHERE tenant_id = scope.tenant_id) AS total_kr, "
             "(SELECT COUNT(*) FROM observations WHERE tenant_id = scope.tenant_id) AS total_obs, "
             "(SELECT COUNT(*) FROM observation_evidence WHERE tenant_id = scope.tenant_id) AS total_oe, "
@@ -12231,7 +12261,7 @@ def audit_capture_health(
     webhook_ok = bool(last_msg and _audit_timestamp(last_msg) >= five_min_ago)
     mins_today = max(1, now_dt.hour * 60 + now_dt.minute)
     msgs_per_min = round(raw_today / mins_today, 1)
-    parser_success_rate = round(total_parsed / max(1, total_raw) * 100, 1)
+    parser_success_rate = round(min(100.0, total_parsed / max(1, total_raw) * 100), 1)
 
     return {
         "stage": {
@@ -12271,141 +12301,149 @@ async def audit_intelligence_v2(user: dict = Depends(require_user)):
     day_ago = (now_dt - timedelta(hours=24)).strftime("%Y-%m-%dT%H:%M:%SZ")
     week_ago = (now_dt - timedelta(days=7)).strftime("%Y-%m-%dT%H:%M:%SZ")
 
-    total_raw = _audit_count("raw_messages")
-    total_parsed = _audit_count("parsed_output")
-    total_groups = _audit_scalar("SELECT COUNT(DISTINCT group_name) FROM raw_messages", default=0) if _table_exists("raw_messages") else 0
-    active_groups_24h = _audit_scalar("SELECT COUNT(DISTINCT group_name) FROM raw_messages WHERE created_at >= ?", (day_ago,), 0) if _table_exists("raw_messages") else 0
-    msgs_today = _audit_scalar("SELECT COUNT(*) FROM raw_messages WHERE created_at >= ?", (today_start,), 0) if _table_exists("raw_messages") else 0
-    parsed_today = _audit_scalar("SELECT COUNT(*) FROM parsed_output WHERE created_at >= ?", (today_start,), 0) if _table_exists("parsed_output") else 0
-    last_msg = _audit_scalar("SELECT MAX(created_at) FROM raw_messages", default=None) if _table_exists("raw_messages") else None
+    total_raw = _audit_scalar("SELECT COUNT(*) FROM raw_messages WHERE tenant_id = ?", (tenant_id,), 0) if _table_exists("raw_messages") else 0
+    total_parsed = _audit_scalar("SELECT COUNT(DISTINCT raw_message_id) FROM parsed_output WHERE tenant_id = ?", (tenant_id,), 0) if _table_exists("parsed_output") else 0
+    total_groups = _audit_scalar("SELECT COUNT(DISTINCT group_name) FROM raw_messages WHERE tenant_id = ? AND COALESCE(group_name, '') != ''", (tenant_id,), 0) if _table_exists("raw_messages") else 0
+    active_groups_24h = _audit_scalar("SELECT COUNT(DISTINCT group_name) FROM raw_messages WHERE tenant_id = ? AND created_at >= ? AND COALESCE(group_name, '') != ''", (tenant_id, day_ago), 0) if _table_exists("raw_messages") else 0
+    msgs_today = _audit_scalar("SELECT COUNT(*) FROM raw_messages WHERE tenant_id = ? AND created_at >= ?", (tenant_id, today_start), 0) if _table_exists("raw_messages") else 0
+    parsed_today = _audit_scalar("SELECT COUNT(DISTINCT raw_message_id) FROM parsed_output WHERE tenant_id = ? AND created_at >= ?", (tenant_id, today_start), 0) if _table_exists("parsed_output") else 0
+    last_msg = _audit_scalar("SELECT MAX(created_at) FROM raw_messages WHERE tenant_id = ?", (tenant_id,), None) if _table_exists("raw_messages") else None
     webhook_ok = bool(last_msg and str(last_msg) >= five_min_ago)
-    parser_success = round((total_parsed / max(1, total_raw)) * 100, 1)
+    parser_success = round(min(100.0, (total_parsed / max(1, total_raw)) * 100), 1)
 
-    knowledge_records = _audit_count("knowledge_records") or total_raw
+    knowledge_records = _audit_scalar("SELECT COUNT(*) FROM knowledge_records WHERE tenant_id = ?", (tenant_id,), 0) if _table_exists("knowledge_records") else total_raw
     searchable_records = _audit_count("knowledge_records_fts") or knowledge_records
     embeddings_count = _audit_count("embeddings")
     indexed_records = searchable_records or knowledge_records
-    recall_ready_pct = round((indexed_records / max(1, knowledge_records)) * 100, 1) if knowledge_records else 0
+    recall_ready_pct = round(min(100.0, (indexed_records / max(1, knowledge_records)) * 100), 1) if knowledge_records else 0
 
-    attachment_count = _audit_scalar("SELECT COUNT(*) FROM raw_messages WHERE COALESCE(message_type, 'text') != 'text'", default=0) if _table_exists("raw_messages") else 0
-    communities_count = _audit_scalar("SELECT COUNT(DISTINCT group_name) FROM raw_messages WHERE lower(group_name) LIKE '%community%'", default=0) if _table_exists("raw_messages") else 0
+    attachment_count = _audit_scalar("SELECT COUNT(*) FROM raw_messages WHERE tenant_id = ? AND COALESCE(message_type, 'text') != 'text'", (tenant_id,), 0) if _table_exists("raw_messages") else 0
+    communities_count = _audit_scalar("SELECT COUNT(DISTINCT group_name) FROM raw_messages WHERE tenant_id = ? AND lower(group_name) LIKE '%community%'", (tenant_id,), 0) if _table_exists("raw_messages") else 0
     broadcast_count = _audit_scalar("""
         SELECT COUNT(DISTINCT group_name) FROM raw_messages
-        WHERE group_name LIKE '%@broadcast'
-           OR group_name = 'status@broadcast'
-           OR lower(group_name) LIKE '%broadcast%'
-    """, default=0) if _table_exists("raw_messages") else 0
+        WHERE tenant_id = ?
+          AND (group_name LIKE '%@broadcast'
+               OR group_name = 'status@broadcast'
+               OR lower(group_name) LIKE '%broadcast%')
+    """, (tenant_id,), 0) if _table_exists("raw_messages") else 0
     direct_message_count = _audit_scalar("""
         SELECT COUNT(*) FROM raw_messages
-        WHERE group_name LIKE '%@s.whatsapp.net'
-           OR group_name LIKE '%@lid'
-    """, default=0) if _table_exists("raw_messages") else 0
+        WHERE tenant_id = ?
+          AND (group_name LIKE '%@s.whatsapp.net'
+               OR group_name LIKE '%@lid')
+    """, (tenant_id,), 0) if _table_exists("raw_messages") else 0
 
-    total_brokers = _audit_count("brokers")
-    total_jids = _audit_count("jid_profiles")
-    unique_phones = _audit_scalar("SELECT COUNT(DISTINCT phone) FROM jid_profiles WHERE phone IS NOT NULL AND phone != ''", default=0) if _table_exists("jid_profiles") else 0
-    named_contacts = _audit_scalar("SELECT COUNT(*) FROM jid_profiles WHERE COALESCE(display_name, '') NOT IN ('', 'Unknown')", default=0) if _table_exists("jid_profiles") else 0
+    total_brokers = _audit_scalar("SELECT COUNT(*) FROM brokers WHERE tenant_id = ?", (tenant_id,), 0) if _table_exists("brokers") else 0
+    total_jids = _audit_scalar("SELECT COUNT(*) FROM jid_profiles WHERE tenant_id = ?", (tenant_id,), 0) if _table_exists("jid_profiles") else 0
+    unique_phones = _audit_scalar("SELECT COUNT(DISTINCT phone) FROM jid_profiles WHERE tenant_id = ? AND phone IS NOT NULL AND phone != ''", (tenant_id,), 0) if _table_exists("jid_profiles") else 0
+    named_contacts = _audit_scalar("SELECT COUNT(*) FROM jid_profiles WHERE tenant_id = ? AND COALESCE(display_name, '') NOT IN ('', 'Unknown')", (tenant_id,), 0) if _table_exists("jid_profiles") else 0
     unnamed_contacts = max(0, total_jids - named_contacts)
-    new_brokers_today = _audit_scalar("SELECT COUNT(*) FROM brokers WHERE date(first_seen_at) = ?", (today,), 0) if _table_exists("brokers") else 0
-    new_brokers_week = _audit_scalar("SELECT COUNT(*) FROM brokers WHERE first_seen_at >= ?", (week_ago,), 0) if _table_exists("brokers") else 0
-    recently_active = _audit_scalar("SELECT COUNT(*) FROM brokers WHERE last_seen_at >= ?", (week_ago,), 0) if _table_exists("brokers") else 0
-    jids_no_phone = _audit_scalar("SELECT COUNT(*) FROM jid_profiles WHERE phone IS NULL OR phone = ''", default=0) if _table_exists("jid_profiles") else 0
+    new_brokers_today = _audit_scalar("SELECT COUNT(*) FROM brokers WHERE tenant_id = ? AND date(first_seen_at) = ?", (tenant_id, today), 0) if _table_exists("brokers") else 0
+    new_brokers_week = _audit_scalar("SELECT COUNT(*) FROM brokers WHERE tenant_id = ? AND first_seen_at >= ?", (tenant_id, week_ago), 0) if _table_exists("brokers") else 0
+    recently_active = _audit_scalar("SELECT COUNT(*) FROM brokers WHERE tenant_id = ? AND last_seen_at >= ?", (tenant_id, week_ago), 0) if _table_exists("brokers") else 0
+    jids_no_phone = _audit_scalar("SELECT COUNT(*) FROM jid_profiles WHERE tenant_id = ? AND (phone IS NULL OR phone = '')", (tenant_id,), 0) if _table_exists("jid_profiles") else 0
 
-    total_listings = _audit_count("listings")
-    sell_count = _audit_scalar("SELECT COUNT(*) FROM listings WHERE upper(COALESCE(intent, '')) IN ('SELL','SELLER','SALE','COMMERCIAL_SALE','PRE-LAUNCH')", default=0) if _table_exists("listings") else 0
-    rent_count = _audit_scalar("SELECT COUNT(*) FROM listings WHERE upper(COALESCE(intent, '')) IN ('RENT','RENTAL','LEASE','COMMERCIAL_RENTAL')", default=0) if _table_exists("listings") else 0
-    commercial_count = _audit_scalar("SELECT COUNT(*) FROM listings WHERE upper(COALESCE(intent, '')) LIKE '%COMMERCIAL%'", default=0) if _table_exists("listings") else 0
+    total_listings = _audit_scalar("SELECT COUNT(*) FROM listings WHERE tenant_id = ?", (tenant_id,), 0) if _table_exists("listings") else 0
+    sell_count = _audit_scalar("SELECT COUNT(*) FROM listings WHERE tenant_id = ? AND upper(COALESCE(intent, '')) IN ('SELL','SELLER','SALE','COMMERCIAL_SALE','PRE-LAUNCH')", (tenant_id,), 0) if _table_exists("listings") else 0
+    rent_count = _audit_scalar("SELECT COUNT(*) FROM listings WHERE tenant_id = ? AND upper(COALESCE(intent, '')) IN ('RENT','RENTAL','LEASE','COMMERCIAL_RENTAL')", (tenant_id,), 0) if _table_exists("listings") else 0
+    commercial_count = _audit_scalar("SELECT COUNT(*) FROM listings WHERE tenant_id = ? AND upper(COALESCE(intent, '')) LIKE '%COMMERCIAL%'", (tenant_id,), 0) if _table_exists("listings") else 0
     total_requirements = _audit_scalar("""
-        SELECT COUNT(*) FROM parsed_output
-        WHERE upper(COALESCE(intent, '')) IN ('BUY','BUYER','REQUIREMENT','RENTAL_SEEKER','TENANT')
-    """, default=0) if _table_exists("parsed_output") else 0
+        SELECT COUNT(DISTINCT raw_message_id) FROM parsed_output
+        WHERE tenant_id = ? AND upper(COALESCE(intent, '')) IN ('BUY','BUYER','REQUIREMENT','RENTAL_SEEKER','TENANT')
+    """, (tenant_id,), 0) if _table_exists("parsed_output") else 0
 
-    markets_observed = _audit_scalar("SELECT COUNT(DISTINCT micro_market) FROM parsed_output WHERE COALESCE(micro_market, '') != ''", default=0) if _table_exists("parsed_output") else 0
-    buildings_observed = _audit_count("buildings")
-    buildings_with_data = _audit_scalar("SELECT COUNT(*) FROM buildings WHERE COALESCE(observed_listings, 0) > 0", default=0) if _table_exists("buildings") else 0
-    developers_observed = _audit_scalar("SELECT COUNT(DISTINCT developer) FROM parsed_output WHERE COALESCE(developer, '') != ''", default=0) if _table_exists("parsed_output") else 0
-    localities_observed = _audit_scalar("SELECT COUNT(DISTINCT area) FROM parsed_output WHERE COALESCE(area, '') != ''", default=0) if _table_exists("parsed_output") else 0
-    landmarks_observed = _audit_scalar("SELECT COUNT(DISTINCT landmark_name) FROM parsed_output WHERE COALESCE(landmark_name, '') != ''", default=0) if _table_exists("parsed_output") else 0
+    markets_observed = _audit_scalar("SELECT COUNT(DISTINCT micro_market) FROM parsed_output WHERE tenant_id = ? AND COALESCE(micro_market, '') != ''", (tenant_id,), 0) if _table_exists("parsed_output") else 0
+    buildings_observed = _audit_scalar("SELECT COUNT(*) FROM buildings WHERE tenant_id = ?", (tenant_id,), 0) if _table_exists("buildings") else 0
+    buildings_with_data = _audit_scalar("SELECT COUNT(*) FROM buildings WHERE tenant_id = ? AND COALESCE(observed_listings, 0) > 0", (tenant_id,), 0) if _table_exists("buildings") else 0
+    developers_observed = _audit_scalar("SELECT COUNT(DISTINCT developer) FROM parsed_output WHERE tenant_id = ? AND COALESCE(developer, '') != ''", (tenant_id,), 0) if _table_exists("parsed_output") else 0
+    localities_observed = _audit_scalar("SELECT COUNT(DISTINCT area) FROM parsed_output WHERE tenant_id = ? AND COALESCE(area, '') != ''", (tenant_id,), 0) if _table_exists("parsed_output") else 0
+    landmarks_observed = _audit_scalar("SELECT COUNT(DISTINCT landmark_name) FROM parsed_output WHERE tenant_id = ? AND COALESCE(landmark_name, '') != ''", (tenant_id,), 0) if _table_exists("parsed_output") else 0
 
     latest_records = _audit_rows("""
         SELECT id, created_at, group_name, sender, message
         FROM raw_messages
+        WHERE tenant_id = ?
         ORDER BY created_at DESC
         LIMIT 12
-    """) if _table_exists("raw_messages") else []
+    """, (tenant_id,)) if _table_exists("raw_messages") else []
 
     group_rows = []
     if _table_exists("raw_messages") and _table_exists("parsed_output"):
         group_rows = _audit_rows("""
             SELECT rm.group_name,
-                   COUNT(*) AS messages,
+                   COUNT(DISTINCT rm.id) AS messages,
                    COUNT(DISTINCT rm.sender) AS unique_senders,
                    MAX(rm.created_at) AS last_seen,
-                   COUNT(po.id) AS observations,
-                   SUM(CASE WHEN upper(COALESCE(po.intent, '')) IN ('BUY','BUYER','REQUIREMENT','RENTAL_SEEKER','TENANT') THEN 1 ELSE 0 END) AS requirements,
-                   SUM(CASE WHEN po.id IS NOT NULL AND upper(COALESCE(po.intent, '')) NOT IN ('BUY','BUYER','REQUIREMENT','RENTAL_SEEKER','TENANT') THEN 1 ELSE 0 END) AS listings,
+                   COUNT(DISTINCT CASE WHEN po.id IS NOT NULL THEN (po.raw_message_id::text || ':' || COALESCE(po.listing_index, 0)::text) END) AS observations,
+                   COUNT(DISTINCT CASE WHEN upper(COALESCE(po.intent, '')) IN ('BUY','BUYER','REQUIREMENT','RENTAL_SEEKER','TENANT') THEN (po.raw_message_id::text || ':' || COALESCE(po.listing_index, 0)::text) END) AS requirements,
+                   COUNT(DISTINCT CASE WHEN po.id IS NOT NULL AND upper(COALESCE(po.intent, '')) NOT IN ('BUY','BUYER','REQUIREMENT','RENTAL_SEEKER','TENANT') THEN (po.raw_message_id::text || ':' || COALESCE(po.listing_index, 0)::text) END) AS listings,
                    COUNT(DISTINCT NULLIF(po.micro_market, '')) AS markets,
                    COUNT(DISTINCT NULLIF(po.building_name, '')) AS buildings
             FROM raw_messages rm
             LEFT JOIN parsed_output po ON po.raw_message_id = rm.id
+            WHERE rm.tenant_id = ? AND COALESCE(rm.group_name, '') != ''
             GROUP BY rm.group_name
             ORDER BY messages DESC
             LIMIT 20
-        """)
+        """, (tenant_id,))
     elif _table_exists("raw_messages"):
         group_rows = _audit_rows("""
             SELECT group_name, COUNT(*) AS messages, COUNT(DISTINCT sender) AS unique_senders,
                    MAX(created_at) AS last_seen, 0 AS observations, 0 AS requirements,
                    0 AS listings, 0 AS markets, 0 AS buildings
             FROM raw_messages
+            WHERE tenant_id = ?
             GROUP BY group_name
             ORDER BY messages DESC
             LIMIT 20
-        """)
+        """, (tenant_id,))
 
     top_brokers = _audit_rows("""
         SELECT canonical_name, primary_phone, observation_count, listing_count,
                requirement_count, group_count, first_seen_at, last_seen_at
         FROM brokers
+        WHERE tenant_id = ?
         ORDER BY observation_count DESC
         LIMIT 15
-    """) if _table_exists("brokers") else []
+    """, (tenant_id,)) if _table_exists("brokers") else []
 
     broker_reach = _audit_rows("""
         SELECT broker_name,
                COUNT(DISTINCT rm.group_name) AS groups,
-               COUNT(*) AS observations,
+               COUNT(DISTINCT rm.id) AS observations,
                MIN(rm.created_at) AS first_seen,
                MAX(rm.created_at) AS last_seen
         FROM parsed_output po
         JOIN raw_messages rm ON po.raw_message_id = rm.id
-        WHERE COALESCE(broker_name, '') != ''
+        WHERE rm.tenant_id = ? AND COALESCE(broker_name, '') != ''
         GROUP BY broker_name
         ORDER BY groups DESC, observations DESC
         LIMIT 10
-    """) if _table_exists("parsed_output") and _table_exists("raw_messages") else []
+    """, (tenant_id,)) if _table_exists("parsed_output") and _table_exists("raw_messages") else []
 
     market_stats = _audit_rows("""
         SELECT micro_market,
-               COUNT(*) AS total,
+               COUNT(DISTINCT rm.id) AS total,
                SUM(CASE WHEN upper(COALESCE(intent, '')) NOT IN ('BUY','BUYER','REQUIREMENT','RENTAL_SEEKER','TENANT') THEN 1 ELSE 0 END) AS residential,
                SUM(CASE WHEN upper(COALESCE(intent, '')) LIKE '%COMMERCIAL%' THEN 1 ELSE 0 END) AS commercial,
                COUNT(DISTINCT broker_name) AS brokers
-        FROM parsed_output
-        WHERE COALESCE(micro_market, '') != ''
+        FROM parsed_output po
+        JOIN raw_messages rm ON po.raw_message_id = rm.id
+        WHERE rm.tenant_id = ? AND COALESCE(micro_market, '') != ''
         GROUP BY micro_market
         ORDER BY total DESC
         LIMIT 20
-    """) if _table_exists("parsed_output") else []
+    """, (tenant_id,)) if _table_exists("parsed_output") and _table_exists("raw_messages") else []
 
     top_markets = _audit_rows("""
         SELECT micro_market, COUNT(DISTINCT broker_name) AS brokers
-        FROM parsed_output
-        WHERE COALESCE(micro_market, '') != ''
+        FROM parsed_output po
+        JOIN raw_messages rm ON po.raw_message_id = rm.id
+        WHERE rm.tenant_id = ? AND COALESCE(micro_market, '') != ''
         GROUP BY micro_market
         ORDER BY brokers DESC
         LIMIT 10
-    """) if _table_exists("parsed_output") else []
+    """, (tenant_id,)) if _table_exists("parsed_output") and _table_exists("raw_messages") else []
 
     suggestions = []
     if total_raw == 0:
@@ -12539,11 +12577,11 @@ def audit_insights(
     week_ago = (datetime.utcnow() - timedelta(days=6)).strftime("%Y-%m-%dT00:00:00Z")
 
     flow_rows = _audit_rows(
-        "SELECT date(rm.created_at) AS day, COUNT(po.id) AS posts, "
-        "SUM(CASE WHEN UPPER(COALESCE(po.intent, '')) IN "
-        "('BUY','BUYER','REQUIREMENT','RENTAL_SEEKER','TENANT') THEN 1 ELSE 0 END) AS requirements, "
-        "SUM(CASE WHEN UPPER(COALESCE(po.intent, '')) NOT IN "
-        "('BUY','BUYER','REQUIREMENT','RENTAL_SEEKER','TENANT') THEN 1 ELSE 0 END) AS listings "
+        "SELECT date(rm.created_at) AS day, COUNT(DISTINCT rm.id) AS posts, "
+        "COUNT(DISTINCT CASE WHEN UPPER(COALESCE(po.intent, '')) IN "
+        "('BUY','BUYER','REQUIREMENT','RENTAL_SEEKER','TENANT') THEN (po.raw_message_id::text || ':' || COALESCE(po.listing_index, 0)::text) END) AS requirements, "
+        "COUNT(DISTINCT CASE WHEN UPPER(COALESCE(po.intent, '')) NOT IN "
+        "('BUY','BUYER','REQUIREMENT','RENTAL_SEEKER','TENANT') THEN (po.raw_message_id::text || ':' || COALESCE(po.listing_index, 0)::text) END) AS listings "
         "FROM raw_messages rm JOIN parsed_output po ON po.raw_message_id = rm.id "
         "WHERE rm.tenant_id = ? AND rm.created_at >= ? "
         "GROUP BY date(rm.created_at) ORDER BY day",
@@ -12551,11 +12589,11 @@ def audit_insights(
     ) if _table_exists("raw_messages") and _table_exists("parsed_output") else []
 
     market_rows = _audit_rows(
-        "SELECT po.micro_market, COUNT(*) AS posts, "
-        "SUM(CASE WHEN UPPER(COALESCE(po.intent, '')) IN "
-        "('BUY','BUYER','REQUIREMENT','RENTAL_SEEKER','TENANT') THEN 1 ELSE 0 END) AS requirements, "
-        "SUM(CASE WHEN UPPER(COALESCE(po.intent, '')) NOT IN "
-        "('BUY','BUYER','REQUIREMENT','RENTAL_SEEKER','TENANT') THEN 1 ELSE 0 END) AS listings, "
+        "SELECT po.micro_market, COUNT(DISTINCT rm.id) AS posts, "
+        "COUNT(DISTINCT CASE WHEN UPPER(COALESCE(po.intent, '')) IN "
+        "('BUY','BUYER','REQUIREMENT','RENTAL_SEEKER','TENANT') THEN (po.raw_message_id::text || ':' || COALESCE(po.listing_index, 0)::text) END) AS requirements, "
+        "COUNT(DISTINCT CASE WHEN UPPER(COALESCE(po.intent, '')) NOT IN "
+        "('BUY','BUYER','REQUIREMENT','RENTAL_SEEKER','TENANT') THEN (po.raw_message_id::text || ':' || COALESCE(po.listing_index, 0)::text) END) AS listings, "
         "COUNT(DISTINCT COALESCE(NULLIF(po.broker_phone, ''), NULLIF(po.broker_name, ''), rm.sender)) AS brokers "
         "FROM parsed_output po JOIN raw_messages rm ON po.raw_message_id = rm.id "
         "WHERE rm.tenant_id = ? AND COALESCE(po.micro_market, '') != '' "
@@ -12742,15 +12780,15 @@ async def health():
 # ── User Profile ──────────────────────────────────────────────────
 
 @app.get("/api/profile")
-async def get_profile(user: dict = Depends(require_user)):
-    profile = storage.get_user_profile(auth_user_id=user.get("id", ""))
+async def get_profile(user: dict = Depends(require_user), tenant_id: str | None = Depends(get_tenant_context)):
+    profile = storage.get_user_profile(auth_user_id=user.get("id", ""), tenant_id=tenant_id)
     return profile or {}
 
 
 @app.post("/api/profile")
-async def save_profile(body: ProfileUpdate, user: dict = Depends(require_user)):
+async def save_profile(body: ProfileUpdate, user: dict = Depends(require_user), tenant_id: str | None = Depends(get_tenant_context)):
     phone = user.get("phone", "")
-    profile = storage.save_user_profile(phone, body.model_dump(), auth_user_id=user.get("id", ""))
+    profile = storage.save_user_profile(phone, body.model_dump(), auth_user_id=user.get("id", ""), tenant_id=tenant_id)
     if not profile:
         raise HTTPException(500, "Profile could not be saved")
     return profile
@@ -14196,8 +14234,8 @@ async def release_chat(body: dict, member: dict = Depends(get_current_member)):
 
 
 @app.get("/api/workspace/llm-providers")
-async def list_llm_providers(user: dict = Depends(require_user)):
-    providers = storage.get_llm_providers()
+async def list_llm_providers(user: dict = Depends(require_user), tenant_id: str | None = Depends(get_tenant_context)):
+    providers = storage.get_llm_providers(tenant_id=tenant_id)
     # Mask API keys
     for p in providers:
         if p.api_key and len(p.api_key) > 8:
@@ -14208,8 +14246,8 @@ async def list_llm_providers(user: dict = Depends(require_user)):
 
 
 @app.get("/api/workspace/llm-providers/active")
-async def get_active_llm_provider(user: dict = Depends(require_user)):
-    provider = storage.get_active_llm_provider()
+async def get_active_llm_provider(user: dict = Depends(require_user), tenant_id: str | None = Depends(get_tenant_context)):
+    provider = storage.get_active_llm_provider(tenant_id=tenant_id)
     if not provider:
         return {}
     if provider.api_key:
@@ -14218,7 +14256,7 @@ async def get_active_llm_provider(user: dict = Depends(require_user)):
 
 
 @app.post("/api/workspace/llm-providers")
-async def save_llm_provider(body: dict, user: dict = Depends(require_user)):
+async def save_llm_provider(body: dict, user: dict = Depends(require_user), tenant_id: str | None = Depends(get_tenant_context)):
     required = ("provider_name",)
     for k in required:
         if k not in body:
@@ -14236,7 +14274,7 @@ async def save_llm_provider(body: dict, user: dict = Depends(require_user)):
         model_name=str(body.get("model_name", "")),
         is_active=1 if body.get("is_active") else 0,
     )
-    provider_id = storage.save_llm_provider(provider)
+    provider_id = storage.save_llm_provider(provider, tenant_id=tenant_id)
     return {"id": provider_id}
 
 
@@ -14284,8 +14322,8 @@ async def test_llm_provider(body: dict, user: dict = Depends(require_user)):
 
 
 @app.delete("/api/workspace/llm-providers/{provider_id}")
-async def delete_llm_provider(provider_id: int, user: dict = Depends(require_user)):
-    ok = storage.delete_llm_provider(provider_id)
+async def delete_llm_provider(provider_id: int, user: dict = Depends(require_user), tenant_id: str | None = Depends(get_tenant_context)):
+    ok = storage.delete_llm_provider(provider_id, tenant_id=tenant_id)
     return {"deleted": ok}
 
 

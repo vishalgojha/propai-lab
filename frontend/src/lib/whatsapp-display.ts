@@ -5,6 +5,20 @@
 
 const RAW_JID_RE = /@(?:g\.us|s\.whatsapp\.net|lid)$/;
 const RAW_JID_WITH_DIGITS_RE = /^\d{12,}[-\d]*@/;
+const EMOJI_RE = /[\p{Extended_Pictographic}\p{Regional_Indicator}]/gu;
+const VARIATION_SELECTOR_RE = /\uFE0F/gu;
+const ZWJ_RE = /\u200D/gu;
+
+export function stripDecorativeEmoji(value?: string): string {
+  const text = (value || "").trim();
+  if (!text) return "";
+  return text
+    .replace(EMOJI_RE, "")
+    .replace(VARIATION_SELECTOR_RE, "")
+    .replace(ZWJ_RE, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
 
 export function isRawWhatsAppId(value?: string): boolean {
   const text = value || "";
@@ -60,7 +74,7 @@ export function displayGroupName(
   // Try known groups lookup
   if (knownGroups) {
     const match = knownGroups.find((g) => g?.jid === text);
-    if (match?.name) return match.name.trim();
+    if (match?.name) return stripDecorativeEmoji(match.name);
   }
 
   // If it's a raw JID, format a readable fallback
@@ -75,7 +89,7 @@ export function displayGroupName(
     return phone ? displayPhone(phone) : "Direct Message";
   }
 
-  return text;
+  return stripDecorativeEmoji(text);
 }
 
 /**
@@ -106,5 +120,5 @@ export function cleanGroupName(value?: string): string {
   const text = (value || "").trim();
   if (!text) return "";
   if (isRawWhatsAppId(text)) return displayGroupName(text);
-  return text;
+  return stripDecorativeEmoji(text);
 }
