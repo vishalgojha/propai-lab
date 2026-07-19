@@ -4319,10 +4319,11 @@ def _ai_promote(system: str, prompt: str) -> str | None:
 
 def _ai_promote_with_key(system: str, prompt: str, api_key: str) -> str | None:
     try:
-        from openai import OpenAI
-        client = OpenAI(api_key=api_key, base_url="https://api.doubleword.ai/v1")
+        from llm import get_client, get_model
+        client = get_client() if not api_key else OpenAI(api_key=api_key, base_url="https://api.doubleword.ai/v1")
+        model = get_model() if not api_key else "Qwen/Qwen3.6-35B-A3B-FP8"
         resp = client.chat.completions.create(
-            model="Qwen/Qwen3.6-35B-A3B-FP8",
+            model=model,
             messages=[{"role": "system", "content": system}, {"role": "user", "content": prompt}],
             max_tokens=300,
         )
@@ -4366,8 +4367,8 @@ async def promote_generate(req: PromoteRequest, user: dict = Depends(require_use
         "ai_enhanced": False,
     }
 
-    promo_api_key = req.api_key or DOUBLEWORD_API_KEY
-    if req.use_ai and ENABLE_AI_PROMO and promo_api_key:
+    promo_api_key = req.api_key or ""
+    if req.use_ai and ENABLE_AI_PROMO:
         try:
             system = "You are a Mumbai real estate marketing assistant. Given property details, write a short promotional ad for the specified channel. Keep it under 120 words. Return only the ad body, no preamble."
             price_str = _promote_price(parsed)
@@ -7050,89 +7051,75 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
 
     # Capability questions → tool-enabled prompt, text-only mode (no tool calls)
     if last_user and _CAPABILITY_SIGNALS.search(last_user):
-        api_key = req.api_key or DOUBLEWORD_API_KEY
-        if api_key:
-            try:
-                cap_sources = chat_engine.load_data()
-                cap_live = chat_engine.load_live_data(getattr(storage, "db", None))
-                cap_sources.update(cap_live)
-                if cap_sources:
-                    cap_msgs = [
-                        {"role": "system", "content": chat_engine.build_system_prompt(cap_sources, broker=broker)},
-                        {"role": "user", "content": last_user},
-                    ]
-                    loop = asyncio.get_running_loop()
-                    cap_reply = await asyncio.wait_for(
-                        loop.run_in_executor(
-                            None,
-                            lambda: chat_engine.get_model_reply(
-                                cap_msgs, cap_sources, api_key=api_key,
-                                model=req.model.strip() or None, max_tool_rounds=0,
-                            ),
-                        ),
-                        timeout=30,
-                    )
-                    text = (cap_reply.content or "").strip() or "I can help with that."
-                    _persist("user", last_user)
-                    _persist("assistant", text)
-                    _maybe_title(last_user)
-                    return {
-                        "content": text,
-                        "blocks": [{"type": "summary", "body": text}],
-                        "sources": list(cap_sources.keys()),
-                        "status_steps": [],
-                        "trace": {"route": "capability_llm"},
-                    }
-            except Exception:
-                pass  # fall through to conversational path
-
-    if last_user and not _has_query_signals(last_user):
-        api_key = req.api_key or DOUBLEWORD_API_KEY
-        if api_key:
-            try:
+        try:
+            cap_sources = chat_engine.load_data()
+            cap_live = chat_engine.load_live_data(getattr(storage, "db", None))
+            cap_sources.update(cap_live)
+            if cap_sources:
+                cap_msgs = [
+                    {"role": "system", "content": chat_engine.build_system_prompt(cap_sources, broker=broker)},
+                    {"role": "user", "content": last_user},
+                ]
                 loop = asyncio.get_running_loop()
-                reply = await asyncio.wait_for(
+                cap_reply = await asyncio.wait_for(
                     loop.run_in_executor(
                         None,
-                        lambda: chat_engine.get_conversational_reply(
-                            req.messages, api_key=api_key, model=req.model.strip() or None, broker=broker
+                        lambda: chat_engine.get_model_reply(
+                            cap_msgs, cap_sources, api_key=req.api_key or "",
+                            model=req.model.strip() or None, max_tool_rounds=0,
                         ),
                     ),
                     timeout=30,
                 )
-                text = (reply.content or "").strip() or "Hey! What can I help you with?"
+                text = (cap_reply.content or "").strip() or "I can help with that."
                 _persist("user", last_user)
                 _persist("assistant", text)
                 _maybe_title(last_user)
                 return {
                     "content": text,
-                    "blocks": [{"type": "greeting", "body": text}],
-                    "sources": [],
+                    "blocks": [{"type": "summary", "body": text}],
+                    "sources": list(cap_sources.keys()),
                     "status_steps": [],
-                    "trace": {"route": "conversational_llm"},
+                    "trace": {"route": "capability_llm"},
                 }
-            except Exception:
-                return {
-                    "content": "Hey! What can I help you with?",
-                    "blocks": [{"type": "greeting", "body": "Hey! What can I help you with?"}],
-                    "sources": [],
-                    "trace": {"route": "conversational_fallback"},
-                }
-        return {
-            "content": "Hey! What can I help you with?",
-            "blocks": [{"type": "greeting", "body": "Hey! What can I help you with?"}],
-            "sources": [],
-            "trace": {"route": "conversational_no_key"},
-        }
+        except Exception:
+            pass  # fall through to conversational path
+
+    if last_user and not _has_query_signals(last_user):
+        try:
+            loop = asyncio.get_running_loop()
+            reply = await asyncio.wait_for(
+                loop.run_in_executor(
+                    None,
+                    lambda: chat_engine.get_conversational_reply(
+                        req.messages, api_key=req.api_key or "", model=req.model.strip() or None, broker=broker
+                    ),
+                ),
+                timeout=30,
+            )
+            text = (reply.content or "").strip() or "Hey! What can I help you with?"
+            _persist("user", last_user)
+            _persist("assistant", text)
+            _maybe_title(last_user)
+            return {
+                "content": text,
+                "blocks": [{"type": "greeting", "body": text}],
+                "sources": [],
+                "status_steps": [],
+                "trace": {"route": "conversational_llm"},
+            }
+        except Exception:
+            return {
+                "content": "Hey! What can I help you with?",
+                "blocks": [{"type": "greeting", "body": "Hey! What can I help you with?"}],
+                "sources": [],
+                "trace": {"route": "conversational_fallback"},
+            }
 
     # Topic-aware context compaction
     if last_user and memory.detect_topic_change(last_user) and len(memory.working) > 2:
         memory.compact_topic()
     memory.prune()
-
-    api_key = req.api_key or DOUBLEWORD_API_KEY
-    if not api_key:
-        return {"error": "api_key_required", "message": "Set your Doubleword API key in Chat settings"}
 
     sources = chat_engine.load_data()
     live = chat_engine.load_live_data(getattr(storage, "db", None))
@@ -7152,7 +7139,7 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
         reply = chat_engine.get_model_reply(
             msgs,
             sources,
-            api_key=api_key,
+            api_key=req.api_key or "",
             model=req.model.strip() or None,
             max_tool_rounds=2,
         )
