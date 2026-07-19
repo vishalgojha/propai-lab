@@ -11,6 +11,7 @@ import SiteFooter from "@/components/SiteFooter";
 import { ShortlistProvider } from "@/components/ShortlistProvider";
 import ShortlistBar from "@/components/ShortlistBar";
 import RequirementCapture from "@/components/RequirementCapture";
+import SearchAiChat from "@/components/SearchAiChat";
 import { NOINDEX } from "@/lib/seo";
 
 // Locality/building lists change gradually; a few minutes of staleness is fine
@@ -44,6 +45,30 @@ export default async function SearchPage({ searchParams }: { searchParams: Searc
   const state = query ? await searchNaturalLanguageListings(query, 24, asset) : null;
   const knownLocalities = await getAllLocalities();
   const summary = state?.parsed ? describeNaturalSearch(state.parsed) : "";
+
+  // Compact, LLM-safe context describing the listings the user is currently
+  // looking at, so the "Ask AI" follow-up chat can answer about them.
+  const aiContext = state
+    ? (() => {
+        const lines: string[] = [];
+        if (query) lines.push(`Search query: "${query}"`);
+        if (asset) lines.push(`Asset type: ${asset}`);
+        const rows = state.results.slice(0, 15);
+        lines.push(`Showing ${state.results.length} result(s); listing up to ${rows.length} below:`);
+        for (const r of rows) {
+          const parts = [
+            r.building_name || r.location_label || "Unknown location",
+            r.bhk ? `${r.bhk} BHK` : null,
+            r.priceLabel !== "Price on request" ? r.priceLabel : null,
+            r.intent ? `(${r.intent})` : null,
+            r.micro_market ? `@ ${r.micro_market}` : null,
+            r.broker_name ? `broker: ${r.broker_name}` : null,
+          ].filter(Boolean);
+          lines.push("- " + parts.join(" "));
+        }
+        return lines.join("\n");
+      })()
+    : "";
   // Results render whenever a search/browse produced a state — including an
   // asset-only browse like /search?asset=commercial (no free-text query).
   const hasResults = Boolean(state);
@@ -192,6 +217,11 @@ export default async function SearchPage({ searchParams }: { searchParams: Searc
                     If a match lands inside your timeline, the requirement can be routed to a broker and/or sent back to you for follow-up.
                   </div>
                 </aside>
+              </div>
+            )}
+            {aiContext && (
+              <div className="mt-10">
+                <SearchAiChat context={aiContext} />
               </div>
             )}
           </section>

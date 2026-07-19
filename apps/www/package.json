@@ -18,7 +18,10 @@
     "autoprefixer": "^10.4.0",
     "postcss": "^8.4.0",
     "mapbox-gl": "^3.9.0",
-    "@supabase/supabase-js": "^2.45.0"
+    "@supabase/supabase-js": "^2.45.0",
+    "ai": "^7.0.19",
+    "@ai-sdk/openai-compatible": "^3.0.7",
+    "@ai-sdk/react": "^4.0.20"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
