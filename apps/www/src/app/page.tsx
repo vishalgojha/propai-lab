@@ -8,6 +8,7 @@ export const revalidate = 300;
 import { MapPin, MessageSquare, Phone, Shield } from "lucide-react";
 import Link from "next/link";
 import HomeSearch from "@/components/HomeSearch";
+import LiveListingTicker from "@/components/LiveListingTicker";
 import SiteHeader from "@/components/SiteHeader";
 import { NoPhotosFaqJsonLd } from "@/components/NoPhotosFaq";
 import SiteFooter from "@/components/SiteFooter";
@@ -72,6 +73,8 @@ export default async function WWWPage() {
                 Try searching a locality, building, or &ldquo;2 BHK in Bandra&rdquo;.
               </p>
             </div>
+
+            <LiveListingTicker />
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-6 max-w-[1600px] mx-auto">
               {[
