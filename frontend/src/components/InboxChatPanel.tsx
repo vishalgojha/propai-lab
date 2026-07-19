@@ -31,6 +31,7 @@ interface InboxChatPanelProps {
   selectedConversationJid?: string;
   collapsed?: boolean;
   onToggleCollapse?: () => void;
+  globalMode?: boolean;
 }
 
 function formatSessionTime(iso: string) {
@@ -104,6 +105,7 @@ export function InboxChatPanel({
   selectedMsgDetails,
   collapsed = false,
   onToggleCollapse,
+  globalMode = false,
 }: InboxChatPanelProps) {
   const [messages, setMessages] = useState<ChatMsg[]>([]);
   const [input, setInput] = useState("");
@@ -226,7 +228,7 @@ export function InboxChatPanel({
     setLoading(true);
     setError(null);
 
-    const contextPrefix = buildContextPrefix(selectedBroker, selectedMsgDetails);
+    const contextPrefix = globalMode ? "" : buildContextPrefix(selectedBroker, selectedMsgDetails);
     const fullUserMsg = contextPrefix ? `${contextPrefix}${rawUserMsg}` : rawUserMsg;
 
     const userMsg: ChatMsg = { role: "user", content: rawUserMsg };
@@ -274,7 +276,7 @@ export function InboxChatPanel({
     } finally {
       setLoading(false);
     }
-  }, [input, loading, messages, sessionId, brokerPhone, selectedBroker, selectedMsgDetails]);
+  }, [input, loading, messages, sessionId, brokerPhone, selectedBroker, selectedMsgDetails, globalMode]);
 
   if (collapsed) {
     return (
@@ -293,14 +295,16 @@ export function InboxChatPanel({
   }
 
   const contextLabel =
-    selectedBroker
+    globalMode
+      ? undefined
+      : selectedBroker
       ? selectedBroker.canonical_name || selectedBroker.name || "Selected broker"
       : selectedMsgDetails
         ? "Selected message"
         : undefined;
 
   return (
-    <div className="h-full flex flex-col bg-[#070b0e] overflow-hidden">
+    <div className="relative h-full w-full min-w-0 flex flex-col bg-[#070b0e] overflow-hidden">
       {/* Header */}
       <div className="flex items-center justify-between px-3 py-2.5 border-b border-white/10 shrink-0">
         <div className="flex items-center gap-2 min-w-0">

@@ -311,6 +311,27 @@ def test_generic_multi_listing_lines_emit_canonical_intent():
     assert cards[0]["intent"] == "SELL"
 
 
+def test_compact_numbered_inventory_splits_and_cleans_buildings():
+    message = """1 Bhk Raheja Estate Kulupwadi Near National Park 40k/ 1 Lac Furnished
+1 Bhk Ariana Residency 31k/1 Lac Unfurnished
+2 Bhk Maruti Tower Thakur Complex 57k/2 Lac Furnished
+2 Bhk Espee Tower 67k/2.5 Lac Furnished
+2 Bhk Triumph Siddhivinayak 60k/2 Lac Unfurnished
+2.5 Bhk Samarpan Tower 77k/3 Lac Final Fully furnished
+3 Bhk Viceroy Savana 1.10 Lac Unfurnished
+3 Bhk Samarpan Exotica 93k/3 Lac Furnished"""
+
+    cards = parse_multi_message(message, profile_name="Manish Yadav")
+
+    assert len(cards) == 8
+    assert cards[0]["bhk"] == "1 BHK"
+    assert cards[0]["building_name"] == "Raheja Estate Kulupwadi Near National Park"
+    assert cards[0]["price"] == 40
+    assert cards[0]["price_unit"] == "K"
+    assert cards[1]["building_name"] == "Ariana Residency"
+    assert cards[1]["furnishing"] == "Unfurnished"
+
+
 def test_primary_building_resolution_preserves_registry_micro_market(monkeypatch):
     monkeypatch.setattr(
         evidence.resolver,

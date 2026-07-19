@@ -855,6 +855,32 @@ def _title_case_name(name: str) -> str:
         return " ".join(result)
     return name
 
+
+def _clean_title_building_name(title: str | None) -> str | None:
+    """Remove compact-line price/deposit/furnishing tails from title-derived names."""
+    if not title:
+        return None
+    clean = re.sub(r'\s+', ' ', title).strip(" -*|:,")
+    if not clean:
+        return None
+    clean = re.sub(
+        r'\s+(?:rs\.?\s*|inr\s*|₹)?\d+(?:\.\d+)?\s*(?:k|lac|lakh|l|cr|crore)\s*/.*$',
+        '',
+        clean,
+        flags=re.I,
+    )
+    clean = re.sub(
+        r'\s+(?:rs\.?\s*|inr\s*|₹)?\d+(?:\.\d+)?\s*(?:k|lac|lakh|l|cr|crore)\b.*$',
+        '',
+        clean,
+        flags=re.I,
+    )
+    clean = re.sub(r'\b(?:fully|semi|un)\s*-?\s*furnished\b.*$', '', clean, flags=re.I)
+    clean = re.sub(r'\bfurnished\b.*$', '', clean, flags=re.I)
+    clean = re.sub(r'\s+', ' ', clean).strip(" -*|:,")
+    return clean or None
+
+
 def _parse_divider_block(
     block: str,
     profile_name: str | None,
@@ -867,6 +893,13 @@ def _parse_divider_block(
     price, unit = _parse_price_from_text(block)
     location_line = _extract_location_line(block)
     building = _extract_building_name(block)
+    _, title_building = _extract_title_parts(block)
+    if title_building and (
+        not building
+        or len(title_building) < len(building)
+        or re.search(r'\b(?:rent|sale|price|furnished|unfurnished|lac|lakh|cr|crore)\b', building, re.I)
+    ):
+        building = title_building
 
     # Skip blocks that are clearly headers (no listing data at all)
     if not building and not area and price is None and not location_line:
@@ -1195,6 +1228,7 @@ def _extract_title_parts(block: str) -> tuple[str | None, str | None]:
         title = re.sub(r'^\s*studio\s*', '', first_line, flags=re.I)
 
     title = re.sub(r'\s+', ' ', title).strip(" -*|:")
+    title = _clean_title_building_name(title)
     if not title or title.lower() in {"option", "options"} or re.search(r'\boptions?\b', title, re.I):
         title = None
     return bhk, title
@@ -1682,10 +1716,13 @@ def _lines_to_listings(
         if area is None and price is None:
             continue
 
-        bhk = _parse_bhk_from_text(line)
+        bhk, line_building = _extract_title_parts(line)
+        bhk = bhk or _parse_bhk_from_text(line)
         furnishing = _parse_furnishing_from_text(line) or section_furnish
         attrs = extract_property_attributes(line)
         listing_source = detect_listing_source(line)
+        clean_line_building = validate_building_name(line_building)
+        clean_shared_building = validate_building_name(shared_building)
 
         result: dict = {
             "intent": section_intent or _infer_intent_from_text(line),
@@ -1695,9 +1732,9 @@ def _lines_to_listings(
             "price_unit": unit,
             "area_sqft": area,
             "furnishing": furnishing,
-            "location_raw": shared_building,
-            "building_name": validate_building_name(shared_building),
-            "landmark_name": shared_building,
+            "location_raw": clean_shared_building,
+            "building_name": clean_line_building or clean_shared_building,
+            "landmark_name": clean_shared_building,
             "street_name": None,
             "area": None,
             "micro_market": None,
