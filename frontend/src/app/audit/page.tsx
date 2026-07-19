@@ -204,11 +204,6 @@ export default function AuditPage() {
           <div className="divide-y divide-white/[0.07]">{state.insights.markets.slice(0, 6).map((market, index) => <div key={market.name} className="grid grid-cols-[24px_1fr_auto] items-center gap-3 px-5 py-3"><span className="text-[10px] text-zinc-600">{index + 1}</span><div><div className="text-sm font-medium">{market.name}</div><div className="mt-1 text-[10px] text-zinc-500">{num(market.brokers)} brokers · {num(market.requirements)} requirements</div></div><div className="text-right"><div className="text-sm font-semibold tabular-nums">{num(market.posts)}</div><div className="text-[9px] text-zinc-600">posts</div></div></div>)}</div>
         </Card>
 
-        <Card className="overflow-hidden">
-          <div className="border-b border-white/10 p-5"><Kicker>Broker leaderboard</Kicker><h2 className="mt-2 text-lg font-semibold">Most useful contributors</h2></div>
-          <div className="divide-y divide-white/[0.07]">{state.insights.brokers.slice(0, 6).map((broker, index) => <div key={`${broker.name}-${index}`} className="flex items-center gap-3 px-5 py-3"><div className="grid h-8 w-8 place-items-center border border-white/10 text-[10px] text-zinc-400">{broker.name.slice(0, 2).toUpperCase()}</div><div className="min-w-0 flex-1"><div className="truncate text-sm font-medium">{broker.name}</div><div className="mt-1 text-[10px] text-zinc-500">{num(broker.groups)} groups · {num(broker.markets)} markets · active {ago(broker.last_seen)}</div></div><div className="text-sm font-semibold tabular-nums">{num(broker.posts)}</div></div>)}</div>
-        </Card>
-
         <Card className="p-5 lg:col-span-2 xl:col-span-1">
           <div className="flex items-start justify-between"><div><Kicker>PropAI recommendations</Kicker><h2 className="mt-2 text-lg font-semibold">Make the network sharper</h2></div><Sparkles className="h-4 w-4 text-zinc-600" /></div>
           <div className="mt-5 space-y-3">
