@@ -96,7 +96,12 @@ export default async function WWWPage() {
                   description: "No chatbots. Every enquiry goes to a verified broker on WhatsApp.",
                 },
               ].map((item, i) => (
-                <div key={i} className="bg-zinc-900/50 border border-white/10 rounded-xl p-6 lg:p-8">
+                <div
+                  key={i}
+                  className="bg-zinc-900/50 border border-white/10 rounded-xl p-6 lg:p-8 transition-all duration-base hover:border-green-400/30 hover:bg-zinc-900 hover:scale-[1.02] hover:shadow-lg hover:shadow-green-400/10 active:scale-[0.98]"
+                  data-scroll-reveal
+                  style={{ transitionDelay: `${i * 100}ms` } as React.CSSProperties}
+                >
                   <item.icon className="w-6 h-6 text-green-400 mb-4" aria-hidden="true" />
                   <h3 className="text-lg font-semibold text-white mb-2">{item.title}</h3>
                   <p className="text-[15px] text-zinc-400">{item.description}</p>
@@ -302,7 +307,7 @@ export default async function WWWPage() {
           </div>
         </section>
 
-        <section id="no-photos" className="py-16 lg:py-24 bg-black">
+        <section id="no-photos" className="py-16 lg:py-24 bg-black" data-scroll-reveal>
           <div className="max-w-3xl mx-auto px-4 lg:px-6">
             <div className="bg-zinc-900/50 border border-white/10 rounded-xl p-6 lg:p-8">
               <h2 className="text-[20px] lg:text-[24px] font-semibold text-white mb-3">
