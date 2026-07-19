@@ -44,7 +44,7 @@ Rules:
     const { text } = await generateText({
       model: provider.model,
       prompt,
-      maxTokens: 30,
+      maxOutputTokens: 30,
       abortSignal: controller.signal,
     });
 
