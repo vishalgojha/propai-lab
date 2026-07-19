@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import * as api from "@/lib/api";
+import { cleanGroupName } from "@/lib/whatsapp-display";
 
 function timeAgo(ts: string) {
   if (!ts) return "never";
@@ -51,7 +52,7 @@ export default function GroupDetailPage() {
       <div className="flex items-start justify-between">
         <div>
           <a href="/audit" className="text-[10px] text-zinc-500 hover:text-white mb-1 block">← WhatsApp Audit</a>
-          <h1 className="text-lg font-semibold">{group.name}</h1>
+          <h1 className="text-lg font-semibold">{cleanGroupName(group.name)}</h1>
         </div>
         <div className="flex gap-3 items-center">
           <div className="text-right">
