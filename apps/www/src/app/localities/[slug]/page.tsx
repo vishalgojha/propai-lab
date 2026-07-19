@@ -7,7 +7,8 @@ import SiteHeader from "@/components/SiteHeader";
 import SiteFooter from "@/components/SiteFooter";
 import ListingCard, { LocalityBackLink } from "@/components/ListingCard";
 import { NoPhotosFaqJsonLd, NoPhotosFaq } from "@/components/NoPhotosFaq";
-import { JsonLd, buildLocalBusiness, buildBreadcrumb, getSiteUrl, buildLocalityDescription } from "@/lib/seo";
+import { JsonLd, buildLocalBusiness, buildBreadcrumb, getSiteUrl } from "@/lib/seo";
+import { localityTitle, localityDescription } from "@/lib/seo-copy";
 
 // Read at server runtime (Coolify injects env into the running container).
 // Passed to the client map so we don't depend on NEXT_PUBLIC_* build-time
@@ -27,9 +28,16 @@ export async function generateMetadata({ params }: Params) {
   const data = await getLocalityData(slug);
   if (!data) return { title: "Locality not found — PropAI" };
   return {
-    title: `${data.locality} — Properties & Brokers | PropAI`,
+    title: localityTitle(data.locality),
     description: data.hasListings
-      ? buildLocalityDescription(data)
+      ? localityDescription({
+          locality: data.locality,
+          totalListings: data.totalListings,
+          buildingCount: data.buildings.length,
+          saleCount: data.saleCount,
+          rentCount: data.rentCount,
+          topBhk: data.topBhk,
+        })
       : `Live ${data.locality} listings, price ranges, and broker activity sourced from WhatsApp broker conversations.`,
   };
 }
@@ -123,7 +131,9 @@ export default async function LocalityPage({ params }: Params) {
             {data.locality}
           </h1>
           <p className="text-lg text-zinc-400 max-w-2xl">
-            {buildLocalityDescription(data)}
+            {data.totalListings.toLocaleString("en-IN")} live {data.locality} listings
+            {data.buildings.length ? ` across ${data.buildings.length} buildings` : ""},
+            sourced from WhatsApp broker conversations and updated in real time.
           </p>
           <div className="mt-6 flex flex-wrap gap-3">
             <TrustStat label="Active listings" value={data.totalListings} />

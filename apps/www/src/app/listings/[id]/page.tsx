@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { JsonLd, buildRealEstateListing, buildBreadcrumb, getSiteUrl } from "@/lib/seo";
+import { listingTitle, listingDescription } from "@/lib/seo-copy";
 import {
   MapPin,
   MessageSquare,
@@ -74,10 +75,16 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const listing = await getListingById(Number(id));
   if (!listing) return { title: "Listing not found — PropAI" };
   const card = toListingCardViewModel(toCardFields(listing), false);
-  const locality = card.locality ? ` in ${card.locality}` : "";
+  const isRent = /month/i.test(card.priceLabel);
+  const dealType = isRent ? "For rent" : "For sale";
   return {
-    title: `${card.title}${locality} — ${card.priceLabel} | PropAI`,
-    description: `${card.title}${locality}. ${card.specRow}. Sourced from live WhatsApp broker activity on PropAI.`,
+    title: listingTitle(card),
+    description: listingDescription({
+      dealType,
+      title: card.title,
+      locality: card.locality,
+      specRow: card.specRow,
+    }),
   };
 }
 

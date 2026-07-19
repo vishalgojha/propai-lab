@@ -9,6 +9,7 @@ import {
 } from "@/lib/localities";
 import { toListingCardViewModel, type ListingCardFields } from "@/lib/listing-card";
 import { slugify } from "@/lib/supabase";
+import { buildingTitle, buildingDescription } from "@/lib/seo-copy";
 import SiteHeader from "@/components/SiteHeader";
 import SiteFooter from "@/components/SiteFooter";
 import ListingTile from "@/components/ListingTile";
@@ -26,9 +27,23 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const building = await getBuildingBySlug(slug);
   if (!building) return { title: "Building not found — PropAI" };
   const locality = building.microMarket ? ` in ${building.microMarket}` : "";
+  const listings = await getBuildingListings(slug);
+  let saleCount = 0;
+  let rentCount = 0;
+  for (const l of listings) {
+    const i = (l.intent || "").toLowerCase();
+    if (i === "rent" || i === "rental" || i === "lease") rentCount += 1;
+    else if (i === "sale" || i === "sell" || i === "buy") saleCount += 1;
+  }
   return {
-    title: `${building.name}${locality} — Buildings | PropAI`,
-    description: `Live listings, price ranges, and broker activity for ${building.name}${locality}, sourced from WhatsApp broker conversations.`,
+    title: buildingTitle(building.name),
+    description: buildingDescription({
+      name: building.name,
+      locality: building.microMarket,
+      listingCount: listings.length,
+      saleCount,
+      rentCount,
+    }),
   };
 }
 
