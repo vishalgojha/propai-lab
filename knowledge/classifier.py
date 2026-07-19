@@ -33,19 +33,9 @@ def _open_db_handle(db_path: Path | str):
 
 def _get_client():
     global _client
-    # Try loading from lab.config first
-    try:
-        from lab.config import DOUBLEWORD_API_KEY
-        key = DOUBLEWORD_API_KEY
-    except ImportError:
-        key = os.environ.get("DOUBLEWORD_API_KEY", "")
-    
-    if not key:
-        return None
-    
-    if _client is None or _client.api_key != key:
-        _client = OpenAI(api_key=key, base_url=BASE_URL)
-    return _client
+    # Use provider fallback chain if no explicit key
+    from llm import get_client as _fb_client
+    return _fb_client()
 
 
 CLASSIFICATION_PROMPT = """You are a real estate knowledge classifier for an Indian property market AI.

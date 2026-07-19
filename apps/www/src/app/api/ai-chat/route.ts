@@ -1,5 +1,5 @@
 import { convertToModelMessages, createUIMessageStreamResponse, streamText, toUIMessageStream, type UIMessage } from "ai";
-import { model } from "@/lib/ai-provider";
+import { getProviderModel, providers, providerCount } from "@/lib/ai-provider";
 
 export const runtime = "edge";
 
@@ -15,10 +15,50 @@ Guidelines:
 - If asked something outside property search, politely redirect to real estate.
 - Keep answers short: a few sentences, or a short bullet list when comparing options.`;
 
+/* ── Health cache: remember last working provider ─────────────────── */
+let cachedIndex = -1;
+let cacheTs = 0;
+const CACHE_TTL = 5 * 60 * 1000;
+
+async function findWorkingProvider(): Promise<number> {
+  if (cachedIndex >= 0 && Date.now() - cacheTs < CACHE_TTL) return cachedIndex;
+
+  const results = await Promise.allSettled(
+    providers.map(async (cfg, i) => {
+      const res = await fetch(`${cfg.baseURL}/chat/completions`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${cfg.apiKey}`,
+        },
+        body: JSON.stringify({
+          model: cfg.model,
+          messages: [{ role: "user", content: "hi" }],
+          max_tokens: 1,
+        }),
+        signal: AbortSignal.timeout(8000),
+      }).catch(() => ({ ok: false, status: 0 }));
+      if (res.ok) return i;
+      throw new Error(`provider ${i} status ${res.status}`);
+    }),
+  );
+
+  const first = results.find((r) => r.status === "fulfilled") as
+    | PromiseFulfilledResult<number>
+    | undefined;
+
+  const idx = first?.value ?? -1;
+  if (idx >= 0) {
+    cachedIndex = idx;
+    cacheTs = Date.now();
+  }
+  return idx;
+}
+
 export async function POST(req: Request) {
-  if (!process.env.DOUBLEWORD_API_KEY) {
+  if (providerCount === 0) {
     return new Response(
-      JSON.stringify({ error: "LLM gateway not configured. Set DOUBLEWORD_API_URL and DOUBLEWORD_API_KEY." }),
+      JSON.stringify({ error: "No LLM providers configured. Set at least one API key." }),
       { status: 503, headers: { "Content-Type": "application/json" } },
     );
   }
@@ -35,8 +75,25 @@ export async function POST(req: Request) {
     : BASE_SYSTEM;
 
   const modelMessages = await convertToModelMessages(messages);
+
+  const idx = await findWorkingProvider();
+  if (idx < 0) {
+    return new Response(
+      JSON.stringify({ error: "All LLM providers are currently unavailable." }),
+      { status: 503, headers: { "Content-Type": "application/json" } },
+    );
+  }
+
+  const p = getProviderModel(idx);
+  if (!p) {
+    return new Response(
+      JSON.stringify({ error: "Provider not found." }),
+      { status: 503, headers: { "Content-Type": "application/json" } },
+    );
+  }
+
   const result = streamText({
-    model,
+    model: p.model,
     system,
     messages: modelMessages,
   });

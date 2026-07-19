@@ -185,13 +185,17 @@ def get_memory(session_id: str) -> ConversationMemory:
 
 def get_client(api_key=None, base_url=None):
     global _client, _client_key, _client_base_url
-    key = api_key or os.environ.get("DOUBLEWORD_API_KEY", "")
-    endpoint = (base_url or BASE_URL).rstrip("/")
-    if _client is None or _client_key != key or _client_base_url != endpoint:
-        _client = OpenAI(api_key=key, base_url=endpoint)
-        _client_key = key
-        _client_base_url = endpoint
-    return _client
+    if api_key or base_url:
+        key = api_key or os.environ.get("DOUBLEWORD_API_KEY", "")
+        endpoint = (base_url or BASE_URL).rstrip("/")
+        if _client is None or _client_key != key or _client_base_url != endpoint:
+            _client = OpenAI(api_key=key, base_url=endpoint)
+            _client_key = key
+            _client_base_url = endpoint
+        return _client
+    # No explicit key → use provider fallback chain
+    from llm import get_client as _fb_client
+    return _fb_client()
 
 
 def load_data():

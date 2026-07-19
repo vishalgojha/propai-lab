@@ -42,16 +42,8 @@ Respond in JSON: {"building_name": string | null, "confidence": 0.0-1.0, "reason
 
 
 def _get_client():
-    key = os.environ.get("DOUBLEWORD_API_KEY", "")
-    if not key:
-        key_file = os.path.expanduser("~/.propai/config.json")
-        if os.path.exists(key_file):
-            try:
-                cfg = json.loads(open(key_file).read())
-                key = cfg.get("doubleword_api_key", "")
-            except (json.JSONDecodeError, OSError):
-                pass
-    return OpenAI(api_key=key, base_url=BASE_URL) if key else None
+    from llm import get_client as _fb_client
+    return _fb_client()
 
 
 def enrich_building(storage: "Storage", d: dict) -> None:

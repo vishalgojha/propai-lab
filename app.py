@@ -4305,10 +4305,10 @@ def _identify_channel_emoji(channel: str) -> str:
 
 def _ai_promote(system: str, prompt: str) -> str | None:
     try:
-        from openai import OpenAI
-        client = OpenAI(api_key=DOUBLEWORD_API_KEY, base_url="https://api.doubleword.ai/v1")
+        from llm import get_client, get_model
+        client = get_client()
         resp = client.chat.completions.create(
-            model="Qwen/Qwen3.6-35B-A3B-FP8",
+            model=get_model(),
             messages=[{"role": "system", "content": system}, {"role": "user", "content": prompt}],
             max_tokens=300,
         )
