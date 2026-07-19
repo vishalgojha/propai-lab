@@ -12,6 +12,12 @@ export const designTokens = {
     cardBg: '#0d1117',
     inputBg: '#18181b',
     error: '#ef4444',
+    // Data-viz palette (Phase 0): for charts/graphs only — never for buttons/links
+    dataviz1: '#F59E0B',  // amber
+    dataviz2: '#8B5CF6',  // violet
+    dataviz3: '#F43F5E',  // rose
+    dataviz4: '#06B6D4',  // cyan
+    dataviz5: '#84CC16',  // lime
   },
   typography: {
     display: { size: '32px', weight: '700', lineHeight: '1.1' },
@@ -37,9 +43,10 @@ export const designTokens = {
     dropdown: '0 8px 32px rgba(0,0,0,0.4)',
   },
   transitions: {
-    fast: '150ms ease',
-    normal: '200ms ease',
-    slow: '300ms ease',
+    fast: '150ms cubic-bezier(0.4, 0, 0.2, 1)',
+    base: '250ms cubic-bezier(0.4, 0, 0.2, 1)',
+    slow: '400ms cubic-bezier(0.4, 0, 0.2, 1)',
+    expressive: '250ms cubic-bezier(0.34, 1.56, 0.64, 1)',
   },
 } as const;
 
