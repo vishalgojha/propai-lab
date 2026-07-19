@@ -111,12 +111,12 @@ export default async function WWWPage() {
           </div>
         </section>
 
-        <section className="py-10 lg:py-14 border-b border-white/5">
+        <section className="py-14 lg:py-20 border-b border-white/5">
           <div className="max-w-[1600px] mx-auto px-4 lg:px-6">
-            <p className="text-center text-sm text-zinc-500 mb-6">
+            <p className="text-center text-sm text-zinc-500 mb-8">
               Real estate intelligence, sourced from live broker activity — not portals
             </p>
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-6 max-w-4xl mx-auto">
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-5 lg:gap-8 max-w-4xl mx-auto">
               <TrustStat label="Live listings tracked" value={overview.counts.listings} />
               <TrustStat label="Brokers in network" value={overview.counts.brokers} />
               <TrustStat label="Localities covered" value={overview.counts.localities} />
@@ -343,11 +343,11 @@ function TrustStat({
   suffix?: string;
 }) {
   return (
-    <div className="rounded-2xl border border-white/10 bg-zinc-900/50 p-5 text-center" data-scroll-reveal>
-      <div className="text-2xl lg:text-3xl font-bold text-white leading-none">
+    <div className="rounded-2xl border border-white/10 bg-zinc-900/50 p-6 lg:p-8 text-center" data-scroll-reveal>
+      <div className="text-3xl lg:text-4xl font-bold text-white leading-none">
         <CountUp end={value} duration={1800} locale="en-IN" suffix={suffix} />
       </div>
-      <div className="mt-2 text-xs text-zinc-400">{label}</div>
+      <div className="mt-3 text-xs lg:text-sm text-zinc-400">{label}</div>
     </div>
   );
 }
