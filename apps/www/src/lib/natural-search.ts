@@ -36,6 +36,8 @@ export type NaturalSearchRow = {
   first_seen: string | null;
   last_seen: string | null;
   observation_count: number | null;
+  latitude: number | null;
+  longitude: number | null;
 };
 
 export type NaturalSearchResult = NaturalSearchRow & {
@@ -678,7 +680,7 @@ async function browseByAsset(
 
   return {
     parsed: { query: "", locality: null, localityStated: false, statedLocalityText: null, bhk: null, intent: null, asset, minPrice: null, maxPrice: null, furnishing: null, tokens: [], matchedLocalities: [] },
-    results: ranked,
+    results: await enrichWithBuildingCoords(ranked),
     totalScanned: rows.length,
     suggestions: matchedSuggestions,
     hasData: true,
@@ -837,11 +839,54 @@ export async function searchNaturalLanguageListings(
 
   return {
     parsed,
-    results: ranked,
+    results: await enrichWithBuildingCoords(ranked),
     totalScanned: rows.length,
     suggestions: matchedSuggestions,
     hasData: true,
     localityUnmatched: false,
     localitySuggestions: [],
   };
+}
+
+const _buildingCoordsCache = new Map<string, { latitude: number; longitude: number }>();
+
+async function enrichWithBuildingCoords(
+  results: NaturalSearchResult[],
+): Promise<NaturalSearchResult[]> {
+  const names = [...new Set(results.map((r) => r.building_name).filter(Boolean) as string[])];
+  if (names.length === 0) return results;
+
+  const missing = names.filter((n) => !_buildingCoordsCache.has(n.toLowerCase()));
+  if (missing.length > 0) {
+    const db = getServerSupabase();
+    if (db) {
+      const PAGE = 500;
+      for (let i = 0; i < missing.length; i += PAGE) {
+        const batch = missing.slice(i, i + PAGE);
+        const { data } = await db
+          .from("buildings")
+          .select("canonical_name, latitude, longitude")
+          .in("canonical_name", batch)
+          .not("latitude", "is", null);
+        for (const row of data ?? []) {
+          const name = (row.canonical_name ?? "").trim().toLowerCase();
+          if (name && row.latitude != null && row.longitude != null) {
+            _buildingCoordsCache.set(name, {
+              latitude: row.latitude,
+              longitude: row.longitude,
+            });
+          }
+        }
+      }
+    }
+  }
+
+  return results.map((r) => {
+    if (!r.building_name) return r;
+    const coords = _buildingCoordsCache.get(r.building_name.toLowerCase());
+    if (coords) {
+      return { ...r, latitude: coords.latitude, longitude: coords.longitude };
+    }
+    return r;
+  });
 }
