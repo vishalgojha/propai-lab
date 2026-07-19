@@ -301,17 +301,32 @@ export function findLocalityMatches(query: string, localities: LocalitySummary[]
     if (qSlug === locSlug || qText === locText) score = 100;
     else if (qSlug.includes(locSlug) || qText.includes(locText)) score = 80;
     else if (locSlug.includes(qSlug) && qSlug.length >= 3) score = 55;
-    else if (
-      qText
-        .split(" ")
-        .filter((part) => part.length >= 3)
-        .every((part) => locText.includes(part))
-    ) {
-      score = 40;
-    } else {
-      // Fuzzy fallback: trigram similarity on the full locality phrase.
-      const sim = trigramSimilarity(query, loc.locality);
-      if (sim >= 0.5) score = Math.round(30 + sim * 20);
+    else {
+      // Check if ANY word from the locality name appears in the query.
+      // Handles "bandra" matching "Bandra West", "andheri" matching "Andheri West", etc.
+      const locWords = locText.split(/\s+/).filter((w) => w.length >= 3);
+      const matchingWords = locWords.filter((w) => {
+        const wordRe = new RegExp(`\\b${w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`);
+        return wordRe.test(qText);
+      });
+      if (matchingWords.length > 0 && matchingWords.length >= Math.ceil(locWords.length / 2)) {
+        // Most words of the locality name appear in the query → good match
+        score = 70;
+      } else if (matchingWords.length > 0 && matchingWords[0].length >= 4) {
+        // At least the first/base word appears (e.g. "bandra" in "Bandra West")
+        score = 50;
+      } else if (
+        qText
+          .split(" ")
+          .filter((part) => part.length >= 3)
+          .every((part) => locText.includes(part))
+      ) {
+        score = 40;
+      } else {
+        // Fuzzy fallback: trigram similarity on the full locality phrase.
+        const sim = trigramSimilarity(query, loc.locality);
+        if (sim >= 0.5) score = Math.round(30 + sim * 20);
+      }
     }
     return { loc, score };
   });
@@ -562,8 +577,12 @@ function scoreRow(row: NaturalSearchRow, parsed: ParsedNaturalSearch): { score: 
 }
 
 export function matchesHardFilters(row: NaturalSearchRow, parsed: ParsedNaturalSearch): boolean {
-  if (parsed.locality && row.micro_market && slugify(row.micro_market) !== slugify(parsed.locality)) {
-    return false;
+  if (parsed.locality && row.micro_market) {
+    const rowSlug = canonicalLocality(row.micro_market).slug;
+    const parsedSlug = canonicalLocality(parsed.locality).slug;
+    if (parsedSlug && rowSlug && rowSlug !== parsedSlug) {
+      return false;
+    }
   }
 
   if (parsed.bhk != null) {
