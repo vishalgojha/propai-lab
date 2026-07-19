@@ -98,7 +98,7 @@ export default function SearchAiChat({ context }: { context: string }) {
           </div>
         )}
         {error && (
-          <div className="text-sm text-red-300 bg-red-900/20 border border-red-500/20 rounded-2xl px-4 py-2.5">
+          <div className="text-sm text-amber-200/90 bg-amber-400/10 border border-amber-400/20 rounded-2xl px-4 py-2.5">
             {error instanceof Error ? error.message : "Something went wrong. Try again."}
           </div>
         )}

@@ -16,6 +16,13 @@ Guidelines:
 - Keep answers short: a few sentences, or a short bullet list when comparing options.`;
 
 export async function POST(req: Request) {
+  if (!process.env.DOUBLEWORD_API_KEY) {
+    return new Response(
+      JSON.stringify({ error: "LLM gateway not configured. Set DOUBLEWORD_API_URL and DOUBLEWORD_API_KEY." }),
+      { status: 503, headers: { "Content-Type": "application/json" } },
+    );
+  }
+
   const body = (await req.json()) as {
     messages?: UIMessage[];
     context?: string;

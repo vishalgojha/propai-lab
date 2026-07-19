@@ -219,7 +219,7 @@ export default async function SearchPage({ searchParams }: { searchParams: Searc
                 </aside>
               </div>
             )}
-            {aiContext && (
+            {aiContext && state && state.results.length > 0 && (
               <div className="mt-10">
                 <SearchAiChat context={aiContext} />
               </div>
