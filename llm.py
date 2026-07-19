@@ -1,5 +1,5 @@
 """
-LLM provider fallback — tries free providers first, Doubleword (paid) last.
+LLM provider fallback — NVIDIA first, then free providers, Doubleword (paid) last.
 
 Usage:
     from llm import get_client, get_model
@@ -12,9 +12,17 @@ import os
 import time
 from openai import OpenAI
 
-# ── Provider chain: free first, Doubleword last ─────────────────────
+# ── Provider chain: NVIDIA first, Doubleword last ─────────────────
 
 _PROVIDERS = []
+
+if os.getenv("NVIDIA_API_KEY"):
+    _PROVIDERS.append({
+        "name": "nvidia-nim",
+        "api_key": os.environ["NVIDIA_API_KEY"],
+        "base_url": "https://integrate.api.nvidia.com/v1",
+        "model": "nvidia/nemotron-3-ultra-550b-a55b",
+    })
 
 if os.getenv("GROQ_API_KEY"):
     _PROVIDERS.append({
@@ -30,14 +38,6 @@ if os.getenv("GEMINI_API_KEY"):
         "api_key": os.environ["GEMINI_API_KEY"],
         "base_url": "https://generativelanguage.googleapis.com/v1beta/openai",
         "model": "gemini-2.0-flash",
-    })
-
-if os.getenv("NVIDIA_API_KEY"):
-    _PROVIDERS.append({
-        "name": "nvidia-nim",
-        "api_key": os.environ["NVIDIA_API_KEY"],
-        "base_url": "https://integrate.api.nvidia.com/v1",
-        "model": "nvidia/nemotron-3-ultra-550b-a55b",
     })
 
 if os.getenv("CEREBRAS_API_KEY"):
