@@ -1,0 +1,11 @@
+# Dependencies
+node_modules/
+
+# Build output
+.next/
+
+# Lockfile intentionally NOT committed: the build runs `npm install --legacy-peer-deps`
+# (see Dockerfile.www). A committed lock can reintroduce the pnpm `workspace:*`
+# protocol resolution failure that broke the Coolify deploy. Keep it out of git
+# and out of the Coolify build cache.
+package-lock.json
