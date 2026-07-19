@@ -57,7 +57,12 @@ function buildContextPrefix(
   const parts: string[] = [];
   if (selectedBroker) {
     const name = selectedBroker.canonical_name || selectedBroker.name || "";
-    if (name) parts.push(`Broker: ${name}`);
+    // Skip group names — they are WhatsApp group names, not broker names.
+    // Group JIDs end with @g.us; group entries won't have a real broker phone.
+    const isGroup = selectedBroker.chat_type === "group"
+      || (selectedBroker.id && String(selectedBroker.id).includes("@g.us"))
+      || (!selectedBroker.phone && !selectedBroker.primary_phone && !selectedBroker.identity_key);
+    if (name && !isGroup) parts.push(`Broker: ${name}`);
     if (selectedBroker.city) parts.push(`City: ${selectedBroker.city}`);
   }
   if (selectedMsgDetails) {
