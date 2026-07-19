@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { motion } from "framer-motion";
+import { motion, useReducedMotion } from "framer-motion";
 import Drawer from "@/components/motion/Drawer";
 import * as api from "@/lib/api";
 import { formatBrokerPrice } from "@/lib/format";
@@ -179,6 +179,7 @@ function backendFields(fields: FactFields, source: Record<string, unknown>) {
 
 export default function PromoteModal({ observationId, listing, parsed, onClose }: PromoteModalProps) {
   const source = useMemo(() => ({ ...(parsed || {}), ...(listing || {}) }), [listing, parsed]);
+  const reduceMotion = useReducedMotion();
   const [active, setActive] = useState<Channel>("whatsapp");
   const [fields, setFields] = useState<FactFields>(() => buildInitialFields(source));
   const [draft, setDraft] = useState<Draft>(() => buildDraft(buildInitialFields(source)));
@@ -290,8 +291,8 @@ export default function PromoteModal({ observationId, listing, parsed, onClose }
 
             <motion.button
               onClick={generate}
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
+              whileHover={reduceMotion ? undefined : { scale: 1.02 }}
+              whileTap={reduceMotion ? undefined : { scale: 0.98 }}
               className="w-full rounded-lg bg-[#3EE88A] px-3 py-2 text-sm font-bold text-black hover:bg-[#2DC96E]"
             >
               Generate Promotion

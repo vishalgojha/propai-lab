@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { motion } from "framer-motion";
+import { motion, useReducedMotion } from "framer-motion";
 import Drawer from "@/components/motion/Drawer";
 import { fetchJSON } from "@/lib/api";
 
@@ -43,6 +43,7 @@ export default function AddToClientBucket({
   messageContext,
   onSave,
 }: AddToClientBucketProps) {
+  const reduceMotion = useReducedMotion();
   const [step, setStep] = useState<"select" | "match" | "confirm">("select");
   const [clients, setClients] = useState<Client[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
@@ -337,8 +338,8 @@ export default function AddToClientBucket({
               <motion.button
                 onClick={handleSave}
                 disabled={loading}
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
+                whileHover={reduceMotion ? undefined : { scale: 1.02 }}
+                whileTap={reduceMotion ? undefined : { scale: 0.98 }}
                 className="flex-1 px-4 py-2.5 bg-blue-600 text-white text-xs font-bold rounded-lg hover:bg-blue-500 transition-colors disabled:opacity-50"
               >
                 {loading ? "Saving..." : "Save to Bucket"}

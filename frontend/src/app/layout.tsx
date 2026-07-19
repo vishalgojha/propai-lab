@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { motion } from "framer-motion";
+import { motion, useReducedMotion } from "framer-motion";
 import "./globals.css";
 import { getPhones, searchMessages, getAuthMe, getCompanionConfig, CompanionConfig, getProfile, getWhatsAppStatus, isLiveWhatsAppConnection, type Phone, type WhatsAppStatus } from "@/lib/api";
 import {
@@ -182,6 +182,7 @@ function PaletteModal({ open, onClose }: { open: boolean; onClose: () => void })
 
 function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const reduceMotion = useReducedMotion();
   const router = useRouter();
   const { user, loading: authLoading, error: authError, refresh: refreshAuth } = useAuth();
   const isMobile = useIsMobile();
@@ -475,7 +476,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
                       <motion.div
                         layoutId="sidebar-active-dot"
                         className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-[#3EE88A]"
-                        transition={{ type: "spring", stiffness: 500, damping: 35 }}
+                        transition={reduceMotion ? { duration: 0 } : { type: "spring", stiffness: 500, damping: 35 }}
                       />
                     )}
                   </Link>
