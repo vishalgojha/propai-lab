@@ -1,6 +1,8 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import { motion } from "framer-motion";
+import Drawer from "@/components/motion/Drawer";
 import { fetchJSON } from "@/lib/api";
 
 interface Client {
@@ -155,8 +157,8 @@ export default function AddToClientBucket({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div className="border border-white/10 rounded-2xl w-full max-w-lg shadow-2xl">
+    <Drawer open={isOpen} onClose={onClose} variant="center" panelClass="bg-[#0a0f14] border border-white/10 shadow-2xl">
+      <div className="w-full">
         {/* Header */}
         <div className="p-5 border-b border-white/10">
           <div className="flex items-center justify-between">
@@ -332,17 +334,19 @@ export default function AddToClientBucket({
               >
                 Cancel
               </button>
-              <button
+              <motion.button
                 onClick={handleSave}
                 disabled={loading}
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
                 className="flex-1 px-4 py-2.5 bg-blue-600 text-white text-xs font-bold rounded-lg hover:bg-blue-500 transition-colors disabled:opacity-50"
               >
                 {loading ? "Saving..." : "Save to Bucket"}
-              </button>
+              </motion.button>
             </div>
           </div>
         )}
       </div>
-    </div>
+    </Drawer>
   );
 }

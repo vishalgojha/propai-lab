@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
 import { fetchJSON } from "@/lib/api";
 
 const copyToClipboard = async (text: string): Promise<boolean> => {
@@ -280,14 +281,22 @@ export default function KnowledgeObservationsPage() {
         )}
       </div>
 
-      {/* Detail Modal */}
-      {selected && (
+       {/* Detail Modal */}
+       {selected && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          {copyToast && (
-            <div className="fixed top-4 right-4 z-60 bg-green-900/90 text-green-200 px-4 py-2 rounded-lg text-sm font-medium shadow-lg animate-in fade-in slide-in-from-top-2">
-              Copied to clipboard!
-            </div>
-          )}
+          <AnimatePresence>
+            {copyToast && (
+              <motion.div
+                initial={{ opacity: 0, y: -12 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -12 }}
+                transition={{ duration: 0.25, ease: "easeOut" }}
+                className="fixed top-4 right-4 z-60 bg-green-900/90 text-green-200 px-4 py-2 rounded-lg text-sm font-medium shadow-lg"
+              >
+                Copied to clipboard!
+              </motion.div>
+            )}
+          </AnimatePresence>
           <div className="bg-zinc-900 rounded-xl max-w-3xl w-full max-h-[80vh] overflow-auto p-6">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-semibold">Observation #{selected.id}</h2>
