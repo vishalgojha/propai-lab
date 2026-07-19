@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { motion } from "framer-motion";
+import Drawer from "@/components/motion/Drawer";
 import * as api from "@/lib/api";
 import { formatBrokerPrice } from "@/lib/format";
 
@@ -247,110 +249,110 @@ export default function PromoteModal({ observationId, listing, parsed, onClose }
   const copyShareLabel = config?.meta_publish_available ? "Publish" : "Copy & Share";
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/60">
-      <div className="absolute right-0 top-0 h-full w-full max-w-3xl overflow-y-auto bg-[var(--color-bg-surface)] border-l border-[var(--color-border-strong)] shadow-2xl">
-        <div className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-[var(--color-border)] bg-[var(--color-bg-surface)] px-5 py-4">
-          <div>
-            <h2 className="text-base font-bold text-[var(--color-text-primary)]">Promote Listing</h2>
-            <div className="text-xs text-[var(--color-text-muted)]">{copyShareLabel}</div>
-          </div>
-          <button onClick={onClose} className="rounded-lg border border-[var(--color-border-strong)] px-3 py-1.5 text-sm text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)]">Close</button>
+    <Drawer open onClose={onClose} variant="right" widthClass="max-w-3xl" panelClass="bg-[var(--color-bg-surface)] border-l border-[var(--color-border-strong)] shadow-2xl">
+      <div className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-[var(--color-border)] bg-[var(--color-bg-surface)] px-5 py-4">
+        <div>
+          <h2 className="text-base font-bold text-[var(--color-text-primary)]">Promote Listing</h2>
+          <div className="text-xs text-[var(--color-text-muted)]">{copyShareLabel}</div>
         </div>
+        <button onClick={onClose} className="rounded-lg border border-[var(--color-border-strong)] px-3 py-1.5 text-sm text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)]">Close</button>
+      </div>
 
-        <div className="grid gap-5 p-5 lg:grid-cols-[280px_1fr]">
-          <div className="space-y-3">
-            <div className="text-[11px] font-bold uppercase tracking-wider text-[var(--color-text-muted)]">Listing Facts</div>
-            {(["property", "location", "price", "area", "contact"] as (keyof FactFields)[]).map((key) => (
-              <label key={key} className="block">
-                <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">{key}</span>
-                <input
-                  value={fields[key]}
-                  onChange={(event) => updateField(key, event.target.value)}
-                  className="w-full rounded-lg border border-[var(--color-border-strong)] bg-[var(--color-bg-elevated)] px-3 py-2 text-sm text-[var(--color-text-primary)] outline-none focus:border-[#3EE88A]"
-                />
-              </label>
-            ))}
-            <label className="block">
-              <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">highlights</span>
-              <textarea
-                value={fields.highlights}
-                onChange={(event) => updateField("highlights", event.target.value)}
-                rows={5}
-                className="w-full resize-y rounded-lg border border-[var(--color-border-strong)] bg-[var(--color-bg-elevated)] px-3 py-2 text-sm text-[var(--color-text-primary)] outline-none focus:border-[#3EE88A]"
+      <div className="grid gap-5 p-5 lg:grid-cols-[280px_1fr]">
+        <div className="space-y-3">
+          <div className="text-[11px] font-bold uppercase tracking-wider text-[var(--color-text-muted)]">Listing Facts</div>
+          {(["property", "location", "price", "area", "contact"] as (keyof FactFields)[]).map((key) => (
+            <label key={key} className="block">
+              <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">{key}</span>
+              <input
+                value={fields[key]}
+                onChange={(event) => updateField(key, event.target.value)}
+                className="w-full rounded-lg border border-[var(--color-border-strong)] bg-[var(--color-bg-elevated)] px-3 py-2 text-sm text-[var(--color-text-primary)] outline-none focus:border-[#3EE88A]"
               />
             </label>
+          ))}
+          <label className="block">
+            <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">highlights</span>
+            <textarea
+              value={fields.highlights}
+              onChange={(event) => updateField("highlights", event.target.value)}
+              rows={5}
+              className="w-full resize-y rounded-lg border border-[var(--color-border-strong)] bg-[var(--color-bg-elevated)] px-3 py-2 text-sm text-[var(--color-text-primary)] outline-none focus:border-[#3EE88A]"
+            />
+          </label>
 
-            {missing.length > 0 && (
-              <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-200">
-                <div className="font-semibold">Missing:</div>
-                {missing.map((item) => <div key={item}>• {item}</div>)}
-              </div>
-            )}
+          {missing.length > 0 && (
+            <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-200">
+              <div className="font-semibold">Missing:</div>
+              {missing.map((item) => <div key={item}>• {item}</div>)}
+            </div>
+          )}
 
-            <button
+            <motion.button
               onClick={generate}
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
               className="w-full rounded-lg bg-[#3EE88A] px-3 py-2 text-sm font-bold text-black hover:bg-[#2DC96E]"
             >
               Generate Promotion
-            </button>
+            </motion.button>
+        </div>
+
+        <div className="min-w-0 space-y-4">
+          <div className="flex flex-wrap gap-2">
+            {channels.map((channel) => (
+              <button
+                key={channel.id}
+                onClick={() => setActive(channel.id)}
+                className={`rounded-lg px-3 py-1.5 text-sm font-semibold ${active === channel.id ? "bg-[#3EE88A] text-black" : "border border-[var(--color-border-strong)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)]"}`}
+              >
+                {channel.label}
+              </button>
+            ))}
           </div>
 
-          <div className="min-w-0 space-y-4">
-            <div className="flex flex-wrap gap-2">
-              {channels.map((channel) => (
-                <button
-                  key={channel.id}
-                  onClick={() => setActive(channel.id)}
-                  className={`rounded-lg px-3 py-1.5 text-sm font-semibold ${active === channel.id ? "bg-[#3EE88A] text-black" : "border border-[var(--color-border-strong)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)]"}`}
-                >
-                  {channel.label}
-                </button>
+          {active === "whatsapp" && (
+            <label className="block">
+              <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">message</span>
+              <textarea value={draft.whatsapp.message} onChange={(event) => setDraft((prev) => ({ ...prev, whatsapp: { message: event.target.value } }))} rows={16} className="w-full resize-y rounded-lg border border-[var(--color-border-strong)] bg-[var(--color-bg-elevated)] px-3 py-2 text-sm leading-relaxed text-[var(--color-text-primary)] outline-none focus:border-[#3EE88A]" />
+            </label>
+          )}
+
+          {active === "facebook" && (
+            <div className="space-y-3">
+              {(["headline", "description", "highlights", "cta"] as (keyof Draft["facebook"])[]).map((key) => (
+                <label key={key} className="block">
+                  <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">{key}</span>
+                  <textarea value={draft.facebook[key]} onChange={(event) => setDraft((prev) => ({ ...prev, facebook: { ...prev.facebook, [key]: event.target.value } }))} rows={key === "headline" ? 2 : 5} className="w-full resize-y rounded-lg border border-[var(--color-border-strong)] bg-[var(--color-bg-elevated)] px-3 py-2 text-sm leading-relaxed text-[var(--color-text-primary)] outline-none focus:border-[#3EE88A]" />
+                </label>
               ))}
             </div>
+          )}
 
-            {active === "whatsapp" && (
-              <label className="block">
-                <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">message</span>
-                <textarea value={draft.whatsapp.message} onChange={(event) => setDraft((prev) => ({ ...prev, whatsapp: { message: event.target.value } }))} rows={16} className="w-full resize-y rounded-lg border border-[var(--color-border-strong)] bg-[var(--color-bg-elevated)] px-3 py-2 text-sm leading-relaxed text-[var(--color-text-primary)] outline-none focus:border-[#3EE88A]" />
-              </label>
-            )}
-
-            {active === "facebook" && (
-              <div className="space-y-3">
-                {(["headline", "description", "highlights", "cta"] as (keyof Draft["facebook"])[]).map((key) => (
-                  <label key={key} className="block">
-                    <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">{key}</span>
-                    <textarea value={draft.facebook[key]} onChange={(event) => setDraft((prev) => ({ ...prev, facebook: { ...prev.facebook, [key]: event.target.value } }))} rows={key === "headline" ? 2 : 5} className="w-full resize-y rounded-lg border border-[var(--color-border-strong)] bg-[var(--color-bg-elevated)] px-3 py-2 text-sm leading-relaxed text-[var(--color-text-primary)] outline-none focus:border-[#3EE88A]" />
-                  </label>
-                ))}
-              </div>
-            )}
-
-            {active === "instagram" && (
-              <div className="space-y-3">
-                {(["caption", "highlights", "hashtags"] as (keyof Draft["instagram"])[]).map((key) => (
-                  <label key={key} className="block">
-                    <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">{key}</span>
-                    <textarea value={draft.instagram[key]} onChange={(event) => setDraft((prev) => ({ ...prev, instagram: { ...prev.instagram, [key]: event.target.value } }))} rows={key === "hashtags" ? 3 : 7} className="w-full resize-y rounded-lg border border-[var(--color-border-strong)] bg-[var(--color-bg-elevated)] px-3 py-2 text-sm leading-relaxed text-[var(--color-text-primary)] outline-none focus:border-[#3EE88A]" />
-                  </label>
-                ))}
-              </div>
-            )}
-
-            <div className="flex flex-wrap gap-2 border-t border-[var(--color-border)] pt-4">
-              <button onClick={() => copy(active)} className="rounded-lg border border-[var(--color-border-strong)] px-3 py-2 text-sm font-semibold text-[var(--color-text-primary)] hover:bg-[var(--color-bg-hover)]">Copy</button>
-              <button onClick={() => copy("whatsapp")} className="rounded-lg border border-[var(--color-border-strong)] px-3 py-2 text-sm font-semibold text-[var(--color-text-primary)] hover:bg-[var(--color-bg-hover)]">Copy WhatsApp</button>
-              <button onClick={() => copy("instagram")} className="rounded-lg border border-[var(--color-border-strong)] px-3 py-2 text-sm font-semibold text-[var(--color-text-primary)] hover:bg-[var(--color-bg-hover)]">Copy Instagram</button>
-              <button onClick={() => copy("facebook")} className="rounded-lg border border-[var(--color-border-strong)] px-3 py-2 text-sm font-semibold text-[var(--color-text-primary)] hover:bg-[var(--color-bg-hover)]">Copy Facebook</button>
-              <button onClick={downloadTxt} className="rounded-lg border border-[var(--color-border-strong)] px-3 py-2 text-sm font-semibold text-[var(--color-text-primary)] hover:bg-[var(--color-bg-hover)]">Download TXT</button>
-              {config?.meta_publish_available && (
-                <button className="rounded-lg bg-[#3EE88A] px-3 py-2 text-sm font-bold text-black">Publish</button>
-              )}
+          {active === "instagram" && (
+            <div className="space-y-3">
+              {(["caption", "highlights", "hashtags"] as (keyof Draft["instagram"])[]).map((key) => (
+                <label key={key} className="block">
+                  <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">{key}</span>
+                  <textarea value={draft.instagram[key]} onChange={(event) => setDraft((prev) => ({ ...prev, instagram: { ...prev.instagram, [key]: event.target.value } }))} rows={key === "hashtags" ? 3 : 7} className="w-full resize-y rounded-lg border border-[var(--color-border-strong)] bg-[var(--color-bg-elevated)] px-3 py-2 text-sm leading-relaxed text-[var(--color-text-primary)] outline-none focus:border-[#3EE88A]" />
+                </label>
+              ))}
             </div>
-            {status && <div className="text-xs text-[var(--color-text-muted)]">{status}</div>}
+          )}
+
+          <div className="flex flex-wrap gap-2 border-t border-[var(--color-border)] pt-4">
+            <button onClick={() => copy(active)} className="rounded-lg border border-[var(--color-border-strong)] px-3 py-2 text-sm font-semibold text-[var(--color-text-primary)] hover:bg-[var(--color-bg-hover)]">Copy</button>
+            <button onClick={() => copy("whatsapp")} className="rounded-lg border border-[var(--color-border-strong)] px-3 py-2 text-sm font-semibold text-[var(--color-text-primary)] hover:bg-[var(--color-bg-hover)]">Copy WhatsApp</button>
+            <button onClick={() => copy("instagram")} className="rounded-lg border border-[var(--color-border-strong)] px-3 py-2 text-sm font-semibold text-[var(--color-text-primary)] hover:bg-[var(--color-bg-hover)]">Copy Instagram</button>
+            <button onClick={() => copy("facebook")} className="rounded-lg border border-[var(--color-border-strong)] px-3 py-2 text-sm font-semibold text-[var(--color-text-primary)] hover:bg-[var(--color-bg-hover)]">Copy Facebook</button>
+            <button onClick={downloadTxt} className="rounded-lg border border-[var(--color-border-strong)] px-3 py-2 text-sm font-semibold text-[var(--color-text-primary)] hover:bg-[var(--color-bg-hover)]">Download TXT</button>
+            {config?.meta_publish_available && (
+              <button className="rounded-lg bg-[#3EE88A] px-3 py-2 text-sm font-bold text-black">Publish</button>
+            )}
           </div>
+          {status && <div className="text-xs text-[var(--color-text-muted)]">{status}</div>}
         </div>
       </div>
-    </div>
+    </Drawer>
   );
 }

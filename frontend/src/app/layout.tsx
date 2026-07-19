@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import { motion } from "framer-motion";
 import "./globals.css";
 import { getPhones, searchMessages, getAuthMe, getCompanionConfig, CompanionConfig, getProfile, getWhatsAppStatus, isLiveWhatsAppConnection, type Phone, type WhatsAppStatus } from "@/lib/api";
 import {
@@ -470,7 +471,13 @@ function AppShell({ children }: { children: React.ReactNode }) {
                   >
                     <Icon className={`w-3.5 h-3.5 shrink-0 ${active ? "text-white" : ""}`} strokeWidth={1.5} />
                     <span className="truncate">{item.label}</span>
-                    {active && <div className="ml-auto h-1 w-1 shrink-0 rounded-full bg-white" />}
+                    {active && (
+                      <motion.div
+                        layoutId="sidebar-active-dot"
+                        className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-[#3EE88A]"
+                        transition={{ type: "spring", stiffness: 500, damping: 35 }}
+                      />
+                    )}
                   </Link>
                 );
               })}

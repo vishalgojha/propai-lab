@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Drawer from "@/components/motion/Drawer";
 import * as api from "@/lib/api";
 
 interface SourceDrawerProps {
@@ -136,8 +137,7 @@ export default function SourceDrawer({ listingId, parsedId, listing, parsed, tit
   const lastSeen = sources.length > 0 ? sources[0].raw_timestamp : null;
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/60">
-      <div className="absolute right-0 top-0 h-full w-full max-w-2xl overflow-y-auto bg-[#0a0f14] border-l border-white/10 shadow-2xl">
+    <Drawer open onClose={onClose} variant="right" widthClass="max-w-2xl" panelClass="bg-[#0a0f14] border-l border-white/10 shadow-2xl">
         {/* Header */}
         <div className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-white/10 bg-[#0a0f14] px-5 py-4">
           <div>
@@ -294,8 +294,7 @@ export default function SourceDrawer({ listingId, parsedId, listing, parsed, tit
             </Section>
           )}
         </div>
-      </div>
-    </div>
+    </Drawer>
   );
 }
 
