@@ -4359,8 +4359,8 @@ return {
           )}
         </div>
 
-        {/* Right panel: AI Chat */}
-        {!chatPanelCollapsed && (
+        {/* Right panel: AI Chat (only when a conversation is selected) */}
+        {!chatPanelCollapsed && selectedBroker && (
           <div
             className="hidden lg:flex h-full min-h-0 shrink-0 border-l border-white/10 bg-[#070b0e] relative"
             style={{ width: chatPanelWidth }}
