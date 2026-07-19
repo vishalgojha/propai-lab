@@ -127,7 +127,7 @@ export default function ListingDetailPage() {
 
   const buildingLink = listing.building_name ? `/buildings/${encodeURIComponent(listing.building_name)}` : null;
   const brokerLink = listing.broker_name ? `/brokers?search=${encodeURIComponent(listing.broker_name)}` : null;
-  const waPhone = listing.broker_phone?.replace(/\D/g, "").slice(-10);
+  const waPhone = listing.broker_phone ? String(listing.broker_phone).replace(/\D/g, "").slice(-10) : "";
   const waLink = waPhone && waPhone.length === 10 ? `https://wa.me/91${waPhone}` : null;
   const pricePerSqft =
     listing.price && listing.area_sqft ? Math.round(listing.price / listing.area_sqft) : null;
@@ -312,7 +312,7 @@ export default function ListingDetailPage() {
             <MessageSquare className="h-3.5 w-3.5 text-zinc-500" /> Original Message
           </h3>
           <div className="bg-black/30 rounded-lg p-3 text-sm text-zinc-300 whitespace-pre-wrap leading-relaxed">
-            {listing.raw_message.content}
+            {listing.raw_message.content || "(no content)"}
           </div>
           <div className="mt-2 text-[10px] text-zinc-500 flex flex-wrap gap-3">
             {listing.raw_message.sender_name && <span>From: {listing.raw_message.sender_name}</span>}
