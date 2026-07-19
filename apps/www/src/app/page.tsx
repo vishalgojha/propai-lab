@@ -16,6 +16,8 @@ import { ShortlistProvider } from "@/components/ShortlistProvider";
 import ShortlistBar from "@/components/ShortlistBar";
 import { getAllLocalities } from "@/lib/localities";
 import { getPublicDataOverview } from "@/lib/public-data";
+import CountUp from "@/components/CountUp";
+import ScrollReveal from "@/components/ScrollReveal";
 
 const howItWorksSteps = [
   {
@@ -115,15 +117,16 @@ export default async function WWWPage() {
               <TrustStat label="Localities covered" value={overview.counts.localities} />
               <TrustStat
                 label="Daily refresh"
-                value={`${overview.counts.parsed_observations.toLocaleString()}+ records`}
+                value={overview.counts.parsed_observations}
+                suffix=" + records"
               />
             </div>
           </div>
         </section>
 
-        <section id="live-data" className="py-16 lg:py-24 bg-zinc-950/60 border-y border-white/5">
+        <section id="live-data" className="py-16 lg:py-24 bg-zinc-950/60 border-y border-white/5" data-scroll-reveal>
           <div className="max-w-[1600px] mx-auto px-4 lg:px-6">
-            <div className="text-center mb-10 lg:mb-12">
+            <div className="text-center mb-10 lg:mb-12" data-scroll-reveal>
               <h2 className="text-[20px] lg:text-[24px] font-semibold text-white mb-4">Live data at a glance</h2>
               <p className="text-[15px] text-zinc-400 max-w-2xl mx-auto">
                 Everything we&apos;ve captured so far is public on www: localities, buildings, listings, and broker activity.
@@ -139,8 +142,10 @@ export default async function WWWPage() {
                 ["Raw messages", overview.counts.raw_messages],
                 ["Parsed records", overview.counts.parsed_observations],
               ].map(([label, value]) => (
-                <div key={label as string} className="rounded-2xl border border-white/10 bg-black/70 p-4">
-                  <div className="text-3xl font-bold text-white">{(value as number).toLocaleString()}</div>
+                <div key={label as string} className="rounded-2xl border border-white/10 bg-black/70 p-4" data-scroll-reveal>
+                  <div className="text-3xl font-bold text-white">
+                    <CountUp end={value as number} duration={1800} locale="en-IN" />
+                  </div>
                   <div className="mt-1 text-[10px] uppercase tracking-wider text-zinc-500">{label as string}</div>
                 </div>
               ))}
@@ -229,9 +234,9 @@ export default async function WWWPage() {
           </div>
         </section>
 
-        <section id="how-it-works" className="py-16 lg:py-24 bg-black">
+        <section id="how-it-works" className="py-16 lg:py-24 bg-black" data-scroll-reveal>
           <div className="max-w-[1600px] mx-auto px-4 lg:px-6">
-            <div className="text-center mb-12 lg:mb-16">
+            <div className="text-center mb-12 lg:mb-16" data-scroll-reveal>
               <h2 className="text-[20px] lg:text-[24px] font-semibold text-white mb-4">How it works</h2>
               <p className="text-[15px] text-zinc-400 max-w-2xl mx-auto">
                 Three simple steps — no apps to download, no accounts to create.
@@ -240,7 +245,12 @@ export default async function WWWPage() {
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 lg:gap-8">
               {howItWorksSteps.map((step, i) => (
-                <div key={i} className="relative bg-zinc-900/50 border border-white/10 rounded-xl p-6 lg:p-8">
+                <div
+                  key={i}
+                  className="relative bg-zinc-900/50 border border-white/10 rounded-xl p-6 lg:p-8"
+                  data-scroll-reveal
+                  style={{ transitionDelay: `${i * 100}ms` } as React.CSSProperties}
+                >
                   <span className="text-4xl font-bold text-green-400/20 mb-4 block">{step.number}</span>
                   <h3 className="text-lg font-semibold text-white mb-3">{step.title}</h3>
                   <p className="text-[15px] text-zinc-400">{step.description}</p>
@@ -250,9 +260,9 @@ export default async function WWWPage() {
           </div>
         </section>
 
-        <section className="py-16 lg:py-24 bg-zinc-950/50">
+        <section className="py-16 lg:py-24 bg-zinc-950/50" data-scroll-reveal>
           <div className="max-w-[1600px] mx-auto px-4 lg:px-6">
-            <div className="text-center mb-12 lg:mb-16">
+            <div className="text-center mb-12 lg:mb-16" data-scroll-reveal>
               <h2 className="text-[20px] lg:text-[24px] font-semibold text-white mb-4">Why PropAI?</h2>
               <p className="text-[15px] text-zinc-400 max-w-2xl mx-auto">
                 We don't scrape portals. We read the source — live WhatsApp conversations between brokers and buyers.
@@ -277,7 +287,12 @@ export default async function WWWPage() {
                   description: "No chatbots. Every enquiry goes to a verified broker on WhatsApp.",
                 },
               ].map((item, i) => (
-                <div key={i} className="bg-zinc-900/50 border border-white/10 rounded-xl p-6 lg:p-8">
+                <div
+                  key={i}
+                  className="bg-zinc-900/50 border border-white/10 rounded-xl p-6 lg:p-8 transition-all duration-base hover:border-green-400/30 hover:bg-zinc-900 hover:scale-[1.02] hover:shadow-lg hover:shadow-green-400/10 active:scale-[0.98]"
+                  data-scroll-reveal
+                  style={{ transitionDelay: `${i * 100}ms` } as React.CSSProperties}
+                >
                   <item.icon className="w-6 h-6 text-green-400 mb-4" aria-hidden="true" />
                   <h3 className="text-lg font-semibold text-white mb-2">{item.title}</h3>
                   <p className="text-[15px] text-zinc-400">{item.description}</p>
@@ -308,15 +323,24 @@ export default async function WWWPage() {
       </main>
 
       <SiteFooter />
+      <ScrollReveal />
     </div>
   );
 }
 
-function TrustStat({ label, value }: { label: string; value: number | string }) {
+function TrustStat({
+  label,
+  value,
+  suffix,
+}: {
+  label: string;
+  value: number;
+  suffix?: string;
+}) {
   return (
-    <div className="rounded-2xl border border-white/10 bg-zinc-900/50 p-5 text-center">
+    <div className="rounded-2xl border border-white/10 bg-zinc-900/50 p-5 text-center" data-scroll-reveal>
       <div className="text-2xl lg:text-3xl font-bold text-white leading-none">
-        {typeof value === "number" ? value.toLocaleString("en-IN") : value}
+        <CountUp end={value} duration={1800} locale="en-IN" suffix={suffix} />
       </div>
       <div className="mt-2 text-xs text-zinc-400">{label}</div>
     </div>

@@ -38,7 +38,7 @@ export default function SiteFooter() {
             <ul className="space-y-3">
               {FOOTER_LINKS.browse.map((link) => (
                 <li key={link.href}>
-                  <Link href={link.href} className="text-[15px] text-zinc-400 hover:text-white transition-colors">
+                  <Link href={link.href} className="text-[15px] text-zinc-400 hover:text-white transition-all duration-base hover:scale-[1.02] active:scale-[0.98]">
                     {link.label}
                   </Link>
                 </li>
@@ -50,7 +50,7 @@ export default function SiteFooter() {
             <ul className="space-y-3">
               {FOOTER_LINKS.support.map((link) => (
                 <li key={link.href}>
-                  <Link href={link.href} className="text-[15px] text-zinc-400 hover:text-white transition-colors">
+                  <Link href={link.href} className="text-[15px] text-zinc-400 hover:text-white transition-all duration-base hover:scale-[1.02] active:scale-[0.98]">
                     {link.label}
                   </Link>
                 </li>
@@ -62,7 +62,7 @@ export default function SiteFooter() {
             <ul className="space-y-3">
               {FOOTER_LINKS.company.map((link) => (
                 <li key={link.href}>
-                  <Link href={link.href} className="text-[15px] text-zinc-400 hover:text-white transition-colors">
+                  <Link href={link.href} className="text-[15px] text-zinc-400 hover:text-white transition-all duration-base hover:scale-[1.02] active:scale-[0.98]">
                     {link.label}
                   </Link>
                 </li>
