@@ -17,32 +17,52 @@ function timeAgo(ts: string) {
 
 export default function GroupDetailPage() {
   const params = useParams();
-  const jid = decodeURIComponent(params.jid as string);
+  const requestedGroup = decodeURIComponent(params.jid as string);
   const [group, setGroup] = useState<any>(null);
   const [timeline, setTimeline] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeSection, setActiveSection] = useState("overview");
+  const [notFoundLabel, setNotFoundLabel] = useState("");
 
   useEffect(() => {
     async function load() {
+      setLoading(true);
+      setGroup(null);
+      setTimeline([]);
+      setNotFoundLabel("");
       try {
+        let jid = requestedGroup;
+        if (!/@g\.us$/i.test(jid)) {
+          const groups = await api.getAuditGroups(requestedGroup);
+          const normalizedRequest = cleanGroupName(requestedGroup).toLowerCase();
+          const match = groups.groups.find((item) => {
+            const name = cleanGroupName(item.name).toLowerCase();
+            return item.jid === requestedGroup || name === normalizedRequest || name.includes(normalizedRequest);
+          });
+          if (match?.jid) jid = match.jid;
+        }
         const [g, tl] = await Promise.all([
           api.getAuditGroupDetail(jid),
           api.getAuditGroupTimeline(jid),
         ]);
-        setGroup(g);
-        setTimeline(tl);
+        if (g && Number(g.messages || 0) > 0) {
+          setGroup(g);
+          setTimeline(tl);
+        } else {
+          setNotFoundLabel(requestedGroup);
+        }
       } catch (e) {
         console.error("Failed to load group detail", e);
+        setNotFoundLabel(requestedGroup);
       } finally {
         setLoading(false);
       }
     }
     load();
-  }, [jid]);
+  }, [requestedGroup]);
 
   if (loading) return <div className="text-center text-zinc-500 py-16">Loading...</div>;
-  if (!group) return <div className="text-center text-zinc-500 py-16">Group not found</div>;
+  if (!group) return <div className="text-center text-zinc-500 py-16">Group not found{notFoundLabel ? `: ${cleanGroupName(notFoundLabel)}` : ""}</div>;
 
   const sections = ["overview", "timeline", "brokers", "markets", "buildings", "suggestions"];
 
