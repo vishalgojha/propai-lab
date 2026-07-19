@@ -14021,35 +14021,6 @@ async def admin_update_whatsapp_session(
     return await _admin_whatsapp_session(result or phone)
 
 
-@app.post("/api/admin/whatsapp/sessions/{phone_id}/{action}")
-async def admin_control_whatsapp_session(
-    phone_id: int, action: str, user: dict = Depends(require_user)
-):
-    if not await asyncio.to_thread(storage.is_super_admin, user["id"]):
-        raise HTTPException(403, "Super admin access required")
-    if action not in {"connect", "disconnect", "reset"}:
-        raise HTTPException(400, "Unsupported WhatsApp action")
-    phone = await asyncio.to_thread(storage.get_whatsapp_connection_unscoped, phone_id)
-    if not phone:
-        raise HTTPException(404, "Phone not found")
-    broker_id = str(phone.get("broker_id") or "").strip()
-    if not broker_id:
-        raise HTTPException(400, "Phone is missing broker_id")
-    _, response = await _first_ingestor_response(
-        "POST", f"/{action}", timeout=10, params={"broker_id": broker_id}
-    )
-    if response is None:
-        raise HTTPException(502, "Cannot reach ingestor")
-    if response.status_code >= 400:
-        raise HTTPException(response.status_code, response.text or "Ingestor action failed")
-    if action == "connect" and not phone.get("is_active", True):
-        phone = await asyncio.to_thread(
-            storage.update_org_whatsapp_connection,
-            phone_id,
-            {"is_active": True, "updated_at": datetime.now(timezone.utc).isoformat()},
-        ) or phone
-    return await _admin_whatsapp_session(phone)
-
 
 @app.get("/api/admin/orgs")
 async def admin_list_organizations(

@@ -2,9 +2,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, LogOut, RefreshCw, RotateCcw, Smartphone } from "lucide-react";
+import { ArrowLeft, RefreshCw, Smartphone } from "lucide-react";
 import {
-  controlAdminWhatsAppSession,
   getAdminWhatsAppSessions,
   updateAdminWhatsAppSession,
   type AdminWhatsAppSession,
@@ -51,20 +50,6 @@ export default function AdminWhatsAppPage() {
       setError(null);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not update session");
-    } finally {
-      setActionKey(null);
-    }
-  }
-
-  async function control(session: AdminWhatsAppSession, action: "connect" | "disconnect" | "reset") {
-    const key = `${session.id}:${action}`;
-    setActionKey(key);
-    try {
-      const updated = await controlAdminWhatsAppSession(session.id, action);
-      setSessions((current) => current.map((item) => item.id === session.id ? { ...item, ...updated } : item));
-      setError(null);
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : `${action} failed`);
     } finally {
       setActionKey(null);
     }
@@ -117,14 +102,9 @@ export default function AdminWhatsAppPage() {
 
                 <div className="space-y-3 border-y border-white/10 py-4">
                   <div className="flex items-center justify-between gap-4"><div><div className="text-sm font-medium text-white">Self-chat assistant</div><div className="text-xs text-zinc-500">Allow commands sent to the phone itself</div></div><Toggle checked={session.self_chat_enabled !== false} disabled={busy} label="Toggle self-chat assistant" onChange={() => void updateSession(session, "self_chat_enabled")} /></div>
-                  <div className="flex items-center justify-between gap-4"><div><div className="text-sm font-medium text-white">Connection enabled</div><div className="text-xs text-zinc-500">Administrative availability switch</div></div><Toggle checked={session.is_active !== false} disabled={busy} label="Toggle connection availability" onChange={() => void updateSession(session, "is_active")} /></div>
+                  <div className="flex items-center justify-between gap-4"><div><div className="text-sm font-medium text-white">Enabled</div><div className="text-xs text-zinc-500">Flip off to ban this session</div></div><Toggle checked={session.is_active !== false} disabled={busy} label="Toggle session enabled" onChange={() => void updateSession(session, "is_active")} /></div>
                 </div>
 
-                <div className="mt-4 grid grid-cols-3 gap-2">
-                  <button onClick={() => void control(session, "connect")} disabled={busy} className="flex min-h-10 items-center justify-center gap-2 rounded-lg bg-white text-xs font-semibold text-black disabled:opacity-50"><RefreshCw className="h-3.5 w-3.5" /> Connect</button>
-                  <button onClick={() => void control(session, "disconnect")} disabled={busy} className="flex min-h-10 items-center justify-center gap-2 rounded-lg border border-white/10 text-xs font-semibold text-zinc-300 disabled:opacity-50"><LogOut className="h-3.5 w-3.5" /> Disconnect</button>
-                  <button onClick={() => void control(session, "reset")} disabled={busy} className="flex min-h-10 items-center justify-center gap-2 rounded-lg border border-red-500/30 text-xs font-semibold text-red-300 disabled:opacity-50"><RotateCcw className="h-3.5 w-3.5" /> Reset</button>
-                </div>
               </section>
             );
           })}
