@@ -181,20 +181,22 @@ export default async function WWWPage() {
               <div className="rounded-3xl border border-white/10 bg-black/70 p-5 lg:p-6">
                 <div className="flex items-center justify-between gap-3 mb-4">
                   <div>
-                    <h3 className="text-lg font-semibold text-white">Top buildings</h3>
-                    <p className="text-sm text-zinc-500">By live listing count</p>
+                    <h3 className="text-lg font-semibold text-white">Top brokers</h3>
+                    <p className="text-sm text-zinc-500">Most active in the network</p>
                   </div>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {overview.topBuildings.slice(0, 4).map((building) => (
+                  {overview.topBrokers.slice(0, 4).map((broker) => (
                     <Link
-                      key={building.name}
-                      href={`/search?q=${encodeURIComponent(building.name)}`}
+                      key={broker.primary_phone}
+                      href={`/brokers?q=${encodeURIComponent(broker.canonical_name)}`}
                       className="rounded-2xl border border-white/10 bg-zinc-950/80 p-4 hover:border-green-400/30 hover:bg-zinc-900 transition-colors"
                     >
-                      <div className="text-white font-medium">{building.name}</div>
-                      <div className="mt-1 text-sm text-zinc-500">{building.listingCount} listing{building.listingCount === 1 ? "" : "s"}</div>
-                      <div className="mt-1 text-xs text-zinc-500">{building.microMarket || "Market pending"}</div>
+                      <div className="text-white font-medium">{broker.canonical_name}</div>
+                      <div className="mt-1 text-sm text-zinc-500">
+                        {broker.listing_count ?? 0} listing{(broker.listing_count ?? 0) === 1 ? "" : "s"}
+                        {broker.market_count && broker.market_count > 0 ? ` · ${broker.market_count} market${broker.market_count === 1 ? "" : "s"}` : ""}
+                      </div>
                     </Link>
                   ))}
                 </div>
