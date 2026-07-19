@@ -1,4 +1,4 @@
-FROM node:20-bookworm-slim AS deps
+FROM node:22-bookworm-slim AS deps
 
 WORKDIR /app
 COPY apps/www/package.json ./
@@ -6,7 +6,7 @@ COPY apps/www/package.json ./
 ARG CACHE_BUST_DEPS=20260719-peerfix
 RUN npm install --legacy-peer-deps
 
-FROM node:20-bookworm-slim AS builder
+FROM node:22-bookworm-slim AS builder
 
 WORKDIR /app
 ARG CACHE_BUST=20260719-peerfix
@@ -22,7 +22,7 @@ COPY apps/www/src ./src
 
 RUN npm run build
 
-FROM node:20-bookworm-slim AS runner
+FROM node:22-bookworm-slim AS runner
 
 WORKDIR /app
 ARG CACHE_BUST_COPY=20260716-1
