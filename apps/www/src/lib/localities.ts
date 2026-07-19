@@ -137,7 +137,10 @@ async function fetchBuildingsForNames(
 
 export async function getLocalityData(rawSlug: string): Promise<LocalityData | null> {
   const db = getServerSupabase();
-  const slug = slugify(rawSlug);
+  // Honour canonical redirects (e.g. "bkc" -> "bandra-kurla-complex")
+  // before resolving raw micro_market values, so short aliases resolve.
+  const canonSlug = canonicalLocality(rawSlug).slug || slugify(rawSlug);
+  const slug = canonSlug;
   if (!db) {
     return {
       locality: rawSlug,
@@ -494,7 +497,8 @@ export async function getLocalityListings(
   filter?: LocalityListingFilter,
 ): Promise<{ locality: string; slug: string; rows: ListingCardFields[] } | null> {
   const db = getServerSupabase();
-  const slug = slugify(rawSlug);
+  const canonSlug = canonicalLocality(rawSlug).slug || slugify(rawSlug);
+  const slug = canonSlug;
   const canon = await resolveLocalityRawValues(slug);
   if (!canon) return null;
   if (!db) return { locality: canon.label, slug, rows: [] };
