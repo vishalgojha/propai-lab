@@ -19,6 +19,17 @@ export const designTokens = {
     dataviz4: '#06B6D4',  // cyan
     dataviz5: '#84CC16',  // lime
   },
+  // Categorical palette for charts/graphs (Phase 4): ordered sequence seeded
+  // from the 5 dataviz tokens, extended with harmonising hues so category
+  // plots (e.g. NetworkMap localities) stay distinguishable. Charts only.
+  datavizCategorical: [
+    '#F59E0B', '#8B5CF6', '#F43F5E', '#06B6D4', '#84CC16',
+    '#6366F1', '#14B8A6', '#FB923C', '#A855F7', '#22D3EE',
+    '#FACC15', '#D946EF', '#4ADE80', '#F87171', '#818CF8',
+    '#0EA5E9', '#E879F9', '#A3E635', '#FB7185', '#38BDF8',
+  ],
+  // Single-series accent for line/area charts (Phase 4).
+  datavizSeries: '#06B6D4', // cyan
   typography: {
     display: { size: '32px', weight: '700', lineHeight: '1.1' },
     section: { size: '20px', weight: '600', lineHeight: '1.3' },

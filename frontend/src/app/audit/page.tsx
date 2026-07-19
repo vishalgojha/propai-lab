@@ -7,7 +7,10 @@ import Link from "next/link";
 import { ArrowUpRight, CircleDot, RefreshCw, Sparkles, Users } from "lucide-react";
 import * as api from "@/lib/api";
 import { cleanGroupName } from "@/lib/whatsapp-display";
+import { designTokens } from "@/lib/design-tokens";
 import NetworkMap from "@/components/NetworkMap";
+
+const DATAVIZ_SERIES = designTokens.datavizSeries; // cyan, single-series line/area
 
 type Duplicate = { group_a?: { jid?: string; name?: string }; group_b?: { jid?: string; name?: string }; match_type?: string };
 type State = {
@@ -54,7 +57,7 @@ function Kicker({ children }: { children: ReactNode }) {
 function QualityRing({ score }: { score: number }) {
   const safeScore = Math.max(0, Math.min(100, score));
   return (
-    <div className="relative grid h-12 w-12 shrink-0 place-items-center rounded-full" style={{ background: `conic-gradient(#e4e4e7 ${safeScore * 3.6}deg, #27272a 0deg)` }}>
+    <div className="relative grid h-12 w-12 shrink-0 place-items-center rounded-full" style={{ background: `conic-gradient(${DATAVIZ_SERIES} ${safeScore * 3.6}deg, #27272a 0deg)` }}>
       <div className="grid h-10 w-10 place-items-center rounded-full bg-[#090909] text-[11px] font-semibold tabular-nums text-zinc-200">{safeScore}</div>
     </div>
   );
@@ -67,9 +70,9 @@ function SignalTrace({ points }: { points: api.AuditInsights["daily_flow"] }) {
   return (
     <div className="mt-5">
       <svg viewBox="0 0 100 82" preserveAspectRatio="none" className="h-28 w-full overflow-visible" aria-label="Seven day opportunity flow">
-        <defs><linearGradient id="flow" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#fafafa" stopOpacity=".16"/><stop offset="1" stopColor="#fafafa" stopOpacity="0"/></linearGradient></defs>
+        <defs><linearGradient id="flow" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor={DATAVIZ_SERIES} stopOpacity=".22"/><stop offset="1" stopColor={DATAVIZ_SERIES} stopOpacity="0"/></linearGradient></defs>
         {[16, 44, 72].map((y) => <line key={y} x1="0" x2="100" y1={y} y2={y} stroke="#27272a" strokeWidth=".35" />)}
-        {coords ? <><polygon points={`8,76 ${coords} 92,76`} fill="url(#flow)"/><polyline points={coords} fill="none" stroke="#e4e4e7" strokeWidth="1.2" vectorEffect="non-scaling-stroke"/></> : null}
+        {coords ? <><polygon points={`8,76 ${coords} 92,76`} fill="url(#flow)"/><polyline points={coords} fill="none" stroke={DATAVIZ_SERIES} strokeWidth="1.2" vectorEffect="non-scaling-stroke"/></> : null}
       </svg>
       <div className="grid grid-cols-7 text-center text-[9px] uppercase tracking-wide text-zinc-600">
         {points.map((item) => <span key={item.date}>{new Date(item.date).toLocaleDateString("en-IN", { weekday: "short" })}</span>)}
