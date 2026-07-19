@@ -43,6 +43,21 @@ function buildLocalityColorMap(groups: { locality: string | null }[]) {
   return map;
 }
 
+// Stable hash so a node without a known locality still gets a consistent,
+// distinct color (instead of every such node collapsing to the grey fallback).
+function hashIndex(key: string, mod: number): number {
+  let h = 0;
+  for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) >>> 0;
+  return h % mod;
+}
+
+// Resolve a node color: locality color when available, otherwise a stable
+// per-node color derived from its jid so the graph isn't one flat colour.
+function nodeColor(node: SimNode, localityColorMap: Map<string, string>): string {
+  if (node.locality) return localityColorMap.get(node.locality) ?? PALETTE[hashIndex(node.jid, PALETTE.length)];
+  return PALETTE[hashIndex(node.jid, PALETTE.length)];
+}
+
 function numFmt(n: number) {
   return n.toLocaleString("en-IN");
 }
@@ -99,18 +114,24 @@ export default function NetworkMap({
   );
 
   const { nodes, edges } = useMemo(() => {
-    const ns: SimNode[] = visibleGroups.map((g) => ({
-      jid: g.jid,
-      name: g.name,
-      senders: g.senders_count,
-      locality: g.parsed?.area || null,
-      x: 400 + (Math.random() - 0.5) * 300,
-      y: 260 + (Math.random() - 0.5) * 200,
-      vx: 0,
-      vy: 0,
-      fx: null,
-      fy: null,
-    }));
+    const ns: SimNode[] = visibleGroups.map((g, i) => {
+      // Deterministic seed positions on a circle so the simulation settles
+      // predictably instead of jumping around from random starts.
+      const angle = (i / Math.max(1, visibleGroups.length)) * Math.PI * 2;
+      const r = 160 + (i % 5) * 24;
+      return {
+        jid: g.jid,
+        name: g.name,
+        senders: g.senders_count,
+        locality: g.parsed?.area || null,
+        x: 400 + Math.cos(angle) * r,
+        y: 260 + Math.sin(angle) * r,
+        vx: 0,
+        vy: 0,
+        fx: null,
+        fy: null,
+      };
+    });
     const es: SimEdge[] = [];
     for (const p of pairs) {
       if (visibleJids.has(p.group_a.jid) && visibleJids.has(p.group_b.jid)) {
@@ -189,7 +210,7 @@ export default function NetworkMap({
       const isConnected = connected.has(n.jid);
       const dim = focusNode && !isFocus && !isConnected;
       const r = nodeRadius(n.senders, maxSenders);
-      const color = n.locality ? localityColorMap.get(n.locality) ?? "#71717a" : "#71717a";
+      const color = nodeColor(n, localityColorMap);
 
       ctx.globalAlpha = dim ? 0.15 : 1;
 
@@ -284,7 +305,10 @@ export default function NetworkMap({
           "collision",
           d3Force.forceCollide().radius((d: any) => nodeRadius(d.senders, maxSenders) + 12),
         )
-        .alphaDecay(0.02)
+        // Settle quickly and stop so the layout doesn't keep jittering.
+        .velocityDecay(0.5)
+        .alphaDecay(0.08)
+        .alphaMin(0.005)
         .on("tick", drawNow);
 
       const zoomBehavior = d3Zoom
@@ -461,7 +485,7 @@ export default function NetworkMap({
           <div className="mt-1 text-zinc-400">{numFmt(tooltip.node.senders)} participants</div>
           {tooltip.node.locality && (
             <div className="mt-0.5 text-zinc-500">
-              <span className="mr-1 inline-block h-2 w-2 rounded-full" style={{ backgroundColor: localityColorMap.get(tooltip.node.locality) ?? "#71717a" }} />
+              <span className="mr-1 inline-block h-2 w-2 rounded-full" style={{ backgroundColor: nodeColor(tooltip.node, localityColorMap) }} />
               {tooltip.node.locality}
             </div>
           )}
@@ -477,7 +501,7 @@ export default function NetworkMap({
           <div className="flex items-start justify-between">
             <div>
               <div className="flex items-center gap-2">
-                <span className="h-3 w-3 rounded-full" style={{ backgroundColor: selectedNode.locality ? localityColorMap.get(selectedNode.locality) ?? "#71717a" : "#71717a" }} />
+                <span className="h-3 w-3 rounded-full" style={{ backgroundColor: nodeColor(selectedNode, localityColorMap) }} />
                 <h3 className="text-sm font-semibold text-white">{cleanGroupName(selectedNode.name)}</h3>
               </div>
               <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-zinc-400">
