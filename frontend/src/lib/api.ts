@@ -377,6 +377,10 @@ export function getListings(limit = 50, offset = 0) {
   return fetchJSON<ListingRow[]>(`/listings?limit=${limit}&offset=${offset}`);
 }
 
+export function getListing(listingId: number) {
+  return fetchJSON<any>(`/listings/${listingId}`);
+}
+
 export function getDashboardActivity() {
   return fetchJSON<DashboardActivity>("/dashboard/activity");
 }
