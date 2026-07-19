@@ -7,6 +7,7 @@ import SiteHeader from "@/components/SiteHeader";
 import SiteFooter from "@/components/SiteFooter";
 import ListingCard, { LocalityBackLink } from "@/components/ListingCard";
 import { NoPhotosFaqJsonLd, NoPhotosFaq } from "@/components/NoPhotosFaq";
+import LocalityFaq, { LocalityFaqJsonLd } from "@/components/LocalityFaq";
 import { JsonLd, buildLocalBusiness, buildBreadcrumb, getSiteUrl } from "@/lib/seo";
 import { localityTitle, localityDescription } from "@/lib/seo-copy";
 
@@ -46,6 +47,10 @@ export default async function LocalityPage({ params }: Params) {
   const { slug } = await params;
   const data = await getLocalityData(slug);
   if (!data) notFound();
+
+  // Nearby / other localities for internal linking (top by inventory, excluding self).
+  const allLocalities = (await getAllLocalities()).filter((l) => l.slug !== data.slug);
+  const nearby = allLocalities.slice(0, 8);
 
   const siteUrl = getSiteUrl();
   const localityUrl = `${siteUrl}/localities/${data.slug}`;
@@ -120,6 +125,12 @@ export default async function LocalityPage({ params }: Params) {
       <SiteHeader />
       <JsonLd data={localitySchema} />
       <JsonLd data={breadcrumbSchema} />
+      <LocalityFaqJsonLd
+        locality={data.locality}
+        saleCount={data.saleCount}
+        rentCount={data.rentCount}
+        buildingCount={data.buildings.length}
+      />
       <main className="max-w-[1600px] mx-auto px-4 lg:px-6 py-10 lg:py-14">
         <NoPhotosFaqJsonLd />
         <div className="mb-8">
@@ -181,6 +192,53 @@ export default async function LocalityPage({ params }: Params) {
       )}
 
       <NoPhotosFaq />
+
+      {/* Internal linking: drill into filtered views + nearby localities. */}
+      <section className="mt-14" aria-label={`More ${data.locality} searches`}>
+        <h2 className="mb-4 text-[18px] lg:text-[20px] font-semibold text-white">
+          Refine {data.locality}
+        </h2>
+        <div className="flex flex-wrap gap-2.5">
+          <Link href={`/localities/${data.slug}/sale`} className="rounded-lg border border-white/10 bg-zinc-900/60 px-3.5 py-2 text-sm text-zinc-200 transition-colors hover:border-green-400/40 hover:text-white">
+            {data.locality} for Sale
+          </Link>
+          <Link href={`/localities/${data.slug}/rent`} className="rounded-lg border border-white/10 bg-zinc-900/60 px-3.5 py-2 text-sm text-zinc-200 transition-colors hover:border-green-400/40 hover:text-white">
+            {data.locality} for Rent
+          </Link>
+          {data.topBhk && (
+            <Link
+              href={`/localities/${data.slug}/${data.topBhk.toLowerCase().replace(/\s+/g, "-").replace("bhk", "bhk-")}`}
+              className="rounded-lg border border-white/10 bg-zinc-900/60 px-3.5 py-2 text-sm text-zinc-200 transition-colors hover:border-green-400/40 hover:text-white"
+            >
+              {data.topBhk} in {data.locality}
+            </Link>
+          )}
+          <Link href={`/localities/${data.slug}/commercial`} className="rounded-lg border border-white/10 bg-zinc-900/60 px-3.5 py-2 text-sm text-zinc-200 transition-colors hover:border-green-400/40 hover:text-white">
+            {data.locality} Commercial
+          </Link>
+        </div>
+      </section>
+
+      {nearby.length > 0 && (
+        <section className="mt-10" aria-label="Nearby localities">
+          <h2 className="mb-4 text-[18px] lg:text-[20px] font-semibold text-white">
+            Explore nearby localities
+          </h2>
+          <div className="flex flex-wrap gap-2.5">
+            {nearby.map((l) => (
+              <Link
+                key={l.slug}
+                href={`/localities/${l.slug}`}
+                className="rounded-lg border border-white/10 bg-zinc-900/60 px-3.5 py-2 text-sm text-zinc-200 transition-colors hover:border-green-400/40 hover:text-white"
+              >
+                {l.locality}
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
+
+      <LocalityFaq locality={data.locality} />
       </main>
       <SiteFooter />
     </div>

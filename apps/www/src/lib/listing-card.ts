@@ -43,6 +43,7 @@ export type ListingCardViewModel = {
     statusTone: "available" | "unconfirmed";
     updatedLabel: string;
     freshnessLabel: string;
+    freshnessBadge: string | null;
     assetTypeLabel: string | null;
   waLink: string | null;
   href: string | null;
@@ -228,6 +229,21 @@ function formatFreshness(iso: string | null): string {
   return date.toLocaleDateString("en-IN", { day: "numeric", month: "short" });
 }
 
+// Short, SEO-friendly freshness badge for cards: emphasizes that PropAI's
+// inventory changes continuously ("Just Landed", "Active today").
+function formatFreshnessBadge(iso: string | null): string | null {
+  if (!iso) return null;
+  const date = new Date(iso);
+  const ms = date.getTime();
+  if (!Number.isFinite(ms)) return null;
+  const now = Date.now();
+  const diffMs = now - ms;
+  if (diffMs < 0) return "Just Landed";
+  if (diffMs < 60 * 60 * 1000) return "Just Landed";
+  if (diffMs < 24 * 60 * 60 * 1000) return "Active today";
+  return null;
+}
+
 // Broker contact must NEVER embed the phone number in public HTML (DPDP Act
 // 2023 — phone is sensitive personal data). Instead we link to a server route
 // that resolves the phone server-side and 302-redirects to wa.me, so the raw
@@ -287,6 +303,7 @@ export function toListingCardViewModel(
     statusTone: hasLocality ? "available" : "unconfirmed",
     updatedLabel: formatUpdated(row.last_seen),
     freshnessLabel: formatFreshness(row.last_seen),
+    freshnessBadge: formatFreshnessBadge(row.last_seen),
     assetTypeLabel: assetTypeLabel(row.asset_type, row.intent),
     waLink: waLinkFor(row.id),
     href: row.id != null ? `/listings/${row.id}` : null,

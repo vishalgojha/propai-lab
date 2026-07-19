@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { slugify } from "@/lib/supabase";
 import { notFound } from "next/navigation";
 import { JsonLd, buildRealEstateListing, buildBreadcrumb, getSiteUrl } from "@/lib/seo";
 import { listingTitle, listingDescription } from "@/lib/seo-copy";
@@ -337,6 +338,39 @@ export default async function ListingPage({ params }: Params) {
           This listing is sourced from live broker activity in PropAI&apos;s WhatsApp network. Details
           are parsed automatically and may change — confirm specifics with the broker before proceeding.
         </p>
+
+        {/* Internal links: same locality views, same BHK, same building. */}
+        {card.localitySlug && (
+          <nav className="mt-8" aria-label="Related searches">
+            <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-zinc-400">
+              More like this
+            </h2>
+            <div className="flex flex-wrap gap-2.5">
+              {(() => {
+                const txn = (listing.intent || "").toLowerCase().includes("rent") ? "rent" : "sale";
+                const links: Array<{ href: string; label: string }> = [
+                  { href: `/localities/${card.localitySlug}/${txn}`, label: `${card.locality} ${txn === "rent" ? "for Rent" : "for Sale"}` },
+                ];
+                const bhkNum = (listing.bhk || "").match(/(\d+)/)?.[1];
+                if (bhkNum) {
+                  links.push({ href: `/localities/${card.localitySlug}/bhk-${bhkNum}`, label: `${bhkNum} BHK in ${card.locality}` });
+                }
+                if (listing.building_name) {
+                  links.push({ href: `/buildings/${slugify(listing.building_name)}`, label: `${listing.building_name}` });
+                }
+                return links.map((l) => (
+                  <Link
+                    key={l.href}
+                    href={l.href}
+                    className="rounded-lg border border-white/10 bg-zinc-900/60 px-3.5 py-2 text-sm text-zinc-200 transition-colors hover:border-green-400/40 hover:text-white"
+                  >
+                    {l.label}
+                  </Link>
+                ));
+              })()}
+            </div>
+          </nav>
+        )}
       </main>
       <SiteFooter />
     </div>
