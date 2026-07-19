@@ -5,6 +5,7 @@ import Link from "next/link";
 import { ArrowUpRight } from "lucide-react";
 import type { AuditGroupCard, AuditGroupOverlapPair } from "@/lib/api";
 import { cleanGroupName } from "@/lib/whatsapp-display";
+import { designTokens } from "@/lib/design-tokens";
 
 /* ── Types ─────────────────────────────────────────────────────────────── */
 
@@ -30,12 +31,8 @@ interface SimEdge {
 
 /* ── Color palette ─────────────────────────────────────────────────────── */
 
-const PALETTE = [
-  "#6366f1", "#f97316", "#10b981", "#eab308", "#ef4444",
-  "#8b5cf6", "#06b6d4", "#f43f5e", "#84cc16", "#a855f7",
-  "#14b8a6", "#fb923c", "#3b82f6", "#ec4899", "#22d3ee",
-  "#facc15", "#d946ef", "#4ade80", "#f87171", "#818cf8",
-];
+// Categorical chart colors from the shared design tokens (Phase 4).
+const PALETTE = designTokens.datavizCategorical;
 
 function buildLocalityColorMap(groups: { locality: string | null }[]) {
   const locals = [...new Set(groups.map((g) => g.locality).filter(Boolean) as string[])].sort();
