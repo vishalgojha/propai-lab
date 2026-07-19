@@ -5,6 +5,16 @@ const API_BASE = configuredApiBase;
 
 const nextConfig: NextConfig = {
   typescript: { ignoreBuildErrors: true },
+  transpilePackages: [
+    "d3-force",
+    "d3-zoom",
+    "d3-selection",
+    "d3-drag",
+    "d3-dispatch",
+    "d3-timer",
+    "d3-interpolate",
+    "d3-scale",
+  ],
   async rewrites() {
     return [
       {
