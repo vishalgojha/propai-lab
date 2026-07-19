@@ -1,6 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { getMarketSummary, getBuildingIntel, logToolCall } from "../data.ts";
+import { formatCurrencyCr } from "../format.ts";
 import type { ToolContext } from "../types.js";
 
 function textResponse(text: string, structured?: unknown) {
@@ -28,7 +29,7 @@ export function registerIntelligenceTools(server: McpServer, context: ToolContex
     const location = locationMatch?.[1]?.trim();
     const summary = location ? await getMarketSummary({ locality: location, days: 90 }) : null;
     const parts = [`Analysis for: "${input.question}"`];
-    if (summary) parts.push(`${location}: ${summary.listing_count} listings, avg ₹${summary.avg_price_cr || "N/A"} Cr`);
+    if (summary) parts.push(`${location}: ${summary.listing_count} listings, avg sale ${formatCurrencyCr(summary.avg_price_cr)}`);
     return textResponse(parts.join("\n"), { question: input.question, market_data: summary });
   });
 
@@ -42,7 +43,7 @@ export function registerIntelligenceTools(server: McpServer, context: ToolContex
     const id = brokerId(context);
     await logToolCall(id, "intel_explain", input);
     const summary = input.location ? await getMarketSummary({ locality: input.location, days: 90 }) : null;
-    const ctx = summary ? `${input.location}: ${summary.listing_count} listings, avg ₹${summary.avg_price_cr || "N/A"} Cr over 90d` : "";
+    const ctx = summary ? `${input.location}: ${summary.listing_count} listings, avg sale ${formatCurrencyCr(summary.avg_price_cr)} over 90d` : "";
     return textResponse(`Explaining: ${input.topic}\n${ctx}`, { topic: input.topic, market_data: summary });
   });
 
@@ -66,7 +67,7 @@ export function registerIntelligenceTools(server: McpServer, context: ToolContex
     ]);
     const fmt = (x: any) => input.type === "building"
       ? `${x.building_name || "N/A"}: ${x.matched_localities?.join(", ") || "N/A"}`
-      : `${x.listing_count} listings, avg ₹${x.avg_price_cr || "N/A"} Cr`;
+      : `${x.listing_count} listings, avg sale ${formatCurrencyCr(x.avg_price_cr)}`;
     return textResponse(`Comparison: ${input.entity_a} vs ${input.entity_b}\nA: ${fmt(a)}\nB: ${fmt(b)}`, { a, b });
   });
 }

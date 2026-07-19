@@ -1174,7 +1174,26 @@ export async function getMarketSummary(input: {
   const parsedRows = await fetchParsedMarketRows(limit, since);
   const rows = normalizePublicListings(filterPublicListingRows(parsedRows, input));
 
-  const prices = rows.map((row) => row.price).filter((value): value is number => value != null);
+  // Separate sale/lease prices from rent prices. Blending them into one
+  // average is meaningless (crores vs thousands-per-month), so compute them
+  // independently. `row.price` is in absolute rupees (see normalizeParsedPrice).
+  const SALE_MIN = 100_000;            // 1 lakh
+  const SALE_MAX = 500_000_000;       // 500 crore
+  const RENT_MIN = 5_000;             // 5k / month
+  const RENT_MAX = 50_000_000;       // 50 lakh / month
+
+  const salePrices: number[] = [];
+  const rentPrices: number[] = [];
+  for (const row of rows) {
+    if (typeof row.price !== "number" || !Number.isFinite(row.price) || row.price <= 0) continue;
+    const dealType = inferPublicDealType(row);
+    if (dealType === "rent") {
+      if (row.price >= RENT_MIN && row.price <= RENT_MAX) rentPrices.push(row.price);
+    } else if (dealType === "sale" || dealType === "lease") {
+      if (row.price >= SALE_MIN && row.price <= SALE_MAX) salePrices.push(row.price);
+    }
+  }
+
   const ppsf = rows
     .map((row) => row.price != null && row.size_sqft ? row.price / row.size_sqft : null)
     .filter((value): value is number => value != null && Number.isFinite(value));
@@ -1185,11 +1204,21 @@ export async function getMarketSummary(input: {
     localityCounts.set(locality, (localityCounts.get(locality) || 0) + 1);
   }
 
+  const avgSaleRupees = salePrices.length
+    ? salePrices.reduce((sum, value) => sum + value, 0) / salePrices.length
+    : null;
+  const avgRentRupees = rentPrices.length
+    ? rentPrices.reduce((sum, value) => sum + value, 0) / rentPrices.length
+    : null;
+
   return {
     days,
     listing_count: rows.length,
-    avg_price_cr: prices.length ? Number((prices.reduce((sum, value) => sum + value, 0) / prices.length).toFixed(2)) : null,
-    median_price_cr: median(prices),
+    // avg_price_cr holds the average SALE price in absolute rupees
+    // (consumers format it via formatCurrencyCr, which converts to Cr/Lakh).
+    avg_price_cr: avgSaleRupees != null ? Number(avgSaleRupees.toFixed(2)) : null,
+    median_price_cr: salePrices.length ? median(salePrices) : null,
+    avg_rent_per_month: avgRentRupees != null ? Math.round(avgRentRupees) : null,
     avg_price_per_sqft: ppsf.length ? Math.round(ppsf.reduce((sum, value) => sum + value, 0) / ppsf.length) : null,
     freshest_message_at: rows[0]?.message_timestamp || rows[0]?.created_at || null,
     top_localities: [...localityCounts.entries()]
@@ -1217,7 +1246,7 @@ export async function estimatePrice(input: {
   const publicPpsf = market.avg_price_per_sqft;
   const referencePpsf = publicPpsf || null;
   const estimatedPriceCr = referencePpsf && input.area_sqft
-    ? Number(((referencePpsf * input.area_sqft) / 10000000).toFixed(2))
+    ? Math.round(referencePpsf * input.area_sqft)
     : market.median_price_cr;
 
   return {

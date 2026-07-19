@@ -2,6 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { getMarketSummary, logToolCall } from "../data.ts";
 import { executeMarketSearch } from "../marketSearch.ts";
+import { formatCurrencyCr } from "../format.ts";
 import type { ToolContext } from "../types.js";
 
 function textResponse(text: string, structured?: unknown) {
@@ -45,10 +46,13 @@ export function registerMarketTools(server: McpServer, context: ToolContext) {
     const id = brokerId(context);
     await logToolCall(id, "market_summary", input);
     const result = await getMarketSummary({ locality: input.location, city: input.city, property_type: input.property_type, bhk: input.bhk, days: input.days });
-    return textResponse(
-      `${input.location || "Mumbai"}: ${result.listing_count} listings, avg ₹${result.avg_price_cr || "N/A"} Cr, avg ₹${result.avg_price_per_sqft || "N/A"}/sqft`,
-      result,
-    );
+    const parts = [
+      `${input.location || "Mumbai"}: ${result.listing_count} listings`,
+      result.avg_price_cr != null ? `avg sale ${formatCurrencyCr(result.avg_price_cr)}` : null,
+      result.avg_rent_per_month != null ? `avg rent ${formatCurrencyCr(result.avg_rent_per_month)}/mo` : null,
+      result.avg_price_per_sqft != null ? `avg ₹${result.avg_price_per_sqft.toLocaleString("en-IN")}/sqft` : null,
+    ].filter(Boolean) as string[];
+    return textResponse(parts.join(", "), result);
   });
 
   server.registerTool("market_trends", {
@@ -63,8 +67,13 @@ export function registerMarketTools(server: McpServer, context: ToolContext) {
     await logToolCall(id, "market_trends", input);
     const result = await getMarketSummary({ locality: input.location, city: input.city, days: input.days });
     const top = result.top_localities?.map((l: any) => `${l.locality} (${l.count})`).join(", ") || "";
+    const parts = [
+      `${input.location || "Mumbai"} over ${input.days}d: ${result.listing_count} listings`,
+      result.avg_price_cr != null ? `avg sale ${formatCurrencyCr(result.avg_price_cr)}` : null,
+      result.avg_rent_per_month != null ? `avg rent ${formatCurrencyCr(result.avg_rent_per_month)}/mo` : null,
+    ].filter(Boolean) as string[];
     return textResponse(
-      `${input.location || "Mumbai"} over ${input.days}d: ${result.listing_count} listings, avg ₹${result.avg_price_cr || "N/A"} Cr${top ? `\nTop localities: ${top}` : ""}`,
+      `${parts.join(", ")}${top ? `\nTop localities: ${top}` : ""}`,
       result,
     );
   });
