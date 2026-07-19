@@ -239,8 +239,8 @@ export function InboxChatPanel({
 
     try {
       const token = await getAccessToken();
-      const res = await fetch(`${typeof window !== "undefined" ? "" : ""}/api/ai/chat`, {
-        method: "POST",
+      const res = await fetch(`/api/ai/chat`, {
+        method: "PUT",
         headers: {
           "Content-Type": "application/json",
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
