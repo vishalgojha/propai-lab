@@ -2,6 +2,15 @@ import { generateText } from "ai";
 import { getProviderModel, providers } from "./ai-provider";
 import { canonicalLocality } from "./locality-canon";
 
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error("timeout")), ms),
+    ),
+  ]);
+}
+
 /**
  * AI-assisted locality extraction from a natural-language property query.
  *
@@ -38,17 +47,14 @@ Rules:
     const provider = getProviderModel(0);
     if (!provider) return null;
 
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 3000);
-
-    const { text } = await generateText({
-      model: provider.model,
-      prompt,
-      maxOutputTokens: 30,
-      abortSignal: controller.signal,
-    });
-
-    clearTimeout(timeout);
+    const { text } = await withTimeout(
+      generateText({
+        model: provider.model,
+        prompt,
+        maxTokens: 30,
+      }),
+      3000,
+    );
 
     const result = text.trim().replace(/^["']|["']$/g, "");
     if (!result || result.toUpperCase() === "NONE") return null;
