@@ -13,6 +13,7 @@ import NotesPanel from "@/components/notes/NotesPanel";
 const CombinedLocalityDialog = nextDynamic(() => import("@/components/CombinedLocalityDialog").then((m) => ({ default: m.CombinedLocalityDialog })), { ssr: false });
 const AddToClientBucket = nextDynamic(() => import("@/components/AddToClientBucket"), { ssr: false });
 import ResizablePanel from "@/components/ResizablePanel";
+import { InboxChatPanel } from "@/components/InboxChatPanel";
 import { entityProfileHref } from "@/lib/entity-links";
 import { classifyFormatIssue, type FormatIssue } from "@/lib/format-issues";
 import { useIsMobile } from "@/hooks/useMediaQuery";
@@ -1021,6 +1022,7 @@ function InboxPageInner({ defaultView }: InboxPageInnerProps) {
 
   const [selectedMsgDetails, setSelectedMsgDetails] = useState<any>(null);
   const [selectedBroker, setSelectedBroker] = useState<any>(null);
+  const [chatPanelCollapsed, setChatPanelCollapsed] = useState(false);
   const [selectedBuilding, setSelectedBuilding] = useState<any>(null);
   const [priceStats, setPriceStats] = useState<any>(null);
   const [allSuggestions, setAllSuggestions] = useState<any[]>([]);
@@ -4329,18 +4331,53 @@ return {
                 </div>
               </div>
             </>
+          ) : !chatPanelCollapsed ? (
+            <div className="flex-1 min-h-0">
+              <InboxChatPanel
+                selectedBroker={selectedBroker}
+                selectedMsgDetails={selectedMsgDetails}
+                selectedConversationJid={selectedConversationJid}
+                collapsed={false}
+                onToggleCollapse={() => setChatPanelCollapsed(true)}
+              />
+            </div>
           ) : (
             <div className="flex-1 flex flex-col items-center justify-center p-8 text-center text-zinc-500 space-y-2">
               <span className="text-4xl">💬</span>
               <h3 className="text-sm font-semibold text-zinc-300">No conversation selected</h3>
               <p className="text-xs max-w-xs">
-                Select a WhatsApp group or direct chat to see messages, evidence, and PropAI actions.
+                Select a WhatsApp group or direct chat to see messages, evidence, and PropAI actions. Or expand the AI Chat panel.
               </p>
+              <button
+                onClick={() => setChatPanelCollapsed(false)}
+                className="mt-2 text-xs text-emerald-400 hover:text-emerald-300 transition-colors"
+              >
+                Open AI Chat
+              </button>
             </div>
           )}
         </div>
 
-        {/* Right intelligence panel removed intentionally; rebuild this area when reintroduced. */}
+        {/* Right panel: AI Chat */}
+        {!chatPanelCollapsed && (
+          <div className="hidden lg:flex h-full min-h-0 w-[340px] shrink-0 border-l border-white/10 bg-[#070b0e]">
+            <InboxChatPanel
+              selectedBroker={selectedBroker}
+              selectedMsgDetails={selectedMsgDetails}
+              selectedConversationJid={selectedConversationJid}
+              collapsed={false}
+              onToggleCollapse={() => setChatPanelCollapsed(true)}
+            />
+          </div>
+        )}
+        {chatPanelCollapsed && (
+          <div className="hidden lg:flex h-full min-h-0 w-10 shrink-0 border-l border-white/10 bg-black/40">
+            <InboxChatPanel
+              collapsed={true}
+              onToggleCollapse={() => setChatPanelCollapsed(false)}
+            />
+          </div>
+        )}
         {/* Combined Localities Dialog */}
         {showCombinedLocalityDialog && (
           <CombinedLocalityDialog
