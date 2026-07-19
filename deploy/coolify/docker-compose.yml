@@ -20,8 +20,8 @@ services:
       CEREBRAS_API_KEY: ${CEREBRAS_API_KEY}
       MISTRAL_API_KEY: ${MISTRAL_API_KEY}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
-    expose:
-      - "4000"
+    ports:
+      - "4000:4000"
     restart: unless-stopped
 
   api:

@@ -2,11 +2,12 @@
 
 export const dynamic = "force-dynamic";
 
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
-import { ArrowUpRight, CircleDot, Network, RefreshCw, Sparkles, Users } from "lucide-react";
+import { ArrowUpRight, CircleDot, RefreshCw, Sparkles, Users } from "lucide-react";
 import * as api from "@/lib/api";
 import { cleanGroupName } from "@/lib/whatsapp-display";
+import NetworkMap from "@/components/NetworkMap";
 
 type Duplicate = { group_a?: { jid?: string; name?: string }; group_b?: { jid?: string; name?: string }; match_type?: string };
 type State = {
@@ -73,107 +74,6 @@ function SignalTrace({ points }: { points: api.AuditInsights["daily_flow"] }) {
       <div className="grid grid-cols-7 text-center text-[9px] uppercase tracking-wide text-zinc-600">
         {points.map((item) => <span key={item.date}>{new Date(item.date).toLocaleDateString("en-IN", { weekday: "short" })}</span>)}
       </div>
-    </div>
-  );
-}
-
-function NetworkMap({ groups, pairs }: { groups: api.AuditGroupCard[]; pairs: api.AuditGroupOverlapPair[] }) {
-  const [hovered, setHovered] = useState<string | null>(null);
-  const [selected, setSelected] = useState<string | null>(null);
-
-  // Deterministic circular layout: largest group centred, rest evenly around it.
-  const nodes = groups.slice(0, 9);
-  const positions = useMemo(() => {
-    const map = new Map<string, [number, number]>();
-    const n = nodes.length;
-    nodes.forEach((group, i) => {
-      if (i === 0) { map.set(group.jid, [50, 50]); return; }
-      const angle = ((i - 1) / Math.max(1, n - 1)) * Math.PI * 2 - Math.PI / 2;
-      const r = 36;
-      map.set(group.jid, [50 + r * Math.cos(angle), 50 + r * Math.sin(angle)]);
-    });
-    return map;
-  }, [nodes]);
-
-  const focus = hovered ?? selected;
-  const connected = useMemo(() => {
-    if (!focus) return null;
-    const set = new Set<string>();
-    for (const p of pairs) {
-      if (p.group_a.jid === focus) set.add(p.group_b.jid);
-      if (p.group_b.jid === focus) set.add(p.group_a.jid);
-    }
-    return set;
-  }, [focus, pairs]);
-
-  return (
-    <div className="relative mt-4 min-h-80 overflow-hidden border-t border-white/[0.06] bg-[radial-gradient(circle_at_center,rgba(255,255,255,0.045),transparent_55%)]">
-      <svg viewBox="0 0 100 100" className="absolute inset-0 h-full w-full" aria-label="WhatsApp group overlap network">
-        {pairs.slice(0, 14).map((pair) => {
-          const a = positions.get(pair.group_a.jid); const b = positions.get(pair.group_b.jid);
-          if (!a || !b) return null;
-          const isFocus = focus && (pair.group_a.jid === focus || pair.group_b.jid === focus);
-          const dim = focus && !isFocus;
-          return (
-            <line
-              key={`${pair.group_a.jid}-${pair.group_b.jid}`}
-              x1={a[0]} y1={a[1]} x2={b[0]} y2={b[1]}
-              stroke={isFocus ? "#a1a1aa" : "#52525b"}
-              strokeOpacity={dim ? 0.08 : Math.max(0.18, pair.overlap_pct / 100)}
-              strokeWidth={isFocus ? Math.max(0.6, pair.overlap_pct / 28) : Math.max(0.35, pair.overlap_pct / 35)}
-              className="transition-all duration-200"
-            />
-          );
-        })}
-      </svg>
-
-      {nodes.map((group, index) => {
-        const pos = positions.get(group.jid)!;
-        const isFocus = focus === group.jid;
-        const isConnected = connected?.has(group.jid);
-        const dim = focus && !isFocus && !isConnected;
-        const isHub = index === 0;
-        return (
-          <button
-            key={group.jid}
-            type="button"
-            onMouseEnter={() => setHovered(group.jid)}
-            onMouseLeave={() => setHovered(null)}
-            onClick={() => setSelected((s) => (s === group.jid ? null : group.jid))}
-            className={`absolute -translate-x-1/2 -translate-y-1/2 text-center transition-all duration-200 ${dim ? "opacity-35" : "opacity-100"}`}
-            style={{ left: `${pos[0]}%`, top: `${pos[1]}%` }}
-            aria-label={`${cleanGroupName(group.name)} — ${group.senders_count} participants`}
-          >
-            <div className={`mx-auto grid rounded-full border bg-black text-xs font-semibold place-items-center transition-all duration-200 ${isHub ? "h-16 w-16 border-white/40 text-white" : isFocus || isConnected ? "h-13 w-13 border-white/35 text-white" : "h-11 w-11 border-white/15 text-zinc-300"} ${isFocus ? "ring-2 ring-white/50" : ""}`}>
-              {num(group.senders_count)}
-            </div>
-            <div className="mt-1 max-w-28 truncate text-[9px] text-zinc-500">{cleanGroupName(group.name)}</div>
-            {isFocus && (
-              <div className="absolute left-1/2 top-full z-10 mt-2 w-40 -translate-x-1/2 rounded-lg border border-white/10 bg-zinc-900 p-2 text-left text-[10px] text-zinc-300 shadow-xl">
-                <div className="truncate font-semibold text-white">{cleanGroupName(group.name)}</div>
-                <div className="mt-0.5 text-zinc-400">{num(group.senders_count)} unique participants</div>
-                <div className="text-zinc-500">{connected ? `${connected.size} overlapping group${connected.size === 1 ? "" : "s"}` : "No overlaps recorded"}</div>
-                <div className="mt-1 text-zinc-600">{selected === group.jid ? "Click to release" : "Click to pin"}</div>
-              </div>
-            )}
-          </button>
-        );
-      })}
-
-      {focus && (
-        <div className="absolute right-3 top-3 rounded-md border border-white/10 bg-black/70 px-2 py-1 text-[10px] text-zinc-400">
-          {connected && connected.size > 0
-            ? `Overlaps with ${connected.size} group${connected.size === 1 ? "" : "s"}`
-            : "Isolated node"}
-        </div>
-      )}
-
-      {nodes.length === 0 ? (
-        <div className="absolute inset-0 grid place-items-center text-xs text-zinc-600">Network appears after group messages are captured.</div>
-      ) : null}
-      {nodes.length < groups.length ? (
-        <div className="absolute bottom-2 left-3 text-[10px] text-zinc-600">Showing top {nodes.length} of {groups.length} groups</div>
-      ) : null}
     </div>
   );
 }
@@ -267,18 +167,23 @@ export default function AuditPage() {
         </Card>
       </section>
 
-      <section className="grid gap-4 xl:grid-cols-[1.15fr_.85fr]">
-        <Card className="p-5">
-          <div className="flex items-start justify-between"><div><Kicker>Network map</Kicker><h2 className="mt-2 text-lg font-semibold">Where your reach overlaps</h2><p className="mt-1 text-xs text-zinc-500">Each node is a group. The number is unique WhatsApp participants; stronger lines mean more shared participants.</p></div><Network className="h-5 w-5 text-zinc-600" /></div>
-          <NetworkMap groups={[...state.groups].sort((a, b) => b.senders_count - a.senders_count)} pairs={state.overlap.pairs} />
-          <div className="grid grid-cols-3 gap-px border border-white/10 bg-white/10 text-center">
-            {[["Unique reach", state.uniqueMembers], ["Shared pairs", state.overlap.pairs.length], ["High redundancy", redundant.length]].map(([label, value]) => <div key={label} className="bg-[#090909] px-3 py-3"><div className="text-lg font-semibold">{num(value)}</div><div className="text-[10px] text-zinc-500">{label}</div></div>)}
-          </div>
+      <section>
+        <Card className="p-5 sm:p-6">
+          <Kicker>Network map</Kicker>
+          <NetworkMap
+            groups={state.groups}
+            pairs={state.overlap.pairs}
+            uniqueMembers={state.uniqueMembers}
+            redundantCount={redundant.length}
+          />
         </Card>
+      </section>
 
-        <Card className="overflow-hidden">
-          <div className="border-b border-white/10 p-5"><Kicker>Best groups</Kicker><h2 className="mt-2 text-lg font-semibold">Signal worth watching</h2></div>
-          <div className="divide-y divide-white/[0.07]">
+      <section className="grid gap-4 xl:grid-cols-[1fr_.85fr]">
+        <Card className="p-5">
+          <Kicker>Best groups</Kicker>
+          <h2 className="mt-2 text-lg font-semibold">Signal worth watching</h2>
+          <div className="mt-3 divide-y divide-white/[0.07]">
             {bestGroups.map((group, index) => <Link href={`/audit/groups/${encodeURIComponent(group.jid)}`} key={group.jid} className="flex items-center gap-4 p-4 transition hover:bg-white/[0.03]">
               <div className="w-5 text-xs tabular-nums text-zinc-600">{String(index + 1).padStart(2, "0")}</div>
               <QualityRing score={group.score} />
