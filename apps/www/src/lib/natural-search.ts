@@ -1,6 +1,7 @@
 import { getAllBuildings, getAllLocalities, type BuildingSummary, type LocalitySummary } from "./localities";
 import { canonicalLocality } from "./locality-canon";
 import { getServerSupabase, slugify } from "./supabase";
+import { extractLocalityWithAI } from "./locality-ai";
 
 export type ParsedNaturalSearch = {
   query: string;
@@ -718,6 +719,24 @@ export async function searchNaturalLanguageListings(
   const parsed = parseSearchQuery(query, localities);
   // An explicit UI toggle (asset) overrides whatever the query text implied.
   if (asset) parsed.asset = asset;
+
+  // AI locality extraction: when regex didn't find a locality but the user
+  // mentioned one, try LLM extraction as a smarter fallback. This handles
+  // typos ("bhi", "bandar"), abbreviations, and compound queries.
+  if (parsed.localityStated && !parsed.locality && query.trim().length >= 3) {
+    try {
+      const aiLocality = await extractLocalityWithAI(query, localities);
+      if (aiLocality) {
+        parsed.locality = aiLocality;
+        // Update matchedLocalities so the UI shows the correct locality link.
+        const match = localities.find((l) => l.locality === aiLocality);
+        if (match) parsed.matchedLocalities = [match];
+      }
+    } catch {
+      // AI extraction is best-effort; fall through to regex results.
+    }
+  }
+
   const matchedSuggestions =
     parsed.matchedLocalities.length > 0 ? parsed.matchedLocalities : localities.slice(0, 6);
 
