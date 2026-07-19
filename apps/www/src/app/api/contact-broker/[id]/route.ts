@@ -14,7 +14,7 @@ function buildRecallMessage(row: {
   micro_market?: string | null;
   building_name?: string | null;
   bhk?: string | null;
-}): string {
+}, listingId: number): string {
   const parts: string[] = [];
   const ptype = (row.property_type || row.asset_type || "").trim();
   const locality = (row.micro_market || "").trim();
@@ -30,7 +30,8 @@ function buildRecallMessage(row: {
     subject += ` in ${locality}`;
   }
 
-  parts.push(`Hi, I came across ${subject} on PropAI and I'm interested.`);
+  const listingUrl = `https://www.propai.live/listings/${listingId}`;
+  parts.push(`Hi, I came across ${subject} on PropAI — ${listingUrl} — and I'm interested.`);
   parts.push("Could you please share availability, price details and photos?");
   return parts.join(" ");
 }
@@ -66,6 +67,6 @@ export async function GET(
     return NextResponse.redirect(new URL("/", _req.url), { status: 302 });
   }
 
-  const text = encodeURIComponent(buildRecallMessage(data));
+  const text = encodeURIComponent(buildRecallMessage(data, listingId));
   return NextResponse.redirect(new URL(`https://wa.me/91${local}?text=${text}`), { status: 302 });
 }
