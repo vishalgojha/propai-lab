@@ -2,14 +2,14 @@ FROM node:20-bookworm-slim AS deps
 
 WORKDIR /app
 COPY apps/www/package.json ./
-# Cache bust: 2026-07-16-1
-ARG CACHE_BUST_DEPS=20260716-1
-RUN npm install
+# Cache bust: 2026-07-19-peerfix
+ARG CACHE_BUST_DEPS=20260719-peerfix
+RUN npm install --legacy-peer-deps
 
 FROM node:20-bookworm-slim AS builder
 
 WORKDIR /app
-ARG CACHE_BUST=20260716-1
+ARG CACHE_BUST=20260719-peerfix
 COPY --from=deps /app/node_modules ./node_modules
 
 COPY apps/www/package.json ./
