@@ -1,6 +1,7 @@
 import { getServerSupabase, slugify } from "./supabase";
 import { getTitlesForRawMessageIds } from "./listing-titles";
 import { canonicalLocality } from "./locality-canon";
+import { type ListingCardFields } from "./listing-card";
 
 export type BuildingOnMap = {
   name: string;
@@ -396,6 +397,177 @@ export async function getLocalityData(rawSlug: string): Promise<LocalityData | n
     saleCount,
     topBhk,
   };
+}
+
+// Resolve a locality slug to the set of raw `micro_market` values that map to
+// its canonical place. Reused by getLocalityData and the programmatic
+// sub-pages (sale / rent / bhk / budget / commercial) so every filtered
+// view queries the same underlying inventory.
+async function resolveLocalityRawValues(
+  slug: string,
+): Promise<{ label: string; standalonePage: boolean; raw: string[] } | null> {
+  const db = getServerSupabase();
+  if (!db) return null;
+
+  // Listings-derived canonical map.
+  const PAGE = 1000;
+  let marketRows: Array<{ micro_market: string | null }> = [];
+  for (let offset = 0; ; offset += PAGE) {
+    const { data: page } = await db
+      .from("listings")
+      .select("micro_market")
+      .not("micro_market", "is", null)
+      .range(offset, offset + PAGE - 1);
+    marketRows = marketRows.concat((page ?? []) as typeof marketRows);
+    if (!page || page.length < PAGE) break;
+  }
+
+  const byCanonical = new Map<
+    string,
+    { label: string; public: boolean; standalonePage: boolean; raw: Set<string> }
+  >();
+  for (const row of marketRows) {
+    const raw = (row.micro_market ?? "").trim();
+    if (!raw) continue;
+    const c = canonicalLocality(raw);
+    if (!c.public || !c.slug) continue;
+    const existing = byCanonical.get(c.slug);
+    if (existing) existing.raw.add(raw);
+    else
+      byCanonical.set(c.slug, {
+        label: c.label,
+        public: c.public,
+        standalonePage: c.standalonePage,
+        raw: new Set([raw]),
+      });
+  }
+
+  const listingCanon = byCanonical.get(slug);
+  if (!listingCanon) {
+    // Fall back to a known-place (buildings table) that may have no live listings.
+    let knownPlaces: Array<{ micro_market: string | null }> = [];
+    for (let offset = 0; ; offset += 1000) {
+      const { data: page } = await db
+        .from("buildings")
+        .select("micro_market")
+        .not("micro_market", "is", null)
+        .range(offset, offset + 999);
+      knownPlaces = knownPlaces.concat((page ?? []) as typeof knownPlaces);
+      if (!page || page.length < 1000) break;
+    }
+    const knownCanon = new Map<string, { label: string; standalonePage: boolean; raw: Set<string> }>();
+    for (const row of knownPlaces) {
+      const raw = (row.micro_market ?? "").trim();
+      if (!raw) continue;
+      const c = canonicalLocality(raw);
+      if (!c.public || !c.slug) continue;
+      const existing = knownCanon.get(c.slug);
+      if (existing) existing.raw.add(raw);
+      else knownCanon.set(c.slug, { label: c.label, standalonePage: c.standalonePage, raw: new Set([raw]) });
+    }
+    const place = knownCanon.get(slug);
+    if (!place) return null;
+    if (!place.standalonePage) return null;
+    return { label: place.label, standalonePage: place.standalonePage, raw: Array.from(place.raw) };
+  }
+
+  if (!listingCanon.standalonePage) return null;
+  return {
+    label: listingCanon.label,
+    standalonePage: listingCanon.standalonePage,
+    raw: Array.from(listingCanon.raw),
+  };
+}
+
+export type LocalityListingFilter = {
+  txn?: "sale" | "rent";
+  bhk?: number;
+  commercial?: boolean;
+  budgetMaxCr?: number;
+};
+
+// Fetch the actual listing rows for a locality so programmatic sub-pages can
+// render filtered cards + accurate counts. Mirrors getLocalityData's pagination
+// and raw-value resolution. Returns rows shaped for toListingCardViewModel.
+export async function getLocalityListings(
+  rawSlug: string,
+  filter?: LocalityListingFilter,
+): Promise<{ locality: string; slug: string; rows: ListingCardFields[] } | null> {
+  const db = getServerSupabase();
+  const slug = slugify(rawSlug);
+  const canon = await resolveLocalityRawValues(slug);
+  if (!canon) return null;
+  if (!db) return { locality: canon.label, slug, rows: [] };
+
+  const rawValues = canon.raw;
+  const PAGE = 1000;
+  const collected: ListingCardFields[] = [];
+  for (let offset = 0; ; offset += PAGE) {
+    const { data, error } = await db
+      .from("listings")
+      .select(
+        "id, bhk, price, price_unit, area_sqft, furnishing, intent, asset_type, property_type, micro_market, building_name, landmark_name, location_label, floor_description, view, representative_raw_message_id, latest_raw_message_id, broker_name, broker_phone, last_seen",
+      )
+      .in("micro_market", rawValues)
+      .range(offset, offset + PAGE - 1);
+    if (error) {
+      console.error("getLocalityListings error:", error.message);
+      return null;
+    }
+    for (const r of (data ?? []) as Array<Record<string, unknown>>) {
+      const rows2 = r as unknown as ListingCardFields;
+      collected.push(rows2);
+    }
+    if (!data || data.length < PAGE) break;
+  }
+
+  // Apply server-side filters.
+  let filtered = collected;
+  if (filter?.txn) {
+    filtered = filtered.filter((r) => {
+      const i = (r.intent || "").toLowerCase();
+      return filter.txn === "rent"
+        ? i === "rent" || i === "rental" || i === "lease"
+        : i === "sale" || i === "sell" || i === "buy";
+    });
+  }
+  if (typeof filter?.bhk === "number") {
+    filtered = filtered.filter((r) => parseBhkValues(r.bhk).includes(filter.bhk as number));
+  }
+  if (filter?.commercial) {
+    filtered = filtered.filter((r) => (r.asset_type || "").toLowerCase() === "commercial");
+  }
+  if (typeof filter?.budgetMaxCr === "number") {
+    const maxAbs = filter.budgetMaxCr * 1_00_00_000;
+    filtered = filtered.filter((r) => {
+      if (typeof r.price !== "number") return false;
+      const u = (r.price_unit || "").toLowerCase();
+      const abs = u.includes("cr")
+        ? r.price > 1000
+          ? r.price
+          : r.price * 1_00_00_000
+        : u.includes("lac")
+          ? r.price * 1_00_000
+          : u.includes("k")
+            ? r.price * 1_000
+            : r.price;
+      return abs <= maxAbs;
+    });
+  }
+
+  // Attach titles (regex/LLM-derived) where available.
+  const titleMap = await getTitlesForRawMessageIds(
+    filtered.flatMap((r) => [r.representative_raw_message_id, r.latest_raw_message_id]),
+  );
+  const rows: ListingCardFields[] = filtered.map((r) => ({
+    ...r,
+    title:
+      (r.representative_raw_message_id != null ? titleMap.get(r.representative_raw_message_id) : null) ??
+      (r.latest_raw_message_id != null ? titleMap.get(r.latest_raw_message_id) : null) ??
+      null,
+  }));
+
+  return { locality: canon.label, slug, rows };
 }
 
 export async function getAllLocalities(): Promise<LocalitySummary[]> {

@@ -78,6 +78,48 @@ export function searchTitle(query: string): string {
   return `${q} | Live Property Search | PropAI`;
 }
 
+// ---- Programmatic sub-page titles (locality x txn / bhk / budget / commercial) ----
+
+export function localitySegmentTitle(
+  locality: string,
+  segment: "sale" | "rent" | "commercial",
+): string {
+  if (segment === "commercial") return `${titleCase(locality)} Commercial Properties | Live Listings | PropAI`;
+  const verb = segment === "rent" ? "for Rent" : "for Sale";
+  return `${locality} Properties ${verb} | PropAI`;
+}
+
+export function localityBhkSegmentTitle(locality: string, bhk: number): string {
+  const label = bhk >= 5 ? "5+ BHK" : `${bhk} BHK`;
+  return `${label} Flats in ${locality} | Live Listings | PropAI`;
+}
+
+export function localityBudgetSegmentTitle(
+  locality: string,
+  budgetLabel: string,
+  txn: Txn,
+): string {
+  const subject = `${titleCase(locality)} property`;
+  const verb = txn === "rent" ? "for Rent" : "for Sale";
+  return `${subject} ${budgetLabel} ${verb} | PropAI`;
+}
+
+export function localitySegmentDescription(opts: {
+  locality: string;
+  segmentLabel: string;
+  listingCount: number;
+  txn: Txn;
+}): string {
+  const { locality, segmentLabel, listingCount, txn } = opts;
+  const verb = txn === "rent" ? "for rent" : "for sale";
+  const parts: string[] = [];
+  parts.push(
+    `Explore ${listingCount.toLocaleString("en-IN")} live ${segmentLabel} listings in ${locality} ${verb}.`,
+  );
+  parts.push("Filter by budget, furnishing and building, then contact the listing broker instantly on WhatsApp.");
+  return clip(parts.join(" "), 155);
+}
+
 // ---- Descriptions (natural language, 140-160 chars) -----------------------
 
 function clip(text: string, max: number): string {
