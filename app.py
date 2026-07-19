@@ -591,7 +591,30 @@ def _normalize_furnishing_canonical(text: str) -> str | None:
     return None
 
 
-def _infer_transaction_type(text: str) -> str | None:
+def _infer_transaction_type(text: str, intent: str | None = None) -> str | None:
+    """
+    Infer transaction type from intent primarily, then text keywords.
+    Intent is more reliable than keyword matching.
+    """
+    # Intent-based inference (most reliable)
+    if intent == "RENT":
+        return "rent"
+    if intent == "LEASE":
+        return "lease"
+    if intent == "SELL":
+        return "sale"
+    if intent == "BUY":
+        return "sale"  # buyer requirement = sale listing
+    if intent == "COMMERCIAL":
+        # For commercial, check text for rent vs sale
+        lower = text.lower()
+        if re.search(r'\b(for\s+rent|rent|rental|on\s+rent|for\s+lease|on\s+lease)\b', lower):
+            return "rent"
+        if re.search(r'\b(lease)\b', lower):
+            return "lease"
+        return "sale"
+    
+    # Fallback: keyword-based (legacy behavior)
     lower = text.lower()
     if re.search(r'\b(for\s+rent|rent|rental|on\s+rent|for\s+lease|on\s+lease)\b', lower):
         return "rent"
@@ -605,6 +628,7 @@ def _infer_transaction_type(text: str) -> str | None:
 def _infer_asset_and_property_type(text: str, intent: str | None) -> tuple[str | None, str | None]:
     lower = text.lower()
     commercial_hint = bool(_RE.search(r'\b(commercial|office|shop|showroom|warehouse|godown|retail)\b', lower))
+    # If commercial hint present, force commercial regardless of intent
     if intent == "COMMERCIAL" or commercial_hint:
         if "office" in lower:
             return "commercial", "office"
@@ -895,16 +919,15 @@ def parse_message(raw_text: str, profile_name: str | None = None) -> dict:
     if _RE.search(r'\b(forwarded|fw[d]?[:.]?|from:|shared by|sent by)\b', lower):
         result["forwarded"] = 1
 
-    # ── 5. Extract BHK ──────────────────────────────────────────
+# ── 5. Extract BHK ──────────────────────────────────────────
     bhk_match = _RE.search(r'(\d+(?:\.\d+)?)\s*(bhk|rk|bedroom|b ed|b e d)', lower)
     if bhk_match:
         result["bhk"] = bhk_match.group(1) + " BHK"
     elif _RE.search(r'\b(studio)\b', lower):
         result["bhk"] = "Studio"
 
-    if result["intent"] == "COMMERCIAL":
-        # Commercial ads often contain words like "Studio" as part of branding.
-        # Don't present those as residential unit types.
+    # Clear BHK for commercial intent early (before asset type inference)
+    if result.get("intent") == "COMMERCIAL":
         result["bhk"] = None
 
     # ── 5b. Residential/commercial schema map ───────────────────
@@ -915,6 +938,8 @@ def parse_message(raw_text: str, profile_name: str | None = None) -> dict:
     result["configuration"] = result.get("bhk")
     if result["asset_type"] == "commercial":
         result["configuration"] = None
+        # Ensure BHK is cleared for commercial asset type too
+        result["bhk"] = None
 
     # ── 6. Extract price — with ambiguous-shorthand guard ─────────
     # Normalize broker "colon-decimal" typos like "3:00 cr" → "3.00 cr" so the
@@ -1059,6 +1084,24 @@ def parse_message(raw_text: str, profile_name: str | None = None) -> dict:
         result["price_model"] = "psf"
     elif result.get("price") is not None:
         result["price_model"] = "total"
+
+    # Sanity check: if tagged as rent but price is absurdly high (>= 1 Cr),
+    # it's almost certainly a sale price mis-tagged. Flip to sale.
+    if result.get("transaction_type") == "rent" and result.get("price") is not None:
+        unit = (result.get("price_unit") or "").lower()
+        price_val = result["price"]
+        # Convert to absolute rupees
+        if unit in ("cr", "crore", "crores"):
+            price_inr = price_val * 1_00_00_000
+        elif unit in ("lac", "lakh", "lakhs", "l"):
+            price_inr = price_val * 1_00_000
+        elif unit in ("k", "thousand"):
+            price_inr = price_val * 1_000
+        else:
+            price_inr = price_val
+        # Any Mumbai rent >= 1 Cr is data error (top luxury ~15-20L/month)
+        if price_inr >= 1_00_00_000:
+            result["transaction_type"] = "sale"
 
     if result["asset_type"] == "commercial":
         result["commercial_use_type"] = _infer_commercial_use_type(text)
