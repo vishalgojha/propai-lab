@@ -271,11 +271,11 @@ def _call_model(raw_text: str, draft: dict[str, Any]) -> tuple[dict[str, Any], i
         '"""\n\nREGEX_DRAFT:\n'
         f"{json.dumps(draft, ensure_ascii=False, separators=(',', ':'))}"
     )
-    model = os.environ.get("LLM_TASK_MODEL", "default")
+    model = os.environ.get("LLM_TASK_MODEL", "").strip() or None
     from llm import get_model as _fb_model
     timeout_seconds = float(os.getenv("AI_CORRECTION_API_TIMEOUT_SECONDS", "120"))
     response = client.with_options(timeout=timeout_seconds, max_retries=0).chat.completions.create(
-        model=_fb_model() if model == "default" else model,
+        model=model or _fb_model(),
         temperature=0,
         response_format={"type": "json_object"},
         messages=[
