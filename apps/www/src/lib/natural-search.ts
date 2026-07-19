@@ -88,8 +88,118 @@ const LISTING_FIELDS = [
   "observation_count",
 ] as const;
 
+// Conversational-search slang / abbreviation expansion. Applied before
+// normalization so "3 bhi bandar w" maps to "3 bhk bandra west" and fuzzy
+// matching can do its job. Only whole-token replacements to avoid corrupting
+// substrings (e.g. "w" only as a standalone token, never inside "powai").
+const SLANG_MAP: Record<string, string> = {
+  bhi: "bhk",
+  bhk: "bhk",
+  bh: "bhk",
+  bandar: "bandra",
+  vileparle: "vile parle",
+  vileparla: "vile parle",
+  w: "west",
+  e: "east",
+  rd: "road",
+  rd_: "road",
+  apt: "apartment",
+  appt: "apartment",
+  flat: "apartment",
+  ph: "plot",
+  bldg: "building",
+  bldng: "building",
+  juhu: "juhu",
+  andheri: "andheri",
+  goregaon: "goregaon",
+  borivali: "borivali",
+  khar: "khar",
+  chembur: "chembur",
+  parel: "parel",
+  worli: "worli",
+  dadar: "dadar",
+  santacruz: "santacruz",
+  vashi: "vashi",
+  malad: "malad",
+  kandivali: "kandivali",
+  kandivli: "kandivli",
+  powai: "powai",
+  thane: "thane",
+};
+
+function expandSlang(value: string): string {
+  return value
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .map((tok) => SLANG_MAP[tok] ?? tok)
+    .join(" ")
+    .trim();
+}
+
 function normalizeText(value: string): string {
-  return value.toLowerCase().replace(/[^a-z0-9]+/g, " ").replace(/\s+/g, " ").trim();
+  const expanded = expandSlang(value);
+  return expanded.replace(/[^a-z0-9]+/g, " ").replace(/\s+/g, " ").trim();
+}
+
+// Base locality names recognised when extracting a stated locality from a query
+// (used by detectLocalityStated / extractStatedLocalityPhrase). Mirrors the
+// slang map's expanded forms so "vileparle" -> "vile parle" is caught.
+const BASE_NAMES = new Set([
+  "bandra",
+  "andheri",
+  "goregaon",
+  "juhu",
+  "powai",
+  "khar",
+  "chembur",
+  "thane",
+  "navi",
+  "mumbai",
+  "delhi",
+  "bangalore",
+  "bengaluru",
+  "hyderabad",
+  "pune",
+  "chennai",
+  "kolkata",
+  "gurgaon",
+  "gurugram",
+  "noida",
+  "vile",
+  "borivali",
+  "kandivali",
+  "parel",
+  "worli",
+  "dadar",
+  "santacruz",
+  "vashi",
+  "malad",
+]);
+
+function baseNameRegex(): RegExp {
+  return new RegExp(`\\b(${Array.from(BASE_NAMES).join("|")})\\b`);
+}
+
+// Trigram overlap (Jaccard) for fuzzy locality matching — catches typos and
+// phonetic variants ("Bandra BKC" vs "Bandra Bkc") after slang expansion.
+function trigrams(s: string): Set<string> {
+  const t = normalizeText(s).replace(/\s+/g, "");
+  const out = new Set<string>();
+  if (t.length < 3) {
+    if (t) out.add(t);
+    return out;
+  }
+  for (let i = 0; i < t.length - 2; i += 1) out.add(t.slice(i, i + 3));
+  return out;
+}
+
+function trigramSimilarity(a: string, b: string): number {
+  const ta = trigrams(a);
+  const tb = trigrams(b);
+  if (ta.size === 0 || tb.size === 0) return 0;
+  let inter = 0;
+  for (const g of ta) if (tb.has(g)) inter += 1;
+  return inter / (ta.size + tb.size - inter);
 }
 
 function formatPrice(value: number | null): string {
@@ -181,25 +291,29 @@ function parseBudget(query: string): { minPrice: number | null; maxPrice: number
 export function findLocalityMatches(query: string, localities: LocalitySummary[]): LocalitySummary[] {
   const qSlug = canonicalLocality(query).slug;
   const qText = normalizeText(query);
-  return localities
-    .map((loc) => {
-      const locSlug = canonicalLocality(loc.locality).slug;
-      const locText = normalizeText(loc.locality);
-      let score = 0;
-      if (!locSlug) return { loc, score };
-      if (qSlug === locSlug || qText === locText) score = 100;
-      else if (qSlug.includes(locSlug) || qText.includes(locText)) score = 80;
-      else if (locSlug.includes(qSlug) && qSlug.length >= 3) score = 55;
-      else if (
-        qText
-          .split(" ")
-          .filter((part) => part.length >= 3)
-          .every((part) => locText.includes(part))
-      ) {
-        score = 40;
-      }
-      return { loc, score };
-    })
+  const scored = localities.map((loc) => {
+    const locSlug = canonicalLocality(loc.locality).slug;
+    const locText = normalizeText(loc.locality);
+    let score = 0;
+    if (!locSlug) return { loc, score };
+    if (qSlug === locSlug || qText === locText) score = 100;
+    else if (qSlug.includes(locSlug) || qText.includes(locText)) score = 80;
+    else if (locSlug.includes(qSlug) && qSlug.length >= 3) score = 55;
+    else if (
+      qText
+        .split(" ")
+        .filter((part) => part.length >= 3)
+        .every((part) => locText.includes(part))
+    ) {
+      score = 40;
+    } else {
+      // Fuzzy fallback: trigram similarity on the full locality phrase.
+      const sim = trigramSimilarity(query, loc.locality);
+      if (sim >= 0.5) score = Math.round(30 + sim * 20);
+    }
+    return { loc, score };
+  });
+  return scored
     .filter((entry) => entry.score > 0)
     .sort((a, b) => b.score - a.score || b.loc.listingCount - a.loc.listingCount)
     .slice(0, 3)
@@ -214,8 +328,7 @@ function detectLocalityStated(query: string): boolean {
   const qText = normalizeText(query);
   const parts = qText.split(" ").filter(Boolean);
   const directional = /\b(east|west|north|south|central|e|w|n|s)\b/;
-  const baseName =
-    /(bandra|andheri|goregaon|juhu|powai|khar|chembur|thane|navi|mumbai|delhi|bangalore|bengaluru|hyderabad|pune|chennai|kolkata|gurgaon|gurugram|noida)/;
+  const baseName = baseNameRegex();
 
   // "in <locality>" / "at <locality>" / "near <locality>" prepositions
   if (/\b(in|at|near|around|locality|area)\b/.test(qText)) return true;
@@ -241,8 +354,7 @@ function extractStatedLocalityPhrase(query: string): string | null {
   if (parts.length === 0) return null;
 
   const directional = /\b(east|west|north|south|central)\b/;
-  const baseName =
-    /(bandra|andheri|goregaon|juhu|powai|khar|chembur|thane|navi|mumbai|delhi|bangalore|bengaluru|hyderabad|pune|chennai|kolkata|gurgaon|gurugram|noida)/;
+  const baseName = baseNameRegex();
   const stopAfter = /\b(bhk|rk|studio|budget|under|below|max|upto|up to|within|less than|rent|rental|sale|sell|buy|buying|purchase|furnished|semi|unfurnished|sqft|sq\.?\s*ft|area)\b/;
 
   // Case 1: "in/at/near <locality> [stop token | end]"
