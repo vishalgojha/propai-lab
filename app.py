@@ -11436,6 +11436,92 @@ def _audit_group_display_name(jid: str) -> str:
         return f"WhatsApp Group {suffix}" if suffix else "WhatsApp Group"
     return "Unknown group"
 
+
+_AUDIT_BUILDING_LABEL_PATTERN = (
+    r'^[[:space:]*_`🏢]*(?:building|bldg(?:[[:space:]]+name)?|'
+    r'project(?:[[:space:]]+name)?)[[:space:]*_`]*[:=-]+'
+    r'[[:space:]*_`"]*([^\n\r]+)'
+)
+
+_AUDIT_BUILDING_PLACEHOLDERS = {
+    "brand new",
+    "brand new building",
+    "building",
+    "call",
+    "details on request",
+    "new",
+    "new building",
+    "on call",
+    "please call",
+    "preferably new",
+    "well maintained",
+}
+
+
+def _clean_audit_building_name(value: str | None) -> str | None:
+    """Keep only credible names from explicit Building/Project labels."""
+    name = re.sub(r"\s+", " ", str(value or "")).strip()
+    name = re.sub(r"^[\s:;,\-–—*_`\"'“”‘’]+", "", name)
+    name = re.sub(r"[\s:;,*_`\"'“”‘’]+$", "", name).strip()
+    if not 3 <= len(name) <= 80 or not re.search(r"[A-Za-z]", name):
+        return None
+
+    comparison = re.sub(r"[^a-z0-9]+", " ", name.casefold()).strip()
+    if comparison in _AUDIT_BUILDING_PLACEHOLDERS:
+        return None
+    if re.search(
+        r"\b(?:available|bhk|budget|call|carpet|details?|floor|furnished|"
+        r"lease|maintained|parking|photo|possession|preferably|rent|request|"
+        r"sale|sqft|video)\b",
+        comparison,
+    ):
+        return None
+    if re.fullmatch(r"[a-z0-9]+ wing", comparison):
+        return None
+    return name
+
+
+def _audit_buildings_for_group(
+    tenant_id: str,
+    jid: str,
+    group_name: str,
+    limit: int = 20,
+) -> list[dict]:
+    """Count conservative building mentions directly from source messages."""
+    rows = _audit_rows(
+        """
+        SELECT building_match[1] AS building_name, COUNT(*) AS occurrences
+        FROM raw_messages r
+        CROSS JOIN LATERAL regexp_matches(
+            COALESCE(r.message, ''), ?, 'gim'
+        ) AS building_match
+        WHERE r.tenant_id = ? AND (r.group_name = ? OR r.group_name = ?)
+        GROUP BY building_match[1]
+        ORDER BY occurrences DESC
+        LIMIT 500
+        """,
+        (_AUDIT_BUILDING_LABEL_PATTERN, tenant_id, jid, group_name),
+    )
+
+    aggregated: dict[str, dict] = {}
+    for row in rows:
+        name = _clean_audit_building_name(
+            _audit_row_value(row, ("building_name", 0), "")
+        )
+        if not name:
+            continue
+        key = re.sub(r"[^a-z0-9]+", " ", name.casefold()).strip()
+        occurrences = int(_audit_row_value(row, ("occurrences", 1), 0) or 0)
+        current = aggregated.setdefault(
+            key, {"building_name": name, "occurrences": 0}
+        )
+        current["occurrences"] += occurrences
+
+    return sorted(
+        aggregated.values(),
+        key=lambda item: (-item["occurrences"], item["building_name"].casefold()),
+    )[:limit]
+
 @app.get("/api/audit/dashboard")
 async def audit_dashboard(user: dict = Depends(require_user)):
     now = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -11832,15 +11918,20 @@ def audit_groups_v2(
 
 
 @app.get("/api/audit/groups/{jid}")
-async def audit_group_detail(jid: str, user: dict = Depends(require_user)):
+async def audit_group_detail(
+    jid: str,
+    user: dict = Depends(require_user),
+    tenant_id: str = Depends(require_tenant),
+):
     group_name = _group_jid_to_name(jid)
-    lookup_values = (jid, group_name)
+    lookup_values = (tenant_id, jid, group_name)
 
     # Raw stats
     raw_info = storage.db.execute("""
         SELECT COUNT(*) as msg_count, MIN(created_at) as first_seen,
                MAX(created_at) as last_seen
-        FROM raw_messages WHERE group_name = ? OR group_name = ?
+        FROM raw_messages
+        WHERE tenant_id = ? AND (group_name = ? OR group_name = ?)
     """, lookup_values).fetchone()
 
     # Observation stats
@@ -11849,7 +11940,7 @@ async def audit_group_detail(jid: str, user: dict = Depends(require_user)):
                p.bhk, p.price, p.price_unit, p.confidence, r.message, r.timestamp
         FROM parsed_output p
         JOIN raw_messages r ON r.id = p.raw_message_id
-        WHERE r.group_name = ? OR r.group_name = ?
+        WHERE r.tenant_id = ? AND (r.group_name = ? OR r.group_name = ?)
         ORDER BY r.created_at DESC LIMIT 50
     """, lookup_values).fetchall()
 
@@ -11857,45 +11948,45 @@ async def audit_group_detail(jid: str, user: dict = Depends(require_user)):
     broker_count = storage.db.execute("""
         SELECT COUNT(DISTINCT p.broker_name) FROM parsed_output p
         JOIN raw_messages r ON r.id = p.raw_message_id
-        WHERE (r.group_name = ? OR r.group_name = ?) AND p.broker_name IS NOT NULL AND p.broker_name != ''
+        WHERE r.tenant_id = ? AND (r.group_name = ? OR r.group_name = ?)
+          AND p.broker_name IS NOT NULL AND p.broker_name != ''
     """, lookup_values).fetchone()[0]
 
     # Markets seen
     markets = storage.db.execute("""
         SELECT DISTINCT p.micro_market FROM parsed_output p
         JOIN raw_messages r ON r.id = p.raw_message_id
-        WHERE (r.group_name = ? OR r.group_name = ?) AND p.micro_market IS NOT NULL AND p.micro_market != ''
+        WHERE r.tenant_id = ? AND (r.group_name = ? OR r.group_name = ?)
+          AND p.micro_market IS NOT NULL AND p.micro_market != ''
         ORDER BY p.micro_market
     """, lookup_values).fetchall()
 
-    # Buildings mentioned
-    buildings = storage.db.execute("""
-        SELECT DISTINCT p.building_name, COUNT(*) as occurrences FROM parsed_output p
-        JOIN raw_messages r ON r.id = p.raw_message_id
-        WHERE (r.group_name = ? OR r.group_name = ?) AND p.building_name IS NOT NULL AND p.building_name != ''
-        GROUP BY p.building_name ORDER BY occurrences DESC LIMIT 20
-    """, lookup_values).fetchall()
+    # Buildings mentioned — use explicit source labels, not parser guesses.
+    buildings = _audit_buildings_for_group(tenant_id, jid, group_name)
 
     # AI suggestions for this group
     suggestions = storage.db.execute("""
         SELECT s.id, s.agent, s.title, s.description, s.status, s.confidence, s.created_at
         FROM ai_suggestions s
+        WHERE s.tenant_id = ?
         ORDER BY s.created_at DESC LIMIT 20
-    """).fetchall()
+    """, (tenant_id,)).fetchall()
 
     # Resolver quality
     resolved = storage.db.execute("""
         SELECT COUNT(*) FROM resolver_decisions rd
         JOIN parsed_output p ON p.id = rd.parsed_id
         JOIN raw_messages r ON r.id = p.raw_message_id
-        WHERE (r.group_name = ? OR r.group_name = ?) AND rd.method != 'unresolved'
+        WHERE r.tenant_id = ? AND (r.group_name = ? OR r.group_name = ?)
+          AND rd.method != 'unresolved'
     """, lookup_values).fetchone()[0]
 
     unresolved = storage.db.execute("""
         SELECT COUNT(*) FROM resolver_decisions rd
         JOIN parsed_output p ON p.id = rd.parsed_id
         JOIN raw_messages r ON r.id = p.raw_message_id
-        WHERE (r.group_name = ? OR r.group_name = ?) AND rd.method = 'unresolved'
+        WHERE r.tenant_id = ? AND (r.group_name = ? OR r.group_name = ?)
+          AND rd.method = 'unresolved'
     """, lookup_values).fetchone()[0]
 
     total_resolved = resolved + unresolved
@@ -11915,7 +12006,7 @@ async def audit_group_detail(jid: str, user: dict = Depends(require_user)):
         "observations": len(obs_rows),
         "brokers": broker_count,
         "markets": [dict(m)["micro_market"] for m in markets],
-        "buildings": [dict(b) for b in buildings],
+        "buildings": buildings,
         "listings": sum(1 for r in obs_rows if r["intent"] in ("SELL", "RENT", "COMMERCIAL", "PRE-LAUNCH")),
         "requirements": sum(1 for r in obs_rows if r["intent"] in ("BUY", "RENTAL_SEEKER")),
         "quality_score": quality_score,
@@ -11928,16 +12019,22 @@ async def audit_group_detail(jid: str, user: dict = Depends(require_user)):
 
 
 @app.get("/api/audit/groups/{jid}/timeline")
-async def audit_group_timeline(jid: str, user: dict = Depends(require_user)):
+async def audit_group_timeline(
+    jid: str,
+    user: dict = Depends(require_user),
+    tenant_id: str = Depends(require_tenant),
+):
     """Per-group event timeline."""
     events = []
     group_name = _group_jid_to_name(jid)
-    lookup_values = (jid, group_name)
+    lookup_values = (tenant_id, jid, group_name)
 
     # Messages
     raw_rows = storage.db.execute("""
         SELECT created_at as ts, message_type, SUBSTR(message, 1, 60) as msg_preview
-        FROM raw_messages WHERE group_name = ? OR group_name = ? ORDER BY created_at DESC LIMIT 30
+        FROM raw_messages
+        WHERE tenant_id = ? AND (group_name = ? OR group_name = ?)
+        ORDER BY created_at DESC LIMIT 30
     """, lookup_values).fetchall()
     for r in raw_rows:
         events.append({"ts": r["ts"], "label": "Message received (" + (r["msg_preview"] or "") + ")", "type": "message"})
@@ -11949,7 +12046,8 @@ async def audit_group_timeline(jid: str, user: dict = Depends(require_user)):
         FROM resolver_decisions rd
         JOIN parsed_output p ON p.id = rd.parsed_id
         JOIN raw_messages r ON r.id = p.raw_message_id
-        WHERE (r.group_name = ? OR r.group_name = ?) AND rd.method != 'unresolved'
+        WHERE r.tenant_id = ? AND (r.group_name = ? OR r.group_name = ?)
+          AND rd.method != 'unresolved'
         ORDER BY rd.created_at DESC LIMIT 20
     """, lookup_values).fetchall()
     for r in res_rows:

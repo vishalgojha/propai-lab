@@ -151,6 +151,42 @@ def test_audit_groups_uses_named_columns_from_supabase_json_rows(monkeypatch):
     assert result["groups"][0]["active_brokers"] == 4
 
 
+def test_audit_building_names_reject_parser_style_false_positives():
+    assert app._clean_audit_building_name(" *BRIGHT LAND` ") == "BRIGHT LAND"
+    assert app._clean_audit_building_name(": Shadaab Tower*") == "Shadaab Tower"
+    assert app._clean_audit_building_name("Floor: Call") is None
+    assert app._clean_audit_building_name("Photo Available") is None
+    assert app._clean_audit_building_name("Well-Maintained") is None
+    assert app._clean_audit_building_name("388") is None
+
+
+def test_audit_buildings_use_explicit_tenant_scoped_mentions(monkeypatch):
+    calls = []
+
+    def rows(sql, params=()):
+        calls.append((sql, params))
+        return [
+            {"building_name": "Arasu CHS", "occurrences": 3},
+            {"occurrences": 2, "building_name": " arasu chs* "},
+            {"building_name": "on call", "occurrences": 12},
+            {"building_name": ": Shadaab Tower*", "occurrences": 2},
+        ]
+
+    monkeypatch.setattr(app, "_audit_rows", rows)
+
+    result = app._audit_buildings_for_group(
+        "tenant-a", "group-jid", "Royal Realtors"
+    )
+
+    assert result == [
+        {"building_name": "Arasu CHS", "occurrences": 5},
+        {"building_name": "Shadaab Tower", "occurrences": 2},
+    ]
+    assert len(calls) == 1
+    assert "r.tenant_id = ?" in calls[0][0]
+    assert calls[0][1][1:] == ("tenant-a", "group-jid", "Royal Realtors")
+
+
 def test_audit_overlap_uses_named_columns_from_supabase_json_rows(monkeypatch):
     monkeypatch.setattr(app, "_table_exists", lambda table: True)
     monkeypatch.setattr(app, "_audit_rows", lambda *_args, **_kwargs: [
