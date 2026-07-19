@@ -36,7 +36,7 @@ function ListingCard({ listing, idx }: { listing: any; idx: number }) {
   if (areaStr) details.push(areaStr);
   if (listing.furnishing) details.push(listing.furnishing);
 
-  return (
+  const card = (
     <div className="border border-[var(--border-strong)] rounded-xl p-3.5">
       <div className="flex items-center gap-2 flex-wrap">
         {listing.listing_index !== undefined && (
@@ -58,6 +58,16 @@ function ListingCard({ listing, idx }: { listing: any; idx: number }) {
       </div>
     </div>
   );
+
+  if (listing.listing_id) {
+    return (
+      <a href={`/listings/${listing.listing_id}`} className="block hover:opacity-80 transition-opacity">
+        {card}
+      </a>
+    );
+  }
+
+  return card;
 }
 
 export default function ObservationPage() {
