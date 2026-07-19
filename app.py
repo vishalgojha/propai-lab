@@ -11889,13 +11889,26 @@ def audit_groups_v2(
             errors.append(f"parsed_output aggregate failed: {exc}")
 
     # ── Query 3: total unique senders across all groups ──
+    # Use resolved identities (broker_name > profile_name > sender) to match
+    # per-group identities_count and avoid raw JID inflation / deflation.
     total_unique_senders = 0
     try:
-        sender_row = _audit_rows(
-            "SELECT COUNT(DISTINCT sender) AS total_unique_senders FROM raw_messages "
-            "WHERE tenant_id = ? AND group_name IS NOT NULL AND group_name != ''",
-            (tenant_id,),
-        )
+        if has_parsed:
+            sender_row = _audit_rows(
+                "SELECT COUNT(DISTINCT COALESCE(NULLIF(po.broker_name, ''), "
+                "NULLIF(po.profile_name, ''), NULLIF(rm.sender, ''))) "
+                "AS total_unique_senders "
+                "FROM parsed_output po "
+                "JOIN raw_messages rm ON po.raw_message_id = rm.id "
+                "WHERE rm.tenant_id = ? AND rm.group_name IS NOT NULL AND rm.group_name != ''",
+                (tenant_id,),
+            )
+        else:
+            sender_row = _audit_rows(
+                "SELECT COUNT(DISTINCT sender) AS total_unique_senders FROM raw_messages "
+                "WHERE tenant_id = ? AND group_name IS NOT NULL AND group_name != ''",
+                (tenant_id,),
+            )
         if sender_row:
             total_unique_senders = int(
                 _audit_row_value(sender_row[0], ("total_unique_senders", 0), 0) or 0
@@ -12254,6 +12267,23 @@ def audit_capture_health(
     total_obs = int(_audit_row_value(row, "total_obs", 0) or 0)
     total_oe = int(_audit_row_value(row, "total_oe", 0) or 0)
     total_brokers = int(_audit_row_value(row, "total_brokers", 0) or 0)
+    # Fallback: when the brokers table is empty (identity resolution not yet run),
+    # count unique resolved identities from parsed_output so "Brokers Overall"
+    # is never a misleading zero while data exists.
+    if total_brokers == 0:
+        try:
+            fb = storage.db.execute(
+                "SELECT COUNT(DISTINCT COALESCE(NULLIF(po.broker_name, ''), "
+                "NULLIF(po.profile_name, ''), NULLIF(rm.sender, ''))) "
+                "FROM parsed_output po "
+                "JOIN raw_messages rm ON po.raw_message_id = rm.id "
+                "WHERE rm.tenant_id = ?",
+                (tenant_id,),
+            ).fetchone()
+            if fb:
+                total_brokers = int(fb[0] or 0)
+        except Exception:
+            pass
     last_msg = _audit_row_value(row, "last_msg")
     pending_enrich = int(_audit_row_value(row, "pending_enrich", 0) or 0)
     pending_ai = int(_audit_row_value(row, "pending_ai", 0) or 0)
