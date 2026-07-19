@@ -259,8 +259,11 @@ def _write_correction(
 
 
 def _call_model(raw_text: str, draft: dict[str, Any]) -> tuple[dict[str, Any], int, int]:
-    if not DOUBLEWORD_API_KEY:
-        raise CorrectionError("DOUBLEWORD_API_KEY is not configured")
+    from llm import get_client as _fb_client
+    try:
+        client = _fb_client()
+    except Exception:
+        raise CorrectionError("No LLM providers configured. Set at least one API key.")
     system_prompt = _load_prompt()
     user_prompt = (
         'RAW_TEXT:\n"""\n'
@@ -268,10 +271,11 @@ def _call_model(raw_text: str, draft: dict[str, Any]) -> tuple[dict[str, Any], i
         '"""\n\nREGEX_DRAFT:\n'
         f"{json.dumps(draft, ensure_ascii=False, separators=(',', ':'))}"
     )
-    client = get_client(api_key=DOUBLEWORD_API_KEY)
+    model = os.environ.get("LLM_TASK_MODEL", "default")
+    from llm import get_model as _fb_model
     timeout_seconds = float(os.getenv("AI_CORRECTION_API_TIMEOUT_SECONDS", "120"))
     response = client.with_options(timeout=timeout_seconds, max_retries=0).chat.completions.create(
-        model=os.environ.get("LLM_TASK_MODEL", "default"),
+        model=_fb_model() if model == "default" else model,
         temperature=0,
         response_format={"type": "json_object"},
         messages=[
