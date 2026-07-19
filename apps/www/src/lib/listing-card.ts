@@ -17,6 +17,8 @@ export type ListingCardFields = {
   floor_description?: string | null;
   view?: string | null;
   title?: string | null;
+  representative_raw_message_id?: number | null;
+  latest_raw_message_id?: number | null;
   broker_name: string | null;
   broker_phone: string | null;
   last_seen: string | null;
