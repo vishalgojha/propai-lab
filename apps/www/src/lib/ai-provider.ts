@@ -1,6 +1,6 @@
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 
-/* ── Provider priority: free first, Doubleword (paid) last ────────── */
+/* ── Provider priority: NVIDIA first, then free providers, Doubleword (paid) last ── */
 
 interface ProviderCfg {
   name: string;
@@ -11,6 +11,15 @@ interface ProviderCfg {
 
 function buildProviders(): ProviderCfg[] {
   const chain: ProviderCfg[] = [];
+
+  if (process.env.NVIDIA_API_KEY) {
+    chain.push({
+      name: "nvidia-nim",
+      baseURL: "https://integrate.api.nvidia.com/v1",
+      apiKey: process.env.NVIDIA_API_KEY,
+      model: "nvidia/nemotron-3-ultra-550b-a55b",
+    });
+  }
 
   if (process.env.GROQ_API_KEY) {
     chain.push({
@@ -27,15 +36,6 @@ function buildProviders(): ProviderCfg[] {
       baseURL: "https://generativelanguage.googleapis.com/v1beta/openai",
       apiKey: process.env.GEMINI_API_KEY,
       model: "gemini-2.0-flash",
-    });
-  }
-
-  if (process.env.NVIDIA_API_KEY) {
-    chain.push({
-      name: "nvidia-nim",
-      baseURL: "https://integrate.api.nvidia.com/v1",
-      apiKey: process.env.NVIDIA_API_KEY,
-      model: "nvidia/nemotron-3-ultra-550b-a55b",
     });
   }
 
