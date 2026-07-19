@@ -4,14 +4,12 @@ import { usePathname, useRouter } from "next/navigation";
 import {
   MessageSquare,
   UserCheck,
-  Brain,
   Wifi,
 } from "lucide-react";
 
 const tabs = [
   { href: "/inbox", label: "Inbox", icon: MessageSquare },
   { href: "/clients", label: "Clients", icon: UserCheck },
-  { href: "/chat", label: "AI Chat", icon: Brain },
   { href: "/connections", label: "Connect", icon: Wifi },
 ];
 

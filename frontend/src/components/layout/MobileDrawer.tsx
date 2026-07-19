@@ -12,7 +12,6 @@ const baseNavSections = [
       { href: "/inbox", label: "Market Inbox" },
       { href: "/brokers", label: "Broker Profiles" },
       { href: "/whatsapp-groups", label: "WhatsApp Groups" },
-      { href: "/chat", label: "AI Chat" },
     ],
   },
   {
