@@ -727,7 +727,7 @@ export type ListingDetail = BuildingListing & {
 // For Rent at Near Pali Village..."), which then leaks into buildings.canonical_name
 // and renders as a garbage /buildings/[slug] page. Reject those as 404s.
 const JUNK_AD_PHRASES =
-  /\b(available|commercial space|for rent|for sale|on rent|on sale|outright|unfurnished|furnished|furnish|semi furnished|car parking|carpet|built up|super area|sq\.? ?ft|sqft|bhk|rent|sale|possession|resale)\b/i;
+  /(available|commercial space|for rent|for sale|on rent|on sale|outright|unfurnished|furnished|furnish|semi furnished|car parking|carpet|built up|super area|sq\.? ?ft|sqft|\d\s*bhk|\bbhk|rent|sale|possession)/i;
 const SOCIETY_WORDS =
   /\b(society|chs|chsl|co[- ]?op|cooperative|housing|apartment|apartments|niwas|park|phase|tower|towers|complex|heights|residency|building|estate|enclave|gardens|residences|layout)\b/i;
 // Broker / agency names mistakenly stored as building_name. These should never
@@ -744,6 +744,10 @@ export function isJunkBuildingName(name: string | null): boolean {
   if (!name) return true;
   const n = name.trim();
   if (n.length < 3) return true;
+  // Real building names never start with a digit (e.g. "1bhk New Inventory",
+  // "2.5bhk For Resale In Shiv Shivam Tower" are ad fragments leaked
+  // from the WhatsApp message body, not actual buildings).
+  if (/^\d/.test(n)) return true;
 
   const lower = n.toLowerCase();
   // Pure BHK / area fragments are never buildings.
