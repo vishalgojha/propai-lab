@@ -1,6 +1,6 @@
 "use client";
 
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { useEffect } from "react";
 
 interface DrawerProps {
@@ -44,8 +44,11 @@ export default function Drawer({
     };
   }, [open, onClose]);
 
-  const panelMotion =
-    variant === "right"
+  const reduceMotion = useReducedMotion();
+
+  const panelMotion = reduceMotion
+    ? { initial: { opacity: 0 }, animate: { opacity: 1 }, exit: { opacity: 0 } }
+    : variant === "right"
       ? { initial: { x: "100%" }, animate: { x: 0 }, exit: { x: "100%" } }
       : { initial: { opacity: 0, scale: 0.96, y: 8 }, animate: { opacity: 1, scale: 1, y: 0 }, exit: { opacity: 0, scale: 0.96, y: 8 } };
 
