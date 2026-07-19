@@ -3,8 +3,6 @@ import { Sparkles } from "lucide-react";
 import { describeNaturalSearch, searchNaturalLanguageListings } from "@/lib/natural-search";
 import { getAllLocalities } from "@/lib/localities";
 import { slugify } from "@/lib/supabase";
-import { toListingCardViewModel } from "@/lib/listing-card";
-import ListingTile from "@/components/ListingTile";
 import SearchBox from "@/components/SearchBox";
 import SiteHeader from "@/components/SiteHeader";
 import SiteFooter from "@/components/SiteFooter";
@@ -12,7 +10,11 @@ import { ShortlistProvider } from "@/components/ShortlistProvider";
 import ShortlistBar from "@/components/ShortlistBar";
 import RequirementCapture from "@/components/RequirementCapture";
 import SearchAiChat from "@/components/SearchAiChat";
+import SearchResultsView from "@/components/SearchResultsView";
 import { NOINDEX } from "@/lib/seo";
+
+const MAPBOX_TOKEN =
+  process.env.NEXT_PUBLIC_MAPBOX_TOKEN || process.env.MAPBOX_TOKEN || null;
 
 // Locality/building lists change gradually; a few minutes of staleness is fine
 // and avoids re-scanning the full tables on every navigation. ISR caches the
@@ -186,23 +188,15 @@ export default async function SearchPage({ searchParams }: { searchParams: Searc
 
             {state && state.results.length > 0 ? (
               <>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 lg:gap-7">
-                  {state.results.map((row) => {
-                    const card = toListingCardViewModel(row, row.resultType === "building");
-                    return (
-                      <ListingTile
-                        key={row.id}
-                        card={card}
-                        buildingName={row.building_name}
-                        footerNote={
-                          row.matchedOn.length > 0
-                            ? `Matched on: ${row.matchedOn.join(", ")}`
-                            : null
-                        }
-                      />
-                    );
-                  })}
-                </div>
+                <SearchResultsView
+                  results={state.results}
+                  mapToken={MAPBOX_TOKEN}
+                  footerNote={(row) =>
+                    row.matchedOn.length > 0
+                      ? `Matched on: ${row.matchedOn.join(", ")}`
+                      : null
+                  }
+                />
               </>
             ) : (
               <div className="grid grid-cols-1 lg:grid-cols-[3fr_1fr] gap-6">
