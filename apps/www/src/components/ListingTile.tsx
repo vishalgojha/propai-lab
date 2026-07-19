@@ -69,7 +69,7 @@ export default function ListingTile({
   }
 
   return (
-    <div className="group relative flex flex-col overflow-hidden rounded-2xl border border-white/10 bg-zinc-950/90 transition-colors hover:border-green-400/40 hover:bg-zinc-900/90">
+    <div className="group relative flex flex-col overflow-hidden rounded-2xl border border-white/10 bg-zinc-950/90 transition-all duration-base hover:border-green-400/40 hover:bg-zinc-900/90 hover:scale-[1.02] hover:shadow-lg hover:shadow-green-400/10 active:scale-[0.98]">
       {/* Stretched link makes the whole card clickable to the listing, while
           the Contact button (z-10) stays an independent, working link. */}
       {card.href && (

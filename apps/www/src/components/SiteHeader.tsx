@@ -12,7 +12,7 @@ const NAV_LINKS = [
 
 function Wordmark() {
   return (
-    <span className="flex items-center gap-2.5">
+    <span className="flex items-center gap-2.5 transition-all duration-base hover:scale-[1.02] active:scale-[0.98]">
       <span
         aria-hidden="true"
         className="grid h-10 w-10 place-items-center rounded-[12px] bg-[#090d12] ring-1 ring-white/10"
@@ -58,7 +58,7 @@ export default function SiteHeader({ backHref, backLabel }: SiteHeaderProps) {
             <Link
               key={link.href}
               href={link.href}
-              className="text-[15px] text-zinc-400 hover:text-white transition-colors"
+              className="text-[15px] text-zinc-400 hover:text-white transition-all duration-base hover:scale-[1.02] active:scale-[0.98]"
             >
               {link.label}
             </Link>
@@ -68,13 +68,13 @@ export default function SiteHeader({ backHref, backLabel }: SiteHeaderProps) {
         <div className="hidden lg:flex items-center gap-4">
           <Link
             href="https://app.propai.live/auth/login"
-            className="text-[15px] text-zinc-400 hover:text-white transition-colors"
+            className="text-[15px] text-zinc-400 hover:text-white transition-all duration-base hover:scale-[1.02] active:scale-[0.98]"
           >
             Broker login
           </Link>
           <Link
             href="https://app.propai.live/auth/signup"
-            className="inline-flex items-center rounded-full bg-[#3EE88A] px-4 py-2 text-sm font-semibold text-black transition-colors hover:bg-[#2ed87a]"
+            className="inline-flex items-center rounded-full bg-[#3EE88A] px-4 py-2 text-sm font-semibold text-black transition-all duration-base hover:bg-[#2ed87a] hover:scale-[1.02] active:scale-[0.98]"
           >
             Get started
           </Link>

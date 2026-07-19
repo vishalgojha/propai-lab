@@ -27,11 +27,11 @@ export default function ListingCard({ building }: { building: BuildingOnMap }) {
   const geocoded = building.latitude != null && building.longitude != null;
   const href = `/buildings/${slugify(building.name)}`;
 
-  return (
-    <Link
-      href={href}
-      className="group block bg-zinc-900/50 border border-white/10 rounded-xl p-5 lg:p-6 transition-colors hover:border-green-400/50 hover:bg-zinc-900"
-    >
+return (
+        <Link
+          href={href}
+          className="group block bg-zinc-900/50 border border-white/10 rounded-xl p-5 lg:p-6 transition-all duration-base hover:border-green-400/50 hover:bg-zinc-900 hover:scale-[1.02] hover:shadow-lg hover:shadow-green-400/10 active:scale-[0.98]"
+        >
       <div className="flex items-start justify-between gap-2 mb-3">
         <h3 className="text-lg font-semibold text-white group-hover:text-green-400 transition-colors">
           {building.name}

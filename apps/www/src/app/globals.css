@@ -52,3 +52,18 @@ body {
   [data-count-up] { opacity: 1 !important; transform: none !important; }
   [data-scroll-reveal] { opacity: 1 !important; transform: none !important; }
 }
+
+/* Scroll-reveal (Phase 1): fade + lift into view when .in-view is toggled
+   by the ScrollReveal client component via IntersectionObserver. */
+[data-scroll-reveal] {
+  opacity: 0;
+  transform: translateY(16px);
+  transition:
+    opacity var(--motion-duration-slow) var(--motion-easing-standard),
+    transform var(--motion-duration-slow) var(--motion-easing-standard);
+  will-change: opacity, transform;
+}
+[data-scroll-reveal].in-view {
+  opacity: 1;
+  transform: translateY(0);
+}
