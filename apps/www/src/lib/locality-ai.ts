@@ -1,21 +1,9 @@
-import { generateText } from "ai";
-import { getProviderModel, providers } from "./ai-provider";
+import { providers } from "./ai-provider";
 import { canonicalLocality } from "./locality-canon";
-
-function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
-  return Promise.race([
-    promise,
-    new Promise<T>((_, reject) =>
-      setTimeout(() => reject(new Error("timeout")), ms),
-    ),
-  ]);
-}
 
 /**
  * AI-assisted locality extraction from a natural-language property query.
- *
- * Returns the best-matching known locality name (canonical label) or null.
- * Uses the first available LLM provider with a 3-second timeout.
+ * Uses the first available LLM provider via direct HTTP (avoids SDK type issues).
  * Falls back to null on any error so the caller can use regex fallback.
  */
 export async function extractLocalityWithAI(
@@ -43,39 +31,54 @@ Rules:
 - If NO locality is mentioned or no match exists, return exactly: NONE
 - Do NOT explain. Return ONLY the locality name or NONE.`;
 
-  try {
-    const provider = getProviderModel(0);
-    if (!provider) return null;
+  for (const provider of providers) {
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 3000);
 
-    const { text } = await withTimeout(
-      generateText({
-        model: provider.model,
-        prompt,
-        maxTokens: 30,
-      }),
-      3000,
-    );
+      const res = await fetch(`${provider.baseURL}/chat/completions`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${provider.apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: provider.model,
+          messages: [{ role: "user", content: prompt }],
+          max_tokens: 30,
+        }),
+        signal: controller.signal,
+      });
 
-    const result = text.trim().replace(/^["']|["']$/g, "");
-    if (!result || result.toUpperCase() === "NONE") return null;
+      clearTimeout(timeout);
 
-    // Validate: the result must be one of the known localities.
-    const match = knownLocalities.find(
-      (l) => l.locality.toLowerCase() === result.toLowerCase(),
-    );
-    if (match) return match.locality;
+      if (!res.ok) continue;
 
-    // Try canonical match (e.g. AI returns "bandra" → "Bandra West").
-    const canonical = canonicalLocality(result);
-    if (canonical.label) {
-      const canonicalMatch = knownLocalities.find(
-        (l) => l.locality.toLowerCase() === canonical.label.toLowerCase(),
+      const data = await res.json();
+      const text = data?.choices?.[0]?.message?.content?.trim();
+      if (!text) continue;
+
+      const result = text.replace(/^["']|["']$/g, "");
+      if (!result || result.toUpperCase() === "NONE") return null;
+
+      const match = knownLocalities.find(
+        (l) => l.locality.toLowerCase() === result.toLowerCase(),
       );
-      if (canonicalMatch) return canonicalMatch.locality;
-    }
+      if (match) return match.locality;
 
-    return null;
-  } catch {
-    return null;
+      const canonical = canonicalLocality(result);
+      if (canonical.label) {
+        const canonicalMatch = knownLocalities.find(
+          (l) => l.locality.toLowerCase() === canonical.label.toLowerCase(),
+        );
+        if (canonicalMatch) return canonicalMatch.locality;
+      }
+
+      return null;
+    } catch {
+      continue;
+    }
   }
+
+  return null;
 }
