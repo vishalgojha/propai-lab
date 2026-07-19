@@ -1023,6 +1023,7 @@ function InboxPageInner({ defaultView }: InboxPageInnerProps) {
   const [selectedMsgDetails, setSelectedMsgDetails] = useState<any>(null);
   const [selectedBroker, setSelectedBroker] = useState<any>(null);
   const [chatPanelCollapsed, setChatPanelCollapsed] = useState(false);
+  const [chatPanelWidth, setChatPanelWidth] = useState(380);
   const [selectedBuilding, setSelectedBuilding] = useState<any>(null);
   const [priceStats, setPriceStats] = useState<any>(null);
   const [allSuggestions, setAllSuggestions] = useState<any[]>([]);
@@ -4360,7 +4361,37 @@ return {
 
         {/* Right panel: AI Chat */}
         {!chatPanelCollapsed && (
-          <div className="hidden lg:flex h-full min-h-0 w-[340px] shrink-0 border-l border-white/10 bg-[#070b0e]">
+          <div
+            className="hidden lg:flex h-full min-h-0 shrink-0 border-l border-white/10 bg-[#070b0e] relative"
+            style={{ width: chatPanelWidth }}
+          >
+            {/* Drag handle on left edge */}
+            <div
+              onMouseDown={(e) => {
+                e.preventDefault();
+                const startX = e.clientX;
+                const startW = chatPanelWidth;
+                const onMove = (ev: MouseEvent) => {
+                  const delta = startX - ev.clientX;
+                  const newW = Math.min(600, Math.max(260, startW + delta));
+                  setChatPanelWidth(newW);
+                };
+                const onUp = () => {
+                  document.removeEventListener("mousemove", onMove);
+                  document.removeEventListener("mouseup", onUp);
+                  document.body.style.cursor = "";
+                  document.body.style.userSelect = "";
+                };
+                document.addEventListener("mousemove", onMove);
+                document.addEventListener("mouseup", onUp);
+                document.body.style.cursor = "col-resize";
+                document.body.style.userSelect = "none";
+              }}
+              className="absolute top-0 left-0 w-[5px] h-full cursor-col-resize group z-20 flex items-center justify-center"
+            >
+              <div className="w-[1px] h-full bg-[rgba(255,255,255,0.06)] group-hover:bg-[#3EE88A]/40 transition-colors" />
+              <div className="absolute w-2 h-8 rounded-full bg-transparent group-hover:bg-[#3EE88A]/20 transition-colors" />
+            </div>
             <InboxChatPanel
               selectedBroker={selectedBroker}
               selectedMsgDetails={selectedMsgDetails}
