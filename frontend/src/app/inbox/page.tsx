@@ -3509,7 +3509,7 @@ return {
               {/* Observation Timeline */}
               <div className="flex-1 overflow-y-auto p-4 space-y-4">
                 {loadingBrokerObs ? (
-                  <div className="p-8 text-center text-xs text-zinc-500">Cleaning up this broker&apos;s market items...</div>
+                  <div className="p-8 text-center text-xs text-zinc-500">Loading market items...</div>
                 ) : brokerObsError ? (
                   <div className="rounded-xl border border-amber-500/20 bg-amber-500/[0.06] p-5 text-center">
                     <div className="text-sm font-semibold text-amber-200">Market items did not load</div>
