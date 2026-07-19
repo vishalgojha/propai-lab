@@ -1767,11 +1767,6 @@ export function updateAdminWhatsAppSession(
   });
 }
 
-export function controlAdminWhatsAppSession(phoneId: number, action: "connect" | "disconnect" | "reset") {
-  return fetchJSON<AdminWhatsAppSession>(`/admin/whatsapp/sessions/${phoneId}/${action}`, {
-    method: "POST",
-  });
-}
 
 export interface ProfilePictureResponse {
   ok: boolean;

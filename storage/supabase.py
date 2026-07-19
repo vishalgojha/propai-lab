@@ -1008,7 +1008,7 @@ class SupabaseStorage(Storage):
         return bool(res.data)
 
     def list_super_admins(self) -> list[dict]:
-        res = self.client.table("super_admins").select("*, auth.users(email, phone)").execute()
+        res = self.client.table("super_admins").select("*").execute()
         return res.data or []
 
     def add_super_admin(self, user_id: str, phone: str = "") -> dict | None:
