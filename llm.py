@@ -12,17 +12,20 @@ import os
 import time
 from openai import OpenAI
 
-# ── Provider chain: NVIDIA first, Doubleword last ─────────────────
+# ── Provider chain: NVIDIA×3 first, then free providers, Doubleword last ──
 
 _PROVIDERS = []
 
-if os.getenv("NVIDIA_API_KEY"):
-    _PROVIDERS.append({
-        "name": "nvidia-nim",
-        "api_key": os.environ["NVIDIA_API_KEY"],
-        "base_url": "https://integrate.api.nvidia.com/v1",
-        "model": "nvidia/nemotron-3-ultra-550b-a55b",
-    })
+_nvidia_model = "nvidia/nemotron-3-ultra-550b-a55b"
+_nvidia_base = "https://integrate.api.nvidia.com/v1"
+for i, key_env in enumerate(["NVIDIA_API_KEY", "NVIDIA_API_KEY_2", "NVIDIA_API_KEY_3"], 1):
+    if os.getenv(key_env):
+        _PROVIDERS.append({
+            "name": f"nvidia-nim-{i}",
+            "api_key": os.environ[key_env],
+            "base_url": _nvidia_base,
+            "model": _nvidia_model,
+        })
 
 if os.getenv("GROQ_API_KEY"):
     _PROVIDERS.append({
