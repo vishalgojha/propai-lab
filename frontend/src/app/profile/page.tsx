@@ -271,7 +271,8 @@ export default function ProfilePage() {
                     <span className="font-mono text-white">
                       {(() => {
                         const live = phones.find((p) => isLiveWhatsAppConnection(p));
-                        const candidate = live?.phone_number_live || live?.phone_number || profile?.phone || "";
+                        const anyPhone = phones.find((p) => p.phone_number);
+                        const candidate = live?.phone_number_live || live?.phone_number || anyPhone?.phone_number || profile?.phone || "";
                         return candidate || "Not linked yet";
                       })()}
                     </span>
