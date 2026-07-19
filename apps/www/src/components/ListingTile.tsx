@@ -117,6 +117,12 @@ export default function ListingTile({
           >
             {card.statusLabel}
           </span>
+          {card.freshnessBadge && (
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-green-400/10 px-2.5 py-1 text-[11px] font-semibold text-green-300">
+              <span className="h-1.5 w-1.5 rounded-full bg-green-400 animate-pulse" aria-hidden="true" />
+              {card.freshnessBadge}
+            </span>
+          )}
         </div>
 
         <h3 className="truncate text-xl font-semibold text-white transition-colors group-hover:text-green-300">
