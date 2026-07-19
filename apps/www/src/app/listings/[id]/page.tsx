@@ -73,9 +73,19 @@ function toCardFields(row: NonNullable<Awaited<ReturnType<typeof getListingById>
 
 export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const { id } = await params;
-  const listing = await getListingById(Number(id));
+  let listing;
+  try {
+    listing = await getListingById(Number(id));
+  } catch {
+    return { title: "Listing not found — PropAI" };
+  }
   if (!listing) return { title: "Listing not found — PropAI" };
-  const card = toListingCardViewModel(toCardFields(listing), false);
+  let card;
+  try {
+    card = toListingCardViewModel(toCardFields(listing), false);
+  } catch {
+    return { title: "Listing not found — PropAI" };
+  }
   const isRent = /month/i.test(card.priceLabel);
   const dealType = isRent ? "For rent" : "For sale";
   return {
@@ -94,10 +104,22 @@ export default async function ListingPage({ params }: Params) {
   const numericId = Number(id);
   if (!Number.isFinite(numericId)) notFound();
 
-  const listing = await getListingById(numericId);
+  let listing;
+  try {
+    listing = await getListingById(numericId);
+  } catch (err) {
+    console.error("getListingById failed:", err);
+    notFound();
+  }
   if (!listing) notFound();
 
-  const card = toListingCardViewModel(toCardFields(listing), false);
+  let card;
+  try {
+    card = toListingCardViewModel(toCardFields(listing), false);
+  } catch (err) {
+    console.error("toListingCardViewModel failed:", err);
+    notFound();
+  }
   const brokerInitials = (card.brokerName || "PR")
     .split(/\s+/)
     .slice(0, 2)
