@@ -120,6 +120,12 @@ export default async function ListingPage({ params }: Params) {
     console.error("toListingCardViewModel failed:", err);
     notFound();
   }
+  // Defensive: ensure all required fields exist on card
+  if (!card || !card.title || !card.href) {
+    console.error("Invalid card view model:", card);
+    notFound();
+  }
+
   const brokerInitials = (card.brokerName || "PR")
     .split(/\s+/)
     .slice(0, 2)
@@ -138,10 +144,12 @@ export default async function ListingPage({ params }: Params) {
     else if (priceUnit.includes("k")) priceINR = listing.price * 1_000;
     else priceINR = listing.price;
   }
+  const safeTitle = card.title || `${listing.bhk || ""} ${listing.property_type || "property"} in ${card.locality || "Mumbai"}`.trim();
+  const safeLocality = card.locality || "Mumbai";
   const listingSchema = buildRealEstateListing({
     url: listingUrl,
     id: numericId,
-    title: card.title || `${listing.bhk || ""} ${listing.property_type || "property"} in ${card.locality || "Mumbai"}`.trim(),
+    title: safeTitle,
     description: `${dealType} — ${card.title || "property"} in ${card.locality || "Mumbai"}. Listed via live WhatsApp broker network, routed directly to the posting broker.`,
     price: priceINR,
     priceCurrency: "INR",
