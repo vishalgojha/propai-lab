@@ -7,6 +7,7 @@ import nextDynamic from "next/dynamic";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 import * as api from "@/lib/api";
+import BrokerAvatar from "@/components/BrokerAvatar";
 import WhatsAppMessage, { MessageEntity } from "@/components/WhatsAppMessage";
 import TextSelectionMenu from "@/components/TextSelectionMenu";
 import NotesPanel from "@/components/notes/NotesPanel";
@@ -60,6 +61,16 @@ type ThreadFallbackItem = {
 function stripEmojis(text: string | null | undefined): string {
   if (!text) return "";
   return text.replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F1E0}-\u{1F1FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{FE00}-\u{FE0F}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FA6F}\u{1FA70}-\u{1FAFF}\u{200D}\u{20E3}\u{231A}-\u{23FF}\u{25A0}-\u{25FF}\u{2934}-\u{2935}\u{2B05}-\u{2B55}\u{3030}\u{303D}\u{3297}\u{3299}\u{2122}\u{2139}\u{24C2}\u{25B6}\u{25C0}\u{25FB}-\u{25FE}\u{2600}-\u{27EB}]/gu, "").trim();
+}
+
+function isLikelyBrokerDisplayName(value?: string): boolean {
+  const text = stripEmojis(value || "").trim();
+  if (!text || text.length < 3 || text.toLowerCase() === "unknown") return false;
+  if (/^[+\d\s().-]+$/.test(text)) return false;
+  if (/\b(?:bhk|rk|sq\s*ft|sqft|carpet|built\s*up|rent|sale|sell|buy|commercial|office|shop|flat|furnished|unfurnished|semi|possession|available|requirement|required|wanted|client|tenant|bachelor|family|self\s*contained|lift|floor|cr|lac|lakh|abs|negotiable)\b/i.test(text)) {
+    return false;
+  }
+  return /[A-Za-z]/.test(text);
 }
 
 function splitCode(rawMessageId: string | number | undefined, index: number): string {
@@ -702,6 +713,8 @@ type BrokerEvidenceItem = {
 
 type BrokerObservationRow = {
   id?: string | number;
+  latest_parsed_id?: string | number;
+  listing_index?: string | number;
   latest_raw_message_id?: string | number;
   raw_message_id?: string | number;
   raw_message?: string;
@@ -717,6 +730,8 @@ type BrokerObservationRow = {
   bhk?: string;
   price?: number;
   price_unit?: string;
+  area_sqft?: number;
+  furnishing?: string;
   location_raw?: string;
   micro_market?: string;
   alternate_intent?: string;
@@ -1023,7 +1038,7 @@ function InboxPageInner({ defaultView }: InboxPageInnerProps) {
   const [selectedMsgDetails, setSelectedMsgDetails] = useState<any>(null);
   const [selectedBroker, setSelectedBroker] = useState<any>(null);
   const [chatPanelCollapsed, setChatPanelCollapsed] = useState(false);
-  const [chatPanelWidth, setChatPanelWidth] = useState(380);
+  const [chatPanelWidth, setChatPanelWidth] = useState(540);
   const [selectedBuilding, setSelectedBuilding] = useState<any>(null);
   const [priceStats, setPriceStats] = useState<any>(null);
   const [allSuggestions, setAllSuggestions] = useState<any[]>([]);
@@ -1190,8 +1205,12 @@ return {
     const groups = new Map<string, BrokerObservationGroup>();
     for (const obs of selectedBrokerObservations as BrokerObservationRow[]) {
       const rawMessageId = obs.latest_raw_message_id || obs.raw_message_id || obs.id;
+      const parsedItemId = (obs as any).latest_parsed_id || obs.id || "";
+      const listingIndex = (obs as any).listing_index;
       const opportunitySignature = normalizeMessageForDedupe(
         [
+          parsedItemId,
+          listingIndex != null ? `item ${listingIndex}` : "",
           obs.summary_title,
           obs.intent,
           obs.bhk,
@@ -1206,7 +1225,9 @@ return {
       const brokerKey = normalizeMessageForDedupe(
         [obs.broker_phone, obs.broker_name, selectedBroker?.phone, selectedBroker?.canonical_name].filter(Boolean).join(" ")
       );
-      const key = normalizedText ? `${brokerKey || "broker"}::${normalizedText}` : String(rawMessageId);
+      const key = normalizedText
+        ? `${brokerKey || "broker"}::${rawMessageId || "raw"}::${normalizedText}`
+        : `${rawMessageId || "raw"}::${parsedItemId || listingIndex || ""}`;
       const existing = groups.get(key);
       if (!existing) {
         groups.set(key, {
@@ -1669,7 +1690,7 @@ return {
       const sender = (msg.sender || "").trim();
       const phone = resolveMessagePhone(msg);
       if (isRawWhatsAppId(sender)) return displayPhoneString(phone) || "Direct Message";
-      if (sender && sender.toLowerCase() !== "unknown") return sender;
+      if (isLikelyBrokerDisplayName(sender)) return sender;
       return displayPhoneString(phone) || "Direct Message";
     }
     const knownGroupName = resolveKnownGroupName(rawConversation);
@@ -1678,7 +1699,7 @@ return {
     const sender = (msg.sender || "").trim();
     const phone = resolveMessagePhone(msg);
     if (isRawWhatsAppId(sender)) return displayPhoneString(phone) || "Direct Message";
-    if (sender && sender.toLowerCase() !== "unknown") return sender;
+    if (isLikelyBrokerDisplayName(sender)) return sender;
     const group = displayGroupName(rawConversation);
     return group || displayPhoneString(phone) || "Direct Message";
   };
@@ -1805,7 +1826,7 @@ return {
     if (msg.from_me === 1 || msg.from_me === true || msg.sender === "seed-bot" || msg.sender === "system" || msg.sender === "owner") return "You";
     const phone = resolveMessagePhone(msg);
     const sender = (msg.sender || "").trim();
-    if (sender && sender.toLowerCase() !== "unknown" && !isRawWhatsAppId(sender)) {
+    if (isLikelyBrokerDisplayName(sender) && !isRawWhatsAppId(sender)) {
       return msg.broker_name || sender;
     }
     return msg.broker_name || (phone ? displayPhoneString(phone) : "");
@@ -2644,15 +2665,17 @@ return {
     if (isMobile) setMobileView("conversation");
     setOpportunityFilter("all");
     const brokerPhone = normalizeRealPhone(broker.primary_phone || broker.phone || broker.identity_key || broker.id || "");
-    const brokerName = stripEmojis(broker.canonical_name || broker.name || "").trim();
+    const rawBrokerName = stripEmojis(broker.canonical_name || broker.name || "").trim();
+    const brokerName = isLikelyBrokerDisplayName(rawBrokerName) ? rawBrokerName : "";
     const brokerIdentityKey = (broker.identity_key || broker.id || broker.primary_phone || brokerPhone || brokerName || "").toString().trim();
+    const displayName = brokerName || displayPhoneString(brokerPhone || broker.primary_phone || broker.phone || brokerIdentityKey) || "Broker";
     if (brokerIdentityKey) updateUrlBroker(brokerIdentityKey);
     setSelectedBroker({
       id: brokerIdentityKey || brokerPhone || broker.primary_phone || brokerName,
       identity_key: brokerIdentityKey,
       phone: brokerPhone || broker.primary_phone || broker.phone || normalizeRealPhone(brokerIdentityKey) || "",
-      canonical_name: broker.canonical_name || broker.name || "",
-      name: broker.canonical_name || broker.name || "",
+      canonical_name: displayName,
+      name: displayName,
       building_count: broker.building_count || 0,
       active_days_30: broker.active_days_30 || 0,
       first_seen: broker.first_seen,
@@ -3251,7 +3274,10 @@ return {
                         >
                           <div className="flex items-center justify-between mb-1">
                             <div className="flex items-center gap-2 min-w-0">
-                              {isActiveNow && <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" />}
+                              <div className="relative">
+                                <BrokerAvatar phone={b.primary_phone} size="sm" />
+                                {isActiveNow && <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-emerald-400 border border-[#0a0e13]" />}
+                              </div>
                               <span className="text-[12px] font-bold text-white truncate max-w-[160px]">
                                 {stripEmojis(b.canonical_name || b.name) || "Unknown"}
                               </span>
@@ -3452,9 +3478,7 @@ return {
                       <ChevronLeft className="w-5 h-5" />
                     </button>
                   )}
-                  <div className="flex h-9 w-9 items-center justify-center rounded-md border border-white/10 bg-white/[0.035] text-zinc-300">
-                    <User className="w-4 h-4" strokeWidth={1.5} />
-                  </div>
+                  <BrokerAvatar phone={resolvedBrokerPhone} size="md" />
                   <div className="min-w-0">
                     <h3 className="text-sm font-bold text-white truncate max-w-[340px]">
                       {selectedBroker.canonical_name || selectedBroker.name || selectedMsgDetails?.parsed?.broker_name || selectedMsgDetails?.parsed?.profile_name || "Broker"}
@@ -3668,6 +3692,7 @@ return {
                               {obs.property_type && <span className="font-medium text-zinc-300">{obs.property_type}</span>}
                               {obs.bhk && <><span className="text-zinc-700">·</span><span>{obs.bhk}</span></>}
                               {obs.price != null && <><span className="text-zinc-700">·</span><span className="font-semibold text-white">{formatCurrency(obs.price, obs.price_unit)}</span></>}
+                              {obs.area_sqft && <><span className="text-zinc-700">·</span><span>{obs.area_sqft} sqft</span></>}
                               {obs.micro_market && <><span className="text-zinc-700">·</span><span>{obs.micro_market}</span></>}
                               {obs.alternate_intent && (
                                 <span className="text-[9px] text-zinc-400 italic ml-1">
@@ -3711,6 +3736,16 @@ return {
                               {obs.building_name && (
                                 <span className="text-[10px] bg-zinc-800 text-zinc-300 px-2 py-0.5 rounded-full border border-white/5">
                                   {stripEmojis(obs.building_name)}
+                                </span>
+                              )}
+                              {obs.area_sqft && (
+                                <span className="text-[10px] bg-zinc-800 text-zinc-300 px-2 py-0.5 rounded-full border border-white/5">
+                                  {obs.area_sqft} sqft
+                                </span>
+                              )}
+                              {obs.furnishing && (
+                                <span className="text-[10px] bg-zinc-800 text-zinc-300 px-2 py-0.5 rounded-full border border-white/5">
+                                  {stripEmojis(obs.furnishing)}
                                 </span>
                               )}
                               {obs.times_seen && obs.times_seen > 1 && (
@@ -4332,37 +4367,21 @@ return {
                 </div>
               </div>
             </>
-          ) : !chatPanelCollapsed ? (
-            <div className="flex-1 min-h-0">
-              <InboxChatPanel
-                selectedBroker={selectedBroker}
-                selectedMsgDetails={selectedMsgDetails}
-                selectedConversationJid={selectedConversationJid}
-                collapsed={false}
-                onToggleCollapse={() => setChatPanelCollapsed(true)}
-              />
-            </div>
           ) : (
             <div className="flex-1 flex flex-col items-center justify-center p-8 text-center text-zinc-500 space-y-2">
-              <span className="text-4xl">💬</span>
+              <MessageSquare className="h-8 w-8 text-zinc-700" strokeWidth={1.5} />
               <h3 className="text-sm font-semibold text-zinc-300">No conversation selected</h3>
               <p className="text-xs max-w-xs">
-                Select a WhatsApp group or direct chat to see messages, evidence, and PropAI actions. Or expand the AI Chat panel.
+                Select a WhatsApp group or broker to see messages, evidence, and PropAI actions.
               </p>
-              <button
-                onClick={() => setChatPanelCollapsed(false)}
-                className="mt-2 text-xs text-emerald-400 hover:text-emerald-300 transition-colors"
-              >
-                Open AI Chat
-              </button>
             </div>
           )}
         </div>
 
-        {/* Right panel: AI Chat (only when a conversation is selected) */}
-        {!chatPanelCollapsed && selectedBroker && (
+        {/* Right panel: global AI Chat, optionally enriched with selected context */}
+        {!chatPanelCollapsed && (
           <div
-            className="hidden lg:flex h-full min-h-0 shrink-0 border-l border-white/10 bg-[#070b0e] relative"
+            className="hidden lg:flex h-full min-h-0 min-w-0 shrink-0 border-l border-white/10 bg-[#070b0e] relative"
             style={{ width: chatPanelWidth }}
           >
             {/* Drag handle on left edge */}
@@ -4373,7 +4392,7 @@ return {
                 const startW = chatPanelWidth;
                 const onMove = (ev: MouseEvent) => {
                   const delta = startX - ev.clientX;
-                  const newW = Math.min(600, Math.max(260, startW + delta));
+                  const newW = Math.min(720, Math.max(320, startW + delta));
                   setChatPanelWidth(newW);
                 };
                 const onUp = () => {
@@ -4397,6 +4416,7 @@ return {
               selectedMsgDetails={selectedMsgDetails}
               selectedConversationJid={selectedConversationJid}
               collapsed={false}
+              globalMode={true}
               onToggleCollapse={() => setChatPanelCollapsed(true)}
             />
           </div>

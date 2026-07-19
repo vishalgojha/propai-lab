@@ -1772,3 +1772,19 @@ export function controlAdminWhatsAppSession(phoneId: number, action: "connect" |
     method: "POST",
   });
 }
+
+export interface ProfilePictureResponse {
+  ok: boolean;
+  url?: string;
+  jid?: string;
+  id?: string;
+  cached?: boolean;
+  note?: string;
+}
+
+export function getProfilePicture(jid: string, brokerId?: string) {
+  const params = new URLSearchParams();
+  if (brokerId) params.set("broker_id", brokerId);
+  const qs = params.toString();
+  return fetchJSON<ProfilePictureResponse>(`/profile-picture/${encodeURIComponent(jid)}${qs ? "?" + qs : ""}`, undefined, 5000);
+}
