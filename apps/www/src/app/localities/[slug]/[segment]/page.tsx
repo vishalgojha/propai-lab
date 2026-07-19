@@ -19,6 +19,7 @@ import {
 import SiteHeader from "@/components/SiteHeader";
 import SiteFooter from "@/components/SiteFooter";
 import ListingTile from "@/components/ListingTile";
+import { ShortlistProvider } from "@/components/ShortlistProvider";
 
 type Params = { params: Promise<{ slug: string; segment: string }> };
 
@@ -138,11 +139,13 @@ export default async function LocalitySegmentPage({ params }: Params) {
         </header>
 
         {cards.length > 0 ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 lg:gap-6">
-            {cards.map((c) => (
-              <ListingTile key={c.href} card={c} />
-            ))}
-          </div>
+          <ShortlistProvider>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 lg:gap-6">
+              {cards.map((c) => (
+                <ListingTile key={c.href} card={c} />
+              ))}
+            </div>
+          </ShortlistProvider>
         ) : (
           <div className="rounded-2xl border border-white/10 bg-zinc-900/50 p-10 text-center">
             <p className="text-lg text-zinc-300">

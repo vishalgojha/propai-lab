@@ -30,8 +30,8 @@ const howItWorksSteps = [
   },
   {
     number: "03",
-    title: "Broker calls you",
-    description: "The broker calls you directly on your phone. You deal with a real person, not a chatbot.",
+    title: "Message the broker",
+    description: "Continue the conversation directly with the broker on WhatsApp — no forms, no spam. Real person, not a chatbot.",
   },
 ];
 
@@ -81,7 +81,7 @@ export default async function WWWPage() {
                 {
                   icon: MessageSquare,
                   title: "Direct to broker",
-                  description: "Your enquiry lands on the broker's WhatsApp instantly. They call you directly on your phone.",
+                  description: "Your enquiry lands on the broker's WhatsApp instantly — no middlemen, no delays.",
                 },
                 {
                   icon: Shield,
@@ -90,8 +90,8 @@ export default async function WWWPage() {
                 },
                 {
                   icon: Phone,
-                  title: "Real brokers, real calls",
-                  description: "No chatbots. Your enquiry goes to a real broker who calls you on your phone.",
+                  title: "Real brokers, real conversations",
+                  description: "No chatbots. Every enquiry goes to a verified broker on WhatsApp.",
                 },
               ].map((item, i) => (
                 <div key={i} className="bg-zinc-900/50 border border-white/10 rounded-xl p-6 lg:p-8">
@@ -264,7 +264,7 @@ export default async function WWWPage() {
                 {
                   icon: MessageSquare,
                   title: "Direct to broker",
-                  description: "Your enquiry lands on the broker's WhatsApp instantly. They call you directly on your phone.",
+                  description: "Your enquiry lands on the broker's WhatsApp instantly — no middlemen, no delays.",
                 },
                 {
                   icon: Shield,
@@ -273,8 +273,8 @@ export default async function WWWPage() {
                 },
                 {
                   icon: Phone,
-                  title: "Real brokers, real calls",
-                  description: "No chatbots. Your enquiry goes to a real broker who calls you on your phone.",
+                  title: "Real brokers, real conversations",
+                  description: "No chatbots. Every enquiry goes to a verified broker on WhatsApp.",
                 },
               ].map((item, i) => (
                 <div key={i} className="bg-zinc-900/50 border border-white/10 rounded-xl p-6 lg:p-8">

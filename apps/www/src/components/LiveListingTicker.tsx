@@ -84,7 +84,7 @@ export default function LiveListingTicker() {
   if (!listing) return null;
 
   const price = priceLabel(listing.price, listing.priceUnit);
-  const bhk = listing.bhk ? `${listing.bhk} BHK` : null;
+  const bhk = listing.bhk ? `${listing.bhk.replace(/\s*BHK\s*$/i, "").trim()} BHK` : null;
   const type = listing.transactionType
     ? listing.transactionType.charAt(0).toUpperCase() + listing.transactionType.slice(1).toLowerCase()
     : listing.assetType
@@ -93,7 +93,7 @@ export default function LiveListingTicker() {
 
   return (
     <div
-      className={`mt-10 flex items-center justify-center gap-3 text-sm transition-opacity duration-500 ${
+      className={`mt-10 mb-6 flex items-center justify-center gap-3 text-sm transition-opacity duration-500 ${
         fresh ? "opacity-100" : "opacity-90"
       }`}
       aria-live="polite"
