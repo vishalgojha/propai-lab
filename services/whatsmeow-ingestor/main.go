@@ -1347,6 +1347,64 @@ func (sm *SessionManager) sendMessageHandler(w http.ResponseWriter, r *http.Requ
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
+func (sm *SessionManager) profilePictureHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if !requireMethod(w, r, http.MethodGet) {
+		return
+	}
+	jidStr := strings.TrimSpace(r.URL.Query().Get("jid"))
+	if jidStr == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{"ok": false, "error": "jid is required"})
+		return
+	}
+	jid, err := types.ParseJID(jidStr)
+	if err != nil || jid.IsEmpty() {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{"ok": false, "error": "invalid jid"})
+		return
+	}
+	brokerID := strings.TrimSpace(r.URL.Query().Get("broker_id"))
+	session, err := sm.connectedSession(brokerID)
+	if err != nil {
+		w.WriteHeader(http.StatusConflict)
+		json.NewEncoder(w).Encode(map[string]interface{}{"ok": false, "error": err.Error()})
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+	params := &whatsmeow.GetProfilePictureParams{}
+	if existingID := strings.TrimSpace(r.URL.Query().Get("existing_id")); existingID != "" {
+		params.ExistingID = existingID
+	}
+	picInfo, err := session.client.GetProfilePictureInfo(ctx, jid, params)
+	if err != nil {
+		w.WriteHeader(http.StatusBadGateway)
+		json.NewEncoder(w).Encode(map[string]interface{}{"ok": false, "error": err.Error()})
+		return
+	}
+	if picInfo == nil {
+		// existing_id matched — picture hasn't changed
+		json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "unchanged": true, "jid": jidStr})
+		return
+	}
+	if picInfo.URL == "" {
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]interface{}{"ok": false, "error": "no profile picture"})
+		return
+	}
+	result := map[string]interface{}{
+		"ok":  true,
+		"url": picInfo.URL,
+		"jid": jidStr,
+		"id":  picInfo.ID,
+	}
+	if picInfo.Type != "" {
+		result["type"] = picInfo.Type
+	}
+	json.NewEncoder(w).Encode(result)
+}
+
 func (sm *SessionManager) listHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if !requireMethod(w, r, http.MethodGet) {
@@ -1713,6 +1771,7 @@ func main() {
 	mux.HandleFunc("/send-message", internalOnly(sm.sendMessageHandler, false))
 	mux.HandleFunc("/list", internalOnly(sm.listHandler, false))
 	mux.HandleFunc("/history/backfill", internalOnly(sm.historyBackfillHandler, false))
+	mux.HandleFunc("/profile-picture", internalOnly(sm.profilePictureHandler, false))
 
 	server := &http.Server{
 		Addr:    ":" + sendPort,

@@ -2225,6 +2225,10 @@ async def webhook(request: Request):
         # the poll-based extraction_worker picks it up — never silently lost.
         _retry_schedule_raw_extraction(raw_id, extraction_ctx)
 
+    # ── Proactively fetch sender profile picture (fire-and-forget) ──
+    if sender_jid and "@s.whatsapp.net" in sender_jid:
+        asyncio.create_task(_maybe_fetch_profile_picture(sender_jid, webhook_broker_id, resolved_tenant_id))
+
     return {"status": "ok", "raw_id": raw_id, "message": "saved"}
 
 
@@ -2277,6 +2281,48 @@ def _retry_schedule_raw_extraction(raw_id: int, ctx: dict, attempt: int = 0):
             "message stays unprocessed for poll worker",
             flush=True,
         )
+
+
+_PROFILE_PICTURE_FETCHED: set[str] = set()
+_PROFILE_PICTURE_LOCK = asyncio.Lock()
+
+
+async def _maybe_fetch_profile_picture(jid: str, broker_id: str, tenant_id: str):
+    """Fetch and cache a sender's WhatsApp profile picture (fire-and-forget).
+
+    Only fetches once per JID per process lifetime to avoid hammering the
+    ingestor on busy group chats.  The 6-hour expiry in the proxy endpoint
+    handles staleness for subsequent requests.
+    """
+    if not jid or "@s.whatsapp.net" not in jid:
+        return
+    async with _PROFILE_PICTURE_LOCK:
+        if jid in _PROFILE_PICTURE_FETCHED:
+            return
+        _PROFILE_PICTURE_FETCHED.add(jid)
+    try:
+        phone = jid.split("@")[0].replace("+", "").strip()
+        cached = storage.get_profile_photo(jid, tenant_id=tenant_id) if hasattr(storage, "get_profile_photo") else None
+        if cached and cached.get("profile_photo_url") and cached.get("profile_photo_fetched_at"):
+            try:
+                fetched_at = datetime.fromisoformat(str(cached["profile_photo_fetched_at"]))
+                if (datetime.now(timezone.utc) - fetched_at).total_seconds() < 6 * 3600:
+                    return
+            except Exception:
+                pass
+        _, resp = await _first_ingestor_response(
+            "GET",
+            f"/profile-picture?jid={jid}" + (f"&broker_id={broker_id}" if broker_id else ""),
+            timeout=8,
+        )
+        if resp is None or resp.status_code >= 300:
+            return
+        data = resp.json()
+        pic_url = data.get("url", "")
+        if pic_url and data.get("ok"):
+            storage.update_profile_photo(jid, pic_url, data.get("id", ""), tenant_id=tenant_id)
+    except Exception:
+        pass
 
 
 def _process_single_raw(raw_id: int, ctx: dict):
@@ -12822,6 +12868,55 @@ async def save_profile(body: ProfileUpdate, user: dict = Depends(require_user), 
     if not profile:
         raise HTTPException(500, "Profile could not be saved")
     return profile
+
+
+@app.get("/api/profile-picture/{jid:path}")
+async def get_profile_picture(jid: str, broker_id: str = "", user: dict = Depends(require_user), tenant_id: str | None = Depends(get_tenant_context)):
+    """Proxy profile picture URL from the WhatsApp ingestor.  Caches in user_profiles."""
+    jid = jid.strip()
+    if not jid:
+        raise HTTPException(400, "jid is required")
+
+    # Check cache — refresh if older than 6 hours
+    cached = storage.get_profile_photo(jid, tenant_id=tenant_id) if hasattr(storage, "get_profile_photo") else None
+    if cached and cached.get("profile_photo_url") and cached.get("profile_photo_fetched_at"):
+        try:
+            fetched_at = datetime.fromisoformat(str(cached["profile_photo_fetched_at"]))
+            if (datetime.now(timezone.utc) - fetched_at).total_seconds() < 6 * 3600:
+                return {"ok": True, "url": cached["profile_photo_url"], "jid": jid, "cached": True}
+        except Exception:
+            pass
+
+    # Forward to ingestor
+    broker_param = f"&broker_id={broker_id}" if broker_id else ""
+    existing_param = f"&existing_id={cached['profile_photo_id']}" if cached and cached.get("profile_photo_id") else ""
+    _, resp = await _first_ingestor_response(
+        "GET",
+        f"/profile-picture?jid={jid}{broker_param}{existing_param}",
+        timeout=8,
+    )
+    if resp is None or resp.status_code >= 400:
+        if resp is not None and resp.status_code == 404:
+            return {"ok": True, "url": "", "jid": jid, "note": "no_profile_picture"}
+        raise HTTPException(502, "Profile picture fetch failed")
+
+    try:
+        data = resp.json()
+    except Exception:
+        raise HTTPException(502, "Invalid response from WhatsApp service")
+
+    if not data.get("ok"):
+        raise HTTPException(502, data.get("error", "Profile picture fetch failed"))
+
+    if data.get("unchanged"):
+        return {"ok": True, "url": cached["profile_photo_url"] if cached else "", "jid": jid, "cached": True}
+
+    pic_url = data.get("url", "")
+    pic_id = data.get("id", "")
+    if pic_url:
+        storage.update_profile_photo(jid, pic_url, pic_id, tenant_id=tenant_id) if hasattr(storage, "update_profile_photo") else None
+
+    return {"ok": True, "url": pic_url, "jid": jid, "id": pic_id}
 
 
 @app.get("/api/key")

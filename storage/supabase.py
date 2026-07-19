@@ -710,6 +710,41 @@ class SupabaseStorage(Storage):
             res = self.client.table("user_profiles").insert(payload).execute()
         return res.data[0] if res and res.data else None
 
+    def get_profile_photo(self, jid: str, tenant_id: str | None = None) -> dict | None:
+        """Get cached profile photo for a WhatsApp JID (phone@s.whatsapp.net)."""
+        tid = tenant_id or self._tenant_id
+        phone = jid.split("@")[0].replace("+", "").strip() if "@" in jid else jid.replace("+", "").strip()
+        if not phone:
+            return None
+        try:
+            q = self.client.table("user_profiles").select("profile_photo_url, profile_photo_id, profile_photo_fetched_at").eq("phone", phone)
+            if tid:
+                q = q.eq("tenant_id", tid)
+            res = q.limit(1).execute()
+            return res.data[0] if res and res.data else None
+        except Exception:
+            return None
+
+    def update_profile_photo(self, jid: str, url: str, photo_id: str = "", tenant_id: str | None = None) -> None:
+        """Update cached profile photo URL for a WhatsApp JID."""
+        tid = tenant_id or self._tenant_id
+        phone = jid.split("@")[0].replace("+", "").strip() if "@" in jid else jid.replace("+", "").strip()
+        if not phone or not url:
+            return
+        try:
+            payload = {
+                "profile_photo_url": url,
+                "profile_photo_id": photo_id,
+                "profile_photo_fetched_at": "now()",
+            }
+            # Use raw RPC-style update since now() needs to be SQL
+            self.client.table("user_profiles").update({
+                "profile_photo_url": url,
+                "profile_photo_id": photo_id,
+            }).eq("phone", phone).eq("tenant_id", tid).execute()
+        except Exception:
+            pass
+
     # ── Permission helpers ──────────────────────────────────────────
 
     PERMISSION_LABELS: list[tuple[str, str]] = [
