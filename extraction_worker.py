@@ -69,6 +69,7 @@ def context_from_raw(row) -> dict:
         "message_id": key.get("id") or "",
         "msg_text": row_value(row, "message") or "",
         "msg": msg,
+        "tenant_id": row_value(row, "tenant_id") or "",
     }
 
 
