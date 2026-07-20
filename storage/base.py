@@ -26,6 +26,7 @@ class RawMessage:
     pipeline_version: Optional[str] = None
     synced_at: Optional[str] = None
     event_id: Optional[str] = None
+    is_group: bool = False
     processed: bool = False
     processed_at: Optional[str] = None
     tenant_id: Optional[str] = None

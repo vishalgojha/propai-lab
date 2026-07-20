@@ -1201,7 +1201,7 @@ class SupabaseStorage(Storage):
         "group_name", "sender", "sender_jid", "sender_phone",
         "message", "message_type", "attachments", "reply_context",
         "timestamp", "source", "raw_payload", "message_uid",
-        "processed", "processed_at", "tenant_id",
+        "is_group", "processed", "processed_at", "tenant_id",
         "created_at",
     }
 
@@ -1239,7 +1239,7 @@ class SupabaseStorage(Storage):
         cols = (
             "id, group_name, sender, sender_jid, sender_phone, message, message_type, "
             "attachments, reply_context, timestamp, source, raw_payload, message_uid, "
-            "pipeline_version, synced_at, event_id, processed, processed_at, tenant_id, created_at"
+            "is_group, pipeline_version, synced_at, event_id, processed, processed_at, tenant_id, created_at"
         )
         query = self.client.table("raw_messages").select(cols).order("timestamp", desc=True).limit(limit).offset(offset)
         if group_name:
@@ -1480,7 +1480,7 @@ class SupabaseStorage(Storage):
             pass
 
         query = self.client.table("raw_messages").select(
-            "id,tenant_id,group_name,sender,sender_phone,sender_jid,timestamp,created_at,message_uid,message,raw_payload"
+            "id,tenant_id,group_name,sender,sender_phone,sender_jid,timestamp,created_at,message_uid,message,raw_payload,is_group"
         )\
             .order("timestamp", desc=True)\
             .limit(max(5000, limit + offset))
@@ -1516,7 +1516,7 @@ class SupabaseStorage(Storage):
 
         groups: dict[str, list[dict]] = {}
         for row in rows:
-            if not _is_market_group_row(row):
+            if not row.get("is_group", False):
                 continue
             key = broker_key(row)
             groups.setdefault(key, []).append(row)
@@ -1590,7 +1590,7 @@ class SupabaseStorage(Storage):
         raw_map: dict[int, dict] = {}
         if raw_ids:
             raw_query = self.client.table("raw_messages").select(
-                "id,group_name,sender,sender_phone,sender_jid,timestamp,created_at,message_uid,message,raw_payload"
+                "id,group_name,sender,sender_phone,sender_jid,timestamp,created_at,message_uid,message,raw_payload,is_group"
             ).in_("id", raw_ids[:min(len(raw_ids), 10000)])
             if tid:
                 raw_query = raw_query.eq("tenant_id", tid)
@@ -1603,7 +1603,7 @@ class SupabaseStorage(Storage):
         phones_by_name: dict[str, set[str]] = defaultdict(set)
         for parsed in parsed_rows:
             raw = raw_map.get(parsed.get("raw_message_id")) or {}
-            if not _is_market_group_row(raw):
+            if not raw.get("is_group", False):
                 continue
 
             phone = (
@@ -2977,7 +2977,7 @@ class SupabaseStorage(Storage):
         phones_by_name: dict[str, set[str]] = defaultdict(set)
         for parsed in (query.execute().data or []):
             raw = parsed.get("raw_messages") or {}
-            if not _is_market_group_row(raw):
+            if not raw.get("is_group", False):
                 continue
             phone = (
                 _normalize_india_phone(parsed.get("broker_phone") or "")
