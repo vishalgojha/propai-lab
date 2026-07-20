@@ -1042,7 +1042,11 @@ func extractContacts(msg *waE2E.Message) []map[string]interface{} {
 		if vcard := c.GetVcard(); vcard != "" {
 			info := parseVCard(vcard)
 			info["display_name"] = c.GetDisplayName()
-			contacts = append(contacts, info)
+			out := make(map[string]interface{}, len(info))
+			for k, v := range info {
+				out[k] = v
+			}
+			contacts = append(contacts, out)
 		}
 	}
 	if ca := msg.GetContactsArrayMessage(); ca != nil {
@@ -1050,7 +1054,11 @@ func extractContacts(msg *waE2E.Message) []map[string]interface{} {
 			if vcard := c.GetVcard(); vcard != "" {
 				info := parseVCard(vcard)
 				info["display_name"] = c.GetDisplayName()
-				contacts = append(contacts, info)
+				out := make(map[string]interface{}, len(info))
+				for k, v := range info {
+					out[k] = v
+				}
+				contacts = append(contacts, out)
 			}
 		}
 	}
@@ -1062,12 +1070,18 @@ func extractReaction(msg *waE2E.Message) map[string]interface{} {
 	if r == nil {
 		return nil
 	}
-	return map[string]interface{}{
-		"emoji":              r.GetText(),
-		"target_message_id":  r.GetStanzaID(),
-		"target_sender_jid":  r.GetSender(),
-		"target_from_me":     r.GetFromMe(),
+	key := r.GetKey()
+	result := map[string]interface{}{
+		"emoji": r.GetText(),
 	}
+	if key != nil {
+		result["target_message_id"] = key.GetID()
+		result["target_sender_jid"] = key.GetParticipant()
+		if key.GetFromMe() {
+			result["target_from_me"] = true
+		}
+	}
+	return result
 }
 
 func extractPoll(msg *waE2E.Message) map[string]interface{} {
@@ -1088,15 +1102,17 @@ func extractPoll(msg *waE2E.Message) map[string]interface{} {
 		if vote == nil {
 			return nil
 		}
-		selected := make([]string, 0, len(vote.GetSelectedOptions()))
-		for _, opt := range vote.GetSelectedOptions() {
-			selected = append(selected, string(opt))
+		result := map[string]interface{}{
+			"type": "poll_update",
 		}
-		return map[string]interface{}{
-			"type":              "poll_update",
-			"selected_options":  selected,
-			"sender_jid":        vote.GetSender(),
+		if pKey := pollUpd.GetPollCreationMessageKey(); pKey != nil {
+			result["poll_creation_message_id"] = pKey.GetID()
 		}
+		encPayload := vote.GetEncPayload()
+		if len(encPayload) > 0 {
+			result["has_vote"] = true
+		}
+		return result
 	}
 	return nil
 }
