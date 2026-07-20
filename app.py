@@ -5,9 +5,12 @@ Flow:
   WhatsApp ingestor webhook → save raw → parse → resolve → store → evaluate
 """
 import json
+import logging
 import os
 import sys
 import asyncio
+
+_logger = logging.getLogger(__name__)
 import time
 import httpx
 import uuid
@@ -5288,6 +5291,35 @@ def _route_message_intent(messages: list[dict]) -> dict | None:
     return None
 
 
+def _assert_model_url_match(model: str, base_url: str) -> None:
+    """Log a warning if the model string doesn't match the provider's base URL.
+
+    This catches silent misrouting where a model intended for one provider
+    ends up being sent to a different provider's endpoint.
+    """
+    known_mappings = [
+        (["nvidia/"], ["integrate.api.nvidia.com"]),
+        (["gemini-"], ["generativelanguage.googleapis.com"]),
+        (["Qwen/", "deepseek-ai/", "qwen-"], ["api.doubleword.ai"]),
+        (["llama-", "mixtral-"], ["api.groq.com", "api.cerebras.ai"]),
+    ]
+    model_lower = model.lower()
+    matched_providers = []
+    for models, base_patterns in known_mappings:
+        if any(model_lower.startswith(m) for m in models):
+            matched_providers.append((models, base_patterns))
+    if not matched_providers:
+        return
+    url_lower = base_url.lower()
+    for models, base_patterns in matched_providers:
+        if not any(p in url_lower for p in base_patterns):
+            _logger.error(
+                "MODEL-URL MISMATCH: model '%s' suggests %s but base_url is '%s' — "
+                "request will be silently misrouted!",
+                model, models, base_url,
+            )
+
+
 def _contextual_self_chat_response(messages: list[dict]) -> dict | None:
     latest_user = ""
     previous_assistant = ""
@@ -6245,11 +6277,13 @@ async def _run_workspace_agent(messages: list[dict], model: str = "", session_id
     configured_model = model.strip()
     api_key = ""
     base_url = ""
+    provider_name = ""
     # Use the shared provider chain (NVIDIA×3 → Groq → Gemini → Cerebras → Doubleword)
     try:
         api_key = _llm.get_client().api_key
         base_url = _llm.get_client().base_url.base_url.rstrip("/") if hasattr(_llm.get_client().base_url, "base_url") else str(_llm.get_client().base_url).rstrip("/")
         configured_model = configured_model or _llm.get_model()
+        provider_name = _llm.get_provider_name()
     except Exception:
         pass
     if not api_key or api_key == "none":
@@ -6258,11 +6292,20 @@ async def _run_workspace_agent(messages: list[dict], model: str = "", session_id
             api_key = (provider.api_key or "").strip()
             base_url = (provider.base_url or "https://api.doubleword.ai/v1").strip().rstrip("/")
             configured_model = configured_model or (provider.model_name or "").strip()
+            provider_name = provider.provider_name
     if not api_key or api_key == "none":
         return {
             "error": "api_key_required",
             "message": "No LLM provider is available. Set NVIDIA_API_KEY or another provider key.",
         }
+    _logger.info(
+        "Workspace agent resolved provider: %s | model=%s | base_url=%s",
+        provider_name, configured_model, base_url,
+    )
+
+    # Model-URL assertion: warn loudly if the model doesn't match the provider's base URL
+    if configured_model and base_url:
+        _assert_model_url_match(configured_model, base_url)
 
     sources = chat_engine.load_data()
     live = chat_engine.load_live_data(getattr(storage, "db", None))
@@ -14429,6 +14472,15 @@ async def list_llm_providers(user: dict = Depends(require_user), tenant_id: str 
 
 @app.get("/api/workspace/llm-providers/active")
 async def get_active_llm_provider(user: dict = Depends(require_user), tenant_id: str | None = Depends(get_tenant_context)):
+    # Return what llm.py is actually using at request time (env-var chain)
+    import llm as _llm
+    try:
+        active = _llm.get_provider_info()
+        if active.get("provider_name") and active.get("provider_name") != "none":
+            return active
+    except Exception:
+        pass
+    # Fallback: return DB-stored provider
     provider = storage.get_active_llm_provider(tenant_id=tenant_id)
     if not provider:
         return {}

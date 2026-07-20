@@ -8,9 +8,12 @@ Usage:
     resp = client.chat.completions.create(model=model, messages=[...])
 """
 
+import logging
 import os
 import time
 from openai import OpenAI
+
+_logger = logging.getLogger(__name__)
 
 # ── Provider chain: NVIDIA×3 first, then free providers, Doubleword last ──
 
@@ -95,8 +98,16 @@ def _find_working() -> int:
         if _ping_provider(p):
             _cached_index = i
             _cached_ts = now
+            if i >= 1:
+                _logger.warning(
+                    "LLM provider fallback: selected %s (index %d) — NVIDIA (%s) was unhealthy",
+                    p["name"], i, _PROVIDERS[0].get("name", "?")
+                )
+            else:
+                _logger.info("LLM provider: selected %s", p["name"])
             return i
 
+    _logger.error("LLM provider chain exhausted — all %d providers unhealthy", len(_PROVIDERS))
     return -1
 
 
@@ -131,3 +142,19 @@ def get_provider_name() -> str:
     if idx >= 0:
         return _PROVIDERS[idx]["name"]
     return "none"
+
+
+def get_provider_info() -> dict:
+    """Return full info of the working provider (or fallback)."""
+    idx = _find_working()
+    if idx >= 0:
+        p = dict(_PROVIDERS[idx])
+    elif _PROVIDERS:
+        p = dict(_PROVIDERS[-1])
+    else:
+        return {"provider_name": "none", "base_url": "", "model_name": "", "error": "no providers configured"}
+    return {
+        "provider_name": p["name"],
+        "base_url": p["base_url"],
+        "model_name": p["model"],
+    }
