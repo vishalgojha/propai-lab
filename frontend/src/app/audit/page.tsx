@@ -23,7 +23,7 @@ type State = {
   errors: string[];
 };
 
-const emptyInsights: api.AuditInsights = { daily_flow: [], markets: [], brokers: [], exclusive_members: {} };
+const emptyInsights: api.AuditInsights = { daily_flow: [], markets: [], brokers: [], exclusive_members: {}, total_unique_brokers: 0, total_broker_appearances: 0 };
 const emptyState: State = {
   groups: [], uniqueMembers: 0, health: null, duplicates: [],
   overlap: { pairs: [], groups: [] }, insights: emptyInsights, errors: [],
@@ -109,7 +109,8 @@ export default function AuditPage() {
   const requirements = state.groups.reduce((sum, group) => sum + group.requirements, 0);
   const active = state.groups.filter((group) => group.status === "live").length;
   const brokersAcrossGroups = state.groups.reduce((sum, group) => sum + (group.active_brokers || 0), 0);
-  const brokersOverall = state.health?.stage?.brokers ?? 0;
+  const brokersOverall = state.insights.total_unique_brokers || state.health?.stage?.brokers ?? 0;
+  const brokerAppearances = state.insights.total_broker_appearances || brokersAcrossGroups;
   const bestGroups = [...state.groups].map((group) => ({
     ...group,
     exclusive: state.insights.exclusive_members[group.jid] || state.insights.exclusive_members[group.name] || 0,
@@ -155,12 +156,12 @@ export default function AuditPage() {
             PropAI found <span className="text-white">{num(today?.posts || state.health?.total_parsed_today)}</span> market posts from a network of <span className="text-white">{num(state.uniqueMembers)}</span> participants across <span className="text-white">{num(active)}</span> active groups.
           </p>
           <div className="mt-8 grid grid-cols-2 gap-px border border-white/10 bg-white/10 lg:grid-cols-3">
-            {[["Listings", listings], ["Requirements", requirements], ["Markets", state.insights.markets.length], ["Brokers overall", brokersOverall], ["Broker appearances", brokersAcrossGroups], ["Parser ready", `${Math.min(100, Math.round(state.health?.parser_success_rate || 0))}%`]].map(([label, value]) => (
+            {[["Listings", listings], ["Requirements", requirements], ["Markets", state.insights.markets.length], ["Unique brokers", brokersOverall], ["Broker appearances", brokerAppearances], ["Parser ready", `${Math.min(100, Math.round(state.health?.parser_success_rate || 0))}%`]].map(([label, value]) => (
               <div key={label} className="bg-[#090909] p-4"><Kicker>{label}</Kicker><div className="mt-2 text-xl font-semibold tabular-nums">{typeof value === "number" ? num(value) : value}</div></div>
             ))}
           </div>
           <p className="mt-3 text-xs leading-5 text-zinc-500">
-            “Brokers overall” is the unique network total. “Broker appearances” is the sum across groups, so you can compare deduped coverage against raw repetition.
+            "Unique brokers" is the deduplicated total across all groups. "Broker appearances" counts how many times broker records appear across groups, so you can see overlap — the gap between these two numbers shows how many brokers are shared across multiple groups.
           </p>
         </Card>
         <Card className="p-5">
