@@ -7266,9 +7266,12 @@ class ReplayStats(BaseModel):
 
 
 @app.post("/api/replay")
-async def replay_all(user: dict = Depends(require_user)):
+async def replay_all(
+    user: dict = Depends(require_user),
+    tenant_id: str | None = Depends(get_tenant_context),
+):
     """Re-run all stored messages through the current resolver and return accuracy stats."""
-    raws = storage.get_all_raw_for_replay()
+    raws = storage.get_all_raw_for_replay(tenant_id=tenant_id)
 
     stats = ReplayStats()
     stats.total = len(raws)
