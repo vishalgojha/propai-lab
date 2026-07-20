@@ -55,6 +55,11 @@ interface PhoneStatus {
   instance_name?: string;
 }
 
+interface IngestorStatusResponse {
+  phones?: any[];
+  ingestor_statuses?: PhoneStatus[];
+}
+
 interface CapabilityResponse {
   capabilities: Capability[];
   instance: string;
@@ -119,14 +124,38 @@ export default function WhatsWowDrawer({ open, onClose }: WhatsWowDrawerProps) {
     try {
       const [caps, status] = await Promise.allSettled([
         fetchJSON<CapabilityResponse>("/ingestor/capabilities", undefined, 5000),
-        fetchJSON<PhoneStatus[]>("/dashboard/whatsapp-status", undefined, 5000),
+        fetchJSON<IngestorStatusResponse>("/ingestor/status", undefined, 5000),
       ]);
       if (caps.status === "fulfilled" && caps.value?.capabilities) {
         setCapabilities(caps.value.capabilities);
       }
       if (status.status === "fulfilled") {
         const data = status.value;
-        setPhones(Array.isArray(data) ? data : (data as any)?.phones || []);
+        // Merge DB phones with live ingestor statuses by broker_id
+        const dbPhones = data.phones || [];
+        const liveStatuses = data.ingestor_statuses || [];
+        const liveMap = new Map<string, PhoneStatus>();
+        for (const ls of liveStatuses) {
+          if (ls.broker_id) liveMap.set(ls.broker_id, ls);
+        }
+        const merged: PhoneStatus[] = dbPhones.map((p: any) => {
+          const live = liveMap.get(p.broker_id) || {};
+          return {
+            broker_id: p.broker_id,
+            phone_number: live.phone_number || p.phone_number_live || p.phone_number || "",
+            display_name: live.display_name || p.display_name || "",
+            connected: live.connected ?? false,
+            connection_state: live.connection_state || "unknown",
+            total_messages_received: live.total_messages_received || 0,
+            total_outgoing: live.total_outgoing || 0,
+            total_locations: live.total_locations || 0,
+            total_contacts: live.total_contacts || 0,
+            total_reactions: live.total_reactions || 0,
+            last_message_at: live.last_message_at || "",
+            instance_name: live.instance_name || "",
+          };
+        });
+        setPhones(merged);
       }
     } catch {
       // silent
