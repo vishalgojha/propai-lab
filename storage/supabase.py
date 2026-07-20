@@ -1269,8 +1269,11 @@ class SupabaseStorage(Storage):
             return dict_to_dataclass(RawMessage, res.data[0])
         return None
 
-    def get_all_raw_for_replay(self) -> list[RawMessage]:
-        res = self.client.table("raw_messages").select("*").order("timestamp", desc=True).limit(1000).execute()
+    def get_all_raw_for_replay(self, tenant_id: str | None = None) -> list[RawMessage]:
+        query = self.client.table("raw_messages").select("*")
+        if tenant_id:
+            query = query.eq("tenant_id", tenant_id)
+        res = query.order("timestamp", desc=True).limit(1000).execute()
         return [dict_to_dataclass(RawMessage, d) for d in res.data]
 
     def get_unprocessed_raw_messages(self, limit: int = 100) -> list[RawMessage]:
