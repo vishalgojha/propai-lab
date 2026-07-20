@@ -19,7 +19,7 @@ import (
 	"syscall"
 	"time"
 
-	_ "github.com/lib/pq"
+	_ "github.com/jackc/pgx/v5/stdlib"
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/proto/waE2E"
 	"go.mau.fi/whatsmeow/proto/waWeb"
@@ -2088,7 +2088,7 @@ func main() {
 	}
 
 	// Open DB connection for broker-device mapping
-	db, err := sql.Open("postgres", databaseURL)
+	db, err := sql.Open("pgx", databaseURL)
 	if err != nil {
 		log.Fatalf("error opening database: %v", err)
 	}
@@ -2118,10 +2118,21 @@ func main() {
 		log.Fatalf("error creating webhook outbox: %v", err)
 	}
 
-	// Create whatsmeow container (handles its own connection pooling)
-	ctx := context.Background()
-	container, err := sqlstore.New(ctx, "postgres", databaseURL, waLog.Noop)
+	// Open a dedicated connection for whatsmeow with MaxOpenConns(1)
+	// This avoids prepared-statement issues through Supabase's connection pooler.
+	containerDB, err := sql.Open("pgx", databaseURL)
 	if err != nil {
+		log.Fatalf("error opening container database: %v", err)
+	}
+	defer containerDB.Close()
+	containerDB.SetMaxOpenConns(1)
+	containerDB.SetMaxIdleConns(1)
+	containerDB.SetConnMaxLifetime(0)
+	containerDB.SetConnMaxIdleTime(0)
+
+	ctx := context.Background()
+	container := sqlstore.NewWithDB(containerDB, "postgres", waLog.Noop)
+	if err := container.Upgrade(ctx); err != nil {
 		log.Fatalf("error creating store container: %v", err)
 	}
 

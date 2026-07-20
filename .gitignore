@@ -59,8 +59,8 @@ yarn-error.log*
 
 # Go ingestor build artifacts and local auth state
 services/whatsmeow-ingestor/ingestor
+services/whatsmeow-ingestor/whatsmeow-ingestor
 /auth/
-whatsmeow-ingestor/whatsmeow-ingestor
 _sqlite3.Connection*
 
 # OS files
