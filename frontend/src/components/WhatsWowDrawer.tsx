@@ -43,6 +43,7 @@ interface Capability {
 interface PhoneStatus {
   broker_id?: string;
   phone_number?: string;
+  phone_number_live?: string;
   display_name?: string;
   connected?: boolean;
   connection_state?: string;
@@ -53,11 +54,11 @@ interface PhoneStatus {
   total_reactions?: number;
   last_message_at?: string;
   instance_name?: string;
+  live_status_available?: boolean;
 }
 
-interface IngestorStatusResponse {
-  phones?: any[];
-  ingestor_statuses?: PhoneStatus[];
+interface PhonesResponse {
+  phones: PhoneStatus[];
 }
 
 interface CapabilityResponse {
@@ -122,40 +123,15 @@ export default function WhatsWowDrawer({ open, onClose }: WhatsWowDrawerProps) {
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const [caps, status] = await Promise.allSettled([
+      const [caps, phonesRes] = await Promise.allSettled([
         fetchJSON<CapabilityResponse>("/ingestor/capabilities", undefined, 5000),
-        fetchJSON<IngestorStatusResponse>("/ingestor/status", undefined, 5000),
+        fetchJSON<PhonesResponse>("/phones", undefined, 5000),
       ]);
       if (caps.status === "fulfilled" && caps.value?.capabilities) {
         setCapabilities(caps.value.capabilities);
       }
-      if (status.status === "fulfilled") {
-        const data = status.value;
-        // Merge DB phones with live ingestor statuses by broker_id
-        const dbPhones = data.phones || [];
-        const liveStatuses = data.ingestor_statuses || [];
-        const liveMap = new Map<string, PhoneStatus>();
-        for (const ls of liveStatuses) {
-          if (ls.broker_id) liveMap.set(ls.broker_id, ls);
-        }
-        const merged: PhoneStatus[] = dbPhones.map((p: any) => {
-          const live = liveMap.get(p.broker_id) || {};
-          return {
-            broker_id: p.broker_id,
-            phone_number: live.phone_number || p.phone_number_live || p.phone_number || "",
-            display_name: live.display_name || p.display_name || "",
-            connected: live.connected ?? false,
-            connection_state: live.connection_state || "unknown",
-            total_messages_received: live.total_messages_received || 0,
-            total_outgoing: live.total_outgoing || 0,
-            total_locations: live.total_locations || 0,
-            total_contacts: live.total_contacts || 0,
-            total_reactions: live.total_reactions || 0,
-            last_message_at: live.last_message_at || "",
-            instance_name: live.instance_name || "",
-          };
-        });
-        setPhones(merged);
+      if (phonesRes.status === "fulfilled") {
+        setPhones(phonesRes.value.phones || []);
       }
     } catch {
       // silent
@@ -218,11 +194,11 @@ export default function WhatsWowDrawer({ open, onClose }: WhatsWowDrawerProps) {
                     <div key={i} className="rounded-lg border border-white/5 bg-white/[0.02] p-3 space-y-1.5">
                       <div className="flex items-center gap-2">
                         <span className={`w-2 h-2 rounded-full ${phone.connected ? "bg-emerald-400" : phone.connection_state === "connecting" ? "bg-amber-400" : "bg-red-400"}`} />
-                        <span className="text-xs font-medium text-white">{phone.display_name || phone.phone_number || phone.broker_id}</span>
+                        <span className="text-xs font-medium text-white">{phone.display_name || phone.phone_number_live || phone.phone_number || phone.broker_id}</span>
                         <span className="text-[10px] text-zinc-500 ml-auto">{phone.connection_state}</span>
                       </div>
-                      {phone.phone_number && (
-                        <div className="text-[10px] text-zinc-500 ml-4">+{phone.phone_number}</div>
+                      {phone.phone_number_live && (
+                        <div className="text-[10px] text-zinc-500 ml-4">+{phone.phone_number_live}</div>
                       )}
                       <div className="flex gap-3 ml-4 text-[10px] text-zinc-500">
                         <span>{phone.total_messages_received || 0} msgs</span>
