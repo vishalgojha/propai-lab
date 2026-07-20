@@ -1831,6 +1831,22 @@ class SupabaseStorage(Storage):
         parse was unresolved, so listings inherit confirmed locality."""
         micro_market = (resolver or {}).get("micro_market") or obs.get("micro_market")
         building_name = (resolver or {}).get("building_name") or obs.get("building_name")
+
+        # If we have price_per_sqft and area_sqft but no total price, compute it.
+        price = obs.get("price")
+        price_unit = obs.get("price_unit")
+        area_sqft = obs.get("area_sqft")
+        price_per_sqft = obs.get("price_per_sqft")
+        total_asking_price = obs.get("total_asking_price")
+        
+        # If we have price_per_sqft and area but no total price, compute it
+        if total_asking_price is None and price_per_sqft is not None and area_sqft is not None and area_sqft > 0:
+            total_asking_price = price_per_sqft * area_sqft
+            # If we're inferring total from psf, the unit is absolute rupees
+            if price is None:
+                price = total_asking_price
+                price_unit = "abs"
+        
         return Listing(
             intent=obs.get("intent"),
             asset_type=obs.get("asset_type"),
@@ -1840,8 +1856,8 @@ class SupabaseStorage(Storage):
             fitout_status=obs.get("fitout_status"),
             occupancy_type=obs.get("occupancy_type"),
             bhk=obs.get("bhk"),
-            price=obs.get("price"),
-            price_unit=obs.get("price_unit"),
+            price=price,
+            price_unit=price_unit,
             area_sqft=obs.get("area_sqft"),
             furnishing=obs.get("furnishing"),
             location_label=micro_market or obs.get("location_raw"),
