@@ -176,8 +176,14 @@ function formatCurrency(val: number, unit?: string) {
     if (u === "cr" || u === "crore") normalized = val * 10000000;
     else if (u === "lac" || u === "lakh" || u === "l") normalized = val * 100000;
     else if (u === "k" || u === "thousand") normalized = val * 1000;
+    // "abs" or empty = already in absolute rupees, no multiplier needed
   }
-  if (unit?.toLowerCase() === "cr" || normalized >= 10000000) {
+  // Sanity check: flag implausibly low values for commercial/residential
+  // ₹<1000 is never a real total price for Mumbai property
+  if (normalized < 1000 && unit?.toLowerCase() !== "k") {
+    return "Price on request";
+  }
+  if (normalized >= 10000000) {
     const cr = normalized / 10000000;
     return `₹${cr % 1 === 0 ? cr.toFixed(0) : cr.toFixed(2)} Cr`;
   }
@@ -1429,10 +1435,12 @@ return {
         // feed page. Resolve the canonical identity directly so name-only
         // brokers remain usable while the left list paginates independently.
         const fallbackName = brokerParam.replace(/^name:/i, "").trim();
+        // Only use phone if it's a valid 10-digit number
+        const validPhone = brokerParamPhone && brokerParamPhone.length === 10 ? brokerParamPhone : undefined;
         selectBroker({
           id: brokerParam,
           identity_key: brokerParam,
-          primary_phone: brokerParamPhone || brokerParam,
+          primary_phone: validPhone,
           canonical_name: fallbackName || (brokerParamPhone ? `+91 ${brokerParamPhone}` : "Broker"),
           observation_count: 0,
           listing_count: 0,
