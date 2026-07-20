@@ -117,6 +117,7 @@ class Listing:
     group_count: int = 0
     latest_raw_message_id: Optional[int] = None
     representative_raw_message_id: Optional[int] = None
+    tenant_id: Optional[str] = None
     created_at: str = ""
     updated_at: str = ""
 
