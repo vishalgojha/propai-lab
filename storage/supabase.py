@@ -1846,6 +1846,31 @@ class SupabaseStorage(Storage):
             if price is None:
                 price = total_asking_price
                 price_unit = "abs"
+
+        # ── Broker phone fallback: when the phone is missing from this
+        # parsed_output, look up a sibling parsed_output from the same raw
+        # message that did extract it.  This happens when multi-listing
+        # extraction creates multiple parsed rows and only one captures the
+        # broker identity.
+        broker_phone = obs.get("broker_phone")
+        broker_name = obs.get("broker_name")
+        raw_msg_id = obs.get("raw_message_id")
+        if not broker_phone and raw_msg_id:
+            try:
+                sibling = (
+                    self.client.table("parsed_output")
+                    .select("broker_phone,broker_name")
+                    .eq("raw_message_id", raw_msg_id)
+                    .not_.is_("broker_phone", "null")
+                    .neq("broker_phone", "")
+                    .limit(1)
+                    .execute()
+                )
+                if sibling.data:
+                    broker_phone = sibling.data[0].get("broker_phone") or broker_phone
+                    broker_name = broker_name or sibling.data[0].get("broker_name")
+            except Exception:
+                pass
         
         return Listing(
             intent=obs.get("intent"),
@@ -1864,8 +1889,8 @@ class SupabaseStorage(Storage):
             building_name=building_name,
             landmark_name=obs.get("landmark_name"),
             micro_market=micro_market,
-            broker_name=obs.get("broker_name"),
-            broker_phone=obs.get("broker_phone"),
+            broker_name=broker_name,
+            broker_phone=broker_phone,
             latest_raw_message_id=obs.get("raw_message_id"),
             representative_raw_message_id=obs.get("raw_message_id"),
             last_seen=obs.get("created_at") or None,
@@ -2043,10 +2068,20 @@ class SupabaseStorage(Storage):
         if not data.get("tenant_id") and self._tenant_id:
             data["tenant_id"] = self._tenant_id
         if data.get("identity_key"):
-            existing = self.client.table("brokers").select("id").eq("identity_key", data["identity_key"]).limit(1).execute()
-            if existing.data:
-                self.client.table("brokers").update(data).eq("id", existing.data[0]["id"]).execute()
-                return existing.data[0]
+            # Try insert first — faster in the common (new broker) case.
+            # If a concurrent request already inserted the same identity_key,
+            # the UNIQUE constraint fires and we fall back to update.
+            try:
+                res = self.client.table("brokers").insert(data).execute()
+                return res.data[0] if res.data else {}
+            except Exception:
+                # Race: another request inserted first, or row already exists.
+                existing = self.client.table("brokers").select("id").eq("identity_key", data["identity_key"]).limit(1).execute()
+                if existing.data:
+                    self.client.table("brokers").update(data).eq("id", existing.data[0]["id"]).execute()
+                    return existing.data[0]
+                # Shouldn't happen, but if it does, return empty.
+                return {}
         res = self.client.table("brokers").insert(data).execute()
         return res.data[0] if res.data else {}
 
