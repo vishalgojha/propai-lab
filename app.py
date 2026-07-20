@@ -6411,7 +6411,10 @@ async def internal_self_chat(req: InternalSelfChatRequest, request: Request):
         )
         if isinstance(response, dict) and response.get("error"):
             return JSONResponse(status_code=503, content=response)
-        return {"reply": _workspace_response_to_whatsapp(response)}
+        reply = _workspace_response_to_whatsapp(response)
+        if reply:
+            reply = "PropAI- " + reply
+        return {"reply": reply}
     except asyncio.TimeoutError:
         return JSONResponse(status_code=504, content={"error": "agent_timeout"})
 

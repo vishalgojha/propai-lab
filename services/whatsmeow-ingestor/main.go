@@ -872,20 +872,21 @@ func selfChatCommand(s *BrokerSession, evt *events.Message) (types.JID, string, 
 		return types.EmptyJID, "", false
 	}
 	info := evt.Info
-	// DeviceSentMeta proves that the command came from another linked device.
-	// Locally generated bot replies do not have it, which prevents reply loops.
-	if !info.IsFromMe || info.IsGroup || info.DeviceSentMeta == nil {
+	if !info.IsFromMe || info.IsGroup {
 		return types.EmptyJID, "", false
 	}
-	destination, err := types.ParseJID(info.DeviceSentMeta.DestinationJID)
-	if err != nil || !isOwnWhatsAppJID(s, destination) {
+	// Self-chat is when the user messages their own number.
+	// We detect this by comparing the chat JID with the account's own JID / LID,
+	// rather than checking DeviceSentMeta (which is only set for relayed messages
+	// and never for direct phone→server self-messages).
+	if !isOwnWhatsAppJID(s, info.Chat) {
 		return types.EmptyJID, "", false
 	}
 	text := messageText(evt.Message)
 	if text == "" {
 		return types.EmptyJID, "", false
 	}
-	return destination.ToNonAD(), text, true
+	return info.Chat.ToNonAD(), text, true
 }
 
 func isOwnWhatsAppJID(s *BrokerSession, candidate types.JID) bool {
