@@ -1794,18 +1794,7 @@ return {
     const explicitType = conversationTypeFor(msg);
     if (explicitType === "direct") return false;
     if (explicitType === "group") return true;
-    const candidates = [
-      msg.group_name,
-      msg.chat_name,
-      msg.conversation_name,
-      msg.chat_id,
-      msg.conversation_key,
-      msg.sender_jid,
-    ]
-      .map((value) => (value || "").trim())
-      .filter(Boolean);
-    if (candidates.some(isGroupJidLike)) return true;
-    return candidates.some((value) => Boolean(resolveKnownGroupName(value)));
+    return isGroupJidLike(msg.group_name || msg.chat_id || msg.conversation_key || "");
   };
 
   const inferredMessageIntent = (msg?: Partial<api.RawMessage> | null) => {
@@ -2118,17 +2107,32 @@ return {
     ).values()
   );
 
-  const groupChats = uniqueThreads
-    .filter((m) => isLikelyGroupConversation(m))
-    .map((m) => ({
-      conversationKey: m.chat_id || m.conversation_key || m.group_name,
-      rawGroupName: m.group_name,
-      groupLabel: displayGroupName(m.chat_name || m.conversation_name || m.group_name),
-      title: displayChatTitle(m),
-      latest: m,
-      count: m.message_count || 0,
-    }))
-    .sort((a, b) => (messageDateValue(b.latest)?.getTime() || 0) - (messageDateValue(a.latest)?.getTime() || 0));
+  const groupChats = (() => {
+    const byGroup = new Map<string, { rawGroupName: string; messages: typeof filteredMessages; latest: typeof filteredMessages[0] }>();
+    for (const m of filteredMessages) {
+      if (!isLikelyGroupConversation(m)) continue;
+      const gKey = m.group_name || m.conversation_key || m.chat_id || "unknown";
+      const existing = byGroup.get(gKey);
+      if (existing) {
+        const ts = messageDateValue(m)?.getTime() || 0;
+        const latestTs = messageDateValue(existing.latest)?.getTime() || 0;
+        if (ts > latestTs) existing.latest = m;
+        existing.messages.push(m);
+      } else {
+        byGroup.set(gKey, { rawGroupName: m.group_name || "", messages: [m], latest: m });
+      }
+    }
+    return Array.from(byGroup.entries())
+      .map(([gKey, g]) => ({
+        conversationKey: gKey,
+        rawGroupName: g.rawGroupName,
+        groupLabel: displayGroupName(g.rawGroupName),
+        title: displayGroupName(g.rawGroupName) || "WhatsApp Group",
+        latest: g.latest,
+        count: g.messages.length,
+      }))
+      .sort((a, b) => (messageDateValue(b.latest)?.getTime() || 0) - (messageDateValue(a.latest)?.getTime() || 0));
+  })();
 
   const directChats = uniqueThreads
     .filter((m) => !isLikelyGroupConversation(m))

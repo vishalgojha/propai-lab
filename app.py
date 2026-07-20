@@ -2207,6 +2207,7 @@ async def webhook(request: Request):
             sender_phone=sender_phone,
             message=msg_text,
             message_type=_whatsapp_message_type(msg),
+            is_group=str(group).endswith("@g.us"),
             attachments=json.dumps(_whatsapp_attachment_metadata(msg, msg_data.get("media"))),
             reply_context=json.dumps(
                 msg.get("extendedTextMessage", {}).get("contextInfo", {})
@@ -3226,7 +3227,7 @@ async def get_observations_feed(
 async def get_brokers_feed(
     user: dict = Depends(require_user),
     limit: int = 50, offset: int = 0,
-    min_observations: int = 1,
+    min_observations: int = 2,
     tenant_id: str | None = Depends(get_tenant_context),
 ):
     return storage.get_brokers_feed(
