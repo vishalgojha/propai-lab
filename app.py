@@ -6250,16 +6250,6 @@ async def _run_workspace_agent(messages: list[dict], model: str = "", session_id
             if not memory.working or memory.working[-1].get("content") != content:
                 memory.add(role, content)
 
-    # Contextual (WhatsApp-specific: "why?" after error, "last question")
-    contextual = _contextual_self_chat_response(messages)
-    if contextual:
-        return contextual
-
-    # Route by intent (greeting, listing, broker, nearby, requirement, coverage)
-    route = _route_message_intent(messages)
-    if route:
-        return route
-
     # Topic-aware compaction
     last_user = ""
     for msg in reversed(messages):
@@ -7074,11 +7064,6 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
                 storage.update_chat_session_title(req.session_id, title, tenant_id=tenant_id)
         except Exception:
             pass
-
-    # Route by intent
-    route = _route_message_intent(req.messages)
-    if route:
-        return route
 
     broker = None
     if req.broker_phone:

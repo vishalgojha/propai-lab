@@ -36,6 +36,11 @@ def test_ai_chat_endpoints_forward_tenant(monkeypatch):
             calls.append(("delete", session_id, tenant_id))
 
     monkeypatch.setattr(app, "storage", FakeStorage())
+    monkeypatch.setattr(
+        app.chat_engine,
+        "get_conversational_reply",
+        lambda *args, **kwargs: type("Reply", (), {"content": "Hello"})(),
+    )
 
     asyncio.run(app.list_chat_sessions(broker_phone="919999999999", tenant_id="org-A"))
     asyncio.run(app.create_chat_session(broker_phone="919999999999", title="t", tenant_id="org-A"))
