@@ -3863,6 +3863,59 @@ async def dashboard_whatsapp_status(
     }
 
 
+@app.get("/api/ingestor/capabilities")
+async def get_ingestor_capabilities(user: dict = Depends(require_user)):
+    """Return what message types the whatsmeow ingestor captures."""
+    _, resp = await _first_ingestor_response("GET", "/capabilities", timeout=3)
+    if resp is not None and resp.status_code == 200:
+        return resp.json()
+    return {
+        "capabilities": [
+            {"name": "Text Messages", "status": "active", "icon": "MessageSquare"},
+            {"name": "Images", "status": "active", "icon": "Image"},
+            {"name": "Video", "status": "active", "icon": "Video"},
+            {"name": "Audio", "status": "active", "icon": "Mic"},
+            {"name": "Documents", "status": "active", "icon": "FileText"},
+            {"name": "Stickers", "status": "active", "icon": "Smile"},
+            {"name": "Location", "status": "active", "icon": "MapPin"},
+            {"name": "Contact Cards", "status": "active", "icon": "Users"},
+            {"name": "Reactions", "status": "active", "icon": "SmilePlus"},
+            {"name": "Polls", "status": "active", "icon": "BarChart3"},
+            {"name": "Edited Messages", "status": "active", "icon": "Pencil"},
+            {"name": "Outgoing Messages", "status": "active", "icon": "ArrowUpRight"},
+            {"name": "History Sync", "status": "active", "icon": "Clock"},
+            {"name": "Read Receipts", "status": "captured_unused", "icon": "CheckCheck"},
+            {"name": "Typing Presence", "status": "captured_unused", "icon": "Pencil"},
+            {"name": "Profile Pictures", "status": "active", "icon": "Camera"},
+            {"name": "Group Directory", "status": "active", "icon": "Users"},
+            {"name": "Media Upload", "status": "active", "icon": "Upload"},
+            {"name": "Self-Chat Agent", "status": "active", "icon": "Bot"},
+        ],
+        "instance": "unknown",
+        "version": "fallback",
+    }
+
+
+@app.get("/api/ingestor/status")
+async def get_ingestor_status(user: dict = Depends(require_user), tenant_id: str | None = Depends(get_tenant_context)):
+    """Return combined WhatsApp ingestor status for the WhatsWow panel."""
+    org_id = _resolve_active_organization_id(user, tenant_id)
+    phones = await asyncio.to_thread(storage.list_org_whatsapp_connections, org_id)
+    statuses: list[dict] = []
+    _, resp = await _first_ingestor_response("GET", "/list", timeout=2)
+    if resp is not None and resp.status_code == 200:
+        statuses.extend(resp.json())
+    now = time.time()
+    statuses.extend(
+        status for status, seen_at in _broker_live_statuses.values()
+        if now - seen_at <= 45
+    )
+    merged = _select_workspace_whatsapp_status(phones, statuses)
+    merged["phones"] = phones
+    merged["ingestor_statuses"] = statuses
+    return merged
+
+
 # ═══════════════════════════════════════════════════════════════
 # AI Layer — read-only intelligence endpoints
 # ═══════════════════════════════════════════════════════════════
@@ -6187,24 +6240,27 @@ async def _run_workspace_agent(messages: list[dict], model: str = "", session_id
         memory.compact_topic()
     memory.prune()
 
-    api_key = DOUBLEWORD_API_KEY
-    base_url = "https://api.doubleword.ai/v1"
+    import llm as _llm
     configured_model = model.strip()
-    if not api_key:
+    api_key = ""
+    base_url = ""
+    # Use the shared provider chain (NVIDIA×3 → Groq → Gemini → Cerebras → Doubleword)
+    try:
+        api_key = _llm.get_client().api_key
+        base_url = _llm.get_client().base_url.base_url.rstrip("/") if hasattr(_llm.get_client().base_url, "base_url") else str(_llm.get_client().base_url).rstrip("/")
+        configured_model = configured_model or _llm.get_model()
+    except Exception:
+        pass
+    if not api_key or api_key == "none":
         provider = await asyncio.to_thread(storage.get_active_llm_provider)
         if provider:
             api_key = (provider.api_key or "").strip()
-            base_url = (provider.base_url or base_url).strip().rstrip("/")
+            base_url = (provider.base_url or "https://api.doubleword.ai/v1").strip().rstrip("/")
             configured_model = configured_model or (provider.model_name or "").strip()
-            if (provider.provider_type or "").strip().lower() == "anthropic":
-                return {
-                    "error": "provider_not_openai_compatible",
-                    "message": "The active Anthropic endpoint is not OpenAI-compatible. Select OpenAI, OpenRouter, Doubleword, or a compatible custom provider for the WhatsApp agent.",
-                }
-    if not api_key:
+    if not api_key or api_key == "none":
         return {
             "error": "api_key_required",
-            "message": "Activate an AI provider with an API key, or set DOUBLEWORD_API_KEY, so the WhatsApp agent can answer.",
+            "message": "No LLM provider is available. Set NVIDIA_API_KEY or another provider key.",
         }
 
     sources = chat_engine.load_data()

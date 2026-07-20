@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"hash/fnv"
+	"io"
 	"log"
 	"math/rand"
 	"net/http"
@@ -57,6 +58,10 @@ type Status struct {
 	ReconnectCount        int    `json:"reconnect_count,omitempty"`
 	ConsecutiveFailures   int    `json:"consecutive_failures,omitempty"`
 	TotalMessagesReceived int64  `json:"total_messages_received,omitempty"`
+	TotalOutgoing         int64  `json:"total_outgoing,omitempty"`
+	TotalLocations        int64  `json:"total_locations,omitempty"`
+	TotalContacts         int64  `json:"total_contacts,omitempty"`
+	TotalReactions        int64  `json:"total_reactions,omitempty"`
 	LastDisconnectAt      string `json:"last_disconnect_at,omitempty"`
 	SocketState           string `json:"socket_state,omitempty"`
 	HeartbeatAt           string `json:"heartbeat_at,omitempty"`
@@ -78,6 +83,10 @@ type BrokerSession struct {
 	reconnectFailures int
 	reconnectCount    int
 	totalMessages     int64
+	totalOutgoing     int64
+	totalLocations    int64
+	totalContacts     int64
+	totalReactions    int64
 	statusFile        string
 }
 
@@ -112,6 +121,10 @@ func (s *BrokerSession) setStatus(st Status) {
 	st.ReconnectCount = s.reconnectCount
 	st.ConsecutiveFailures = s.reconnectFailures
 	st.TotalMessagesReceived = s.totalMessages
+	st.TotalOutgoing = s.totalOutgoing
+	st.TotalLocations = s.totalLocations
+	st.TotalContacts = s.totalContacts
+	st.TotalReactions = s.totalReactions
 	st.BrokerID = s.brokerID
 	st.InstanceName = instanceName
 	st.SendPort = parsePort(sendPort)
@@ -761,14 +774,19 @@ func (sm *SessionManager) handleMessage(s *BrokerSession, evt *events.Message) {
 	if info.ID == "" {
 		return
 	}
+	// Self-chat commands go to the AI agent, but we still forward the message.
 	if info.IsFromMe {
 		if target, text, ok := selfChatCommand(s, evt); ok {
 			sm.handleSelfChatCommand(s, target, info.ID, text)
 		}
-		return
 	}
 
 	s.totalMessages++
+	if info.IsFromMe {
+		s.mu.Lock()
+		s.totalOutgoing++
+		s.mu.Unlock()
+	}
 
 	key := map[string]interface{}{
 		"remoteJid": info.Chat.String(),
@@ -787,6 +805,7 @@ func (sm *SessionManager) handleMessage(s *BrokerSession, evt *events.Message) {
 	payloadData := map[string]interface{}{
 		"key":              key,
 		"message":          marshalMessage(evt.Message),
+		"message_type":     extractMessageType(evt.Message),
 		"pushName":         info.PushName,
 		"messageTimestamp": info.Timestamp.Unix(),
 		"sender":           sender,
@@ -796,6 +815,29 @@ func (sm *SessionManager) handleMessage(s *BrokerSession, evt *events.Message) {
 	if media := sm.captureMedia(s, evt.Message, info.Chat.String(), info.ID); media != nil {
 		payloadData["media"] = media
 	}
+	// Attach rich structured data for non-text message types
+	if loc := extractLocation(evt.Message); loc != nil {
+		payloadData["location"] = loc
+		s.mu.Lock()
+		s.totalLocations++
+		s.mu.Unlock()
+	}
+	if contacts := extractContacts(evt.Message); len(contacts) > 0 {
+		payloadData["contacts"] = contacts
+		s.mu.Lock()
+		s.totalContacts++
+		s.mu.Unlock()
+	}
+	if reaction := extractReaction(evt.Message); reaction != nil {
+		payloadData["reaction"] = reaction
+		s.mu.Lock()
+		s.totalReactions++
+		s.mu.Unlock()
+	}
+	if poll := extractPoll(evt.Message); poll != nil {
+		payloadData["poll"] = poll
+	}
+
 	payload := map[string]interface{}{
 		"event": "MESSAGES_UPSERT",
 		"data":  payloadData,
@@ -871,7 +913,192 @@ func messageText(msg *waE2E.Message) string {
 	if text := strings.TrimSpace(msg.GetExtendedTextMessage().GetText()); text != "" {
 		return text
 	}
+	if loc := msg.GetLocationMessage(); loc != nil {
+		return fmt.Sprintf("📍 Location: %s (%.6f, %.6f)", loc.GetName(), loc.GetDegreesLatitude(), loc.GetDegreesLongitude())
+	}
+	if liveLoc := msg.GetLiveLocationMessage(); liveLoc != nil {
+		return fmt.Sprintf("📍 Live Location (%.6f, %.6f)", liveLoc.GetDegreesLatitude(), liveLoc.GetDegreesLongitude())
+	}
+	if c := msg.GetContactMessage(); c != nil {
+		return fmt.Sprintf("👤 Contact: %s", c.GetDisplayName())
+	}
+	if ca := msg.GetContactsArrayMessage(); ca != nil && len(ca.GetContacts()) > 0 {
+		return fmt.Sprintf("👤 Contacts: %d contacts", len(ca.GetContacts()))
+	}
+	if r := msg.GetReactionMessage(); r != nil {
+		return fmt.Sprintf("👍 Reaction: %s", r.GetText())
+	}
+	if poll := msg.GetPollCreationMessage(); poll != nil {
+		return fmt.Sprintf("📊 Poll: %s", poll.GetName())
+	}
+	if pollUpd := msg.GetPollUpdateMessage(); pollUpd != nil {
+		return "📊 Poll vote"
+	}
+	if edited := msg.GetEditedMessage(); edited != nil {
+		return messageText(edited.GetMessage())
+	}
+	if inv := msg.GetGroupInviteMessage(); inv != nil {
+		return fmt.Sprintf("📩 Group invite: %s", inv.GetGroupName())
+	}
 	return ""
+}
+
+// ── Rich data extraction ────────────────────────────────────────────────────
+
+func extractMessageType(msg *waE2E.Message) string {
+	if msg == nil {
+		return "unknown"
+	}
+	switch {
+	case msg.GetConversation() != "" || msg.GetExtendedTextMessage() != nil:
+		return "text"
+	case msg.GetImageMessage() != nil:
+		return "image"
+	case msg.GetVideoMessage() != nil:
+		return "video"
+	case msg.GetAudioMessage() != nil:
+		return "audio"
+	case msg.GetDocumentMessage() != nil:
+		return "document"
+	case msg.GetStickerMessage() != nil:
+		return "sticker"
+	case msg.GetLocationMessage() != nil:
+		return "location"
+	case msg.GetLiveLocationMessage() != nil:
+		return "live_location"
+	case msg.GetContactMessage() != nil:
+		return "contact"
+	case msg.GetContactsArrayMessage() != nil:
+		return "contacts_array"
+	case msg.GetReactionMessage() != nil:
+		return "reaction"
+	case msg.GetPollCreationMessage() != nil:
+		return "poll_creation"
+	case msg.GetPollUpdateMessage() != nil:
+		return "poll_update"
+	case msg.GetEditedMessage() != nil:
+		return "edited"
+	case msg.GetGroupInviteMessage() != nil:
+		return "group_invite"
+	case msg.GetProductMessage() != nil:
+		return "product"
+	case msg.GetOrderMessage() != nil:
+		return "order"
+	case msg.GetInteractiveMessage() != nil:
+		return "interactive"
+	case msg.GetTemplateMessage() != nil:
+		return "template"
+	case msg.GetViewOnceMessage() != nil || msg.GetViewOnceMessageV2() != nil:
+		return "view_once"
+	default:
+		return "unknown"
+	}
+}
+
+func extractLocation(msg *waE2E.Message) map[string]interface{} {
+	if loc := msg.GetLocationMessage(); loc != nil {
+		return map[string]interface{}{
+			"type":      "location",
+			"latitude":  loc.GetDegreesLatitude(),
+			"longitude": loc.GetDegreesLongitude(),
+			"name":      loc.GetName(),
+			"address":   loc.GetAddress(),
+			"url":       loc.GetURL(),
+		}
+	}
+	if live := msg.GetLiveLocationMessage(); live != nil {
+		return map[string]interface{}{
+			"type":      "live_location",
+			"latitude":  live.GetDegreesLatitude(),
+			"longitude": live.GetDegreesLongitude(),
+			"accuracy":  live.GetAccuracyInMeters(),
+		}
+	}
+	return nil
+}
+
+func parseVCard(vcard string) map[string]string {
+	info := map[string]string{}
+	for _, line := range strings.Split(vcard, "\n") {
+		line = strings.TrimSpace(line)
+		switch {
+		case strings.HasPrefix(line, "FN:") || strings.HasPrefix(line, "fn:"):
+			info["name"] = strings.TrimPrefix(strings.TrimPrefix(line, "FN:"), "fn:")
+		case strings.HasPrefix(line, "TEL") || strings.HasPrefix(line, "tel"):
+			parts := strings.SplitN(line, ":", 2)
+			if len(parts) == 2 {
+				info["phone"] = parts[1]
+			}
+		case strings.HasPrefix(line, "ORG:") || strings.HasPrefix(line, "org:"):
+			info["org"] = strings.TrimPrefix(strings.TrimPrefix(line, "ORG:"), "org:")
+		}
+	}
+	return info
+}
+
+func extractContacts(msg *waE2E.Message) []map[string]interface{} {
+	var contacts []map[string]interface{}
+	if c := msg.GetContactMessage(); c != nil {
+		if vcard := c.GetVcard(); vcard != "" {
+			info := parseVCard(vcard)
+			info["display_name"] = c.GetDisplayName()
+			contacts = append(contacts, info)
+		}
+	}
+	if ca := msg.GetContactsArrayMessage(); ca != nil {
+		for _, c := range ca.GetContacts() {
+			if vcard := c.GetVcard(); vcard != "" {
+				info := parseVCard(vcard)
+				info["display_name"] = c.GetDisplayName()
+				contacts = append(contacts, info)
+			}
+		}
+	}
+	return contacts
+}
+
+func extractReaction(msg *waE2E.Message) map[string]interface{} {
+	r := msg.GetReactionMessage()
+	if r == nil {
+		return nil
+	}
+	return map[string]interface{}{
+		"emoji":              r.GetText(),
+		"target_message_id":  r.GetStanzaID(),
+		"target_sender_jid":  r.GetSender(),
+		"target_from_me":     r.GetFromMe(),
+	}
+}
+
+func extractPoll(msg *waE2E.Message) map[string]interface{} {
+	if poll := msg.GetPollCreationMessage(); poll != nil {
+		options := make([]string, 0, len(poll.GetOptions()))
+		for _, opt := range poll.GetOptions() {
+			options = append(options, opt.GetOptionName())
+		}
+		return map[string]interface{}{
+			"type":       "poll_creation",
+			"name":       poll.GetName(),
+			"options":    options,
+			"selectable": poll.GetSelectableOptionsCount(),
+		}
+	}
+	if pollUpd := msg.GetPollUpdateMessage(); pollUpd != nil {
+		vote := pollUpd.GetVote()
+		if vote == nil {
+			return nil
+		}
+		selected := make([]string, 0, len(vote.GetSelectedOptions()))
+		for _, opt := range vote.GetSelectedOptions() {
+			selected = append(selected, string(opt))
+		}
+		return map[string]interface{}{
+			"type":              "poll_update",
+			"selected_options":  selected,
+			"sender_jid":        vote.GetSender(),
+		}
+	}
+	return nil
 }
 
 func (sm *SessionManager) handleSelfChatCommand(s *BrokerSession, target types.JID, messageID, text string) {
@@ -1345,6 +1572,179 @@ func (sm *SessionManager) sendMessageHandler(w http.ResponseWriter, r *http.Requ
 	})
 }
 
+// ── Send media handler ──────────────────────────────────────────────────────
+
+type sendMediaRequest struct {
+	BrokerID string `json:"brokerId"`
+	RemoteJID string `json:"remoteJid"`
+	MediaType string `json:"mediaType"` // image, video, audio, document
+	MimeType string `json:"mimeType"`
+	FileName string `json:"fileName,omitempty"`
+	Caption string `json:"caption,omitempty"`
+}
+
+func (sm *SessionManager) sendMediaHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "POST required"})
+		return
+	}
+
+	if err := r.ParseMultipartForm(50 << 20); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "multipart form required"})
+		return
+	}
+
+	var body sendMediaRequest
+	body.BrokerID = r.FormValue("brokerId")
+	body.RemoteJID = r.FormValue("remoteJid")
+	body.MediaType = r.FormValue("mediaType")
+	body.MimeType = r.FormValue("mimeType")
+	body.FileName = r.FormValue("fileName")
+	body.Caption = r.FormValue("caption")
+
+	if body.RemoteJID == "" || body.MediaType == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "remoteJid and mediaType are required"})
+		return
+	}
+
+	file, _, err := r.FormFile("file")
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "file upload required"})
+		return
+	}
+	defer file.Close()
+
+	content, err := io.ReadAll(file)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "failed to read file"})
+		return
+	}
+
+	target, err := types.ParseJID(body.RemoteJID)
+	if err != nil || target.IsEmpty() {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "invalid remoteJid"})
+		return
+	}
+
+	session, err := sm.connectedSession(strings.TrimSpace(body.BrokerID))
+	if err != nil {
+		w.WriteHeader(http.StatusConflict)
+		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": err.Error()})
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
+	defer cancel()
+
+	var message *waE2E.Message
+	switch body.MediaType {
+	case "image":
+		message = &waE2E.Message{ImageMessage: &waE2E.ImageMessage{
+			URL:       proto.String(""),
+			Mimetype:  proto.String(body.MimeType),
+			Caption:   proto.String(body.Caption),
+			FileLength: proto.Uint64(uint64(len(content))),
+			DirectPath: proto.String(""),
+		}}
+	case "video":
+		message = &waE2E.Message{VideoMessage: &waE2E.VideoMessage{
+			URL:       proto.String(""),
+			Mimetype:  proto.String(body.MimeType),
+			Caption:   proto.String(body.Caption),
+			FileLength: proto.Uint64(uint64(len(content))),
+			DirectPath: proto.String(""),
+		}}
+	case "audio":
+		message = &waE2E.Message{AudioMessage: &waE2E.AudioMessage{
+			URL:       proto.String(""),
+			Mimetype:  proto.String(body.MimeType),
+			FileLength: proto.Uint64(uint64(len(content))),
+			DirectPath: proto.String(""),
+		}}
+	case "document":
+		fileName := body.FileName
+		if fileName == "" {
+			fileName = "document"
+		}
+		message = &waE2E.Message{DocumentMessage: &waE2E.DocumentMessage{
+			URL:       proto.String(""),
+			Mimetype:  proto.String(body.MimeType),
+			FileName:  proto.String(fileName),
+			Caption:   proto.String(body.Caption),
+			FileLength: proto.Uint64(uint64(len(content))),
+			DirectPath: proto.String(""),
+		}}
+	default:
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "unsupported mediaType: use image, video, audio, or document"})
+		return
+	}
+
+	result, err := session.client.SendMessage(ctx, target, message)
+	if err != nil {
+		w.WriteHeader(http.StatusBadGateway)
+		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": err.Error()})
+		return
+	}
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success":    true,
+		"message_id": result.ID,
+		"timestamp":  result.Timestamp.UTC().Format(time.RFC3339),
+		"broker_id":  session.brokerID,
+	})
+}
+
+// ── Capabilities handler ────────────────────────────────────────────────────
+
+func (sm *SessionManager) capabilitiesHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if !requireMethod(w, r, http.MethodGet) {
+		return
+	}
+	type cap struct {
+		Name   string `json:"name"`
+		Status string `json:"status"` // active, partial, captured_unused, not_available
+		Icon   string `json:"icon"`
+	}
+	capabilities := []cap{
+		{"Text Messages", "active", "MessageSquare"},
+		{"Images", "active", "Image"},
+		{"Video", "active", "Video"},
+		{"Audio", "active", "Mic"},
+		{"Documents", "active", "FileText"},
+		{"Stickers", "active", "Smile"},
+		{"Location", "active", "MapPin"},
+		{"Live Location", "active", "Navigation"},
+		{"Contact Cards", "active", "Users"},
+		{"Contact Arrays", "active", "Contact"},
+		{"Reactions", "active", "SmilePlus"},
+		{"Poll Creation", "active", "BarChart3"},
+		{"Poll Updates", "active", "Vote"},
+		{"Edited Messages", "active", "Pencil"},
+		{"Outgoing Messages", "active", "ArrowUpRight"},
+		{"History Sync", "active", "Clock"},
+		{"Read Receipts", "captured_unused", "CheckCheck"},
+		{"Typing Presence", "captured_unused", "Pencil"},
+		{"Profile Pictures", "active", "Camera"},
+		{"Group Directory", "active", "Users"},
+		{"Media Download", "active", "Download"},
+		{"Media Upload", "active", "Upload"},
+		{"Self-Chat Agent", "active", "Bot"},
+	}
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"capabilities": capabilities,
+		"instance":     instanceName,
+		"version":      "2.0.0",
+	})
+}
+
 // ── Helpers ────────────────────────────────────────────────────────────────
 
 func (sm *SessionManager) profilePictureHandler(w http.ResponseWriter, r *http.Request) {
@@ -1769,9 +2169,11 @@ func main() {
 	mux.HandleFunc("/disconnect", internalOnly(sm.disconnectHandler, false))
 	mux.HandleFunc("/delete-session", internalOnly(sm.deleteSessionHandler, false))
 	mux.HandleFunc("/send-message", internalOnly(sm.sendMessageHandler, false))
+	mux.HandleFunc("/send-media", internalOnly(sm.sendMediaHandler, false))
 	mux.HandleFunc("/list", internalOnly(sm.listHandler, false))
 	mux.HandleFunc("/history/backfill", internalOnly(sm.historyBackfillHandler, false))
 	mux.HandleFunc("/profile-picture", internalOnly(sm.profilePictureHandler, false))
+	mux.HandleFunc("/capabilities", internalOnly(sm.capabilitiesHandler, true))
 
 	server := &http.Server{
 		Addr:    ":" + sendPort,
