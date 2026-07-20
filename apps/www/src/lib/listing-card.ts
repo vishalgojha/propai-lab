@@ -5,6 +5,8 @@ export type ListingCardFields = {
   bhk: string | null;
   price: number | null;
   price_unit: string | null;
+  price_model?: string | null;
+  price_per_sqft?: number | null;
   area_sqft: number | null;
   furnishing: string | null;
   intent: string | null;
@@ -39,15 +41,17 @@ export type ListingCardViewModel = {
   priceLabel: string;
   specRow: string;
   specItems: ListingSpecItem[];
-    statusLabel: string;
-    statusTone: "available" | "unconfirmed";
-    updatedLabel: string;
-    freshnessLabel: string;
-    freshnessBadge: string | null;
-    assetTypeLabel: string | null;
+  statusLabel: string;
+  statusTone: "available" | "unconfirmed";
+  updatedLabel: string;
+  freshnessLabel: string;
+  freshnessBadge: string | null;
+  assetTypeLabel: string | null;
   waLink: string | null;
   href: string | null;
   brokerName: string | null;
+  priceModel: string | null;
+  pricePerSqft: number | null;
 };
 
 function normalizeUnit(value: string | null): string | null {
@@ -91,15 +95,35 @@ export function assetTypeLabel(
 //     (e.g. 26600000 with unit "cr" => ₹2.66 Cr; 85000 "k" rent => ₹85,000/mo).
 //   - "lac": the number is already in lakh-scale (e.g. 110000 => ₹110,000 Lakh).
 //   - "abs": absolute rupees.
+//   - "psf": price is per-sqft; total = price_per_sqft * area_sqft (unit = abs).
 // We normalise each to a readable, grouped amount in the appropriate unit.
 export function formatCardPrice(
   price: number | null,
   priceUnit: string | null,
   intent: string | null,
+  priceModel: string | null = null,
+  pricePerSqft: number | null = null,
+  areaSqft: number | null = null,
 ): string {
   const unit = normalizeUnit(priceUnit);
   const intentKind = intentValue(intent);
   const perMonth = intentKind === "rent";
+
+  // If price model is per-sqft and we have area, compute total price
+  if (priceModel === "psf" && pricePerSqft != null && areaSqft != null && areaSqft > 0) {
+    const totalPrice = pricePerSqft * areaSqft;
+    // For sale, render as absolute rupees with appropriate unit
+    const grouped = (n: number) => Math.round(n).toLocaleString("en-IN");
+    if (totalPrice >= 1_00_00_000) {
+      const cr = totalPrice / 1_00_00_000;
+      return `₹${cr % 1 === 0 ? cr : cr.toFixed(2)} Cr`;
+    }
+    if (totalPrice >= 1_00_000) {
+      const lac = totalPrice / 1_00_000;
+      return `₹${lac % 1 === 0 ? lac : lac.toFixed(1)} Lakh`;
+    }
+    return `₹${Math.round(totalPrice).toLocaleString("en-IN")}`;
+  }
 
   if (price == null) return "Price on request";
 
@@ -296,7 +320,7 @@ export function toListingCardViewModel(
     locality,
     localitySlug: locality ? slugify(locality) : null,
     isBuilding,
-    priceLabel: formatCardPrice(row.price, row.price_unit, row.intent),
+    priceLabel: formatCardPrice(row.price, row.price_unit, row.intent, row.price_model, row.price_per_sqft, row.area_sqft),
     specRow: buildSpecRow(specItems),
     specItems,
     statusLabel: hasLocality ? "Available" : "Locality unconfirmed",
@@ -308,5 +332,7 @@ export function toListingCardViewModel(
     waLink: waLinkFor(row.id),
     href: row.id != null ? `/listings/${row.id}` : null,
     brokerName: safeBrokerName(row.broker_name),
+    priceModel: row.price_model ?? null,
+    pricePerSqft: row.price_per_sqft ?? null,
   };
 }
