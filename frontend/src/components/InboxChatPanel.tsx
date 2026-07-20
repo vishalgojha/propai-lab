@@ -256,6 +256,7 @@ export function InboxChatPanel({
           messages: historyForApi,
           session_id: sessionId || undefined,
           broker_phone: brokerPhone || undefined,
+          source: "inbox",
         }),
       });
 

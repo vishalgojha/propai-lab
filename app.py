@@ -4454,6 +4454,7 @@ class ChatRequest(BaseModel):
     model: str = ""
     session_id: str = ""
     broker_phone: str = ""
+    source: str = ""
 
 
 class SelfChatRequest(BaseModel):
@@ -7078,15 +7079,19 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
         except Exception:
             pass
 
-    # If no intent matched and no query signals → conversational reply (no tools)
+    # If there are no query signals, use the LLM conversational path without tools.
     last_user = ""
     for msg in reversed(req.messages):
         if msg.get("role") == "user":
             last_user = str(msg.get("content", "")).strip()
             break
 
+    # Skip deterministic short-circuits for inbox AI chat — always use the full
+    # tool-enabled path so the assistant has access to data and tools.
+    _is_inbox = req.source == "inbox"
+
     # Capability questions → tool-enabled prompt, text-only mode (no tool calls)
-    if last_user and _CAPABILITY_SIGNALS.search(last_user):
+    if not _is_inbox and last_user and _CAPABILITY_SIGNALS.search(last_user):
         try:
             cap_sources = chat_engine.load_data()
             cap_live = chat_engine.load_live_data(getattr(storage, "db", None))
@@ -7121,7 +7126,7 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
         except Exception:
             pass  # fall through to conversational path
 
-    if last_user and not _has_query_signals(last_user):
+    if not _is_inbox and last_user and not _has_query_signals(last_user):
         try:
             loop = asyncio.get_running_loop()
             reply = await asyncio.wait_for(

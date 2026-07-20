@@ -207,7 +207,7 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
                 msg_text, profile_name=sender_name or push_name
             )
         else:
-            single = parse_message(msg_text)
+            single = parse_message(msg_text, profile_name=sender_name or push_name)
             parsed_listings = [single] if single else []
     except Exception as exc:
         print(f"  [extract] parse error for {raw_id}: {exc}", flush=True)

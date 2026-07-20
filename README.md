@@ -84,3 +84,28 @@ deploy/coolify/        Production deployment config
 services/             WhatsApp ingestor
 supabase/              Database migrations
 ```
+
+## Companion Webhooks (ElevenLabs WhatsApp agent)
+
+Stateless webhook tools for the PropAI Companion — an ElevenLabs voice agent
+that serves multiple brokers via a shared WABA number. Each request carries
+the broker's phone number, so identity is resolved per-request (not per-session).
+
+### Endpoints
+
+| Endpoint | Purpose |
+|----------|---------|
+| `POST /webhooks/companion/save-listing` | Save a property listing |
+| `POST /webhooks/companion/create-requirement` | Create a buyer/tenant requirement |
+| `POST /webhooks/companion/onboard-broker` | Register a new broker (requires explicit consent) |
+
+All endpoints require the `X-Companion-Webhook-Secret` header.
+
+### Onboarding flow
+
+Unknown phone numbers get a 404 with `needs_onboarding=true`. The agent asks
+for the broker's name and consent, then calls `/onboard-broker` before retrying.
+
+### Environment variables
+
+- `COMPANION_WEBHOOK_SECRET` — shared secret for webhook auth

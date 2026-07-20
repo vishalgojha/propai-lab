@@ -79,6 +79,11 @@ def test_ai_chat_persist_uses_tenant(monkeypatch):
             return None
 
     monkeypatch.setattr(app, "storage", FakeStorage())
+    monkeypatch.setattr(
+        app.chat_engine,
+        "get_conversational_reply",
+        lambda *args, **kwargs: type("Reply", (), {"content": "Hello"})(),
+    )
 
     class FakeReq:
         session_id = "s1"
