@@ -1195,6 +1195,8 @@ export interface AuditInsights {
   markets: { name: string; posts: number; requirements: number; listings: number; brokers: number }[];
   brokers: { name: string; posts: number; listings: number; requirements: number; groups: number; markets: number; last_seen: string }[];
   exclusive_members: Record<string, number>;
+  total_unique_brokers?: number;
+  total_broker_appearances?: number;
 }
 
 export function getAuditInsights() {

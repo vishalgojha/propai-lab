@@ -12708,92 +12708,119 @@ def audit_insights(
     tenant_id: str = Depends(require_tenant),
 ):
     """Compact, tenant-scoped intelligence used by the broker audit dashboard."""
-    week_ago = (datetime.utcnow() - timedelta(days=6)).strftime("%Y-%m-%dT00:00:00Z")
-
-    flow_rows = _audit_rows(
-        "SELECT date(rm.created_at) AS day, COUNT(DISTINCT rm.id) AS posts, "
-        "COUNT(DISTINCT CASE WHEN UPPER(COALESCE(po.intent, '')) IN "
-        "('BUY','BUYER','REQUIREMENT','RENTAL_SEEKER','TENANT') THEN (po.raw_message_id::text || ':' || COALESCE(po.listing_index, 0)::text) END) AS requirements, "
-        "COUNT(DISTINCT CASE WHEN UPPER(COALESCE(po.intent, '')) NOT IN "
-        "('BUY','BUYER','REQUIREMENT','RENTAL_SEEKER','TENANT') THEN (po.raw_message_id::text || ':' || COALESCE(po.listing_index, 0)::text) END) AS listings "
-        "FROM raw_messages rm JOIN parsed_output po ON po.raw_message_id = rm.id "
-        "WHERE rm.tenant_id = ? AND rm.created_at >= ? "
-        "GROUP BY date(rm.created_at) ORDER BY day",
-        (tenant_id, week_ago),
-    ) if _table_exists("raw_messages") and _table_exists("parsed_output") else []
-
-    market_rows = _audit_rows(
-        "SELECT po.micro_market, COUNT(DISTINCT rm.id) AS posts, "
-        "COUNT(DISTINCT CASE WHEN UPPER(COALESCE(po.intent, '')) IN "
-        "('BUY','BUYER','REQUIREMENT','RENTAL_SEEKER','TENANT') THEN (po.raw_message_id::text || ':' || COALESCE(po.listing_index, 0)::text) END) AS requirements, "
-        "COUNT(DISTINCT CASE WHEN UPPER(COALESCE(po.intent, '')) NOT IN "
-        "('BUY','BUYER','REQUIREMENT','RENTAL_SEEKER','TENANT') THEN (po.raw_message_id::text || ':' || COALESCE(po.listing_index, 0)::text) END) AS listings, "
-        "COUNT(DISTINCT COALESCE(NULLIF(po.broker_phone, ''), NULLIF(po.broker_name, ''), rm.sender)) AS brokers "
-        "FROM parsed_output po JOIN raw_messages rm ON po.raw_message_id = rm.id "
-        "WHERE rm.tenant_id = ? AND COALESCE(po.micro_market, '') != '' "
-        "GROUP BY po.micro_market ORDER BY posts DESC LIMIT 8",
-        (tenant_id,),
-    ) if _table_exists("raw_messages") and _table_exists("parsed_output") else []
-
-    broker_rows = _audit_rows(
-        "SELECT canonical_name, observation_count, listing_count, requirement_count, "
-        "group_count, market_count, last_seen_at FROM brokers "
-        "WHERE tenant_id = ? ORDER BY observation_count DESC LIMIT 8",
-        (tenant_id,),
-    ) if _table_exists("brokers") else []
-
-    exclusive_rows = _audit_rows(
-        "WITH memberships AS ("
-        "SELECT sender, COUNT(DISTINCT group_name) AS group_count "
-        "FROM raw_messages WHERE tenant_id = ? AND COALESCE(group_name, '') != '' GROUP BY sender), "
-        "exclusive AS ("
-        "SELECT rm.group_name, COUNT(DISTINCT rm.sender) AS exclusive_members "
-        "FROM raw_messages rm JOIN memberships m ON m.sender = rm.sender "
-        "WHERE rm.tenant_id = ? AND m.group_count = 1 GROUP BY rm.group_name) "
-        "SELECT group_name, exclusive_members FROM exclusive "
-        "ORDER BY exclusive_members DESC LIMIT 12",
-        (tenant_id, tenant_id),
-    ) if _table_exists("raw_messages") else []
-
-    return {
-        "daily_flow": [
-            {
-                "date": str(_audit_row_value(r, ("day", 0), "")),
-                "posts": _audit_row_value(r, ("posts", 1), 0) or 0,
-                "requirements": _audit_row_value(r, ("requirements", 2), 0) or 0,
-                "listings": _audit_row_value(r, ("listings", 3), 0) or 0,
-            }
-            for r in flow_rows
-        ],
-        "markets": [
-            {
-                "name": _audit_row_value(r, ("micro_market", 0), ""),
-                "posts": _audit_row_value(r, ("posts", 1), 0) or 0,
-                "requirements": _audit_row_value(r, ("requirements", 2), 0) or 0,
-                "listings": _audit_row_value(r, ("listings", 3), 0) or 0,
-                "brokers": _audit_row_value(r, ("brokers", 4), 0) or 0,
-            }
-            for r in market_rows
-        ],
-        "brokers": [
-            {
-                "name": _audit_row_value(r, ("canonical_name", 0), "") or "Unknown broker",
-                "posts": _audit_row_value(r, ("observation_count", 1), 0) or 0,
-                "listings": _audit_row_value(r, ("listing_count", 2), 0) or 0,
-                "requirements": _audit_row_value(r, ("requirement_count", 3), 0) or 0,
-                "groups": _audit_row_value(r, ("group_count", 4), 0) or 0,
-                "markets": _audit_row_value(r, ("market_count", 5), 0) or 0,
-                "last_seen": _audit_timestamp(_audit_row_value(r, ("last_seen_at", 6))),
-            }
-            for r in broker_rows
-        ],
-        "exclusive_members": {
-            str(_audit_row_value(r, ("group_name", 0), "")): int(
-                _audit_row_value(r, ("exclusive_members", 1), 0) or 0
-            )
-            for r in exclusive_rows
-        },
+    empty = {
+        "daily_flow": [],
+        "markets": [],
+        "brokers": [],
+        "exclusive_members": {},
+        "total_unique_brokers": 0,
+        "total_broker_appearances": 0,
     }
+    try:
+        week_ago = (datetime.utcnow() - timedelta(days=6)).strftime("%Y-%m-%dT00:00:00Z")
+
+        flow_rows = _audit_rows(
+            "SELECT (rm.created_at)::date AS day, COUNT(DISTINCT rm.id) AS posts, "
+            "COUNT(DISTINCT CASE WHEN UPPER(COALESCE(po.intent, '')) IN "
+            "('BUY','BUYER','REQUIREMENT','RENTAL_SEEKER','TENANT') THEN (po.raw_message_id::text || ':' || COALESCE(po.listing_index, 0)::text) END) AS requirements, "
+            "COUNT(DISTINCT CASE WHEN UPPER(COALESCE(po.intent, '')) NOT IN "
+            "('BUY','BUYER','REQUIREMENT','RENTAL_SEEKER','TENANT') THEN (po.raw_message_id::text || ':' || COALESCE(po.listing_index, 0)::text) END) AS listings "
+            "FROM raw_messages rm JOIN parsed_output po ON po.raw_message_id = rm.id "
+            "WHERE rm.tenant_id = $1 AND rm.created_at >= $2 "
+            "GROUP BY (rm.created_at)::date ORDER BY day",
+            (tenant_id, week_ago),
+        ) if _table_exists("raw_messages") and _table_exists("parsed_output") else []
+
+        market_rows = _audit_rows(
+            "SELECT po.micro_market, COUNT(DISTINCT rm.id) AS posts, "
+            "COUNT(DISTINCT CASE WHEN UPPER(COALESCE(po.intent, '')) IN "
+            "('BUY','BUYER','REQUIREMENT','RENTAL_SEEKER','TENANT') THEN (po.raw_message_id::text || ':' || COALESCE(po.listing_index, 0)::text) END) AS requirements, "
+            "COUNT(DISTINCT CASE WHEN UPPER(COALESCE(po.intent, '')) NOT IN "
+            "('BUY','BUYER','REQUIREMENT','RENTAL_SEEKER','TENANT') THEN (po.raw_message_id::text || ':' || COALESCE(po.listing_index, 0)::text) END) AS listings, "
+            "COUNT(DISTINCT COALESCE(NULLIF(po.broker_phone, ''), NULLIF(po.broker_name, ''), rm.sender)) AS brokers "
+            "FROM parsed_output po JOIN raw_messages rm ON po.raw_message_id = rm.id "
+            "WHERE rm.tenant_id = $1 AND COALESCE(po.micro_market, '') != '' "
+            "GROUP BY po.micro_market ORDER BY posts DESC LIMIT 8",
+            (tenant_id,),
+        ) if _table_exists("raw_messages") and _table_exists("parsed_output") else []
+
+        broker_rows = _audit_rows(
+            "SELECT canonical_name, observation_count, listing_count, requirement_count, "
+            "group_count, market_count, last_seen_at FROM brokers "
+            "WHERE tenant_id = $1 ORDER BY observation_count DESC LIMIT 8",
+            (tenant_id,),
+        ) if _table_exists("brokers") else []
+
+        exclusive_rows = _audit_rows(
+            "WITH memberships AS ("
+            "SELECT sender, COUNT(DISTINCT group_name) AS group_count "
+            "FROM raw_messages WHERE tenant_id = $1 AND COALESCE(group_name, '') != '' GROUP BY sender), "
+            "exclusive AS ("
+            "SELECT rm.group_name, COUNT(DISTINCT rm.sender) AS exclusive_members "
+            "FROM raw_messages rm JOIN memberships m ON m.sender = rm.sender "
+            "WHERE rm.tenant_id = $2 AND m.group_count = 1 GROUP BY rm.group_name) "
+            "SELECT group_name, exclusive_members FROM exclusive "
+            "ORDER BY exclusive_members DESC LIMIT 12",
+            (tenant_id, tenant_id),
+        ) if _table_exists("raw_messages") else []
+
+        total_unique_brokers = _audit_scalar(
+            "SELECT COUNT(DISTINCT COALESCE(NULLIF(broker_phone, ''), NULLIF(broker_name, ''), rm.sender)) "
+            "FROM parsed_output po JOIN raw_messages rm ON po.raw_message_id = rm.id "
+            "WHERE rm.tenant_id = $1",
+            (tenant_id,),
+        ) if _table_exists("parsed_output") else 0
+        total_broker_appearances = _audit_scalar(
+            "SELECT COUNT(DISTINCT po.raw_message_id || ':' || COALESCE(po.listing_index, 0)) "
+            "FROM parsed_output po JOIN raw_messages rm ON po.raw_message_id = rm.id "
+            "WHERE rm.tenant_id = $1 AND COALESCE(NULLIF(po.broker_phone, ''), NULLIF(po.broker_name, ''), rm.sender) != ''",
+            (tenant_id,),
+        ) if _table_exists("parsed_output") else 0
+
+        return {
+            "daily_flow": [
+                {
+                    "date": str(_audit_row_value(r, ("day", 0), "")),
+                    "posts": _audit_row_value(r, ("posts", 1), 0) or 0,
+                    "requirements": _audit_row_value(r, ("requirements", 2), 0) or 0,
+                    "listings": _audit_row_value(r, ("listings", 3), 0) or 0,
+                }
+                for r in flow_rows
+            ],
+            "markets": [
+                {
+                    "name": _audit_row_value(r, ("micro_market", 0), ""),
+                    "posts": _audit_row_value(r, ("posts", 1), 0) or 0,
+                    "requirements": _audit_row_value(r, ("requirements", 2), 0) or 0,
+                    "listings": _audit_row_value(r, ("listings", 3), 0) or 0,
+                    "brokers": _audit_row_value(r, ("brokers", 4), 0) or 0,
+                }
+                for r in market_rows
+            ],
+            "brokers": [
+                {
+                    "name": _audit_row_value(r, ("canonical_name", 0), "") or "Unknown broker",
+                    "posts": _audit_row_value(r, ("observation_count", 1), 0) or 0,
+                    "listings": _audit_row_value(r, ("listing_count", 2), 0) or 0,
+                    "requirements": _audit_row_value(r, ("requirement_count", 3), 0) or 0,
+                    "groups": _audit_row_value(r, ("group_count", 4), 0) or 0,
+                    "markets": _audit_row_value(r, ("market_count", 5), 0) or 0,
+                    "last_seen": _audit_timestamp(_audit_row_value(r, ("last_seen_at", 6))),
+                }
+                for r in broker_rows
+            ],
+            "exclusive_members": {
+                str(_audit_row_value(r, ("group_name", 0), "")): (
+                    int(_audit_row_value(r, ("exclusive_members", 1), 0) or 0)
+                )
+                for r in exclusive_rows
+            },
+            "total_unique_brokers": int(total_unique_brokers or 0),
+            "total_broker_appearances": int(total_broker_appearances or 0),
+        }
+    except Exception as exc:
+        print(f"[audit] insights failed: {exc}", flush=True)
+        return empty
 
 
 @app.get("/api/audit/search-evidence")
