@@ -109,7 +109,7 @@ export default function AuditPage() {
   const requirements = state.groups.reduce((sum, group) => sum + group.requirements, 0);
   const active = state.groups.filter((group) => group.status === "live").length;
   const brokersAcrossGroups = state.groups.reduce((sum, group) => sum + (group.active_brokers || 0), 0);
-  const brokersOverall = state.insights.total_unique_brokers || state.health?.stage?.brokers ?? 0;
+  const brokersOverall = state.insights.total_unique_brokers || (state.health?.stage?.brokers ?? 0);
   const brokerAppearances = state.insights.total_broker_appearances || brokersAcrossGroups;
   const bestGroups = [...state.groups].map((group) => ({
     ...group,
