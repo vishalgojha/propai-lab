@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSupabase } from "@/lib/supabase";
+import { getSiteUrl } from "@/lib/site";
 
 // Resolves the broker phone server-side from the listing id and 302-redirects
 // to the wa.me deep link with a pre-filled recall message. The raw phone number
@@ -42,13 +43,14 @@ export async function GET(
 ) {
   const { id } = await params;
   const listingId = Number.parseInt(id, 10);
+  const siteUrl = getSiteUrl();
   if (!Number.isFinite(listingId)) {
-    return NextResponse.redirect(new URL("/", _req.url), { status: 302 });
+    return NextResponse.redirect(new URL("/", siteUrl), { status: 302 });
   }
 
   const db = getServerSupabase();
   if (!db) {
-    return NextResponse.redirect(new URL("/", _req.url), { status: 302 });
+    return NextResponse.redirect(new URL("/", siteUrl), { status: 302 });
   }
 
   const { data, error } = await db
@@ -58,13 +60,13 @@ export async function GET(
     .maybeSingle();
 
   if (error || !data?.broker_phone) {
-    return NextResponse.redirect(new URL("/", _req.url), { status: 302 });
+    return NextResponse.redirect(new URL(`/listings/${listingId}`, siteUrl), { status: 302 });
   }
 
   const digits = String(data.broker_phone).replace(/\D/g, "");
   const local = digits.endsWith("91") && digits.length > 10 ? digits.slice(-10) : digits.slice(-10);
   if (local.length !== 10) {
-    return NextResponse.redirect(new URL("/", _req.url), { status: 302 });
+    return NextResponse.redirect(new URL(`/listings/${listingId}`, siteUrl), { status: 302 });
   }
 
   const text = encodeURIComponent(buildRecallMessage(data, listingId));

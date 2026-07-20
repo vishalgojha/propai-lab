@@ -44,14 +44,14 @@ function textStream(content: string) {
   });
 }
 
-async function callFastAPI(messages: { role: string; content: string }[], brokerPhone: string = "", sessionId: string = "", authHeader = "") {
+async function callFastAPI(messages: { role: string; content: string }[], brokerPhone: string = "", sessionId: string = "", authHeader = "", source: string = "") {
   const fastapi = await fetch(`${API_BASE}/api/ai/chat`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       ...(authHeader ? { Authorization: authHeader } : {}),
     },
-    body: JSON.stringify({ messages, broker_phone: brokerPhone, session_id: sessionId }),
+    body: JSON.stringify({ messages, broker_phone: brokerPhone, session_id: sessionId, source }),
   });
 
   const raw = await fastapi.text();
@@ -77,6 +77,7 @@ export async function POST(req: Request) {
   const brokerPhone = (body.broker_phone as string) || "";
   const sessionId = (body.session_id as string) || "";
   const authHeader = req.headers.get("authorization") || "";
+  const source = (body.source as string) || "";
 
   if (!messages.length || messages[messages.length - 1].role !== "user") {
     return createUIMessageStreamResponse({
@@ -85,7 +86,7 @@ export async function POST(req: Request) {
   }
 
   try {
-    const result = await callFastAPI(messages, brokerPhone, sessionId, authHeader);
+    const result = await callFastAPI(messages, brokerPhone, sessionId, authHeader, source);
     return createUIMessageStreamResponse({ stream: textStream(result.content) });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Chat API failed";
@@ -100,10 +101,11 @@ export async function PUT(req: Request) {
   const brokerPhone = (body.broker_phone as string) || "";
   const sessionId = (body.session_id as string) || "";
   const authHeader = req.headers.get("authorization") || "";
+  const source = (body.source as string) || "";
 
   try {
     const filtered = messages.filter((m) => m.content && ["system", "user", "assistant"].includes(m.role));
-    const result = await callFastAPI(filtered, brokerPhone, sessionId, authHeader);
+    const result = await callFastAPI(filtered, brokerPhone, sessionId, authHeader, source);
     return Response.json(result);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Chat API failed";
