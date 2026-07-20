@@ -25,7 +25,8 @@ export function getServerSupabase(): SupabaseClient | null {
   return client;
 }
 
-export function slugify(value: string): string {
+export function slugify(value: string | null | undefined): string {
+  if (!value) return "";
   return value
     .trim()
     .toLowerCase()

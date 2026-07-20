@@ -479,6 +479,17 @@ function rowIntentValue(intent: string | null): "rent" | "sale" | null {
   return null;
 }
 
+/** Convert a row's price (stored in its unit) to absolute rupees for budget comparison. */
+function rowPriceInRupees(row: NaturalSearchRow): number | null {
+  if (typeof row.price !== "number") return null;
+  const unit = (row.price_unit || "").toLowerCase();
+  if (unit === "cr" || unit === "crore" || unit === "crores") return row.price * 1_00_00_000;
+  if (unit === "lac" || unit === "lakh" || unit === "lakhs" || unit === "l") return row.price * 1_00_000;
+  if (unit === "k" || unit === "thousand") return row.price * 1_000;
+  // "abs" or empty → already absolute rupees
+  return row.price;
+}
+
 function rowSearchText(row: NaturalSearchRow): string {
   return normalizeText(
     [
@@ -547,7 +558,7 @@ function scoreRow(row: NaturalSearchRow, parsed: ParsedNaturalSearch): { score: 
   }
 
   if (parsed.minPrice != null || parsed.maxPrice != null) {
-    const price = typeof row.price === "number" ? row.price : null;
+    const price = rowPriceInRupees(row);
     if (price != null) {
       const inRange =
         (parsed.minPrice == null || price >= parsed.minPrice) &&
@@ -611,9 +622,10 @@ export function matchesHardFilters(row: NaturalSearchRow, parsed: ParsedNaturalS
   }
 
   if (parsed.minPrice != null || parsed.maxPrice != null) {
-    if (typeof row.price !== "number") return false;
-    if (parsed.minPrice != null && row.price < parsed.minPrice) return false;
-    if (parsed.maxPrice != null && row.price > parsed.maxPrice) return false;
+    const price = rowPriceInRupees(row);
+    if (price == null) return false;
+    if (parsed.minPrice != null && price < parsed.minPrice) return false;
+    if (parsed.maxPrice != null && price > parsed.maxPrice) return false;
   }
 
   return true;
@@ -669,7 +681,12 @@ async function browseByAsset(
     if ((data ?? []).length < PAGE) break;
   }
 
-  const knownBuildings = await getAllBuildings();
+  let knownBuildings: BuildingSummary[] = [];
+  try {
+    knownBuildings = await getAllBuildings();
+  } catch (err) {
+    console.error("getAllBuildings failed in browseByAsset:", err);
+  }
   const buildingNameSet = new Set(
     knownBuildings.map((b: BuildingSummary) => slugify(b.name)).filter(Boolean),
   );
@@ -841,7 +858,12 @@ export async function searchNaturalLanguageListings(
 
   // Build a set of known building names so we can classify a result as a
   // building vs a locality (a building must never render as a "Locality" card).
-  const knownBuildings = await getAllBuildings();
+  let knownBuildings: BuildingSummary[] = [];
+  try {
+    knownBuildings = await getAllBuildings();
+  } catch (err) {
+    console.error("getAllBuildings failed in search:", err);
+  }
   const buildingNameSet = new Set(
     knownBuildings.map((b: BuildingSummary) => slugify(b.name)).filter(Boolean),
   );
@@ -899,22 +921,26 @@ async function enrichWithBuildingCoords(
     const db = getServerSupabase();
     if (db) {
       const PAGE = 500;
-      for (let i = 0; i < missing.length; i += PAGE) {
-        const batch = missing.slice(i, i + PAGE);
-        const { data } = await db
-          .from("buildings")
-          .select("canonical_name, latitude, longitude")
-          .in("canonical_name", batch)
-          .not("latitude", "is", null);
-        for (const row of data ?? []) {
-          const name = (row.canonical_name ?? "").trim().toLowerCase();
-          if (name && row.latitude != null && row.longitude != null) {
-            _buildingCoordsCache.set(name, {
-              latitude: row.latitude,
-              longitude: row.longitude,
-            });
+      try {
+        for (let i = 0; i < missing.length; i += PAGE) {
+          const batch = missing.slice(i, i + PAGE);
+          const { data } = await db
+            .from("buildings")
+            .select("canonical_name, latitude, longitude")
+            .in("canonical_name", batch)
+            .not("latitude", "is", null);
+          for (const row of data ?? []) {
+            const name = (row.canonical_name ?? "").trim().toLowerCase();
+            if (name && row.latitude != null && row.longitude != null) {
+              _buildingCoordsCache.set(name, {
+                latitude: row.latitude,
+                longitude: row.longitude,
+              });
+            }
           }
         }
+      } catch (err) {
+        console.error("enrichWithBuildingCoords query failed:", err);
       }
     }
   }

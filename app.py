@@ -2022,7 +2022,15 @@ def generate_summary_title(parsed: dict, raw_text: str = "") -> str | None:
 
     if not pieces:
         return None
-    return " | ".join(pieces)
+    title = " | ".join(pieces)
+    # Guard against low-quality fallbacks: locality-only or raw-message fragments
+    if len(pieces) == 1 and pieces[0] in {"Virar", "Bandra", "Andheri", "Khar", "Powai", "Juhu", "Dadar", "Worli", "Lower Parel", "Marine Lines", "Colaba", "Churchgate", "Fort", "Cuffe Parade", "Nariman Point", "BKC", "Bandra Kurla Complex"}:
+        return None
+    # Filter out raw-message fragments that leaked in (common patterns)
+    bad_fragments = ["loan facility", "subject to", "approval", "emi", "down payment", "contact", "call", "whatsapp", "available", "urgent", "negotiable", "best price", "best deal"]
+    if any(frag in title.lower() for frag in bad_fragments):
+        return None
+    return title
 
 
 def _parsed_display_label(parsed: dict) -> str:

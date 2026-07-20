@@ -44,8 +44,25 @@ export default async function SearchPage({ searchParams }: { searchParams: Searc
   const query = q.trim();
   const asset =
     assetParam === "residential" || assetParam === "commercial" ? assetParam : null;
-  const state = query ? await searchNaturalLanguageListings(query, 24, asset) : null;
-  const knownLocalities = await getAllLocalities();
+
+  let state: Awaited<ReturnType<typeof searchNaturalLanguageListings>> | null = null;
+  let searchError = false;
+  if (query) {
+    try {
+      state = await searchNaturalLanguageListings(query, 24, asset);
+    } catch (err) {
+      console.error("searchNaturalLanguageListings failed:", err);
+      searchError = true;
+    }
+  }
+
+  let knownLocalities: Awaited<ReturnType<typeof getAllLocalities>> = [];
+  try {
+    knownLocalities = await getAllLocalities();
+  } catch (err) {
+    console.error("getAllLocalities failed:", err);
+  }
+
   const summary = state?.parsed ? describeNaturalSearch(state.parsed) : "";
 
   // Compact, LLM-safe context describing the listings the user is currently
@@ -130,7 +147,17 @@ export default async function SearchPage({ searchParams }: { searchParams: Searc
           )}
         </header>
 
-        {hasResults ? (
+        {searchError ? (
+          <section className="mt-10 rounded-2xl border border-red-400/20 bg-red-400/5 p-6 lg:p-8">
+            <h2 className="text-lg font-semibold text-white mb-2">Search is temporarily unavailable</h2>
+            <p className="text-sm text-zinc-400">
+              We couldn&apos;t complete your search right now. Please try again in a moment, or{" "}
+              <Link href="/search" className="text-green-300 hover:text-green-200">
+                refresh the page
+              </Link>.
+            </p>
+          </section>
+        ) : hasResults ? (
           <section className="mt-10 space-y-6">
             <div className="flex flex-wrap items-center gap-2 text-sm">
               {query && (
