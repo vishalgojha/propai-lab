@@ -153,26 +153,57 @@ func TestOwnWhatsAppJIDAcceptsPhoneAndLIDAddresses(t *testing.T) {
 	}
 }
 
-func TestSelfChatCommandAcceptsOwnLIDAndRejectsLocalBotEcho(t *testing.T) {
+func TestSelfChatCommandAcceptsOwnJIDAndLID(t *testing.T) {
 	phone := types.NewJID("919773757759", types.DefaultUserServer)
 	lid := types.NewJID("123456789012345", types.HiddenUserServer)
 	session := &BrokerSession{client: &whatsmeow.Client{Store: &store.Device{ID: &phone, LID: lid}}}
+
+	// Self-chat directed at the phone-number JID (no DeviceSentMeta needed)
 	evt := &events.Message{
 		Info: types.MessageInfo{
-			MessageSource:  types.MessageSource{IsFromMe: true},
-			ID:             "human-command",
-			DeviceSentMeta: &types.DeviceSentMeta{DestinationJID: lid.String()},
+			MessageSource: types.MessageSource{
+				IsFromMe: true,
+				Chat:     phone,
+			},
+			ID: "human-command-phone",
 		},
 		Message: &waE2E.Message{Conversation: proto.String("find options")},
 	}
-
 	target, text, ok := selfChatCommand(session, evt)
-	if !ok || target != lid || text != "find options" {
-		t.Fatalf("selfChatCommand() = target %s text %q ok %v", target, text, ok)
+	if !ok || target != phone.ToNonAD() || text != "find options" {
+		t.Fatalf("selfChatCommand(phone) = target %s text %q ok %v", target, text, ok)
 	}
-	evt.Info.DeviceSentMeta = nil
-	if _, _, ok := selfChatCommand(session, evt); ok {
-		t.Fatal("locally generated bot echo must not trigger another self-chat reply")
+
+	// Self-chat directed at the LID
+	evt2 := &events.Message{
+		Info: types.MessageInfo{
+			MessageSource: types.MessageSource{
+				IsFromMe: true,
+				Chat:     lid,
+			},
+			ID: "human-command-lid",
+		},
+		Message: &waE2E.Message{Conversation: proto.String("list properties")},
+	}
+	target2, text2, ok2 := selfChatCommand(session, evt2)
+	if !ok2 || target2 != lid.ToNonAD() || text2 != "list properties" {
+		t.Fatalf("selfChatCommand(lid) = target %s text %q ok %v", target2, text2, ok2)
+	}
+
+	// Message to a different number must NOT trigger self-chat
+	other := types.NewJID("919999999999", types.DefaultUserServer)
+	evt3 := &events.Message{
+		Info: types.MessageInfo{
+			MessageSource: types.MessageSource{
+				IsFromMe: true,
+				Chat:     other,
+			},
+			ID: "other-person",
+		},
+		Message: &waE2E.Message{Conversation: proto.String("hello")},
+	}
+	if _, _, ok3 := selfChatCommand(session, evt3); ok3 {
+		t.Fatal("message to another number must not trigger self-chat")
 	}
 }
 
