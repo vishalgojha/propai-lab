@@ -26,6 +26,7 @@ import {
   Menu,
   ShieldCheck,
   X,
+  Zap,
 } from "lucide-react";
 import { AuthProvider, useAuth } from "@/lib/AuthProvider";
 import { LayoutProvider, useLayout } from "@/hooks/useLayout";
@@ -55,6 +56,7 @@ const baseNavSections = [
     title: "Settings",
     items: [
       { href: "/connections", label: "Connect WhatsApp", icon: Wifi },
+      { href: "/whatswow", label: "WhatsWow", icon: Zap },
       { href: "/audit", label: "WhatsApp Audit", icon: MessageSquare },
       { href: "/profile", label: "My Profile", icon: UserCheck },
       { href: "/profile/team", label: "Team", icon: UserCog },
