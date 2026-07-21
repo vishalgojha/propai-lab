@@ -10,11 +10,9 @@ import SearchMapLoader from "@/components/SearchMapLoader";
 export default function SearchResultsView({
   results,
   mapToken,
-  footerNote,
 }: {
   results: NaturalSearchResult[];
   mapToken: string | null;
-  footerNote?: ((row: NaturalSearchResult) => string | null) | null;
 }) {
   const [view, setView] = useState<"list" | "map">("list");
   const geocodedCount = results.filter(
@@ -61,12 +59,16 @@ export default function SearchResultsView({
           {results.map((row) => {
             const card = toListingCardViewModel(row, row.resultType === "building");
             return (
-              <ListingTile
-                key={row.id}
-                card={card}
-                buildingName={row.building_name}
-                footerNote={footerNote ? footerNote(row) : null}
-              />
+            <ListingTile
+              key={row.id}
+              card={card}
+              buildingName={row.building_name}
+              footerNote={
+                row.matchedOn.length > 0
+                  ? `Matched on: ${row.matchedOn.join(", ")}`
+                  : null
+              }
+            />
             );
           })}
         </div>

@@ -218,11 +218,6 @@ export default async function SearchPage({ searchParams }: { searchParams: Searc
                 <SearchResultsView
                   results={state.results}
                   mapToken={MAPBOX_TOKEN}
-                  footerNote={(row) =>
-                    row.matchedOn.length > 0
-                      ? `Matched on: ${row.matchedOn.join(", ")}`
-                      : null
-                  }
                 />
               </>
             ) : (
