@@ -309,6 +309,26 @@ class LLMProvider:
     updated_at: str = ""
 
 
+@dataclass
+class ProviderOutageEvent:
+    """A single probe result for an LLM provider.
+
+    Populated by the 60s background loop in app.py:_provider_probe_loop.
+    Rendered in /admin/providers.
+    """
+    id: int = 0
+    ts: str = ""
+    provider_id: int = 0
+    provider_name: str = ""
+    provider_type: str = ""
+    model_name: str = ""
+    status: str = ""           # ok | slow | timeout | http | error
+    latency_ms: int = 0
+    http_status: int = 0
+    error_kind: str = ""
+    error_msg: str = ""
+
+
 def dict_to_dataclass(cls, d):
     """Convert a dict or row object to a dataclass, skipping unknown fields."""
     if hasattr(d, 'keys'):

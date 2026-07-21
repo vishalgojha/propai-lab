@@ -2738,6 +2738,9 @@ class SupabaseStorage(Storage):
     def create_suggestion(self, sug: AISuggestion) -> int:
         data = {k: v for k, v in sug.__dict__.items() if v is not None}
         data.pop("id", None)
+        for skip in ("created_at", "updated_at"):
+            if skip in data and not data[skip]:
+                del data[skip]
         if not data.get("tenant_id") and self._tenant_id:
             data["tenant_id"] = self._tenant_id
         res = self.client.table("ai_suggestions").insert(data).execute()
@@ -2872,6 +2875,17 @@ class SupabaseStorage(Storage):
         res = q.execute()
         return dict_to_dataclass(LLMProvider, res.data[0]) if res.data else None
 
+    def list_all_llm_providers(self) -> list[dict]:
+        """Cross-tenant provider list — used by the probe loop and /admin/providers.
+
+        Returns raw dicts (not dataclasses) so the probe loop and admin UI can
+        read fields without dataclass round-tripping. Includes inactive
+        providers so they still get probed (so you can see outage evidence for
+        a provider that was deactivated during an incident).
+        """
+        res = self.client.table("llm_providers").select("*").execute()
+        return list(res.data or [])
+
     def save_llm_provider(self, provider: LLMProvider, tenant_id: str | None = None) -> int:
         tid = tenant_id or self._tenant_id
         data = {k: v for k, v in provider.__dict__.items() if v is not None}
@@ -2915,6 +2929,47 @@ class SupabaseStorage(Storage):
             q = q.eq("tenant_id", tid)
         res = q.execute()
         return len(res.data) > 0
+
+    # ── Provider Outage Log ────────────────────────────────────────────
+
+    def insert_provider_outage_event(self, event) -> int:
+        """Write one probe result. Returns the new row id."""
+        data = {k: v for k, v in event.__dict__.items() if v is not None and k != "id"}
+        res = self.client.table("provider_outage_log").insert(data).execute()
+        return int(res.data[0]["id"]) if res.data else 0
+
+    def list_provider_outage_events(
+        self,
+        since_minutes: int = 60,
+        provider_name: str | None = None,
+        limit: int = 500,
+    ) -> list[dict]:
+        """Recent probe results, newest first.
+
+        Used by /admin/providers/health + /admin/providers/history.
+        Returns raw dicts (not dataclasses) so timestamps survive the round-trip
+        without timezone parsing in tests.
+        """
+        cutoff = (
+            datetime.now(timezone.utc) - timedelta(minutes=since_minutes)
+        ).isoformat()
+        q = (
+            self.client.table("provider_outage_log")
+            .select("*")
+            .gte("ts", cutoff)
+        )
+        if provider_name:
+            q = q.eq("provider_name", provider_name)
+        q = q.order("ts", desc=True).limit(limit)
+        res = q.execute()
+        return list(res.data or [])
+
+    def cleanup_provider_outage_log(self, retention_days: int = 7) -> int:
+        """Drop rows older than `retention_days`. Returns the deleted count."""
+        res = self.db.execute(
+            "SELECT cleanup_provider_outage_log(%s)", (retention_days,)
+        ).fetchone()
+        return int(res[0]) if res else 0
 
     # ── Observation Graph ────────────────────────────────────────────────
 

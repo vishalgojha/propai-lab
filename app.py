@@ -72,7 +72,7 @@ class ProfileUpdate(BaseModel):
     email: str = ""
     city: str = ""
 
-from storage import Storage, SupabaseStorage, RawMessage, ParsedObservation, ResolverDecision, Evaluation, LLMProvider, set_tenant_id, get_tenant_id
+from storage import Storage, SupabaseStorage, RawMessage, ParsedObservation, ResolverDecision, Evaluation, LLMProvider, ProviderOutageEvent, set_tenant_id, get_tenant_id
 from lab.embedding import create_engine, observation_text, pack_embedding, EmbeddingEngine
 from lab import ai_chat_engine as chat_engine
 from lab import multi_listing
@@ -1584,7 +1584,16 @@ async def lifespan(app: FastAPI):
         print("  [auth] WARNING: JWKS client NOT initialized — auth disabled")
     print(f"  Webhook: http://localhost:{PORT}/webhook")
     print(f"  Admin:   http://localhost:{PORT}/")
+    # Provider probe loop: hits every configured LLM provider every 60s and
+    # writes results to provider_outage_log. Feeds /admin/providers.
+    provider_probe_task = asyncio.create_task(_provider_probe_loop())
+    print("  Provider probe loop started (60s cadence)")
     yield
+    provider_probe_task.cancel()
+    try:
+        await provider_probe_task
+    except (asyncio.CancelledError, Exception):
+        pass
     # Shutdown enrichment worker
     if enrichment_worker:
         try:
@@ -15209,23 +15218,35 @@ async def save_llm_provider(body: dict, user: dict = Depends(require_user), tena
     return {"id": provider_id}
 
 
-@app.post("/api/workspace/llm-providers/test")
-async def test_llm_provider(body: dict, user: dict = Depends(require_user)):
-    api_key = str(body.get("api_key", "") or "")
-    base_url = str(body.get("base_url", "") or "")
-    model_name = str(body.get("model_name", "") or "")
-    if not api_key:
-        return {"success": False, "error": "No API key provided"}
+PROBE_OK_LATENCY_THRESHOLD_MS = 5000
+
+
+async def _probe_provider(api_key: str, base_url: str, model_name: str, timeout_s: float = 15.0) -> dict:
+    """Hit a provider with a tiny 'Respond with exactly: OK' prompt.
+
+    Returns a normalised dict with keys:
+        status      → "ok" | "slow" | "timeout" | "http" | "error"
+        latency_ms  → integer
+        http_status → int | None
+        error_kind  → str | None
+        error_msg   → str | None
+    Never raises. Designed to be called from a background loop and from the
+    manual-test endpoint with the same shape so outage evidence and ad-hoc
+    tests stay comparable.
+    """
+    empty = {"status": "error", "latency_ms": 0, "http_status": None,
+             "error_kind": "missing_credentials", "error_msg": "no API key"}
+    if not api_key or not base_url:
+        return empty
     url = base_url.rstrip("/") + "/chat/completions"
     payload = {
         "model": model_name or "gpt-4o-mini",
         "messages": [{"role": "user", "content": "Respond with exactly: OK"}],
         "max_tokens": 10,
     }
-    import time
     start = time.time()
     try:
-        async with httpx.AsyncClient(timeout=15.0) as client:
+        async with httpx.AsyncClient(timeout=timeout_s) as client:
             resp = await client.post(
                 url,
                 json=payload,
@@ -15234,28 +15255,292 @@ async def test_llm_provider(body: dict, user: dict = Depends(require_user)):
                     "Content-Type": "application/json",
                 },
             )
-            latency = round(time.time() - start, 2)
-            if resp.status_code == 200:
-                return {"success": True, "latency": latency}
-            try:
-                detail = resp.json()
-            except Exception:
-                detail = resp.text[:200]
-            return {
-                "success": False,
-                "error": f"HTTP {resp.status_code}: {detail}",
-                "latency": latency,
-            }
+        latency_ms = int((time.time() - start) * 1000)
+        if resp.status_code == 200:
+            status = "slow" if latency_ms > PROBE_OK_LATENCY_THRESHOLD_MS else "ok"
+            return {"status": status, "latency_ms": latency_ms, "http_status": 200,
+                    "error_kind": None, "error_msg": None}
+        try:
+            detail = resp.json()
+        except Exception:
+            detail = resp.text[:200]
+        msg = f"HTTP {resp.status_code}: {str(detail)[:180]}"
+        return {"status": "http", "latency_ms": latency_ms, "http_status": resp.status_code,
+                "error_kind": "non_2xx", "error_msg": msg}
     except httpx.TimeoutException:
-        return {"success": False, "error": "Request timed out after 15s", "latency": round(time.time() - start, 2)}
+        latency_ms = int((time.time() - start) * 1000)
+        return {"status": "timeout", "latency_ms": latency_ms, "http_status": None,
+                "error_kind": "timeout", "error_msg": f"Request timed out after {timeout_s}s"}
     except Exception as exc:
-        return {"success": False, "error": str(exc)[:200], "latency": round(time.time() - start, 2)}
+        latency_ms = int((time.time() - start) * 1000)
+        return {"status": "error", "latency_ms": latency_ms, "http_status": None,
+                "error_kind": type(exc).__name__, "error_msg": str(exc)[:200]}
+
+
+@app.post("/api/workspace/llm-providers/test")
+async def test_llm_provider(body: dict, user: dict = Depends(require_user)):
+    api_key = str(body.get("api_key", "") or "")
+    base_url = str(body.get("base_url", "") or "")
+    model_name = str(body.get("model_name", "") or "")
+    result = await _probe_provider(api_key, base_url, model_name)
+    success = result["status"] in ("ok", "slow")
+    out = {"success": success, "status": result["status"],
+           "latency_ms": result["latency_ms"], "latency": round(result["latency_ms"] / 1000.0, 2)}
+    if result["http_status"] is not None:
+        out["http_status"] = result["http_status"]
+    if not success:
+        out["error"] = result["error_msg"]
+    return out
 
 
 @app.delete("/api/workspace/llm-providers/{provider_id}")
 async def delete_llm_provider(provider_id: int, user: dict = Depends(require_user), tenant_id: str | None = Depends(get_tenant_context)):
     ok = storage.delete_llm_provider(provider_id, tenant_id=tenant_id)
     return {"deleted": ok}
+
+
+# ═══════════════════════════════════════════════════════════════
+# Provider Health (admin outage evidence)
+#
+# _probe_provider hits a single LLM with a tiny "Respond with exactly: OK"
+# prompt and returns a normalised dict {status, latency_ms, http_status,
+# error_kind, error_msg}. _provider_probe_loop runs every 60s, probes every
+# configured provider across all tenants, and writes the result to
+# provider_outage_log. The /admin/providers UI reads from that table.
+# ═══════════════════════════════════════════════════════════════
+
+PROVIDER_PROBE_INTERVAL_S = 60
+
+
+async def _run_provider_probe_and_log(provider_row: dict) -> None:
+    """Probe one provider row (raw dict from storage) and append to outage log."""
+    api_key = provider_row.get("api_key") or ""
+    base_url = provider_row.get("base_url") or ""
+    model_name = provider_row.get("model_name") or ""
+    result = await _probe_provider(api_key, base_url, model_name, timeout_s=15.0)
+    event = ProviderOutageEvent(
+        provider_id=provider_row.get("id") or 0,
+        provider_name=str(provider_row.get("provider_name") or "unknown"),
+        provider_type=str(provider_row.get("provider_type") or "unknown"),
+        model_name=model_name,
+        status=result["status"],
+        latency_ms=result["latency_ms"],
+        http_status=result["http_status"] or 0,
+        error_kind=result["error_kind"] or "",
+        error_msg=result["error_msg"] or "",
+    )
+    try:
+        await asyncio.to_thread(storage.insert_provider_outage_event, event)
+    except Exception as exc:
+        print(f"  [provider-probe] failed to log result for {event.provider_name}: {exc}")
+
+
+async def _provider_probe_loop() -> None:
+    """Background loop: every PROVIDER_PROBE_INTERVAL_S, probe every configured
+    LLM provider across all tenants. Sleep first so the server has time to
+    finish booting before we hit external APIs.
+    """
+    await asyncio.sleep(10)
+    while True:
+        try:
+            providers = await asyncio.to_thread(storage.list_all_llm_providers)
+            if not providers:
+                await asyncio.sleep(PROVIDER_PROBE_INTERVAL_S)
+                continue
+            await asyncio.gather(
+                *[_run_provider_probe_and_log(p) for p in providers],
+                return_exceptions=True,
+            )
+        except Exception as exc:
+            print(f"  [provider-probe] loop error: {exc}")
+        await asyncio.sleep(PROVIDER_PROBE_INTERVAL_S)
+
+
+def _classify_provider_status(events: list[dict], now_ts: float) -> str:
+    """Pure helper: turn a sorted-newest-first event list into a status string.
+
+    Rules (matches /admin/providers UI badges):
+      up        → last probe is ok/slow and <= 5 min old
+      degraded  → last probe is ok/slow but slow; OR error rate > 20% in last 30 min
+      down      → last probe is timeout/http/error; OR no successful probe in last 10 min
+      unknown   → no probes in last 30 min
+    """
+    if not events:
+        return "unknown"
+    newest = events[0]
+    newest_ts = _parse_event_ts(newest)
+    age_s = now_ts - newest_ts if newest_ts else 9e9
+    if age_s > 1800:
+        return "unknown"
+    if newest["status"] in ("timeout", "http", "error"):
+        return "down"
+    if newest["status"] == "slow":
+        return "degraded"
+    cutoff_30 = now_ts - 1800
+    cutoff_10 = now_ts - 600
+    recent_30 = [e for e in events if (_parse_event_ts(e) or 0) >= cutoff_30]
+    recent_10 = [e for e in events if (_parse_event_ts(e) or 0) >= cutoff_10]
+    if recent_10 and not any(e["status"] in ("ok", "slow") for e in recent_10):
+        return "down"
+    if recent_30:
+        failures = sum(1 for e in recent_30 if e["status"] != "ok")
+        if failures / max(len(recent_30), 1) > 0.20:
+            return "degraded"
+    return "up"
+
+
+def _parse_event_ts(event: dict) -> float | None:
+    """Parse an event timestamp (ISO 8601 with timezone) into a Unix epoch."""
+    ts = event.get("ts")
+    if not ts:
+        return None
+    try:
+        if isinstance(ts, str):
+            return datetime.fromisoformat(ts.replace("Z", "+00:00")).timestamp()
+        return float(ts)
+    except Exception:
+        return None
+
+
+def _summarise_provider(events: list[dict], now_ts: float) -> dict:
+    """Aggregate events into the dict shape the /admin/providers UI renders."""
+    latencies = [int(e.get("latency_ms") or 0) for e in events
+                 if e.get("status") in ("ok", "slow")]
+    latencies.sort()
+    p50 = latencies[len(latencies) // 2] if latencies else 0
+    p95 = latencies[int(len(latencies) * 0.95)] if latencies else 0
+    status = _classify_provider_status(events, now_ts)
+    newest = events[0] if events else {}
+    last_error = next((e for e in events if e.get("status") != "ok"), None)
+    return {
+        "status": status,
+        "probe_count": len(events),
+        "p50_ms": p50,
+        "p95_ms": p95,
+        "last_probe_ts": newest.get("ts"),
+        "last_status": newest.get("status"),
+        "last_latency_ms": int(newest.get("latency_ms") or 0) if newest else 0,
+        "last_error": last_error,
+    }
+
+
+def _bucket_history(events: list[dict], bucket_minutes: int = 5,
+                    window_hours: int = 24) -> list[dict]:
+    """Bin events into time buckets for the 24h timeline strip.
+
+    Returns newest-first list of {ts_bucket, ok_count, fail_count, total}.
+    """
+    if not events:
+        return []
+    now_ts = time.time()
+    bucket_s = bucket_minutes * 60
+    cutoff = now_ts - window_hours * 3600
+    bins: dict[int, dict] = {}
+    for e in events:
+        ts = _parse_event_ts(e)
+        if ts is None or ts < cutoff:
+            continue
+        bucket = int(ts // bucket_s) * bucket_s
+        b = bins.setdefault(bucket, {"ts_bucket": bucket, "ok_count": 0, "fail_count": 0, "total": 0})
+        b["total"] += 1
+        if e.get("status") == "ok":
+            b["ok_count"] += 1
+        else:
+            b["fail_count"] += 1
+    return sorted(bins.values(), key=lambda b: -b["ts_bucket"])
+
+
+@app.get("/api/admin/providers/health")
+async def admin_provider_health(user: dict = Depends(require_user)):
+    """Current health per provider: status, p50/p95, last probe, last error.
+
+    Reads the last 30 min of probe results for each configured provider and
+    classifies status (up/degraded/down/unknown). Used by /admin/providers.
+    """
+    providers = await asyncio.to_thread(storage.list_all_llm_providers)
+    by_name: dict[str, dict] = {p["provider_name"]: p for p in providers}
+    now_ts = time.time()
+    out_providers = []
+    worst = "up"
+    for name, prow in by_name.items():
+        events = await asyncio.to_thread(
+            storage.list_provider_outage_events, 30, name, 200
+        )
+        summary = _summarise_provider(events, now_ts)
+        out_providers.append({
+            "provider_id": prow.get("id"),
+            "provider_name": name,
+            "provider_type": prow.get("provider_type"),
+            "model_name": prow.get("model_name"),
+            "base_url": prow.get("base_url"),
+            "is_active": bool(prow.get("is_active")),
+            "tenant_id": prow.get("tenant_id"),
+            **summary,
+        })
+        rank = {"up": 0, "degraded": 1, "unknown": 2, "down": 3}
+        if rank[summary["status"]] > rank[worst]:
+            worst = summary["status"]
+    return {
+        "providers": out_providers,
+        "overall": worst,
+        "now_ts": now_ts,
+    }
+
+
+@app.get("/api/admin/providers/history")
+async def admin_provider_history(user: dict = Depends(require_user),
+                                  hours: int = 24, bucket_minutes: int = 5):
+    """24h timeline per provider, bucketed by 5 min.
+
+    Powers the timeline strip in /admin/providers. Each bucket reports
+    ok_count, fail_count, total so the UI can colour the cell.
+    """
+    if hours not in (1, 6, 24, 168):
+        hours = 24
+    if bucket_minutes not in (1, 5, 15, 60):
+        bucket_minutes = 5
+    since_minutes = hours * 60
+    events = await asyncio.to_thread(
+        storage.list_provider_outage_events, since_minutes, None, 5000
+    )
+    by_name: dict[str, list[dict]] = {}
+    for e in events:
+        by_name.setdefault(e.get("provider_name", "unknown"), []).append(e)
+    return {
+        "hours": hours,
+        "bucket_minutes": bucket_minutes,
+        "providers": [
+            {
+                "provider_name": name,
+                "buckets": _bucket_history(evts, bucket_minutes, hours),
+            }
+            for name, evts in by_name.items()
+        ],
+    }
+
+
+@app.post("/api/admin/providers/probe/{provider_id}")
+async def admin_provider_probe_now(provider_id: int, user: dict = Depends(require_user)):
+    """Manual trigger: probe one provider immediately and append to log."""
+    providers = await asyncio.to_thread(storage.list_all_llm_providers)
+    target = next((p for p in providers if int(p.get("id") or 0) == provider_id), None)
+    if not target:
+        return {"probed": False, "error": "provider not found"}
+    await _run_provider_probe_and_log(target)
+    events = await asyncio.to_thread(
+        storage.list_provider_outage_events, 5, target["provider_name"], 5
+    )
+    return {"probed": True, "recent": events}
+
+
+@app.post("/api/admin/providers/cleanup")
+async def admin_provider_cleanup(body: dict, user: dict = Depends(require_user)):
+    """Delete outage log rows older than retention_days (default 7)."""
+    days = int(body.get("retention_days") or 7)
+    if days < 1 or days > 90:
+        return {"deleted": 0, "error": "retention_days must be between 1 and 90"}
+    deleted = await asyncio.to_thread(storage.cleanup_provider_outage_log, days)
+    return {"deleted": deleted, "retention_days": days}
 
 
 # ═══════════════════════════════════════════════════════════════
