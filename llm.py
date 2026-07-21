@@ -21,7 +21,7 @@ _PROVIDERS = []
 
 _nvidia_model = "nvidia/nemotron-3-ultra-550b-a55b"
 _nvidia_base = "https://integrate.api.nvidia.com/v1"
-for i, key_env in enumerate(["NVIDIA_API_KEY", "NVIDIA_API_KEY_2", "NVIDIA_API_KEY_3"], 1):
+for i, key_env in enumerate(["NVIDIA_API_KEY", "NVIDIA_API_KEY_2", "NVIDIA_API_KEY_3", "NVIDIA_API_KEY_4"], 1):
     if os.getenv(key_env):
         _PROVIDERS.append({
             "name": f"nvidia-nim-{i}",

@@ -88,6 +88,7 @@ class ParsedObservation:
     summary_title: Optional[str] = None
     normalized_message: Optional[str] = None
     tenant_id: Optional[str] = None
+    ai_extraction: Optional[dict] = None
 
 
 @dataclass

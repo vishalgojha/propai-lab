@@ -50,7 +50,7 @@ def test_single_message_worker_uses_property_parser(monkeypatch):
 
     monkeypatch.setattr(lab.config, "load_excluded_groups", lambda: set())
     monkeypatch.setattr(multi_listing, "classify_message", lambda _text: "single")
-    monkeypatch.setattr(app, "parse_message", lambda _text: dict(parsed))
+    monkeypatch.setattr(app, "parse_message", lambda _text, profile_name=None: dict(parsed))
     monkeypatch.setattr(app, "classify_conversation", lambda *_args: "public")
     monkeypatch.setattr(app, "compute_embedding", lambda _parsed: None)
     monkeypatch.setattr(app, "resolve_parsed", lambda *_args: {})
