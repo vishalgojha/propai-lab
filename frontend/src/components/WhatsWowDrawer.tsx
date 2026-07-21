@@ -249,6 +249,9 @@ export default function WhatsWowDrawer({ open, onClose }: WhatsWowDrawerProps) {
               {expandedSections.capabilities ? <ChevronDown className="w-3.5 h-3.5 text-zinc-500" /> : <ChevronRight className="w-3.5 h-3.5 text-zinc-500" />}
               <Zap className="w-3.5 h-3.5 text-[#3EE88A]" />
               <span className="text-xs font-semibold text-zinc-300 uppercase tracking-wider">Capabilities</span>
+              <span className={`shrink-0 badge ${phones.some(p => p.connected) ? "badge-success" : "badge-neutral"}`}>
+                {phones.filter(p => p.connected).length}/{phones.length} live
+              </span>
               <span className="ml-auto text-[10px] text-zinc-500">{activeCount}/{capabilities.length} working</span>
             </button>
             {expandedSections.capabilities && (
