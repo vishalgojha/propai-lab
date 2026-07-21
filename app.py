@@ -3871,36 +3871,167 @@ async def dashboard_whatsapp_status(
     }
 
 
+_CAPTURED_UNUSED_CAPS = frozenset({"Read Receipts", "Typing Presence"})
+
+_ALWAYS_ON_CAPS = frozenset({
+    "Outgoing Messages",
+    "History Sync",
+    "Profile Pictures",
+    "Group Directory",
+    "Media Download",
+    "Media Upload",
+    "Self-Chat Agent",
+})
+
+_CAPABILITY_TYPE_KEY: dict[str, str] = {
+    "Text Messages": "text",
+    "Images": "image",
+    "Video": "video",
+    "Audio": "audio",
+    "Documents": "document",
+    "Stickers": "sticker",
+    "Location": "location",
+    "Live Location": "live_location",
+    "Contact Cards": "contact",
+    "Contact Arrays": "contacts_array",
+    "Reactions": "reaction",
+    "Poll Creation": "poll_creation",
+    "Poll Updates": "poll_update",
+    "Edited Messages": "edited",
+}
+
+_FALLBACK_CAPABILITIES: list[dict] = [
+    {"name": "Text Messages", "icon": "MessageSquare", "description": "Plain text from any group, with sender, group, and timestamp."},
+    {"name": "Images", "icon": "Image", "description": "Image messages: caption and sender captured; full media downloaded on demand."},
+    {"name": "Video", "icon": "Video", "description": "Video messages: caption plus thumbnail; full download on demand."},
+    {"name": "Audio", "icon": "Mic", "description": "Voice notes and audio files; transcribed automatically."},
+    {"name": "Documents", "icon": "FileText", "description": "PDFs and file attachments; filename and mimetype captured."},
+    {"name": "Stickers", "icon": "Smile", "description": "Sticker messages: metadata captured, sticker image not stored."},
+    {"name": "Location", "icon": "MapPin", "description": "Static shared locations: latitude, longitude, label, and address."},
+    {"name": "Live Location", "icon": "Navigation", "description": "Real-time location streams from any participant."},
+    {"name": "Contact Cards", "icon": "Users", "description": "Shared vCards: phone, name, and organisation extracted."},
+    {"name": "Contact Arrays", "icon": "Contact", "description": "Multi-contact shares parsed into individual cards."},
+    {"name": "Reactions", "icon": "SmilePlus", "description": "Emoji reactions on any observed message."},
+    {"name": "Poll Creation", "icon": "BarChart3", "description": "Polls created in groups: options and voters captured."},
+    {"name": "Poll Updates", "icon": "Vote", "description": "Per-option vote tally updates as votes come in."},
+    {"name": "Edited Messages", "icon": "Pencil", "description": "Edit events re-linked to the original message."},
+    {"name": "Outgoing Messages", "icon": "ArrowUpRight", "description": "Messages your phone sends, kept in sync for your own listings."},
+    {"name": "History Sync", "icon": "Clock", "description": "Initial backfill of recent messages on first connect."},
+    {"name": "Read Receipts", "icon": "CheckCheck", "description": "Blue-tick events captured but not yet surfaced in the UI."},
+    {"name": "Typing Presence", "icon": "Pencil", "description": "Typing indicators captured but not yet surfaced in the UI."},
+    {"name": "Profile Pictures", "icon": "Camera", "description": "Profile picture changes tracked per JID."},
+    {"name": "Group Directory", "icon": "Users", "description": "Group metadata: name, participants, admins, and subject changes."},
+    {"name": "Media Download", "icon": "Download", "description": "On-demand download of incoming media to workspace storage."},
+    {"name": "Media Upload", "icon": "Upload", "description": "Outbound media uploads for sending files, images, and video."},
+    {"name": "Self-Chat Agent", "icon": "Bot", "description": "Sends structured replies to your Message Yourself chat so PropAI can act on them."},
+]
+
+_CAPABILITY_WINDOW_DAYS = 7
+
+
+def _capability_type_counts(tenant_id: str | None) -> dict[str, int]:
+    if not _table_exists("raw_messages"):
+        return {}
+    try:
+        rows = storage.db.execute(
+            """
+            SELECT COALESCE(message_type, 'text') AS t, COUNT(*) AS c
+            FROM raw_messages
+            WHERE tenant_id = ?
+              AND created_at >= now() - interval '7 days'
+            GROUP BY t
+            """,
+            (tenant_id,),
+        ).fetchall()
+    except Exception as exc:
+        print(f"[capabilities] type-count query failed: {exc}", flush=True)
+        return {}
+    counts: dict[str, int] = {}
+    for row in rows or []:
+        try:
+            counts[str(row["t"])] = int(row["c"] or 0)
+        except (KeyError, TypeError, ValueError):
+            continue
+    return counts
+
+
+def _compute_capability_status(name: str, type_counts: dict[str, int], any_phone: bool, any_connected: bool) -> tuple[str, int]:
+    if name in _CAPTURED_UNUSED_CAPS:
+        return "captured_unused", 0
+    if name in _ALWAYS_ON_CAPS:
+        if any_connected:
+            return "active", 0
+        if any_phone:
+            return "partial", 0
+        return "not_available", 0
+    type_key = _CAPABILITY_TYPE_KEY.get(name)
+    count = int(type_counts.get(type_key, 0)) if type_key else 0
+    if count > 0:
+        return "active", count
+    if any_phone:
+        return "partial", 0
+    return "not_available", 0
+
+
 @app.get("/api/ingestor/capabilities")
-async def get_ingestor_capabilities(user: dict = Depends(require_user)):
-    """Return what message types the whatsmeow ingestor captures."""
+async def get_ingestor_capabilities(
+    user: dict = Depends(require_user),
+    tenant_id: str | None = Depends(get_tenant_context),
+):
+    """Return what message types the whatsmeow ingestor captures, with live per-workspace status."""
+    org_id = _resolve_active_organization_id(user, tenant_id)
+    phones = await asyncio.to_thread(storage.list_org_whatsapp_connections, org_id)
+    any_phone = bool(phones)
+
+    statuses: list[dict] = []
+    _, list_resp = await _first_ingestor_response("GET", "/list", timeout=2)
+    if list_resp is not None and list_resp.status_code == 200:
+        try:
+            statuses.extend(list_resp.json() or [])
+        except Exception:
+            statuses = []
+    now = time.time()
+    statuses.extend(
+        status for status, seen_at in _broker_live_statuses.values()
+        if now - seen_at <= 45
+    )
+    broker_ids = {str(phone.get("broker_id") or "") for phone in phones}
+    broker_ids.discard("")
+    any_connected = any(
+        bool(status.get("connected"))
+        for status in statuses
+        if str(status.get("broker_id") or "") in broker_ids
+    )
+
+    ingestor_payload: dict | None = None
     _, resp = await _first_ingestor_response("GET", "/capabilities", timeout=3)
     if resp is not None and resp.status_code == 200:
-        return resp.json()
+        try:
+            ingestor_payload = resp.json()
+        except Exception:
+            ingestor_payload = None
+    canonical = (ingestor_payload or {}).get("capabilities") or _FALLBACK_CAPABILITIES
+
+    type_counts = _capability_type_counts(tenant_id)
+
+    out: list[dict] = []
+    for cap in canonical:
+        entry = {k: v for k, v in cap.items() if k in {"name", "icon", "description"}}
+        status, evidence = _compute_capability_status(
+            cap.get("name", ""), type_counts, any_phone, any_connected
+        )
+        entry["status"] = status
+        entry["evidence_count"] = evidence
+        out.append(entry)
+
     return {
-        "capabilities": [
-            {"name": "Text Messages", "status": "active", "icon": "MessageSquare"},
-            {"name": "Images", "status": "active", "icon": "Image"},
-            {"name": "Video", "status": "active", "icon": "Video"},
-            {"name": "Audio", "status": "active", "icon": "Mic"},
-            {"name": "Documents", "status": "active", "icon": "FileText"},
-            {"name": "Stickers", "status": "active", "icon": "Smile"},
-            {"name": "Location", "status": "active", "icon": "MapPin"},
-            {"name": "Contact Cards", "status": "active", "icon": "Users"},
-            {"name": "Reactions", "status": "active", "icon": "SmilePlus"},
-            {"name": "Polls", "status": "active", "icon": "BarChart3"},
-            {"name": "Edited Messages", "status": "active", "icon": "Pencil"},
-            {"name": "Outgoing Messages", "status": "active", "icon": "ArrowUpRight"},
-            {"name": "History Sync", "status": "active", "icon": "Clock"},
-            {"name": "Read Receipts", "status": "captured_unused", "icon": "CheckCheck"},
-            {"name": "Typing Presence", "status": "captured_unused", "icon": "Pencil"},
-            {"name": "Profile Pictures", "status": "active", "icon": "Camera"},
-            {"name": "Group Directory", "status": "active", "icon": "Users"},
-            {"name": "Media Upload", "status": "active", "icon": "Upload"},
-            {"name": "Self-Chat Agent", "status": "active", "icon": "Bot"},
-        ],
-        "instance": "unknown",
-        "version": "fallback",
+        "capabilities": out,
+        "instance": (ingestor_payload or {}).get("instance", "unknown"),
+        "version": (ingestor_payload or {}).get("version", "unknown"),
+        "any_connected": any_connected,
+        "any_phone": any_phone,
+        "window_days": _CAPABILITY_WINDOW_DAYS,
+        "source": "ingestor" if ingestor_payload else "fallback",
     }
 
 
