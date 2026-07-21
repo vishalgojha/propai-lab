@@ -29,12 +29,12 @@ def test_shared_waba_is_available_to_super_admin(monkeypatch):
     monkeypatch.setattr(app, "storage", Storage())
     monkeypatch.setattr(
         app,
-        "_companion_get_config_value",
+        "_business_api_get_config_value",
         lambda key, _env_key="": values.get(key, ""),
     )
 
-    super_config = asyncio.run(app.companion_config(user={"id": "super-user"}, tenant_id="org-admin"))
-    broker_config = asyncio.run(app.companion_config(user={"id": "broker-user"}, tenant_id="org-broker"))
+    super_config = asyncio.run(app.business_api_config(user={"id": "super-user"}, tenant_id="org-admin"))
+    broker_config = asyncio.run(app.business_api_config(user={"id": "broker-user"}, tenant_id="org-broker"))
 
     assert super_config["waba_owner"] == "propai"
     assert super_config["outbound_allowed"] is True
@@ -83,7 +83,7 @@ def test_waba_webhook_stores_inbound_message_once(monkeypatch):
     )
     monkeypatch.setattr(app, "_waba_session_update", lambda *_args, **_kwargs: None)
 
-    result = asyncio.run(app.companion_webhook_receive(Request()))
+    result = asyncio.run(app.business_api_webhook_receive(Request()))
 
     raw_insert = next(sql for sql, _params in calls if "INSERT INTO raw_messages" in sql)
     assert "ON CONFLICT DO NOTHING" in raw_insert

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { getCompanionConfig, getConnectionState, type CompanionConfig, type ConnectionState } from "@/lib/api";
+import { getBusinessApiConfig, getConnectionState, type BusinessApiConfig, type ConnectionState } from "@/lib/api";
 
 const personTypes = ["Broker", "Buyer", "Owner", "Builder", "Developer", "Channel Partner", "Architect"];
 
@@ -17,11 +17,11 @@ function SourcePill({ label, connected }: { label: string; connected: boolean })
 }
 
 export default function PeoplePage() {
-  const [waba, setWaba] = useState<CompanionConfig | null>(null);
+  const [waba, setWaba] = useState<BusinessApiConfig | null>(null);
   const [whatsapp, setWhatsapp] = useState<ConnectionState | null>(null);
 
   useEffect(() => {
-    getCompanionConfig().then(setWaba).catch(() => setWaba(null));
+    getBusinessApiConfig().then(setWaba).catch(() => setWaba(null));
     getConnectionState().then(setWhatsapp).catch(() => setWhatsapp(null));
   }, []);
 

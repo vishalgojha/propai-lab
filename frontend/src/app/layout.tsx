@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { motion, useReducedMotion } from "framer-motion";
 import "./globals.css";
-import { getPhones, searchMessages, getAuthMe, getCompanionConfig, CompanionConfig, getProfile, getWhatsAppStatus, isLiveWhatsAppConnection, type Phone, type WhatsAppStatus } from "@/lib/api";
+import { getPhones, searchMessages, getAuthMe, getBusinessApiConfig, BusinessApiConfig, getProfile, getWhatsAppStatus, isLiveWhatsAppConnection, type Phone, type WhatsAppStatus } from "@/lib/api";
 import {
   MessageSquare,
   BarChart3,
@@ -193,7 +193,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [offline, setOffline] = useState(false);
   const [profile, setProfile] = useState<{ auth_user_id?: string; phone: string; first_name: string; last_name?: string; email?: string; city?: string } | null>(null);
-  const [wabaConfig, setWabaConfig] = useState<CompanionConfig | null>(null);
+  const [wabaConfig, setWabaConfig] = useState<BusinessApiConfig | null>(null);
   const [liveStatus, setLiveStatus] = useState<WhatsAppStatus | null>(null);
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const { signOut: authSignOut } = useAuth();
@@ -361,7 +361,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
       }
       if (status) setLiveStatus(status);
     };
-    void getCompanionConfig(15000).then((config) => {
+    void getBusinessApiConfig(15000).then((config) => {
       setWabaConfig(config);
     }).catch(() => {});
     load();

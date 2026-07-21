@@ -6,9 +6,9 @@ import type { FormEvent } from "react";
 import { useEffect, useState } from "react";
 import { ExternalLink, Copy, Check, Eye, EyeOff } from "lucide-react";
 import {
-  getCompanionConfig,
-  saveCompanionConfig,
-  type CompanionConfig,
+  getBusinessApiConfig,
+  saveBusinessApiConfig,
+  type BusinessApiConfig,
 } from "@/lib/api";
 
 const PROPAI_WABA_NUMBER = "+917021045254";
@@ -65,7 +65,7 @@ function MetaLink({ href, children }: { href: string; children: React.ReactNode 
 }
 
 export default function WabaPage() {
-  const [waba, setWaba] = useState<CompanionConfig | null>(null);
+  const [waba, setWaba] = useState<BusinessApiConfig | null>(null);
   const [businessNumber, setBusinessNumber] = useState("");
   const [phoneNumberId, setPhoneNumberId] = useState("");
   const [accessToken, setAccessToken] = useState("");
@@ -77,7 +77,7 @@ export default function WabaPage() {
   const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
-    getCompanionConfig()
+    getBusinessApiConfig()
       .then((cfg) => {
         setWaba(cfg);
         setLoadError(null);
@@ -132,7 +132,7 @@ export default function WabaPage() {
     }
 
     try {
-      const next = await saveCompanionConfig({
+      const next = await saveBusinessApiConfig({
         whatsapp_business_number: nextBusinessNumber || undefined,
         phone_number_id: nextPhoneNumberId || undefined,
         access_token: nextAccessToken || undefined,
@@ -142,7 +142,7 @@ export default function WabaPage() {
       setAccessToken("");
       setVerifyToken("");
       setEditing(false);
-      const config = await getCompanionConfig().catch(() => null);
+      const config = await getBusinessApiConfig().catch(() => null);
       if (config) setWaba(config);
       setStatus("Configuration saved.");
     } catch (error) {
