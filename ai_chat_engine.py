@@ -7,7 +7,7 @@ import pandas as pd
 from openai import OpenAI
 import time
 
-MODEL = os.getenv("DOUBLEWORD_MODEL", "Qwen/Qwen3.6-35B-A3B-FP8")
+MODEL = os.getenv("DOUBLEWORD_MODEL", "").strip()
 BASE_URL = os.getenv("DOUBLEWORD_API_URL", "https://api.doubleword.ai/v1")
 _lab_dir = os.path.realpath(os.path.dirname(os.path.abspath(__file__)))
 _propai_data = os.path.realpath(os.path.join(_lab_dir, "..", "propai", "data"))
@@ -2252,11 +2252,8 @@ def get_conversational_reply(messages, api_key=None, model=None, broker=None):
 
 def _get_fallback_model() -> str:
     """Return the model name from the active provider chain."""
-    try:
-        from llm import get_model as _fb_model
-        return _fb_model()
-    except Exception:
-        return "Qwen/Qwen3.6-35B-A3B-FP8"
+    from llm import get_model as _fb_model
+    return _fb_model()
 
 
 def get_model_reply(messages, sources, api_key=None, db_path=None, model=None, base_url=None, max_tool_rounds=5, _depth=0, tenant_id: str | None = None):

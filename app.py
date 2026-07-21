@@ -4574,7 +4574,8 @@ def _ai_promote_with_key(system: str, prompt: str, api_key: str) -> str | None:
     try:
         from llm import get_client, get_model
         client = get_client() if not api_key else OpenAI(api_key=api_key, base_url="https://api.doubleword.ai/v1")
-        model = get_model() if not api_key else "Qwen/Qwen3.6-35B-A3B-FP8"
+        # A browser-supplied key can override credentials, never the configured model.
+        model = get_model()
         resp = client.chat.completions.create(
             model=model,
             messages=[{"role": "system", "content": system}, {"role": "user", "content": prompt}],
@@ -5519,7 +5520,7 @@ def _assert_model_url_match(model: str, base_url: str) -> None:
     known_mappings = [
         (["nvidia/"], ["integrate.api.nvidia.com"]),
         (["gemini-"], ["generativelanguage.googleapis.com"]),
-        (["Qwen/", "deepseek-ai/", "qwen-"], ["api.doubleword.ai"]),
+        (["deepseek-ai/"], ["api.doubleword.ai"]),
         (["llama-", "mixtral-"], ["api.groq.com", "api.cerebras.ai"]),
     ]
     model_lower = model.lower()
@@ -7615,10 +7616,13 @@ def _doubleword_error_response(exc: Exception) -> JSONResponse:
 
 @app.get("/api/ai/config")
 async def ai_config(user: dict = Depends(require_user)):
+    import llm as _llm
+    info = _llm.get_provider_info()
     return {
-        "has_server_key": bool(DOUBLEWORD_API_KEY),
-        "base_url": chat_engine.BASE_URL,
-        "model": chat_engine.MODEL,
+        "has_server_key": info.get("provider_name") != "none",
+        "base_url": info.get("base_url", ""),
+        "model": info.get("model_name", ""),
+        "provider": info.get("provider_name", "none"),
     }
 
 
@@ -10072,7 +10076,9 @@ def _iso_now() -> str:
 def _generate_batch_jsonl(max_messages: int = 0) -> tuple[list[dict], str]:
     """Generate JSONL lines for observation extraction batch. Returns (rows, jsonl_path)."""
     import json
-    from ai_chat_engine import _OBSERVATION_PROMPT, MODEL as _MODEL
+    from ai_chat_engine import _OBSERVATION_PROMPT
+    from llm import get_model
+    model_name = get_model()
 
     out_dir = Path("/tmp/opencode")
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -10101,7 +10107,7 @@ def _generate_batch_jsonl(max_messages: int = 0) -> tuple[list[dict], str]:
             "method": "POST",
             "url": "/v1/chat/completions",
             "body": {
-                "model": _MODEL,
+                "model": model_name,
                 "messages": [
                     {"role": "system", "content": _OBSERVATION_PROMPT},
                     {"role": "user", "content": text},
@@ -15334,9 +15340,11 @@ async def _probe_provider(api_key: str, base_url: str, model_name: str, timeout_
              "error_kind": "missing_credentials", "error_msg": "no API key"}
     if not api_key or not base_url:
         return empty
+    if not model_name:
+        return {**empty, "error_kind": "missing_model", "error_msg": "no model configured"}
     url = base_url.rstrip("/") + "/chat/completions"
     payload = {
-        "model": model_name or "gpt-4o-mini",
+        "model": model_name,
         "messages": [{"role": "user", "content": "Respond with exactly: OK"}],
         "max_tokens": 10,
     }

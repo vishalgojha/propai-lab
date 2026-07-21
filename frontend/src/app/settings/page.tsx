@@ -116,7 +116,7 @@ export default function SettingsPage() {
             type="text"
             value={doublewordModel}
             onChange={(event) => setDoublewordModel(event.target.value)}
-            placeholder={aiConfig?.model || "Qwen/Qwen3.6-35B-A3B-FP8"}
+            placeholder={aiConfig?.model || "Configured server model"}
             className="w-full rounded-lg border border-white/10 bg-zinc-800 px-3 py-2 text-sm text-white outline-none focus:border-[#3EE88A]"
           />
           <span className="mt-1 block text-xs text-zinc-500">
@@ -143,7 +143,7 @@ export default function SettingsPage() {
           </div>
           <div>
             <div className="text-[10px] text-zinc-500 uppercase tracking-wider">Model</div>
-            <div className="text-white break-all">{doublewordModel || aiConfig?.model || "Qwen/Qwen3.6-35B-A3B-FP8"}</div>
+            <div className="text-white break-all">{doublewordModel || aiConfig?.model || "Not configured"}</div>
           </div>
         </div>
 
