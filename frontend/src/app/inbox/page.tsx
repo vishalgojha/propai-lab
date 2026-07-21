@@ -998,8 +998,6 @@ function InboxPageInner({ defaultView }: InboxPageInnerProps) {
   const activeSlug = useMemo(() => slugs.find(s => s.slug === currentSlug) || null, [slugs, currentSlug]);
   const [brokerFeed, setBrokerFeed] = useState<any[]>([]);
   const [loadingBrokerFeed, setLoadingBrokerFeed] = useState(defaultView !== "groups");
-  const [marketFeed, setMarketFeed] = useState<BrokerObservationRow[]>([]);
-  const [loadingMarketFeed, setLoadingMarketFeed] = useState(defaultView !== "groups");
   const [brokerOffset, setBrokerOffset] = useState(0);
   const [marketAccess, setMarketAccess] = useState<api.MarketAccessStatus | null>(null);
   const [loadingMarketAccess, setLoadingMarketAccess] = useState(true);
@@ -1007,7 +1005,6 @@ function InboxPageInner({ defaultView }: InboxPageInnerProps) {
   const [whatsappStatus, setWhatsappStatus] = useState<api.WhatsAppStatus | null>(null);
   const [whatsWowOpen, setWhatsWowOpen] = useState(false);
   const [selectedBrokerObservations, setSelectedBrokerObservations] = useState<any[]>([]);
-  const [selectedMarketObservation, setSelectedMarketObservation] = useState<BrokerObservationRow | null>(null);
   const [loadingBrokerObs, setLoadingBrokerObs] = useState(false);
   const [brokerObsError, setBrokerObsError] = useState("");
   const brokerObservationRequestRef = useRef<AbortController | null>(null);
@@ -1533,7 +1530,6 @@ return {
     autoSelectedThreadRef.current = "";
     setSelectedBroker(null);
     setSelectedBrokerObservations([]);
-    setSelectedMarketObservation(null);
     setSelectedMsg(null);
     setSelectedMsgDetails(null);
     setConversationMessages([]);
@@ -1611,21 +1607,6 @@ return {
     }
   }, [connectionPending, brokerOffset]);
 
-  const loadMarketFeed = useCallback(async (requestedOffset = brokerOffset) => {
-    if (connectionPending) {
-      setMarketFeed([]);
-      return;
-    }
-    setLoadingMarketFeed(true);
-    try {
-      setMarketFeed(await api.getObservationsFeed(BROKER_PAGE_SIZE, requestedOffset));
-    } catch (e) {
-      console.error("Failed to load market observations:", e);
-    } finally {
-      setLoadingMarketFeed(false);
-    }
-  }, [connectionPending, brokerOffset]);
-
   // Load broker feed when switching to a slug whose view_type needs brokers feed
   const prevBrokerOffsetRef = useRef(0);
   const brokerInitialLoadDone = useRef(false);
@@ -1636,14 +1617,14 @@ return {
     if (!brokerInitialLoadDone.current) {
       brokerInitialLoadDone.current = true;
       prevBrokerOffsetRef.current = brokerOffset;
-      loadMarketFeed(brokerOffset);
+      loadBrokerFeed(brokerOffset);
       return;
     }
     if (brokerOffset !== prevBrokerOffsetRef.current) {
       prevBrokerOffsetRef.current = brokerOffset;
-      loadMarketFeed(brokerOffset);
+      loadBrokerFeed(brokerOffset);
     }
-  }, [activeSlug, brokerOffset, connectionPending, currentSlug, loadMarketFeed]);
+  }, [activeSlug, brokerOffset, connectionPending, currentSlug, loadBrokerFeed]);
 
   // Scroll to bottom of conversation thread when new messages arrive
   useEffect(() => {
@@ -2183,28 +2164,6 @@ return {
         return haystack.includes(query);
       });
 
-  const filteredMarketFeed = !query
-    ? marketFeed
-    : marketFeed.filter((obs) =>
-        [
-          obs.summary_title,
-          obs.intent,
-          obs.observation_type,
-          obs.bhk,
-          obs.property_type,
-          obs.price,
-          obs.micro_market,
-          obs.location_raw,
-          obs.building_name,
-          obs.broker_name,
-          obs.raw_message,
-        ]
-          .filter(Boolean)
-          .join(" ")
-          .toLowerCase()
-          .includes(query)
-      );
-
   const filteredDirectChats = !query
     ? directChats
     : directChats.filter((d: any) => {
@@ -2250,18 +2209,18 @@ return {
     .sort((a, b) => (messageDateValue(b.latest)?.getTime() || 0) - (messageDateValue(a.latest)?.getTime() || 0));
 
   const isBrokerView = activeSlug?.view_type === "brokers" || (!activeSlug && currentSlug === "brokers");
-  const showThreadFallback = !isBrokerView || (!loadingMarketFeed && filteredMarketFeed.length === 0);
-  const brokerHasMore = marketFeed.length >= BROKER_PAGE_SIZE;
+  const showThreadFallback = !isBrokerView || (!loadingBrokerFeed && filteredBrokerFeed.length === 0);
+  const brokerHasMore = brokerFeed.length >= BROKER_PAGE_SIZE;
   const brokerPage = Math.floor(brokerOffset / BROKER_PAGE_SIZE) + 1;
   const messagePage = Math.floor(offset / PAGE_SIZE) + 1;
 
   const leftListEmpty = (() => {
-    if (loadingSlugs || loadingLeft || (isBrokerView && loadingMarketFeed)) return false;
-    if (isBrokerView) return filteredMarketFeed.length === 0 && threadFallbackItems.length === 0;
+    if (loadingSlugs || loadingLeft || (isBrokerView && loadingBrokerFeed)) return false;
+    if (isBrokerView) return filteredBrokerFeed.length === 0 && threadFallbackItems.length === 0;
     return threadFallbackItems.length === 0;
   })();
   const initialLeftPanelLoading = isBrokerView
-    ? marketFeed.length === 0 && (loadingMarketFeed || loadingSlugs)
+    ? brokerFeed.length === 0 && (loadingBrokerFeed || loadingSlugs)
     : threadFallbackItems.length === 0 && loadingLeft;
 
   const groupedConversationMessages: [string, api.RawMessage[][]][] = (() => {
@@ -2873,18 +2832,6 @@ return {
     loadMessageDetails(rawId, { setSelectedRaw: true, preserveProfiles: true });
   };
 
-  const selectMarketObservation = (obs: BrokerObservationRow) => {
-    const rawId = Number(obs.latest_raw_message_id || obs.raw_message_id);
-    setSelectedMarketObservation(obs);
-    setSelectedBroker(null);
-    setSelectedBrokerObservations([]);
-    if (isMobile) setMobileView("conversation");
-    if (Number.isFinite(rawId) && rawId > 0) {
-      updateUrlObservation(rawId);
-      void loadMessageDetails(rawId, { setSelectedRaw: true });
-    }
-  };
-
   const loadBrokerDetails = async (name: string, phone: string) => {
     try {
       const res = await api.findBroker(name, phone);
@@ -3171,26 +3118,20 @@ return {
                 <div className="hidden sm:block text-[10px] text-zinc-500 mt-0.5">
                   {isGroupsView
                     ? "Raw WhatsApp groups with inline PropAI composer"
-                    : "Structured listings and requirements extracted from WhatsApp groups"}
+                    : "WhatsApp conversations with PropAI memory"}
                 </div>
               </div>
               <button
                 onClick={() => {
                   resetSelectionForPageChange();
-                  if (isBrokerView) {
-                    setBrokerOffset(0);
-                    prevBrokerOffsetRef.current = 0;
-                    void loadMarketFeed(0);
-                  } else {
-                    setOffset(0);
-                    prevOffsetRef.current = 0;
-                    loadFeed(false, 0);
-                  }
+                  setOffset(0);
+                  prevOffsetRef.current = 0;
+                  loadFeed(false, 0);
                 }}
                 className="text-[10px] sm:text-xs text-[#3EE88A] hover:underline"
-                disabled={isBrokerView ? loadingMarketFeed : loadingLeft}
+                disabled={loadingLeft}
               >
-                {(isBrokerView ? loadingMarketFeed : loadingLeft) ? "Refreshing..." : <><span className="sm:hidden">↻</span><span className="sm:hidden ml-0.5">Refresh</span><span className="hidden sm:inline">Refresh</span></>}
+                {loadingLeft ? "Refreshing..." : <><span className="sm:hidden">↻</span><span className="sm:hidden ml-0.5">Refresh</span><span className="hidden sm:inline">Refresh</span></>}
               </button>
               <button
                 onClick={() => setWhatsWowOpen(true)}
@@ -3214,7 +3155,7 @@ return {
               {slugs.length === 0 ? (
                 <>
                   <div className="flex-1 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wider text-center text-zinc-500 bg-zinc-800">
-                    {isGroupsView ? "Groups" : "Market"}
+                    {isGroupsView ? "Groups" : "Brokers"}
                   </div>
                 </>
               ) : (
@@ -3231,7 +3172,7 @@ return {
                         : "text-zinc-500 hover:text-white"
                     }`}
                   >
-                    {sv.view_type === "brokers" ? "Market" : sv.label}
+                    {sv.label}
                   </button>
                 ))
               )}
@@ -3327,54 +3268,96 @@ return {
             ) : leftListEmpty ? (
               <div className="p-8 text-center text-xs text-zinc-500">
                 {isBrokerView
-                  ? "No market opportunities have been extracted from group messages yet."
+                  ? "No broker entities extracted from group messages yet."
                   : "No chats found"}
               </div>
             ) : (
               <>
-                {isBrokerView && loadingMarketFeed && marketFeed.length > 0 && (
-                  <div className="px-3 py-2 text-center text-[10px] text-zinc-600">Refreshing market feed...</div>
+                {isBrokerView && loadingBrokerFeed && brokerFeed.length > 0 && (
+                  <div className="px-3 py-2 text-center text-[10px] text-zinc-600">Refreshing broker feed...</div>
                 )}
                 {isBrokerView &&
-                  filteredMarketFeed.map((obs) => {
-                    const rawId = obs.latest_raw_message_id || obs.raw_message_id;
+                  filteredBrokerFeed.map((b) => {
                     const isSelected =
-                      Boolean(selectedMarketObservation?.id && obs.id && selectedMarketObservation.id === obs.id)
-                      || Boolean(selectedMarketObservation?.latest_parsed_id && obs.latest_parsed_id && selectedMarketObservation.latest_parsed_id === obs.latest_parsed_id);
-                    const opportunityLabel = marketOpportunityLabel({
-                      intent: obs.intent,
-                      observation_type: obs.observation_type,
-                      text: `${obs.summary_title || ""} ${obs.raw_message || ""}`,
-                    });
-                    const source = obs.evidence_list?.find((item) => item.type === "group")?.source;
+                      (selectedBroker?.identity_key && selectedBroker.identity_key === (b.identity_key || b.primary_phone || b.id)) ||
+                      (normalizeRealPhone(selectedBroker?.phone || selectedBroker?.id || "") === normalizeRealPhone(b.primary_phone || "")) ||
+                      (selectedBroker?.id && selectedBroker.id === (b.identity_key || b.primary_phone || b.id));
+                    const menuOpen = openMenuBroker === b.primary_phone;
+                    const isActiveNow = b.last_active && now - new Date(b.last_active).getTime() < 300000;
+                    const latestIntent = b.latest_intent || (b.latest_title || "").match(/^(Sale|Rent|Lease|Buy|Requirement)/i)?.[1];
+                    const brokerPhoneDigits = normalizeRealPhone(b.primary_phone || "");
+                    const brokerIdentityHint = brokerPhoneDigits ? `Phone ending ${brokerPhoneDigits.slice(-4)}` : "No phone anchor";
                     return (
-                      <button
-                        key={`${rawId || "observation"}-${obs.id}`}
-                        type="button"
-                        onClick={() => selectMarketObservation(obs)}
-                        className={`w-full text-left p-2.5 lg:p-3 transition-colors select-none ${
-                          isSelected ? "bg-white/[0.055] border-l border-white/40" : "hover:bg-white/[0.035]"
-                        }`}
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <span className={`badge ${marketOpportunityColor(opportunityLabel)} text-[9px]`}>
-                            {opportunityLabel}
-                          </span>
-                          <span className="text-[9px] text-zinc-600">{formatAgeShort(obs.last_seen)}</span>
+                      <div key={b.primary_phone} className="relative">
+                        <button
+                          onClick={() => selectBroker(b)}
+                          className={`w-full text-left p-2.5 lg:p-3 transition-colors select-none ${
+                            isSelected ? "bg-white/[0.055] border-l border-white/40" : "hover:bg-white/[0.035]"
+                          }`}
+                        >
+                          <div className="flex items-center justify-between mb-1">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <div className="relative">
+                                <BrokerAvatar phone={b.primary_phone} size="sm" />
+                                {isActiveNow && <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-emerald-400 border border-[#0a0e13]" />}
+                              </div>
+                              <span className="text-[12px] font-bold text-white truncate max-w-[160px]">
+                                {stripEmojis(b.canonical_name || b.name) || "Unknown"}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-[10px] font-bold text-white tabular-nums">
+                                {b.observation_count}
+                              </span>
+                              <div onClick={(e) => { e.stopPropagation(); setOpenMenuBroker(menuOpen ? null : b.primary_phone); }} className="w-5 h-5 flex items-center justify-center rounded hover:bg-[rgba(255,255,255,0.06)] text-zinc-500 hover:text-white transition-colors cursor-pointer">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg>
+                              </div>
+                            </div>
+                          </div>
+                          <div className="mb-1 text-[9px] font-medium text-zinc-600">
+                            {brokerIdentityHint}
+                          </div>
+                          {b.latest_title && (
+                            <div className="text-[10px] text-zinc-400 leading-relaxed truncate mb-1.5">
+                              <span className="text-zinc-500">Last: </span>
+                              {(() => {
+                                const title = stripEmojis(b.latest_title);
+                                if (latestIntent) {
+                                  const stripped = title.replace(new RegExp(`^${latestIntent}\\s*[|•-]?\\s*`, "i"), "");
+                                  return <><span className="font-semibold text-zinc-300">{latestIntent}</span>{stripped ? ` ${stripped}` : ""}</>;
+                                }
+                                return <span>{title}</span>;
+                              })()}
+                            </div>
+                          )}
+                          <div className="flex items-center gap-2 text-[9px] text-zinc-500">
+                            {b.group_evidence_count > 0 && (
+                              <span>{b.group_evidence_count}g</span>
+                            )}
+                            {b.dm_evidence_count > 0 && (
+                              <span>{b.dm_evidence_count}dm</span>
+                            )}
+                            {b.last_active && (
+                              <>
+                                <span>·</span>
+                                <span>{formatAgeShort(b.last_active)}</span>
+                              </>
+                            )}
+                          </div>
+                          </button>
+                          {menuOpen && (
+                            <div className="absolute right-2 top-3 z-50 bg-zinc-800 border border-white/10 rounded-lg shadow-xl py-1 min-w-[140px]">
+                              <button
+                                onClick={(e) => { e.stopPropagation(); handleHideBroker(b.primary_phone); }}
+                                className="w-full text-left px-3 py-1.5 text-[11px] text-white hover:bg-[rgba(255,255,255,0.06)] flex items-center gap-2"
+                              >
+                                <EyeOff className="w-3 h-3" strokeWidth={1.5} />
+                                Hide Broker
+                              </button>
+                            </div>
+                          )}
                         </div>
-                        <div className="mt-1.5 text-[12px] font-semibold leading-relaxed text-zinc-100 line-clamp-2">
-                          {stripEmojis(obs.summary_title || obs.raw_message) || "Parsed market opportunity"}
-                        </div>
-                        <div className="mt-1 flex flex-wrap gap-x-2 text-[10px] text-zinc-500">
-                          {[obs.property_type, obs.bhk, obs.price != null ? formatCurrency(obs.price, obs.price_unit) : "", obs.micro_market || obs.location_raw]
-                            .filter(Boolean)
-                            .map((detail) => <span key={String(detail)}>• {stripEmojis(String(detail))}</span>)}
-                        </div>
-                        <div className="mt-1.5 truncate text-[9px] text-zinc-600">
-                          {stripEmojis(source || "WhatsApp group")} · {stripEmojis(obs.broker_name || "Broker not resolved")}
-                        </div>
-                      </button>
-                    );
+                      );
                     })
                   }
                   {showThreadFallback && threadFallbackItems.map((item) => {
@@ -3504,66 +3487,6 @@ return {
                 </div>
               </div>
             </div>
-          ) : isBrokerView && selectedMarketObservation ? (
-            <>
-              <div className="border-b border-white/10 bg-black/80 px-5 py-4">
-                <div className="flex items-center gap-3">
-                  {isMobile && (
-                    <button
-                      onClick={() => setMobileView("list")}
-                      className="p-1 -ml-1 rounded-lg text-zinc-400 hover:text-white hover:bg-white/5 transition-colors touch-target"
-                      aria-label="Back to market inbox"
-                    >
-                      <ChevronLeft className="w-5 h-5" />
-                    </button>
-                  )}
-                  <div className="flex h-9 w-9 items-center justify-center rounded-full bg-[#3EE88A]/10 text-[#3EE88A]">
-                    <ClipboardList className="h-4 w-4" strokeWidth={1.6} />
-                  </div>
-                  <div className="min-w-0">
-                    <h3 className="text-sm font-bold text-white">Market opportunity</h3>
-                    <div className="mt-0.5 text-[10px] text-zinc-500">
-                      Extracted from {stripEmojis(selectedMarketObservation.evidence_list?.find((item) => item.type === "group")?.source || "a WhatsApp group")}
-                    </div>
-                  </div>
-                </div>
-              </div>
-              <div className="flex-1 overflow-y-auto px-5 py-5">
-                <div className="mx-auto max-w-2xl">
-                  <div className="text-[10px] font-semibold uppercase tracking-wider text-zinc-600">{marketOpportunityLabel({ intent: selectedMarketObservation.intent, observation_type: selectedMarketObservation.observation_type, text: `${selectedMarketObservation.summary_title || ""} ${selectedMarketObservation.raw_message || ""}` })}</div>
-                  <h4 className="mt-2 text-lg font-semibold leading-relaxed text-white">
-                    {stripEmojis(selectedMarketObservation.summary_title || selectedMarketObservation.raw_message) || "Parsed market opportunity"}
-                  </h4>
-                  <ul className="mt-5 grid gap-x-8 gap-y-3 text-sm text-zinc-300 sm:grid-cols-2">
-                    {[
-                      ["Property", selectedMarketObservation.property_type],
-                      ["Configuration", selectedMarketObservation.bhk],
-                      ["Price", selectedMarketObservation.price != null ? formatCurrency(selectedMarketObservation.price, selectedMarketObservation.price_unit) : ""],
-                      ["Area", selectedMarketObservation.area_sqft ? `${selectedMarketObservation.area_sqft} sqft` : ""],
-                      ["Furnishing", selectedMarketObservation.furnishing],
-                      ["Locality", selectedMarketObservation.micro_market || selectedMarketObservation.location_raw],
-                      ["Building", selectedMarketObservation.building_name],
-                      ["Posted by", selectedMarketObservation.broker_name],
-                      ["Posted", selectedMarketObservation.last_seen ? formatAgeShort(selectedMarketObservation.last_seen) : ""],
-                    ].filter(([, value]) => Boolean(value)).map(([label, value]) => (
-                      <li key={label} className="flex gap-2"><span className="text-zinc-600">•</span><span><span className="text-zinc-500">{label}: </span>{stripEmojis(String(value))}</span></li>
-                    ))}
-                  </ul>
-                  {selectedMarketObservation.raw_message && (
-                    <div className="mt-7 border-t border-white/10 pt-5">
-                      <div className="text-[10px] font-semibold uppercase tracking-wider text-zinc-600">Original group post</div>
-                      <WhatsAppMessage
-                        text={selectedMarketObservation.raw_message}
-                        sender={selectedMarketObservation.broker_name || ""}
-                        senderPhone={selectedMarketObservation.broker_phone || ""}
-                        flatMultiBlocks
-                        className="mt-2 text-sm leading-relaxed text-zinc-300"
-                      />
-                    </div>
-                  )}
-                </div>
-              </div>
-            </>
           ) : activeSlug?.view_type === "brokers" && selectedBroker ? (
             <>
               {/* Observation Timeline Header */}
@@ -3659,8 +3582,8 @@ return {
                     </button>
                   </div>
                 ) : groupedBrokerObservations.length === 0 ? (
-                  <div className="px-5 py-7 text-center">
-                    <div className="mx-auto flex h-10 w-10 items-center justify-center text-zinc-400">
+                  <div className="rounded-xl border border-white/10 bg-zinc-950/60 p-5 text-center">
+                    <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-md border border-white/10 bg-white/[0.035] text-zinc-400">
                       <ClipboardList className="h-5 w-5" strokeWidth={1.6} />
                     </div>
                     <div className="mt-3 text-sm font-semibold text-white">No matching items yet</div>
@@ -3670,11 +3593,11 @@ return {
                         : "This broker card has not resolved to parsed items yet. The feed item is still usable for navigation and WhatsApp actions."}
                     </div>
                     {selectedBroker.latest_title && (
-                      <div className="mx-auto mt-5 max-w-[560px] text-left">
+                      <div className="mx-auto mt-4 max-w-[560px] text-left text-xs leading-relaxed text-zinc-500">
                         <div className="text-[10px] font-semibold uppercase tracking-wider text-zinc-600">
                           Latest item
                         </div>
-                        <div className="mt-1 text-sm font-semibold leading-relaxed text-zinc-200">
+                        <div className="mt-1 text-sm font-semibold text-zinc-200">
                           <WhatsAppMessage
                             text={
                               selectedMsgDetails?.raw?.message ||
@@ -3690,26 +3613,25 @@ return {
                             className="text-sm text-zinc-200"
                           />
                         </div>
-                        <ul className="mt-3 grid gap-1.5 text-[11px] text-zinc-500 sm:grid-cols-2">
+                        <div className="mt-2 flex flex-wrap items-center gap-2 text-[10px]">
                           {selectedBroker.latest_intent && (
-                            <li className="flex items-center gap-2">
-                              <span className="text-zinc-700">•</span>
-                              <span className={`badge ${intentColor(selectedBroker.latest_intent)}`}>
-                                {intentLabel(selectedBroker.latest_intent)}
-                              </span>
-                            </li>
+                            <span className={`badge ${intentColor(selectedBroker.latest_intent)}`}>
+                              {intentLabel(selectedBroker.latest_intent)}
+                            </span>
                           )}
                           {selectedBroker.latest_micro_market && (
-                            <li className="flex items-center gap-2">
-                              <span className="text-zinc-700">•</span>
-                              <span>{selectedBroker.latest_micro_market}</span>
-                            </li>
+                            <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-zinc-300">
+                              {selectedBroker.latest_micro_market}
+                            </span>
                           )}
-                          <li className="flex items-center gap-2"><span className="text-zinc-700">•</span><span>{selectedBroker.observation_count || 0} market items</span></li>
-                          <li className="flex items-center gap-2"><span className="text-zinc-700">•</span><span>{selectedBroker.building_count || 0} buildings</span></li>
-                          <li className="flex items-center gap-2"><span className="text-zinc-700">•</span><span>{(selectedBroker.channels || []).length || 0} channels</span></li>
-                          <li className="flex items-center gap-2"><span className="text-zinc-700">•</span><span>{selectedBroker.last_seen ? formatAgeShort(selectedBroker.last_seen) : "Unknown"}</span></li>
-                        </ul>
+                          <span>{selectedBroker.observation_count || 0} market items</span>
+                          <span>•</span>
+                          <span>{selectedBroker.building_count || 0} buildings</span>
+                          <span>•</span>
+                          <span>{(selectedBroker.channels || []).length || 0} channels</span>
+                          <span>•</span>
+                          <span>{selectedBroker.last_seen ? formatAgeShort(selectedBroker.last_seen) : "Unknown"}</span>
+                        </div>
                       </div>
                     )}
                   </div>
