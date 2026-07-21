@@ -43,28 +43,29 @@ var (
 // ── Status ──────────────────────────────────────────────────────────────────
 
 type Status struct {
-	BrokerID              string `json:"broker_id,omitempty"`
-	Connected             bool   `json:"connected"`
-	ConnectionState       string `json:"connection_state"`
-	QR                    string `json:"qr,omitempty"`
-	QRAvailable           bool   `json:"qr_available,omitempty"`
-	PhoneNumber           string `json:"phone_number,omitempty"`
-	DisplayName           string `json:"display_name,omitempty"`
-	InstanceName          string `json:"instance_name,omitempty"`
-	ConnectedSince        string `json:"connected_since,omitempty"`
-	LastMessageAt         string `json:"last_message_at,omitempty"`
-	DisconnectReason      int    `json:"disconnect_reason,omitempty"`
-	SendPort              int    `json:"send_port,omitempty"`
-	ReconnectCount        int    `json:"reconnect_count,omitempty"`
-	ConsecutiveFailures   int    `json:"consecutive_failures,omitempty"`
-	TotalMessagesReceived int64  `json:"total_messages_received,omitempty"`
-	TotalOutgoing         int64  `json:"total_outgoing,omitempty"`
-	TotalLocations        int64  `json:"total_locations,omitempty"`
-	TotalContacts         int64  `json:"total_contacts,omitempty"`
-	TotalReactions        int64  `json:"total_reactions,omitempty"`
-	LastDisconnectAt      string `json:"last_disconnect_at,omitempty"`
-	SocketState           string `json:"socket_state,omitempty"`
-	HeartbeatAt           string `json:"heartbeat_at,omitempty"`
+	BrokerID              string           `json:"broker_id,omitempty"`
+	Connected             bool             `json:"connected"`
+	ConnectionState       string           `json:"connection_state"`
+	QR                    string           `json:"qr,omitempty"`
+	QRAvailable           bool             `json:"qr_available,omitempty"`
+	PhoneNumber           string           `json:"phone_number,omitempty"`
+	DisplayName           string           `json:"display_name,omitempty"`
+	InstanceName          string           `json:"instance_name,omitempty"`
+	ConnectedSince        string           `json:"connected_since,omitempty"`
+	LastMessageAt         string           `json:"last_message_at,omitempty"`
+	DisconnectReason      int              `json:"disconnect_reason,omitempty"`
+	SendPort              int              `json:"send_port,omitempty"`
+	ReconnectCount        int              `json:"reconnect_count,omitempty"`
+	ConsecutiveFailures   int              `json:"consecutive_failures,omitempty"`
+	TotalMessagesReceived int64            `json:"total_messages_received,omitempty"`
+	TotalOutgoing         int64            `json:"total_outgoing,omitempty"`
+	TotalLocations        int64            `json:"total_locations,omitempty"`
+	TotalContacts         int64            `json:"total_contacts,omitempty"`
+	TotalReactions        int64            `json:"total_reactions,omitempty"`
+	MessageTypeCounts     map[string]int64 `json:"message_type_counts,omitempty"`
+	LastDisconnectAt      string           `json:"last_disconnect_at,omitempty"`
+	SocketState           string           `json:"socket_state,omitempty"`
+	HeartbeatAt           string           `json:"heartbeat_at,omitempty"`
 }
 
 // ── Broker session ─────────────────────────────────────────────────────────
@@ -87,6 +88,7 @@ type BrokerSession struct {
 	totalLocations    int64
 	totalContacts     int64
 	totalReactions    int64
+	totalByType       map[string]int64
 	statusFile        string
 }
 
@@ -125,6 +127,11 @@ func (s *BrokerSession) setStatus(st Status) {
 	st.TotalLocations = s.totalLocations
 	st.TotalContacts = s.totalContacts
 	st.TotalReactions = s.totalReactions
+	typeCounts := make(map[string]int64, len(s.totalByType))
+	for k, v := range s.totalByType {
+		typeCounts[k] = v
+	}
+	st.MessageTypeCounts = typeCounts
 	st.BrokerID = s.brokerID
 	st.InstanceName = instanceName
 	st.SendPort = parsePort(sendPort)
@@ -360,11 +367,12 @@ func (sm *SessionManager) restoreSessionWhenAvailable(brokerID string) {
 func (sm *SessionManager) newSession(brokerID string, device *store.Device) *BrokerSession {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &BrokerSession{
-		brokerID:   brokerID,
-		device:     device,
-		ctx:        ctx,
-		cancel:     cancel,
-		statusFile: fmt.Sprintf("/tmp/status_%s.json", brokerID),
+		brokerID:     brokerID,
+		device:       device,
+		ctx:          ctx,
+		cancel:       cancel,
+		totalByType:  map[string]int64{},
+		statusFile:   fmt.Sprintf("/tmp/status_%s.json", brokerID),
 		status: Status{
 			ConnectionState: "new",
 			SocketState:     "new",
@@ -801,6 +809,14 @@ func (sm *SessionManager) handleMessage(s *BrokerSession, evt *events.Message) {
 		"id":   info.Sender.String(),
 		"name": info.PushName,
 	}
+	// LID→PN resolution: WhatsApp increasingly uses LID JIDs (user@lid) instead
+	// of phone-number JIDs.  Look up the stored mapping so the Python backend
+	// can populate sender_phone for broker attribution.
+	if s.client != nil && s.client.Store != nil && s.client.Store.LIDs != nil && info.Sender.Server == "lid" {
+		if pn, err := s.client.Store.LIDs.GetPNForLID(s.ctx, info.Sender); err == nil && !pn.IsEmpty() {
+			sender["phone"] = pn.String()
+		}
+	}
 
 	payloadData := map[string]interface{}{
 		"key":              key,
@@ -811,6 +827,11 @@ func (sm *SessionManager) handleMessage(s *BrokerSession, evt *events.Message) {
 		"sender":           sender,
 		"instance":         instanceName,
 		"broker_id":        s.brokerID,
+	}
+	if msgType, ok := payloadData["message_type"].(string); ok && msgType != "" && msgType != "unknown" {
+		s.mu.Lock()
+		s.totalByType[msgType]++
+		s.mu.Unlock()
 	}
 	if media := sm.captureMedia(s, evt.Message, info.Chat.String(), info.ID); media != nil {
 		payloadData["media"] = media
@@ -1720,46 +1741,139 @@ func (sm *SessionManager) sendMediaHandler(w http.ResponseWriter, r *http.Reques
 
 // ── Capabilities handler ────────────────────────────────────────────────────
 
+type capabilityRow struct {
+	Name          string `json:"name"`
+	Status        string `json:"status"` // active, partial, captured_unused, not_available
+	Icon          string `json:"icon"`
+	Description   string `json:"description"`
+	EvidenceCount int64  `json:"evidence_count"`
+}
+
 func (sm *SessionManager) capabilitiesHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if !requireMethod(w, r, http.MethodGet) {
 		return
 	}
-	type cap struct {
-		Name   string `json:"name"`
-		Status string `json:"status"` // active, partial, captured_unused, not_available
-		Icon   string `json:"icon"`
+	capturedUnused := map[string]bool{
+		"Read Receipts":  true,
+		"Typing Presence": true,
 	}
-	capabilities := []cap{
-		{"Text Messages", "active", "MessageSquare"},
-		{"Images", "active", "Image"},
-		{"Video", "active", "Video"},
-		{"Audio", "active", "Mic"},
-		{"Documents", "active", "FileText"},
-		{"Stickers", "active", "Smile"},
-		{"Location", "active", "MapPin"},
-		{"Live Location", "active", "Navigation"},
-		{"Contact Cards", "active", "Users"},
-		{"Contact Arrays", "active", "Contact"},
-		{"Reactions", "active", "SmilePlus"},
-		{"Poll Creation", "active", "BarChart3"},
-		{"Poll Updates", "active", "Vote"},
-		{"Edited Messages", "active", "Pencil"},
-		{"Outgoing Messages", "active", "ArrowUpRight"},
-		{"History Sync", "active", "Clock"},
-		{"Read Receipts", "captured_unused", "CheckCheck"},
-		{"Typing Presence", "captured_unused", "Pencil"},
-		{"Profile Pictures", "active", "Camera"},
-		{"Group Directory", "active", "Users"},
-		{"Media Download", "active", "Download"},
-		{"Media Upload", "active", "Upload"},
-		{"Self-Chat Agent", "active", "Bot"},
+	alwaysOn := map[string]bool{
+		"Outgoing Messages": true,
+		"History Sync":      true,
+		"Profile Pictures":  true,
+		"Group Directory":   true,
+		"Media Download":    true,
+		"Media Upload":      true,
+		"Self-Chat Agent":   true,
 	}
+	typeKey := map[string]string{
+		"Text Messages":   "text",
+		"Images":          "image",
+		"Video":           "video",
+		"Audio":           "audio",
+		"Documents":       "document",
+		"Stickers":        "sticker",
+		"Location":        "location",
+		"Live Location":   "live_location",
+		"Contact Cards":   "contact",
+		"Contact Arrays":  "contacts_array",
+		"Reactions":       "reaction",
+		"Poll Creation":   "poll_creation",
+		"Poll Updates":    "poll_update",
+		"Edited Messages": "edited",
+	}
+	definitions := []capabilityRow{
+		{"Text Messages", "active", "MessageSquare", "Plain text from any group, with sender, group, and timestamp.", 0},
+		{"Images", "active", "Image", "Image messages: caption and sender captured; full media downloaded on demand.", 0},
+		{"Video", "active", "Video", "Video messages: caption plus thumbnail; full download on demand.", 0},
+		{"Audio", "active", "Mic", "Voice notes and audio files; transcribed automatically.", 0},
+		{"Documents", "active", "FileText", "PDFs and file attachments; filename and mimetype captured.", 0},
+		{"Stickers", "active", "Smile", "Sticker messages: metadata captured, sticker image not stored.", 0},
+		{"Location", "active", "MapPin", "Static shared locations: latitude, longitude, label, and address.", 0},
+		{"Live Location", "active", "Navigation", "Real-time location streams from any participant.", 0},
+		{"Contact Cards", "active", "Users", "Shared vCards: phone, name, and organisation extracted.", 0},
+		{"Contact Arrays", "active", "Contact", "Multi-contact shares parsed into individual cards.", 0},
+		{"Reactions", "active", "SmilePlus", "Emoji reactions on any observed message.", 0},
+		{"Poll Creation", "active", "BarChart3", "Polls created in groups: options and voters captured.", 0},
+		{"Poll Updates", "active", "Vote", "Per-option vote tally updates as votes come in.", 0},
+		{"Edited Messages", "active", "Pencil", "Edit events re-linked to the original message.", 0},
+		{"Outgoing Messages", "active", "ArrowUpRight", "Messages your phone sends, kept in sync for your own listings.", 0},
+		{"History Sync", "active", "Clock", "Initial backfill of recent messages on first connect.", 0},
+		{"Read Receipts", "captured_unused", "CheckCheck", "Blue-tick events captured but not yet surfaced in the UI.", 0},
+		{"Typing Presence", "captured_unused", "Pencil", "Typing indicators captured but not yet surfaced in the UI.", 0},
+		{"Profile Pictures", "active", "Camera", "Profile picture changes tracked per JID.", 0},
+		{"Group Directory", "active", "Users", "Group metadata: name, participants, admins, and subject changes.", 0},
+		{"Media Download", "active", "Download", "On-demand download of incoming media to workspace storage.", 0},
+		{"Media Upload", "active", "Upload", "Outbound media uploads for sending files, images, and video.", 0},
+		{"Self-Chat Agent", "active", "Bot", "Sends structured replies to your Message Yourself chat so PropAI can act on them.", 0},
+	}
+
+	typeCounts := sm.aggregateByType()
+	anyConnected := sm.anyConnected()
+	anySession := len(sm.List()) > 0
+
+	out := computeCapabilityStatuses(definitions, capturedUnused, alwaysOn, typeKey, typeCounts, anyConnected, anySession)
+
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"capabilities": capabilities,
+		"capabilities": out,
 		"instance":     instanceName,
 		"version":      "2.0.0",
+		"any_connected": anyConnected,
+		"any_session":  anySession,
 	})
+}
+
+// computeCapabilityStatuses applies the live-status rules to a canonical
+// capability list. Exported as a package-level function so it can be unit
+// tested without spinning up a SessionManager.
+func computeCapabilityStatuses(
+	definitions []capabilityRow,
+	capturedUnused map[string]bool,
+	alwaysOn map[string]bool,
+	typeKey map[string]string,
+	typeCounts map[string]int64,
+	anyConnected bool,
+	anySession bool,
+) []capabilityRow {
+	out := make([]capabilityRow, 0, len(definitions))
+	for _, def := range definitions {
+		entry := def
+		switch {
+		case capturedUnused[entry.Name]:
+			entry.Status = "captured_unused"
+			entry.EvidenceCount = 0
+		case alwaysOn[entry.Name]:
+			entry.EvidenceCount = 0
+			switch {
+			case anyConnected:
+				entry.Status = "active"
+			case anySession:
+				entry.Status = "partial"
+			default:
+				entry.Status = "not_available"
+			}
+		default:
+			key, ok := typeKey[entry.Name]
+			if !ok {
+				entry.Status = "not_available"
+				entry.EvidenceCount = 0
+			} else {
+				count := typeCounts[key]
+				entry.EvidenceCount = count
+				switch {
+				case count > 0:
+					entry.Status = "active"
+				case anySession:
+					entry.Status = "partial"
+				default:
+					entry.Status = "not_available"
+				}
+			}
+		}
+		out = append(out, entry)
+	}
+	return out
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -1833,6 +1947,30 @@ func (sm *SessionManager) listHandler(w http.ResponseWriter, r *http.Request) {
 		result = append(result, s.getStatus())
 	}
 	json.NewEncoder(w).Encode(result)
+}
+
+// aggregateByType returns the sum of per-message-type counters across all
+// sessions. Used by /capabilities to drive live per-capability status.
+func (sm *SessionManager) aggregateByType() map[string]int64 {
+	aggregated := map[string]int64{}
+	for _, s := range sm.List() {
+		s.mu.RLock()
+		for k, v := range s.totalByType {
+			aggregated[k] += v
+		}
+		s.mu.RUnlock()
+	}
+	return aggregated
+}
+
+// anyConnected reports whether any session currently reports Connected=true.
+func (sm *SessionManager) anyConnected() bool {
+	for _, s := range sm.List() {
+		if s.getStatus().Connected {
+			return true
+		}
+	}
+	return false
 }
 
 func (sm *SessionManager) historyBackfillHandler(w http.ResponseWriter, r *http.Request) {

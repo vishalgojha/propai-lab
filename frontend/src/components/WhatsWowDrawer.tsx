@@ -38,6 +38,8 @@ interface Capability {
   name: string;
   status: "active" | "partial" | "captured_unused" | "not_available";
   icon: string;
+  description?: string;
+  evidence_count?: number;
 }
 
 interface PhoneStatus {
@@ -96,6 +98,13 @@ const STATUS_COLORS: Record<string, string> = {
   partial: "bg-amber-400",
   captured_unused: "bg-sky-400",
   not_available: "bg-zinc-600",
+};
+
+const STATUS_BADGE: Record<string, string> = {
+  active: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30",
+  partial: "bg-amber-500/15 text-amber-300 border-amber-500/30",
+  captured_unused: "bg-sky-500/15 text-sky-300 border-sky-500/30",
+  not_available: "bg-zinc-500/15 text-zinc-400 border-zinc-500/30",
 };
 
 const STATUS_LABELS: Record<string, string> = {
@@ -238,17 +247,32 @@ export default function WhatsWowDrawer({ open, onClose }: WhatsWowDrawerProps) {
               <span className="ml-auto text-[10px] text-zinc-500">{activeCount}/{capabilities.length} active</span>
             </button>
             {expandedSections.capabilities && (
-              <div className="px-4 pb-3">
-                <div className="grid grid-cols-2 gap-1.5">
-                  {capabilities.map((cap) => (
-                    <div key={cap.name} className="flex items-center gap-2 rounded-md border border-white/5 bg-white/[0.015] px-2.5 py-2">
+              <div className="px-4 pb-3 space-y-1.5">
+                {capabilities.map((cap) => (
+                  <div key={cap.name} className="rounded-md border border-white/5 bg-white/[0.015] px-2.5 py-2">
+                    <div className="flex items-center gap-2">
                       <CapIcon name={cap.icon} className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
-                      <span className="text-[10px] text-zinc-300 truncate flex-1">{cap.name}</span>
-                      <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${STATUS_COLORS[cap.status]}`} title={STATUS_LABELS[cap.status]} />
+                      <span className="text-[10px] font-medium text-white truncate flex-1">{cap.name}</span>
+                      {cap.evidence_count !== undefined && cap.evidence_count > 0 && (
+                        <span className="shrink-0 text-[9px] tabular-nums text-zinc-500">
+                          {cap.evidence_count.toLocaleString("en-IN")}
+                        </span>
+                      )}
+                      <span
+                        className={`shrink-0 inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[8px] font-semibold uppercase tracking-wider ${STATUS_BADGE[cap.status]}`}
+                      >
+                        <span className={`w-1 h-1 rounded-full ${STATUS_COLORS[cap.status]}`} />
+                        {STATUS_LABELS[cap.status]}
+                      </span>
                     </div>
-                  ))}
-                </div>
-                <div className="flex gap-3 mt-3 text-[9px] text-zinc-600">
+                    {cap.description && (
+                      <p className="mt-1 ml-5 text-[10px] leading-snug text-zinc-500">
+                        {cap.description}
+                      </p>
+                    )}
+                  </div>
+                ))}
+                <div className="flex gap-3 mt-2 text-[9px] text-zinc-600">
                   <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-emerald-400" /> Active</span>
                   <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-amber-400" /> Partial</span>
                   <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-sky-400" /> Captured</span>
