@@ -23,10 +23,11 @@ type inboundMedia struct {
 	FileName    string `json:"file_name,omitempty"`
 	FileLength  uint64 `json:"file_length,omitempty"`
 	StoragePath string `json:"storage_path,omitempty"`
+	Deferred    bool   `json:"deferred,omitempty"`
 	Error       string `json:"error,omitempty"`
 }
 
-func (sm *SessionManager) captureMedia(s *BrokerSession, msg *waE2E.Message, chatJID, messageID string) *inboundMedia {
+func (sm *SessionManager) captureMedia(s *BrokerSession, msg *waE2E.Message, chatJID, messageID string, allowDownload bool) *inboundMedia {
 	if s == nil || s.client == nil || msg == nil {
 		return nil
 	}
@@ -61,6 +62,14 @@ func (sm *SessionManager) captureMedia(s *BrokerSession, msg *waE2E.Message, cha
 	}
 	if media.FileLength > maxBytes {
 		media.Error = fmt.Sprintf("media exceeds %d byte limit", maxBytes)
+		return media
+	}
+	// WhatsApp's historical sync includes old media metadata, but its download
+	// URLs are commonly expired (410) or no longer authorised (403). Preserve
+	// that evidence without turning a first connection into thousands of slow,
+	// doomed downloads. New live messages still download below.
+	if !allowDownload {
+		media.Deferred = true
 		return media
 	}
 
