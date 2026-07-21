@@ -3977,14 +3977,17 @@ def _capability_coverage(tenant_id: str | None) -> dict:
         rows = storage.db.execute(
             """
             SELECT COUNT(*) AS total,
-                   COUNT(DISTINCT chat_jid) AS chats,
-                   COUNT(DISTINCT CASE WHEN chat_jid LIKE '%@g.us' THEN chat_jid END) AS groups,
-                   COUNT(DISTINCT CASE WHEN chat_jid LIKE '%@broadcast' THEN chat_jid END) AS broadcasts,
+                   COUNT(DISTINCT remote_jid) AS chats,
+                   COUNT(DISTINCT CASE WHEN remote_jid LIKE '%@g.us' THEN remote_jid END) AS groups,
+                   COUNT(DISTINCT CASE WHEN remote_jid LIKE '%@broadcast' THEN remote_jid END) AS broadcasts,
                    MIN(created_at) AS oldest,
                    MAX(created_at) AS newest
-            FROM raw_messages
-            WHERE tenant_id = ?
-              AND created_at >= now() - interval '7 days'
+            FROM (
+                SELECT raw_payload->'data'->'key'->>'remoteJid' AS remote_jid, created_at
+                FROM raw_messages
+                WHERE tenant_id = ?
+                  AND created_at >= now() - interval '7 days'
+            ) sub
             """,
             (tenant_id,),
         ).fetchall()
