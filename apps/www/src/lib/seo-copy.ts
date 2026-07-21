@@ -19,16 +19,16 @@ function titleCase(s: string): string {
 // ---- Locality titles -------------------------------------------------------
 
 export function localityTitle(locality: string): string {
-  return `${locality} Properties for Sale & Rent | PropAI`;
+  return `${locality} Properties for Sale and Rent — PropAI`;
 }
 
 export function localityTxnTitle(locality: string, txn: Txn): string {
   const verb = txn === "rent" ? "for Rent" : "for Sale";
-  return `${locality} Properties ${verb} | PropAI`;
+  return `${locality} Properties ${verb} — PropAI`;
 }
 
 export function localityBhkTitle(locality: string, bhk: string): string {
-  return `${bhk} Flats in ${locality} | Live Listings | PropAI`;
+  return `${bhk} Flats for Sale and Rent in ${locality} — PropAI`;
 }
 
 export function localityBudgetTitle(
@@ -39,22 +39,22 @@ export function localityBudgetTitle(
 ): string {
   const subject = bhk ? `${bhk} in ${locality}` : `${titleCase(locality)} property`;
   const verb = txn === "rent" ? "for Rent" : "for Sale";
-  return `${subject} ${budgetLabel} ${verb} | PropAI`;
+  return `${subject} ${budgetLabel} ${verb} — PropAI`;
 }
 
 export function localityCommercialTitle(locality: string, kind: string): string {
-  return `${titleCase(kind)} in ${locality} | Live Broker Listings | PropAI`;
+  return `${titleCase(kind)} for Sale and Rent in ${locality} — PropAI`;
 }
 
 // ---- Building titles -------------------------------------------------------
 
 export function buildingTitle(name: string): string {
-  return `${name} | Live Listings | PropAI`;
+  return `${name} — Live Property Listings — PropAI`;
 }
 
 export function buildingTxnTitle(name: string, txn: Txn): string {
   const verb = txn === "rent" ? "for Rent" : "for Sale";
-  return `${name} ${verb} | Live Listings | PropAI`;
+  return `${name} ${verb} — Live Property Listings — PropAI`;
 }
 
 // ---- Listing / 3BHK / budget generic --------------------------------------
@@ -67,15 +67,15 @@ export function listingTitle(card: {
   const where = card.locality ? ` in ${card.locality}` : "";
   const base = card.title || "Property";
   if (card.priceLabel && card.priceLabel !== "Price on request") {
-    return `${base}${where} — ${card.priceLabel} | PropAI`;
+    return `${base}${where} — ${card.priceLabel} — PropAI`;
   }
-  return `${base}${where} | PropAI`;
+  return `${base}${where} — PropAI`;
 }
 
 export function searchTitle(query: string): string {
   const q = query.trim();
-  if (!q) return "Search Property Listings | PropAI";
-  return `${q} | Live Property Search | PropAI`;
+  if (!q) return "Search Property Listings — PropAI";
+  return `${q} — Live Property Search — PropAI`;
 }
 
 // ---- Programmatic sub-page titles (locality x txn / bhk / budget / commercial) ----
@@ -84,14 +84,14 @@ export function localitySegmentTitle(
   locality: string,
   segment: "sale" | "rent" | "commercial",
 ): string {
-  if (segment === "commercial") return `${titleCase(locality)} Commercial Properties | Live Listings | PropAI`;
+  if (segment === "commercial") return `${titleCase(locality)} Commercial Properties for Sale and Rent — PropAI`;
   const verb = segment === "rent" ? "for Rent" : "for Sale";
-  return `${locality} Properties ${verb} | PropAI`;
+  return `${locality} Properties ${verb} — PropAI`;
 }
 
 export function localityBhkSegmentTitle(locality: string, bhk: number): string {
   const label = bhk >= 5 ? "5+ BHK" : `${bhk} BHK`;
-  return `${label} Flats in ${locality} | Live Listings | PropAI`;
+  return `${label} Flats for Sale and Rent in ${locality} — PropAI`;
 }
 
 export function localityBudgetSegmentTitle(
@@ -101,7 +101,7 @@ export function localityBudgetSegmentTitle(
 ): string {
   const subject = `${titleCase(locality)} property`;
   const verb = txn === "rent" ? "for Rent" : "for Sale";
-  return `${subject} ${budgetLabel} ${verb} | PropAI`;
+  return `${subject} ${budgetLabel} ${verb} — PropAI`;
 }
 
 export function localitySegmentDescription(opts: {
