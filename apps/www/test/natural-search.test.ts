@@ -31,6 +31,8 @@ function makeRow(over: Partial<NaturalSearchRow>): NaturalSearchRow {
     price_unit: "l",
     area_sqft: 1200,
     furnishing: "furnished",
+    floor_description: null,
+    view: null,
     asset_type: null,
     property_type: null,
     location_label: null,
@@ -42,6 +44,8 @@ function makeRow(over: Partial<NaturalSearchRow>): NaturalSearchRow {
     first_seen: null,
     last_seen: new Date().toISOString(),
     observation_count: 2,
+    latitude: null,
+    longitude: null,
     ...over,
   };
 }

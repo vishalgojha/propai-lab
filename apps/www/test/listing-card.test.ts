@@ -45,17 +45,16 @@ function check(name: string, fn: () => void) {
 
 console.log("listing-card view model tests");
 
-// Title never duplicates the bare locality in both title and subtitle.
-check("building name is the title (locality only in pill)", () => {
+// Titles are deterministic summaries of structured data, never raw poster copy.
+check("building card title is a normalized structured summary", () => {
   const vm = toListingCardViewModel(base({ building_name: "Kalpataru" }), true);
-  assert.equal(vm.title, "Kalpataru");
+  assert.equal(vm.title, "Semi-Furnished 3 BHK for Sale at Kalpataru");
   assert.equal(vm.locality, "Bandra East");
-  assert.notEqual(vm.title, vm.locality);
 });
 
-check("no building name -> descriptive title from BHK + locality", () => {
+check("no building name -> structured title uses locality", () => {
   const vm = toListingCardViewModel(base({ building_name: null }), false);
-  assert.equal(vm.title, "3 BHK — Bandra East");
+  assert.equal(vm.title, "Semi-Furnished 3 BHK for Sale at Bandra East");
   assert.equal(vm.locality, "Bandra East");
 });
 
@@ -116,13 +115,12 @@ check("missing listing id -> no wa link (no dead CTA)", () => {
 
 // The reported repro: a 3BHK in a stated locality must yield cards that
 // satisfy the public-format requirements.
-check('"3 bhk in bandra east" card has non-duplicated title + unit price + status + CTA', () => {
+check('"3 bhk in bandra east" card has a structured title + unit price + status + CTA', () => {
   const vm = toListingCardViewModel(
     base({ bhk: "3 BHK", micro_market: "Bandra East", building_name: "Sky Heights", price: 3, price_unit: "cr", intent: "sell", broker_phone: "9988776655" }),
     true,
   );
-  assert.equal(vm.title, "Sky Heights");
-  assert.notEqual(vm.title, vm.locality);
+  assert.equal(vm.title, "Semi-Furnished 3 BHK for Sale at Sky Heights");
   assert.match(vm.priceLabel, /Cr$/);
   assert.equal(vm.statusLabel, "Available");
   assert.equal(vm.waLink, "/contact-broker/1");
@@ -245,12 +243,12 @@ check("buildListingSlug handles fractional bhk", () => {
 check("buildListingSlug returns null for non-finite id", () => {
   assert.equal(buildListingSlug({ id: NaN as unknown as number, bhk: "3 BHK" }), null);
 });
-check("href uses slug not bare id", () => {
+check("href uses the slug and id required by the public route", () => {
   const vm = toListingCardViewModel(
     base({ id: 319236, bhk: "3 BHK", micro_market: "Andheri West", building_name: "Rajgriha CHS" }),
     false,
   );
-  assert.equal(vm.href, "/listings/3-bhk-andheri-west-319236");
+  assert.equal(vm.href, "/listings/3-bhk-andheri-west-319236/319236");
   assert.equal(vm.slug, "3-bhk-andheri-west-319236");
 });
 check("href falls back to bare id when slug cannot be computed", () => {

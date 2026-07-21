@@ -117,7 +117,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     if (!slug) continue;
     const lastModified = l.last_seen ? new Date(l.last_seen) : now;
     urls.push({
-      url: `${baseUrl}/listings/${slug}`,
+      url: `${baseUrl}/listings/${slug}/${l.id}`,
       lastModified,
       changeFrequency: "daily",
       priority: 0.55,

@@ -28,6 +28,8 @@ export type NaturalSearchRow = {
   price_unit: string | null;
   area_sqft: number | null;
   furnishing: string | null;
+  floor_description: string | null;
+  view: string | null;
   location_label: string | null;
   building_name: string | null;
   landmark_name: string | null;
@@ -80,6 +82,8 @@ const LISTING_FIELDS = [
   "price_unit",
   "area_sqft",
   "furnishing",
+  "floor_description",
+  "view",
   "location_label",
   "building_name",
   "landmark_name",
@@ -90,6 +94,13 @@ const LISTING_FIELDS = [
   "last_seen",
   "observation_count",
 ] as const;
+
+// Keep the second-stage natural-language scorer, but ask Postgres for a small
+// relevant candidate set first.  This is deliberately well above the 24-card
+// UI limit so scoring still has enough choice without shipping every listing
+// to the Next.js server on each keystroke.
+const SEARCH_CANDIDATE_LIMIT = 300;
+const MAX_CANDIDATE_TOKENS = 4;
 
 // Conversational-search slang / abbreviation expansion. Applied before
 // normalization so "3 bhi bandar w" maps to "3 bhk bandra west" and fuzzy
@@ -142,6 +153,26 @@ function expandSlang(value: string): string {
 function normalizeText(value: string): string {
   const expanded = expandSlang(value);
   return expanded.replace(/[^a-z0-9]+/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function candidateTokens(query: string): string[] {
+  const ignored = new Set([
+    "a", "an", "and", "any", "apartment", "at", "bhk", "buy", "commercial",
+    "flat", "for", "from", "furnished", "in", "lease", "on", "property", "rent",
+    "rental", "residential", "sale", "sell", "semi", "semifurnished", "to",
+    "unfurnished", "with",
+  ]);
+  return Array.from(new Set(
+    normalizeText(query)
+      .split(" ")
+      .filter((token) => token.length >= 3 && !ignored.has(token) && !/^\d+$/.test(token)),
+  )).slice(0, MAX_CANDIDATE_TOKENS);
+}
+
+function postgrestLikeToken(token: string): string {
+  // We only use normalized alphanumeric tokens in the PostgREST filter, so
+  // they cannot alter its comma/parenthesis filter grammar.
+  return `%${token.replace(/[^a-z0-9]/gi, "")}%`;
 }
 
 // Base locality names recognised when extracting a stated locality from a query
@@ -664,22 +695,16 @@ async function browseByAsset(
   matchedSuggestions: LocalitySummary[],
 ): Promise<NaturalSearchState> {
   const fields = LISTING_FIELDS.join(", ");
-  const rows: NaturalSearchRow[] = [];
-  const PAGE = 1000;
-  for (let offset = 0; ; offset += PAGE) {
-    const { data, error } = await db
-      .from("listings")
-      .select(fields)
-      .eq("asset_type", asset)
-      .order("last_seen", { ascending: false })
-      .range(offset, offset + PAGE - 1);
-    if (error) {
-      console.error("browseByAsset error:", error.message);
-      break;
-    }
-    rows.push(...((data ?? []) as unknown as NaturalSearchRow[]));
-    if ((data ?? []).length < PAGE) break;
-  }
+  // This is a recency browse, not a relevance search. Fetch only the cards
+  // we can render rather than paginating the entire asset inventory.
+  const { data, error } = await db
+    .from("listings")
+    .select(fields)
+    .eq("asset_type", asset)
+    .order("last_seen", { ascending: false })
+    .limit(limit);
+  if (error) console.error("browseByAsset error:", error.message);
+  const rows = (data ?? []) as unknown as NaturalSearchRow[];
 
   let knownBuildings: BuildingSummary[] = [];
   try {
@@ -807,54 +832,49 @@ export async function searchNaturalLanguageListings(
 
   const fields = LISTING_FIELDS.join(", ");
 
-  // Paginate the full table so NO matching listing is skipped. Supabase caps a
-  // single select at 1000 rows; a bare .limit(400) would never surface the
-  // 1001st+ listing. We apply the locality filter at the DB layer (when a
-  // locality matched) and run the remaining hard filters in-memory below.
-  const fetchRows = async (narrowed: boolean): Promise<NaturalSearchRow[]> => {
-    const out: NaturalSearchRow[] = [];
-    const PAGE = 1000;
-    for (let offset = 0; ; offset += PAGE) {
-      let qb = db
-        .from("listings")
-        .select(fields)
-        .order("last_seen", { ascending: false })
-        .range(offset, offset + PAGE - 1);
-
-      if (narrowed && parsed.locality) {
-        // parsed.locality is a canonical label; match every raw micro_market
-        // value that resolves to it (e.g. "Bandra Bkc" + "Bandra East").
-        const targetSlug = canonicalLocality(parsed.locality).slug;
-        const rawValues = Array.from(
-          new Set(
-            localities
-              .map((l) => l.locality)
-              .filter((raw) => canonicalLocality(raw).slug === targetSlug),
-          ),
-        );
-        if (rawValues.length > 0) qb = qb.in("micro_market", rawValues);
-        else qb = qb.eq("micro_market", parsed.locality);
-      }
-
-      if (parsed.asset) {
-        qb = qb.eq("asset_type", parsed.asset);
-      }
-
-      const { data, error } = await qb;
+  // Database-side candidate retrieval. Exact canonical localities use the
+  // existing btree index; free-text searches use trigram-indexed fields from
+  // the paired migration. The in-memory scorer below only sees this bounded
+  // set, never the full inventory.
+  const fetchCandidateRows = async (): Promise<NaturalSearchRow[]> => {
+    if (parsed.locality) {
+      const targetSlug = canonicalLocality(parsed.locality).slug;
+      const rawValues = Array.from(new Set(
+        localities.map((l) => l.locality).filter((raw) => canonicalLocality(raw).slug === targetSlug),
+      ));
+      let qb = db.from("listings").select(fields).order("last_seen", { ascending: false });
+      qb = rawValues.length > 0 ? qb.in("micro_market", rawValues) : qb.eq("micro_market", parsed.locality);
+      if (parsed.asset) qb = qb.eq("asset_type", parsed.asset);
+      const { data, error } = await qb.limit(SEARCH_CANDIDATE_LIMIT);
       if (error) {
-        console.error("searchNaturalLanguageListings error:", error.message);
-        return out;
+        console.error("searchNaturalLanguageListings locality candidate error:", error.message);
+        return [];
       }
-      const page = (data ?? []) as unknown as NaturalSearchRow[];
-      out.push(...page);
-      if (page.length < PAGE) break;
+      return (data ?? []) as unknown as NaturalSearchRow[];
     }
-    return out;
+
+    const tokens = candidateTokens(query);
+    if (tokens.length === 0) return [];
+    const batches = await Promise.all(tokens.map(async (token) => {
+      const like = postgrestLikeToken(token);
+      let qb = db.from("listings")
+        .select(fields)
+        .or(`building_name.ilike.${like},micro_market.ilike.${like},location_label.ilike.${like},landmark_name.ilike.${like}`)
+        .order("last_seen", { ascending: false });
+      if (parsed.asset) qb = qb.eq("asset_type", parsed.asset);
+      const { data, error } = await qb.limit(SEARCH_CANDIDATE_LIMIT);
+      if (error) {
+        console.error("searchNaturalLanguageListings text candidate error:", error.message);
+        return [] as NaturalSearchRow[];
+      }
+      return (data ?? []) as unknown as NaturalSearchRow[];
+    }));
+    const deduped = new Map<number, NaturalSearchRow>();
+    for (const batch of batches) for (const row of batch) deduped.set(row.id, row);
+    return Array.from(deduped.values());
   };
 
-  // When a locality matched, narrow at the DB layer AND enforce it as a hard
-  // filter below. Never broad-fetch just because narrow returned few rows.
-  const rows = await fetchRows(Boolean(parsed.locality));
+  const rows = await fetchCandidateRows();
 
   // Build a set of known building names so we can classify a result as a
   // building vs a locality (a building must never render as a "Locality" card).

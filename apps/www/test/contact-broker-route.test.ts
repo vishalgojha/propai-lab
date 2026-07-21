@@ -44,7 +44,7 @@ function decisionFor(row: { id: number; broker_phone: string | null; bhk: string
     building_name: row.building_name,
     property_type: row.property_type,
   });
-  const canonicalPath = `/listings/${slug ?? row.id}`;
+  const canonicalPath = `/listings/${slug ?? "listing"}/${row.id}`;
   const recall = `https://www.propai.live${canonicalPath}`;
   const text = encodeURIComponent(`Hi, I came across ... — ${recall} — and I'm interested.`);
   return { status: 302, body: null, redirect: `https://wa.me/91${local}?text=${text}` };
@@ -85,7 +85,7 @@ check("valid broker_phone → 302 to wa.me with slug in recall message", () => {
   assert.match(r.redirect, /^https:\/\/wa\.me\/919123456789\?text=/);
   // The recall message is URL-encoded; decode before searching for the slug.
   const text = decodeURIComponent(r.redirect.split("?text=")[1] ?? "");
-  assert.match(text, /\/listings\/3-bhk-andheri-west-319236/);
+  assert.match(text, /\/listings\/3-bhk-andheri-west-319236\/319236/);
   assert.ok(!text.includes("/listings/319236-"), "should not use bare id even when slug is computed");
 });
 

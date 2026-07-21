@@ -93,9 +93,8 @@ export async function GET(
     building_name: data.building_name,
     property_type: data.property_type,
   });
-  const canonicalPath = `/listings/${slug ?? data.id}`;
+  const canonicalPath = `/listings/${slug ?? "listing"}/${data.id}`;
 
   const text = encodeURIComponent(buildRecallMessage(data, listingId, canonicalPath));
   return NextResponse.redirect(new URL(`https://wa.me/91${local}?text=${text}`), { status: 302 });
 }
-

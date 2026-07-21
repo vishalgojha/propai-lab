@@ -37,20 +37,34 @@ Onboarding flow (explicit consent, not silent):
 
 import os
 import re
+import json
+import asyncio
+import hashlib
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel
 
-from storage import SupabaseStorage
-from storage.base import Listing
+from storage import RawMessage, SupabaseStorage
 
 router = APIRouter(prefix="/webhooks/business-api", tags=["business-api"])
 
 # Set this in your environment and mirror it in ElevenLabs' webhook tool config.
 BUSINESS_API_WEBHOOK_SECRET = os.environ.get("BUSINESS_API_WEBHOOK_SECRET", "")
 
-storage = SupabaseStorage()
+_storage: SupabaseStorage | None = None
+
+
+def get_storage() -> SupabaseStorage:
+    """Create storage only when a webhook is invoked.
+
+    Keeping this lazy means mounting these optional ElevenLabs endpoints does
+    not make importing the FastAPI app depend on production environment vars.
+    """
+    global _storage
+    if _storage is None:
+        _storage = SupabaseStorage()
+    return _storage
 
 ONBOARDING_PROMPT = (
     "This number isn't registered with PropAI yet. Ask for the broker's name "
@@ -92,7 +106,7 @@ def _normalize_phone(phone: str) -> str:
     return ""
 
 
-def resolve_broker(phone: str) -> str:
+def resolve_broker(phone: str) -> dict:
     """Resolve an already-onboarded broker (= tenant) by WhatsApp phone number.
 
     Does NOT create anything. Raises HTTPException(404) with
@@ -103,9 +117,9 @@ def resolve_broker(phone: str) -> str:
     if not norm_phone:
         raise HTTPException(400, "A valid phone number is required to resolve broker identity")
 
-    existing = storage.find_broker(phone=norm_phone)
+    existing = get_storage().find_broker(phone=norm_phone)
     if existing:
-        return str(existing["id"])
+        return existing
 
     raise HTTPException(
         404,
@@ -132,6 +146,7 @@ async def onboard_broker_webhook(
     if not norm_phone:
         raise HTTPException(400, "A valid phone number is required")
 
+    storage = get_storage()
     existing = storage.find_broker(phone=norm_phone)
     if existing:
         return {"status": "already_onboarded", "broker_id": str(existing["id"])}
@@ -156,6 +171,7 @@ class SaveListingRequest(BaseModel):
     carpet_area: str | None = None
     furnishing: str | None = None
     contact_number: str | None = None
+    source_message_id: str | None = None
 
 
 class CreateRequirementRequest(BaseModel):
@@ -168,6 +184,8 @@ class CreateRequirementRequest(BaseModel):
     timeline: str | None = None
     bhk_preference: str | None = None
     property_type: str | None = None
+    source_message_id: str | None = None
+    confirmed: bool = False
 
 
 def _to_price_cr(price: str | None) -> float | None:
@@ -205,37 +223,114 @@ def _to_price_cr(price: str | None) -> float | None:
     return val
 
 
+def _tenant_id_for(broker: dict) -> str:
+    # An authenticated broker already belongs to a workspace.  Never use the
+    # broker entity id as tenant_id: that silently hid listings from Inbox.
+    return str(
+        broker.get("tenant_id")
+        or os.environ.get("BUSINESS_API_TENANT_ID", "").strip()
+        or "00000000-0000-0000-0000-000000000010"
+    )
+
+
+def _agent_message_uid(body: SaveListingRequest, phone: str) -> str:
+    supplied = (body.source_message_id or "").strip()
+    if supplied:
+        return f"waba-agent:{supplied[:180]}"
+    # Gives retry-safe behaviour when the provider has not supplied a message
+    # ID, without inventing a second listing for the exact same submission.
+    digest = hashlib.sha256(f"{phone}\n{body.raw_text.strip()}".encode()).hexdigest()[:32]
+    return f"waba-agent:body:{digest}"
+
+
 @router.post("/save-listing")
 async def save_listing_webhook(
     body: SaveListingRequest,
     x_business_api_webhook_secret: str | None = Header(default=None),
 ):
     _check_secret(x_business_api_webhook_secret)
-    broker_id = resolve_broker(body.phone)
-
+    broker = resolve_broker(body.phone)
+    storage = get_storage()
+    broker_phone = _normalize_phone(body.phone)
+    tenant_id = _tenant_id_for(broker)
     now = datetime.now(timezone.utc).isoformat()
-    listing = Listing(
-        intent="listing",
-        bhk=body.bhk,
-        price=_to_price_cr(body.price),
-        price_unit="cr" if body.price else None,
-        area_sqft=float(re.sub(r"\D+", "", body.carpet_area)) if body.carpet_area and re.sub(r"\D+", "", body.carpet_area) else None,
-        furnishing=body.furnishing,
-        location_label=body.location,
-        micro_market=body.location,
-        broker_name=body.name,
-        broker_phone=_normalize_phone(body.contact_number or body.phone),
-        first_seen=now,
-        last_seen=now,
-        tenant_id=broker_id,
-    )
-    listing_id = storage.save_listing(listing)
+    message_uid = _agent_message_uid(body, broker_phone)
+    existing = storage.get_raw_by_uid(message_uid)
+    if existing and existing.processed:
+        raw_id = existing.id
+        parsed_ids = [parsed.id for parsed in storage.get_parsed_by_message(raw_id)]
+        listing_ids = []
+        for parsed_id in parsed_ids:
+            listing_id = storage.upsert_listing_from_parsed(parsed_id)
+            if listing_id:
+                listing_ids.append(listing_id)
+        result = {"raw_id": raw_id, "parsed_ids": parsed_ids, "listing_ids": listing_ids}
+    else:
+        raw_id = existing.id if existing else 0
+        if not raw_id:
+            raw_id = storage.save_raw_message(RawMessage(
+                group_name=f"WABA agent · {broker.get('canonical_name') or broker_phone}",
+                sender=broker.get("canonical_name") or body.name or broker_phone,
+                sender_jid=f"{broker_phone}@s.whatsapp.net",
+                sender_phone=broker_phone,
+                message=body.raw_text.strip(),
+                message_type="text",
+                timestamp=now,
+                source="WABA_AGENT",
+                raw_payload=json.dumps({
+                    "source": "waba_business_api",
+                    "source_message_id": body.source_message_id,
+                    "submitted_fields": {
+                        "bhk": body.bhk,
+                        "location": body.location,
+                        "price": body.price,
+                        "carpet_area": body.carpet_area,
+                        "furnishing": body.furnishing,
+                    },
+                }),
+                message_uid=message_uid,
+                is_group=False,
+                tenant_id=tenant_id,
+            ))
+        # The raw message is the source of truth.  Running it through the normal
+        # pipeline creates parsed_output, broker evidence and one listing per
+        # option; it deliberately does not copy "location" into micro_market.
+        from extraction import process_raw_message
+        result = await asyncio.to_thread(process_raw_message, raw_id, {
+            "sender_name": broker.get("canonical_name") or body.name or broker_phone,
+            "push_name": broker.get("canonical_name") or body.name or broker_phone,
+            "sender_jid": f"{broker_phone}@s.whatsapp.net",
+            "sender_phone": broker_phone,
+            "group": f"waba-agent:{broker_phone}",
+            "group_name": f"WABA agent · {broker.get('canonical_name') or broker_phone}",
+            "msg_text": body.raw_text.strip(),
+            "instance": "waba-agent",
+            "is_dm": True,
+            "message_uid": message_uid,
+            "message_id": body.source_message_id or message_uid,
+            "msg": {},
+            "tenant_id": tenant_id,
+        }) or {}
+    listing_ids = result.get("listing_ids") or []
+    if not listing_ids:
+        raise HTTPException(422, {
+            "saved": False,
+            "message": "The message was received but no property listing could be verified. Do not tell the broker it was saved.",
+            "raw_id": raw_id,
+        })
 
     return {
         "status": "saved",
-        "listing_id": listing_id,
-        "broker_id": broker_id,
-        "source": "waba_business_api",
+        "raw_id": raw_id,
+        "parsed_ids": result.get("parsed_ids") or [],
+        "listing_ids": listing_ids,
+        "listing_urls": [
+            f"{os.environ.get('PUBLIC_WWW_URL', 'https://www.propai.live').rstrip('/')}/listings/{listing_id}/{listing_id}"
+            for listing_id in listing_ids
+        ],
+        "broker_id": str(broker["id"]),
+        "tenant_id": tenant_id,
+        "source": "waba_agent_pipeline",
     }
 
 
@@ -245,24 +340,70 @@ async def create_requirement_webhook(
     x_business_api_webhook_secret: str | None = Header(default=None),
 ):
     _check_secret(x_business_api_webhook_secret)
-    broker_id = resolve_broker(body.phone)
-
-    client_data = {
-        "tenant_id": broker_id,
-        "name": body.lead_name or "WABA Requirement",
-        "phone": _normalize_phone(body.lead_phone) if body.lead_phone else None,
-        "notes": (
-            f"[source: waba_business_api]\n{body.raw_text}\n"
-            f"budget={body.budget or '-'} location={body.location_pref or '-'} "
-            f"timeline={body.timeline or '-'} bhk={body.bhk_preference or '-'} "
-            f"type={body.property_type or '-'}"
-        ),
-    }
-    saved = storage.save_client(client_data)
+    if not body.confirmed:
+        raise HTTPException(409, {
+            "saved": False,
+            "message": "A requirement is only saved after the broker explicitly confirms it. For search-only, do not call this endpoint.",
+        })
+    broker = resolve_broker(body.phone)
+    storage = get_storage()
+    broker_phone = _normalize_phone(body.phone)
+    tenant_id = _tenant_id_for(broker)
+    now = datetime.now(timezone.utc).isoformat()
+    source_message_id = (body.source_message_id or "").strip()
+    digest = hashlib.sha256(f"{broker_phone}\nrequirement\n{body.raw_text.strip()}".encode()).hexdigest()[:32]
+    message_uid = f"waba-agent:{source_message_id[:180]}" if source_message_id else f"waba-agent:requirement:{digest}"
+    existing = storage.get_raw_by_uid(message_uid)
+    raw_id = existing.id if existing else storage.save_raw_message(RawMessage(
+        group_name=f"WABA agent · {broker.get('canonical_name') or broker_phone}",
+        sender=broker.get("canonical_name") or broker_phone,
+        sender_jid=f"{broker_phone}@s.whatsapp.net",
+        sender_phone=broker_phone,
+        message=body.raw_text.strip(),
+        message_type="text",
+        timestamp=now,
+        source="WABA_AGENT",
+        raw_payload=json.dumps({
+            "source": "waba_business_api",
+            "kind": "requirement",
+            "source_message_id": source_message_id or None,
+        }),
+        message_uid=message_uid,
+        is_group=False,
+        tenant_id=tenant_id,
+    ))
+    if existing and existing.processed:
+        parsed_ids = [parsed.id for parsed in storage.get_parsed_by_message(raw_id)]
+    else:
+        from extraction import process_raw_message
+        result = await asyncio.to_thread(process_raw_message, raw_id, {
+            "sender_name": broker.get("canonical_name") or broker_phone,
+            "push_name": broker.get("canonical_name") or broker_phone,
+            "sender_jid": f"{broker_phone}@s.whatsapp.net",
+            "sender_phone": broker_phone,
+            "group": f"waba-agent:{broker_phone}",
+            "group_name": f"WABA agent · {broker.get('canonical_name') or broker_phone}",
+            "msg_text": body.raw_text.strip(),
+            "instance": "waba-agent",
+            "is_dm": True,
+            "message_uid": message_uid,
+            "message_id": source_message_id or message_uid,
+            "msg": {},
+            "tenant_id": tenant_id,
+        }) or {}
+        parsed_ids = result.get("parsed_ids") or []
+    if not parsed_ids:
+        raise HTTPException(422, {
+            "saved": False,
+            "message": "The requirement was received but could not be structured. Do not say it was saved.",
+            "raw_id": raw_id,
+        })
 
     return {
         "status": "saved",
-        "client_id": saved.get("id"),
-        "broker_id": broker_id,
-        "source": "waba_business_api",
+        "raw_id": raw_id,
+        "parsed_ids": parsed_ids,
+        "broker_id": str(broker["id"]),
+        "tenant_id": tenant_id,
+        "source": "waba_agent_pipeline",
     }
