@@ -91,6 +91,16 @@ def _market_name_key(name: str = "") -> str:
     return re.sub(r"[\W_]+", " ", clean.casefold(), flags=re.UNICODE).strip()
 
 
+_AMBIGUOUS_NAME_WORDS: frozenset[str] = frozenset({
+    "broker", "agent", "dealer", "builder", "owner", "company", "firm",
+    "realty", "realtor", "property", "realestate", "real", "estate",
+    "group", "associates", "consultancy", "consultant", "solutions",
+    "services", "enterprises", "corporation", "corp", "inc", "ltd",
+    "private", "limited", "projects", "developers", "infra", "housing",
+    "homes", "constructions", "interior", "design", "decor",
+})
+
+
 def _resolve_market_identity(
     phone: str,
     name: str,
@@ -103,6 +113,14 @@ def _resolve_market_identity(
         candidates = phones_by_name.get(name_key, set())
         if len(candidates) == 1:
             normalized_phone = next(iter(candidates))
+        elif not candidates:
+            name_words = {w for w in name_key.split() if w not in _AMBIGUOUS_NAME_WORDS}
+            if name_words:
+                for known_name, known_phones in phones_by_name.items():
+                    known_words = {w for w in known_name.split() if w not in _AMBIGUOUS_NAME_WORDS}
+                    if name_words & known_words:
+                        normalized_phone = next(iter(known_phones))
+                        break
     return normalized_phone or f"name:{name_key}", normalized_phone
 
 
@@ -533,9 +551,15 @@ class _RestClient:
         return _QueryBuilder(self, name)
 
     def rpc(self, name: str, params: dict[str, Any] | None = None):
+        import logging
         url = f"{self._base_url}/rest/v1/rpc/{name}"
-        res = self._http.post(url, content=json.dumps(params or {}))
-        res.raise_for_status()
+        try:
+            res = self._http.post(url, content=json.dumps(params or {}))
+            res.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            detail = e.response.text[:500] if e.response else str(e)
+            logging.error("Supabase RPC '%s' failed (HTTP %s): %s", name, e.response.status_code if e.response else "?", detail)
+            raise RuntimeError(f"Database query failed")
         if not res.text:
             return []
         return res.json()
@@ -3006,7 +3030,7 @@ class SupabaseStorage(Storage):
             )\
             .gte("created_at", cutoff)\
             .order("created_at", desc=True)\
-            .limit(max(5000, limit + offset))
+            .limit(max(50000, limit + offset))
         tid = tenant_id or self._tenant_id
         if tid:
             query = query.eq("tenant_id", tid)
@@ -3041,9 +3065,13 @@ class SupabaseStorage(Storage):
             identity, resolved_phone = _resolve_market_identity(phone, name, phones_by_name)
             if normalized_key:
                 if resolved_phone != normalized_key:
-                    continue
+                    if not candidate_name_key or normalized_key not in phones_by_name.get(candidate_name_key, set()):
+                        continue
             elif requested_name_key and candidate_name_key != requested_name_key:
-                continue
+                req_words = {w for w in requested_name_key.split() if w not in _AMBIGUOUS_NAME_WORDS}
+                cand_words = {w for w in candidate_name_key.split() if w not in _AMBIGUOUS_NAME_WORDS}
+                if not (req_words and cand_words and req_words & cand_words):
+                    continue
             else:
                 continue
 

@@ -83,7 +83,11 @@ from lab.events import get_bus
 PROJECT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(PROJECT_DIR))
 
-from lab.config import HOST, PORT, FRONTEND_URL, DOUBLEWORD_API_KEY, ENABLE_AI_PROMO, ENABLE_META_PUBLISHING, STATUS_FILE, SUPABASE_URL, SUPABASE_SERVICE_KEY, load_excluded_groups, save_excluded_groups, load_group_allowlist, save_group_allowlist
+from lab.config import HOST, PORT, DOUBLEWORD_API_KEY, ENABLE_AI_PROMO, ENABLE_META_PUBLISHING, STATUS_FILE, SUPABASE_URL, SUPABASE_SERVICE_KEY, load_excluded_groups, save_excluded_groups, load_group_allowlist, save_group_allowlist
+try:
+    from lab.config import FRONTEND_URL
+except ImportError:
+    FRONTEND_URL = os.getenv("FRONTEND_URL", "https://app.propai.live")
 from evidence.resolver import resolve, resolve_by_landmark, resolve_by_street
 from evidence.parsers import parse as broker_parse
 
@@ -7115,12 +7119,10 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
             last_user = str(msg.get("content", "")).strip()
             break
 
-    # Skip deterministic short-circuits for inbox AI chat — always use the full
-    # tool-enabled path so the assistant has access to data and tools.
     _is_inbox = req.source == "inbox"
 
     # Capability questions → tool-enabled prompt, text-only mode (no tool calls)
-    if not _is_inbox and last_user and _CAPABILITY_SIGNALS.search(last_user):
+    if last_user and _CAPABILITY_SIGNALS.search(last_user):
         try:
             cap_sources = chat_engine.load_data()
             cap_live = chat_engine.load_live_data(getattr(storage, "db", None))
@@ -7155,7 +7157,7 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
         except Exception:
             pass  # fall through to conversational path
 
-    if not _is_inbox and last_user and not _has_query_signals(last_user):
+    if last_user and not _has_query_signals(last_user):
         try:
             loop = asyncio.get_running_loop()
             reply = await asyncio.wait_for(
@@ -7192,8 +7194,11 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
     memory.prune()
 
     sources = chat_engine.load_data()
-    live = chat_engine.load_live_data(getattr(storage, "db", None))
-    sources.update(live)
+    try:
+        live = chat_engine.load_live_data(getattr(storage, "db", None))
+        sources.update(live)
+    except Exception:
+        pass
     if not sources:
         return {"error": "no_data", "message": "No data found. Check CSV files and database."}
 
@@ -10577,77 +10582,98 @@ async def search_messages(q: str = "", user: dict = Depends(require_user)):
     # Build search results grouped by entity type
     result = {"listings": [], "requirements": [], "brokers": [], "buildings": [], "markets": [], "messages": []}
 
-    # Priority: listings first (most useful)
-    result["listings"] = [dict(r) for r in storage.db.execute("""
-        SELECT fingerprint, intent, bhk, price, price_unit, area_sqft, furnishing,
-               location_label, building_name, landmark_name, micro_market,
-               broker_name, broker_phone, observation_count, last_seen
-        FROM listings
-        WHERE broker_name LIKE ? OR building_name LIKE ? OR micro_market LIKE ?
-           OR bhk LIKE ? OR location_label LIKE ? OR landmark_name LIKE ?
-        ORDER BY observation_count DESC
-        LIMIT 8
-    """, [like_q] * 6).fetchall()]
+    try:
+        # Priority: listings first (most useful)
+        try:
+            result["listings"] = [dict(r) for r in storage.db.execute("""
+                SELECT fingerprint, intent, bhk, price, price_unit, area_sqft, furnishing,
+                       location_label, building_name, landmark_name, micro_market,
+                       broker_name, broker_phone, observation_count, last_seen
+                FROM listings
+                WHERE broker_name LIKE ? OR building_name LIKE ? OR micro_market LIKE ?
+                   OR bhk LIKE ? OR location_label LIKE ? OR landmark_name LIKE ?
+                ORDER BY observation_count DESC
+                LIMIT 8
+            """, [like_q] * 6).fetchall()]
+        except Exception:
+            result["listings"] = []
 
-    # Requirements
-    result["requirements"] = [dict(r) for r in storage.db.execute("""
-        SELECT p.id, p.intent, p.bhk, p.price, p.price_unit, p.broker_name, p.broker_phone,
-               p.micro_market, p.location_raw, p.created_at, r.message, r.group_name
-        FROM parsed_output p
-        JOIN raw_messages r ON r.id = p.raw_message_id
-        WHERE p.intent IN ('BUY','RENTAL_SEEKER')
-          AND (r.message LIKE ? OR p.broker_name LIKE ? OR p.micro_market LIKE ?
-               OR p.bhk LIKE ? OR p.location_raw LIKE ?)
-        ORDER BY p.id DESC
-        LIMIT 6
-    """, [like_q] * 5).fetchall()]
+        # Requirements
+        try:
+            result["requirements"] = [dict(r) for r in storage.db.execute("""
+                SELECT p.id, p.intent, p.bhk, p.price, p.price_unit, p.broker_name, p.broker_phone,
+                       p.micro_market, p.location_raw, p.created_at, r.message, r.group_name
+                FROM parsed_output p
+                JOIN raw_messages r ON r.id = p.raw_message_id
+                WHERE p.intent IN ('BUY','RENTAL_SEEKER')
+                  AND (r.message LIKE ? OR p.broker_name LIKE ? OR p.micro_market LIKE ?
+                       OR p.bhk LIKE ? OR p.location_raw LIKE ?)
+                ORDER BY p.id DESC
+                LIMIT 6
+            """, [like_q] * 5).fetchall()]
+        except Exception:
+            result["requirements"] = []
 
-    # Brokers
-    result["brokers"] = [dict(r) for r in storage.db.execute("""
-        SELECT id, canonical_name AS name, primary_phone AS phone,
-               observation_count, listing_count, requirement_count,
-               group_count, market_count, avg_ticket
-        FROM brokers
-        WHERE canonical_name LIKE ? OR primary_phone LIKE ?
-        ORDER BY observation_count DESC
-        LIMIT 6
-    """, [like_q, like_q]).fetchall()]
+        # Brokers
+        try:
+            result["brokers"] = [dict(r) for r in storage.db.execute("""
+                SELECT id, canonical_name AS name, primary_phone AS phone,
+                       observation_count, listing_count, requirement_count,
+                       group_count, market_count, avg_ticket
+                FROM brokers
+                WHERE canonical_name LIKE ? OR primary_phone LIKE ?
+                ORDER BY observation_count DESC
+                LIMIT 6
+            """, [like_q, like_q]).fetchall()]
+        except Exception:
+            result["brokers"] = []
 
-    # Buildings
-    result["buildings"] = [dict(r) for r in storage.db.execute("""
-        SELECT DISTINCT rd.building_name AS name, p.micro_market,
-               COUNT(*) AS occurrence_count,
-               COUNT(DISTINCT p.broker_name) AS broker_count
-        FROM resolver_decisions rd
-        LEFT JOIN parsed_output p ON p.id = rd.parsed_id
-        WHERE rd.building_name IS NOT NULL AND rd.building_name != ''
-          AND rd.building_name LIKE ?
-        GROUP BY rd.building_name
-        ORDER BY occurrence_count DESC
-        LIMIT 6
-    """, [like_q]).fetchall()]
+        # Buildings
+        try:
+            result["buildings"] = [dict(r) for r in storage.db.execute("""
+                SELECT DISTINCT rd.building_name AS name, p.micro_market,
+                       COUNT(*) AS occurrence_count,
+                       COUNT(DISTINCT p.broker_name) AS broker_count
+                FROM resolver_decisions rd
+                LEFT JOIN parsed_output p ON p.id = rd.parsed_id
+                WHERE rd.building_name IS NOT NULL AND rd.building_name != ''
+                  AND rd.building_name LIKE ?
+                GROUP BY rd.building_name
+                ORDER BY occurrence_count DESC
+                LIMIT 6
+            """, [like_q]).fetchall()]
+        except Exception:
+            result["buildings"] = []
 
-    # Markets
-    result["markets"] = [dict(r) for r in storage.db.execute("""
-        SELECT micro_market, COUNT(*) AS observation_count,
-               COUNT(DISTINCT building_name) AS building_count,
-               COUNT(DISTINCT broker_name) AS broker_count
-        FROM parsed_output
-        WHERE micro_market IS NOT NULL AND micro_market != ''
-          AND micro_market LIKE ?
-        GROUP BY micro_market
-        ORDER BY observation_count DESC
-        LIMIT 6
-    """, [like_q]).fetchall()]
+        # Markets
+        try:
+            result["markets"] = [dict(r) for r in storage.db.execute("""
+                SELECT micro_market, COUNT(*) AS observation_count,
+                       COUNT(DISTINCT building_name) AS building_count,
+                       COUNT(DISTINCT broker_name) AS broker_count
+                FROM parsed_output
+                WHERE micro_market IS NOT NULL AND micro_market != ''
+                  AND micro_market LIKE ?
+                GROUP BY micro_market
+                ORDER BY observation_count DESC
+                LIMIT 6
+            """, [like_q]).fetchall()]
+        except Exception:
+            result["markets"] = []
 
-    # Raw messages (for full-text search of messages)
-    result["messages"] = [dict(r) for r in storage.db.execute("""
-        SELECT id, message, group_name, sender, timestamp
-        FROM raw_messages
-        WHERE message LIKE ?
-        ORDER BY id DESC
-        LIMIT 6
-    """, [like_q]).fetchall()]
+        # Raw messages (for full-text search of messages)
+        try:
+            result["messages"] = [dict(r) for r in storage.db.execute("""
+                SELECT id, message, group_name, sender, timestamp
+                FROM raw_messages
+                WHERE message LIKE ?
+                ORDER BY id DESC
+                LIMIT 6
+            """, [like_q]).fetchall()]
+        except Exception:
+            result["messages"] = []
+    except Exception:
+        pass
 
     # Remove empty groups
     result = {k: v for k, v in result.items() if v}
