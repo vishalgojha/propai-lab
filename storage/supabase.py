@@ -523,9 +523,9 @@ class _RestClient:
             "Authorization": f"Bearer {key}",
             "Content-Type": "application/json",
         }
-        timeout_seconds = float(os.getenv("SUPABASE_HTTP_TIMEOUT_SECONDS", "8"))
+        timeout_seconds = float(os.getenv("SUPABASE_HTTP_TIMEOUT_SECONDS", "30"))
         self._http = httpx.Client(
-            timeout=httpx.Timeout(timeout_seconds, connect=min(3.0, timeout_seconds)),
+            timeout=httpx.Timeout(timeout_seconds, connect=min(5.0, timeout_seconds)),
             headers=self._headers,
         )
 
@@ -1495,34 +1495,56 @@ class SupabaseStorage(Storage):
         if not rows:
             return []
 
-        def broker_key(r: dict, parsed: dict | None = None) -> str:
+        def _raw_broker_key(r: dict, parsed: dict | None = None) -> str:
             parsed = parsed or {}
-            return (
-                (r.get("sender_jid") or "").strip()
-                or (r.get("sender_phone") or "").strip()
-                or (parsed.get("broker_phone") or "").strip()
-                or (parsed.get("broker_name") or "").strip()
-                or (r.get("sender") or "").strip()
-                or "unknown"
+            raw_phone = (
+                _normalize_india_phone(r.get("sender_jid") or "")
+                or _normalize_india_phone(r.get("sender_phone") or "")
+                or _normalize_india_phone(parsed.get("broker_phone") or "")
             )
+            if raw_phone:
+                return raw_phone
+            name = _clean_person_name(parsed.get("broker_name") or "")
+            if name:
+                return f"name:{_market_name_key(name)}"
+            name = _clean_person_name(r.get("sender") or "")
+            if name:
+                return f"name:{_market_name_key(name)}"
+            return "unknown"
 
-        def broker_label(r: dict, parsed: dict | None = None) -> str:
+        def _raw_broker_label(r: dict, parsed: dict | None = None) -> str:
             parsed = parsed or {}
             return (
                 _clean_person_name(parsed.get("broker_name") or "")
                 or _clean_person_name(r.get("sender") or "")
-                or (parsed.get("broker_phone") or "").strip()
-                or (r.get("sender_phone") or "").strip()
-                or (r.get("sender_jid") or "").strip()
+                or _normalize_india_phone(parsed.get("broker_phone") or "")
+                or _normalize_india_phone(r.get("sender_phone") or "")
+                or _normalize_india_phone(r.get("sender_jid") or "")
                 or "Unknown broker"
             )
 
         groups: dict[str, list[dict]] = {}
+        phone_counts: dict[str, set[str]] = {}
+        unknown_senders: dict[str, list[dict]] = {}
         for row in rows:
             if not row.get("is_group", False):
                 continue
-            key = broker_key(row)
+            key = _raw_broker_key(row)
             groups.setdefault(key, []).append(row)
+            phone = _normalize_india_phone(row.get("sender_jid") or "") or _normalize_india_phone(row.get("sender_phone") or "")
+            if phone and key.startswith("name:"):
+                name_part = key[5:]
+                phone_counts.setdefault(name_part, set()).add(phone)
+            if key == "unknown":
+                jid = (row.get("sender_jid") or "").strip()
+                unknown_senders.setdefault(jid, []).append(row)
+
+        for name_part, phones in phone_counts.items():
+            name_key = f"name:{name_part}"
+            if len(phones) == 1 and name_key not in groups:
+                phone = next(iter(phones))
+                group_rows = groups.pop(name_key, [])
+                groups.setdefault(phone, []).extend(group_rows)
 
         latest_ids = [msgs[0].get("id") for msgs in groups.values() if msgs and msgs[0].get("id")]
         parsed_map: dict[int, dict] = {}
@@ -1543,13 +1565,13 @@ class SupabaseStorage(Storage):
             latest = msgs[0]
             ts = latest.get("timestamp") or latest.get("created_at") or ""
             p = parsed_map.get(latest["id"])
-            conv_name = broker_label(latest, p)
-            chat_id = (
-                latest.get("sender_jid")
-                or latest.get("sender_phone")
-                or (p or {}).get("broker_phone")
-                or key
+            conv_name = _raw_broker_label(latest, p)
+            phone = (
+                _normalize_india_phone(latest.get("sender_jid") or "")
+                or _normalize_india_phone(latest.get("sender_phone") or "")
+                or _normalize_india_phone((p or {}).get("broker_phone") or "")
             )
+            chat_id = phone or key
             group_name = latest.get("group_name") or ""
             is_group = "@g.us" in group_name or "_broadcast" in group_name
             latest["chat_id"] = chat_id
@@ -1575,14 +1597,12 @@ class SupabaseStorage(Storage):
         return threads[offset:offset + limit]
 
     def _get_parsed_market_threads(self, limit: int, offset: int, tenant_id: str | None = None) -> list[dict]:
-        cutoff = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
         tid = tenant_id or self._tenant_id
 
         query = self.client.table("parsed_output")\
             .select("id,raw_message_id,message_type,intent,bhk,price,price_unit,area_sqft,furnishing,location_raw,building_name,landmark_name,micro_market,broker_name,broker_phone,profile_name,listing_index,confidence,summary_title,created_at")\
-            .gte("created_at", cutoff)\
             .order("created_at", desc=True)\
-            .limit(max(5000, limit + offset))
+            .limit(max(50000, limit + offset))
         if tid:
             query = query.eq("tenant_id", tid)
         parsed_rows = query.execute().data or []
@@ -1592,20 +1612,39 @@ class SupabaseStorage(Storage):
         raw_ids = list({p["raw_message_id"] for p in parsed_rows if p.get("raw_message_id")})
         raw_map: dict[int, dict] = {}
         if raw_ids:
-            raw_query = self.client.table("raw_messages").select(
-                "id,group_name,sender,sender_phone,sender_jid,timestamp,created_at,message_uid,message,raw_payload,is_group"
-            ).in_("id", raw_ids[:min(len(raw_ids), 10000)])
-            if tid:
-                raw_query = raw_query.eq("tenant_id", tid)
-            raw_res = raw_query.execute()
-            for r in raw_res.data or []:
-                if r.get("id"):
-                    raw_map[r["id"]] = r
+            BATCH_SIZE = 500
+            for i in range(0, len(raw_ids), BATCH_SIZE):
+                batch = raw_ids[i:i + BATCH_SIZE]
+                raw_query = self.client.table("raw_messages").select(
+                    "id,group_name,sender,sender_phone,sender_jid,timestamp,created_at,message_uid,message,raw_payload,is_group"
+                ).in_("id", batch)
+                if tid:
+                    raw_query = raw_query.eq("tenant_id", tid)
+                try:
+                    raw_res = raw_query.execute()
+                    for r in raw_res.data or []:
+                        if r.get("id"):
+                            raw_map[r["id"]] = r
+                except Exception:
+                    _logger.exception("_get_parsed_market_threads: batch query failed for %d ids", len(batch))
+            dropped = len(raw_ids) - len(raw_map)
+            if dropped > 0:
+                _logger.warning(
+                    "_get_parsed_market_threads: %d raw_message_ids had no matching raw_messages row",
+                    dropped,
+                )
 
         market_rows: list[tuple[dict, dict, str, str]] = []
         phones_by_name: dict[str, set[str]] = defaultdict(set)
         for parsed in parsed_rows:
-            raw = raw_map.get(parsed.get("raw_message_id")) or {}
+            raw = raw_map.get(parsed.get("raw_message_id"))
+            if raw is None:
+                if parsed.get("raw_message_id"):
+                    _logger.debug(
+                        "_get_parsed_market_threads: missing raw_message_id=%s for parsed id=%s — skipping",
+                        parsed.get("raw_message_id"), parsed.get("id"),
+                    )
+                continue
             if not raw.get("is_group", False):
                 continue
 
@@ -2898,11 +2937,9 @@ class SupabaseStorage(Storage):
                 "p_intent": intent,
                 "p_tenant_id": tid or None,
             })
-            if isinstance(rows, list) and (rows or not broker_key):
+            if isinstance(rows, list) and rows:
                 return rows
         except Exception:
-            # Backward-compatible during rolling deploys before the migration
-            # has reached the database.
             pass
 
         if broker_key:
@@ -3087,15 +3124,14 @@ class SupabaseStorage(Storage):
                 "p_min_observations": min_observations,
                 "p_tenant_id": tid or None,
             })
-            if isinstance(rows, list):
+            if isinstance(rows, list) and rows:
                 return rows
         except Exception:
-            # Preserve availability while API and migration roll out.
             pass
 
         try:
             parsed_threads = self._get_parsed_market_threads(
-                max(5000, limit + offset), 0, tenant_id=tid
+                max(50000, limit + offset), 0, tenant_id=tid
             )
             result = []
             for thread in parsed_threads:
