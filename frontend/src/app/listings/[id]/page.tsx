@@ -60,6 +60,76 @@ function intentBadge(intent?: string) {
   return <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${cls}`}>{intent}</span>;
 }
 
+const DEAL_TAG_LABELS: Record<string, { label: string; cls: string }> = {
+  distress_sale: { label: "DISTRESS SALE", cls: "bg-red-900/50 text-red-200 border border-red-700/50" },
+  bank_auction: { label: "BANK AUCTION", cls: "bg-red-900/50 text-red-200 border border-red-700/50" },
+  urgent_sale: { label: "URGENT SALE", cls: "bg-orange-900/50 text-orange-200 border border-orange-700/50" },
+  negotiable: { label: "NEGOTIABLE", cls: "bg-emerald-900/50 text-emerald-200" },
+  resale: { label: "RESALE", cls: "bg-zinc-700 text-zinc-200" },
+  exclusive_mandate: { label: "EXCLUSIVE MANDATE", cls: "bg-purple-900/50 text-purple-200" },
+  price_drop: { label: "PRICE DROP", cls: "bg-blue-900/50 text-blue-200" },
+};
+
+function dealTagBadges(tags?: string[] | null) {
+  if (!tags || !Array.isArray(tags) || tags.length === 0) return null;
+  return (
+    <>
+      {tags.map((tag) => {
+        const spec = DEAL_TAG_LABELS[tag] || { label: tag.toUpperCase().replace(/_/g, " "), cls: "bg-zinc-700 text-zinc-200" };
+        return (
+          <span
+            key={tag}
+            className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${spec.cls}`}
+            title={spec.label}
+          >
+            {spec.label}
+          </span>
+        );
+      })}
+    </>
+  );
+}
+
+function formatChargeAmount(amount: number, type: string, listingPrice?: number | null) {
+  if (type === "percent_of_price") {
+    return `${amount}% of price`;
+  }
+  // Fixed amount — render in compact form (Lakhs / Crores).
+  if (amount >= 10000000) return `${(amount / 10000000).toLocaleString("en-IN", { maximumFractionDigits: 2 })} Cr`;
+  if (amount >= 100000) return `${(amount / 100000).toLocaleString("en-IN", { maximumFractionDigits: 2 })} L`;
+  if (amount >= 1000) return `${(amount / 1000).toLocaleString("en-IN", { maximumFractionDigits: 1 })} K`;
+  return `${amount.toLocaleString("en-IN")}`;
+}
+
+function additionalChargesSection(
+  charges?: any[] | null,
+  listingPrice?: number | null,
+) {
+  if (!charges || !Array.isArray(charges) || charges.length === 0) return null;
+  return (
+    <div className="mt-2 space-y-0.5">
+      <div className="text-[10px] uppercase tracking-wide text-zinc-500">Additional charges</div>
+      {charges.map((c, idx) => {
+        const label = String(c?.label || "").trim();
+        const amount = Number(c?.amount);
+        const type = String(c?.amount_type || "");
+        if (!label || !Number.isFinite(amount) || (type !== "fixed" && type !== "percent_of_price")) return null;
+        const resolved =
+          type === "percent_of_price" && listingPrice
+            ? `${amount}% ≈ ₹${((amount / 100) * listingPrice).toLocaleString("en-IN", { maximumFractionDigits: 0 })}`
+            : `₹${formatChargeAmount(amount, type, listingPrice)}`;
+        return (
+          <div key={`${label}-${idx}`} className="text-xs text-zinc-300">
+            <span className="text-zinc-400">+</span>
+            <span className="ml-1">{label}:</span>
+            <span className="ml-1.5 font-medium text-amber-300">{resolved}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function InfoRow({ label, value, link }: { label: string; value?: string | number | null; link?: string }) {
   if (!value && value !== 0) return null;
   return (
@@ -147,6 +217,7 @@ export default function ListingDetailPage() {
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
               {intentBadge(listing.intent)}
+              {dealTagBadges(listing.deal_tags)}
               {listing.bhk && (
                 <span className="text-[10px] px-2 py-0.5 rounded-full bg-zinc-700 text-zinc-200 font-medium">
                   {listing.bhk}
@@ -175,6 +246,7 @@ export default function ListingDetailPage() {
             {pricePerSqft && (
               <div className="text-xs text-zinc-500 mt-0.5">₹{pricePerSqft.toLocaleString("en-IN")}/sqft</div>
             )}
+            {additionalChargesSection(listing.additional_charges, listing.price)}
           </div>
         </div>
       </div>
@@ -221,6 +293,33 @@ export default function ListingDetailPage() {
             <InfoRow label="Commercial use" value={listing.commercial_use_type || "—"} />
             <InfoRow label="Fitout" value={listing.fitout_status || "—"} />
             <InfoRow label="Occupancy" value={listing.occupancy_type || "—"} />
+            {Array.isArray(listing.deal_tags) && listing.deal_tags.length > 0 && (
+              <div className="py-1.5 border-b border-white/5 flex items-baseline justify-between gap-2">
+                <span className="text-xs text-zinc-500 shrink-0">Deal type</span>
+                <span className="flex flex-wrap gap-1 justify-end">
+                  {dealTagBadges(listing.deal_tags)}
+                </span>
+              </div>
+            )}
+            {Array.isArray(listing.additional_charges) && listing.additional_charges.length > 0 && (
+              <div className="py-1.5 border-b border-white/5">
+                <div className="text-xs text-zinc-500 mb-1">Additional charges</div>
+                <div className="space-y-0.5">
+                  {listing.additional_charges.map((c: any, idx: number) => {
+                    const label = String(c?.label || "").trim();
+                    const amount = Number(c?.amount);
+                    const type = String(c?.amount_type || "");
+                    if (!label || !Number.isFinite(amount) || (type !== "fixed" && type !== "percent_of_price")) return null;
+                    return (
+                      <div key={`detail-charge-${idx}`} className="text-sm text-zinc-200 text-right">
+                        <span className="text-zinc-400">+ </span>
+                        {label}: <span className="font-medium text-amber-300">{formatChargeAmount(amount, type)}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
         </section>
 

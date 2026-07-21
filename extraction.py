@@ -89,6 +89,54 @@ def _sanitize_parsed_listing(parsed: dict) -> dict:
     return {key: _sanitize_parsed_value(value) for key, value in parsed.items()}
 
 
+# Defence-in-depth validators for AI-only fields (deal_tags, additional_charges).
+# ai_extract() already runs _normalize_extraction in ai_extraction.py, but if
+# any code path bypasses that (mocked in tests, future schema migration, raw
+# LLM output without normalization), the row should still be safe to save.
+_VALID_DEAL_TAGS_STORAGE = frozenset({
+    "distress_sale", "urgent_sale", "negotiable", "bank_auction",
+    "resale", "exclusive_mandate", "price_drop",
+})
+_VALID_CHARGE_TYPES_STORAGE = frozenset({"fixed", "percent_of_price"})
+
+
+def _safe_deal_tags(raw) -> list[str]:
+    if not isinstance(raw, list):
+        return []
+    out: list[str] = []
+    for t in raw:
+        if not isinstance(t, str):
+            continue
+        key = t.strip().lower()
+        if key and key in _VALID_DEAL_TAGS_STORAGE:
+            out.append(key)
+    return out
+
+
+def _safe_additional_charges(raw) -> list[dict]:
+    if not isinstance(raw, list):
+        return []
+    out: list[dict] = []
+    for c in raw:
+        if not isinstance(c, dict):
+            continue
+        label = c.get("label")
+        amount = c.get("amount")
+        amount_type = c.get("amount_type")
+        if not isinstance(label, str) or not label.strip():
+            continue
+        if not isinstance(amount_type, str) or amount_type.strip().lower() not in _VALID_CHARGE_TYPES_STORAGE:
+            continue
+        try:
+            amount_f = float(amount)
+        except (TypeError, ValueError):
+            continue
+        if not (amount_f == amount_f):  # NaN check
+            continue
+        out.append({"label": label.strip(), "amount": amount_f, "amount_type": amount_type.strip().lower()})
+    return out
+
+
 def _ai_extraction_to_parsed(ai_extraction: dict, raw_text: str, sender_name: str, push_name: str) -> dict:
     """Convert AI extraction schema to the existing parsed dict format.
 
@@ -485,6 +533,14 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
             embedding=embedding_blob,
             summary_title=ai_extraction_raw.get("title") if ai_extraction_raw else generate_summary_title(parsed, source_text),
             ai_extraction=ai_extraction_raw,
+            # deal_tags + additional_charges are AI-only signals (regex parser
+            # doesn't know about them). When AI extraction fails/times out we
+            # fall back to an empty list so the row still saves. We also
+            # re-run the whitelist/dict-shape validator here so a junk value
+            # from any code path (LLM drift, future schema changes, mocked
+            # ai_extract in tests) can't poison the row.
+            deal_tags=_safe_deal_tags(ai_extraction_raw.get("deal_tags") if ai_extraction_raw else None),
+            additional_charges=_safe_additional_charges(ai_extraction_raw.get("additional_charges") if ai_extraction_raw else None),
         )
         try:
             parsed_id = storage.save_parsed(obs)

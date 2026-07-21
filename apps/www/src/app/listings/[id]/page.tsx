@@ -68,6 +68,8 @@ function toCardFields(row: NonNullable<Awaited<ReturnType<typeof getListingById>
     broker_name: row.broker_name,
     broker_phone: row.broker_phone,
     last_seen: row.last_seen,
+    deal_tags: row.deal_tags,
+    additional_charges: row.additional_charges,
   };
 }
 
@@ -246,6 +248,28 @@ export default async function ListingPage({ params }: Params) {
                 <span className="mt-1 inline-block rounded-md bg-green-400/10 px-2 py-0.5 text-xs font-semibold text-green-300">
                   {dealType}
                 </span>
+                {card.dealTags.length > 0 && (
+                  <div className="mt-2 flex flex-wrap justify-end gap-1.5">
+                    {card.dealTags.map((t) => (
+                      <span
+                        key={t.tag}
+                        className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${t.tone}`}
+                      >
+                        {t.label}
+                      </span>
+                    ))}
+                  </div>
+                )}
+                {card.additionalCharges.length > 0 && (
+                  <ul className="mt-2 space-y-0.5 text-xs text-zinc-400">
+                    {card.additionalCharges.map((c, i) => (
+                      <li key={`${c.label}-${i}`} className="flex items-center justify-end gap-1.5">
+                        <span className="text-zinc-500">{c.label}</span>
+                        <span className="font-medium text-zinc-200">{c.amountLabel}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
             </div>
 

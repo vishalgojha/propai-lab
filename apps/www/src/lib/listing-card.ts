@@ -24,6 +24,14 @@ export type ListingCardFields = {
   broker_name: string | null;
   broker_phone: string | null;
   last_seen: string | null;
+  deal_tags?: string[] | null;
+  additional_charges?: AdditionalCharge[] | null;
+};
+
+export type AdditionalCharge = {
+  label: string;
+  amount: number | null;
+  amount_type: "fixed" | "percent_of_price";
 };
 
 // Structured spec entries so callers can render an icon per spec (bed count,
@@ -52,6 +60,8 @@ export type ListingCardViewModel = {
   brokerName: string | null;
   priceModel: string | null;
   pricePerSqft: number | null;
+  dealTags: Array<{ tag: string; label: string; tone: string }>;
+  additionalCharges: Array<{ label: string; amountLabel: string }>;
 };
 
 function normalizeUnit(value: string | null): string | null {
@@ -304,6 +314,88 @@ export function safeBrokerName(raw: string | null): string | null {
   return v;
 }
 
+// Deal-tag taxonomy — mirrors the whitelist enforced server-side in
+// ai_extraction._VALID_DEAL_TAGS. Tone buckets are public-site Tailwind class
+// fragments (border + bg + text). Kept in this file so the card + detail
+// page stay in sync without prop drilling.
+const DEAL_TAG_LABELS: Record<string, string> = {
+  distress_sale: "Distress sale",
+  urgent_sale: "Urgent sale",
+  negotiable: "Negotiable",
+  bank_auction: "Bank auction",
+  resale: "Resale",
+  exclusive_mandate: "Exclusive mandate",
+  price_drop: "Price drop",
+};
+
+const DEAL_TAG_TONES: Record<string, string> = {
+  distress_sale: "border-red-400/30 bg-red-400/10 text-red-300",
+  urgent_sale: "border-orange-400/30 bg-orange-400/10 text-orange-300",
+  negotiable: "border-emerald-400/30 bg-emerald-400/10 text-emerald-300",
+  bank_auction: "border-blue-400/30 bg-blue-400/10 text-blue-300",
+  resale: "border-zinc-400/30 bg-zinc-400/10 text-zinc-300",
+  exclusive_mandate: "border-purple-400/30 bg-purple-400/10 text-purple-300",
+  price_drop: "border-cyan-400/30 bg-cyan-400/10 text-cyan-300",
+};
+
+export function buildDealTags(raw: string[] | null | undefined): ListingCardViewModel["dealTags"] {
+  if (!raw || raw.length === 0) return [];
+  const out: ListingCardViewModel["dealTags"] = [];
+  for (const tag of raw) {
+    if (typeof tag !== "string") continue;
+    const key = tag.trim().toLowerCase();
+    if (!key) continue;
+    const label = DEAL_TAG_LABELS[key];
+    const tone = DEAL_TAG_TONES[key];
+    if (!label || !tone) continue; // whitelist — drop anything we don't recognise
+    out.push({ tag: key, label, tone });
+  }
+  return out;
+}
+
+// Compact Indian-currency formatter for additional charge lines: 1000000 → "₹10L",
+// 3500000 → "₹35L", 15000000 → "₹1.5Cr". Mirrors formatCardPrice units but is
+// purely display-side; server stores `amount` as raw INR.
+function formatChargeAmount(amount: number): string {
+  if (!Number.isFinite(amount) || amount <= 0) return "₹—";
+  if (amount >= 1_00_00_000) {
+    const cr = amount / 1_00_00_000;
+    return `₹${cr % 1 === 0 ? cr.toFixed(0) : cr.toFixed(1)}Cr`;
+  }
+  if (amount >= 1_00_000) {
+    const lac = amount / 1_00_000;
+    return `₹${lac % 1 === 0 ? lac.toFixed(0) : lac.toFixed(1)}L`;
+  }
+  if (amount >= 1_000) {
+    const k = amount / 1_000;
+    return `₹${k % 1 === 0 ? k.toFixed(0) : k.toFixed(1)}K`;
+  }
+  return `₹${amount.toLocaleString("en-IN")}`;
+}
+
+export function buildAdditionalCharges(
+  raw: AdditionalCharge[] | null | undefined,
+): ListingCardViewModel["additionalCharges"] {
+  if (!raw || raw.length === 0) return [];
+  const out: ListingCardViewModel["additionalCharges"] = [];
+  for (const c of raw) {
+    if (!c || typeof c !== "object") continue;
+    const label = typeof c.label === "string" ? c.label.trim() : "";
+    if (!label) continue;
+    if (c.amount_type === "percent_of_price" && typeof c.amount === "number" && Number.isFinite(c.amount)) {
+      const pct = c.amount;
+      out.push({ label, amountLabel: `${pct % 1 === 0 ? pct.toFixed(0) : pct.toFixed(2)}% of price` });
+      continue;
+    }
+    if (c.amount_type === "fixed" && typeof c.amount === "number" && Number.isFinite(c.amount) && c.amount > 0) {
+      out.push({ label, amountLabel: `+ ${formatChargeAmount(c.amount)}` });
+      continue;
+    }
+    // Malformed entry — drop silently rather than render "undefined%".
+  }
+  return out;
+}
+
 export function toListingCardViewModel(
   row: ListingCardFields,
   isBuilding: boolean,
@@ -334,5 +426,7 @@ export function toListingCardViewModel(
     brokerName: safeBrokerName(row.broker_name),
     priceModel: row.price_model ?? null,
     pricePerSqft: row.price_per_sqft ?? null,
+    dealTags: buildDealTags(row.deal_tags),
+    additionalCharges: buildAdditionalCharges(row.additional_charges),
   };
 }
