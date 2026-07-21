@@ -270,8 +270,14 @@ function AppShell({ children }: { children: React.ReactNode }) {
     if (authLoading) return;
     if (authError) return;
     if (!user) {
-      router.replace(`/auth/login?next=${encodeURIComponent(pathname || "/dashboard")}`);
-      return;
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
+      const project = supabaseUrl.replace(/^https?:\/\//, "").split(".")[0];
+      const hasStoredSession = typeof window !== "undefined" &&
+        !!localStorage.getItem(`sb-${project}-auth-token`);
+      const t = setTimeout(() => {
+        router.replace(`/auth/login?next=${encodeURIComponent(pathname || "/dashboard")}`);
+      }, hasStoredSession ? 2000 : 0);
+      return () => clearTimeout(t);
     }
   }, [authLoading, authError, user, pathname, router]);
 
@@ -290,6 +296,35 @@ function AppShell({ children }: { children: React.ReactNode }) {
       });
     return () => { cancelled = true; };
   }, [authLoading, user?.id]);
+
+  // PWA back-navigation stack — intercept popstate so the Android
+  // hardware back button navigates in-app instead of exiting the PWA.
+  const navStackRef = useRef<string[]>([]);
+  useEffect(() => {
+    const key = `propai_nav_stack`;
+    try {
+      const saved = sessionStorage.getItem(key);
+      if (saved) navStackRef.current = JSON.parse(saved);
+    } catch { /* ignore */ }
+    const save = () => sessionStorage.setItem(key, JSON.stringify(navStackRef.current));
+    // Push current path on navigation
+    if (pathname && navStackRef.current[navStackRef.current.length - 1] !== pathname) {
+      navStackRef.current.push(pathname);
+      save();
+    }
+    const onPopState = () => {
+      navStackRef.current.pop();
+      save();
+      const prev = navStackRef.current[navStackRef.current.length - 1];
+      if (prev && prev !== pathname) {
+        router.push(prev);
+      } else {
+        router.push("/dashboard");
+      }
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, [pathname, router]);
 
   const handleSignOut = useCallback(async () => {
     localStorage.removeItem("propai_profile");

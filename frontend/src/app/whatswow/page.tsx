@@ -3,6 +3,7 @@
 export const dynamic = "force-dynamic";
 
 import { useCallback, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   Zap,
   MessageSquare,
@@ -29,6 +30,7 @@ import {
   Radio,
   ChevronDown,
   ChevronRight,
+  ChevronLeft,
   Wifi,
   WifiOff,
   Activity,
@@ -138,6 +140,7 @@ function ago(value?: string) {
 }
 
 export default function WhatsWowPage() {
+  const router = useRouter();
   const [capabilities, setCapabilities] = useState<Capability[]>([]);
   const [phones, setPhones] = useState<PhoneStatus[]>([]);
   const [loading, setLoading] = useState(true);
@@ -184,12 +187,22 @@ export default function WhatsWowPage() {
     <main className="mx-auto max-w-[1500px] space-y-5 px-4 py-5 text-white sm:px-6">
       {/* Header */}
       <header className="flex flex-wrap items-end justify-between gap-4 border-b border-white/10 pb-5">
-        <div>
-          <Kicker>WhatsApp ingestor</Kicker>
-          <h1 className="mt-2 text-3xl font-semibold tracking-[-0.04em] sm:text-4xl">WhatsWow</h1>
-          <p className="mt-2 max-w-2xl text-sm text-zinc-500">
-            Live connection status, message capture capabilities and ingestor health.
-          </p>
+        <div className="flex items-start gap-3">
+          <button
+            type="button"
+            onClick={() => router.back()}
+            className="mt-1 flex h-8 w-8 items-center justify-center rounded-lg text-zinc-400 hover:bg-white/5 hover:text-white transition-colors lg:hidden"
+            aria-label="Go back"
+          >
+            <ChevronLeft className="h-5 w-5" />
+          </button>
+          <div>
+            <Kicker>WhatsApp ingestor</Kicker>
+            <h1 className="mt-2 text-3xl font-semibold tracking-[-0.04em] sm:text-4xl">WhatsWow</h1>
+            <p className="mt-2 max-w-2xl text-sm text-zinc-500">
+              Live connection status, message capture capabilities and ingestor health.
+            </p>
+          </div>
         </div>
         <button
           type="button"
