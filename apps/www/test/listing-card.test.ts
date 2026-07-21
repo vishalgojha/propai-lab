@@ -5,6 +5,8 @@ import {
   toListingCardViewModel,
   formatCardPrice,
   waLinkFor,
+  buildListingSlug,
+  isBrokerContactable,
   type ListingCardFields,
   type AdditionalCharge,
 } from "../src/lib/listing-card";
@@ -191,12 +193,12 @@ check("additional_charges drops malformed entries silently", () => {
   const vm = toListingCardViewModel(
     base({
       additional_charges: [
-        { label: "Society dues", amount: 1000000, amount_type: "fixed" }, // valid
-        { label: "", amount: 100000, amount_type: "fixed" },             // missing label
-        { label: "Garbage", amount_type: "fixed" },                       // missing amount
-        { label: "Bad", amount: 100000, amount_type: "weekly" },           // bad amount_type
-        { label: "NaN", amount: Number.NaN, amount_type: "fixed" },       // non-finite amount
-        null as unknown as AdditionalCharge,                              // null entry
+        { label: "Society dues", amount: 1000000, amount_type: "fixed" },            // valid
+        { label: "", amount: 100000, amount_type: "fixed" },                          // missing label
+        { label: "Garbage" } as unknown as AdditionalCharge,                          // missing amount
+        { label: "Bad", amount: 100000, amount_type: "weekly" } as unknown as AdditionalCharge, // bad amount_type
+        { label: "NaN", amount: Number.NaN, amount_type: "fixed" },                   // non-finite amount
+        null as unknown as AdditionalCharge,                                          // null entry
       ],
     }),
     false,
@@ -211,6 +213,81 @@ check("additional_charges null/empty -> empty VM array", () => {
   assert.deepEqual(a.additionalCharges, []);
   assert.deepEqual(b.additionalCharges, []);
   assert.deepEqual(c.additionalCharges, []);
+});
+
+// ── SEO slug (buildListingSlug) ────────────────────────────────────
+//
+// The public route /listings/[slug]/[id] uses this slug. Format is
+// "{bhk-or-property-type}-{locality-or-empty}-{id}" — the id is always
+// appended so the URL stays unique even when the prefix is empty.
+check("buildListingSlug formats bhk + locality + id", () => {
+  assert.equal(
+    buildListingSlug({ id: 12345, bhk: "3 BHK", micro_market: "Bandra West" }),
+    "3-bhk-bandra-west-12345",
+  );
+});
+check("buildListingSlug falls back to building when locality missing", () => {
+  assert.equal(
+    buildListingSlug({ id: 319236, bhk: "3 BHK", micro_market: null, building_name: "Rajgriha CHS" }),
+    "3-bhk-rajgriha-chs-319236",
+  );
+});
+check("buildListingSlug returns just the id when no fields available", () => {
+  assert.equal(buildListingSlug({ id: 999 }), "999");
+  assert.equal(buildListingSlug({ id: 999, bhk: "", micro_market: "", building_name: "" }), "999");
+});
+check("buildListingSlug handles fractional bhk", () => {
+  assert.equal(
+    buildListingSlug({ id: 999, bhk: "2.5 BHK", micro_market: "Powai" }),
+    "2-5-bhk-powai-999",
+  );
+});
+check("buildListingSlug returns null for non-finite id", () => {
+  assert.equal(buildListingSlug({ id: NaN as unknown as number, bhk: "3 BHK" }), null);
+});
+check("href uses slug not bare id", () => {
+  const vm = toListingCardViewModel(
+    base({ id: 319236, bhk: "3 BHK", micro_market: "Andheri West", building_name: "Rajgriha CHS" }),
+    false,
+  );
+  assert.equal(vm.href, "/listings/3-bhk-andheri-west-319236");
+  assert.equal(vm.slug, "3-bhk-andheri-west-319236");
+});
+check("href falls back to bare id when slug cannot be computed", () => {
+  // NaN id produces a null slug and a null href.
+  const vm = toListingCardViewModel(base({ id: NaN as unknown as number }), false);
+  assert.equal(vm.href, null);
+  assert.equal(vm.slug, null);
+});
+
+// ── waAvailable (broker contactability) ────────────────────────────
+//
+// Mirrors the server-side check in /api/contact-broker/[id] so the public
+// card never shows a button that would just 302 back to the listing.
+check("waAvailable true when broker_phone is 10 digits", () => {
+  const vm = toListingCardViewModel(base({ broker_phone: "9123456789" }), false);
+  assert.equal(vm.waAvailable, true);
+});
+check("waAvailable true when broker_phone has +91 prefix", () => {
+  const vm = toListingCardViewModel(base({ broker_phone: "+91 9123456789" }), false);
+  assert.equal(vm.waAvailable, true);
+});
+check("waAvailable false when broker_phone null", () => {
+  const vm = toListingCardViewModel(base({ broker_phone: null }), false);
+  assert.equal(vm.waAvailable, false);
+});
+check("waAvailable false when broker_phone too short", () => {
+  const vm = toListingCardViewModel(base({ broker_phone: "12345" }), false);
+  assert.equal(vm.waAvailable, false);
+});
+check("isBrokerContactable handles raw digits", () => {
+  assert.equal(isBrokerContactable("9123456789"), true);
+  assert.equal(isBrokerContactable("919123456789"), true);
+  assert.equal(isBrokerContactable("+91 9123456789"), true);
+  assert.equal(isBrokerContactable(null), false);
+  assert.equal(isBrokerContactable(undefined), false);
+  assert.equal(isBrokerContactable(""), false);
+  assert.equal(isBrokerContactable("12345"), false);
 });
 
 console.log(`\n${passed} checks passed`);

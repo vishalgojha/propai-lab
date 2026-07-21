@@ -1003,3 +1003,37 @@ export async function matchLocalities(
     .slice(0, limit)
     .map((s) => s.loc);
 }
+
+// Lightweight projection of `listings` for the sitemap. Returns only the
+// fields we need to compute a slug and a lastModified timestamp; nothing
+// sensitive (no phone, no broker name) so it stays inside the public
+// surface. Filters to the last `sinceDays` so dead listings don't waste
+// Google crawl budget.
+export type SitemapListingRow = {
+  id: number;
+  last_seen: string | null;
+  micro_market: string | null;
+  bhk: string | null;
+  building_name: string | null;
+  property_type: string | null;
+};
+
+export async function getRecentListingsForSitemap(
+  opts: { sinceDays: number; limit: number },
+): Promise<SitemapListingRow[]> {
+  const db = getServerSupabase();
+  if (!db) return [];
+  const sinceMs = Date.now() - opts.sinceDays * 86_400_000;
+  const sinceIso = new Date(sinceMs).toISOString();
+  const { data, error } = await db
+    .from("listings")
+    .select("id, last_seen, micro_market, bhk, building_name, property_type")
+    .gte("last_seen", sinceIso)
+    .order("last_seen", { ascending: false })
+    .limit(opts.limit);
+  if (error) {
+    console.error("getRecentListingsForSitemap error:", error.message);
+    return [];
+  }
+  return (data ?? []) as SitemapListingRow[];
+}

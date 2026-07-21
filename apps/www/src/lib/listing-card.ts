@@ -57,6 +57,8 @@ export type ListingCardViewModel = {
   assetTypeLabel: string | null;
   waLink: string | null;
   href: string | null;
+  slug: string | null;
+  waAvailable: boolean;
   brokerName: string | null;
   priceModel: string | null;
   pricePerSqft: number | null;
@@ -314,6 +316,60 @@ export function safeBrokerName(raw: string | null): string | null {
   return v;
 }
 
+// True when the stored broker_phone can be coerced to a 10-digit Indian mobile
+// (with or without the +91 prefix). Mirrors the server-side check in the
+// /api/contact-broker/[id] route so the public card never shows a "Contact on
+// WhatsApp" button that would just 302 back to the listing page.
+export function isBrokerContactable(raw: string | null | undefined): boolean {
+  if (!raw) return false;
+  const digits = String(raw).replace(/\D/g, "");
+  if (digits.length < 10) return false;
+  const local = digits.length > 10 ? digits.slice(-10) : digits;
+  return local.length === 10;
+}
+
+// SEO-friendly slug for the public /listings/[slug]/[id] route. Format:
+//   `{bhk-or-property-type}-{locality-or-empty}-{id}`
+// The id is always appended so the URL is unique even when the prefix is empty
+// or repeats. Examples:
+//   bhk="3 BHK", micro_market="Andheri West", id=319236 → "3-bhk-andheri-west-319236"
+//   bhk=null, micro_market=null, id=319236              → "319236"
+//   bhk="2.5 BHK", micro_market="Powai", id=999         → "2-5-bhk-powai-999"
+// Use this from listing-card.ts, sitemap.ts, and contact-broker route so all
+// three surfaces point at the same canonical URL.
+export type SlugInput = {
+  id: number;
+  bhk?: string | null;
+  micro_market?: string | null;
+  building_name?: string | null;
+  property_type?: string | null;
+};
+
+export function buildListingSlug(input: SlugInput): string | null {
+  if (!Number.isFinite(input.id)) return null;
+  const id = String(input.id);
+  const parts: string[] = [];
+  const bhk = (input.bhk ?? "").trim();
+  if (bhk) parts.push(slugify(bhk));
+  // Prefer the locality when present, then fall back to the building name —
+  // either alone gives Google a usable keyword on the URL.
+  const micro = (input.micro_market ?? "").trim();
+  if (micro) parts.push(slugify(micro));
+  else {
+    const bldg = (input.building_name ?? "").trim();
+    if (bldg && !/^(sq\.?\s*ft|multiple options|carpet|na\b)/i.test(bldg)) {
+      parts.push(slugify(bldg));
+    }
+  }
+  // If both bhk and locality/building are missing, the slug is just the id.
+  // Otherwise join with hyphens, then suffix the id for uniqueness.
+  if (parts.length === 0) return id;
+  // Filter out empty parts (e.g. if bhk was just whitespace), then join.
+  const filtered = parts.filter((p) => p.length > 0);
+  if (filtered.length === 0) return id;
+  return `${filtered.join("-")}-${id}`;
+}
+
 // Deal-tag taxonomy — mirrors the whitelist enforced server-side in
 // ai_extraction._VALID_DEAL_TAGS. Tone buckets are public-site Tailwind class
 // fragments (border + bg + text). Kept in this file so the card + detail
@@ -407,6 +463,17 @@ export function toListingCardViewModel(
   const locality = ownLocality ?? (fallbackLocality && fallbackLocality.trim() ? fallbackLocality.trim() : null);
   const hasLocality = Boolean(locality);
   const specItems = buildSpecItems(row);
+  // Compute the SEO slug once so card href, JSON-LD, sitemap, and the
+  // back-compat redirect all agree on the canonical URL.
+  const slug = row.id != null
+    ? buildListingSlug({
+        id: row.id,
+        bhk: row.bhk,
+        micro_market: row.micro_market,
+        building_name: row.building_name,
+        property_type: row.property_type,
+      })
+    : null;
   return {
     title: buildTitle(row),
     locality,
@@ -422,7 +489,11 @@ export function toListingCardViewModel(
     freshnessBadge: formatFreshnessBadge(row.last_seen),
     assetTypeLabel: assetTypeLabel(row.asset_type, row.intent),
     waLink: waLinkFor(row.id),
-    href: row.id != null ? `/listings/${row.id}` : null,
+    // Public URL uses the SEO slug; if we couldn't compute one, fall back to
+    // the bare id (the back-compat route at /listings/[id] 301s to the slug).
+    slug,
+    href: row.id != null && Number.isFinite(row.id) ? `/listings/${slug ?? String(row.id)}` : null,
+    waAvailable: isBrokerContactable(row.broker_phone),
     brokerName: safeBrokerName(row.broker_name),
     priceModel: row.price_model ?? null,
     pricePerSqft: row.price_per_sqft ?? null,
