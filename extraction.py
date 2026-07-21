@@ -361,6 +361,31 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
             })
         except Exception:
             pass
+        # Save a no-anchor stub so the message still surfaces in the inbox
+        # feed (broker cards show message_count, not just listing_count).
+        # Without this, [Image]/[Video] placeholders get marked processed
+        # silently and brokers that only share images/videos appear empty.
+        msg_class = msg_class if 'msg_class' in locals() else "unknown"
+        try:
+            stub = ParsedObservation(
+                raw_message_id=raw_id,
+                message_type=msg_class,
+                intent="NO_ANCHOR",
+                broker_name=sender_name or push_name or "",
+                broker_phone=sender_phone or "",
+                profile_name=sender_name or push_name or "",
+                confidence=0.0,
+                raw_payload=json.dumps({
+                    "note": "no_real_estate_anchor",
+                    "message_class": msg_class,
+                    "message_preview": msg_text[:200],
+                }),
+                summary_title=f"[{msg_class}] {sender_name or push_name or 'unknown'}",
+                ai_extraction={"reason": "no_real_estate_anchor", "class": msg_class},
+            )
+            storage.save_parsed(stub)
+        except Exception as exc:
+            print(f"  [extract] save_parsed stub error for {raw_id}: {exc}", flush=True)
         try:
             storage.mark_raw_processed(raw_id)
         except Exception:
@@ -368,15 +393,19 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
         return
 
     # ── Broker attribution ──────────────────────────────────────
+    # Only store broker_phone from validated Indian mobile numbers (10-12 digits,
+    # starting with 6-9, optional +91/91 prefix).  WhatsApp LIDs (15 digits starting
+    # with 1-2) are never valid phone numbers — reject them silently.
     for pl in parsed_listings:
+        is_valid_mobile = bool(re.fullmatch(r'^(\+?91)?[6-9]\d{9}$', sender_phone or ''))
         if not pl.get("broker_name") or not pl.get("broker_phone"):
             if not pl.get("broker_name"):
-                if len(sender_phone) >= 10:
+                if is_valid_mobile:
                     pl["broker_name"] = f"+91 {sender_phone[-10:]}"
                 elif sender_phone:
                     pl["broker_name"] = f"+{sender_phone}"
             if not pl.get("broker_phone"):
-                if len(sender_phone) >= 10:
+                if is_valid_mobile:
                     pl["broker_phone"] = sender_phone[-10:]
 
     if parsed_listings:

@@ -336,9 +336,12 @@ export default function WhatsWowPage() {
 
         {/* Capabilities */}
         <Card className="p-5 sm:p-6">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <Activity className="h-4 w-4 text-[#3EE88A]" />
             <Kicker>Capabilities</Kicker>
+            <span className={`shrink-0 badge ${phones.some(p => p.connected) ? "badge-success" : "badge-neutral"}`}>
+              {phones.filter(p => p.connected).length}/{phones.length} phones live
+            </span>
             {capabilities.length > 0 && (
               <span className="ml-auto text-caption text-zinc-500">
                 {activeCount} working · {capabilities.length - activeCount} idle
