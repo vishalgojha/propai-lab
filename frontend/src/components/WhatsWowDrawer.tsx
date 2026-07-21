@@ -40,6 +40,7 @@ interface Capability {
   icon: string;
   description?: string;
   evidence_count?: number;
+  last_seen?: string;
 }
 
 interface PhoneStatus {
@@ -93,26 +94,30 @@ const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
   Navigation: MapPin,
 };
 
-const STATUS_COLORS: Record<string, string> = {
-  active: "bg-emerald-400",
-  partial: "bg-amber-400",
-  captured_unused: "bg-sky-400",
-  not_available: "bg-zinc-600",
-};
-
 const STATUS_BADGE: Record<string, string> = {
-  active: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30",
-  partial: "bg-amber-500/15 text-amber-300 border-amber-500/30",
-  captured_unused: "bg-sky-500/15 text-sky-300 border-sky-500/30",
-  not_available: "bg-zinc-500/15 text-zinc-400 border-zinc-500/30",
+  active: "badge-success",
+  partial: "badge-neutral",
+  captured_unused: "badge-neutral",
+  not_available: "badge-neutral",
 };
 
 const STATUS_LABELS: Record<string, string> = {
   active: "Active",
-  partial: "Partial",
-  captured_unused: "Captured",
-  "not_available": "Off",
+  partial: "Idle",
+  captured_unused: "Telemetry",
+  not_available: "Off",
 };
+
+function ago(value?: string) {
+  if (!value) return "never";
+  const stamp = new Date(value).getTime();
+  if (Number.isNaN(stamp)) return "unknown";
+  const minutes = Math.max(0, Math.floor((Date.now() - stamp) / 60000));
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes}m`;
+  if (minutes < 1440) return `${Math.floor(minutes / 60)}h`;
+  return `${Math.floor(minutes / 1440)}d`;
+}
 
 function CapIcon({ name, className }: { name: string; className?: string }) {
   const C = ICON_MAP[name] || Circle;
@@ -244,7 +249,7 @@ export default function WhatsWowDrawer({ open, onClose }: WhatsWowDrawerProps) {
               {expandedSections.capabilities ? <ChevronDown className="w-3.5 h-3.5 text-zinc-500" /> : <ChevronRight className="w-3.5 h-3.5 text-zinc-500" />}
               <Zap className="w-3.5 h-3.5 text-[#3EE88A]" />
               <span className="text-xs font-semibold text-zinc-300 uppercase tracking-wider">Capabilities</span>
-              <span className="ml-auto text-[10px] text-zinc-500">{activeCount}/{capabilities.length} active</span>
+              <span className="ml-auto text-[10px] text-zinc-500">{activeCount}/{capabilities.length} working</span>
             </button>
             {expandedSections.capabilities && (
               <div className="px-4 pb-3 space-y-1.5">
@@ -252,16 +257,19 @@ export default function WhatsWowDrawer({ open, onClose }: WhatsWowDrawerProps) {
                   <div key={cap.name} className="rounded-md border border-white/5 bg-white/[0.015] px-2.5 py-2">
                     <div className="flex items-center gap-2">
                       <CapIcon name={cap.icon} className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
-                      <span className="text-[10px] font-medium text-white truncate flex-1">{cap.name}</span>
+                      <span className="text-[10px] font-medium text-white truncate">{cap.name}</span>
+                      <div className="flex-1" />
                       {cap.evidence_count !== undefined && cap.evidence_count > 0 && (
-                        <span className="shrink-0 text-[9px] tabular-nums text-zinc-500">
-                          {cap.evidence_count.toLocaleString("en-IN")}
+                        <span className="flex items-center gap-1 shrink-0 text-[10px] tabular-nums">
+                          <span className="text-white font-medium">
+                            {cap.evidence_count.toLocaleString("en-IN")}
+                          </span>
+                          {cap.last_seen && (
+                            <span className="text-zinc-600">· {ago(cap.last_seen)}</span>
+                          )}
                         </span>
                       )}
-                      <span
-                        className={`shrink-0 inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[8px] font-semibold uppercase tracking-wider ${STATUS_BADGE[cap.status]}`}
-                      >
-                        <span className={`w-1 h-1 rounded-full ${STATUS_COLORS[cap.status]}`} />
+                      <span className={`shrink-0 badge ${STATUS_BADGE[cap.status]}`}>
                         {STATUS_LABELS[cap.status]}
                       </span>
                     </div>
@@ -272,12 +280,6 @@ export default function WhatsWowDrawer({ open, onClose }: WhatsWowDrawerProps) {
                     )}
                   </div>
                 ))}
-                <div className="flex gap-3 mt-2 text-[9px] text-zinc-600">
-                  <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-emerald-400" /> Active</span>
-                  <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-amber-400" /> Partial</span>
-                  <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-sky-400" /> Captured</span>
-                  <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-zinc-600" /> Off</span>
-                </div>
               </div>
             )}
           </div>

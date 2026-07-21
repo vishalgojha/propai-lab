@@ -63,6 +63,7 @@ type Status struct {
 	TotalContacts         int64            `json:"total_contacts,omitempty"`
 	TotalReactions        int64            `json:"total_reactions,omitempty"`
 	MessageTypeCounts     map[string]int64 `json:"message_type_counts,omitempty"`
+	LastSeenByType        map[string]string `json:"last_seen_by_type,omitempty"`
 	LastDisconnectAt      string           `json:"last_disconnect_at,omitempty"`
 	SocketState           string           `json:"socket_state,omitempty"`
 	HeartbeatAt           string           `json:"heartbeat_at,omitempty"`
@@ -89,6 +90,7 @@ type BrokerSession struct {
 	totalContacts     int64
 	totalReactions    int64
 	totalByType       map[string]int64
+	lastSeenByType    map[string]time.Time
 	statusFile        string
 }
 
@@ -132,6 +134,13 @@ func (s *BrokerSession) setStatus(st Status) {
 		typeCounts[k] = v
 	}
 	st.MessageTypeCounts = typeCounts
+	lastSeen := make(map[string]string, len(s.lastSeenByType))
+	for k, v := range s.lastSeenByType {
+		if !v.IsZero() {
+			lastSeen[k] = v.UTC().Format(time.RFC3339)
+		}
+	}
+	st.LastSeenByType = lastSeen
 	st.BrokerID = s.brokerID
 	st.InstanceName = instanceName
 	st.SendPort = parsePort(sendPort)
@@ -367,12 +376,13 @@ func (sm *SessionManager) restoreSessionWhenAvailable(brokerID string) {
 func (sm *SessionManager) newSession(brokerID string, device *store.Device) *BrokerSession {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &BrokerSession{
-		brokerID:     brokerID,
-		device:       device,
-		ctx:          ctx,
-		cancel:       cancel,
-		totalByType:  map[string]int64{},
-		statusFile:   fmt.Sprintf("/tmp/status_%s.json", brokerID),
+		brokerID:       brokerID,
+		device:         device,
+		ctx:            ctx,
+		cancel:         cancel,
+		totalByType:    map[string]int64{},
+		lastSeenByType: map[string]time.Time{},
+		statusFile:     fmt.Sprintf("/tmp/status_%s.json", brokerID),
 		status: Status{
 			ConnectionState: "new",
 			SocketState:     "new",
@@ -829,8 +839,13 @@ func (sm *SessionManager) handleMessage(s *BrokerSession, evt *events.Message) {
 		"broker_id":        s.brokerID,
 	}
 	if msgType, ok := payloadData["message_type"].(string); ok && msgType != "" && msgType != "unknown" {
+		seenAt := info.Timestamp
+		if seenAt.IsZero() {
+			seenAt = time.Now()
+		}
 		s.mu.Lock()
 		s.totalByType[msgType]++
+		s.lastSeenByType[msgType] = seenAt
 		s.mu.Unlock()
 	}
 	if media := sm.captureMedia(s, evt.Message, info.Chat.String(), info.ID); media != nil {
@@ -1747,6 +1762,7 @@ type capabilityRow struct {
 	Icon          string `json:"icon"`
 	Description   string `json:"description"`
 	EvidenceCount int64  `json:"evidence_count"`
+	LastSeen      string `json:"last_seen,omitempty"`
 }
 
 func (sm *SessionManager) capabilitiesHandler(w http.ResponseWriter, r *http.Request) {
@@ -1784,36 +1800,36 @@ func (sm *SessionManager) capabilitiesHandler(w http.ResponseWriter, r *http.Req
 		"Edited Messages": "edited",
 	}
 	definitions := []capabilityRow{
-		{"Text Messages", "active", "MessageSquare", "Plain text from any group, with sender, group, and timestamp.", 0},
-		{"Images", "active", "Image", "Image messages: caption and sender captured; full media downloaded on demand.", 0},
-		{"Video", "active", "Video", "Video messages: caption plus thumbnail; full download on demand.", 0},
-		{"Audio", "active", "Mic", "Voice notes and audio files; transcribed automatically.", 0},
-		{"Documents", "active", "FileText", "PDFs and file attachments; filename and mimetype captured.", 0},
-		{"Stickers", "active", "Smile", "Sticker messages: metadata captured, sticker image not stored.", 0},
-		{"Location", "active", "MapPin", "Static shared locations: latitude, longitude, label, and address.", 0},
-		{"Live Location", "active", "Navigation", "Real-time location streams from any participant.", 0},
-		{"Contact Cards", "active", "Users", "Shared vCards: phone, name, and organisation extracted.", 0},
-		{"Contact Arrays", "active", "Contact", "Multi-contact shares parsed into individual cards.", 0},
-		{"Reactions", "active", "SmilePlus", "Emoji reactions on any observed message.", 0},
-		{"Poll Creation", "active", "BarChart3", "Polls created in groups: options and voters captured.", 0},
-		{"Poll Updates", "active", "Vote", "Per-option vote tally updates as votes come in.", 0},
-		{"Edited Messages", "active", "Pencil", "Edit events re-linked to the original message.", 0},
-		{"Outgoing Messages", "active", "ArrowUpRight", "Messages your phone sends, kept in sync for your own listings.", 0},
-		{"History Sync", "active", "Clock", "Initial backfill of recent messages on first connect.", 0},
-		{"Read Receipts", "captured_unused", "CheckCheck", "Blue-tick events captured but not yet surfaced in the UI.", 0},
-		{"Typing Presence", "captured_unused", "Pencil", "Typing indicators captured but not yet surfaced in the UI.", 0},
-		{"Profile Pictures", "active", "Camera", "Profile picture changes tracked per JID.", 0},
-		{"Group Directory", "active", "Users", "Group metadata: name, participants, admins, and subject changes.", 0},
-		{"Media Download", "active", "Download", "On-demand download of incoming media to workspace storage.", 0},
-		{"Media Upload", "active", "Upload", "Outbound media uploads for sending files, images, and video.", 0},
-		{"Self-Chat Agent", "active", "Bot", "Sends structured replies to your Message Yourself chat so PropAI can act on them.", 0},
+		{"Text Messages", "active", "MessageSquare", "Plain text from any group, with sender, group, and timestamp.", 0, ""},
+		{"Images", "active", "Image", "Image messages: caption and sender captured; full media downloaded on demand.", 0, ""},
+		{"Video", "active", "Video", "Video messages: caption plus thumbnail; full download on demand.", 0, ""},
+		{"Audio", "active", "Mic", "Voice notes and audio files; transcribed automatically.", 0, ""},
+		{"Documents", "active", "FileText", "PDFs and file attachments; filename and mimetype captured.", 0, ""},
+		{"Stickers", "active", "Smile", "Sticker messages: metadata captured, sticker image not stored.", 0, ""},
+		{"Location", "active", "MapPin", "Static shared locations: latitude, longitude, label, and address.", 0, ""},
+		{"Live Location", "active", "Navigation", "Real-time location streams from any participant.", 0, ""},
+		{"Contact Cards", "active", "Users", "Shared vCards: phone, name, and organisation extracted.", 0, ""},
+		{"Contact Arrays", "active", "Contact", "Multi-contact shares parsed into individual cards.", 0, ""},
+		{"Reactions", "active", "SmilePlus", "Emoji reactions on any observed message.", 0, ""},
+		{"Poll Creation", "active", "BarChart3", "Polls created in groups: options and voters captured.", 0, ""},
+		{"Poll Updates", "active", "Vote", "Per-option vote tally updates as votes come in.", 0, ""},
+		{"Edited Messages", "active", "Pencil", "Edit events re-linked to the original message.", 0, ""},
+		{"Outgoing Messages", "active", "ArrowUpRight", "Messages your phone sends, kept in sync for your own listings.", 0, ""},
+		{"History Sync", "active", "Clock", "Initial backfill of recent messages on first connect.", 0, ""},
+		{"Read Receipts", "captured_unused", "CheckCheck", "Blue-tick events captured but not yet surfaced in the UI.", 0, ""},
+		{"Typing Presence", "captured_unused", "Pencil", "Typing indicators captured but not yet surfaced in the UI.", 0, ""},
+		{"Profile Pictures", "active", "Camera", "Profile picture changes tracked per JID.", 0, ""},
+		{"Group Directory", "active", "Users", "Group metadata: name, participants, admins, and subject changes.", 0, ""},
+		{"Media Download", "active", "Download", "On-demand download of incoming media to workspace storage.", 0, ""},
+		{"Media Upload", "active", "Upload", "Outbound media uploads for sending files, images, and video.", 0, ""},
+		{"Self-Chat Agent", "active", "Bot", "Sends structured replies to your Message Yourself chat so PropAI can act on them.", 0, ""},
 	}
 
-	typeCounts := sm.aggregateByType()
+	typeCounts, lastSeenByType := sm.aggregateByType()
 	anyConnected := sm.anyConnected()
 	anySession := len(sm.List()) > 0
 
-	out := computeCapabilityStatuses(definitions, capturedUnused, alwaysOn, typeKey, typeCounts, anyConnected, anySession)
+	out := computeCapabilityStatuses(definitions, capturedUnused, alwaysOn, typeKey, typeCounts, lastSeenByType, anyConnected, anySession)
 
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"capabilities": out,
@@ -1833,6 +1849,7 @@ func computeCapabilityStatuses(
 	alwaysOn map[string]bool,
 	typeKey map[string]string,
 	typeCounts map[string]int64,
+	lastSeenByType map[string]time.Time,
 	anyConnected bool,
 	anySession bool,
 ) []capabilityRow {
@@ -1843,8 +1860,10 @@ func computeCapabilityStatuses(
 		case capturedUnused[entry.Name]:
 			entry.Status = "captured_unused"
 			entry.EvidenceCount = 0
+			entry.LastSeen = ""
 		case alwaysOn[entry.Name]:
 			entry.EvidenceCount = 0
+			entry.LastSeen = ""
 			switch {
 			case anyConnected:
 				entry.Status = "active"
@@ -1858,9 +1877,16 @@ func computeCapabilityStatuses(
 			if !ok {
 				entry.Status = "not_available"
 				entry.EvidenceCount = 0
+				entry.LastSeen = ""
 			} else {
 				count := typeCounts[key]
 				entry.EvidenceCount = count
+				if ts, ok := lastSeenByType[key]; ok && !ts.IsZero() {
+					entry.LastSeen = ts.UTC().Format(time.RFC3339)
+				} else {
+					entry.LastSeen = ""
+				}
+
 				switch {
 				case count > 0:
 					entry.Status = "active"
@@ -1949,18 +1975,25 @@ func (sm *SessionManager) listHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(result)
 }
 
-// aggregateByType returns the sum of per-message-type counters across all
-// sessions. Used by /capabilities to drive live per-capability status.
-func (sm *SessionManager) aggregateByType() map[string]int64 {
-	aggregated := map[string]int64{}
+// aggregateByType returns the sum of per-message-type counters and the most
+// recent timestamp seen for each type across all sessions. Used by
+// /capabilities to drive live per-capability status.
+func (sm *SessionManager) aggregateByType() (map[string]int64, map[string]time.Time) {
+	counts := map[string]int64{}
+	latest := map[string]time.Time{}
 	for _, s := range sm.List() {
 		s.mu.RLock()
 		for k, v := range s.totalByType {
-			aggregated[k] += v
+			counts[k] += v
+		}
+		for k, v := range s.lastSeenByType {
+			if existing, ok := latest[k]; !ok || v.After(existing) {
+				latest[k] = v
+			}
 		}
 		s.mu.RUnlock()
 	}
-	return aggregated
+	return counts, latest
 }
 
 // anyConnected reports whether any session currently reports Connected=true.

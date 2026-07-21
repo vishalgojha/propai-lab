@@ -43,6 +43,7 @@ interface Capability {
   icon: string;
   description?: string;
   evidence_count?: number;
+  last_seen?: string;
 }
 
 interface PhoneStatus {
@@ -96,31 +97,17 @@ const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
   Navigation: MapPin,
 };
 
-const STATUS_COLORS: Record<string, string> = {
-  active: "bg-emerald-400",
-  partial: "bg-amber-400",
-  captured_unused: "bg-sky-400",
-  not_available: "bg-zinc-600",
-};
-
-const STATUS_BORDER: Record<string, string> = {
-  active: "border-emerald-500/20 bg-emerald-500/[0.04]",
-  partial: "border-amber-500/20 bg-amber-500/[0.04]",
-  captured_unused: "border-sky-500/20 bg-sky-500/[0.04]",
-  not_available: "border-white/5 bg-white/[0.015]",
-};
-
 const STATUS_BADGE: Record<string, string> = {
-  active: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30",
-  partial: "bg-amber-500/15 text-amber-300 border-amber-500/30",
-  captured_unused: "bg-sky-500/15 text-sky-300 border-sky-500/30",
-  not_available: "bg-zinc-500/15 text-zinc-400 border-zinc-500/30",
+  active: "badge-success",
+  partial: "badge-neutral",
+  captured_unused: "badge-neutral",
+  not_available: "badge-neutral",
 };
 
 const STATUS_LABELS: Record<string, string> = {
   active: "Active",
-  partial: "Partial",
-  captured_unused: "Captured",
+  partial: "Idle",
+  captured_unused: "Telemetry",
   not_available: "Off",
 };
 
@@ -337,35 +324,43 @@ export default function WhatsWowPage() {
           <div className="flex items-center gap-2">
             <Activity className="h-4 w-4 text-[#3EE88A]" />
             <Kicker>Capabilities</Kicker>
+            {capabilities.length > 0 && (
+              <span className="ml-auto text-caption text-zinc-500">
+                {activeCount} working · {capabilities.length - activeCount} idle
+              </span>
+            )}
           </div>
-          <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-2">
+          <div className="mt-4 space-y-1.5">
             {capabilities.length === 0 ? (
-              <div className="col-span-2 py-8 text-center text-sm text-zinc-600">
+              <div className="py-8 text-center text-caption text-zinc-600">
                 {loading ? "Loading capabilities..." : "No capability data available."}
               </div>
             ) : (
               capabilities.map((cap) => (
                 <div
                   key={cap.name}
-                  className={`rounded-lg border px-3 py-2.5 ${STATUS_BORDER[cap.status]}`}
+                  className="rounded-md border border-white/5 bg-white/[0.015] px-3 py-2.5"
                 >
                   <div className="flex items-center gap-2.5">
                     <CapIcon name={cap.icon} className="w-4 h-4 text-zinc-400 shrink-0" />
-                    <span className="text-xs font-medium text-white truncate flex-1">{cap.name}</span>
+                    <span className="text-caption font-medium text-white truncate">{cap.name}</span>
+                    <div className="flex-1" />
                     {cap.evidence_count !== undefined && cap.evidence_count > 0 && (
-                      <span className="shrink-0 text-[10px] tabular-nums text-zinc-500">
-                        {cap.evidence_count.toLocaleString("en-IN")} seen
+                      <span className="flex items-center gap-1.5 shrink-0 text-secondary tabular-nums">
+                        <span className="text-white font-medium">
+                          {cap.evidence_count.toLocaleString("en-IN")}
+                        </span>
+                        {cap.last_seen && (
+                          <span className="text-zinc-600">· {ago(cap.last_seen)}</span>
+                        )}
                       </span>
                     )}
-                    <span
-                      className={`shrink-0 inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider ${STATUS_BADGE[cap.status]}`}
-                    >
-                      <span className={`w-1.5 h-1.5 rounded-full ${STATUS_COLORS[cap.status]}`} />
+                    <span className={`shrink-0 badge ${STATUS_BADGE[cap.status]}`}>
                       {STATUS_LABELS[cap.status]}
                     </span>
                   </div>
                   {cap.description && (
-                    <p className="mt-1 ml-6 text-[11px] leading-snug text-zinc-500">
+                    <p className="text-caption text-zinc-500 mt-1.5 ml-6 leading-snug">
                       {cap.description}
                     </p>
                   )}
@@ -373,14 +368,6 @@ export default function WhatsWowPage() {
               ))
             )}
           </div>
-          {capabilities.length > 0 && (
-            <div className="flex flex-wrap gap-4 mt-4 pt-3 border-t border-white/5 text-[10px] text-zinc-500">
-              <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-emerald-400" /> {activeCount} Active</span>
-              <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-amber-400" /> {partialCount} Partial</span>
-              <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-sky-400" /> {capturedCount} Captured</span>
-              <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-zinc-600" /> {offCount} Off</span>
-            </div>
-          )}
         </Card>
       </section>
 
