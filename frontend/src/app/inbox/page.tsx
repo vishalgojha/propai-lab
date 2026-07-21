@@ -982,6 +982,7 @@ function InboxPageInner({ defaultView }: InboxPageInnerProps) {
   const router = useRouter();
   const isMobile = useIsMobile();
   const [mobileView, setMobileView] = useState<"list" | "conversation">("list");
+  const [mobileAiChatOpen, setMobileAiChatOpen] = useState(false);
   // Left Panel States
   const [messages, setMessages] = useState<api.InboxThread[]>([]);
   const [groups, setGroups] = useState<any[]>([]);
@@ -3130,7 +3131,7 @@ return {
                 className="text-[10px] sm:text-xs text-[#3EE88A] hover:underline"
                 disabled={loadingLeft}
               >
-                {loadingLeft ? "Refreshing..." : <><span className="sm:hidden">↻</span><span className="hidden sm:inline">Refresh</span></>}
+                {loadingLeft ? "Refreshing..." : <><span className="sm:hidden">↻</span><span className="sm:hidden ml-0.5">Refresh</span><span className="hidden sm:inline">Refresh</span></>}
               </button>
               <button
                 onClick={() => setWhatsWowOpen(true)}
@@ -3550,6 +3551,15 @@ return {
                   >
                     <EyeOff className="w-3 h-3" strokeWidth={1.5} />
                   </button>
+                  {isMobile && (
+                    <button
+                      onClick={() => setMobileAiChatOpen(true)}
+                      className="flex lg:hidden h-7 items-center gap-1 rounded-md border border-white/10 bg-zinc-800 px-2 text-zinc-400 hover:text-[#3EE88A] transition-colors text-[10px] font-bold"
+                      title="AI Chat"
+                    >
+                      <Sparkles className="w-3 h-3" strokeWidth={1.5} />
+                    </button>
+                  )}
                 </div>
               </div>
 
@@ -4396,6 +4406,15 @@ return {
               <p className="text-xs max-w-xs">
                 Select a WhatsApp group or broker to see messages, evidence, and PropAI actions.
               </p>
+              {isMobile && (
+                <button
+                  onClick={() => setMobileAiChatOpen(true)}
+                  className="mt-4 flex items-center gap-2 rounded-lg border border-white/10 bg-zinc-900 px-4 py-2 text-xs font-semibold text-zinc-300 hover:border-[#3EE88A]/40 hover:text-[#3EE88A] transition-colors"
+                >
+                  <Sparkles className="w-4 h-4" strokeWidth={1.5} />
+                  Open AI Chat
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -4403,48 +4422,63 @@ return {
         {/* Right panel: global AI Chat, optionally enriched with selected context */}
         {!chatPanelCollapsed && (
           <div
-            className="hidden lg:flex h-full min-h-0 min-w-0 shrink-0 border-l border-white/10 bg-[#070b0e] relative"
-            style={{ width: chatPanelWidth }}
+            className={`${isMobile && !mobileAiChatOpen ? "hidden" : "flex"} ${isMobile ? "absolute inset-0 z-50" : "lg:flex"} h-full min-h-0 min-w-0 shrink-0 border-l border-white/10 bg-[#070b0e] relative`}
+            style={{ width: isMobile ? undefined : chatPanelWidth }}
           >
-            {/* Drag handle on left edge */}
-            <div
-              onMouseDown={(e) => {
-                e.preventDefault();
-                const startX = e.clientX;
-                const startW = chatPanelWidth;
-                const onMove = (ev: MouseEvent) => {
-                  const delta = startX - ev.clientX;
-                  const newW = Math.min(720, Math.max(320, startW + delta));
-                  setChatPanelWidth(newW);
-                };
-                const onUp = () => {
-                  document.removeEventListener("mousemove", onMove);
-                  document.removeEventListener("mouseup", onUp);
-                  document.body.style.cursor = "";
-                  document.body.style.userSelect = "";
-                };
-                document.addEventListener("mousemove", onMove);
-                document.addEventListener("mouseup", onUp);
-                document.body.style.cursor = "col-resize";
-                document.body.style.userSelect = "none";
-              }}
-              className="absolute top-0 left-0 w-[5px] h-full cursor-col-resize group z-20 flex items-center justify-center"
-            >
-              <div className="w-[1px] h-full bg-[rgba(255,255,255,0.06)] group-hover:bg-[#3EE88A]/40 transition-colors" />
-              <div className="absolute w-2 h-8 rounded-full bg-transparent group-hover:bg-[#3EE88A]/20 transition-colors" />
-            </div>
+            {/* Drag handle on left edge — desktop only */}
+            {!isMobile && (
+              <div
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  const startX = e.clientX;
+                  const startW = chatPanelWidth;
+                  const onMove = (ev: MouseEvent) => {
+                    const delta = startX - ev.clientX;
+                    const newW = Math.min(720, Math.max(320, startW + delta));
+                    setChatPanelWidth(newW);
+                  };
+                  const onUp = () => {
+                    document.removeEventListener("mousemove", onMove);
+                    document.removeEventListener("mouseup", onUp);
+                    document.body.style.cursor = "";
+                    document.body.style.userSelect = "";
+                  };
+                  document.addEventListener("mousemove", onMove);
+                  document.addEventListener("mouseup", onUp);
+                  document.body.style.cursor = "col-resize";
+                  document.body.style.userSelect = "none";
+                }}
+                className="absolute top-0 left-0 w-[5px] h-full cursor-col-resize group z-20 flex items-center justify-center"
+              >
+                <div className="w-[1px] h-full bg-[rgba(255,255,255,0.06)] group-hover:bg-[#3EE88A]/40 transition-colors" />
+                <div className="absolute w-2 h-8 rounded-full bg-transparent group-hover:bg-[#3EE88A]/20 transition-colors" />
+              </div>
+            )}
+            {/* Mobile close button */}
+            {isMobile && (
+              <button
+                onClick={() => setMobileAiChatOpen(false)}
+                className="absolute top-3 right-3 z-50 flex h-8 w-8 items-center justify-center rounded-full bg-zinc-800 text-zinc-400 hover:text-white transition-colors"
+                aria-label="Close AI Chat"
+              >
+                ✕
+              </button>
+            )}
             <InboxChatPanel
               selectedBroker={selectedBroker}
               selectedMsgDetails={selectedMsgDetails}
               selectedConversationJid={selectedConversationJid}
               collapsed={false}
               globalMode={true}
-              onToggleCollapse={() => setChatPanelCollapsed(true)}
+              onToggleCollapse={() => {
+                if (isMobile) setMobileAiChatOpen(false);
+                else setChatPanelCollapsed(true);
+              }}
             />
           </div>
         )}
         {chatPanelCollapsed && (
-          <div className="hidden lg:flex h-full min-h-0 w-10 shrink-0 border-l border-white/10 bg-black/40">
+          <div className={`${isMobile ? "hidden" : "lg:flex"} h-full min-h-0 w-10 shrink-0 border-l border-white/10 bg-black/40`}>
             <InboxChatPanel
               collapsed={true}
               onToggleCollapse={() => setChatPanelCollapsed(false)}
