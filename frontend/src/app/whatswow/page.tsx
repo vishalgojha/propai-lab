@@ -41,6 +41,8 @@ interface Capability {
   name: string;
   status: "active" | "partial" | "captured_unused" | "not_available";
   icon: string;
+  description?: string;
+  evidence_count?: number;
 }
 
 interface PhoneStatus {
@@ -106,6 +108,13 @@ const STATUS_BORDER: Record<string, string> = {
   partial: "border-amber-500/20 bg-amber-500/[0.04]",
   captured_unused: "border-sky-500/20 bg-sky-500/[0.04]",
   not_available: "border-white/5 bg-white/[0.015]",
+};
+
+const STATUS_BADGE: Record<string, string> = {
+  active: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30",
+  partial: "bg-amber-500/15 text-amber-300 border-amber-500/30",
+  captured_unused: "bg-sky-500/15 text-sky-300 border-sky-500/30",
+  not_available: "bg-zinc-500/15 text-zinc-400 border-zinc-500/30",
 };
 
 const STATUS_LABELS: Record<string, string> = {
@@ -338,11 +347,28 @@ export default function WhatsWowPage() {
               capabilities.map((cap) => (
                 <div
                   key={cap.name}
-                  className={`flex items-center gap-2.5 rounded-lg border px-3 py-2.5 ${STATUS_BORDER[cap.status]}`}
+                  className={`rounded-lg border px-3 py-2.5 ${STATUS_BORDER[cap.status]}`}
                 >
-                  <CapIcon name={cap.icon} className="w-4 h-4 text-zinc-400 shrink-0" />
-                  <span className="text-xs text-zinc-300 truncate flex-1">{cap.name}</span>
-                  <span className={`w-2 h-2 rounded-full shrink-0 ${STATUS_COLORS[cap.status]}`} title={STATUS_LABELS[cap.status]} />
+                  <div className="flex items-center gap-2.5">
+                    <CapIcon name={cap.icon} className="w-4 h-4 text-zinc-400 shrink-0" />
+                    <span className="text-xs font-medium text-white truncate flex-1">{cap.name}</span>
+                    {cap.evidence_count !== undefined && cap.evidence_count > 0 && (
+                      <span className="shrink-0 text-[10px] tabular-nums text-zinc-500">
+                        {cap.evidence_count.toLocaleString("en-IN")} seen
+                      </span>
+                    )}
+                    <span
+                      className={`shrink-0 inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider ${STATUS_BADGE[cap.status]}`}
+                    >
+                      <span className={`w-1.5 h-1.5 rounded-full ${STATUS_COLORS[cap.status]}`} />
+                      {STATUS_LABELS[cap.status]}
+                    </span>
+                  </div>
+                  {cap.description && (
+                    <p className="mt-1 ml-6 text-[11px] leading-snug text-zinc-500">
+                      {cap.description}
+                    </p>
+                  )}
                 </div>
               ))
             )}
