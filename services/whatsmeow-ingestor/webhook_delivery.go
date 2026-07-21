@@ -79,7 +79,15 @@ func (sm *SessionManager) flushWebhookOutbox() {
 	sm.deliveryMu.Lock()
 	defer sm.deliveryMu.Unlock()
 
-	const batchSize = 100
+	// Keep claims deliberately small. A large backlog must not make one
+	// transaction hold 100 queue rows while the next batch is being chosen.
+	batchSize := getEnvInt("WEBHOOK_DELIVERY_BATCH_SIZE", 25)
+	if batchSize < 1 {
+		batchSize = 25
+	}
+	if batchSize > 100 {
+		batchSize = 100
+	}
 	queued, err := sm.claimWebhookOutbox(batchSize)
 	if err != nil {
 		log.Printf("webhook outbox claim failed: %v", err)
@@ -128,14 +136,10 @@ func (sm *SessionManager) claimWebhookOutbox(limit int) ([]queuedWebhookEvent, e
 		SELECT id, broker_id, payload, attempts
 		FROM whatsapp_webhook_outbox
 		WHERE next_attempt_at <= NOW()
-		ORDER BY
-			CASE
-				WHEN payload->>'event' IN ('MESSAGES_UPSERT', 'MESSAGES_SET', 'messages.upsert') THEN 0
-				WHEN attempts = 0 THEN 1
-				ELSE 2
-			END,
-			next_attempt_at,
-			id
+		-- This order is backed by idx_whatsapp_webhook_outbox_due. The old
+		-- JSON CASE priority forced a full sort of the entire backlog and made
+		-- the claim statement time out, which stopped all message delivery.
+		ORDER BY next_attempt_at, id
 		LIMIT $1
 		FOR UPDATE SKIP LOCKED`, limit)
 	if err != nil {

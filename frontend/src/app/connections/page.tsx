@@ -673,7 +673,7 @@ function PhoneCard({
         )}
       </div>
 
-      <div className="grid grid-cols-4 gap-2">
+      <div className="grid grid-cols-2 gap-2">
         <ActionButton
           icon={<ImageUp className="w-3.5 h-3.5" />}
           label={actionLoading === "qr" ? "Loading..." : "QR"}
