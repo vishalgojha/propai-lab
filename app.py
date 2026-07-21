@@ -15317,10 +15317,21 @@ async def _run_provider_probe_and_log(provider_row: dict) -> None:
     api_key = provider_row.get("api_key") or ""
     base_url = provider_row.get("base_url") or ""
     model_name = provider_row.get("model_name") or ""
-    result = await _probe_provider(api_key, base_url, model_name, timeout_s=15.0)
+    pid = int(provider_row.get("id") or 0)
+    pname = str(provider_row.get("provider_name") or "unknown")
+    try:
+        result = await _probe_provider(api_key, base_url, model_name, timeout_s=15.0)
+    except Exception as exc:
+        result = {
+            "status": "error",
+            "latency_ms": 0,
+            "http_status": None,
+            "error_kind": type(exc).__name__,
+            "error_msg": str(exc)[:200],
+        }
     event = ProviderOutageEvent(
-        provider_id=provider_row.get("id") or 0,
-        provider_name=str(provider_row.get("provider_name") or "unknown"),
+        provider_id=pid,
+        provider_name=pname,
         provider_type=str(provider_row.get("provider_type") or "unknown"),
         model_name=model_name,
         status=result["status"],
@@ -15332,7 +15343,8 @@ async def _run_provider_probe_and_log(provider_row: dict) -> None:
     try:
         await asyncio.to_thread(storage.insert_provider_outage_event, event)
     except Exception as exc:
-        print(f"  [provider-probe] failed to log result for {event.provider_name}: {exc}")
+        print(f"  [provider-probe] FAILED to log result for {pname} (id={pid}): "
+              f"{exc.__class__.__name__}: {str(exc)[:200]}")
 
 
 async def _provider_probe_loop() -> None:
@@ -15352,7 +15364,7 @@ async def _provider_probe_loop() -> None:
                 return_exceptions=True,
             )
         except Exception as exc:
-            print(f"  [provider-probe] loop error: {exc}")
+            print(f"  [provider-probe] loop error: {exc.__class__.__name__}: {exc}")
         await asyncio.sleep(PROVIDER_PROBE_INTERVAL_S)
 
 
@@ -15458,26 +15470,30 @@ async def admin_provider_health(user: dict = Depends(require_user)):
     classifies status (up/degraded/down/unknown). Used by /admin/providers.
     """
     providers = await asyncio.to_thread(storage.list_all_llm_providers)
-    by_name: dict[str, dict] = {p["provider_name"]: p for p in providers}
     now_ts = time.time()
     out_providers = []
     worst = "up"
-    for name, prow in by_name.items():
+    rank = {"up": 0, "degraded": 1, "unknown": 2, "down": 3}
+    # One card per configured row. Multiple rows with the same provider_name
+    # (e.g. several NVIDIA keys) each get their own card so a single bad key
+    # doesn't hide behind a healthy one. Events are filtered by provider_id so
+    # probe rows are never mixed across rows that share a name.
+    for prow in providers:
+        pid = int(prow.get("id") or 0)
         events = await asyncio.to_thread(
-            storage.list_provider_outage_events, 30, name, 200
+            storage.list_provider_outage_events_by_provider_id, 30, pid, 200
         )
         summary = _summarise_provider(events, now_ts)
         out_providers.append({
-            "provider_id": prow.get("id"),
-            "provider_name": name,
-            "provider_type": prow.get("provider_type"),
-            "model_name": prow.get("model_name"),
-            "base_url": prow.get("base_url"),
+            "provider_id": pid,
+            "provider_name": str(prow.get("provider_name") or ""),
+            "provider_type": str(prow.get("provider_type") or ""),
+            "model_name": str(prow.get("model_name") or ""),
+            "base_url": str(prow.get("base_url") or ""),
             "is_active": bool(prow.get("is_active")),
             "tenant_id": prow.get("tenant_id"),
             **summary,
         })
-        rank = {"up": 0, "degraded": 1, "unknown": 2, "down": 3}
         if rank[summary["status"]] > rank[worst]:
             worst = summary["status"]
     return {
@@ -15490,10 +15506,12 @@ async def admin_provider_health(user: dict = Depends(require_user)):
 @app.get("/api/admin/providers/history")
 async def admin_provider_history(user: dict = Depends(require_user),
                                   hours: int = 24, bucket_minutes: int = 5):
-    """24h timeline per provider, bucketed by 5 min.
+    """24h timeline per provider row, bucketed by 5 min.
 
     Powers the timeline strip in /admin/providers. Each bucket reports
-    ok_count, fail_count, total so the UI can colour the cell.
+    ok_count, fail_count, total so the UI can colour the cell. Bucketed
+    by provider_id (not provider_name) so per-key outages stay distinct
+    when several rows share a provider type (NVIDIA x4, etc.).
     """
     if hours not in (1, 6, 24, 168):
         hours = 24
@@ -15503,34 +15521,65 @@ async def admin_provider_history(user: dict = Depends(require_user),
     events = await asyncio.to_thread(
         storage.list_provider_outage_events, since_minutes, None, 5000
     )
-    by_name: dict[str, list[dict]] = {}
+    # Build a per-row series. Keyed by (provider_id, provider_name) so the
+    # frontend can match a card to its timeline by provider_id.
+    by_row: dict[int, dict] = {}
     for e in events:
-        by_name.setdefault(e.get("provider_name", "unknown"), []).append(e)
+        pid = int(e.get("provider_id") or 0)
+        if pid not in by_row:
+            by_row[pid] = {
+                "provider_id": pid,
+                "provider_name": e.get("provider_name", "unknown"),
+                "events": [],
+            }
+        by_row[pid]["events"].append(e)
     return {
         "hours": hours,
         "bucket_minutes": bucket_minutes,
         "providers": [
             {
-                "provider_name": name,
-                "buckets": _bucket_history(evts, bucket_minutes, hours),
+                "provider_id": row["provider_id"],
+                "provider_name": row["provider_name"],
+                "buckets": _bucket_history(row["events"], bucket_minutes, hours),
             }
-            for name, evts in by_name.items()
+            for row in by_row.values()
         ],
     }
 
 
 @app.post("/api/admin/providers/probe/{provider_id}")
 async def admin_provider_probe_now(provider_id: int, user: dict = Depends(require_user)):
-    """Manual trigger: probe one provider immediately and append to log."""
+    """Manual trigger: probe one provider immediately and append to log.
+
+    Surfaces probe + insert errors to the UI (previously swallowed by a
+    print-only except handler, which is why the page showed NO DATA even
+    after the user clicked Probe now).
+    """
     providers = await asyncio.to_thread(storage.list_all_llm_providers)
     target = next((p for p in providers if int(p.get("id") or 0) == provider_id), None)
     if not target:
-        return {"probed": False, "error": "provider not found"}
-    await _run_provider_probe_and_log(target)
-    events = await asyncio.to_thread(
-        storage.list_provider_outage_events, 5, target["provider_name"], 5
+        return {"probed": False, "error": f"provider_id {provider_id} not found"}
+    api_key = str(target.get("api_key") or "")
+    base_url = str(target.get("base_url") or "")
+    model_name = str(target.get("model_name") or "")
+    result = await _probe_provider(api_key, base_url, model_name, timeout_s=15.0)
+    event = ProviderOutageEvent(
+        provider_id=provider_id,
+        provider_name=str(target.get("provider_name") or "unknown"),
+        provider_type=str(target.get("provider_type") or "unknown"),
+        model_name=model_name,
+        status=result["status"],
+        latency_ms=result["latency_ms"],
+        http_status=result["http_status"] or 0,
+        error_kind=result["error_kind"] or "",
+        error_msg=result["error_msg"] or "",
     )
-    return {"probed": True, "recent": events}
+    try:
+        new_id = await asyncio.to_thread(storage.insert_provider_outage_event, event)
+    except Exception as exc:
+        return {"probed": False, "error": f"insert failed: {str(exc)[:200]}",
+                "probe_result": result}
+    return {"probed": True, "inserted_id": new_id, "probe_result": result}
 
 
 @app.post("/api/admin/providers/cleanup")

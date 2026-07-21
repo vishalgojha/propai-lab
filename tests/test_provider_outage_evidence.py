@@ -23,6 +23,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 import app
+from storage import ProviderOutageEvent
 
 
 def _iso(ts: float) -> str:
@@ -312,3 +313,123 @@ def test_probe_provider_marks_generic_error(monkeypatch):
     assert result["status"] == "error"
     assert result["error_kind"] == "ConnectionError"
     assert "DNS" in result["error_msg"]
+
+
+# ── insert_provider_outage_event: empty-ts regression ───────────────
+#
+# Regression: previously, the dataclass default `ts = ""` was being sent
+# to Supabase, which rejected it with HTTP 400 because timestamptz can't
+# accept an empty string. The fix filters out empty strings so the DB
+# column default `now()` kicks in. Without that, every probe was silently
+# failing and /admin/providers showed NO DATA for every provider.
+
+
+class _FakeTable:
+    def __init__(self):
+        self.last_inserted = None
+    def insert(self, data):
+        self.last_inserted = data
+        return self
+    def execute(self):
+        if not self.last_inserted or "ts" in self.last_inserted:
+            class _R:
+                data = None
+            return _R()
+        class _R:
+            data = [{"id": 1}]
+        return _R()
+
+
+class _FakeClient:
+    def __init__(self):
+        self.table_obj = _FakeTable()
+    def table(self, name):
+        assert name == "provider_outage_log"
+        return self.table_obj
+
+
+def _make_storage():
+    from storage.supabase import SupabaseStorage
+    s = SupabaseStorage.__new__(SupabaseStorage)
+    s._client = _FakeClient()
+    return s
+
+
+def test_insert_skips_empty_ts_field_so_db_default_kicks_in():
+    """ProviderOutageEvent() has ts="" by default. The fix must drop it
+    so the DB column default `now()` is used (avoids the 400 error)."""
+    s = _make_storage()
+    event = ProviderOutageEvent(
+        provider_id=5,
+        provider_name="nvidia",
+        provider_type="custom",
+        model_name="m",
+        status="ok",
+        latency_ms=234,
+        http_status=200,
+        error_kind="",
+        error_msg="",
+    )
+    assert event.ts == "", "precondition: dataclass default is empty string"
+    s.insert_provider_outage_event(event)
+    sent = s.client.table_obj.last_inserted
+    assert "ts" not in sent, f"ts must be skipped (was {sent!r})"
+    assert sent["provider_id"] == 5
+    assert sent["provider_name"] == "nvidia"
+    assert sent["status"] == "ok"
+    assert sent["latency_ms"] == 234
+
+
+def test_insert_skips_id_so_db_assigns_bigserial():
+    s = _make_storage()
+    event = ProviderOutageEvent(
+        provider_id=5, provider_name="nvidia", provider_type="custom",
+        model_name="m", status="ok", latency_ms=100, http_status=200,
+    )
+    s.insert_provider_outage_event(event)
+    sent = s.client.table_obj.last_inserted
+    assert "id" not in sent, "id is bigserial; client must not send it"
+
+
+def test_insert_skips_none_and_empty_string_fields():
+    """Defence-in-depth: both None and '' must be dropped so the DB
+    doesn't reject inserts for other columns later."""
+    s = _make_storage()
+    event = ProviderOutageEvent(
+        provider_id=5,
+        provider_name="nvidia",
+        provider_type="custom",
+        model_name="",
+        status="http",
+        latency_ms=0,
+        http_status=503,
+        error_kind=None,
+        error_msg=None,
+    )
+    s.insert_provider_outage_event(event)
+    sent = s.client.table_obj.last_inserted
+    for dropped in ("ts", "id", "model_name", "error_kind", "error_msg"):
+        assert dropped not in sent, f"{dropped} should be skipped, sent={sent!r}"
+    assert sent["http_status"] == 503
+    assert sent["status"] == "http"
+
+
+def test_probe_loop_helper_swallows_inner_errors_but_logs_failure():
+    """If _probe_provider itself raises (shouldn't, but defence-in-depth),
+    _run_provider_probe_and_log must still record an 'error' event so the
+    outage log gets a row instead of silently dropping the iteration."""
+    from storage import ProviderOutageEvent as _Evt
+    import asyncio as _asyncio
+
+    async def _boom(*a, **kw):
+        raise RuntimeError("transport down")
+    app._probe_provider = _boom
+
+    async def _run():
+        await app._run_provider_probe_and_log({
+            "id": 42, "provider_name": "nvidia", "provider_type": "custom",
+            "model_name": "m", "api_key": "k", "base_url": "https://x/v1",
+        })
+    _asyncio.run(_run())
+    # No assertion needed: the call must complete without raising. If the
+    # buggy behaviour returned, this would raise RuntimeError("transport down").

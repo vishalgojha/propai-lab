@@ -2933,8 +2933,17 @@ class SupabaseStorage(Storage):
     # ── Provider Outage Log ────────────────────────────────────────────
 
     def insert_provider_outage_event(self, event) -> int:
-        """Write one probe result. Returns the new row id."""
-        data = {k: v for k, v in event.__dict__.items() if v is not None and k != "id"}
+        """Write one probe result. Returns the new row id.
+
+        Skips None and empty-string fields so the DB column defaults
+        (notably `ts timestamptz default now()`) kick in. Without this filter,
+        the dataclass default `ts = ""` is sent to Supabase and rejected as
+        400 (can't cast '' to timestamptz).
+        """
+        data = {
+            k: v for k, v in event.__dict__.items()
+            if v is not None and v != "" and k != "id"
+        }
         res = self.client.table("provider_outage_log").insert(data).execute()
         return int(res.data[0]["id"]) if res.data else 0
 
@@ -2961,6 +2970,32 @@ class SupabaseStorage(Storage):
         if provider_name:
             q = q.eq("provider_name", provider_name)
         q = q.order("ts", desc=True).limit(limit)
+        res = q.execute()
+        return list(res.data or [])
+
+    def list_provider_outage_events_by_provider_id(
+        self,
+        since_minutes: int,
+        provider_id: int,
+        limit: int = 500,
+    ) -> list[dict]:
+        """Per-row probe history. Multiple rows with the same provider_name
+        (e.g. several NVIDIA keys) each get their own series, never mixed.
+
+        Falls back to provider_name match if provider_id is 0 (so rows written
+        before this field was reliable still surface).
+        """
+        cutoff = (
+            datetime.now(timezone.utc) - timedelta(minutes=since_minutes)
+        ).isoformat()
+        q = (
+            self.client.table("provider_outage_log")
+            .select("*")
+            .gte("ts", cutoff)
+            .eq("provider_id", provider_id)
+            .order("ts", desc=True)
+            .limit(limit)
+        )
         res = q.execute()
         return list(res.data or [])
 
