@@ -13,7 +13,6 @@ import TextSelectionMenu from "@/components/TextSelectionMenu";
 import NotesPanel from "@/components/notes/NotesPanel";
 const CombinedLocalityDialog = nextDynamic(() => import("@/components/CombinedLocalityDialog").then((m) => ({ default: m.CombinedLocalityDialog })), { ssr: false });
 const AddToClientBucket = nextDynamic(() => import("@/components/AddToClientBucket"), { ssr: false });
-const WhatsWowDrawer = nextDynamic(() => import("@/components/WhatsWowDrawer"), { ssr: false });
 import ResizablePanel from "@/components/ResizablePanel";
 import { InboxChatPanel } from "@/components/InboxChatPanel";
 import { entityProfileHref } from "@/lib/entity-links";
@@ -39,7 +38,6 @@ import {
   TrendingUp,
   Home,
   ChevronLeft,
-  Zap,
 } from "lucide-react";
 
 const PAGE_SIZE = 100;
@@ -1003,7 +1001,6 @@ function InboxPageInner({ defaultView }: InboxPageInnerProps) {
   const [loadingMarketAccess, setLoadingMarketAccess] = useState(true);
   const [marketAccessError, setMarketAccessError] = useState<string | null>(null);
   const [whatsappStatus, setWhatsappStatus] = useState<api.WhatsAppStatus | null>(null);
-  const [whatsWowOpen, setWhatsWowOpen] = useState(false);
   const [selectedBrokerObservations, setSelectedBrokerObservations] = useState<any[]>([]);
   const [loadingBrokerObs, setLoadingBrokerObs] = useState(false);
   const [brokerObsError, setBrokerObsError] = useState("");
@@ -3133,13 +3130,6 @@ return {
               >
                 {loadingLeft ? "Refreshing..." : <><span className="sm:hidden">↻</span><span className="sm:hidden ml-0.5">Refresh</span><span className="hidden sm:inline">Refresh</span></>}
               </button>
-              <button
-                onClick={() => setWhatsWowOpen(true)}
-                className="text-[10px] sm:text-xs text-zinc-500 hover:text-[#3EE88A] transition-colors ml-1"
-                title="WhatsWow — WhatsApp capabilities debug panel"
-              >
-                <Zap className="w-3.5 h-3.5 inline" />
-              </button>
             </div>
             
             <input
@@ -4494,8 +4484,6 @@ return {
             onSave={handleCombinedLocalitySave}
           />
         )}
-        {/* WhatsWow Debug Drawer */}
-        <WhatsWowDrawer open={whatsWowOpen} onClose={() => setWhatsWowOpen(false)} />
       </div>
       </div>
   );

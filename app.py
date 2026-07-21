@@ -6511,11 +6511,16 @@ def _build_self_chat_system_prompt(sources: dict) -> str:
     contract (JSON blocks, listing_cards, exports) contradicts the WhatsApp
     surface. The model gets one job: answer in bullets, plain text only.
     """
+    # Identity is shared with workspace chat. Only presentation differs on
+    # WhatsApp, so product truth cannot drift between the two surfaces.
+    identity = chat_engine._read_prompt_file("identity.md")
     now = datetime.now()
     time_str = now.strftime("%a, %d %b %Y %I:%M %p")
     overview = sources.get("overview", "") or ""
     overview_line = f"\nDATA SNAPSHOT:\n{overview[:600]}\n" if overview else ""
-    return f"""You are PropAI in WhatsApp Message-Yourself chat. Today is {time_str}.
+    return f"""{identity or 'You are PropAI, a Mumbai real-estate broker assistant.'}
+
+You are PropAI in WhatsApp Message-Yourself chat. Today is {time_str}.
 
 OUTPUT RULES — non-negotiable:
 - EVERY reply uses bulleted points. Use '• ' prefix for each bullet.
@@ -6717,6 +6722,28 @@ async def _run_self_chat_agent(
             sources.update(live)
         if not sources:
             return {"error": "no_data", "message": "No PropAI data is available yet."}
+
+        last_user = next(
+            (str(message.get("content") or "").strip() for message in reversed(messages)
+             if message.get("role") == "user"),
+            "",
+        )
+        deterministic_query = chat_engine.parse_market_search_request(last_user)
+        if deterministic_query:
+            try:
+                result = await asyncio.to_thread(
+                    chat_engine.execute_tool,
+                    "market_search",
+                    deterministic_query,
+                    sources,
+                    getattr(storage, "db", None),
+                    tenant_id,
+                )
+                return chat_engine.deterministic_market_response(
+                    deterministic_query, result, sources
+                )
+            except Exception as exc:
+                _logger.warning("Self-chat deterministic market search failed: %s", exc)
 
     loop = asyncio.get_running_loop()
 
@@ -7878,6 +7905,30 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
         pass
     if not sources:
         return {"error": "no_data", "message": "No data found. Check CSV files and database."}
+
+    # Concrete property questions must reach the market database regardless of
+    # whether an LLM happens to choose a tool call. The model remains available
+    # for broader analysis, but it is no longer the search gatekeeper.
+    deterministic_query = chat_engine.parse_market_search_request(last_user)
+    if deterministic_query:
+        try:
+            search_result = await asyncio.to_thread(
+                chat_engine.execute_tool,
+                "market_search",
+                deterministic_query,
+                sources,
+                getattr(storage, "db", None),
+                tenant_id,
+            )
+            response = chat_engine.deterministic_market_response(
+                deterministic_query, search_result, sources
+            )
+            _persist("user", last_user)
+            _persist("assistant", response.get("content", ""))
+            _maybe_title(last_user)
+            return response
+        except Exception as exc:
+            _logger.warning("Deterministic market search failed: %s", exc)
 
     loop = asyncio.get_running_loop()
 
