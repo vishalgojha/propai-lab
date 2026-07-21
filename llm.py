@@ -72,7 +72,7 @@ _CACHE_TTL = 5 * 60  # 5 minutes
 
 
 def _ping_provider(p: dict) -> bool:
-    """Quick health check — 1-token completion."""
+    """Quick health check — 1-token completion (only 2xx considered healthy)."""
     try:
         import httpx
         r = httpx.post(
@@ -81,7 +81,7 @@ def _ping_provider(p: dict) -> bool:
             json={"model": p["model"], "messages": [{"role": "user", "content": "hi"}], "max_tokens": 1},
             timeout=8.0,
         )
-        return r.status_code < 500
+        return r.status_code >= 200 and r.status_code < 300
     except Exception:
         return False
 
@@ -139,6 +139,53 @@ def get_model() -> str:
 def get_provider_name() -> str:
     """Return the name of the current working provider."""
     idx = _find_working()
+    if idx >= 0:
+        return _PROVIDERS[idx]["name"]
+    return "none"
+
+
+# ── Fast-provider selection (for latency-sensitive paths like WhatsApp self-chat) ──
+
+# Order: speed-optimized providers first. Falls back to the chain default if none are healthy.
+_FAST_PROVIDER_PREFERENCE = ["cerebras", "gemini", "groq"]
+
+
+def _find_fast_working() -> int:
+    """Pick the fastest healthy provider, preferring Cerebras > Gemini > Groq."""
+    for name in _FAST_PROVIDER_PREFERENCE:
+        for i, p in enumerate(_PROVIDERS):
+            if p["name"] == name and _ping_provider(p):
+                _logger.info("Fast provider selected: %s (index %d)", name, i)
+                return i
+    # Fallback: use the regular chain.
+    return _find_working()
+
+
+def get_fast_client() -> OpenAI:
+    """Return an OpenAI client pointing at the fastest healthy provider."""
+    idx = _find_fast_working()
+    if idx >= 0:
+        p = _PROVIDERS[idx]
+        return OpenAI(api_key=p["api_key"], base_url=p["base_url"])
+    if _PROVIDERS:
+        p = _PROVIDERS[-1]
+        return OpenAI(api_key=p["api_key"], base_url=p["base_url"])
+    return OpenAI(api_key="none", base_url="https://api.doubleword.ai/v1")
+
+
+def get_fast_model() -> str:
+    """Return the model name for the fastest healthy provider."""
+    idx = _find_fast_working()
+    if idx >= 0:
+        return _PROVIDERS[idx]["model"]
+    if _PROVIDERS:
+        return _PROVIDERS[-1]["model"]
+    return "Qwen/Qwen3.6-35B-A3B-FP8"
+
+
+def get_fast_provider_name() -> str:
+    """Return the name of the fastest healthy provider."""
+    idx = _find_fast_working()
     if idx >= 0:
         return _PROVIDERS[idx]["name"]
     return "none"

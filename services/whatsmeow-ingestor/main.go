@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"crypto/hmac"
 	"database/sql"
@@ -1155,10 +1156,26 @@ func extractPoll(msg *waE2E.Message) map[string]interface{} {
 }
 
 func (sm *SessionManager) handleSelfChatCommand(s *BrokerSession, target types.JID, messageID, text string) {
-	presenceCtx, presenceCancel := context.WithTimeout(context.Background(), 5*time.Second)
-	_ = s.client.SendChatPresence(presenceCtx, target, types.ChatPresenceComposing, types.ChatPresenceMediaText)
-	presenceCancel()
+	// Send the typing indicator. We'll refresh it periodically while the
+	// Python agent streams so the user keeps seeing "typing…" until the
+	// last chunk lands. (WhatsApp clients auto-clear after ~10s otherwise.)
+	stopTyping := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(4 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-stopTyping:
+				return
+			case <-ticker.C:
+				presenceCtx, presenceCancel := context.WithTimeout(context.Background(), 5*time.Second)
+				_ = s.client.SendChatPresence(presenceCtx, target, types.ChatPresenceComposing, types.ChatPresenceMediaText)
+				presenceCancel()
+			}
+		}
+	}()
 	defer func() {
+		close(stopTyping)
 		pausedCtx, pausedCancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer pausedCancel()
 		_ = s.client.SendChatPresence(pausedCtx, target, types.ChatPresencePaused, types.ChatPresenceMediaText)
@@ -1182,6 +1199,7 @@ func (sm *SessionManager) handleSelfChatCommand(s *BrokerSession, target types.J
 		return
 	}
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/x-ndjson")
 	token := strings.TrimSpace(os.Getenv("PROPAI_INTERNAL_TOKEN"))
 	if token == "" {
 		token = strings.TrimSpace(os.Getenv("SUPABASE_SERVICE_KEY"))
@@ -1195,6 +1213,15 @@ func (sm *SessionManager) handleSelfChatCommand(s *BrokerSession, target types.J
 		return
 	}
 	defer resp.Body.Close()
+
+	// Try NDJSON streaming first. If the response is plain JSON (sync path
+	// for data queries, or older API), fall back to a one-shot decode.
+	mediaType := resp.Header.Get("Content-Type")
+	if strings.HasPrefix(mediaType, "application/x-ndjson") || strings.HasPrefix(mediaType, "application/jsonlines") {
+		sm.handleSelfChatStream(s, target, resp)
+		return
+	}
+	// Legacy non-streaming path: single JSON reply.
 	var agentResponse selfChatAgentResponse
 	if err := json.NewDecoder(resp.Body).Decode(&agentResponse); err != nil {
 		log.Printf("[broker %s] self-chat agent response decode failed: %v", s.brokerID, err)
@@ -1217,6 +1244,88 @@ func (sm *SessionManager) handleSelfChatCommand(s *BrokerSession, target types.J
 	); err != nil {
 		log.Printf("[broker %s] self-chat reply send failed: %v", s.brokerID, err)
 	}
+}
+
+// selfChatStreamEvent is one line of NDJSON from /api/internal/self-chat.
+type selfChatStreamEvent struct {
+	Event string `json:"event"`
+	Delta string `json:"delta,omitempty"`
+	Reply string `json:"reply,omitempty"`
+	Error string `json:"message,omitempty"`
+}
+
+// handleSelfChatStream reads NDJSON events from the Python streaming endpoint
+// and sends each chunk as a separate WhatsApp message so the broker sees a
+// progressive reply (one bullet or two at a time) instead of a single wall
+// of text after the full completion.
+func (sm *SessionManager) handleSelfChatStream(s *BrokerSession, target types.JID, resp *http.Response) {
+	// Flush thresholds — keep each WhatsApp message short and readable.
+	const (
+		flushChars   = 60  // Send a message when buffer reaches this many chars.
+		maxFlushWait = 800 * time.Millisecond // Or after this much wall time.
+	)
+	scanner := bufio.NewScanner(resp.Body)
+	scanner.Buffer(make([]byte, 0, 4096), 64*1024)
+	flushTimer := time.NewTimer(maxFlushWait)
+	defer flushTimer.Stop()
+
+	buffer := strings.Builder{}
+	flush := func(force bool) {
+		text := strings.TrimSpace(buffer.String())
+		if text == "" {
+			return
+		}
+		if !force && len(text) < flushChars {
+			return
+		}
+		sendCtx, sendCancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer sendCancel()
+		if _, err := s.client.SendMessage(
+			sendCtx,
+			target,
+			&waE2E.Message{Conversation: proto.String(text)},
+		); err != nil {
+			log.Printf("[broker %s] self-chat chunk send failed: %v", s.brokerID, err)
+		}
+		buffer.Reset()
+		flushTimer.Reset(maxFlushWait)
+	}
+
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+		var evt selfChatStreamEvent
+		if err := json.Unmarshal([]byte(line), &evt); err != nil {
+			log.Printf("[broker %s] self-chat stream parse failed: %v line=%q", s.brokerID, err, line[:min(120, len(line))])
+			continue
+		}
+		switch evt.Event {
+		case "chunk":
+			if evt.Delta != "" {
+				buffer.WriteString(evt.Delta)
+				flush(false)
+			}
+		case "done":
+			// Final reply — overwrite any remaining buffer and send it.
+			if strings.TrimSpace(evt.Reply) != "" {
+				buffer.Reset()
+				buffer.WriteString(evt.Reply)
+			}
+			flush(true)
+			return
+		case "error":
+			log.Printf("[broker %s] self-chat stream error: %s", s.brokerID, evt.Error)
+			flush(true) // Best-effort flush of whatever we have.
+			return
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		log.Printf("[broker %s] self-chat stream read failed: %v", s.brokerID, err)
+	}
+	// Stream ended without a done event — flush whatever we have.
+	flush(true)
 }
 
 // ── HTTP handlers ──────────────────────────────────────────────────────────
