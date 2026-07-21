@@ -91,6 +91,64 @@ def test_single_message_worker_uses_property_parser(monkeypatch):
     assert storage.processed == [7]
 
 
+def test_multi_listing_post_uses_one_ai_result_per_option(monkeypatch):
+    """A multi-option post must persist each validated AI extraction."""
+    import ai_extraction
+    import lab.multi_listing as extraction_multi_listing
+
+    storage = _Storage()
+    ai_items = [
+        {
+            "listing_type": "rent", "property_category": "residential", "bhk": 2,
+            "carpet_area_sqft": 700, "price": {"amount": 100000, "unit": "total", "period": "per_month"},
+            "locality": {"raw_mention": "Turner Road", "resolved_locality": "Bandra West", "confidence": "high"},
+            "furnishing_status": "fully_furnished", "title": "Option 1", "extraction_confidence": "high",
+        },
+        {
+            "listing_type": "rent", "property_category": "residential", "bhk": 2,
+            "carpet_area_sqft": 800, "price": {"amount": 160000, "unit": "total", "period": "per_month"},
+            "locality": {"raw_mention": "Waterfield Road", "resolved_locality": "Bandra West", "confidence": "high"},
+            "furnishing_status": "fully_furnished", "title": "Option 2", "extraction_confidence": "high",
+        },
+    ]
+
+    monkeypatch.setattr(lab.config, "load_excluded_groups", lambda: set())
+    monkeypatch.setattr(extraction_multi_listing, "classify_message", lambda _text: "multi")
+    monkeypatch.setattr(extraction_multi_listing, "parse_multi_message", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("AI multi extraction should be used")))
+    monkeypatch.setattr(ai_extraction, "ai_extract", lambda *_args, **_kwargs: {
+        "extraction_source": "ai",
+        "extraction": ai_items[0],
+        "extractions": ai_items,
+        "provider_used": "fake",
+    })
+    monkeypatch.setattr(app, "classify_conversation", lambda *_args: "public")
+    monkeypatch.setattr(app, "compute_embedding", lambda _parsed: None)
+    monkeypatch.setattr(app, "resolve_parsed", lambda *_args: {})
+    monkeypatch.setattr(app, "_parsed_source_text", lambda item, fallback: item["raw_payload"]["full_text"] or fallback)
+    monkeypatch.setattr(app, "_demote_weak_property_parse", lambda item, _text: item)
+    monkeypatch.setattr(app, "_parsed_has_market_anchor", lambda *_args: True)
+    monkeypatch.setattr(app, "_attribution_suffix", lambda *_args: "")
+    monkeypatch.setattr(app, "check_share_eligibility", lambda *_args: (True, "ok"))
+    monkeypatch.setattr(app, "generate_summary_title", lambda parsed, *_args: parsed["raw_payload"]["full_text"])
+    monkeypatch.setattr(app, "_process_observations", lambda *_args: None)
+    monkeypatch.setattr(extraction, "get_bus", lambda: SimpleNamespace(publish=lambda *_args: None))
+
+    extraction.process_raw_message(
+        8,
+        {
+            "sender_name": "Broker", "push_name": "Broker", "sender_jid": "919999999999@s.whatsapp.net",
+            "sender_phone": "919999999999", "group": "group@g.us", "group_name": "Bandra Brokers",
+            "msg_text": "Option 1\nOption 2", "instance": "test", "is_dm": False,
+            "message_uid": "test-8", "message_id": "8", "msg": {},
+        },
+        storage=storage,
+    )
+
+    assert [row.listing_index for row in storage.saved] == [0, 1]
+    assert [row.price for row in storage.saved] == [100000.0, 160000.0]
+    assert [row.summary_title for row in storage.saved] == ["Option 1", "Option 2"]
+
+
 def _run_broker_attribution(monkeypatch, sender_phone: str) -> dict:
     """Helper: process a message and return broker_name/broker_phone on the saved row."""
     storage = _Storage()

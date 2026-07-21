@@ -95,6 +95,7 @@ Rules:
 12. furnishing_status: "unfurnished", "semi_furnished", "fully_furnished", or null
 13. amenities: array of strings like "gym", "parking", "swimming pool", "pets allowed", "security", "power backup", "lift". Extract only explicitly mentioned amenities.
 14. possession_status: "ready_to_move", "under_construction", or a date/timeline string, null if not mentioned
+(FAQ) Some building names contain locality names (e.g. "Ten BKC", "One BKC", "BKC-X"). These are tower names in BKC, not locality mentions. Extract building_name for these, and set locality.raw_mention to the area phrase (e.g., "BKC" is resolved to locality "BKC").
 15. title: auto-generated human-readable title (see below)
 16. extraction_confidence: "high" (confident in all fields), "medium" (some uncertainty), "low" (guessing)
 17. carpet_area_sqft: number or null
@@ -137,7 +138,12 @@ CRITICAL — NEVER do these:
   and additional charges (dues, fees, etc.) must stay separate — the
   frontend displays them as distinct line items.
 
-Return ONLY valid JSON with no markdown formatting, no code blocks, no extra text. Just the JSON object."""
+For a message with one opportunity, return one JSON object. For a message with
+multiple distinct listings or requirements, return a JSON array with one object
+per opportunity, in the same order as the message. Never merge options, floors,
+or properties into one object.
+
+Return ONLY valid JSON with no markdown formatting, no code blocks, no extra text."""
 
 
 # ── Schema validation ─────────────────────────────────────────────────
@@ -465,8 +471,8 @@ def _has_flyer_image(ctx: dict) -> bool:
 
 # ── Main extraction function ──────────────────────────────────────────
 
-def _call_provider(provider: dict, messages: list[dict], timeout: int = 45) -> dict | None:
-    """Call a single LLM provider. Returns parsed JSON dict or None."""
+def _call_provider(provider: dict, messages: list[dict], timeout: int = 45) -> dict | list | None:
+    """Call a single LLM provider. Returns a parsed JSON object/array or None."""
     try:
         client = OpenAI(api_key=provider["api_key"], base_url=provider["base_url"])
         resp = client.chat.completions.create(
@@ -501,7 +507,8 @@ def ai_extract(raw_text: str, ctx: dict | None = None, storage=None) -> dict:
     """Main entry point: try AI providers in rotation, fall back to regex.
 
     Returns a dict with:
-        extraction: dict — normalized extraction result
+        extraction: dict — first normalized extraction result (compatibility)
+        extractions: list[dict] — every normalized opportunity in the message
         extraction_source: "ai" | "regex_fallback" | "image_unprocessed"
         needs_review: bool
         provider_used: str | None
@@ -510,6 +517,7 @@ def ai_extract(raw_text: str, ctx: dict | None = None, storage=None) -> dict:
     start = time.time()
     result = {
         "extraction": None,
+        "extractions": [],
         "extraction_source": None,
         "needs_review": False,
         "provider_used": None,
@@ -568,34 +576,41 @@ def ai_extract(raw_text: str, ctx: dict | None = None, storage=None) -> dict:
         if raw_extraction is None:
             continue
 
-        # Schema validation pass 1
-        normalized = _normalize_extraction(raw_extraction)
-        if normalized.get("listing_type") is None and normalized.get("extraction_confidence") != "low":
-            normalized = _normalize_extraction(raw_extraction)
+        candidates = raw_extraction if isinstance(raw_extraction, list) else [raw_extraction]
+        normalized_items: list[dict] = []
+        for candidate in candidates:
+            if not isinstance(candidate, dict):
+                continue
+            normalized = _normalize_extraction(candidate)
             if normalized.get("listing_type") is None:
-                _logger.warning("Provider %s: schema validation failed (no listing_type)", provider["name"])
+                _logger.warning("Provider %s: skipped an item without listing_type", provider["name"])
                 continue
 
-        # Locality resolution against reference table
-        loc = normalized.get("locality", {})
-        if isinstance(loc, dict) and loc.get("raw_mention") and not loc.get("resolved_locality"):
-            resolved = resolve_locality(loc["raw_mention"], storage=storage)
-            if resolved["resolved_locality"]:
-                loc["resolved_locality"] = resolved["resolved_locality"]
-                loc["confidence"] = resolved["confidence"]
+            # Locality resolution against reference table
+            loc = normalized.get("locality", {})
+            if isinstance(loc, dict) and loc.get("raw_mention") and not loc.get("resolved_locality"):
+                resolved = resolve_locality(loc["raw_mention"], storage=storage)
+                if resolved["resolved_locality"]:
+                    loc["resolved_locality"] = resolved["resolved_locality"]
+                    loc["confidence"] = resolved["confidence"]
 
-        # Generate title if not provided
-        if not normalized.get("title"):
-            normalized["title"] = generate_title(normalized)
+            if not normalized.get("title"):
+                normalized["title"] = generate_title(normalized)
+            normalized_items.append(normalized)
 
-        result["extraction"] = normalized
+        if not normalized_items:
+            _logger.warning("Provider %s: schema validation failed (no valid listings)", provider["name"])
+            continue
+
+        result["extraction"] = normalized_items[0]
+        result["extractions"] = normalized_items
         result["extraction_source"] = "ai"
         result["provider_used"] = provider["name"]
-        result["needs_review"] = normalized.get("extraction_confidence") == "low"
+        result["needs_review"] = any(item.get("extraction_confidence") == "low" for item in normalized_items)
 
         _logger.info(
-            "ai_extract: success via %s in %.1fs (confidence=%s)",
-            provider["name"], time.time() - start, normalized.get("extraction_confidence"),
+            "ai_extract: %d item(s) via %s in %.1fs",
+            len(normalized_items), provider["name"], time.time() - start,
         )
         return result
 
