@@ -452,7 +452,7 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
             storage.mark_raw_processed(raw_id)
         except Exception:
             pass
-        return
+        return {"raw_id": raw_id, "parsed_ids": [], "listing_ids": []}
 
     # ── Broker attribution ──────────────────────────────────────
     # Only store broker_phone from validated Indian mobile numbers (10-12 digits,
@@ -480,6 +480,7 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
 
     # ── Save parsed observations ────────────────────────────────
     parsed_ids: list[int] = []
+    listing_ids: list[int] = []
     for idx, parsed in enumerate(parsed_listings):
         ai_item = ai_extractions_raw[idx] if ai_extractions_raw and idx < len(ai_extractions_raw) else ai_extraction_raw
         share_eligible, share_reason = True, "ok"
@@ -625,7 +626,9 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
         # Bridge the fully enriched observation to listings only after the
         # resolver pass. Fingerprint upsert keeps retries idempotent.
         try:
-            storage.upsert_listing_from_parsed(parsed_id)
+            listing_id = storage.upsert_listing_from_parsed(parsed_id)
+            if listing_id:
+                listing_ids.append(listing_id)
         except Exception as lexc:
             print(f"  [extract] upsert_listing error: {lexc}", flush=True)
 
@@ -669,8 +672,9 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
             "all parsed_output inserts failed",
             flush=True,
         )
-        return
+        return {"raw_id": raw_id, "parsed_ids": [], "listing_ids": []}
     try:
         storage.mark_raw_processed(raw_id)
     except Exception as exc:
         print(f"  [extract] mark_raw_processed error: {exc}", flush=True)
+    return {"raw_id": raw_id, "parsed_ids": parsed_ids, "listing_ids": listing_ids}

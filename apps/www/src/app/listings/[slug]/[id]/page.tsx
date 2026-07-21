@@ -163,9 +163,8 @@ export default async function ListingPage({ params }: Params) {
   const dealType = isRent ? "For rent" : "For sale";
 
   const siteUrl = getSiteUrl();
-  // Canonical URL uses the SEO slug; falls back to bare id when no slug
-  // could be computed (very rare — listings with no BHK and no locality).
-  const listingUrl = `${siteUrl}/listings/${canonicalSlug ?? numericId}`;
+  // Canonical URL mirrors the dynamic route: /listings/[slug]/[id].
+  const listingUrl = `${siteUrl}/listings/${canonicalSlug ?? "listing"}/${numericId}`;
   const priceUnit = (listing.price_unit || "").toLowerCase();
   let priceINR: number | null = null;
   if (typeof listing.price === "number" && !Number.isNaN(listing.price)) {
@@ -195,7 +194,7 @@ export default async function ListingPage({ params }: Params) {
     ...(card.locality && card.localitySlug
       ? [{ name: card.locality, url: `/localities/${card.localitySlug}` }]
       : []),
-    { name: card.title || `Listing ${numericId}`, url: `/listings/${canonicalSlug ?? numericId}` },
+    { name: card.title || `Listing ${numericId}`, url: `/listings/${canonicalSlug ?? "listing"}/${numericId}` },
   ]);
 
   return (

@@ -175,37 +175,35 @@ export function formatCardPrice(
   return `₹${grouped(price)}`;
 }
 
+function titleCase(value: string): string {
+  return value
+    .trim()
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
 function buildTitle(row: ListingCardFields): string {
-  // Prefer the real, regex/LLM-derived title computed at ingestion time.
-  if (row.title && row.title.trim()) {
-    return row.title.trim();
-  }
-  const ptype = (row.property_type || "").trim();
-  const isCommercial = (row.asset_type || "").trim().toLowerCase() === "commercial";
-  const building = row.building_name && row.building_name.trim();
-  const locality = row.micro_market && row.micro_market.trim();
-
-  // For commercial listings the property type (Office / Shop / Showroom /
-  // Warehouse / Plot ...) is the most meaningful descriptor — lead with it so
-  // the card immediately says what it is, instead of a garbled building_name.
-  if (isCommercial && ptype && /[a-z]/i.test(ptype)) {
-    const cap = ptype.charAt(0).toUpperCase() + ptype.slice(1);
-    if (building && !/^(sq\.?\s*ft|multiple options|carpet|na\b)/i.test(building)) {
-      return `${cap} — ${building}`;
-    }
-    if (locality) return `${cap} in ${locality}`;
-    return cap;
-  }
-
-  if (building) {
-    return building;
-  }
+  // A raw WhatsApp title is evidence, not display copy.  It is often merely
+  // a building name (or a noisy poster headline), which made equivalent cards
+  // read as "Ten BKC", "3 BHK — BKC", and "Available Ten bkc 3bhk".  Build
+  // one deterministic title from the structured fields for every card.
+  const furnishing = (row.furnishing || "").trim();
   const bhk = (row.bhk || "").trim();
-  if (bhk && locality) return `${bhk} — ${locality}`;
-  if (bhk) return bhk;
-  if (locality) return locality;
-  if (row.landmark_name && row.landmark_name.trim()) return row.landmark_name.trim();
-  return "Listing";
+  const propertyType = (row.property_type || "").trim();
+  const building = row.building_name?.trim() || null;
+  const locality = row.micro_market?.trim() || row.location_label?.trim() || null;
+  const intent = intentValue(row.intent);
+  const transaction = intent === "rent" ? "for Rent" : intent === "sale" ? "for Sale" : "";
+
+  const descriptor = [
+    furnishing ? titleCase(furnishing) : "",
+    bhk || (propertyType ? titleCase(propertyType) : "Property"),
+  ].filter(Boolean).join(" ");
+  const place = building || locality || row.landmark_name?.trim() || null;
+
+  if (place && transaction) return `${descriptor} ${transaction} at ${place}`;
+  if (place) return `${descriptor} at ${place}`;
+  if (transaction) return `${descriptor} ${transaction}`;
+  return descriptor;
 }
 
 function buildSpecItems(row: ListingCardFields): ListingSpecItem[] {
@@ -489,10 +487,12 @@ export function toListingCardViewModel(
     freshnessBadge: formatFreshnessBadge(row.last_seen),
     assetTypeLabel: assetTypeLabel(row.asset_type, row.intent),
     waLink: waLinkFor(row.id),
-    // Public URL uses the SEO slug; if we couldn't compute one, fall back to
-    // the bare id (the back-compat route at /listings/[id] 301s to the slug).
+    // The public route is /listings/[slug]/[id].  Keeping both segments here
+    // prevents every card click/prefetch from requesting a one-segment 404.
     slug,
-    href: row.id != null && Number.isFinite(row.id) ? `/listings/${slug ?? String(row.id)}` : null,
+    href: row.id != null && Number.isFinite(row.id)
+      ? `/listings/${slug ?? "listing"}/${row.id}`
+      : null,
     waAvailable: isBrokerContactable(row.broker_phone),
     brokerName: safeBrokerName(row.broker_name),
     priceModel: row.price_model ?? null,

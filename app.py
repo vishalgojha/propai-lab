@@ -1609,6 +1609,12 @@ app = FastAPI(
     redoc_url=None,
 )
 
+# ElevenLabs agent webhooks use the same raw-message → extraction path as
+# WhatsMeow/WABA ingestion.  Mounting the router here makes its documented
+# endpoints real rather than a dead, separately-maintained module.
+from business_api import router as business_api_router
+app.include_router(business_api_router)
+
 
 # ── Global error handler for debugging ───────────────────────────
 @app.exception_handler(Exception)
