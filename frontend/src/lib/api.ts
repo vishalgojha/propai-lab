@@ -894,9 +894,9 @@ export function getPromoteConfig() {
   return fetchJSON<PromoteConfig>("/promote/config");
 }
 
-// ── PropAI Companion ───────────────────────────────────────────
+// ── PropAI Business API ───────────────────────────────────────────
 
-export interface CompanionTeamMember {
+export interface BusinessApiTeamMember {
   id: number;
   name: string;
   mobile_number: string;
@@ -909,7 +909,7 @@ export interface CompanionTeamMember {
   updated_at: string;
 }
 
-export interface CompanionTeamMemberInput {
+export interface BusinessApiTeamMemberInput {
   name: string;
   mobile_number: string;
   role: string;
@@ -918,7 +918,7 @@ export interface CompanionTeamMemberInput {
   waba_identity: string;
 }
 
-export interface CompanionOverview {
+export interface BusinessApiOverview {
   connection_status: string;
   whatsapp_business_number: string;
   shared_waba_number?: string;
@@ -942,7 +942,7 @@ export interface CompanionOverview {
   };
 }
 
-export interface CompanionConfig {
+export interface BusinessApiConfig {
   is_super_admin?: boolean;
   can_manage_platform?: boolean;
   whatsapp_business_number: string;
@@ -957,7 +957,7 @@ export interface CompanionConfig {
   webhook_callback_url?: string;
 }
 
-export interface CompanionConfigInput {
+export interface BusinessApiConfigInput {
   whatsapp_business_number?: string;
   phone_number_id?: string;
   access_token?: string;
@@ -966,53 +966,53 @@ export interface CompanionConfigInput {
   clear_verify_token?: boolean;
 }
 
-export function getCompanionOverview() {
-  return fetchJSON<CompanionOverview>("/companion/overview");
+export function getBusinessApiOverview() {
+  return fetchJSON<BusinessApiOverview>("/business-api/overview");
 }
 
-export function getCompanionConfig(timeoutMs = 8000) {
-  return fetchJSON<CompanionConfig>("/companion/config", undefined, timeoutMs);
+export function getBusinessApiConfig(timeoutMs = 8000) {
+  return fetchJSON<BusinessApiConfig>("/business-api/config", undefined, timeoutMs);
 }
 
-export function saveCompanionConfig(config: CompanionConfigInput) {
-  return fetchJSON<CompanionConfig>("/companion/config", {
+export function saveBusinessApiConfig(config: BusinessApiConfigInput) {
+  return fetchJSON<BusinessApiConfig>("/business-api/config", {
     method: "POST",
     body: JSON.stringify(config),
   });
 }
 
-export function getCompanionTeam() {
-  return fetchJSON<CompanionTeamMember[]>("/companion/team");
+export function getBusinessApiTeam() {
+  return fetchJSON<BusinessApiTeamMember[]>("/business-api/team");
 }
 
-export function addCompanionTeamMember(member: CompanionTeamMemberInput) {
-  return fetchJSON<CompanionTeamMember>("/companion/team", {
+export function addBusinessApiTeamMember(member: BusinessApiTeamMemberInput) {
+  return fetchJSON<BusinessApiTeamMember>("/business-api/team", {
     method: "POST",
     body: JSON.stringify(member),
   });
 }
 
-export function updateCompanionTeamMember(id: number, member: CompanionTeamMemberInput) {
-  return fetchJSON<CompanionTeamMember>(`/companion/team/${id}`, {
+export function updateBusinessApiTeamMember(id: number, member: BusinessApiTeamMemberInput) {
+  return fetchJSON<BusinessApiTeamMember>(`/business-api/team/${id}`, {
     method: "PATCH",
     body: JSON.stringify(member),
   });
 }
 
-export function getCompanionRoles() {
-  return fetchJSON<Record<string, { label: string; permissions: string[] }>>("/companion/roles");
+export function getBusinessApiRoles() {
+  return fetchJSON<Record<string, { label: string; permissions: string[] }>>("/business-api/roles");
 }
 
-export function getCompanionTools() {
-  return fetchJSON<{ tools: string[] }>("/companion/tools");
+export function getBusinessApiTools() {
+  return fetchJSON<{ tools: string[] }>("/business-api/tools");
 }
 
-export function getCompanionConversations() {
-  return fetchJSON<any[]>("/companion/conversations");
+export function getBusinessApiConversations() {
+  return fetchJSON<any[]>("/business-api/conversations");
 }
 
-export function getCompanionAudit() {
-  return fetchJSON<any[]>("/companion/audit");
+export function getBusinessApiAudit() {
+  return fetchJSON<any[]>("/business-api/audit");
 }
 
 // ── WhatsApp Audit ──────────────────────────────────────────────

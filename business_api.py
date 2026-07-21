@@ -1,5 +1,5 @@
 """
-Webhook tools for PropAI Companion (ElevenLabs WhatsApp agent).
+Webhook tools for PropAI Business API (ElevenLabs WhatsApp agent).
 
 Why this exists (not MCP):
 ElevenLabs' MCP integration binds one OAuth session to one fixed broker_id
@@ -11,10 +11,10 @@ fresh, so identity is resolved per-request, not per-session.
 
 Wire-up on ElevenLabs' side:
   Tools tab -> Add tool -> Webhook
-  URL: https://<your-api-host>/webhooks/companion/save-listing
-  URL: https://<your-api-host>/webhooks/companion/create-requirement
-  URL: https://<your-api-host>/webhooks/companion/onboard-broker
-  Header: X-Companion-Webhook-Secret: <COMPANION_WEBHOOK_SECRET>
+  URL: https://<your-api-host>/webhooks/business-api/save-listing
+  URL: https://<your-api-host>/webhooks/business-api/create-requirement
+  URL: https://<your-api-host>/webhooks/business-api/onboard-broker
+  Header: X-Business-Api-Webhook-Secret: <BUSINESS_API_WEBHOOK_SECRET>
   Body params should map to the Pydantic fields below. Pass the broker's
   WhatsApp number via the {{system__caller_id}} dynamic variable into the
   `phone` field.
@@ -45,10 +45,10 @@ from pydantic import BaseModel
 from storage import SupabaseStorage
 from storage.base import Listing
 
-router = APIRouter(prefix="/webhooks/companion", tags=["companion"])
+router = APIRouter(prefix="/webhooks/business-api", tags=["business-api"])
 
 # Set this in your environment and mirror it in ElevenLabs' webhook tool config.
-COMPANION_WEBHOOK_SECRET = os.environ.get("COMPANION_WEBHOOK_SECRET", "")
+BUSINESS_API_WEBHOOK_SECRET = os.environ.get("BUSINESS_API_WEBHOOK_SECRET", "")
 
 storage = SupabaseStorage()
 
@@ -58,11 +58,11 @@ ONBOARDING_PROMPT = (
 )
 
 
-def _check_secret(x_companion_webhook_secret: str | None):
-    if not COMPANION_WEBHOOK_SECRET:
+def _check_secret(x_business_api_webhook_secret: str | None):
+    if not BUSINESS_API_WEBHOOK_SECRET:
         # Fail closed: refuse to run wide open in production.
-        raise HTTPException(500, "COMPANION_WEBHOOK_SECRET is not configured on the server")
-    if x_companion_webhook_secret != COMPANION_WEBHOOK_SECRET:
+        raise HTTPException(500, "BUSINESS_API_WEBHOOK_SECRET is not configured on the server")
+    if x_business_api_webhook_secret != BUSINESS_API_WEBHOOK_SECRET:
         raise HTTPException(401, "Invalid webhook secret")
 
 
@@ -122,9 +122,9 @@ class OnboardBrokerRequest(BaseModel):
 @router.post("/onboard-broker")
 async def onboard_broker_webhook(
     body: OnboardBrokerRequest,
-    x_companion_webhook_secret: str | None = Header(default=None),
+    x_business_api_webhook_secret: str | None = Header(default=None),
 ):
-    _check_secret(x_companion_webhook_secret)
+    _check_secret(x_business_api_webhook_secret)
     if not body.consent:
         raise HTTPException(400, "Cannot onboard a broker without explicit consent=true")
 
@@ -208,9 +208,9 @@ def _to_price_cr(price: str | None) -> float | None:
 @router.post("/save-listing")
 async def save_listing_webhook(
     body: SaveListingRequest,
-    x_companion_webhook_secret: str | None = Header(default=None),
+    x_business_api_webhook_secret: str | None = Header(default=None),
 ):
-    _check_secret(x_companion_webhook_secret)
+    _check_secret(x_business_api_webhook_secret)
     broker_id = resolve_broker(body.phone)
 
     now = datetime.now(timezone.utc).isoformat()
@@ -235,16 +235,16 @@ async def save_listing_webhook(
         "status": "saved",
         "listing_id": listing_id,
         "broker_id": broker_id,
-        "source": "waba_companion",
+        "source": "waba_business_api",
     }
 
 
 @router.post("/create-requirement")
 async def create_requirement_webhook(
     body: CreateRequirementRequest,
-    x_companion_webhook_secret: str | None = Header(default=None),
+    x_business_api_webhook_secret: str | None = Header(default=None),
 ):
-    _check_secret(x_companion_webhook_secret)
+    _check_secret(x_business_api_webhook_secret)
     broker_id = resolve_broker(body.phone)
 
     client_data = {
@@ -252,7 +252,7 @@ async def create_requirement_webhook(
         "name": body.lead_name or "WABA Requirement",
         "phone": _normalize_phone(body.lead_phone) if body.lead_phone else None,
         "notes": (
-            f"[source: waba_companion]\n{body.raw_text}\n"
+            f"[source: waba_business_api]\n{body.raw_text}\n"
             f"budget={body.budget or '-'} location={body.location_pref or '-'} "
             f"timeline={body.timeline or '-'} bhk={body.bhk_preference or '-'} "
             f"type={body.property_type or '-'}"
@@ -264,5 +264,5 @@ async def create_requirement_webhook(
         "status": "saved",
         "client_id": saved.get("id"),
         "broker_id": broker_id,
-        "source": "waba_companion",
+        "source": "waba_business_api",
     }

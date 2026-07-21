@@ -28,7 +28,7 @@ function formatDate(value?: string) {
   }
 }
 
-function emptyMember(): api.CompanionTeamMemberInput {
+function emptyMember(): api.BusinessApiTeamMemberInput {
   return {
     name: "",
     mobile_number: "",
@@ -39,26 +39,26 @@ function emptyMember(): api.CompanionTeamMemberInput {
   };
 }
 
-export default function CompanionPage() {
-  const [overview, setOverview] = useState<api.CompanionOverview | null>(null);
-  const [team, setTeam] = useState<api.CompanionTeamMember[]>([]);
+export default function BusinessApiPage() {
+  const [overview, setOverview] = useState<api.BusinessApiOverview | null>(null);
+  const [team, setTeam] = useState<api.BusinessApiTeamMember[]>([]);
   const [roles, setRoles] = useState<Record<string, { label: string; permissions: string[] }>>({});
   const [tools, setTools] = useState<string[]>([]);
   const [conversations, setConversations] = useState<any[]>([]);
   const [audit, setAudit] = useState<any[]>([]);
-  const [form, setForm] = useState<api.CompanionTeamMemberInput>(emptyMember());
+  const [form, setForm] = useState<api.BusinessApiTeamMemberInput>(emptyMember());
   const [marketsText, setMarketsText] = useState("");
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState("");
 
   const load = useCallback(async () => {
     const [nextOverview, nextTeam, nextRoles, nextTools, nextConversations, nextAudit] = await Promise.all([
-      api.getCompanionOverview(),
-      api.getCompanionTeam(),
-      api.getCompanionRoles(),
-      api.getCompanionTools(),
-      api.getCompanionConversations(),
-      api.getCompanionAudit(),
+      api.getBusinessApiOverview(),
+      api.getBusinessApiTeam(),
+      api.getBusinessApiRoles(),
+      api.getBusinessApiTools(),
+      api.getBusinessApiConversations(),
+      api.getBusinessApiAudit(),
     ]);
     setOverview(nextOverview);
     setTeam(nextTeam);
@@ -69,7 +69,7 @@ export default function CompanionPage() {
   }, []);
 
   useEffect(() => {
-    load().catch((error) => setStatus(error instanceof Error ? error.message : "Unable to load Companion."));
+    load().catch((error) => setStatus(error instanceof Error ? error.message : "Unable to load business-api."));
   }, [load]);
 
   const overviewCards = useMemo(() => {
@@ -99,10 +99,10 @@ export default function CompanionPage() {
     setStatus("");
     try {
       const assigned_markets = marketsText.split(",").map((item) => item.trim()).filter(Boolean);
-      await api.addCompanionTeamMember({ ...form, assigned_markets });
+      await api.addBusinessApiTeamMember({ ...form, assigned_markets });
       setForm(emptyMember());
       setMarketsText("");
-      setStatus("Team member approved for PropAI Companion.");
+      setStatus("Team member approved for PropAI Business API.");
       await load();
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Could not save team member.");
@@ -111,8 +111,8 @@ export default function CompanionPage() {
     }
   }
 
-  async function toggleMember(member: api.CompanionTeamMember) {
-    await api.updateCompanionTeamMember(member.id, {
+  async function toggleMember(member: api.BusinessApiTeamMember) {
+    await api.updateBusinessApiTeamMember(member.id, {
       name: member.name,
       mobile_number: member.mobile_number,
       role: member.role,
@@ -127,7 +127,7 @@ export default function CompanionPage() {
     <div className="space-y-6">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h2 className="text-lg font-bold text-white">PropAI Companion</h2>
+          <h2 className="text-lg font-bold text-white">PropAI Business API</h2>
           <div className="mt-1 text-sm text-zinc-500">
             The WhatsApp interface for your brokerage team.
           </div>
@@ -308,7 +308,7 @@ export default function CompanionPage() {
         <section className="bg-zinc-900 border border-white/10 rounded-2xl p-5">
           <h3 className="text-sm font-bold text-white">Human Handoff</h3>
           {conversations.length === 0 ? (
-            <div className="text-sm text-zinc-500 py-8 text-center">No active Companion conversations.</div>
+            <div className="text-sm text-zinc-500 py-8 text-center">No active business-api conversations.</div>
           ) : (
             <div className="mt-3 space-y-2">
               {conversations.map((conversation) => (
@@ -327,7 +327,7 @@ export default function CompanionPage() {
         <section className="bg-zinc-900 border border-white/10 rounded-2xl p-5">
           <h3 className="text-sm font-bold text-white">Audit Log</h3>
           {audit.length === 0 ? (
-            <div className="text-sm text-zinc-500 py-8 text-center">No Companion activity logged yet.</div>
+            <div className="text-sm text-zinc-500 py-8 text-center">No business-api activity logged yet.</div>
           ) : (
             <div className="mt-3 space-y-2">
               {audit.map((item) => (

@@ -1846,12 +1846,12 @@ def execute_tool(name, args, sources, db_path=None):
             phone_number_id = None
             access_token = None
             
-            # Query the companion_config table directly via Supabase REST
+            # Query the business_api_config table directly via Supabase REST
             # We'll need to use the storage module
             from storage.supabase import SupabaseStorage
             storage = SupabaseStorage()
             config = storage.db.execute(
-                "SELECT * FROM companion_config WHERE key IN ('phone_number_id', 'access_token')"
+                "SELECT * FROM business_api_config WHERE key IN ('phone_number_id', 'access_token')"
             ).fetchall()
             for row in config:
                 if row["key"] == "phone_number_id":

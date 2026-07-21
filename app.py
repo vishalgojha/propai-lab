@@ -4157,7 +4157,7 @@ async def market_access_status(
         message = "WhatsApp is connected. PropAI is waiting for the first sync record before opening Market Inbox."
 
     # Check if WABA (WhatsApp Business API) is configured — allows outbound even without whatsmeow
-    waba_configured = bool(await asyncio.to_thread(_companion_get_config_value, "access_token", "WABA_ACCESS_TOKEN"))
+    waba_configured = bool(await asyncio.to_thread(_business_api_get_config_value, "access_token", "WABA_ACCESS_TOKEN"))
 
     return {
         "authenticated": bool(user),
@@ -7643,7 +7643,7 @@ COMPANION_TOOLS = [
 ]
 
 
-class CompanionTeamMemberRequest(BaseModel):
+class BusinessApiTeamMemberRequest(BaseModel):
     name: str
     mobile_number: str
     role: str = "sales_agent"
@@ -7652,7 +7652,7 @@ class CompanionTeamMemberRequest(BaseModel):
     waba_identity: str = ""
 
 
-class CompanionConfigRequest(BaseModel):
+class BusinessApiConfigRequest(BaseModel):
     whatsapp_business_number: str = ""
     phone_number_id: str = ""
     access_token: str = ""
@@ -7687,7 +7687,7 @@ def _json_list(value: str | None) -> list[str]:
     return []
 
 
-def _companion_member(row) -> dict:
+def _business_api_member(row) -> dict:
     data = dict(row)
     data["assigned_markets"] = _json_list(data.get("assigned_markets"))
     data["active"] = bool(data.get("active"))
@@ -7714,10 +7714,10 @@ def _table_exists(table: str) -> bool:
         return False
 
 
-def _companion_get_config_value(key: str, env_key: str = "") -> str:
+def _business_api_get_config_value(key: str, env_key: str = "") -> str:
     try:
         row = storage.db.execute(
-            "SELECT value FROM companion_config WHERE key = ?", (key,)
+            "SELECT value FROM business_api_config WHERE key = ?", (key,)
         ).fetchone()
         if row and row["value"]:
             return row["value"]
@@ -7726,10 +7726,10 @@ def _companion_get_config_value(key: str, env_key: str = "") -> str:
     return os.getenv(env_key or key, "")
 
 
-def _companion_set_config_value(key: str, value: str):
+def _business_api_set_config_value(key: str, value: str):
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     storage.db.execute(
-        """INSERT INTO companion_config (key, value, updated_at)
+        """INSERT INTO business_api_config (key, value, updated_at)
            VALUES (?,?,?)
            ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at""",
         (key, value, now),
@@ -7899,24 +7899,24 @@ def _today_count(table: str, column: str = "created_at", where: str = "1=1") -> 
         return 0
 
 
-@app.get("/api/companion/overview")
-async def companion_overview(
+@app.get("/api/business-api/overview")
+async def business_api_overview(
     user: dict = Depends(require_user),
     tenant_id: str | None = Depends(get_tenant_context),
 ):
-    team_count = _count_table("companion_team_members")
+    team_count = _count_table("business_api_team_members")
     active_team = storage.db.execute(
-        "SELECT COUNT(*) AS c FROM companion_team_members WHERE active = 1"
+        "SELECT COUNT(*) AS c FROM business_api_team_members WHERE active = 1"
     ).fetchone()["c"]
     pending_conversations = storage.db.execute(
-        "SELECT COUNT(*) AS c FROM companion_conversations WHERE status IN ('needs_human', 'pending_approval')"
+        "SELECT COUNT(*) AS c FROM business_api_conversations WHERE status IN ('needs_human', 'pending_approval')"
     ).fetchone()["c"]
     last_sync_row = storage.db.execute(
         "SELECT MAX(timestamp) AS ts FROM raw_messages"
     ).fetchone()
     last_sync = last_sync_row["ts"] if last_sync_row else None
-    inbound_today = _today_count("companion_messages", where="direction = 'inbound'")
-    outbound_today = _today_count("companion_messages", where="direction = 'outbound'")
+    inbound_today = _today_count("business_api_messages", where="direction = 'inbound'")
+    outbound_today = _today_count("business_api_messages", where="direction = 'outbound'")
     ai_today = _today_count("ai_usage_log")
     messages_today = _today_count("raw_messages", "timestamp")
     is_super_admin = await asyncio.to_thread(storage.is_super_admin, user["id"])
@@ -7980,12 +7980,12 @@ async def companion_overview(
 def _platform_waba_values() -> dict:
     return {
         "whatsapp_business_number": (
-            _companion_get_config_value("whatsapp_business_number", "WABA_PHONE_NUMBER")
-            or _companion_get_config_value("whatsapp_business_number", "WABA_BUSINESS_NUMBER")
+            _business_api_get_config_value("whatsapp_business_number", "WABA_PHONE_NUMBER")
+            or _business_api_get_config_value("whatsapp_business_number", "WABA_BUSINESS_NUMBER")
         ),
-        "phone_number_id": _companion_get_config_value("phone_number_id", "WABA_PHONE_NUMBER_ID"),
-        "access_token": _companion_get_config_value("access_token", "WABA_ACCESS_TOKEN"),
-        "verify_token": _companion_get_config_value("verify_token", "WABA_VERIFY_TOKEN"),
+        "phone_number_id": _business_api_get_config_value("phone_number_id", "WABA_PHONE_NUMBER_ID"),
+        "access_token": _business_api_get_config_value("access_token", "WABA_ACCESS_TOKEN"),
+        "verify_token": _business_api_get_config_value("verify_token", "WABA_VERIFY_TOKEN"),
     }
 
 
@@ -8007,7 +8007,7 @@ async def _workspace_waba_values(org_id: str) -> dict:
         return {}
 
 
-async def _companion_config_for(user: dict, tenant_id: str | None) -> dict:
+async def _business_api_config_for(user: dict, tenant_id: str | None) -> dict:
     is_super_admin = await asyncio.to_thread(storage.is_super_admin, user["id"])
     if is_super_admin:
         values = _platform_waba_values()
@@ -8053,17 +8053,17 @@ async def _companion_config_for(user: dict, tenant_id: str | None) -> dict:
     }
 
 
-@app.get("/api/companion/config")
-async def companion_config(
+@app.get("/api/business-api/config")
+async def business_api_config(
     user: dict = Depends(require_user),
     tenant_id: str | None = Depends(get_tenant_context),
 ):
-    return await _companion_config_for(user, tenant_id)
+    return await _business_api_config_for(user, tenant_id)
 
 
-@app.post("/api/companion/config")
-async def companion_save_config(
-    req: CompanionConfigRequest,
+@app.post("/api/business-api/config")
+async def business_api_save_config(
+    req: BusinessApiConfigRequest,
     user: dict = Depends(require_user),
     tenant_id: str | None = Depends(get_tenant_context),
 ):
@@ -8081,17 +8081,17 @@ async def companion_save_config(
 
     if is_super_admin:
         if requested_number:
-            _companion_set_config_value("whatsapp_business_number", requested_number)
+            _business_api_set_config_value("whatsapp_business_number", requested_number)
         if req.phone_number_id.strip():
-            _companion_set_config_value("phone_number_id", req.phone_number_id.strip())
+            _business_api_set_config_value("phone_number_id", req.phone_number_id.strip())
         if req.clear_access_token:
-            _companion_set_config_value("access_token", "")
+            _business_api_set_config_value("access_token", "")
         elif req.access_token.strip():
-            _companion_set_config_value("access_token", req.access_token.strip())
+            _business_api_set_config_value("access_token", req.access_token.strip())
         if req.clear_verify_token:
-            _companion_set_config_value("verify_token", "")
+            _business_api_set_config_value("verify_token", "")
         elif req.verify_token.strip():
-            _companion_set_config_value("verify_token", req.verify_token.strip())
+            _business_api_set_config_value("verify_token", req.verify_token.strip())
     else:
         current = await _workspace_waba_values(org_id)
         values = {
@@ -8128,12 +8128,12 @@ async def companion_save_config(
 
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     storage.db.execute(
-        """INSERT INTO companion_audit_log
+        """INSERT INTO business_api_audit_log
            (action, target_type, target_id, status, details, created_at)
            VALUES (?,?,?,?,?,?)""",
         (
             "waba_config_updated",
-            "org_waba_connection" if org_id else "companion_config",
+            "org_waba_connection" if org_id else "business_api_config",
             org_id or "platform",
             "logged",
             json.dumps({
@@ -8145,15 +8145,15 @@ async def companion_save_config(
             now,
         ),
     )
-    return await _companion_config_for(user, tenant_id)
+    return await _business_api_config_for(user, tenant_id)
 
 
-@app.get("/api/companion/webhook")
-async def companion_webhook_verify(request: Request):
+@app.get("/api/business-api/webhook")
+async def business_api_webhook_verify(request: Request):
     mode = request.query_params.get("hub.mode", "")
     token = request.query_params.get("hub.verify_token", "")
     challenge = request.query_params.get("hub.challenge", "")
-    expected = _companion_get_config_value("verify_token", "WABA_VERIFY_TOKEN")
+    expected = _business_api_get_config_value("verify_token", "WABA_VERIFY_TOKEN")
     if mode == "subscribe" and expected and token == expected:
         return Response(content=challenge, media_type="text/plain")
     raise HTTPException(403, "Webhook verify token does not match")
@@ -8161,7 +8161,7 @@ async def companion_webhook_verify(request: Request):
 
 async def _download_waba_media(media_id: str, access_token: str = "") -> dict | None:
     """Download media from WhatsApp Business API. Returns {filename, filepath, mime_type} or None."""
-    access_token = access_token or _companion_get_config_value("access_token", "WABA_ACCESS_TOKEN")
+    access_token = access_token or _business_api_get_config_value("access_token", "WABA_ACCESS_TOKEN")
     if not access_token:
         return None
     try:
@@ -8232,7 +8232,7 @@ async def _resolve_waba_webhook_config(body: dict, org_id: str | None = None) ->
     return _platform_waba_values(), None
 
 
-async def _process_companion_webhook(
+async def _process_business_api_webhook(
     body: dict,
     org_id: str | None = None,
     resolved_config: dict | None = None,
@@ -8257,6 +8257,18 @@ async def _process_companion_webhook(
                 media_id = ""
                 stored_inbound = False
                 sender_name = ""
+
+                # Only persist text-bearing message types. Meta sends
+                # type=unsupported for voice calls / payments / etc with
+                # no body; writing those as raw rows creates inbox orphans.
+                if msg_type not in _BUSINESS_API_PERSISTABLE_TYPES:
+                    print(
+                        f"[waba-webhook] skipping non-persistable msg_type={msg_type!r} "
+                        f"id={msg_id} from={msg_from}",
+                        flush=True,
+                    )
+                    processed.append({"type": "msg_type_skipped", "msg_type": msg_type, "id": msg_id})
+                    continue
 
                 # Track 24h session window — user messaged us
                 try:
@@ -8376,12 +8388,12 @@ async def _process_companion_webhook(
                     print(f"[waba-webhook] failed to update delivery status: {exc}", flush=True)
 
     storage.db.execute(
-        """INSERT INTO companion_audit_log
+        """INSERT INTO business_api_audit_log
            (action, target_type, target_id, status, details, created_at)
            VALUES (?,?,?,?,?,?)""",
         (
             "waba_webhook_received",
-            "companion_webhook",
+            "business_api_webhook",
             "meta",
             "logged",
             json.dumps({
@@ -8396,9 +8408,9 @@ async def _process_companion_webhook(
     return {"status": "received", "processed": processed}
 
 
-@app.post("/api/companion/webhook")
-async def companion_webhook_receive(request: Request):
-    return await _process_companion_webhook(await request.json())
+@app.post("/api/business-api/webhook")
+async def business_api_webhook_receive(request: Request):
+    return await _process_business_api_webhook(await request.json())
 
 
 # ── WhatsApp Cloud API webhook aliases ────────────────────────────
@@ -8406,12 +8418,12 @@ async def companion_webhook_receive(request: Request):
 
 @app.get("/api/whatsapp/cloud/webhook")
 async def whatsapp_cloud_webhook_verify(request: Request):
-    return await companion_webhook_verify(request)
+    return await business_api_webhook_verify(request)
 
 
 @app.post("/api/whatsapp/cloud/webhook")
 async def whatsapp_cloud_webhook_receive(request: Request):
-    return await companion_webhook_receive(request)
+    return await business_api_webhook_receive(request)
 
 
 @app.get("/api/whatsapp/cloud/webhook/{org_id}")
@@ -8430,9 +8442,19 @@ async def whatsapp_workspace_cloud_webhook_verify(org_id: str, request: Request)
 async def whatsapp_workspace_cloud_webhook_receive(org_id: str, request: Request):
     body = await request.json()
     values, resolved_org_id = await _resolve_waba_webhook_config(body, org_id)
-    return await _process_companion_webhook(
+    return await _process_business_api_webhook(
         body, org_id=resolved_org_id, resolved_config=values
     )
+
+
+# Types we persist to raw_messages from the WABA webhook. Anything outside
+# this set (e.g. "unsupported" for voice calls / payments, "reaction" events
+# without body text, "system" notifications) is logged and dropped so the
+# inbox feed doesn't accumulate orphan rows.
+_BUSINESS_API_PERSISTABLE_TYPES: frozenset[str] = frozenset({
+    "text", "image", "video", "audio", "document", "sticker",
+    "location", "contacts",
+})
 
 
 # ── WABA 24h Session Tracking ────────────────────────────────────
@@ -8779,16 +8801,16 @@ async def waba_sessions_bulk(user: dict = Depends(require_user)):
         return JSONResponse(status_code=500, content={"error": str(exc)})
 
 
-@app.get("/api/companion/team")
-async def companion_team(user: dict = Depends(require_user)):
+@app.get("/api/business-api/team")
+async def business_api_team(user: dict = Depends(require_user)):
     rows = storage.db.execute(
-        "SELECT * FROM companion_team_members ORDER BY active DESC, name COLLATE NOCASE"
+        "SELECT * FROM business_api_team_members ORDER BY active DESC, name COLLATE NOCASE"
     ).fetchall()
-    return [_companion_member(row) for row in rows]
+    return [_business_api_member(row) for row in rows]
 
 
-@app.post("/api/companion/team")
-async def companion_add_team_member(req: CompanionTeamMemberRequest, user: dict = Depends(require_user)):
+@app.post("/api/business-api/team")
+async def business_api_add_team_member(req: BusinessApiTeamMemberRequest, user: dict = Depends(require_user)):
     name = req.name.strip()
     mobile = _mobile_digits(req.mobile_number)
     if not name:
@@ -8800,7 +8822,7 @@ async def companion_add_team_member(req: CompanionTeamMemberRequest, user: dict 
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     try:
         cur = storage.db.execute(
-            """INSERT INTO companion_team_members
+            """INSERT INTO business_api_team_members
                (name, mobile_number, role, assigned_markets, active, waba_identity, created_at, updated_at)
                VALUES (?,?,?,?,?,?,?,?)""",
             (
@@ -8815,19 +8837,19 @@ async def companion_add_team_member(req: CompanionTeamMemberRequest, user: dict 
             ),
         )
         storage.db.execute(
-            """INSERT INTO companion_audit_log
+            """INSERT INTO business_api_audit_log
                (team_member_id, action, target_type, target_id, status, details, created_at)
                VALUES (?,?,?,?,?,?,?)""",
             (cur.lastrowid, "team_member_registered", "team_member", str(cur.lastrowid), "logged", "{}", now),
         )
     except Exception as exc:
         raise HTTPException(400, f"Could not add team member: {exc}")
-    row = storage.db.execute("SELECT * FROM companion_team_members WHERE id = ?", (cur.lastrowid,)).fetchone()
-    return _companion_member(row)
+    row = storage.db.execute("SELECT * FROM business_api_team_members WHERE id = ?", (cur.lastrowid,)).fetchone()
+    return _business_api_member(row)
 
 
-@app.patch("/api/companion/team/{member_id}")
-async def companion_update_team_member(member_id: int, req: CompanionTeamMemberRequest, user: dict = Depends(require_user)):
+@app.patch("/api/business-api/team/{member_id}")
+async def business_api_update_team_member(member_id: int, req: BusinessApiTeamMemberRequest, user: dict = Depends(require_user)):
     if req.role not in COMPANION_ROLES:
         raise HTTPException(400, "Invalid role")
     mobile = _mobile_digits(req.mobile_number)
@@ -8835,7 +8857,7 @@ async def companion_update_team_member(member_id: int, req: CompanionTeamMemberR
         raise HTTPException(400, "Valid mobile number is required")
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     storage.db.execute(
-        """UPDATE companion_team_members
+        """UPDATE business_api_team_members
            SET name = ?, mobile_number = ?, role = ?, assigned_markets = ?,
                active = ?, waba_identity = ?, updated_at = ?
            WHERE id = ?""",
@@ -8851,33 +8873,33 @@ async def companion_update_team_member(member_id: int, req: CompanionTeamMemberR
         ),
     )
     storage.db.execute(
-        """INSERT INTO companion_audit_log
+        """INSERT INTO business_api_audit_log
            (team_member_id, action, target_type, target_id, status, details, created_at)
            VALUES (?,?,?,?,?,?,?)""",
         (member_id, "team_member_updated", "team_member", str(member_id), "logged", "{}", now),
     )
-    row = storage.db.execute("SELECT * FROM companion_team_members WHERE id = ?", (member_id,)).fetchone()
+    row = storage.db.execute("SELECT * FROM business_api_team_members WHERE id = ?", (member_id,)).fetchone()
     if not row:
         raise HTTPException(404, "Team member not found")
-    return _companion_member(row)
+    return _business_api_member(row)
 
 
-@app.get("/api/companion/roles")
-async def companion_roles(user: dict = Depends(require_user)):
+@app.get("/api/business-api/roles")
+async def business_api_roles(user: dict = Depends(require_user)):
     return COMPANION_ROLES
 
 
-@app.get("/api/companion/tools")
-async def companion_tools(user: dict = Depends(require_user)):
+@app.get("/api/business-api/tools")
+async def business_api_tools(user: dict = Depends(require_user)):
     return {"tools": COMPANION_TOOLS}
 
 
-@app.get("/api/companion/conversations")
-async def companion_conversations(limit: int = 20, user: dict = Depends(require_user)):
+@app.get("/api/business-api/conversations")
+async def business_api_conversations(limit: int = 20, user: dict = Depends(require_user)):
     rows = storage.db.execute(
         """SELECT c.*, t.name AS team_member_name, t.role AS team_member_role
-           FROM companion_conversations c
-           LEFT JOIN companion_team_members t ON t.id = c.team_member_id
+           FROM business_api_conversations c
+           LEFT JOIN business_api_team_members t ON t.id = c.team_member_id
            ORDER BY COALESCE(c.last_message_at, c.created_at) DESC
            LIMIT ?""",
         (limit,),
@@ -8885,12 +8907,12 @@ async def companion_conversations(limit: int = 20, user: dict = Depends(require_
     return [dict(row) for row in rows]
 
 
-@app.get("/api/companion/audit")
-async def companion_audit(limit: int = 30, user: dict = Depends(require_user)):
+@app.get("/api/business-api/audit")
+async def business_api_audit(limit: int = 30, user: dict = Depends(require_user)):
     rows = storage.db.execute(
         """SELECT a.*, t.name AS team_member_name
-           FROM companion_audit_log a
-           LEFT JOIN companion_team_members t ON t.id = a.team_member_id
+           FROM business_api_audit_log a
+           LEFT JOIN business_api_team_members t ON t.id = a.team_member_id
            ORDER BY a.created_at DESC
            LIMIT ?""",
         (limit,),
@@ -14866,7 +14888,7 @@ async def get_usage(user: dict = Depends(require_user)):
     broker_phone = None
     try:
         row = storage.db.execute(
-            "SELECT value FROM companion_config WHERE key = 'whatsapp_business_number'"
+            "SELECT value FROM business_api_config WHERE key = 'whatsapp_business_number'"
         ).fetchone()
         if row and row["value"]:
             broker_phone = row["value"]
@@ -15043,7 +15065,7 @@ async def get_alerts_config(user: dict = Depends(require_user)):
         return {
             "requirements": [dict(r) for r in requirements],
             "recent_alerts": [dict(a) for a in recent_alerts],
-            "waba_configured": bool(_companion_get_config_value("access_token", "WABA_ACCESS_TOKEN")),
+            "waba_configured": bool(_business_api_get_config_value("access_token", "WABA_ACCESS_TOKEN")),
         }
     except Exception as exc:
         return JSONResponse(status_code=500, content={"error": str(exc)})
