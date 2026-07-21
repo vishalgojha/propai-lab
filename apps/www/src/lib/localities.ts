@@ -1,4 +1,5 @@
 import { getServerSupabase, slugify } from "./supabase";
+import { unstable_cache } from "next/cache";
 import { getTitlesForRawMessageIds } from "./listing-titles";
 import { canonicalLocality } from "./locality-canon";
 import { type ListingCardFields } from "./listing-card";
@@ -574,7 +575,7 @@ export async function getLocalityListings(
   return { locality: canon.label, slug, rows };
 }
 
-export async function getAllLocalities(): Promise<LocalitySummary[]> {
+async function fetchAllLocalities(): Promise<LocalitySummary[]> {
   const db = getServerSupabase();
   if (!db) return [];
 
@@ -621,6 +622,12 @@ export async function getAllLocalities(): Promise<LocalitySummary[]> {
     .sort((a, b) => b.listingCount - a.listingCount);
 }
 
+export const getAllLocalities = unstable_cache(
+  fetchAllLocalities,
+  ["public-localities"],
+  { revalidate: 300 },
+);
+
 export type BuildingSummary = {
   name: string;
   id: number | null;
@@ -631,7 +638,7 @@ export type BuildingSummary = {
   developer: string | null;
 };
 
-export async function getAllBuildings(limit = 5000): Promise<BuildingSummary[]> {
+async function fetchAllBuildings(limit = 5000): Promise<BuildingSummary[]> {
   const db = getServerSupabase();
   if (!db) return [];
 
@@ -685,6 +692,12 @@ export async function getAllBuildings(limit = 5000): Promise<BuildingSummary[]> 
       };
     });
 }
+
+export const getAllBuildings = unstable_cache(
+  fetchAllBuildings,
+  ["public-buildings"],
+  { revalidate: 300 },
+);
 
 export type BuildingDetail = {
   id: number | null;
