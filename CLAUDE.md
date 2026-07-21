@@ -52,7 +52,7 @@ verification, broker onboarding (currently paused) can resume.
 ### ENV / TOOLING NOTES
 - venv `/tmp/opencode/venv` has: supabase, requests, pillow, numpy, pytest, fastapi, pydantic.
   NOT a full project env → `import app` fails (needs whole dep tree); run storage tests standalone.
-- www env needs `DOUBLEWORD_API_URL` + `DOUBLEWORD_API_KEY` in Coolify (LiteLLM gateway).
+- www env needs `DOUBLEWORD_API_URL` + `DOUBLEWORD_API_KEY` in Coolify (direct provider).
 - Supabase access token `sbp_130fb…` is VALID — do NOT revoke.
 <!-- END:session-handoff -->
 
