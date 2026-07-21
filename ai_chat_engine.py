@@ -384,7 +384,7 @@ If the user greets you, greet them back naturally. If they ask how you are, say 
 """
 
 
-def build_system_prompt(sources, broker=None):
+def _legacy_build_system_prompt(sources, broker=None):
     overview = build_overview(sources)
     identity = _read_prompt_file("identity.md")
     bootstrap = _read_prompt_file("bootstrap.md")
@@ -492,6 +492,38 @@ Common patterns:
 - "3/4 BHK for rent in Bandra 3-4.5 lakh" = 3 BHK or 4 BHK, rent ₹3,00,000-4,50,000/month
 - "2 Cr flat" = ₹2,00,00,000 purchase price
 - "15000 monthly" = ₹15,000/month (absolute rupees)"""
+
+
+def build_system_prompt(sources, broker=None):
+    """Build the shared workspace policy used by the live assistant.
+
+    Search routing happens in code, so the model receives a small, current
+    policy rather than a second copy of every product workflow.
+    """
+    identity = _read_prompt_file("identity.md")
+    bootstrap = _read_prompt_file("bootstrap.md")
+    now = datetime.datetime.now().strftime("%A, %d %B %Y at %I:%M %p IST")
+    broker_line = (
+        f"\nYou are currently talking to {broker['name']} ({broker['phone']}), a broker using PropAI."
+        if broker and broker.get("name") else ""
+    )
+    return f"""{identity or 'You are PropAI, a Mumbai real-estate broker assistant.'}
+
+{bootstrap}
+
+Current date and time: {now}{broker_line}
+
+You are in the PropAI workspace. Available sources are summarized below; use
+only retrieved values as facts. Concrete property and requirement requests are
+searched against the live global marketplace before you answer. Never claim
+that the database is unavailable when verified search results are present.
+
+AVAILABLE DATA:
+{build_overview(sources)}
+
+For workspace data, return valid JSON with a short `content` field and UI
+`blocks`. Use `summary`, `listing_cards`, `broker_cards`, `table`,
+`empty_state`, or `error_state`. Keep cards factual and compact."""
 
 
 WORKSPACE_BLOCK_TYPES = {
@@ -949,6 +981,11 @@ def _market_search_tool():
                         "type": "string",
                         "description": "Micro market / locality name (e.g. 'Bandra East', 'BKC', 'Andheri West')",
                     },
+                    "micro_markets": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Alternative micro markets to search together, e.g. ['Bandra East', 'BKC']",
+                    },
                     "price_max": {
                         "type": "number",
                         "description": "Maximum price filter (in rupees, e.g. 20000000 for ₹2 Cr)",
@@ -1084,6 +1121,172 @@ def fmt_listing_price(val, unit=None, intent=None):
     if str(intent or "").upper() == "RENT" and 0 < v < 100:
         return f"₹{v:g} L{suffix}"
     return f"{fmt_price(v)}{suffix}"
+
+
+# Search routing is intentionally deterministic. The chat model may explain
+# verified results, but it must never be the component that decides whether a
+# concrete property request reaches the live marketplace.
+_MARKET_LOCALITIES = (
+    "Bandra West", "Bandra East", "Bandra", "BKC", "Khar West", "Khar",
+    "Santacruz West", "Santacruz East", "Santacruz", "Andheri West",
+    "Andheri East", "Andheri", "Juhu", "Vile Parle West", "Vile Parle East",
+    "Worli", "Lower Parel", "Prabhadevi", "Dadar", "Powai", "Kalina",
+    "Pali Hill", "Lokhandwala", "Goregaon West", "Goregaon East", "Malad West",
+    "Malad East", "Chembur", "Navi Mumbai", "Thane",
+)
+
+
+def _market_price_to_rupees(value: str, unit: str) -> float:
+    amount = float(value.replace(",", ""))
+    unit = unit.lower()
+    if unit in {"cr", "crore", "crores", "karod", "karods"}:
+        return amount * 1_00_00_000
+    if unit in {"l", "lac", "lacs", "lakh", "lakhs"}:
+        return amount * 1_00_000
+    if unit in {"k", "thousand", "thousands", "hazaar", "hazar"}:
+        return amount * 1_000
+    return amount
+
+
+def parse_market_search_request(text: str) -> dict | None:
+    """Parse an ordinary broker search message into safe market filters.
+
+    This intentionally recognises only concrete property language. Generic
+    messages still go to normal conversational AI rather than accidentally
+    searching the entire marketplace.
+    """
+    raw = (text or "").strip()
+    lower = raw.lower()
+    if not raw:
+        return None
+
+    bhk_match = re.search(r"\b(\d+(?:\.5)?)\s*(?:bhk|bed(?:room)?s?)\b", lower)
+    localities = [
+        locality for locality in _MARKET_LOCALITIES
+        if re.search(rf"(?<!\w){re.escape(locality.lower())}(?!\w)", lower)
+    ]
+    localities = [
+        locality for locality in localities
+        if not any(locality != other and locality.lower() in other.lower() for other in localities)
+    ]
+    property_words = re.search(
+        r"\b(?:flat|apartment|property|listing|listings|inventory|requirement|"
+        r"rent|rental|lease|sale|sell|buy|purchase|furnished|unfurnished|"
+        r"building|tower|society|project|available|need|looking for|find|search)\b",
+        lower,
+    )
+    if not (bhk_match or localities) or not property_words:
+        return None
+
+    args: dict[str, object] = {
+        "limit": 10,
+        "offset": 0,
+        "sort_by": "last_seen",
+        "group_by_building": False,
+    }
+    if bhk_match:
+        args["bhk"] = bhk_match.group(1)
+
+    # A buyer's request asks for available sale listings; a tenant request asks
+    # for available rent listings. Explicit intent wins over generic wording.
+    if re.search(r"\b(?:rent|rental|lease|leave\s*(?:&|and)\s*license|l&l)\b", lower):
+        args["intent"] = "RENT"
+    elif re.search(r"\b(?:sale|sell|buy|purchase)\b", lower):
+        args["intent"] = "SELL"
+
+    if localities:
+        # Preserve "Bandra East or BKC" rather than silently searching only
+        # one half of a broker's requirement.
+        args["micro_markets"] = sorted(set(localities), key=len, reverse=True)
+
+    if re.search(r"\bsemi[-\s]?furnished\b", lower):
+        args["furnishing"] = "Semi Furnished"
+    elif re.search(r"\bunfurnished\b", lower):
+        args["furnishing"] = "Unfurnished"
+    elif re.search(r"\bfully\s+furnished\b|\bfurnished\b", lower):
+        args["furnishing"] = "Furnished"
+
+    amount_pattern = r"(\d+(?:\.\d+)?)\s*(cr|crore|crores|karod|karods|l|lac|lacs|lakh|lakhs|k|thousand|thousands|hazaar|hazar)\b"
+    range_match = re.search(
+        rf"(?:between\s+)?{amount_pattern}\s*(?:to|[-–])\s*{amount_pattern}", lower
+    )
+    if range_match:
+        first = _market_price_to_rupees(range_match.group(1), range_match.group(2))
+        second = _market_price_to_rupees(range_match.group(3), range_match.group(4))
+        args["price_min"], args["price_max"] = sorted((first, second))
+    else:
+        # Broker shorthand commonly writes "6 to 8 Cr" (unit only once).
+        shared_unit_range = re.search(
+            r"(?:between\s+)?(\d+(?:\.\d+)?)\s*(?:to|[-–])\s*"
+            r"(\d+(?:\.\d+)?)\s*(cr|crore|crores|karod|karods|l|lac|lacs|lakh|lakhs|k|thousand|thousands|hazaar|hazar)\b",
+            lower,
+        )
+        if shared_unit_range:
+            first = _market_price_to_rupees(shared_unit_range.group(1), shared_unit_range.group(3))
+            second = _market_price_to_rupees(shared_unit_range.group(2), shared_unit_range.group(3))
+            args["price_min"], args["price_max"] = sorted((first, second))
+            return args
+        ceiling = re.search(rf"(?:under|below|upto|up to|max(?:imum)?|budget\s*(?:of)?\s*)\s*(?:₹|rs\.?\s*)?{amount_pattern}", lower)
+        if ceiling:
+            args["price_max"] = _market_price_to_rupees(ceiling.group(1), ceiling.group(2))
+
+    return args
+
+
+def deterministic_market_response(query: dict, result: str, sources: dict | None = None) -> dict:
+    """Convert the verified market search output into a workspace response."""
+    source_names = list((sources or {}).keys())
+    try:
+        payload = json.loads(result)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return {
+            "content": "I couldn't fetch the latest market listings right now.",
+            "blocks": [{"type": "error_state", "title": "Market search unavailable", "body": "Please try again shortly."}],
+            "sources": source_names,
+            "status_steps": ["Searching live marketplace"],
+            "trace": {"route": "deterministic_market_search", "sources": source_names},
+        }
+
+    results = payload.get("results") or []
+    total = int(payload.get("total") or 0)
+    if not results:
+        return {
+            "content": "No active listings match those filters yet.",
+            "blocks": [{
+                "type": "empty_state",
+                "title": "No exact market matches",
+                "body": payload.get("suggestion") or "Try a nearby locality, a wider budget, or the latest listings.",
+            }],
+            "sources": ["global marketplace"],
+            "status_steps": ["Searched live marketplace"],
+            "trace": {"route": "deterministic_market_search", "filters": query},
+        }
+
+    shown = len(results)
+    return {
+        "content": f"Found {total} active match{'es' if total != 1 else ''}; showing the {shown} most recently seen.",
+        "blocks": [
+            {
+                "type": "summary",
+                "title": "Live market search",
+                "body": "Results are structured from broker posts and ranked by most recent evidence.",
+                "metrics": [
+                    {"label": "Matches", "value": str(total), "tone": "success"},
+                    {"label": "Showing", "value": str(shown), "tone": "neutral"},
+                ],
+            },
+            {
+                "type": "listing_cards",
+                "title": "Active listings",
+                "subtitle": "Global PropAI marketplace",
+                "items": results,
+                "sources": ["WhatsApp broker posts"],
+            },
+        ],
+        "sources": ["global marketplace", "WhatsApp broker posts"],
+        "status_steps": ["Parsed request", "Searched live marketplace", "Ranked by recent evidence"],
+        "trace": {"route": "deterministic_market_search", "filters": query, "total": total},
+    }
 
 
 def _open_db():
@@ -1284,7 +1487,11 @@ def execute_tool(name, args, sources, db_path=None, tenant_id: str | None = None
             con.close()
 
     if name == "market_search":
-        con = _open_db()
+        # The API already owns the Supabase-backed connection. Reuse it when
+        # supplied so global market search is not silently pointed at a stale
+        # local fallback database.
+        con = db_path if hasattr(db_path, "execute") else _open_db()
+        close_con = con is not db_path
         if not con:
             return "Database not available"
         try:
@@ -1295,6 +1502,7 @@ def execute_tool(name, args, sources, db_path=None, tenant_id: str | None = None
             bhk = args.get("bhk")
             building = args.get("building")
             micro_market = args.get("micro_market")
+            micro_markets = [str(value).strip() for value in (args.get("micro_markets") or []) if str(value).strip()]
             price_max = args.get("price_max")
             price_min = args.get("price_min")
             furnishing = args.get("furnishing")
@@ -1329,7 +1537,10 @@ def execute_tool(name, args, sources, db_path=None, tenant_id: str | None = None
                 bpattern = f"%{building}%"
                 params.extend([bpattern, bpattern, bpattern, bpattern])
 
-            if micro_market:
+            if micro_markets:
+                where_clauses.append("(" + " OR ".join("l.micro_market LIKE ?" for _ in micro_markets) + ")")
+                params.extend(f"%{market}%" for market in micro_markets)
+            elif micro_market:
                 where_clauses.append("l.micro_market LIKE ?")
                 params.append(f"%{micro_market}%")
 
@@ -1408,7 +1619,7 @@ def execute_tool(name, args, sources, db_path=None, tenant_id: str | None = None
                     match_reasons.append(f"✓ {d['bhk']} BHK")
                 if intent and d.get("intent"):
                     match_reasons.append(f"✓ {d['intent']}")
-                if micro_market and d.get("micro_market"):
+                if (micro_market or micro_markets) and d.get("micro_market"):
                     match_reasons.append(f"✓ {d['micro_market']}")
                 if building and d.get("building_name"):
                     match_reasons.append(f"✓ Building match: {d['building_name']}")
@@ -1511,7 +1722,8 @@ def execute_tool(name, args, sources, db_path=None, tenant_id: str | None = None
                 },
             }, default=str)
         finally:
-            con.close()
+            if close_con:
+                con.close()
 
     if name == "query_data":
         source = args.get("source")
