@@ -828,6 +828,10 @@ func (sm *SessionManager) handleMessage(s *BrokerSession, evt *events.Message) {
 	if s.client != nil && s.client.Store != nil && s.client.Store.LIDs != nil && info.Sender.Server == "lid" {
 		if pn, err := s.client.Store.LIDs.GetPNForLID(s.ctx, info.Sender); err == nil && !pn.IsEmpty() {
 			sender["phone"] = pn.String()
+			// Keep the resolved phone JID beside the original LID in the
+			// message key. The API persists both as identity evidence, while
+			// using the phone route for the broker Market Inbox entity.
+			key["participantAlt"] = pn.String()
 		}
 	}
 
