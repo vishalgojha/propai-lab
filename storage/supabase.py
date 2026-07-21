@@ -1114,6 +1114,20 @@ class SupabaseStorage(Storage):
         res = self.client.table("org_whatsapp_connections").select("organization_id, broker_id, phone_number, instance_name, is_active, self_chat_enabled").eq("broker_id", broker_id).limit(1).execute()
         return res.data[0] if res.data else None
 
+    def get_active_org_whatsapp_connection_by_phone(self, phone: str) -> dict | None:
+        """Resolve a QR-linked WhatsApp number to its owning workspace."""
+        target = re.sub(r"\D+", "", phone or "")[-10:]
+        if len(target) != 10:
+            return None
+        res = self.client.table("org_whatsapp_connections").select(
+            "id,organization_id,broker_id,phone_number,instance_name,is_active,self_chat_enabled"
+        ).eq("is_active", True).execute()
+        for row in res.data or []:
+            candidate = re.sub(r"\D+", "", str(row.get("phone_number") or ""))[-10:]
+            if candidate == target:
+                return row
+        return None
+
     def get_org_waba_connection(self, org_id: str) -> dict | None:
         """Return the server-only Cloud API connection for one workspace."""
         res = self.client.table("org_waba_connections").select("*")\
