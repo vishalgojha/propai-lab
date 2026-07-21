@@ -796,7 +796,9 @@ func (sm *SessionManager) handleMessage(s *BrokerSession, evt *events.Message) {
 	// Self-chat commands go to the AI agent, but we still forward the message.
 	if info.IsFromMe {
 		if target, text, ok := selfChatCommand(s, evt); ok {
-			sm.handleSelfChatCommand(s, target, info.ID, text)
+			// Never let a slow AI/database request block Whatsmeow's event loop.
+			// The raw self-message continues through normal ingestion below.
+			go sm.handleSelfChatCommand(s, target, info.ID, text)
 		}
 	}
 
@@ -849,7 +851,7 @@ func (sm *SessionManager) handleMessage(s *BrokerSession, evt *events.Message) {
 		s.lastSeenByType[msgType] = seenAt
 		s.mu.Unlock()
 	}
-	if media := sm.captureMedia(s, evt.Message, info.Chat.String(), info.ID); media != nil {
+	if media := sm.captureMedia(s, evt.Message, info.Chat.String(), info.ID, true); media != nil {
 		payloadData["media"] = media
 	}
 	// Attach rich structured data for non-text message types
@@ -1435,7 +1437,7 @@ func (sm *SessionManager) postWebMessage(s *BrokerSession, wmsg *waWeb.WebMessag
 			"conversationName": chatName,
 		},
 	}
-	if media := sm.captureMedia(s, wmsg.GetMessage(), remoteJID, messageID); media != nil {
+	if media := sm.captureMedia(s, wmsg.GetMessage(), remoteJID, messageID, false); media != nil {
 		payload["data"].(map[string]interface{})["media"] = media
 	}
 
