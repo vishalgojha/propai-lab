@@ -4,6 +4,7 @@ import contextvars
 import json
 import os
 import re
+import time
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -640,6 +641,7 @@ class SupabaseStorage(Storage):
         self._client: Client = create_client(url, key)
         self._db = _SupabaseDatabaseAdapter(self._client)
         self.__tenant_id_fallback: str | None = None
+        self._stats_cache: dict[str, tuple[float, dict[str, int]]] = {}
 
     @property
     def client(self) -> Client:
@@ -2387,26 +2389,49 @@ class SupabaseStorage(Storage):
 
     def get_stats(self) -> dict:
         tenant_id = self.tenant_id
-        tenant_clause = " WHERE tenant_id = ?" if tenant_id else ""
-        requirement_clause = (
-            tenant_clause + (" AND " if tenant_clause else " WHERE ")
-            + "intent IN ('BUY','BUYER','REQUIREMENT','RENTAL_SEEKER')"
-        )
-        sql = f"""
-            SELECT
-              (SELECT COUNT(*) FROM raw_messages{tenant_clause}) AS total_messages,
-              (SELECT COUNT(*) FROM parsed_output{tenant_clause}) AS total_parsed,
-              (SELECT COUNT(*) FROM listings{tenant_clause}) AS total_listings,
-              (SELECT COUNT(*) FROM parsed_output{requirement_clause}) AS total_requirements,
-              (SELECT COUNT(*) FROM brokers{tenant_clause}) AS total_brokers,
-              (SELECT COUNT(*) FROM buildings{tenant_clause}) AS total_buildings
-        """
-        params = [tenant_id] * 6 if tenant_id else []
-        row = self.db.execute(sql, params).fetchone() or {}
-        return {key: int(row.get(key) or 0) for key in (
+        cache_key = tenant_id or "__all__"
+        cached = self._stats_cache.get(cache_key)
+        now = time.monotonic()
+        # Connections, WhatsWow and the sidebar ask for these same counts in
+        # quick succession. Keep dashboard counts responsive without turning a
+        # page load into repeated full-table count queries.
+        if cached and now - cached[0] < 15:
+            return dict(cached[1])
+
+        def count(table: str, *, intents: list[str] | None = None) -> int:
+            query = self.client.table(table).select("id", count="exact")
+            if tenant_id:
+                query = query.eq("tenant_id", tenant_id)
+            if intents:
+                query = query.in_("intent", intents)
+            response = query.execute()
+            return int(response.count or 0)
+
+        keys = (
             "total_messages", "total_parsed", "total_listings",
             "total_requirements", "total_brokers", "total_buildings",
-        )}
+        )
+        try:
+            stats = {
+                "total_messages": count("raw_messages"),
+                "total_parsed": count("parsed_output"),
+                "total_listings": count("listings"),
+                "total_requirements": count(
+                    "parsed_output",
+                    intents=["BUY", "BUYER", "REQUIREMENT", "RENTAL_SEEKER"],
+                ),
+                "total_brokers": count("brokers"),
+                "total_buildings": count("buildings"),
+            }
+        except Exception as exc:
+            # Stats are informational. Do not let a transient count failure
+            # take down Connections or conceal the WhatsApp session state.
+            import logging
+            logging.warning("Supabase stats query failed: %s", exc)
+            return dict(cached[1]) if cached else {key: 0 for key in keys}
+
+        self._stats_cache[cache_key] = (now, stats)
+        return dict(stats)
 
     # ── Observation Detail ───────────────────────────────────────
 
