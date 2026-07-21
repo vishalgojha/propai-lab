@@ -61,6 +61,7 @@ export function MobileDrawer({
           title: "Platform",
           items: [
             { href: "/admin", label: "Super Admin" },
+            { href: "/admin/providers", label: "Provider Health" },
             { href: "/admin/whatsapp", label: "WhatsApp Sessions" },
             { href: "/admin/analytics", label: "Site Analytics" },
           ],

@@ -27,6 +27,7 @@ import {
   ShieldCheck,
   X,
   Zap,
+  Sparkles,
 } from "lucide-react";
 import { AuthProvider, useAuth } from "@/lib/AuthProvider";
 import { LayoutProvider, useLayout } from "@/hooks/useLayout";
@@ -73,6 +74,7 @@ const adminNavSection = {
   title: "Platform",
   items: [
     { href: "/admin", label: "Super Admin", icon: ShieldCheck },
+    { href: "/admin/providers", label: "Provider Health", icon: Sparkles },
     { href: "/admin/whatsapp", label: "WhatsApp Sessions", icon: Wifi },
     { href: "/admin/analytics", label: "Site Analytics", icon: BarChart3 },
   ],
