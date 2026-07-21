@@ -107,19 +107,35 @@ def _normalize_phone(phone: str) -> str:
 
 
 def resolve_broker(phone: str) -> dict:
-    """Resolve an already-onboarded broker (= tenant) by WhatsApp phone number.
+    """Resolve an authenticated WhatsApp identity to its workspace.
 
-    Does NOT create anything. Raises HTTPException(404) with
-    needs_onboarding=True in the detail if the phone number is unknown —
-    the agent must run the explicit onboarding flow before retrying.
+    A QR-linked organization connection is the authorization record.  The
+    inferred brokers table is used only to enrich that identity, never as the
+    authority which grants workspace access.
     """
     norm_phone = _normalize_phone(phone)
     if not norm_phone:
         raise HTTPException(400, "A valid phone number is required to resolve broker identity")
 
-    existing = get_storage().find_broker(phone=norm_phone)
+    storage = get_storage()
+    connection = storage.get_active_org_whatsapp_connection_by_phone(norm_phone)
+    if connection and connection.get("organization_id"):
+        existing = storage.find_broker(phone=norm_phone) or {}
+        return {
+            "id": existing.get("id") or connection.get("broker_id") or connection.get("id"),
+            "canonical_name": existing.get("canonical_name") or connection.get("instance_name") or norm_phone,
+            "tenant_id": connection["organization_id"],
+            "connection_id": connection.get("id"),
+        }
+
+    existing = storage.find_broker(phone=norm_phone)
     if existing:
-        return existing
+        # A market-inferred broker can be displayed but cannot authorize a
+        # Business API write until their number is QR-linked to a workspace.
+        raise HTTPException(403, {
+            "needs_qr_connection": True,
+            "message": "This number appears in market data but is not connected to a PropAI workspace. Link it by QR first.",
+        })
 
     raise HTTPException(
         404,

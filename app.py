@@ -6475,8 +6475,8 @@ def _workspace_response_to_whatsapp(response: dict) -> str:
 
 
 _SELF_CHAT_BULLET = "• "
-_SELF_CHAT_MAX_BULLETS = 8
-_SELF_CHAT_MAX_CHARS = 1600
+_SELF_CHAT_MAX_BULLETS = 3
+_SELF_CHAT_MAX_CHARS = 420
 
 _CASUAL_CHAT_SIGNAL = re.compile(
     r"^\s*(hi|hello|hey|hiya|yo|hola|good\s*(morning|afternoon|evening)|"
@@ -6522,10 +6522,12 @@ OUTPUT RULES — non-negotiable:
 - NEVER write flowing paragraphs. NEVER write multi-sentence prose blocks.
 - NEVER return JSON, code fences, markdown tables, or UI blocks.
 - Each bullet must fit on one WhatsApp line (under ~120 chars).
-- Lead with the answer in bullet 1. Follow with context bullets. End with one optional action bullet.
-- Maximum 8 bullets per reply. If you have more, pick the most important.
+- Lead with the answer in bullet 1. Follow with only essential context.
+- Maximum 3 bullets per reply. If you have more, pick the most important.
 - For greetings or identity questions, respond with 1-2 bullets only.
-- Use the data tools (market_search, get_listing, etc.) ONLY when the user asks for listings, market stats, or a property detail. Skip tools for greetings, identity, thanks, or small talk.
+- This QR-linked self-chat is authenticated. Never ask the user to log in to the portal.
+- For a listing/requirement search, use market_search against the global published marketplace. Never claim database access is unavailable before trying it.
+- Do not claim a listing was found, saved, or updated unless a tool result confirms it.
 - For real-estate queries, format like:
   • <Property>: <price>, <bhk>, <area> sqft — <micro_market>
   • Broker: <name> / <phone>
@@ -6637,6 +6639,7 @@ async def _run_self_chat_agent(
     model: str = "",
     session_id: str = "whatsapp",
     casual: bool = False,
+    tenant_id: str | None = None,
 ) -> dict:
     """Lightweight variant of _run_workspace_agent for the WhatsApp self-chat path.
 
@@ -6741,6 +6744,8 @@ async def _run_self_chat_agent(
             model=configured_model or None,
             base_url=base_url,
             max_tool_rounds=max_rounds,
+            db_path=getattr(storage, "db", None),
+            tenant_id=tenant_id,
         )
         if reply.content and not casual:
             try:
@@ -6843,7 +6848,12 @@ async def _stream_self_chat_reply(text: str) -> dict | None:
         return None
 
 
-async def _run_workspace_agent(messages: list[dict], model: str = "", session_id: str = "whatsapp") -> dict:
+async def _run_workspace_agent(
+    messages: list[dict],
+    model: str = "",
+    session_id: str = "whatsapp",
+    tenant_id: str | None = None,
+) -> dict:
     # Conversation memory
     from ai_chat_engine import get_memory
     memory = get_memory(session_id)
@@ -6916,9 +6926,10 @@ async def _run_workspace_agent(messages: list[dict], model: str = "", session_id
         system_prompt += """
 
 WHATSAPP SELF-CHAT MODE:
-- You are running on WhatsApp. Keep replies short enough for a phone screen (2-4 lines typically).
-- Have read-only access to PropAI's live database through the available tools.
-- Do not ask the user to open the dashboard unless the action truly requires UI review.
+- The sender is authenticated through their QR-linked WhatsApp connection. Never ask them to log in to the portal.
+- You have access to their live PropAI database through tools. For a search or inventory question, call the tool; never claim database access is unavailable before trying it.
+- Reply in at most 3 short lines (or up to 5 compact result bullets). No tables, greetings, repeated summaries, or filler.
+- Never claim a listing/requirement was saved, searched, or found unless the tool result says so.
 - Never return JSON, markdown tables, or UI blocks — plain text only.
 """
         if relevant_obs:
@@ -6941,6 +6952,7 @@ WHATSAPP SELF-CHAT MODE:
             model=configured_model or None,
             base_url=base_url,
             max_tool_rounds=2,
+            tenant_id=tenant_id,
         )
         if reply.content:
             memory.add("assistant", reply.content)
@@ -6983,6 +6995,11 @@ async def internal_self_chat(req: InternalSelfChatRequest, request: Request):
         storage.get_org_whatsapp_connection_by_broker_id,
         req.broker_id.strip(),
     )
+    if not connection and req.sender_jid:
+        sender_phone = re.sub(r"\D+", "", req.sender_jid.split("@", 1)[0])
+        connection = await asyncio.to_thread(
+            storage.get_active_org_whatsapp_connection_by_phone, sender_phone
+        )
     if not connection:
         raise HTTPException(404, "Unknown WhatsApp connection")
     if not connection.get("is_active", True):
@@ -7010,6 +7027,7 @@ async def internal_self_chat(req: InternalSelfChatRequest, request: Request):
             [{"role": "user", "content": text[:1800]}],
             session_id=f"whatsmeow:{req.broker_id}",
             casual=casual,
+            tenant_id=connection.get("organization_id") or DEFAULT_TENANT_ID,
         )
         if isinstance(response, dict) and response.get("error"):
             return JSONResponse(status_code=503, content=response)
@@ -7055,6 +7073,7 @@ async def _self_chat_ndjson(text: str, broker_id: str, casual: bool):
             [{"role": "user", "content": text[:1800]}],
             session_id=f"whatsmeow:{broker_id}",
             casual=casual,
+            tenant_id=get_tenant_id() or DEFAULT_TENANT_ID,
         )
         if isinstance(response, dict) and response.get("error"):
             yield _ndjson_line({"event": "error", "message": response.get("message") or response.get("error") or "agent_error"})
@@ -8676,9 +8695,18 @@ async def _resolve_waba_webhook_config(body: dict, org_id: str | None = None) ->
                 return values, str(values.get("organization_id") or "") or None
         except Exception as exc:
             print(f"[waba-webhook] workspace resolve failed: {exc}", flush=True)
-    # The shared PropAI number is an assistant entry point. Map the sender's
-    # verified profile back to their workspace so agent reads stay tenant-safe.
+    # The shared PropAI number is an assistant entry point. A number paired by
+    # QR inside an authenticated workspace is already a verified workspace
+    # identity. Resolve that first; a profile phone is merely a fallback.
     if sender_phone:
+        try:
+            connection = await asyncio.to_thread(
+                storage.get_active_org_whatsapp_connection_by_phone, sender_phone
+            )
+            if connection and connection.get("organization_id"):
+                return _platform_waba_values(), str(connection["organization_id"])
+        except Exception as exc:
+            print(f"[waba-webhook] QR connection workspace resolve failed: {exc}", flush=True)
         try:
             profile = await asyncio.to_thread(storage.get_user_profile, sender_phone, "")
             auth_user_id = str((profile or {}).get("auth_user_id") or "")
@@ -9065,6 +9093,7 @@ async def _handle_waba_agent_reply(
         response = await _run_workspace_agent(
             [{"role": "user", "content": text[:1800]}],
             session_id=f"waba:{tenant_id or DEFAULT_TENANT_ID}:{to}",
+            tenant_id=tenant_id or DEFAULT_TENANT_ID,
         )
         if isinstance(response, dict) and response.get("error"):
             raise RuntimeError(response.get("message") or response["error"])

@@ -1094,7 +1094,7 @@ def _open_db():
     return None
 
 
-def execute_tool(name, args, sources, db_path=None):
+def execute_tool(name, args, sources, db_path=None, tenant_id: str | None = None):
     if name == "get_overview":
         return build_overview(sources)
 
@@ -1928,7 +1928,7 @@ def _get_fallback_model() -> str:
         return "Qwen/Qwen3.6-35B-A3B-FP8"
 
 
-def get_model_reply(messages, sources, api_key=None, db_path=None, model=None, base_url=None, max_tool_rounds=5, _depth=0):
+def get_model_reply(messages, sources, api_key=None, db_path=None, model=None, base_url=None, max_tool_rounds=5, _depth=0, tenant_id: str | None = None):
     client = get_client(api_key=api_key, base_url=base_url)
     tools = _build_tools(sources)
     db_path = db_path or _default_db_path()
@@ -1992,7 +1992,7 @@ def get_model_reply(messages, sources, api_key=None, db_path=None, model=None, b
                     fn_args, _ = decoder.raw_decode(tc.function.arguments)
                 except (json.JSONDecodeError, ValueError):
                     fn_args = {}
-            result = execute_tool(fn_name, fn_args, sources, db_path=db_path)
+            result = execute_tool(fn_name, fn_args, sources, db_path=db_path, tenant_id=tenant_id)
             result_str = str(result) if not isinstance(result, str) else result
             messages.append({
                 "role": "tool",
@@ -2008,6 +2008,7 @@ def get_model_reply(messages, sources, api_key=None, db_path=None, model=None, b
             base_url=base_url,
             max_tool_rounds=max_tool_rounds,
             _depth=_depth + 1,
+            tenant_id=tenant_id,
         )
 
     return msg
