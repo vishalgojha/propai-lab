@@ -330,30 +330,31 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
         else group_name
     )
     knowledge_record_id = None
-    try:
-        now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-        knowledge_record_id = storage.create_knowledge_record({
-            "source_type": kr_source_type,
-            "source_id": message_uid,
-            "raw_content": msg_text,
-            "sender_jid": sender_jid,
-            "sender_name": sender_name,
-            "sender_phone": sender_phone,
-            "conversation_id": group,
-            "conversation_name": kr_conversation_name,
-            "message_timestamp": now,
-            "content_type": "unknown",
-            "metadata": json.dumps({
-                "raw_id": raw_id,
-                "message_id": message_id,
-                "instance": instance,
-                "has_image": bool(msg.get("imageMessage")),
-                "has_video": bool(msg.get("videoMessage")),
-                "has_document": bool(msg.get("documentMessage")),
-            }),
-        })
-    except Exception as exc:
-        print(f"  [extract] create_knowledge_record error for {raw_id}: {exc}", flush=True)
+    if not ctx.get("skip_knowledge_record"):
+        try:
+            now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+            knowledge_record_id = storage.create_knowledge_record({
+                "source_type": kr_source_type,
+                "source_id": message_uid,
+                "raw_content": msg_text,
+                "sender_jid": sender_jid,
+                "sender_name": sender_name,
+                "sender_phone": sender_phone,
+                "conversation_id": group,
+                "conversation_name": kr_conversation_name,
+                "message_timestamp": now,
+                "content_type": "unknown",
+                "metadata": json.dumps({
+                    "raw_id": raw_id,
+                    "message_id": message_id,
+                    "instance": instance,
+                    "has_image": bool(msg.get("imageMessage")),
+                    "has_video": bool(msg.get("videoMessage")),
+                    "has_document": bool(msg.get("documentMessage")),
+                }),
+            })
+        except Exception as exc:
+            print(f"  [extract] create_knowledge_record error for {raw_id}: {exc}", flush=True)
 
     # ── Parse (AI first, regex fallback) ────────────────────────
     parsed_listings: list[dict] = []
