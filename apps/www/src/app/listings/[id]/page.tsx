@@ -19,7 +19,6 @@ import {
   Flag,
   Target,
   Phone,
-  ArrowLeft,
   ChevronRight,
   Tag,
 } from "lucide-react";
@@ -28,6 +27,7 @@ import { toListingCardViewModel, type ListingCardFields, type ListingSpecItem } 
 import SiteHeader from "@/components/SiteHeader";
 import SiteFooter from "@/components/SiteFooter";
 import ListingSpecs from "@/components/ListingSpecs";
+import BackButton from "@/components/BackButton";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -174,13 +174,7 @@ export default async function ListingPage({ params }: Params) {
       <JsonLd data={listingSchema} />
       <JsonLd data={breadcrumbSchema} />
       <main className="mx-auto max-w-5xl px-4 py-8 lg:px-6 lg:py-12">
-        <button
-          onClick={() => history.back()}
-          className="mb-5 inline-flex items-center gap-1.5 text-sm font-medium text-zinc-400 transition-colors hover:text-white"
-        >
-          <ArrowLeft className="h-4 w-4" aria-hidden="true" />
-          Back to listings
-        </button>
+        <BackButton />
 
         <div className="mb-6 flex flex-wrap items-center gap-1.5 text-xs text-zinc-500">
           <Link href="/search" className="hover:text-white transition-colors">
