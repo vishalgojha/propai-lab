@@ -3929,13 +3929,15 @@ _FALLBACK_CAPABILITIES: list[dict] = [
 _CAPABILITY_WINDOW_DAYS = 7
 
 
-def _capability_type_counts(tenant_id: str | None) -> dict[str, int]:
+def _capability_type_counts(tenant_id: str | None) -> dict[str, dict]:
     if not _table_exists("raw_messages"):
         return {}
     try:
         rows = storage.db.execute(
             """
-            SELECT COALESCE(message_type, 'text') AS t, COUNT(*) AS c
+            SELECT COALESCE(message_type, 'text') AS t,
+                   COUNT(*) AS c,
+                   MAX(created_at) AS last_seen
             FROM raw_messages
             WHERE tenant_id = ?
               AND created_at >= now() - interval '7 days'
@@ -3946,31 +3948,90 @@ def _capability_type_counts(tenant_id: str | None) -> dict[str, int]:
     except Exception as exc:
         print(f"[capabilities] type-count query failed: {exc}", flush=True)
         return {}
-    counts: dict[str, int] = {}
+    counts: dict[str, dict] = {}
     for row in rows or []:
         try:
-            counts[str(row["t"])] = int(row["c"] or 0)
-        except (KeyError, TypeError, ValueError):
+            last_seen = row["last_seen"]
+            counts[str(row["t"])] = {
+                "count": int(row["c"] or 0),
+                "last_seen": last_seen.isoformat() if last_seen else None,
+            }
+        except (KeyError, TypeError, ValueError, AttributeError):
             continue
     return counts
 
 
-def _compute_capability_status(name: str, type_counts: dict[str, int], any_phone: bool, any_connected: bool) -> tuple[str, int]:
+def _capability_coverage(tenant_id: str | None) -> dict:
+    """Return aggregate coverage stats: total messages, unique chats, unique groups.
+
+    Used to answer "is whatsmeow ingesting all my groups?" — idle caps just mean
+    that no messages of that type arrived in the window, not that ingestion
+    failed. These numbers let the user verify their ingestor is pulling from
+    the full set of groups they expect.
+    """
+    empty = {"total_messages": 0, "unique_chats": 0, "unique_groups": 0,
+             "unique_broadcasts": 0, "oldest_message": None, "newest_message": None}
+    if not _table_exists("raw_messages"):
+        return empty
+    try:
+        rows = storage.db.execute(
+            """
+            SELECT COUNT(*) AS total,
+                   COUNT(DISTINCT chat_jid) AS chats,
+                   COUNT(DISTINCT CASE WHEN chat_jid LIKE '%@g.us' THEN chat_jid END) AS groups,
+                   COUNT(DISTINCT CASE WHEN chat_jid LIKE '%@broadcast' THEN chat_jid END) AS broadcasts,
+                   MIN(created_at) AS oldest,
+                   MAX(created_at) AS newest
+            FROM raw_messages
+            WHERE tenant_id = ?
+              AND created_at >= now() - interval '7 days'
+            """,
+            (tenant_id,),
+        ).fetchall()
+    except Exception as exc:
+        print(f"[capabilities] coverage query failed: {exc}", flush=True)
+        return empty
+    if not rows:
+        return empty
+    row = rows[0]
+    try:
+        oldest = row["oldest"]
+        newest = row["newest"]
+        return {
+            "total_messages": int(row["total"] or 0),
+            "unique_chats": int(row["chats"] or 0),
+            "unique_groups": int(row["groups"] or 0),
+            "unique_broadcasts": int(row["broadcasts"] or 0),
+            "oldest_message": oldest.isoformat() if oldest else None,
+            "newest_message": newest.isoformat() if newest else None,
+        }
+    except (KeyError, TypeError, ValueError, AttributeError):
+        return empty
+
+
+def _compute_capability_status(
+    name: str,
+    type_data: dict[str, dict],
+    any_phone: bool,
+    any_connected: bool,
+) -> tuple[str, int, str | None]:
     if name in _CAPTURED_UNUSED_CAPS:
-        return "captured_unused", 0
+        return "captured_unused", 0, None
     if name in _ALWAYS_ON_CAPS:
         if any_connected:
-            return "active", 0
+            return "active", 0, None
         if any_phone:
-            return "partial", 0
-        return "not_available", 0
+            return "partial", 0, None
+        return "not_available", 0, None
     type_key = _CAPABILITY_TYPE_KEY.get(name)
-    count = int(type_counts.get(type_key, 0)) if type_key else 0
+    data = type_data.get(type_key) if type_key else None
+    count = int(data["count"]) if data else 0
+    last_seen = data["last_seen"] if data else None
     if count > 0:
-        return "active", count
+        return "active", count, last_seen
     if any_phone:
-        return "partial", 0
-    return "not_available", 0
+        return "partial", 0, None
+    return "not_available", 0, None
 
 
 @app.get("/api/ingestor/capabilities")
@@ -4012,16 +4073,18 @@ async def get_ingestor_capabilities(
             ingestor_payload = None
     canonical = (ingestor_payload or {}).get("capabilities") or _FALLBACK_CAPABILITIES
 
-    type_counts = _capability_type_counts(tenant_id)
+    type_data = _capability_type_counts(tenant_id)
 
     out: list[dict] = []
     for cap in canonical:
         entry = {k: v for k, v in cap.items() if k in {"name", "icon", "description"}}
-        status, evidence = _compute_capability_status(
-            cap.get("name", ""), type_counts, any_phone, any_connected
+        status, evidence, last_seen = _compute_capability_status(
+            cap.get("name", ""), type_data, any_phone, any_connected
         )
         entry["status"] = status
         entry["evidence_count"] = evidence
+        if last_seen:
+            entry["last_seen"] = last_seen
         out.append(entry)
 
     return {
@@ -4032,6 +4095,7 @@ async def get_ingestor_capabilities(
         "any_phone": any_phone,
         "window_days": _CAPABILITY_WINDOW_DAYS,
         "source": "ingestor" if ingestor_payload else "fallback",
+        "coverage": _capability_coverage(tenant_id),
     }
 
 

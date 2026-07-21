@@ -67,10 +67,23 @@ interface PhonesResponse {
   phones: PhoneStatus[];
 }
 
+interface CoverageStats {
+  total_messages: number;
+  unique_chats: number;
+  unique_groups: number;
+  unique_broadcasts: number;
+  oldest_message?: string | null;
+  newest_message?: string | null;
+}
+
 interface CapabilityResponse {
   capabilities: Capability[];
   instance: string;
   version: string;
+  any_connected?: boolean;
+  any_phone?: boolean;
+  window_days?: number;
+  coverage?: CoverageStats;
 }
 
 const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
@@ -138,6 +151,7 @@ function ago(value?: string) {
 export default function WhatsWowPage() {
   const router = useRouter();
   const [capabilities, setCapabilities] = useState<Capability[]>([]);
+  const [coverage, setCoverage] = useState<CoverageStats | null>(null);
   const [phones, setPhones] = useState<PhoneStatus[]>([]);
   const [loading, setLoading] = useState(true);
   const [showRaw, setShowRaw] = useState(false);
@@ -151,6 +165,7 @@ export default function WhatsWowPage() {
       ]);
       if (caps.status === "fulfilled" && caps.value?.capabilities) {
         setCapabilities(caps.value.capabilities);
+        setCoverage(caps.value.coverage ?? null);
       }
       if (phonesRes.status === "fulfilled") {
         setPhones(phonesRes.value.phones || []);
@@ -330,44 +345,63 @@ export default function WhatsWowPage() {
               </span>
             )}
           </div>
-          <div className="mt-4 space-y-1.5">
+          <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-1.5">
             {capabilities.length === 0 ? (
-              <div className="py-8 text-center text-caption text-zinc-600">
+              <div className="col-span-full py-8 text-center text-caption text-zinc-600">
                 {loading ? "Loading capabilities..." : "No capability data available."}
               </div>
             ) : (
               capabilities.map((cap) => (
                 <div
                   key={cap.name}
-                  className="rounded-md border border-white/5 bg-white/[0.015] px-3 py-2.5"
+                  title={cap.description}
+                  className="rounded-md border border-white/5 bg-white/[0.015] px-2.5 py-2"
                 >
-                  <div className="flex items-center gap-2.5">
-                    <CapIcon name={cap.icon} className="w-4 h-4 text-zinc-400 shrink-0" />
+                  <div className="flex items-center gap-1.5">
+                    <CapIcon name={cap.icon} className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
                     <span className="text-caption font-medium text-white truncate">{cap.name}</span>
                     <div className="flex-1" />
-                    {cap.evidence_count !== undefined && cap.evidence_count > 0 && (
-                      <span className="flex items-center gap-1.5 shrink-0 text-secondary tabular-nums">
-                        <span className="text-white font-medium">
-                          {cap.evidence_count.toLocaleString("en-IN")}
-                        </span>
-                        {cap.last_seen && (
-                          <span className="text-zinc-600">· {ago(cap.last_seen)}</span>
-                        )}
-                      </span>
-                    )}
                     <span className={`shrink-0 badge ${STATUS_BADGE[cap.status]}`}>
                       {STATUS_LABELS[cap.status]}
                     </span>
                   </div>
-                  {cap.description && (
-                    <p className="text-caption text-zinc-500 mt-1.5 ml-6 leading-snug">
-                      {cap.description}
-                    </p>
+                  {(cap.evidence_count !== undefined && cap.evidence_count > 0) && (
+                    <div className="flex items-center gap-1 mt-1 ml-5 text-[11px] tabular-nums text-zinc-500">
+                      <span className="text-zinc-300 font-medium">
+                        {cap.evidence_count.toLocaleString("en-IN")}
+                      </span>
+                      {cap.last_seen && (
+                        <span className="text-zinc-600">· {ago(cap.last_seen)}</span>
+                      )}
+                    </div>
                   )}
                 </div>
               ))
             )}
           </div>
+          {coverage && (
+            <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-zinc-500 border-t border-white/5 pt-3">
+              <span>
+                <span className="text-zinc-300 font-medium tabular-nums">{coverage.total_messages.toLocaleString("en-IN")}</span>
+                <span className="text-zinc-600"> messages · last 7d</span>
+              </span>
+              <span>
+                <span className="text-zinc-300 font-medium tabular-nums">{coverage.unique_chats}</span>
+                <span className="text-zinc-600"> chats</span>
+              </span>
+              <span>
+                <span className="text-zinc-300 font-medium tabular-nums">{coverage.unique_groups}</span>
+                <span className="text-zinc-600"> groups</span>
+              </span>
+              <span>
+                <span className="text-zinc-300 font-medium tabular-nums">{coverage.unique_broadcasts}</span>
+                <span className="text-zinc-600"> broadcasts</span>
+              </span>
+              {coverage.newest_message && (
+                <span className="text-zinc-600">latest · {ago(coverage.newest_message)}</span>
+              )}
+            </div>
+          )}
         </Card>
       </section>
 
