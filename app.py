@@ -2167,9 +2167,17 @@ async def webhook(request: Request):
     push_name = msg_data.get("pushName", "") or sender_data.get("pushName", "") or ""
     sender_name = sender_data.get("name", "") or push_name
     sender_jid = key.get("participant", "") or sender_data.get("id", "")
+    # WhatsApp can identify a group sender by a Meta LID (`user@lid`) while
+    # whatsmeow's LID store resolves the same person to a phone JID. The
+    # resolved value is currently sent as either a full `@s.whatsapp.net` JID
+    # or bare digits. Both are a valid contact route and must win over the LID.
     participant_phone_jid = key.get("participantAlt", "") or key.get("participant_pn", "") or sender_data.get("phone", "")
-    phone_source = participant_phone_jid if str(participant_phone_jid).endswith("@s.whatsapp.net") else sender_jid
-    sender_phone = _canonical_phone_from_jid(phone_source) if str(phone_source).endswith("@s.whatsapp.net") else ""
+    resolved_phone = _canonical_phone_from_jid(str(participant_phone_jid))
+    sender_phone = resolved_phone or (
+        _canonical_phone_from_jid(sender_jid)
+        if str(sender_jid).endswith("@s.whatsapp.net")
+        else ""
+    )
     sender = _format_whatsapp_sender(sender_name, sender_jid, sender_phone)
     group = key.get("remoteJid", "") or msg_data.get("from", "")
     if _is_blocked_whatsapp_conversation(group) or (sender_jid and _is_blocked_whatsapp_conversation(sender_jid)):
