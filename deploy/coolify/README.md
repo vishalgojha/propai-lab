@@ -29,7 +29,9 @@ Set these on each service in Coolify:
 | `PROPAI_INTERNAL_TOKEN` | Shared random secret for API ↔ WhatsMeow internal calls (set the same value on API, ingestor, and alert job) |
 | `DOUBLEWORD_API_URL` | `https://api.doubleword.ai/v1` |
 | `DOUBLEWORD_API_KEY` | Active Doubleword inference key |
-| `DOUBLEWORD_MODEL` | `Qwen/Qwen3.6-35B-A3B-FP8` |
+| `DOUBLEWORD_MODEL` | Exact model ID enabled for this key (required when Doubleword is enabled) |
+| `NVIDIA_MODEL`, `GROQ_MODEL`, `GEMINI_MODEL`, `CEREBRAS_MODEL` | Exact model ID for each enabled provider; do not set a key without its matching model variable |
+| `DOUBLEWORD_EMBEDDING_MODEL` | Exact embedding model ID, if the MCP embedding service is enabled |
 | `FRONTEND_URL` | `https://app.propai.live` |
 | `STATUS_FILE` | `/data/status.json` |
 | `LAB_HOST` | `0.0.0.0` |

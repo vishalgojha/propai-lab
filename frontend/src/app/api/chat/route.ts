@@ -1,5 +1,5 @@
 import { convertToModelMessages, createUIMessageStreamResponse, streamText, toUIMessageStream, type UIMessage } from "ai";
-import { model } from "@/lib/ai-provider";
+import { getConfiguredModel } from "@/lib/ai-provider";
 
 export const runtime = "edge";
 
@@ -13,6 +13,13 @@ Guidelines:
 - Support your claims with numbers and specifics when possible`;
 
 export async function POST(req: Request) {
+  const model = getConfiguredModel();
+  if (!model) {
+    return new Response(
+      JSON.stringify({ error: "No complete LLM provider is configured. Set an API key and model." }),
+      { status: 503, headers: { "Content-Type": "application/json" } },
+    );
+  }
   const { messages } = await req.json() as { messages?: UIMessage[] };
   const modelMessages = await convertToModelMessages(messages || []);
   const result = streamText({

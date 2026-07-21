@@ -1,5 +1,5 @@
 """
-LLM provider fallback — NVIDIA first, then free providers, Doubleword (paid) last.
+LLM provider chain — configured providers are tried in order.
 
 Usage:
     from llm import get_client, get_model
@@ -15,54 +15,66 @@ from openai import OpenAI
 
 _logger = logging.getLogger(__name__)
 
-# ── Provider chain: NVIDIA×3 first, then free providers, Doubleword last ──
+# ── Provider chain ─────────────────────────────────────────────────
+# A model is deployment configuration, not product code. A provider with a
+# key but no model is deliberately skipped: silently inventing a model makes
+# requests succeed or fail against an accidental provider/model combination.
 
 _PROVIDERS = []
 
-_nvidia_model = "nvidia/nemotron-3-ultra-550b-a55b"
+_nvidia_model = os.getenv("NVIDIA_MODEL", "").strip()
 _nvidia_base = "https://integrate.api.nvidia.com/v1"
 for i, key_env in enumerate(["NVIDIA_API_KEY", "NVIDIA_API_KEY_2", "NVIDIA_API_KEY_3", "NVIDIA_API_KEY_4"], 1):
-    if os.getenv(key_env):
+    if os.getenv(key_env) and _nvidia_model:
         _PROVIDERS.append({
             "name": f"nvidia-nim-{i}",
             "api_key": os.environ[key_env],
             "base_url": _nvidia_base,
             "model": _nvidia_model,
         })
+    elif os.getenv(key_env):
+        _logger.warning("Skipping %s: set NVIDIA_MODEL to enable this provider", key_env)
 
-if os.getenv("GROQ_API_KEY"):
+if os.getenv("GROQ_API_KEY") and os.getenv("GROQ_MODEL", "").strip():
     _PROVIDERS.append({
         "name": "groq",
         "api_key": os.environ["GROQ_API_KEY"],
         "base_url": "https://api.groq.com/openai/v1",
-        "model": "llama-3.3-70b-versatile",
+        "model": os.environ["GROQ_MODEL"].strip(),
     })
 
-if os.getenv("GEMINI_API_KEY"):
+if os.getenv("GEMINI_API_KEY") and os.getenv("GEMINI_MODEL", "").strip():
     _PROVIDERS.append({
         "name": "gemini",
         "api_key": os.environ["GEMINI_API_KEY"],
         "base_url": "https://generativelanguage.googleapis.com/v1beta/openai",
-        "model": "gemini-2.0-flash",
+        "model": os.environ["GEMINI_MODEL"].strip(),
     })
 
-if os.getenv("CEREBRAS_API_KEY"):
+if os.getenv("CEREBRAS_API_KEY") and os.getenv("CEREBRAS_MODEL", "").strip():
     _PROVIDERS.append({
         "name": "cerebras",
         "api_key": os.environ["CEREBRAS_API_KEY"],
         "base_url": "https://api.cerebras.ai/v1",
-        "model": "llama-3.3-70b",
+        "model": os.environ["CEREBRAS_MODEL"].strip(),
     })
 
 # Doubleword — paid, always last
 _dw_key = os.getenv("DOUBLEWORD_API_KEY", "")
-if _dw_key:
+_dw_model = os.getenv("DOUBLEWORD_MODEL", "").strip()
+if _dw_key and _dw_model:
     _PROVIDERS.append({
         "name": "doubleword",
         "api_key": _dw_key,
         "base_url": os.getenv("DOUBLEWORD_API_URL", "https://api.doubleword.ai/v1"),
-        "model": os.getenv("DOUBLEWORD_MODEL", "Qwen/Qwen3.6-35B-A3B-FP8"),
+        "model": _dw_model,
     })
+elif _dw_key:
+    _logger.warning("Skipping doubleword: set DOUBLEWORD_MODEL to enable this provider")
+
+
+class ProviderConfigurationError(RuntimeError):
+    """Raised when no complete LLM provider configuration is available."""
 
 # ── Health cache ────────────────────────────────────────────────────
 
@@ -119,11 +131,14 @@ def get_client() -> OpenAI:
     if idx >= 0:
         p = _PROVIDERS[idx]
         return OpenAI(api_key=p["api_key"], base_url=p["base_url"])
-    # Fallback: return Doubleword client (will fail if no key)
+    # Preserve a useful configuration error instead of constructing a fake client.
     if _PROVIDERS:
         p = _PROVIDERS[-1]
         return OpenAI(api_key=p["api_key"], base_url=p["base_url"])
-    return OpenAI(api_key="none", base_url="https://api.doubleword.ai/v1")
+    raise ProviderConfigurationError(
+        "No complete LLM provider is configured. Set an API key and its model "
+        "(for example DOUBLEWORD_API_KEY + DOUBLEWORD_MODEL)."
+    )
 
 
 def get_model() -> str:
@@ -133,7 +148,9 @@ def get_model() -> str:
         return _PROVIDERS[idx]["model"]
     if _PROVIDERS:
         return _PROVIDERS[-1]["model"]
-    return "Qwen/Qwen3.6-35B-A3B-FP8"
+    raise ProviderConfigurationError(
+        "No complete LLM provider is configured. Set an API key and its model."
+    )
 
 
 def get_provider_name() -> str:
@@ -170,7 +187,9 @@ def get_fast_client() -> OpenAI:
     if _PROVIDERS:
         p = _PROVIDERS[-1]
         return OpenAI(api_key=p["api_key"], base_url=p["base_url"])
-    return OpenAI(api_key="none", base_url="https://api.doubleword.ai/v1")
+    raise ProviderConfigurationError(
+        "No complete LLM provider is configured. Set an API key and its model."
+    )
 
 
 def get_fast_model() -> str:
@@ -180,7 +199,9 @@ def get_fast_model() -> str:
         return _PROVIDERS[idx]["model"]
     if _PROVIDERS:
         return _PROVIDERS[-1]["model"]
-    return "Qwen/Qwen3.6-35B-A3B-FP8"
+    raise ProviderConfigurationError(
+        "No complete LLM provider is configured. Set an API key and its model."
+    )
 
 
 def get_fast_provider_name() -> str:

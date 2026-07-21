@@ -22,7 +22,7 @@ DEFAULT_THRESHOLD = 0.7
 DEFAULT_MAX_CALLS = 500
 INPUT_COST_PER_MILLION = 0.14
 OUTPUT_COST_PER_MILLION = 1.00
-PROMPT_PATH = Path(__file__).parent / "prompts" / "qwen-correction-layer-prompt.md"
+PROMPT_PATH = Path(__file__).parent / "prompts" / "extraction-correction-layer-prompt.md"
 STATUS_PATH = STATUS_FILE.with_name("ai_correction_status.json")
 
 CORRECTABLE_FIELDS = (

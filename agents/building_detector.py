@@ -24,9 +24,6 @@ logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     from lab.storage.base import Storage
 
-MODEL = "Qwen/Qwen3.6-35B-A3B-FP8"
-BASE_URL = "https://api.doubleword.ai/v1"
-
 BUILDING_SYSTEM_PROMPT = """You are a building name extractor for Mumbai real estate WhatsApp groups.
 
 Given a raw WhatsApp message, extract the building/complex name if one is clearly mentioned.

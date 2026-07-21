@@ -1,6 +1,6 @@
 """
 AI-powered classification for knowledge records.
-Uses the existing Qwen model to classify and extract metadata.
+Uses the configured LLM provider to classify and extract metadata.
 """
 
 import json
@@ -9,9 +9,6 @@ from pathlib import Path
 
 from openai import OpenAI
 
-
-MODEL = os.getenv("DOUBLEWORD_MODEL", "Qwen/Qwen3.6-35B-A3B-FP8")
-BASE_URL = "https://api.doubleword.ai/v1"
 
 _client = None
 

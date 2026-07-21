@@ -15,10 +15,10 @@ interface Provider {
 }
 
 const DEFAULT_PROVIDERS = [
-  { type: "openai", label: "OpenAI", baseUrl: "https://api.openai.com/v1", defaultModel: "gpt-4o-mini" },
-  { type: "anthropic", label: "Anthropic", baseUrl: "https://api.anthropic.com/v1", defaultModel: "claude-3-5-sonnet-latest" },
-  { type: "openrouter", label: "OpenRouter", baseUrl: "https://openrouter.ai/api/v1", defaultModel: "openai/gpt-4o-mini" },
-  { type: "doubleword", label: "Doubleword", baseUrl: "https://api.doubleword.ai/v1", defaultModel: "Qwen/Qwen3.6-35B-A3B-FP8" },
+  { type: "openai", label: "OpenAI", baseUrl: "https://api.openai.com/v1" },
+  { type: "anthropic", label: "Anthropic", baseUrl: "https://api.anthropic.com/v1" },
+  { type: "openrouter", label: "OpenRouter", baseUrl: "https://openrouter.ai/api/v1" },
+  { type: "doubleword", label: "Doubleword", baseUrl: "https://api.doubleword.ai/v1" },
 ];
 
 export default function LLMProvidersPage() {
@@ -142,7 +142,7 @@ export default function LLMProvidersPage() {
       provider_type: "openai",
       api_key: "",
       base_url: DEFAULT_PROVIDERS[0].baseUrl,
-      model_name: DEFAULT_PROVIDERS[0].defaultModel,
+      model_name: "",
       is_active: false,
     });
     setEditingProvider(null);
@@ -157,7 +157,7 @@ export default function LLMProvidersPage() {
       provider_type: provider.provider_type || provider.provider_name,
       api_key: "", // Don't pre-fill key for security
       base_url: provider.base_url || DEFAULT_PROVIDERS.find((d) => d.type === (provider.provider_type || provider.provider_name))?.baseUrl || "",
-      model_name: provider.model_name || DEFAULT_PROVIDERS.find((d) => d.type === (provider.provider_type || provider.provider_name))?.defaultModel || "",
+      model_name: provider.model_name || "",
       is_active: !!provider.is_active,
     });
     setEditingProvider(provider);
@@ -315,7 +315,7 @@ export default function LLMProvidersPage() {
                         ...formData,
                         provider_type: val,
                         base_url: isCustom ? formData.base_url : def?.baseUrl || formData.base_url,
-                        model_name: isCustom ? formData.model_name : def?.defaultModel || formData.model_name,
+                        model_name: formData.model_name,
                       });
                     }}
                   >

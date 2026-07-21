@@ -1,4 +1,4 @@
-const EMBED_MODEL = process.env.DOUBLEWORD_EMBEDDING_MODEL || "Qwen/Qwen3-Embedding-8B";
+const EMBED_MODEL = process.env.DOUBLEWORD_EMBEDDING_MODEL || "";
 const EMBED_DIMENSIONS = Number(process.env.DOUBLEWORD_EMBEDDING_DIMENSIONS || "768");
 const EMBED_TIMEOUT_MS = 8000;
 const RATE_LIMIT_COOLDOWN_MS = 60_000;
@@ -22,6 +22,10 @@ export async function generateEmbedding(text: string): Promise<number[] | null> 
   const apiKeys = getDoublewordApiKeys();
   if (!apiKeys.length) {
     console.warn("[mcp/embedding] DOUBLEWORD_EMBEDDING_API_KEY or DOUBLEWORD_API_KEY is not configured");
+    return null;
+  }
+  if (!EMBED_MODEL) {
+    console.warn("[mcp/embedding] DOUBLEWORD_EMBEDDING_MODEL is not configured");
     return null;
   }
   if (Date.now() < rateLimitedUntil) {

@@ -25,9 +25,6 @@ logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     from lab.storage.base import Storage
 
-MODEL = "Qwen/Qwen3.6-35B-A3B-FP8"
-BASE_URL = "https://api.doubleword.ai/v1"
-
 LOCATION_SYSTEM_PROMPT = """You are a Mumbai real estate location resolver.
 
 Given a raw WhatsApp message and its extracted location text, determine the most specific micro_market in Mumbai.
