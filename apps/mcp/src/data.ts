@@ -1189,7 +1189,7 @@ export async function getMarketSummary(input: {
     const dealType = inferPublicDealType(row);
     if (dealType === "rent") {
       if (row.price >= RENT_MIN && row.price <= RENT_MAX) rentPrices.push(row.price);
-    } else if (dealType === "sale" || dealType === "lease") {
+    } else if (dealType === "sale") {
       if (row.price >= SALE_MIN && row.price <= SALE_MAX) salePrices.push(row.price);
     }
   }
