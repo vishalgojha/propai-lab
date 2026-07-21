@@ -198,8 +198,8 @@ def test_parsed_market_fallback_merges_phone_and_name_rows():
         },
     ]
     raw_rows = [
-        {"id": 101, "group_name": "Juhu Brokers", "sender": "Deepak Jagasia", "timestamp": "2026-07-18T10:00:00+00:00"},
-        {"id": 102, "group_name": "Juhu Brokers", "sender": "Deepak Jagasia", "timestamp": "2026-07-18T11:00:00+00:00"},
+        {"id": 101, "group_name": "Juhu Brokers", "sender": "Deepak Jagasia", "timestamp": "2026-07-18T10:00:00+00:00", "is_group": True},
+        {"id": 102, "group_name": "Juhu Brokers", "sender": "Deepak Jagasia", "timestamp": "2026-07-18T11:00:00+00:00", "is_group": True},
     ]
 
     class FakeQuery:
@@ -245,6 +245,7 @@ def test_phone_observation_fallback_includes_linked_name_only_rows():
                 "sender": "Deepak Jagasia",
                 "message": f"Listing {row_id}",
                 "timestamp": f"2026-07-18T1{row_id}:00:00+00:00",
+                "is_group": True,
             },
         }
 
@@ -540,6 +541,7 @@ def test_inbox_threads_fallback_stays_tenant_scoped(monkeypatch):
                 "message_uid": "uid-1",
                 "message": "Hello",
                 "raw_payload": {},
+                "is_group": True,
             }])
 
     class Client:
