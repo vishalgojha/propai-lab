@@ -6744,6 +6744,9 @@ async def _run_self_chat_agent(
                 )
             except Exception as exc:
                 _logger.warning("Self-chat deterministic market search failed: %s", exc)
+                return chat_engine.deterministic_market_response(
+                    deterministic_query, "", sources
+                )
 
     loop = asyncio.get_running_loop()
 
@@ -7929,6 +7932,13 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
             return response
         except Exception as exc:
             _logger.warning("Deterministic market search failed: %s", exc)
+            response = chat_engine.deterministic_market_response(
+                deterministic_query, "", sources
+            )
+            _persist("user", last_user)
+            _persist("assistant", response.get("content", ""))
+            _maybe_title(last_user)
+            return response
 
     loop = asyncio.get_running_loop()
 

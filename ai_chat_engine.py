@@ -1297,6 +1297,121 @@ def _open_db():
     return None
 
 
+def _listing_price_in_rupees(row: dict) -> float | None:
+    """Normalize a stored listing price without depending on SQL CASE logic."""
+    try:
+        value = float(row.get("price"))
+    except (TypeError, ValueError):
+        return None
+    unit = str(row.get("price_unit") or "").strip().lower()
+    if unit in {"lac", "lakh", "l"}:
+        return value * 1_00_000
+    if unit in {"cr", "crore"}:
+        return value * 1_00_00_000
+    if unit == "k":
+        return value * 1_000
+    return value
+
+
+def _rest_market_search(client, args: dict) -> str:
+    """Read global listings through Supabase's table API, not the SQL bridge.
+
+    The SQL bridge is useful for internal diagnostics but has a history of
+    statement timeouts under marketplace load. This path is simple indexed
+    filters plus a small in-process price normalization step.
+    """
+    intent = str(args.get("intent") or "").upper()
+    bhk = str(args.get("bhk") or "").strip()
+    building = str(args.get("building") or "").strip()
+    broker = str(args.get("broker") or "").strip()
+    furnishing = str(args.get("furnishing") or "").strip()
+    markets = [str(value).strip() for value in (args.get("micro_markets") or []) if str(value).strip()]
+    if not markets and args.get("micro_market"):
+        markets = [str(args["micro_market"]).strip()]
+    price_min = args.get("price_min")
+    price_max = args.get("price_max")
+    limit = max(1, min(int(args.get("limit") or 10), 50))
+    offset = max(0, int(args.get("offset") or 0))
+
+    columns = (
+        "fingerprint,intent,bhk,price,price_unit,area_sqft,furnishing,location_label,"
+        "building_name,landmark_name,micro_market,broker_name,broker_phone,first_seen,"
+        "last_seen,observation_count,group_count,latest_raw_message_id,confidence"
+    )
+
+    def fetch_one_market(market: str | None):
+        query = client.table("listings").select(columns, count="exact")
+        if intent:
+            query = query.eq("intent", intent)
+        if bhk and bhk.lower() != "any":
+            query = query.eq("bhk", bhk if bhk.upper().endswith("BHK") else f"{bhk} BHK")
+        if furnishing and furnishing.lower() != "any":
+            query = query.eq("furnishing", furnishing)
+        if building:
+            query = query.ilike("building_name", f"%{building}%")
+        if broker:
+            query = query.ilike("broker_name", f"%{broker}%")
+        if market:
+            query = query.ilike("micro_market", f"%{market}%")
+        return query.order("last_seen", desc=True).limit(max(limit * 15, 100)).execute()
+
+    responses = [fetch_one_market(market) for market in (markets or [None])]
+    seen: set[str] = set()
+    rows: list[dict] = []
+    for response in responses:
+        for row in response.data or []:
+            key = str(row.get("fingerprint") or row.get("id") or "")
+            if key and key in seen:
+                continue
+            if key:
+                seen.add(key)
+            normalized_price = _listing_price_in_rupees(row)
+            if price_min is not None and (normalized_price is None or normalized_price < float(price_min)):
+                continue
+            if price_max is not None and (normalized_price is None or normalized_price > float(price_max)):
+                continue
+            rows.append(row)
+
+    rows.sort(key=lambda row: str(row.get("last_seen") or ""), reverse=True)
+    total = len(rows)
+    result_rows = rows[offset : offset + limit]
+    results = []
+    for row in result_rows:
+        results.append({
+            "fingerprint": row.get("fingerprint"),
+            "intent": row.get("intent"),
+            "bhk": row.get("bhk"),
+            "price": row.get("price"),
+            "price_unit": row.get("price_unit"),
+            "price_formatted": fmt_listing_price(row.get("price"), row.get("price_unit"), row.get("intent")),
+            "area_sqft": row.get("area_sqft"),
+            "furnishing": row.get("furnishing"),
+            "location_label": row.get("location_label"),
+            "building_name": row.get("building_name") or "Unknown Building",
+            "landmark_name": row.get("landmark_name"),
+            "micro_market": row.get("micro_market"),
+            "broker_name": row.get("broker_name"),
+            "broker_phone": row.get("broker_phone"),
+            "first_seen": row.get("first_seen"),
+            "last_seen": row.get("last_seen"),
+            "last_seen_text": row.get("last_seen") or "",
+            "observation_count": row.get("observation_count") or 0,
+            "group_count": row.get("group_count") or 0,
+            "confidence": round(float(row.get("confidence") or 0) * 100),
+            "raw_message_id": row.get("latest_raw_message_id"),
+        })
+
+    return json.dumps({
+        "type": "listing_results",
+        "total": total,
+        "results": results,
+        "showing": len(results),
+        "offset": offset,
+        "has_more": total > offset + limit,
+        "remaining": max(0, total - offset - limit),
+    }, default=str)
+
+
 def execute_tool(name, args, sources, db_path=None, tenant_id: str | None = None):
     if name == "get_overview":
         return build_overview(sources)
@@ -1495,6 +1610,10 @@ def execute_tool(name, args, sources, db_path=None, tenant_id: str | None = None
         if not con:
             return "Database not available"
         try:
+            rest_client = getattr(con, "_client", None)
+            if rest_client is not None and hasattr(rest_client, "table"):
+                return _rest_market_search(rest_client, args)
+
             import math
             from datetime import datetime, timezone, timedelta
 
