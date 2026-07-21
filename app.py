@@ -14779,7 +14779,7 @@ async def reset_phone(
     _, resp = await _first_ingestor_response("POST", "/reset", timeout=10, params={"broker_id": broker_id})
     if resp is not None and resp.status_code == 200:
         return {"ok": True, "message": "Session cleared, QR should appear shortly"}
-    raise HTTPException(502, "Cannot reach ingestor")
+    raise HTTPException(502, _ingestor_failure_message(resp))
 
 
 @app.post("/api/phones/{phone_id}/disconnect")
@@ -14795,7 +14795,7 @@ async def disconnect_phone(
     _, resp = await _first_ingestor_response("POST", "/disconnect", timeout=10, params={"broker_id": broker_id})
     if resp is not None and resp.status_code == 200:
         return {"ok": True, "message": "Phone disconnected"}
-    raise HTTPException(502, "Cannot reach ingestor")
+    raise HTTPException(502, _ingestor_failure_message(resp))
 
 
 @app.post("/api/phones/{phone_id}/connect")

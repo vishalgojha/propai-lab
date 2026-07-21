@@ -552,7 +552,13 @@ function PhoneCard({
       } else if (action === "connect" || action === "qr") await onConnect(phone);
       else await onRefresh();
       if (!["connect", "qr", "self-chat"].includes(action)) {
-        setActionMessage(action === "delete" ? "Phone removed" : action === "reset" ? "Session reset" : "Phone disconnected");
+        setActionMessage(
+          action === "delete"
+            ? "Phone removed"
+            : action === "reset"
+              ? "Session cleared. Scan the new QR to re-pair this phone."
+              : "Phone disconnected"
+        );
       }
       await onRefresh();
     } catch (error) {
@@ -565,8 +571,13 @@ function PhoneCard({
     }
   };
 
-  const isConnected = isConnectedPhone(phone) || matchesLiveStatus(phone, liveStatus);
   const statusAvailable = phone.live_status_available !== false;
+  // `is_active` and old connection fields are persisted metadata. They are not
+  // proof that WhatsMeow is reachable now. When the API cannot probe the
+  // ingestor, never turn that stale metadata into a live "Connected" session.
+  const isConnected = statusAvailable && (
+    isConnectedPhone(phone) || matchesLiveStatus(phone, liveStatus)
+  );
   const phoneDisplay = phone.phone_number_live || phone.phone_number;
   const isUnpaired = !isConnected && isPlaceholderPhone(phoneDisplay);
   const isReconnecting = statusAvailable && ["connecting", "reconnecting"].includes(phone.connection_state);
@@ -676,7 +687,7 @@ function PhoneCard({
           variant={isConnected ? "danger" : "primary"}
           disabled={actionLoading !== null}
         />
-        <ActionButton icon={<RefreshCw className="w-3.5 h-3.5" />} label={actionLoading === "reset" ? "Resetting..." : "Reset"} onClick={() => handleAction("reset")} disabled={actionLoading !== null} />
+        <ActionButton icon={<RefreshCw className="w-3.5 h-3.5" />} label={actionLoading === "reset" ? "Preparing..." : "Re-pair"} onClick={() => handleAction("reset")} disabled={actionLoading !== null} />
         <ActionButton icon={<Trash2 className="w-3.5 h-3.5" />} label={actionLoading === "delete" ? "Deleting..." : "Delete"} onClick={() => handleAction("delete")} variant="danger" disabled={actionLoading !== null} />
       </div>
       {actionMessage && <p className="text-xs text-zinc-300">{actionMessage}</p>}
