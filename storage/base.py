@@ -89,6 +89,8 @@ class ParsedObservation:
     normalized_message: Optional[str] = None
     tenant_id: Optional[str] = None
     ai_extraction: Optional[dict] = None
+    deal_tags: list[str] = field(default_factory=list)
+    additional_charges: list[dict] = field(default_factory=list)
 
 
 @dataclass
@@ -122,6 +124,8 @@ class Listing:
     tenant_id: Optional[str] = None
     created_at: str = ""
     updated_at: str = ""
+    deal_tags: list[str] = field(default_factory=list)
+    additional_charges: list[dict] = field(default_factory=list)
 
 
 @dataclass

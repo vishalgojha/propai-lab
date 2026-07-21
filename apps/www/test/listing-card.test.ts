@@ -6,6 +6,7 @@ import {
   formatCardPrice,
   waLinkFor,
   type ListingCardFields,
+  type AdditionalCharge,
 } from "../src/lib/listing-card";
 
 function base(over: Partial<ListingCardFields>): ListingCardFields {
@@ -123,6 +124,93 @@ check('"3 bhk in bandra east" card has non-duplicated title + unit price + statu
   assert.match(vm.priceLabel, /Cr$/);
   assert.equal(vm.statusLabel, "Available");
   assert.equal(vm.waLink, "/contact-broker/1");
+});
+
+// Deal tags: whitelist enforced server-side too; here we verify the public
+// card renders the right label + tone for each known tag and silently drops
+// anything that isn't on the whitelist (defence-in-depth against bad DB rows).
+check("deal_tags renders label + tone for whitelisted tags", () => {
+  const vm = toListingCardViewModel(
+    base({ deal_tags: ["distress_sale", "bank_auction", "negotiable"] }),
+    false,
+  );
+  assert.equal(vm.dealTags.length, 3);
+  assert.deepEqual(vm.dealTags.map((t) => t.tag), ["distress_sale", "bank_auction", "negotiable"]);
+  assert.deepEqual(vm.dealTags.map((t) => t.label), ["Distress sale", "Bank auction", "Negotiable"]);
+  // Tone classes are Tailwind class fragments; assert presence of the brand colour.
+  assert.match(vm.dealTags[0].tone, /red/);
+  assert.match(vm.dealTags[1].tone, /blue/);
+  assert.match(vm.dealTags[2].tone, /emerald/);
+});
+check("deal_tags drops unknown values silently (no crash, no leak)", () => {
+  const vm = toListingCardViewModel(
+    base({ deal_tags: ["distress_sale", "liquidation", "URGENT_SALE", "  ", null as unknown as string] }),
+    false,
+  );
+  // 'URGENT_SALE' is the same whitelist entry as 'urgent_sale' (case-insensitive).
+  assert.equal(vm.dealTags.length, 2);
+  assert.deepEqual(vm.dealTags.map((t) => t.tag), ["distress_sale", "urgent_sale"]);
+});
+check("deal_tags null/empty -> empty VM array", () => {
+  const a = toListingCardViewModel(base({ deal_tags: null }), false);
+  const b = toListingCardViewModel(base({ deal_tags: [] }), false);
+  const c = toListingCardViewModel(base({}), false);
+  assert.deepEqual(a.dealTags, []);
+  assert.deepEqual(b.dealTags, []);
+  assert.deepEqual(c.dealTags, []);
+});
+
+// Additional charges: fixed amounts render as '+ ₹XL' / '+ ₹XCr'; percent
+// amounts render as 'N% of price'; malformed entries are dropped silently.
+check("additional_charges renders fixed amounts with explicit unit", () => {
+  const vm = toListingCardViewModel(
+    base({
+      additional_charges: [
+        { label: "Society dues", amount: 1000000, amount_type: "fixed" },
+        { label: "Professional fees", amount: 15000000, amount_type: "fixed" },
+      ],
+    }),
+    false,
+  );
+  assert.equal(vm.additionalCharges.length, 2);
+  assert.equal(vm.additionalCharges[0].label, "Society dues");
+  assert.equal(vm.additionalCharges[0].amountLabel, "+ ₹10L");
+  assert.equal(vm.additionalCharges[1].amountLabel, "+ ₹1.5Cr");
+});
+check("additional_charges renders percent_of_price as 'N% of price'", () => {
+  const vm = toListingCardViewModel(
+    base({
+      additional_charges: [{ label: "Professional fees", amount: 3, amount_type: "percent_of_price" }],
+    }),
+    false,
+  );
+  assert.equal(vm.additionalCharges.length, 1);
+  assert.equal(vm.additionalCharges[0].amountLabel, "3% of price");
+});
+check("additional_charges drops malformed entries silently", () => {
+  const vm = toListingCardViewModel(
+    base({
+      additional_charges: [
+        { label: "Society dues", amount: 1000000, amount_type: "fixed" }, // valid
+        { label: "", amount: 100000, amount_type: "fixed" },             // missing label
+        { label: "Garbage", amount_type: "fixed" },                       // missing amount
+        { label: "Bad", amount: 100000, amount_type: "weekly" },           // bad amount_type
+        { label: "NaN", amount: Number.NaN, amount_type: "fixed" },       // non-finite amount
+        null as unknown as AdditionalCharge,                              // null entry
+      ],
+    }),
+    false,
+  );
+  assert.equal(vm.additionalCharges.length, 1);
+  assert.equal(vm.additionalCharges[0].label, "Society dues");
+});
+check("additional_charges null/empty -> empty VM array", () => {
+  const a = toListingCardViewModel(base({ additional_charges: null }), false);
+  const b = toListingCardViewModel(base({ additional_charges: [] }), false);
+  const c = toListingCardViewModel(base({}), false);
+  assert.deepEqual(a.additionalCharges, []);
+  assert.deepEqual(b.additionalCharges, []);
+  assert.deepEqual(c.additionalCharges, []);
 });
 
 console.log(`\n${passed} checks passed`);

@@ -731,12 +731,20 @@ export type BuildingListing = {
   latest_raw_message_id: number | null;
 };
 
+export type AdditionalCharge = {
+  label: string;
+  amount: number | null;
+  amount_type: "fixed" | "percent_of_price";
+};
+
 export type ListingDetail = BuildingListing & {
   area_sqft: number | null;
   landmark_name: string | null;
   location_label: string | null;
   buildingSlug: string | null;
   localitySlug: string | null;
+  deal_tags: string[];
+  additional_charges: AdditionalCharge[];
 };
 
 // A real building name is short and Proper-noun-like. Ingestion sometimes
@@ -921,7 +929,7 @@ export async function getListingById(id: number): Promise<ListingDetail | null> 
   const { data, error } = await db
     .from("listings")
     .select(
-      "id, bhk, price, price_unit, area_sqft, furnishing, intent, asset_type, property_type, location_label, landmark_name, micro_market, view, floor_description, broker_name, broker_phone, last_seen, building_name, representative_raw_message_id, latest_raw_message_id",
+      "id, bhk, price, price_unit, area_sqft, furnishing, intent, asset_type, property_type, location_label, landmark_name, micro_market, view, floor_description, broker_name, broker_phone, last_seen, building_name, representative_raw_message_id, latest_raw_message_id, deal_tags, additional_charges",
     )
     .eq("id", id)
     .maybeSingle();
@@ -963,6 +971,8 @@ export async function getListingById(id: number): Promise<ListingDetail | null> 
     title,
     representative_raw_message_id: data.representative_raw_message_id,
     latest_raw_message_id: data.latest_raw_message_id,
+    deal_tags: Array.isArray(data.deal_tags) ? data.deal_tags : [],
+    additional_charges: Array.isArray(data.additional_charges) ? data.additional_charges : [],
     buildingSlug:
       data.building_name && !isJunkBuildingName(data.building_name) ? slugify(data.building_name) : null,
     localitySlug: data.micro_market ? slugify(data.micro_market) : null,

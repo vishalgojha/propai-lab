@@ -1784,6 +1784,7 @@ class SupabaseStorage(Storage):
         "available_from", "ready_by", "construction_stage",
         "launch_timeline", "expected_possession",
         "ai_extraction",
+        "deal_tags", "additional_charges",
     }
 
     def save_parsed(self, parsed: ParsedObservation) -> int:
@@ -1963,6 +1964,8 @@ class SupabaseStorage(Storage):
             last_seen=obs.get("created_at") or None,
             first_seen=obs.get("created_at") or None,
             observation_count=1,
+            deal_tags=list(obs.get("deal_tags") or []),
+            additional_charges=list(obs.get("additional_charges") or []),
         )
 
     def rebuild_listings(self, limit: int = 0):

@@ -2838,6 +2838,8 @@ async def ingest(req: IngestRequest, user: dict = Depends(require_user)):
         raw_payload=json.dumps(parsed.get("raw_payload", {})),
         embedding=embedding_blob,
         summary_title=generate_summary_title(parsed, req.message),
+        deal_tags=list(parsed.get("deal_tags") or []),
+        additional_charges=list(parsed.get("additional_charges") or []),
     )
     parsed_id = storage.save_parsed(obs)
 

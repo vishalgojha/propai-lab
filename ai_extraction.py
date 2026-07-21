@@ -98,6 +98,20 @@ Rules:
 15. title: auto-generated human-readable title (see below)
 16. extraction_confidence: "high" (confident in all fields), "medium" (some uncertainty), "low" (guessing)
 17. carpet_area_sqft: number or null
+18. deal_tags: array of strings describing deal urgency/type if explicitly signaled in the message. Use values from this set only:
+    "distress_sale", "urgent_sale", "negotiable", "bank_auction",
+    "resale", "exclusive_mandate", "price_drop". Empty array if none apply.
+    Do NOT infer urgency from tone alone — only tag when the message uses
+    explicit language (e.g. "distress sale", "urgent", "negotiable",
+    "bank auction/SARFAESI").
+19. additional_charges: array of objects for any cost mentioned SEPARATELY
+    from the headline price (society dues, transfer fees, professional
+    fees, brokerage, stamp duty if broker-quoted, parking charges, etc.).
+    Each object: {"label": string, "amount": number, "amount_type":
+    "fixed" | "percent_of_price"}. amount_type "percent_of_price" means
+    `amount` is the percentage value (e.g. 3, not 0.03). Do NOT include
+    the base/reserve price itself here — that belongs in `price`. Empty
+    array if no additional charges are mentioned.
 
 Title generation examples:
 - "3 BHK for Rent in Bandra West — ₹2.75L/month"
@@ -119,6 +133,9 @@ CRITICAL — NEVER do these:
 - Default to "Western Suburbs" or any generic bucket for locality. Resolve properly or mark confidence low.
 - Confuse rent vs sale. Check price period "/month" → rent. Check words like "rent", "lease", "monthly" vs "sale", "outright", "purchase".
 - Use WhatsApp push name or message text name for broker identity. Only the phone number identifies the broker.
+- Never fold additional_charges into price.amount. Reserve/asking price
+  and additional charges (dues, fees, etc.) must stay separate — the
+  frontend displays them as distinct line items.
 
 Return ONLY valid JSON with no markdown formatting, no code blocks, no extra text. Just the JSON object."""
 
@@ -131,6 +148,16 @@ _VALID_FURNISHING = frozenset({"unfurnished", "semi_furnished", "fully_furnished
 _VALID_CONFIDENCE = frozenset({"high", "medium", "low"})
 _VALID_PRICE_UNITS = frozenset({"total", "per_sqft"})
 _VALID_PRICE_PERIODS = frozenset({"one_time", "per_month"})
+_VALID_DEAL_TAGS = frozenset({
+    "distress_sale",
+    "urgent_sale",
+    "negotiable",
+    "bank_auction",
+    "resale",
+    "exclusive_mandate",
+    "price_drop",
+})
+_VALID_CHARGE_TYPES = frozenset({"fixed", "percent_of_price"})
 
 
 def _normalize_extraction(raw: dict) -> dict:
@@ -236,6 +263,42 @@ def _normalize_extraction(raw: dict) -> dict:
     # extraction_confidence
     ec = str(raw.get("extraction_confidence", "")).strip().lower()
     result["extraction_confidence"] = ec if ec in _VALID_CONFIDENCE else "medium"
+
+    # deal_tags — whitelist-filter list of lowercase strings.
+    tags = raw.get("deal_tags", [])
+    if isinstance(tags, list):
+        result["deal_tags"] = [
+            str(t).strip().lower()
+            for t in tags
+            if str(t).strip().lower() in _VALID_DEAL_TAGS
+        ]
+    else:
+        result["deal_tags"] = []
+
+    # additional_charges — array of {label, amount, amount_type} with
+    # amount_type in {"fixed", "percent_of_price"}. Junk entries (missing
+    # label, missing amount, bad amount_type, non-numeric amount) are
+    # silently dropped so a malformed entry can't poison the whole row.
+    charges = raw.get("additional_charges", [])
+    normalized_charges: list[dict] = []
+    if isinstance(charges, list):
+        for c in charges:
+            if not isinstance(c, dict):
+                continue
+            label = str(c.get("label", "")).strip()
+            amount = c.get("amount")
+            amount_type = str(c.get("amount_type", "")).strip().lower()
+            if not label or amount is None or amount_type not in _VALID_CHARGE_TYPES:
+                continue
+            try:
+                normalized_charges.append({
+                    "label": label,
+                    "amount": float(amount),
+                    "amount_type": amount_type,
+                })
+            except (ValueError, TypeError):
+                continue
+    result["additional_charges"] = normalized_charges
 
     return result
 
