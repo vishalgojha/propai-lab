@@ -6454,6 +6454,378 @@ def _workspace_response_to_whatsapp(response: dict) -> str:
     return sanitize_whatsapp_text(text)
 
 
+# ── WhatsApp self-chat helpers ────────────────────────────────────
+
+
+_SELF_CHAT_BULLET = "• "
+_SELF_CHAT_MAX_BULLETS = 8
+_SELF_CHAT_MAX_CHARS = 1600
+
+_CASUAL_CHAT_SIGNAL = re.compile(
+    r"^\s*(hi|hello|hey|hiya|yo|hola|good\s*(morning|afternoon|evening)|"
+    r"thanks|thank\s*you|thx|ok|okay|cool|nice|great|got\s*it|"
+    r"who\s*are\s*you|what\s*can\s*you\s*do|how\s*are\s*you|"
+    r"bye|see\s*you|cya)\b",
+    re.IGNORECASE,
+)
+
+_DATA_QUERY_SIGNAL = re.compile(
+    r"\b(\d+(?:\.\d+)?\s*bhk|studio|rent|rental|lease|sale|buy|purchase|"
+    r"flat|apartment|property|listing|broker|building|locality|"
+    r"market|trend|audit|recent|latest|today|yesterday|this\s*week|last\s*week)\b",
+    re.IGNORECASE,
+)
+
+
+def _is_casual_self_chat(text: str) -> bool:
+    """Heuristic: short greeting/thanks/identity question — no tool calls needed."""
+    stripped = (text or "").strip()
+    if len(stripped) > 60:
+        return False
+    if _DATA_QUERY_SIGNAL.search(stripped):
+        return False
+    return bool(_CASUAL_CHAT_SIGNAL.match(stripped))
+
+
+def _build_self_chat_system_prompt(sources: dict) -> str:
+    """Strict bullet-only prompt for the WhatsApp self-chat agent.
+
+    This deliberately does NOT inherit build_system_prompt() — the workspace
+    contract (JSON blocks, listing_cards, exports) contradicts the WhatsApp
+    surface. The model gets one job: answer in bullets, plain text only.
+    """
+    now = datetime.now()
+    time_str = now.strftime("%a, %d %b %Y %I:%M %p")
+    overview = sources.get("overview", "") or ""
+    overview_line = f"\nDATA SNAPSHOT:\n{overview[:600]}\n" if overview else ""
+    return f"""You are PropAI in WhatsApp Message-Yourself chat. Today is {time_str}.
+
+OUTPUT RULES — non-negotiable:
+- EVERY reply uses bulleted points. Use '• ' prefix for each bullet.
+- NEVER write flowing paragraphs. NEVER write multi-sentence prose blocks.
+- NEVER return JSON, code fences, markdown tables, or UI blocks.
+- Each bullet must fit on one WhatsApp line (under ~120 chars).
+- Lead with the answer in bullet 1. Follow with context bullets. End with one optional action bullet.
+- Maximum 8 bullets per reply. If you have more, pick the most important.
+- For greetings or identity questions, respond with 1-2 bullets only.
+- Use the data tools (market_search, get_listing, etc.) ONLY when the user asks for listings, market stats, or a property detail. Skip tools for greetings, identity, thanks, or small talk.
+- For real-estate queries, format like:
+  • <Property>: <price>, <bhk>, <area> sqft — <micro_market>
+  • Broker: <name> / <phone>
+- Numbers above 999: write as 1.2L (lac), 3.5Cr (crore), 25K. Do NOT write ₹1,20,000.
+- Do not ask the user to open the dashboard. If a UI is genuinely required, say so in one bullet.{overview_line}"""
+
+
+def _format_self_chat_response(text: str) -> str:
+    """Force-bullet post-processor.
+
+    The model sometimes still emits paragraphs even with a strict prompt.
+    This function is the safety net: split any prose into sentence-sized
+    bullets, prefix every non-empty line with '• ', cap to 8 bullets and
+    ~1600 chars total so it fits a single WhatsApp reply.
+    """
+    if not text:
+        return ""
+
+    cleaned = text.strip()
+
+    # Strip JSON code fences the model occasionally leaks. Extract the JSON
+    # content (don't delete it!) so we can pull out the "content"/"reply"
+    # field instead of rendering the raw JSON.
+    fence_match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", cleaned, flags=re.DOTALL)
+    if fence_match:
+        try:
+            parsed = json.loads(fence_match.group(1))
+            if isinstance(parsed, dict):
+                cleaned = (
+                    parsed.get("content")
+                    or parsed.get("summary")
+                    or parsed.get("reply")
+                    or parsed.get("text")
+                    or ""
+                )
+        except (json.JSONDecodeError, ValueError):
+            # Fall through with the rest of the text minus the fence.
+            cleaned = (cleaned[: fence_match.start()] + cleaned[fence_match.end() :]).strip()
+    else:
+        # Generic non-JSON fence: drop it but keep surrounding text.
+        cleaned = re.sub(r"```(?!json)[^`]*```", "", cleaned, flags=re.DOTALL).strip()
+
+    # If the entire reply is a JSON object, extract its "content" field if present.
+    if cleaned.startswith("{") and cleaned.endswith("}"):
+        try:
+            parsed = json.loads(cleaned)
+            if isinstance(parsed, dict):
+                cleaned = (
+                    parsed.get("content")
+                    or parsed.get("summary")
+                    or parsed.get("reply")
+                    or parsed.get("text")
+                    or ""
+                )
+        except (json.JSONDecodeError, ValueError):
+            pass
+
+    if not cleaned:
+        return ""
+
+    # Strip existing bullet markers before re-bulleting to avoid double prefixes.
+    cleaned = re.sub(r"^[\s>]*[-*•·]+\s*", "", cleaned, flags=re.MULTILINE)
+
+    # Split into atomic bullets: by newline first, then by sentence for each
+    # paragraph. Even short prose paragraphs must be broken into sentence-sized
+    # bullets so the user sees a list, not a wall of text.
+    raw_lines: list[str] = []
+    for line in cleaned.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        # Split on sentence terminators AND commas that introduce a new clause.
+        # Keep numerical/currency tokens intact by matching a capital letter
+        # or bullet character after the terminator.
+        sentence_parts = re.split(r"(?<=[.!?])\s+(?=[A-Z•])|\s*,\s+(?=[a-z])", line)
+        for part in sentence_parts:
+            part = part.strip().rstrip(",.;:")
+            if part:
+                # Hard cap per bullet to keep it on one WhatsApp line.
+                raw_lines.append(part[:140])
+
+    if not raw_lines:
+        return ""
+
+    # De-duplicate near-identical bullets (LLM sometimes repeats).
+    seen: set[str] = set()
+    deduped: list[str] = []
+    for line in raw_lines:
+        key = re.sub(r"\W+", "", line.lower())[:80]
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        deduped.append(line)
+
+    # Prefix with bullet and cap.
+    bulleted = [_SELF_CHAT_BULLET + line for line in deduped[:_SELF_CHAT_MAX_BULLETS]]
+
+    text_out = "\n".join(bulleted)
+    if len(text_out) > _SELF_CHAT_MAX_CHARS:
+        text_out = text_out[: _SELF_CHAT_MAX_CHARS - 1].rstrip() + "…"
+    # Skip sanitize_whatsapp_text — it strips leading '• ' which would undo
+    # the bullets we just added. The model output is already markdown-stripped
+    # above (JSON fences, bold, leading dashes).
+    return text_out
+
+
+async def _run_self_chat_agent(
+    messages: list[dict],
+    model: str = "",
+    session_id: str = "whatsapp",
+    casual: bool = False,
+) -> dict:
+    """Lightweight variant of _run_workspace_agent for the WhatsApp self-chat path.
+
+    Differences vs. _run_workspace_agent:
+    - Strict bullet-only system prompt (no workspace JSON contract).
+    - Casual chat → no tool calls, no observation gathering, no live-data load.
+    - Data chat → max_tool_rounds=1 instead of 2.
+    - Prefers fastest available provider (Cerebras > Gemini > default).
+    - Tighter timeout (30s instead of 90s).
+    """
+    import llm as _llm
+
+    from ai_chat_engine import get_memory
+
+    # Memory only matters if the conversation actually spans multiple turns.
+    # Self-chat is mostly single-shot, so we skip memory writes for casual.
+    if not casual:
+        memory = get_memory(session_id)
+        for msg in messages:
+            role = msg.get("role", "")
+            content = str(msg.get("content", "")).strip()
+            if content:
+                if not memory.working or memory.working[-1].get("content") != content:
+                    memory.add(role, content)
+
+    configured_model = model.strip()
+    api_key = ""
+    base_url = ""
+    provider_name = ""
+    # Self-chat prefers the fastest healthy provider. Try Cerebras → Gemini
+    # before falling back to the chain default (NVIDIA NIM, which is slow).
+    try:
+        fast = _llm.get_fast_client()
+        api_key = fast.api_key
+        base_url = (
+            fast.base_url.base_url.rstrip("/")
+            if hasattr(fast.base_url, "base_url")
+            else str(fast.base_url).rstrip("/")
+        )
+        configured_model = configured_model or _llm.get_fast_model()
+        provider_name = _llm.get_fast_provider_name()
+    except Exception:
+        pass
+    if not api_key or api_key == "none":
+        # Fallback to default chain.
+        try:
+            client = _llm.get_client()
+            api_key = client.api_key
+            base_url = (
+                client.base_url.base_url.rstrip("/")
+                if hasattr(client.base_url, "base_url")
+                else str(client.base_url).rstrip("/")
+            )
+            configured_model = configured_model or _llm.get_model()
+            provider_name = _llm.get_provider_name()
+        except Exception:
+            pass
+    if not api_key or api_key == "none":
+        return {
+            "error": "api_key_required",
+            "message": "No LLM provider is available for self-chat.",
+        }
+
+    _logger.info(
+        "Self-chat agent resolved provider: %s | model=%s | casual=%s",
+        provider_name, configured_model, casual,
+    )
+
+    # Casual chat: no data loading, no tools, just a fast text reply.
+    sources: dict = {}
+    if not casual:
+        sources = chat_engine.load_data()
+        live = chat_engine.load_live_data(getattr(storage, "db", None))
+        if isinstance(live, dict):
+            sources.update(live)
+        if not sources:
+            return {"error": "no_data", "message": "No PropAI data is available yet."}
+
+    loop = asyncio.get_running_loop()
+
+    def _call():
+        system_prompt = _build_self_chat_system_prompt(sources)
+        # Casual chat: strip tools entirely so the model can't be tempted.
+        max_rounds = 0 if casual else 1
+        context_parts: list[str] = []
+        if not casual:
+            try:
+                memory = get_memory(session_id)
+                context_parts.append(memory.build_context())
+            except Exception:
+                pass
+        context_parts.append(messages[-1].get("content", "") if messages else "")
+        context = "\n\n".join(p for p in context_parts if p).strip()
+        msgs = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": context or "Hello."},
+        ]
+        reply = chat_engine.get_model_reply(
+            msgs,
+            sources,
+            api_key=api_key,
+            model=configured_model or None,
+            base_url=base_url,
+            max_tool_rounds=max_rounds,
+        )
+        if reply.content and not casual:
+            try:
+                memory = get_memory(session_id)
+                memory.add("assistant", reply.content)
+            except Exception:
+                pass
+        return chat_engine.normalize_workspace_response(reply.content or "", sources)
+
+    import contextvars
+
+    request_context = contextvars.copy_context()
+    try:
+        return await asyncio.wait_for(
+            loop.run_in_executor(None, request_context.run, _call),
+            timeout=30,
+        )
+    except asyncio.TimeoutError:
+        return {"error": "agent_timeout", "message": "Self-chat agent timed out."}
+
+
+async def _stream_self_chat_reply(text: str) -> dict | None:
+    """Direct OpenAI streaming for casual self-chat (no tool plumbing).
+
+    Bypasses chat_engine.get_model_reply entirely because that path is sync
+    and tool-aware. For casual chat we want first-token-on-the-wire fast —
+    the user already sees a typing indicator; streaming keeps total time
+    close to TTFT instead of waiting for the full completion.
+
+    Returns the final formatted reply (PropAI-prefixed, bullet-formatted) on
+    success, or None on failure. Progress chunks are sent via the channel
+    passed in (or logged if channel is None).
+    """
+    import llm as _llm
+
+    api_key = ""
+    base_url = ""
+    configured_model = ""
+    try:
+        fast = _llm.get_fast_client()
+        api_key = fast.api_key
+        base_url = (
+            fast.base_url.base_url.rstrip("/")
+            if hasattr(fast.base_url, "base_url")
+            else str(fast.base_url).rstrip("/")
+        )
+        configured_model = _llm.get_fast_model()
+    except Exception:
+        pass
+    if not api_key or api_key == "none":
+        return None
+
+    sources: dict = {}
+    try:
+        sources = chat_engine.load_data()
+        live = chat_engine.load_live_data(getattr(storage, "db", None))
+        if isinstance(live, dict):
+            sources.update(live)
+    except Exception:
+        pass
+
+    system_prompt = _build_self_chat_system_prompt(sources)
+    user_text = (text or "").strip()[:1800] or "Hello."
+
+    try:
+        from openai import OpenAI
+
+        client = OpenAI(api_key=api_key, base_url=base_url)
+        stream = client.chat.completions.create(
+            model=configured_model or _llm.get_fast_model(),
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_text},
+            ],
+            stream=True,
+            max_tokens=400,
+            temperature=0.4,
+        )
+        chunks: list[str] = []
+        for chunk in stream:
+            try:
+                delta = (
+                    chunk.choices[0].delta.content
+                    if chunk.choices and chunk.choices[0].delta
+                    else None
+                )
+            except (AttributeError, IndexError):
+                delta = None
+            if delta:
+                chunks.append(delta)
+        full = "".join(chunks).strip()
+        if not full:
+            return None
+        formatted = _format_self_chat_response(full)
+        if not formatted:
+            return None
+        return "PropAI- " + formatted
+    except Exception as exc:
+        _logger.warning("self-chat streaming failed: %s", exc)
+        return None
+
+
 async def _run_workspace_agent(messages: list[dict], model: str = "", session_id: str = "whatsapp") -> dict:
     # Conversation memory
     from ai_chat_engine import get_memory
@@ -6606,19 +6978,90 @@ async def internal_self_chat(req: InternalSelfChatRequest, request: Request):
         return {"reply": ""}
 
     set_tenant_id(connection.get("organization_id") or DEFAULT_TENANT_ID)
+    casual = _is_casual_self_chat(text)
+    wants_stream = casual or _stream_self_chat_enabled()
+
+    if wants_stream:
+        return StreamingResponse(
+            _self_chat_ndjson(text, req.broker_id, casual=casual),
+            media_type="application/x-ndjson",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
+
     try:
-        response = await _run_workspace_agent(
+        response = await _run_self_chat_agent(
             [{"role": "user", "content": text[:1800]}],
             session_id=f"whatsmeow:{req.broker_id}",
+            casual=casual,
         )
         if isinstance(response, dict) and response.get("error"):
             return JSONResponse(status_code=503, content=response)
-        reply = _workspace_response_to_whatsapp(response)
+        raw_reply = _workspace_response_to_whatsapp(response) if response.get("content") or response.get("blocks") else ""
+        if not raw_reply:
+            raw_reply = response.get("content") or ""
+        # Force bullets — last line of defense against prose replies.
+        reply = _format_self_chat_response(raw_reply) if raw_reply else ""
         if reply:
             reply = "PropAI- " + reply
         return {"reply": reply}
     except asyncio.TimeoutError:
         return JSONResponse(status_code=504, content={"error": "agent_timeout"})
+
+
+def _stream_self_chat_enabled() -> bool:
+    """Allow forcing streaming for data queries via env var for debugging."""
+    val = (os.getenv("PROPAI_SELF_CHAT_STREAM") or "").strip().lower()
+    return val in {"1", "true", "yes", "on"}
+
+
+async def _self_chat_ndjson(text: str, broker_id: str, casual: bool):
+    """Yield NDJSON events for the self-chat stream.
+
+    Event shape (line-delimited JSON, newline-terminated):
+      {"event":"chunk","delta":"• Hello"}
+      {"event":"chunk","delta":" there"}
+      {"event":"done","reply":"PropAI- • Hello there"}
+      (or {"event":"error","message":"..."} on failure)
+    """
+    try:
+        if casual:
+            reply = await _stream_self_chat_reply(text)
+            if reply:
+                # Stream one fake chunk + done so the Go side gets a final reply.
+                yield _ndjson_line({"event": "chunk", "delta": reply})
+                yield _ndjson_line({"event": "done", "reply": reply})
+                return
+            # Streaming failed — fall through to the sync path.
+            _logger.info("self-chat streaming returned None; falling back to sync path")
+        # Data path (or streaming fallback): run sync, stream the full reply.
+        response = await _run_self_chat_agent(
+            [{"role": "user", "content": text[:1800]}],
+            session_id=f"whatsmeow:{broker_id}",
+            casual=casual,
+        )
+        if isinstance(response, dict) and response.get("error"):
+            yield _ndjson_line({"event": "error", "message": response.get("message") or response.get("error") or "agent_error"})
+            return
+        raw_reply = _workspace_response_to_whatsapp(response) if response.get("content") or response.get("blocks") else ""
+        if not raw_reply:
+            raw_reply = response.get("content") or ""
+        reply = _format_self_chat_response(raw_reply) if raw_reply else ""
+        if reply:
+            reply = "PropAI- " + reply
+        if reply:
+            yield _ndjson_line({"event": "chunk", "delta": reply})
+            yield _ndjson_line({"event": "done", "reply": reply})
+        else:
+            yield _ndjson_line({"event": "error", "message": "empty_reply"})
+    except asyncio.TimeoutError:
+        yield _ndjson_line({"event": "error", "message": "agent_timeout"})
+    except Exception as exc:
+        _logger.warning("self-chat NDJSON generator failed: %s", exc)
+        yield _ndjson_line({"event": "error", "message": str(exc)[:200]})
+
+
+def _ndjson_line(payload: dict) -> bytes:
+    return (json.dumps(payload, ensure_ascii=False) + "\n").encode("utf-8")
 
 
 @app.post("/api/self-chat")
