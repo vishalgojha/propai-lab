@@ -4,17 +4,24 @@ This module contains the shared extraction logic used by both:
   - The webhook background thread (runs per-message when webhook fires)
   - The extraction worker (poll-based, picks up unprocessed messages)
 
+Extraction order:
+  1. AI extraction (primary) — calls ai_extraction.ai_extract()
+  2. Regex fallback — existing parse_message() pipeline
+
 Import pattern:
   from extraction import process_raw_message
 """
 
 import json
+import logging
 import os
 import re
 import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
+
+_logger = logging.getLogger(__name__)
 
 PROJECT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(PROJECT_DIR))
@@ -80,6 +87,113 @@ def _sanitize_parsed_value(value):
 
 def _sanitize_parsed_listing(parsed: dict) -> dict:
     return {key: _sanitize_parsed_value(value) for key, value in parsed.items()}
+
+
+def _ai_extraction_to_parsed(ai_extraction: dict, raw_text: str, sender_name: str, push_name: str) -> dict:
+    """Convert AI extraction schema to the existing parsed dict format.
+
+    This bridges the new AI extraction result to the legacy parsed_observation
+    columns so the rest of the pipeline (resolver, listing upsert, etc.)
+    remains unchanged. The full AI result is stored separately in the
+    `ai_extraction` JSONB column.
+    """
+    listing_type = ai_extraction.get("listing_type")
+    if listing_type == "sale":
+        intent = "SELL"
+    elif listing_type == "rent":
+        intent = "RENT"
+    elif listing_type == "requirement":
+        intent = "BUY"
+    else:
+        intent = None
+
+    category = ai_extraction.get("property_category")
+    asset_type = category.upper() if category else None
+
+    bhk_val = ai_extraction.get("bhk")
+    bhk_str = None
+    if bhk_val is not None:
+        if bhk_val == 0.5:
+            bhk_str = "1 RK"
+        elif bhk_val == int(bhk_val):
+            bhk_str = f"{int(bhk_val)} BHK"
+        else:
+            bhk_str = f"{bhk_val} BHK"
+
+    price_info = ai_extraction.get("price", {})
+    price_amount = price_info.get("amount") if isinstance(price_info, dict) else None
+    price_unit_price = price_info.get("unit") if isinstance(price_info, dict) else None
+    price_period = price_info.get("period") if isinstance(price_info, dict) else None
+
+    price = float(price_amount) if price_amount is not None else None
+    price_unit = "cr" if price and price >= 1_00_00_000 else ("lac" if price and price >= 1_00_000 else "abs") if price else None
+    price_model = "psf" if price_unit_price == "per_sqft" else None
+
+    locality = ai_extraction.get("locality", {})
+    if isinstance(locality, dict):
+        rl = locality.get("resolved_locality")
+        micro_market = rl if rl and str(rl).strip().lower() != "none" else None
+        rm = locality.get("raw_mention")
+        location_raw = rm if rm and str(rm).strip().lower() != "none" else None
+    else:
+        micro_market = None
+        location_raw = None
+
+    title = ai_extraction.get("title") or None
+
+    return {
+        "intent": intent,
+        "principal": None,
+        "bhk": bhk_str,
+        "configuration": None,
+        "price": price,
+        "price_unit": price_unit,
+        "price_model": price_model,
+        "price_per_sqft": None,
+        "monthly_rent": price if listing_type == "rent" else None,
+        "total_asking_price": price if listing_type in ("sale",) else None,
+        "area_sqft": ai_extraction.get("carpet_area_sqft"),
+
+        "furnishing": ai_extraction.get("furnishing_status") or None,
+        "furnishing_canonical": None,
+
+        "location_raw": location_raw,
+        "building_name": ai_extraction.get("building_name") or None,
+        "landmark_name": None,
+        "street_name": None,
+        "area": None,
+        "micro_market": micro_market,
+        "developer": None,
+
+        "asset_type": asset_type,
+        "property_type": None,
+        "transaction_type": None,
+        "commercial_use_type": None,
+        "fitout_status": None,
+        "occupancy_type": None,
+        "floor_range": None,
+        "rent_per_sqft": None,
+
+        "availability_status": None,
+        "possession_status": ai_extraction.get("possession_status") or None,
+        "possession_date": None,
+        "available_from": None,
+        "ready_by": None,
+        "construction_stage": None,
+        "launch_timeline": None,
+        "expected_possession": None,
+
+        "deposit": None,
+        "lock_in_period": None,
+
+        "broker_name": None,
+        "broker_phone": None,
+        "forwarded": 0,
+        "confidence": 1.0 if ai_extraction.get("extraction_confidence") == "high" else 0.7,
+        "raw_payload": {"full_text": raw_text},
+        "location": None,
+        "message_type": listing_type,
+    }
 
 
 def process_raw_message(raw_id: int, ctx: dict, storage=None):
@@ -193,34 +307,52 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
     except Exception as exc:
         print(f"  [extract] create_knowledge_record error for {raw_id}: {exc}", flush=True)
 
-    # ── Parse ───────────────────────────────────────────────────
-    try:
-        msg_class = multi_listing.classify_message(msg_text)
-    except Exception as exc:
-        print(f"  [extract] classify_message error for {raw_id}: {exc}", flush=True)
-        msg_class = "single"
+    # ── Parse (AI first, regex fallback) ────────────────────────
+    parsed_listings: list[dict] = []
+    ai_extraction_raw: dict | None = None
+    extraction_source: str | None = None
 
-    parsed_listings = []
+    # 1. Try AI extraction
     try:
-        if msg_class == "multi":
-            parsed_listings = multi_listing.parse_multi_message(
-                msg_text, profile_name=sender_name or push_name
-            )
-        else:
-            single = parse_message(msg_text, profile_name=sender_name or push_name)
-            parsed_listings = [single] if single else []
+        from ai_extraction import ai_extract
+        ai_result = ai_extract(msg_text, ctx, storage=storage)
+        extraction_source = ai_result.get("extraction_source")
+        if extraction_source == "ai" and ai_result.get("extraction"):
+            parsed_listings = [_ai_extraction_to_parsed(ai_result["extraction"], msg_text, sender_name, push_name)]
+            ai_extraction_raw = ai_result["extraction"]
+            _logger.info("raw_id=%d AI extraction: success via %s", raw_id, ai_result.get("provider_used"))
     except Exception as exc:
-        print(f"  [extract] parse error for {raw_id}: {exc}", flush=True)
+        _logger.warning("raw_id=%d ai_extract error: %s — falling back to regex", raw_id, exc)
+        extraction_source = "regex_fallback"
 
-    # Filter weak parses
-    market_listings = []
-    for pl in parsed_listings:
-        source_text = _parsed_source_text(pl, msg_text)
-        enriched = enrich_parsed_location(pl, source_text, fallback_text=msg_text)
-        cleaned = _demote_weak_property_parse(enriched, source_text)
-        if _parsed_has_market_anchor(cleaned, source_text):
-            market_listings.append(cleaned)
-    parsed_listings = [_sanitize_parsed_listing(pl) for pl in market_listings]
+    # 2. Regex fallback
+    if not parsed_listings:
+        try:
+            msg_class = multi_listing.classify_message(msg_text)
+        except Exception as exc:
+            print(f"  [extract] classify_message error for {raw_id}: {exc}", flush=True)
+            msg_class = "single"
+
+        try:
+            if msg_class == "multi":
+                parsed_listings = multi_listing.parse_multi_message(
+                    msg_text, profile_name=sender_name or push_name
+                )
+            else:
+                single = parse_message(msg_text, profile_name=sender_name or push_name)
+                parsed_listings = [single] if single else []
+        except Exception as exc:
+            print(f"  [extract] parse error for {raw_id}: {exc}", flush=True)
+
+        # Filter weak parses
+        market_listings = []
+        for pl in parsed_listings:
+            source_text = _parsed_source_text(pl, msg_text)
+            enriched = enrich_parsed_location(pl, source_text, fallback_text=msg_text)
+            cleaned = _demote_weak_property_parse(enriched, source_text)
+            if _parsed_has_market_anchor(cleaned, source_text):
+                market_listings.append(cleaned)
+        parsed_listings = [_sanitize_parsed_listing(pl) for pl in market_listings]
 
     if not parsed_listings:
         try:
@@ -322,7 +454,8 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
             confidence=parsed.get("confidence", 0.0),
             raw_payload=json.dumps(parsed.get("raw_payload", {})),
             embedding=embedding_blob,
-            summary_title=generate_summary_title(parsed, source_text),
+            summary_title=ai_extraction_raw.get("title") if ai_extraction_raw else generate_summary_title(parsed, source_text),
+            ai_extraction=ai_extraction_raw,
         )
         try:
             parsed_id = storage.save_parsed(obs)

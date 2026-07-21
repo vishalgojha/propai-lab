@@ -1783,6 +1783,7 @@ class SupabaseStorage(Storage):
         "availability_status", "possession_status", "possession_date",
         "available_from", "ready_by", "construction_stage",
         "launch_timeline", "expected_possession",
+        "ai_extraction",
     }
 
     def save_parsed(self, parsed: ParsedObservation) -> int:
