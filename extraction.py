@@ -358,29 +358,42 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
     # ── Parse (AI first, regex fallback) ────────────────────────
     parsed_listings: list[dict] = []
     ai_extraction_raw: dict | None = None
+    ai_extractions_raw: list[dict] | None = None
     extraction_source: str | None = None
 
-    # 1. Try AI extraction
+    # Detect multi-option posts so the AI response can be held to the same
+    # one-structured-item-per-listing standard as the deterministic splitter.
+    try:
+        msg_class = multi_listing.classify_message(msg_text)
+    except Exception as exc:
+        print(f"  [extract] classify_message error for {raw_id}: {exc}", flush=True)
+        msg_class = "single"
+
+    # 1. Try AI extraction. Multi-listing messages require an AI array with at
+    # least two validated items; otherwise the deterministic block parser is
+    # the safe fallback.
     try:
         from ai_extraction import ai_extract
         ai_result = ai_extract(msg_text, ctx, storage=storage)
         extraction_source = ai_result.get("extraction_source")
-        if extraction_source == "ai" and ai_result.get("extraction"):
-            parsed_listings = [_ai_extraction_to_parsed(ai_result["extraction"], msg_text, sender_name, push_name)]
-            ai_extraction_raw = ai_result["extraction"]
-            _logger.info("raw_id=%d AI extraction: success via %s", raw_id, ai_result.get("provider_used"))
+        raw_ai_items = ai_result.get("extractions") or ([ai_result["extraction"]] if ai_result.get("extraction") else [])
+        ai_items = [item for item in raw_ai_items if isinstance(item, dict)]
+        if extraction_source == "ai" and ai_items and (msg_class != "multi" or len(ai_items) >= 2):
+            parsed_listings = [
+                _ai_extraction_to_parsed(item, msg_text, sender_name, push_name)
+                for item in ai_items
+            ]
+            ai_extractions_raw = ai_items
+            ai_extraction_raw = ai_items[0]
+            _logger.info("raw_id=%d AI extraction: %d structured item(s) via %s", raw_id, len(ai_items), ai_result.get("provider_used"))
+        elif msg_class == "multi" and extraction_source == "ai":
+            _logger.warning("raw_id=%d multi-listing AI result had %d item(s); using block parser fallback", raw_id, len(ai_items))
     except Exception as exc:
         _logger.warning("raw_id=%d ai_extract error: %s — falling back to regex", raw_id, exc)
         extraction_source = "regex_fallback"
 
     # 2. Regex fallback
     if not parsed_listings:
-        try:
-            msg_class = multi_listing.classify_message(msg_text)
-        except Exception as exc:
-            print(f"  [extract] classify_message error for {raw_id}: {exc}", flush=True)
-            msg_class = "single"
-
         try:
             if msg_class == "multi":
                 parsed_listings = multi_listing.parse_multi_message(
@@ -467,6 +480,7 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
     # ── Save parsed observations ────────────────────────────────
     parsed_ids: list[int] = []
     for idx, parsed in enumerate(parsed_listings):
+        ai_item = ai_extractions_raw[idx] if ai_extractions_raw and idx < len(ai_extractions_raw) else ai_extraction_raw
         share_eligible, share_reason = True, "ok"
         try:
             share_eligible, share_reason = check_share_eligibility(parsed, org_privacy, conv_type or "unknown")
@@ -531,16 +545,16 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
             confidence=parsed.get("confidence", 0.0),
             raw_payload=json.dumps(parsed.get("raw_payload", {})),
             embedding=embedding_blob,
-            summary_title=ai_extraction_raw.get("title") if ai_extraction_raw else generate_summary_title(parsed, source_text),
-            ai_extraction=ai_extraction_raw,
+            summary_title=ai_item.get("title") if ai_item else generate_summary_title(parsed, source_text),
+            ai_extraction=ai_item,
             # deal_tags + additional_charges are AI-only signals (regex parser
             # doesn't know about them). When AI extraction fails/times out we
             # fall back to an empty list so the row still saves. We also
             # re-run the whitelist/dict-shape validator here so a junk value
             # from any code path (LLM drift, future schema changes, mocked
             # ai_extract in tests) can't poison the row.
-            deal_tags=_safe_deal_tags(ai_extraction_raw.get("deal_tags") if ai_extraction_raw else None),
-            additional_charges=_safe_additional_charges(ai_extraction_raw.get("additional_charges") if ai_extraction_raw else None),
+            deal_tags=_safe_deal_tags(ai_item.get("deal_tags") if ai_item else None),
+            additional_charges=_safe_additional_charges(ai_item.get("additional_charges") if ai_item else None),
         )
         try:
             parsed_id = storage.save_parsed(obs)
