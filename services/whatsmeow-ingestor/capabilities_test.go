@@ -1,6 +1,9 @@
 package main
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 func capabilityTestDefs() []capabilityRow {
 	return []capabilityRow{
@@ -92,7 +95,7 @@ func TestCapturedUnusedAlwaysReturned(t *testing.T) {
 		{"connected with evidence", true, true, map[string]int64{"reaction": 99}},
 	}
 	for _, tc := range cases {
-		out := computeCapabilityStatuses(defs, capturedUnused, alwaysOn, typeKey, tc.counts, tc.anyConnected, tc.anySession)
+		out := computeCapabilityStatuses(defs, capturedUnused, alwaysOn, typeKey, tc.counts, nil, tc.anyConnected, tc.anySession)
 		rr := findCap(out, "Read Receipts")
 		if rr.Status != "captured_unused" {
 			t.Errorf("[%s] Read Receipts status = %q, want captured_unused", tc.name, rr.Status)
@@ -113,7 +116,7 @@ func TestAlwaysOnConnectedIsActive(t *testing.T) {
 	alwaysOn := testAlwaysOn()
 	typeKey := testTypeKey()
 
-	out := computeCapabilityStatuses(defs, capturedUnused, alwaysOn, typeKey, map[string]int64{}, true, true)
+	out := computeCapabilityStatuses(defs, capturedUnused, alwaysOn, typeKey, map[string]int64{}, nil, true, true)
 	alwaysOnNames := []string{
 		"Outgoing Messages", "History Sync", "Profile Pictures", "Group Directory",
 		"Media Download", "Media Upload", "Self-Chat Agent",
@@ -132,7 +135,7 @@ func TestAlwaysOnSessionOfflineIsPartial(t *testing.T) {
 	alwaysOn := testAlwaysOn()
 	typeKey := testTypeKey()
 
-	out := computeCapabilityStatuses(defs, capturedUnused, alwaysOn, typeKey, map[string]int64{}, false, true)
+	out := computeCapabilityStatuses(defs, capturedUnused, alwaysOn, typeKey, map[string]int64{}, nil, false, true)
 	for _, name := range []string{
 		"Outgoing Messages", "History Sync", "Profile Pictures", "Group Directory",
 		"Media Download", "Media Upload", "Self-Chat Agent",
@@ -150,7 +153,7 @@ func TestAlwaysOnNoSessionIsNotAvailable(t *testing.T) {
 	alwaysOn := testAlwaysOn()
 	typeKey := testTypeKey()
 
-	out := computeCapabilityStatuses(defs, capturedUnused, alwaysOn, typeKey, map[string]int64{}, false, false)
+	out := computeCapabilityStatuses(defs, capturedUnused, alwaysOn, typeKey, map[string]int64{}, nil, false, false)
 	for _, name := range []string{
 		"Outgoing Messages", "History Sync", "Profile Pictures", "Group Directory",
 		"Media Download", "Media Upload", "Self-Chat Agent",
@@ -169,15 +172,25 @@ func TestEvidenceBasedWithCountIsActive(t *testing.T) {
 	typeKey := testTypeKey()
 
 	counts := map[string]int64{
-		"text":          100,
-		"image":         42,
-		"video":         7,
-		"live_location": 3,
+		"text":           100,
+		"image":          42,
+		"video":          7,
+		"live_location":  3,
 		"contacts_array": 11,
-		"poll_update":   5,
-		"edited":        4,
+		"poll_update":    5,
+		"edited":         4,
 	}
-	out := computeCapabilityStatuses(defs, capturedUnused, alwaysOn, typeKey, counts, true, true)
+	now := time.Now()
+	lastSeen := map[string]time.Time{
+		"text":           now.Add(-2 * time.Minute),
+		"image":          now.Add(-15 * time.Minute),
+		"video":          now.Add(-1 * time.Hour),
+		"live_location":  now.Add(-30 * time.Second),
+		"contacts_array": now.Add(-3 * time.Hour),
+		"poll_update":    now.Add(-5 * time.Minute),
+		"edited":         now.Add(-20 * time.Minute),
+	}
+	out := computeCapabilityStatuses(defs, capturedUnused, alwaysOn, typeKey, counts, lastSeen, true, true)
 
 	checks := []struct {
 		name  string
@@ -199,6 +212,9 @@ func TestEvidenceBasedWithCountIsActive(t *testing.T) {
 		if c.EvidenceCount != tc.count {
 			t.Errorf("%s evidence = %d, want %d", tc.name, c.EvidenceCount, tc.count)
 		}
+		if c.LastSeen == "" {
+			t.Errorf("%s last_seen = empty, want non-empty", tc.name)
+		}
 	}
 }
 
@@ -210,7 +226,7 @@ func TestEvidenceBasedZeroCountSessionIsPartial(t *testing.T) {
 
 	// Has a session (so partial is possible), but no evidence for Video.
 	counts := map[string]int64{"text": 50}
-	out := computeCapabilityStatuses(defs, capturedUnused, alwaysOn, typeKey, counts, false, true)
+	out := computeCapabilityStatuses(defs, capturedUnused, alwaysOn, typeKey, counts, nil, false, true)
 
 	c := findCap(out, "Video")
 	if c.Status != "partial" {
@@ -218,6 +234,9 @@ func TestEvidenceBasedZeroCountSessionIsPartial(t *testing.T) {
 	}
 	if c.EvidenceCount != 0 {
 		t.Errorf("Video evidence = %d, want 0", c.EvidenceCount)
+	}
+	if c.LastSeen != "" {
+		t.Errorf("Video last_seen = %q, want empty", c.LastSeen)
 	}
 }
 
@@ -227,7 +246,7 @@ func TestEvidenceBasedNoSessionIsNotAvailable(t *testing.T) {
 	alwaysOn := testAlwaysOn()
 	typeKey := testTypeKey()
 
-	out := computeCapabilityStatuses(defs, capturedUnused, alwaysOn, typeKey, map[string]int64{}, false, false)
+	out := computeCapabilityStatuses(defs, capturedUnused, alwaysOn, typeKey, map[string]int64{}, nil, false, false)
 	c := findCap(out, "Images")
 	if c.Status != "not_available" {
 		t.Errorf("Images status = %q, want not_available", c.Status)
@@ -258,26 +277,42 @@ func TestTypeKeyMatchesExtractorValues(t *testing.T) {
 
 func TestAggregateByTypeEmptyByDefault(t *testing.T) {
 	sm := &SessionManager{}
-	got := sm.aggregateByType()
-	if len(got) != 0 {
-		t.Errorf("aggregateByType with no sessions = %v, want empty map", got)
+	counts, latest := sm.aggregateByType()
+	if len(counts) != 0 {
+		t.Errorf("aggregateByType counts with no sessions = %v, want empty map", counts)
+	}
+	if len(latest) != 0 {
+		t.Errorf("aggregateByType lastSeen with no sessions = %v, want empty map", latest)
 	}
 }
 
 func TestAggregateByTypeSumsAcrossSessions(t *testing.T) {
 	sm := &SessionManager{}
-	s1 := &BrokerSession{totalByType: map[string]int64{"text": 3, "image": 1}}
-	s2 := &BrokerSession{totalByType: map[string]int64{"text": 2, "video": 4}}
+	now := time.Now()
+	s1 := &BrokerSession{
+		totalByType:    map[string]int64{"text": 3, "image": 1},
+		lastSeenByType: map[string]time.Time{"text": now.Add(-1 * time.Minute)},
+	}
+	s2 := &BrokerSession{
+		totalByType:    map[string]int64{"text": 2, "video": 4},
+		lastSeenByType: map[string]time.Time{"text": now.Add(-5 * time.Minute), "video": now.Add(-10 * time.Minute)},
+	}
 	sm.sessions = map[string]*BrokerSession{"a": s1, "b": s2}
 
-	got := sm.aggregateByType()
-	if got["text"] != 5 {
-		t.Errorf("text = %d, want 5", got["text"])
+	counts, latest := sm.aggregateByType()
+	if counts["text"] != 5 {
+		t.Errorf("text count = %d, want 5", counts["text"])
 	}
-	if got["image"] != 1 {
-		t.Errorf("image = %d, want 1", got["image"])
+	if counts["image"] != 1 {
+		t.Errorf("image count = %d, want 1", counts["image"])
 	}
-	if got["video"] != 4 {
-		t.Errorf("video = %d, want 4", got["video"])
+	if counts["video"] != 4 {
+		t.Errorf("video count = %d, want 4", counts["video"])
+	}
+	if !latest["text"].Equal(now.Add(-1 * time.Minute)) {
+		t.Errorf("text lastSeen = %v, want %v (newer wins)", latest["text"], now.Add(-1*time.Minute))
+	}
+	if !latest["video"].Equal(now.Add(-10 * time.Minute)) {
+		t.Errorf("video lastSeen = %v, want %v", latest["video"], now.Add(-10*time.Minute))
 	}
 }
