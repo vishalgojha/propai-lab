@@ -2,13 +2,25 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import * as api from "@/lib/api";
-import AIWorkspace from "@/components/AIWorkspace";
 import { Send, X, Sparkles, Loader2 } from "lucide-react";
 
 interface ChatMessage {
   role: "user" | "assistant";
   content: string;
   blocks?: any[];
+}
+
+function renderAssistantMessage(msg: ChatMessage) {
+  return (
+    <div className="space-y-2">
+      <p className="text-sm whitespace-pre-wrap">{msg.content || "No assistant text returned."}</p>
+      {msg.blocks && msg.blocks.length > 0 && (
+        <div className="text-[10px] text-zinc-500">
+          Structured response received. Open the workspace view for the full breakdown.
+        </div>
+      )}
+    </div>
+  );
 }
 
 interface InboxAIChatProps {
@@ -92,11 +104,7 @@ export function InboxAIChat({ context, selectedMessage, onClose }: InboxAIChatPr
             {messages.map((msg, idx) => (
               <div key={idx} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
                 <div className={`max-w-[85%] rounded-2xl px-4 py-3 ${msg.role === "user" ? "bg-emerald-400 text-black" : "border border-white/10"}`}>
-                  {msg.blocks ? (
-                    <AIWorkspace response={{ blocks: msg.blocks, content: msg.content, sources: [] }} />
-                  ) : (
-                    <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
-                  )}
+                  {msg.role === "assistant" ? renderAssistantMessage(msg) : <p className="text-sm whitespace-pre-wrap">{msg.content}</p>}
                 </div>
               </div>
             ))}
@@ -149,11 +157,7 @@ export function InboxAIChat({ context, selectedMessage, onClose }: InboxAIChatPr
         {messages.map((msg, idx) => (
           <div key={idx} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
             <div className={`max-w-[85%] rounded-2xl px-4 py-3 ${msg.role === "user" ? "bg-emerald-400 text-black" : "border border-white/10"}`}>
-              {msg.blocks ? (
-                <AIWorkspace response={{ blocks: msg.blocks, content: msg.content, sources: [] }} />
-              ) : (
-                <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
-              )}
+              {msg.role === "assistant" ? renderAssistantMessage(msg) : <p className="text-sm whitespace-pre-wrap">{msg.content}</p>}
             </div>
           </div>
         ))}
