@@ -2344,6 +2344,119 @@ class SupabaseStorage(Storage):
         res = query.execute()
         return [dict_to_dataclass(SyncJob, d) for d in res.data]
 
+    # ── Durable WhatsApp conversation directory ───────────────────
+
+    def upsert_whatsapp_conversations(
+        self,
+        tenant_id: str,
+        broker_id: str,
+        instance: str,
+        conversations: list[dict],
+    ) -> int:
+        """Persist WhatsApp's directory independently of raw/parsed messages."""
+        if not tenant_id or not broker_id or not conversations:
+            return 0
+        existing_result = self.client.table("whatsapp_conversations").select(
+            "conversation_jid,display_name,message_count,last_message_at"
+        ).eq("tenant_id", tenant_id).eq("broker_id", broker_id).limit(1000).execute()
+        existing_by_jid = {
+            str(row.get("conversation_jid") or ""): row
+            for row in (existing_result.data or [])
+        }
+        rows = []
+        for conversation in conversations:
+            jid = str(conversation.get("jid") or conversation.get("id") or "").strip()
+            kind = str(conversation.get("type") or conversation.get("conversation_type") or "").strip()
+            if not jid or kind not in {"group", "broadcast", "direct"}:
+                continue
+            row = {
+                "tenant_id": tenant_id,
+                "broker_id": broker_id,
+                "instance": instance or "",
+                "conversation_jid": jid,
+                "conversation_type": kind,
+                "display_name": str(conversation.get("name") or conversation.get("display_name") or jid).strip(),
+                "unread_count": max(0, int(conversation.get("unread_count") or 0)),
+                "message_count": max(0, int(conversation.get("message_count") or 0)),
+                "last_message_at": conversation.get("last_message_at") or None,
+                "last_seen_at": conversation.get("last_seen_at") or datetime.now(timezone.utc).isoformat(),
+                "source": str(conversation.get("source") or "live"),
+                "metadata": conversation.get("metadata") or {},
+            }
+            existing = existing_by_jid.get(jid)
+            if existing:
+                # Directory/history refreshes can know a conversation exists
+                # without containing its complete message history. Never let
+                # that shallow refresh erase activity we have already stored.
+                row["message_count"] = max(
+                    int(existing.get("message_count") or 0), row["message_count"],
+                )
+                row["last_message_at"] = (
+                    max(str(existing.get("last_message_at") or ""), str(row["last_message_at"] or "")) or None
+                )
+                existing_name = str(existing.get("display_name") or "").strip()
+                if existing_name and existing_name != jid and row["display_name"] == jid:
+                    row["display_name"] = existing_name
+            rows.append(row)
+        if not rows:
+            return 0
+        # The composite key makes every refresh idempotent. Batch calls keep a
+        # full WhatsApp directory from turning into hundreds of REST requests.
+        for start in range(0, len(rows), 200):
+            self.client.table("whatsapp_conversations").upsert(
+                rows[start:start + 200],
+                on_conflict="tenant_id,broker_id,conversation_jid",
+            ).execute()
+        return len(rows)
+
+    def touch_whatsapp_conversation(
+        self,
+        tenant_id: str,
+        broker_id: str,
+        instance: str,
+        conversation_jid: str,
+        conversation_type: str,
+        last_message_at: str | None = None,
+    ) -> None:
+        """Advance activity without erasing a name learned from WhatsApp."""
+        if not tenant_id or not broker_id or not conversation_jid:
+            return
+        updates = {
+            "instance": instance or "",
+            "last_seen_at": datetime.now(timezone.utc).isoformat(),
+            "source": "live",
+        }
+        if last_message_at:
+            updates["last_message_at"] = last_message_at
+        existing = self.client.table("whatsapp_conversations").select("id,message_count").eq(
+            "tenant_id", tenant_id
+        ).eq("broker_id", broker_id).eq("conversation_jid", conversation_jid).limit(1).execute()
+        if existing.data:
+            current = existing.data[0]
+            updates["message_count"] = int(current.get("message_count") or 0) + 1
+            self.client.table("whatsapp_conversations").update(updates).eq("id", current["id"]).execute()
+            return
+        self.upsert_whatsapp_conversations(tenant_id, broker_id, instance, [{
+            "jid": conversation_jid,
+            "type": conversation_type,
+            "name": conversation_jid,
+            "message_count": 1,
+            "last_message_at": last_message_at,
+            "source": "live",
+        }])
+
+    def get_whatsapp_conversations(
+        self,
+        tenant_id: str,
+        types: list[str] | None = None,
+        limit: int = 500,
+    ) -> list[dict]:
+        query = self.client.table("whatsapp_conversations").select("*").eq("tenant_id", tenant_id)
+        if types:
+            query = query.in_("conversation_type", types)
+        result = query.order("last_message_at", desc=True, nullsfirst=False).limit(limit).execute()
+        return result.data or []
+
     def get_group_markets(self) -> dict[str, list[str]]:
         """Derived tags: aggregate distinct micro_markets per WhatsApp group
         from parsed_output joined to raw_messages by group_name.

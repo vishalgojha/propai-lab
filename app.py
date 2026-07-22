@@ -1643,6 +1643,7 @@ _EVENT_CLASS = {
     "groups.update": "group",
     "groups.participants.update": "group",
     "GROUPS_REFRESHED": "group",
+    "CONVERSATIONS_UPSERT": "conversation",
     "presence.update": "presence",
     "call": "call",
 }
@@ -2133,7 +2134,7 @@ async def webhook(request: Request):
         # A full group directory can contain hundreds of entries. It is
         # recoverable and must not hold the durable message outbox behind a
         # long series of Supabase calls.
-        if event_class == "group":
+        if event_class in {"group", "conversation"}:
             asyncio.create_task(
                 asyncio.to_thread(
                     _handle_system_event,
@@ -2263,6 +2264,26 @@ async def webhook(request: Request):
                 set_tenant_id(previous)
 
         raw_id = await asyncio.to_thread(save_scoped_raw)
+        # A message is also activity on a WhatsApp conversation. Keep this
+        # separate from extraction so the raw WhatsApp mirror stays current
+        # even when AI parsing is delayed or unavailable.
+        conversation_type = (
+            "group" if str(group).endswith("@g.us")
+            else "broadcast" if str(group).endswith("@broadcast")
+            else "direct"
+        )
+        try:
+            await asyncio.to_thread(
+                storage.touch_whatsapp_conversation,
+                resolved_tenant_id,
+                webhook_broker_id or "legacy",
+                instance,
+                group,
+                conversation_type,
+                message_timestamp,
+            )
+        except Exception as exc:
+            print(f"[webhook] conversation activity update failed: {exc}", flush=True)
     except Exception as exc:
         print(f"[webhook] save_raw_message error: {exc}", flush=True)
         return {"error": f"save_raw_message: {exc}", "status": "failed"}
@@ -2459,9 +2480,25 @@ def _handle_system_event(event_class: str, event: str, data: dict, instance: str
             "instance": instance,
             "state": state,
         })
+    elif event_class == "conversation":
+        conversations = data.get("conversations") or []
+        broker_id = (msg_data.get("broker_id", "") if isinstance(msg_data, dict) else "") or "legacy"
+        try:
+            persisted = storage.upsert_whatsapp_conversations(
+                tenant_id, broker_id, instance, conversations,
+            )
+            get_bus().publish("whatsapp.conversations.updated", {
+                "instance": instance,
+                "broker_id": broker_id,
+                "count": persisted,
+            })
+        except Exception as exc:
+            print(f"[webhook] conversation directory persistence failed: {exc}", flush=True)
     elif event_class == "group":
         groups_list = data.get("groups") or (msg_data if isinstance(msg_data, list) else [msg_data])
         incoming_jids = set()
+        directory_rows = []
+        broker_id = (msg_data.get("broker_id", "") if isinstance(msg_data, dict) else "") or "legacy"
         for g in groups_list:
             if not isinstance(g, dict):
                 continue
@@ -2471,6 +2508,14 @@ def _handle_system_event(event_class: str, event: str, data: dict, instance: str
             incoming_jids.add(jid)
             name = g.get("name") or g.get("subject") or jid
             participants = len(g.get("participants", [])) if isinstance(g.get("participants"), list) else g.get("size", 0)
+            directory_rows.append({
+                "jid": jid,
+                "type": "group",
+                "name": name,
+                "message_count": 0,
+                "source": "group_directory",
+                "metadata": {"participants": participants},
+            })
             try:
                 storage.upsert_sync_job(
                     source="whatsapp", instance=instance,
@@ -2485,6 +2530,13 @@ def _handle_system_event(event_class: str, event: str, data: dict, instance: str
                 "name": name,
                 "participants": participants,
             })
+        if directory_rows:
+            try:
+                storage.upsert_whatsapp_conversations(
+                    tenant_id, broker_id, instance, directory_rows,
+                )
+            except Exception as exc:
+                print(f"[webhook] group directory conversation persistence failed: {exc}", flush=True)
         # On full refresh, remove stale groups no longer in this instance's list
         if data.get("groups") and incoming_jids:
             try:
@@ -11165,6 +11217,23 @@ async def list_groups(user: dict = Depends(require_user)):
             "excluded": excluded,
         })
     return sorted(groups, key=lambda g: g["name"].lower())
+
+
+@app.get("/api/whatsapp/conversations")
+async def list_whatsapp_conversations(
+    types: str = "group,broadcast",
+    user: dict = Depends(require_user),
+    tenant_id: str | None = Depends(get_tenant_context),
+):
+    """Workspace-scoped WhatsApp directory, independent of market parsing."""
+    allowed = {"group", "broadcast", "direct"}
+    requested = [value.strip() for value in types.split(",") if value.strip() in allowed]
+    return await asyncio.to_thread(
+        storage.get_whatsapp_conversations,
+        tenant_id or DEFAULT_TENANT_ID,
+        requested or ["group", "broadcast"],
+        1000,
+    )
 
 
 @app.get("/api/groups/opt-out")
