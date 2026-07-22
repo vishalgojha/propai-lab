@@ -1,9 +1,6 @@
 """AI-first extraction pipeline — primary path for all listing/requirement parsing.
 
-Provider rotation (round-robin, per-message):
-  1-4. NVIDIA NIM (4 keys, via Doubleword NIM gateway)
-  5.    Groq (free tier)
-  6.    Gemini (free tier)
+Provider rotation uses the same deployment-configured chain as chat.
 
 On 429/timeout → immediately retry next key.
 Only fall to regex if ALL 6 keys fail, or AI response fails schema validation twice.
@@ -19,46 +16,22 @@ Usage:
 
 import json
 import logging
-import os
 import re
 import time
 from datetime import datetime, timezone
 from typing import Optional
 
 from openai import OpenAI
+from llm import get_configured_providers
 
 _logger = logging.getLogger(__name__)
 
 # ── Provider configuration ────────────────────────────────────────────
 
-_PROVIDERS: list[dict] = []
-
-_nvidia_model = "nvidia/nemotron-3-ultra-550b-a55b"
-_nvidia_base = "https://integrate.api.nvidia.com/v1"
-for i, key_env in enumerate(["NVIDIA_API_KEY", "NVIDIA_API_KEY_2", "NVIDIA_API_KEY_3", "NVIDIA_API_KEY_4"], 1):
-    if os.getenv(key_env):
-        _PROVIDERS.append({
-            "name": f"nvidia-nim-{i}",
-            "api_key": os.environ[key_env],
-            "base_url": _nvidia_base,
-            "model": _nvidia_model,
-        })
-
-if os.getenv("GROQ_API_KEY"):
-    _PROVIDERS.append({
-        "name": "groq",
-        "api_key": os.environ["GROQ_API_KEY"],
-        "base_url": "https://api.groq.com/openai/v1",
-        "model": "llama-3.3-70b-versatile",
-    })
-
-if os.getenv("GEMINI_API_KEY"):
-    _PROVIDERS.append({
-        "name": "gemini",
-        "api_key": os.environ["GEMINI_API_KEY"],
-        "base_url": "https://generativelanguage.googleapis.com/v1beta/openai",
-        "model": "gemini-2.0-flash",
-    })
+# One provider registry for chat, WhatsApp, and extraction.  Models are always
+# deployment configuration; changing a key/model in Coolify changes every path
+# together after redeploy.
+_PROVIDERS: list[dict] = list(get_configured_providers())
 
 # Round-robin pointer
 _rr_index = 0
@@ -138,10 +111,13 @@ CRITICAL — NEVER do these:
   and additional charges (dues, fees, etc.) must stay separate — the
   frontend displays them as distinct line items.
 
-For a message with one opportunity, return one JSON object. For a message with
-multiple distinct listings or requirements, return a JSON array with one object
-per opportunity, in the same order as the message. Never merge options, floors,
-or properties into one object.
+Always return one JSON object with this exact outer shape:
+{"items": [<one object per opportunity>]}
+
+For a message with one opportunity, "items" contains one object. For a message
+with multiple distinct listings or requirements, it contains one object per
+opportunity, in the same order as the message. Never merge options, floors, or
+properties into one object.
 
 Return ONLY valid JSON with no markdown formatting, no code blocks, no extra text."""
 
@@ -475,22 +451,51 @@ def _call_provider(provider: dict, messages: list[dict], timeout: int = 45) -> d
     """Call a single LLM provider. Returns a parsed JSON object/array or None."""
     try:
         client = OpenAI(api_key=provider["api_key"], base_url=provider["base_url"])
-        resp = client.chat.completions.create(
+        request = dict(
             model=provider["model"],
             messages=messages,
             temperature=0.1,
-            max_tokens=1024,
+            # Reasoning models (notably Qwen 3.6) can spend their first tokens
+            # thinking before emitting the final JSON.  1,024 was often not
+            # enough for both; a truncated reasoning response has no content
+            # and was incorrectly treated as an unavailable provider.
+            max_tokens=2048,
             timeout=timeout,
         )
-        raw = resp.choices[0].message.content
+        # Doubleword supports OpenAI-compatible JSON mode.  Its response must
+        # be an object, hence the stable {"items": [...]} envelope in the
+        # prompt above.  Other providers retain the portable prompt-only path.
+        if provider["name"] == "doubleword":
+            request["response_format"] = {"type": "json_object"}
+        resp = client.chat.completions.create(**request)
+        choice = resp.choices[0]
+        raw = choice.message.content
         if not raw or not raw.strip():
+            reasoning = getattr(choice.message, "reasoning_content", None)
+            finish_reason = getattr(choice, "finish_reason", None)
+            if reasoning:
+                _logger.warning(
+                    "Provider %s returned reasoning but no final JSON (finish=%s)",
+                    provider["name"], finish_reason,
+                )
+            else:
+                _logger.warning(
+                    "Provider %s returned empty content (finish=%s)",
+                    provider["name"], finish_reason,
+                )
             return None
         cleaned = raw.strip()
         if cleaned.startswith("```"):
             cleaned = cleaned.split("\n", 1)[-1] if "\n" in cleaned else cleaned[3:]
             if cleaned.endswith("```"):
                 cleaned = cleaned[:-3].strip()
-        return json.loads(cleaned)
+        parsed = json.loads(cleaned)
+        # The structured-output envelope keeps JSON mode compatible with both
+        # single and multi-listing broker posts.  Keep accepting the legacy
+        # object/array shape from non-Doubleword providers during rollout.
+        if isinstance(parsed, dict) and isinstance(parsed.get("items"), list):
+            return parsed["items"]
+        return parsed
     except json.JSONDecodeError:
         _logger.warning("Provider %s returned malformed JSON", provider["name"])
         return None
