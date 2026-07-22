@@ -125,6 +125,14 @@ def _find_working() -> int:
 
 # ── Public API ──────────────────────────────────────────────────────
 
+def get_configured_providers() -> tuple[dict, ...]:
+    """Return safe copies of the deployment-configured provider chain.
+
+    Background jobs need to rotate across the same keys/models as chat.  They
+    must not carry a second, stale list of hard-coded models.
+    """
+    return tuple(dict(provider) for provider in _PROVIDERS)
+
 def get_client() -> OpenAI:
     """Return an OpenAI client pointing at the first healthy provider."""
     idx = _find_working()
