@@ -3221,6 +3221,21 @@ class SupabaseStorage(Storage):
                               broker_key: str = "", intent: str = "",
                               tenant_id: str | None = None) -> list[dict]:
         tid = tenant_id or self._tenant_id
+        # A selected broker already gives us a stable identity. Resolve that
+        # narrow timeline first instead of invoking the global aggregate RPC.
+        # The RPC can legitimately be expensive while a large WhatsApp history
+        # is being backfilled; making it the first step made broker cards say
+        # "No matching items" even when their parsed listings existed.
+        if broker_key:
+            try:
+                parsed_rows = self._get_parsed_observations_for_broker(
+                    limit, offset, broker_key=broker_key, intent=intent, tenant_id=tid
+                )
+                if parsed_rows:
+                    return _merge_observation_rows(parsed_rows)
+            except Exception:
+                pass
+
         # Preferred path: filter the canonical phone/name identity inside
         # Postgres before LIMIT.  This avoids downloading thousands of parsed
         # rows and retrying equivalent name keys in application code.
@@ -3242,16 +3257,6 @@ class SupabaseStorage(Storage):
                 ]
         except Exception:
             pass
-
-        if broker_key:
-            try:
-                parsed_rows = self._get_parsed_observations_for_broker(
-                    limit, offset, broker_key=broker_key, intent=intent, tenant_id=tid
-                )
-            except Exception:
-                parsed_rows = []
-            if parsed_rows:
-                return _merge_observation_rows(parsed_rows)
 
         try:
             data = self.db.execute(
@@ -3301,22 +3306,36 @@ class SupabaseStorage(Storage):
                 "id,raw_message_id,message_type,intent,asset_type,property_type,transaction_type,"
                 "bhk,configuration,price,price_unit,price_model,price_per_sqft,monthly_rent,total_asking_price,"
                 "area_sqft,furnishing,furnishing_canonical,location_raw,building_name,landmark_name,micro_market,"
-                "commercial_use_type,fitout_status,occupancy_type,floor_range,availability_status,possession_status,"
+                "availability_status,possession_status,"
                 "possession_date,available_from,ready_by,construction_stage,launch_timeline,expected_possession,"
-                "broker_name,broker_phone,profile_name,listing_index,confidence,summary_title,normalized_message,created_at,raw_messages(*)"
+                "broker_name,broker_phone,profile_name,listing_index,confidence,summary_title,created_at,raw_messages(*)"
             )\
             .gte("created_at", cutoff)\
-            .order("created_at", desc=True)\
-            .limit(max(50000, limit + offset))
+            .order("created_at", desc=True)
         tid = tenant_id or self._tenant_id
         if tid:
             query = query.eq("tenant_id", tid)
         if intent:
             query = query.eq("intent", intent.upper())
 
+        # Most parsed market posts carry the resolved broker phone.  Filter
+        # that column in Postgres for a phone-selected broker instead of
+        # loading a 50k-row, nested raw-message scan into the API process.
+        # Keep a bounded broad fallback only for legacy rows whose phone lives
+        # exclusively on raw_messages.
+        if normalized_key:
+            direct_query = query.ilike("broker_phone", f"*{normalized_key}").limit(max(500, limit + offset))
+            direct_rows = direct_query.execute().data or []
+            if direct_rows:
+                parsed_rows = direct_rows
+            else:
+                parsed_rows = query.limit(5000).execute().data or []
+        else:
+            parsed_rows = query.limit(5000).execute().data or []
+
         candidates: list[tuple[dict, dict, str, str]] = []
         phones_by_name: dict[str, set[str]] = defaultdict(set)
-        for parsed in (query.execute().data or []):
+        for parsed in parsed_rows:
             raw = parsed.get("raw_messages") or {}
             if not raw.get("is_group", False):
                 continue
