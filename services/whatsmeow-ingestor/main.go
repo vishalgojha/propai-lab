@@ -1394,6 +1394,7 @@ func (sm *SessionManager) handleHistorySync(s *BrokerSession, evt *events.Histor
 
 	conversations := evt.Data.GetConversations()
 	posted := 0
+	directory := make([]map[string]interface{}, 0, len(conversations))
 	for _, conv := range conversations {
 		if conv == nil {
 			continue
@@ -1402,6 +1403,21 @@ func (sm *SessionManager) handleHistorySync(s *BrokerSession, evt *events.Histor
 		chatName := strings.TrimSpace(conv.GetName())
 		if chatName == "" {
 			chatName = strings.TrimSpace(conv.GetDisplayName())
+		}
+		if conversationType := whatsappConversationType(chatID); conversationType != "" {
+			lastMessageAt := whatsappConversationTimestamp(conv.GetLastMsgTimestamp())
+			if lastMessageAt == "" {
+				lastMessageAt = whatsappConversationTimestamp(conv.GetConversationTimestamp())
+			}
+			directory = append(directory, map[string]interface{}{
+				"jid":             chatID,
+				"type":            conversationType,
+				"name":            chatName,
+				"unread_count":    conv.GetUnreadCount(),
+				"message_count":   len(conv.GetMessages()),
+				"last_message_at": lastMessageAt,
+				"source":          "history_sync",
+			})
 		}
 
 		for _, historyMsg := range conv.GetMessages() {
@@ -1412,6 +1428,21 @@ func (sm *SessionManager) handleHistorySync(s *BrokerSession, evt *events.Histor
 				posted++
 			}
 		}
+	}
+	for start := 0; start < len(directory); start += 200 {
+		end := start + 200
+		if end > len(directory) {
+			end = len(directory)
+		}
+		sm.queueWebhook(s.brokerID, fmt.Sprintf("conversation-directory:%s:%d:%d", s.brokerID, evt.Data.GetProgress(), start), map[string]interface{}{
+			"event": "CONVERSATIONS_UPSERT",
+			"data": map[string]interface{}{
+				"broker_id": s.brokerID,
+				"instance":  instanceName,
+			},
+			"instance":      instanceName,
+			"conversations": directory[start:end],
+		})
 	}
 
 	if posted > 0 {
@@ -1428,6 +1459,38 @@ func (sm *SessionManager) handleHistorySync(s *BrokerSession, evt *events.Histor
 		})
 	}
 	log.Printf("[broker %s] history sync progress=%d conversations=%d messages_posted=%d", s.brokerID, evt.Data.GetProgress(), len(conversations), posted)
+}
+
+func whatsappConversationType(jid string) string {
+	jid = strings.ToLower(strings.TrimSpace(jid))
+	switch {
+	case jid == "", jid == "status@broadcast", strings.HasSuffix(jid, "@newsletter"):
+		return ""
+	case strings.HasSuffix(jid, "@g.us"):
+		return "group"
+	case strings.HasSuffix(jid, "@broadcast"):
+		return "broadcast"
+	default:
+		return "direct"
+	}
+}
+
+// WhatsApp history timestamps are normally seconds, but some sync payloads
+// contain milliseconds. Never let a malformed value push a chat into the
+// future and make the directory appear stale or wrongly ordered.
+func whatsappConversationTimestamp(timestamp uint64) string {
+	if timestamp == 0 {
+		return ""
+	}
+	seconds := int64(timestamp)
+	if seconds > 10_000_000_000 {
+		seconds /= 1000
+	}
+	value := time.Unix(seconds, 0).UTC()
+	if value.After(time.Now().UTC().Add(7 * 24 * time.Hour)) {
+		return ""
+	}
+	return value.Format(time.RFC3339)
 }
 
 func (sm *SessionManager) postWebMessage(s *BrokerSession, wmsg *waWeb.WebMessageInfo, chatID, chatName, source string) bool {

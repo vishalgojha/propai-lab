@@ -1491,7 +1491,7 @@ return {
       setMessages((prev) => (append ? [...prev, ...threadMsgs] : threadMsgs));
       if (!append) {
         const [groupResult, suggestionResult] = await Promise.allSettled([
-          api.getGroups(),
+          api.getWhatsAppConversations(),
           api.getSuggestions("pending", 100),
         ]);
         if (groupResult.status === "fulfilled") {
@@ -2139,11 +2139,12 @@ return {
   const directoryGroupItems: ThreadFallbackItem[] = (() => {
     const capturedByJid = new Map(groupChats.map((chat) => [String(chat.conversationKey), chat]));
     return groups
-      .filter((group) => String(group?.jid || "").trim())
+      .filter((group) => String(group?.conversation_jid || group?.jid || "").trim())
       .map((group) => {
-        const jid = String(group.jid).trim();
+        const jid = String(group.conversation_jid || group.jid).trim();
         const captured = capturedByJid.get(jid);
-        const groupName = String(group.name || captured?.title || "WhatsApp Group").trim();
+        const groupName = String(group.display_name || group.name || captured?.title || "WhatsApp Group").trim();
+        const conversationType = group.conversation_type === "broadcast" ? "broadcast" : "group";
         const latest = captured?.latest || ({
           id: 0,
           chat_id: jid,
@@ -2154,12 +2155,15 @@ return {
           conversation_name: groupName,
           group_name: jid,
           message: "No captured messages yet.",
-          message_count: Number(group.records_found || 0),
+          message_count: Number(group.message_count || group.records_found || 0),
+          timestamp: group.last_message_at || "",
         } as api.InboxThread);
         return {
           key: jid,
           title: groupName,
-          subtitle: captured ? "WhatsApp group" : "WhatsApp group · awaiting messages",
+          subtitle: captured
+            ? (conversationType === "broadcast" ? "WhatsApp broadcast" : "WhatsApp group")
+            : `${conversationType === "broadcast" ? "WhatsApp broadcast" : "WhatsApp group"} · awaiting messages`,
           latest: {
             ...latest,
             chat_id: jid,
@@ -2169,7 +2173,7 @@ return {
             conversation_type: "group",
             conversation_name: groupName,
           },
-          count: captured?.count || Number(group.records_found || 0),
+          count: captured?.count || Number(group.message_count || group.records_found || 0),
           type: "group" as const,
         };
       })

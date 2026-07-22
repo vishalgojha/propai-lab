@@ -453,6 +453,10 @@ export function getGroups() {
   return fetchJSON<any[]>("/groups");
 }
 
+export function getWhatsAppConversations(types = "group,broadcast") {
+  return fetchJSON<any[]>(`/whatsapp/conversations?types=${encodeURIComponent(types)}`);
+}
+
 export function getBuildings(limit = 100, offset = 0) {
   return fetchJSON<any>(`/buildings?limit=${limit}&offset=${offset}`);
 }
