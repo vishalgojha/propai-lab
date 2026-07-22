@@ -11228,9 +11228,15 @@ async def list_whatsapp_conversations(
     """Workspace-scoped WhatsApp directory, independent of market parsing."""
     allowed = {"group", "broadcast", "direct"}
     requested = [value.strip() for value in types.split(",") if value.strip() in allowed]
+    # Keep this directory on the exact same workspace resolver used by the
+    # connected-phone header and Connections page. A stale/default tenant
+    # context must never make a broker's live WhatsApp mirror look empty.
+    active_org_id = await asyncio.to_thread(
+        _resolve_active_organization_id, user, tenant_id,
+    )
     return await asyncio.to_thread(
         storage.get_whatsapp_conversations,
-        tenant_id or DEFAULT_TENANT_ID,
+        active_org_id,
         requested or ["group", "broadcast"],
         1000,
     )
