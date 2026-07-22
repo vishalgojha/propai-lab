@@ -3095,7 +3095,13 @@ class SupabaseStorage(Storage):
                 "p_tenant_id": tid or None,
             })
             if isinstance(rows, list) and rows:
-                return rows
+                # Market Inbox is a contactable broker market, not an
+                # anonymous-name directory.  Keep unresolved identities in
+                # raw Groups evidence until WhatsApp has resolved a real phone.
+                return [
+                    row for row in rows
+                    if _normalize_india_phone(str(row.get("primary_phone") or ""))
+                ]
         except Exception:
             pass
 
@@ -3298,10 +3304,12 @@ class SupabaseStorage(Storage):
             for thread in parsed_threads:
                 identity = thread.get("conversation_key") or thread.get("chat_id") or ""
                 phone = _normalize_india_phone(thread.get("broker_phone") or "")
+                if not phone:
+                    continue
                 result.append({
                     "id": identity,
                     "identity_key": identity,
-                    "primary_phone": phone or identity,
+                    "primary_phone": phone,
                     "canonical_name": thread.get("broker_name") or thread.get("conversation_name") or "Unknown broker",
                     "building_count": 1 if thread.get("building_name") else 0,
                     "active_days_30": None,
@@ -3326,13 +3334,11 @@ class SupabaseStorage(Storage):
                 merged: dict[str, dict] = {}
                 for row in result:
                     phone = _normalize_india_phone(row.get("primary_phone") or "")
-                    name = _clean_person_name(row.get("canonical_name") or "")
-                    name_key = re.sub(r"[^a-z0-9]+", " ", name.lower()).strip()
-                    key = phone or f"name:{name_key}"
+                    key = phone
                     existing = merged.get(key)
                     if not existing:
                         row["identity_key"] = key
-                        row["primary_phone"] = phone or key
+                        row["primary_phone"] = phone
                         merged[key] = row
                         continue
                     for field in (
