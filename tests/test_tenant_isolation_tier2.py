@@ -28,7 +28,7 @@ def test_ai_chat_endpoints_forward_tenant(monkeypatch):
             calls.append(("get", session_id, tenant_id))
             return {"id": session_id}
 
-        def get_chat_messages(self, session_id, limit=200, tenant_id=None):
+        def get_ai_chat_messages(self, session_id, limit=200, tenant_id=None):
             calls.append(("messages", session_id, limit, tenant_id))
             return []
 
@@ -67,7 +67,7 @@ def test_ai_chat_persist_uses_tenant(monkeypatch):
         def touch_chat_session(self, session_id, tenant_id=None):
             calls.append(("touch", session_id, tenant_id))
 
-        def get_chat_messages(self, session_id, limit=200, tenant_id=None):
+        def get_ai_chat_messages(self, session_id, limit=200, tenant_id=None):
             calls.append(("messages", session_id, limit, tenant_id))
             return []
 
@@ -254,7 +254,7 @@ def test_storage_scopes_chat_tables_by_tenant():
         s.list_chat_sessions("919999999999", tenant_id="org-A")
         s.create_chat_session("919999999999", title="t", tenant_id="org-A")
         s.get_chat_session("s1", tenant_id="org-A")
-        s.get_chat_messages("s1", tenant_id="org-A")
+        s.get_ai_chat_messages("s1", tenant_id="org-A")
         s.add_chat_message("s1", "user", "hi", tenant_id="org-A")
         s.delete_chat_session("s1", tenant_id="org-A")
         s.get_llm_providers(tenant_id="org-A")

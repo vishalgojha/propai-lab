@@ -374,6 +374,9 @@ class Storage(ABC):
     def get_chat_messages(self, chat_id: str, limit: int = 200, offset: int = 0, tenant_id: str | None = None) -> list[RawMessage]: ...
 
     @abstractmethod
+    def get_ai_chat_messages(self, session_id: str, limit: int = 200, tenant_id: str | None = None) -> list[dict]: ...
+
+    @abstractmethod
     def get_all_raw_for_replay(self, tenant_id: str | None = None) -> list[RawMessage]: ...
 
     @abstractmethod
