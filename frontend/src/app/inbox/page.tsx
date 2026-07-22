@@ -1802,6 +1802,12 @@ return {
   };
 
   const isLikelyGroupConversation = (msg: Partial<api.InboxThread | api.RawMessage>) => {
+    // The remote JID is WhatsApp's source of truth. Some historical rows
+    // were decorated as direct using their sender, but `@g.us` can never be
+    // a direct conversation and must win over that stale classification.
+    if ([msg.chat_id, msg.conversation_key, msg.group_name].some((value) => isGroupJidLike(value || ""))) {
+      return true;
+    }
     const explicitType = conversationTypeFor(msg);
     if (explicitType === "direct") return false;
     if (explicitType === "group") return true;
