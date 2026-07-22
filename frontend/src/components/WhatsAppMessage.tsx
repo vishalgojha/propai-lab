@@ -220,12 +220,20 @@ function PreviewCard({ entity }: { entity: MessageEntity }) {
             )}
           </>
         ) : (
-          <div className="text-zinc-300">Open search or create a linked entity.</div>
+          <div className="text-zinc-300">
+            {entity.type === "phone"
+              ? "No broker profile linked yet."
+              : "Open profile or create a linked entity."}
+          </div>
         )}
       </div>
 
       <div className="mt-3 border-t border-white/10 pt-2 text-[10px] font-semibold text-[#3EE88A]">
-        {entity.exists === false ? "Create profile ->" : "Open profile ->"}
+        {entity.type === "phone"
+          ? "Open broker profile ->"
+          : entity.exists === false
+            ? "Create profile ->"
+            : "Open profile ->"}
       </div>
     </div>
   );
@@ -244,12 +252,13 @@ function EntityLink({
   const [preview, setPreview] = React.useState(false);
   const href = entityProfileHref(entity);
   const title = entityTooltip(entity);
+  const showPreview = entity.type !== "phone";
 
   return (
     <span
       className="relative inline-flex align-baseline"
-      onMouseEnter={() => setPreview(true)}
-      onMouseLeave={() => setPreview(false)}
+      onMouseEnter={() => showPreview && setPreview(true)}
+      onMouseLeave={() => showPreview && setPreview(false)}
     >
       <Link
         href={href}
@@ -269,7 +278,7 @@ function EntityLink({
         <span className="text-[#60a5fa]">{entityIcon(entity.type)}</span>
         <span>{children}</span>
       </Link>
-      {preview && <PreviewCard entity={entity} />}
+      {preview && showPreview && <PreviewCard entity={entity} />}
     </span>
   );
 }
