@@ -15379,16 +15379,21 @@ async def get_active_llm_provider(user: dict = Depends(require_user), tenant_id:
     try:
         active = _llm.get_provider_info()
         if active.get("provider_name") and active.get("provider_name") != "none":
+            active["source"] = "runtime_env"
+            active["source_label"] = "Runtime config (Coolify / env)"
             return active
     except Exception:
         pass
     # Fallback: return DB-stored provider
     provider = storage.get_active_llm_provider(tenant_id=tenant_id)
     if not provider:
-        return {}
+        return {"provider_name": "none", "base_url": "", "model_name": "", "source": "none", "source_label": "Unconfigured"}
     if provider.api_key:
         provider.api_key = ""
-    return asdict(provider)
+    data = asdict(provider)
+    data["source"] = "database"
+    data["source_label"] = "Workspace DB"
+    return data
 
 
 @app.post("/api/workspace/llm-providers")

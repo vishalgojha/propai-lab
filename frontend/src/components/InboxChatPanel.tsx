@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import * as api from "@/lib/api";
-import AIWorkspace from "@/components/AIWorkspace";
 import { getAccessToken } from "@/lib/auth";
 import {
   Send,
@@ -85,22 +84,28 @@ function buildContextPrefix(
 }
 
 function renderAssistantMessage(msg: ChatMsg) {
-  if (msg.blocks && msg.blocks.length > 0) {
-    return (
-      <div className="w-full">
-        <AIWorkspace
-          response={{
-            content: msg.content,
-            blocks: msg.blocks as api.WorkspaceBlock[],
-            sources: msg.sources || [],
-          }}
-        />
-      </div>
-    );
-  }
   return (
-    <div className="text-sm text-zinc-300 whitespace-pre-wrap leading-relaxed">
-      {msg.content}
+    <div className="space-y-2">
+      <div className="text-sm text-zinc-300 whitespace-pre-wrap leading-relaxed">
+        {msg.content || "No assistant text returned."}
+      </div>
+      {msg.sources && msg.sources.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {msg.sources.map((source, idx) => (
+            <span
+              key={`${source}-${idx}`}
+              className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] text-zinc-400"
+            >
+              {source}
+            </span>
+          ))}
+        </div>
+      )}
+      {msg.blocks && msg.blocks.length > 0 && (
+        <div className="text-[10px] text-zinc-500">
+          Structured response received. Open the workspace view for the full breakdown.
+        </div>
+      )}
     </div>
   );
 }
@@ -309,6 +314,14 @@ export function InboxChatPanel({
         ? "Selected message"
         : undefined;
 
+  const memoryScopeLabel = globalMode
+    ? "Memory: global chat"
+    : sessionId
+      ? "Memory: broker session"
+      : brokerPhone
+        ? "Memory: broker inbox"
+        : "Memory: sessionless";
+
   return (
     <div className="relative h-full w-full min-w-0 flex flex-col bg-[#070b0e] overflow-hidden">
       {/* Header */}
@@ -322,6 +335,9 @@ export function InboxChatPanel({
             {contextLabel && (
               <div className="text-[9px] text-emerald-400/70 truncate">{contextLabel}</div>
             )}
+            <div className="mt-0.5 text-[9px] text-zinc-500 truncate" title={memoryScopeLabel}>
+              {memoryScopeLabel}
+            </div>
           </div>
         </div>
         <div className="flex items-center gap-1 shrink-0">
@@ -405,6 +421,9 @@ export function InboxChatPanel({
                 </p>
               </div>
             )}
+            <div className="mt-2 text-[9px] text-zinc-500">
+              {memoryScopeLabel}
+            </div>
           </div>
         ) : (
           messages.map((msg, idx) => (

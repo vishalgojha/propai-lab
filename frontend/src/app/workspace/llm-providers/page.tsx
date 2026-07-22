@@ -14,6 +14,11 @@ interface Provider {
   is_active: number;
 }
 
+interface ActiveProvider extends Provider {
+  source?: "runtime_env" | "database" | "none";
+  source_label?: string;
+}
+
 const DEFAULT_PROVIDERS = [
   { type: "openai", label: "OpenAI", baseUrl: "https://api.openai.com/v1" },
   { type: "anthropic", label: "Anthropic", baseUrl: "https://api.anthropic.com/v1" },
@@ -23,7 +28,7 @@ const DEFAULT_PROVIDERS = [
 
 export default function LLMProvidersPage() {
   const [providers, setProviders] = useState<Provider[]>([]);
-  const [activeProvider, setActiveProvider] = useState<Provider | null>(null);
+  const [activeProvider, setActiveProvider] = useState<ActiveProvider | null>(null);
   const [loading, setLoading] = useState(true);
   const [isAdding, setIsAdding] = useState(false);
   const [editingProvider, setEditingProvider] = useState<Provider | null>(null);
@@ -167,6 +172,15 @@ export default function LLMProvidersPage() {
 
   const activeProviderName = activeProvider?.provider_name ? String(activeProvider.provider_name).toUpperCase() : "";
   const activeProviderType = activeProvider?.provider_type ? String(activeProvider.provider_type).toUpperCase() : "";
+  const activeProviderSource = activeProvider?.source_label || (
+    activeProvider?.source === "runtime_env"
+      ? "Runtime config (Coolify / env)"
+      : activeProvider?.source === "database"
+        ? "Workspace DB"
+        : activeProvider?.source === "none"
+          ? "Unconfigured"
+          : ""
+  );
 
   if (loading) return <div className="p-8 text-gray-400">Loading providers...</div>;
 
@@ -198,6 +212,11 @@ export default function LLMProvidersPage() {
                 {activeProviderType ? <span className="text-green-400"> {" "}({activeProviderType})</span> : null}
               </div>
               <div className="text-green-400 text-xs">Model: {activeProvider?.model_name || "—"}</div>
+              {activeProviderSource && (
+                <div className="mt-1 inline-flex items-center gap-1 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-emerald-300">
+                  Runtime source: {activeProviderSource}
+                </div>
+              )}
             </div>
           </div>
           <div className="text-green-400 text-sm font-medium">● Connected</div>
