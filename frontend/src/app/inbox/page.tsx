@@ -19,6 +19,7 @@ import { entityProfileHref } from "@/lib/entity-links";
 import { classifyFormatIssue, type FormatIssue } from "@/lib/format-issues";
 import { useIsMobile } from "@/hooks/useMediaQuery";
 import { useInfiniteScroll } from "@/hooks/useInfiniteScroll";
+import { stripDecorativeEmoji } from "@/lib/whatsapp-display";
 import {
   Users,
   User,
@@ -1697,7 +1698,7 @@ return {
       const suffix = raw.includes("-") ? raw.split("-").pop()?.slice(-4) : raw.slice(-4);
       return suffix ? `WhatsApp Group ${suffix}` : "WhatsApp Group";
     }
-    return text;
+    return stripDecorativeEmoji(text);
   };
 
   const displayChatTitle = (msg: api.InboxThread | api.RawMessage) => {
@@ -1712,7 +1713,7 @@ return {
       const sender = (msg.sender || "").trim();
       const phone = resolveMessagePhone(msg);
       if (isRawWhatsAppId(sender)) return displayPhoneString(phone) || "Direct Message";
-      if (isLikelyBrokerDisplayName(sender)) return sender;
+      if (isLikelyBrokerDisplayName(sender)) return stripDecorativeEmoji(sender);
       return displayPhoneString(phone) || "Direct Message";
     }
     const knownGroupName = resolveKnownGroupName(rawConversation);
@@ -1721,7 +1722,7 @@ return {
     const sender = (msg.sender || "").trim();
     const phone = resolveMessagePhone(msg);
     if (isRawWhatsAppId(sender)) return displayPhoneString(phone) || "Direct Message";
-    if (isLikelyBrokerDisplayName(sender)) return sender;
+    if (isLikelyBrokerDisplayName(sender)) return stripDecorativeEmoji(sender);
     const group = displayGroupName(rawConversation);
     return group || displayPhoneString(phone) || "Direct Message";
   };
@@ -1844,14 +1845,14 @@ return {
     const phone = resolveMessagePhone(msg);
     const sender = (msg.sender || "").trim();
     if (isLikelyBrokerDisplayName(sender) && !isRawWhatsAppId(sender)) {
-      return msg.broker_name || sender;
+      return stripDecorativeEmoji(msg.broker_name || sender);
     }
-    return msg.broker_name || (phone ? displayPhoneString(phone) : "");
+    return stripDecorativeEmoji(msg.broker_name || (phone ? displayPhoneString(phone) : ""));
   };
 
   const appendBrokerSignature = (text: string, brokerName?: string, brokerPhone?: string) => {
     const cleanText = String(text || "").trim();
-    const name = stripEmojis(brokerName || "").trim();
+    const name = stripDecorativeEmoji(brokerName || "").trim();
     const phone = normalizeRealPhone(brokerPhone) || "";
     if (!cleanText || (!name && !phone)) return cleanText;
 
@@ -2761,7 +2762,7 @@ return {
     if (isMobile) setMobileView("conversation");
     setOpportunityFilter("all");
     const brokerPhone = normalizeRealPhone(broker.primary_phone || broker.phone || broker.identity_key || broker.id || "");
-    const rawBrokerName = stripEmojis(broker.canonical_name || broker.name || "").trim();
+    const rawBrokerName = stripDecorativeEmoji(broker.canonical_name || broker.name || "").trim();
     const brokerName = isLikelyBrokerDisplayName(rawBrokerName) ? rawBrokerName : "";
     const brokerIdentityKey = (broker.identity_key || broker.id || broker.primary_phone || brokerPhone || brokerName || "").toString().trim();
     const displayName = brokerName || displayPhoneString(brokerPhone || broker.primary_phone || broker.phone || brokerIdentityKey) || "Broker";
@@ -3304,8 +3305,8 @@ return {
               ) : (
                 searchResults.map((result) => {
                   const item = rawSearchResultToMessage(result);
-                  const title = stripEmojis(result.group_name || result.sender || result.sender_phone || "Conversation");
-                  const subtitle = stripEmojis(
+                  const title = stripDecorativeEmoji(result.group_name || result.sender || result.sender_phone || "Conversation");
+                  const subtitle = stripDecorativeEmoji(
                     result.group_name && /@g\.us$/i.test(result.group_name)
                       ? "WhatsApp group"
                       : result.sender_phone
@@ -3381,7 +3382,7 @@ return {
                                 {isActiveNow && <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-emerald-400 border border-[#0a0e13]" />}
                               </div>
                               <span className="text-[12px] font-bold text-white truncate max-w-[160px]">
-                                {stripEmojis(b.canonical_name || b.name) || "Unknown"}
+                                {stripDecorativeEmoji(b.canonical_name || b.name) || "Unknown"}
                               </span>
                             </div>
                             <div className="flex items-center gap-1.5">
@@ -3400,7 +3401,7 @@ return {
                             <div className="text-[10px] text-zinc-400 leading-relaxed truncate mb-1.5">
                               <span className="text-zinc-500">Last: </span>
                               {(() => {
-                                const title = stripEmojis(b.latest_title);
+                                const title = stripDecorativeEmoji(b.latest_title);
                                 if (latestIntent) {
                                   const stripped = title.replace(new RegExp(`^${latestIntent}\\s*[|•-]?\\s*`, "i"), "");
                                   return <><span className="font-semibold text-zinc-300">{latestIntent}</span>{stripped ? ` ${stripped}` : ""}</>;
@@ -3451,12 +3452,12 @@ return {
                         }`}
                       >
                         <div className="flex items-center justify-between gap-2 mb-1">
-                          <div className="flex items-center gap-2 min-w-0">
-                            <MessageSquare className="w-3.5 h-3.5 shrink-0 text-zinc-500" strokeWidth={1.5} />
-                            <span className="text-[12px] font-bold text-white truncate max-w-[190px]">
-                              {stripEmojis(item.title) || "WhatsApp conversation"}
-                            </span>
-                          </div>
+                        <div className="flex items-center gap-2 min-w-0">
+                          <MessageSquare className="w-3.5 h-3.5 shrink-0 text-zinc-500" strokeWidth={1.5} />
+                          <span className="text-[12px] font-bold text-white truncate max-w-[190px]">
+                              {stripDecorativeEmoji(item.title) || "WhatsApp conversation"}
+                          </span>
+                        </div>
                           <span className="text-[10px] font-bold text-white tabular-nums">{item.count}</span>
                         </div>
                         {item.latest.market_scope === "shared" && (
@@ -3465,7 +3466,7 @@ return {
                           </div>
                         )}
                         <div className="text-[10px] text-zinc-500 leading-relaxed truncate mb-1">
-                          {stripEmojis(resolveMessageSenderName(item.latest) || item.subtitle)}
+                          {stripDecorativeEmoji(resolveMessageSenderName(item.latest) || item.subtitle)}
                         </div>
                         <div className="text-[10px] text-zinc-400 leading-relaxed line-clamp-2">
                           {stripEmojis(item.latest.message) || "No text content"}
@@ -3583,7 +3584,7 @@ return {
                   <BrokerAvatar phone={resolvedBrokerPhone} size="md" />
                   <div className="min-w-0">
                     <h3 className="text-sm font-bold text-white truncate max-w-[340px]">
-                      {selectedBroker.canonical_name || selectedBroker.name || selectedMsgDetails?.parsed?.broker_name || selectedMsgDetails?.parsed?.profile_name || "Broker"}
+                      {stripDecorativeEmoji(selectedBroker.canonical_name || selectedBroker.name || selectedMsgDetails?.parsed?.broker_name || selectedMsgDetails?.parsed?.profile_name || "Broker")}
                     </h3>
                     <div className="text-[10px] text-zinc-500 flex items-center gap-2 mt-0.5 flex-wrap">
                       <span className="truncate">{displayPhoneString(resolvedBrokerPhone) || "Number not resolved"}</span>
@@ -3684,7 +3685,7 @@ return {
                               selectedBroker.latest_title ||
                               ""
                             }
-                            sender={selectedMsgDetails?.raw?.sender || selectedBroker.canonical_name || selectedBroker.name || ""}
+                            sender={selectedMsgDetails?.raw?.sender || stripDecorativeEmoji(selectedBroker.canonical_name || selectedBroker.name || "")}
                             senderPhone={resolvedBrokerPhone || selectedMsgDetails?.raw?.broker_phone || ""}
                             truncate
                             maxLines={6}

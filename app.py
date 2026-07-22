@@ -11547,6 +11547,28 @@ async def search_raw_messages(q: str = "", limit: int = 20, offset: int = 0, use
 
     q = q.strip()
 
+    def _resolve_group_name(group_name: str) -> str:
+        if group_name and "@g.us" in group_name:
+            resolved = storage.db.execute(
+                "SELECT group_name FROM source_sync_jobs WHERE group_id = ? LIMIT 1",
+                (group_name,)
+            ).fetchone()
+            if resolved:
+                return resolved[0]
+        return group_name
+
+    def _row_to_result(row: Any, snippet: str | None = None) -> dict:
+        return {
+            "id": row[0],
+            "group_name": _resolve_group_name(row[1]),
+            "sender": row[2],
+            "sender_phone": row[3],
+            "message": row[4],
+            "timestamp": row[5],
+            "source": row[6],
+            "snippet": snippet if snippet is not None else (row[4][:200] if row[4] else ""),
+        }
+
     # FTS5 search
     try:
         rows = storage.db.execute("""
@@ -11566,71 +11588,60 @@ async def search_raw_messages(q: str = "", limit: int = 20, offset: int = 0, use
         """, (q,)).fetchone()
         total = count_row[0] if count_row else 0
 
-        results = []
-        for r in rows:
-            # Resolve group name
-            group_name = r[1]
-            if group_name and '@g.us' in group_name:
-                resolved = storage.db.execute(
-                    "SELECT group_name FROM source_sync_jobs WHERE group_id = ? LIMIT 1",
-                    (group_name,)
-                ).fetchone()
-                if resolved:
-                    group_name = resolved[0]
-
-            results.append({
-                "id": r[0],
-                "group_name": group_name,
-                "sender": r[2],
-                "sender_phone": r[3],
-                "message": r[4],
-                "timestamp": r[5],
-                "source": r[6],
-                "snippet": r[7],
-            })
-
-        return {"results": results, "count": total, "query": q}
+        return {"results": [_row_to_result(r, r[7]) for r in rows], "count": total, "query": q}
 
     except Exception as e:
         # Fallback to LIKE search if FTS fails
-        like_q = f"%{q}%"
-        rows = storage.db.execute("""
-            SELECT id, group_name, sender, sender_phone, message, timestamp, source
-            FROM raw_messages
-            WHERE message LIKE ? OR group_name LIKE ? OR sender LIKE ?
-            ORDER BY id DESC
-            LIMIT ? OFFSET ?
-        """, (like_q, like_q, like_q, limit, offset)).fetchall()
+        try:
+            like_q = f"%{q}%"
+            rows = storage.db.execute("""
+                SELECT id, group_name, sender, sender_phone, message, timestamp, source
+                FROM raw_messages
+                WHERE message LIKE ? OR group_name LIKE ? OR sender LIKE ?
+                ORDER BY id DESC
+                LIMIT ? OFFSET ?
+            """, (like_q, like_q, like_q, limit, offset)).fetchall()
 
-        count_row = storage.db.execute("""
-            SELECT COUNT(*) FROM raw_messages
-            WHERE message LIKE ? OR group_name LIKE ? OR sender LIKE ?
-        """, (like_q, like_q, like_q)).fetchone()
-        total = count_row[0] if count_row else 0
+            count_row = storage.db.execute("""
+                SELECT COUNT(*) FROM raw_messages
+                WHERE message LIKE ? OR group_name LIKE ? OR sender LIKE ?
+            """, (like_q, like_q, like_q)).fetchone()
+            total = count_row[0] if count_row else 0
+            return {"results": [_row_to_result(r) for r in rows], "count": total, "query": q}
+        except Exception as like_error:
+            logging.warning("[api/search/raw] FTS and LIKE search failed: %s / %s", e, like_error)
 
-        results = []
-        for r in rows:
-            group_name = r[1]
-            if group_name and '@g.us' in group_name:
-                resolved = storage.db.execute(
-                    "SELECT group_name FROM source_sync_jobs WHERE group_id = ? LIMIT 1",
-                    (group_name,)
-                ).fetchone()
-                if resolved:
-                    group_name = resolved[0]
-
-            results.append({
-                "id": r[0],
-                "group_name": group_name,
-                "sender": r[2],
-                "sender_phone": r[3],
-                "message": r[4],
-                "timestamp": r[5],
-                "source": r[6],
-                "snippet": r[4][:200] if r[4] else "",
-            })
-
-        return {"results": results, "count": total, "query": q}
+        try:
+            rows = storage.get_raw_messages(limit=max(limit + offset, 1000), offset=0)
+            needle = q.casefold()
+            filtered = []
+            for row in rows:
+                haystack = " ".join(
+                    str(part)
+                    for part in (
+                        getattr(row, "message", "") or "",
+                        getattr(row, "group_name", "") or "",
+                        getattr(row, "sender", "") or "",
+                        getattr(row, "sender_phone", "") or "",
+                        getattr(row, "source", "") or "",
+                    )
+                ).casefold()
+                if needle in haystack:
+                    filtered.append({
+                        "id": getattr(row, "id", None),
+                        "group_name": _resolve_group_name(getattr(row, "group_name", "") or ""),
+                        "sender": getattr(row, "sender", "") or "",
+                        "sender_phone": getattr(row, "sender_phone", "") or "",
+                        "message": getattr(row, "message", "") or "",
+                        "timestamp": getattr(row, "timestamp", "") or "",
+                        "source": getattr(row, "source", "") or "",
+                        "snippet": (getattr(row, "message", "") or "")[:200],
+                    })
+            total = len(filtered)
+            return {"results": filtered[offset:offset + limit], "count": total, "query": q, "fallback": "python_scan"}
+        except Exception as scan_error:
+            logging.warning("[api/search/raw] python fallback failed: %s", scan_error)
+            return {"results": [], "count": 0, "query": q, "fallback": "empty"}
 
 
 @app.get("/api/search/raw/sender")

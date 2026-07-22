@@ -5,7 +5,7 @@ export const dynamic = 'force-dynamic';
 import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import * as api from "@/lib/api";
-import { displayGroupName } from "@/lib/whatsapp-display";
+import { displayGroupName, stripDecorativeEmoji } from "@/lib/whatsapp-display";
 
 function MarketsContent() {
   const router = useRouter();
@@ -80,7 +80,7 @@ function MarketsContent() {
               >
                 <span className="text-[10px] text-zinc-500 w-5 shrink-0">{i + 1}</span>
                 <div className="flex-1 min-w-0">
-                  <div className="text-xs font-medium text-white truncate">{h.micro_market}</div>
+                  <div className="text-xs font-medium text-white truncate">{stripDecorativeEmoji(h.micro_market)}</div>
                   <div className="flex gap-3 text-[10px] text-zinc-500">
                     <span>{h.c} messages</span>
                   </div>
@@ -112,9 +112,9 @@ function MarketsContent() {
           {marketDetail && !loading && (
             <div className="space-y-4">
               <div className="bg-zinc-900 border border-white/10 rounded-2xl p-5">
-                <div className="flex items-center justify-between mb-3">
-                  <div>
-                    <div className="text-sm font-bold text-white">{marketDetail.name}</div>
+                  <div className="flex items-center justify-between mb-3">
+                    <div>
+                    <div className="text-sm font-bold text-white">{stripDecorativeEmoji(marketDetail.name)}</div>
                     <div className="text-[10px] text-zinc-500">Activity from broker groups</div>
                   </div>
                   <div className="flex gap-3">
@@ -151,7 +151,7 @@ function MarketsContent() {
                           onClick={() => router.push(`/buildings/${encodeURIComponent(b.building_name)}`)}
                           className="w-full flex items-center justify-between px-2 py-1.5 rounded-lg hover:bg-white/5 text-left transition-colors cursor-pointer"
                         >
-                          <span className="text-xs text-white truncate">{b.building_name}</span>
+                          <span className="text-xs text-white truncate">{stripDecorativeEmoji(b.building_name)}</span>
                           <span className="text-[10px] text-zinc-500">{b.observation_count} msgs</span>
                         </button>
                       ))}
@@ -170,7 +170,7 @@ function MarketsContent() {
                           onClick={() => router.push(`/brokers/${b.id}`)}
                           className="w-full flex items-center justify-between px-2 py-1.5 rounded-lg hover:bg-white/5 text-left transition-colors cursor-pointer"
                         >
-                          <span className="text-xs text-white">{b.name}</span>
+                          <span className="text-xs text-white">{stripDecorativeEmoji(b.name)}</span>
                           <span className="text-[10px] text-zinc-500">{b.listing_count} listings / {b.requirement_count} requirements</span>
                         </button>
                       ))}
@@ -185,7 +185,7 @@ function MarketsContent() {
                     <div className="flex gap-1 flex-wrap">
                       {marketDetail.groups.map((g: any, i: number) => (
                         <span key={i} className="text-[10px] text-zinc-400 bg-white/5 px-2 py-0.5 rounded">
-                          {displayGroupName(g.group_name)?.slice(0, 25)}
+                          {stripDecorativeEmoji(displayGroupName(g.group_name)?.slice(0, 25) || "")}
                         </span>
                       ))}
                     </div>
