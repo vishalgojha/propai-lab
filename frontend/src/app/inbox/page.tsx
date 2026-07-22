@@ -2122,7 +2122,9 @@ return {
     const byGroup = new Map<string, { rawGroupName: string; messages: typeof filteredMessages; latest: typeof filteredMessages[0] }>();
     for (const m of filteredMessages) {
       if (!isLikelyGroupConversation(m)) continue;
-      const gKey = m.group_name || m.conversation_key || m.chat_id || "unknown";
+      // group_name is only WhatsApp's editable human label.  Join the raw
+      // mirror to the directory with the immutable remote JID instead.
+      const gKey = m.chat_id || m.conversation_key || m.group_name || "unknown";
       const existing = byGroup.get(gKey);
       if (existing) {
         const ts = messageDateValue(m)?.getTime() || 0;

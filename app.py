@@ -7823,7 +7823,7 @@ async def get_chat_session_messages(session_id: str, user: dict = Depends(requir
     session = storage.get_chat_session(session_id, tenant_id=tenant_id)
     if not session:
         raise HTTPException(404, "Session not found")
-    return storage.get_chat_messages(session_id, tenant_id=tenant_id)
+    return storage.get_ai_chat_messages(session_id, tenant_id=tenant_id)
 
 
 @app.delete("/api/ai/chat/sessions/{session_id}")
@@ -7862,7 +7862,7 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
         if not req.session_id or not text:
             return
         try:
-            msgs = storage.get_chat_messages(req.session_id, limit=3, tenant_id=tenant_id)
+            msgs = storage.get_ai_chat_messages(req.session_id, limit=3, tenant_id=tenant_id)
             user_msgs = [m for m in msgs if m.get("role") == "user"]
             if len(user_msgs) <= 1:
                 title = text[:80].strip()

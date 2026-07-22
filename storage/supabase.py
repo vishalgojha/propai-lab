@@ -502,6 +502,11 @@ class _QueryBuilder:
         self._filters.append((column, "ilike", value))
         return self
 
+    def like(self, column: str, value: Any):
+        """Add a PostgREST case-sensitive LIKE filter."""
+        self._filters.append((column, "like", value))
+        return self
+
     def in_(self, column: str, values: list[Any]):
         self._filters.append((column, "in", values))
         return self
@@ -1438,7 +1443,10 @@ class SupabaseStorage(Storage):
     def get_chats(self, limit: int = 500, offset: int = 0, tenant_id: str | None = None) -> list[dict]:
         query = self.client.table("raw_messages").select(
             "id,group_name,sender,sender_jid,sender_phone,message,message_type,"
-            "timestamp,source,message_uid,created_at,tenant_id,attachments,reply_context"
+            # The WhatsApp conversation ID lives in the event key.  Keeping
+            # raw_payload here is essential: a display name such as "All
+            # Bombay" is not a durable chat identity, while remoteJid is.
+            "timestamp,source,message_uid,raw_payload,created_at,tenant_id,attachments,reply_context"
         )\
             .order("timestamp", desc=True)\
             .limit(max(2000, limit + offset))
@@ -1503,7 +1511,14 @@ class SupabaseStorage(Storage):
             except Exception:
                 return
 
-        add_query("message_uid", f"{chat_id}:%", "like")
+        # Current Whatsmeow events use
+        #   <broker_id>:<remoteJid>:<message_id>
+        # so a chat ID is in the middle of the UID, never at its beginning.
+        # This covers existing history as well as live messages without
+        # depending on a mutable WhatsApp group name.
+        # PostgREST's `like` operator uses `*` (not SQL's `%`) as its
+        # URL-level wildcard.
+        add_query("message_uid", f"*:{chat_id}:*", "like")
         for name in names:
             add_query("group_name", name)
         add_query("sender_jid", chat_id)
@@ -2997,7 +3012,14 @@ class SupabaseStorage(Storage):
         )
         return res.data[0] if res.data else None
 
-    def get_chat_messages(self, session_id: str, limit: int = 200, tenant_id: str | None = None) -> list[dict]:
+    def get_ai_chat_messages(self, session_id: str, limit: int = 200, tenant_id: str | None = None) -> list[dict]:
+        """Return persisted AI-chat messages.
+
+        This must not share a name with get_chat_messages(), which is the
+        WhatsApp raw-message timeline used by /api/chats/{jid}/messages.
+        Python keeps only the later method definition; the old collision made
+        every WhatsApp group JID query ai_chat_messages instead.
+        """
         tid = tenant_id or self._tenant_id
         q = (
             self.client.table("ai_chat_messages")
