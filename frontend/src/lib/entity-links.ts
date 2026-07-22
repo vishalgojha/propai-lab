@@ -35,6 +35,8 @@ export function entityTooltip(entity: Pick<EntityLinkLike, "type" | "exists">) {
     return "Click to create profile";
   }
   switch (entity.type) {
+    case "phone":
+      return "Click to view broker profile";
     case "locality":
       return "Click to explore market";
     case "building":
