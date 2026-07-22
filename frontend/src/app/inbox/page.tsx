@@ -1070,6 +1070,16 @@ function InboxPageInner({ defaultView }: InboxPageInnerProps) {
       return;
     }
 
+    // On the WhatsApp mirror, search is a local conversation-directory filter.
+    // It must not call the Market Inbox raw-search endpoint or be blocked by
+    // extraction/database health.
+    if (window.location.pathname === "/whatsapp-groups") {
+      setSearchResults([]);
+      setSearchError("");
+      setSearchLoading(false);
+      return;
+    }
+
     setSearchLoading(true);
     setSearchError("");
     const timer = window.setTimeout(() => {
@@ -2147,6 +2157,8 @@ return {
         const captured = capturedByJid.get(jid);
         const groupName = String(group.display_name || group.name || captured?.title || "WhatsApp Group").trim();
         const conversationType = group.conversation_type === "broadcast" ? "broadcast" : "group";
+        const historyCount = Number(group.message_count || group.records_found || 0);
+        const hasHistory = historyCount > 0;
         const latest = captured?.latest || ({
           id: 0,
           chat_id: jid,
@@ -2156,8 +2168,8 @@ return {
           conversation_type: "group",
           conversation_name: groupName,
           group_name: jid,
-          message: "No captured messages yet.",
-          message_count: Number(group.message_count || group.records_found || 0),
+          message: hasHistory ? "WhatsApp history synced; message evidence is loading." : "No captured messages yet.",
+          message_count: historyCount,
           timestamp: group.last_message_at || "",
         } as api.InboxThread);
         return {
@@ -2165,7 +2177,7 @@ return {
           title: groupName,
           subtitle: captured
             ? (conversationType === "broadcast" ? "WhatsApp broadcast" : "WhatsApp group")
-            : `${conversationType === "broadcast" ? "WhatsApp broadcast" : "WhatsApp group"} · awaiting messages`,
+            : `${conversationType === "broadcast" ? "WhatsApp broadcast" : "WhatsApp group"} · ${hasHistory ? "history synced" : "awaiting messages"}`,
           latest: {
             ...latest,
             chat_id: jid,
@@ -2175,10 +2187,11 @@ return {
             conversation_type: "group",
             conversation_name: groupName,
           },
-          count: captured?.count || Number(group.message_count || group.records_found || 0),
+          count: captured?.count || historyCount,
           type: "group" as const,
         };
       })
+      .filter((item) => !query || [item.title, item.subtitle, item.key].join(" ").toLowerCase().includes(query))
       .sort((a, b) => {
         const newest = (messageDateValue(b.latest)?.getTime() || 0) - (messageDateValue(a.latest)?.getTime() || 0);
         return newest || a.title.localeCompare(b.title);
@@ -3255,7 +3268,7 @@ return {
                   )}
                 </div>
               </div>
-            ) : hasSearchQuery ? (
+            ) : hasSearchQuery && !isGroupsView ? (
               searchLoading ? (
                 <div className="p-8 text-center text-xs text-zinc-500">Searching messages...</div>
               ) : searchError ? (
