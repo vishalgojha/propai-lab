@@ -3923,10 +3923,8 @@ async def dashboard_whatsapp_status(
     phones = await asyncio.to_thread(storage.list_org_whatsapp_connections, org_id)
     details: dict = {}
     if phones:
-        statuses: list[dict] = []
-        _, resp = await _first_ingestor_response("GET", "/list", timeout=2)
-        if resp is not None and resp.status_code == 200:
-            statuses.extend(resp.json())
+        statuses_map, ingestor_reachable, ingestor_error = await _merged_ingestor_list(timeout=2)
+        statuses: list[dict] = list(statuses_map.values())
         now = time.time()
         statuses.extend(
             status
@@ -3934,6 +3932,10 @@ async def dashboard_whatsapp_status(
             if now - seen_at <= 45
         )
         details = _select_workspace_whatsapp_status(phones, statuses)
+        if not details and ingestor_reachable:
+            details = {"connection_state": "stopped", "connected": False}
+        elif not details and ingestor_error:
+            details = {"connection_state": "unavailable", "connected": False}
 
     phone = details.get("phone_number") or ""
     return {
@@ -4124,13 +4126,8 @@ async def get_ingestor_capabilities(
     phones = await asyncio.to_thread(storage.list_org_whatsapp_connections, org_id)
     any_phone = bool(phones)
 
-    statuses: list[dict] = []
-    _, list_resp = await _first_ingestor_response("GET", "/list", timeout=2)
-    if list_resp is not None and list_resp.status_code == 200:
-        try:
-            statuses.extend(list_resp.json() or [])
-        except Exception:
-            statuses = []
+    statuses_map, _, _ = await _merged_ingestor_list(timeout=2)
+    statuses: list[dict] = list(statuses_map.values())
     now = time.time()
     statuses.extend(
         status for status, seen_at in _broker_live_statuses.values()
@@ -4184,10 +4181,8 @@ async def get_ingestor_status(user: dict = Depends(require_user), tenant_id: str
     """Return combined WhatsApp ingestor status for the WhatsWow panel."""
     org_id = _resolve_active_organization_id(user, tenant_id)
     phones = await asyncio.to_thread(storage.list_org_whatsapp_connections, org_id)
-    statuses: list[dict] = []
-    _, resp = await _first_ingestor_response("GET", "/list", timeout=2)
-    if resp is not None and resp.status_code == 200:
-        statuses.extend(resp.json())
+    statuses_map, _, _ = await _merged_ingestor_list(timeout=2)
+    statuses: list[dict] = list(statuses_map.values())
     now = time.time()
     statuses.extend(
         status for status, seen_at in _broker_live_statuses.values()
@@ -9537,7 +9532,7 @@ async def business_api_audit(limit: int = 30, user: dict = Depends(require_user)
 @app.get("/api/sync/connection")
 async def sync_connection(user: dict = Depends(require_user)):
     """Check WhatsApp connection status."""
-    details = _connection_details()
+    details = await _live_connection_details()
     jobs = storage.get_sync_jobs(limit=500, source="whatsapp") if storage else []
     last_finished = max((j.finished_at for j in jobs if j.finished_at), default=None)
     discovered_groups = len(jobs)
@@ -9573,11 +9568,11 @@ async def sync_connection(user: dict = Depends(require_user)):
 @app.get("/api/sync/qr")
 async def sync_qr(user: dict = Depends(require_user)):
     """Get QR code for WhatsApp login."""
-    status = _status_file()
+    status = await _live_connection_details()
     qr = status.get("qr")
     if qr:
         return {"qr": qr, "available": True}
-    details = _connection_details()
+    details = status
     if details.get("connected"):
         return {
             "qr": None,
@@ -9609,6 +9604,54 @@ def _ingestor_auth_headers() -> dict[str, str]:
         or os.getenv("SUPABASE_SERVICE_KEY", "").strip()
     )
     return {"X-PropAI-Internal-Token": token} if token else {}
+
+
+def _normalize_ingestor_status(status: dict | None) -> dict:
+    if not isinstance(status, dict):
+        return {}
+    normalized = dict(status)
+    broker_id = str(normalized.get("broker_id") or "").strip()
+    if broker_id:
+        normalized["broker_id"] = broker_id
+    return normalized
+
+
+def _status_preference_score(status: dict) -> int:
+    score = 0
+    if status.get("connected"):
+        score += 100
+    state = str(status.get("connection_state") or "").strip().lower()
+    if state in {"open", "connected"}:
+        score += 50
+    elif state not in {"", "unknown", "unavailable"}:
+        score += 10
+    if status.get("qr"):
+        score += 25
+    if status.get("phone_number"):
+        score += 10
+    if status.get("display_name"):
+        score += 5
+    if status.get("connected_since"):
+        score += 5
+    return score
+
+
+def _looks_like_useful_health_status(status: dict, broker_id: str) -> bool:
+    if not isinstance(status, dict):
+        return False
+    payload_broker_id = str(status.get("broker_id") or "").strip()
+    if broker_id and payload_broker_id and payload_broker_id != broker_id:
+        return False
+    state = str(status.get("connection_state") or "").strip().lower()
+    if state and state not in {"unknown", "unavailable"}:
+        return True
+    return bool(
+        status.get("connected")
+        or status.get("qr")
+        or status.get("phone_number")
+        or status.get("display_name")
+        or status.get("connected_since")
+    )
 
 
 async def _first_ingestor_response(
@@ -9646,6 +9689,105 @@ async def _first_ingestor_response(
                     task.cancel()
             await asyncio.gather(*tasks, return_exceptions=True)
     return first_failure
+
+
+async def _all_ingestor_responses(
+    method: str,
+    path: str,
+    *,
+    timeout: float = 10,
+    **kwargs,
+) -> list[tuple[str, httpx.Response]]:
+    urls = _ingestor_urls()
+    if not urls:
+        return []
+    request_headers = {**_ingestor_auth_headers(), **(kwargs.pop("headers", {}) or {})}
+    responses: list[tuple[str, httpx.Response]] = []
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        async def request_one(base_url: str) -> tuple[str, httpx.Response | None]:
+            try:
+                return base_url, await client.request(
+                    method, f"{base_url}{path}", headers=request_headers, **kwargs
+                )
+            except httpx.RequestError:
+                return base_url, None
+
+        tasks = [asyncio.create_task(request_one(base_url)) for base_url in urls]
+        try:
+            for completed in asyncio.as_completed(tasks):
+                base_url, response = await completed
+                if response is not None:
+                    responses.append((base_url, response))
+        finally:
+            for task in tasks:
+                if not task.done():
+                    task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+    return responses
+
+
+async def _best_ingestor_health_status(broker_id: str, *, timeout: float = 2) -> dict:
+    fallback: dict = {}
+    for _, response in await _all_ingestor_responses(
+        "GET", "/health", timeout=timeout, params={"broker_id": broker_id}
+    ):
+        if response.status_code >= 300:
+            continue
+        try:
+            payload = _normalize_ingestor_status(response.json())
+        except Exception:
+            continue
+        if payload and _looks_like_useful_health_status(payload, broker_id):
+            return payload
+        if not fallback and payload:
+            fallback = payload
+    return fallback
+
+
+async def _best_ingestor_status_for_broker(broker_id: str, *, timeout: float = 2) -> dict:
+    broker_id = str(broker_id or "").strip()
+    if not broker_id:
+        return {}
+    merged, _, _ = await _merged_ingestor_list(timeout=timeout)
+    status = merged.get(broker_id, {})
+    if status and _looks_like_useful_health_status(status, broker_id):
+        return status
+    status = await _best_ingestor_health_status(broker_id, timeout=timeout)
+    if status and _looks_like_useful_health_status(status, broker_id):
+        return status
+    cached_status, seen_at = _broker_live_statuses.get(broker_id, ({}, 0.0))
+    if cached_status and time.time() - seen_at <= 45:
+        return cached_status
+    return status or {}
+
+
+async def _merged_ingestor_list(timeout: float = 2) -> tuple[dict[str, dict], bool, str]:
+    merged: dict[str, dict] = {}
+    ingestor_reachable = False
+    ingestor_error = ""
+    for _, response in await _all_ingestor_responses("GET", "/list", timeout=timeout):
+        if response.status_code >= 300:
+            if not ingestor_error:
+                ingestor_error = _ingestor_failure_message(response)
+            continue
+        ingestor_reachable = True
+        try:
+            statuses = response.json()
+        except ValueError:
+            if not ingestor_error:
+                ingestor_error = "WhatsApp service returned an invalid status response."
+            continue
+        if not isinstance(statuses, list):
+            continue
+        for raw_status in statuses:
+            status = _normalize_ingestor_status(raw_status)
+            broker_id = str(status.get("broker_id") or "").strip()
+            if not broker_id:
+                continue
+            current = merged.get(broker_id)
+            if current is None or _status_preference_score(status) >= _status_preference_score(current):
+                merged[broker_id] = status
+    return merged, ingestor_reachable, ingestor_error
 
 
 def _ingestor_failure_message(response: httpx.Response | None) -> str:
@@ -9753,11 +9895,11 @@ async def sync_status_update(request: Request):
 @app.get("/api/sync/events")
 async def sync_events():
     """SSE endpoint that streams real-time connection status changes."""
-    def current_sync_status() -> dict:
+    async def current_sync_status() -> dict:
         raw = _memory_status if _memory_status else _status_file()
         if _status_has_live_signal(raw):
             return raw
-        details = _connection_details()
+        details = await _live_connection_details()
         return {
             **raw,
             "connected": details.get("connected", False),
@@ -9770,12 +9912,12 @@ async def sync_events():
 
     async def event_stream():
         seen: dict = {}
-        initial = current_sync_status()
+        initial = await current_sync_status()
         yield f"event: status\ndata: {json.dumps(initial)}\n\n"
         while True:
             try:
                 await asyncio.sleep(1.5)
-                current = current_sync_status()
+                current = await current_sync_status()
                 prev = seen
                 seen = dict(current)
                 cs = current.get("connection_state", "")
@@ -9826,7 +9968,7 @@ async def sync_logout(user: dict = Depends(require_user)):
 @app.get("/api/sync/connection-state")
 async def sync_connection_state(user: dict = Depends(require_user)):
     """Get current connection state (open/connecting/closed)."""
-    details = await asyncio.to_thread(_connection_details)
+    details = await _live_connection_details()
     return {"state": details["connection_state"], "connected": details["connected"]}
 
 
@@ -9871,6 +10013,25 @@ def _connection_details() -> dict:
         "messages_captured": messages_captured,
         "status_stale": False,
     }
+
+
+async def _live_connection_details(timeout: float = 2) -> dict:
+    details = _connection_details()
+    merged, ingestor_reachable, ingestor_error = await _merged_ingestor_list(timeout=timeout)
+    if not merged:
+        if not ingestor_reachable and ingestor_error:
+            details["live_status_error"] = ingestor_error
+        return details
+    best = max(merged.values(), key=_status_preference_score)
+    broker_id = str(best.get("broker_id") or "").strip()
+    if not best or not _looks_like_useful_health_status(best, broker_id):
+        return details
+    details.update(_normalize_connection_snapshot(best))
+    details["connected"] = bool(best.get("connected"))
+    details["connection_state"] = str(best.get("connection_state") or details.get("connection_state") or "unknown").lower()
+    details["status_stale"] = False
+    details["live_status_error"] = ""
+    return details
 
 
 def _historical_sync_state(jobs) -> str:
@@ -14750,22 +14911,7 @@ async def list_phones(
     ingestor_reachable = False
     ingestor_error = ""
     if include_live:
-        _, resp = await _first_ingestor_response("GET", "/list", timeout=2)
-        if resp is not None and resp.status_code == 200:
-            ingestor_reachable = True
-            try:
-                statuses = resp.json()
-            except ValueError:
-                statuses = []
-                ingestor_reachable = False
-                ingestor_error = "WhatsApp service returned an invalid status response."
-            for s in statuses if isinstance(statuses, list) else []:
-                if isinstance(s, dict):
-                    ingestor_statuses[s.get("broker_id", "")] = s
-        elif resp is not None:
-            ingestor_error = _ingestor_failure_message(resp)
-        else:
-            ingestor_error = _ingestor_failure_message(None)
+        ingestor_statuses, ingestor_reachable, ingestor_error = await _merged_ingestor_list(timeout=2)
         now = time.time()
         for broker_id, (cached_status, seen_at) in _broker_live_statuses.items():
             if broker_id not in ingestor_statuses and now - seen_at <= 45:
@@ -14853,14 +14999,7 @@ async def get_phone(
     org_id = _resolve_active_organization_id(user, tenant_id)
     phone = await _scoped_phone(phone_id, org_id)
     broker_id = phone.get("broker_id", "")
-    status = {}
-    _, resp = await _first_ingestor_response("GET", "/health", timeout=2, params={"broker_id": broker_id})
-    if resp is not None and resp.status_code == 200:
-        status = resp.json()
-    elif broker_id in _broker_live_statuses:
-        cached_status, seen_at = _broker_live_statuses[broker_id]
-        if time.time() - seen_at <= 45:
-            status = cached_status
+    status = await _best_ingestor_status_for_broker(broker_id, timeout=2)
     has_live_status = bool(status)
     return {
         **phone,
@@ -14983,11 +15122,7 @@ async def _admin_whatsapp_session(phone: dict, live_status: dict | None = None) 
     broker_id = str(phone.get("broker_id") or "").strip()
     status: dict = live_status or {}
     if broker_id and live_status is None:
-        _, response = await _first_ingestor_response(
-            "GET", "/health", timeout=2, params={"broker_id": broker_id}
-        )
-        if response is not None and response.status_code == 200:
-            status = response.json()
+        status = await _best_ingestor_status_for_broker(broker_id, timeout=2)
     return {
         **phone,
         "connected": bool(status.get("connected")),
@@ -15007,13 +15142,7 @@ async def admin_list_whatsapp_sessions(user: dict = Depends(require_user)):
     if not await asyncio.to_thread(storage.is_super_admin, user["id"]):
         raise HTTPException(403, "Super admin access required")
     phones = await asyncio.to_thread(storage.list_all_whatsapp_connections)
-    statuses: dict[str, dict] = {}
-    _, response = await _first_ingestor_response("GET", "/list", timeout=3)
-    if response is not None and response.status_code == 200:
-        statuses = {
-            str(row.get("broker_id") or ""): row
-            for row in response.json() if row.get("broker_id")
-        }
+    statuses, _, _ = await _merged_ingestor_list(timeout=3)
     sessions = [
         await _admin_whatsapp_session(
             phone, statuses.get(str(phone.get("broker_id") or ""), {})
