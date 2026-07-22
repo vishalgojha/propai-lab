@@ -1486,21 +1486,23 @@ return {
   // 1. Initial Load of Feed & Suggestions
   const loadFeed = useCallback(async (append = false, requestedOffset = offset) => {
     setLoadingLeft(true);
+    // The raw WhatsApp mirror must never depend on the Market Inbox feed.
+    // Start this independently: a broker-feed timeout or parsing failure must
+    // not make groups/broadcasts vanish from the user-facing WhatsApp view.
+    const directoryRequest = !append
+      ? api.getWhatsAppConversations()
+          .then((directory) => setGroups(directory))
+          .catch((reason) => {
+            console.error("Failed to load WhatsApp conversation directory:", reason);
+          })
+      : null;
     try {
       const threadMsgs = await api.getInboxThreads(PAGE_SIZE, requestedOffset);
       setMessages((prev) => (append ? [...prev, ...threadMsgs] : threadMsgs));
       if (!append) {
-        const [groupResult, suggestionResult] = await Promise.allSettled([
-          api.getWhatsAppConversations(),
-          api.getSuggestions("pending", 100),
-        ]);
-        if (groupResult.status === "fulfilled") {
-          setGroups(groupResult.value);
-        } else {
-          console.error("Failed to load inbox groups:", groupResult.reason);
-        }
+        const suggestionResult = await Promise.allSettled([api.getSuggestions("pending", 100)]);
         if (suggestionResult.status === "fulfilled") {
-          setAllSuggestions(suggestionResult.value);
+          setAllSuggestions(suggestionResult.value[0]);
         } else {
           console.error("Failed to load inbox suggestions:", suggestionResult.reason);
         }
@@ -1512,13 +1514,13 @@ return {
         const fallbackThreads = rawMsgs.map(toInboxThread);
         setMessages((prev) => (append ? [...prev, ...fallbackThreads] : fallbackThreads));
         if (!append) {
-          setGroups([]);
           setAllSuggestions([]);
         }
       } catch (fallbackError) {
         console.error("Failed to load raw inbox fallback:", fallbackError);
       }
     } finally {
+      await directoryRequest;
       setLoadingLeft(false);
     }
   }, [marketAccess, offset]);
