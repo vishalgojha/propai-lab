@@ -2049,7 +2049,7 @@ def execute_tool(name, args, sources, db_path=None, tenant_id: str | None = None
 
             # Try FTS5 first
             try:
-                where_clauses = ["kr.is_valid = 1"]
+                where_clauses = ["COALESCE(kr.is_valid, true) = true"]
                 params = [query]
 
                 if content_type:
@@ -2085,7 +2085,7 @@ def execute_tool(name, args, sources, db_path=None, tenant_id: str | None = None
 
             # Fallback to LIKE
             like_q = f"%{query}%"
-            where_clauses = ["is_valid = 1", "raw_content LIKE ?"]
+            where_clauses = ["COALESCE(is_valid, true) = true", "raw_content LIKE ?"]
             params = [like_q]
 
             if content_type:

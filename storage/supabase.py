@@ -1920,6 +1920,184 @@ class SupabaseStorage(Storage):
         if records:
             self.client.table("knowledge_tags").upsert(records, on_conflict="record_id,tag_type,tag_value").execute()
 
+    def _knowledge_filters_sql(
+        self,
+        *,
+        content_type: str | None = None,
+        q: str | None = None,
+        table_alias: str = "",
+    ) -> tuple[str, list[Any]]:
+        prefix = f"{table_alias}." if table_alias else ""
+        clauses = [
+            f"COALESCE({prefix}is_valid, true) = true",
+            f"COALESCE({prefix}conversation_id, '') NOT LIKE '%@newsletter'",
+            f"COALESCE({prefix}conversation_name, '') NOT LIKE '%@newsletter'",
+            f"COALESCE({prefix}sender_jid, '') NOT LIKE '%@newsletter'",
+            f"COALESCE({prefix}conversation_id, '') NOT IN ('status@broadcast', 'broadcast')",
+            f"COALESCE({prefix}conversation_id, '') NOT LIKE '%@broadcast'",
+        ]
+        params: list[Any] = []
+        if self._tenant_id:
+            clauses.append(f"{prefix}tenant_id = ?")
+            params.append(self._tenant_id)
+        if content_type and content_type != "all":
+            normalized_type = str(content_type).strip().lower()
+            if normalized_type == "unknown":
+                clauses.append(f"COALESCE(NULLIF(LOWER(COALESCE({prefix}content_type, '')), ''), 'unknown') = 'unknown'")
+            else:
+                clauses.append(f"COALESCE(NULLIF(LOWER(COALESCE({prefix}content_type, '')), ''), 'unknown') = ?")
+                params.append(normalized_type)
+        if q and q.strip():
+            pattern = f"%{q.strip()}%"
+            clauses.append(
+                "("
+                f"COALESCE({prefix}raw_content, '') ILIKE ? OR "
+                f"COALESCE({prefix}sender_name, '') ILIKE ? OR "
+                f"COALESCE({prefix}sender_phone, '') ILIKE ? OR "
+                f"COALESCE({prefix}conversation_name, '') ILIKE ? OR "
+                f"COALESCE({prefix}conversation_id, '') ILIKE ?"
+                ")"
+            )
+            params.extend([pattern] * 5)
+        return " AND ".join(clauses), params
+
+    def _knowledge_record_from_row(self, row: dict[str, Any], *, truncate: bool = False) -> dict:
+        raw_content = str(row.get("raw_content") or "")
+        metadata = row.get("metadata")
+        if isinstance(metadata, str) and metadata:
+            try:
+                metadata = json.loads(metadata)
+            except Exception:
+                pass
+        message_timestamp = row.get("message_timestamp") or row.get("created_at") or row.get("ingested_at")
+        record = {
+            "id": row.get("id"),
+            "source_type": row.get("source_type") or "",
+            "source_id": row.get("source_id"),
+            "raw_content": raw_content[:200] if truncate else raw_content,
+            "processed_content": row.get("processed_content"),
+            "sender_name": row.get("sender_name") or "",
+            "sender_phone": row.get("sender_phone") or "",
+            "sender_jid": row.get("sender_jid") or "",
+            "conversation_name": row.get("conversation_name") or "",
+            "conversation_id": row.get("conversation_id") or "",
+            "message_timestamp": message_timestamp,
+            "timestamp": message_timestamp,
+            "content_type": (row.get("content_type") or "unknown"),
+            "intent": row.get("intent") or "NONE",
+            "embedding_id": row.get("embedding_id"),
+            "metadata": metadata,
+            "confidence": float(row.get("confidence") or 0.0),
+            "is_valid": bool(row.get("is_valid", True)),
+            "created_at": row.get("created_at"),
+            "updated_at": row.get("updated_at"),
+        }
+        return record
+
+    def get_knowledge_record(self, record_id: int) -> dict | None:
+        if not record_id:
+            return None
+        where_sql, params = self._knowledge_filters_sql()
+        row = self.db.execute(
+            f"""
+            SELECT *
+            FROM knowledge_records
+            WHERE id = ? AND {where_sql}
+            LIMIT 1
+            """,
+            (record_id, *params),
+        ).fetchone()
+        if not row:
+            return None
+        return self._knowledge_record_from_row(dict(row), truncate=False)
+
+    def get_knowledge_records(
+        self,
+        limit: int = 100,
+        offset: int = 0,
+        q: str | None = None,
+        content_type: str | None = None,
+    ) -> list[dict]:
+        where_sql, params = self._knowledge_filters_sql(content_type=content_type, q=q)
+        rows = self.db.execute(
+            f"""
+            SELECT *
+            FROM knowledge_records
+            WHERE {where_sql}
+            ORDER BY COALESCE(message_timestamp, created_at, ingested_at) DESC, id DESC
+            LIMIT ? OFFSET ?
+            """,
+            (*params, int(limit), int(offset)),
+        ).fetchall()
+        return [self._knowledge_record_from_row(dict(row), truncate=True) for row in rows]
+
+    def search_knowledge_records(
+        self,
+        q: str,
+        limit: int = 20,
+        content_type: str | None = None,
+        offset: int = 0,
+    ) -> list[dict]:
+        return self.get_knowledge_records(limit=limit, offset=offset, q=q, content_type=content_type)
+
+    def get_knowledge_stats(self) -> dict:
+        where_sql, params = self._knowledge_filters_sql()
+        row = self.db.execute(
+            f"""
+            SELECT
+                COUNT(*) AS total_records,
+                COUNT(DISTINCT COALESCE(NULLIF(sender_phone, ''), NULLIF(sender_jid, ''), NULLIF(sender_name, ''))) AS unique_senders,
+                COUNT(DISTINCT COALESCE(NULLIF(conversation_id, ''), NULLIF(conversation_name, ''))) AS unique_conversations,
+                SUM(CASE WHEN COALESCE(NULLIF(LOWER(COALESCE(content_type, '')), ''), 'unknown') = 'listing' THEN 1 ELSE 0 END) AS listings,
+                SUM(CASE WHEN COALESCE(NULLIF(LOWER(COALESCE(content_type, '')), ''), 'unknown') = 'requirement' THEN 1 ELSE 0 END) AS requirements,
+                SUM(CASE WHEN COALESCE(NULLIF(LOWER(COALESCE(content_type, '')), ''), 'unknown') = 'unknown' THEN 1 ELSE 0 END) AS unclassified
+            FROM knowledge_records
+            WHERE {where_sql}
+            """,
+            params,
+        ).fetchone() or {}
+        return {
+            "total_records": int(row.get("total_records") or 0),
+            "unique_senders": int(row.get("unique_senders") or 0),
+            "unique_conversations": int(row.get("unique_conversations") or 0),
+            "listings": int(row.get("listings") or 0),
+            "requirements": int(row.get("requirements") or 0),
+            "unclassified": int(row.get("unclassified") or 0),
+        }
+
+    def get_embedding_stats(self) -> dict:
+        where_sql, params = self._knowledge_filters_sql(table_alias="kr")
+        row = self.db.execute(
+            f"""
+            SELECT
+                COUNT(*) AS total_embeddings,
+                COUNT(DISTINCT e.model) AS models,
+                COUNT(DISTINCT e.record_id) AS embedded_records
+            FROM embeddings e
+            JOIN knowledge_records kr ON kr.id = e.record_id
+            WHERE {where_sql}
+            """,
+            params,
+        ).fetchone() or {}
+        return {
+            "total_embeddings": int(row.get("total_embeddings") or 0),
+            "models": int(row.get("models") or 0),
+            "embedded_records": int(row.get("embedded_records") or 0),
+        }
+
+    def search_knowledge_with_embeddings(self, q: str, limit: int = 10) -> list[dict]:
+        try:
+            from knowledge.embedder import get_embedder
+
+            embedder = get_embedder(self.db)
+            results = embedder.search_similar(q, limit=limit)
+            if results:
+                return results
+        except Exception as exc:
+            import logging
+            logging.warning("semantic knowledge search fallback: %s", exc)
+        return self.search_knowledge_records(q, limit=limit)
+
     # ── Listings ─────────────────────────────────────────────────
 
     def _listing_from_parsed(

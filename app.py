@@ -12418,49 +12418,26 @@ async def get_trainer_localities(user: dict = Depends(require_user)):
 # ── Knowledge Records API ────────────────────────────────────────
 
 @app.get("/api/knowledge/records")
-async def get_knowledge_records(limit: int = 100, content_type: str | None = None, user: dict = Depends(require_user)):
+async def get_knowledge_records(
+    limit: int = 100,
+    offset: int = 0,
+    q: str | None = None,
+    content_type: str | None = None,
+    user: dict = Depends(require_user),
+):
     """Get knowledge records with optional filtering."""
-    source_filter = """
-        is_valid = 1
-        AND COALESCE(conversation_id, '') NOT LIKE '%@newsletter'
-        AND COALESCE(conversation_name, '') NOT LIKE '%@newsletter'
-        AND COALESCE(sender_jid, '') NOT LIKE '%@newsletter'
-        AND COALESCE(conversation_id, '') NOT IN ('status@broadcast', 'broadcast')
-        AND COALESCE(conversation_id, '') NOT LIKE '%@broadcast'
-    """
-    if content_type:
-        rows = storage.db.execute(f"""
-            SELECT id, source_type, raw_content, sender_name, conversation_name,
-                   message_timestamp, content_type, intent, confidence
-            FROM knowledge_records
-            WHERE content_type = ? AND {source_filter}
-            ORDER BY message_timestamp DESC
-            LIMIT ?
-        """, (content_type, limit)).fetchall()
-    else:
-        rows = storage.db.execute(f"""
-            SELECT id, source_type, raw_content, sender_name, conversation_name,
-                   message_timestamp, content_type, intent, confidence
-            FROM knowledge_records
-            WHERE {source_filter}
-            ORDER BY message_timestamp DESC
-            LIMIT ?
-        """, (limit,)).fetchall()
-
-    return [
-        {
-            "id": r[0], "source_type": r[1], "raw_content": r[2][:200],
-            "sender_name": r[3], "conversation_name": r[4],
-            "timestamp": r[5], "content_type": r[6], "intent": r[7],
-            "confidence": r[8],
-        }
-        for r in rows
-    ]
+    return storage.get_knowledge_records(limit=limit, offset=offset, q=q, content_type=content_type)
 
 @app.get("/api/knowledge/search")
-async def search_knowledge(q: str, limit: int = 20, content_type: str | None = None, user: dict = Depends(require_user)):
+async def search_knowledge(
+    q: str,
+    limit: int = 20,
+    offset: int = 0,
+    content_type: str | None = None,
+    user: dict = Depends(require_user),
+):
     """Search knowledge records using FTS5."""
-    return storage.search_knowledge_records(q, limit=limit, content_type=content_type)
+    return storage.search_knowledge_records(q, limit=limit, offset=offset, content_type=content_type)
 
 @app.get("/api/knowledge/stats")
 async def get_knowledge_stats(user: dict = Depends(require_user)):
