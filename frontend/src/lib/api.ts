@@ -1121,6 +1121,11 @@ export function getAuditTimeline(limit = 50) {
 export interface AuditGroupsResponse {
   groups: AuditGroupCard[];
   total_unique_senders: number;
+  total_unique_participants: number;
+  total_membership_rows: number;
+  duplicate_memberships: number;
+  connected_groups: number;
+  posting_groups_24h: number;
   errors?: string[];
 }
 

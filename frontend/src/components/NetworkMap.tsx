@@ -76,11 +76,13 @@ export default function NetworkMap({
   pairs,
   uniqueMembers,
   redundantCount,
+  duplicateMemberships,
 }: {
   groups: AuditGroupCard[];
   pairs: AuditGroupOverlapPair[];
   uniqueMembers: number;
   redundantCount: number;
+  duplicateMemberships: number;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -418,11 +420,12 @@ export default function NetworkMap({
   return (
     <div className="relative w-full">
       {/* Stats header row */}
-      <div className="mb-4 grid grid-cols-3 gap-px border border-white/10 bg-white/10 text-center">
+      <div className="mb-4 grid grid-cols-2 gap-px border border-white/10 bg-white/10 text-center sm:grid-cols-4">
         {([
           ["Unique reach", uniqueMembers],
           ["Shared pairs", pairs.length],
           ["High redundancy", redundantCount],
+          ["Duplicate memberships", duplicateMemberships],
         ] as [string, number][]).map(([label, value]) => (
           <div key={label} className="bg-[#090909] px-4 py-3">
             <div className="text-lg font-semibold tabular-nums">{numFmt(value)}</div>

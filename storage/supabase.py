@@ -2380,7 +2380,7 @@ class SupabaseStorage(Storage):
                 "tenant_id": tenant_id,
                 "group_id": group_id,
                 "member_jid": member_jid,
-                "member_phone": str(participant.get("member_phone") or "").strip() or None,
+                "member_phone": self._normalize_phone(str(participant.get("member_phone") or "")) or None,
                 "display_name": str(participant.get("display_name") or "").strip() or None,
                 "is_admin": bool(participant.get("is_admin")),
                 "last_seen_at": now,
