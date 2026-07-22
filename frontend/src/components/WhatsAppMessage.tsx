@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { Building2, MapPin, Phone, User, Users } from "lucide-react";
 import * as api from "@/lib/api";
 import { entityProfileHref, entityTooltip } from "@/lib/entity-links";
+import { stripDecorativeEmoji } from "@/lib/whatsapp-display";
 
 interface WhatsAppMessageProps {
   text: string;
@@ -543,7 +544,7 @@ export default function WhatsAppMessage({
             >
               {sender && (
                 <div className="flex items-center gap-1.5 mb-1.5 pb-1.5 border-b border-white/5">
-                  <span className="text-[10px] font-semibold text-zinc-400">{sender}</span>
+                  <span className="text-[10px] font-semibold text-zinc-400">{stripDecorativeEmoji(sender)}</span>
                   {senderPhone && (
                     <span className="text-[9px] text-zinc-500 font-mono">{senderPhone}</span>
                   )}

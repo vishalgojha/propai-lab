@@ -105,12 +105,14 @@ export function resolveSenderName(msg: {
 }): string {
   if (msg.from_me === 1 || msg.from_me === true) return "You";
   const sender = (msg.sender || "").trim();
+  const cleanedBrokerName = stripDecorativeEmoji(msg.broker_name || "");
+  const cleanedSender = stripDecorativeEmoji(sender);
   if (sender && sender.toLowerCase() !== "unknown" && !isRawWhatsAppId(sender)) {
-    return msg.broker_name || sender;
+    return cleanedBrokerName || cleanedSender || sender;
   }
   const phone =
     normalizePhone(msg.sender_phone) || phoneFromJid(msg.sender_jid) || "";
-  return msg.broker_name || (phone ? displayPhone(phone) : "Unknown");
+  return cleanedBrokerName || cleanedSender || (phone ? displayPhone(phone) : "Unknown");
 }
 
 /**
