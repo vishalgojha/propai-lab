@@ -1496,6 +1496,7 @@ return {
   // 1. Initial Load of Feed & Suggestions
   const loadFeed = useCallback(async (append = false, requestedOffset = offset) => {
     setLoadingLeft(true);
+    const isWhatsAppGroupsRoute = typeof window !== "undefined" && window.location.pathname === "/whatsapp-groups";
     // The raw WhatsApp mirror must never depend on the Market Inbox feed.
     // Start this independently: a broker-feed timeout or parsing failure must
     // not make groups/broadcasts vanish from the user-facing WhatsApp view.
@@ -1509,7 +1510,7 @@ return {
     try {
       const threadMsgs = await api.getInboxThreads(PAGE_SIZE, requestedOffset);
       setMessages((prev) => (append ? [...prev, ...threadMsgs] : threadMsgs));
-      if (!append) {
+      if (!append && !isWhatsAppGroupsRoute) {
         const suggestionResult = await Promise.allSettled([api.getSuggestions("pending", 100)]);
         if (suggestionResult.status === "fulfilled") {
           setAllSuggestions(suggestionResult.value[0]);
