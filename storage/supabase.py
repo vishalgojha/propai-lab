@@ -2454,7 +2454,10 @@ class SupabaseStorage(Storage):
         query = self.client.table("whatsapp_conversations").select("*").eq("tenant_id", tenant_id)
         if types:
             query = query.in_("conversation_type", types)
-        result = query.order("last_message_at", desc=True, nullsfirst=False).limit(limit).execute()
+        # The internal REST query builder only supports column + direction;
+        # PostgREST already puts null timestamps after dated conversations for
+        # this descending directory order.
+        result = query.order("last_message_at", desc=True).limit(limit).execute()
         return result.data or []
 
     def get_group_markets(self) -> dict[str, list[str]]:
