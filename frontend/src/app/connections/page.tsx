@@ -105,11 +105,25 @@ function QRDisplay({ qrText, onRefresh, refreshing }: { qrText: string; onRefres
 
   useEffect(() => {
     if (!canvasRef.current) return;
-    QRCode.toCanvas(canvasRef.current, qrText, {
-      width: 360,
-      margin: 2,
-      color: { dark: "#000000", light: "#ffffff" },
-    });
+    let cancelled = false;
+    const draw = async () => {
+      try {
+        canvasRef.current!.getContext("2d")?.clearRect(0, 0, canvasRef.current!.width, canvasRef.current!.height);
+        await QRCode.toCanvas(canvasRef.current!, qrText, {
+          width: 360,
+          margin: 2,
+          color: { dark: "#000000", light: "#ffffff" },
+        });
+      } catch {
+        if (!cancelled) {
+          canvasRef.current?.getContext("2d")?.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
+        }
+      }
+    };
+    void draw();
+    return () => {
+      cancelled = true;
+    };
   }, [qrText]);
 
   return (
@@ -320,6 +334,7 @@ function QRModal({
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [connected, setConnected] = useState(false);
+  const [qrDrawError, setQrDrawError] = useState<string | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -342,9 +357,11 @@ function QRModal({
         setQrText(qrResult.qr);
         setError(null);
         setNotice(null);
+        setQrDrawError(null);
         return;
       }
       setNotice((qrResult as any)?.message || "QR not available yet. Waiting for the ingestor to generate it.");
+      setQrText(null);
     } catch (error) {
       setError(error instanceof Error ? error.message : "Failed to fetch QR code. Retry, or reset the phone if it stays stuck.");
     } finally {
@@ -375,6 +392,7 @@ function QRModal({
     if (!open) {
       setQrText(null);
       setConnected(false);
+      setQrDrawError(null);
     }
   }, [open, fetchQR]);
 
@@ -421,11 +439,25 @@ function QRModal({
 
   useEffect(() => {
     if (!canvasRef.current || !qrText) return;
-    QRCode.toCanvas(canvasRef.current, qrText, {
-      width: 320,
-      margin: 2,
-      color: { dark: "#000000", light: "#ffffff" },
-    });
+    let cancelled = false;
+    const draw = async () => {
+      try {
+        canvasRef.current!.getContext("2d")?.clearRect(0, 0, canvasRef.current!.width, canvasRef.current!.height);
+        await QRCode.toCanvas(canvasRef.current!, qrText, {
+          width: 320,
+          margin: 2,
+          color: { dark: "#000000", light: "#ffffff" },
+        });
+      } catch {
+        if (!cancelled) {
+          setQrDrawError("QR could not be drawn. Refresh the QR or re-pair the phone.");
+        }
+      }
+    };
+    void draw();
+    return () => {
+      cancelled = true;
+    };
   }, [qrText]);
 
   useEffect(() => {
@@ -499,11 +531,25 @@ function QRModal({
         {!connected && !loading && !error && qrText && (
           <div className="flex flex-col items-center">
             <canvas ref={canvasRef} className="rounded-xl border-[6px] border-white bg-white" style={{ width: "min(320px, 100%)", height: "min(320px, 100%)", aspectRatio: "1/1" }} />
+            {qrDrawError && <p className="mt-3 text-xs text-red-300">{qrDrawError}</p>}
             <ol className="mt-4 space-y-2 text-sm text-zinc-400 text-center">
               <li>Open <strong className="text-white">WhatsApp</strong> → <strong className="text-white">Settings</strong> → <strong className="text-white">Linked Devices</strong></li>
               <li>Tap <strong className="text-white">Link a Device</strong> and scan this QR</li>
             </ol>
             <p className="mt-3 text-[11px] text-zinc-600">Waiting for scan... (auto-refreshes every 3s)</p>
+            <button onClick={refreshSessionAndFetchQR} disabled={loading} className="mt-3 rounded-lg border border-white/10 bg-zinc-800 text-zinc-300 px-6 py-2.5 text-xs font-bold min-h-[44px] disabled:opacity-50 w-full">
+              Refresh QR
+            </button>
+          </div>
+        )}
+        {!connected && !loading && !error && !qrText && (
+          <div className="flex flex-col items-center py-10 text-center">
+            <div className="flex h-[320px] w-full max-w-[320px] items-center justify-center rounded-xl border border-white/10 bg-white/5 text-zinc-500">
+              QR not ready yet
+            </div>
+            <p className="mt-4 text-xs text-zinc-500">
+              {notice || "Waiting for the ingestor to generate the code."}
+            </p>
             <button onClick={refreshSessionAndFetchQR} disabled={loading} className="mt-3 rounded-lg border border-white/10 bg-zinc-800 text-zinc-300 px-6 py-2.5 text-xs font-bold min-h-[44px] disabled:opacity-50 w-full">
               Refresh QR
             </button>

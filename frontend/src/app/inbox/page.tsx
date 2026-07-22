@@ -206,15 +206,15 @@ function formatAgeShort(value?: string) {
   if (diffMs < 0) return "now";
   const mins = Math.floor(diffMs / 60000);
   if (mins < 1) return "now";
-  if (mins < 60) return `${mins}m`;
+  if (mins < 60) return `Fresh · ${mins}m`;
   const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours}h`;
+  if (hours < 24) return `Fresh · ${hours}h`;
   const days = Math.floor(hours / 24);
-  if (days < 7) return `${days}d`;
+  if (days < 7) return `Historic · ${days}d`;
   const weeks = Math.floor(days / 7);
-  if (weeks < 5) return `${weeks}w`;
+  if (weeks < 5) return `Historic · ${weeks}w`;
   const months = Math.floor(days / 30);
-  return `${months}mo`;
+  return `Historic · ${months}mo`;
 }
 
 function toInboxThread(message: api.RawMessage): api.InboxThread {
