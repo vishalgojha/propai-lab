@@ -81,3 +81,30 @@ OBS_TYPES = [
     "SELLER", "BUYER", "REQUIREMENT", "RENTAL", "RENTAL_SEEKER",
     "COMMERCIAL_SALE", "COMMERCIAL_RENTAL", "PRE_LAUNCH",
 ]
+
+# ── Per-model LLM pricing (USD per million tokens) ─────────────────
+# Keys must match the model name returned by the provider (what appears in
+# the `model` field of OpenAI-compatible responses).  Unknown models fall
+# back to DEFAULT_MODEL_PRICING so logging never silently drops a row.
+MODEL_PRICING: dict[str, dict[str, float]] = {
+    # NVIDIA NIM — Qwen 3.6
+    "nvidia-nim": {"input": 0.20, "output": 0.60},
+    # Groq — Llama / Mixtral family
+    "groq": {"input": 0.05, "output": 0.08},
+    # Gemini — Flash / Pro
+    "gemini": {"input": 0.075, "output": 0.30},
+    # Cerebras — Llama family
+    "cerebras": {"input": 0.10, "output": 0.10},
+    # Doubleword — Qwen 3.6
+    "doubleword": {"input": 0.20, "output": 0.60},
+}
+DEFAULT_MODEL_PRICING: dict[str, float] = {"input": 0.20, "output": 0.60}
+
+
+def get_model_pricing(model_name: str = "", provider_name: str = "") -> dict[str, float]:
+    """Return per-million-token pricing for a model/provider pair."""
+    if provider_name and provider_name in MODEL_PRICING:
+        return MODEL_PRICING[provider_name]
+    if model_name and model_name in MODEL_PRICING:
+        return MODEL_PRICING[model_name]
+    return DEFAULT_MODEL_PRICING

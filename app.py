@@ -4615,11 +4615,23 @@ def _ai_promote(system: str, prompt: str) -> str | None:
     try:
         from llm import get_client, get_model
         client = get_client()
+        model = get_model()
         resp = client.chat.completions.create(
-            model=get_model(),
+            model=model,
             messages=[{"role": "system", "content": system}, {"role": "user", "content": prompt}],
             max_tokens=300,
         )
+        usage = getattr(resp, "usage", None)
+        try:
+            from usage_logger import log_ai_usage
+            log_ai_usage(
+                agent="promote",
+                model=model,
+                tokens_input=getattr(usage, "prompt_tokens", 0) or 0,
+                tokens_output=getattr(usage, "completion_tokens", 0) or 0,
+            )
+        except Exception:
+            pass
         return resp.choices[0].message.content
     except Exception:
         return None
@@ -4636,6 +4648,17 @@ def _ai_promote_with_key(system: str, prompt: str, api_key: str) -> str | None:
             messages=[{"role": "system", "content": system}, {"role": "user", "content": prompt}],
             max_tokens=300,
         )
+        usage = getattr(resp, "usage", None)
+        try:
+            from usage_logger import log_ai_usage
+            log_ai_usage(
+                agent="promote",
+                model=model,
+                tokens_input=getattr(usage, "prompt_tokens", 0) or 0,
+                tokens_output=getattr(usage, "completion_tokens", 0) or 0,
+            )
+        except Exception:
+            pass
         return resp.choices[0].message.content
     except Exception:
         return None
@@ -6908,9 +6931,11 @@ async def _stream_self_chat_reply(text: str) -> dict | None:
             ],
             stream=True,
             max_tokens=400,
+            stream_options={"include_usage": True},
             temperature=0.4,
         )
         chunks: list[str] = []
+        usage_info = None
         for chunk in stream:
             try:
                 delta = (
@@ -6922,6 +6947,19 @@ async def _stream_self_chat_reply(text: str) -> dict | None:
                 delta = None
             if delta:
                 chunks.append(delta)
+        if getattr(chunk, "usage", None):
+            usage_info = chunk.usage
+        # Log token usage for cost tracking
+        try:
+            from usage_logger import log_ai_usage
+            log_ai_usage(
+                agent="self_chat",
+                model=configured_model or _llm.get_fast_model(),
+                tokens_input=getattr(usage_info, "prompt_tokens", 0) or 0,
+                tokens_output=getattr(usage_info, "completion_tokens", 0) or 0,
+            )
+        except Exception:
+            pass
         full = "".join(chunks).strip()
         if not full:
             return None
@@ -16180,3 +16218,11 @@ async def get_alerts_config(user: dict = Depends(require_user)):
         }
     except Exception as exc:
         return JSONResponse(status_code=500, content={"error": str(exc)})
+
+
+@app.get("/api/admin/ai-usage")
+async def admin_ai_usage(days: int = 7, user: dict = Depends(require_user)):
+    """Super-admin only: AI cost dashboard — who spent what on which model."""
+    if not await asyncio.to_thread(storage.is_super_admin, user["id"]):
+        raise HTTPException(403, "Super admin only")
+    return storage.get_ai_usage_stats(days=min(max(days, 1), 90))

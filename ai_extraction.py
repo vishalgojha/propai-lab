@@ -447,8 +447,21 @@ def _has_flyer_image(ctx: dict) -> bool:
 
 # ── Main extraction function ──────────────────────────────────────────
 
-def _call_provider(provider: dict, messages: list[dict], timeout: int = 45) -> dict | list | None:
-    """Call a single LLM provider. Returns a parsed JSON object/array or None."""
+def _call_provider(
+    provider: dict,
+    messages: list[dict],
+    timeout: int = 45,
+    *,
+    source_id: int | None = None,
+    tenant_id: str | None = None,
+) -> dict | list | None:
+    """Call a single LLM provider. Returns a parsed JSON object/array or None.
+
+    Logs every completed API call (success or truncated) to ai_usage_log so
+    cost is never silently lost.
+    """
+    from usage_logger import log_ai_usage
+
     try:
         client = OpenAI(api_key=provider["api_key"], base_url=provider["base_url"])
         request = dict(
@@ -468,11 +481,17 @@ def _call_provider(provider: dict, messages: list[dict], timeout: int = 45) -> d
         if provider["name"] == "doubleword":
             request["response_format"] = {"type": "json_object"}
         resp = client.chat.completions.create(**request)
+        usage = getattr(resp, "usage", None)
+        tokens_in = getattr(usage, "prompt_tokens", 0) or 0
+        tokens_out = getattr(usage, "completion_tokens", 0) or 0
+
         choice = resp.choices[0]
         raw = choice.message.content
+        truncated_no_content = False
         if not raw or not raw.strip():
             reasoning = getattr(choice.message, "reasoning_content", None)
             finish_reason = getattr(choice, "finish_reason", None)
+            truncated_no_content = True
             if reasoning:
                 _logger.warning(
                     "Provider %s returned reasoning but no final JSON (finish=%s)",
@@ -483,7 +502,32 @@ def _call_provider(provider: dict, messages: list[dict], timeout: int = 45) -> d
                     "Provider %s returned empty content (finish=%s)",
                     provider["name"], finish_reason,
                 )
+            # Log the spend even though the output was empty
+            log_ai_usage(
+                agent="extraction",
+                model=provider["model"],
+                tokens_input=tokens_in,
+                tokens_output=tokens_out,
+                source="raw_message",
+                source_id=source_id,
+                provider_name=provider["name"],
+                tenant_id=tenant_id,
+                truncated=True,
+            )
             return None
+
+        # Log successful call
+        log_ai_usage(
+            agent="extraction",
+            model=provider["model"],
+            tokens_input=tokens_in,
+            tokens_output=tokens_out,
+            source="raw_message",
+            source_id=source_id,
+            provider_name=provider["name"],
+            tenant_id=tenant_id,
+        )
+
         cleaned = raw.strip()
         if cleaned.startswith("```"):
             cleaned = cleaned.split("\n", 1)[-1] if "\n" in cleaned else cleaned[3:]
@@ -568,6 +612,8 @@ def ai_extract(raw_text: str, ctx: dict | None = None, storage=None) -> dict:
     attempts = 0
     max_attempts = len(_PROVIDERS) * 2  # Allow two full rotations
     last_error = None
+    _src_id = ctx.get("message_id") if ctx else None
+    _tid = ctx.get("tenant_id") if ctx else None
 
     while attempts < max_attempts:
         provider = _next_provider()
@@ -576,7 +622,7 @@ def ai_extract(raw_text: str, ctx: dict | None = None, storage=None) -> dict:
             break
 
         attempts += 1
-        raw_extraction = _call_provider(provider, messages)
+        raw_extraction = _call_provider(provider, messages, source_id=_src_id, tenant_id=_tid)
 
         if raw_extraction is None:
             continue
