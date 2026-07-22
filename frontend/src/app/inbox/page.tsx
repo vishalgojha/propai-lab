@@ -2132,6 +2132,53 @@ return {
       .sort((a, b) => (messageDateValue(b.latest)?.getTime() || 0) - (messageDateValue(a.latest)?.getTime() || 0));
   })();
 
+  // WhatsApp Groups is a directory view, not a derived view of parsed broker
+  // posts.  `groups` comes from Whatsmeow's joined-group directory, so groups
+  // with no captured property post are still visible and selecting one uses
+  // its actual WhatsApp JID (rather than the latest sender's identity).
+  const directoryGroupItems: ThreadFallbackItem[] = (() => {
+    const capturedByJid = new Map(groupChats.map((chat) => [String(chat.conversationKey), chat]));
+    return groups
+      .filter((group) => String(group?.jid || "").trim())
+      .map((group) => {
+        const jid = String(group.jid).trim();
+        const captured = capturedByJid.get(jid);
+        const groupName = String(group.name || captured?.title || "WhatsApp Group").trim();
+        const latest = captured?.latest || ({
+          id: 0,
+          chat_id: jid,
+          chat_type: "group",
+          chat_name: groupName,
+          conversation_key: jid,
+          conversation_type: "group",
+          conversation_name: groupName,
+          group_name: jid,
+          message: "No captured messages yet.",
+          message_count: Number(group.records_found || 0),
+        } as api.InboxThread);
+        return {
+          key: jid,
+          title: groupName,
+          subtitle: captured ? "WhatsApp group" : "WhatsApp group · awaiting messages",
+          latest: {
+            ...latest,
+            chat_id: jid,
+            chat_type: "group",
+            chat_name: groupName,
+            conversation_key: jid,
+            conversation_type: "group",
+            conversation_name: groupName,
+          },
+          count: captured?.count || Number(group.records_found || 0),
+          type: "group" as const,
+        };
+      })
+      .sort((a, b) => {
+        const newest = (messageDateValue(b.latest)?.getTime() || 0) - (messageDateValue(a.latest)?.getTime() || 0);
+        return newest || a.title.localeCompare(b.title);
+      });
+  })();
+
   const directChats = uniqueThreads
     .filter((m) => !isLikelyGroupConversation(m))
     .map((m) => ({
@@ -2173,14 +2220,7 @@ return {
 
   const threadFallbackItems: ThreadFallbackItem[] = [
     ...((searchParams.get("view") === "groups" || currentSlug === "groups")
-      ? groupChats.map((chat) => ({
-          key: String(chat.conversationKey || ""),
-          title: chat.title,
-          subtitle: chat.groupLabel && chat.groupLabel !== chat.title ? chat.groupLabel : "WhatsApp group",
-          latest: chat.latest,
-          count: chat.count,
-          type: "group" as const,
-        }))
+      ? directoryGroupItems
       : [
           ...(activeSlug?.view_type === "brokers" ? [] : groupChats.map((chat) => ({
             key: String(chat.conversationKey || ""),

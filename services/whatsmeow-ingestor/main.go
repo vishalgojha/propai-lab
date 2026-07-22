@@ -74,6 +74,8 @@ type Status struct {
 
 type BrokerSession struct {
 	mu                sync.RWMutex
+	groupSyncMu       sync.Mutex
+	groupSyncRunning  bool
 	brokerID          string
 	client            *whatsmeow.Client
 	device            *store.Device
@@ -730,10 +732,10 @@ func (sm *SessionManager) handleEvent(s *BrokerSession, evt interface{}) {
 		})
 
 	case *events.JoinedGroup:
-		go sm.syncGroups(s)
+		sm.requestGroupDirectorySync(s, "group joined")
 
 	case *events.GroupInfo:
-		go sm.syncGroups(s)
+		sm.requestGroupDirectorySync(s, "group updated")
 
 	case *events.ChatPresence:
 		sm.queueWebhook(s.brokerID, fmt.Sprintf("chat-presence:%s:%s:%d", s.brokerID, v.Chat.String(), time.Now().UnixNano()), map[string]interface{}{
@@ -749,19 +751,59 @@ func (sm *SessionManager) initializeConnectedSession(s *BrokerSession) {
 	if err := s.client.SendPresence(ctx, types.PresenceAvailable); err != nil {
 		log.Printf("[broker %s] send available presence failed: %v", s.brokerID, err)
 	}
-	sm.syncGroups(s)
+	sm.requestGroupDirectorySync(s, "connected")
 }
 
-func (sm *SessionManager) syncGroups(s *BrokerSession) {
-	if s == nil || s.client == nil || !s.client.IsConnected() {
+// requestGroupDirectorySync makes the WhatsApp group directory eventually
+// consistent after a reconnect. GetJoinedGroups is a websocket request and a
+// stream replacement can interrupt the first call; previously that left the
+// UI with an old partial directory until another group event happened.
+func (sm *SessionManager) requestGroupDirectorySync(s *BrokerSession, reason string) {
+	if s == nil {
 		return
+	}
+	s.groupSyncMu.Lock()
+	if s.groupSyncRunning {
+		s.groupSyncMu.Unlock()
+		return
+	}
+	s.groupSyncRunning = true
+	s.groupSyncMu.Unlock()
+
+	go func() {
+		defer func() {
+			s.groupSyncMu.Lock()
+			s.groupSyncRunning = false
+			s.groupSyncMu.Unlock()
+		}()
+		delays := []time.Duration{0, 5 * time.Second, 15 * time.Second, 30 * time.Second, time.Minute}
+		for attempt, delay := range delays {
+			if delay > 0 {
+				select {
+				case <-time.After(delay):
+				case <-s.ctx.Done():
+					return
+				}
+			}
+			if sm.syncGroups(s) {
+				log.Printf("[broker %s] group directory sync completed after %s (attempt %d)", s.brokerID, reason, attempt+1)
+				return
+			}
+		}
+		log.Printf("[broker %s] group directory sync exhausted retries after %s", s.brokerID, reason)
+	}()
+}
+
+func (sm *SessionManager) syncGroups(s *BrokerSession) bool {
+	if s == nil || s.client == nil || !s.client.IsConnected() {
+		return false
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	groups, err := s.client.GetJoinedGroups(ctx)
 	if err != nil {
 		log.Printf("[broker %s] group directory sync failed: %v", s.brokerID, err)
-		return
+		return false
 	}
 	directory := make([]map[string]interface{}, 0, len(groups))
 	for _, group := range groups {
@@ -780,10 +822,13 @@ func (sm *SessionManager) syncGroups(s *BrokerSession) {
 			"is_ephemeral": group.IsEphemeral, "disappearing_timer": group.DisappearingTimer,
 		})
 	}
-	sm.queueWebhook(s.brokerID, fmt.Sprintf("group-directory:%s:%d", s.brokerID, time.Now().Unix()/30), map[string]interface{}{
+	if !sm.queueWebhook(s.brokerID, fmt.Sprintf("group-directory:%s:%d", s.brokerID, time.Now().Unix()/30), map[string]interface{}{
 		"event": "GROUPS_REFRESHED", "instance": instanceName, "groups": directory,
 		"data": map[string]interface{}{"broker_id": s.brokerID},
-	})
+	}) {
+		return false
+	}
+	return true
 }
 
 // ── Message handling ───────────────────────────────────────────────────────
@@ -792,6 +837,12 @@ func (sm *SessionManager) handleMessage(s *BrokerSession, evt *events.Message) {
 	info := evt.Info
 	if info.ID == "" {
 		return
+	}
+	if info.IsGroup {
+		// This deliberately records receipt before database/webhook work so a
+		// production test can distinguish WhatsApp stream loss from delivery
+		// or extraction backlog.
+		log.Printf("[broker %s] group message received chat=%s id=%s from_me=%t", s.brokerID, info.Chat.String(), info.ID, info.IsFromMe)
 	}
 	// Self-chat commands go to the AI agent, but we still forward the message.
 	if info.IsFromMe {
