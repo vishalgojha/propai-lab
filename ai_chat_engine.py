@@ -2235,6 +2235,25 @@ def _default_db_path():
     return None
 
 
+def _log_usage(resp, agent: str, model: str, tenant_id: str | None = None) -> None:
+    """Fire-and-forget: log token usage from an OpenAI-compatible response."""
+    try:
+        from usage_logger import log_ai_usage
+        usage = getattr(resp, "usage", None)
+        tokens_in = getattr(usage, "prompt_tokens", 0) or 0
+        tokens_out = getattr(usage, "completion_tokens", 0) or 0
+        if tokens_in or tokens_out:
+            log_ai_usage(
+                agent=agent,
+                model=model,
+                tokens_input=tokens_in,
+                tokens_output=tokens_out,
+                tenant_id=tenant_id,
+            )
+    except Exception:
+        pass
+
+
 def get_conversational_reply(messages, api_key=None, model=None, broker=None):
     """Call the LLM purely conversationally — no tools, no data, no JSON contract."""
     client = get_client(api_key=api_key)
@@ -2242,11 +2261,13 @@ def get_conversational_reply(messages, api_key=None, model=None, broker=None):
     msgs = [{"role": "system", "content": _cached_system_blocks(system_prompt)}] + [
         m for m in messages if m.get("role") in ("user", "assistant")
     ]
+    used_model = model or _get_fallback_model()
     resp = client.chat.completions.create(
-        model=model or _get_fallback_model(),
+        model=used_model,
         messages=msgs,
         max_tokens=1000,
     )
+    _log_usage(resp, "ai_chat", used_model)
     return resp.choices[0].message
 
 
@@ -2273,19 +2294,23 @@ def get_model_reply(messages, sources, api_key=None, db_path=None, model=None, b
     # Limit recursion depth
     if _depth >= max_tool_rounds:
         # Force a text-only response — no tools, but still cache the system prompt
+        _used_model = model or _get_fallback_model()
         resp = client.chat.completions.create(
-            model=model or _get_fallback_model(),
+            model=_used_model,
             messages=cached_msgs,
             max_tokens=2000,
         )
+        _log_usage(resp, "ai_chat", _used_model, tenant_id=tenant_id)
         return resp.choices[0].message
 
+    _used_model = model or _get_fallback_model()
     resp = client.chat.completions.create(
-        model=model or _get_fallback_model(),
+        model=_used_model,
         messages=cached_msgs,
         tools=cached_tools,
         tool_choice="auto",
     )
+    _log_usage(resp, "ai_chat", _used_model, tenant_id=tenant_id)
     msg = resp.choices[0].message
 
     # Append as dict, not as raw object

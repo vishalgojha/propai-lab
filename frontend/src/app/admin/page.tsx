@@ -5,7 +5,7 @@ export const dynamic = 'force-dynamic';
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Shield, Database, Terminal, Wrench, ArrowLeft, Plus, Smartphone, Sparkles } from "lucide-react";
+import { Shield, Database, Terminal, Wrench, ArrowLeft, Plus, Smartphone, Sparkles, DollarSign } from "lucide-react";
 import { fetchJSON } from "@/lib/api";
 
 interface SuperAdmin {
@@ -211,6 +211,17 @@ export default function AdminPage() {
               <span className="font-medium text-white">Provider Health</span>
             </div>
             <p className="text-xs text-zinc-500">LLM provider uptime, latency, recent failures, 24h timeline (probed every 60s)</p>
+          </Link>
+
+          <Link
+            href="/admin/ai-usage"
+            className="block p-4 rounded-xl border border-white/10 hover:border-emerald-400/30 transition-colors"
+          >
+            <div className="flex items-center gap-3 mb-2">
+              <DollarSign className="w-5 h-5 text-emerald-400" />
+              <span className="font-medium text-white">AI Usage &amp; Cost</span>
+            </div>
+            <p className="text-xs text-zinc-500">Token spend by model &amp; agent, daily trend, wasted cost on truncated calls</p>
           </Link>
 
           <Link

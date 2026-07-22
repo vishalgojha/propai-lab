@@ -2359,6 +2359,54 @@ class SupabaseStorage(Storage):
         res = query.execute()
         return [dict_to_dataclass(SyncJob, d) for d in res.data]
 
+    def upsert_group_members(self, tenant_id: str, group_id: str, participants: list[dict]) -> int:
+        if not tenant_id or not group_id or not participants:
+            return 0
+        now = datetime.now(timezone.utc).isoformat()
+        rows = []
+        for participant in participants:
+            if not isinstance(participant, dict):
+                continue
+            member_jid = str(
+                participant.get("member_jid")
+                or participant.get("id")
+                or participant.get("phone_jid")
+                or participant.get("lid")
+                or ""
+            ).strip()
+            if not member_jid:
+                continue
+            row = {
+                "tenant_id": tenant_id,
+                "group_id": group_id,
+                "member_jid": member_jid,
+                "member_phone": str(participant.get("member_phone") or "").strip() or None,
+                "display_name": str(participant.get("display_name") or "").strip() or None,
+                "is_admin": bool(participant.get("is_admin")),
+                "last_seen_at": now,
+            }
+            rows.append(row)
+        if not rows:
+            return 0
+        self.client.table("group_members").upsert(
+            rows,
+            on_conflict="tenant_id,group_id,member_jid",
+        ).execute()
+        return len(rows)
+
+    def prune_group_members(self, tenant_id: str, group_id: str, keep_member_jids: set) -> int:
+        if not tenant_id or not group_id:
+            return 0
+        existing = self.client.table("group_members").select("id,member_jid").eq("tenant_id", tenant_id).eq("group_id", group_id).execute()
+        removed = 0
+        keep_member_jids = {str(jid).strip() for jid in (keep_member_jids or set()) if str(jid).strip()}
+        for row in existing.data or []:
+            member_jid = str(row.get("member_jid") or "").strip()
+            if member_jid and member_jid not in keep_member_jids:
+                self.client.table("group_members").delete().eq("id", row["id"]).execute()
+                removed += 1
+        return removed
+
     # ── Durable WhatsApp conversation directory ───────────────────
 
     def upsert_whatsapp_conversations(
@@ -3775,3 +3823,86 @@ class SupabaseStorage(Storage):
         except Exception as e:
             print(f"Error getting broker summary: {e}")
             return empty
+
+    # ── AI Usage Log (super-admin) ────────────────────────────────
+
+    def get_ai_usage_stats(self, days: int = 7) -> dict:
+        """Query ai_usage_log for the admin cost dashboard.
+
+        Returns grouped totals by model×agent, a daily time series, and
+        separate waste (truncated/failed) stats.
+        """
+        from datetime import datetime, timedelta, timezone
+
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+
+        try:
+            res = self.client.table("ai_usage_log") \
+                .select("agent,model,tokens_input,tokens_output,cost_usd,created_at") \
+                .gte("created_at", cutoff) \
+                .order("created_at", desc=True) \
+                .limit(50000) \
+                .execute()
+            rows = res.data or []
+        except Exception:
+            rows = []
+
+        if not rows:
+            return {
+                "total_cost_usd": 0,
+                "total_calls": 0,
+                "total_tokens_input": 0,
+                "total_tokens_output": 0,
+                "by_model_agent": [],
+                "daily": [],
+                "waste": {"calls": 0, "cost_usd": 0},
+            }
+
+        # ── Aggregate by model×agent ──────────────────────────────
+        combos: dict[tuple[str, str], dict] = {}
+        total_cost = 0.0
+        total_in = 0
+        total_out = 0
+        for r in rows:
+            key = (r.get("model") or "unknown", r.get("agent") or "unknown")
+            if key not in combos:
+                combos[key] = {"model": key[0], "agent": key[1], "calls": 0, "tokens_input": 0, "tokens_output": 0, "cost_usd": 0}
+            c = combos[key]
+            c["calls"] += 1
+            c["tokens_input"] += r.get("tokens_input") or 0
+            c["tokens_output"] += r.get("tokens_output") or 0
+            c["cost_usd"] += float(r.get("cost_usd") or 0)
+            total_cost += float(r.get("cost_usd") or 0)
+            total_in += r.get("tokens_input") or 0
+            total_out += r.get("tokens_output") or 0
+
+        by_model_agent = sorted(combos.values(), key=lambda x: x["cost_usd"], reverse=True)
+
+        # ── Daily time series ─────────────────────────────────────
+        daily: dict[str, dict] = {}
+        for r in rows:
+            day = (r.get("created_at") or "")[:10]
+            if not day:
+                continue
+            if day not in daily:
+                daily[day] = {"date": day, "calls": 0, "cost_usd": 0, "tokens_input": 0, "tokens_output": 0}
+            d = daily[day]
+            d["calls"] += 1
+            d["cost_usd"] += float(r.get("cost_usd") or 0)
+            d["tokens_input"] += r.get("tokens_input") or 0
+            d["tokens_output"] += r.get("tokens_output") or 0
+        daily_list = sorted(daily.values(), key=lambda x: x["date"])
+
+        # ── Waste (truncated calls cost money but produced nothing) ─
+        waste_calls = sum(1 for r in rows if r.get("agent") == "extraction" and r.get("tokens_output", 0) == 0)
+        waste_cost = sum(float(r.get("cost_usd") or 0) for r in rows if r.get("agent") == "extraction" and r.get("tokens_output", 0) == 0)
+
+        return {
+            "total_cost_usd": round(total_cost, 6),
+            "total_calls": len(rows),
+            "total_tokens_input": total_in,
+            "total_tokens_output": total_out,
+            "by_model_agent": by_model_agent,
+            "daily": daily_list,
+            "waste": {"calls": waste_calls, "cost_usd": round(waste_cost, 6)},
+        }
