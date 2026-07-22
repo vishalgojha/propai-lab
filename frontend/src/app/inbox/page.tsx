@@ -2521,6 +2521,14 @@ return {
     const text = replyText.trim();
     if (!text || sendingReply || !selectedConversationJid || !canReplyWhatsApp || (!whatsappConnected && !wabaConfigured)) return;
 
+    // A WhatsApp group can only be addressed through the linked WhatsApp
+    // session.  Meta's Business API requires a phone number and cannot send
+    // to a group JID, so never send a group reply through /waba/send.
+    if (isGroupConversationSelected && !whatsappConnected) {
+      setReplyError("Reconnect the linked WhatsApp phone before sending to this group.");
+      return;
+    }
+
     setSendingReply(true);
     setReplyError("");
     setReplyStatus("");
@@ -2528,11 +2536,18 @@ return {
     const nowIso = new Date().toISOString();
 
     try {
-      await api.sendWabaMessage({
-        to: replyFallbackPhone || "",
-        text,
-        remote_jid: selectedConversationJid,
-      });
+      if (isGroupConversationSelected) {
+        await api.sendMessage({
+          remote_jid: selectedConversationJid,
+          text,
+        });
+      } else {
+        await api.sendWabaMessage({
+          to: replyFallbackPhone || "",
+          text,
+          remote_jid: selectedConversationJid,
+        });
+      }
 
       const optimisticMessage: api.RawMessage = {
         id: Number(`${Date.now()}`),
@@ -2555,7 +2570,7 @@ return {
         message: text,
         message_type: "text",
         timestamp: nowIso,
-        source: "WABA_OUTBOUND",
+        source: isGroupConversationSelected ? "WHATSAPP_OUTBOUND" : "WABA_OUTBOUND",
         event_id: `local-${Date.now()}`,
         message_uid: `local-${Date.now()}`,
         raw_payload: JSON.stringify({ local: true, remote_jid: selectedConversationJid }),
@@ -2579,7 +2594,7 @@ return {
       setReplyError(message);
       if (/whatsapp|ingestor|connect/i.test(message)) {
         setReplyStatus("WhatsApp is disconnected. Open QR to reconnect.");
-      } else if (replyFallbackPhone) {
+      } else if (!isGroupConversationSelected && replyFallbackPhone) {
         setReplyStatus("Send failed. Open WhatsApp to continue.");
       }
     } finally {

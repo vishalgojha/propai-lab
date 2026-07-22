@@ -1,4 +1,4 @@
-FROM node:20-bookworm-slim AS deps
+FROM node:22-bookworm-slim AS deps
 
 WORKDIR /app
 COPY frontend/package.json frontend/package-lock.json ./
@@ -6,7 +6,7 @@ COPY frontend/package.json frontend/package-lock.json ./
 ARG CACHE_BUST_DEPS=20260710-5
 RUN npm ci
 
-FROM node:20-bookworm-slim AS builder
+FROM node:22-bookworm-slim AS builder
 
 WORKDIR /app
 ARG LAB_API_BASE_URL=http://api:8000
@@ -34,7 +34,7 @@ COPY frontend/ .
 
 RUN npm run build
 
-FROM node:20-bookworm-slim AS runner
+FROM node:22-bookworm-slim AS runner
 
 WORKDIR /app
 ARG LAB_API_BASE_URL
