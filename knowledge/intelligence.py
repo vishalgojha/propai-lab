@@ -41,7 +41,7 @@ class IntelligenceEngine:
             SELECT COUNT(*) as cnt,
                    string_agg(DISTINCT intent, ',') as intents
             FROM knowledge_records
-            WHERE content_type = 'listing' AND message_timestamp >= ? AND is_valid = 1
+            WHERE content_type = 'listing' AND message_timestamp >= ? AND COALESCE(is_valid, true) = true
         """, (cutoff,)).fetchone()
 
         # New requirements
@@ -49,7 +49,7 @@ class IntelligenceEngine:
             SELECT COUNT(*) as cnt,
                    string_agg(DISTINCT intent, ',') as intents
             FROM knowledge_records
-            WHERE content_type = 'requirement' AND message_timestamp >= ? AND is_valid = 1
+            WHERE content_type = 'requirement' AND message_timestamp >= ? AND COALESCE(is_valid, true) = true
         """, (cutoff,)).fetchone()
 
         # Active markets
@@ -57,7 +57,7 @@ class IntelligenceEngine:
             SELECT tag_value, COUNT(*) as cnt
             FROM knowledge_tags kt
             JOIN knowledge_records kr ON kr.id = kt.record_id
-            WHERE kt.tag_type = 'market' AND kr.message_timestamp >= ? AND kr.is_valid = 1
+            WHERE kt.tag_type = 'market' AND kr.message_timestamp >= ? AND COALESCE(kr.is_valid, true) = true
             GROUP BY tag_value
             ORDER BY cnt DESC
             LIMIT 10
@@ -68,7 +68,7 @@ class IntelligenceEngine:
             SELECT tag_value, COUNT(*) as cnt
             FROM knowledge_tags kt
             JOIN knowledge_records kr ON kr.id = kt.record_id
-            WHERE kt.tag_type = 'building' AND kr.message_timestamp >= ? AND kr.is_valid = 1
+            WHERE kt.tag_type = 'building' AND kr.message_timestamp >= ? AND COALESCE(kr.is_valid, true) = true
             GROUP BY tag_value
             ORDER BY cnt DESC
             LIMIT 10
@@ -78,7 +78,7 @@ class IntelligenceEngine:
         senders = self.db.execute("""
             SELECT sender_name, sender_phone, COUNT(*) as cnt
             FROM knowledge_records
-            WHERE message_timestamp >= ? AND is_valid = 1 AND sender_name IS NOT NULL
+            WHERE message_timestamp >= ? AND COALESCE(is_valid, true) = true AND sender_name IS NOT NULL
             GROUP BY sender_name
             ORDER BY cnt DESC
             LIMIT 10
@@ -87,7 +87,7 @@ class IntelligenceEngine:
         # Total messages
         total = self.db.execute("""
             SELECT COUNT(*) FROM knowledge_records
-            WHERE message_timestamp >= ? AND is_valid = 1
+            WHERE message_timestamp >= ? AND COALESCE(is_valid, true) = true
         """, (cutoff,)).fetchone()[0]
 
         return {
@@ -112,7 +112,7 @@ class IntelligenceEngine:
             JOIN knowledge_tags kt_bhk ON kt_bhk.record_id = kt_market.record_id AND kt_bhk.tag_type = 'bhk'
             JOIN knowledge_tags kt_price ON kt_price.record_id = kt_market.record_id AND kt_price.tag_type = 'price'
             JOIN knowledge_records kr ON kr.id = kt_market.record_id
-            WHERE kt_market.tag_type = 'market' AND kr.is_valid = 1
+            WHERE kt_market.tag_type = 'market' AND COALESCE(kr.is_valid, true) = true
             GROUP BY kt_market.tag_value, kt_bhk.tag_value
             HAVING cnt >= 2
             ORDER BY market, bhk
@@ -210,7 +210,7 @@ class IntelligenceEngine:
                    SUM(CASE WHEN content_type = 'listing' THEN 1 ELSE 0 END) as listings,
                    SUM(CASE WHEN content_type = 'requirement' THEN 1 ELSE 0 END) as requirements
             FROM knowledge_records
-            WHERE is_valid = 1 AND sender_name IS NOT NULL
+            WHERE COALESCE(is_valid, true) = true AND sender_name IS NOT NULL
             GROUP BY sender_name
             ORDER BY messages DESC
             LIMIT 20
@@ -221,7 +221,7 @@ class IntelligenceEngine:
             SELECT kr.sender_name, kt.tag_value as market, COUNT(*) as cnt
             FROM knowledge_records kr
             JOIN knowledge_tags kt ON kt.record_id = kr.id AND kt.tag_type = 'market'
-            WHERE kr.is_valid = 1 AND kr.sender_name IS NOT NULL
+            WHERE COALESCE(kr.is_valid, true) = true AND kr.sender_name IS NOT NULL
             GROUP BY kr.sender_name, kt.tag_value
             HAVING cnt >= 2
             ORDER BY kr.sender_name, cnt DESC
@@ -252,7 +252,7 @@ class IntelligenceEngine:
             SELECT kr.id, kr.raw_content, kr.sender_name, kt.tag_value as price
             FROM knowledge_records kr
             JOIN knowledge_tags kt ON kt.record_id = kr.id AND kt.tag_type = 'price'
-            WHERE kr.is_valid = 1 AND CAST(kt.tag_value AS REAL) > 0
+            WHERE COALESCE(kr.is_valid, true) = true AND CAST(kt.tag_value AS REAL) > 0
             AND (CAST(kt.tag_value AS REAL) > 50000000 OR CAST(kt.tag_value AS REAL) < 1000000)
         """).fetchall()
 
@@ -270,7 +270,7 @@ class IntelligenceEngine:
             SELECT kt.tag_value, MIN(kr.message_timestamp) as first_seen
             FROM knowledge_tags kt
             JOIN knowledge_records kr ON kr.id = kt.record_id
-            WHERE kt.tag_type = 'market' AND kr.is_valid = 1
+            WHERE kt.tag_type = 'market' AND COALESCE(kr.is_valid, true) = true
             GROUP BY kt.tag_value
         """).fetchall()
 
@@ -303,7 +303,7 @@ class IntelligenceEngine:
         # 1. Unmatched requirements
         unmatched = self.db.execute("""
             SELECT COUNT(*) FROM knowledge_records
-            WHERE content_type = 'requirement' AND is_valid = 1
+            WHERE content_type = 'requirement' AND COALESCE(is_valid, true) = true
         """).fetchone()[0]
 
         if unmatched > 0:
@@ -322,7 +322,7 @@ class IntelligenceEngine:
                    SUM(CASE WHEN kr.content_type = 'listing' THEN 1 ELSE 0 END) as supply
             FROM knowledge_tags kt
             JOIN knowledge_records kr ON kr.id = kt.record_id
-            WHERE kt.tag_type = 'market' AND kr.is_valid = 1
+            WHERE kt.tag_type = 'market' AND COALESCE(kr.is_valid, true) = true
             GROUP BY kt.tag_value
             HAVING demand > supply * 2 AND demand >= 3
             ORDER BY (demand - supply) DESC

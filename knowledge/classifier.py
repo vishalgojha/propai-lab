@@ -194,7 +194,7 @@ def classify_and_store(db_path: Path, limit: int = 100) -> dict:
     rows = db.execute("""
         SELECT id, raw_content
         FROM knowledge_records
-        WHERE content_type = 'unknown' AND is_valid = 1
+        WHERE content_type = 'unknown' AND COALESCE(is_valid, true) = true
         ORDER BY message_timestamp DESC
         LIMIT ?
     """, (limit,)).fetchall()

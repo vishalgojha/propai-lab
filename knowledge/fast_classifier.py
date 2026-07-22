@@ -203,7 +203,7 @@ def classify_all(db_path: Path, batch_size: int = 1000):
     rows = db.execute("""
         SELECT id, raw_content
         FROM knowledge_records
-        WHERE content_type = 'unknown' AND is_valid = 1
+        WHERE content_type = 'unknown' AND COALESCE(is_valid, true) = true
     """).fetchall()
 
     print(f"Classifying {len(rows)} records...")

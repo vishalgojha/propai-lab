@@ -65,7 +65,7 @@ class KnowledgeEmbedder:
             return self._vocab
 
         rows = self.db.execute(
-            "SELECT id, raw_content FROM knowledge_records WHERE is_valid = 1"
+            "SELECT id, raw_content FROM knowledge_records WHERE COALESCE(is_valid, true) = true"
         ).fetchall()
 
         token_counts = Counter()
@@ -87,7 +87,7 @@ class KnowledgeEmbedder:
 
         vocab = self._build_vocab()
         n_docs = self.db.execute(
-            "SELECT COUNT(*) FROM knowledge_records WHERE is_valid = 1"
+            "SELECT COUNT(*) FROM knowledge_records WHERE COALESCE(is_valid, true) = true"
         ).fetchone()[0]
 
         if n_docs == 0:
@@ -97,7 +97,7 @@ class KnowledgeEmbedder:
         # Count document frequency for each token
         df = Counter()
         rows = self.db.execute(
-            "SELECT raw_content FROM knowledge_records WHERE is_valid = 1"
+            "SELECT raw_content FROM knowledge_records WHERE COALESCE(is_valid, true) = true"
         ).fetchall()
 
         for row in rows:
@@ -208,7 +208,7 @@ class KnowledgeEmbedder:
             SELECT kr.id
             FROM knowledge_records kr
             LEFT JOIN embeddings e ON e.record_id = kr.id
-            WHERE e.id IS NULL AND kr.is_valid = 1
+            WHERE e.id IS NULL AND COALESCE(kr.is_valid, true) = true
         """).fetchall()
 
         count = 0
@@ -231,7 +231,7 @@ class KnowledgeEmbedder:
                    kr.conversation_name, kr.message_timestamp, kr.content_type
             FROM embeddings e
             JOIN knowledge_records kr ON kr.id = e.record_id
-            WHERE kr.is_valid = 1
+            WHERE COALESCE(kr.is_valid, true) = true
         """).fetchall()
 
         # Compute similarities
@@ -261,8 +261,8 @@ class KnowledgeEmbedder:
         return {
             "vocab_size": len(vocab),
             "total_records": self.db.execute(
-                "SELECT COUNT(*) FROM knowledge_records WHERE is_valid = 1"
-            ).fetchone()[0],
+            "SELECT COUNT(*) FROM knowledge_records WHERE COALESCE(is_valid, true) = true"
+        ).fetchone()[0],
             "embedded_records": self.db.execute(
                 "SELECT COUNT(*) FROM embeddings"
             ).fetchone()[0],
