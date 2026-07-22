@@ -3975,7 +3975,10 @@ return {
                             const first = block[0];
                             const last = block[block.length - 1];
                             const isSelf = first.from_me === 1 || first.from_me === true || first.sender === "seed-bot" || first.sender === "system" || first.sender === "owner";
-                            const blockHasSplitListings = block.some((m) => splitDelimitedListingText(m.message).length > 1);
+                            // WhatsApp Groups is evidence only.  Splitting a raw
+                            // WhatsApp post into opportunities belongs solely in
+                            // Market Inbox, never in the source mirror.
+                            const blockHasSplitListings = !isGroupsView && block.some((m) => splitDelimitedListingText(m.message).length > 1);
                             const bubbleBg = isSelf
                               ? "bg-emerald-950/40 border border-emerald-800/30 ml-auto"
                               : "border border-white/10";
@@ -4034,6 +4037,24 @@ return {
                                     }
                                     return badges;
                                   })();
+                                  if (isGroupsView) {
+                                    return (
+                                      <div
+                                        key={m.id}
+                                        ref={el => { messageRefs.current[m.id] = el; }}
+                                        onClick={() => selectMessage(m)}
+                                        className="rounded-lg px-2.5 py-2 hover:bg-white/[0.025] cursor-pointer"
+                                      >
+                                        <div className="mb-1 flex items-center justify-between gap-2 text-[10px] text-zinc-500">
+                                          <span className="font-semibold text-zinc-300">{mSenderName || "WhatsApp sender"}</span>
+                                          <span className="whitespace-nowrap">{messageTimeLabel(m)}</span>
+                                        </div>
+                                        <div className="text-xs text-zinc-200 whitespace-pre-wrap leading-relaxed text-left propai-message-content">
+                                          {m.message || ""}
+                                        </div>
+                                      </div>
+                                    );
+                                  }
                                   return (
                                     <div
                                       key={m.id}
