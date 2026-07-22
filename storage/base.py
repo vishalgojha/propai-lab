@@ -456,6 +456,14 @@ class Storage(ABC):
     def get_sync_jobs(self, limit: int = 200, offset: int = 0,
                       source: str = "", status: str = "") -> list[SyncJob]: ...
 
+    @abstractmethod
+    def upsert_group_members(self, tenant_id: str, group_id: str,
+                             participants: list[dict]) -> int: ...
+
+    @abstractmethod
+    def prune_group_members(self, tenant_id: str, group_id: str,
+                            keep_member_jids: set) -> int: ...
+
     # ── Sync checkpoints ───────────────────────────────────────
 
     @abstractmethod

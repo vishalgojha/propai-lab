@@ -2499,6 +2499,7 @@ def _handle_system_event(event_class: str, event: str, data: dict, instance: str
         incoming_jids = set()
         directory_rows = []
         broker_id = (msg_data.get("broker_id", "") if isinstance(msg_data, dict) else "") or "legacy"
+        is_full_refresh = bool(data.get("groups"))
         for g in groups_list:
             if not isinstance(g, dict):
                 continue
@@ -2507,7 +2508,8 @@ def _handle_system_event(event_class: str, event: str, data: dict, instance: str
                 continue
             incoming_jids.add(jid)
             name = g.get("name") or g.get("subject") or jid
-            participants = len(g.get("participants", [])) if isinstance(g.get("participants"), list) else g.get("size", 0)
+            raw_participants = g.get("participants", []) if isinstance(g.get("participants"), list) else []
+            participants = len(raw_participants) if raw_participants else g.get("size", 0)
             directory_rows.append({
                 "jid": jid,
                 "type": "group",
@@ -2516,6 +2518,33 @@ def _handle_system_event(event_class: str, event: str, data: dict, instance: str
                 "source": "group_directory",
                 "metadata": {"participants": participants},
             })
+            participant_rows = []
+            participant_jids = set()
+            for participant in raw_participants:
+                if not isinstance(participant, dict):
+                    continue
+                member_jid = (
+                    participant.get("id")
+                    or participant.get("phone_jid")
+                    or participant.get("lid")
+                    or ""
+                )
+                member_jid = str(member_jid).strip()
+                if not member_jid:
+                    continue
+                participant_jids.add(member_jid)
+                phone_source = str(
+                    participant.get("phone_jid")
+                    or participant.get("id")
+                    or participant.get("lid")
+                    or ""
+                ).strip()
+                participant_rows.append({
+                    "member_jid": member_jid,
+                    "member_phone": storage._normalize_phone(phone_source) or None,
+                    "display_name": str(participant.get("display_name") or "").strip() or None,
+                    "is_admin": bool(participant.get("is_admin") or participant.get("is_super_admin")),
+                })
             try:
                 storage.upsert_sync_job(
                     source="whatsapp", instance=instance,
@@ -2524,6 +2553,22 @@ def _handle_system_event(event_class: str, event: str, data: dict, instance: str
                 )
             except Exception as e:
                 print(f"  upsert sync job failed for {jid}: {e}")
+            if participant_rows:
+                try:
+                    storage.upsert_group_members(tenant_id, jid, participant_rows)
+                except Exception as exc:
+                    print(f"[webhook] group member persistence failed for {jid}: {exc}", flush=True)
+            if is_full_refresh:
+                try:
+                    removed_members = storage.prune_group_members(
+                        tenant_id=tenant_id,
+                        group_id=jid,
+                        keep_member_jids=participant_jids,
+                    )
+                    if removed_members:
+                        print(f"  Removed {removed_members} stale members for {jid}")
+                except Exception as exc:
+                    print(f"[webhook] prune group members failed for {jid}: {exc}", flush=True)
             get_bus().publish("group.updated", {
                 "instance": instance,
                 "jid": jid,
@@ -6930,8 +6975,8 @@ async def _stream_self_chat_reply(text: str) -> dict | None:
                 {"role": "user", "content": user_text},
             ],
             stream=True,
-            max_tokens=400,
             stream_options={"include_usage": True},
+            max_tokens=400,
             temperature=0.4,
         )
         chunks: list[str] = []
@@ -6947,8 +6992,8 @@ async def _stream_self_chat_reply(text: str) -> dict | None:
                 delta = None
             if delta:
                 chunks.append(delta)
-        if getattr(chunk, "usage", None):
-            usage_info = chunk.usage
+            if getattr(chunk, "usage", None):
+                usage_info = chunk.usage
         # Log token usage for cost tracking
         try:
             from usage_logger import log_ai_usage
@@ -13071,9 +13116,20 @@ def audit_groups_v2(
     query = (q or "").strip().lower()
 
     if not _table_exists("raw_messages"):
-        return {"groups": [], "total_unique_senders": 0, "errors": []}
+        return {
+            "groups": [],
+            "total_unique_senders": 0,
+            "total_unique_participants": 0,
+            "total_membership_rows": 0,
+            "duplicate_memberships": 0,
+            "connected_groups": 0,
+            "posting_groups_24h": 0,
+            "errors": [],
+        }
 
     has_parsed = _table_exists("parsed_output")
+    has_group_members = _table_exists("group_members")
+    has_sync_jobs = _table_exists("sync_jobs")
     errors: list[str] = []
 
     # ── Query 1: aggregate raw_messages by group_name ──
@@ -13165,6 +13221,42 @@ def audit_groups_v2(
     except Exception:
         pass
 
+    total_membership_rows = 0
+    total_unique_participants = 0
+    duplicate_memberships = 0
+    connected_groups = 0
+    if has_group_members:
+        try:
+            member_row = _audit_rows(
+                "SELECT COUNT(*) AS total_membership_rows, "
+                "COUNT(DISTINCT COALESCE(NULLIF(member_phone, ''), NULLIF(member_jid, ''))) AS total_unique_participants, "
+                "COUNT(DISTINCT group_id) AS connected_groups "
+                "FROM group_members "
+                "WHERE tenant_id = ?",
+                (tenant_id,),
+            )
+            if member_row:
+                total_membership_rows = int(_audit_row_value(member_row[0], ("total_membership_rows", 0), 0) or 0)
+                total_unique_participants = int(_audit_row_value(member_row[0], ("total_unique_participants", 1), 0) or 0)
+                connected_groups = int(_audit_row_value(member_row[0], ("connected_groups", 2), 0) or 0)
+                duplicate_memberships = max(0, total_membership_rows - total_unique_participants)
+        except Exception as exc:
+            errors.append(f"group_members aggregate failed: {exc}")
+    elif has_sync_jobs:
+        try:
+            sync_row = _audit_rows(
+                "SELECT COUNT(DISTINCT group_id) AS connected_groups, "
+                "COALESCE(SUM(participants), 0) AS total_membership_rows "
+                "FROM sync_jobs "
+                "WHERE source = ? AND group_id IS NOT NULL AND group_id != ''",
+                ("whatsapp",),
+            )
+            if sync_row:
+                connected_groups = int(_audit_row_value(sync_row[0], ("connected_groups", 0), 0) or 0)
+                total_membership_rows = int(_audit_row_value(sync_row[0], ("total_membership_rows", 1), 0) or 0)
+        except Exception:
+            pass
+
     groups = []
     for gn, g in stats.items():
         name = _audit_group_display_name(gn)
@@ -13206,7 +13298,18 @@ def audit_groups_v2(
             "parsed": parse_group_name(name),
         })
 
-    return {"groups": groups, "total_unique_senders": total_unique_senders, "errors": errors}
+    posting_groups_24h = sum(1 for group in groups if group["status"] == "live")
+
+    return {
+        "groups": groups,
+        "total_unique_senders": total_unique_senders,
+        "total_unique_participants": total_unique_participants,
+        "total_membership_rows": total_membership_rows,
+        "duplicate_memberships": duplicate_memberships,
+        "connected_groups": connected_groups,
+        "posting_groups_24h": posting_groups_24h,
+        "errors": errors,
+    }
 
 
 @app.get("/api/audit/groups/{jid}")
@@ -15832,6 +15935,14 @@ def _bucket_history(events: list[dict], bucket_minutes: int = 5,
     return sorted(bins.values(), key=lambda b: -b["ts_bucket"])
 
 
+@app.get("/api/admin/ai-usage")
+async def admin_ai_usage(days: int = 7, user: dict = Depends(require_user)):
+    """Super-admin only: AI cost dashboard — who spent what on which model."""
+    if not await asyncio.to_thread(storage.is_super_admin, user["id"]):
+        raise HTTPException(403, "Super admin only")
+    return storage.get_ai_usage_stats(days=min(max(days, 1), 90))
+
+
 @app.get("/api/admin/providers/health")
 async def admin_provider_health(user: dict = Depends(require_user)):
     """Current health per provider: status, p50/p95, last probe, last error.
@@ -16218,11 +16329,3 @@ async def get_alerts_config(user: dict = Depends(require_user)):
         }
     except Exception as exc:
         return JSONResponse(status_code=500, content={"error": str(exc)})
-
-
-@app.get("/api/admin/ai-usage")
-async def admin_ai_usage(days: int = 7, user: dict = Depends(require_user)):
-    """Super-admin only: AI cost dashboard — who spent what on which model."""
-    if not await asyncio.to_thread(storage.is_super_admin, user["id"]):
-        raise HTTPException(403, "Super admin only")
-    return storage.get_ai_usage_stats(days=min(max(days, 1), 90))

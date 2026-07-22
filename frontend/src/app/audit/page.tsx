@@ -15,7 +15,11 @@ const DATAVIZ_SERIES = designTokens.datavizSeries; // cyan, single-series line/a
 type Duplicate = { group_a?: { jid?: string; name?: string }; group_b?: { jid?: string; name?: string }; match_type?: string };
 type State = {
   groups: api.AuditGroupCard[];
-  uniqueMembers: number;
+  uniqueParticipants: number;
+  totalMembershipRows: number;
+  duplicateMemberships: number;
+  connectedGroups: number;
+  postingGroups24h: number;
   health: api.AuditCaptureHealth | null;
   duplicates: Duplicate[];
   overlap: api.AuditGroupOverlapResponse;
@@ -25,7 +29,7 @@ type State = {
 
 const emptyInsights: api.AuditInsights = { daily_flow: [], markets: [], brokers: [], exclusive_members: {}, total_unique_brokers: 0, total_broker_appearances: 0 };
 const emptyState: State = {
-  groups: [], uniqueMembers: 0, health: null, duplicates: [],
+  groups: [], uniqueParticipants: 0, totalMembershipRows: 0, duplicateMemberships: 0, connectedGroups: 0, postingGroups24h: 0, health: null, duplicates: [],
   overlap: { pairs: [], groups: [] }, insights: emptyInsights, errors: [],
 };
 
@@ -87,14 +91,27 @@ export default function AuditPage() {
   const load = useCallback(async () => {
     setLoading(true);
     const [groups, health, duplicates, overlap, insights] = await Promise.all([
-      safe("groups", () => api.getAuditGroups(), { groups: [], total_unique_senders: 0 } as api.AuditGroupsResponse),
+      safe("groups", () => api.getAuditGroups(), {
+        groups: [],
+        total_unique_senders: 0,
+        total_unique_participants: 0,
+        total_membership_rows: 0,
+        duplicate_memberships: 0,
+        connected_groups: 0,
+        posting_groups_24h: 0,
+      } as api.AuditGroupsResponse),
       safe("capture", () => api.getAuditCaptureHealth(), null),
       safe("duplicates", () => api.getAuditDuplicates(), []),
       safe("overlap", () => api.getAuditGroupOverlap(), { pairs: [], groups: [] } as api.AuditGroupOverlapResponse),
       safe("insights", () => api.getAuditInsights(), emptyInsights),
     ]);
     setState({
-      groups: groups.value.groups, uniqueMembers: groups.value.total_unique_senders,
+      groups: groups.value.groups,
+      uniqueParticipants: groups.value.total_unique_participants ?? groups.value.total_unique_senders,
+      totalMembershipRows: groups.value.total_membership_rows ?? 0,
+      duplicateMemberships: groups.value.duplicate_memberships ?? 0,
+      connectedGroups: groups.value.connected_groups ?? 0,
+      postingGroups24h: groups.value.posting_groups_24h ?? 0,
       health: health.value, duplicates: duplicates.value, overlap: overlap.value, insights: insights.value,
       errors: [groups.error, health.error, duplicates.error, overlap.error, insights.error].filter(Boolean),
     });
@@ -107,7 +124,6 @@ export default function AuditPage() {
 
   const listings = state.groups.reduce((sum, group) => sum + group.listings, 0);
   const requirements = state.groups.reduce((sum, group) => sum + group.requirements, 0);
-  const active = state.groups.filter((group) => group.status === "live").length;
   const brokersAcrossGroups = state.groups.reduce((sum, group) => sum + (group.active_brokers || 0), 0);
   const brokersOverall = state.insights.total_unique_brokers || (state.health?.stage?.brokers ?? 0);
   const brokerAppearances = state.insights.total_broker_appearances || brokersAcrossGroups;
@@ -153,8 +169,16 @@ export default function AuditPage() {
           <div className="absolute right-0 top-0 h-48 w-48 bg-[radial-gradient(circle,rgba(255,255,255,.07),transparent_65%)]" />
           <Kicker>Today&apos;s brief</Kicker>
           <p className="mt-5 max-w-4xl text-2xl font-medium leading-tight tracking-[-0.035em] text-zinc-100 sm:text-4xl">
-            PropAI found <span className="text-white">{num(today?.posts || state.health?.total_parsed_today)}</span> market posts from a network of <span className="text-white">{num(state.uniqueMembers)}</span> participants across <span className="text-white">{num(active)}</span> active groups.
+            PropAI found <span className="text-white">{num(today?.posts || state.health?.total_parsed_today)}</span> market posts from a network of <span className="text-white">{num(state.uniqueParticipants)}</span> participants across <span className="text-white">{num(state.connectedGroups)}</span> connected groups.
           </p>
+          <div className="mt-4 flex flex-wrap gap-2 text-[11px] font-medium">
+            <span className="rounded-full border border-white/10 bg-white/[0.03] px-3 py-1.5 text-zinc-300">
+              {num(state.postingGroups24h)} groups posted in the last 24h
+            </span>
+            <span className="rounded-full border border-white/10 bg-white/[0.03] px-3 py-1.5 text-zinc-300">
+              {num(state.totalMembershipRows)} raw memberships · {num(state.duplicateMemberships)} duplicates
+            </span>
+          </div>
           <div className="mt-8 grid grid-cols-2 gap-px border border-white/10 bg-white/10 lg:grid-cols-3">
             {[["Listings", listings], ["Requirements", requirements], ["Markets", state.insights.markets.length], ["Unique brokers", brokersOverall], ["Broker appearances", brokerAppearances], ["Parser ready", `${Math.min(100, Math.round(state.health?.parser_success_rate || 0))}%`]].map(([label, value]) => (
               <div key={label} className="bg-[#090909] p-4"><Kicker>{label}</Kicker><div className="mt-2 text-xl font-semibold tabular-nums">{typeof value === "number" ? num(value) : value}</div></div>
@@ -177,8 +201,9 @@ export default function AuditPage() {
           <NetworkMap
             groups={state.groups}
             pairs={state.overlap.pairs}
-            uniqueMembers={state.uniqueMembers}
+            uniqueMembers={state.uniqueParticipants}
             redundantCount={redundant.length}
+            duplicateMemberships={state.duplicateMemberships}
           />
         </Card>
       </section>
