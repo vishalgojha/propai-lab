@@ -2223,7 +2223,7 @@ return {
       });
 
   const threadFallbackItems: ThreadFallbackItem[] = [
-    ...((searchParams.get("view") === "groups" || currentSlug === "groups")
+    ...(isGroupsView
       ? directoryGroupItems
       : [
           ...(activeSlug?.view_type === "brokers" ? [] : groupChats.map((chat) => ({
@@ -3184,33 +3184,39 @@ return {
               className="w-full px-2.5 py-1.5 bg-zinc-900 border border-white/10 rounded-lg text-xs text-white focus:border-[#3EE88A] focus:outline-none transition-colors"
             />
 
-            {/* Slug-based View Tabs */}
-            <div className="flex gap-1 bg-zinc-900 p-0.5 rounded-lg border border-[rgba(255,255,255,0.03)]" style={{ gridTemplateColumns: `repeat(${Math.min(slugs.length, 5)}, 1fr)` }}>
-              {slugs.length === 0 ? (
-                <>
+            {/* Saved broker views do not apply to the raw WhatsApp mirror. */}
+            {isGroupsView ? (
+              <div className="flex gap-1 bg-zinc-900 p-0.5 rounded-lg border border-[rgba(255,255,255,0.03)]">
+                <div className="flex-1 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wider text-center text-[#3EE88A] bg-zinc-800">
+                  Chats & broadcasts
+                </div>
+              </div>
+            ) : (
+              <div className="flex gap-1 bg-zinc-900 p-0.5 rounded-lg border border-[rgba(255,255,255,0.03)]" style={{ gridTemplateColumns: `repeat(${Math.min(slugs.length, 5)}, 1fr)` }}>
+                {slugs.length === 0 ? (
                   <div className="flex-1 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wider text-center text-zinc-500 bg-zinc-800">
-                    {isGroupsView ? "Groups" : "Brokers"}
+                    Brokers
                   </div>
-                </>
-              ) : (
-                slugs.map((sv) => (
-                  <button
-                    key={sv.slug}
-                    onClick={() => {
-                      setCurrentSlug(sv.slug);
-                      updateUrlView(sv.slug);
-                    }}
-                    className={`flex-1 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wider transition-colors touch-target ${
-                      currentSlug === sv.slug
-                        ? "bg-zinc-800 text-[#3EE88A] shadow-sm"
-                        : "text-zinc-500 hover:text-white"
-                    }`}
-                  >
-                    {sv.label}
-                  </button>
-                ))
-              )}
-            </div>
+                ) : (
+                  slugs.map((sv) => (
+                    <button
+                      key={sv.slug}
+                      onClick={() => {
+                        setCurrentSlug(sv.slug);
+                        updateUrlView(sv.slug);
+                      }}
+                      className={`flex-1 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wider transition-colors touch-target ${
+                        currentSlug === sv.slug
+                          ? "bg-zinc-800 text-[#3EE88A] shadow-sm"
+                          : "text-zinc-500 hover:text-white"
+                      }`}
+                    >
+                      {sv.label}
+                    </button>
+                  ))
+                )}
+              </div>
+            )}
           </div>
 
           {/* List Content */}
