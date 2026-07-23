@@ -121,6 +121,10 @@ export default function AuditPage() {
     const timer = window.setTimeout(() => { void load(); }, 0);
     return () => window.clearTimeout(timer);
   }, [load]);
+  useEffect(() => {
+    const interval = window.setInterval(() => { void load(); }, 30000);
+    return () => window.clearInterval(interval);
+  }, [load]);
 
   const listings = state.groups.reduce((sum, group) => sum + group.listings, 0);
   const requirements = state.groups.reduce((sum, group) => sum + group.requirements, 0);
