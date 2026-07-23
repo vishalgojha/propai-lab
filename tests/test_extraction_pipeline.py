@@ -38,26 +38,21 @@ class _Storage:
 
 def test_single_message_worker_uses_property_parser(monkeypatch):
     storage = _Storage()
-    parsed = {
-        "intent": "SELL",
-        "bhk": "3 BHK",
-        "price": 5.0,
-        "price_unit": "Cr",
-        "location_raw": "Bandra West",
-        "micro_market": "Bandra West",
-        "confidence": 0.9,
-        "raw_payload": {"full_text": "3 BHK for sale in Bandra West at 5 Cr"},
+    ai_item = {
+        "listing_type": "sale", "property_category": "residential", "bhk": 3,
+        "price": {"amount": 5.0, "unit": "cr", "period": "total"},
+        "locality": {"raw_mention": "Bandra West", "resolved_locality": "Bandra West", "confidence": "high"},
+        "furnishing_status": None, "title": None, "extraction_confidence": "high",
     }
 
     monkeypatch.setattr(lab.config, "load_excluded_groups", lambda: set())
     monkeypatch.setattr(multi_listing, "classify_message", lambda _text: "single")
-    monkeypatch.setattr(app, "parse_message", lambda _text, profile_name=None: dict(parsed))
+    monkeypatch.setattr(ai_extraction, "ai_extract", lambda *_args, **_kwargs: {
+        "extraction_source": "ai", "extraction": ai_item, "extractions": [ai_item], "provider_used": "fake",
+    })
     monkeypatch.setattr(app, "classify_conversation", lambda *_args: "public")
     monkeypatch.setattr(app, "compute_embedding", lambda _parsed: None)
     monkeypatch.setattr(app, "resolve_parsed", lambda *_args: {})
-    monkeypatch.setattr(app, "_parsed_source_text", lambda item, fallback: item["raw_payload"]["full_text"])
-    monkeypatch.setattr(app, "_demote_weak_property_parse", lambda item, _text: item)
-    monkeypatch.setattr(app, "_parsed_has_market_anchor", lambda *_args: True)
     monkeypatch.setattr(app, "_attribution_suffix", lambda *_args: "")
     monkeypatch.setattr(app, "check_share_eligibility", lambda *_args: (True, "ok"))
     monkeypatch.setattr(app, "generate_summary_title", lambda *_args: "3 BHK in Bandra West")
@@ -347,25 +342,21 @@ Aaron 8655245101""",
 def _run_broker_attribution(monkeypatch, sender_phone: str) -> dict:
     """Helper: process a message and return broker_name/broker_phone on the saved row."""
     storage = _Storage()
-    parsed = {
-        "intent": "RENT",
-        "bhk": "2 BHK",
-        "price": 1.5,
-        "price_unit": "Lac",
-        "location_raw": "Bandra West",
-        "micro_market": "Bandra West",
-        "confidence": 0.85,
-        "raw_payload": {"full_text": "2 BHK for rent in Bandra West"},
+    ai_item = {
+        "listing_type": "rent", "property_category": "residential", "bhk": 2,
+        "carpet_area_sqft": None,
+        "price": {"amount": 150000, "unit": "total", "period": "per_month"},
+        "locality": {"raw_mention": "Bandra West", "resolved_locality": "Bandra West", "confidence": "high"},
+        "furnishing_status": None, "title": None, "extraction_confidence": "high",
     }
     monkeypatch.setattr(lab.config, "load_excluded_groups", lambda: set())
     monkeypatch.setattr(multi_listing, "classify_message", lambda _text: "single")
-    monkeypatch.setattr(app, "parse_message", lambda _text, profile_name=None: dict(parsed))
+    monkeypatch.setattr(ai_extraction, "ai_extract", lambda *_args, **_kwargs: {
+        "extraction_source": "ai", "extraction": ai_item, "extractions": [ai_item], "provider_used": "fake",
+    })
     monkeypatch.setattr(app, "classify_conversation", lambda *_args: "public")
     monkeypatch.setattr(app, "compute_embedding", lambda _parsed: None)
     monkeypatch.setattr(app, "resolve_parsed", lambda *_args: {})
-    monkeypatch.setattr(app, "_parsed_source_text", lambda item, fallback: item["raw_payload"]["full_text"])
-    monkeypatch.setattr(app, "_demote_weak_property_parse", lambda item, _text: item)
-    monkeypatch.setattr(app, "_parsed_has_market_anchor", lambda *_args: True)
     monkeypatch.setattr(app, "_attribution_suffix", lambda *_args: "")
     monkeypatch.setattr(app, "check_share_eligibility", lambda *_args: (True, "ok"))
     monkeypatch.setattr(app, "generate_summary_title", lambda *_args: "2 BHK in Bandra West")
