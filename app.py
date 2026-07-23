@@ -13964,9 +13964,9 @@ def audit_insights(
             "('BUY','BUYER','REQUIREMENT','RENTAL_SEEKER','TENANT') THEN (po.raw_message_id::text || ':' || COALESCE(po.listing_index, 0)::text) END) AS listings, "
             "COUNT(DISTINCT COALESCE(NULLIF(po.broker_phone, ''), NULLIF(po.broker_name, ''), rm.sender)) AS brokers "
             "FROM parsed_output po JOIN raw_messages rm ON po.raw_message_id = rm.id "
-            "WHERE rm.tenant_id = $1 AND COALESCE(po.micro_market, '') != '' "
+            "WHERE rm.tenant_id = $1 AND rm.created_at >= $2 AND COALESCE(po.micro_market, '') != '' "
             "GROUP BY po.micro_market ORDER BY posts DESC LIMIT 8",
-            (tenant_id,),
+            (tenant_id, week_ago),
         ) if _table_exists("raw_messages") and _table_exists("parsed_output") else []
 
         broker_rows = _audit_rows(
