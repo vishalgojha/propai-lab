@@ -50,76 +50,31 @@ def _next_provider() -> dict | None:
 
 # ── Extraction prompt ─────────────────────────────────────────────────
 
-_EXTRACTION_SYSTEM_PROMPT = """You are a real estate listing parser for Mumbai, India.
-Extract structured data from broker WhatsApp messages.
+_EXTRACTION_SYSTEM_PROMPT = """You parse Mumbai real estate broker WhatsApp messages into JSON.
+
+Return {"items": [<one object per listing>]} with exactly these fields per item:
+
+listing_type: "sale" | "rent" | "requirement"
+property_category: "residential" | "commercial"
+bhk: number (1, 1.5, 2, 3...) or null for commercial
+carpet_area_sqft: number or null
+price: {amount: number|null, unit: "total"|"per_sqft"|null, period: "one_time"|"per_month"|null, raw_price_text: "exact phrase"|null}
+  - Convert: 1 Cr = 10000000, 1 Lakh = 100000. amount = TOTAL price (not per-sqft)
+locality: {raw_mention: "exact location text"|null, resolved_locality: "parent area like Bandra West"|null, confidence: "high"|"medium"}
+building_name: "proper complex name" | null (NEVER amenities like "Sea View", "Semi Furnished")
+furnishing_status: "unfurnished" | "semi_furnished" | "fully_furnished" | null
+amenities: ["gym", "parking"...] (only if explicitly mentioned)
+possession_status: "ready_to_move" | "under_construction" | date string | null
+deal_tags: ["negotiable", "urgent_sale"...] (only if explicit in message)
+additional_charges: [{label:str, amount:num, amount_type:"fixed"|"percent_of_price"}]
+title: "3 BHK for Rent in Bandra West — ₹2.75L/month" (auto-generated from fields)
+extraction_confidence: "high" | "medium" | "low"
 
 Rules:
-1. listing_type: "sale" (owner selling), "rent" (landlord leasing), "requirement" (broker looking to buy/rent)
-2. property_category: "residential" (flat, villa, bungalow, apartment) or "commercial" (office, shop, godown, warehouse)
-3. bhk: number like 1, 1.5 (1RK), 2, 3, 3.5, 4. null for commercial
-4. price.amount: the TOTAL price (not per-sqft), as a number. If message says "12 crs (75K psf)", amount = 120000000 (₹12 Cr). Convert crores to absolute: 1 Cr = 10,000,000. Convert lakhs: 1 Lac/Lakh = 100,000.
-5. price.unit: "total" for absolute price, "per_sqft" only if message ONLY gives per-sqft rate without total
-6. price.period: "one_time" for sale, "per_month" for rent, null if unclear
-7. price.raw_price_text: the exact price phrase from the message verbatim. Example: "12 crs (75K psf) nego", "₹2.75L/month"
-8. locality.raw_mention: the exact location phrase from the message, e.g. "Union Park", "Carter Road", "Lilavati Hospital ke paas"
-9. locality.resolved_locality: the PARENT LOCALITY, e.g. "Bandra West" (not "Union Park"). Use your knowledge of Mumbai to resolve sub-localities to known areas.
-10. locality.confidence: "high" if the parent locality is certain, "medium" if inferred
-11. building_name: the building/complex name if mentioned, null otherwise. CRITICAL: building_name is ONLY the proper name of a residential/commercial complex (e.g. "Kalpataru Vivant", "Lodha Altamount", "Raheja Imperia"). It is NEVER a feature, amenity, or description. "Stamp Duty Benefit", "Semi Furnished", "Sea View", "Ready to Move", "Near Station" are NOT building names — extract null for these.
-12. furnishing_status: "unfurnished", "semi_furnished", "fully_furnished", or null
-13. amenities: array of strings like "gym", "parking", "swimming pool", "pets allowed", "security", "power backup", "lift". Extract only explicitly mentioned amenities.
-14. possession_status: "ready_to_move", "under_construction", or a date/timeline string, null if not mentioned
-(FAQ) Some building names contain locality names (e.g. "Ten BKC", "One BKC", "BKC-X"). These are tower names in BKC, not locality mentions. Extract building_name for these, and set locality.raw_mention to the area phrase (e.g., "BKC" is resolved to locality "BKC").
-15. title: auto-generated human-readable title (see below)
-16. extraction_confidence: "high" (confident in all fields), "medium" (some uncertainty), "low" (guessing)
-17. carpet_area_sqft: number or null
-18. deal_tags: array of strings describing deal urgency/type if explicitly signaled in the message. Use values from this set only:
-    "distress_sale", "urgent_sale", "negotiable", "bank_auction",
-    "resale", "exclusive_mandate", "price_drop". Empty array if none apply.
-    Do NOT infer urgency from tone alone — only tag when the message uses
-    explicit language (e.g. "distress sale", "urgent", "negotiable",
-    "bank auction/SARFAESI").
-19. additional_charges: array of objects for any cost mentioned SEPARATELY
-    from the headline price (society dues, transfer fees, professional
-    fees, brokerage, stamp duty if broker-quoted, parking charges, etc.).
-    Each object: {"label": string, "amount": number, "amount_type":
-    "fixed" | "percent_of_price"}. amount_type "percent_of_price" means
-    `amount` is the percentage value (e.g. 3, not 0.03). Do NOT include
-    the base/reserve price itself here — that belongs in `price`. Empty
-    array if no additional charges are mentioned.
-
-Title generation examples:
-- "3 BHK for Rent in Bandra West — ₹2.75L/month"
-- "3 BHK for Sale in Juhu (Union Park) — ₹12 Cr"
-- "Commercial Office for Rent in BKC — ₹5L/month"
-- "Requirement: 2 BHK in Andheri West, Budget ₹2–3 Cr"
-- "1 RK for Rent in Goregaon West — ₹18K/month"
-- "Studio Apartment for Sale in Lower Parel — ₹1.5 Cr"
-
-Title rules:
-- Use structured fields, NOT verbatim text
-- Omit price if it's "Price on request" / not disclosed
-- For requirements, prefix with "Requirement: "
-- Include building name in parentheses if available
-- Format prices: crores as "₹X Cr", lakhs as "₹X Lakh", thousands as "₹XK/month"
-
-CRITICAL — NEVER do these:
-- Confuse per-sqft price with total price. "75K psf" = price per sqft, NOT total price. If both total and psf are given, amount = total price.
-- Default to "Western Suburbs" or any generic bucket for locality. Resolve properly or mark confidence low.
-- Confuse rent vs sale. Check price period "/month" → rent. Check words like "rent", "lease", "monthly" vs "sale", "outright", "purchase".
-- Use WhatsApp push name or message text name for broker identity. Only the phone number identifies the broker.
-- Never fold additional_charges into price.amount. Reserve/asking price
-  and additional charges (dues, fees, etc.) must stay separate — the
-  frontend displays them as distinct line items.
-
-Always return one JSON object with this exact outer shape:
-{"items": [<one object per opportunity>]}
-
-For a message with one opportunity, "items" contains one object. For a message
-with multiple distinct listings or requirements, it contains one object per
-opportunity, in the same order as the message. Never merge options, floors, or
-properties into one object.
-
-Return ONLY valid JSON with no markdown formatting, no code blocks, no extra text."""
+- One message may contain multiple listings. Put each in a separate items[] entry.
+- For requirements (broker seeking), listing_type = "requirement".
+- Building name = ONLY proper complex names (e.g. "Kalpataru Vivant"). NEVER features/descriptions.
+- Return ONLY valid JSON. No markdown, no code blocks, no extra text."""
 
 
 # ── Schema validation ─────────────────────────────────────────────────
@@ -668,6 +623,9 @@ def ai_extract(raw_text: str, ctx: dict | None = None, storage=None) -> dict:
         raw_extraction = _call_provider(provider, messages, source_id=_src_id, tenant_id=_tid)
 
         if raw_extraction is None:
+            # Backoff before trying next provider (avoids cascading rate limits)
+            import time as _time
+            _time.sleep(min(attempts * 1.5, 8))
             continue
 
         candidates = raw_extraction if isinstance(raw_extraction, list) else [raw_extraction]
