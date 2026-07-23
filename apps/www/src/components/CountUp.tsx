@@ -19,11 +19,20 @@ export default function CountUp({
   className = "",
   locale = "en-IN",
 }: CountUpProps) {
-  const [count, setCount] = useState(0);
+  // SSR: render the real value so crawlers see accurate numbers.
+  // On mount, reset to 0 and animate up — users see the count-up effect.
+  const [count, setCount] = useState(end);
+  const [hasMounted, setHasMounted] = useState(false);
   const [isVisible, setIsVisible] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    setHasMounted(true);
+    setCount(0);
+  }, []);
+
+  useEffect(() => {
+    if (!hasMounted) return;
     const observer = new IntersectionObserver(
       ([entry]) => {
         if (entry.isIntersecting) {
@@ -36,7 +45,7 @@ export default function CountUp({
 
     if (ref.current) observer.observe(ref.current);
     return () => observer.disconnect();
-  }, []);
+  }, [hasMounted]);
 
   useEffect(() => {
     if (!isVisible) return;
