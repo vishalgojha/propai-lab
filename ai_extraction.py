@@ -64,7 +64,7 @@ Rules:
 8. locality.raw_mention: the exact location phrase from the message, e.g. "Union Park", "Carter Road", "Lilavati Hospital ke paas"
 9. locality.resolved_locality: the PARENT LOCALITY, e.g. "Bandra West" (not "Union Park"). Use your knowledge of Mumbai to resolve sub-localities to known areas.
 10. locality.confidence: "high" if the parent locality is certain, "medium" if inferred
-11. building_name: the building/complex name if mentioned, null otherwise
+11. building_name: the building/complex name if mentioned, null otherwise. CRITICAL: building_name is ONLY the proper name of a residential/commercial complex (e.g. "Kalpataru Vivant", "Lodha Altamount", "Raheja Imperia"). It is NEVER a feature, amenity, or description. "Stamp Duty Benefit", "Semi Furnished", "Sea View", "Ready to Move", "Near Station" are NOT building names — extract null for these.
 12. furnishing_status: "unfurnished", "semi_furnished", "fully_furnished", or null
 13. amenities: array of strings like "gym", "parking", "swimming pool", "pets allowed", "security", "power backup", "lift". Extract only explicitly mentioned amenities.
 14. possession_status: "ready_to_move", "under_construction", or a date/timeline string, null if not mentioned
@@ -214,9 +214,25 @@ def _normalize_extraction(raw: dict) -> dict:
     else:
         result["locality"] = {"raw_mention": None, "resolved_locality": None, "confidence": "low"}
 
-    # building_name
+    # building_name — reject garbage patterns that the LLM sometimes extracts
+    # as building names (furnishing descriptions, price phrases, etc.)
     bn = raw.get("building_name")
-    result["building_name"] = str(bn).strip() if bn and str(bn).strip() else None
+    bn_str = str(bn).strip() if bn and str(bn).strip() else None
+    if bn_str:
+        bn_lower = bn_str.lower()
+        _GARBAGE_BUILDING_PATTERNS = (
+            "stamp duty", "furnished", "carpet", "bhk", "sqft", "sq ft",
+            "ready to move", "negotiable", "balcony", "sea view",
+            "amenities", "parking", "deposit", "possession",
+            " available", "available ", "options", "benefit",
+            "family", "bachelor", "veg ", " non-veg",
+            " near ", "opp ", "opposite", "behind", "floor",
+        )
+        if any(pat in bn_lower for pat in _GARBAGE_BUILDING_PATTERNS):
+            bn_str = None
+        elif len(bn_str) < 3 or len(bn_str) > 80:
+            bn_str = None
+    result["building_name"] = bn_str
 
     # furnishing_status
     fs = str(raw.get("furnishing_status", "")).strip().lower().replace(" ", "_")
