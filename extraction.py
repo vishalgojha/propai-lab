@@ -203,7 +203,20 @@ def _ai_extraction_to_parsed(ai_extraction: dict, raw_text: str, sender_name: st
     price_period = price_info.get("period") if isinstance(price_info, dict) else None
 
     price = float(price_amount) if price_amount is not None else None
-    price_unit = "cr" if price and price >= 1_00_00_000 else ("lac" if price and price >= 1_00_000 else "abs") if price else None
+    # Use AI's raw_price_text to infer unit, not magnitude heuristic
+    raw_price_text = (price_info.get("raw_price_text") or "").lower() if isinstance(price_info, dict) else ""
+    if price is not None:
+        if any(u in raw_price_text for u in ("cr", "crore")):
+            price_unit = "cr"
+        elif any(u in raw_price_text for u in ("lac", "lakh", "l ")):
+            price_unit = "lac"
+        elif any(u in raw_price_text for u in ("k", "thousand")):
+            price_unit = "K"
+        else:
+            # Fallback: magnitude heuristic (last resort)
+            price_unit = "cr" if price >= 1_00_00_000 else ("lac" if price >= 1_00_000 else "abs")
+    else:
+        price_unit = None
     price_model = "psf" if price_unit_price == "per_sqft" else None
 
     locality = ai_extraction.get("locality", {})
