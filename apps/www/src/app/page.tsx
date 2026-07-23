@@ -118,7 +118,7 @@ export default async function WWWPage() {
             </p>
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-5 lg:gap-8 max-w-4xl mx-auto">
               <TrustStat label="Active listings" value={overview.counts.activeListings} />
-              <TrustStat label="Verified brokers" value={overview.counts.brokers} />
+              <TrustStat label="Active brokers" value={overview.counts.brokers} />
               <TrustStat label="Localities covered" value={overview.counts.localities} />
               <TrustStat
                 label="Messages analysed"
