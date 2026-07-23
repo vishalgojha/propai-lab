@@ -190,6 +190,8 @@ def _check_substring_aliases(storage: "Storage", raw_text: str, parsed_id: int) 
 
 
 def _call_llm(raw_message: str, location_raw: str) -> dict | None:
+    from llm import get_model
+
     client = _get_client()
     if not client:
         return None
@@ -197,7 +199,7 @@ def _call_llm(raw_message: str, location_raw: str) -> dict | None:
     user_text = f"Message: {raw_message}\nLocation: {location_raw}"
     try:
         resp = client.chat.completions.create(
-            model=os.environ.get("LLM_TASK_MODEL", "extraction"),
+            model=get_model(),
             messages=[
                 {"role": "system", "content": LOCATION_SYSTEM_PROMPT},
                 {"role": "user", "content": user_text},

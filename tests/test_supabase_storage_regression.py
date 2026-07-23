@@ -228,6 +228,78 @@ def test_parsed_market_fallback_merges_phone_and_name_rows():
     assert result[0]["message_count"] == 2
 
 
+def test_parsed_market_specialties_do_not_count_reposts_twice():
+    from storage.supabase import SupabaseStorage
+
+    parsed_rows = [
+        {
+            "id": 1,
+            "raw_message_id": 101,
+            "intent": "RENT",
+            "broker_name": "Market Broker",
+            "broker_phone": "9820012345",
+            "micro_market": "Zuhu",
+            "property_type": "Apartment",
+            "bhk": "2 BHK",
+            "price": "2 lakh",
+            "created_at": "2026-07-18T10:00:00+00:00",
+        },
+        {
+            "id": 2,
+            "raw_message_id": 102,
+            "intent": "RENT",
+            "broker_name": "Market Broker",
+            "broker_phone": "9820012345",
+            "micro_market": "Zuhu",
+            "property_type": "Apartment",
+            "bhk": "2 BHK",
+            "price": "2 lakh",
+            "created_at": "2026-07-18T11:00:00+00:00",
+        },
+        {
+            "id": 3,
+            "raw_message_id": 103,
+            "intent": "SELL",
+            "broker_name": "Market Broker",
+            "broker_phone": "9820012345",
+            "micro_market": "Andheri West",
+            "property_type": "Office",
+            "area_sqft": 900,
+            "price": "4 crore",
+            "created_at": "2026-07-18T12:00:00+00:00",
+        },
+    ]
+    raw_rows = [
+        {"id": 101, "group_name": "Broker Group", "timestamp": "2026-07-18T10:00:00+00:00", "is_group": True},
+        {"id": 102, "group_name": "Broker Group", "timestamp": "2026-07-18T11:00:00+00:00", "is_group": True},
+        {"id": 103, "group_name": "Broker Group", "timestamp": "2026-07-18T12:00:00+00:00", "is_group": True},
+    ]
+
+    class FakeQuery:
+        def __init__(self, rows):
+            self.rows = rows
+
+        def __getattr__(self, _name):
+            return lambda *args, **kwargs: self
+
+        def execute(self):
+            return SimpleNamespace(data=self.rows)
+
+    class FakeClient:
+        def table(self, name):
+            return FakeQuery(parsed_rows if name == "parsed_output" else raw_rows)
+
+    storage = object.__new__(SupabaseStorage)
+    storage._client = FakeClient()
+    storage._SupabaseStorage__tenant_id_fallback = None
+
+    result = storage._get_parsed_market_threads(25, 0)
+
+    assert result[0]["message_count"] == 2
+    assert result[0]["specialty_localities"] == ["Andheri West", "Zuhu"]
+    assert result[0]["specialty_property_types"] == ["Apartment", "Office"]
+
+
 def test_phone_observation_fallback_includes_linked_name_only_rows():
     from types import SimpleNamespace
     from storage.supabase import SupabaseStorage
@@ -387,6 +459,60 @@ def test_name_identity_observation_lookup_is_one_database_request():
             "p_tenant_id": "org-2",
         },
     )]
+
+
+def test_market_observation_reposts_merge_across_raw_message_ids():
+    from storage.supabase import _merge_observation_rows
+
+    base = {
+        "observation_type": "LISTING",
+        "intent": "RENT",
+        "bhk": "3 BHK",
+        "building_name": "Ten BKC",
+        "micro_market": "BKC",
+        "area_sqft": 1360,
+        "price": 300000,
+        "broker_phone": "919773757759",
+    }
+    rows = [
+        {**base, "id": 1, "raw_message_id": 101, "last_seen": "2026-07-23T08:00:00Z", "source_message": "first post"},
+        {
+            **base,
+            "broker_phone": "",
+            "broker_name": "Kapil Ojha",
+            "id": 2,
+            "raw_message_id": 205,
+            "last_seen": "2026-07-23T12:00:00Z",
+            "source_message": "latest post",
+        },
+    ]
+
+    merged = _merge_observation_rows(rows)
+
+    assert len(merged) == 1
+    assert merged[0]["times_seen"] == 2
+    assert merged[0]["raw_message_id"] == 205
+    assert merged[0]["source_message"] == "latest post"
+
+
+def test_market_observation_dedupe_keeps_requirements_and_distinct_floors_separate():
+    from storage.supabase import _merge_observation_rows
+
+    base = {
+        "intent": "RENT",
+        "bhk": "3 BHK",
+        "building_name": "Ten BKC",
+        "area_sqft": 1360,
+        "price": 300000,
+        "broker_phone": "919773757759",
+    }
+    rows = [
+        {**base, "observation_type": "LISTING", "floor_range": "17", "raw_message_id": 1},
+        {**base, "observation_type": "LISTING", "floor_range": "24", "raw_message_id": 2},
+        {**base, "observation_type": "REQUIREMENT", "floor_range": "17", "raw_message_id": 3},
+    ]
+
+    assert len(_merge_observation_rows(rows)) == 3
 
 
 def test_find_broker_refreshes_stale_profile_graph(monkeypatch):

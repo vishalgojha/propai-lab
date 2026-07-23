@@ -2,17 +2,13 @@
 
 export const dynamic = 'force-dynamic';
 
-import { useEffect, useState, useRef, useCallback, useMemo, Suspense, lazy } from "react";
-import nextDynamic from "next/dynamic";
+import { useEffect, useState, useRef, useCallback, useMemo, Suspense } from "react";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 import * as api from "@/lib/api";
 import BrokerAvatar from "@/components/BrokerAvatar";
 import WhatsAppMessage, { MessageEntity } from "@/components/WhatsAppMessage";
-import TextSelectionMenu from "@/components/TextSelectionMenu";
 import NotesPanel from "@/components/notes/NotesPanel";
-const CombinedLocalityDialog = nextDynamic(() => import("@/components/CombinedLocalityDialog").then((m) => ({ default: m.CombinedLocalityDialog })), { ssr: false });
-const AddToClientBucket = nextDynamic(() => import("@/components/AddToClientBucket"), { ssr: false });
 import ResizablePanel from "@/components/ResizablePanel";
 import { InboxChatPanel } from "@/components/InboxChatPanel";
 import { entityProfileHref } from "@/lib/entity-links";
@@ -74,6 +70,34 @@ function isLikelyBrokerDisplayName(value?: string): boolean {
   return /[A-Za-z]/.test(text);
 }
 
+function cleanSpecialtyValue(value: unknown): string {
+  const text = stripDecorativeEmoji(String(value || ""))
+    .replace(/[|•]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!text || /^(?:unknown|other|n\/?a|na|property|properties|listing|requirement)$/i.test(text)) return "";
+  return text;
+}
+
+function brokerSpecialtyLabel(broker: any): string {
+  const localities = (Array.isArray(broker.specialty_localities) ? broker.specialty_localities : [])
+    .map(cleanSpecialtyValue)
+    .filter(Boolean)
+    .slice(0, 2);
+  const propertyType = (Array.isArray(broker.specialty_property_types) ? broker.specialty_property_types : [])
+    .map(cleanSpecialtyValue)
+    .find(Boolean);
+  const listings = Number(broker.listing_count || 0);
+  const requirements = Number(broker.requirement_count || 0);
+  const activity = listings > 0 && requirements > 0
+    ? "Listings & requirements"
+    : requirements > 0
+      ? "Requirements"
+      : "Listings";
+  const focus = propertyType ? `${propertyType} ${activity.toLowerCase()}` : activity;
+  return localities.length ? `${localities.join(", ")} · ${focus}` : focus;
+}
+
 function splitCode(rawMessageId: string | number | undefined, index: number): string {
   const source = String(rawMessageId || "RAW").replace(/[^\w-]/g, "").slice(-8) || "RAW";
   return `PO-${source}-${String(index + 1).padStart(2, "0")}`;
@@ -127,8 +151,9 @@ function inferOpportunityKind(input: { intent?: string; observation_type?: strin
   const text = (input.text || "").toLowerCase();
   const hasRequirementSignal = /\b(requirement|required|wanted|looking|need|client wants|buyer|tenant)\b/.test(text);
   const hasListingSignal = /\b(available|on rent|for rent|rent only|for sale|on sale|distress|outright|asking|inspection|call|contact)\b/.test(text);
+  if (type === "LISTING") return "Listing";
+  if (type === "REQUIREMENT") return "Requirement";
   if (
-    type === "REQUIREMENT" ||
     ["BUY", "BUYER", "REQUIREMENT", "RENTAL_SEEKER", "WANTED"].includes(intent) ||
     (hasRequirementSignal && !hasListingSignal)
   ) {
@@ -140,15 +165,18 @@ function inferOpportunityKind(input: { intent?: string; observation_type?: strin
   return "Market";
 }
 
-function inferOpportunitySide(input: { intent?: string; text?: string }) {
+function inferOpportunitySide(input: { intent?: string; transaction_type?: string; text?: string }) {
   const intent = (input.intent || "").toUpperCase();
+  const transactionType = (input.transaction_type || "").toUpperCase();
   const text = (input.text || "").toLowerCase();
+  if (["RENT", "LEASE", "RENTAL", "LEAVE_AND_LICENSE"].includes(transactionType)) return "Rent";
+  if (["SALE", "SELL", "OUTRIGHT", "PRE_LEASED"].includes(transactionType)) return "Sale";
+  if (["RENT", "LEASE", "RENTAL_SEEKER"].includes(intent)) return "Rent";
+  if (["SELL", "SALE"].includes(intent)) return "Sale";
   const rentSignal = /\b(on rent|for rent|rent only|rent\s*:|rental|lease|leave\s*&\s*license|l\s*&\s*l|per month|p\.?m\.?)\b/.test(text);
   const saleSignal = /\b(for sale|on sale|distress sale|outright|sale price|reserve price)\b/.test(text);
   if (rentSignal) return "Rent";
   if (saleSignal) return "Sale";
-  if (["RENT", "LEASE", "RENTAL_SEEKER"].includes(intent)) return "Rent";
-  if (["SELL", "SALE"].includes(intent)) return "Sale";
   if (["BUY", "BUYER", "REQUIREMENT", "WANTED"].includes(intent)) {
     if (/\b(rent|rental|lease|tenant)\b/.test(text)) return "Rent";
     return "Buy";
@@ -158,7 +186,7 @@ function inferOpportunitySide(input: { intent?: string; text?: string }) {
   return "";
 }
 
-function marketOpportunityLabel(input: { intent?: string; observation_type?: string; text?: string }) {
+function marketOpportunityLabel(input: { intent?: string; observation_type?: string; transaction_type?: string; text?: string }) {
   const kind = inferOpportunityKind(input);
   const side = inferOpportunitySide(input);
   return side ? `${side} ${kind}` : kind;
@@ -720,11 +748,14 @@ type BrokerEvidenceItem = {
 
 type BrokerObservationRow = {
   id?: string | number;
+  fingerprint?: string;
   latest_parsed_id?: string | number;
   listing_index?: string | number;
   latest_raw_message_id?: string | number;
   raw_message_id?: string | number;
   raw_message?: string;
+  normalized_message?: string;
+  source_message?: string;
   summary_title?: string;
   broker_phone?: string;
   broker_name?: string;
@@ -735,6 +766,8 @@ type BrokerObservationRow = {
   intent?: string;
   property_type?: string;
   bhk?: string;
+  configuration?: string;
+  transaction_type?: string;
   price?: number;
   price_unit?: string;
   area_sqft?: number;
@@ -745,6 +778,69 @@ type BrokerObservationRow = {
   times_seen?: number;
   building_name?: string;
 };
+
+function cleanMarketField(value?: string) {
+  const cleaned = stripEmojis(value || "").replace(/_/g, " ").replace(/\s+/g, " ").trim();
+  return ["", "UNKNOWN", "LISTING", "REQUIREMENT", "PROPERTY", "TEXT"].includes(cleaned.toUpperCase())
+    ? ""
+    : cleaned;
+}
+
+function buildMarketItemTitle(obs: BrokerObservationRow) {
+  const source = obs.source_message || obs.normalized_message || obs.raw_message || "";
+  const kind = inferOpportunityKind({
+    intent: obs.intent,
+    observation_type: obs.observation_type,
+    text: `${obs.summary_title || ""} ${source}`,
+  });
+  const side = inferOpportunitySide({
+    intent: obs.intent,
+    transaction_type: obs.transaction_type,
+    text: `${obs.summary_title || ""} ${source}`,
+  });
+  const rawConfiguration = cleanMarketField(obs.bhk || obs.configuration);
+  const bhk = /^\d+(?:\.\d+)?$/.test(rawConfiguration) ? `${rawConfiguration} BHK` : rawConfiguration;
+  const propertyType = cleanMarketField(obs.property_type);
+  const furnishing = cleanMarketField(obs.furnishing).replace(/\bsemi furnished\b/i, "semi-furnished");
+  let subject = bhk || propertyType || "property";
+  if (bhk && propertyType && !bhk.toLowerCase().includes(propertyType.toLowerCase())) {
+    subject = `${bhk} ${propertyType}`;
+  }
+  let descriptor = [furnishing.toLowerCase(), subject].filter(Boolean).join(" ");
+  if (obs.area_sqft && Number(obs.area_sqft) > 0) {
+    descriptor += ` with ${Number(obs.area_sqft).toLocaleString("en-IN")} sqft`;
+  }
+  const building = cleanMarketField(obs.building_name);
+  const locality = cleanMarketField(obs.micro_market || obs.location_raw);
+  const places = [building, locality].filter((place, index, values) => {
+    if (!place) return false;
+    return !values.slice(0, index).some((existing) =>
+      existing.toLowerCase().includes(place.toLowerCase()) || place.toLowerCase().includes(existing.toLowerCase())
+    );
+  });
+  const place = places.join(", ");
+  const price = obs.price ? formatCurrency(obs.price, obs.price_unit) : "";
+  const validPrice = price && price !== "—" && price !== "Price on request" ? price : "";
+  const rent = side === "Rent";
+  const article = /^[aeiou]/i.test(descriptor) ? "an" : "a";
+
+  let title: string;
+  if (kind === "Requirement") {
+    title = `Looking to ${rent ? "rent" : "buy"} ${article} ${descriptor}`;
+    if (place) title += ` in ${place}`;
+    if (validPrice) title += ` with a ${rent ? "monthly " : ""}budget of ${validPrice}`;
+  } else {
+    title = `${descriptor.charAt(0).toUpperCase()}${descriptor.slice(1)} for ${rent ? "rent" : "sale"}`;
+    if (place) title += ` at ${place}`;
+    if (validPrice) title += ` for ${validPrice}${rent ? " per month" : ""}`;
+  }
+
+  if (title && !title.includes("|")) return title;
+  return stripEmojis(obs.summary_title || "Property opportunity")
+    .replace(/\s*\|\s*/g, ", ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
 
 type BrokerObservationGroup = {
   key: string;
@@ -930,7 +1026,7 @@ function PropertyDetails({ parsed }: { parsed: any }) {
   );
 }
 
-function BrokerTooltip({ name, phone, onContextMenu }: { name: string; phone: string; onContextMenu?: (e: React.MouseEvent) => void }) {
+function BrokerTooltip({ name, phone }: { name: string; phone: string }) {
   const [data, setData] = useState<any>(null);
   const [visible, setVisible] = useState(false);
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -944,7 +1040,6 @@ function BrokerTooltip({ name, phone, onContextMenu }: { name: string; phone: st
       className="relative inline-block"
       onMouseEnter={() => { if (hideTimer.current) clearTimeout(hideTimer.current); if (!data) doFetch(); setVisible(true); }}
       onMouseLeave={() => { hideTimer.current = setTimeout(() => setVisible(false), 200); }}
-      onContextMenu={onContextMenu}
     >
       <span className="font-semibold text-zinc-300 truncate max-w-[220px] block">{name}</span>
       {visible && data && (
@@ -1223,29 +1318,32 @@ return {
     const groups = new Map<string, BrokerObservationGroup>();
     for (const obs of selectedBrokerObservations as BrokerObservationRow[]) {
       const rawMessageId = obs.latest_raw_message_id || obs.raw_message_id || obs.id;
-      const parsedItemId = (obs as any).latest_parsed_id || obs.id || "";
-      const listingIndex = (obs as any).listing_index;
       const opportunitySignature = normalizeMessageForDedupe(
         [
-          parsedItemId,
-          listingIndex != null ? `item ${listingIndex}` : "",
-          obs.summary_title,
+          obs.observation_type,
           obs.intent,
+          obs.transaction_type,
+          obs.property_type,
           obs.bhk,
+          obs.configuration,
           obs.building_name,
           obs.micro_market,
           obs.location_raw,
           obs.price,
           obs.price_unit,
+          obs.area_sqft,
+          obs.furnishing,
         ].filter(Boolean).join(" ")
       );
-      const normalizedText = opportunitySignature || normalizeMessageForDedupe(obs.raw_message || "");
+      const normalizedText = obs.fingerprint || opportunitySignature || normalizeMessageForDedupe(
+        obs.source_message || obs.normalized_message || obs.raw_message || ""
+      );
       const brokerKey = normalizeMessageForDedupe(
         [obs.broker_phone, obs.broker_name, selectedBroker?.phone, selectedBroker?.canonical_name].filter(Boolean).join(" ")
       );
       const key = normalizedText
-        ? `${brokerKey || "broker"}::${rawMessageId || "raw"}::${normalizedText}`
-        : `${rawMessageId || "raw"}::${parsedItemId || listingIndex || ""}`;
+        ? `${brokerKey || "broker"}::${normalizedText}`
+        : `${brokerKey || "broker"}::${rawMessageId || "raw"}`;
       const existing = groups.get(key);
       if (!existing) {
         groups.set(key, {
@@ -1280,12 +1378,14 @@ return {
   }, [selectedBroker, selectedBrokerObservations]);
 
   const isRequirementObservation = useCallback((obs: BrokerObservationRow) => {
-    const intent = (obs.intent || obs.alternate_intent || "").toUpperCase();
-    const text = `${obs.summary_title || ""} ${obs.raw_message || ""}`.toLowerCase();
-    return (
-      ["BUY", "BUYER", "REQUIREMENT", "RENTAL_SEEKER", "WANTED"].includes(intent)
-      || /\b(requirement|required|wanted|looking|need|buyer|tenant)\b/.test(text)
-    );
+    const type = (obs.observation_type || "").toUpperCase();
+    if (type === "REQUIREMENT") return true;
+    if (type === "LISTING") return false;
+    return inferOpportunityKind({
+      intent: obs.intent || obs.alternate_intent,
+      observation_type: obs.observation_type,
+      text: `${obs.summary_title || ""} ${obs.source_message || obs.normalized_message || obs.raw_message || ""}`,
+    }) === "Requirement";
   }, []);
 
   const filteredBrokerObservationGroups = useMemo(() => {
@@ -1334,15 +1434,6 @@ return {
       setTimeout(() => setActionMessage(null), 3000);
     }
   };
-
-  // Context Action States
-  const [showAddToBucket, setShowAddToBucket] = useState(false);
-  const [selectedActionText, setSelectedActionText] = useState("");
-  const [actionContext, setActionContext] = useState<any>(null);
-
-  // Combined Locality Dialog State
-  const [showCombinedLocalityDialog, setShowCombinedLocalityDialog] = useState(false);
-  const [combinedLocalitySurfaceText, setCombinedLocalitySurfaceText] = useState("");
 
   const messageAreaRef = useRef<HTMLDivElement>(null);
   const messageRefs = useRef<Record<number, HTMLDivElement | null>>({});
@@ -1945,15 +2036,6 @@ return {
   };
 
   const handleEntityClick = (entity: MessageEntity) => {
-    setActionContext({
-      entity,
-      entity_type: entity.type,
-      entity_name: entity.text,
-      entity_phone: entity.phone,
-      message_id: entity.rawMessageId || selectedMsg?.id,
-      selected_message_id: selectedMsg?.id,
-    });
-
     if (entity.rawMessageId && entity.rawMessageId !== selectedMsg?.id) {
       const msg = conversationMessages.find((item) => item.id === entity.rawMessageId);
       if (msg) selectMessage(msg);
@@ -1966,136 +2048,6 @@ return {
   const toggleRevealPhone = (phone: string) => {
     setRevealedPhone(prev => ({ ...prev, [phone]: !prev[phone] }));
   };
-
-  // Context Action Handlers
-  const handleTextAction = (text: string, action: string, notes = "") => {
-    setSelectedActionText(text);
-    // Build context from current message
-    const ctx = selectedMsg ? {
-      id: selectedMsg.id,
-      building_name: selectedMsgDetails?.parsed?.building_name,
-      micro_market: selectedMsgDetails?.parsed?.micro_market,
-      bhk: selectedMsgDetails?.parsed?.bhk,
-      price: selectedMsgDetails?.parsed?.price,
-      area_sqft: selectedMsgDetails?.parsed?.area_sqft,
-      furnishing: selectedMsgDetails?.parsed?.furnishing,
-      intent: selectedMsgDetails?.parsed?.intent || selectedMsg.message_type,
-      broker_name: selectedMsgDetails?.parsed?.broker_name || selectedMsg.broker_name || selectedMsg.sender,
-      broker_phone: resolveMessagePhone(selectedMsg),
-    } : {};
-    setActionContext(ctx);
-
-    switch (action) {
-      case "training-building":
-        api.inlineResolveTrainerTerm(text, selectedMsg?.id, "building", notes).then(() =>
-          alert(`"${text}" saved as Building`)
-        ).catch(e => alert("Error: " + e.message));
-        break;
-      case "training-society":
-        api.inlineResolveTrainerTerm(text, selectedMsg?.id, "society", notes).then(() =>
-          alert(`"${text}" saved as Society`)
-        ).catch(e => alert("Error: " + e.message));
-        break;
-      case "training-landmark":
-        api.inlineResolveTrainerTerm(text, selectedMsg?.id, "landmark", notes).then(() =>
-          alert(`"${text}" saved as Landmark`)
-        ).catch(e => alert("Error: " + e.message));
-        break;
-      case "training-locality":
-        api.inlineResolveTrainerTerm(text, selectedMsg?.id, "locality", notes).then(() =>
-          alert(`"${text}" saved as Locality`)
-        ).catch(e => alert("Error: " + e.message));
-        break;
-      case "training-combined-locality":
-        setCombinedLocalitySurfaceText(text);
-        setShowCombinedLocalityDialog(true);
-        break;
-      case "training-ignore":
-        api.inlineResolveTrainerTerm(text, selectedMsg?.id, "ignored", notes).then(() =>
-          alert(`"${text}" will be ignored in future`)
-        ).catch(e => alert("Error: " + e.message));
-        break;
-      case "resolve-building":
-        api.resolveBuilding(text).then(r => alert(r.resolved ? `Building: ${r.building_name}` : "No building found")).catch(e => alert("Error: " + e.message));
-        break;
-      case "summarize":
-        api.summarizeText(text).then(r => alert(r.summary)).catch(e => alert("Error: " + e.message));
-        break;
-      case "ask-propai":
-        api.askPropAI(text, selectedMsg?.id, ctx).then(r => alert(r.response)).catch(e => alert("Error: " + e.message));
-        break;
-    }
-  };
-
-  const handleCombinedLocalitySave = async (expandsTo: string[]) => {
-    const surface = combinedLocalitySurfaceText;
-    if (!surface) return;
-    
-    try {
-      // First add to trainer if not already there
-      const existing = await api.fetchJSON<any[]>(`/trainer/terms?status=combined_locality`);
-      const alreadyExists = existing.some((t: any) => t.term.toLowerCase() === surface.toLowerCase());
-      
-      let termId: number;
-      if (alreadyExists) {
-        const term = existing.find((t: any) => t.term.toLowerCase() === surface.toLowerCase());
-        termId = term.id;
-      } else {
-        // Add to trainer
-        const context = selectedMsgDetails?.raw?.message?.slice(0, 120) || "";
-        const addData = await api.fetchJSON<any>("/trainer/inline-resolve", {
-          method: "POST",
-          body: JSON.stringify({
-            text: surface,
-            raw_message_id: selectedMsg?.id,
-            status: "combined_locality",
-            expands_to: expandsTo,
-          }),
-        });
-        if (!addData.status || addData.status === "error") {
-          alert("Failed to save combined locality");
-          return;
-        }
-        // Get the term ID
-        const terms = await api.fetchJSON<any[]>(`/trainer/terms?status=combined_locality`);
-        const term = terms.find((t: any) => t.term.toLowerCase() === surface.toLowerCase());
-        termId = term?.id;
-      }
-      
-      if (termId) {
-        // Resolve with expands_to
-        await api.fetchJSON(`/trainer/resolve`, {
-          method: "POST",
-          body: JSON.stringify({
-            term_id: termId,
-            status: "combined_locality",
-            expands_to: expandsTo,
-          }),
-        });
-      }
-      
-      alert(`"${surface}" mapped to: ${expandsTo.join(", ")}`);
-      setShowCombinedLocalityDialog(false);
-      setCombinedLocalitySurfaceText("");
-    } catch (err) {
-      console.error("Error saving combined locality:", err);
-      alert("Error saving combined locality");
-    }
-  };
-
-  const contextActions = [
-    { id: "ask-propai", label: "Ask PropAI", icon: "✨", handler: (t: string) => handleTextAction(t, "ask-propai") },
-    { id: "summarize", label: "Summarize", icon: "📝", handler: (t: string) => handleTextAction(t, "summarize") },
-    { id: "sep1", label: "", icon: "", handler: () => {} },
-    { id: "training-building", label: "This is a Building", icon: "🏢", handler: (t: string) => handleTextAction(t, "training-building") },
-    { id: "training-society", label: "This is a Society", icon: "🏘️", handler: (t: string) => handleTextAction(t, "training-society") },
-    { id: "training-landmark", label: "This is a Landmark", icon: "📍", handler: (t: string) => handleTextAction(t, "training-landmark") },
-    { id: "training-locality", label: "This is a Locality", icon: "🗺️", handler: (t: string) => handleTextAction(t, "training-locality") },
-    { id: "training-combined-locality", label: "Combined Localities", icon: "🔀", handler: (t: string) => handleTextAction(t, "training-combined-locality") },
-    { id: "training-ignore", label: "Ignore as Noise", icon: "🚫", handler: (t: string) => handleTextAction(t, "training-ignore") },
-    { id: "sep2", label: "", icon: "", handler: () => {} },
-    { id: "resolve-building", label: "Fix Building Detection", icon: "🔍", handler: (t: string) => handleTextAction(t, "resolve-building") },
-  ];
 
   // 2. Compute Left Panel Grouped Lists
   const query = searchText.trim().toLowerCase();
@@ -2230,6 +2182,8 @@ return {
           b.latest_title,
           b.latest_intent,
           b.latest_micro_market,
+          ...(Array.isArray(b.specialty_localities) ? b.specialty_localities : []),
+          ...(Array.isArray(b.specialty_property_types) ? b.specialty_property_types : []),
         ]
           .filter(Boolean)
           .join(" ")
@@ -2778,6 +2732,10 @@ return {
       first_seen: broker.first_seen,
       last_seen: broker.last_active,
       observation_count: broker.observation_count || broker.obs_count || 0,
+      listing_count: broker.listing_count || 0,
+      requirement_count: broker.requirement_count || 0,
+      specialty_localities: broker.specialty_localities || [],
+      specialty_property_types: broker.specialty_property_types || [],
       latest_title: broker.latest_title || "",
       latest_intent: broker.latest_intent || "",
       latest_micro_market: broker.latest_micro_market || "",
@@ -3143,24 +3101,6 @@ return {
   return (
     <div className="flex flex-col h-[calc(100dvh-104px)] min-h-0 max-h-[calc(100dvh-104px)] overflow-hidden bg-black lg:h-full lg:max-h-full lg:rounded-2xl lg:border lg:border-white/10">
       
-      {/* Context Action Menu - floats over message area */}
-      <TextSelectionMenu
-        actions={contextActions}
-        context={actionContext}
-      />
-
-      {/* Add to Client Bucket Modal */}
-      <AddToClientBucket
-        isOpen={showAddToBucket}
-        onClose={() => setShowAddToBucket(false)}
-        selectedText={selectedActionText}
-        messageContext={actionContext}
-        onSave={(clientId, notes) => {
-          setActionMessage(`Added to client bucket!`);
-          setTimeout(() => setActionMessage(null), 3000);
-        }}
-      />
-
       {actionMessage && (
         <div className="bg-[#1e293b] border-b border-[#3EE88A]/30 text-[#3EE88A] px-4 py-2 text-xs font-semibold text-center flex items-center justify-center gap-3 animate-fadeIn">
           <span>{actionMessage}</span>
@@ -3364,7 +3304,7 @@ return {
                       (selectedBroker?.id && selectedBroker.id === (b.identity_key || b.primary_phone || b.id));
                     const menuOpen = openMenuBroker === b.primary_phone;
                     const isActiveNow = b.last_active && now - new Date(b.last_active).getTime() < 300000;
-                    const latestIntent = b.latest_intent || (b.latest_title || "").match(/^(Sale|Rent|Lease|Buy|Requirement)/i)?.[1];
+                    const specialty = brokerSpecialtyLabel(b);
                     const brokerPhoneDigits = normalizeRealPhone(b.primary_phone || "");
                     const brokerIdentityHint = brokerPhoneDigits ? `Phone ending ${brokerPhoneDigits.slice(-4)}` : "No phone anchor";
                     return (
@@ -3397,19 +3337,10 @@ return {
                           <div className="mb-1 text-[9px] font-medium text-zinc-600">
                             {brokerIdentityHint}
                           </div>
-                          {b.latest_title && (
-                            <div className="text-[10px] text-zinc-400 leading-relaxed truncate mb-1.5">
-                              <span className="text-zinc-500">Last: </span>
-                              {(() => {
-                                const title = stripDecorativeEmoji(b.latest_title);
-                                if (latestIntent) {
-                                  const stripped = title.replace(new RegExp(`^${latestIntent}\\s*[|•-]?\\s*`, "i"), "");
-                                  return <><span className="font-semibold text-zinc-300">{latestIntent}</span>{stripped ? ` ${stripped}` : ""}</>;
-                                }
-                                return <span>{title}</span>;
-                              })()}
-                            </div>
-                          )}
+                          <div className="text-[10px] leading-relaxed truncate mb-1.5" title={`Market focus: ${specialty}`}>
+                            <span className="text-zinc-500">Focus: </span>
+                            <span className="font-medium text-zinc-300">{specialty}</span>
+                          </div>
                           <div className="flex items-center gap-2 text-[9px] text-zinc-500">
                             {b.group_evidence_count > 0 && (
                               <span>{b.group_evidence_count}g</span>
@@ -3763,10 +3694,13 @@ return {
                     const timeLabel = obsTime
                       ? obsTime.toLocaleDateString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })
                       : "";
+                    const itemSource = obs.source_message || obs.normalized_message || obs.raw_message || "";
+                    const marketTitle = buildMarketItemTitle(obs);
                     const opportunityLabel = marketOpportunityLabel({
                       intent: obs.intent,
                       observation_type: obs.observation_type,
-                      text: `${obs.summary_title || ""} ${obs.raw_message || ""}`,
+                      transaction_type: obs.transaction_type,
+                      text: `${obs.summary_title || ""} ${itemSource}`,
                     });
                     return (
                       <div key={group.key}>
@@ -3777,10 +3711,15 @@ return {
                           <div className="h-px flex-1 bg-[rgba(255,255,255,0.06)]" />
                         </div>
                         {/* Opportunity Card */}
-                        <button
-                          type="button"
-                          onClick={() => selectBrokerObservation(obs)}
-                          className={`w-full overflow-hidden rounded-md border bg-zinc-950/70 text-left transition-colors hover:border-white/25 ${
+                        <article
+                          onClick={(event) => {
+                            const target = event.target as HTMLElement;
+                            if (target.closest("a, button, input, textarea")) return;
+                            const selection = window.getSelection();
+                            if (selection && !selection.isCollapsed) return;
+                            selectBrokerObservation(obs);
+                          }}
+                          className={`w-full cursor-pointer overflow-hidden rounded-md border bg-zinc-950/70 text-left transition-colors hover:border-white/25 ${
                             isSelected ? "border-white/40 bg-white/[0.035]" : "border-white/10"
                           }`}
                         >
@@ -3798,10 +3737,17 @@ return {
                                   {observationTypeLabel(obs.observation_type)}
                                 </span>
                                 <span className="text-[9px] text-zinc-500 tabular-nums">{timeLabel}</span>
+                                <button
+                                  type="button"
+                                  onClick={() => selectBrokerObservation(obs)}
+                                  className="text-[9px] font-semibold text-zinc-500 transition-colors hover:text-white"
+                                >
+                                  View details
+                                </button>
                               </div>
                             </div>
                             <div className="flex items-center gap-1.5 mt-1.5 text-[11px] text-zinc-400">
-                              {obs.property_type && <span className="font-medium text-zinc-300">{obs.property_type}</span>}
+                              {cleanMarketField(obs.property_type) && <span className="font-medium text-zinc-300">{cleanMarketField(obs.property_type)}</span>}
                               {obs.bhk && <><span className="text-zinc-700">·</span><span>{obs.bhk}</span></>}
                               {obs.price != null && <><span className="text-zinc-700">·</span><span className="font-semibold text-white">{formatCurrency(obs.price, obs.price_unit)}</span></>}
                               {obs.area_sqft && <><span className="text-zinc-700">·</span><span>{obs.area_sqft} sqft</span></>}
@@ -3815,22 +3761,14 @@ return {
                           </div>
                           {/* Bubble Body */}
                           <div className="px-4 py-3 space-y-2">
-                            {obs.summary_title && (
+                            {marketTitle && (
                               <div className="text-[12px] font-semibold leading-relaxed text-zinc-100">
-                                {stripEmojis(obs.summary_title)}
+                                {marketTitle}
                               </div>
                             )}
-                            {obs.raw_message && (
-                              <div className="rounded-xl border border-white/5 bg-white/[0.03] px-3 py-2">
-                                <WhatsAppMessage
-                                  text={obs.raw_message}
-                                  sender={selectedBroker.canonical_name || selectedBroker.name || ""}
-                                  senderPhone={resolvedBrokerPhone || obs.broker_phone || ""}
-                                  truncate
-                                  maxLines={8}
-                                  flatMultiBlocks
-                                  className="text-[11px] text-zinc-200"
-                                />
+                            {itemSource && (
+                              <div className="select-text whitespace-pre-wrap break-words text-[11px] leading-relaxed text-zinc-300">
+                                {stripEmojis(itemSource)}
                               </div>
                             )}
                             {/* Key fields as inline chips */}
@@ -3896,7 +3834,7 @@ return {
                               onClick={(e) => e.stopPropagation()}
                             >
                               <a
-                                href={getWaLinkWithRecall(resolvedBrokerPhone, obs.raw_message || obs.summary_title || "")}
+                                href={getWaLinkWithRecall(resolvedBrokerPhone, itemSource || marketTitle)}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 onClick={() => trackBrokerWhatsAppOpen(resolvedBrokerPhone, "market_item")}
@@ -3907,7 +3845,7 @@ return {
                               </a>
                             </div>
                           )}
-                        </button>
+                        </article>
                       </div>
                     );
                     })}
@@ -4029,18 +3967,10 @@ return {
                 </div>
               </div>
 
-              {/* Chat Thread Message Area — PropAI owns text selection here */}
+              {/* Chat thread. Native selection/context menu stays available for copy/paste. */}
               <div
                 ref={messageAreaRef}
                 className="flex-1 overflow-y-auto px-5 py-4 propai-interaction-area"
-                data-prevent-context="true"
-                onContextMenu={(e) => {
-                  // Prevent native context menu — PropAI owns this
-                  const selection = window.getSelection();
-                  if (selection && !selection.isCollapsed && selection.toString().trim()) {
-                    e.preventDefault();
-                  }
-                }}
               >
                 {conversationMessages.length === 0 && loadingConv ? (
                   <div className="h-full flex items-center justify-center text-xs text-zinc-500">
@@ -4081,19 +4011,9 @@ return {
                                 } space-y-2 relative transition-all ${isSelf && !blockHasSplitListings ? "text-right ml-auto" : ""}`}
                               >
 <div className={`flex items-center gap-2 text-[10px] text-zinc-500 ${isSelf ? "justify-end" : "justify-between"}`}>
-                                   <BrokerTooltip 
+                                   <BrokerTooltip
                                      name={resolveMessageSenderName(first)} 
                                      phone={resolveMessagePhone(first)}
-                                     onContextMenu={(e) => {
-                                       e.preventDefault();
-                                       e.stopPropagation();
-                                       const rect = e.currentTarget.getBoundingClientRect();
-                                       setActionContext({
-                                         type: "broker",
-                                         data: { name: resolveMessageSenderName(first), phone: resolveMessagePhone(first) },
-                                         position: { x: rect.left + rect.width / 2, y: rect.top },
-                                       });
-                                     }}
                                    />
                                   <span className="whitespace-nowrap">
                                     {block.length > 1
@@ -4150,17 +4070,6 @@ return {
                                       key={m.id}
                                       ref={el => { messageRefs.current[m.id] = el; }}
                                       onClick={() => selectMessage(m)}
-                                      onContextMenu={(e) => {
-                                        e.preventDefault();
-                                        e.stopPropagation();
-                                        // Semantic context: right-click on message bubble
-                                        const rect = e.currentTarget.getBoundingClientRect();
-                                        setActionContext({
-                                          type: "message",
-                                          data: m,
-                                          position: { x: rect.left + rect.width / 2, y: rect.top },
-                                        });
-                                      }}
                                       className={`relative group/message transition-all cursor-pointer ${
                                         listingChunks.length > 1
                                           ? "w-full"
@@ -4585,15 +4494,6 @@ return {
               onToggleCollapse={() => setChatPanelCollapsed(false)}
             />
           </div>
-        )}
-        {/* Combined Localities Dialog */}
-        {showCombinedLocalityDialog && (
-          <CombinedLocalityDialog
-            isOpen={showCombinedLocalityDialog}
-            onClose={() => setShowCombinedLocalityDialog(false)}
-            surfaceText={combinedLocalitySurfaceText}
-            onSave={handleCombinedLocalitySave}
-          />
         )}
       </div>
       </div>
