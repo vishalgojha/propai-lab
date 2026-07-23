@@ -311,6 +311,25 @@ export function safeBrokerName(raw: string | null): string | null {
   const digitRatio = (v.match(/[0-9]/g) || []).length / Math.max(v.replace(/\s/g, "").length, 1);
   if (digitRatio > 0.5 || /^\+?\d[\d\s().-]{6,}$/.test(v)) return null;
   if (/wa\.me|whatsapp/i.test(v)) return null;
+  // Reject garbage text that the LLM sometimes extracts as broker names.
+  const low = v.toLowerCase();
+  const GARBAGE = (
+    "stamp duty|furnished|carpet|bhk|sqft|sq ft|ready to move|negotiable|"
+    + "balcon|sea view|amenities|parking|deposit|possession|available|"
+    + "options|benefit|family|bachelor|veg|non-veg|near|opp|opposite|"
+    + "behind|floor|tower|residency|heights|apartment|regards|thank|"
+    + "hello|dear|rent|sale|commercial|office|shop|lift|backup|"
+    + "security|power|gym|swimming|landmark|station|price|asking|"
+    + "location|coverage|capacity|reception|entrance|ground|first|"
+    + "second|third|fourth|fifth|upper|lower|basement|dedicated|"
+    + "visitor|ample|separate|exclusive|ready|restaurant|central|"
+    + "suburb|mumbai"
+  );
+  if (new RegExp(GARBAGE).test(low)) return null;
+  // Too short or too long to be a real name.
+  if (v.length < 2 || v.length > 50) return null;
+  // All-caps single word is usually not a name (e.g. "FURNISHED").
+  if (v === v.toUpperCase() && !v.includes(" ")) return null;
   return v;
 }
 
