@@ -8018,24 +8018,20 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
                 ),
                 timeout=30,
             )
-            text = (reply.content or "").strip() or "Hey! What can I help you with?"
-            _persist("user", last_user)
-            _persist("assistant", text)
-            _maybe_title(last_user)
-            return {
-                "content": text,
-                "blocks": [{"type": "greeting", "body": text}],
-                "sources": [],
-                "status_steps": [],
-                "trace": {"route": "conversational_llm"},
-            }
+            text = (reply.content or "").strip()
+            if text:
+                _persist("user", last_user)
+                _persist("assistant", text)
+                _maybe_title(last_user)
+                return {
+                    "content": text,
+                    "blocks": [{"type": "greeting", "body": text}],
+                    "sources": [],
+                    "status_steps": [],
+                    "trace": {"route": "conversational_llm"},
+                }
         except Exception:
-            return {
-                "content": "Hey! What can I help you with?",
-                "blocks": [{"type": "greeting", "body": "Hey! What can I help you with?"}],
-                "sources": [],
-                "trace": {"route": "conversational_fallback"},
-            }
+            pass  # fall through to tool-enabled LLM path
 
     # Topic-aware context compaction
     if last_user and memory.detect_topic_change(last_user) and len(memory.working) > 2:
@@ -14786,11 +14782,6 @@ async def action_ask_propai(body: dict, user: dict = Depends(require_user)):
     text = body.get("text", "")
     message_id = body.get("message_id")
     context = body.get("context", {})
-
-    # Short-circuit casual messages
-    casual = _get_casual_response([{"role": "user", "content": text}])
-    if casual:
-        return {"response": casual.get("content", "Ready.")}
 
     # Build context-enhanced prompt
     prompt = f"""About this message:
