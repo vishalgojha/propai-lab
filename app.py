@@ -1588,7 +1588,14 @@ async def lifespan(app: FastAPI):
     # writes results to provider_outage_log. Feeds /admin/providers.
     provider_probe_task = asyncio.create_task(_provider_probe_loop())
     print("  Provider probe loop started (60s cadence)")
+    backfill_task = asyncio.create_task(_history_backfill_loop())
+    print("  History backfill loop started (6h cadence)")
     yield
+    backfill_task.cancel()
+    try:
+        await backfill_task
+    except (asyncio.CancelledError, Exception):
+        pass
     provider_probe_task.cancel()
     try:
         await provider_probe_task
@@ -2575,6 +2582,7 @@ def _handle_system_event(event_class: str, event: str, data: dict, instance: str
                     source="whatsapp", instance=instance,
                     group_id=jid, group_name=name,
                     participants=participants,
+                    status="complete",
                 )
             except Exception as e:
                 print(f"  upsert sync job failed for {jid}: {e}")
@@ -3251,8 +3259,19 @@ async def require_tenant(
 
 
 @app.get("/api/inbox/threads")
-async def inbox_threads(user: dict = Depends(require_user), limit: int = 500, offset: int = 0,
-                        tenant_id: str | None = Depends(get_tenant_context)):
+async def inbox_threads(
+    request: Request,
+    user: dict | None = Depends(get_current_user),
+    limit: int = 500, offset: int = 0,
+    tenant_id: str | None = Depends(get_tenant_context),
+):
+    # Allow internal token auth (for ingestor backfill calls)
+    if user is None:
+        expected = (os.getenv("PROPAI_INTERNAL_TOKEN", "").strip()
+                    or os.getenv("SUPABASE_SERVICE_KEY", "").strip())
+        supplied = request.headers.get("X-PropAI-Internal-Token", "").strip()
+        if not expected or not hmac.compare_digest(supplied, expected):
+            raise HTTPException(401, "Authentication required")
     return storage.get_inbox_threads(limit, offset, tenant_id=tenant_id)
 
 
@@ -15809,6 +15828,7 @@ async def delete_llm_provider(provider_id: int, user: dict = Depends(require_use
 # ═══════════════════════════════════════════════════════════════
 
 PROVIDER_PROBE_INTERVAL_S = 60
+HISTORY_BACKFILL_INTERVAL_S = 6 * 3600  # every 6 hours
 
 
 async def _run_provider_probe_and_log(provider_row: dict) -> None:
@@ -15865,6 +15885,42 @@ async def _provider_probe_loop() -> None:
         except Exception as exc:
             print(f"  [provider-probe] loop error: {exc.__class__.__name__}: {exc}")
         await asyncio.sleep(PROVIDER_PROBE_INTERVAL_S)
+
+
+async def _history_backfill_loop() -> None:
+    """Periodic background loop: every HISTORY_BACKFILL_INTERVAL_S, ask the
+    WhatsApp ingestor to request older messages from WhatsApp for all known
+    conversations.  The ingestor calls BuildHistorySyncRequest per chat and
+    WhatsApp returns history asynchronously through HistorySync events which
+    flow back through /webhook.
+    """
+    await asyncio.sleep(60)  # let server finish booting
+    while True:
+        try:
+            urls = _ingestor_urls()
+            if not urls:
+                await asyncio.sleep(HISTORY_BACKFILL_INTERVAL_S)
+                continue
+            async with httpx.AsyncClient(timeout=45) as client:
+                for base_url in urls:
+                    try:
+                        resp = await client.post(
+                            f"{base_url}/history/backfill",
+                            params={"broker_id": "default", "limit": 50, "count": 50},
+                            headers=_ingestor_auth_headers(),
+                        )
+                        body = resp.json() if resp.headers.get("content-type", "").startswith("application/json") else {}
+                        if resp.status_code < 300 and body.get("ok"):
+                            requested = body.get("requested", 0)
+                            skipped = body.get("skipped", 0)
+                            print(f"  [history-backfill] requested={requested} skipped={skipped} via {base_url}")
+                        else:
+                            print(f"  [history-backfill] {base_url} returned {resp.status_code}: {body.get('error', body)}")
+                    except httpx.RequestError as e:
+                        print(f"  [history-backfill] {base_url} unreachable: {e}")
+        except Exception as exc:
+            print(f"  [history-backfill] loop error: {exc.__class__.__name__}: {exc}")
+        await asyncio.sleep(HISTORY_BACKFILL_INTERVAL_S)
 
 
 def _classify_provider_status(events: list[dict], now_ts: float) -> str:

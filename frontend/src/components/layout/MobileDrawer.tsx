@@ -33,7 +33,6 @@ const baseNavSections = [
       { href: "/profile/billing", label: "Billing" },
       { href: "/waba", label: "WABA API" },
       { href: "/workspace/llm-providers", label: "AI Providers" },
-      { href: "/trainer", label: "AI Learning" },
       { href: "/usage", label: "Usage" },
     ],
   },

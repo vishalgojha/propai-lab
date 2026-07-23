@@ -2603,10 +2603,13 @@ class SupabaseStorage(Storage):
                          group_id: str = "", group_name: str = "",
                          participants: int = 0,
                          status: str = "pending") -> int:
-        existing = self.client.table("sync_jobs").select("id").eq("source", source).eq("group_id", group_id).limit(1).execute()
+        existing = self.client.table("sync_jobs").select("id,status").eq("source", source).eq("group_id", group_id).limit(1).execute()
         if existing.data:
+            existing_status = existing.data[0].get("status", "pending")
+            terminal = {"complete", "failed", "cancelled"}
+            new_status = status if existing_status not in terminal else existing_status
             self.client.table("sync_jobs").update({
-                "status": status, "instance": instance,
+                "status": new_status, "instance": instance,
                 "group_name": group_name, "participants": participants,
             }).eq("id", existing.data[0]["id"]).execute()
             return existing.data[0]["id"]

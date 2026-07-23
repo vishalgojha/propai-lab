@@ -547,12 +547,9 @@ export default function WhatsAppMessage({
 
         if (multiBlock && !flatMultiBlocks) {
           return (
-            <div
-              key={bi}
-              className="my-1.5 px-2.5 py-2 rounded-md bg-white/5 border border-white/5"
-            >
-              {sender && (
-                <div className="flex items-center gap-1.5 mb-1.5 pb-1.5 border-b border-white/5">
+            <div key={bi} className="space-y-0.5">
+              {sender && bi === 0 && (
+                <div className="flex items-center gap-1.5 mb-1">
                   <span className="text-[10px] font-semibold text-zinc-400">{stripDecorativeEmoji(sender)}</span>
                   {senderPhone && (
                     <span className="text-[9px] text-zinc-500 font-mono">{senderPhone}</span>

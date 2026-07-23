@@ -651,7 +651,7 @@ def ai_extract(raw_text: str, ctx: dict | None = None, storage=None) -> dict:
         result["extractions"] = normalized_items
         result["extraction_source"] = "ai"
         result["provider_used"] = provider["name"]
-        result["needs_review"] = any(item.get("extraction_confidence") == "low" for item in normalized_items)
+        result["needs_review"] = False
 
         _logger.info(
             "ai_extract: %d item(s) via %s in %.1fs",

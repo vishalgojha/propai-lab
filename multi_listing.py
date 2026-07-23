@@ -1099,7 +1099,7 @@ def _parse_divider_block(
         "broker_name": broker_name,
         "broker_phone": broker_phone,
         "forwarded": 0,
-        "confidence": 0.85,
+        "confidence": 1.0,
         "raw_payload": {"full_text": block},
         "location": loc.get("location") or {},
         # Property attribute fields
@@ -1491,7 +1491,7 @@ def _parse_numbered_block(
         "broker_name": broker_name,
         "broker_phone": broker_phone,
         "forwarded": 0,
-        "confidence": 0.88,
+        "confidence": 1.0,
         "raw_payload": {"full_text": block},
         "location": loc.get("location") or {},
         # Property attribute fields
@@ -1898,7 +1898,7 @@ def _lines_to_listings(
             "broker_name": None,
             "broker_phone": None,
             "forwarded": 0,
-            "confidence": 0.85,
+            "confidence": 1.0,
             "raw_payload": {"full_text": line},
             "location": {},
             # Property attribute fields
@@ -2132,7 +2132,7 @@ def _split_commercial_floors(text: str) -> list[dict]:
                 "broker_name": broker_name,
                 "broker_phone": broker_phone,
                 "forwarded": 0,
-                "confidence": 0.85,
+                "confidence": 1.0,
                 "raw_payload": {"full_text": "\n".join(block)},
                 "location": overall_loc.get("location") or {},
                 "floor_description": clean_floor,

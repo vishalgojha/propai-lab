@@ -65,7 +65,6 @@ const baseNavSections = [
       { href: "/profile/billing", label: "Billing", icon: TrendingUp },
       { href: "/waba", label: "WABA API", icon: Key },
       { href: "/workspace/llm-providers", label: "AI Providers", icon: Radar },
-      { href: "/trainer", label: "AI Learning", icon: GraduationCap },
       { href: "/usage", label: "Usage", icon: BarChart3 },
     ],
   },
