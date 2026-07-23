@@ -413,6 +413,20 @@ export default async function ListingPage({ params }: Params) {
           This listing is sourced from live broker activity in PropAI&apos;s WhatsApp network. Details
           are parsed automatically and may change — confirm specifics with the broker before proceeding.
         </p>
+        <p className="mt-1 text-xs text-zinc-600">
+          Last updated: {listing.last_seen ? (() => {
+            const d = new Date(listing.last_seen);
+            const ms = d.getTime();
+            if (!Number.isFinite(ms)) return "recently";
+            const diffMs = Date.now() - ms;
+            const dayMs = 24 * 60 * 60 * 1000;
+            if (diffMs < 0) return "just now";
+            if (diffMs < dayMs) return "today";
+            if (diffMs < 2 * dayMs) return "yesterday";
+            if (diffMs < 7 * dayMs) return `${Math.floor(diffMs / dayMs)}d ago`;
+            return d.toLocaleDateString("en-IN", { day: "numeric", month: "short" });
+          })() : "recently"}
+        </p>
 
         {/* Internal links: same locality views, same BHK, same building. */}
         {card.localitySlug && (
