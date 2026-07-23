@@ -2638,6 +2638,31 @@ class SupabaseStorage(Storage):
         res = query.execute()
         return [dict_to_dataclass(SyncJob, d) for d in res.data]
 
+    def resolve_lid_from_group_members(self, member_jid: str, group_id: str = "") -> dict | None:
+        """Look up a LID JID in group_members to find phone + display_name.
+
+        Searches for the best match:
+        1. Exact (group_id + member_jid) if group_id provided
+        2. Any row with matching member_jid (most recent first)
+        """
+        if not member_jid:
+            return None
+        q = self.client.table("group_members").select(
+            "member_phone,display_name,group_id"
+        ).eq("member_jid", member_jid).order("last_seen_at", desc=True).limit(1)
+        if group_id:
+            q = q.eq("group_id", group_id)
+        res = q.execute()
+        if res.data:
+            return res.data[0]
+        if group_id:
+            res = self.client.table("group_members").select(
+                "member_phone,display_name,group_id"
+            ).eq("member_jid", member_jid).order("last_seen_at", desc=True).limit(1).execute()
+            if res.data:
+                return res.data[0]
+        return None
+
     def upsert_group_members(self, tenant_id: str, group_id: str, participants: list[dict]) -> int:
         if not tenant_id or not group_id or not participants:
             return 0

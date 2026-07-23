@@ -4284,7 +4284,7 @@ return {
                         </div>
                         <div className="mt-3 flex flex-wrap gap-2">
                           <a
-                            href="/team"
+                            href="/profile/team"
                             className="inline-flex h-8 items-center justify-center rounded-lg bg-[#3EE88A] px-3 text-[10px] font-bold text-black transition-colors hover:bg-[#35d47c]"
                           >
                             Open Team Roles

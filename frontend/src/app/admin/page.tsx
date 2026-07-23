@@ -214,7 +214,7 @@ export default function AdminPage() {
           </Link>
 
           <Link
-            href="/admin/entities"
+            href="/admin/knowledge"
             className="block p-4 rounded-xl border border-white/10 hover:border-emerald-400/30 transition-colors"
           >
             <div className="flex items-center gap-3 mb-2">
