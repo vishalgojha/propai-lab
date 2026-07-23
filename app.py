@@ -333,22 +333,6 @@ def _extract_all_contacts(text: str) -> list[dict]:
     return contacts
 
 
-def _attribution_suffix(
-    broker_name: str | None,
-    broker_phone: str | None,
-) -> str:
-    """Build standardized broker attribution line for block text."""
-    name = (broker_name or "").strip()
-    phone = (broker_phone or "").strip()
-    if name and phone:
-        return f"\n— {name} | {phone}"
-    if name:
-        return f"\n— {name}"
-    if phone:
-        return f"\n— {phone}"
-    return ""
-
-
 def _compute_parser_confidence(parsed: dict) -> float:
     """Score extraction confidence from independent, parseable signals."""
     weights = {
@@ -465,41 +449,6 @@ def _extract_entity_mentions(text: str) -> list[str]:
         except Exception:
             pass
     return list(candidates)[:20]
-
-def _process_observations(
-    text: str,
-    broker_name: str,
-    broker_phone: str,
-    parsed_ids: list[int],
-    raw_id: int | None,
-):
-    """Extract observations from a broker message and store them."""
-    try:
-        observations = chat_engine.extract_observations(text, broker_name, broker_phone)
-    except Exception:
-        return
-    if not observations:
-        return
-
-    now = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%fZ')
-    parsed_id = parsed_ids[0] if parsed_ids else None
-    for obs in observations:
-        if not obs.get("entity_type") or not obs.get("entity_name") or not obs.get("observation_text"):
-            continue
-        try:
-            _merge_observation(
-                entity_type=obs["entity_type"],
-                entity_name=obs["entity_name"],
-                observation_type=obs.get("observation_type", "building_feedback"),
-                observation_text=obs["observation_text"],
-                broker_name=broker_name,
-                broker_phone=broker_phone,
-                parsed_id=parsed_id,
-                raw_id=raw_id,
-                now=now,
-            )
-        except Exception:
-            continue
 
 
 def _merge_observation(
@@ -1566,8 +1515,6 @@ async def lifespan(app: FastAPI):
         print("  Supabase schema managed by migrations — skipping local init")
     except Exception as exc:
         print(f"  Listings rebuild skipped: {exc}")
-    enrichment_worker = None
-    print("  Supabase mode: broker graph, alias learner, enrichment worker disabled (run via workers)")
     # Auto-generate API key if missing
     key_path = Path(__file__).parent / ".api_key"
     if not key_path.exists():
@@ -1601,12 +1548,6 @@ async def lifespan(app: FastAPI):
         await provider_probe_task
     except (asyncio.CancelledError, Exception):
         pass
-    # Shutdown enrichment worker
-    if enrichment_worker:
-        try:
-            enrichment_worker.stop()
-        except Exception:
-            pass
 
 app = FastAPI(
     title="PropAI Local Intelligence Lab",
@@ -1806,93 +1747,6 @@ def _parsed_has_market_anchor(parsed: dict, raw_text: str = "") -> bool:
 
     return has_property_signal and (has_market_action or bool(parsed.get("price")))
 
-
-# ── Conversation Classification for Privacy ─────────────────────────
-
-_BROKER_GROUP_KEYWORDS = frozenset({
-    "broker", "brokers", "property", "properties", "realty", "real estate",
-    "listing", "listings", "inventory", "availability", "mandate", "mandates",
-    "deal", "deals", "market", "markets", "bkc", "bandra", "andheri", "juhu",
-    "powai", "worli", "colaba", "chembur", "wadala", "malad", "goregaon",
-    "thane", "navi mumbai", "commercial", "residential", "rental", "rent",
-    "lease", "buyer", "seller", "investment", "sqft", "bhk", "carpet",
-    "built up", "possession", "handover", "availability", "rate", "price",
-    "crore", "lac", "lakh", "lacs",
-})
-
-_CLIENT_GROUP_KEYWORDS = frozenset({
-    "client", "clients", "buyer", "buyers", "tenant", "tenants",
-    "requirement", "requirements", "need", "looking for", "searching",
-    "budget", "preference", "preferences", "site visit", "inspection",
-})
-
-_PERSONAL_KEYWORDS = frozenset({
-    "family", "personal", "friend", "friends", "birthday", "wedding",
-    "party", "celebration", "festival", "holiday", "vacation", "travel",
-    "food", "restaurant", "movie", "cricket", "football", "sports",
-    "whatsapp", "forward", "good morning", "good night", "joke", "meme",
-    "video", "photo", "image", "sticker", "gif",
-})
-
-CONV_TYPE_BROKER_GROUP = "broker_group"
-CONV_TYPE_CLIENT_GROUP = "client_group"
-CONV_TYPE_DM = "dm"
-CONV_TYPE_PERSONAL = "personal"
-CONV_TYPE_BROADCAST = "broadcast"
-
-
-def classify_conversation(group_name: str, group_jid: str, message_text: str) -> str:
-    """
-    Classify a WhatsApp conversation into:
-    - broker_group: Professional broker groups (shared market eligible)
-    - client_group: Client-facing groups (never shared)
-    - dm: Direct messages (never shared)
-    - personal: Personal chats (never shared)
-    - broadcast: Broadcast lists (never shared)
-    """
-    if not group_name and not group_jid:
-        return CONV_TYPE_PERSONAL
-
-    # DM check
-    if str(group_jid).endswith("@s.whatsapp.net") or str(group_jid).endswith("@lid"):
-        return CONV_TYPE_DM
-
-    # Broadcast check
-    if group_jid.endswith("@broadcast") or "broadcast" in (group_name or "").lower():
-        return CONV_TYPE_BROADCAST
-
-    gn = (group_name or "").lower()
-    msg = (message_text or "").lower()
-
-    # Check for personal chat indicators
-    if any(kw in gn for kw in _PERSONAL_KEYWORDS):
-        return CONV_TYPE_PERSONAL
-
-    # Check for client group indicators
-    if any(kw in gn for kw in _CLIENT_GROUP_KEYWORDS):
-        return CONV_TYPE_CLIENT_GROUP
-
-    # Check for broker group indicators
-    if any(kw in gn for kw in _BROKER_GROUP_KEYWORDS):
-        return CONV_TYPE_BROKER_GROUP
-
-    # Check message content for broker signals
-    if any(kw in msg for kw in _BROKER_GROUP_KEYWORDS):
-        return CONV_TYPE_BROKER_GROUP
-
-    # Default: treat unknown groups as personal (safer)
-    return CONV_TYPE_PERSONAL
-
-
-def check_share_eligibility(parsed: dict, org_privacy: dict, conv_type: str) -> tuple[bool, str]:
-    """
-    Determine if a parsed observation should contribute to the broker network.
-    Returns (eligible, reason)
-    """
-    if conv_type != CONV_TYPE_BROKER_GROUP:
-        return False, f"conversation_type_{conv_type}"
-
-    return True, "ok"
 
 
 # ── Parser helpers ──────────────────────────────────────────────────
@@ -2211,6 +2065,20 @@ async def webhook(request: Request):
         if str(sender_jid).endswith("@s.whatsapp.net")
         else ""
     )
+    # Fallback: when ingestor's inline LID store fails, look up the group_members
+    # directory which is populated on group-directory-sync with LID→phone mappings.
+    if not sender_phone and str(sender_jid).endswith("@lid"):
+        group_jid = key.get("remoteJid", "") or msg_data.get("from", "")
+        try:
+            gm = await asyncio.to_thread(
+                storage.resolve_lid_from_group_members, str(sender_jid), str(group_jid)
+            )
+            if gm:
+                sender_phone = _canonical_phone_from_jid(str(gm.get("member_phone") or ""))
+                if not sender_name or sender_name == "unknown":
+                    sender_name = str(gm.get("display_name") or "").strip() or sender_name
+        except Exception as exc:
+            print(f"[webhook] LID fallback error: {exc}", flush=True)
     sender = _format_whatsapp_sender(sender_name, sender_jid, sender_phone)
     group = key.get("remoteJid", "") or msg_data.get("from", "")
     if _is_blocked_whatsapp_conversation(group) or (sender_jid and _is_blocked_whatsapp_conversation(sender_jid)):
@@ -2730,22 +2598,6 @@ def _clean_person_name(name: str = "") -> str:
     if re.fullmatch(r"\+?[\dXx\s().-]{7,}", clean):
         return ""
     return clean
-
-
-def should_share_to_market(
-    org_privacy: dict,
-    conv_type: str,
-    parsed_intent: str | None = None,
-    is_listing: bool = False,
-    is_requirement: bool = False,
-) -> bool:
-    """
-    Determine if a message/observation should contribute to the broker network.
-    """
-    if conv_type != CONV_TYPE_BROKER_GROUP:
-        return False
-
-    return True
 
 
 # ── Manual ingest endpoint (for testing) ────────────────────────
@@ -5637,51 +5489,6 @@ def _has_query_signals(text: str) -> bool:
     return any(kw in lowered for kw in query_keywords)
 
 
-def _route_message_intent(messages: list[dict]) -> dict | None:
-    # 1. Casual/greeting (returns its own response)
-    result = _get_casual_response(messages)
-    if result:
-        return result
-
-    decision = _classify_workspace_intent(messages)
-    intent = decision.get("intent")
-
-    if intent == "SAVE_REQUIREMENT":
-        args = _extract_save_requirement_query(messages)
-        if args:
-            return _save_requirement_response(args)
-        return None
-
-    if intent == "SAVE_CLIENT_NOTE":
-        args = _extract_client_note_query(messages, correction=False)
-        return _client_note_response(args) if args else None
-
-    if intent == "UPDATE_CLIENT_NOTE":
-        args = _extract_client_note_query(messages, correction=True)
-        return _client_note_response(args) if args else None
-
-    if intent == "SEARCH_LISTINGS":
-        args = _extract_simple_listing_query(messages)
-        return _listing_search_response(args) if args else None
-
-    if intent == "SEARCH_BROKERS":
-        args = _extract_simple_broker_query(messages)
-        return _broker_search_response(args) if args else None
-
-    if intent == "NEARBY_MARKETS":
-        args = _extract_nearby_market_query(messages)
-        return _nearby_markets_response(args) if args else None
-
-    if intent == "SEARCH_REQUIREMENTS":
-        args = _extract_requirement_match_query(messages)
-        return _requirement_match_response(args) if args else None
-
-    if intent == "DATABASE_COVERAGE":
-        return _database_coverage_response()
-
-    return None
-
-
 def _assert_model_url_match(model: str, base_url: str) -> None:
     """Log a warning if the model string doesn't match the provider's base URL.
 
@@ -5709,55 +5516,6 @@ def _assert_model_url_match(model: str, base_url: str) -> None:
                 "request will be silently misrouted!",
                 model, models, base_url,
             )
-
-
-def _contextual_self_chat_response(messages: list[dict]) -> dict | None:
-    latest_user = ""
-    previous_assistant = ""
-    for message in reversed(messages):
-        content = str(message.get("content") or "").strip()
-        if not content:
-            continue
-        if not latest_user and message.get("role") == "user":
-            latest_user = content
-            continue
-        if latest_user and message.get("role") == "assistant":
-            previous_assistant = content
-            break
-
-    lowered = latest_user.lower()
-    previous_lower = previous_assistant.lower()
-    if lowered in {"why", "why?", "why??"} and "could not reach" in previous_lower and "database" in previous_lower:
-        return {
-            "content": "That means the WhatsApp agent could not reach the local PropAI API at that moment. It is a connectivity/process issue, not that the data is gone.",
-            "blocks": [],
-            "sources": ["self_chat_history"],
-            "trace": {"route": "deterministic_context_followup"},
-        }
-
-    if re.search(r"\b(last|previous)\s+(question|query|search)\b", lowered):
-        previous_user = ""
-        seen_latest = False
-        for message in reversed(messages):
-            if message.get("role") != "user":
-                continue
-            content = str(message.get("content") or "").strip()
-            if not content:
-                continue
-            if not seen_latest:
-                seen_latest = True
-                continue
-            previous_user = content
-            break
-        if previous_user:
-            return {
-                "content": f"Yes. Your previous question was: {previous_user}",
-                "blocks": [],
-                "sources": ["self_chat_history"],
-                "trace": {"route": "deterministic_context_memory"},
-            }
-
-    return None
 
 
 def _format_listing_price(item: dict) -> str:
@@ -12753,21 +12511,6 @@ def _audit_rows(sql: str, params=()):
 
 def _audit_count(table: str) -> int:
     return _count_table(table) if _table_exists(table) else 0
-
-
-def _audit_intent_bucket(intent: str) -> str:
-    value = (intent or "").upper()
-    if value in {"BUY", "BUYER", "REQUIREMENT", "RENTAL_SEEKER", "TENANT"}:
-        return "requirement"
-    if value in {"RENT", "RENTAL", "LEASE", "COMMERCIAL_RENTAL"}:
-        return "rent"
-    if value in {"SELL", "SELLER", "SALE", "COMMERCIAL_SALE", "PRE-LAUNCH"}:
-        return "sale"
-    if "RENT" in value:
-        return "rent"
-    if "BUY" in value or "REQ" in value:
-        return "requirement"
-    return "listing"
 
 
 def _audit_timestamp(value) -> str:
