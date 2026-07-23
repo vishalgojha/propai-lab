@@ -770,6 +770,10 @@ const SOCIETY_WORDS =
 // render as a building card (clicking them 404s on /buildings/<slug>).
 const BROKER_NAME_PHRASES =
   /\b(real estate|realtor|broker|broking|properties|property consultant|consultant|ventures|realty)\b/i;
+// Sentence-like fragments that are descriptions, not building names
+// (e.g. "Located In Industrial Estate", "Opposite Railway Station").
+const SENTENCE_PHRASES =
+  /^(located in|situated at|near|opposite|beside|behind|next to|adjacent to|in front of|behind|above|below|ground floor|first floor|basement|annexe|wing|block|flat)\b/i;
 const JUNK_LEADING = /^[.\*◇\-_📍🔥]+/;
 // Pure ad/bhk/area fragments with no proper-noun building name, e.g.
 // "1bhk", "2.5bhk", "1rk", "1850 carpet", "3.5 Bhk".
@@ -791,11 +795,22 @@ export function isJunkBuildingName(name: string | null): boolean {
   // Broker / agency names are never buildings — exclude them outright, even
   // though some (e.g. "estate") overlap with legitimate society suffixes.
   if (BROKER_NAME_PHRASES.test(lower)) return true;
-  // Legitimate building/society names are never junk.
-  if (SOCIETY_WORDS.test(lower)) return false;
+  // Sentence-like fragments describing a location, not actual building names.
+  if (SENTENCE_PHRASES.test(n)) return true;
 
   const words = n.split(/\s+/).filter(Boolean);
   const hasAd = JUNK_AD_PHRASES.test(lower);
+
+  // Names with BOTH a society word AND ad phrases / long length are ad text
+  // leaked from WhatsApp messages (e.g. "Wallflort Tower, 2bhk Available For
+  // Sale, 740 Sqft"). Real building names never embed BHK counts, carpet
+  // areas, or price details.
+  if (SOCIETY_WORDS.test(lower)) {
+    if (hasAd && words.length >= 3) return true;
+    if (n.length > 60) return true;
+    return false;
+  }
+
   // Reads like an ad sentence: an ad phrase present AND (many words, a leading
   // markdown/punctuation artifact, or just a short ad fragment like
   // "2bhk flat on rent" / "3bhk apt").
