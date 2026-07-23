@@ -122,7 +122,7 @@ export default function AuditPage() {
     return () => window.clearTimeout(timer);
   }, [load]);
   useEffect(() => {
-    const interval = window.setInterval(() => { void load(); }, 30000);
+    const interval = window.setInterval(() => { void load(); }, 120000);
     return () => window.clearInterval(interval);
   }, [load]);
 
