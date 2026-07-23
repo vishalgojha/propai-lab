@@ -291,7 +291,9 @@ export async function getLocalityData(rawSlug: string): Promise<LocalityData | n
 
 
   const buildingNames = Array.from(
-    new Set(rows.map((r) => r.building_name?.trim()).filter(Boolean) as string[]),
+    new Set(
+      rows.map((r) => cleanBuildingName(r.building_name)).filter(Boolean) as string[],
+    ),
   );
 
   const buildingMap = await fetchBuildingsForNames(buildingNames);
@@ -310,11 +312,8 @@ export async function getLocalityData(rawSlug: string): Promise<LocalityData | n
   >();
 
   for (const row of rows) {
-    const name = (row.building_name ?? "").trim();
+    const name = cleanBuildingName(row.building_name);
     if (!name) continue;
-    // Skip broker/agency names stored as building_name — they produce cards
-    // that 404 on /buildings/<slug> (e.g. "OM Sai Real Estate").
-    if (isJunkBuildingName(name)) continue;
     const entry = agg.get(name) ?? {
       name,
       count: 0,
@@ -774,6 +773,33 @@ const BROKER_NAME_PHRASES =
 // (e.g. "Located In Industrial Estate", "Opposite Railway Station").
 const SENTENCE_PHRASES =
   /^(located in|situated at|near|opposite|beside|behind|next to|adjacent to|in front of|behind|above|below|ground floor|first floor|basement|annexe|wing|block|flat)\b/i;
+
+// Extract the clean building name from a dirty listing.building_name value.
+// The extraction pipeline often stores the ENTIRE ad message as building_name
+// (e.g. "Wallfort Tower, 2bhk Available For Sale, 740 Sqft, Quote 2.40cr").
+// Real building names are short and appear at the start, before ad text.
+export function cleanBuildingName(raw: string | null): string | null {
+  if (!raw) return null;
+  const name = raw.trim();
+  if (!name) return null;
+
+  // Short names are likely already clean — use as-is.
+  if (name.length <= 40 && !isJunkBuildingName(name)) return name;
+
+  // Try first segment before comma — real building names are usually the first
+  // part before ad details kick in (e.g. "Wallfort Tower" from
+  // "Wallfort Tower, 2bhk Available For Sale, 740 Sqft...").
+  const firstSegment = name.split(",")[0].trim();
+  if (firstSegment.length >= 3 && firstSegment.length <= 50 && !isJunkBuildingName(firstSegment)) {
+    return firstSegment;
+  }
+
+  // If the whole name is junk, return null.
+  if (isJunkBuildingName(name)) return null;
+
+  return name;
+}
+
 const JUNK_LEADING = /^[.\*◇\-_📍🔥]+/;
 // Pure ad/bhk/area fragments with no proper-noun building name, e.g.
 // "1bhk", "2.5bhk", "1rk", "1850 carpet", "3.5 Bhk".
