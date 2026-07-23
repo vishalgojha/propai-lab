@@ -579,29 +579,40 @@ async function fetchAllLocalities(): Promise<LocalitySummary[]> {
   const db = getServerSupabase();
   if (!db) return [];
 
-  // Paginate: a bare select is capped at 1000 rows, which would drop
-  // low-volume localities (e.g. Bandra East with a handful of listings) from
-  // the locality list and search suggestions.
+  // Use RPC for server-side aggregation instead of fetching all 96K+ rows.
+  const { data: rpcData, error: rpcError } = await db.rpc("get_locality_counts");
+  if (!rpcError && rpcData) {
+    const counts = new Map<string, { label: string; count: number }>();
+    for (const row of rpcData as Array<{ micro_market: string; listing_count: number }>) {
+      const raw = (row.micro_market ?? "").trim();
+      if (!raw) continue;
+      const c = canonicalLocality(raw);
+      if (!c.public || !c.standalonePage || !c.slug) continue;
+      const existing = counts.get(c.slug);
+      if (existing) existing.count += Number(row.listing_count);
+      else counts.set(c.slug, { label: c.label, count: Number(row.listing_count) });
+    }
+    return Array.from(counts.entries())
+      .map(([slug, { label, count }]) => ({ locality: label, slug, listingCount: count }))
+      .sort((a, b) => b.listingCount - a.listingCount);
+  }
+
+  // Fallback: fetch paginated (slow)
+  console.error("fetchAllLocalities RPC error:", rpcError?.message);
   const PAGE = 1000;
   let all: Array<{ micro_market: string | null }> = [];
   for (let offset = 0; ; offset += PAGE) {
-    const { data, error } = await db
+    const res = await db
       .from("listings")
       .select("micro_market")
       .not("micro_market", "is", null)
       .range(offset, offset + PAGE - 1);
-    if (error) {
-      console.error("getAllLocalities error:", error.message);
-      return [];
-    }
-    all = all.concat((data ?? []) as typeof all);
-    if (!data || data.length < PAGE) break;
+    if (res.error) return [];
+    all = all.concat((res.data ?? []) as typeof all);
+    if (!res.data || res.data.length < PAGE) break;
   }
 
-  // Aggregate by canonical locality. Case dupes ("Bandra Bkc"/"Bandra BKC")
-  // merge; hidden internal buckets drop; generic ambiguous parents (Andheri,
-  // Dadar, ...) are excluded from the browse list (no standalone page) but
-  // remain reachable via general search.
+  // Aggregate by canonical locality.
   const counts = new Map<string, { label: string; count: number }>();
   for (const row of all) {
     const raw = (row.micro_market ?? "").trim();

@@ -48,21 +48,6 @@ export type PublicActivityPoint = {
   listings: number;
 };
 
-function formatCount(value: number | null | undefined): number {
-  return Number.isFinite(value ?? NaN) ? Math.max(0, Math.trunc(value ?? 0)) : 0;
-}
-
-async function countRows(table: string): Promise<number> {
-  const db = getServerSupabase();
-  if (!db) return 0;
-  const { count, error } = await db.from(table).select("id", { count: "exact", head: true });
-  if (error) {
-    console.error(`countRows(${table}) error:`, error.message);
-    return 0;
-  }
-  return formatCount(count);
-}
-
 function priceLabel(value: number | null, unit: string | null): string {
   if (value == null) return "Price on request";
   const normalizedUnit = (unit || "").toLowerCase();
@@ -108,31 +93,26 @@ export async function getPublicDataOverview(options?: {
   buildings?: BuildingSummary[];
 }): Promise<PublicDataOverview> {
   const db = getServerSupabase();
-  const now = new Date();
-  const thirtyDaysAgo = new Date(now);
-  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-  const thirtyDaysAgoIso = thirtyDaysAgo.toISOString();
 
-  const [localities, buildings, listings, activeListings, brokers, rawMessages] = await Promise.all([
+  // Single RPC for all 6 counts instead of 6 separate queries.
+  const countsPromise = db ? db.rpc("get_public_counts").then((res) => {
+    if (res.error) {
+      console.error("get_public_counts error:", res.error.message);
+      return null;
+    }
+    return res.data?.[0] ?? null;
+  }) : Promise.resolve(null);
+
+  const [localities, buildings, countsRow] = await Promise.all([
     options?.localities ?? getAllLocalities(),
     options?.buildings ?? getAllBuildings(200),
-    countRows("listings"),
-    (async () => {
-      const d = getServerSupabase();
-      if (!d) return 0;
-      const { count, error } = await d
-        .from("listings")
-        .select("id", { count: "exact", head: true })
-        .gte("last_seen", thirtyDaysAgoIso);
-      if (error) {
-        console.error("countActiveListings error:", error.message);
-        return 0;
-      }
-      return formatCount(count);
-    })(),
-    countRows("brokers"),
-    countRows("raw_messages"),
+    countsPromise,
   ]);
+
+  const listings = Number(countsRow?.listings_total ?? 0);
+  const activeListings = Number(countsRow?.listings_active_30d ?? 0);
+  const brokers = Number(countsRow?.brokers ?? 0);
+  const rawMessages = Number(countsRow?.raw_messages ?? 0);
 
   const topBuildings = [...buildings]
     .sort((a, b) => b.listingCount - a.listingCount || a.name.localeCompare(b.name))
