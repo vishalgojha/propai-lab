@@ -466,18 +466,11 @@ def _call_provider(
             model=provider["model"],
             messages=messages,
             temperature=0.1,
-            # Reasoning models (notably Qwen 3.6) can spend their first tokens
-            # thinking before emitting the final JSON.  1,024 was often not
-            # enough for both; a truncated reasoning response has no content
-            # and was incorrectly treated as an unavailable provider.
             max_tokens=2048,
             timeout=timeout,
         )
-        # Doubleword supports OpenAI-compatible JSON mode.  Its response must
-        # be an object, hence the stable {"items": [...]} envelope in the
-        # prompt above.  Other providers retain the portable prompt-only path.
-        if provider["name"] == "doubleword":
-            request["response_format"] = {"type": "json_object"}
+        # Enable JSON mode for providers that support it (Haiku 4.5, etc.)
+        request["response_format"] = {"type": "json_object"}
         resp = client.chat.completions.create(**request)
         usage = getattr(resp, "usage", None)
         tokens_in = getattr(usage, "prompt_tokens", 0) or 0

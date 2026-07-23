@@ -89,14 +89,8 @@ OBS_TYPES = [
 MODEL_PRICING: dict[str, dict[str, float]] = {
     # NVIDIA NIM — Qwen 3.6
     "nvidia-nim": {"input": 0.20, "output": 0.60},
-    # Groq — Llama / Mixtral family
-    "groq": {"input": 0.05, "output": 0.08},
-    # Gemini — Flash / Pro
-    "gemini": {"input": 0.075, "output": 0.30},
-    # Cerebras — Llama family
-    "cerebras": {"input": 0.10, "output": 0.10},
-    # Doubleword — Qwen 3.6
-    "doubleword": {"input": 0.20, "output": 0.60},
+    # Merge Gateway — Claude Haiku 4.5
+    "merge": {"input": 1.00, "output": 5.00},
 }
 DEFAULT_MODEL_PRICING: dict[str, float] = {"input": 0.20, "output": 0.60}
 
