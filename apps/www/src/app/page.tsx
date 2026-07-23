@@ -125,6 +125,10 @@ export default async function WWWPage() {
                 value={overview.counts.messagesAnalysed}
               />
             </div>
+            <p className="mt-4 text-center text-xs text-zinc-600 max-w-2xl mx-auto">
+              Counts are pooled across all brokers in the network. Individual listings may appear
+              from multiple brokers — confirm availability directly before proceeding.
+            </p>
           </div>
         </section>
 
