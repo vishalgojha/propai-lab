@@ -119,7 +119,7 @@ def enrich_building(storage: "Storage", d: dict) -> None:
         return
 
     # Last resort: LLM call
-    result = _call_llm(raw_message, location_raw, micro_market)
+    result = _call_llm(raw_message, location_raw, micro_market, storage=storage, parsed_id=parsed_id)
     if result:
         sug = _make_suggestion(parsed_id, result["building_name"],
                                result["confidence"],
@@ -242,7 +242,8 @@ def _check_group_context(storage: "Storage", parsed_id: int,
     return False
 
 
-def _call_llm(raw_message: str, location_raw: str, micro_market: str) -> dict | None:
+def _call_llm(raw_message: str, location_raw: str, micro_market: str,
+              storage=None, parsed_id: int = 0) -> dict | None:
     hint = ""
     if "bkc" in micro_market.lower() or "bkc" in location_raw.lower():
         towers = ", ".join(sorted(KNOWN_BKC_TOWERS))
@@ -277,6 +278,29 @@ def _call_llm(raw_message: str, location_raw: str, micro_market: str) -> dict | 
             resp = client.chat.completions.create(**kwargs)
             text = resp.choices[0].message.content.strip()
 
+            # Capture usage stats for cost tracking
+            usage = resp.usage
+            usage_info = {
+                "prompt_tokens": usage.prompt_tokens if usage else 0,
+                "completion_tokens": usage.completion_tokens if usage else 0,
+            }
+            # Log to ai_usage_log
+            if usage_info.get("prompt_tokens", 0) and parsed_id:
+                try:
+                    from usage_logger import log_ai_usage
+                    cost = usage_info["prompt_tokens"] * 0.25 / 1_000_000 + usage_info["completion_tokens"] * 1.50 / 1_000_000
+                    log_ai_usage(
+                        agent="building",
+                        model=f"merge/{_get_model()}",
+                        tokens_input=usage_info["prompt_tokens"],
+                        tokens_output=usage_info["completion_tokens"],
+                        cost_usd=cost,
+                        source="enrichment",
+                        source_id=parsed_id,
+                    )
+                except Exception:
+                    pass
+
             # Try JSON first
             result = _extract_json(text)
             if result:
@@ -286,13 +310,14 @@ def _call_llm(raw_message: str, location_raw: str, micro_market: str) -> dict | 
                 if bn:
                     result["building_name"] = bn
                     result.setdefault("confidence", 0.75)
+                    result["_usage"] = usage_info
                     return result
 
             # Fallback: extract building name from narrative text
             bn = _extract_narrative_building(text)
             if bn:
                 logger.info("building_detector (%s): narrative extraction -> %s", label, bn)
-                return {"building_name": bn, "confidence": 0.65, "reasoning": "extracted from narrative"}
+                return {"building_name": bn, "confidence": 0.65, "reasoning": "extracted from narrative", "_usage": usage_info}
         except Exception as exc:
             # Retry once on 429/503 after delay
             err_str = str(exc)
