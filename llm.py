@@ -25,11 +25,12 @@ _PROVIDERS = []
 # Merge Gateway — OpenAI-compatible, first in chain (highest priority)
 _merge_key = os.getenv("MERGE_API_KEY", "").strip()
 _merge_model = os.getenv("MERGE_MODEL", "").strip()
+_merge_base = os.getenv("MERGE_BASE_URL", "https://api-gateway.merge.dev/v1/openai").strip()
 if _merge_key and _merge_model:
     _PROVIDERS.append({
         "name": "merge",
         "api_key": _merge_key,
-        "base_url": "https://api-gateway.merge.dev/v1/openai",
+        "base_url": _merge_base,
         "model": _merge_model,
     })
 elif _merge_key:
