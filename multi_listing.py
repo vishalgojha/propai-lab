@@ -1141,9 +1141,7 @@ def _is_plausible_broker_name(name: str | None) -> bool:
             "mulund", "bhandup", "vikhroli", "kanjurmarg", "kurla",
             "wadala", "prabhadevi", "parel", "dadar", "mahim", "matunga",
             "sion", "byculla", "colaba", "cuffe", "walkeshwar", "altamont",
-            "stamp duty", "benefit", "balcon", "sea view", "garden",
-            "tower", "residency", "heights", "apartment",
-            "regards", "thank", "thanks", "hello", "dear", "hi ")):
+            "stamp duty", "benefit", "balcon", "sea view", "garden")):
         return False
     return True
 
