@@ -25,6 +25,7 @@ const baseNavSections = [
     title: "Settings",
     items: [
       { href: "/connections", label: "Connect WhatsApp" },
+      { href: "/groups", label: "Group Settings" },
       { href: "/whatswow", label: "WhatsWow" },
       { href: "/audit", label: "WhatsApp Audit" },
       { href: "/profile", label: "My Profile" },
