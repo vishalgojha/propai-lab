@@ -86,7 +86,36 @@ def _sanitize_parsed_value(value):
 
 
 def _sanitize_parsed_listing(parsed: dict) -> dict:
-    return {key: _sanitize_parsed_value(value) for key, value in parsed.items()}
+    cleaned = {key: _sanitize_parsed_value(value) for key, value in parsed.items()}
+
+    # Multi-listing parsers historically used ``floor`` or
+    # ``floor_description`` while parsed_output stores ``floor_range``. Keep
+    # one canonical save key for residential and commercial observations so a
+    # reviewed split cannot lose the option that made it a separate card.
+    if not cleaned.get("floor_range"):
+        cleaned["floor_range"] = (
+            cleaned.get("floor_description") or cleaned.get("floor")
+        )
+
+    # A project heading is the building identity for Market Inbox purposes.
+    # Tower/wing remain evidence metadata; they must never be promoted to a
+    # locality or allowed to replace an explicit sibling building.
+    if not cleaned.get("building_name") and cleaned.get("project_name"):
+        cleaned["building_name"] = cleaned["project_name"]
+
+    payload = cleaned.get("raw_payload")
+    if isinstance(payload, dict):
+        hierarchy = {
+            key: cleaned.get(key)
+            for key in ("project_name", "tower_name", "wing_name")
+            if cleaned.get(key)
+        }
+        if hierarchy:
+            payload = dict(payload)
+            payload.setdefault("hierarchy", {}).update(hierarchy)
+            cleaned["raw_payload"] = payload
+
+    return cleaned
 
 
 # Defence-in-depth validators for AI-only fields (deal_tags, additional_charges).
@@ -244,6 +273,103 @@ def _ai_extraction_to_parsed(ai_extraction: dict, raw_text: str, sender_name: st
     }
 
 
+def _normalized_bhk(value) -> float | None:
+    """Return a comparable BHK value without guessing when none is present."""
+    if value is None:
+        return None
+    text = str(value).strip().lower()
+    if "rk" in text:
+        return 0.5
+    match = re.search(r"\d+(?:\.\d+)?", text)
+    if not match:
+        return None
+    try:
+        return float(match.group(0))
+    except ValueError:
+        return None
+
+
+def _deterministic_price_rupees(item: dict) -> float | None:
+    """Convert a deterministic boundary price to absolute rupees."""
+    raw_price = item.get("price")
+    if raw_price in (None, ""):
+        return None
+    try:
+        value = float(raw_price)
+    except (TypeError, ValueError):
+        return None
+
+    unit = str(item.get("price_unit") or "").strip().lower()
+    if unit in {"cr", "crore", "crores"}:
+        return value * 1_00_00_000 if value < 1_00_000 else value
+    if unit in {"lac", "lacs", "lakh", "lakhs", "l"}:
+        return value * 1_00_000 if value < 10_000 else value
+    if unit in {"k", "thousand"}:
+        return value * 1_000 if value < 10_000 else value
+    return value
+
+
+def _meaningful_name_tokens(value) -> set[str]:
+    if not value:
+        return set()
+    generic = {
+        "apartment", "apartments", "building", "bungalow", "commercial",
+        "flat", "office", "project", "residential", "residency", "society",
+        "tower", "towers",
+    }
+    return {
+        token
+        for token in re.findall(r"[a-z0-9]+", str(value).lower())
+        if len(token) >= 3 and token not in generic
+    }
+
+
+def _ai_item_matches_boundary(ai_item: dict, boundary: dict, source_text: str) -> tuple[bool, list[str]]:
+    """Reject explicit cross-unit conflicts between AI output and a split block.
+
+    Missing fields are allowed because AI may legitimately recover an anchor the
+    regex splitter missed. Explicitly conflicting BHK, area, price, or building
+    values are not allowed: those are the common signs that sibling properties
+    were merged or reordered.
+    """
+    parsed = _ai_extraction_to_parsed(ai_item, source_text, "", "")
+    conflicts: list[str] = []
+
+    boundary_bhk = _normalized_bhk(boundary.get("bhk"))
+    ai_bhk = _normalized_bhk(parsed.get("bhk"))
+    if boundary_bhk is not None and ai_bhk is not None and boundary_bhk != ai_bhk:
+        conflicts.append(f"bhk {ai_bhk:g}!={boundary_bhk:g}")
+
+    try:
+        boundary_area = float(boundary.get("area_sqft")) if boundary.get("area_sqft") not in (None, "") else None
+        ai_area = float(parsed.get("area_sqft")) if parsed.get("area_sqft") not in (None, "") else None
+    except (TypeError, ValueError):
+        boundary_area = ai_area = None
+    if boundary_area is not None and ai_area is not None:
+        tolerance = max(25.0, boundary_area * 0.03)
+        if abs(ai_area - boundary_area) > tolerance:
+            conflicts.append(f"area {ai_area:g}!={boundary_area:g}")
+
+    boundary_price = _deterministic_price_rupees(boundary)
+    try:
+        ai_price = float(parsed.get("price")) if parsed.get("price") not in (None, "") else None
+    except (TypeError, ValueError):
+        ai_price = None
+    if boundary_price is not None and ai_price is not None:
+        tolerance = max(25_000.0, boundary_price * 0.02)
+        if abs(ai_price - boundary_price) > tolerance:
+            conflicts.append(f"price {ai_price:g}!={boundary_price:g}")
+
+    boundary_building = _meaningful_name_tokens(
+        boundary.get("building_name") or boundary.get("project_name")
+    )
+    ai_building = _meaningful_name_tokens(parsed.get("building_name"))
+    if boundary_building and ai_building and boundary_building.isdisjoint(ai_building):
+        conflicts.append("building mismatch")
+
+    return not conflicts, conflicts
+
+
 def process_raw_message(raw_id: int, ctx: dict, storage=None):
     """Process a single raw message through the full extraction pipeline.
 
@@ -357,9 +483,20 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
             print(f"  [extract] create_knowledge_record error for {raw_id}: {exc}", flush=True)
 
     # ── Parse (AI first, regex fallback) ────────────────────────
-    parsed_listings: list[dict] = []
-    ai_extraction_raw: dict | None = None
-    ai_extractions_raw: list[dict] | None = None
+    preparsed_input = ctx.get("preparsed_listings")
+    parsed_listings: list[dict] = (
+        [
+            _sanitize_parsed_listing(dict(item))
+            for item in preparsed_input
+            if isinstance(item, dict)
+        ]
+        if isinstance(preparsed_input, list)
+        else []
+    )
+    # Kept index-aligned with parsed_listings. A deterministic fallback must
+    # never inherit a mixed whole-message AI result merely because it shares
+    # the same source message.
+    ai_extractions_raw: list[dict | None] = []
     extraction_source: str | None = None
 
     # Detect multi-option posts so the AI response can be held to the same
@@ -370,25 +507,113 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
         print(f"  [extract] classify_message error for {raw_id}: {exc}", flush=True)
         msg_class = "single"
 
+    # Establish property boundaries before asking AI to repair a multi-unit
+    # post. The deterministic parser supplies boundaries; AI remains the
+    # preferred source for the structured fields.
+    split_listings: list[dict] = []
+    split_source_texts: list[str] = []
+    if msg_class == "multi":
+        try:
+            split_listings = multi_listing.parse_multi_message(
+                msg_text, profile_name=sender_name or push_name
+            )
+            for item in split_listings:
+                source_text = _parsed_source_text(item, msg_text).strip()
+                if source_text:
+                    split_source_texts.append(source_text)
+        except Exception as exc:
+            _logger.warning("raw_id=%d multi-listing block split failed: %s", raw_id, exc)
+
     # 1. Try AI extraction. Multi-listing messages require an AI array with at
     # least two validated items; otherwise the deterministic block parser is
     # the safe fallback.
     try:
         from ai_extraction import ai_extract
-        ai_result = ai_extract(msg_text, ctx, storage=storage)
+        ai_result = (
+            {"extraction_source": "reviewed_reparse_preview", "extractions": []}
+            if isinstance(preparsed_input, list)
+            else ai_extract(msg_text, ctx, storage=storage)
+        )
         extraction_source = ai_result.get("extraction_source")
         raw_ai_items = ai_result.get("extractions") or ([ai_result["extraction"]] if ai_result.get("extraction") else [])
         ai_items = [item for item in raw_ai_items if isinstance(item, dict)]
-        if extraction_source == "ai" and ai_items and (msg_class != "multi" or len(ai_items) >= 2):
+        whole_ai_is_valid = extraction_source == "ai" and bool(ai_items)
+        multi_conflicts: list[str] = []
+        if whole_ai_is_valid and msg_class == "multi":
+            whole_ai_is_valid = (
+                len(ai_items) == len(split_listings) == len(split_source_texts)
+                and len(ai_items) >= 2
+            )
+            if whole_ai_is_valid:
+                for idx, (item, boundary, block_text) in enumerate(
+                    zip(ai_items, split_listings, split_source_texts)
+                ):
+                    aligned, conflicts = _ai_item_matches_boundary(item, boundary, block_text)
+                    if not aligned:
+                        whole_ai_is_valid = False
+                        multi_conflicts.extend(f"block {idx + 1}: {reason}" for reason in conflicts)
+
+        if whole_ai_is_valid:
+            source_texts = split_source_texts if msg_class == "multi" else [msg_text] * len(ai_items)
             parsed_listings = [
-                _ai_extraction_to_parsed(item, msg_text, sender_name, push_name)
-                for item in ai_items
+                _ai_extraction_to_parsed(item, source_texts[idx], sender_name, push_name)
+                for idx, item in enumerate(ai_items)
             ]
             ai_extractions_raw = ai_items
-            ai_extraction_raw = ai_items[0]
             _logger.info("raw_id=%d AI extraction: %d structured item(s) via %s", raw_id, len(ai_items), ai_result.get("provider_used"))
         elif msg_class == "multi" and extraction_source == "ai":
-            _logger.warning("raw_id=%d multi-listing AI result had %d item(s); using block parser fallback", raw_id, len(ai_items))
+            _logger.warning(
+                "raw_id=%d multi-listing AI result rejected (%d item(s), %d boundary block(s)%s); retrying blocks independently",
+                raw_id,
+                len(ai_items),
+                len(split_source_texts),
+                f", conflicts={'; '.join(multi_conflicts)}" if multi_conflicts else "",
+            )
+
+            # Models can occasionally merge a natural-language broker block
+            # even when prompted for an array. Retry every detected property
+            # independently so fields and evidence cannot bleed between units.
+            # This is all-or-nothing: a partial result falls back to the safe
+            # deterministic split below.
+            block_ai_items: list[dict] = []
+            block_parsed: list[dict] = []
+            for boundary, block_text in zip(split_listings, split_source_texts):
+                block_result = ai_extract(block_text, ctx, storage=storage)
+                block_raw_items = block_result.get("extractions") or (
+                    [block_result["extraction"]] if block_result.get("extraction") else []
+                )
+                block_items = [item for item in block_raw_items if isinstance(item, dict)]
+                if block_result.get("extraction_source") != "ai" or len(block_items) != 1:
+                    block_ai_items = []
+                    block_parsed = []
+                    break
+                aligned, conflicts = _ai_item_matches_boundary(
+                    block_items[0], boundary, block_text
+                )
+                if not aligned:
+                    _logger.warning(
+                        "raw_id=%d isolated block AI result rejected: %s",
+                        raw_id,
+                        "; ".join(conflicts),
+                    )
+                    block_ai_items = []
+                    block_parsed = []
+                    break
+                block_ai_items.append(block_items[0])
+                block_parsed.append(
+                    _ai_extraction_to_parsed(
+                        block_items[0], block_text, sender_name, push_name
+                    )
+                )
+
+            if block_parsed and len(block_parsed) == len(split_source_texts):
+                parsed_listings = block_parsed
+                ai_extractions_raw = block_ai_items
+                _logger.info(
+                    "raw_id=%d recovered %d isolated AI listing(s) from property blocks",
+                    raw_id,
+                    len(block_parsed),
+                )
     except Exception as exc:
         _logger.warning("raw_id=%d ai_extract error: %s — falling back to regex", raw_id, exc)
         extraction_source = "regex_fallback"
@@ -397,7 +622,7 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
     if not parsed_listings:
         try:
             if msg_class == "multi":
-                parsed_listings = multi_listing.parse_multi_message(
+                parsed_listings = split_listings or multi_listing.parse_multi_message(
                     msg_text, profile_name=sender_name or push_name
                 )
             else:
@@ -415,6 +640,19 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
             if _parsed_has_market_anchor(cleaned, source_text):
                 market_listings.append(cleaned)
         parsed_listings = [_sanitize_parsed_listing(pl) for pl in market_listings]
+
+    # Historical reparses are previewed before any derived rows are changed.
+    # Applying a reviewed preview must use those exact item boundaries instead
+    # of trusting a second, potentially different, AI response.
+    preparsed_listings = ctx.get("preparsed_listings")
+    if isinstance(preparsed_listings, list):
+        parsed_listings = [
+            _sanitize_parsed_listing(dict(item))
+            for item in preparsed_listings
+            if isinstance(item, dict)
+        ]
+        ai_extractions_raw = [None] * len(parsed_listings)
+        extraction_source = "reviewed_reparse_preview"
 
     if not parsed_listings:
         try:
@@ -478,11 +716,23 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
                 if isinstance(rp, dict) and isinstance(rp.get("full_text"), str):
                     rp["full_text"] = rp["full_text"].rstrip() + suffix
 
+    # Preview mode deliberately stops before save_parsed, listing upserts,
+    # graph writes, processed flags, or any deletion. The caller can validate
+    # the exact proposed cards and later pass them back as preparsed_listings.
+    if ctx.get("preview_only"):
+        return {
+            "raw_id": raw_id,
+            "parsed_listings": parsed_listings,
+            "proposed_count": len(parsed_listings),
+            "message_class": msg_class,
+            "extraction_source": extraction_source or "regex_fallback",
+        }
+
     # ── Save parsed observations ────────────────────────────────
     parsed_ids: list[int] = []
     listing_ids: list[int] = []
     for idx, parsed in enumerate(parsed_listings):
-        ai_item = ai_extractions_raw[idx] if ai_extractions_raw and idx < len(ai_extractions_raw) else ai_extraction_raw
+        ai_item = ai_extractions_raw[idx] if idx < len(ai_extractions_raw) else None
         share_eligible, share_reason = True, "ok"
         try:
             share_eligible, share_reason = check_share_eligibility(parsed, org_privacy, conv_type or "unknown")
@@ -528,10 +778,16 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
             intent=parsed.get("intent"),
             principal=parsed.get("principal"),
             bhk=parsed.get("bhk"),
+            configuration=parsed.get("configuration"),
             price=parsed.get("price"),
             price_unit=parsed.get("price_unit"),
+            price_model=parsed.get("price_model"),
+            price_per_sqft=parsed.get("price_per_sqft"),
+            monthly_rent=parsed.get("monthly_rent"),
+            total_asking_price=parsed.get("total_asking_price"),
             area_sqft=parsed.get("area_sqft"),
             furnishing=parsed.get("furnishing"),
+            furnishing_canonical=parsed.get("furnishing_canonical"),
             location_raw=parsed.get("location_raw"),
             location=json.dumps(parsed.get("location")) if parsed.get("location") else None,
             building_name=parsed.get("building_name"),
@@ -540,6 +796,22 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
             area=parsed.get("area"),
             micro_market=parsed.get("micro_market"),
             developer=parsed.get("developer"),
+            asset_type=parsed.get("asset_type"),
+            property_type=parsed.get("property_type"),
+            transaction_type=parsed.get("transaction_type"),
+            commercial_use_type=parsed.get("commercial_use_type"),
+            fitout_status=parsed.get("fitout_status"),
+            occupancy_type=parsed.get("occupancy_type"),
+            floor_range=parsed.get("floor_range"),
+            rent_per_sqft=parsed.get("rent_per_sqft"),
+            availability_status=parsed.get("availability_status"),
+            possession_status=parsed.get("possession_status"),
+            possession_date=parsed.get("possession_date"),
+            available_from=parsed.get("available_from"),
+            ready_by=parsed.get("ready_by"),
+            construction_stage=parsed.get("construction_stage"),
+            launch_timeline=parsed.get("launch_timeline"),
+            expected_possession=parsed.get("expected_possession"),
             broker_name=parsed.get("broker_name"),
             broker_phone=parsed.get("broker_phone"),
             profile_name=sender_name or push_name,
@@ -555,8 +827,12 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
             # re-run the whitelist/dict-shape validator here so a junk value
             # from any code path (LLM drift, future schema changes, mocked
             # ai_extract in tests) can't poison the row.
-            deal_tags=_safe_deal_tags(ai_item.get("deal_tags") if ai_item else None),
-            additional_charges=_safe_additional_charges(ai_item.get("additional_charges") if ai_item else None),
+            deal_tags=_safe_deal_tags(
+                ai_item.get("deal_tags") if ai_item else parsed.get("deal_tags")
+            ),
+            additional_charges=_safe_additional_charges(
+                ai_item.get("additional_charges") if ai_item else parsed.get("additional_charges")
+            ),
         )
         try:
             parsed_id = storage.save_parsed(obs)

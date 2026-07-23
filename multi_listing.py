@@ -140,7 +140,7 @@ def validate_building_name(name: str | None) -> str | None:
     if lower in _IMPOSSIBLE_BUILDINGS:
         return None
     # Check pattern matches (e.g. "3BHK" as building)
-    if re.match(r'^\d+\s*(bhk|rk|bedroom|sqft|sq\s*ft|sft)\b', lower):
+    if re.match(r'^\d[\d,.]*\s*(bhk|rk|bedroom|sqft|sq\s*ft|sft|carpet|usable)\b', lower):
         return None
     # Check if it's a price string (with optional currency prefix)
     if re.match(r'^(?:rs\.?\s*|inr\s*|usd\s*|[₹$€])\s*[\d,.]+\s*(cr|crore|lac|lakh|l|k|thousand)\b', lower):
@@ -405,6 +405,10 @@ _AREA_RANGE_RE = re.compile(
     r'(\d[\d,.]*)\s*(?:to|[-–])\s*(\d[\d,.]*)\s*((?:cr|crore|lac|lakh|l|lacs|lakhs|k|thousand))?\s*(sq\.?\s*ft|sqft|sft|sq\s*feet|carpet)',
     re.I,
 )
+_USABLE_AREA_RE = re.compile(
+    r'(\d[\d,.]*)\s*(?:sq\.?\s*ft\s*)?(?:usable|useable)\b',
+    re.I,
+)
 _PRICE_ONLY_RE = re.compile(
     r'(?:(?:@|cost|rate|price|rent|asking(?:\s+price)?|for\s+sale|for\s+(?:l\s*&?\s*l|lease|rent|leave\s+and\s+licence))\s*:?\s*)?'
     r'(?:rs\.?\s*|inr\s*|₹)?\s*([\d,.:/\-]+)\s*(?:\/-\s*)?(cr|crore|lac|lakh|l|lacs|lakhs|k|thousand|sqft|sq\s*ft|sft)\b',
@@ -473,7 +477,7 @@ def _parse_amount(value: str) -> float | None:
     except ValueError:
         return None
 _NUMBERED_ANY_RE = re.compile(r'^\s*(?:[⭐*•-]\s*)?(?:\d{1,3})\s*[\).:-]\s*(.+)', re.I)
-_LOCATION_LINE_RE = re.compile(r'^\s*(?:📍|location\s*[:\-])\s*(.+)', re.I)
+_LOCATION_LINE_RE = re.compile(r'^\s*(?:📍\s*|location\s*[:\-]+\s*)(.+)', re.I)
 _SIGNATURE_HINT_RE = re.compile(r'\b(?:for inspection|for details|contact|housen realtors|realtors|realty)\b', re.I)
 _FREEFORM_START_HINT_RE = re.compile(
     r'\b(?:available|requirement|requirements|required|required for|wanted|need|looking\s+for|seeking|'
@@ -514,6 +518,22 @@ def _freeform_block_has_listing_core(block: str) -> bool:
     return False
 
 
+def _looks_like_standalone_property_heading(line: str) -> bool:
+    """Return True for a short project/building heading between options."""
+    clean = _clean_line_markup(line).strip(" :-")
+    if not validate_building_name(clean):
+        return False
+    if len(clean.split()) > 6 or not re.search(r"[A-Za-z]", clean):
+        return False
+    return not re.search(
+        r'\b(?:available|possession|parking|pet|family|bachelor|floor|view|'
+        r'furnished|carpet|usable|rent|sale|lease|price|deposit|brokerage|'
+        r'negotiable|inspection|contact|call|regards|amenities)\b',
+        clean,
+        re.I,
+    )
+
+
 def _split_freeform_listing_blocks(text: str) -> list[str]:
     """Split a free-form multi-listing message into card-sized blocks.
 
@@ -521,19 +541,27 @@ def _split_freeform_listing_blocks(text: str) -> list[str]:
     lines, signatures, and mixed title/detail lines instead of explicit
     numbered or divider markers.
     """
-    lines = [line.rstrip() for line in text.split("\n")]
+    lines = [line.rstrip() for line in text.split("\n") if line.strip()]
     blocks: list[list[str]] = []
     current: list[str] = []
     current_has_core = False
 
-    for raw_line in lines:
+    for index, raw_line in enumerate(lines):
         line = raw_line.strip()
-        if not line:
-            continue
 
         is_start = _freeform_block_looks_like_listing_start(line)
         is_signature = bool(_FREEFORM_SIGNATURE_HINT_RE.search(line)) and not is_start
         has_core = _freeform_block_has_listing_core(line)
+        next_line = lines[index + 1].strip() if index + 1 < len(lines) else ""
+        is_next_option_heading = (
+            current_has_core
+            and not is_start
+            and not is_signature
+            and not has_core
+            and _looks_like_standalone_property_heading(line)
+            and bool(next_line)
+            and _freeform_block_has_listing_core(next_line)
+        )
 
         if not current:
             current = [raw_line]
@@ -542,6 +570,12 @@ def _split_freeform_listing_blocks(text: str) -> list[str]:
 
         if is_signature:
             current.append(raw_line)
+            continue
+
+        if is_next_option_heading:
+            blocks.append(current)
+            current = [raw_line]
+            current_has_core = False
             continue
 
         if is_start and current_has_core:
@@ -765,6 +799,47 @@ def _extract_building_name(text: str) -> str | None:
     """Extract building name from various patterns: 🏢 prefix, 🔹 name 🔹, or all-caps standalone line."""
     lines = text.split("\n")
     clean_lines = [l.strip().strip("🏢 *") for l in lines]
+
+    # Priority -1: a labelled compound location often carries
+    # ``Building, Locality`` followed by price text.  The first component is
+    # the project only when it is not itself a known locality.
+    for line in lines:
+        location_match = _LOCATION_LINE_RE.match(line)
+        if not location_match:
+            continue
+        location_text = _trim_location_value(location_match.group(1))
+        first_component = location_text.split(",", 1)[0].strip(" -*|:;.")
+        if (
+            first_component
+            and first_component.lower() not in _KNOWN_LOCALITIES
+            and validate_building_name(first_component)
+        ):
+            return _title_case_name(first_component)
+
+    # Priority -0.5: compact broker rows commonly start with the project,
+    # e.g. ``WestBay 3BHK available for sale ...``.  Only the text before the
+    # configuration is a project candidate; sibling attributes remain in the
+    # row and must never become part of the building name.
+    for line in lines:
+        compact_match = re.match(
+            r'^\s*[*_`~]*\s*([A-Za-z][A-Za-z0-9 .&\'\-]{1,50}?)\s+'
+            r'\d+(?:\.\d+)?\s*(?:bhk|rk)\b',
+            line,
+            re.I,
+        )
+        if not compact_match:
+            continue
+        candidate = compact_match.group(1).strip(" -*|:;.,")
+        if re.search(
+            r'\b(?:available|fantastic|premium|luxury|direct|urgent|required|'
+            r'requirement|wanted|spacious|beautiful)\b',
+            candidate,
+            re.I,
+        ):
+            continue
+        candidate = validate_building_name(candidate)
+        if candidate and candidate.lower() not in _KNOWN_LOCALITIES:
+            return _title_case_name(candidate)
 
     # Priority 0: explicit BLDG / Building / Project labels
     for line in lines:
@@ -1223,7 +1298,28 @@ def _extract_title_parts(block: str) -> tuple[str | None, str | None]:
     elif " - " in first_line:
         title = first_line.split(" - ", 1)[1]
     elif bhk:
-        title = re.sub(r'^\s*\d+\s*bhk\s*', '', first_line, flags=re.I)
+        inline_project = re.match(
+            r'^\s*([A-Za-z][A-Za-z0-9 .&\'\-]{1,50}?)\s+'
+            r'\d+(?:\.\d+)?\s*(?:bhk|rk)\b',
+            first_line,
+            re.I,
+        )
+        if inline_project and not re.search(
+            r'\b(?:available|fantastic|premium|luxury|direct|urgent|required|'
+            r'requirement|wanted|spacious|beautiful)\b',
+            inline_project.group(1),
+            re.I,
+        ):
+            title = inline_project.group(1)
+        elif re.match(r'^\s*\d+(?:\.\d+)?\s*(?:bhk|rk)\b', first_line, re.I):
+            title = re.sub(
+                r'^\s*\d+(?:\.\d+)?\s*(?:bhk|rk)\s*',
+                '',
+                first_line,
+                flags=re.I,
+            )
+        else:
+            title = ""
     elif re.search(r'^\s*studio\b', first_line, re.I):
         title = re.sub(r'^\s*studio\s*', '', first_line, flags=re.I)
 
@@ -1234,11 +1330,33 @@ def _extract_title_parts(block: str) -> tuple[str | None, str | None]:
     return bhk, title
 
 
+def _trim_location_value(value: str) -> str:
+    """Remove price/quote tails without changing the location identity."""
+    clean = re.sub(r'\s+', ' ', value or '').strip(" -*|:;.")
+    clean = re.split(
+        r'\s*[,;]?\s*\b(?:quote|price|rent|asking)\b\s*[:\-]?',
+        clean,
+        maxsplit=1,
+        flags=re.I,
+    )[0]
+    return clean.strip(" -*|:;.,")
+
+
 def _extract_location_line(block: str) -> str | None:
     for line in block.split("\n"):
         m = _LOCATION_LINE_RE.match(line)
         if m:
-            return m.group(1).strip()
+            return _trim_location_value(m.group(1))
+
+    # Some forwards omit the label and put a known locality at the start of
+    # its own row: ``Bandra West, Quote 4.75 cr``.  Accept only anchored known
+    # localities so descriptive prose does not become a location.
+    for line in block.split("\n"):
+        clean = _trim_location_value(_clean_line_markup(line))
+        lower = clean.lower()
+        for locality in sorted(_KNOWN_LOCALITIES, key=len, reverse=True):
+            if re.match(rf'^{re.escape(locality)}(?:\b|\s*[,/|-])', lower):
+                return locality.title()
     return None
 
 
@@ -1581,6 +1699,9 @@ def _parse_area_from_text(text: str) -> float | None:
         if scale and scale.lower().rstrip("s") in ("k", "thousand"):
             val *= 1000
         return val
+    usable_m = _USABLE_AREA_RE.search(text)
+    if usable_m:
+        return float(usable_m.group(1).replace(",", ""))
     rera_m = re.search(r'(\d[\d,.]*)\s*rera\s*carpet\b', text, re.I)
     if rera_m:
         return float(rera_m.group(1).replace(",", ""))
@@ -2002,6 +2123,264 @@ def _split_commercial_floors(text: str) -> list[dict]:
     return results
 
 
+_INLINE_TOWER_OR_WING_RE = re.compile(
+    r'\b(?P<kind>tower|wing)\s*[-:]?\s*(?P<name>[A-Za-z0-9][A-Za-z0-9-]*)\b',
+    re.I,
+)
+
+
+def _explicit_intent_from_text(text: str) -> str | None:
+    """Return an intent only when the broker actually stated one.
+
+    Multi-option boundaries must not turn an ambiguous floor/price menu into a
+    sale merely because the legacy single-listing parser defaults to SELL.
+    """
+    lower = text.lower()
+    if re.search(r'\b(?:rent|rental|lease|l\s*&\s*l|leave\s+and\s+licen[cs]e)\b', lower):
+        return "RENT"
+    if re.search(r'\b(?:sale|sell|outright)\b', lower):
+        return "SELL"
+    if re.search(r'\b(?:buy|purchase|buyer)\b', lower):
+        return "BUY"
+    return None
+
+
+def _shared_project_identity(header_text: str) -> tuple[str | None, str | None, str | None]:
+    """Extract project/tower/market identity from a shared option header.
+
+    The first clean title line in posts such as ``Ten BKC Tower 7`` is the
+    project anchor.  Tower/wing is stored separately and is never treated as
+    a locality.
+    """
+    project = None
+    tower_or_wing = None
+    micro_market = None
+
+    for raw_line in header_text.splitlines():
+        clean = _clean_line_markup(raw_line).strip(" -*|:,.")
+        if not clean:
+            continue
+        if (
+            _parse_bhk_from_text(clean)
+            or _parse_area_from_text(clean) is not None
+            or _parse_price_from_text(clean)[0] is not None
+            or _parse_furnishing_from_text(clean)
+            or _FLOOR_LINE_RE.search(clean)
+            or _PHONE_CANDIDATE_RE.search(clean)
+        ):
+            continue
+        if re.search(r'\b(?:available|required|requirement|wanted|contact|call|whatsapp)\b', clean, re.I):
+            continue
+
+        match = _INLINE_TOWER_OR_WING_RE.search(clean)
+        if match:
+            label = match.group("kind").title()
+            tower_or_wing = f'{label} {match.group("name")}'
+            clean = (clean[:match.start()] + clean[match.end():]).strip(" -*|:,.")
+        project = validate_building_name(clean)
+        if project:
+            break
+
+    if re.search(r'(?<!\w)bkc(?!\w)', header_text, re.I):
+        micro_market = "BKC"
+    else:
+        lower = header_text.lower()
+        for locality in sorted(_KNOWN_LOCALITIES, key=len, reverse=True):
+            if re.search(rf'(?<!\w){re.escape(locality)}(?!\w)', lower):
+                micro_market = locality.title()
+                break
+
+    return project, tower_or_wing, micro_market
+
+
+def _split_floor_option_listings(
+    text: str,
+    profile_name: str | None = None,
+) -> list[dict]:
+    """Split one shared property header with separately actionable floors.
+
+    Example: a Ten BKC header followed by ``24th floor - 3 lakh`` and
+    ``17th floor - 3 lakh`` is two listings, not a header card plus two
+    incomplete cards. Shared project/BHK/area/furnishing/contact data is
+    inherited; floor-specific evidence never crosses into its sibling.
+    """
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    floor_indices = [idx for idx, line in enumerate(lines) if _FLOOR_LINE_RE.search(line)]
+    if len(floor_indices) < 2:
+        return []
+
+    # Commercial rate sheets have different semantics and already have a
+    # dedicated per-square-foot splitter.
+    if len(_PER_SQFT_RE.findall(text)) >= 2:
+        return []
+
+    header_lines = lines[:floor_indices[0]]
+    header_text = "\n".join(header_lines)
+    if not header_text:
+        return []
+
+    broker_name, broker_phone = _extract_broker_from_block(text)
+    signature_lines: list[str] = []
+    for line in lines:
+        line_phone_match = _PHONE_CANDIDATE_RE.search(line)
+        line_phone = _normalize_indian_phone(line_phone_match.group(0)) if line_phone_match else None
+        if (
+            (broker_phone and line_phone == broker_phone)
+            or (broker_name and broker_name.lower() in line.lower())
+            or re.search(r'\b(?:regards|for\s+(?:details|inspection)|contact|call|whatsapp)\b', line, re.I)
+        ):
+            signature_lines.append(line)
+
+    project, tower_or_wing, micro_market = _shared_project_identity(header_text)
+    shared_intent = _explicit_intent_from_text(header_text)
+    results: list[dict] = []
+
+    for pos, start in enumerate(floor_indices):
+        end = floor_indices[pos + 1] if pos + 1 < len(floor_indices) else len(lines)
+        option_lines = [line for line in lines[start:end] if line not in signature_lines]
+        option_text = "\n".join(option_lines)
+
+        # A distinct floor becomes a distinct record only when the option is
+        # independently actionable (price or another unit-specific anchor).
+        option_price, _ = _parse_price_from_text(option_text)
+        option_area = _parse_area_from_text(option_text)
+        if option_price is None and option_area is None:
+            return []
+
+        evidence_lines = header_lines + option_lines
+        evidence_lines.extend(line for line in signature_lines if line not in evidence_lines)
+        evidence = "\n".join(evidence_lines)
+        parsed = _parse_divider_block(evidence, profile_name, hierarchical_ctx={})
+        if not parsed:
+            return []
+
+        parsed["floor_description"] = _clean_floor_description(lines[start])
+        parsed["broker_name"] = parsed.get("broker_name") or broker_name
+        parsed["broker_phone"] = parsed.get("broker_phone") or broker_phone
+        parsed["raw_payload"] = {"full_text": evidence}
+
+        if project:
+            parsed["building_name"] = project
+            parsed["project_name"] = project
+        if tower_or_wing:
+            if tower_or_wing.lower().startswith("tower "):
+                parsed["tower_name"] = tower_or_wing
+            else:
+                parsed["wing_name"] = tower_or_wing
+        if micro_market:
+            parsed["micro_market"] = micro_market
+            parsed["location_raw"] = micro_market
+
+        explicit_option_intent = _explicit_intent_from_text(option_text)
+        parsed["intent"] = explicit_option_intent or shared_intent
+        results.append(parsed)
+
+    return results if len(results) >= 2 else []
+
+
+def _shared_preamble_context(text: str) -> dict:
+    """Return document-wide identity stated before the first option row.
+
+    Broker forwards often put ``Ten BKC`` on its own line and then list two
+    independently actionable configurations.  That first line belongs to
+    both options; it is not a third listing and must not disappear from the
+    second option's evidence.
+    """
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    header_lines: list[str] = []
+    for line in lines:
+        clean = _clean_line_markup(line)
+        if (
+            _parse_bhk_from_text(clean)
+            or _parse_area_from_text(clean) is not None
+            or _parse_price_from_text(clean)[0] is not None
+            or _FLOOR_LINE_RE.search(clean)
+        ):
+            break
+        header_lines.append(line)
+
+    header_text = "\n".join(header_lines)
+    project, tower_or_wing, micro_market = _shared_project_identity(header_text)
+    broker_name, broker_phone = _extract_broker_from_block(text)
+    return {
+        "header_lines": header_lines,
+        "project_name": project,
+        "tower_or_wing": tower_or_wing,
+        "micro_market": micro_market,
+        "intent": _explicit_intent_from_text(header_text),
+        "broker_name": broker_name,
+        "broker_phone": broker_phone,
+    }
+
+
+def _apply_shared_preamble_context(text: str, listings: list[dict]) -> list[dict]:
+    """Inherit only document-wide fields across already-split options."""
+    if len(listings) < 2:
+        return listings
+
+    shared = _shared_preamble_context(text)
+    header_lines = shared["header_lines"]
+    project = shared["project_name"]
+    tower_or_wing = shared["tower_or_wing"]
+    micro_market = shared["micro_market"]
+    broker_name = shared["broker_name"]
+    broker_phone = shared["broker_phone"]
+
+    # A first listing title can look exactly like a shared project header.
+    # Treat it as document-wide only when no sibling has a different valid
+    # building identity. This keeps ``Greenfields`` from leaking into an
+    # explicitly named ``WestBay`` sibling while still repairing a second
+    # option whose parser mistook ``1450 carpet`` for the building name.
+    valid_buildings = [
+        validate_building_name(listing.get("building_name"))
+        for listing in listings
+    ]
+    if project and any(
+        building and building.casefold() != project.casefold()
+        for building in valid_buildings
+    ):
+        project = None
+        tower_or_wing = None
+        micro_market = None
+        header_lines = []
+
+    signature_lines: list[str] = []
+    for line in (line.strip() for line in text.splitlines() if line.strip()):
+        phone_match = _PHONE_CANDIDATE_RE.search(line)
+        line_phone = _normalize_indian_phone(phone_match.group(0)) if phone_match else None
+        if (
+            (broker_phone and line_phone == broker_phone)
+            or (broker_name and broker_name.casefold() in line.casefold())
+        ):
+            signature_lines.append(line)
+
+    for listing, current_building in zip(listings, valid_buildings):
+        listing["building_name"] = current_building or project
+        if project:
+            listing["project_name"] = listing.get("project_name") or project
+        if tower_or_wing:
+            key = "tower_name" if tower_or_wing.lower().startswith("tower ") else "wing_name"
+            listing[key] = listing.get(key) or tower_or_wing
+        if micro_market:
+            listing["micro_market"] = listing.get("micro_market") or micro_market
+            listing["location_raw"] = listing.get("location_raw") or micro_market
+        listing["intent"] = listing.get("intent") or shared["intent"]
+        listing["broker_name"] = listing.get("broker_name") or broker_name
+        listing["broker_phone"] = listing.get("broker_phone") or broker_phone
+
+        payload = listing.get("raw_payload") or {}
+        evidence = str(payload.get("full_text") or "").strip()
+        evidence_lines = [line for line in header_lines if line not in evidence]
+        evidence_lines.extend([evidence] if evidence else [])
+        evidence_lines.extend(
+            line for line in signature_lines
+            if line not in evidence and line not in evidence_lines
+        )
+        listing["raw_payload"] = {**payload, "full_text": "\n".join(evidence_lines)}
+
+    return listings
+
+
 def _clean_floor_description(floor_line: str) -> str:
     """Extract a clean floor label from a floor line.
 
@@ -2047,7 +2426,7 @@ def _detect_intent_from_line(line: str) -> str | None:
     return None
 
 
-def _rank_split_strategies(text: str) -> list[dict]:
+def _rank_split_strategies(text: str, profile_name: str | None = None) -> list[dict]:
     """Run splitters and rank them by marker specificity.
 
     The old parser returned the first matching splitter, which let weak
@@ -2055,6 +2434,14 @@ def _rank_split_strategies(text: str) -> list[dict]:
     every splitter honest and makes collisions explicit.
     """
     strategies: list[dict] = []
+
+    floor_option_listings = _split_floor_option_listings(text, profile_name)
+    if len(floor_option_listings) >= 2:
+        strategies.append({
+            "name": "floor_options",
+            "score": 125 + (len(floor_option_listings) * 3),
+            "listings": floor_option_listings,
+        })
 
     option_blocks = _split_option_blocks(text)
     if len(option_blocks) >= 2:
@@ -2140,14 +2527,14 @@ def parse_multi_message(
     # Extract document-level hierarchical context
     hier_ctx = extract_hierarchical_context(text)
 
-    for strategy in _rank_split_strategies(text):
-        if strategy["name"] == "commercial_floors":
+    for strategy in _rank_split_strategies(text, profile_name):
+        if strategy["name"] in {"floor_options", "commercial_floors"}:
             enriched = [
                 _enrich_listing_with_building_db(listing, building_lookup_fn)
                 for listing in strategy.get("listings", [])
             ]
             if len(enriched) >= 2:
-                return enriched
+                return _apply_shared_preamble_context(text, enriched)
             continue
 
         parser = _parse_numbered_block if strategy["name"] == "numbered" else _parse_divider_block
@@ -2164,7 +2551,7 @@ def parse_multi_message(
                 for listing in listings:
                     listing["broker_name"] = listing.get("broker_name") or broker_name
                     listing["broker_phone"] = listing.get("broker_phone") or broker_phone
-            return listings
+            return _apply_shared_preamble_context(text, listings)
 
     # Try commercial floor-pricing split (early return - distinct format)
     floor_listings = _split_commercial_floors(text)
@@ -2188,7 +2575,7 @@ def parse_multi_message(
                 parsed = _enrich_listing_with_building_db(parsed, building_lookup_fn)
                 listings.append(parsed)
         if listings:
-            return listings
+            return _apply_shared_preamble_context(text, listings)
 
     # Try divider-based split (________ separators)
     divider_blocks = _split_by_dividers(text)
@@ -2203,7 +2590,7 @@ def parse_multi_message(
                 parsed = _enrich_listing_with_building_db(parsed, building_lookup_fn)
                 listings.append(parsed)
         if len(listings) >= 2:
-            return listings
+            return _apply_shared_preamble_context(text, listings)
 
     repeated_blocks = _split_repeated_available_blocks(text)
     if len(repeated_blocks) >= 2:
@@ -2217,7 +2604,7 @@ def parse_multi_message(
                 parsed = _enrich_listing_with_building_db(parsed, building_lookup_fn)
                 listings.append(parsed)
         if len(listings) >= 2:
-            return listings
+            return _apply_shared_preamble_context(text, listings)
 
     # Try 📍 pin-based split (Prakash Jha-style bulk forwards with per-listing pins)
     pin_blocks = _split_by_pin_markers(text)
@@ -2232,7 +2619,7 @@ def parse_multi_message(
                 parsed = _enrich_listing_with_building_db(parsed, building_lookup_fn)
                 listings.append(parsed)
         if len(listings) >= 2:
-            return listings
+            return _apply_shared_preamble_context(text, listings)
 
     freeform_blocks = _split_freeform_listing_blocks(text)
     if len(freeform_blocks) >= 2:
@@ -2246,7 +2633,7 @@ def parse_multi_message(
                 parsed = _enrich_listing_with_building_db(parsed, building_lookup_fn)
                 listings.append(parsed)
         if len(listings) >= 2:
-            return listings
+            return _apply_shared_preamble_context(text, listings)
 
     building = _extract_building(text)
     building = validate_building_name(building)
