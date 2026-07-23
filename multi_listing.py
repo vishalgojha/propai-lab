@@ -88,7 +88,24 @@ _IMPOSSIBLE_BUILDINGS = _FLOOR_DESCRIPTIONS | _VIEW_DESCRIPTIONS | _ORIENTATIONS
     "new launch", "pre launch", "pre-launch",
     "prime location", "premium location",
     "under construction",
+    "photo available", "photos available", "photo on request",
+    "video available", "videos available", "video on request",
+    "direct outright", "direct deal", "no brokerage",
+    "negotiable", "price on request", "call for price",
+    "keys with us", "owner side", "maintenance included",
+    "oc received", "oc pending", "ready to move",
+    "near station", "near mall", "near hospital",
+    "serene and peaceful neighbourhood", "peaceful neighbourhood",
+    "20th floor", "16th road", "15th road",
+    "building name", "project name",
 })
+
+# Reject building names that are URLs, phone numbers, or image placeholders
+_IMPOSSIBLE_BUILDING_RE = re.compile(
+    r'^https?://|^www\.|photo\s+available|video\s+available|'
+    r'^\+?\d{10,}|^building\s+name\s*:|^project\s+name\s*:',
+    re.I,
+)
 
 _FLOOR_RE = re.compile(
     r'\b(' + '|'.join(re.escape(d) for d in sorted(_FLOOR_DESCRIPTIONS, key=len, reverse=True)) + r')\b',
@@ -138,6 +155,9 @@ def validate_building_name(name: str | None) -> str | None:
     lower = name.strip().lower()
     # Check against known impossible values
     if lower in _IMPOSSIBLE_BUILDINGS:
+        return None
+    # Check regex patterns (URLs, phone numbers, image placeholders)
+    if _IMPOSSIBLE_BUILDING_RE.search(lower):
         return None
     # Check pattern matches (e.g. "3BHK" as building)
     if re.match(r'^\d[\d,.]*\s*(bhk|rk|bedroom|sqft|sq\s*ft|sft|carpet|usable)\b', lower):
@@ -1141,7 +1161,8 @@ def _is_plausible_broker_name(name: str | None) -> bool:
             "mulund", "bhandup", "vikhroli", "kanjurmarg", "kurla",
             "wadala", "prabhadevi", "parel", "dadar", "mahim", "matunga",
             "sion", "byculla", "colaba", "cuffe", "walkeshwar", "altamont",
-            "stamp duty", "benefit", "balcon", "sea view", "garden")):
+            "stamp duty", "benefit", "balcon", "sea view", "garden",
+            "photo", "video", "available", "on request", "direct outright")):
         return False
     return True
 
