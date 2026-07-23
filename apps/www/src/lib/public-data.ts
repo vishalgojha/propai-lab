@@ -27,14 +27,9 @@ export type PublicListingSummary = {
 };
 
 export type PublicBrokerSummary = {
-  canonical_name: string;
-  primary_phone: string | null;
-  observation_count: number | null;
+  display_name: string;
   listing_count: number | null;
-  requirement_count: number | null;
   market_count: number | null;
-  avg_ticket: number | null;
-  last_seen_at: string | null;
 };
 
 export type PublicDataOverview = {
@@ -160,14 +155,7 @@ export async function getPublicDataOverview(options?: {
         )
         .order("last_seen", { ascending: false })
         .limit(12),
-      db
-        .from("brokers")
-        .select(
-          "canonical_name, primary_phone, observation_count, listing_count, requirement_count, market_count, avg_ticket, last_seen_at",
-        )
-        .not("canonical_name", "like", "+%")
-        .order("observation_count", { ascending: false })
-        .limit(8),
+      db.rpc("get_top_brokers_clean", { p_limit: 8 }),
     ]);
 
     const [rawRowsRes, parsedRowsRes, listingRowsRes] = await Promise.all([

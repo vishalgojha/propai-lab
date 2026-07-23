@@ -190,17 +190,18 @@ export default async function WWWPage() {
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {overview.topBrokers.slice(0, 4).map((broker) => (
-                    <Link
-                      key={broker.primary_phone}
-                      href={`/brokers?q=${encodeURIComponent(broker.canonical_name)}`}
-                      className="rounded-2xl border border-white/10 bg-zinc-950/80 p-4 hover:border-green-400/30 hover:bg-zinc-900 transition-colors"
+                    <div
+                      key={broker.display_name}
+                      className="rounded-2xl border border-white/10 bg-zinc-950/80 p-4"
                     >
-                      <div className="text-white font-medium">{broker.canonical_name}</div>
+                      <div className="text-white font-medium">{broker.display_name}</div>
                       <div className="mt-1 text-sm text-zinc-500">
                         {broker.listing_count ?? 0} listing{(broker.listing_count ?? 0) === 1 ? "" : "s"}
-                        {broker.market_count && broker.market_count > 0 ? ` · ${broker.market_count} market${broker.market_count === 1 ? "" : "s"}` : ""}
+                        {broker.market_count && broker.market_count > 0
+                          ? ` · ${broker.market_count} market${broker.market_count === 1 ? "" : "s"}`
+                          : ""}
                       </div>
-                    </Link>
+                    </div>
                   ))}
                 </div>
               </div>
