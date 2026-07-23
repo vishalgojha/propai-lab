@@ -2515,6 +2515,9 @@ func main() {
 	)`); err != nil {
 		log.Fatalf("error creating history table: %v", err)
 	}
+	if err := ensureGroupMembersTable(db); err != nil {
+		log.Fatalf("error creating group members table: %v", err)
+	}
 	if err := ensureWebhookOutbox(db); err != nil {
 		log.Fatalf("error creating webhook outbox: %v", err)
 	}
