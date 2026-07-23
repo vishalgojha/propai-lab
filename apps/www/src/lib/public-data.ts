@@ -5,9 +5,10 @@ export type PublicCountKey =
   | "localities"
   | "buildings"
   | "listings"
+  | "activeListings"
   | "brokers"
   | "raw_messages"
-  | "parsed_observations";
+  | "messagesAnalysed";
 
 export type PublicListingSummary = {
   id: number;
@@ -112,13 +113,30 @@ export async function getPublicDataOverview(options?: {
   buildings?: BuildingSummary[];
 }): Promise<PublicDataOverview> {
   const db = getServerSupabase();
-  const [localities, buildings, listings, brokers, rawMessages, parsedObservations] = await Promise.all([
+  const now = new Date();
+  const thirtyDaysAgo = new Date(now);
+  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+  const thirtyDaysAgoIso = thirtyDaysAgo.toISOString();
+
+  const [localities, buildings, listings, activeListings, brokers, rawMessages] = await Promise.all([
     options?.localities ?? getAllLocalities(),
     options?.buildings ?? getAllBuildings(200),
     countRows("listings"),
+    (async () => {
+      const d = getServerSupabase();
+      if (!d) return 0;
+      const { count, error } = await d
+        .from("listings")
+        .select("id", { count: "exact", head: true })
+        .gte("last_seen", thirtyDaysAgoIso);
+      if (error) {
+        console.error("countActiveListings error:", error.message);
+        return 0;
+      }
+      return formatCount(count);
+    })(),
     countRows("brokers"),
     countRows("raw_messages"),
-    countRows("parsed_output"),
   ]);
 
   const topBuildings = [...buildings]
@@ -194,9 +212,10 @@ export async function getPublicDataOverview(options?: {
       localities: localities.length,
       buildings: buildings.length,
       listings,
+      activeListings,
       brokers,
       raw_messages: rawMessages,
-      parsed_observations: parsedObservations,
+      messagesAnalysed: rawMessages,
     },
     activity,
     topLocalities: localities.slice(0, 8),
