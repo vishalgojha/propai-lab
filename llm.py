@@ -22,7 +22,7 @@ _logger = logging.getLogger(__name__)
 
 _PROVIDERS = []
 
-# Merge Gateway — OpenAI-compatible, first in chain (highest priority)
+# Merge Gateway — OpenAI-compatible, only provider
 _merge_key = os.getenv("MERGE_API_KEY", "").strip()
 _merge_model = os.getenv("MERGE_MODEL", "").strip()
 _merge_base = os.getenv("MERGE_BASE_URL", "https://api-gateway.merge.dev/v1/openai").strip()
@@ -35,45 +35,6 @@ if _merge_key and _merge_model:
     })
 elif _merge_key:
     _logger.warning("Skipping merge: set MERGE_MODEL to enable this provider")
-
-_nvidia_model = os.getenv("NVIDIA_MODEL", "").strip()
-_nvidia_base = "https://integrate.api.nvidia.com/v1"
-for i, key_env in enumerate(["NVIDIA_API_KEY", "NVIDIA_API_KEY_2", "NVIDIA_API_KEY_3", "NVIDIA_API_KEY_4"], 1):
-    if os.getenv(key_env) and _nvidia_model:
-        _PROVIDERS.append({
-            "name": f"nvidia-nim-{i}",
-            "api_key": os.environ[key_env],
-            "base_url": _nvidia_base,
-            "model": _nvidia_model,
-        })
-    elif os.getenv(key_env):
-        _logger.warning("Skipping %s: set NVIDIA_MODEL to enable this provider", key_env)
-
-if os.getenv("GROQ_API_KEY") and os.getenv("GROQ_MODEL", "").strip():
-    _PROVIDERS.append({
-        "name": "groq",
-        "api_key": os.environ["GROQ_API_KEY"],
-        "base_url": "https://api.groq.com/openai/v1",
-        "model": os.environ["GROQ_MODEL"].strip(),
-    })
-
-if os.getenv("GEMINI_API_KEY") and os.getenv("GEMINI_MODEL", "").strip():
-    _PROVIDERS.append({
-        "name": "gemini",
-        "api_key": os.environ["GEMINI_API_KEY"],
-        "base_url": "https://generativelanguage.googleapis.com/v1beta/openai",
-        "model": os.environ["GEMINI_MODEL"].strip(),
-    })
-
-if os.getenv("CEREBRAS_API_KEY") and os.getenv("CEREBRAS_MODEL", "").strip():
-    _PROVIDERS.append({
-        "name": "cerebras",
-        "api_key": os.environ["CEREBRAS_API_KEY"],
-        "base_url": "https://api.cerebras.ai/v1",
-        "model": os.environ["CEREBRAS_MODEL"].strip(),
-    })
-
-# Doubleword — removed (API key dead, 403 on all requests)
 
 
 class ProviderConfigurationError(RuntimeError):
@@ -113,16 +74,10 @@ def _find_working() -> int:
         if _ping_provider(p):
             _cached_index = i
             _cached_ts = now
-            if i >= 1:
-                _logger.warning(
-                    "LLM provider fallback: selected %s (index %d) — NVIDIA (%s) was unhealthy",
-                    p["name"], i, _PROVIDERS[0].get("name", "?")
-                )
-            else:
-                _logger.info("LLM provider: selected %s", p["name"])
+            _logger.info("LLM provider: selected %s", p["name"])
             return i
 
-    _logger.error("LLM provider chain exhausted — all %d providers unhealthy", len(_PROVIDERS))
+    _logger.error("LLM provider unavailable — %s is unhealthy", _PROVIDERS[0]["name"] if _PROVIDERS else "none")
     return -1
 
 
@@ -147,8 +102,7 @@ def get_client() -> OpenAI:
         p = _PROVIDERS[-1]
         return OpenAI(api_key=p["api_key"], base_url=p["base_url"])
     raise ProviderConfigurationError(
-        "No complete LLM provider is configured. Set an API key and its model "
-        "(for example DOUBLEWORD_API_KEY + DOUBLEWORD_MODEL)."
+        "No complete LLM provider is configured. Set MERGE_API_KEY and MERGE_MODEL."
     )
 
 
@@ -174,18 +128,9 @@ def get_provider_name() -> str:
 
 # ── Fast-provider selection (for latency-sensitive paths like WhatsApp self-chat) ──
 
-# Order: speed-optimized providers first. Falls back to the chain default if none are healthy.
-_FAST_PROVIDER_PREFERENCE = ["cerebras", "gemini", "groq"]
-
-
+# Only Merge is configured — fast path uses the same provider.
 def _find_fast_working() -> int:
-    """Pick the fastest healthy provider, preferring Cerebras > Gemini > Groq."""
-    for name in _FAST_PROVIDER_PREFERENCE:
-        for i, p in enumerate(_PROVIDERS):
-            if p["name"] == name and _ping_provider(p):
-                _logger.info("Fast provider selected: %s (index %d)", name, i)
-                return i
-    # Fallback: use the regular chain.
+    """Pick the fastest healthy provider. Only Merge is configured."""
     return _find_working()
 
 
@@ -199,7 +144,7 @@ def get_fast_client() -> OpenAI:
         p = _PROVIDERS[-1]
         return OpenAI(api_key=p["api_key"], base_url=p["base_url"])
     raise ProviderConfigurationError(
-        "No complete LLM provider is configured. Set an API key and its model."
+        "No complete LLM provider is configured. Set MERGE_API_KEY and MERGE_MODEL."
     )
 
 
@@ -211,7 +156,7 @@ def get_fast_model() -> str:
     if _PROVIDERS:
         return _PROVIDERS[-1]["model"]
     raise ProviderConfigurationError(
-        "No complete LLM provider is configured. Set an API key and its model."
+        "No complete LLM provider is configured. Set MERGE_API_KEY and MERGE_MODEL."
     )
 
 
