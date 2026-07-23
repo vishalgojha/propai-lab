@@ -373,7 +373,7 @@ class _SupabaseDatabaseAdapter:
     def _translate_sql(sql: str, params: tuple[Any, ...] | list[Any] | None) -> tuple[str, list[Any]]:
         text = (sql or "").strip().rstrip(";")
         if not params:
-            return text, []
+            params = []
 
         translated: list[str] = []
         idx = 0
@@ -430,6 +430,21 @@ class _SupabaseDatabaseAdapter:
             flags=re.IGNORECASE,
         )
         # date(expr) -> (expr)::date  (normalize to Postgres cast)
+        # Special case: DATE('now', '-N days') -> (now() - interval 'N days')::date
+        translated_sql = re.sub(
+            r"(?<![:\w])date\('now',\s*'-?(\d+)\s*(day|days|month|months|year|years)'\)",
+            r"(now() - interval '\1 \2')::date",
+            translated_sql,
+            flags=re.IGNORECASE,
+        )
+        # DATE('now') -> CURRENT_DATE
+        translated_sql = re.sub(
+            r"(?<![:\w])date\('now'\)",
+            "CURRENT_DATE",
+            translated_sql,
+            flags=re.IGNORECASE,
+        )
+        # Generic: date(expr) -> (expr)::date
         translated_sql = re.sub(
             r"(?<![:\w])date\(([^)]+)\)",
             r"(\1)::date",
