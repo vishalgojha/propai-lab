@@ -2548,6 +2548,44 @@ def _parse_split_blocks(
     return listings
 
 
+def split_multi_message(text: str, profile_name: str | None = None) -> list[str]:
+    """Split a multi-listing message into raw text blocks (no field extraction).
+
+    Returns a list of raw text strings, one per detected listing.
+    Uses the same delimiter-based strategies as parse_multi_message() but
+    skips all regex field extraction — blocks are passed to AI for parsing.
+    """
+    for strategy in _rank_split_strategies(text, profile_name):
+        if strategy["name"] in {"floor_options", "commercial_floors"}:
+            # These strategies return pre-parsed dicts — extract source text
+            listings = strategy.get("listings", [])
+            if len(listings) >= 2:
+                blocks = []
+                for listing in listings:
+                    raw = listing.get("raw_payload") or ""
+                    if isinstance(raw, str) and raw.strip():
+                        blocks.append(raw.strip())
+                    else:
+                        # Fallback: reconstruct minimal text from parsed fields
+                        parts = []
+                        if listing.get("building_name"):
+                            parts.append(listing["building_name"])
+                        if listing.get("bhk"):
+                            parts.append(listing["bhk"])
+                        if listing.get("price"):
+                            parts.append(f"₹{listing['price']}")
+                        blocks.append("\n".join(parts) if parts else "")
+                return [b for b in blocks if b]
+            continue
+
+        # For block-based strategies, return raw text blocks directly
+        blocks = strategy.get("blocks", [])
+        if len(blocks) >= 2:
+            return blocks
+
+    return []
+
+
 def parse_multi_message(
     text: str,
     profile_name: str | None = None,

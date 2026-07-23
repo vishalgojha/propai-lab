@@ -523,23 +523,17 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
     # Establish property boundaries before asking AI to repair a multi-unit
     # post. The deterministic parser supplies boundaries; AI remains the
     # preferred source for the structured fields.
-    split_listings: list[dict] = []
     split_source_texts: list[str] = []
     if msg_class == "multi":
         try:
-            split_listings = multi_listing.parse_multi_message(
+            split_source_texts = multi_listing.split_multi_message(
                 msg_text, profile_name=sender_name or push_name
             )
-            for item in split_listings:
-                source_text = _parsed_source_text(item, msg_text).strip()
-                if source_text:
-                    split_source_texts.append(source_text)
         except Exception as exc:
             _logger.warning("raw_id=%d multi-listing block split failed: %s", raw_id, exc)
 
-    # 1. Try AI extraction. Multi-listing messages require an AI array with at
-    # least two validated items; otherwise the deterministic block parser is
-    # the safe fallback.
+    # 1. Try AI extraction. Multi-listing messages send each block to AI
+    # independently; no regex boundary comparison.
     try:
         from ai_extraction import ai_extract
         ai_result = (
@@ -551,20 +545,13 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
         raw_ai_items = ai_result.get("extractions") or ([ai_result["extraction"]] if ai_result.get("extraction") else [])
         ai_items = [item for item in raw_ai_items if isinstance(item, dict)]
         whole_ai_is_valid = extraction_source == "ai" and bool(ai_items)
-        multi_conflicts: list[str] = []
+
         if whole_ai_is_valid and msg_class == "multi":
+            # For multi-listing: AI must return exactly as many items as split blocks
             whole_ai_is_valid = (
-                len(ai_items) == len(split_listings) == len(split_source_texts)
+                len(ai_items) == len(split_source_texts)
                 and len(ai_items) >= 2
             )
-            if whole_ai_is_valid:
-                for idx, (item, boundary, block_text) in enumerate(
-                    zip(ai_items, split_listings, split_source_texts)
-                ):
-                    aligned, conflicts = _ai_item_matches_boundary(item, boundary, block_text)
-                    if not aligned:
-                        whole_ai_is_valid = False
-                        multi_conflicts.extend(f"block {idx + 1}: {reason}" for reason in conflicts)
 
         if whole_ai_is_valid:
             source_texts = split_source_texts if msg_class == "multi" else [msg_text] * len(ai_items)
@@ -574,41 +561,25 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
             ]
             ai_extractions_raw = ai_items
             _logger.info("raw_id=%d AI extraction: %d structured item(s) via %s", raw_id, len(ai_items), ai_result.get("provider_used"))
-        elif msg_class == "multi" and extraction_source == "ai":
+        elif msg_class == "multi" and extraction_source == "ai" and split_source_texts:
             _logger.warning(
-                "raw_id=%d multi-listing AI result rejected (%d item(s), %d boundary block(s)%s); retrying blocks independently",
+                "raw_id=%d multi-listing AI result rejected (%d item(s), %d block(s)); retrying blocks independently",
                 raw_id,
                 len(ai_items),
                 len(split_source_texts),
-                f", conflicts={'; '.join(multi_conflicts)}" if multi_conflicts else "",
             )
 
-            # Models can occasionally merge a natural-language broker block
-            # even when prompted for an array. Retry every detected property
-            # independently so fields and evidence cannot bleed between units.
-            # This is all-or-nothing: a partial result falls back to the safe
-            # deterministic split below.
+            # Retry every detected property block independently so fields
+            # cannot bleed between units.
             block_ai_items: list[dict] = []
             block_parsed: list[dict] = []
-            for boundary, block_text in zip(split_listings, split_source_texts):
+            for block_text in split_source_texts:
                 block_result = ai_extract(block_text, ctx, storage=storage)
                 block_raw_items = block_result.get("extractions") or (
                     [block_result["extraction"]] if block_result.get("extraction") else []
                 )
                 block_items = [item for item in block_raw_items if isinstance(item, dict)]
                 if block_result.get("extraction_source") != "ai" or len(block_items) != 1:
-                    block_ai_items = []
-                    block_parsed = []
-                    break
-                aligned, conflicts = _ai_item_matches_boundary(
-                    block_items[0], boundary, block_text
-                )
-                if not aligned:
-                    _logger.warning(
-                        "raw_id=%d isolated block AI result rejected: %s",
-                        raw_id,
-                        "; ".join(conflicts),
-                    )
                     block_ai_items = []
                     block_parsed = []
                     break
@@ -628,31 +599,10 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
                     len(block_parsed),
                 )
     except Exception as exc:
-        _logger.warning("raw_id=%d ai_extract error: %s — falling back to regex", raw_id, exc)
-        extraction_source = "regex_fallback"
+        _logger.warning("raw_id=%d ai_extract error: %s", raw_id, exc)
 
-    # 2. Regex fallback
-    if not parsed_listings:
-        try:
-            if msg_class == "multi":
-                parsed_listings = split_listings or multi_listing.parse_multi_message(
-                    msg_text, profile_name=sender_name or push_name
-                )
-            else:
-                single = parse_message(msg_text, profile_name=sender_name or push_name)
-                parsed_listings = [single] if single else []
-        except Exception as exc:
-            print(f"  [extract] parse error for {raw_id}: {exc}", flush=True)
-
-        # Filter weak parses
-        market_listings = []
-        for pl in parsed_listings:
-            source_text = _parsed_source_text(pl, msg_text)
-            enriched = enrich_parsed_location(pl, source_text, fallback_text=msg_text)
-            cleaned = _demote_weak_property_parse(enriched, source_text)
-            if _parsed_has_market_anchor(cleaned, source_text):
-                market_listings.append(cleaned)
-        parsed_listings = [_sanitize_parsed_listing(pl) for pl in market_listings]
+    # No regex fallback — AI is the only extraction path. If AI fails, the
+    # message gets a NO_ANCHOR stub below so it still surfaces in the inbox.
 
     # Historical reparses are previewed before any derived rows are changed.
     # Applying a reviewed preview must use those exact item boundaries instead
