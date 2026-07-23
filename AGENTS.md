@@ -45,8 +45,3 @@ supabase/migrations/            Database migrations
 docs/                           Product documentation (this index)
 deploy/coolify/                 Production deployment config
 ```
-
-## Session state (ephemeral)
-
-For current session state, pending work, and deployment notes, see `CLAUDE.md`.
-For permanent product knowledge, see `docs/`.
