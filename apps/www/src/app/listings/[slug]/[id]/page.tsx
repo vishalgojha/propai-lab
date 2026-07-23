@@ -320,7 +320,7 @@ export default async function ListingPage({ params }: Params) {
                 <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-zinc-400">
                   About this listing
                 </h2>
-                <p className="text-sm leading-relaxed text-zinc-300">{listing.location_label}</p>
+                <p className="text-sm leading-relaxed text-zinc-300 break-words">{listing.location_label}</p>
               </div>
             )}
 
@@ -342,7 +342,7 @@ export default async function ListingPage({ params }: Params) {
 
           {/* Sidebar */}
           <aside className="relative">
-            <div className="sticky top-6 rounded-2xl border border-white/10 bg-zinc-950/90 p-5">
+            <div className="sticky top-6 overflow-hidden rounded-2xl border border-white/10 bg-zinc-950/90 p-5">
               <button
                 className="absolute right-3 top-3 inline-flex h-6 w-6 items-center justify-center rounded-md text-zinc-500 transition-colors hover:border-white/20 hover:bg-white/5 hover:text-amber-400"
                 aria-label="Report incorrect information for this listing"
@@ -355,7 +355,7 @@ export default async function ListingPage({ params }: Params) {
                 {brokerInitials}
               </div>
               <div className="mt-3 flex items-center justify-center gap-1.5 text-center text-base font-semibold text-white">
-                {card.brokerName || "Verified network"}
+                <span className="truncate">{card.brokerName || "Verified network"}</span>
                 {card.brokerName && (
                   <ShieldCheck className="h-4 w-4 shrink-0 text-green-400" aria-hidden="true" />
                 )}
