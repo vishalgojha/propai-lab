@@ -328,20 +328,47 @@ def resolve_locality(raw_mention: str | None, storage=None) -> dict:
         return {"resolved_locality": None, "confidence": "low", "raw_mention": mention}
 
     try:
-        storage.cursor.execute(
-            """SELECT parent_locality, confidence, city
-               FROM locality_reference
-               WHERE LOWER(sub_locality) = LOWER(%s) OR %s ILIKE ANY(alternate_names || ARRAY[sub_locality])
-               LIMIT 1""",
-            (mention, mention),
-        )
-        row = storage.cursor.fetchone()
-        if row:
+        db = storage.client if hasattr(storage, "client") else None
+        if not db:
+            return {"resolved_locality": None, "confidence": "low", "raw_mention": mention}
+
+        # Try exact match first
+        res = db.table("locality_reference").select("parent_locality, confidence").eq(
+            "sub_locality", mention
+        ).limit(1).execute()
+        if res.data:
+            row = res.data[0]
             return {
-                "resolved_locality": row[0],
-                "confidence": row[1] or "medium",
+                "resolved_locality": row["parent_locality"],
+                "confidence": row.get("confidence") or "medium",
                 "raw_mention": mention,
             }
+
+        # Case-insensitive via ilike
+        res = db.table("locality_reference").select("parent_locality, confidence").ilike(
+            "sub_locality", mention
+        ).limit(1).execute()
+        if res.data:
+            row = res.data[0]
+            return {
+                "resolved_locality": row["parent_locality"],
+                "confidence": row.get("confidence") or "medium",
+                "raw_mention": mention,
+            }
+
+        # Substring match — check if mention contains a known sub-locality
+        res = db.table("locality_reference").select("sub_locality, parent_locality, confidence").limit(200).execute()
+        if res.data:
+            mention_lower = mention.lower()
+            for row in res.data:
+                sub = (row.get("sub_locality") or "").lower()
+                if sub and sub in mention_lower:
+                    return {
+                        "resolved_locality": row["parent_locality"],
+                        "confidence": row.get("confidence") or "medium",
+                        "raw_mention": mention,
+                    }
+
     except Exception:
         _logger.warning("locality_reference query failed for %r", mention, exc_info=True)
 
