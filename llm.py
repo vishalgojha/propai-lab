@@ -73,18 +73,7 @@ if os.getenv("CEREBRAS_API_KEY") and os.getenv("CEREBRAS_MODEL", "").strip():
         "model": os.environ["CEREBRAS_MODEL"].strip(),
     })
 
-# Doubleword — paid, always last
-_dw_key = os.getenv("DOUBLEWORD_API_KEY", "")
-_dw_model = os.getenv("DOUBLEWORD_MODEL", "").strip()
-if _dw_key and _dw_model:
-    _PROVIDERS.append({
-        "name": "doubleword",
-        "api_key": _dw_key,
-        "base_url": os.getenv("DOUBLEWORD_API_URL", "https://api.doubleword.ai/v1"),
-        "model": _dw_model,
-    })
-elif _dw_key:
-    _logger.warning("Skipping doubleword: set DOUBLEWORD_MODEL to enable this provider")
+# Doubleword — removed (API key dead, 403 on all requests)
 
 
 class ProviderConfigurationError(RuntimeError):
