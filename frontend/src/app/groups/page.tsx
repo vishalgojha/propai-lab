@@ -2,16 +2,14 @@
 
 export const dynamic = "force-dynamic";
 
-import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
-import { CheckCircle2, MessageSquare, Plus, Trash2, X } from "lucide-react";
+import { CheckCircle2, Plus, Trash2, X } from "lucide-react";
 import * as api from "@/lib/api";
 import { cleanGroupName, stripDecorativeEmoji } from "@/lib/whatsapp-display";
 
 export default function GroupsPage() {
   const [groups, setGroups] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [whatsappConnected, setWhatsappConnected] = useState<boolean | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [optOutEntries, setOptOutEntries] = useState<string[]>([]);
   const [optOutDraft, setOptOutDraft] = useState("");
@@ -50,15 +48,6 @@ export default function GroupsPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const access = await api.getMarketAccessStatus();
-      setWhatsappConnected(access.whatsapp_connected);
-      if (!access.whatsapp_connected) {
-        setGroups([]);
-        setOptOutEntries([]);
-        setLoading(false);
-        return;
-      }
-
       const [data, optOut] = await Promise.all([
         api.getGroups(),
         api.getOptOutList(),
@@ -77,16 +66,6 @@ export default function GroupsPage() {
     let cancelled = false;
     (async () => {
       try {
-        const access = await api.getMarketAccessStatus();
-        if (cancelled) return;
-        setWhatsappConnected(access.whatsapp_connected);
-        if (!access.whatsapp_connected) {
-          setGroups([]);
-          setOptOutEntries([]);
-          setLoading(false);
-          return;
-        }
-
         const [data, optOut] = await Promise.all([api.getGroups(), api.getOptOutList()]);
         if (cancelled) return;
         setGroups(data);
@@ -106,7 +85,6 @@ export default function GroupsPage() {
   const parsedGroupCount = groups.filter((g) => g.parsed?.is_real_estate || g.parsed?.markets?.length || g.parsed?.segments?.length).length;
   const optedOutCount = optOutEntries.length;
   const trackedCount = groups.filter((g) => !g.excluded).length;
-  const showConnectPrompt = whatsappConnected === false;
 
   const syncOptOutEntries = (entries: string[]) => {
     const normalized = Array.from(new Set(entries.map((entry) => entry.trim()).filter(Boolean)));
@@ -159,37 +137,7 @@ export default function GroupsPage() {
   };
 
   if (loading) {
-    return <div className="p-6 text-sm text-zinc-500">Checking WhatsApp connection...</div>;
-  }
-
-  if (showConnectPrompt) {
-    return (
-      <div className="mx-auto max-w-2xl px-4 py-10">
-        <div className="rounded-2xl border border-white/10 bg-zinc-950 p-6 text-center">
-          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-xl border border-[#3EE88A]/30 bg-[#3EE88A]/10 text-[#3EE88A]">
-            <MessageSquare className="h-5 w-5" strokeWidth={1.6} />
-          </div>
-          <h2 className="text-xl font-bold text-white">Scan WhatsApp QR to view groups</h2>
-          <p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-zinc-500">
-            WhatsApp is not connected yet. Open the Connection Center, scan the QR code, and then return here to see your raw WhatsApp groups.
-          </p>
-          <div className="mt-5 flex flex-col items-center justify-center gap-2 sm:flex-row">
-            <Link
-              href="/connections"
-              className="inline-flex h-10 items-center justify-center rounded-lg bg-[#3EE88A] px-5 text-sm font-bold text-black hover:bg-[#35d47c]"
-            >
-              Open QR
-            </Link>
-            <Link
-              href="/connections"
-              className="inline-flex h-10 items-center justify-center rounded-lg border border-white/10 bg-zinc-900 px-5 text-sm font-bold text-zinc-200 hover:border-[#3EE88A]/40 hover:text-[#3EE88A]"
-            >
-              Open Connection Center
-            </Link>
-          </div>
-        </div>
-      </div>
-    );
+    return <div className="p-6 text-sm text-zinc-500">Loading groups...</div>;
   }
 
   return (
