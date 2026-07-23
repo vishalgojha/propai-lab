@@ -62,12 +62,12 @@ export default async function AboutPage() {
         </div>
 
         <div className="mt-10 grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <AboutStat label="Live listings tracked" value={overview.counts.listings} />
-          <AboutStat label="Brokers in network" value={overview.counts.brokers} />
+          <AboutStat label="Active listings" value={overview.counts.activeListings} />
+          <AboutStat label="Verified brokers" value={overview.counts.brokers} />
           <AboutStat label="Localities covered" value={overview.counts.localities} />
           <AboutStat
-            label="Records parsed"
-            value={overview.counts.parsed_observations}
+            label="Messages analysed"
+            value={overview.counts.messagesAnalysed}
           />
         </div>
         <p className="mt-4 text-sm text-zinc-500">

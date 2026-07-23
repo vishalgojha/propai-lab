@@ -117,13 +117,12 @@ export default async function WWWPage() {
               Real estate intelligence, sourced from live broker activity — not portals
             </p>
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-5 lg:gap-8 max-w-4xl mx-auto">
-              <TrustStat label="Live listings tracked" value={overview.counts.listings} />
-              <TrustStat label="Brokers in network" value={overview.counts.brokers} />
+              <TrustStat label="Active listings" value={overview.counts.activeListings} />
+              <TrustStat label="Verified brokers" value={overview.counts.brokers} />
               <TrustStat label="Localities covered" value={overview.counts.localities} />
               <TrustStat
-                label="Daily refresh"
-                value={overview.counts.parsed_observations}
-                suffix=" + records"
+                label="Messages analysed"
+                value={overview.counts.messagesAnalysed}
               />
             </div>
           </div>
@@ -142,10 +141,10 @@ export default async function WWWPage() {
               {[
                 ["Localities", overview.counts.localities],
                 ["Buildings", overview.counts.buildings],
-                ["Listings", overview.counts.listings],
+                ["Active listings", overview.counts.activeListings],
+                ["Total listings", overview.counts.listings],
                 ["Brokers", overview.counts.brokers],
-                ["Raw messages", overview.counts.raw_messages],
-                ["Parsed records", overview.counts.parsed_observations],
+                ["Messages analysed", overview.counts.messagesAnalysed],
               ].map(([label, value]) => (
                 <div key={label as string} className="rounded-2xl border border-white/10 bg-black/70 p-4" data-scroll-reveal>
                   <div className="text-3xl font-bold text-white">
