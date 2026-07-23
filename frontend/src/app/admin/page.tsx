@@ -181,17 +181,6 @@ export default function AdminPage() {
           </Link>
 
           <Link
-            href="/admin/knowledge/observations"
-            className="block p-4 rounded-xl border border-white/10 hover:border-emerald-400/30 transition-colors"
-          >
-            <div className="flex items-center gap-3 mb-2">
-              <Terminal className="w-5 h-5 text-blue-400" />
-              <span className="font-medium text-white">Knowledge Observations</span>
-            </div>
-            <p className="text-xs text-zinc-500">Inspect entity observations (buildings, prices, feedback, etc.)</p>
-          </Link>
-
-          <Link
             href="/extractions"
             className="block p-4 rounded-xl border border-white/10 hover:border-emerald-400/30 transition-colors"
           >
@@ -225,17 +214,6 @@ export default function AdminPage() {
           </Link>
 
           <Link
-            href="/admin/pipeline"
-            className="block p-4 rounded-xl border border-white/10 hover:border-emerald-400/30 transition-colors"
-          >
-            <div className="flex items-center gap-3 mb-2">
-              <Wrench className="w-5 h-5 text-amber-400" />
-              <span className="font-medium text-white">Pipeline Monitor</span>
-            </div>
-            <p className="text-xs text-zinc-500">Sync jobs, webhook health, processing queue, backfill status</p>
-          </Link>
-
-          <Link
             href="/admin/entities"
             className="block p-4 rounded-xl border border-white/10 hover:border-emerald-400/30 transition-colors"
           >
@@ -244,17 +222,6 @@ export default function AdminPage() {
               <span className="font-medium text-white">Entity Coverage</span>
             </div>
             <p className="text-xs text-zinc-500">Building/broker/location resolution rates, alias coverage, missing entities</p>
-          </Link>
-
-          <Link
-            href="/admin/errors"
-            className="block p-4 rounded-xl border border-white/10 hover:border-emerald-400/30 transition-colors"
-          >
-            <div className="flex items-center gap-3 mb-2">
-              <Shield className="w-5 h-5 text-red-400" />
-              <span className="font-medium text-white">Extraction Errors</span>
-            </div>
-            <p className="text-xs text-zinc-500">Failed parses, low confidence, unrecognized entities, schema mismatches</p>
           </Link>
         </div>
       </section>

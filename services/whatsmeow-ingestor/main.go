@@ -2271,7 +2271,16 @@ func (sm *SessionManager) historyBackfillHandler(w http.ResponseWriter, r *http.
 
 	reqURL := fmt.Sprintf("%s/api/inbox/threads?limit=%d", strings.TrimRight(apiURL, "/"), limit)
 	client := &http.Client{Timeout: 15 * time.Second}
-	resp, err := client.Get(reqURL)
+	req, err := http.NewRequest(http.MethodGet, reqURL, nil)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]interface{}{"ok": false, "error": err.Error()})
+		return
+	}
+	if token := strings.TrimSpace(os.Getenv("PROPAI_INTERNAL_TOKEN")); token != "" {
+		req.Header.Set("X-PropAI-Internal-Token", token)
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		w.WriteHeader(http.StatusBadGateway)
 		json.NewEncoder(w).Encode(map[string]interface{}{"ok": false, "error": err.Error()})

@@ -3712,8 +3712,8 @@ return {
                           <span className="text-[9px] uppercase tracking-wider text-zinc-500 font-semibold">{timeLabel}</span>
                           <div className="h-px flex-1 bg-[rgba(255,255,255,0.06)]" />
                         </div>
-                        {/* Opportunity Card */}
-                        <article
+                        {/* WhatsApp-style message bubble */}
+                        <div
                           onClick={(event) => {
                             const target = event.target as HTMLElement;
                             if (target.closest("a, button, input, textarea")) return;
@@ -3721,133 +3721,81 @@ return {
                             if (selection && !selection.isCollapsed) return;
                             selectBrokerObservation(obs);
                           }}
-                          className={`w-full cursor-pointer overflow-hidden rounded-md border bg-zinc-950/70 text-left transition-colors hover:border-white/25 ${
-                            isSelected ? "border-white/40 bg-white/[0.035]" : "border-white/10"
+                          className={`w-full cursor-pointer text-left transition-all rounded-xl rounded-tl-none px-3 py-2 max-w-[85%] ${
+                            isSelected
+                              ? "bg-[#005c4b] shadow-lg shadow-emerald-900/20"
+                              : "bg-[#1f2c34] hover:bg-[#243241]"
                           }`}
                         >
-                          {/* Bubble Header — Primary Type */}
-                          <div className="px-4 py-2.5 border-b border-white/5">
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-2">
-                                <span className="text-base">{observationTypeIcon(obs.observation_type)}</span>
-                                <span className={`badge ${marketOpportunityColor(opportunityLabel)} text-[10px]`}>
-                                  {opportunityLabel}
-                                </span>
-                              </div>
-                              <div className="flex items-center gap-2">
-                                <span className={`text-[9px] font-semibold px-2 py-0.5 rounded-full ${observationTypeColor(obs.observation_type)}`}>
-                                  {observationTypeLabel(obs.observation_type)}
-                                </span>
-                                <span className="text-[9px] text-zinc-500 tabular-nums">{timeLabel}</span>
-                                <button
-                                  type="button"
-                                  onClick={() => selectBrokerObservation(obs)}
-                                  className="text-[9px] font-semibold text-zinc-500 transition-colors hover:text-white"
-                                >
-                                  View details
-                                </button>
-                              </div>
-                            </div>
-                            <div className="flex items-center gap-1.5 mt-1.5 text-[11px] text-zinc-400">
-                              {cleanMarketField(obs.property_type) && <span className="font-medium text-zinc-300">{cleanMarketField(obs.property_type)}</span>}
-                              {obs.bhk && <><span className="text-zinc-700">·</span><span>{obs.bhk}</span></>}
-                              {obs.price != null && <><span className="text-zinc-700">·</span><span className="font-semibold text-white">{formatCurrency(obs.price, obs.price_unit)}</span></>}
-                              {obs.area_sqft && <><span className="text-zinc-700">·</span><span>{obs.area_sqft} sqft</span></>}
-                              {obs.micro_market && <><span className="text-zinc-700">·</span><span>{obs.micro_market}</span></>}
-                              {obs.alternate_intent && (
-                                <span className="text-[9px] text-zinc-400 italic ml-1">
-                                  Also {obs.alternate_intent === "RENT" ? "Rent" : "Sale"}
-                                </span>
-                              )}
-                            </div>
+                          {/* Sender + time */}
+                          <div className="flex items-center justify-between gap-2 mb-1">
+                            <span className="text-[10px] font-semibold text-[#3EE88A]">
+                              {observationTypeIcon(obs.observation_type)} {opportunityLabel}
+                            </span>
+                            <span className="text-[9px] text-zinc-500 tabular-nums">{timeLabel}</span>
                           </div>
-                          {/* Bubble Body */}
-                          <div className="px-4 py-3 space-y-2">
-                            {marketTitle && (
-                              <div className="text-[12px] font-semibold leading-relaxed text-zinc-100">
-                                {marketTitle}
-                              </div>
-                            )}
-                            {itemSource && (
-                              <div className="select-text whitespace-pre-wrap break-words text-[11px] leading-relaxed text-zinc-300">
-                                {stripEmojis(itemSource)}
-                              </div>
-                            )}
-                            {/* Key fields as inline chips */}
-                            <div className="flex flex-wrap gap-1.5">
-                              {obs.bhk && (
-                                <span className="text-[10px] bg-zinc-800 text-zinc-300 px-2 py-0.5 rounded-full border border-white/5">
-                                  {stripEmojis(obs.bhk)}
-                                </span>
-                              )}
-                              {obs.micro_market && (
-                                <span className="text-[10px] bg-zinc-800 text-zinc-300 px-2 py-0.5 rounded-full border border-white/5">
-                                  {stripEmojis(obs.micro_market)}
-                                </span>
-                              )}
-                              {obs.building_name && (
-                                <span className="text-[10px] bg-zinc-800 text-zinc-300 px-2 py-0.5 rounded-full border border-white/5">
-                                  {stripEmojis(obs.building_name)}
-                                </span>
-                              )}
-                              {obs.area_sqft && (
-                                <span className="text-[10px] bg-zinc-800 text-zinc-300 px-2 py-0.5 rounded-full border border-white/5">
-                                  {obs.area_sqft} sqft
-                                </span>
-                              )}
-                              {obs.furnishing && (
-                                <span className="text-[10px] bg-zinc-800 text-zinc-300 px-2 py-0.5 rounded-full border border-white/5">
-                                  {stripEmojis(obs.furnishing)}
-                                </span>
-                              )}
-                              {obs.times_seen && obs.times_seen > 1 && (
-                                <span className="text-[9px] text-zinc-500 px-1 py-0.5">
-                                  Seen {obs.times_seen}x
-                                </span>
-                              )}
-                              {group.duplicateCount > 1 && (
-                                <span className="text-[9px] text-zinc-500 px-1 py-0.5">
-                                  Repeated {group.duplicateCount}x
-                                </span>
-                              )}
-                              {group.observations.length > 1 && (
-                                <span className="text-[9px] text-zinc-500 px-1 py-0.5">
-                                  Linked {group.observations.length} items
-                                </span>
-                              )}
-                            </div>
-                            {/* Posted In chips */}
-                            {(groupChannels.length > 0 || dmCount > 0) && (
-                              <div className="flex flex-wrap gap-1 items-center text-[8px]">
-                                {groupChannels.slice(0, 3).map((src: string, i: number) => (
-                                  <span key={i} className="bg-zinc-800 border border-white/10 text-zinc-400 px-1.5 py-0.5 rounded-full">
-                                    {displayGroupName(src) || src.slice(-8)}
-                                  </span>
-                                ))}
-                                {groupChannels.length > 3 && <span className="text-zinc-500">+{groupChannels.length - 3}g</span>}
-                                {dmCount > 0 && <span className="border border-[rgba(62,232,138,0.15)] text-[#3EE88A] px-1.5 py-0.5 rounded-full">{dmCount}dm</span>}
-                              </div>
-                            )}
+                          {/* Property summary line */}
+                          <div className="flex items-center gap-1.5 text-[11px] text-zinc-300 flex-wrap">
+                            {cleanMarketField(obs.property_type) && <span className="font-medium text-white">{cleanMarketField(obs.property_type)}</span>}
+                            {obs.bhk && <span>{obs.bhk}</span>}
+                            {obs.price != null && <span className="font-semibold text-white">{formatCurrency(obs.price, obs.price_unit)}</span>}
+                            {obs.area_sqft && <span>{obs.area_sqft} sqft</span>}
+                            {obs.micro_market && <span className="text-zinc-400">· {obs.micro_market}</span>}
                           </div>
-                          {/* WhatsApp CTA */}
-                          {resolvedBrokerPhone && (
-                            <div
-                              className="border-t border-white/5 px-4 py-2 flex items-center gap-2"
-                              onClick={(e) => e.stopPropagation()}
+                          {/* Title */}
+                          {marketTitle && (
+                            <div className="mt-1 text-[12px] font-semibold leading-relaxed text-white">
+                              {marketTitle}
+                            </div>
+                          )}
+                          {/* Source text */}
+                          {itemSource && (
+                            <div className="mt-1 select-text whitespace-pre-wrap break-words text-[11px] leading-relaxed text-zinc-300">
+                              {stripEmojis(itemSource)}
+                            </div>
+                          )}
+                          {/* Key fields as inline text */}
+                          <div className="mt-1.5 flex flex-wrap gap-x-2 gap-y-0.5 text-[10px] text-zinc-400">
+                            {obs.bhk && <span>{stripEmojis(obs.bhk)}</span>}
+                            {obs.building_name && <span className="text-zinc-300">{stripEmojis(obs.building_name)}</span>}
+                            {obs.furnishing && <span>{stripEmojis(obs.furnishing)}</span>}
+                            {obs.times_seen && obs.times_seen > 1 && <span className="text-zinc-500">Seen {obs.times_seen}x</span>}
+                            {group.duplicateCount > 1 && <span className="text-zinc-500">Repeated {group.duplicateCount}x</span>}
+                          </div>
+                          {/* Posted In */}
+                          {(groupChannels.length > 0 || dmCount > 0) && (
+                            <div className="mt-1 flex flex-wrap gap-1 items-center text-[8px]">
+                              {groupChannels.slice(0, 3).map((src: string, i: number) => (
+                                <span key={i} className="text-zinc-500">
+                                  {displayGroupName(src) || src.slice(-8)}
+                                </span>
+                              ))}
+                              {groupChannels.length > 3 && <span className="text-zinc-500">+{groupChannels.length - 3}g</span>}
+                              {dmCount > 0 && <span className="text-emerald-400/70">{dmCount}dm</span>}
+                            </div>
+                          )}
+                          {/* Action row */}
+                          <div className="mt-2 flex items-center gap-3 text-[10px]">
+                            <button
+                              type="button"
+                              onClick={(e) => { e.stopPropagation(); selectBrokerObservation(obs); }}
+                              className="text-zinc-500 hover:text-white transition-colors"
                             >
+                              Details
+                            </button>
+                            {resolvedBrokerPhone && (
                               <a
                                 href={getWaLinkWithRecall(resolvedBrokerPhone, itemSource || marketTitle)}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                onClick={() => trackBrokerWhatsAppOpen(resolvedBrokerPhone, "market_item")}
-                                className="flex items-center gap-1.5 text-[10px] font-semibold text-zinc-400 transition-colors hover:text-white touch-target"
+                                onClick={(e) => { e.stopPropagation(); trackBrokerWhatsAppOpen(resolvedBrokerPhone, "market_item"); }}
+                                className="text-zinc-500 hover:text-white transition-colors"
                               >
-                                <MessageSquare className="w-3 h-3" strokeWidth={1.8} />
-                                <span>Contact on WhatsApp</span>
+                                WhatsApp
                               </a>
-                            </div>
-                          )}
-                        </article>
+                            )}
+                          </div>
+                        </div>
                       </div>
                     );
                     })}
@@ -4002,8 +3950,8 @@ return {
                             // Market Inbox, never in the source mirror.
                             const blockHasSplitListings = !isGroupsView && block.some((m) => splitDelimitedListingText(m.message).length > 1);
                             const bubbleBg = isSelf
-                              ? "bg-emerald-950/40 border border-emerald-800/30 ml-auto"
-                              : "border border-white/10";
+                              ? "bg-[#005c4b] rounded-2xl rounded-tr-none ml-auto"
+                              : "bg-[#1f2c34] rounded-2xl rounded-tl-none";
 
                             return (
                               <div
@@ -4049,16 +3997,16 @@ return {
                                     }
                                     return badges;
                                   })();
-                                  if (isGroupsView) {
+                                   if (isGroupsView) {
                                     return (
                                       <div
                                         key={m.id}
                                         ref={el => { messageRefs.current[m.id] = el; }}
                                         onClick={() => selectMessage(m)}
-                                        className="rounded-lg px-2.5 py-2 hover:bg-white/[0.025] cursor-pointer"
+                                        className="rounded-xl rounded-tl-none bg-[#1f2c34] px-3 py-2 max-w-[85%] cursor-pointer hover:bg-[#243241] transition-colors"
                                       >
                                         <div className="mb-1 flex items-center justify-between gap-2 text-[10px] text-zinc-500">
-                                          <span className="font-semibold text-zinc-300">{mSenderName || "WhatsApp sender"}</span>
+                                          <span className="font-semibold text-[#3EE88A]">{mSenderName || "WhatsApp sender"}</span>
                                           <span className="whitespace-nowrap">{messageTimeLabel(m)}</span>
                                         </div>
                                         <div className="text-xs text-zinc-200 whitespace-pre-wrap leading-relaxed text-left propai-message-content">
