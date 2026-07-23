@@ -107,7 +107,7 @@ export default function AuditPage() {
     ]);
     setState({
       groups: groups.value.groups,
-      uniqueParticipants: groups.value.total_unique_participants ?? groups.value.total_unique_senders,
+      uniqueParticipants: groups.value.total_unique_participants || groups.value.total_unique_senders,
       totalMembershipRows: groups.value.total_membership_rows ?? 0,
       duplicateMemberships: groups.value.duplicate_memberships ?? 0,
       connectedGroups: groups.value.connected_groups ?? 0,

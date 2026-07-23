@@ -13233,6 +13233,22 @@ def audit_groups_v2(
                 total_membership_rows = int(_audit_row_value(sync_row[0], ("total_membership_rows", 1), 0) or 0)
         except Exception:
             pass
+    # Fallback: compute unique participants from raw_messages when group_members is absent
+    if not has_group_members and not total_unique_participants:
+        try:
+            up_row = _audit_rows(
+                "SELECT COUNT(DISTINCT sender) AS total_unique_participants FROM raw_messages "
+                "WHERE tenant_id = ? AND group_name IS NOT NULL AND group_name != ''",
+                (tenant_id,),
+            )
+            if up_row:
+                total_unique_participants = int(
+                    _audit_row_value(up_row[0], ("total_unique_participants", 0), 0) or 0
+                )
+                if not duplicate_memberships and total_membership_rows > total_unique_participants:
+                    duplicate_memberships = total_membership_rows - total_unique_participants
+        except Exception:
+            pass
 
     groups = []
     for gn, g in stats.items():

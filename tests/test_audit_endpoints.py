@@ -152,6 +152,7 @@ def test_audit_groups_uses_named_columns_from_supabase_json_rows(monkeypatch):
             "identities": 4,
         }],
         [{"total_unique_senders": 4}],
+        [],
     ])
 
     def rows(sql, params=()):
@@ -163,7 +164,7 @@ def test_audit_groups_uses_named_columns_from_supabase_json_rows(monkeypatch):
 
     result = app.audit_groups_v2(user={"id": "user"}, tenant_id="tenant-a")
 
-    assert len(calls) == 3
+    assert len(calls) == 4
     assert "po.raw_message_id::text || ':' || COALESCE(po.listing_index, 0)::text" in calls[1][0]
     assert result["total_unique_senders"] == 4
     assert result["groups"][0]["name"] == "Bandra Brokers"
