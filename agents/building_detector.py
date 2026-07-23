@@ -106,11 +106,15 @@ def enrich_building(storage: "Storage", d: dict) -> None:
     if alias_building:
         return
 
-    # Pre-check 2: canonical buildings
+    # Pre-check 2: canonical buildings (exact substring match)
     if _check_canonical_buildings(storage, raw_text, parsed_id):
         return
 
-    # Pre-check 3: cross-reference — other observations in same group, last hour
+    # Pre-check 3: fuzzy alias matching — catches near-misses exact match misses
+    if _check_fuzzy_building_match(storage, raw_text, parsed_id):
+        return
+
+    # Pre-check 4: cross-reference — other observations in same group, last hour
     if _check_group_context(storage, parsed_id, group_name, sender, raw_text):
         return
 
@@ -135,6 +139,72 @@ def _check_canonical_buildings(storage: "Storage", raw_text: str, parsed_id: int
             sug = _make_suggestion(parsed_id, name, 0.92, "matched canonical database")
             storage.create_suggestion(sug)
             return True
+    return False
+
+
+def _check_fuzzy_building_match(storage: "Storage", raw_text: str, parsed_id: int) -> bool:
+    """Fuzzy-match the raw text against known building names and aliases.
+
+    Uses the building_alias_engine.fuzzy_score() to catch near-misses
+    that exact substring matching (used by _check_canonical_buildings)
+    would miss — e.g. "Kalpataru Vivant" vs "Kalpataru Vivant Andheri West".
+    Runs before the LLM fallback to resolve cheaply what it can.
+    """
+    from agents.building_alias_engine import fuzzy_score, normalize_building_name
+
+    norm_text = normalize_building_name(raw_text)
+    norm_tokens = norm_text.split()
+    if len(norm_tokens) < 2:
+        return False
+
+    # Collect known building names + aliases
+    names = set()
+    try:
+        for table, col in [("buildings", "canonical_name"),
+                           ("building_aliases", "alias"),
+                           ("building_name_aliases", "alias")]:
+            rows = storage.db.execute(
+                f"SELECT DISTINCT {col} FROM {table} WHERE {col} IS NOT NULL AND {col} != ''"
+            ).fetchall()
+            for r in rows:
+                names.add(r[col])
+    except Exception:
+        return False
+
+    if not names:
+        return False
+
+    best_name = None
+    best_score = 0.0
+    THRESHOLD = 0.85
+
+    for name in names:
+        norm_name = normalize_building_name(name)
+        if not norm_name or len(norm_name) < 4:
+            continue
+        name_tokens = norm_name.split()
+        name_len = len(name_tokens)
+        if name_len < 1:
+            continue
+
+        # Sliding window over raw text tokens to find best match
+        max_start = len(norm_tokens) - name_len + 1
+        for i in range(max_start):
+            window = ' '.join(norm_tokens[i:i + name_len])
+            score = fuzzy_score(norm_name, window)
+            if score > best_score:
+                best_score = score
+                best_name = name
+                if score >= 1.0:
+                    break
+        if best_score >= 1.0:
+            break
+
+    if best_score >= THRESHOLD and best_name:
+        sug = _make_suggestion(parsed_id, best_name, best_score,
+                               f"fuzzy alias match (score={best_score:.3f})")
+        storage.create_suggestion(sug)
+        return True
     return False
 
 

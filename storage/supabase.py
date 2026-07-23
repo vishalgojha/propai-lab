@@ -2373,7 +2373,14 @@ class SupabaseStorage(Storage):
             except Exception:
                 resolver = None
             listing = self._listing_from_parsed(obs, resolver)
-            return self.save_listing(listing)
+            listing_id = self.save_listing(listing)
+            # ── Queue enrichment job if building_name is missing/unresolved ──
+            building_name = obs.get("building_name")
+            raw_msg_id = obs.get("raw_message_id")
+            if not self._building_resolved(building_name) and raw_msg_id:
+                self.create_enrichment_job(parsed_id, raw_msg_id,
+                                           scheduled_after=datetime.now(timezone.utc).isoformat())
+            return listing_id
         except Exception as exc:
             print(f"[upsert_listing_from_parsed] parsed {parsed_id}: {exc}", flush=True)
             return 0
@@ -2450,6 +2457,28 @@ class SupabaseStorage(Storage):
         except Exception as exc:
             print(f"[storage] merge_building_amenities({building_name}): {exc}", flush=True)
             return False
+
+    def _building_resolved(self, building_name: str) -> bool:
+        """Check if a building_name is already known (canonical or alias).
+
+        Used to decide whether to queue an enrichment job — if the building
+        is already known, no resolution work is needed.
+        """
+        if not building_name:
+            return False
+        try:
+            res = self.client.table("buildings").select("id").ilike("canonical_name", building_name).limit(1).execute()
+            if res.data:
+                return True
+            res = self.client.table("building_aliases").select("canonical").ilike("alias", building_name).limit(1).execute()
+            if res.data:
+                return True
+            res = self.client.table("building_name_aliases").select("building_id").ilike("alias", building_name).limit(1).execute()
+            if res.data:
+                return True
+        except Exception:
+            pass
+        return False
 
     def get_listings(self, limit: int = 50, offset: int = 0,
                       intent: str = "", bhk: str = "",
@@ -3215,6 +3244,10 @@ class SupabaseStorage(Storage):
 
     def create_enrichment_job(self, parsed_id: int, raw_message_id: int,
                                scheduled_after: str) -> int:
+        # Dedup: skip if a job already exists for this parsed_id (any status)
+        existing = self.get_enrichment_job_by_parsed(parsed_id)
+        if existing:
+            return existing["id"]
         data = {"parsed_id": parsed_id, "raw_message_id": raw_message_id,
                 "scheduled_after": scheduled_after, "status": "pending"}
         res = self.client.table("enrichment_jobs").insert(data).execute()
