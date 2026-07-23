@@ -500,7 +500,7 @@ _NUMBERED_ANY_RE = re.compile(r'^\s*(?:[⭐*•-]\s*)?(?:\d{1,3})\s*[\).:-]\s*(.
 _LOCATION_LINE_RE = re.compile(r'^\s*(?:📍\s*|location\s*[:\-]+\s*)(.+)', re.I)
 _SIGNATURE_HINT_RE = re.compile(r'\b(?:for inspection|for details|contact|housen realtors|realtors|realty)\b', re.I)
 _FREEFORM_START_HINT_RE = re.compile(
-    r'\b(?:available|requirement|requirements|required|required for|wanted|need|looking\s+for|seeking|'
+    r'\b(?:requirement|requirements|required|required for|wanted|need|looking\s+for|seeking|'
     r'outrate|out\s*rate|option|available\s+for|direct\s+available|premium|urgent)\b',
     re.I,
 )
@@ -545,13 +545,24 @@ def _looks_like_standalone_property_heading(line: str) -> bool:
         return False
     if len(clean.split()) > 6 or not re.search(r"[A-Za-z]", clean):
         return False
-    return not re.search(
-        r'\b(?:available|possession|parking|pet|family|bachelor|floor|view|'
+    # Check for property-related keywords — these are attributes, not building names
+    if re.search(
+        r'(?:available|possession|parking|pet|family|bachelor|floor|view|'
         r'furnished|carpet|usable|rent|sale|lease|price|deposit|brokerage|'
-        r'negotiable|inspection|contact|call|regards|amenities)\b',
+        r'negotiable|inspection|contact|call|regards|amenities|'
+        r'bareshell|bare\s*shell|builder\s*finished|higher|lower|'
+        r'modular|facing|corner|ventilated|ready|unfurnished|semi|'
+        r'bldg|opp|car\s*park|o\.c|rera|maintenance|electricity|'
+        r'tenant|owner|society|pantry|washroom|lift|lifts|power|backup|'
+        r'water|storeroom|store\s*room|pooja|servant|driver)',
         clean,
         re.I,
-    )
+    ):
+        return False
+    # Phone numbers are not building names
+    if re.search(r'\d{7,}', clean):
+        return False
+    return True
 
 
 def _split_freeform_listing_blocks(text: str) -> list[str]:
@@ -1831,7 +1842,9 @@ def _parse_bhk_from_text(text: str) -> str | None:
     range_match = re.search(r'(\d+(?:\.\d+)?\s*/\s*\d+(?:\.\d+)?)\s*bhk', text, re.I)
     if range_match:
         return re.sub(r'\s+', '', range_match.group(1)) + " BHK"
-    m = re.search(r'(\d+(?:\.\d+)?)\s*(bhk|rk|bedroom|b ed|b e d)', text, re.I)
+    # Only match explicit BHK/RK mentions — "bedroom" alone is too broad
+    # (e.g. "1 master bedroom" is a room description, not a listing start)
+    m = re.search(r'(\d+(?:\.\d+)?)\s*(bhk|rk)\b', text, re.I)
     if m:
         return m.group(1) + " BHK"
     if re.search(r'\bstudio\b', text, re.I):
