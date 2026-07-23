@@ -315,12 +315,12 @@ export function InboxChatPanel({
         : undefined;
 
   const memoryScopeLabel = globalMode
-    ? "Memory: global chat"
+    ? "Memory: PropAI workspace"
     : sessionId
-      ? "Memory: broker session"
+      ? "Memory: PropAI broker session"
       : brokerPhone
-        ? "Memory: broker inbox"
-        : "Memory: sessionless";
+        ? "Memory: market inbox context"
+        : "Memory: unavailable";
 
   return (
     <div className="relative h-full w-full min-w-0 flex flex-col bg-[#070b0e] overflow-hidden">
