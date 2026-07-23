@@ -11362,7 +11362,11 @@ async def list_listings(limit: int = 50, offset: int = 0, user: dict = Depends(r
 
 @app.get("/api/listings/{listing_id}")
 async def get_listing_detail(listing_id: int, user: dict = Depends(require_user)):
-    """Get a single listing by ID with full details."""
+    """Get a single listing by ID with full details.
+    NOTE: SELECT * includes tenant_nationality_preference (INTERNAL ONLY).
+    This is safe here because this endpoint is behind require_user (admin),
+    NOT a public-facing route. Do not expose to propai.live / consumer surfaces.
+    """
     try:
         res = storage.client.table("listings").select("*").eq("id", listing_id).limit(1).execute()
         if not res.data:

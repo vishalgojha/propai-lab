@@ -1906,6 +1906,17 @@ class SupabaseStorage(Storage):
         "launch_timeline", "expected_possession",
         "ai_extraction",
         "deal_tags", "additional_charges",
+        # v2 schema — physical / deal attributes
+        "carpet_area_sqft", "built_up_area_sqft",
+        "bathroom_count", "car_parking_count", "parking_type",
+        "deposit_amount", "oc_status", "interior_value",
+        "ceiling_height", "price_basis", "brokerage_type",
+        "configuration_type", "lease_term_type",
+        # v2 schema — amenities
+        "amenities", "amenities_unverified_claim", "building_amenities",
+        # v2 schema — rental / tenancy policy
+        "pet_policy", "tenant_type_preference", "sharing_allowed",
+        "company_lease_criteria", "tenant_nationality_preference",
     }
 
     def save_parsed(self, parsed: ParsedObservation) -> int:
@@ -2265,6 +2276,34 @@ class SupabaseStorage(Storage):
             observation_count=1,
             deal_tags=list(obs.get("deal_tags") or []),
             additional_charges=list(obs.get("additional_charges") or []),
+            # v2 schema — physical / deal attributes
+            carpet_area_sqft=obs.get("carpet_area_sqft"),
+            built_up_area_sqft=obs.get("built_up_area_sqft"),
+            bathroom_count=obs.get("bathroom_count"),
+            car_parking_count=obs.get("car_parking_count"),
+            parking_type=obs.get("parking_type"),
+            deposit_amount=obs.get("deposit_amount"),
+            possession_date=obs.get("possession_date"),
+            possession_status=obs.get("possession_status"),
+            oc_status=obs.get("oc_status"),
+            interior_value=obs.get("interior_value"),
+            ceiling_height=obs.get("ceiling_height"),
+            price_basis=obs.get("price_basis"),
+            brokerage_type=obs.get("brokerage_type"),
+            configuration_type=obs.get("configuration_type"),
+            lease_term_type=obs.get("lease_term_type"),
+            # v2 schema — unit-level amenities
+            amenities=list(obs.get("amenities") or []),
+            amenities_unverified_claim=obs.get("amenities_unverified_claim"),
+            # v2 schema — rental / tenancy policy
+            pet_policy=obs.get("pet_policy"),
+            tenant_type_preference=obs.get("tenant_type_preference"),
+            sharing_allowed=obs.get("sharing_allowed"),
+            company_lease_criteria=obs.get("company_lease_criteria"),
+            # IMPORTANT: tenant_nationality_preference is INTERNAL/BROKER-FACING ONLY.
+            # Must NEVER appear in any public-facing API response, search filter,
+            # or badge on propai.live / consumer surfaces.
+            tenant_nationality_preference=obs.get("tenant_nationality_preference"),
         )
 
     def rebuild_listings(self, limit: int = 0):
@@ -2366,6 +2405,51 @@ class SupabaseStorage(Storage):
             return existing.id
         res = self.client.table("listings").insert(data).execute()
         return res.data[0]["id"] if res.data else 0
+
+    def merge_building_amenities(self, building_name: str, new_amenities: list[str]) -> bool:
+        """Merge newly extracted building amenities into the buildings table.
+
+        When a building amenity is mentioned in a new listing for a building
+        that already exists in `buildings`, merge/reinforce rather than
+        overwrite — increment confidence rather than replacing the array.
+        Only updates if the building exists and new_amenities is non-empty.
+        """
+        if not building_name or not new_amenities:
+            return False
+        try:
+            res = (
+                self.client.table("buildings")
+                .select("id,amenities,amenities_confidence")
+                .ilike("canonical_name", building_name)
+                .limit(1)
+                .execute()
+            )
+            if not res.data:
+                return False
+            row = res.data[0]
+            existing = row.get("amenities") or []
+            if not isinstance(existing, list):
+                existing = []
+            # Deduplicate: add only amenities not already present
+            merged = list(existing)
+            added = False
+            for a in new_amenities:
+                if a and a not in merged:
+                    merged.append(a)
+                    added = True
+            if not added:
+                return False  # nothing new to merge
+            # Increment confidence (capped at 1.0)
+            current_conf = float(row.get("amenities_confidence") or 0.0)
+            new_conf = min(current_conf + 0.1, 1.0)
+            self.client.table("buildings").update({
+                "amenities": merged,
+                "amenities_confidence": new_conf,
+            }).eq("id", row["id"]).execute()
+            return True
+        except Exception as exc:
+            print(f"[storage] merge_building_amenities({building_name}): {exc}", flush=True)
+            return False
 
     def get_listings(self, limit: int = 50, offset: int = 0,
                       intent: str = "", bhk: str = "",

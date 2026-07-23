@@ -58,22 +58,50 @@ listing_type: "sale" | "rent" | "requirement"
 property_category: "residential" | "commercial"
 bhk: number (1, 1.5, 2, 3...) or null for commercial
 carpet_area_sqft: number or null
+built_up_area_sqft: number or null
 price: {amount: number|null, unit: "total"|"per_sqft"|null, period: "one_time"|"per_month"|null, raw_price_text: "exact phrase"|null}
   - Convert: 1 Cr = 10000000, 1 Lakh = 100000. amount = TOTAL price (not per-sqft)
 locality: {raw_mention: "exact location text"|null, resolved_locality: "parent area like Bandra West"|null, confidence: "high"|"medium"}
 building_name: "proper complex name" | null (NEVER amenities like "Sea View", "Semi Furnished")
 furnishing_status: "unfurnished" | "semi_furnished" | "fully_furnished" | null
-amenities: ["gym", "parking"...] (only if explicitly mentioned)
 possession_status: "ready_to_move" | "under_construction" | date string | null
+possession_date: "YYYY-MM-DD" | null (only if explicit date mentioned)
 deal_tags: ["negotiable", "urgent_sale"...] (only if explicit in message)
 additional_charges: [{label:str, amount:num, amount_type:"fixed"|"percent_of_price"}]
 title: "3 BHK for Rent in Bandra West — ₹2.75L/month" (auto-generated from fields)
-extraction_confidence: "high" | "medium" | "low"
+
+Physical details (only if explicitly stated):
+bathroom_count: number | null
+car_parking_count: number | null
+parking_type: "open" | "covered" | "stack" | null
+deposit_amount: number | null (security deposit in rupees)
+oc_status: "received" | "pending" | "applied" | null (Occupancy Certificate)
+interior_value: number | null (cost of interiors when quoted separately)
+ceiling_height: "14 ft" | null (commercial/retail only)
+price_basis: "carpet" | "built_up" | null (whether price_per_sqft is on carpet or built-up area)
+configuration_type: "jodi_flats" | "duplex" | null (null if standard apartment)
+lease_term_type: "short_term" | "long_term" | null
+
+Brokerage:
+brokerage_type: "no_brokerage" | "direct_only" | "no_sub_broker" | null
+
+Amenities — CRITICAL SPLIT:
+- building_amenities: ["gym", "swimming_pool", "rooftop_terrace", "clubhouse", "garden", "kids_play_area", "jogging_track", "community_hall", "24h_security", "power_backup", "elevator", "covered_parking"] — only building-shared physical amenities
+- amenities: ["ac_2_units", "modular_kitchen", "wardrobe", "geyser", "washing_machine", "microwave", "sofa", "dining_table", "curtains", "false_ceiling", "wooden_flooring", "marble_flooring"] — only unit-specific items installed IN the flat
+- amenities_unverified_claim: "all amenities" | "fully loaded" | null — vague marketing language, never expand into structured tags
+
+Rental / tenancy policy (only if explicitly stated):
+pet_policy: "allowed" | "not_allowed" | "allowed_with_conditions" | "not_specified" | null
+tenant_type_preference: "family_only" | "bachelors_male" | "bachelors_female" | "bachelors_any" | "company_lease" | "no_preference" | null
+sharing_allowed: "allowed" | "not_allowed" | "not_specified" | null
+company_lease_criteria: {min_paid_up_capital: str|null, company_type: str|null, notes: str|null} | null
+tenant_nationality_preference: str | null (capture faithfully when stated, e.g. "only Indian tenants")
 
 Rules:
 - One message may contain multiple listings. Put each in a separate items[] entry.
 - For requirements (broker seeking), listing_type = "requirement".
 - Building name = ONLY proper complex names (e.g. "Kalpataru Vivant"). NEVER features/descriptions.
+- Only extract fields that are EXPLICITLY stated in the message. Never infer or invent a value.
 - Return ONLY valid JSON. No markdown, no code blocks, no extra text."""
 
 
