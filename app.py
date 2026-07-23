@@ -1537,7 +1537,14 @@ async def lifespan(app: FastAPI):
     print("  Provider probe loop started (60s cadence)")
     backfill_task = asyncio.create_task(_history_backfill_loop())
     print("  History backfill loop started (6h cadence)")
+    enrichment_task = asyncio.create_task(_enrichment_loop())
+    print("  Enrichment loop started (30s cadence)")
     yield
+    enrichment_task.cancel()
+    try:
+        await enrichment_task
+    except (asyncio.CancelledError, Exception):
+        pass
     backfill_task.cancel()
     try:
         await backfill_task
@@ -15668,6 +15675,52 @@ async def _history_backfill_loop() -> None:
         except Exception as exc:
             print(f"  [history-backfill] loop error: {exc.__class__.__name__}: {exc}")
         await asyncio.sleep(HISTORY_BACKFILL_INTERVAL_S)
+
+
+ENRICHMENT_POLL_INTERVAL = 30
+ENRICHMENT_BATCH_SIZE = 20
+
+
+async def _enrichment_loop() -> None:
+    """Background loop: every ENRICHMENT_POLL_INTERVAL s, poll the
+    enrichment_jobs table and process pending jobs.  Runs synchronously
+    via asyncio.to_thread to reuse the existing worker logic.
+
+    Only runs when a storage backend is configured — skips silently if
+    storage is a no-op (SqliteStorage in tests).
+    """
+    await asyncio.sleep(15)  # let server finish booting
+    while True:
+        try:
+            if storage is None or not hasattr(storage, "client"):
+                await asyncio.sleep(ENRICHMENT_POLL_INTERVAL)
+                continue
+            jobs = await asyncio.to_thread(
+                storage.get_pending_enrichment_jobs,
+                limit=ENRICHMENT_BATCH_SIZE,
+            )
+            if not jobs:
+                await asyncio.sleep(ENRICHMENT_POLL_INTERVAL)
+                continue
+            for job in jobs:
+                claimed = await asyncio.to_thread(storage.claim_enrichment_job, job["id"])
+                if not claimed:
+                    continue
+                try:
+                    await asyncio.to_thread(_process_enrichment_job, storage, job)
+                    await asyncio.to_thread(storage.complete_enrichment_job, job["id"])
+                except Exception as e:
+                    print(f"  [enrichment] job {job['id']} failed: {e}", flush=True)
+                    await asyncio.to_thread(storage.complete_enrichment_job, job["id"], error=str(e))
+        except Exception as exc:
+            print(f"  [enrichment] loop error: {exc.__class__.__name__}: {exc}", flush=True)
+        await asyncio.sleep(ENRICHMENT_POLL_INTERVAL)
+
+
+def _process_enrichment_job(storage, job: dict) -> None:
+    """Process a single enrichment job — runs in a thread via asyncio.to_thread."""
+    from worker import enrich_observation
+    enrich_observation(storage, job)
 
 
 def _classify_provider_status(events: list[dict], now_ts: float) -> str:
