@@ -8030,8 +8030,21 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
                     "status_steps": [],
                     "trace": {"route": "conversational_llm"},
                 }
-        except Exception:
-            pass  # fall through to tool-enabled LLM path
+            else:
+                return {
+                    "content": "AI returned an empty response. Please try again.",
+                    "blocks": [{"type": "error", "body": "AI returned an empty response. Please try again."}],
+                    "sources": [],
+                    "status_steps": [],
+                    "trace": {"route": "conversational_empty"},
+                }
+        except Exception as exc:
+            return {
+                "content": f"AI chat failed: {exc}. Please try again.",
+                "blocks": [{"type": "error", "body": f"AI chat failed: {exc}. Please try again."}],
+                "sources": [],
+                "trace": {"route": "conversational_error"},
+            }
 
     # Topic-aware context compaction
     if last_user and memory.detect_topic_change(last_user) and len(memory.working) > 2:
