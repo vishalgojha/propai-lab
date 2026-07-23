@@ -2506,8 +2506,16 @@ class SupabaseStorage(Storage):
         res = query.execute()
         return res.data
 
-    def get_building(self, building_id: str) -> dict | None:
-        query = self.client.table("buildings").select("*").eq("building_id", building_id).limit(1)
+    def get_building(self, building_id: str | None = None, canonical_name: str | None = None,
+                     building_db_id: int | str | None = None) -> dict | None:
+        if building_db_id is not None:
+            query = self.client.table("buildings").select("*").eq("id", int(building_db_id)).limit(1)
+        elif canonical_name:
+            query = self.client.table("buildings").select("*").eq("canonical_name", canonical_name).limit(1)
+        elif building_id:
+            query = self.client.table("buildings").select("*").eq("building_id", building_id).limit(1)
+        else:
+            return None
         if self._tenant_id:
             query = query.eq("tenant_id", self._tenant_id)
         res = query.execute()
