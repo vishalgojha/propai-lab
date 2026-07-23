@@ -17,11 +17,10 @@ import {
   Building,
   Flag,
   Target,
-  Phone,
   ChevronRight,
   Tag,
 } from "lucide-react";
-import { getListingById } from "@/lib/localities";
+import { getListingById, getBrokerAreas } from "@/lib/localities";
 import { slugify } from "@/lib/supabase";
 import {
   toListingCardViewModel,
@@ -132,6 +131,9 @@ export default async function ListingPage({ params }: Params) {
     notFound();
   }
   if (!listing) notFound();
+
+  // Fetch broker's operating areas from their listing history
+  const brokerAreas = await getBrokerAreas(listing.broker_phone);
 
   // If the request slug doesn't match the canonical slug (e.g. external site
   // linked to an older slug after the listing was edited), 301 to the canonical
@@ -355,7 +357,7 @@ export default async function ListingPage({ params }: Params) {
                 {brokerInitials}
               </div>
               <div className="mt-3 flex items-center justify-center gap-1.5 text-center text-base font-semibold text-white">
-                <span className="truncate">{card.brokerName || "Verified network"}</span>
+                <span className="truncate">{card.brokerName || "PropAI network"}</span>
                 {card.brokerName && (
                   <ShieldCheck className="h-4 w-4 shrink-0 text-green-400" aria-hidden="true" />
                 )}
@@ -390,19 +392,28 @@ export default async function ListingPage({ params }: Params) {
                     Contact info unavailable
                   </span>
                 )}
-                {card.waAvailable && card.waLink && (
-                  <a
-                    href={card.waLink}
-                    className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 px-5 py-3 text-sm font-medium text-zinc-200 transition-colors hover:border-green-400/40 hover:text-white"
-                  >
-                    <Phone className="h-4 w-4" aria-hidden="true" />
-                    Show phone number
-                  </a>
-                )}
               </div>
 
+              {brokerAreas.length > 0 && (
+                <div className="mt-5">
+                  <h3 className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500 mb-2">
+                    Active in
+                  </h3>
+                  <div className="flex flex-wrap gap-1.5">
+                    {brokerAreas.map((area) => (
+                      <span
+                        key={area}
+                        className="rounded-full bg-white/5 border border-white/10 px-2.5 py-1 text-[11px] text-zinc-400"
+                      >
+                        {area}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               <p className="mt-4 text-[11px] leading-relaxed text-zinc-500">
-                Listing sourced from verified broker WhatsApp networks and refreshed continuously by
+                Listing sourced from active broker WhatsApp networks and refreshed continuously by
                 PropAI.
               </p>
             </div>
