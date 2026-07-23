@@ -4076,9 +4076,13 @@ def _capability_type_counts(tenant_id: str | None) -> dict[str, dict]:
     for row in rows or []:
         try:
             last_seen = row["last_seen"]
+            if last_seen and hasattr(last_seen, "isoformat"):
+                last_seen_str = last_seen.isoformat()
+            else:
+                last_seen_str = str(last_seen) if last_seen else None
             counts[str(row["t"])] = {
                 "count": int(row["c"] or 0),
-                "last_seen": last_seen.isoformat() if last_seen else None,
+                "last_seen": last_seen_str,
             }
         except (KeyError, TypeError, ValueError, AttributeError):
             continue
@@ -4129,8 +4133,8 @@ def _capability_coverage(tenant_id: str | None) -> dict:
             "unique_chats": int(row["chats"] or 0),
             "unique_groups": int(row["groups"] or 0),
             "unique_broadcasts": int(row["broadcasts"] or 0),
-            "oldest_message": oldest.isoformat() if oldest else None,
-            "newest_message": newest.isoformat() if newest else None,
+            "oldest_message": oldest.isoformat() if hasattr(oldest, "isoformat") else (str(oldest) if oldest else None),
+            "newest_message": newest.isoformat() if hasattr(newest, "isoformat") else (str(newest) if newest else None),
         }
     except (KeyError, TypeError, ValueError, AttributeError):
         return empty
