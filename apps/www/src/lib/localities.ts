@@ -1037,3 +1037,28 @@ export async function getRecentListingsForSitemap(
   }
   return (data ?? []) as SitemapListingRow[];
 }
+
+export async function getBrokerAreas(
+  brokerPhone: string | null,
+): Promise<string[]> {
+  if (!brokerPhone) return [];
+  const db = getServerSupabase();
+  if (!db) return [];
+  const { data, error } = await db
+    .from("listings")
+    .select("micro_market")
+    .eq("broker_phone", brokerPhone)
+    .not("micro_market", "is", null)
+    .neq("micro_market", "");
+  if (error || !data) return [];
+  const counts = new Map<string, number>();
+  for (const row of data) {
+    const mm = (row.micro_market ?? "").trim();
+    if (!mm) continue;
+    counts.set(mm, (counts.get(mm) ?? 0) + 1);
+  }
+  return [...counts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+    .map(([name]) => name);
+}

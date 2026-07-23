@@ -158,7 +158,7 @@ export default function ListingTile({
             {card.brokerName && (
               <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-green-400" aria-hidden="true" />
             )}
-            {card.brokerName || "Verified network"}
+            {card.brokerName || "PropAI network"}
           </span>
           {card.waLink ? (
             <a
