@@ -325,6 +325,34 @@ export default async function WWWPage() {
             </div>
           </div>
         </section>
+
+        <section className="py-16 lg:py-24 bg-zinc-950/50" data-scroll-reveal>
+          <div className="max-w-[1600px] mx-auto px-4 lg:px-6">
+            <div className="text-center mb-12 lg:mb-16" data-scroll-reveal>
+              <h2 className="text-[20px] lg:text-[24px] font-semibold text-white mb-4">How our data pipeline works</h2>
+              <p className="text-[15px] text-zinc-400 max-w-2xl mx-auto">
+                Every listing on PropAI traces back to a real WhatsApp message from a verified broker.
+              </p>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-6">
+              {[
+                { step: "1", title: "Capture", desc: "Messages arrive from live WhatsApp broker groups in real time." },
+                { step: "2", title: "Parse", desc: "AI extracts property details: location, price, BHK, broker — with confidence scores." },
+                { step: "3", title: "Deduplicate", desc: "Same broker + same unit + same day = one listing. Different floors = separate listings." },
+                { step: "4", title: "Publish", desc: "Clean, structured listings go live on the site within minutes of capture." },
+              ].map((item, i) => (
+                <div key={i} className="rounded-2xl border border-white/10 bg-black/70 p-5" data-scroll-reveal>
+                  <div className="text-2xl font-bold text-green-400/30 mb-2">{item.step}</div>
+                  <div className="text-sm font-semibold text-white mb-1">{item.title}</div>
+                  <div className="text-xs text-zinc-500 leading-relaxed">{item.desc}</div>
+                </div>
+              ))}
+            </div>
+            <p className="mt-6 text-center text-xs text-zinc-600">
+              Listings inactive for 30+ days are automatically hidden. The sitemap includes only listings updated in the last 90 days.
+            </p>
+          </div>
+        </section>
        <ShortlistBar />
        </ShortlistProvider>
       </main>
