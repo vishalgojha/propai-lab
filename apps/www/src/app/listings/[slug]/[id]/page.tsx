@@ -28,6 +28,7 @@ import {
   type ListingCardFields,
   type ListingSpecItem,
 } from "@/lib/listing-card";
+import { cleanBuildingName } from "@/lib/localities";
 import SiteHeader from "@/components/SiteHeader";
 import SiteFooter from "@/components/SiteFooter";
 import ListingSpecs from "@/components/ListingSpecs";
@@ -223,7 +224,7 @@ export default async function ListingPage({ params }: Params) {
               <ChevronRight className="h-3 w-3" aria-hidden="true" />
             </>
           )}
-          <span className="text-zinc-400">{listing.building_name || card.title}</span>
+          <span className="text-zinc-400">{cleanBuildingName(listing.building_name) || card.title}</span>
         </div>
 
         <div className="grid grid-cols-1 gap-7 lg:grid-cols-[1fr_300px]">
@@ -235,15 +236,10 @@ export default async function ListingPage({ params }: Params) {
               <div>
                 <div className="flex items-center gap-1.5 text-sm text-zinc-400">
                   <MapPin className="h-3.5 w-3.5" aria-hidden="true" />
-                  <span>
-                    {card.locality}
-                    {listing.micro_market && listing.micro_market !== card.locality
-                      ? ` · ${listing.micro_market}`
-                      : ""}
-                  </span>
+                  <span>{card.locality}</span>
                 </div>
                 <h1 className="mt-1 text-[28px] font-bold leading-[1.15] text-white lg:text-[34px]">
-                  {listing.building_name || card.title}
+                  {cleanBuildingName(listing.building_name) || card.title}
                 </h1>
               </div>
               <div className="text-right">
@@ -316,8 +312,8 @@ export default async function ListingPage({ params }: Params) {
               </div>
             )}
 
-            {/* Description */}
-            {listing.location_label && (
+            {/* Description — only show if location_label adds info beyond micro_market */}
+            {listing.location_label && listing.location_label !== listing.micro_market && (
               <div className="mt-7">
                 <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-zinc-400">
                   About this listing
@@ -326,8 +322,8 @@ export default async function ListingPage({ params }: Params) {
               </div>
             )}
 
-            {/* Landmarks / nearby */}
-            {card.locality && (
+            {/* Landmarks / nearby — only show if we have actual landmark info */}
+            {listing.landmark_name && listing.landmark_name !== card.locality && (
               <div className="mt-7">
                 <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-zinc-400">
                   Nearby
@@ -335,7 +331,7 @@ export default async function ListingPage({ params }: Params) {
                 <ul className="space-y-1.5">
                   <li className="flex items-center gap-2 text-sm text-zinc-300">
                     <Building2 className="h-3.5 w-3.5 text-zinc-500" aria-hidden="true" />
-                    {card.locality}
+                    {listing.landmark_name}
                   </li>
                 </ul>
               </div>
@@ -456,7 +452,10 @@ export default async function ListingPage({ params }: Params) {
                   links.push({ href: `/localities/${card.localitySlug}/bhk-${bhkNum}`, label: `${bhkNum} BHK in ${card.locality}` });
                 }
                 if (listing.building_name) {
-                  links.push({ href: `/buildings/${slugify(listing.building_name)}`, label: `${listing.building_name}` });
+                  const cleanName = cleanBuildingName(listing.building_name);
+                  if (cleanName) {
+                    links.push({ href: `/buildings/${slugify(cleanName)}`, label: cleanName });
+                  }
                 }
                 return links.map((l) => (
                   <Link

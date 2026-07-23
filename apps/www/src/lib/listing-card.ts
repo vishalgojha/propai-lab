@@ -189,7 +189,12 @@ function buildTitle(row: ListingCardFields): string {
   const furnishing = (row.furnishing || "").trim();
   const bhk = (row.bhk || "").trim();
   const propertyType = (row.property_type || "").trim();
-  const building = row.building_name?.trim() || null;
+  // Extract first segment before comma — real building names are short and
+  // appear at the start (e.g. "Wallfort Tower" from "Wallfort Tower, 2bhk...").
+  const rawBuilding = (row.building_name ?? "").trim();
+  const building = rawBuilding
+    ? (rawBuilding.includes(",") ? rawBuilding.split(",")[0].trim() : rawBuilding)
+    : null;
   const locality = row.micro_market?.trim() || row.location_label?.trim() || null;
   const intent = intentValue(row.intent);
   const transaction = intent === "rent" ? "for Rent" : intent === "sale" ? "for Sale" : "";
@@ -373,8 +378,11 @@ export function buildListingSlug(input: SlugInput): string | null {
   const micro = (input.micro_market ?? "").trim();
   if (micro) parts.push(slugify(micro));
   else {
-    const bldg = (input.building_name ?? "").trim();
-    if (bldg && !/^(sq\.?\s*ft|multiple options|carpet|na\b)/i.test(bldg)) {
+    // Extract first segment before comma — real building names are short and
+    // appear at the start (e.g. "Wallfort Tower" from "Wallfort Tower, 2bhk...").
+    const raw = (input.building_name ?? "").trim();
+    const bldg = raw.includes(",") ? raw.split(",")[0].trim() : raw;
+    if (bldg && bldg.length <= 50 && !/^(sq\.?\s*ft|multiple options|carpet|na\b|\d+\s*bhk|for sale|for rent|available|new listing|video|pics|car park|residential listing)/i.test(bldg)) {
       parts.push(slugify(bldg));
     }
   }
