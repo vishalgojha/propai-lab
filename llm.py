@@ -22,6 +22,19 @@ _logger = logging.getLogger(__name__)
 
 _PROVIDERS = []
 
+# Merge Gateway — OpenAI-compatible, first in chain (highest priority)
+_merge_key = os.getenv("MERGE_API_KEY", "").strip()
+_merge_model = os.getenv("MERGE_MODEL", "").strip()
+if _merge_key and _merge_model:
+    _PROVIDERS.append({
+        "name": "merge",
+        "api_key": _merge_key,
+        "base_url": "https://api-gateway.merge.dev/v1/openai",
+        "model": _merge_model,
+    })
+elif _merge_key:
+    _logger.warning("Skipping merge: set MERGE_MODEL to enable this provider")
+
 _nvidia_model = os.getenv("NVIDIA_MODEL", "").strip()
 _nvidia_base = "https://integrate.api.nvidia.com/v1"
 for i, key_env in enumerate(["NVIDIA_API_KEY", "NVIDIA_API_KEY_2", "NVIDIA_API_KEY_3", "NVIDIA_API_KEY_4"], 1):
