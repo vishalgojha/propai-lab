@@ -238,11 +238,11 @@ function formatAgeShort(value?: string) {
   const hours = Math.floor(mins / 60);
   if (hours < 24) return `Fresh · ${hours}h`;
   const days = Math.floor(hours / 24);
-  if (days < 7) return `Historic · ${days}d`;
+  if (days < 7) return `Older · ${days}d`;
   const weeks = Math.floor(days / 7);
-  if (weeks < 5) return `Historic · ${weeks}w`;
+  if (weeks < 5) return `Older · ${weeks}w`;
   const months = Math.floor(days / 30);
-  return `Historic · ${months}mo`;
+  return `Older · ${months}mo`;
 }
 
 function toInboxThread(message: api.RawMessage): api.InboxThread {
@@ -2130,7 +2130,7 @@ return {
           conversation_type: "group",
           conversation_name: groupName,
           group_name: jid,
-          message: hasHistory ? "WhatsApp history synced; message evidence is loading." : "No captured messages yet.",
+          message: hasHistory ? "WhatsApp history synced; market evidence is loading." : "No captured messages yet.",
           message_count: historyCount,
           timestamp: group.last_message_at || "",
         } as api.InboxThread);
@@ -2139,7 +2139,7 @@ return {
           title: groupName,
           subtitle: captured
             ? (conversationType === "broadcast" ? "WhatsApp broadcast" : "WhatsApp group")
-            : `${conversationType === "broadcast" ? "WhatsApp broadcast" : "WhatsApp group"} · ${hasHistory ? "history synced" : "awaiting messages"}`,
+            : `${conversationType === "broadcast" ? "WhatsApp broadcast" : "WhatsApp group"} · ${hasHistory ? "market history synced" : "awaiting evidence"}`,
           latest: {
             ...latest,
             chat_id: jid,
@@ -2556,7 +2556,7 @@ return {
       if (/whatsapp|ingestor|connect/i.test(message)) {
         setReplyStatus("WhatsApp is disconnected. Open QR to reconnect.");
       } else if (!isGroupConversationSelected && replyFallbackPhone) {
-        setReplyStatus("Send failed. Open WhatsApp to continue.");
+        setReplyStatus("Send failed. Open chat to continue.");
       }
     } finally {
       setSendingReply(false);
@@ -3531,6 +3531,8 @@ return {
                           <span>{selectedBroker.building_count} buildings</span>
                         </>
                       )}
+                      <span>•</span>
+                      <span>Focus: {brokerSpecialtyLabel(selectedBroker)}</span>
                     </div>
                   </div>
                 </div>
@@ -3600,13 +3602,13 @@ return {
                     <div className="mt-3 text-sm font-semibold text-white">No matching items yet</div>
                     <div className="mx-auto mt-1 max-w-[360px] text-xs leading-relaxed text-zinc-500">
                       {selectedBroker.latest_title
-                        ? "We found a recent post, but it has not been split into matching items yet."
-                        : "This broker card has not resolved to parsed items yet. The feed item is still usable for navigation and WhatsApp actions."}
+                        ? "We found a recent post, but it has not been split into structured items yet."
+                        : "This broker card has not resolved to parsed items yet. The market feed item is still usable for navigation and broker context."}
                     </div>
                     {selectedBroker.latest_title && (
                       <div className="mx-auto mt-4 max-w-[560px] text-left text-xs leading-relaxed text-zinc-500">
                         <div className="text-[10px] font-semibold uppercase tracking-wider text-zinc-600">
-                          Latest item
+                          Source post
                         </div>
                         <div className="mt-1 text-sm font-semibold text-zinc-200">
                           <WhatsAppMessage
@@ -3873,8 +3875,8 @@ return {
                     <div className="mt-2 flex items-center justify-between gap-3">
                       <div className="text-[11px] text-zinc-500">
                         {whatsappConnected
-                          ? "Sends inside PropAI and records the action in workspace analytics."
-                          : "Connect your WhatsApp phone to send from PropAI."}
+                          ? "Replies route through the connected WhatsApp link and record the action in workspace analytics."
+                          : "Connect your WhatsApp phone to reply from PropAI."}
                       </div>
                       <button
                         type="button"
@@ -3890,11 +3892,11 @@ return {
                     {replyStatus && <div className="mt-2 text-[11px] text-zinc-300">{replyStatus}</div>}
                   </>
                 ) : (
-                  <div className="rounded-xl border border-white/10 bg-zinc-950 px-3 py-3 text-[11px] text-zinc-400">
-                    No WhatsApp number was found in this broker&apos;s captured evidence yet. You can keep reviewing the clean market items above; PropAI will link the number automatically when it appears in a future post.
-                  </div>
-                )}
-              </div>
+                    <div className="rounded-xl border border-white/10 bg-zinc-950 px-3 py-3 text-[11px] text-zinc-400">
+                      No phone anchor was found in this broker&apos;s captured evidence yet. You can keep reviewing the parsed market items above; PropAI will link the number automatically when it appears in a future post.
+                    </div>
+                  )}
+                </div>
             </>
           ) : selectedMsg ? (
             <>
@@ -3961,7 +3963,7 @@ return {
                       rel="noopener noreferrer"
                       className="px-2.5 py-1 bg-[#166534] text-green-100 hover:bg-[#15803d] rounded text-[10px] font-bold uppercase tracking-wider transition-colors touch-target"
                     >
-                      Open WhatsApp
+                      Open chat
                     </a>
                   )}
                 </div>
@@ -4266,7 +4268,7 @@ return {
                   <div className="min-w-0 flex-1">
                     <div className="mb-2 flex items-center justify-between gap-3">
                       <div className="text-[10px] font-bold uppercase tracking-[0.28em] text-zinc-500">
-                        Reply inside PropAI
+                        Reply in PropAI workspace
                       </div>
                       <div className="text-[10px] text-zinc-500">
                         {selectedConversationJid
@@ -4369,8 +4371,8 @@ return {
                             ) : replyStatus ? (
                               <span className="text-[#3EE88A]">{replyStatus}</span>
                             ) : selectedConversationJid ? (
-                              <span className="text-zinc-500">Replies are sent through the connected WhatsApp number.</span>
-                            ) : null}
+                            <span className="text-zinc-500">Replies are sent through the connected WhatsApp number.</span>
+                          ) : null}
                           </div>
                           <div className="flex items-center gap-2">
                             {replyFallbackPhone && (
@@ -4382,7 +4384,7 @@ return {
                                 onClick={(e) => e.stopPropagation()}
                               >
                                 <MessageSquare className="h-3.5 w-3.5" strokeWidth={1.8} />
-                                Open WhatsApp
+                                Open chat
                               </a>
                             )}
                             <button
@@ -4414,7 +4416,7 @@ return {
               <MessageSquare className="h-8 w-8 text-zinc-700" strokeWidth={1.5} />
               <h3 className="text-sm font-semibold text-zinc-300">No conversation selected</h3>
               <p className="text-xs max-w-xs">
-                Select a WhatsApp group or broker to see messages, evidence, and PropAI actions.
+                Select a WhatsApp group or broker to see market messages, evidence, and workspace context.
               </p>
               {isMobile && (
                 <button
