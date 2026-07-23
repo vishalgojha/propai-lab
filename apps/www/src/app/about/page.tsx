@@ -63,7 +63,7 @@ export default async function AboutPage() {
 
         <div className="mt-10 grid grid-cols-2 lg:grid-cols-4 gap-4">
           <AboutStat label="Active listings" value={overview.counts.activeListings} />
-          <AboutStat label="Verified brokers" value={overview.counts.brokers} />
+          <AboutStat label="Active brokers" value={overview.counts.brokers} />
           <AboutStat label="Localities covered" value={overview.counts.localities} />
           <AboutStat
             label="Messages analysed"

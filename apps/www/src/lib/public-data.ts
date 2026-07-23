@@ -165,6 +165,7 @@ export async function getPublicDataOverview(options?: {
         .select(
           "canonical_name, primary_phone, observation_count, listing_count, requirement_count, market_count, avg_ticket, last_seen_at",
         )
+        .not("canonical_name", "like", "+%")
         .order("observation_count", { ascending: false })
         .limit(8),
     ]);
