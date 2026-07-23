@@ -134,6 +134,8 @@ const STANDALONE_LOCALITIES: Record<string, string> = {
   "goregaon west": "Goregaon West",
   "grant road": "Grant Road",
   juhu: "Juhu",
+  "jogeshwari east": "Jogeshwari East",
+  "jogeshwari west": "Jogeshwari West",
   kalyan: "Kalyan",
   "kandivali east": "Kandivali East",
   "kandivali west": "Kandivali West",
