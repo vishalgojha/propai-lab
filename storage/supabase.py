@@ -2353,7 +2353,13 @@ class SupabaseStorage(Storage):
     def upsert_listing_from_parsed(self, parsed_id: int) -> int:
         """Incrementally push a single parsed_observation (+ its resolver
         decision) into `listings`. Safe to call on every new observation — the
-        fingerprint upsert dedupes against existing rows."""
+        fingerprint upsert dedupes against existing rows.
+
+        Enrichment job queuing is in a separate try block so a failure there
+        cannot mask a successful save_listing() return value.
+        """
+        obs = None
+        listing_id = 0
         try:
             obs_res = (
                 self.client.table("parsed_output")
@@ -2374,16 +2380,22 @@ class SupabaseStorage(Storage):
                 resolver = None
             listing = self._listing_from_parsed(obs, resolver)
             listing_id = self.save_listing(listing)
-            # ── Queue enrichment job if building_name is missing/unresolved ──
-            building_name = obs.get("building_name")
-            raw_msg_id = obs.get("raw_message_id")
-            if not self._building_resolved(building_name) and raw_msg_id:
-                self.create_enrichment_job(parsed_id, raw_msg_id,
-                                           scheduled_after=datetime.now(timezone.utc).isoformat())
-            return listing_id
         except Exception as exc:
             print(f"[upsert_listing_from_parsed] parsed {parsed_id}: {exc}", flush=True)
             return 0
+
+        # ── Queue enrichment job (separate try: failure here must not mask
+        # save_listing success above) ──
+        if listing_id and obs:
+            try:
+                building_name = obs.get("building_name")
+                raw_msg_id = obs.get("raw_message_id")
+                if not self._building_resolved(building_name) and raw_msg_id:
+                    self.create_enrichment_job(parsed_id, raw_msg_id,
+                                               scheduled_after=datetime.now(timezone.utc).isoformat())
+            except Exception as exc:
+                print(f"[upsert_listing_from_parsed] enrichment job queue error: {exc}", flush=True)
+        return listing_id
 
     def save_listing(self, listing: Listing) -> int:
         data = {k: v for k, v in listing.__dict__.items() if v is not None and v != ""}
