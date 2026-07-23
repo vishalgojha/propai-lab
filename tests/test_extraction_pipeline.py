@@ -50,13 +50,9 @@ def test_single_message_worker_uses_property_parser(monkeypatch):
     monkeypatch.setattr(ai_extraction, "ai_extract", lambda *_args, **_kwargs: {
         "extraction_source": "ai", "extraction": ai_item, "extractions": [ai_item], "provider_used": "fake",
     })
-    monkeypatch.setattr(app, "classify_conversation", lambda *_args: "public")
     monkeypatch.setattr(app, "compute_embedding", lambda _parsed: None)
     monkeypatch.setattr(app, "resolve_parsed", lambda *_args: {})
-    monkeypatch.setattr(app, "_attribution_suffix", lambda *_args: "")
-    monkeypatch.setattr(app, "check_share_eligibility", lambda *_args: (True, "ok"))
     monkeypatch.setattr(app, "generate_summary_title", lambda *_args: "3 BHK in Bandra West")
-    monkeypatch.setattr(app, "_process_observations", lambda *_args: None)
     monkeypatch.setattr(extraction, "get_bus", lambda: SimpleNamespace(publish=lambda *_args: None))
 
     extraction.process_raw_message(
@@ -120,16 +116,12 @@ def test_multi_listing_post_uses_one_ai_result_per_option(monkeypatch):
         "extractions": ai_items,
         "provider_used": "fake",
     })
-    monkeypatch.setattr(app, "classify_conversation", lambda *_args: "public")
     monkeypatch.setattr(app, "compute_embedding", lambda _parsed: None)
     monkeypatch.setattr(app, "resolve_parsed", lambda *_args: {})
     monkeypatch.setattr(app, "_parsed_source_text", lambda item, fallback: item["raw_payload"]["full_text"] or fallback)
     monkeypatch.setattr(app, "_demote_weak_property_parse", lambda item, _text: item)
     monkeypatch.setattr(app, "_parsed_has_market_anchor", lambda *_args: True)
-    monkeypatch.setattr(app, "_attribution_suffix", lambda *_args: "")
-    monkeypatch.setattr(app, "check_share_eligibility", lambda *_args: (True, "ok"))
     monkeypatch.setattr(app, "generate_summary_title", lambda parsed, *_args: parsed["raw_payload"]["full_text"])
-    monkeypatch.setattr(app, "_process_observations", lambda *_args: None)
     monkeypatch.setattr(extraction, "get_bus", lambda: SimpleNamespace(publish=lambda *_args: None))
 
     extraction.process_raw_message(
@@ -194,16 +186,12 @@ def test_reviewed_reparse_preview_is_read_only_and_apply_reuses_exact_cards(monk
         lambda *_args, **_kwargs: [dict(item) for item in reviewed],
     )
     monkeypatch.setattr(ai_extraction, "ai_extract", fail_if_ai_runs)
-    monkeypatch.setattr(app, "classify_conversation", lambda *_args: "public")
     monkeypatch.setattr(app, "compute_embedding", lambda _parsed: None)
     monkeypatch.setattr(app, "resolve_parsed", lambda *_args: {})
     monkeypatch.setattr(app, "_parsed_source_text", lambda item, fallback: item["raw_payload"]["full_text"] or fallback)
     monkeypatch.setattr(app, "_demote_weak_property_parse", lambda item, _text: item)
     monkeypatch.setattr(app, "_parsed_has_market_anchor", lambda *_args: True)
-    monkeypatch.setattr(app, "_attribution_suffix", lambda *_args: "")
-    monkeypatch.setattr(app, "check_share_eligibility", lambda *_args: (True, "ok"))
     monkeypatch.setattr(app, "generate_summary_title", lambda parsed, *_args: parsed["raw_payload"]["full_text"])
-    monkeypatch.setattr(app, "_process_observations", lambda *_args: None)
     monkeypatch.setattr(extraction, "get_bus", lambda: SimpleNamespace(publish=lambda *_args: None))
 
     base_context = {
@@ -308,13 +296,9 @@ Aaron 8655245101""",
     monkeypatch.setattr(extraction_multi_listing, "classify_message", lambda _text: "multi")
     monkeypatch.setattr(extraction_multi_listing, "parse_multi_message", lambda *_args, **_kwargs: boundary_rows)
     monkeypatch.setattr(ai_extraction, "ai_extract", fake_ai_extract)
-    monkeypatch.setattr(app, "classify_conversation", lambda *_args: "public")
     monkeypatch.setattr(app, "compute_embedding", lambda _parsed: None)
     monkeypatch.setattr(app, "resolve_parsed", lambda *_args: {})
     monkeypatch.setattr(app, "_parsed_source_text", lambda item, fallback: item["raw_payload"]["full_text"] or fallback)
-    monkeypatch.setattr(app, "_attribution_suffix", lambda *_args: "")
-    monkeypatch.setattr(app, "check_share_eligibility", lambda *_args: (True, "ok"))
-    monkeypatch.setattr(app, "_process_observations", lambda *_args: None)
     monkeypatch.setattr(extraction, "get_bus", lambda: SimpleNamespace(publish=lambda *_args: None))
 
     extraction.process_raw_message(
@@ -354,13 +338,9 @@ def _run_broker_attribution(monkeypatch, sender_phone: str) -> dict:
     monkeypatch.setattr(ai_extraction, "ai_extract", lambda *_args, **_kwargs: {
         "extraction_source": "ai", "extraction": ai_item, "extractions": [ai_item], "provider_used": "fake",
     })
-    monkeypatch.setattr(app, "classify_conversation", lambda *_args: "public")
     monkeypatch.setattr(app, "compute_embedding", lambda _parsed: None)
     monkeypatch.setattr(app, "resolve_parsed", lambda *_args: {})
-    monkeypatch.setattr(app, "_attribution_suffix", lambda *_args: "")
-    monkeypatch.setattr(app, "check_share_eligibility", lambda *_args: (True, "ok"))
     monkeypatch.setattr(app, "generate_summary_title", lambda *_args: "2 BHK in Bandra West")
-    monkeypatch.setattr(app, "_process_observations", lambda *_args: None)
     monkeypatch.setattr(extraction, "get_bus", lambda: SimpleNamespace(publish=lambda *_args: None))
 
     extraction.process_raw_message(
@@ -436,16 +416,12 @@ def _run_with_ai_extraction(monkeypatch, ai_extraction_payload: dict) -> _Storag
     monkeypatch.setattr(ai_extraction, "ai_extract", lambda *_args, **_kwargs: ai_result)
     monkeypatch.setattr(lab.config, "load_excluded_groups", lambda: set())
     monkeypatch.setattr(multi_listing, "classify_message", lambda _text: "single")
-    monkeypatch.setattr(app, "classify_conversation", lambda *_args: "public")
     monkeypatch.setattr(app, "compute_embedding", lambda _parsed: None)
     monkeypatch.setattr(app, "resolve_parsed", lambda *_args: {})
-    monkeypatch.setattr(app, "_parsed_source_text", lambda item, fallback: item.get("raw_payload", {}).get("full_text") or fallback)
+    monkeypatch.setattr(app, "_parsed_source_text", lambda item, fallback: item["raw_payload"]["full_text"] or fallback)
     monkeypatch.setattr(app, "_demote_weak_property_parse", lambda item, _text: item)
     monkeypatch.setattr(app, "_parsed_has_market_anchor", lambda *_args: True)
-    monkeypatch.setattr(app, "_attribution_suffix", lambda *_args: "")
-    monkeypatch.setattr(app, "check_share_eligibility", lambda *_args: (True, "ok"))
-    monkeypatch.setattr(app, "generate_summary_title", lambda *_args: "Elite Auction — Rajgriha CHS")
-    monkeypatch.setattr(app, "_process_observations", lambda *_args: None)
+    monkeypatch.setattr(app, "generate_summary_title", lambda parsed, *_args: parsed["raw_payload"]["full_text"])
     monkeypatch.setattr(extraction, "get_bus", lambda: SimpleNamespace(publish=lambda *_args: None))
 
     extraction.process_raw_message(

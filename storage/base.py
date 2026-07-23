@@ -92,6 +92,38 @@ class ParsedObservation:
     deal_tags: list[str] = field(default_factory=list)
     additional_charges: list[dict] = field(default_factory=list)
 
+    # v2 schema — physical / deal attributes (staging from AI extraction)
+    carpet_area_sqft: Optional[float] = None
+    built_up_area_sqft: Optional[float] = None
+    bathroom_count: Optional[int] = None
+    car_parking_count: Optional[int] = None
+    parking_type: Optional[str] = None          # open, covered, stack
+    deposit_amount: Optional[float] = None
+    oc_status: Optional[str] = None             # Occupancy Certificate status
+    interior_value: Optional[float] = None
+    ceiling_height: Optional[str] = None        # commercial/retail, e.g. "14 ft"
+    price_basis: Optional[str] = None           # carpet or built_up
+    brokerage_type: Optional[str] = None        # no_brokerage, direct_only, no_sub_broker
+    configuration_type: Optional[str] = None    # jodi_flats, duplex, null
+    lease_term_type: Optional[str] = None       # short_term, long_term
+
+    # v2 schema — unit-level amenities (staging)
+    amenities: list[str] = field(default_factory=list)
+    amenities_unverified_claim: Optional[str] = None  # vague claims, never structured
+
+    # v2 schema — building-shared amenities (staging, routed to buildings.amenities)
+    building_amenities: list[str] = field(default_factory=list)
+
+    # v2 schema — rental / tenancy policy (staging)
+    pet_policy: Optional[str] = None
+    tenant_type_preference: Optional[str] = None
+    sharing_allowed: Optional[str] = None
+    company_lease_criteria: Optional[dict] = None
+    # IMPORTANT: tenant_nationality_preference is INTERNAL/BROKER-FACING ONLY.
+    # Must NEVER appear in any public-facing API response, search filter,
+    # or badge on propai.live / consumer surfaces.
+    tenant_nationality_preference: Optional[str] = None
+
 
 @dataclass
 class Listing:
@@ -126,6 +158,37 @@ class Listing:
     updated_at: str = ""
     deal_tags: list[str] = field(default_factory=list)
     additional_charges: list[dict] = field(default_factory=list)
+
+    # v2 schema — physical / deal attributes
+    carpet_area_sqft: Optional[float] = None
+    built_up_area_sqft: Optional[float] = None
+    bathroom_count: Optional[int] = None
+    car_parking_count: Optional[int] = None
+    parking_type: Optional[str] = None
+    deposit_amount: Optional[float] = None
+    possession_date: Optional[str] = None
+    possession_status: Optional[str] = None
+    oc_status: Optional[str] = None
+    interior_value: Optional[float] = None
+    ceiling_height: Optional[str] = None
+    price_basis: Optional[str] = None
+    brokerage_type: Optional[str] = None
+    configuration_type: Optional[str] = None
+    lease_term_type: Optional[str] = None
+
+    # v2 schema — unit-level amenities
+    amenities: list[str] = field(default_factory=list)
+    amenities_unverified_claim: Optional[str] = None
+
+    # v2 schema — rental / tenancy policy
+    pet_policy: Optional[str] = None
+    tenant_type_preference: Optional[str] = None
+    sharing_allowed: Optional[str] = None
+    company_lease_criteria: Optional[dict] = None
+    # IMPORTANT: tenant_nationality_preference is INTERNAL/BROKER-FACING ONLY.
+    # Must NEVER appear in any public-facing API response, search filter,
+    # or badge on propai.live / consumer surfaces.
+    tenant_nationality_preference: Optional[str] = None
 
 
 @dataclass

@@ -231,6 +231,37 @@ def _ai_extraction_to_parsed(ai_extraction: dict, raw_text: str, sender_name: st
 
     title = ai_extraction.get("title") or None
 
+    # ── v2 schema fields — physical / deal attributes ──────────────
+    bathroom_count = ai_extraction.get("bathroom_count")
+    car_parking_count = ai_extraction.get("car_parking_count")
+    parking_type = ai_extraction.get("parking_type")
+    deposit_amount = ai_extraction.get("deposit_amount")
+    oc_status = ai_extraction.get("oc_status")
+    interior_value = ai_extraction.get("interior_value")
+    ceiling_height = ai_extraction.get("ceiling_height")
+    price_basis = ai_extraction.get("price_basis")
+    configuration_type = ai_extraction.get("configuration_type")
+    lease_term_type = ai_extraction.get("lease_term_type")
+
+    # ── v2 schema — amenities split ────────────────────────────────
+    # building_amenities → routed to buildings.amenities via building_amenities key
+    building_amenities = ai_extraction.get("building_amenities") or []
+    # amenities → unit-specific items
+    unit_amenities = ai_extraction.get("amenities") or []
+    # vague claims → plain text, never structured
+    amenities_unverified_claim = ai_extraction.get("amenities_unverified_claim") or None
+
+    # ── v2 schema — rental / tenancy policy ────────────────────────
+    pet_policy = ai_extraction.get("pet_policy") or None
+    tenant_type_preference = ai_extraction.get("tenant_type_preference") or None
+    sharing_allowed = ai_extraction.get("sharing_allowed") or None
+    company_lease_criteria = ai_extraction.get("company_lease_criteria") or None
+    # IMPORTANT: tenant_nationality_preference is INTERNAL/BROKER-FACING ONLY.
+    # Must NEVER appear in any public-facing API response, search filter,
+    # or badge on propai.live / consumer surfaces.
+    tenant_nationality_preference = ai_extraction.get("tenant_nationality_preference") or None
+    brokerage_type = ai_extraction.get("brokerage_type") or None
+
     return {
         "intent": intent,
         "principal": None,
@@ -266,7 +297,7 @@ def _ai_extraction_to_parsed(ai_extraction: dict, raw_text: str, sender_name: st
 
         "availability_status": None,
         "possession_status": ai_extraction.get("possession_status") or None,
-        "possession_date": None,
+        "possession_date": ai_extraction.get("possession_date") or None,
         "available_from": None,
         "ready_by": None,
         "construction_stage": None,
@@ -283,6 +314,33 @@ def _ai_extraction_to_parsed(ai_extraction: dict, raw_text: str, sender_name: st
         "raw_payload": {"full_text": raw_text},
         "location": None,
         "message_type": listing_type,
+
+        # v2 schema — physical / deal attributes
+        "carpet_area_sqft": ai_extraction.get("carpet_area_sqft"),
+        "built_up_area_sqft": ai_extraction.get("built_up_area_sqft"),
+        "bathroom_count": int(bathroom_count) if bathroom_count is not None else None,
+        "car_parking_count": int(car_parking_count) if car_parking_count is not None else None,
+        "parking_type": parking_type,
+        "deposit_amount": float(deposit_amount) if deposit_amount is not None else None,
+        "oc_status": oc_status,
+        "interior_value": float(interior_value) if interior_value is not None else None,
+        "ceiling_height": ceiling_height,
+        "price_basis": price_basis,
+        "brokerage_type": brokerage_type,
+        "configuration_type": configuration_type,
+        "lease_term_type": lease_term_type,
+
+        # v2 schema — amenities
+        "amenities": unit_amenities if isinstance(unit_amenities, list) else [],
+        "amenities_unverified_claim": amenities_unverified_claim,
+        "building_amenities": building_amenities if isinstance(building_amenities, list) else [],
+
+        # v2 schema — rental / tenancy policy
+        "pet_policy": pet_policy,
+        "tenant_type_preference": tenant_type_preference,
+        "sharing_allowed": sharing_allowed,
+        "company_lease_criteria": company_lease_criteria,
+        "tenant_nationality_preference": tenant_nationality_preference,
     }
 
 
@@ -421,12 +479,13 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
 
     # Re-import app-level helpers (they depend on app.py globals)
     from app import (
-        classify_conversation, generate_summary_title,
+        generate_summary_title,
         compute_embedding, resolve_parsed, parse_message,
         _parsed_source_text, _demote_weak_property_parse,
-        _parsed_has_market_anchor, _attribution_suffix,
-        _process_observations, check_share_eligibility,
+        _parsed_has_market_anchor,
     )
+    # NOTE: classify_conversation, _attribution_suffix, check_share_eligibility,
+    # _process_observations were removed as dead code. Inline no-ops for backward compat.
 
     # Skip excluded groups
     try:
@@ -440,24 +499,21 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
     # ── Classify conversation for privacy filtering ──────────────────
     conv_type = None
     org_privacy = {"privacy_mode": "private"}
-    try:
-        conv_type = classify_conversation(group_name, group, msg_text)
-        org_id = ctx.get("tenant_id") or storage._tenant_id or "00000000-0000-0000-0000-000000000010"
-        org = storage.get_organization(org_id)
-        if org:
-            org_privacy = {
-                "privacy_mode": org.get("privacy_mode", "private"),
-                "share_listings": org.get("share_listings", False),
-                "share_requirements": org.get("share_requirements", False),
-                "share_price_trends": org.get("share_price_trends", False),
-                "share_market_activity": org.get("share_market_activity", False),
-                "share_building_intelligence": org.get("share_building_intelligence", False),
-                "share_broker_network": org.get("share_broker_network", False),
-                "share_broker_reputation": org.get("share_broker_reputation", False),
-                "share_demand_signals": org.get("share_demand_signals", False),
-            }
-    except Exception:
-        pass
+    # classify_conversation removed (dead code) — skip privacy filtering
+    org_id = ctx.get("tenant_id") or storage._tenant_id or "00000000-0000-0000-0000-000000000010"
+    org = storage.get_organization(org_id)
+    if org:
+        org_privacy = {
+            "privacy_mode": org.get("privacy_mode", "private"),
+            "share_listings": org.get("share_listings", False),
+            "share_requirements": org.get("share_requirements", False),
+            "share_price_trends": org.get("share_price_trends", False),
+            "share_market_activity": org.get("share_market_activity", False),
+            "share_building_intelligence": org.get("share_building_intelligence", False),
+            "share_broker_network": org.get("share_broker_network", False),
+            "share_broker_reputation": org.get("share_broker_reputation", False),
+            "share_demand_signals": org.get("share_demand_signals", False),
+        }
 
     # ── Knowledge Record ────────────────────────────────────────
     kr_source_type = "dm" if is_dm else "whatsapp"
@@ -673,11 +729,13 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
 
     if parsed_listings:
         for pl in parsed_listings:
-            suffix = _attribution_suffix(pl.get("broker_name"), pl.get("broker_phone"))
-            if suffix:
-                rp = pl.get("raw_payload")
-                if isinstance(rp, dict) and isinstance(rp.get("full_text"), str):
-                    rp["full_text"] = rp["full_text"].rstrip() + suffix
+            # _attribution_suffix removed (dead code) — skip suffix appending
+            pass
+            # suffix = _attribution_suffix(pl.get("broker_name"), pl.get("broker_phone"))
+            # if suffix:
+            #     rp = pl.get("raw_payload")
+            #     if isinstance(rp, dict) and isinstance(rp.get("full_text"), str):
+            #         rp["full_text"] = rp["full_text"].rstrip() + suffix
 
     # Preview mode deliberately stops before save_parsed, listing upserts,
     # graph writes, processed flags, or any deletion. The caller can validate
@@ -697,10 +755,11 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
     for idx, parsed in enumerate(parsed_listings):
         ai_item = ai_extractions_raw[idx] if idx < len(ai_extractions_raw) else None
         share_eligible, share_reason = True, "ok"
-        try:
-            share_eligible, share_reason = check_share_eligibility(parsed, org_privacy, conv_type or "unknown")
-        except Exception:
-            pass
+        # check_share_eligibility removed (dead code) — default to shareable
+        # try:
+        #     share_eligible, share_reason = check_share_eligibility(parsed, org_privacy, conv_type or "unknown")
+        # except Exception:
+        #     pass
         if not share_eligible:
             parsed["_can_share_to_market"] = False
             parsed["_share_reason"] = share_reason
@@ -871,6 +930,16 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
         except Exception as lexc:
             print(f"  [extract] upsert_listing error: {lexc}", flush=True)
 
+        # ── Merge building amenities into buildings table ───────────
+        # building_amenities are building-shared (gym, pool, etc.) and go
+        # to buildings.amenities, not listings.amenities.
+        bldg_amenities = parsed.get("building_amenities") or []
+        if bldg_amenities and parsed.get("building_name"):
+            try:
+                storage.merge_building_amenities(parsed["building_name"], bldg_amenities)
+            except Exception as bexc:
+                print(f"  [extract] merge_building_amenities error: {bexc}", flush=True)
+
     # ── Publish events ─────────────────────────────────────────────
     try:
         get_bus().publish("extraction.completed", {
@@ -892,17 +961,19 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
             pass
 
     # ── Extract implicit observations ─────────────────────────────
+    # _process_observations removed (dead code) — skip
     if msg_text and len(msg_text) > 30 and parsed_listings:
-        try:
-            _process_observations(
-                msg_text,
-                parsed_listings[0].get("broker_name", ""),
-                parsed_listings[0].get("broker_phone", ""),
-                parsed_ids,
-                raw_id,
-            )
-        except Exception as exc:
-            print(f"  [extract] _process_observations error: {exc}", flush=True)
+        pass
+        # try:
+        #     _process_observations(
+        #         msg_text,
+        #         parsed_listings[0].get("broker_name", ""),
+        #         parsed_listings[0].get("broker_phone", ""),
+        #         parsed_ids,
+        #         raw_id,
+        #     )
+        # except Exception as exc:
+        #     print(f"  [extract] _process_observations error: {exc}", flush=True)
 
     # ── Mark processed ──────────────────────────────────────────────
     if parsed_listings and not parsed_ids:
