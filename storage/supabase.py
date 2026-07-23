@@ -1,6 +1,7 @@
 """Supabase implementation of the Storage interface."""
 
 import contextvars
+import hashlib
 import json
 import os
 import re
@@ -182,8 +183,19 @@ def _is_market_group_row(row: dict) -> bool:
 
 
 def _observation_fingerprint(row: dict) -> str:
+    """Return a stable, broker-scoped identity for a market opportunity.
+
+    Raw/parsed row IDs deliberately do not participate: WhatsApp reposts get
+    new IDs even when the underlying listing or requirement is unchanged.
+    Conversely, fields that distinguish real units (notably floor, area and
+    price) remain part of the identity so multi-listing posts stay split.
+    """
     payload = {
-        "intent": row.get("intent") or row.get("observation_type") or "",
+        "observation_type": row.get("observation_type") or "",
+        "intent": row.get("intent") or "",
+        "transaction_type": row.get("transaction_type") or "",
+        "asset_type": row.get("asset_type") or "",
+        "property_type": row.get("property_type") or "",
         "bhk": row.get("bhk") or row.get("configuration") or "",
         "price": row.get("price") or row.get("monthly_rent") or row.get("total_asking_price") or "",
         "area_sqft": row.get("area_sqft") or "",
@@ -192,23 +204,49 @@ def _observation_fingerprint(row: dict) -> str:
         "landmark_name": row.get("landmark_name") or "",
         "micro_market": row.get("micro_market") or "",
         "location_raw": row.get("location_raw") or "",
-        "broker_phone": row.get("broker_phone") or "",
-        "broker_name": row.get("broker_name") or row.get("profile_name") or "",
-        "summary_title": row.get("summary_title") or row.get("normalized_message") or row.get("message") or "",
+        "floor_range": row.get("floor_range") or "",
+        "commercial_use_type": row.get("commercial_use_type") or "",
+        "occupancy_type": row.get("occupancy_type") or "",
     }
-    return listing_fingerprint(payload, raw_sender=row.get("raw_sender") or row.get("sender") or "", group_name=row.get("group_name") or "")
+    normalized = {
+        key: re.sub(r"[^a-z0-9]+", " ", str(value).lower()).strip()
+        for key, value in payload.items()
+    }
+
+    # Weak parses without a property/location/size/price anchor are unsafe to
+    # merge broadly.  Their item-specific text still collapses exact reposts
+    # while avoiding one broker's unrelated generic posts becoming one item.
+    anchors = (
+        normalized["bhk"], normalized["price"], normalized["area_sqft"],
+        normalized["building_name"], normalized["micro_market"],
+        normalized["location_raw"], normalized["landmark_name"],
+    )
+    if not any(anchors):
+        source = (
+            row.get("source_message")
+            or row.get("normalized_message")
+            or row.get("summary_title")
+            or row.get("raw_message")
+            or row.get("message")
+            or ""
+        )
+        normalized["source_fallback"] = re.sub(
+            r"[^a-z0-9]+", " ", str(source).lower()
+        ).strip()
+
+    blob = json.dumps(normalized, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(blob.encode("utf-8")).hexdigest()
 
 
 def _merge_observation_rows(rows: list[dict]) -> list[dict]:
     merged: dict[str, dict] = {}
     order: list[str] = []
     for row in rows:
-        raw_id = row.get("raw_message_id") or row.get("id") or ""
-        listing_index = row.get("listing_index")
-        key = f"{raw_id}:{listing_index if listing_index is not None else ''}:{_observation_fingerprint(row)}"
+        key = _observation_fingerprint(row)
         existing = merged.get(key)
         if not existing:
             copy = dict(row)
+            copy["fingerprint"] = key
             copy["times_seen"] = int(copy.get("times_seen") or 1)
             evidence = copy.get("evidence_list")
             if isinstance(evidence, list):
@@ -268,6 +306,8 @@ def _merge_observation_rows(rows: list[dict]) -> list[dict]:
                 "first_seen",
                 "last_seen",
                 "raw_message",
+                "normalized_message",
+                "source_message",
                 "raw_sender",
                 "broker_name",
                 "broker_phone",
@@ -1655,7 +1695,7 @@ class SupabaseStorage(Storage):
         tid = tenant_id or self._tenant_id
 
         query = self.client.table("parsed_output")\
-            .select("id,raw_message_id,message_type,intent,bhk,price,price_unit,area_sqft,furnishing,location_raw,building_name,landmark_name,micro_market,broker_name,broker_phone,profile_name,listing_index,confidence,summary_title,created_at")\
+            .select("id,raw_message_id,message_type,intent,asset_type,property_type,transaction_type,bhk,configuration,price,price_unit,monthly_rent,total_asking_price,area_sqft,furnishing,location_raw,building_name,landmark_name,micro_market,floor_range,commercial_use_type,occupancy_type,broker_name,broker_phone,profile_name,listing_index,confidence,summary_title,normalized_message,created_at")\
             .order("created_at", desc=True)\
             .limit(max(50000, limit + offset))
         if tid:
@@ -1727,21 +1767,44 @@ class SupabaseStorage(Storage):
             ts = raw.get("timestamp") or parsed.get("created_at") or raw.get("created_at") or ""
             bucket = grouped.setdefault(identity, {
                 "latest": None,
-                "message_count": 0,
-                "listing_count": 0,
-                "requirement_count": 0,
+                "opportunity_keys": set(),
+                "listing_keys": set(),
+                "requirement_keys": set(),
                 "source_group_names": set(),
+                "specialty_localities": {},
+                "specialty_property_types": {},
                 "latest_ts": "",
             })
 
-            bucket["message_count"] += 1
             intent = (parsed.get("intent") or "").upper()
-            if intent in {"BUY", "BUYER", "REQUIREMENT", "RENTAL_SEEKER"}:
-                bucket["requirement_count"] += 1
+            observation_type = (
+                "REQUIREMENT"
+                if (parsed.get("message_type") or "").upper() == "REQUIREMENT"
+                or intent in {"BUY", "BUYER", "REQUIREMENT", "RENTAL_SEEKER", "WANTED"}
+                else "LISTING"
+            )
+            opportunity_key = _observation_fingerprint({
+                **parsed,
+                "observation_type": observation_type,
+                "broker_phone": resolved_phone,
+                "broker_name": name,
+                "source_message": parsed.get("normalized_message") or raw.get("message") or "",
+            })
+            is_new_opportunity = opportunity_key not in bucket["opportunity_keys"]
+            bucket["opportunity_keys"].add(opportunity_key)
+            if observation_type == "REQUIREMENT":
+                bucket["requirement_keys"].add(opportunity_key)
             else:
-                bucket["listing_count"] += 1
+                bucket["listing_keys"].add(opportunity_key)
             if raw.get("group_name"):
                 bucket["source_group_names"].add(raw.get("group_name"))
+
+            locality = (parsed.get("micro_market") or parsed.get("location_raw") or "").strip()
+            if locality and is_new_opportunity:
+                bucket["specialty_localities"][locality] = bucket["specialty_localities"].get(locality, 0) + 1
+            property_type = (parsed.get("asset_type") or parsed.get("property_type") or "").strip()
+            if property_type and is_new_opportunity:
+                bucket["specialty_property_types"][property_type] = bucket["specialty_property_types"].get(property_type, 0) + 1
 
             if not bucket["latest"] or str(ts) > str(bucket["latest_ts"]):
                 bucket["latest"] = (parsed, raw, resolved_phone, name, identity)
@@ -1765,10 +1828,10 @@ class SupabaseStorage(Storage):
                 "conversation_key": identity,
                 "conversation_type": "group" if is_group else "direct",
                 "conversation_name": conv_name,
-                "message_count": bucket["message_count"],
-                "opportunity_count": bucket["message_count"],
-                "listing_count": bucket["listing_count"],
-                "requirement_count": bucket["requirement_count"],
+                "message_count": len(bucket["opportunity_keys"]),
+                "opportunity_count": len(bucket["opportunity_keys"]),
+                "listing_count": len(bucket["listing_keys"]),
+                "requirement_count": len(bucket["requirement_keys"]),
                 "latest_message_at": bucket["latest_ts"],
                 "broker_name": name,
                 "broker_phone": phone,
@@ -1780,6 +1843,18 @@ class SupabaseStorage(Storage):
                 "location_raw": parsed.get("location_raw"),
                 "summary_title": parsed.get("summary_title"),
                 "source_group_names": sorted(bucket["source_group_names"]),
+                "specialty_localities": [
+                    value for value, _count in sorted(
+                        bucket["specialty_localities"].items(),
+                        key=lambda item: (-item[1], item[0].lower()),
+                    )[:3]
+                ],
+                "specialty_property_types": [
+                    value for value, _count in sorted(
+                        bucket["specialty_property_types"].items(),
+                        key=lambda item: (-item[1], item[0].lower()),
+                    )[:2]
+                ],
                 "market_scope": "workspace",
             })
             threads.append(raw_row)
@@ -3479,7 +3554,9 @@ class SupabaseStorage(Storage):
                 # raw Groups evidence until WhatsApp has resolved a real phone.
                 return [
                     row for row in rows
-                    if _normalize_india_phone(str(row.get("primary_phone") or ""))
+                    if _normalize_india_phone(str(
+                        row.get("broker_phone") or row.get("primary_phone") or ""
+                    ))
                 ]
         except Exception:
             pass
@@ -3532,9 +3609,10 @@ class SupabaseStorage(Storage):
                 "id,raw_message_id,message_type,intent,asset_type,property_type,transaction_type,"
                 "bhk,configuration,price,price_unit,price_model,price_per_sqft,monthly_rent,total_asking_price,"
                 "area_sqft,furnishing,furnishing_canonical,location_raw,building_name,landmark_name,micro_market,"
+                "commercial_use_type,fitout_status,occupancy_type,floor_range,"
                 "availability_status,possession_status,"
                 "possession_date,available_from,ready_by,construction_stage,launch_timeline,expected_possession,"
-                "broker_name,broker_phone,profile_name,listing_index,confidence,summary_title,created_at,raw_messages(*)"
+                "broker_name,broker_phone,profile_name,listing_index,confidence,summary_title,normalized_message,raw_payload,created_at,raw_messages(*)"
             )\
             .gte("created_at", cutoff)\
             .order("created_at", desc=True)
@@ -3550,7 +3628,9 @@ class SupabaseStorage(Storage):
         # Keep a bounded broad fallback only for legacy rows whose phone lives
         # exclusively on raw_messages.
         if normalized_key:
-            direct_query = query.ilike("broker_phone", f"*{normalized_key}").limit(max(500, limit + offset))
+            direct_query = query.ilike("broker_phone", f"*{normalized_key}").limit(
+                max(5000, limit + offset)
+            )
             direct_rows = direct_query.execute().data or []
             if direct_rows:
                 parsed_rows = direct_rows
@@ -3601,9 +3681,22 @@ class SupabaseStorage(Storage):
             intent_value = (parsed.get("intent") or "").upper()
             observation_type = (
                 "REQUIREMENT"
-                if intent_value in {"BUY", "BUYER", "REQUIREMENT", "RENTAL_SEEKER"}
+                if (parsed.get("message_type") or "").upper() == "REQUIREMENT"
+                or intent_value in {"BUY", "BUYER", "REQUIREMENT", "RENTAL_SEEKER", "WANTED"}
                 else "LISTING"
             )
+            raw_payload = parsed.get("raw_payload") or {}
+            if isinstance(raw_payload, str):
+                try:
+                    raw_payload = json.loads(raw_payload)
+                except (TypeError, ValueError, json.JSONDecodeError):
+                    raw_payload = {}
+            item_source = (
+                raw_payload.get("full_text", "")
+                if isinstance(raw_payload, dict)
+                else ""
+            )
+            item_source = item_source or parsed.get("normalized_message") or raw.get("message") or ""
             result.append({
                 "id": parsed.get("id"),
                 "fingerprint": f"parsed:{parsed.get('id')}",
@@ -3612,7 +3705,7 @@ class SupabaseStorage(Storage):
                 "observation_type": observation_type,
                 "intent": parsed.get("intent"),
                 "asset_type": parsed.get("asset_type"),
-                "property_type": parsed.get("property_type") or parsed.get("message_type"),
+                "property_type": parsed.get("property_type"),
                 "transaction_type": parsed.get("transaction_type"),
                 "bhk": parsed.get("bhk"),
                 "configuration": parsed.get("configuration"),
@@ -3625,7 +3718,6 @@ class SupabaseStorage(Storage):
                 "area_sqft": parsed.get("area_sqft"),
                 "furnishing": parsed.get("furnishing"),
                 "furnishing_canonical": parsed.get("furnishing_canonical"),
-                "property_type": parsed.get("message_type"),
                 "building_name": parsed.get("building_name"),
                 "micro_market": parsed.get("micro_market"),
                 "location_raw": parsed.get("location_raw"),
@@ -3653,12 +3745,17 @@ class SupabaseStorage(Storage):
                 "latest_raw_message_id": parsed.get("raw_message_id"),
                 "latest_parsed_id": parsed.get("id"),
                 "raw_message": raw.get("message") or "",
+                "normalized_message": parsed.get("normalized_message") or "",
+                "source_message": item_source,
                 "raw_sender": raw.get("sender") or name,
                 "broker_name": name,
                 "broker_phone": resolved_phone,
             })
 
-        return _merge_observation_rows(result[offset:offset + limit])
+        # Reposts must be collapsed before pagination; otherwise duplicates
+        # consume the page and the same opportunity can leak onto later pages.
+        merged = _merge_observation_rows(result)
+        return merged[offset:offset + limit]
 
     def get_brokers_feed(self, limit: int = 50, offset: int = 0,
                          min_observations: int = 1,
@@ -3708,6 +3805,8 @@ class SupabaseStorage(Storage):
                     "latest_title": thread.get("summary_title") or thread.get("message"),
                     "latest_intent": thread.get("intent") or thread.get("parsed_intent"),
                     "latest_micro_market": thread.get("micro_market"),
+                    "specialty_localities": thread.get("specialty_localities") or [],
+                    "specialty_property_types": thread.get("specialty_property_types") or [],
                     "channels": [
                         {"source": group_name, "type": "group"}
                         for group_name in (thread.get("source_group_names") or [])
@@ -3735,6 +3834,16 @@ class SupabaseStorage(Storage):
                     }
                     existing["channels"] = list(channels.values())
                     existing["group_evidence_count"] = len(existing["channels"])
+                    for field, maximum in (("specialty_localities", 3), ("specialty_property_types", 2)):
+                        combined = []
+                        seen = set()
+                        for value in [*(existing.get(field) or []), *(row.get(field) or [])]:
+                            normalized = str(value or "").strip()
+                            key_value = normalized.lower()
+                            if normalized and key_value not in seen:
+                                seen.add(key_value)
+                                combined.append(normalized)
+                        existing[field] = combined[:maximum]
                     if str(row.get("last_active") or "") > str(existing.get("last_active") or ""):
                         for field in ("last_active", "latest_title", "latest_intent", "latest_micro_market"):
                             existing[field] = row.get(field)
@@ -3804,6 +3913,8 @@ class SupabaseStorage(Storage):
                 d["active_days_30"] = d.get("active_days_30") or 0
                 ch = d.get("channels")
                 d["channels"] = json.loads(ch) if isinstance(ch, str) else (ch or [])
+                d["specialty_localities"] = []
+                d["specialty_property_types"] = []
                 result.append(d)
             return result
         except Exception:

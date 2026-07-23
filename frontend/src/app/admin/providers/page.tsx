@@ -2,7 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import Link from "next/link";
 import { ArrowLeft, Activity, AlertTriangle, CheckCircle2, RefreshCw, Sparkles, Trash2 } from "lucide-react";
 import { fetchJSON } from "@/lib/api";
@@ -44,6 +44,7 @@ interface HistoryBucket {
 }
 
 interface HistoryProvider {
+  provider_id: number;
   provider_name: string;
   buckets: HistoryBucket[];
 }
@@ -152,6 +153,7 @@ export default function AdminProvidersPage() {
   const [hours, setHours] = useState(24);
   const [probingId, setProbingId] = useState<number | null>(null);
   const [tickNow, setTickNow] = useState<number | null>(null);
+  const [showInactive, setShowInactive] = useState(false);
 
   const load = useCallback(async (): Promise<ProviderHealthResponse | null> => {
     try {
@@ -183,6 +185,18 @@ export default function AdminProvidersPage() {
   }, []);
 
   const nowTs = health?.now_ts ?? tickNow ?? 0;
+  const visibleProviders = useMemo(() => {
+    const providers = health?.providers || [];
+    const rows = showInactive ? providers : providers.filter((p) => p.is_active);
+    return rows.slice().sort((a, b) => {
+      if (a.is_active !== b.is_active) return Number(b.is_active) - Number(a.is_active);
+      if (a.status !== b.status) {
+        const rank: Record<string, number> = { up: 0, degraded: 1, unknown: 2, down: 3 };
+        return rank[a.status] - rank[b.status];
+      }
+      return a.provider_name.localeCompare(b.provider_name);
+    });
+  }, [health?.providers, showInactive]);
 
   async function probeNow(providerId: number) {
     setProbingId(providerId);
@@ -229,6 +243,17 @@ export default function AdminProvidersPage() {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowInactive((v) => !v)}
+            className={`flex items-center gap-1 px-3 py-2 rounded-lg text-sm border ${
+              showInactive
+                ? "bg-cyan-400/10 text-cyan-300 border-cyan-400/30"
+                : "bg-zinc-800 text-zinc-400 hover:text-white border-white/10"
+            }`}
+            title="Toggle inactive provider rows"
+          >
+            {showInactive ? "Showing inactive" : "Active only"}
+          </button>
           <select
             value={hours}
             onChange={(e) => setHours(Number(e.target.value))}
@@ -278,8 +303,13 @@ export default function AdminProvidersPage() {
                     Overall: <StatusPill status={health.overall} />
                   </div>
                   <div className="text-xs text-zinc-400 mt-1">
-                    {health.providers.length} provider{health.providers.length === 1 ? "" : "s"} configured · probing every 60s
+                    {visibleProviders.length} visible / {health.providers.length} total provider{health.providers.length === 1 ? "" : "s"} · probing every 60s
                   </div>
+                  {!showInactive && health.providers.some((p) => !p.is_active) && (
+                    <div className="text-[11px] text-zinc-500 mt-1">
+                      Inactive rows are hidden. Toggle them on if you want to inspect dead keys or stale tenants.
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -287,8 +317,8 @@ export default function AdminProvidersPage() {
 
           {/* Provider cards */}
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 mb-8">
-            {(health?.providers || []).map((p) => {
-              const buckets = (history?.providers.find((h) => h.provider_name === p.provider_name)?.buckets) ?? [];
+            {visibleProviders.map((p) => {
+              const buckets = (history?.providers.find((h) => h.provider_id === p.provider_id)?.buckets) ?? [];
               return (
                 <div key={p.provider_id} className="rounded-2xl border border-white/10 bg-zinc-900/50 p-5 flex flex-col gap-3">
                   <div className="flex items-start justify-between">
@@ -322,6 +352,9 @@ export default function AdminProvidersPage() {
                     <span>·</span>
                     <span>{fmtAgo(p.last_probe_ts, nowTs)}</span>
                   </div>
+                  <div className="text-[10px] text-zinc-500 uppercase tracking-wider">
+                    tenant {p.tenant_id}
+                  </div>
                   {p.last_error && (
                     <div className="rounded-lg border border-red-500/20 bg-red-500/5 p-2 text-xs">
                       <div className="text-red-300 font-mono">{p.last_error.error_kind || "error"}</div>
@@ -344,7 +377,7 @@ export default function AdminProvidersPage() {
                 </div>
               );
             })}
-            {(!health || health.providers.length === 0) && (
+            {(!health || visibleProviders.length === 0) && (
               <div className="col-span-full rounded-xl border border-white/10 bg-zinc-900/30 p-8 text-center text-zinc-500">
                 No LLM providers configured. Add one in <Link href="/workspace/llm-providers" className="text-cyan-400 hover:underline">AI Providers</Link> to start tracking outage evidence.
               </div>

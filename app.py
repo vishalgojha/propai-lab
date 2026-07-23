@@ -1890,13 +1890,45 @@ def check_share_eligibility(parsed: dict, org_privacy: dict, conv_type: str) -> 
 
 # ── Parser helpers ──────────────────────────────────────────────────
 def generate_summary_title(parsed: dict, raw_text: str = "") -> str | None:
-    pieces: list[str] = []
-
     lower = raw_text.lower()
     intent = (parsed.get("intent") or "").upper()
+    message_type = (parsed.get("message_type") or "").upper()
+
+    def clean_label(value) -> str:
+        text = re.sub(r"\s+", " ", str(value or "").replace("_", " ")).strip(" ,|-\n\t")
+        if text.upper() in {"", "UNKNOWN", "LISTING", "REQUIREMENT", "PROPERTY", "TEXT"}:
+            return ""
+        return text
+
+    def format_price(value, unit: str = "") -> str:
+        if isinstance(value, str):
+            already_formatted = re.sub(r"\s+", " ", value).strip()
+            if re.search(r"(?i)(?:₹|\brs\.?\b|\binr\b).*(?:\bcr\b|\bcrore\b|\blac\b|\blakh\b|\bk\b)", already_formatted):
+                return already_formatted.replace("Rs.", "₹").replace("Rs", "₹")
+            value = re.sub(r"[^\d.]", "", already_formatted)
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            return ""
+        if number <= 0:
+            return ""
+        normalized_unit = clean_label(unit).lower()
+        if normalized_unit in {"cr", "crore", "crores"}:
+            return f"₹{number:g} Cr"
+        if normalized_unit in {"lac", "lakh", "lakhs", "l"}:
+            return f"₹{number:g} L"
+        if normalized_unit in {"k", "thousand"}:
+            return f"₹{number:g} K"
+        if number >= 10_000_000:
+            return f"₹{number / 10_000_000:g} Cr"
+        if number >= 100_000:
+            return f"₹{number / 100_000:g} L"
+        if number >= 1_000:
+            return f"₹{number / 1_000:g} K"
+        return ""
 
     # 1. Detect property type from raw text
-    prop_type = None
+    prop_type = clean_label(parsed.get("property_type"))
     prop_pats = [
         (r'\bflat\b', "Flat"),
         (r'\bapartment\b', "Apartment"),
@@ -1929,65 +1961,45 @@ def generate_summary_title(parsed: dict, raw_text: str = "") -> str | None:
         (r'\bland\b', "Land"),
         (r'\bsite\b', "Site"),
     ]
-    for pat, label in prop_pats:
-        if re.search(pat, lower):
-            prop_type = label
-            break
+    if not prop_type:
+        for pat, label in prop_pats:
+            if re.search(pat, lower):
+                prop_type = label
+                break
 
     # 2. Detect transaction type from raw text
-    trans_type = None
+    trans_type = clean_label(parsed.get("transaction_type")).upper()
     if re.search(r'\bpre.?leased?\b', lower):
-        trans_type = "Pre-Leased"
+        trans_type = "PRE-LEASED"
     elif re.search(r'\bleased?\b', lower):
-        trans_type = "Leased"
+        trans_type = "LEASE"
     elif re.search(r'\bfor\s+sale\b', lower) or re.search(r'\bonsale\b', lower):
-        trans_type = "Sale"
+        trans_type = "SALE"
     elif re.search(r'\b(?:for\s+)?rent\b', lower):
-        trans_type = "Rent"
+        trans_type = "RENT"
 
     # 3. Fallback to parsed intent if no transaction found
-    if not trans_type and intent in ("SELL", "RENT", "LEASE"):
-        trans_type = intent.capitalize()
+    if not trans_type:
+        if intent in {"RENT", "LEASE", "RENTAL_SEEKER"}:
+            trans_type = "RENT"
+        elif intent in {"SELL", "SALE", "BUY", "BUYER"}:
+            trans_type = "SALE"
 
-    if trans_type:
-        pieces.append(trans_type)
-    if prop_type:
-        pieces.append(prop_type)
-
-    # 4. Key features from raw text + parsed
-    features: list[str] = []
-
-    bhk = parsed.get("bhk")
-    if bhk:
-        features.append(bhk.upper() if len(bhk) < 6 else bhk)
-
-    furnishing = parsed.get("furnishing")
-    if furnishing:
-        parts = furnishing.replace("_", " ").split()
-        f = " ".join(w.capitalize() for w in parts)
-        features.append(f)
-
-    area = parsed.get("area_sqft")
-    if area:
-        features.append(f"{int(area)} sqft")
-
-    if not bhk:
-        # Look for notable keywords in raw text
-        notable = []
-        for kw in ["road facing", "sea view", "modular kitchen",
-                     "gas pipeline", "vaastu", "vastu", "corner",
-                     "fully furnished", "semi furnished", "unfurnished",
-                     "carpet", "super built", "balcony", "terrace",
-                     "garden", "pool", "club house", "security",
-                     "parking", "lift", "pipeline", "renovated",
-                     "new launch", "ready to move", "possession"]:
-            if re.search(r'\b' + kw + r'\b', lower):
-                notable.append(kw.title())
-        if notable:
-            features.append(notable[0])
-
-    if features:
-        pieces.append(", ".join(features[:2]))
+    bhk = clean_label(parsed.get("bhk") or parsed.get("configuration"))
+    if re.fullmatch(r"\d+(?:\.\d+)?", bhk):
+        bhk = f"{bhk} BHK"
+    furnishing = clean_label(parsed.get("furnishing") or parsed.get("furnishing_canonical"))
+    furnishing = re.sub(r"\bsemi furnished\b", "semi-furnished", furnishing, flags=re.IGNORECASE)
+    subject = bhk.upper() if bhk and len(bhk) <= 8 else bhk
+    if prop_type and (not subject or prop_type.lower() not in subject.lower()):
+        subject = f"{subject} {prop_type}".strip()
+    subject = subject or ("commercial property" if (parsed.get("asset_type") or "").lower() == "commercial" else "property")
+    try:
+        area_sqft = float(parsed.get("area_sqft") or 0)
+    except (TypeError, ValueError):
+        area_sqft = 0
+    area_value = f"{int(area_sqft):,}" if area_sqft.is_integer() else f"{area_sqft:,.2f}".rstrip("0").rstrip(".")
+    area_text = f"{area_value} sqft" if area_sqft > 0 else ""
 
     # 5. Location — from parsed first, then fall back to raw text
     loc = parsed.get("micro_market") or parsed.get("location_raw") or parsed.get("area")
@@ -2021,8 +2033,7 @@ def generate_summary_title(parsed: dict, raw_text: str = "") -> str | None:
                              lambda m: {"E": "East", "W": "West"}.get(m.group(1).upper(), m.group(1)),
                              loc).replace("_", " ").strip()
                 break
-    if loc:
-        pieces.append(str(loc).strip())
+    loc = clean_label(loc)
 
     # 6. Building name — from parsed first, then fall back to raw text (first line only, conservative)
     bldg = parsed.get("building_name")
@@ -2033,27 +2044,41 @@ def generate_summary_title(parsed: dict, raw_text: str = "") -> str | None:
             cand = bm.group(1).strip().strip("_").strip()
             if cand and not re.search(r'(price|lac|cr|sqft|floor|contact|call|property|available|building|tower)', cand, re.IGNORECASE):
                 bldg = cand
-    if bldg:
-        pieces.append(str(bldg))
+    bldg = clean_label(bldg)
+    places: list[str] = []
+    for place in (bldg, loc):
+        if place and not any(place.casefold() in existing.casefold() or existing.casefold() in place.casefold() for existing in places):
+            places.append(place)
+    place_text = ", ".join(places)
 
-    # 7. Price
-    price = parsed.get("price")
-    unit = parsed.get("price_unit") or ""
-    if price:
-        p = f"₹{price:g} {unit}".strip()
-        pieces.append(p)
+    price_text = format_price(
+        parsed.get("price") or parsed.get("monthly_rent") or parsed.get("total_asking_price"),
+        parsed.get("price_unit") or "",
+    )
+    is_requirement = message_type == "REQUIREMENT" or intent in {
+        "BUY", "BUYER", "REQUIREMENT", "RENTAL_SEEKER", "WANTED"
+    }
+    is_rent = trans_type in {"RENT", "LEASE", "RENTAL"}
 
-    if not pieces:
-        return None
-    title = " | ".join(pieces)
-    # Guard against low-quality fallbacks: locality-only or raw-message fragments
-    if len(pieces) == 1 and pieces[0] in {"Virar", "Bandra", "Andheri", "Khar", "Powai", "Juhu", "Dadar", "Worli", "Lower Parel", "Marine Lines", "Colaba", "Churchgate", "Fort", "Cuffe Parade", "Nariman Point", "BKC", "Bandra Kurla Complex"}:
-        return None
-    # Filter out raw-message fragments that leaked in (common patterns)
-    bad_fragments = ["loan facility", "subject to", "approval", "emi", "down payment", "contact", "call", "whatsapp", "available", "urgent", "negotiable", "best price", "best deal"]
-    if any(frag in title.lower() for frag in bad_fragments):
-        return None
-    return title
+    descriptor = " ".join(part for part in (furnishing.lower(), subject) if part).strip()
+    if area_text:
+        descriptor += f" with {area_text}"
+    article = "an" if descriptor[:1].lower() in "aeiou" else "a"
+    if is_requirement:
+        title = f"Looking to {'rent' if is_rent else 'buy'} {article} {descriptor}"
+        if place_text:
+            title += f" in {place_text}"
+        if price_text:
+            title += f" with a {'monthly ' if is_rent else ''}budget of {price_text}"
+    else:
+        title = descriptor[:1].upper() + descriptor[1:]
+        title += f" for {'rent' if is_rent else 'sale'}"
+        if place_text:
+            title += f" at {place_text}"
+        if price_text:
+            title += f" for {price_text}{' per month' if is_rent else ''}"
+
+    return re.sub(r"\s+", " ", title).strip()
 
 
 def _parsed_display_label(parsed: dict) -> str:

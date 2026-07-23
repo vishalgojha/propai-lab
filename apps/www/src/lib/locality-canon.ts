@@ -19,8 +19,9 @@
 //  - These generic parents stay as their own bucket, with NO automatic
 //    East/West assumption and NO standalone public page (general search only):
 //      Andheri, Dadar, Thane, Malad, Goregaon, Vile Parle, Kandivali, Borivali
-//  - Non-place internal buckets are hidden from public pages entirely:
-//      "Western Suburbs Prime", "South Mumbai Central", "Eastern Suburbs", etc.
+//  - Standalone public pages are opt-in. Raw micro_market values are ingestion
+//    data, not an editorial locality taxonomy, so an unknown value must never
+//    automatically create a public location page.
 
 import { slugify } from "./supabase";
 
@@ -75,6 +76,103 @@ const REDIRECTS: Record<string, string> = {
   "bandra bkc east": "Bandra East",
   "bandra east bkc": "Bandra East",
   bkc: "Bandra Kurla Complex",
+  "pali hill": "Bandra West",
+  "mount mary": "Bandra West",
+  "turner road": "Bandra West",
+  lokhandwala: "Andheri West",
+  versova: "Andheri West",
+  oshiwara: "Andheri West",
+  "dn nagar": "Andheri West",
+  marol: "Andheri East",
+  sakinaka: "Andheri East",
+  chandivali: "Andheri East",
+  "juhu scheme": "Juhu",
+  "hiranandani estate": "Thane West",
+  "wagle estate, thane": "Thane West",
+  kasarvadavali: "Thane West",
+  kasarvadavli: "Thane West",
+  kapurbawdi: "Thane West",
+  "ghodbunder road, thane": "Thane West",
+  "mahajanwadi, thane": "Thane West",
+  "mahim west": "Mahim",
+  "matunga east": "Matunga",
+  "wadala west": "Wadala",
+  "vile parle east": "Vile Parle East",
+  "parle east": "Vile Parle East",
+};
+
+// The public browse taxonomy. Add a location here only after it has been
+// reviewed as a market-level area, rather than relying on whatever free text
+// happened to be assigned to listings during ingestion.
+const STANDALONE_LOCALITIES: Record<string, string> = {
+  "andheri east": "Andheri East",
+  "andheri west": "Andheri West",
+  ambernath: "Ambernath",
+  agripada: "Agripada",
+  badlapur: "Badlapur",
+  "bandra east": "Bandra East",
+  "bandra kurla complex": "Bandra Kurla Complex",
+  "bandra west": "Bandra West",
+  bhandup: "Bhandup",
+  bhayandar: "Bhayandar",
+  "borivali east": "Borivali East",
+  "borivali west": "Borivali West",
+  byculla: "Byculla",
+  chembur: "Chembur",
+  churchgate: "Churchgate",
+  chowpatty: "Chowpatty",
+  colaba: "Colaba",
+  "cuffe parade": "Cuffe Parade",
+  dahisar: "Dahisar",
+  "dadar east": "Dadar East",
+  "dadar west": "Dadar West",
+  dombivli: "Dombivli",
+  fort: "Fort",
+  "ghatkopar east": "Ghatkopar East",
+  "ghatkopar west": "Ghatkopar West",
+  "goregaon east": "Goregaon East",
+  "goregaon west": "Goregaon West",
+  "grant road": "Grant Road",
+  juhu: "Juhu",
+  kalyan: "Kalyan",
+  "kandivali east": "Kandivali East",
+  "kandivali west": "Kandivali West",
+  "khar west": "Khar West",
+  kurla: "Kurla",
+  "kurla west": "Kurla West",
+  lalbaug: "Lalbaug",
+  "lower parel": "Lower Parel",
+  mahalaxmi: "Mahalaxmi",
+  mahim: "Mahim",
+  "malabar hill": "Malabar Hill",
+  "malad east": "Malad East",
+  "malad west": "Malad West",
+  "marine lines": "Marine Lines",
+  matunga: "Matunga",
+  "mira road": "Mira Road",
+  "mulund west": "Mulund West",
+  "mumbai central": "Mumbai Central",
+  "nariman point": "Nariman Point",
+  nagpada: "Nagpada",
+  nerul: "Nerul",
+  panvel: "Panvel",
+  parel: "Parel",
+  powai: "Powai",
+  prabhadevi: "Prabhadevi",
+  pydhonie: "Pydhonie",
+  "santacruz east": "Santacruz East",
+  "santacruz west": "Santacruz West",
+  sewri: "Sewri",
+  sion: "Sion",
+  tardeo: "Tardeo",
+  "thane west": "Thane West",
+  "vile parle west": "Vile Parle West",
+  vashi: "Vashi",
+  vasai: "Vasai",
+  vikhroli: "Vikhroli",
+  virar: "Virar",
+  wadala: "Wadala",
+  worli: "Worli",
 };
 
 function normalise(raw: string): string {
@@ -111,9 +209,14 @@ export function canonicalLocality(raw: string | null | undefined): CanonicalLoca
     return { label, slug: slugify(label), public: true, standalonePage: false };
   }
 
-  // Everything else: keep as-is, public with its own page.
-  const label = raw!.trim().replace(/\s+/g, " ");
-  return { label, slug: slugify(label), public: true, standalonePage: true };
+  const label = STANDALONE_LOCALITIES[input];
+  if (label) {
+    return { label, slug: slugify(label), public: true, standalonePage: true };
+  }
+
+  // Unreviewed raw values remain available to ingestion and broad listing
+  // search, but cannot appear in the public locality index or create a route.
+  return { label: "", slug: "", public: false, standalonePage: false };
 }
 
 /** Convenience: is this raw value hidden from public pages? */
