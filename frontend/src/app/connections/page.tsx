@@ -628,6 +628,8 @@ function PhoneCard({
     setActionLoading("pair-code");
     setActionError(null);
     try {
+      // Ensure the client is connected first — PairPhone requires an active session
+      try { await connectPhone(phone.id); } catch (_) { /* may already be connected */ }
       const result = await pairCodePhone(phone.id, pairCodeInput);
       setPairCodeResult(result.pairing_code || result.code || "N/A");
     } catch (error) {
