@@ -103,6 +103,13 @@ body {
   .touch-target { min-height: 44px; min-width: 44px; }
 }
 
+@media (max-width: 1023px) {
+  .mobile-inbox .touch-target {
+    min-height: 0;
+    min-width: 0;
+  }
+}
+
 /* ── Sidebar link ── */
 .sidebar-link {
   display: flex;

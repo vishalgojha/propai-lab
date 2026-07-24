@@ -330,7 +330,7 @@ export function InboxChatPanel({
   return (
     <div className="relative h-full w-full min-w-0 flex flex-col bg-[#070b0e] overflow-hidden">
       {/* Header */}
-      <div className="flex items-center justify-between px-3 py-2.5 border-b border-white/10 shrink-0">
+      <div className="flex items-center justify-between px-2.5 py-2 border-b border-white/10 shrink-0 sm:px-3 sm:py-2.5">
         <div className="flex items-center gap-2 min-w-0">
           <div className="flex h-6 w-6 items-center justify-center rounded-md bg-emerald-500/10 text-emerald-400 shrink-0">
             <Sparkles className="w-3.5 h-3.5" />
@@ -468,7 +468,7 @@ export function InboxChatPanel({
       </div>
 
       {/* Input */}
-      <div className="px-3 pb-3 pt-1 border-t border-white/10 shrink-0">
+      <div className="px-2 pb-2 pt-1 border-t border-white/10 shrink-0 sm:px-3 sm:pb-3">
         <div className="flex gap-2 items-end">
           <textarea
             ref={textareaRef}
@@ -485,13 +485,13 @@ export function InboxChatPanel({
                 ? `Ask about ${contextLabel.toLowerCase()}...`
                 : "Ask about your market data..."
             }
-            rows={2}
-            className="flex-1 bg-zinc-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder-zinc-500 resize-none max-h-[80px] outline-none transition-colors focus:border-emerald-400/50 focus:ring-1 focus:ring-emerald-400/30"
+            rows={1}
+            className="flex-1 rounded-xl border border-white/10 bg-zinc-900 px-3 py-1.5 text-xs text-white placeholder-zinc-500 resize-none max-h-[80px] outline-none transition-colors focus:border-emerald-400/50 focus:ring-1 focus:ring-emerald-400/30 sm:py-2"
           />
           <button
             onClick={sendMessage}
             disabled={loading || !input.trim()}
-            className="px-3 py-2 bg-emerald-500 hover:bg-emerald-400 disabled:opacity-40 rounded-xl text-xs font-bold text-black transition-colors shrink-0 min-h-[36px] flex items-center gap-1.5"
+            className="flex min-h-8 shrink-0 items-center gap-1.5 rounded-xl bg-emerald-500 px-3 py-1.5 text-xs font-bold text-black transition-colors hover:bg-emerald-400 disabled:opacity-40 sm:min-h-[36px] sm:py-2"
           >
             <Send className="w-3 h-3" />
           </button>

@@ -602,11 +602,11 @@ function AppShell({ children }: { children: React.ReactNode }) {
       {/* ═══════ Main Content ═══════ */}
       <main className="flex-1 flex flex-col overflow-hidden bg-black min-w-0">
         {/* ═══ Top Bar ═══ */}
-        <div className="flex items-center gap-2 border-b border-white/5 bg-black/80 px-2 py-1.5 lg:min-h-[44px] lg:px-5 lg:py-2">
+        <div className="flex min-h-9 items-center gap-2 border-b border-white/5 bg-black/80 px-2 py-1 lg:min-h-[44px] lg:px-5 lg:py-2">
           {/* Hamburger (mobile) */}
           <button
             onClick={toggleDrawer}
-            className="lg:hidden p-1.5 -ml-1 rounded-lg text-zinc-400 hover:text-white hover:bg-white/5 transition-colors"
+            className="lg:hidden -ml-1 flex h-7 w-7 items-center justify-center rounded-lg text-zinc-400 hover:bg-white/5 hover:text-white transition-colors"
             aria-label={drawerOpen ? "Close menu" : "Open menu"}
           >
             {drawerOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
@@ -645,7 +645,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
           <div className="flex-1" />
           <button
             onClick={handleSignOut}
-            className="flex h-7 w-7 items-center justify-center rounded-lg text-zinc-500 transition-colors hover:bg-white/5 hover:text-white"
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-zinc-500 transition-colors hover:bg-white/5 hover:text-white"
             aria-label="Log out"
             title="Log out"
           >

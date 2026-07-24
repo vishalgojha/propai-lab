@@ -3091,7 +3091,7 @@ return {
   const selectedHasMarketContext = hasMarketContext(selectedMsgDetails);
 
   return (
-    <div className="flex flex-col h-[calc(100dvh-104px)] min-h-0 max-h-[calc(100dvh-104px)] overflow-hidden bg-black lg:h-full lg:max-h-full lg:rounded-2xl lg:border lg:border-white/10">
+    <div className="mobile-inbox flex flex-col h-[calc(100dvh-80px)] min-h-0 max-h-[calc(100dvh-80px)] overflow-hidden bg-black lg:h-full lg:max-h-full lg:rounded-2xl lg:border lg:border-white/10">
       
       {actionMessage && (
         <div className="bg-[#1e293b] border-b border-[#3EE88A]/30 text-[#3EE88A] px-4 py-2 text-xs font-semibold text-center flex items-center justify-center gap-3 animate-fadeIn">
@@ -3122,10 +3122,10 @@ return {
         >
           <div className="flex flex-col h-full">
           {/* Panel Search & Header */}
-          <div className="p-3 sm:p-4 border-b border-white/10 space-y-2 sm:space-y-3">
+          <div className="p-2 sm:p-4 border-b border-white/10 space-y-1.5 sm:space-y-3">
             <div className="flex items-center justify-between">
               <div>
-                <div className="text-sm font-bold tracking-wider text-white uppercase">
+                <div className="text-[13px] font-bold tracking-wider text-white uppercase sm:text-sm">
                   {isGroupsView ? "WhatsApp Groups" : "Market Inbox"}
                 </div>
                 <div className="hidden sm:block text-[10px] text-zinc-500 mt-0.5">
@@ -3153,20 +3153,20 @@ return {
               placeholder="Search messages, brokers, localities"
               value={searchText}
               onChange={(e) => setSearchText(e.target.value)}
-              className="w-full px-2.5 py-1.5 bg-zinc-900 border border-white/10 rounded-lg text-xs text-white focus:border-[#3EE88A] focus:outline-none transition-colors"
+              className="h-8 w-full rounded-lg border border-white/10 bg-zinc-900 px-2.5 py-1 text-xs text-white focus:border-[#3EE88A] focus:outline-none transition-colors sm:h-auto sm:py-1.5"
             />
 
             {/* Saved broker views do not apply to the raw WhatsApp mirror. */}
             {isGroupsView ? (
               <div className="flex gap-1 bg-zinc-900 p-0.5 rounded-lg border border-[rgba(255,255,255,0.03)]">
-                <div className="flex-1 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wider text-center text-[#3EE88A] bg-zinc-800">
+                <div className="flex-1 rounded-md bg-zinc-800 py-1 text-center text-[9px] font-bold uppercase tracking-wider text-[#3EE88A] sm:py-1.5 sm:text-[10px]">
                   Chats & broadcasts
                 </div>
               </div>
             ) : (
               <div className="flex gap-1 bg-zinc-900 p-0.5 rounded-lg border border-[rgba(255,255,255,0.03)]" style={{ gridTemplateColumns: `repeat(${Math.min(slugs.length, 5)}, 1fr)` }}>
                 {slugs.length === 0 ? (
-                  <div className="flex-1 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wider text-center text-zinc-500 bg-zinc-800">
+                  <div className="flex-1 rounded-md bg-zinc-800 py-1 text-center text-[9px] font-bold uppercase tracking-wider text-zinc-500 sm:py-1.5 sm:text-[10px]">
                     Brokers
                   </div>
                 ) : (
@@ -3177,7 +3177,7 @@ return {
                         setCurrentSlug(sv.slug);
                         updateUrlView(sv.slug);
                       }}
-                      className={`flex-1 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wider transition-colors touch-target ${
+                      className={`flex-1 rounded-md py-1 text-[9px] font-bold uppercase tracking-wider transition-colors sm:py-1.5 sm:text-[10px] ${
                         currentSlug === sv.slug
                           ? "bg-zinc-800 text-[#3EE88A] shadow-sm"
                           : "text-zinc-500 hover:text-white"
@@ -3252,7 +3252,7 @@ return {
                       onClick={() => {
                         void selectConversation(item);
                       }}
-                      className="w-full text-left p-2.5 lg:p-3 transition-colors select-none hover:bg-white/5"
+                      className="w-full select-none p-2 transition-colors hover:bg-white/5 lg:p-3"
                     >
                       <div className="flex items-center justify-between gap-2 mb-1">
                         <div className="flex items-center gap-2 min-w-0">
@@ -3303,7 +3303,7 @@ return {
                       <div key={b.primary_phone} className="relative">
                         <button
                           onClick={() => selectBroker(b)}
-                          className={`w-full text-left p-2.5 lg:p-3 transition-colors select-none ${
+                          className={`w-full select-none p-2 transition-colors lg:p-3 ${
                             isSelected ? "bg-white/[0.055] border-l border-white/40" : "hover:bg-white/[0.035]"
                           }`}
                         >
@@ -3370,7 +3370,7 @@ return {
                       <button
                         key={`${item.type}-${item.key}`}
                         onClick={() => selectConversation(item.latest)}
-                        className={`w-full text-left p-2.5 lg:p-3 transition-colors select-none ${
+                        className={`w-full select-none p-2 transition-colors lg:p-3 ${
                           isSelected ? "bg-white/[0.055] border-l border-white/40" : "hover:bg-white/[0.035]"
                         }`}
                       >
