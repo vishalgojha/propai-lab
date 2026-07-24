@@ -23,6 +23,38 @@ export async function fetchJSON<T>(url: string, init?: RequestInit, timeoutMs = 
   return fetchJSONWithRetry<T>(url, init, timeoutMs, false);
 }
 
+export async function fetchFormData<T>(url: string, formData: FormData, timeoutMs = API_TIMEOUT_MS): Promise<T> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const token = await getAccessToken();
+    const tenantId = readActiveTenantId();
+    const res = await fetch(`${BASE}${url}`, {
+      method: "POST",
+      body: formData,
+      signal: controller.signal,
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(tenantId ? { "X-Tenant-Id": tenantId } : {}),
+      },
+    });
+    if (!res.ok) {
+      const body = await res.text();
+      let message = body.trim();
+      try {
+        const parsed = JSON.parse(body);
+        message = parsed.message || parsed.detail || body;
+      } catch {
+        if (!message) message = "Backend API did not return a response.";
+      }
+      throw new Error(`${res.status} ${res.statusText}: ${message}`);
+    }
+    return await parseJSONBody<T>(res, url);
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 async function fetchJSONWithRetry<T>(
   url: string,
   init: RequestInit | undefined,
@@ -352,6 +384,28 @@ export function sendWabaMessage(payload: WabaSendRequest) {
     method: "POST",
     body: JSON.stringify(payload),
   });
+}
+
+export interface SendMediaRequest {
+  remote_jid: string;
+  media_type: "image" | "video" | "audio" | "document";
+  caption?: string;
+  file_name?: string;
+  mime_type?: string;
+  broker_id?: string;
+  file: File;
+}
+
+export function sendMediaMessage(payload: SendMediaRequest) {
+  const formData = new FormData();
+  formData.set("remote_jid", payload.remote_jid);
+  formData.set("media_type", payload.media_type);
+  if (payload.caption) formData.set("caption", payload.caption);
+  if (payload.file_name) formData.set("file_name", payload.file_name);
+  if (payload.mime_type) formData.set("mime_type", payload.mime_type);
+  if (payload.broker_id) formData.set("broker_id", payload.broker_id);
+  formData.set("file", payload.file, payload.file.name);
+  return fetchFormData<any>("/send-media", formData);
 }
 
 export interface WabaSessionStatus {
