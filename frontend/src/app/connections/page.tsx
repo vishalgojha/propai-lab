@@ -5,9 +5,9 @@ export const dynamic = 'force-dynamic';
 import { useCallback, useEffect, useRef, useState } from "react";
 import QRCode from "qrcode";
 import { useRouter } from "next/navigation";
-import { Activity, Clock, Database, ImageUp, Inbox, List, LogOut, MessageSquare, Plus, RefreshCw, Shield, Smartphone, Trash2, AlertTriangle, Users, Zap, Lock, X } from "lucide-react";
+import { Activity, Clock, Database, ImageUp, Inbox, List, LogOut, MessageSquare, Plus, RefreshCw, Shield, Smartphone, Trash2, AlertTriangle, Users, Zap, Lock, X, ChevronLeft, MoreVertical, User, MessageCircle, Check, AlertCircle, Hash } from "lucide-react";
 import { useAuth } from "@/lib/AuthProvider";
-import { getPhones, getPhone, createPhone, deletePhone, resetPhone, disconnectPhone, connectPhone, updatePhone, fetchJSON, isLiveWhatsAppConnection, type Phone, type WhatsAppStatus } from "@/lib/api";
+import { getPhones, getPhone, createPhone, deletePhone, resetPhone, disconnectPhone, connectPhone, pairCodePhone, updatePhone, fetchJSON, isLiveWhatsAppConnection, type Phone, type WhatsAppStatus } from "@/lib/api";
 
 type HealthStatus = "healthy" | "warning" | "error";
 
@@ -58,12 +58,12 @@ function StatusDot({ status }: { status: HealthStatus }) {
 
 function StatBox({ icon, label, value, status }: { icon: React.ReactNode; label: string; value: string; status?: HealthStatus }) {
   return (
-    <div className="flex items-center gap-3 p-4">
-      <div className="flex h-10 w-10 items-center justify-center shrink-0">
+    <div className="flex items-center gap-3 p-3">
+      <div className="flex h-8 w-8 items-center justify-center shrink-0">
         {icon}
       </div>
       <div className="flex-1 min-w-0">
-        <div className="text-[11px] font-medium text-zinc-500 uppercase tracking-wider">{label}</div>
+        <div className="text-xs text-zinc-500 uppercase tracking-wider">{label}</div>
         <div className="mt-0.5 flex items-center gap-2">
           <span className="text-sm font-bold text-white truncate">{value}</span>
           {status && <StatusDot status={status} />}
@@ -77,11 +77,11 @@ function HealthRow({ label, status, detail }: { label: string; status: HealthSta
   const labels = { healthy: "Healthy", warning: "Warning", error: "Error" };
   const colors = { healthy: "text-zinc-200", warning: "text-zinc-400", error: "text-red-400" };
   return (
-    <div className="flex items-center justify-between py-2.5 border-b border-white/[0.04] last:border-0">
+    <div className="flex items-center justify-between py-2 border-b border-white/[0.04] last:border-0">
       <span className="text-xs text-zinc-400">{label}</span>
       <div className="flex items-center gap-2">
         <span className="text-xs text-zinc-500">{detail}</span>
-        <span className={`text-[11px] font-semibold ${colors[status]}`}>{labels[status]}</span>
+        <span className={`text-xs font-semibold ${colors[status]}`}>{labels[status]}</span>
         <StatusDot status={status} />
       </div>
     </div>
@@ -156,10 +156,10 @@ function LoadingDots() {
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="overflow-hidden rounded-xl border border-white/10">
-      <div className="px-5 py-3 border-b border-white/10">
-        <h3 className="text-sm font-bold text-white">{title}</h3>
+      <div className="px-4 py-2 border-b border-white/10">
+        <h3 className="text-xs font-bold text-white uppercase tracking-wider">{title}</h3>
       </div>
-      <div className="px-5 py-3">{children}</div>
+      <div className="px-4 py-2">{children}</div>
     </div>
   );
 }
@@ -174,7 +174,7 @@ function ActionButton({ icon, label, onClick, variant, disabled }: { icon: React
     <button
       onClick={onClick}
       disabled={disabled}
-      className={`flex min-h-[44px] items-center justify-center gap-2 rounded-md px-4 py-2.5 text-xs font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${styles[variant || "default"]}`}
+      className={`flex min-h-[40px] items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${styles[variant || "default"]}`}
     >
       {icon}
       {label}
@@ -580,6 +580,11 @@ function PhoneCard({
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [showMenu, setShowMenu] = useState(false);
+  const [showPairCodeDialog, setShowPairCodeDialog] = useState(false);
+  const [pairCodeInput, setPairCodeInput] = useState("");
+  const [pairCodeResult, setPairCodeResult] = useState<string | null>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
 
   const handleAction = async (action: string) => {
     setActionLoading(action);
@@ -595,7 +600,8 @@ function PhoneCard({
       } else if (action === "self-chat") {
         await updatePhone(phone.id, { self_chat_enabled: !phone.self_chat_enabled });
         setActionMessage(phone.self_chat_enabled ? "Self-chat assistant disabled" : "Self-chat assistant enabled");
-      } else if (action === "connect" || action === "qr") await onConnect(phone);
+      }       else if (action === "connect" || action === "qr") await onConnect(phone);
+      else if (action === "pair-code") { setShowPairCodeDialog(true); setActionLoading(null); return; }
       else await onRefresh();
       if (!["connect", "qr", "self-chat"].includes(action)) {
         setActionMessage(
@@ -612,6 +618,21 @@ function PhoneCard({
       // A cached card may refer to a connection already removed server-side.
       // Refresh even after a failed action so stale phones disappear.
       await onRefresh();
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handlePairCodeSubmit = async () => {
+    if (pairCodeInput.length < 10) return;
+    setActionLoading("pair-code");
+    setActionError(null);
+    try {
+      const result = await pairCodePhone(phone.id, pairCodeInput);
+      setPairCodeResult(result.pairing_code || result.code || "N/A");
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "Pair code request failed");
+      setShowPairCodeDialog(false);
     } finally {
       setActionLoading(null);
     }
@@ -636,115 +657,234 @@ function PhoneCard({
         : "Disconnected";
   const health: HealthStatus = isConnected ? "healthy" : (!statusAvailable || isUnpaired || isReconnecting) ? "warning" : "error";
 
+  // Close menu on outside click
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setShowMenu(false);
+      }
+    }
+    if (showMenu) {
+      document.addEventListener("mousedown", handleClickOutside);
+      return () => document.removeEventListener("mousedown", handleClickOutside);
+    }
+  }, [showMenu]);
+
   return (
-    <div className="space-y-4 rounded-xl border border-white/10 p-5">
+    <div className="rounded-xl border border-white/10 p-4">
+      {/* Row 1: Avatar + Name + Phone + Status dot */}
       <div className="flex items-center gap-3">
-        <div className="flex h-12 w-12 items-center justify-center rounded-lg border border-white/10 bg-white/[0.03]">
-          <Smartphone className="h-5 w-5 text-zinc-200" />
+        <div className="flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/[0.03] shrink-0">
+          <User className="h-4 w-4 text-zinc-300" />
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <span className="text-sm font-bold text-white">{isUnpaired ? "New Phone" : formatPhone(phoneDisplay)}</span>
+            <span className="text-sm font-bold text-white truncate">
+              {isUnpaired ? "New Phone" : (phone.instance_name || formatPhone(phoneDisplay))}
+            </span>
             <StatusDot status={health} />
           </div>
-          {phone.instance_name && <div className="text-xs text-zinc-500">{phone.instance_name}</div>}
-          {isUnpaired && (
-            <div className="mt-0.5 text-[11px] text-zinc-500">Scan QR to pair</div>
+          {!isUnpaired && phone.instance_name && (
+            <div className="text-xs text-zinc-500 truncate">{formatPhone(phoneDisplay)}</div>
           )}
-          {!isConnected && !isUnpaired && (
-            <div className="text-[11px] text-zinc-400 mt-0.5">{statusLabel}</div>
+          {isUnpaired && (
+            <div className="text-xs text-zinc-500">Scan QR to pair</div>
           )}
           {!statusAvailable && phone.live_status_error && (
-            <div className="mt-0.5 text-[11px] text-red-300">{phone.live_status_error}</div>
+            <div className="text-xs text-red-300">{phone.live_status_error}</div>
+          )}
+        </div>
+        {/* ⋮ Menu */}
+        <div className="relative" ref={menuRef}>
+          <button
+            onClick={() => setShowMenu(!showMenu)}
+            className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-white/10 transition-colors"
+          >
+            <MoreVertical className="h-4 w-4 text-zinc-400" />
+          </button>
+          {showMenu && (
+            <div className="absolute right-0 top-full mt-1 w-56 rounded-xl border border-white/10 bg-zinc-900 shadow-popover z-50 overflow-hidden">
+              <div className="px-3 py-2 border-b border-white/10">
+                <div className="text-xs font-semibold text-white">Connection Status</div>
+                <div className="flex items-center gap-2 mt-1">
+                  <StatusDot status={health} />
+                  <span className="text-xs text-zinc-300">{statusLabel}</span>
+                </div>
+              </div>
+              <div className="px-3 py-2 border-b border-white/10">
+                <div className="text-xs text-zinc-500">Account Number</div>
+                <div className="text-xs text-white font-medium">{formatPhone(phoneDisplay)}</div>
+              </div>
+              <div className="px-3 py-2 border-b border-white/10">
+                <div className="text-xs text-zinc-500">Last Active</div>
+                <div className="text-xs text-white font-medium">{formatTime(phone.last_message_at)}</div>
+              </div>
+              <div className="px-3 py-2 border-b border-white/10">
+                <div className="text-xs text-zinc-500">Connected Since</div>
+                <div className="text-xs text-white font-medium">{phone.connected_since ? formatTime(phone.connected_since) : "—"}</div>
+              </div>
+              <div className="px-3 py-2 border-b border-white/10">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-zinc-500">Self-chat</span>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={phone.self_chat_enabled !== false}
+                    onClick={() => handleAction("self-chat")}
+                    disabled={actionLoading !== null}
+                    className={`relative h-5 w-9 shrink-0 rounded-full transition-colors disabled:opacity-50 ${phone.self_chat_enabled !== false ? "bg-emerald-500" : "bg-zinc-700"}`}
+                  >
+                    <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-transform ${phone.self_chat_enabled !== false ? "translate-x-4" : "translate-x-0.5"}`} />
+                  </button>
+                </div>
+              </div>
+              <div className="px-3 py-2 border-b border-white/10">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-zinc-500">Messages</span>
+                  <span className="text-xs text-white font-medium">{phone.total_messages_received?.toLocaleString() || "0"}</span>
+                </div>
+              </div>
+              <div className="px-3 py-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-zinc-500">Connection Attempts</span>
+                  <span className="text-xs text-white font-medium">{attemptState?.attempts ?? 0}</span>
+                </div>
+              </div>
+            </div>
           )}
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-0 text-center [&>*:nth-child(2n)]:border-l [&>*:nth-child(2n)]:border-white/10 [&>*:nth-child(n+3)]:border-t [&>*:nth-child(n+3)]:border-white/10">
-        <div className="py-2">
-          <div className="text-[11px] text-zinc-500 uppercase">Status</div>
-          <div className="text-xs font-semibold text-zinc-300">{statusLabel}</div>
-        </div>
-        <div className="py-2">
-          <div className="text-[11px] text-zinc-500 uppercase">Last Active</div>
-          <div className="text-xs font-semibold text-white">{formatTime(phone.last_message_at)}</div>
-        </div>
-        <div className="py-2">
-          <div className="text-[11px] text-zinc-500 uppercase">Connected</div>
-          <div className="text-xs font-semibold text-white">{phone.connected_since ? formatTime(phone.connected_since) : "—"}</div>
-        </div>
-        <div className="py-2">
-          <div className="text-[11px] text-zinc-500 uppercase">Messages</div>
-          <div className="text-xs font-semibold text-white">{phone.total_messages_received?.toLocaleString() || "0"}</div>
-        </div>
+      {/* Row 2: Action buttons - icon-only, right-aligned */}
+      <div className="flex items-center justify-end gap-2 mt-3">
+        <button
+          onClick={() => handleAction("qr")}
+          disabled={actionLoading !== null}
+          className="flex h-10 w-10 items-center justify-center rounded-lg border border-white/10 bg-white/[0.03] hover:bg-white/10 transition-colors disabled:opacity-50"
+          title="QR Code"
+        >
+          {actionLoading === "qr" ? (
+            <div className="h-4 w-4 animate-spin rounded-full border-2 border-zinc-500 border-t-white" />
+          ) : (
+            <ImageUp className="h-4 w-4 text-zinc-300" />
+          )}
+        </button>
+        <button
+          onClick={() => handleAction("pair-code")}
+          disabled={actionLoading !== null}
+          className="flex h-10 w-10 items-center justify-center rounded-lg border border-white/10 bg-white/[0.03] hover:bg-white/10 transition-colors disabled:opacity-50"
+          title="Pair with Code"
+        >
+          {actionLoading === "pair-code" ? (
+            <div className="h-4 w-4 animate-spin rounded-full border-2 border-zinc-500 border-t-white" />
+          ) : (
+            <Hash className="h-4 w-4 text-zinc-300" />
+          )}
+        </button>
+        <button
+          onClick={() => handleAction(isConnected ? "disconnect" : "connect")}
+          disabled={actionLoading !== null}
+          className={`flex h-10 w-10 items-center justify-center rounded-lg transition-colors disabled:opacity-50 ${
+            isConnected
+              ? "border border-white/10 bg-white/[0.03] hover:bg-white/10"
+              : "border border-white bg-white text-black hover:bg-zinc-200"
+          }`}
+          title={isConnected ? "Disconnect" : "Connect"}
+        >
+          {actionLoading === "connect" || actionLoading === "disconnect" ? (
+            <div className="h-4 w-4 animate-spin rounded-full border-2 border-zinc-500 border-t-white" />
+          ) : isConnected ? (
+            <LogOut className="h-4 w-4 text-zinc-300" />
+          ) : (
+            <RefreshCw className="h-4 w-4 text-black" />
+          )}
+        </button>
       </div>
 
-      <div className="rounded-xl border border-white/10 bg-black/40 px-4 py-3 text-[11px] text-zinc-400">
-        <div className="mb-3 flex items-center justify-between gap-3 border-b border-white/10 pb-3">
-          <div>
-            <div className="font-semibold text-white">Self-chat assistant</div>
-            <div className="mt-0.5 text-zinc-500">Message your own number to ask PropAI</div>
-          </div>
-          <button
-            type="button"
-            role="switch"
-            aria-checked={phone.self_chat_enabled !== false}
-            aria-label="Toggle self-chat assistant"
-            onClick={() => handleAction("self-chat")}
-            disabled={actionLoading !== null}
-            className={`relative h-6 w-11 shrink-0 rounded-full transition-colors disabled:opacity-50 ${phone.self_chat_enabled !== false ? "bg-emerald-500" : "bg-zinc-700"}`}
-          >
-            <span className={`absolute top-1 h-4 w-4 rounded-full bg-white transition-transform ${phone.self_chat_enabled !== false ? "translate-x-6" : "translate-x-1"}`} />
-          </button>
-        </div>
-        <div className="flex items-center justify-between gap-3">
-          <span>Connection attempts</span>
-          <span className="font-semibold text-white">{attemptState?.attempts ?? 0}</span>
-        </div>
-        <div className="mt-1 flex items-center justify-between gap-3">
-          <span>Current attempt</span>
-          <span className="font-semibold text-white">
-            {attemptState?.startedAt
-              ? `${formatDuration(Math.max(0, Math.floor((now - new Date(attemptState.startedAt).getTime()) / 1000)))} elapsed`
-              : "—"}
+      {/* Row 3: Stat chips inline */}
+      <div className="flex flex-wrap items-center gap-2 mt-3">
+        <span className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/[0.03] px-2.5 py-1 text-xs text-zinc-300">
+          <List className="h-3 w-3 text-zinc-400" />
+          {phone.total_messages_received?.toLocaleString() || "0"} items
+        </span>
+        <span className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/[0.03] px-2.5 py-1 text-xs text-zinc-300">
+          <Users className="h-3 w-3 text-zinc-400" />
+          {phone.instance_name || "Unknown"}
+        </span>
+        {isConnected && (
+          <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-xs text-emerald-300">
+            <Check className="h-3 w-3" />
+            Active
           </span>
-        </div>
-        {attemptState?.lastOutcome && attemptState.lastDurationSeconds != null && (
-          <div className="mt-1 flex items-center justify-between gap-3">
-            <span>Last result</span>
-            <span className={`font-semibold ${attemptState.lastOutcome === "connected" ? "text-zinc-200" : "text-red-400"}`}>
-              {attemptState.lastOutcome === "connected" ? "Connected" : "Failed"} in {formatDuration(attemptState.lastDurationSeconds)}
-            </span>
-          </div>
         )}
       </div>
 
-      <div className="grid grid-cols-2 gap-2">
-        <ActionButton
-          icon={<ImageUp className="w-3.5 h-3.5" />}
-          label={actionLoading === "qr" ? "Loading..." : "QR"}
-          onClick={() => handleAction("qr")}
-          disabled={actionLoading !== null}
-        />
-        <ActionButton
-          icon={isConnected ? <LogOut className="w-3.5 h-3.5" /> : <RefreshCw className="w-3.5 h-3.5" />}
-          label={isConnected ? "Disconnect" : actionLoading === "connect" ? "Connecting..." : "Connect"}
-          onClick={() => handleAction(isConnected ? "disconnect" : "connect")}
-          variant={isConnected ? "danger" : "primary"}
-          disabled={actionLoading !== null}
-        />
-        <ActionButton icon={<RefreshCw className="w-3.5 h-3.5" />} label={actionLoading === "reset" ? "Preparing..." : "Re-pair"} onClick={() => handleAction("reset")} disabled={actionLoading !== null} />
-        <ActionButton icon={<Trash2 className="w-3.5 h-3.5" />} label={actionLoading === "delete" ? "Deleting..." : "Delete"} onClick={() => handleAction("delete")} variant="danger" disabled={actionLoading !== null} />
-      </div>
-      {actionMessage && <p className="text-xs text-zinc-300">{actionMessage}</p>}
-      {actionError && <p className="text-xs text-red-400">{actionError}</p>}
+      {/* Action feedback */}
+      {actionMessage && <p className="text-xs text-zinc-300 mt-2">{actionMessage}</p>}
+      {actionError && <p className="text-xs text-red-400 mt-2">{actionError}</p>}
+
+      {/* Pair Code Dialog */}
+      {showPairCodeDialog && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={() => { setShowPairCodeDialog(false); setPairCodeResult(null); setPairCodeInput(""); }}>
+          <div className="w-full max-w-sm rounded-xl bg-zinc-900 border border-white/10 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            {!pairCodeResult ? (
+              <>
+                <div className="flex items-center gap-3 px-5 py-4 border-b border-white/10">
+                  <Hash className="h-5 w-5 text-zinc-400" />
+                  <div className="text-sm font-semibold text-white">Pair with Code</div>
+                  <button onClick={() => { setShowPairCodeDialog(false); setPairCodeInput(""); }} className="ml-auto text-zinc-500 hover:text-white"><X className="h-4 w-4" /></button>
+                </div>
+                <div className="px-5 py-4 space-y-3">
+                  <p className="text-xs text-zinc-400">Enter the phone number to pair (with country code, e.g. 919820056180):</p>
+                  <input
+                    type="tel"
+                    value={pairCodeInput}
+                    onChange={(e) => setPairCodeInput(e.target.value.replace(/[^0-9]/g, ""))}
+                    placeholder="919820056180"
+                    autoFocus
+                    className="w-full rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2.5 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-emerald-500/50"
+                    onKeyDown={(e) => { if (e.key === "Enter" && pairCodeInput.length >= 10) handlePairCodeSubmit(); }}
+                  />
+                </div>
+                <div className="flex justify-end gap-2 px-5 py-3 border-t border-white/10">
+                  <button onClick={() => { setShowPairCodeDialog(false); setPairCodeInput(""); }} className="px-3 py-1.5 text-xs text-zinc-400 hover:text-white">Cancel</button>
+                  <button
+                    onClick={handlePairCodeSubmit}
+                    disabled={pairCodeInput.length < 10 || actionLoading === "pair-code"}
+                    className="px-4 py-1.5 text-xs font-medium rounded-lg bg-emerald-500 text-white hover:bg-emerald-400 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {actionLoading === "pair-code" ? "Requesting..." : "Get Code"}
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="flex items-center gap-3 px-5 py-4 border-b border-white/10">
+                  <Check className="h-5 w-5 text-emerald-400" />
+                  <div className="text-sm font-semibold text-white">Pairing Code</div>
+                  <button onClick={() => { setShowPairCodeDialog(false); setPairCodeResult(null); setPairCodeInput(""); }} className="ml-auto text-zinc-500 hover:text-white"><X className="h-4 w-4" /></button>
+                </div>
+                <div className="px-5 py-4 text-center space-y-3">
+                  <p className="text-xs text-zinc-400">Open WhatsApp → Settings → Linked Devices → Link a Device</p>
+                  <div className="text-2xl font-mono font-bold text-white tracking-[0.3em] bg-white/[0.03] rounded-lg py-3 border border-white/10">
+                    {pairCodeResult}
+                  </div>
+                  <p className="text-[11px] text-zinc-500">Code expires in ~2 minutes</p>
+                </div>
+                <div className="flex justify-end px-5 py-3 border-t border-white/10">
+                  <button onClick={() => { setShowPairCodeDialog(false); setPairCodeResult(null); setPairCodeInput(""); }} className="px-3 py-1.5 text-xs text-zinc-400 hover:text-white">Done</button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
 function LiveStatusCard({ status, onAddPhone }: { status: WhatsAppStatus | null; onAddPhone: () => void }) {
   const connected = Boolean(status?.connected || status?.state === "open" || status?.state === "connected" || status?.connected_since);
-  const headline = connected ? "WhatsApp connected" : "Checking WhatsApp connection";
 
   return (
     <div className="mb-8 rounded-xl border border-white/10 p-5">
@@ -754,10 +894,10 @@ function LiveStatusCard({ status, onAddPhone }: { status: WhatsAppStatus | null;
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <span className="text-sm font-bold text-white">{headline}</span>
+            <span className="text-sm font-bold text-white">{connected ? "WhatsApp connected" : "Checking WhatsApp connection"}</span>
             <StatusDot status={connected ? "healthy" : "warning"} />
           </div>
-          <div className="text-[11px] text-zinc-500 mt-0.5">
+          <div className="text-xs text-zinc-500 mt-0.5">
             {connected ? "Live WhatsApp session detected" : "Live session state is being checked"}
           </div>
         </div>
@@ -1005,22 +1145,33 @@ export default function ConnectionCenterPage() {
   const totalMessages = phones.reduce((sum, p) => sum + (p.total_messages_received || 0), 0);
 
   return (
-    <div className="max-w-6xl mx-auto px-4 lg:px-6 pt-12 pb-12">
-      <div className="flex items-center justify-between mb-8">
-        <div>
-          <h2 className="text-lg font-bold text-white">WhatsApp Phones</h2>
-          <p className="mt-2 max-w-2xl text-sm text-zinc-500">
-            Manage your WhatsApp connections. Each phone runs its own session (max 3 per account).
-          </p>
-        </div>
-        {phones.length < 3 && (
+    <div className="max-w-6xl mx-auto px-4 lg:px-6 pt-8 pb-12">
+      {/* Compact Header */}
+      <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center gap-3">
           <button
-            onClick={() => setShowCreate(true)}
-            className="flex min-h-[44px] items-center gap-2 rounded-md border border-white bg-white px-4 py-2.5 text-xs font-semibold text-black hover:bg-zinc-200"
+            onClick={() => router.back()}
+            className="flex h-10 w-10 items-center justify-center rounded-lg hover:bg-white/10 transition-colors"
           >
-            <Plus className="w-4 h-4" /> Add Phone
+            <ChevronLeft className="h-5 w-5 text-zinc-300" />
           </button>
-        )}
+          <div>
+            <h2 className="text-lg font-bold text-white">WhatsApp Phones</h2>
+            <p className="text-xs text-zinc-500">
+              {connectedCount}/{phones.length} connected · {totalMessages.toLocaleString()} messages
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          {phones.length < 3 && (
+            <button
+              onClick={() => setShowCreate(true)}
+              className="flex h-10 items-center gap-2 rounded-lg border border-white bg-white px-4 py-2.5 text-xs font-semibold text-black hover:bg-zinc-200"
+            >
+              <Plus className="w-4 h-4" /> Add Phone
+            </button>
+          )}
+        </div>
       </div>
 
       {phonesLoading ? (
@@ -1036,7 +1187,7 @@ export default function ConnectionCenterPage() {
           {phones.length === 0 && !phonesError && (
             <LiveStatusCard status={liveStatus} onAddPhone={() => setShowCreate(true)} />
           )}
-          {/* Phone Cards */}
+          {/* Phone Cards - Compact Grid */}
           {phones.length > 0 && (
             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
               {phones.map((phone) => (
@@ -1072,8 +1223,8 @@ export default function ConnectionCenterPage() {
             </div>
           )}
 
-          {/* Aggregate Stats */}
-          <div className="grid lg:grid-cols-2 gap-6 mb-8">
+          {/* Summary Stats - Compact */}
+          <div className="grid lg:grid-cols-2 gap-4 mb-8">
             <Section title="Summary">
               <div className="grid grid-cols-2 gap-0 [&>*:nth-child(2n)]:border-l [&>*:nth-child(2n)]:border-white/10 [&>*:nth-child(n+3)]:border-t [&>*:nth-child(n+3)]:border-white/10">
                 <StatBox icon={<Smartphone className="w-4 h-4 text-zinc-400" />} label="Phones" value={`${connectedCount}/${phones.length}`} />
@@ -1092,7 +1243,7 @@ export default function ConnectionCenterPage() {
             </Section>
           </div>
 
-          {/* Extraction Pipeline */}
+          {/* Extraction Pipeline - Compact */}
           <Section title="Extraction Pipeline">
             <div className="space-y-4">
               <div className="grid grid-cols-3 gap-0 [&>*:nth-child(2n)]:border-l [&>*:nth-child(2n)]:border-white/10">
@@ -1103,7 +1254,7 @@ export default function ConnectionCenterPage() {
               {rawTotal > 0 && (
                 <div className="px-4 pb-2">
                   <div className="flex items-center justify-between mb-1.5">
-                    <span className="text-[11px] font-medium text-zinc-500 uppercase tracking-wider">Progress</span>
+                    <span className="text-xs font-medium text-zinc-500 uppercase tracking-wider">Progress</span>
                     <span className="text-xs font-bold text-white">{extractionPct}%</span>
                   </div>
                   <div className="h-2 rounded-full bg-zinc-800 overflow-hidden">
