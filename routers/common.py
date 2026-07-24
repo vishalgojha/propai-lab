@@ -697,3 +697,50 @@ WHATSAPP SELF-CHAT MODE:
         loop.run_in_executor(None, request_context.run, _call),
         timeout=90,
     )
+
+
+# ── Group name parsing (used by groups_market + audit) ──────────────────
+
+GROUP_MARKET_KEYWORDS = {
+    "Bandra": ["bandra", "bkc", "bks"],
+    "Khar": ["khar"],
+    "Santacruz": ["santacruz", "scruz", "s cruz"],
+    "Juhu": ["juhu"],
+    "Andheri": ["andheri"],
+    "Worli": ["worli"],
+    "Colaba": ["colaba"],
+    "Chembur": ["chembur"],
+    "Wadala": ["wadala"],
+    "Malad": ["malad"],
+    "Goregaon": ["goregaon"],
+    "Thane": ["thane"],
+    "SOBO": ["sobo", "south mumbai"],
+}
+
+GROUP_SEGMENT_KEYWORDS = {
+    "Commercial": ["commercial", "office", "retail", "shop", "showroom"],
+    "Rental": ["rent", "rental", "lease"],
+    "Requirement": ["requirement", "requirements", "req"],
+    "Inventory": ["inventory", "availability", "availabilty", "listing", "listings"],
+    "Broadcast": ["broadcast", "brodcast"],
+    "Auction": ["auction", "distress"],
+}
+
+
+def parse_group_name(name: str) -> dict:
+    lower = (name or "").lower()
+    markets = [
+        market
+        for market, words in GROUP_MARKET_KEYWORDS.items()
+        if any(word in lower for word in words)
+    ]
+    segments = [
+        segment
+        for segment, words in GROUP_SEGMENT_KEYWORDS.items()
+        if any(word in lower for word in words)
+    ]
+    return {
+        "markets": markets,
+        "segments": segments,
+        "is_real_estate": bool(markets or segments or any(word in lower for word in ["realty", "realtor", "property", "properties", "estate", "broker"])),
+    }
