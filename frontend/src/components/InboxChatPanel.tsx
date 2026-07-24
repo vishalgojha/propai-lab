@@ -102,8 +102,13 @@ function renderAssistantMessage(msg: ChatMsg) {
         </div>
       )}
       {msg.blocks && msg.blocks.length > 0 && (
-        <div className="text-[10px] text-zinc-500">
-          Structured response received. Open the workspace view for the full breakdown.
+        <div className="flex flex-wrap gap-1.5 mt-1">
+          {msg.blocks.map((block, idx) => (
+            <span key={idx}
+              className="rounded-full border border-green-500/30 bg-green-500/10 px-2 py-0.5 text-[11px] text-green-400">
+              {(block as any).label || block.type || "data"}
+            </span>
+          ))}
         </div>
       )}
     </div>
