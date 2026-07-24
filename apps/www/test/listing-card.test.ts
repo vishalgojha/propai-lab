@@ -57,6 +57,11 @@ check("no building name -> structured title uses locality", () => {
   assert.equal(vm.title, "Semi-Furnished 3 BHK for Sale at Bandra East");
   assert.equal(vm.locality, "Bandra East");
 });
+check("underscore furnishing values render as readable words", () => {
+  const vm = toListingCardViewModel(base({ furnishing: "fully_furnished" }), false);
+  assert.match(vm.title, /^Fully Furnished /);
+  assert.match(vm.specRow, /Fully Furnished/);
+});
 
 // Price always carries an explicit unit.
 check("sale price with cr unit renders Cr", () => {
@@ -79,6 +84,16 @@ check("abs unit with no scale -> explicit ₹, not guessed lakh/cr", () => {
   const vm = toListingCardViewModel(base({ price: 37000, price_unit: "abs", intent: "commercial" }), false);
   assert.match(vm.priceLabel, /^₹[\d,]+$/);
   assert.equal(vm.priceLabel.match(/(Lakh|Cr|\/month)$/), null);
+});
+check("large absolute sale values are normalized to lakh/cr", () => {
+  const vm = toListingCardViewModel(base({ price: 44000000000000, price_unit: "abs", intent: "sell" }), false);
+  assert.match(vm.priceLabel, /Cr$/);
+  assert.equal(vm.priceLabel, "₹4400000 Cr");
+});
+check("large absolute rent values are normalized to lakh/cr per month", () => {
+  const vm = toListingCardViewModel(base({ price: 44000000000000, price_unit: "abs", intent: "rent" }), false);
+  assert.match(vm.priceLabel, /\/month$/);
+  assert.match(vm.priceLabel, /Cr\/month$/);
 });
 
 // Status badge is buyer-readable, not internal "Market pending".

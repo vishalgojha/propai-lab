@@ -140,6 +140,36 @@ def _normalize_india_phone(value: str = "") -> str:
     return ""
 
 
+def _normalize_listing_price(price: object, price_unit: object) -> tuple[float | None, str | None]:
+    if price in (None, ""):
+        return None, None
+    try:
+        value = float(price)
+    except (TypeError, ValueError):
+        return None, None
+
+    unit = str(price_unit or "").strip().lower()
+    if unit in {"cr", "crore", "crores"}:
+        if value >= 1_00_00_000:
+            value = value / 1_00_00_000
+        return value, "Cr"
+    if unit in {"lac", "lakh", "lakhs", "l"}:
+        if value >= 1_00_000:
+            value = value / 1_00_000
+        return value, "Lac"
+    if unit in {"k", "thousand"}:
+        if value >= 1_000:
+            value = value / 1_000
+        return value, "K"
+    if unit in {"abs", "absolute", "rupees", "rs", "inr", "", "none", "null"}:
+        if value >= 1_00_00_000:
+            return round(value / 1_00_00_000, 2), "Cr"
+        if value >= 1_00_000:
+            return round(value / 1_00_000, 2), "Lac"
+        return value, "abs"
+    return value, price_unit if price_unit is None or isinstance(price_unit, str) else str(price_unit)
+
+
 def _is_market_group_name(group_name: str = "") -> bool:
     gn = (group_name or "").strip()
     if not gn or gn in ("seed", "seed-bot", "status@broadcast", "broadcast"):
@@ -2224,6 +2254,8 @@ class SupabaseStorage(Storage):
             if price is None:
                 price = total_asking_price
                 price_unit = "abs"
+
+        price, price_unit = _normalize_listing_price(price, price_unit)
 
         # ── Broker phone fallback: when the phone is missing from this
         # parsed_output, look up a sibling parsed_output from the same raw

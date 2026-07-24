@@ -120,12 +120,23 @@ export function formatCardPrice(
   const unit = normalizeUnit(priceUnit);
   const intentKind = intentValue(intent);
   const perMonth = intentKind === "rent";
+  const grouped = (n: number) => Math.round(n).toLocaleString("en-IN");
+  const formatScaled = (amount: number, suffix: string) => {
+    if (amount >= 1_00_00_000) {
+      const cr = amount / 1_00_00_000;
+      return `₹${cr % 1 === 0 ? cr : cr.toFixed(2)} Cr${suffix}`;
+    }
+    if (amount >= 1_00_000) {
+      const lac = amount / 1_00_000;
+      return `₹${lac % 1 === 0 ? lac : lac.toFixed(1)} Lakh${suffix}`;
+    }
+    return `₹${grouped(amount)}${suffix}`;
+  };
 
   // If price model is per-sqft and we have area, compute total price
   if (priceModel === "psf" && pricePerSqft != null && areaSqft != null && areaSqft > 0) {
     const totalPrice = pricePerSqft * areaSqft;
     // For sale, render as absolute rupees with appropriate unit
-    const grouped = (n: number) => Math.round(n).toLocaleString("en-IN");
     if (totalPrice >= 1_00_00_000) {
       const cr = totalPrice / 1_00_00_000;
       return `₹${cr % 1 === 0 ? cr : cr.toFixed(2)} Cr`;
@@ -139,8 +150,6 @@ export function formatCardPrice(
 
   if (price == null) return "Price on request";
 
-  const grouped = (n: number) => Math.round(n).toLocaleString("en-IN");
-
   if (perMonth) {
     // Rentals are quoted per month. Stored numbers use the natural unit:
     // "cr" = crores/month, "lac" = lakhs/month, "k" = thousands/month,
@@ -153,7 +162,7 @@ export function formatCardPrice(
     // like 12 or 185 rupees). Anything under ₹1,000/month is not a real Mumbai
     // rent — fall back rather than show a clearly-wrong number.
     if (abs < 1000) return "Price on request";
-    return `₹${grouped(abs)}/month`;
+    return formatScaled(abs, "/month");
   }
 
   // Sale / commercial
@@ -171,12 +180,15 @@ export function formatCardPrice(
     const abs = price > 1000 ? price : price * 1_000;
     return `₹${grouped(abs)}`;
   }
-  // "abs" or unknown — render the grouped whole amount.
-  return `₹${grouped(price)}`;
+  // "abs" or unknown — render the grouped whole amount, but scale obvious
+  // outliers into Cr/Lakh so we do not surface raw comma-dumped parser junk.
+  return formatScaled(price, "");
 }
 
 function titleCase(value: string): string {
   return value
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
     .trim()
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
@@ -225,7 +237,7 @@ function buildSpecItems(row: ListingCardFields): ListingSpecItem[] {
     items.push({ kind: "area", label: `${row.area_sqft.toLocaleString("en-IN")} sqft` });
   }
   if (row.furnishing && row.furnishing.trim()) {
-    items.push({ kind: "furnishing", label: row.furnishing.trim() });
+    items.push({ kind: "furnishing", label: titleCase(row.furnishing) });
   }
   if (row.floor_description && row.floor_description.trim()) {
     items.push({ kind: "floor", label: row.floor_description.trim() });
