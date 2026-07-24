@@ -33,6 +33,19 @@ _logger = logging.getLogger(__name__)
 # together after redeploy.
 _PROVIDERS: list[dict] = list(get_configured_providers())
 
+# Append Gemini as a fallback provider (used when MERGE key is exhausted).
+# Checks ENRICHMENT_GEMINI_KEY first (scoped for enrichment/extraction),
+# then falls back to GEMINI_API_KEY (production key).
+_gemini_key = os.getenv("ENRICHMENT_GEMINI_KEY") or os.getenv("GEMINI_API_KEY", "")
+if _gemini_key:
+    _PROVIDERS.append({
+        "name": "gemini",
+        "provider": "gemini",
+        "api_key": _gemini_key,
+        "base_url": "https://generativelanguage.googleapis.com/v1beta/openai",
+        "model": "gemini-3.1-flash-lite",
+    })
+
 # Round-robin pointer
 _rr_index = 0
 _rr_lock = __import__("threading").Lock()
