@@ -63,5 +63,8 @@ services/whatsmeow-ingestor/whatsmeow-ingestor
 /auth/
 _sqlite3.Connection*
 
+# Supabase migrations (applied directly, not tracked in repo)
+supabase/migrations/
+
 # OS files
 .DS_Store
