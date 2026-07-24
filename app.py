@@ -15757,6 +15757,10 @@ async def _enrichment_loop() -> None:
             if storage is None or not hasattr(storage, "client"):
                 await asyncio.sleep(ENRICHMENT_POLL_INTERVAL)
                 continue
+            # Recover jobs stuck in_progress (e.g. from a previous crash/restart)
+            recovered = await asyncio.to_thread(storage.recover_stale_enrichment_jobs, 600)
+            if recovered:
+                print(f"  [enrichment] recovered {recovered} stale jobs", flush=True)
             jobs = await asyncio.to_thread(
                 storage.get_pending_enrichment_jobs,
                 limit=ENRICHMENT_BATCH_SIZE,

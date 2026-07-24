@@ -3270,14 +3270,28 @@ class SupabaseStorage(Storage):
         return res.data
 
     def claim_enrichment_job(self, job_id: int) -> bool:
-        res = self.client.table("enrichment_jobs").update({"status": "in_progress"}).eq("id", job_id).eq("status", "pending").execute()
+        res = self.client.table("enrichment_jobs").update({
+            "status": "in_progress",
+            "started_at": "now()",
+        }).eq("id", job_id).eq("status", "pending").execute()
         return len(res.data) > 0
 
     def complete_enrichment_job(self, job_id: int, error: str = ""):
-        updates = {"status": "done" if not error else "failed"}
+        updates = {"status": "done" if not error else "failed", "completed_at": "now()"}
         if error:
-            updates["error"] = error
+            updates["last_error"] = error
         self.client.table("enrichment_jobs").update(updates).eq("id", job_id).execute()
+
+    def recover_stale_enrichment_jobs(self, stale_seconds: int = 600) -> int:
+        """Reset enrichment_jobs stuck in_progress for longer than stale_seconds."""
+        from datetime import datetime, timezone, timedelta
+        cutoff = (datetime.now(timezone.utc) - timedelta(seconds=stale_seconds)).isoformat()
+        res = self.client.table("enrichment_jobs").update({
+            "status": "pending",
+            "started_at": None,
+            "attempts": 0,
+        }).eq("status", "in_progress").lt("started_at", cutoff).execute()
+        return len(res.data) if res.data else 0
 
     def get_enrichment_job_by_parsed(self, parsed_id: int) -> Optional[dict]:
         res = self.client.table("enrichment_jobs").select("*").eq("parsed_id", parsed_id).limit(1).execute()
