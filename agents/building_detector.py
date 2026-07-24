@@ -69,9 +69,13 @@ def _get_client():
 
 
 def _gemini_client() -> OpenAI | None:
-    """Try to create a Gemini OpenAI-compatible client."""
+    """Try to create a Gemini OpenAI-compatible client.
+
+    Checks ENRICHMENT_GEMINI_KEY first (for batch enrichment work), then
+    falls back to GEMINI_API_KEY (production key used by chat/extraction).
+    """
     import os
-    key = os.getenv("GEMINI_API_KEY", "")
+    key = os.getenv("ENRICHMENT_GEMINI_KEY") or os.getenv("GEMINI_API_KEY", "")
     if key:
         return OpenAI(api_key=key, base_url="https://generativelanguage.googleapis.com/v1beta/openai")
     return None
@@ -253,6 +257,7 @@ def _call_llm(raw_message: str, location_raw: str, micro_market: str,
 
     providers_to_try = [
         (_get_client(), None, "Default"),
+        (_gemini_client(), "gemini-3.1-flash-lite", "Gemini (free tier)"),
         (_cerebras_client(), "gpt-oss-120b", "Cerebras"),
     ]
 
