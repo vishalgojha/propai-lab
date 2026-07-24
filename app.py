@@ -7151,6 +7151,37 @@ async def get_current_team_member(
     return member
 
 
+async def _select_reply_broker_id(member: dict, requested_broker_id: str = "") -> str:
+    org_id = member.get("organization_id")
+    if not org_id:
+        return ""
+
+    connections = await asyncio.to_thread(storage.list_org_whatsapp_connections, org_id)
+    connections = [row for row in connections if row.get("is_active", True)]
+    explicit_access = await asyncio.to_thread(storage.get_member_whatsapp_access, member["id"], org_id)
+    if explicit_access:
+        allowed_numbers = {
+            str(row.get("whatsapp_number") or "")
+            for row in explicit_access if row.get("can_send")
+        }
+        connections = [
+            row for row in connections
+            if str(row.get("phone_number") or "") in allowed_numbers
+        ]
+
+    requested_broker_id = requested_broker_id.strip()
+    if requested_broker_id:
+        connections = [
+            row for row in connections
+            if str(row.get("broker_id") or "") == requested_broker_id
+        ]
+
+    if not connections:
+        raise HTTPException(403, "No WhatsApp phone is available for this team member")
+
+    return str(connections[0].get("broker_id") or "").strip()
+
+
 @app.post("/api/send")
 async def send_message(req: SendMessageRequest, member: dict = Depends(get_current_team_member)):
     check_permission(member, "reply_whatsapp")
@@ -7166,33 +7197,9 @@ async def send_message(req: SendMessageRequest, member: dict = Depends(get_curre
             "remoteJid": req.remote_jid,
             "text": text,
         }
-        org_id = member.get("organization_id")
-        if org_id:
-            connections = await asyncio.to_thread(storage.list_org_whatsapp_connections, org_id)
-            connections = [row for row in connections if row.get("is_active", True)]
-            explicit_access = await asyncio.to_thread(
-                storage.get_member_whatsapp_access, member["id"], org_id
-            )
-            if explicit_access:
-                allowed_numbers = {
-                    str(row.get("whatsapp_number") or "")
-                    for row in explicit_access if row.get("can_send")
-                }
-                connections = [
-                    row for row in connections
-                    if str(row.get("phone_number") or "") in allowed_numbers
-                ]
-            requested_broker_id = req.broker_id.strip()
-            if requested_broker_id:
-                connections = [
-                    row for row in connections
-                    if str(row.get("broker_id") or "") == requested_broker_id
-                ]
-            if not connections:
-                raise HTTPException(403, "No WhatsApp phone is available for this team member")
-            selected_broker_id = str(connections[0].get("broker_id") or "").strip()
-            if selected_broker_id:
-                payload["brokerId"] = selected_broker_id
+        selected_broker_id = await _select_reply_broker_id(member, req.broker_id)
+        if selected_broker_id:
+            payload["brokerId"] = selected_broker_id
         if req.quoted_message_id:
             payload["quotedMessageId"] = req.quoted_message_id
             payload["quotedRemoteJid"] = req.quoted_remote_jid or req.remote_jid
@@ -7254,6 +7261,8 @@ async def send_message(req: SendMessageRequest, member: dict = Depends(get_curre
             status_code=502,
             content={"success": False, "error": "Cannot reach WhatsApp ingestor. Is WhatsApp connected?"},
         )
+    except HTTPException:
+        raise
     except Exception as exc:
         try:
             storage.log_activity(
@@ -7269,6 +7278,134 @@ async def send_message(req: SendMessageRequest, member: dict = Depends(get_curre
             )
         except Exception as log_exc:
             print(f"[activity-log] failed to record whatsapp reply exception: {log_exc}", flush=True)
+        return JSONResponse(
+            status_code=500,
+            content={"success": False, "error": str(exc)},
+        )
+
+
+@app.post("/api/send-media")
+async def send_media(req: Request, member: dict = Depends(get_current_team_member)):
+    check_permission(member, "reply_whatsapp")
+
+    form = await req.form()
+    remote_jid = str(form.get("remote_jid") or form.get("remoteJid") or "").strip()
+    media_type = str(form.get("media_type") or form.get("mediaType") or "").strip().lower()
+    caption = str(form.get("caption") or "").strip()
+    file_name = str(form.get("file_name") or form.get("fileName") or "").strip()
+    mime_type = str(form.get("mime_type") or form.get("mimeType") or "").strip()
+    requested_broker_id = str(form.get("broker_id") or form.get("brokerId") or "").strip()
+    file = form.get("file")
+
+    if not remote_jid:
+        return JSONResponse(status_code=400, content={"success": False, "error": "remote_jid is required"})
+    if media_type not in {"image", "video", "audio", "document"}:
+        return JSONResponse(status_code=400, content={"success": False, "error": "media_type must be image, video, audio, or document"})
+    if not file or not hasattr(file, "read"):
+        return JSONResponse(status_code=400, content={"success": False, "error": "file is required"})
+
+    if not mime_type and hasattr(file, "content_type"):
+        mime_type = str(getattr(file, "content_type") or "").strip()
+    if not file_name and hasattr(file, "filename"):
+        file_name = str(getattr(file, "filename") or "").strip()
+
+    try:
+        content = await file.read()
+        selected_broker_id = await _select_reply_broker_id(member, requested_broker_id)
+        ingestor_url = _send_url()
+        data = {
+            "remoteJid": remote_jid,
+            "mediaType": media_type,
+            "caption": caption,
+        }
+        if selected_broker_id:
+            data["brokerId"] = selected_broker_id
+        if mime_type:
+            data["mimeType"] = mime_type
+        if file_name:
+            data["fileName"] = file_name
+
+        files = {
+            "file": (
+                file_name or "attachment",
+                content,
+                mime_type or "application/octet-stream",
+            )
+        }
+
+        async with httpx.AsyncClient(timeout=60) as client:
+            response = await client.post(
+                f"{ingestor_url}/send-media",
+                data=data,
+                files=files,
+                headers=_ingestor_auth_headers(),
+            )
+
+        response_body = {}
+        if response.text:
+            try:
+                response_body = response.json()
+            except Exception:
+                response_body = {"raw": response.text[:1000]}
+
+        try:
+            storage.log_activity(
+                team_member_id=member["id"],
+                action="reply_whatsapp_sent" if response.status_code < 400 else "reply_whatsapp_failed",
+                target_type="whatsapp_conversation",
+                target_id=remote_jid,
+                details={
+                    "surface": "inbox",
+                    "reply_text": caption[:500],
+                    "media_type": media_type,
+                    "file_name": file_name,
+                    "transport_status_code": response.status_code,
+                    "transport_response": response_body,
+                },
+            )
+        except Exception as exc:
+            print(f"[activity-log] failed to record whatsapp media reply: {exc}", flush=True)
+
+        return JSONResponse(
+            status_code=response.status_code,
+            content=response_body if response.text else {"success": False, "error": "empty response"},
+        )
+    except httpx.ConnectError:
+        try:
+            storage.log_activity(
+                team_member_id=member["id"],
+                action="reply_whatsapp_failed",
+                target_type="whatsapp_conversation",
+                target_id=remote_jid,
+                details={
+                    "surface": "inbox",
+                    "reply_text": caption[:500],
+                    "error": "Cannot reach WhatsApp ingestor",
+                },
+            )
+        except Exception as exc:
+            print(f"[activity-log] failed to record whatsapp media error: {exc}", flush=True)
+        return JSONResponse(
+            status_code=502,
+            content={"success": False, "error": "Cannot reach WhatsApp ingestor. Is WhatsApp connected?"},
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        try:
+            storage.log_activity(
+                team_member_id=member["id"],
+                action="reply_whatsapp_failed",
+                target_type="whatsapp_conversation",
+                target_id=remote_jid,
+                details={
+                    "surface": "inbox",
+                    "reply_text": caption[:500],
+                    "error": str(exc),
+                },
+            )
+        except Exception as log_exc:
+            print(f"[activity-log] failed to record whatsapp media exception: {log_exc}", flush=True)
         return JSONResponse(
             status_code=500,
             content={"success": False, "error": str(exc)},

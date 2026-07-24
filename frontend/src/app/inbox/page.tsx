@@ -29,6 +29,8 @@ import {
   Send,
   Copy,
   Check,
+  Paperclip,
+  X,
   Calendar,
   MessageSquare,
   ClipboardList,
@@ -257,6 +259,26 @@ function formatAgeShort(value?: string) {
   if (weeks < 5) return `Older · ${weeks}w`;
   const months = Math.floor(days / 30);
   return `Older · ${months}mo`;
+}
+
+function formatFileSize(bytes: number) {
+  if (!bytes || bytes < 1024) return `${bytes || 0} B`;
+  const units = ["KB", "MB", "GB"];
+  let value = bytes / 1024;
+  let unitIndex = 0;
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex += 1;
+  }
+  return `${value >= 10 ? value.toFixed(0) : value.toFixed(1)} ${units[unitIndex]}`;
+}
+
+function inferAttachmentMediaType(file: File): "image" | "video" | "audio" | "document" {
+  const mime = (file.type || "").toLowerCase();
+  if (mime.startsWith("image/")) return "image";
+  if (mime.startsWith("video/")) return "video";
+  if (mime.startsWith("audio/")) return "audio";
+  return "document";
 }
 
 function toInboxThread(message: api.RawMessage): api.InboxThread {
@@ -1126,6 +1148,7 @@ function InboxPageInner({ defaultView }: InboxPageInnerProps) {
   const [conversationMessages, setConversationMessages] = useState<api.RawMessage[]>([]);
   const [loadingConv, setLoadingConv] = useState(false);
   const [replyText, setReplyText] = useState("");
+  const [replyAttachment, setReplyAttachment] = useState<File | null>(null);
   const [brokerReplyText, setBrokerReplyText] = useState("");
   const [sendingReply, setSendingReply] = useState(false);
   const [replyError, setReplyError] = useState("");
@@ -1136,6 +1159,7 @@ function InboxPageInner({ defaultView }: InboxPageInnerProps) {
   const [sessionCountdown, setSessionCountdown] = useState("");
   const [replyDraftLoadedKey, setReplyDraftLoadedKey] = useState("");
   const [currentTeamMember, setCurrentTeamMember] = useState<api.TeamMember | null>(null);
+  const attachmentInputRef = useRef<HTMLInputElement>(null);
   const threadEndRef = useRef<HTMLDivElement>(null);
 
   const withThreadTimeout = async <T,>(promise: Promise<T>, ms = 8000): Promise<T> => {
@@ -2494,7 +2518,9 @@ return {
 
   const handleSendReply = useCallback(async () => {
     const text = replyText.trim();
-    if (!text || sendingReply || !selectedConversationJid || !canReplyWhatsApp || (!whatsappConnected && !wabaConfigured)) return;
+    const attachment = replyAttachment;
+    if (sendingReply || !selectedConversationJid || !canReplyWhatsApp || (!whatsappConnected && !wabaConfigured)) return;
+    if (!text && !attachment) return;
 
     // A WhatsApp group can only be addressed through the linked WhatsApp
     // session.  Meta's Business API requires a phone number and cannot send
@@ -2511,10 +2537,22 @@ return {
     const nowIso = new Date().toISOString();
 
     try {
-      await api.sendMessage({
-        remote_jid: selectedConversationJid,
-        text,
-      });
+      const outboundText = text || (attachment ? `Attachment: ${attachment.name}` : "");
+      if (attachment) {
+        await api.sendMediaMessage({
+          remote_jid: selectedConversationJid,
+          media_type: inferAttachmentMediaType(attachment),
+          caption: text,
+          file_name: attachment.name,
+          mime_type: attachment.type || "",
+          file: attachment,
+        });
+      } else {
+        await api.sendMessage({
+          remote_jid: selectedConversationJid,
+          text: outboundText,
+        });
+      }
 
       const optimisticMessage: api.RawMessage = {
         id: Number(`${Date.now()}`),
@@ -2534,13 +2572,18 @@ return {
         micro_market: selectedMsg?.micro_market || "",
         landmark_name: selectedMsg?.landmark_name || "",
         parsed_intent: selectedMsg?.parsed_intent || "",
-        message: text,
-        message_type: "text",
+        message: outboundText,
+        message_type: attachment ? inferAttachmentMediaType(attachment) : "text",
         timestamp: nowIso,
         source: isGroupConversationSelected ? "WHATSAPP_OUTBOUND" : "WABA_OUTBOUND",
         event_id: `local-${Date.now()}`,
         message_uid: `local-${Date.now()}`,
-        raw_payload: JSON.stringify({ local: true, remote_jid: selectedConversationJid }),
+        raw_payload: JSON.stringify({
+          local: true,
+          remote_jid: selectedConversationJid,
+          media_type: attachment ? inferAttachmentMediaType(attachment) : "text",
+          file_name: attachment?.name || "",
+        }),
         synced_at: nowIso,
         pipeline_version: "propai-web-send",
         from_me: true,
@@ -2548,6 +2591,10 @@ return {
       };
       setConversationMessages((prev) => [...prev, optimisticMessage]);
       setReplyText("");
+      setReplyAttachment(null);
+      if (attachmentInputRef.current) {
+        attachmentInputRef.current.value = "";
+      }
       if (replyDraftKey) {
         try {
           window.localStorage.removeItem(replyDraftKey);
@@ -2555,7 +2602,7 @@ return {
           // Ignore local storage failures.
         }
       }
-      setReplyStatus("Message sent");
+      setReplyStatus(attachment ? "Attachment sent" : "Message sent");
     } catch (e: any) {
       const message = e?.message || "Failed to send reply";
       setReplyError(message);
@@ -2572,6 +2619,7 @@ return {
     replyFallbackPhone,
     replyTargetMessage,
     replyText,
+    replyAttachment,
     replyDraftKey,
     selectedConversationJid,
     selectedMsg,
@@ -3502,7 +3550,7 @@ return {
           ) : activeSlug?.view_type === "brokers" && selectedBroker ? (
             <>
               {/* Observation Timeline Header */}
-              <div className="px-5 py-4 border-b border-white/10 flex items-center justify-between bg-black/80">
+              <div className="px-3 py-2.5 border-b border-white/10 flex items-center justify-between bg-black/80 sm:px-5 sm:py-4">
                 <div className="flex items-center gap-3">
                   {isMobile && (
                     <button
@@ -3578,7 +3626,7 @@ return {
               </div>
 
               {/* Observation Timeline */}
-              <div className="flex-1 overflow-y-auto p-4 space-y-4">
+              <div className="flex-1 overflow-y-auto p-3 space-y-3 sm:p-4 sm:space-y-4">
                 {loadingBrokerObs ? (
                   <div className="p-8 text-center text-xs text-zinc-500">Loading market items...</div>
                 ) : brokerObsError ? (
@@ -3850,7 +3898,7 @@ return {
           ) : selectedMsg ? (
             <>
               {/* Chat Thread Header */}
-              <div className="px-5 py-4 border-b border-white/10 flex items-center justify-between bg-black/80">
+              <div className="px-3 py-2.5 border-b border-white/10 flex items-center justify-between bg-black/80 sm:px-5 sm:py-4">
                 <div className="flex items-center gap-3">
                   {isMobile && (
                     <button
@@ -3921,7 +3969,7 @@ return {
               {/* Chat thread. Native selection/context menu stays available for copy/paste. */}
               <div
                 ref={messageAreaRef}
-                className="flex-1 overflow-y-auto px-5 py-4 propai-interaction-area"
+                className="flex-1 overflow-y-auto px-3 py-3 propai-interaction-area sm:px-5 sm:py-4"
               >
                 {conversationMessages.length === 0 && loadingConv ? (
                   <div className="h-full flex items-center justify-center text-xs text-zinc-500">
@@ -4206,10 +4254,10 @@ return {
                   </div>
                 )}
               </div>
-              <div className="border-t border-white/10 bg-black/90 px-4 py-3">
+              <div className="border-t border-white/10 bg-black/90 px-3 py-2.5 sm:px-4 sm:py-3">
                 <div className="flex items-start gap-3">
                   <div className="min-w-0 flex-1">
-                    <div className="mb-2 flex items-center justify-between gap-3">
+                    <div className="mb-2 hidden items-center justify-between gap-3 sm:flex">
                       <div className="text-[10px] font-bold uppercase tracking-[0.28em] text-zinc-500">
                         Reply in PropAI workspace
                       </div>
@@ -4288,34 +4336,82 @@ return {
                       </div>
                     ) : canReplyWhatsApp ? (
                       <>
-                        <div className="relative">
-                          <textarea
-                            value={replyText}
-                            onChange={(e) => setReplyText(e.target.value)}
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter" && !e.shiftKey) {
-                                e.preventDefault();
-                                void handleSendReply();
+                        <input
+                          ref={attachmentInputRef}
+                          type="file"
+                          accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.txt,.rtf,.csv,.xls,.xlsx,.ppt,.pptx"
+                          className="hidden"
+                          onChange={(event) => {
+                            const file = event.target.files?.[0] || null;
+                            if (!file) return;
+                            setReplyAttachment(file);
+                            setReplyError("");
+                            setReplyStatus("");
+                          }}
+                        />
+                        <div className="rounded-2xl border border-white/10 bg-zinc-950/95 px-3 pb-2.5 pt-2 shadow-[0_0_0_1px_rgba(255,255,255,0.02)]">
+                          {replyAttachment && (
+                            <div className="mb-2 flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/[0.03] px-2.5 py-2">
+                              <div className="min-w-0">
+                                <div className="truncate text-[11px] font-semibold text-white">
+                                  {replyAttachment.name}
+                                </div>
+                                <div className="text-[10px] text-zinc-500">
+                                  {inferAttachmentMediaType(replyAttachment).toUpperCase()} · {formatFileSize(replyAttachment.size)}
+                                </div>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setReplyAttachment(null);
+                                  if (attachmentInputRef.current) attachmentInputRef.current.value = "";
+                                }}
+                                className="flex h-6 w-6 items-center justify-center rounded-md border border-white/10 text-zinc-500 transition-colors hover:border-white/20 hover:text-white"
+                                aria-label="Remove attachment"
+                              >
+                                <X className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
+                          )}
+                          <div className="relative">
+                            <textarea
+                              value={replyText}
+                              onChange={(e) => setReplyText(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter" && !e.shiftKey) {
+                                  e.preventDefault();
+                                  void handleSendReply();
+                                }
+                              }}
+                              placeholder={
+                                selectedConversationJid
+                                  ? "Type a reply. Shift+Enter adds a new line."
+                                  : "Select a conversation to reply."
                               }
-                            }}
-                            placeholder={
-                              selectedConversationJid
-                                ? "Type a reply. Shift+Enter adds a new line."
-                                : "Select a conversation to reply."
-                            }
-                            rows={3}
-                            disabled={sendingReply || !selectedConversationJid}
-                            className="w-full resize-none rounded-xl border border-white/10 bg-zinc-950 px-3 py-2.5 pr-12 text-sm text-white placeholder-zinc-500 outline-none transition-colors focus:border-[#3EE88A]/50 focus:ring-1 focus:ring-[#3EE88A]/30 disabled:cursor-not-allowed disabled:opacity-60"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => void handleSendReply()}
-                            disabled={sendingReply || !replyText.trim() || !selectedConversationJid}
-                            className="absolute bottom-2 right-2 flex h-8 w-8 items-center justify-center rounded-lg bg-[#3EE88A] text-black transition-colors hover:bg-[#35d47c] disabled:cursor-not-allowed disabled:opacity-50 sm:h-9 sm:w-9"
-                            aria-label={sendingReply ? "Sending reply" : "Send reply"}
-                          >
-                            <Send className="h-3.5 w-3.5" />
-                          </button>
+                              rows={3}
+                              disabled={sendingReply || !selectedConversationJid}
+                              className="min-h-[88px] w-full resize-none rounded-xl border-0 bg-transparent px-1 py-1.5 pl-10 pr-12 text-sm text-white placeholder-zinc-500 outline-none transition-colors focus:ring-0 disabled:cursor-not-allowed disabled:opacity-60"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => attachmentInputRef.current?.click()}
+                              disabled={sendingReply || !selectedConversationJid}
+                              className="absolute bottom-2 left-2 flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 bg-white/[0.03] text-zinc-400 transition-colors hover:border-[#3EE88A]/40 hover:text-[#3EE88A] disabled:cursor-not-allowed disabled:opacity-50"
+                              aria-label="Attach a file"
+                              title="Attach a file"
+                            >
+                              <Paperclip className="h-3.5 w-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void handleSendReply()}
+                              disabled={sendingReply || (!replyText.trim() && !replyAttachment) || !selectedConversationJid}
+                              className="absolute bottom-2 right-2 flex h-8 w-8 items-center justify-center rounded-lg bg-[#3EE88A] text-black transition-colors hover:bg-[#35d47c] disabled:cursor-not-allowed disabled:opacity-50"
+                              aria-label={sendingReply ? "Sending reply" : "Send reply"}
+                            >
+                              <Send className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
                         </div>
 
                         <div className="mt-2 flex items-center justify-between gap-3">
@@ -4325,8 +4421,8 @@ return {
                             ) : replyStatus ? (
                               <span className="text-[#3EE88A]">{replyStatus}</span>
                             ) : selectedConversationJid ? (
-                            <span className="text-zinc-500">Replies are sent through the connected WhatsApp number.</span>
-                          ) : null}
+                              <span className="text-zinc-500 hidden sm:inline">Replies are sent through the connected WhatsApp number.</span>
+                            ) : null}
                           </div>
                           <div className="flex items-center gap-2">
                             {replyFallbackPhone && (
@@ -4334,7 +4430,7 @@ return {
                                 href={getWaLinkWithRecall(replyFallbackPhone, replyText || replyTargetMessage?.message || "")}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-white/10 bg-zinc-800 px-3 text-[11px] font-semibold text-zinc-200 transition-colors hover:border-[#3EE88A]/40 hover:text-[#3EE88A]"
+                                className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-white/10 bg-zinc-800 px-3 text-[10px] font-semibold text-zinc-200 transition-colors hover:border-[#3EE88A]/40 hover:text-[#3EE88A]"
                                 onClick={(e) => e.stopPropagation()}
                               >
                                 <MessageSquare className="h-3.5 w-3.5" strokeWidth={1.8} />
