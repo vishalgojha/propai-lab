@@ -36,6 +36,19 @@ if _merge_key and _merge_model:
 elif _merge_key:
     _logger.warning("Skipping merge: set MERGE_MODEL to enable this provider")
 
+# NVIDIA — up to 4 keys for round-robin, all use the same model
+_nvidia_model = os.getenv("NVIDIA_MODEL", "").strip()
+if _nvidia_model:
+    for suffix in ("", "_2", "_3", "_4"):
+        key = os.getenv(f"NVIDIA_API_KEY{suffix}", "").strip()
+        if key:
+            _PROVIDERS.append({
+                "name": f"nvidia{suffix}" if suffix else "nvidia",
+                "api_key": key,
+                "base_url": "https://api.nvidia.com/v1",
+                "model": _nvidia_model,
+            })
+
 
 class ProviderConfigurationError(RuntimeError):
     """Raised when no complete LLM provider configuration is available."""
