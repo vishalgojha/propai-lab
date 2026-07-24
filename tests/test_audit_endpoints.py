@@ -6,6 +6,7 @@ import pytest
 
 import app
 from routers import audit as audit_mod
+from routers import whatsapp_sync as ws_mod
 
 
 class _Result:
@@ -228,7 +229,7 @@ def test_audit_overlap_uses_named_columns_from_supabase_json_rows(monkeypatch):
 def test_phone_list_resolves_authenticated_workspace(monkeypatch):
     seen = []
 
-    class Storage:
+    class FakeStorage:
         def list_org_whatsapp_connections(self, org_id):
             seen.append(org_id)
             return [{"id": 13, "broker_id": "phone-real", "phone_number": "919820056180"}]
@@ -236,11 +237,12 @@ def test_phone_list_resolves_authenticated_workspace(monkeypatch):
     async def inline_to_thread(function, *args, **kwargs):
         return function(*args, **kwargs)
 
-    monkeypatch.setattr(app, "storage", Storage())
-    monkeypatch.setattr(app, "_resolve_active_organization_id", lambda user, tenant_id: "workspace-real")
-    monkeypatch.setattr(app.asyncio, "to_thread", inline_to_thread)
+    monkeypatch.setattr(ws_mod, "storage", FakeStorage())
+    monkeypatch.setattr(ws_mod, "_resolve_active_organization_id", lambda user, tenant_id: "workspace-real")
+    monkeypatch.setattr(asyncio, "to_thread", inline_to_thread)
+    monkeypatch.setattr(ws_mod, "_merged_ingestor_list", lambda **kw: ({}, False, ""))
 
-    result = asyncio.run(app.list_phones(
+    result = asyncio.run(ws_mod.list_phones(
         user={"id": "user"}, tenant_id="00000000-0000-0000-0000-000000000010", include_live=False,
     ))
 
@@ -251,11 +253,14 @@ def test_phone_list_resolves_authenticated_workspace(monkeypatch):
 def test_create_phone_reuses_workspace_placeholder(monkeypatch):
     connection_calls = []
 
-    class Storage:
+    class FakeStorage:
         def list_org_whatsapp_connections(self, org_id):
             return [{"id": 19, "broker_id": "phone-placeholder", "phone_number": "Unpaired:phone-placeholder", "instance_name": ""}]
 
         def update_org_whatsapp_connection(self, conn_id, updates):
+            return None
+
+        def add_org_whatsapp_connection(self, *a, **kw):
             return None
 
     async def ingestor(method, path, **kwargs):
@@ -268,13 +273,13 @@ def test_create_phone_reuses_workspace_placeholder(monkeypatch):
     async def inline_to_thread(function, *args, **kwargs):
         return function(*args, **kwargs)
 
-    monkeypatch.setattr(app, "storage", Storage())
-    monkeypatch.setattr(app, "_resolve_active_organization_id", lambda user, tenant_id: "workspace-real")
-    monkeypatch.setattr(app, "_first_ingestor_response", ingestor)
-    monkeypatch.setattr(app, "_require_org_permission", allow_phone_management)
-    monkeypatch.setattr(app.asyncio, "to_thread", inline_to_thread)
+    monkeypatch.setattr(ws_mod, "storage", FakeStorage())
+    monkeypatch.setattr(ws_mod, "_resolve_active_organization_id", lambda user, tenant_id: "workspace-real")
+    monkeypatch.setattr(ws_mod, "_first_ingestor_response", ingestor)
+    monkeypatch.setattr(ws_mod, "_require_org_permission", allow_phone_management)
+    monkeypatch.setattr(asyncio, "to_thread", inline_to_thread)
 
-    result = asyncio.run(app.create_phone(
+    result = asyncio.run(ws_mod.create_phone(
         {"instance_name": ""}, user={"id": "user"}, tenant_id="workspace-real",
     ))
 
@@ -283,25 +288,24 @@ def test_create_phone_reuses_workspace_placeholder(monkeypatch):
 
 
 def test_phone_list_marks_missing_session_as_stopped_when_ingestor_is_reachable(monkeypatch):
-    class Storage:
+    class FakeStorage:
         def list_org_whatsapp_connections(self, org_id):
             assert org_id == "workspace-real"
             return [{"id": 13, "broker_id": "phone-real", "phone_number": "919820056180"}]
 
-    async def ingestor(method, path, **kwargs):
-        assert (method, path) == ("GET", "/list")
-        return "http://ingestor:3001", httpx.Response(200, json=[])
+    async def merged_list(**kw):
+        return {"phone-real": {"connected": False, "connection_state": "stopped"}}, True, ""
 
     async def inline_to_thread(function, *args, **kwargs):
         return function(*args, **kwargs)
 
-    monkeypatch.setattr(app, "storage", Storage())
-    monkeypatch.setattr(app, "_resolve_active_organization_id", lambda user, tenant_id: "workspace-real")
-    monkeypatch.setattr(app, "_first_ingestor_response", ingestor)
-    monkeypatch.setattr(app, "_broker_live_statuses", {})
-    monkeypatch.setattr(app.asyncio, "to_thread", inline_to_thread)
+    monkeypatch.setattr(ws_mod, "storage", FakeStorage())
+    monkeypatch.setattr(ws_mod, "_resolve_active_organization_id", lambda user, tenant_id: "workspace-real")
+    monkeypatch.setattr(ws_mod, "_merged_ingestor_list", merged_list)
+    monkeypatch.setattr(ws_mod, "_broker_live_statuses", {})
+    monkeypatch.setattr(asyncio, "to_thread", inline_to_thread)
 
-    result = asyncio.run(app.list_phones(
+    result = asyncio.run(ws_mod.list_phones(
         user={"id": "user"}, tenant_id="workspace-real", include_live=True,
     ))
 
@@ -313,23 +317,23 @@ def test_phone_list_marks_missing_session_as_stopped_when_ingestor_is_reachable(
 
 
 def test_phone_list_exposes_ingestor_auth_configuration_error(monkeypatch):
-    class Storage:
+    class FakeStorage:
         def list_org_whatsapp_connections(self, org_id):
             return [{"id": 13, "broker_id": "phone-real", "phone_number": "919820056180"}]
 
-    async def ingestor(method, path, **kwargs):
-        return "http://ingestor:3001", httpx.Response(401, json={"error": "invalid token"})
+    async def merged_list(**kw):
+        return {}, False, "WhatsApp service authentication failed. PROPAI_INTERNAL_TOKEN must match on the API and ingestor services."
 
     async def inline_to_thread(function, *args, **kwargs):
         return function(*args, **kwargs)
 
-    monkeypatch.setattr(app, "storage", Storage())
-    monkeypatch.setattr(app, "_resolve_active_organization_id", lambda user, tenant_id: "workspace-real")
-    monkeypatch.setattr(app, "_first_ingestor_response", ingestor)
-    monkeypatch.setattr(app, "_broker_live_statuses", {})
-    monkeypatch.setattr(app.asyncio, "to_thread", inline_to_thread)
+    monkeypatch.setattr(ws_mod, "storage", FakeStorage())
+    monkeypatch.setattr(ws_mod, "_resolve_active_organization_id", lambda user, tenant_id: "workspace-real")
+    monkeypatch.setattr(ws_mod, "_merged_ingestor_list", merged_list)
+    monkeypatch.setattr(ws_mod, "_broker_live_statuses", {})
+    monkeypatch.setattr(asyncio, "to_thread", inline_to_thread)
 
-    result = asyncio.run(app.list_phones(
+    result = asyncio.run(ws_mod.list_phones(
         user={"id": "user"}, tenant_id="workspace-real", include_live=True,
     ))
 
@@ -343,7 +347,7 @@ def test_phone_list_exposes_ingestor_auth_configuration_error(monkeypatch):
 def test_delete_phone_removes_ingestor_session_and_workspace_record(monkeypatch):
     calls = []
 
-    class Storage:
+    class FakeStorage:
         def remove_org_whatsapp_connection(self, phone_id):
             calls.append(("storage-delete", phone_id))
             return True
@@ -361,14 +365,14 @@ def test_delete_phone_removes_ingestor_session_and_workspace_record(monkeypatch)
     async def inline_to_thread(function, *args, **kwargs):
         return function(*args, **kwargs)
 
-    monkeypatch.setattr(app, "storage", Storage())
-    monkeypatch.setattr(app, "_resolve_active_organization_id", lambda user, tenant_id: "workspace-real")
-    monkeypatch.setattr(app, "_require_org_permission", allow_phone_management)
-    monkeypatch.setattr(app, "_scoped_phone", scoped_phone)
-    monkeypatch.setattr(app, "_first_ingestor_response", ingestor)
-    monkeypatch.setattr(app.asyncio, "to_thread", inline_to_thread)
+    monkeypatch.setattr(ws_mod, "storage", FakeStorage())
+    monkeypatch.setattr(ws_mod, "_resolve_active_organization_id", lambda user, tenant_id: "workspace-real")
+    monkeypatch.setattr(ws_mod, "_require_org_permission", allow_phone_management)
+    monkeypatch.setattr(ws_mod, "_scoped_phone", scoped_phone)
+    monkeypatch.setattr(ws_mod, "_first_ingestor_response", ingestor)
+    monkeypatch.setattr(asyncio, "to_thread", inline_to_thread)
 
-    result = asyncio.run(app.delete_phone(
+    result = asyncio.run(ws_mod.delete_phone(
         13, user={"id": "user"}, tenant_id="workspace-real",
     ))
 
@@ -389,13 +393,13 @@ def test_connect_phone_maps_ingestor_unauthorized_to_dependency_error(monkeypatc
     async def ingestor(method, path, **kwargs):
         return "http://ingestor:3001", httpx.Response(401, json={"error": "invalid token"})
 
-    monkeypatch.setattr(app, "_resolve_active_organization_id", lambda user, tenant_id: "workspace-real")
-    monkeypatch.setattr(app, "_require_org_permission", allow_phone_management)
-    monkeypatch.setattr(app, "_scoped_phone", scoped_phone)
-    monkeypatch.setattr(app, "_first_ingestor_response", ingestor)
+    monkeypatch.setattr(ws_mod, "_resolve_active_organization_id", lambda user, tenant_id: "workspace-real")
+    monkeypatch.setattr(ws_mod, "_require_org_permission", allow_phone_management)
+    monkeypatch.setattr(ws_mod, "_scoped_phone", scoped_phone)
+    monkeypatch.setattr(ws_mod, "_first_ingestor_response", ingestor)
 
-    with pytest.raises(app.HTTPException) as exc:
-        asyncio.run(app.connect_phone(13, user={"id": "user"}, tenant_id="workspace-real"))
+    with pytest.raises(ws_mod.HTTPException) as exc:
+        asyncio.run(ws_mod.connect_phone(13, user={"id": "user"}, tenant_id="workspace-real"))
 
     assert exc.value.status_code == 502
     assert "PROPAI_INTERNAL_TOKEN" in exc.value.detail
