@@ -6614,32 +6614,11 @@ async def _run_self_chat_agent(
     # Self-chat prefers the fastest healthy provider. Try Cerebras → Gemini
     # before falling back to the chain default (NVIDIA NIM, which is slow).
     try:
-        fast = _llm.get_fast_client()
-        api_key = fast.api_key
-        base_url = (
-            fast.base_url.base_url.rstrip("/")
-            if hasattr(fast.base_url, "base_url")
-            else str(fast.base_url).rstrip("/")
-        )
-        configured_model = configured_model or _llm.get_fast_model()
-        provider_name = _llm.get_fast_provider_name()
+        configured_model = configured_model or _llm.get_model()
+        provider_name = _llm.get_provider_name()
     except Exception:
         pass
-    if not api_key or api_key == "none":
-        # Fallback to default chain.
-        try:
-            client = _llm.get_client()
-            api_key = client.api_key
-            base_url = (
-                client.base_url.base_url.rstrip("/")
-                if hasattr(client.base_url, "base_url")
-                else str(client.base_url).rstrip("/")
-            )
-            configured_model = configured_model or _llm.get_model()
-            provider_name = _llm.get_provider_name()
-        except Exception:
-            pass
-    if not api_key or api_key == "none":
+    if not provider_name or provider_name == "none":
         return {
             "error": "api_key_required",
             "message": "No LLM provider is available for self-chat.",
@@ -6707,9 +6686,7 @@ async def _run_self_chat_agent(
         reply = chat_engine.get_model_reply(
             msgs,
             sources,
-            api_key=api_key,
             model=configured_model or None,
-            base_url=base_url,
             max_tool_rounds=max_rounds,
             db_path=getattr(storage, "db", None),
             tenant_id=tenant_id,
