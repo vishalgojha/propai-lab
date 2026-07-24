@@ -174,6 +174,38 @@ export function MobileDrawer({
           <kbd className="ml-auto text-[10px] text-zinc-600 bg-white/5 px-1.5 py-0.5 rounded">⌘K</kbd>
         </button>
 
+        <a
+          href="/connections"
+          onClick={onClose}
+          className="mx-3 mt-2 flex items-center gap-3 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2.5 transition-colors hover:bg-white/[0.05]"
+        >
+          <div
+            className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border text-xs font-bold ${
+              whatsappConnected
+                ? "border-[#3EE88A]/20 bg-[#3EE88A]/10 text-[#3EE88A]"
+                : whatsappConnected === false
+                  ? "border-red-500/20 bg-red-500/10 text-red-300"
+                  : "border-white/10 bg-white/[0.03] text-zinc-400"
+            }`}
+          >
+            {whatsappConnected ? "WA" : "?"}
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="text-sm font-semibold text-white">
+              {whatsappConnected === null
+                ? "Checking WhatsApp"
+                : whatsappConnected
+                  ? "WhatsApp Connected"
+                  : "Connect WhatsApp"}
+            </div>
+            <div className="text-[11px] text-zinc-500 truncate">
+              {whatsappConnected
+                ? whatsappPhone || "Your connected number"
+                : "Open Connection Center from here"}
+            </div>
+          </div>
+        </a>
+
         {/* Navigation */}
         <nav className="flex-1 overflow-y-auto px-3 py-4">
           {navSections.map((section) => (

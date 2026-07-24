@@ -39,7 +39,9 @@ import {
   TrendingUp,
   Home,
   ChevronLeft,
+  Menu,
 } from "lucide-react";
+import { useLayout } from "@/hooks/useLayout";
 
 const PAGE_SIZE = 100;
 const BROKER_PAGE_SIZE = 25;
@@ -1111,6 +1113,7 @@ interface InboxPageInnerProps {
 function InboxPageInner({ defaultView }: InboxPageInnerProps) {
   const router = useRouter();
   const isMobile = useIsMobile();
+  const { toggleDrawer } = useLayout();
   const [mobileView, setMobileView] = useState<"list" | "conversation">("list");
   const [mobileAiChatOpen, setMobileAiChatOpen] = useState(false);
   // Left Panel States
@@ -3153,7 +3156,7 @@ return {
   const selectedHasMarketContext = hasMarketContext(selectedMsgDetails);
 
   return (
-    <div className="mobile-inbox flex flex-col h-[calc(100dvh-36px)] min-h-0 max-h-[calc(100dvh-36px)] overflow-hidden bg-black lg:h-full lg:max-h-full lg:rounded-2xl lg:border lg:border-white/10">
+    <div className="mobile-inbox safe-area-top safe-area-bottom flex flex-col h-[100dvh] min-h-0 max-h-[100dvh] overflow-hidden bg-black lg:h-full lg:max-h-full lg:rounded-2xl lg:border lg:border-white/10">
       
       {actionMessage && (
         <div className="bg-[#1e293b] border-b border-[#3EE88A]/30 text-[#3EE88A] px-4 py-2 text-xs font-semibold text-center flex items-center justify-center gap-3 animate-fadeIn">
@@ -3185,9 +3188,9 @@ return {
           <div className="flex flex-col h-full">
           {/* Panel Search & Header */}
           <div className="p-2 sm:p-4 border-b border-white/10 space-y-1.5 sm:space-y-3">
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="text-[13px] font-bold tracking-wider text-white uppercase sm:text-sm">
+            <div className="flex items-center justify-between gap-2">
+              <div className="min-w-0">
+                <div className="text-[12px] font-bold tracking-wider text-white uppercase sm:text-sm">
                   {isGroupsView ? "WhatsApp Groups" : "Market Inbox"}
                 </div>
                 <div className="hidden sm:block text-[10px] text-zinc-500 mt-0.5">
@@ -3196,18 +3199,28 @@ return {
                     : "WhatsApp conversations with PropAI memory"}
                 </div>
               </div>
-              <button
-                onClick={() => {
-                  resetSelectionForPageChange();
-                  setOffset(0);
-                  prevOffsetRef.current = 0;
-                  loadFeed(false, 0);
-                }}
-                className="text-[10px] sm:text-xs text-[#3EE88A] hover:underline"
-                disabled={loadingLeft}
-              >
-                {loadingLeft ? "Refreshing..." : <><span className="sm:hidden">↻</span><span className="sm:hidden ml-0.5">Refresh</span><span className="hidden sm:inline">Refresh</span></>}
-              </button>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <button
+                  onClick={toggleDrawer}
+                  className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 bg-white/[0.03] text-zinc-400 hover:text-white hover:border-white/20 transition-colors lg:hidden"
+                  aria-label="Open menu"
+                  title="Open menu"
+                >
+                  <Menu className="h-4 w-4" strokeWidth={1.5} />
+                </button>
+                <button
+                  onClick={() => {
+                    resetSelectionForPageChange();
+                    setOffset(0);
+                    prevOffsetRef.current = 0;
+                    loadFeed(false, 0);
+                  }}
+                  className="text-[10px] sm:text-xs text-[#3EE88A] hover:underline"
+                  disabled={loadingLeft}
+                >
+                  {loadingLeft ? "Refreshing..." : <><span className="sm:hidden">↻</span><span className="sm:hidden ml-0.5">Refresh</span><span className="hidden sm:inline">Refresh</span></>}
+                </button>
+              </div>
             </div>
             
             <input
@@ -3554,6 +3567,15 @@ return {
                 <div className="flex items-center gap-3">
                   {isMobile && (
                     <button
+                      onClick={toggleDrawer}
+                      className="p-1 -ml-1 rounded-lg text-zinc-400 hover:text-white hover:bg-white/5 transition-colors touch-target"
+                      aria-label="Open menu"
+                    >
+                      <Menu className="w-5 h-5" />
+                    </button>
+                  )}
+                  {isMobile && (
+                    <button
                       onClick={() => setMobileView("list")}
                       className="p-1 -ml-1 rounded-lg text-zinc-400 hover:text-white hover:bg-white/5 transition-colors touch-target"
                       aria-label="Back to inbox list"
@@ -3862,28 +3884,31 @@ return {
                 </div>
                 {brokerReplyPhone ? (
                   <>
-                    <textarea
-                      value={brokerReplyText}
-                      onChange={(e) => setBrokerReplyText(e.target.value)}
-                      rows={3}
-                      placeholder="Write a short note, question, or follow-up..."
-                      className="w-full resize-none rounded-md border border-white/10 bg-zinc-950 px-3 py-2.5 text-sm text-white placeholder-zinc-500 outline-none transition-colors focus:border-white/35"
-                    />
-                    <div className="mt-2 flex items-center justify-between gap-3">
-                      <div className="text-[11px] text-zinc-500">
-                        {whatsappConnected
-                          ? "Replies route through the connected WhatsApp link and record the action in workspace analytics."
-                          : "Connect your WhatsApp phone to reply from PropAI."}
-                      </div>
+                    <div className="relative">
+                      <textarea
+                        value={brokerReplyText}
+                        onChange={(e) => setBrokerReplyText(e.target.value)}
+                        rows={3}
+                        placeholder="Write a short note, question, or follow-up..."
+                        className="w-full resize-none rounded-2xl border border-white/10 bg-zinc-950 px-3 py-2.5 pb-12 pr-12 text-sm text-white placeholder-zinc-500 outline-none transition-colors focus:border-white/35"
+                      />
                       <button
                         type="button"
                         onClick={() => void handleSendBrokerReply()}
                         disabled={!brokerReplyText.trim() || sendingReply || !whatsappConnected || replyAccessLoading}
-                        className="inline-flex h-9 items-center gap-1.5 rounded bg-white px-4 text-[11px] font-semibold text-black transition-colors hover:bg-zinc-200 disabled:cursor-not-allowed disabled:bg-zinc-800 disabled:text-zinc-500"
+                        className="absolute bottom-2 right-2 inline-flex h-8 w-8 items-center justify-center rounded-lg bg-white text-black transition-colors hover:bg-zinc-200 disabled:cursor-not-allowed disabled:bg-zinc-800 disabled:text-zinc-500"
+                        aria-label={sendingReply ? "Sending message" : "Send message"}
                       >
                         <MessageSquare className="h-3.5 w-3.5" />
-                        {sendingReply ? "Sending..." : "Send message"}
                       </button>
+                    </div>
+                    <div className="mt-2 flex items-center justify-between gap-3">
+                      <div className="min-w-0 text-[11px] text-zinc-500">
+                        {whatsappConnected
+                          ? "Replies route through the connected WhatsApp link and record the action in workspace analytics."
+                          : "Connect your WhatsApp phone to reply from PropAI."}
+                      </div>
+                      <div className="shrink-0" />
                     </div>
                     {replyError && <div className="mt-2 text-[11px] text-red-400">{replyError}</div>}
                     {replyStatus && <div className="mt-2 text-[11px] text-zinc-300">{replyStatus}</div>}
@@ -3900,6 +3925,15 @@ return {
               {/* Chat Thread Header */}
               <div className="px-3 py-2.5 border-b border-white/10 flex items-center justify-between bg-black/80 sm:px-5 sm:py-4">
                 <div className="flex items-center gap-3">
+                  {isMobile && (
+                    <button
+                      onClick={toggleDrawer}
+                      className="p-1 -ml-1 rounded-lg text-zinc-400 hover:text-white hover:bg-white/5 transition-colors touch-target"
+                      aria-label="Open menu"
+                    >
+                      <Menu className="w-5 h-5" />
+                    </button>
+                  )}
                   {isMobile && (
                     <button
                       onClick={() => setMobileView("list")}

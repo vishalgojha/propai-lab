@@ -330,7 +330,7 @@ export function InboxChatPanel({
   return (
     <div className="relative h-full w-full min-w-0 flex flex-col bg-[#070b0e] overflow-hidden">
       {/* Header */}
-      <div className="flex items-center justify-between px-2.5 py-2 border-b border-white/10 shrink-0 sm:px-3 sm:py-2.5">
+      <div className="flex items-center justify-between px-2 py-1.5 border-b border-white/10 shrink-0 sm:px-3 sm:py-2.5">
         <div className="flex items-center gap-2 min-w-0">
           <div className="flex h-6 w-6 items-center justify-center rounded-md bg-emerald-500/10 text-emerald-400 shrink-0">
             <Sparkles className="w-3.5 h-3.5" />
@@ -409,7 +409,7 @@ export function InboxChatPanel({
       )}
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3 relative">
+      <div className="flex-1 overflow-y-auto px-2.5 py-2.5 space-y-2.5 relative sm:px-3 sm:py-3 sm:space-y-3">
         {messages.length === 0 && !loading ? (
           <div className="flex flex-col items-center justify-center h-full text-center px-4">
             <div className="h-10 w-10 rounded-xl bg-emerald-500/10 flex items-center justify-center mb-3">
@@ -486,7 +486,7 @@ export function InboxChatPanel({
                 : "Ask about your market data..."
             }
             rows={1}
-            className="flex-1 rounded-xl border border-white/10 bg-zinc-900 px-3 py-1.5 text-xs text-white placeholder-zinc-500 resize-none max-h-[80px] outline-none transition-colors focus:border-emerald-400/50 focus:ring-1 focus:ring-emerald-400/30 sm:py-2"
+            className="flex-1 rounded-xl border border-white/10 bg-zinc-900 px-3 py-1.5 text-[11px] text-white placeholder-zinc-500 resize-none max-h-[80px] outline-none transition-colors focus:border-emerald-400/50 focus:ring-1 focus:ring-emerald-400/30 sm:py-2 sm:text-xs"
           />
           <button
             onClick={sendMessage}
