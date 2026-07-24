@@ -49,6 +49,19 @@ if _nvidia_model:
                 "model": _nvidia_model,
             })
 
+# Groq — up to 4 pooled-account keys for round-robin
+_groq_model = os.getenv("GROQ_MODEL", "").strip()
+if _groq_model:
+    for suffix in ("", "_2", "_3", "_4"):
+        key = os.getenv(f"GROQ_API_KEY{suffix}", "").strip()
+        if key:
+            _PROVIDERS.append({
+                "name": f"groq{suffix}" if suffix else "groq",
+                "api_key": key,
+                "base_url": "https://api.groq.com/openai/v1",
+                "model": _groq_model,
+            })
+
 
 class ProviderConfigurationError(RuntimeError):
     """Raised when no complete LLM provider configuration is available."""
