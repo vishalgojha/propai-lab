@@ -170,14 +170,13 @@ export default function GroupsPage() {
           {error}
         </div>
       )}
-      <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-5">
+      <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-4">
         {[
           ["Groups", groups.length],
           ["Tagged", parsedGroupCount],
           ["Tracked", trackedCount],
           ["Opt-outs", optedOutCount],
           ["Capture", "Live"],
-          ["Window", "10-7"],
         ].map(([label, value]) => (
           <div key={label as string} className="rounded-xl border border-white/10 bg-zinc-900 p-3">
             <div className="text-2xl font-bold text-white">{value as number | string}</div>
