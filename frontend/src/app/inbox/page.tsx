@@ -2497,18 +2497,10 @@ return {
     const nowIso = new Date().toISOString();
 
     try {
-      if (isGroupConversationSelected) {
-        await api.sendMessage({
-          remote_jid: selectedConversationJid,
-          text,
-        });
-      } else {
-        await api.sendWabaMessage({
-          to: replyFallbackPhone || "",
-          text,
-          remote_jid: selectedConversationJid,
-        });
-      }
+      await api.sendMessage({
+        remote_jid: selectedConversationJid,
+        text,
+      });
 
       const optimisticMessage: api.RawMessage = {
         id: Number(`${Date.now()}`),
