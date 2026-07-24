@@ -966,7 +966,7 @@ func selfChatCommand(s *BrokerSession, evt *events.Message) (types.JID, string, 
 		return types.EmptyJID, "", false
 	}
 	info := evt.Info
-	if !info.IsFromMe || info.IsGroup {
+	if info.IsGroup {
 		return types.EmptyJID, "", false
 	}
 	// Self-chat is when the user messages their own number.
