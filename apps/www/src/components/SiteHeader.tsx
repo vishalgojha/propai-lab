@@ -67,13 +67,13 @@ export default function SiteHeader({ backHref, backLabel }: SiteHeaderProps) {
 
         <div className="hidden lg:flex items-center gap-4">
           <Link
-            href="https://app.propai.live/auth/login"
+            href="/contact"
             className="text-[15px] text-zinc-400 hover:text-white transition-all duration-base hover:scale-[1.02] active:scale-[0.98]"
           >
             Broker login
           </Link>
           <Link
-            href="https://app.propai.live/auth/signup"
+            href="/contact"
             className="inline-flex items-center rounded-full bg-[#3EE88A] px-4 py-2 text-sm font-semibold text-black transition-all duration-base hover:bg-[#2ed87a] hover:scale-[1.02] active:scale-[0.98]"
           >
             Get started
@@ -116,14 +116,14 @@ export default function SiteHeader({ backHref, backLabel }: SiteHeaderProps) {
             ))}
             <div className="flex items-center gap-4 pt-4 pb-2">
               <Link
-                href="https://app.propai.live/auth/login"
+                href="/contact"
                 onClick={() => setOpen(false)}
                 className="text-[15px] text-zinc-400 hover:text-white transition-colors"
               >
                 Broker login
               </Link>
               <Link
-                href="https://app.propai.live/auth/signup"
+                href="/contact"
                 onClick={() => setOpen(false)}
                 className="inline-flex items-center rounded-full bg-[#3EE88A] px-4 py-2 text-sm font-semibold text-black transition-colors"
               >

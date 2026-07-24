@@ -292,7 +292,9 @@ export async function getLocalityData(rawSlug: string): Promise<LocalityData | n
 
   const buildingNames = Array.from(
     new Set(
-      rows.map((r) => cleanBuildingName(r.building_name)).filter(Boolean) as string[],
+      rows
+        .map((r) => cleanBuildingName(r.building_name))
+        .filter((name): name is string => Boolean(name) && canonicalLocality(name).slug !== slug),
     ),
   );
 
@@ -313,7 +315,7 @@ export async function getLocalityData(rawSlug: string): Promise<LocalityData | n
 
   for (const row of rows) {
     const name = cleanBuildingName(row.building_name);
-    if (!name) continue;
+    if (!name || canonicalLocality(name).slug === slug) continue;
     const entry = agg.get(name) ?? {
       name,
       count: 0,
@@ -762,13 +764,13 @@ export type ListingDetail = BuildingListing & {
 // For Rent at Near Pali Village..."), which then leaks into buildings.canonical_name
 // and renders as a garbage /buildings/[slug] page. Reject those as 404s.
 const JUNK_AD_PHRASES =
-  /(available|commercial space|for rent|for sale|on rent|on sale|outright|unfurnished|furnished|furnish|semi furnished|car parking|carpet|built up|super area|sq\.? ?ft|sqft|\d\s*bhk|\bbhk|rent|sale|possession)/i;
+  /(available|commercial space|for rent|for sale|on rent|on sale|outright|unfurnished|furnished|furnish|semi furnished|car parking|carpet|built up|super area|sq\.? ?ft|sqft|\d\s*bhk|\bbhk|rent|sale|possession|inventory|inventories|direct inventory|direct inventories|video available)/i;
 const SOCIETY_WORDS =
   /\b(society|chs|chsl|co[- ]?op|cooperative|housing|apartment|apartments|niwas|park|phase|tower|towers|complex|heights|residency|building|estate|enclave|gardens|residences|layout)\b/i;
 // Broker / agency names mistakenly stored as building_name. These should never
 // render as a building card (clicking them 404s on /buildings/<slug>).
 const BROKER_NAME_PHRASES =
-  /\b(real estate|realtor|broker|broking|properties|property consultant|consultant|ventures|realty)\b/i;
+  /\b(real estate|realtors?|broker|broking|properties?|property consultant|consultants?|ventures?|realty)\b/i;
 // Sentence-like fragments that are descriptions, not building names
 // (e.g. "Located In Industrial Estate", "Opposite Railway Station").
 const SENTENCE_PHRASES =

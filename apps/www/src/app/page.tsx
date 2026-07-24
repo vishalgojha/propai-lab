@@ -15,7 +15,8 @@ import SiteFooter from "@/components/SiteFooter";
 import { ShortlistProvider } from "@/components/ShortlistProvider";
 import ShortlistBar from "@/components/ShortlistBar";
 import { getAllLocalities } from "@/lib/localities";
-import { getPublicDataOverview } from "@/lib/public-data";
+import { formatPublicPrice, getPublicDataOverview } from "@/lib/public-data";
+import { slugify } from "@/lib/supabase";
 import CountUp from "@/components/CountUp";
 import ScrollReveal from "@/components/ScrollReveal";
 
@@ -206,6 +207,54 @@ export default async function WWWPage() {
                 </div>
               </div>
             </div>
+
+            {overview.recentListings.length > 0 && (
+              <div className="mt-6 rounded-3xl border border-white/10 bg-black/70 p-5 lg:p-6">
+                <div className="mb-4 flex items-end justify-between gap-3">
+                  <div>
+                    <h3 className="text-lg font-semibold text-white">Latest 6 listings</h3>
+                    <p className="text-sm text-zinc-500">Fresh inventory from the live WhatsApp feed</p>
+                  </div>
+                  <Link href="/search" className="text-sm text-green-300 hover:text-green-200 transition-colors">
+                    Search all
+                  </Link>
+                </div>
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+                  {overview.recentListings.slice(0, 6).map((row) => {
+                    const title =
+                      row.building_name?.trim() ||
+                      row.landmark_name?.trim() ||
+                      row.location_label?.trim() ||
+                      row.micro_market?.trim() ||
+                      "Listing";
+                    const slug = slugify(row.building_name || row.micro_market || row.location_label || title);
+                    const price = formatPublicPrice(row.price, row.price_unit);
+                    const spec = [row.bhk, row.furnishing].filter(Boolean).join(" · ");
+                    return (
+                      <Link
+                        key={row.id}
+                        href={`/listings/${slug}/${row.id}`}
+                        className="rounded-2xl border border-white/10 bg-zinc-950/80 p-4 transition-colors hover:border-green-400/30 hover:bg-zinc-900"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <div className="text-sm font-medium text-white line-clamp-2">{title}</div>
+                            <div className="mt-1 text-xs text-zinc-500">
+                              {row.micro_market || "Mumbai"}{row.broker_name ? ` · ${row.broker_name}` : ""}
+                            </div>
+                          </div>
+                          <div className="text-sm font-semibold text-green-300 whitespace-nowrap">{price}</div>
+                        </div>
+                        {spec && <div className="mt-3 text-xs text-zinc-400">{spec}</div>}
+                        <div className="mt-4 text-xs text-zinc-500">
+                          {row.last_seen ? `Updated ${new Date(row.last_seen).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}` : "Updated recently"}
+                        </div>
+                      </Link>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
         </section>
 

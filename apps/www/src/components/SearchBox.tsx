@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import { ArrowRight, Search, MapPin } from "lucide-react";
 import type { LocalitySummary } from "@/lib/localities";
 import { useAnalytics } from "@/lib/useAnalytics";
@@ -199,13 +198,17 @@ export default function SearchBox({
         <ul className="absolute z-20 mt-2 w-full overflow-hidden rounded-2xl border border-white/10 bg-zinc-950 shadow-[0_25px_80px_rgba(0,0,0,0.55)]">
           {suggestions.map((s, i) => (
             <li key={s.slug}>
-              <Link
-                href={`/localities/${s.slug}`}
-                className={`flex items-center justify-between gap-3 px-4 py-3 text-sm transition-colors ${
+              <button
+                type="button"
+                className={`flex w-full items-center justify-between gap-3 px-4 py-3 text-left text-sm transition-colors ${
                   i === active ? "bg-green-400/15 text-white" : "text-zinc-300 hover:bg-white/5"
                 }`}
                 onMouseEnter={() => setActive(i)}
-                onClick={() => setOpen(false)}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  setOpen(false);
+                  router.push(`/localities/${s.slug}`);
+                }}
               >
                 <span className="flex items-center gap-2">
                   <MapPin className="h-4 w-4 text-green-400" aria-hidden="true" />
@@ -214,7 +217,7 @@ export default function SearchBox({
                 <span className="text-xs text-zinc-500">
                   {s.listingCount.toLocaleString()} listings
                 </span>
-              </Link>
+              </button>
             </li>
           ))}
         </ul>

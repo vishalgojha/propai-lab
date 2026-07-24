@@ -111,6 +111,11 @@ export default async function SearchPage({ searchParams }: { searchParams: Searc
 
           <div className="mt-8 max-w-2xl">
             <SearchBox query={query} asset={assetParam} localities={knownLocalities} />
+            {aiContext && state && state.results.length > 0 && (
+              <div className="mt-4">
+                <SearchAiChat context={aiContext} />
+              </div>
+            )}
           </div>
 
           {!query && (
@@ -233,11 +238,6 @@ export default async function SearchPage({ searchParams }: { searchParams: Searc
                     If a match lands inside your timeline, the requirement can be routed to a broker and/or sent back to you for follow-up.
                   </div>
                 </aside>
-              </div>
-            )}
-            {aiContext && state && state.results.length > 0 && (
-              <div className="mt-10">
-                <SearchAiChat context={aiContext} />
               </div>
             )}
           </section>
