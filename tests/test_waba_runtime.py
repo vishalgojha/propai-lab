@@ -61,6 +61,7 @@ def test_waba_webhook_stores_inbound_message_once(monkeypatch):
                 "entry": [{
                     "changes": [{
                         "value": {
+                            "metadata": {"phone_number_id": "test-phone-id"},
                             "contacts": [{"profile": {"name": "Broker One"}}],
                             "messages": [{
                                 "from": "919999999999",
@@ -73,12 +74,19 @@ def test_waba_webhook_stores_inbound_message_once(monkeypatch):
                 }],
             }
 
+    workspace = {
+        "organization_id": "org-broker",
+        "phone_number_id": "test-phone-id",
+        "access_token": "token",
+        "verify_token": "verify",
+        "is_active": True,
+    }
     monkeypatch.setattr(
         app,
         "storage",
         SimpleNamespace(
             db=Database(),
-            get_org_waba_connection_by_phone_number_id=lambda _phone_id: None,
+            get_org_waba_connection_by_phone_number_id=lambda _phone_id: workspace,
         ),
     )
     monkeypatch.setattr(app, "_waba_session_update", lambda *_args, **_kwargs: None)
