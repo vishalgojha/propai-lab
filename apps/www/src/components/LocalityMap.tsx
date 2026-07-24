@@ -49,8 +49,6 @@ export default function LocalityMap({ locality, buildings, token }: Props) {
         mapboxgl = mod;
         popupApi = mod.Popup;
 
-        (mapboxgl as unknown as { accessToken: string }).accessToken = token;
-
         const map = new mapboxgl.Map({
           container,
           style: "mapbox://styles/mapbox/light-v11",
@@ -60,6 +58,7 @@ export default function LocalityMap({ locality, buildings, token }: Props) {
               : [0, 0],
           zoom: geocoded.length === 1 ? 14 : 11,
           attributionControl: false,
+          accessToken: token,
         });
         mapRef.current = map;
 
