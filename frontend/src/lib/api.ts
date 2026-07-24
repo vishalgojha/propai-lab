@@ -1756,6 +1756,13 @@ export function connectPhone(phoneId: number) {
   return fetchJSON<Phone>(`/phones/${phoneId}/connect`, { method: "POST" });
 }
 
+export function pairCodePhone(phoneId: number, phone: string) {
+  return fetchJSON<any>(`/phones/${phoneId}/pair-code`, {
+    method: "POST",
+    body: JSON.stringify({ phone }),
+  });
+}
+
 export function updatePhone(phoneId: number, data: { instance_name?: string; self_chat_enabled?: boolean }) {
   return fetchJSON<Phone>(`/phones/${phoneId}`, {
     method: "PATCH",

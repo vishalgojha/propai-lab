@@ -15094,6 +15094,32 @@ async def connect_phone(
     raise HTTPException(502, _ingestor_failure_message(resp))
 
 
+@app.post("/api/phones/{phone_id}/pair-code")
+async def pair_code_phone(
+    phone_id: int,
+    body: dict,
+    user: dict = Depends(require_user),
+    tenant_id: str | None = Depends(get_tenant_context),
+):
+    org_id = _resolve_active_organization_id(user, tenant_id)
+    await _require_org_permission(user, org_id, "manage_whatsapp")
+    phone = await _scoped_phone(phone_id, org_id)
+    broker_id = phone.get("broker_id", "")
+    if not broker_id:
+        raise HTTPException(400, "Phone is missing broker_id")
+    phone_number = body.get("phone", "").strip()
+    if not phone_number:
+        raise HTTPException(400, "phone number is required")
+    _, resp = await _first_ingestor_response(
+        "POST", "/pair-code", timeout=15,
+        params={"broker_id": broker_id},
+        json={"phone": phone_number},
+    )
+    if resp is not None and resp.status_code == 200:
+        return resp.json()
+    raise HTTPException(502, _ingestor_failure_message(resp))
+
+
 async def _admin_whatsapp_session(phone: dict, live_status: dict | None = None) -> dict:
     broker_id = str(phone.get("broker_id") or "").strip()
     status: dict = live_status or {}

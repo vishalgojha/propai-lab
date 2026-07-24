@@ -49,6 +49,8 @@ type Status struct {
 	ConnectionState       string           `json:"connection_state"`
 	QR                    string           `json:"qr,omitempty"`
 	QRAvailable           bool             `json:"qr_available,omitempty"`
+	PairingCode           string           `json:"pairing_code,omitempty"`
+	PairingPhone          string           `json:"pairing_phone,omitempty"`
 	PhoneNumber           string           `json:"phone_number,omitempty"`
 	DisplayName           string           `json:"display_name,omitempty"`
 	InstanceName          string           `json:"instance_name,omitempty"`
@@ -95,6 +97,8 @@ type BrokerSession struct {
 	totalByType       map[string]int64
 	lastSeenByType    map[string]time.Time
 	statusFile        string
+	pairingMode       string // "qr" or "code"
+	pairingPhone      string // phone number for code pairing
 }
 
 func (s *BrokerSession) getStatus() Status {
@@ -510,7 +514,7 @@ sessionLoop:
 		}
 
 		if s.device.ID == nil {
-			// No session — QR pairing flow
+			// No session — QR or code pairing flow
 			s.reconnectFailures = 0
 			qrChan, err := s.client.GetQRChannel(ctx)
 			if err != nil {
@@ -524,16 +528,26 @@ sessionLoop:
 				continue
 			}
 			heartbeatStop = s.startHeartbeat()
-		qrLoop:
-			for {
+
+			// Code pairing: wait for first QR event, then generate pairing code
+			s.mu.RLock()
+			pairMode := s.pairingMode
+			phone := s.pairingPhone
+			s.mu.RUnlock()
+			if pairMode == "code" && phone != "" {
+				log.Printf("[broker %s] initiating code pairing for phone %s", s.brokerID, phone)
+				// Wait for the first QR event to ensure connection is established
 				select {
 				case evt, ok := <-qrChan:
-					if !ok {
-						break qrLoop
-					}
-					if evt.Event == "code" {
-						s.setStatus(Status{Connected: false, ConnectionState: "qr", QR: evt.Code, QRAvailable: true})
-						fmt.Printf("[broker %s] QR: %s\n", s.brokerID, evt.Code)
+					if ok && evt.Event == "code" {
+						code, err := s.client.PairPhone(ctx, phone, false, whatsmeow.PairClientUnknown, "PropAI (Linux)")
+						if err != nil {
+							log.Printf("[broker %s] PairPhone failed: %v", s.brokerID, err)
+							s.setStatus(Status{ConnectionState: "error"})
+						} else {
+							log.Printf("[broker %s] pairing code: %s", s.brokerID, code)
+							s.setStatus(Status{Connected: false, ConnectionState: "code_pairing", PairingCode: code, PairingPhone: phone, QRAvailable: true})
+						}
 					}
 				case <-disconnected:
 					stopHeartbeat()
@@ -543,14 +557,61 @@ sessionLoop:
 					s.client.Disconnect()
 					return
 				}
-			}
-			// A successful pair closes the QR channel while keeping the socket
-			// authenticated. Do not disconnect that brand-new client: wait for its
-			// normal disconnect event below. If pairing ended without credentials,
-			// start a fresh QR attempt instead.
-			if shouldRetryQRPairing(s.device) {
-				stopHeartbeat()
-				continue sessionLoop
+				// Now wait for pairing to complete (channel closes on success)
+				for {
+					select {
+					case _, ok := <-qrChan:
+						if !ok {
+							goto pairDone
+						}
+					case <-disconnected:
+						stopHeartbeat()
+						continue sessionLoop
+					case <-s.ctx.Done():
+						stopHeartbeat()
+						s.client.Disconnect()
+						return
+					}
+				}
+			pairDone:
+				s.mu.Lock()
+				s.pairingMode = ""
+				s.pairingPhone = ""
+				s.mu.Unlock()
+				if shouldRetryQRPairing(s.device) {
+					stopHeartbeat()
+					continue sessionLoop
+				}
+			} else {
+				// Standard QR pairing flow
+			qrLoop:
+				for {
+					select {
+					case evt, ok := <-qrChan:
+						if !ok {
+							break qrLoop
+						}
+						if evt.Event == "code" {
+							s.setStatus(Status{Connected: false, ConnectionState: "qr", QR: evt.Code, QRAvailable: true})
+							fmt.Printf("[broker %s] QR: %s\n", s.brokerID, evt.Code)
+						}
+					case <-disconnected:
+						stopHeartbeat()
+						continue sessionLoop
+					case <-s.ctx.Done():
+						stopHeartbeat()
+						s.client.Disconnect()
+						return
+					}
+				}
+				// A successful pair closes the QR channel while keeping the socket
+				// authenticated. Do not disconnect that brand-new client: wait for its
+				// normal disconnect event below. If pairing ended without credentials,
+				// start a fresh QR attempt instead.
+				if shouldRetryQRPairing(s.device) {
+					stopHeartbeat()
+					continue sessionLoop
+				}
 			}
 		} else {
 			// Existing session — connect directly
@@ -1665,6 +1726,67 @@ func (sm *SessionManager) connectHandler(w http.ResponseWriter, r *http.Request)
 	json.NewEncoder(w).Encode(status)
 }
 
+func (sm *SessionManager) pairCodeHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if !requireMethod(w, r, http.MethodPost) {
+		return
+	}
+	brokerID := brokerIDFromRequest(r)
+	if brokerID == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "broker_id is required"})
+		return
+	}
+	var body struct {
+		Phone string `json:"phone"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Phone == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "phone number is required"})
+		return
+	}
+	// Strip non-digits
+	phone := ""
+	for _, c := range body.Phone {
+		if c >= '0' && c <= '9' {
+			phone += string(c)
+		}
+	}
+	if len(phone) < 10 {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "invalid phone number"})
+		return
+	}
+
+	session := sm.StartOrGet(brokerID)
+	if session == nil {
+		w.WriteHeader(http.StatusConflict)
+		json.NewEncoder(w).Encode(map[string]string{"error": "session is already active in another ingestor instance"})
+		return
+	}
+	// Set pairing mode before the session loop picks it up
+	session.mu.Lock()
+	session.pairingMode = "code"
+	session.pairingPhone = phone
+	session.mu.Unlock()
+
+	// If session is already in QR flow, cancel and restart so it picks up code pairing
+	if session.getStatus().ConnectionState == "qr" || session.getStatus().ConnectionState == "" {
+		if session.cancel != nil {
+			session.cancel()
+		}
+		// Restart will happen automatically via sessionLoop
+	}
+
+	status := session.getStatus()
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"ok":    true,
+		"phone": phone,
+		"note":  "Pairing code will be generated. Check status for the code.",
+		"status": status,
+	})
+}
+
 func (sm *SessionManager) resetHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if !requireMethod(w, r, http.MethodPost) {
@@ -2605,6 +2727,7 @@ func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", internalOnly(sm.healthHandler, true))
 	mux.HandleFunc("/connect", internalOnly(sm.connectHandler, false))
+	mux.HandleFunc("/pair-code", internalOnly(sm.pairCodeHandler, false))
 	mux.HandleFunc("/reset", internalOnly(sm.resetHandler, false))
 	mux.HandleFunc("/disconnect", internalOnly(sm.disconnectHandler, false))
 	mux.HandleFunc("/delete-session", internalOnly(sm.deleteSessionHandler, false))
