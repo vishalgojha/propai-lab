@@ -11,7 +11,8 @@ import asyncio
 
 
 def test_ai_chat_endpoints_forward_tenant(monkeypatch):
-    import app
+    import routers.ai_chat as ai_chat
+    import routers.common as _common
 
     calls = []
 
@@ -35,17 +36,18 @@ def test_ai_chat_endpoints_forward_tenant(monkeypatch):
         def delete_chat_session(self, session_id, tenant_id=None):
             calls.append(("delete", session_id, tenant_id))
 
-    monkeypatch.setattr(app, "storage", FakeStorage())
+    monkeypatch.setattr(_common, "storage", FakeStorage())
+    monkeypatch.setattr(ai_chat, "storage", FakeStorage())
     monkeypatch.setattr(
-        app.chat_engine,
+        ai_chat.chat_engine,
         "get_conversational_reply",
         lambda *args, **kwargs: type("Reply", (), {"content": "Hello"})(),
     )
 
-    asyncio.run(app.list_chat_sessions(broker_phone="919999999999", tenant_id="org-A"))
-    asyncio.run(app.create_chat_session(broker_phone="919999999999", title="t", tenant_id="org-A"))
-    asyncio.run(app.get_chat_session_messages(session_id="s1", tenant_id="org-A"))
-    asyncio.run(app.delete_chat_session(session_id="s1", tenant_id="org-A"))
+    asyncio.run(ai_chat.list_chat_sessions(broker_phone="919999999999", tenant_id="org-A"))
+    asyncio.run(ai_chat.create_chat_session(broker_phone="919999999999", title="t", tenant_id="org-A"))
+    asyncio.run(ai_chat.get_chat_session_messages(session_id="s1", tenant_id="org-A"))
+    asyncio.run(ai_chat.delete_chat_session(session_id="s1", tenant_id="org-A"))
 
     assert ("list", "919999999999", 50, "org-A") in calls
     assert ("create", "919999999999", "t", "org-A") in calls
@@ -56,7 +58,8 @@ def test_ai_chat_endpoints_forward_tenant(monkeypatch):
 
 
 def test_ai_chat_persist_uses_tenant(monkeypatch):
-    import app
+    import routers.ai_chat as ai_chat
+    import routers.common as _common
 
     calls = []
 
@@ -78,9 +81,10 @@ def test_ai_chat_persist_uses_tenant(monkeypatch):
             calls.append(("profile", phone, auth_user_id, tenant_id))
             return None
 
-    monkeypatch.setattr(app, "storage", FakeStorage())
+    monkeypatch.setattr(_common, "storage", FakeStorage())
+    monkeypatch.setattr(ai_chat, "storage", FakeStorage())
     monkeypatch.setattr(
-        app.chat_engine,
+        ai_chat.chat_engine,
         "get_conversational_reply",
         lambda *args, **kwargs: type("Reply", (), {"content": "Hello"})(),
     )
@@ -92,7 +96,7 @@ def test_ai_chat_persist_uses_tenant(monkeypatch):
         api_key = None
         messages = [{"role": "user", "content": "hi"}]
 
-    asyncio.run(app.ai_chat(FakeReq(), user={"id": "u"}, tenant_id="org-A"))
+    asyncio.run(ai_chat.ai_chat(FakeReq(), user={"id": "u"}, tenant_id="org-A"))
 
     assert ("add", "s1", "user", "hi", "org-A") in calls
     assert ("touch", "s1", "org-A") in calls

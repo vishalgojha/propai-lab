@@ -191,7 +191,7 @@ def test_lodha_supremus_office_card_parses_as_commercial():
 
 
 def test_lodha_supremus_commercial_promote_labels_use_use_type():
-    from app import _promote_headline
+    from routers.ai_chat import _promote_headline
 
     parsed = parse_message(LODHA_SUPREMUS_OFFICE)
     headline = _promote_headline(parsed, "whatsapp")
