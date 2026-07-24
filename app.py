@@ -2712,44 +2712,6 @@ async def require_user(user: dict | None = Depends(get_current_user)) -> dict:
         raise HTTPException(401, "Authentication required")
     return user
 
-
-@app.get("/debug/auth")
-async def debug_auth(request: Request):
-    """Diagnostic endpoint — no auth required. Shows exactly what's happening with JWT."""
-    auth_header = request.headers.get("authorization", "")
-    result = {
-        "jwks_client_ready": bool(_jwks_client),
-        "supabase_url": SUPABASE_URL,
-        "authorization_header_present": bool(auth_header),
-        "authorization_header_prefix": auth_header[:20] + "..." if len(auth_header) > 20 else auth_header,
-    }
-    if not auth_header:
-        result["diagnosis"] = "NO_TOKEN: Authorization header is missing. Frontend is not sending the token."
-    elif not auth_header.startswith("Bearer "):
-        result["diagnosis"] = f"BAD_FORMAT: Authorization header starts with '{auth_header[:10]}', expected 'Bearer ...'"
-    elif not _jwks_client:
-        result["diagnosis"] = "NO_JWKS_CLIENT: JWKS client not initialized. Check SUPABASE_URL env var."
-    else:
-        token = auth_header[7:]
-        try:
-            signing_key = _jwks_client.get_signing_key_from_jwt(token)
-            payload = pyjwt.decode(token, signing_key.key, algorithms=["ES256"],
-                                  audience="authenticated",
-                                  options={"require": ["sub", "exp"]})
-            result["diagnosis"] = "VALID: Token decoded successfully. Auth should be working."
-            result["payload_sub"] = payload.get("sub")
-            result["payload_email"] = payload.get("email")
-        except pyjwt.ExpiredSignatureError:
-            result["diagnosis"] = "EXPIRED: Token is valid but expired. User needs to re-login."
-        except pyjwt.InvalidSignatureError:
-            result["diagnosis"] = "SIGNATURE_MISMATCH: Token signature verification failed."
-        except pyjwt.DecodeError as e:
-            result["diagnosis"] = f"DECODE_ERROR: Token is not valid JWT. {e}"
-        except Exception as e:
-            result["diagnosis"] = f"UNKNOWN_ERROR: {type(e).__name__}: {e}"
-    return result
-
-
 @app.post("/ingest")
 async def ingest(req: IngestRequest, user: dict = Depends(require_user)):
     """Manually ingest a message for testing."""
@@ -2931,47 +2893,6 @@ async def get_raw_messages(user: dict = Depends(require_user), limit: int = 50, 
     return payload
 
 
-@app.get("/api/raw/{raw_id}")
-async def get_raw_message(raw_id: int, user: dict = Depends(require_user)):
-    row = storage.get_raw_message(raw_id)
-    if not row:
-        raise HTTPException(404)
-    payload = asdict(row)
-    parsed = storage.db.execute(
-        """
-        SELECT id AS parsed_id, intent,
-               broker_name, broker_phone,
-               building_name, micro_market, landmark_name, location_raw
-        FROM parsed_output
-        WHERE raw_message_id = ?
-          AND (
-            (broker_phone IS NOT NULL AND TRIM(broker_phone) != '')
-            OR (broker_name IS NOT NULL AND TRIM(broker_name) != '')
-            OR (building_name IS NOT NULL AND TRIM(building_name) != '')
-            OR (micro_market IS NOT NULL AND TRIM(micro_market) != '')
-            OR (landmark_name IS NOT NULL AND TRIM(landmark_name) != '')
-            OR (location_raw IS NOT NULL AND TRIM(location_raw) != '')
-          )
-        ORDER BY confidence DESC, id DESC
-        LIMIT 1
-        """,
-        (raw_id,),
-    ).fetchone()
-    if parsed:
-        payload["broker_name"] = parsed["broker_name"] or ""
-        payload["broker_phone"] = parsed["broker_phone"] or ""
-        payload["parsed_id"] = parsed["parsed_id"]
-        payload["parsed_intent"] = parsed["intent"] or ""
-        payload["building_name"] = parsed["building_name"] or ""
-        payload["micro_market"] = parsed["micro_market"] or ""
-        payload["landmark_name"] = parsed["landmark_name"] or ""
-        payload["location_raw"] = parsed["location_raw"] or ""
-    return payload
-
-
-
-
-
 async def get_tenant_context(
     user: dict | None = Depends(get_current_user),
     x_tenant_id: str | None = Header(None),
@@ -3112,16 +3033,6 @@ async def get_chat(chat_id: str, tenant_id: str | None = Depends(get_tenant_cont
     row["conversation_name"] = row.get("group_name") or row.get("sender") or chat_id
     row["message_count"] = 1
     return row
-
-
-@app.get("/api/resolver")
-async def get_resolver_decisions(limit: int = 50, offset: int = 0, method: str = "", user: dict = Depends(require_user)):
-    return storage.get_resolver_decisions(limit, offset, method)
-
-
-@app.get("/api/failed")
-async def get_failed(limit: int = 50, offset: int = 0, user: dict = Depends(require_user)):
-    return storage.get_failed(limit, offset)
 
 
 @app.get("/api/stats")
@@ -3457,24 +3368,6 @@ async def get_ingestor_capabilities(
     }
 
 
-@app.get("/api/ingestor/status")
-async def get_ingestor_status(user: dict = Depends(require_user), tenant_id: str | None = Depends(get_tenant_context)):
-    """Return combined WhatsApp ingestor status for the WhatsWow panel."""
-    org_id = _resolve_active_organization_id(user, tenant_id)
-    phones = await asyncio.to_thread(storage.list_org_whatsapp_connections, org_id)
-    statuses_map, _, _ = await _merged_ingestor_list(timeout=2)
-    statuses: list[dict] = list(statuses_map.values())
-    now = time.time()
-    statuses.extend(
-        status for status, seen_at in _broker_live_statuses.values()
-        if now - seen_at <= 45
-    )
-    merged = _select_workspace_whatsapp_status(phones, statuses)
-    merged["phones"] = phones
-    merged["ingestor_statuses"] = statuses
-    return merged
-
-
 # ═══════════════════════════════════════════════════════════════
 # AI Layer — read-only intelligence endpoints
 # ═══════════════════════════════════════════════════════════════
@@ -3526,14 +3419,6 @@ async def market_access_status(
         "reason": reason,
         "message": message,
     }
-
-@app.get("/api/evaluations")
-async def get_evaluations(limit: int = 50, min_accuracy: float = 0.0, user: dict = Depends(require_user)):
-    rows = storage.get_evaluations(limit)
-    if min_accuracy > 0.0:
-        rows = [r for r in rows if r.get("accuracy_overall") is None or r["accuracy_overall"] >= min_accuracy]
-    return rows
-
 
 # ═══════════════════════════════════════════════════════════════
 # Scraper Data Chat — conversational AI over scraped CSVs
@@ -5620,78 +5505,6 @@ async def chat_suggestions(user: dict = Depends(require_user)):
 # ── Source Sync Endpoints ─────────────────────────────────────────
 # IMPORTANT: static routes must come before /sources/{source_name}
 
-@app.get("/api/sources")
-async def list_sources(user: dict = Depends(require_user)):
-    """List all registered sources."""
-    from lab.ingestion.registry import get_registry
-    reg = get_registry()
-    sources = []
-    for s in reg.all():
-        sources.append({
-            "name": s.name,
-            "version": s.version,
-            "connected": s.validate_connection(),
-        })
-    return {"sources": sources}
-
-
-@app.get("/api/sources/status")
-async def scheduler_status(user: dict = Depends(require_user)):
-    """Return scheduler status and per-source summary."""
-    scheduler = get_scheduler()
-    st = scheduler.status()
-    src_counts = storage.source_summary()
-    st["capture_mode"] = "live_webhook_only"
-    st["business_window"] = business_window_status()
-    st["historical_messages_stored"] = 0
-    st["total_messages_stored"] = sum(src_counts.values())
-    all_jobs = storage.get_sync_jobs(limit=500)
-    source_summary = {}
-    for j in all_jobs:
-        s = j.source
-        if s not in source_summary:
-            source_summary[s] = {"total": 0, "complete": 0, "running": 0, "failed": 0, "records": 0}
-        source_summary[s]["total"] += 1
-        status_key = j.status or "pending"
-        source_summary[s][status_key] = source_summary[s].get(status_key, 0) + 1
-        source_summary[s]["records"] += j.records_processed or 0
-    st["source_summary"] = source_summary
-    return st
-
-
-@app.get("/api/sources/jobs")
-async def list_jobs(source: str = "", status: str = "", limit: int = 50, user: dict = Depends(require_user)):
-    """List sync jobs, optionally filtered by source and/or status."""
-    jobs = storage.get_sync_jobs(limit=limit, source=source, status=status)
-    return [asdict(j) for j in jobs]
-
-
-@app.get("/api/sources/jobs/{job_id}")
-async def get_job_detail(job_id: int, user: dict = Depends(require_user)):
-    """Get details for a specific sync job."""
-    job = storage.get_sync_job(job_id)
-    if not job:
-        raise HTTPException(404, f"Job {job_id} not found")
-    return asdict(job)
-
-
-# ── Source sync routes moved to routers/whatsapp_sync.py ──────
-
-
-@app.get("/api/sources/{source_name}")
-async def get_source(source_name: str, user: dict = Depends(require_user)):
-    """Get details for a specific source."""
-    from lab.ingestion.registry import get_registry
-    s = get_registry().get(source_name)
-    if not s:
-        raise HTTPException(404, f"Unknown source: {source_name}")
-    return {
-        "name": s.name,
-        "version": s.version,
-        "connected": s.validate_connection(),
-    }
-
-
 # ═══════════════════════════════════════════════════════════════
 # PropAI Companion — official WhatsApp Business mobile interface
 # ═══════════════════════════════════════════════════════════════
@@ -5947,25 +5760,6 @@ def _status_file_debug() -> dict:
         "candidates": candidate_results,
         "memory_status_available": bool(_memory_status),
         "memory_status_preview": _memory_status if _memory_status else None,
-    }
-
-
-@app.get("/api/debug/sync/status-file")
-async def debug_sync_status_file(user: dict = Depends(require_user)):
-    return _status_file_debug()
-
-
-@app.get("/api/debug/sync/connection")
-async def debug_sync_connection(user: dict = Depends(require_user)):
-    status = _status_file()
-    return {
-        "status_source": "memory" if _memory_status and not status.get("connection_state") else "file_or_memory",
-        "connection_state": status.get("connection_state"),
-        "connected": status.get("connected"),
-        "qr": status.get("qr"),
-        "qr_available": status.get("qr_available"),
-        "status_preview": {k: status[k] for k in list(status.keys())[:12]},
-        "computed_connection_details": _connection_details(),
     }
 
 
@@ -6762,62 +6556,6 @@ async def business_api_audit(limit: int = 30, user: dict = Depends(require_user)
     return [dict(row) for row in rows]
 
 
-@app.get("/api/sync/connection")
-async def sync_connection(user: dict = Depends(require_user)):
-    """Check WhatsApp connection status."""
-    details = await _live_connection_details()
-    jobs = storage.get_sync_jobs(limit=500, source="whatsapp") if storage else []
-    last_finished = max((j.finished_at for j in jobs if j.finished_at), default=None)
-    discovered_groups = len(jobs)
-    historical_messages = 0
-    total_messages = 0
-    try:
-        historical_messages = storage.db.execute(
-            "SELECT COUNT(*) AS c FROM raw_messages WHERE raw_payload LIKE '%\"source\":\"history_sync\"%' OR raw_payload LIKE '%\"source\": \"history_sync\"%'"
-        ).fetchone()["c"]
-    except Exception:
-        historical_messages = 0
-    try:
-        total_messages = storage.db.execute("SELECT COUNT(*) AS c FROM raw_messages").fetchone()["c"]
-    except Exception:
-        total_messages = 0
-    if details.get("total_groups") is None or discovered_groups > details.get("total_groups", 0):
-        details["total_groups"] = discovered_groups
-    details.update({
-        "api_url": None,
-        "ingestor": "whatsapp",
-        "capture_mode": "live_and_history_webhook",
-        "business_window": business_window_status(),
-        "historical_sync_state": _historical_sync_state(jobs),
-        "last_sync": last_finished,
-        "discovered_jobs": discovered_groups,
-        "historical_messages": historical_messages,
-        "messages_found": total_messages,
-        "top_message_groups": _top_message_groups(jobs),
-    })
-    return details
-
-
-@app.get("/api/sync/qr")
-async def sync_qr(user: dict = Depends(require_user)):
-    """Get QR code for WhatsApp login."""
-    status = await _live_connection_details()
-    qr = status.get("qr")
-    if qr:
-        return {"qr": qr, "available": True}
-    details = status
-    if details.get("connected"):
-        return {
-            "qr": None,
-            "available": False,
-            "connected": True,
-            "message": "WhatsApp is already connected.",
-        }
-    if status.get("qr_available") and not qr:
-        return {"qr": None, "available": False, "message": "QR being generated, try again"}
-    return {"qr": None, "available": False, "message": f"QR not available: {status.get('connection_state', 'unknown')}"}
-
-
 INGESTOR_INTERNAL_URL = os.getenv("INGESTOR_INTERNAL_URL", "http://ingestor:3001")
 INGESTOR_PUBLIC_URL = os.getenv("INGESTOR_PUBLIC_URL", "http://egn4dqsw3xxmhb9noorm85do.62.238.18.85.sslip.io")
 
@@ -7085,86 +6823,6 @@ async def sync_status_update(request: Request):
         return {"ok": False, "error": str(e)}
 
 
-@app.get("/api/sync/events")
-async def sync_events():
-    """SSE endpoint that streams real-time connection status changes."""
-    async def current_sync_status() -> dict:
-        raw = _memory_status if _memory_status else _status_file()
-        if _status_has_live_signal(raw):
-            return raw
-        details = await _live_connection_details()
-        return {
-            **raw,
-            "connected": details.get("connected", False),
-            "connection_state": details.get("connection_state", "unknown"),
-            "phone_number": details.get("phone_number") or raw.get("phone_number"),
-            "display_name": details.get("display_name") or raw.get("display_name"),
-            "connected_since": details.get("connected_since") or raw.get("connected_since"),
-            "last_message_at": details.get("last_message_at") or raw.get("last_message_at"),
-        }
-
-    async def event_stream():
-        seen: dict = {}
-        initial = await current_sync_status()
-        yield f"event: status\ndata: {json.dumps(initial)}\n\n"
-        while True:
-            try:
-                await asyncio.sleep(1.5)
-                current = await current_sync_status()
-                prev = seen
-                seen = dict(current)
-                cs = current.get("connection_state", "")
-                prev_cs = prev.get("connection_state", "")
-
-                # Always emit transition events when state changes
-                if current != prev:
-                    if cs == "open" and current.get("connected"):
-                        yield f"event: connected\ndata: {json.dumps(seen)}\n\n"
-                    elif cs in ("closed", "logged_out"):
-                        reason = current.get("disconnect_reason", cs)
-                        yield f"event: disconnected\ndata: {json.dumps({'reason': reason, 'status': seen})}\n\n"
-                    elif cs == "error":
-                        yield f"event: error\ndata: {json.dumps({'reason': current.get('error', 'unknown'), 'status': seen})}\n\n"
-                    elif cs == "qr" and current.get("qr"):
-                        if prev_cs != "qr":
-                            yield f"event: qr_ready\ndata: {json.dumps({'qr': current.get('qr')})}\n\n"
-                    elif prev_cs == "qr" and cs not in ("", prev_cs) and cs != "open":
-                        yield f"event: qr_scanned\ndata: {json.dumps({'connection_state': cs or 'authenticating'})}\n\n"
-
-                # Always send heartbeat — prevents proxy timeout killing the connection
-                yield f"event: heartbeat\ndata: {json.dumps({'connection_state': cs, 'connected': current.get('connected', False)})}\n\n"
-            except asyncio.CancelledError:
-                break
-            except Exception:
-                yield f"event: heartbeat\ndata: {json.dumps({'connection_state': 'unknown', 'connected': False})}\n\n"
-    return StreamingResponse(event_stream(), media_type="text/event-stream")
-
-
-@app.post("/api/sync/logout")
-async def sync_logout(user: dict = Depends(require_user)):
-    """Disconnect the WhatsApp session and clear stored credentials."""
-    errors = []
-    async with httpx.AsyncClient(timeout=10) as client:
-        for base_url in _ingestor_urls():
-            try:
-                resp = await client.post(
-                    f"{base_url}/disconnect?broker_id=default", headers=_ingestor_auth_headers()
-                )
-                if resp.status_code == 200:
-                    return {"ok": True, "message": "WhatsApp session disconnected"}
-                errors.append(f"{base_url}: {resp.status_code}")
-            except httpx.RequestError as e:
-                errors.append(f"{base_url}: {e}")
-    return {"ok": False, "message": "Cannot reach ingestor to disconnect", "errors": errors}
-
-
-@app.get("/api/sync/connection-state")
-async def sync_connection_state(user: dict = Depends(require_user)):
-    """Get current connection state (open/connecting/closed)."""
-    details = await _live_connection_details()
-    return {"state": details["connection_state"], "connected": details["connected"]}
-
-
 def _connection_details() -> dict:
     status = _status_file()
     if _status_has_live_signal(status):
@@ -7275,18 +6933,6 @@ def _top_message_groups(jobs, limit: int = 5) -> list[dict]:
 
 # ── Listing endpoints for frontend ───────────────────────────────
 
-@app.post("/api/rebuild-broker-graph")
-async def rebuild_broker_graph(user: dict = Depends(require_user)):
-    result = storage.rebuild_broker_graph()
-    return result
-
-
-@app.post("/api/rebuild-observation-graph")
-async def rebuild_observation_graph(user: dict = Depends(require_user)):
-    result = storage.rebuild_observation_graph()
-    return result
-
-
 # ── AI Suggestions Queue ─────────────────────────────────────────
 
 class SuggestionAction(BaseModel):
@@ -7296,11 +6942,6 @@ class SuggestionAction(BaseModel):
 @app.get("/api/suggestions")
 async def list_suggestions(status: str = "pending", limit: int = 50, offset: int = 0, user: dict = Depends(require_user)):
     return storage.get_suggestions(status=status, limit=limit, offset=offset)
-
-
-@app.get("/api/suggestions/counts")
-async def suggestion_counts(user: dict = Depends(require_user)):
-    return storage.get_suggestion_counts()
 
 
 @app.post("/api/suggestions/{sug_id}/{action}")
@@ -7331,18 +6972,7 @@ async def batch_suggestions(request: Request, user: dict = Depends(require_user)
     return {"status": "ok", "count": len(ids)}
 
 
-@app.get("/api/suggestions/memory")
-async def suggestion_memory(user: dict = Depends(require_user)):
-    return storage.get_ai_memory_stats()
-
-
-@app.get("/api/suggestions/usage")
-async def suggestion_usage(days: int = 1, user: dict = Depends(require_user)):
-    return storage.get_ai_usage_stats(days=days)
-
-
 # ── WhatsApp Audit ────────────────────────────────────────────────
-
 def _group_jid_to_name(jid: str) -> str:
     """Resolve a JID to its human-readable name from sync_jobs."""
     value = str(jid or "")
@@ -7583,52 +7213,7 @@ async def health():
     return {"status": "ok"}
 
 
-@app.get("/api/key")
-async def api_key(user: dict = Depends(require_user)):
-    key_path = Path(__file__).parent / ".api_key"
-    token = key_path.read_text().strip() if key_path.exists() else ""
-    return {"key": token, "path": str(key_path)}
-
-
 # ── Legacy QR routes ─────────────────────────────────────────────
-
-@app.get("/qr")
-async def qr_page(user: dict = Depends(require_user)):
-    return HTMLResponse(
-        """<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>PropAI Connect</title>
-  <style>
-    body{margin:0;font-family:ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#0b0f14;color:#e2e8f0;display:grid;place-items:center;min-height:100vh;padding:24px}
-    .card{max-width:640px;width:100%;border:1px solid rgba(255,255,255,.08);background:#0d1117;border-radius:18px;padding:24px}
-    .muted{color:#94a3b8;line-height:1.6}
-    a{color:#3ee88a;text-decoration:none;font-weight:600}
-    .row{display:flex;gap:12px;flex-wrap:wrap;margin-top:20px}
-    .btn{display:inline-block;padding:10px 14px;border-radius:10px;border:1px solid rgba(255,255,255,.1);color:#e2e8f0;text-decoration:none}
-    .primary{background:#3ee88a;color:#04100a;border-color:#3ee88a}
-  </style>
-</head>
-<body>
-  <div class="card">
-    <h1>Connect WhatsApp</h1>
-    <p class="muted">Open the Connections page in the app to scan the QR code for WhatsApp pairing.</p>
-    <div class="row">
-      <a class="btn primary" href="/connections">Open Connection Center</a>
-      <a class="btn" href="/">Go to App</a>
-    </div>
-  </div>
-</body>
-</html>"""
-    )
-
-
-@app.get("/qr/image")
-async def qr_image(user: dict = Depends(require_user)):
-    return {"error": "qr_in_frontend", "message": "QR is displayed in the app dashboard. Open the Connections page in the PropAI frontend."}
-
 
 @app.get("/connect")
 async def connect_page(user: dict = Depends(require_user)):
@@ -7829,25 +7414,6 @@ if __name__ == "__main__":
 
 
 
-
-
-@app.get("/api/roles/{role_id}/permissions")
-async def get_role_permissions(role_id: int, user: dict = Depends(require_user)):
-    return {"permissions": storage.get_role_permissions(role_id)}
-
-
-@app.put("/api/roles/{role_id}/permissions")
-async def set_role_permissions(role_id: int, body: dict, user: dict = Depends(require_user)):
-    keys = body.get("permissions", [])
-    if not isinstance(keys, list):
-        raise HTTPException(400, "permissions must be a list of keys")
-    storage.set_role_permissions(role_id, keys)
-    return {"ok": True}
-
-
-@app.get("/api/permissions")
-async def list_all_permissions(user: dict = Depends(require_user)):
-    return {"permissions": storage.list_permissions()}
 
 
 # ── Phone routes moved to routers/whatsapp_sync.py ─────────────
@@ -8525,26 +8091,3 @@ async def _check_listing_alerts(listing_data: dict, raw_message_id: int = 0):
     except Exception as exc:
         print(f"[waba-alert] error in _check_listing_alerts: {exc}", flush=True)
 
-
-@app.get("/api/alerts/config")
-async def get_alerts_config(user: dict = Depends(require_user)):
-    """Get alert configuration and recent alert history."""
-    try:
-        requirements = storage.db.execute(
-            "SELECT * FROM client_requirements WHERE is_primary = true ORDER BY created_at DESC"
-        ).fetchall()
-
-        # Get recent WABA alerts from activity log
-        recent_alerts = storage.db.execute(
-            """SELECT * FROM activity_log
-               WHERE action LIKE 'waba%' OR action LIKE 'alert%'
-               ORDER BY created_at DESC LIMIT 20"""
-        ).fetchall()
-
-        return {
-            "requirements": [dict(r) for r in requirements],
-            "recent_alerts": [dict(a) for a in recent_alerts],
-            "waba_configured": bool(_business_api_get_config_value("access_token", "WABA_ACCESS_TOKEN")),
-        }
-    except Exception as exc:
-        return JSONResponse(status_code=500, content={"error": str(exc)})
