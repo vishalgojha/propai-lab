@@ -242,11 +242,6 @@ export default function GroupsPage() {
           </p>
         </div>
       </div>
-      {groups.length > 0 && (
-        <div className="mb-4 border border-white/10 bg-zinc-900 text-zinc-400 rounded-xl px-4 py-3 text-sm">
-          PropAI tracks new WhatsApp group activity during 10 AM - 7 PM IST.
-        </div>
-      )}
       {groups.length === 0 ? (
         <div className="text-zinc-500">No groups connected yet</div>
       ) : (

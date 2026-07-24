@@ -192,9 +192,9 @@ def business_window_status() -> dict:
         "timezone": BUSINESS_TIMEZONE,
         "start": "10:00",
         "end": "19:00",
-        "active": start <= now < end,
+        "active": True,
         "now": now.isoformat(),
-        "label": "10 AM - 7 PM IST",
+        "label": "24/7 tracking",
     }
 
 def get_scheduler():
