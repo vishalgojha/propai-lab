@@ -3652,35 +3652,33 @@ return {
                 {loadingBrokerObs ? (
                   <div className="p-8 text-center text-xs text-zinc-500">Loading market items...</div>
                 ) : brokerObsError ? (
-                  <div className="rounded-xl border border-amber-500/20 bg-amber-500/[0.06] p-5 text-center">
+                  <div className="py-2 text-center">
                     <div className="text-sm font-semibold text-amber-200">Market items did not load</div>
                     <div className="mx-auto mt-1 max-w-[360px] text-xs leading-relaxed text-zinc-500">
-                      Your broker card is safe. Retry the item lookup without leaving Market Inbox.
+                      Retry the item lookup without leaving Market Inbox.
                     </div>
                     <button
                       type="button"
                       onClick={() => void selectBroker(selectedBroker)}
-                      className="mt-4 h-8 rounded-md border border-white/15 bg-white/[0.06] px-3 text-[11px] font-semibold text-white hover:bg-white/[0.1]"
+                      className="mt-3 inline-flex h-8 items-center justify-center rounded-md border border-white/15 bg-white/[0.06] px-3 text-[11px] font-semibold text-white hover:bg-white/[0.1]"
                     >
                       Retry
                     </button>
                   </div>
                 ) : groupedBrokerObservations.length === 0 ? (
-                  <div className="rounded-xl border border-white/10 bg-zinc-950/60 p-5 text-center">
-                    <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-md border border-white/10 bg-white/[0.035] text-zinc-400">
-                      <ClipboardList className="h-5 w-5" strokeWidth={1.6} />
+                  <div className="px-2 py-2 sm:px-3">
+                    <div className="flex items-center gap-2 text-sm font-semibold text-white">
+                      <ClipboardList className="h-4 w-4 shrink-0 text-zinc-500" strokeWidth={1.6} />
+                      <span>No matching items yet</span>
                     </div>
-                    <div className="mt-3 text-sm font-semibold text-white">No matching items yet</div>
-                    <div className="mx-auto mt-1 max-w-[360px] text-xs leading-relaxed text-zinc-500">
+                    <div className="mt-1 max-w-[460px] text-xs leading-relaxed text-zinc-500">
                       {selectedBroker.latest_title
                         ? "We found a recent post, but it has not been split into structured items yet."
-                        : "This broker card has not resolved to parsed items yet. The market feed item is still usable for navigation and broker context."}
+                        : "This broker has not resolved to parsed items yet. The market feed item is still usable for navigation and broker context."}
                     </div>
                     {selectedBroker.latest_title && (
-                      <div className="mx-auto mt-4 max-w-[560px] text-left text-xs leading-relaxed text-zinc-500">
-                        <div className="text-[10px] font-semibold uppercase tracking-wider text-zinc-600">
-                          Source post
-                        </div>
+                      <div className="mt-3 max-w-[560px] text-left text-xs leading-relaxed text-zinc-500">
+                        <div className="text-[10px] font-semibold uppercase tracking-wider text-zinc-600">Source post</div>
                         <div className="mt-1 text-sm font-semibold text-zinc-200">
                           <WhatsAppMessage
                             text={
