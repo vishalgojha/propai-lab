@@ -27,6 +27,8 @@ import {
   Ruler,
   Armchair,
   Send,
+  Copy,
+  Check,
   Calendar,
   MessageSquare,
   ClipboardList,
@@ -96,6 +98,18 @@ function brokerSpecialtyLabel(broker: any): string {
       : "Listings";
   const focus = propertyType ? `${propertyType} ${activity.toLowerCase()}` : activity;
   return localities.length ? `${localities.join(", ")} · ${focus}` : focus;
+}
+
+function brokerCoverageLabel(broker: any): string {
+  const localities = [
+    ...(Array.isArray(broker.specialty_localities) ? broker.specialty_localities : []),
+    broker.latest_micro_market,
+  ]
+    .map(cleanSpecialtyValue)
+    .filter(Boolean)
+    .filter((value, index, values) => values.findIndex((item) => item.toLowerCase() === value.toLowerCase()) === index)
+    .slice(0, 3);
+  return localities.length ? localities.join(", ") : "No parsed locality yet";
 }
 
 function splitCode(rawMessageId: string | number | undefined, index: number): string {
@@ -1106,7 +1120,7 @@ function InboxPageInner({ defaultView }: InboxPageInnerProps) {
 
   // Selection States
   const [selectedMsg, setSelectedMsg] = useState<api.RawMessage | api.InboxThread | null>(null);
-  const [teachingMsgId, setTeachingMsgId] = useState<number | null>(null);
+  const [copiedMessageId, setCopiedMessageId] = useState<number | null>(null);
   
   // Center Panel States
   const [conversationMessages, setConversationMessages] = useState<api.RawMessage[]>([]);
@@ -3296,9 +3310,7 @@ return {
                       (selectedBroker?.id && selectedBroker.id === (b.identity_key || b.primary_phone || b.id));
                     const menuOpen = openMenuBroker === b.primary_phone;
                     const isActiveNow = b.last_active && now - new Date(b.last_active).getTime() < 300000;
-                    const specialty = brokerSpecialtyLabel(b);
-                    const brokerPhoneDigits = normalizeRealPhone(b.primary_phone || "");
-                    const brokerIdentityHint = brokerPhoneDigits ? `Phone ending ${brokerPhoneDigits.slice(-4)}` : "No phone anchor";
+                    const coverage = brokerCoverageLabel(b);
                     return (
                       <div key={b.primary_phone} className="relative">
                         <button
@@ -3326,12 +3338,9 @@ return {
                               </div>
                             </div>
                           </div>
-                          <div className="mb-1 text-[9px] font-medium text-zinc-600">
-                            {brokerIdentityHint}
-                          </div>
-                          <div className="text-[10px] leading-relaxed truncate mb-1.5" title={`Market focus: ${specialty}`}>
-                            <span className="text-zinc-500">Focus: </span>
-                            <span className="font-medium text-zinc-300">{specialty}</span>
+                          <div className="mb-1.5 truncate text-[10px] leading-relaxed" title={`Areas covered: ${coverage}`}>
+                            <span className="text-zinc-500">Areas: </span>
+                            <span className="font-medium text-zinc-300">{coverage}</span>
                           </div>
                           <div className="flex items-center gap-2 text-[9px] text-zinc-500">
                             {b.group_evidence_count > 0 && (
@@ -4130,32 +4139,6 @@ return {
                                         </div>
                                       )}
 
-                                      {isSelectedMessage && selectedMsgDetails?.parsed && (
-                                        <div className="pt-2 mt-2 border-t border-[rgba(62,232,138,0.1)]">
-                                          <button
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              setTeachingMsgId(teachingMsgId === m.id ? null : m.id);
-                                            }}
-                                            className="text-[9px] text-[#3EE88A]/70 hover:text-[#3EE88A] flex items-center gap-1"
-                                          >
-                                            <Sparkles className="w-2.5 h-2.5" strokeWidth={1.7} />
-                                            {teachingMsgId === m.id ? "Close Teach AI" : "Teach AI"}
-                                          </button>
-                                          {teachingMsgId === m.id && (
-                                            <div className="mt-2 space-y-1.5" onClick={(e) => e.stopPropagation()}>
-                                              <TeachingForm
-                                                parsed={selectedMsgDetails.parsed}
-                                                obsId={m.id}
-                                                parsedId={selectedMsgDetails.parsed?.id}
-                                                rawMessageId={m.id}
-                                                onSave={() => setTeachingMsgId(null)}
-                                              />
-                                            </div>
-                                          )}
-                                        </div>
-                                      )}
-
                                       <div className={`${listingChunks.length > 1 ? "hidden" : "flex"} items-center justify-end gap-2 pt-1.5 mt-1.5 border-t border-white/5`}>
                                         <div className="hidden">
                                           {mBadges.map((b, bi) => (
@@ -4179,6 +4162,26 @@ return {
                                               WhatsApp
                                             </a>
                                           )}
+                                          <button
+                                            type="button"
+                                            onClick={async (e) => {
+                                              e.stopPropagation();
+                                              try {
+                                                await navigator.clipboard.writeText(m.message || "");
+                                                setCopiedMessageId(m.id);
+                                                window.setTimeout(() => setCopiedMessageId((current) => current === m.id ? null : current), 1500);
+                                              } catch {
+                                                setCopiedMessageId(null);
+                                              }
+                                            }}
+                                            className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-white/10 bg-zinc-900 text-zinc-400 transition-colors hover:border-[#3EE88A]/40 hover:text-[#3EE88A]"
+                                            title={copiedMessageId === m.id ? "Copied" : "Copy message"}
+                                            aria-label={copiedMessageId === m.id ? "Copied" : "Copy message"}
+                                          >
+                                            {copiedMessageId === m.id
+                                              ? <Check className="h-3.5 w-3.5 text-[#3EE88A]" />
+                                              : <Copy className="h-3.5 w-3.5" />}
+                                          </button>
                                           <button
                                             onClick={(e) => { e.stopPropagation(); selectMessage(m); }}
                                             className="text-[10px] font-semibold text-[#3EE88A] hover:underline"

@@ -54,7 +54,7 @@ def _looks_like_echo_misfire(user_msg: str, assistant_msg: str, threshold: float
     overlap = len(user_tokens & assistant_tokens) / len(user_tokens)
     return overlap >= threshold
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 from contextlib import asynccontextmanager
 from dataclasses import asdict
 
