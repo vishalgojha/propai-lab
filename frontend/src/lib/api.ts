@@ -729,16 +729,6 @@ export function deleteChatSession(sessionId: string): Promise<{ ok: boolean }> {
   return fetchJSON<{ ok: boolean }>(`/ai/chat/sessions/${sessionId}`, { method: "DELETE" });
 }
 
-export function getResolver(limit = 50, offset = 0, method?: string) {
-  const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
-  if (method) params.set("method", method);
-  return fetchJSON<any[]>(`/resolver?${params}`);
-}
-
-export function getFailed(limit = 50, offset = 0) {
-  return fetchJSON<any[]>(`/failed?limit=${limit}&offset=${offset}`);
-}
-
 export function getGraphGrowth() {
   return fetchJSON<any>("/dashboard/graph-growth");
 }
@@ -896,10 +886,6 @@ export function getSuggestions(status = "pending", limit = 50, offset = 0) {
   return fetchJSON<any[]>(`/suggestions?status=${status}&limit=${limit}&offset=${offset}`);
 }
 
-export function getSuggestionCounts() {
-  return fetchJSON<Record<string, number>>("/suggestions/counts");
-}
-
 export function actOnSuggestion(id: number, action: string, rejection_reason = "") {
   return fetchJSON<any>(`/suggestions/${id}/${action}`, {
     method: "POST",
@@ -912,14 +898,6 @@ export function batchActOnSuggestions(ids: number[], action: string, rejection_r
     method: "POST",
     body: JSON.stringify({ ids, action, rejection_reason }),
   });
-}
-
-export function getSuggestionMemory() {
-  return fetchJSON<any>("/suggestions/memory");
-}
-
-export function getSuggestionUsage(days = 1) {
-  return fetchJSON<any>(`/suggestions/usage?days=${days}`);
 }
 
 export interface PromoteRequest {
