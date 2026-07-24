@@ -15889,7 +15889,9 @@ async def _enrichment_loop() -> None:
     storage is a no-op (SqliteStorage in tests).
     """
     await asyncio.sleep(15)  # let server finish booting
+    cycle = 0
     while True:
+        cycle += 1
         try:
             if storage is None or not hasattr(storage, "client"):
                 await asyncio.sleep(ENRICHMENT_POLL_INTERVAL)
@@ -15903,18 +15905,26 @@ async def _enrichment_loop() -> None:
                 limit=ENRICHMENT_BATCH_SIZE,
             )
             if not jobs:
+                if cycle % 10 == 0:
+                    print(f"  [enrichment] cycle {cycle}: no pending jobs", flush=True)
                 await asyncio.sleep(ENRICHMENT_POLL_INTERVAL)
                 continue
+            print(f"  [enrichment] cycle {cycle}: {len(jobs)} pending jobs fetched", flush=True)
+            processed = 0
+            skipped = 0
             for job in jobs:
                 claimed = await asyncio.to_thread(storage.claim_enrichment_job, job["id"])
                 if not claimed:
+                    skipped += 1
                     continue
                 try:
                     await asyncio.to_thread(_process_enrichment_job, storage, job)
                     await asyncio.to_thread(storage.complete_enrichment_job, job["id"])
+                    processed += 1
                 except Exception as e:
                     print(f"  [enrichment] job {job['id']} failed: {e}", flush=True)
                     await asyncio.to_thread(storage.complete_enrichment_job, job["id"], error=str(e))
+            print(f"  [enrichment] cycle {cycle}: processed={processed} skipped={skipped}", flush=True)
         except Exception as exc:
             print(f"  [enrichment] loop error: {exc.__class__.__name__}: {exc}", flush=True)
         await asyncio.sleep(ENRICHMENT_POLL_INTERVAL)

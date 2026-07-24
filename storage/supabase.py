@@ -3304,11 +3304,16 @@ class SupabaseStorage(Storage):
     def claim_enrichment_job(self, job_id: int) -> bool:
         from datetime import datetime, timezone
         now = datetime.now(timezone.utc).isoformat()
-        res = self.client.table("enrichment_jobs").update({
+        # Use eq on status=pending + the specific id.  PostgREST may not
+        # return updated rows from .update(), so we verify with a select.
+        self.client.table("enrichment_jobs").update({
             "status": "in_progress",
             "started_at": now,
         }).eq("id", job_id).eq("status", "pending").execute()
-        return len(res.data) > 0
+        res = self.client.table("enrichment_jobs").select("status").eq("id", job_id).execute()
+        if res.data and res.data[0].get("status") == "in_progress":
+            return True
+        return False
 
     def complete_enrichment_job(self, job_id: int, error: str = ""):
         from datetime import datetime, timezone
@@ -3326,20 +3331,12 @@ class SupabaseStorage(Storage):
         """
         from datetime import datetime, timezone, timedelta
         cutoff = (datetime.now(timezone.utc) - timedelta(seconds=stale_seconds)).isoformat()
-        # Case 1: started_at is set but older than cutoff
-        res1 = self.client.table("enrichment_jobs").update({
+        res = self.client.table("enrichment_jobs").update({
             "status": "pending",
             "started_at": None,
             "attempts": 0,
         }).eq("status", "in_progress").lt("started_at", cutoff).execute()
-        count1 = len(res1.data) if res1.data else 0
-        # Case 2: started_at is NULL (pre-fix leftover) — also stale
-        res2 = self.client.table("enrichment_jobs").update({
-            "status": "pending",
-            "attempts": 0,
-        }).eq("status", "in_progress").is_("started_at", "null").execute()
-        count2 = len(res2.data) if res2.data else 0
-        return count1 + count2
+        return len(res.data) if res.data else 0
 
     def get_enrichment_job_by_parsed(self, parsed_id: int) -> Optional[dict]:
         res = self.client.table("enrichment_jobs").select("*").eq("parsed_id", parsed_id).limit(1).execute()
