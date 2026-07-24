@@ -481,10 +481,9 @@ def test_elite_auction_distress_with_charges(monkeypatch):
 
     assert len(storage.saved) == 1
     obs = storage.saved[0]
-    # Headline price is what the broker quoted (1.55Cr → 15500000 rupees)
-    # — NOT inflated by the additional charges. The listing materializer
-    # later converts to lakhs/crores for display.
-    assert obs.price == 15500000.0, f"price.amount got inflated by charges: {obs.price}"
+    # Headline price is what the broker quoted, normalized to the stated unit
+    # (1.55Cr → price=1.55, price_unit=cr). NOT inflated by additional charges.
+    assert obs.price == 1.55, f"price should be 1.55 cr, got {obs.price}"
     assert obs.price_unit == "cr"
     assert obs.micro_market == "Andheri West"
     assert obs.building_name == "Rajgriha CHS"
