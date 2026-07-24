@@ -55,14 +55,13 @@ export default function SearchMap({ results, token }: Props) {
         const mod = await import("mapbox-gl");
         mapboxgl = mod;
 
-        (mapboxgl as unknown as { accessToken: string }).accessToken = token;
-
         const map = new mapboxgl.Map({
           container,
           style: "mapbox://styles/mapbox/dark-v11",
           center: [72.8777, 19.076],
           zoom: 11,
           attributionControl: false,
+          accessToken: token,
         });
         mapRef.current = map;
 
