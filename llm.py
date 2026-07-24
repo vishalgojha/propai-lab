@@ -45,7 +45,7 @@ if _nvidia_model:
             _PROVIDERS.append({
                 "name": f"nvidia{suffix}" if suffix else "nvidia",
                 "api_key": key,
-                "base_url": "https://api.nvidia.com/v1",
+                "base_url": "https://integrate.api.nvidia.com/v1",
                 "model": _nvidia_model,
             })
 
