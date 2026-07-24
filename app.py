@@ -7937,6 +7937,12 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
             content={"error": "timeout", "message": "Request timed out. Try a simpler query."},
         )
     except Exception as exc:
+        err_str = str(exc)
+        if "budget_exhausted" in err_str or "402" in err_str:
+            return JSONResponse(
+                status_code=503,
+                content={"error": "ai_unavailable", "message": "AI service credits exhausted. Extraction and chat will resume once credits are added."},
+            )
         return _doubleword_error_response(exc)
 
 
