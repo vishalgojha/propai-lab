@@ -171,8 +171,6 @@ API / CLI / (future UI)
 | `evidence/resolver.py` | BuildingID + Street resolution engine |
 | `evidence/intelligence.py` | Intelligence computation (stubs) |
 | `evidence/example_observations.py` | One example per source + type |
-| `evidence/enrich_maharera.py` | MahaRERA enrichment pipeline |
-| `evidence/resolver_report.py` | Diagnostic report: categorizes every resolution attempt |
 | `evidence/parsers.py` | Broker vocabulary parser (spatial relations, suffix patterns, keyword hints) |
 | `evidence/coverage.py` | Evidence coverage report (density, source diversity, time span) |
 | `evidence/adapters/__init__.py` | Adapter protocol |
@@ -181,7 +179,6 @@ API / CLI / (future UI)
 | `evidence/adapters/maharera_adapter.py` | MahaRERA → Observation |
 | `evidence/adapters/igr_adapter.py` | IGR → Observation |
 | `evidence/adapters/whatsapp_adapter.py` | WhatsApp → Observation |
-| `evidence/enrich_maharera.py` | MahaRERA enrichment pipeline (normalize → resolve → registries → observations) |
 | `registry/street.py` | Street registry builder |
 | `registry/landmarks.py` | Landmark registry builder (seeds + proximity computation) |
 | `registry/location_graph.py` | Location graph builder (City→Zone→MM→Landmark→Street→Building) |
