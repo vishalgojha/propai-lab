@@ -3,7 +3,7 @@
 export const dynamic = "force-dynamic";
 
 import { useCallback, useEffect, useState } from "react";
-import { CheckCircle2, Plus, Trash2, X } from "lucide-react";
+import { CheckCircle2, ChevronDown, ChevronRight, Plus, Trash2, X } from "lucide-react";
 import * as api from "@/lib/api";
 import { cleanGroupName, stripDecorativeEmoji } from "@/lib/whatsapp-display";
 
@@ -15,6 +15,9 @@ export default function GroupsPage() {
   const [optOutDraft, setOptOutDraft] = useState("");
   const [savingOptOut, setSavingOptOut] = useState(false);
   const [optOutMessage, setOptOutMessage] = useState<string | null>(null);
+  const [expandedGroup, setExpandedGroup] = useState<string | null>(null);
+  const [members, setMembers] = useState<Record<string, any[]>>({});
+  const [loadingMembers, setLoadingMembers] = useState<string | null>(null);
 
   const groupIdentity = (group: any) => String(group.jid || group.id || group.name || "").trim();
   const matchesOptOutEntry = (group: any, entry: string) => {
@@ -134,6 +137,25 @@ export default function GroupsPage() {
       ? optOutEntries.filter((entry) => entry !== groupId)
       : [...optOutEntries, groupId];
     await applyOptOutEntries(next, excluded ? "Group will now be tracked." : "Group added to opt-out list.");
+  };
+
+  const toggleMembers = async (jid: string) => {
+    if (expandedGroup === jid) {
+      setExpandedGroup(null);
+      return;
+    }
+    setExpandedGroup(jid);
+    if (!members[jid]) {
+      setLoadingMembers(jid);
+      try {
+        const data = await api.getGroupMembers(jid);
+        setMembers((prev) => ({ ...prev, [jid]: data }));
+      } catch {
+        setMembers((prev) => ({ ...prev, [jid]: [] }));
+      } finally {
+        setLoadingMembers(null);
+      }
+    }
   };
 
   if (loading) {
@@ -256,7 +278,12 @@ export default function GroupsPage() {
               </tr>
             </thead>
             <tbody>
-              {groups.map((g: any, i: number) => (
+              {groups.map((g: any, i: number) => {
+                const jid = g.jid || "";
+                const isExpanded = expandedGroup === jid;
+                const groupMembers = members[jid] || [];
+                const isLoading = loadingMembers === jid;
+                return (
                 <tr key={g.id || i} className="hover:bg-zinc-900">
                   <td className="px-2.5 py-2 border-b border-white/10 font-semibold">{cleanGroupName(g.name)}</td>
                   <td className="px-2.5 py-2 border-b border-white/10">
@@ -270,7 +297,41 @@ export default function GroupsPage() {
                           ))}
                     </div>
                   </td>
-                  <td className="px-2.5 py-2 border-b border-white/10">{g.participants ?? "—"}</td>
+                  <td className="px-2.5 py-2 border-b border-white/10">
+                    <button
+                      type="button"
+                      onClick={() => void toggleMembers(jid)}
+                      className="flex items-center gap-1.5 text-zinc-300 hover:text-white transition-colors"
+                    >
+                      {isExpanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+                      <span className="font-medium">{g.participants ?? "—"}</span>
+                    </button>
+                    {isExpanded && (
+                      <div className="mt-2 max-h-64 overflow-y-auto rounded-lg border border-white/10 bg-black/30 p-2">
+                        {isLoading ? (
+                          <div className="text-xs text-zinc-500 py-1">Loading members...</div>
+                        ) : groupMembers.length === 0 ? (
+                          <div className="text-xs text-zinc-500 py-1">No member data available</div>
+                        ) : (
+                          <div className="flex flex-wrap gap-1.5">
+                            {groupMembers.map((m: any, idx: number) => (
+                              <span
+                                key={m.phone || m.name || idx}
+                                className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs ${
+                                  m.is_admin
+                                    ? "border border-[#3EE88A]/20 bg-[#3EE88A]/10 text-[#9ff7bf]"
+                                    : "border border-white/10 bg-white/[0.04] text-zinc-400"
+                                }`}
+                              >
+                                {m.name}
+                                {m.is_admin && <span className="text-[9px] text-[#3EE88A]">admin</span>}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </td>
                   <td className="px-2.5 py-2 border-b border-white/10">
                     <div className="flex flex-wrap items-center gap-2">
                     {isGroupExcluded(g, optOutEntries) || g.excluded ? (
@@ -293,7 +354,8 @@ export default function GroupsPage() {
                     </div>
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>

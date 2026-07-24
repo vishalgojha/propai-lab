@@ -11278,6 +11278,49 @@ async def list_groups(user: dict = Depends(require_user)):
     return sorted(groups, key=lambda g: g["name"].lower())
 
 
+@app.get("/api/groups/{jid}/members")
+async def list_group_members(jid: str, user: dict = Depends(require_user)):
+    tenant_id = await asyncio.to_thread(
+        _resolve_active_organization_id, user, None,
+    )
+    if not tenant_id:
+        return []
+
+    def _fetch():
+        rows = (
+            storage.client.table("group_members")
+            .select("display_name,member_phone,member_jid,is_admin,last_seen_at")
+            .eq("tenant_id", tenant_id)
+            .eq("group_id", jid)
+            .order("display_name", desc=False)
+            .limit(500)
+            .execute()
+            .data
+        )
+        seen = set()
+        members = []
+        for r in rows:
+            key = r.get("member_jid") or r.get("member_phone") or ""
+            if key in seen:
+                continue
+            seen.add(key)
+            name = (r.get("display_name") or "").strip()
+            phone = (r.get("member_phone") or "").strip()
+            if not name and phone:
+                name = phone
+            elif not name:
+                name = "Unknown"
+            members.append({
+                "name": name,
+                "phone": phone,
+                "is_admin": bool(r.get("is_admin")),
+                "last_seen": r.get("last_seen_at"),
+            })
+        return members
+
+    return await asyncio.to_thread(_fetch)
+
+
 @app.get("/api/whatsapp/conversations")
 async def list_whatsapp_conversations(
     types: str = "group,broadcast",
