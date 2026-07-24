@@ -3091,7 +3091,7 @@ return {
   const selectedHasMarketContext = hasMarketContext(selectedMsgDetails);
 
   return (
-    <div className="mobile-inbox flex flex-col h-[calc(100dvh-80px)] min-h-0 max-h-[calc(100dvh-80px)] overflow-hidden bg-black lg:h-full lg:max-h-full lg:rounded-2xl lg:border lg:border-white/10">
+    <div className="mobile-inbox flex flex-col h-[calc(100dvh-36px)] min-h-0 max-h-[calc(100dvh-36px)] overflow-hidden bg-black lg:h-full lg:max-h-full lg:rounded-2xl lg:border lg:border-white/10">
       
       {actionMessage && (
         <div className="bg-[#1e293b] border-b border-[#3EE88A]/30 text-[#3EE88A] px-4 py-2 text-xs font-semibold text-center flex items-center justify-center gap-3 animate-fadeIn">
@@ -4285,24 +4285,35 @@ return {
                       </div>
                     ) : canReplyWhatsApp ? (
                       <>
-                        <textarea
-                          value={replyText}
-                          onChange={(e) => setReplyText(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter" && !e.shiftKey) {
-                              e.preventDefault();
-                              void handleSendReply();
+                        <div className="relative">
+                          <textarea
+                            value={replyText}
+                            onChange={(e) => setReplyText(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" && !e.shiftKey) {
+                                e.preventDefault();
+                                void handleSendReply();
+                              }
+                            }}
+                            placeholder={
+                              selectedConversationJid
+                                ? "Type a reply. Shift+Enter adds a new line."
+                                : "Select a conversation to reply."
                             }
-                          }}
-                          placeholder={
-                            selectedConversationJid
-                              ? "Type a reply. Shift+Enter adds a new line."
-                              : "Select a conversation to reply."
-                          }
-                          rows={3}
-                          disabled={sendingReply || !selectedConversationJid}
-                          className="w-full resize-none rounded-xl border border-white/10 bg-zinc-950 px-3 py-2.5 text-sm text-white placeholder-zinc-500 outline-none transition-colors focus:border-[#3EE88A]/50 focus:ring-1 focus:ring-[#3EE88A]/30 disabled:cursor-not-allowed disabled:opacity-60"
-                        />
+                            rows={3}
+                            disabled={sendingReply || !selectedConversationJid}
+                            className="w-full resize-none rounded-xl border border-white/10 bg-zinc-950 px-3 py-2.5 pr-12 text-sm text-white placeholder-zinc-500 outline-none transition-colors focus:border-[#3EE88A]/50 focus:ring-1 focus:ring-[#3EE88A]/30 disabled:cursor-not-allowed disabled:opacity-60"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => void handleSendReply()}
+                            disabled={sendingReply || !replyText.trim() || !selectedConversationJid}
+                            className="absolute bottom-2 right-2 flex h-8 w-8 items-center justify-center rounded-lg bg-[#3EE88A] text-black transition-colors hover:bg-[#35d47c] disabled:cursor-not-allowed disabled:opacity-50 sm:h-9 sm:w-9"
+                            aria-label={sendingReply ? "Sending reply" : "Send reply"}
+                          >
+                            <Send className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
 
                         <div className="mt-2 flex items-center justify-between gap-3">
                           <div className="min-h-[1rem] text-[11px]">
@@ -4327,15 +4338,6 @@ return {
                                 Open chat
                               </a>
                             )}
-                            <button
-                              type="button"
-                              onClick={() => void handleSendReply()}
-                              disabled={sendingReply || !replyText.trim() || !selectedConversationJid}
-                              className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-[#3EE88A] px-4 text-[11px] font-bold text-black transition-colors hover:bg-[#35d47c] disabled:cursor-not-allowed disabled:opacity-50"
-                            >
-                              <Send className="h-3.5 w-3.5" />
-                              {sendingReply ? "Sending..." : "Send"}
-                            </button>
                           </div>
                         </div>
                       </>

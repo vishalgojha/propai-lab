@@ -43,11 +43,15 @@ export function MobileDrawer({
   onClose,
   onOpenPalette,
   isSuperAdmin,
+  whatsappConnected,
+  whatsappPhone,
 }: {
   open: boolean;
   onClose: () => void;
   onOpenPalette: () => void;
   isSuperAdmin: boolean;
+  whatsappConnected: boolean | null;
+  whatsappPhone?: string | null;
 }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -192,6 +196,11 @@ export function MobileDrawer({
                     }`}
                   >
                     <span>{item.label}</span>
+                    {item.href === "/connections" && (
+                      <span className={`float-right text-[10px] ${whatsappConnected ? "text-[#3EE88A]" : "text-zinc-600"}`}>
+                        {whatsappConnected ? whatsappPhone || "Connected" : whatsappConnected === false ? "Offline" : "Checking"}
+                      </span>
+                    )}
                     {active && (
                       <span className="float-right mt-1 h-1.5 w-1.5 rounded-full bg-white" />
                     )}

@@ -186,6 +186,7 @@ function PaletteModal({ open, onClose }: { open: boolean; onClose: () => void })
 
 function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const isFocusedWorkspace = pathname === "/inbox" || pathname.startsWith("/whatsapp-groups");
   const reduceMotion = useReducedMotion();
   const router = useRouter();
   const { user, loading: authLoading, error: authError, refresh: refreshAuth } = useAuth();
@@ -473,6 +474,8 @@ function AppShell({ children }: { children: React.ReactNode }) {
         onClose={() => setDrawerOpen(false)}
         onOpenPalette={() => setPaletteOpen(true)}
         isSuperAdmin={isSuperAdmin}
+        whatsappConnected={waConnected}
+        whatsappPhone={waPhone}
       />
 
       {/* ═══════ Sidebar (desktop) ═══════ */}
@@ -613,7 +616,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
           </button>
 
           {/* Connection status */}
-          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1">
+          <div className={`${isFocusedWorkspace ? "max-lg:hidden " : ""}flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1`}>
             {offline && (
               <span className="flex items-center gap-1 text-[10px] text-red-400 font-semibold">
                 <WifiOff className="w-3 h-3" strokeWidth={1.5} />
@@ -645,7 +648,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
           <div className="flex-1" />
           <button
             onClick={handleSignOut}
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-zinc-500 transition-colors hover:bg-white/5 hover:text-white"
+            className={`${isFocusedWorkspace ? "max-lg:hidden " : ""}flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-zinc-500 transition-colors hover:bg-white/5 hover:text-white`}
             aria-label="Log out"
             title="Log out"
           >
@@ -660,7 +663,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
       </main>
 
       {/* ═══════ Bottom Navigation (mobile) ═══════ */}
-      <BottomNav onTabChange={setLastTab} />
+      {!isFocusedWorkspace && <BottomNav onTabChange={setLastTab} />}
 
       {/* Install Prompt */}
       <InstallPrompt />
