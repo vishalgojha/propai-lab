@@ -845,12 +845,12 @@ func (sm *SessionManager) handleMessage(s *BrokerSession, evt *events.Message) {
 		log.Printf("[broker %s] group message received chat=%s id=%s from_me=%t", s.brokerID, info.Chat.String(), info.ID, info.IsFromMe)
 	}
 	// Self-chat commands go to the AI agent, but we still forward the message.
-	if info.IsFromMe {
-		if target, text, ok := selfChatCommand(s, evt); ok {
-			// Never let a slow AI/database request block Whatsmeow's event loop.
-			// The raw self-message continues through normal ingestion below.
-			go sm.handleSelfChatCommand(s, target, info.ID, text)
-		}
+	// Check every message (not just IsFromMe) so phone-sent self-messages
+	// (from_me=false on the web) also trigger the agent.
+	if target, text, ok := selfChatCommand(s, evt); ok {
+		// Never let a slow AI/database request block Whatsmeow's event loop.
+		// The raw self-message continues through normal ingestion below.
+		go sm.handleSelfChatCommand(s, target, info.ID, text)
 	}
 
 	s.totalMessages++
