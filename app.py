@@ -2005,7 +2005,7 @@ async def webhook(request: Request):
     webhook_broker_id = msg_data_for_instance.get("broker_id", "")
 
     # ── Resolve tenant from broker_id ──────────────────────────────
-    resolved_tenant_id = DEFAULT_TENANT_ID
+    resolved_tenant_id = None
     if webhook_broker_id:
         try:
             conn = await asyncio.to_thread(
@@ -2015,6 +2015,9 @@ async def webhook(request: Request):
                 resolved_tenant_id = conn["organization_id"]
         except Exception as exc:
             print(f"[webhook] tenant resolve error: {exc}", flush=True)
+    if not resolved_tenant_id:
+        print(f"[webhook] WARN: no tenant for broker_id={webhook_broker_id!r} — skipping message", flush=True)
+        return {"status": "skipped", "reason": "unresolved_tenant", "broker_id": webhook_broker_id}
 
     # ── Classify and route event ──────────────────────────────────
     try:
@@ -2345,7 +2348,9 @@ def _process_single_raw(raw_id: int, ctx: dict):
 
 def _handle_system_event(event_class: str, event: str, data: dict, instance: str, tenant_id: str | None = None):
     """Handle non-message webhook events (connection, QR, system, etc.)."""
-    tenant_id = tenant_id or DEFAULT_TENANT_ID
+    if not tenant_id:
+        print(f"[webhook] WARN: skipping system event {event} — no tenant resolved", flush=True)
+        return
     msg_data = data.get("data", data)
     if event.startswith("WHATSAPP_") or event_class in {"presence", "call"}:
         try:
@@ -2997,10 +3002,7 @@ async def get_raw_message(raw_id: int, user: dict = Depends(require_user)):
     return payload
 
 
-# Shared default organization used when no tenant context is provided
-# (e.g. unauthenticated feed endpoints). Brokers/observations are seeded
-# under this tenant, so scoping to it keeps the inbox populated.
-DEFAULT_TENANT_ID = "00000000-0000-0000-0000-000000000010"
+
 
 
 async def get_tenant_context(
@@ -3019,10 +3021,9 @@ async def get_tenant_context(
             tid = requested_id
         else:
             tid = await asyncio.to_thread(_resolve_user_organization_id, user)
-    # Public endpoints use the shared feed, but authenticated users never
-    # inherit an arbitrary or stale shared tenant from the request header.
+    # Public endpoints have no tenant context; callers must handle None.
     if not tid:
-        tid = DEFAULT_TENANT_ID
+        tid = None
     set_tenant_id(tid)
     return tid
 
@@ -3075,7 +3076,7 @@ def _resolve_user_organization_id(user: dict) -> str | None:
 
 
 def _resolve_active_organization_id(user: dict, tenant_id: str | None) -> str:
-    if tenant_id and tenant_id != DEFAULT_TENANT_ID:
+    if tenant_id:
         try:
             user_org_ids = {
                 str(org.get("id"))
@@ -3089,7 +3090,7 @@ def _resolve_active_organization_id(user: dict, tenant_id: str | None) -> str:
     resolved = _resolve_user_organization_id(user)
     if resolved:
         return resolved
-    return tenant_id if tenant_id and tenant_id != DEFAULT_TENANT_ID else DEFAULT_TENANT_ID
+    return tenant_id or ""
 
 
 async def _require_org_permission(user: dict, org_id: str, permission_key: str) -> None:
@@ -6970,7 +6971,10 @@ async def internal_self_chat(req: InternalSelfChatRequest, request: Request):
     if not text:
         return {"reply": ""}
 
-    set_tenant_id(connection.get("organization_id") or DEFAULT_TENANT_ID)
+    org_id = connection.get("organization_id")
+    if not org_id:
+        raise HTTPException(500, "WhatsApp connection has no organization_id")
+    set_tenant_id(org_id)
     casual = _is_casual_self_chat(text)
     wants_stream = casual or _stream_self_chat_enabled()
 
@@ -6986,7 +6990,7 @@ async def internal_self_chat(req: InternalSelfChatRequest, request: Request):
             [{"role": "user", "content": text[:1800]}],
             session_id=f"whatsmeow:{req.broker_id}",
             casual=casual,
-            tenant_id=connection.get("organization_id") or DEFAULT_TENANT_ID,
+            tenant_id=connection.get("organization_id"),
         )
         if isinstance(response, dict) and response.get("error"):
             return JSONResponse(status_code=503, content=response)
@@ -7032,7 +7036,7 @@ async def _self_chat_ndjson(text: str, broker_id: str, casual: bool):
             [{"role": "user", "content": text[:1800]}],
             session_id=f"whatsmeow:{broker_id}",
             casual=casual,
-            tenant_id=get_tenant_id() or DEFAULT_TENANT_ID,
+            tenant_id=get_tenant_id(),
         )
         if isinstance(response, dict) and response.get("error"):
             yield _ndjson_line({"event": "error", "message": response.get("message") or response.get("error") or "agent_error"})
@@ -8741,6 +8745,10 @@ async def _process_business_api_webhook(
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     processed = []
 
+    if not resolved_tenant_id:
+        print("[waba-webhook] WARN: no tenant resolved — skipping message batch", flush=True)
+        return {"status": "skipped", "reason": "unresolved_tenant"}
+
     for entry in body.get("entry", []):
         for change in entry.get("changes", []):
             value = change.get("value", {})
@@ -8829,7 +8837,7 @@ async def _process_business_api_webhook(
                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                            ON CONFLICT DO NOTHING""",
                         (
-                            resolved_tenant_id or DEFAULT_TENANT_ID,
+                            resolved_tenant_id,
                             sender_jid,
                             sender_name or msg_from,
                             sender_jid,
@@ -9095,13 +9103,15 @@ async def _handle_waba_agent_reply(
     tenant_id: str | None = None,
 ) -> None:
     """Run the workspace agent for one WABA message and send one reply."""
+    if not tenant_id:
+        raise RuntimeError("WABA agent reply requires a tenant_id")
     try:
         previous_tenant = get_tenant_id()
-        set_tenant_id(tenant_id or DEFAULT_TENANT_ID)
+        set_tenant_id(tenant_id)
         response = await _run_workspace_agent(
             [{"role": "user", "content": text[:1800]}],
-            session_id=f"waba:{tenant_id or DEFAULT_TENANT_ID}:{to}",
-            tenant_id=tenant_id or DEFAULT_TENANT_ID,
+            session_id=f"waba:{tenant_id}:{to}",
+            tenant_id=tenant_id,
         )
         if isinstance(response, dict) and response.get("error"):
             raise RuntimeError(response.get("message") or response["error"])
@@ -9123,7 +9133,7 @@ async def _handle_waba_agent_reply(
                 source, timestamp, raw_payload, message_uid, delivery_status, synced_at, created_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
-                tenant_id or DEFAULT_TENANT_ID,
+                tenant_id,
                 sender_jid,
                 "PropAI Agent",
                 sender_jid,
@@ -14766,7 +14776,7 @@ async def list_all_permissions(user: dict = Depends(require_user)):
 @app.get("/api/orgs/{org_id}/whatsapp")
 async def list_org_whatsapp(org_id: str, user: dict = Depends(require_user)):
     active_org_id = _resolve_active_organization_id(user, org_id)
-    if org_id != DEFAULT_TENANT_ID and str(org_id) != str(active_org_id) and not storage.is_super_admin(user["id"]):
+    if org_id and str(org_id) != str(active_org_id) and not storage.is_super_admin(user["id"]):
         raise HTTPException(404, "Organization not found")
     org_id = active_org_id
     return storage.list_org_whatsapp_connections(org_id)
@@ -14777,7 +14787,7 @@ async def add_org_whatsapp(org_id: str, body: dict, user: dict = Depends(require
     phone = body.get("phone_number")
     if not phone:
         raise HTTPException(400, "phone_number is required")
-    if org_id == DEFAULT_TENANT_ID or not storage.get_organization(org_id):
+    if not org_id or not storage.get_organization(org_id):
         org_id = _resolve_active_organization_id(user, org_id)
     await _require_org_permission(user, org_id, "manage_whatsapp")
     count = storage.count_org_phones(org_id)

@@ -240,7 +240,7 @@ def test_phone_list_resolves_authenticated_workspace(monkeypatch):
     monkeypatch.setattr(app.asyncio, "to_thread", inline_to_thread)
 
     result = asyncio.run(app.list_phones(
-        user={"id": "user"}, tenant_id=app.DEFAULT_TENANT_ID, include_live=False,
+        user={"id": "user"}, tenant_id="00000000-0000-0000-0000-000000000010", include_live=False,
     ))
 
     assert seen == ["workspace-real"]
