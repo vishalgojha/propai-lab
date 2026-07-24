@@ -1511,6 +1511,8 @@ async def lifespan(app: FastAPI):
         raise RuntimeError("Supabase is required. Set SUPABASE_URL and SUPABASE_SERVICE_KEY.")
     print(f"  Using Supabase backend: {SUPABASE_URL}")
     storage = SupabaseStorage(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+    import routers.common as _common
+    _common.storage = storage
     try:
         print("  Supabase schema managed by migrations — skipping local init")
     except Exception as exc:
