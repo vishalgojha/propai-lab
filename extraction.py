@@ -203,18 +203,28 @@ def _ai_extraction_to_parsed(ai_extraction: dict, raw_text: str, sender_name: st
     price_period = price_info.get("period") if isinstance(price_info, dict) else None
 
     price = float(price_amount) if price_amount is not None else None
-    # Use AI's raw_price_text to infer unit, not magnitude heuristic
+    # Use AI's raw_price_text to infer unit.  The AI prompt instructs the
+    # model to return amount in absolute rupees (1 Cr = 10000000, 1 Lakh =
+    # 100000).  When a unit keyword is detected in raw_price_text, we set
+    # price_unit AND normalize the price to that unit (frontend expects
+    # price in the stated unit, e.g. 4.4 lac = ₹4,40,000).
     raw_price_text = (price_info.get("raw_price_text") or "").lower() if isinstance(price_info, dict) else ""
     if price is not None:
         if any(u in raw_price_text for u in ("cr", "crore")):
             price_unit = "cr"
+            if price >= 10_000_000:
+                price = price / 1_00_00_000
         elif any(u in raw_price_text for u in ("lac", "lakh", "l ")):
             price_unit = "lac"
+            if price >= 100_000:
+                price = price / 1_00_000
         elif any(u in raw_price_text for u in ("k", "thousand")):
             price_unit = "K"
+            if price >= 10_000:
+                price = price / 1_000
         else:
-            # Fallback: magnitude heuristic (last resort)
-            price_unit = "cr" if price >= 1_00_00_000 else ("lac" if price >= 1_00_000 else "abs")
+            # No unit keyword — store as absolute rupees
+            price_unit = "abs"
     else:
         price_unit = None
     price_model = "psf" if price_unit_price == "per_sqft" else None
