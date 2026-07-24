@@ -153,13 +153,21 @@ def test_saved_inbox_views_forward_tenant(monkeypatch):
             calls.append(("delete", slug, tenant_id))
             return True
 
+    import routers.workspace as _ws
     monkeypatch.setattr(app, "storage", FakeStorage())
+    monkeypatch.setattr(_ws, "storage", FakeStorage())
 
-    asyncio.run(app.get_saved_inbox_views(user={"id": "u"}, tenant_id="org-A"))
-    asyncio.run(app.get_saved_inbox_view(slug="v", user={"id": "u"}, tenant_id="org-A"))
-    asyncio.run(app.create_saved_inbox_view(user={"id": "u"}, tenant_id="org-A", slug="v", name="n", filters={}))
-    asyncio.run(app.update_saved_inbox_view(user={"id": "u"}, tenant_id="org-A", slug="v"))
-    asyncio.run(app.delete_saved_inbox_view(slug="v", user={"id": "u"}, tenant_id="org-A"))
+    from routers.workspace import (
+        get_saved_inbox_views, get_saved_inbox_view,
+        create_saved_inbox_view, update_saved_inbox_view,
+        delete_saved_inbox_view,
+    )
+
+    asyncio.run(get_saved_inbox_views(user={"id": "u"}, tenant_id="org-A"))
+    asyncio.run(get_saved_inbox_view(slug="v", user={"id": "u"}, tenant_id="org-A"))
+    asyncio.run(create_saved_inbox_view(user={"id": "u"}, tenant_id="org-A", slug="v", name="n", filters={}))
+    asyncio.run(update_saved_inbox_view(user={"id": "u"}, tenant_id="org-A", slug="v"))
+    asyncio.run(delete_saved_inbox_view(slug="v", user={"id": "u"}, tenant_id="org-A"))
 
     assert all(c[-1] == "org-A" for c in calls)
     assert ("list", "org-A") in calls
@@ -191,12 +199,19 @@ def test_llm_providers_forward_tenant(monkeypatch):
             calls.append(("delete", provider_id, tenant_id))
             return True
 
+    import routers.workspace as _ws
     monkeypatch.setattr(app, "storage", FakeStorage())
+    monkeypatch.setattr(_ws, "storage", FakeStorage())
 
-    asyncio.run(app.list_llm_providers(user={"id": "u"}, tenant_id="org-A"))
-    asyncio.run(app.get_active_llm_provider(user={"id": "u"}, tenant_id="org-A"))
-    asyncio.run(app.save_llm_provider(body={"provider_name": "p"}, user={"id": "u"}, tenant_id="org-A"))
-    asyncio.run(app.delete_llm_provider(provider_id=5, user={"id": "u"}, tenant_id="org-A"))
+    from routers.workspace import (
+        list_llm_providers, get_active_llm_provider,
+        save_llm_provider, delete_llm_provider,
+    )
+
+    asyncio.run(list_llm_providers(user={"id": "u"}, tenant_id="org-A"))
+    asyncio.run(get_active_llm_provider(user={"id": "u"}, tenant_id="org-A"))
+    asyncio.run(save_llm_provider(body={"provider_name": "p"}, user={"id": "u"}, tenant_id="org-A"))
+    asyncio.run(delete_llm_provider(provider_id=5, user={"id": "u"}, tenant_id="org-A"))
 
     assert ("list", "org-A") in calls
     assert ("active", "org-A") in calls

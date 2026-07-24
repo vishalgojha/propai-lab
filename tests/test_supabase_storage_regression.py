@@ -567,9 +567,13 @@ def test_activity_log_uses_the_authenticated_member(monkeypatch):
             captured.update(kwargs)
             return 41
 
+    import routers.workspace as _ws
     monkeypatch.setattr(app, "storage", FakeStorage())
+    monkeypatch.setattr(_ws, "storage", FakeStorage())
 
-    result = asyncio.run(app.log_activity(
+    from routers.workspace import log_activity
+
+    result = asyncio.run(log_activity(
         body={
             "team_member_id": 999,
             "action": "broker_whatsapp_opened",
