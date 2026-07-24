@@ -5,6 +5,7 @@ import httpx
 import pytest
 
 import app
+from routers import audit as audit_mod
 
 
 class _Result:
@@ -38,8 +39,8 @@ def test_capture_health_uses_one_tenant_scoped_query(monkeypatch):
                 "pending_ai": 1,
             }])
 
-    monkeypatch.setattr(app, "storage", SimpleNamespace(db=Database()))
-    result = app.audit_capture_health(user={"id": "user"}, tenant_id="tenant")
+    monkeypatch.setattr(audit_mod, "storage", SimpleNamespace(db=Database()))
+    result = audit_mod.audit_capture_health(user={"id": "user"}, tenant_id="tenant")
 
     assert len(calls) == 1
     assert calls[0][1][0] == "tenant"
@@ -67,8 +68,8 @@ def test_capture_health_caps_parser_ready(monkeypatch):
                 "pending_ai": 1,
             }])
 
-    monkeypatch.setattr(app, "storage", SimpleNamespace(db=Database()))
-    result = app.audit_capture_health(user={"id": "user"}, tenant_id="tenant")
+    monkeypatch.setattr(audit_mod, "storage", SimpleNamespace(db=Database()))
+    result = audit_mod.audit_capture_health(user={"id": "user"}, tenant_id="tenant")
 
     assert result["parser_success_rate"] == 100.0
 
@@ -83,8 +84,8 @@ def test_duplicate_audit_reads_current_tenant_messages(monkeypatch):
             {"group_id": "Bandra Brokers West", "group_name": "Bandra Brokers West", "error": "", "status": "captured"},
         ]
 
-    monkeypatch.setattr(app, "_audit_rows", rows)
-    result = app.audit_duplicates(user={"id": "user"}, tenant_id="tenant")
+    monkeypatch.setattr(audit_mod, "_audit_rows", rows)
+    result = audit_mod.audit_duplicates(user={"id": "user"}, tenant_id="tenant")
 
     assert len(result) == 1
     assert calls[0][1] == ("tenant",)
@@ -159,10 +160,10 @@ def test_audit_groups_uses_named_columns_from_supabase_json_rows(monkeypatch):
         calls.append((sql, params))
         return next(result_sets)
 
-    monkeypatch.setattr(app, "_table_exists", lambda table: True)
-    monkeypatch.setattr(app, "_audit_rows", rows)
+    monkeypatch.setattr(audit_mod, "_table_exists", lambda table: True)
+    monkeypatch.setattr(audit_mod, "_audit_rows", rows)
 
-    result = app.audit_groups_v2(user={"id": "user"}, tenant_id="tenant-a")
+    result = audit_mod.audit_groups_v2(user={"id": "user"}, tenant_id="tenant-a")
 
     assert len(calls) == 4
     assert "po.raw_message_id::text || ':' || COALESCE(po.listing_index, 0)::text" in calls[1][0]
@@ -210,15 +211,15 @@ def test_audit_buildings_use_explicit_tenant_scoped_mentions(monkeypatch):
 
 
 def test_audit_overlap_uses_named_columns_from_supabase_json_rows(monkeypatch):
-    monkeypatch.setattr(app, "_table_exists", lambda table: True)
-    monkeypatch.setattr(app, "_audit_rows", lambda *_args, **_kwargs: [
+    monkeypatch.setattr(audit_mod, "_table_exists", lambda table: True)
+    monkeypatch.setattr(audit_mod, "_audit_rows", lambda *_args, **_kwargs: [
         {"sender": "broker-1", "group_name": "Group A"},
         {"group_name": "Group B", "sender": "broker-1"},
         {"sender": "broker-2", "group_name": "Group A"},
         {"group_name": "Group B", "sender": "broker-2"},
     ])
 
-    result = app.audit_group_overlap(user={"id": "user"}, tenant_id="tenant-a")
+    result = audit_mod.audit_group_overlap(user={"id": "user"}, tenant_id="tenant-a")
 
     assert result["pairs"][0]["shared_senders"] == 2
     assert {item["name"] for item in result["groups"]} == {"Group A", "Group B"}
