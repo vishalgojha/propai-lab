@@ -464,6 +464,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
   const navSections = isSuperAdmin
     ? [...baseNavSections, adminNavSection]
     : baseNavSections;
+  const hideGlobalChromeOnMobile = isFocusedWorkspace && isMobile;
 
   return (
     <div className="flex h-screen overflow-hidden bg-black">
@@ -605,56 +606,58 @@ function AppShell({ children }: { children: React.ReactNode }) {
       {/* ═══════ Main Content ═══════ */}
       <main className="flex-1 flex flex-col overflow-hidden bg-black min-w-0">
         {/* ═══ Top Bar ═══ */}
-        <div className="flex min-h-9 items-center gap-2 border-b border-white/5 bg-black/80 px-2 py-1 lg:min-h-[44px] lg:px-5 lg:py-2">
-          {/* Hamburger (mobile) */}
-          <button
-            onClick={toggleDrawer}
-            className="lg:hidden -ml-1 flex h-7 w-7 items-center justify-center rounded-lg text-zinc-400 hover:bg-white/5 hover:text-white transition-colors"
-            aria-label={drawerOpen ? "Close menu" : "Open menu"}
-          >
-            {drawerOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
-          </button>
+        {!hideGlobalChromeOnMobile && (
+          <div className="flex min-h-9 items-center gap-2 border-b border-white/5 bg-black/80 px-2 py-1 lg:min-h-[44px] lg:px-5 lg:py-2">
+            {/* Hamburger (mobile) */}
+            <button
+              onClick={toggleDrawer}
+              className="lg:hidden -ml-1 flex h-7 w-7 items-center justify-center rounded-lg text-zinc-400 hover:bg-white/5 hover:text-white transition-colors"
+              aria-label={drawerOpen ? "Close menu" : "Open menu"}
+            >
+              {drawerOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+            </button>
 
-          {/* Connection status */}
-          <div className={`${isFocusedWorkspace ? "max-lg:hidden " : ""}flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1`}>
-            {offline && (
-              <span className="flex items-center gap-1 text-[10px] text-red-400 font-semibold">
-                <WifiOff className="w-3 h-3" strokeWidth={1.5} />
-                Offline
-              </span>
-            )}
-            <a href="/connections" className={`flex shrink-0 items-center gap-1 text-[10px] font-semibold transition-colors sm:text-[11px] lg:text-[12px] ${waConnected === null ? "text-zinc-400 hover:text-zinc-300" : waConnected ? (waStale ? "text-zinc-400 hover:text-zinc-300" : "text-[#3EE88A] hover:text-[#74f0a5]") : "text-zinc-300 hover:text-white"}`}>
-              <span className={`h-1.5 w-1.5 rounded-full lg:h-2 lg:w-2 ${waConnected === null ? "bg-zinc-500" : waConnected ? (waStale ? "bg-zinc-500" : "bg-[#3EE88A]") : "bg-red-400"}`} />
-              <span>
-                {waConnected === null ? "Checking" : waConnected ? "Connected" : "Connect WhatsApp"}
-              </span>
-            </a>
-            {waConnected && waPhone && (
-              <a
-                href="/connections"
-                className="shrink-0 font-mono text-[9px] text-zinc-400 transition-colors hover:text-white sm:text-[10px] lg:text-[11px]"
-                title="Manage connected WhatsApp number"
-              >
-                {waPhone}
+            {/* Connection status */}
+            <div className={`${isFocusedWorkspace ? "max-lg:hidden " : ""}flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1`}>
+              {offline && (
+                <span className="flex items-center gap-1 text-[10px] text-red-400 font-semibold">
+                  <WifiOff className="w-3 h-3" strokeWidth={1.5} />
+                  Offline
+                </span>
+              )}
+              <a href="/connections" className={`flex shrink-0 items-center gap-1 text-[10px] font-semibold transition-colors sm:text-[11px] lg:text-[12px] ${waConnected === null ? "text-zinc-400 hover:text-zinc-300" : waConnected ? (waStale ? "text-zinc-400 hover:text-zinc-300" : "text-[#3EE88A] hover:text-[#74f0a5]") : "text-zinc-300 hover:text-white"}`}>
+                <span className={`h-1.5 w-1.5 rounded-full lg:h-2 lg:w-2 ${waConnected === null ? "bg-zinc-500" : waConnected ? (waStale ? "bg-zinc-500" : "bg-[#3EE88A]") : "bg-red-400"}`} />
+                <span>
+                  {waConnected === null ? "Checking" : waConnected ? "Connected" : "Connect WhatsApp"}
+                </span>
               </a>
-            )}
-            {(wabaConfig?.outbound_allowed || wabaConfig?.shared_waba_number) && (
-              <a href="/waba" className="flex shrink-0 items-center gap-1 text-[10px] font-semibold text-[#3EE88A] transition-colors hover:text-[#74f0a5] lg:text-[11px]" title={wabaConfig?.outbound_allowed ? "Workspace WABA connected" : "Message the PropAI assistant on WhatsApp"}>
-                <span className="h-1.5 w-1.5 rounded-full bg-[#3EE88A] lg:h-2 lg:w-2" />
-                <span>{wabaConfig?.outbound_allowed ? "WABA Connected" : "PropAI WABA"}</span>
-              </a>
-            )}
+              {waConnected && waPhone && (
+                <a
+                  href="/connections"
+                  className="shrink-0 font-mono text-[9px] text-zinc-400 transition-colors hover:text-white sm:text-[10px] lg:text-[11px]"
+                  title="Manage connected WhatsApp number"
+                >
+                  {waPhone}
+                </a>
+              )}
+              {(wabaConfig?.outbound_allowed || wabaConfig?.shared_waba_number) && (
+                <a href="/waba" className="flex shrink-0 items-center gap-1 text-[10px] font-semibold text-[#3EE88A] transition-colors hover:text-[#74f0a5] lg:text-[11px]" title={wabaConfig?.outbound_allowed ? "Workspace WABA connected" : "Message the PropAI assistant on WhatsApp"}>
+                  <span className="h-1.5 w-1.5 rounded-full bg-[#3EE88A] lg:h-2 lg:w-2" />
+                  <span>{wabaConfig?.outbound_allowed ? "WABA Connected" : "PropAI WABA"}</span>
+                </a>
+              )}
+            </div>
+            <div className="flex-1" />
+            <button
+              onClick={handleSignOut}
+              className={`${isFocusedWorkspace ? "max-lg:hidden " : ""}flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-zinc-500 transition-colors hover:bg-white/5 hover:text-white`}
+              aria-label="Log out"
+              title="Log out"
+            >
+              <LogOut className="h-3.5 w-3.5" strokeWidth={1.5} />
+            </button>
           </div>
-          <div className="flex-1" />
-          <button
-            onClick={handleSignOut}
-            className={`${isFocusedWorkspace ? "max-lg:hidden " : ""}flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-zinc-500 transition-colors hover:bg-white/5 hover:text-white`}
-            aria-label="Log out"
-            title="Log out"
-          >
-            <LogOut className="h-3.5 w-3.5" strokeWidth={1.5} />
-          </button>
-        </div>
+        )}
 
         {/* Page content */}
         <div className="flex-1 min-h-0 overflow-y-auto text-white relative">
