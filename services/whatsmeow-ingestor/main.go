@@ -1770,19 +1770,45 @@ func (sm *SessionManager) pairCodeHandler(w http.ResponseWriter, r *http.Request
 	session.pairingPhone = phone
 	session.mu.Unlock()
 
-	// If session is already in QR flow, cancel and restart so it picks up code pairing
-	if session.getStatus().ConnectionState == "qr" || session.getStatus().ConnectionState == "" {
-		if session.cancel != nil {
-			session.cancel()
-		}
-		// Restart will happen automatically via sessionLoop
+	// Force the session loop into the QR/code pairing path.
+	//
+	// We must NOT cancel the context: ctx.Done() causes runSession to return
+	// (goroutine dies, no restart). Instead we disconnect the client which
+	// fires the `disconnected` channel — that path loops back to the top of
+	// the for-loop where pairingMode is re-read.
+	//
+	// If the device already has an ID (previously-paired session), nil it so
+	// runSession enters the pairing path instead of "connect directly".
+	if session.client != nil {
+		session.client.Disconnect()
+	}
+	if session.device != nil && session.device.ID != nil {
+		session.device.ID = nil
 	}
 
+	// Poll until PairPhone() generates the code or timeout.
+	// PairPhone() runs asynchronously inside runSession after the first QR
+	// event arrives; we wait for the code to appear in the session status.
+	deadline := time.Now().Add(30 * time.Second)
+	for time.Now().Before(deadline) {
+		st := session.getStatus()
+		if code := st.PairingCode; code != "" {
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok":              true,
+				"phone":           phone,
+				"pairing_code":    code,
+				"connection_state": st.ConnectionState,
+			})
+			return
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	// Timed out — return current status so the frontend can fall back to polling
 	status := session.getStatus()
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"ok":    true,
-		"phone": phone,
-		"note":  "Pairing code will be generated. Check status for the code.",
+		"ok":     true,
+		"phone":  phone,
+		"note":   "Pairing code not yet available. Poll status for updates.",
 		"status": status,
 	})
 }
