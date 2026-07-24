@@ -75,9 +75,9 @@ def test_tenant_context_accepts_a_users_own_tenant(monkeypatch):
 
 
 def test_market_feed_endpoints_forward_the_active_tenant(monkeypatch):
-    import app
     import routers.common as _common
     import routers.knowledge as _knowledge
+    import routers.brokers as _brokers
 
     calls = []
 
@@ -91,11 +91,11 @@ def test_market_feed_endpoints_forward_the_active_tenant(monkeypatch):
             return []
 
     fake = FakeStorage()
-    monkeypatch.setattr(app, "storage", fake)
     monkeypatch.setattr(_common, "storage", fake)
     monkeypatch.setattr(_knowledge, "storage", fake)
+    monkeypatch.setattr(_brokers, "storage", fake)
 
-    asyncio.run(app.get_brokers_feed(
+    asyncio.run(_brokers.get_brokers_feed(
         user={"id": "user-2"},
         limit=25,
         offset=0,
@@ -521,7 +521,7 @@ def test_market_observation_dedupe_keeps_requirements_and_distinct_floors_separa
 
 
 def test_find_broker_refreshes_stale_profile_graph(monkeypatch):
-    import app
+    import routers.brokers as _brokers
 
     class Result:
         def __init__(self, row):
@@ -549,9 +549,9 @@ def test_find_broker_refreshes_stale_profile_graph(monkeypatch):
             self.rebuilds += 1
 
     fake_storage = FakeStorage()
-    monkeypatch.setattr(app, "storage", fake_storage)
+    monkeypatch.setattr(_brokers, "storage", fake_storage)
 
-    result = asyncio.run(app.find_broker(
+    result = asyncio.run(_brokers.find_broker(
         name="Sunil Rajwani",
         phone="",
         user={"id": "user-2"},
@@ -594,9 +594,9 @@ def test_activity_log_uses_the_authenticated_member(monkeypatch):
 
 def test_whatsapp_status_is_scoped_to_the_users_workspace():
     """A global ingestor session must not leak into another workspace."""
-    import app
+    import routers.dashboard as _dashboard
 
-    status = app._select_workspace_whatsapp_status(
+    status = _dashboard._select_workspace_whatsapp_status(
         [{"broker_id": "broker-owned"}],
         [
             {
