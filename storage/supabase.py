@@ -1916,6 +1916,64 @@ class SupabaseStorage(Storage):
         res = query.execute()
         return res.count or 0
 
+    # ── Broker Identity Resolution ──────────────────────────────
+
+    def resolve_broker(self, broker_phone: str = "", sender_phone: str = "",
+                       sender_jid: str = "", broker_name: str = "",
+                       profile_name: str = "", sender: str = "") -> Optional[int]:
+        """Upsert broker identity and return broker_id.
+
+        Computes the canonical identity the same way the SQL backfill does:
+          effective_phone = market_normalize_phone(broker_phone, sender_phone, sender_jid)
+          effective_name  = market_clean_person_name(broker_name, profile_name, sender)
+          identity_key    = 'phone:' + phone  OR  'name:' + name_key
+
+        Returns the brokers.id (bigint) or None if no identity could be resolved.
+        """
+        effective_phone = (
+            _normalize_india_phone(broker_phone)
+            or _normalize_india_phone(sender_phone)
+            or _normalize_india_phone(sender_jid)
+        )
+
+        effective_name = (
+            _clean_person_name(broker_name)
+            or _clean_person_name(profile_name)
+            or _clean_person_name(sender)
+        )
+
+        if not effective_phone and not effective_name:
+            return None
+
+        if effective_phone:
+            identity_key = f"phone:{effective_phone}"
+        else:
+            identity_key = f"name:{_market_name_key(effective_name)}"
+
+        canonical = effective_name or effective_phone or "Unknown broker"
+        tenant_id = self._tenant_id
+
+        # Try to find existing
+        q = self.client.table("brokers").select("id").eq("identity_key", identity_key)
+        if tenant_id:
+            q = q.eq("tenant_id", tenant_id)
+        res = q.execute()
+        if res.data:
+            return res.data[0]["id"]
+
+        # Insert new broker
+        row = {
+            "identity_key": identity_key,
+            "primary_phone": effective_phone or None,
+            "canonical_name": canonical,
+        }
+        if tenant_id:
+            row["tenant_id"] = tenant_id
+        res = self.client.table("brokers").insert(row).execute()
+        if res.data:
+            return res.data[0]["id"]
+        return None
+
     # ── Parsed Output ────────────────────────────────────────────
 
     PARSED_OUTPUT_COLUMNS = {
@@ -1947,6 +2005,7 @@ class SupabaseStorage(Storage):
         # v2 schema — rental / tenancy policy
         "pet_policy", "tenant_type_preference", "sharing_allowed",
         "company_lease_criteria", "tenant_nationality_preference",
+        "broker_id",
     }
 
     def save_parsed(self, parsed: ParsedObservation) -> int:
@@ -3328,15 +3387,24 @@ class SupabaseStorage(Storage):
         
         Handles both cases: jobs with old started_at AND jobs with NULL started_at
         (from before started_at tracking was added).
+        Uses raw SQL to avoid postgrest-py version compatibility issues with .lt()/.filter().
         """
         from datetime import datetime, timezone, timedelta
         cutoff = (datetime.now(timezone.utc) - timedelta(seconds=stale_seconds)).isoformat()
-        res = self.client.table("enrichment_jobs").update({
-            "status": "pending",
-            "started_at": None,
-            "attempts": 0,
-        }).eq("status", "in_progress").filter("started_at", "lt", cutoff).execute()
-        return len(res.data) if res.data else 0
+        sql = """
+            UPDATE enrichment_jobs
+            SET status = 'pending', started_at = NULL, attempts = 0
+            WHERE status = 'in_progress'
+              AND (started_at < %s OR started_at IS NULL)
+        """
+        from psycopg2.extras import RealDictCursor
+        conn = self.db._conn
+        cur = conn.cursor()
+        cur.execute(sql, (cutoff,))
+        affected = cur.rowcount
+        conn.commit()
+        cur.close()
+        return affected
 
     def get_enrichment_job_by_parsed(self, parsed_id: int) -> Optional[dict]:
         res = self.client.table("enrichment_jobs").select("*").eq("parsed_id", parsed_id).limit(1).execute()
