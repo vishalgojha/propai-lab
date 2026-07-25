@@ -58,6 +58,8 @@ function toCardFields(row: NonNullable<Awaited<ReturnType<typeof getListingById>
     bhk: row.bhk,
     price: row.price,
     price_unit: row.price_unit,
+    price_model: row.price_model,
+    price_per_sqft: row.price_per_sqft,
     area_sqft: row.area_sqft,
     furnishing: row.furnishing,
     intent: row.intent,
