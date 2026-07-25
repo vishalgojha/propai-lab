@@ -20,12 +20,6 @@ export interface ListingItem {
   landmark_name?: string;
 }
 
-const INTENT_STYLES: Record<string, { bg: string; text: string; label: string }> = {
-  SELL: { bg: "bg-emerald-900/40", text: "text-emerald-300", label: "SALE" },
-  RENT: { bg: "bg-blue-900/40", text: "text-blue-300", label: "RENT" },
-  REQUIREMENT: { bg: "bg-amber-900/40", text: "text-amber-300", label: "WANTED" },
-};
-
 function relativeTime(text: string): string {
   if (!text) return "";
   try {
@@ -48,7 +42,13 @@ function relativeTime(text: string): string {
 
 export default function ListingCard({ item }: { item: ListingItem }) {
   const intent = (item.intent || "").toUpperCase();
-  const style = INTENT_STYLES[intent] || { bg: "bg-zinc-800", text: "text-zinc-300", label: intent || "LISTING" };
+  const isWanted = intent === "REQUIREMENT";
+  const isSale = intent === "SELL" || intent === "SALE";
+  const isRent = intent === "RENT";
+
+  const badgeLabel = isWanted ? "Wanted" : isRent ? "Rent" : "Sale";
+  const cardClass = isWanted ? "card wanted" : "card sale";
+  const badgeClass = isWanted ? "badge wanted" : "badge sale";
 
   const location = item.micro_market || item.location_label || item.landmark_name || "";
   const waLink = item.broker_phone
@@ -56,83 +56,49 @@ export default function ListingCard({ item }: { item: ListingItem }) {
     : "";
 
   return (
-    <div className="bg-zinc-900/80 border border-white/10 rounded-lg p-3 hover:border-white/20 transition-colors">
-      {/* Header: intent badge + building */}
-      <div className="flex items-start justify-between gap-2 mb-2">
-        <div className="flex items-center gap-2 min-w-0">
-          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${style.bg} ${style.text} shrink-0`}>
-            {style.label}
-          </span>
-          {item.bhk && (
-            <span className="text-[10px] font-semibold text-white bg-white/10 px-1.5 py-0.5 rounded shrink-0">
-              {item.bhk}
-            </span>
-          )}
+    <div className={cardClass}>
+      <div className="card-top">
+        <div>
+          <span className={badgeClass}>{badgeLabel}</span>
+          <div className="building">{item.building_name || "Unknown Building"}</div>
+          {location && <div className="locality">{location}</div>}
         </div>
-        {item.confidence != null && item.confidence > 0 && (
-          <span className="text-[9px] text-zinc-500 shrink-0">{item.confidence}%</span>
-        )}
-      </div>
-
-      {/* Building + location */}
-      <div className="flex items-center gap-1.5 mb-1.5">
-        <Building2 className="w-3 h-3 text-zinc-500 shrink-0" />
-        <span className="text-xs font-semibold text-white truncate">
-          {item.building_name || "Unknown Building"}
-        </span>
-      </div>
-      {location && (
-        <div className="text-[11px] text-zinc-400 mb-2 truncate">{location}</div>
-      )}
-
-      {/* Specs row */}
-      <div className="flex flex-wrap gap-x-3 gap-y-1 mb-2 text-[11px]">
         {item.price_formatted && (
-          <span className="text-white font-semibold">{item.price_formatted}</span>
+          <div className="price">
+            {item.price_formatted}
+            {item.area_sqft && <small>{item.area_sqft} sqft</small>}
+          </div>
         )}
-        {item.area_sqft && (
-          <span className="text-zinc-400">{item.area_sqft} sqft</span>
-        )}
+      </div>
+      <div className="specs">
+        {item.bhk && <span><b>{item.bhk}</b> BHK</span>}
+        {item.area_sqft && <span><b>{item.area_sqft}</b> sqft</span>}
         {item.furnishing && item.furnishing !== "None" && (
-          <span className="text-zinc-500">{item.furnishing}</span>
+          <span><b>{item.furnishing}</b></span>
         )}
       </div>
-
-      {/* Footer: broker + meta */}
-      <div className="flex items-center justify-between gap-2 pt-2 border-t border-white/5">
-        <div className="flex items-center gap-2 min-w-0">
+      <div className="card-bottom">
+        <div>
           {item.broker_name && (
-            <span className="text-[11px] text-zinc-300 truncate">{item.broker_name}</span>
+            <div className="broker"><b>{item.broker_name}</b></div>
           )}
-          {item.broker_phone && (
-            <span className="text-[10px] text-zinc-500">{item.broker_phone}</span>
-          )}
+          <div className="meta">
+            {item.group_count && item.group_count > 0 && `${item.group_count} grp · `}
+            {item.last_seen_text && relativeTime(item.last_seen_text)}
+          </div>
         </div>
-        <div className="flex items-center gap-2 shrink-0">
-          {item.group_count != null && item.group_count > 0 && (
-            <span className="text-[9px] text-zinc-500">{item.group_count} grp</span>
-          )}
-          {item.last_seen_text && (
-            <span className="flex items-center gap-0.5 text-[9px] text-zinc-500">
-              <Clock className="w-2.5 h-2.5" />
-              {relativeTime(item.last_seen_text)}
-            </span>
-          )}
-        </div>
+        {waLink && (
+          <a
+            href={waLink}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="wa-btn"
+          >
+            <MessageSquare className="w-3.5 h-3.5" />
+            WhatsApp
+          </a>
+        )}
       </div>
-
-      {/* WhatsApp CTA */}
-      {waLink && (
-        <a
-          href={waLink}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="mt-2 flex items-center justify-center gap-1.5 w-full py-1.5 rounded-md bg-[#25D366]/10 border border-[#25D366]/20 text-[#25D366] text-[11px] font-semibold hover:bg-[#25D366]/20 transition-colors"
-        >
-          <MessageSquare className="w-3 h-3" />
-          Message on WhatsApp
-        </a>
-      )}
     </div>
   );
 }
