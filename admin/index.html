@@ -354,7 +354,6 @@ button.green:hover { background: #2ea043; }
     <button onclick="loadSync()">Refresh</button>
     <button onclick="startSync()" id="syncStartBtn2">Start Sync</button>
     <button onclick="stopSync()" id="syncStopBtn2" class="red">Stop Sync</button>
-    <button onclick="showLoginModal()" id="loginBtn2" class="green">Login</button>
     <button onclick="confirmLogout()" id="logoutBtn2" class="red" style="display:none;">Logout</button>
     <button onclick="checkConnection()" class="gray">Check Connection</button>
     <span id="connStatus2" class="muted" style="font-size:12px;"></span>
@@ -364,28 +363,6 @@ button.green:hover { background: #2ea043; }
   <table><thead><tr>
     <th>Group Name</th><th>ID</th><th>Members</th><th>Status</th><th>Processed</th><th>Found</th><th>Remaining</th><th>Started</th><th>Finished</th><th>Error</th>
   </tr></thead><tbody id="syncBody2"></tbody></table>
-</div>
-
-<!-- QR Login Modal -->
-<div id="qrModal" class="modal" style="display:none;">
-  <div class="modal-content" style="max-width:420px;text-align:center;">
-    <span class="modal-close" onclick="closeQRModal()">&times;</span>
-    <h3 style="margin-bottom:12px;">Scan QR with WhatsApp</h3>
-    <div id="qrContainer" style="background:#fff;border-radius:8px;padding:16px;margin:12px 0;min-height:280px;display:flex;align-items:center;justify-content:center;">
-      <div id="qrSpinner" style="color:#8b949e;">Requesting QR code...</div>
-      <img id="qrImage" style="max-width:300px;display:none;" alt="QR Code"/>
-    </div>
-    <div id="qrStatus" style="font-size:12px;color:#8b949e;margin-bottom:8px;"></div>
-    <div style="display:flex;gap:8px;justify-content:center;">
-      <button onclick="refreshQR()" class="gray">Refresh QR</button>
-      <button onclick="closeQRModal()">Close</button>
-    </div>
-    <div style="margin-top:12px;font-size:11px;color:#8b949e;">
-      1. Open WhatsApp on your phone &middot;
-      2. Settings &rarr; Linked Devices &middot;
-      3. Tap "Link a Device"
-    </div>
-  </div>
 </div>
 
 </div>
@@ -1083,86 +1060,10 @@ async function loadSync() {
 
 function safeJsonParse(s) { try { return JSON.parse(s); } catch(e) { return {}; } }
 
-// ── Login / Logout / QR ──────────────────────────────────────────
-
-let qrPollTimer = null;
-
-function showLoginModal() {
-  document.getElementById('qrModal').style.display = 'flex';
-  document.getElementById('qrImage').style.display = 'none';
-  document.getElementById('qrSpinner').textContent = 'Requesting QR code...';
-  document.getElementById('qrSpinner').style.display = 'block';
-  document.getElementById('qrStatus').textContent = '';
-  fetchQR();
-}
-
-function closeQRModal() {
-  document.getElementById('qrModal').style.display = 'none';
-  if (qrPollTimer) { clearTimeout(qrPollTimer); qrPollTimer = null; }
-}
-
-async function fetchQR() {
-  try {
-    const res = await fetch('/api/sync/qr');
-    const data = await res.json();
-    if (data.error) {
-      document.getElementById('qrSpinner').textContent = 'Error: ' + data.error;
-      document.getElementById('qrStatus').textContent = 'Is Evolution API running?';
-      return;
-    }
-    if (data.count === 0) {
-      document.getElementById('qrSpinner').textContent = 'Already connected!';
-      document.getElementById('qrStatus').textContent = '';
-      updateLoginButtons();
-      setTimeout(closeQRModal, 1500);
-      return;
-    }
-    const base64 = data.base64 || '';
-    if (!base64) {
-      document.getElementById('qrSpinner').textContent = 'No QR yet, retrying...';
-      document.getElementById('qrStatus').textContent = 'Refreshing in 3s';
-      qrPollTimer = setTimeout(fetchQR, 3000);
-      return;
-    }
-    document.getElementById('qrSpinner').style.display = 'none';
-    const img = document.getElementById('qrImage');
-    img.src = 'data:image/png;base64,' + base64;
-    img.style.display = 'block';
-    document.getElementById('qrStatus').textContent = 'Scan with WhatsApp → Linked Devices';
-    // Poll for connection
-    pollConnection();
-  } catch(e) {
-    document.getElementById('qrSpinner').textContent = 'Failed: ' + e.message;
-  }
-}
-
-async function refreshQR() {
-  if (qrPollTimer) { clearTimeout(qrPollTimer); qrPollTimer = null; }
-  document.getElementById('qrImage').style.display = 'none';
-  document.getElementById('qrSpinner').style.display = 'block';
-  document.getElementById('qrSpinner').textContent = 'Refreshing QR...';
-  document.getElementById('qrStatus').textContent = '';
-  fetchQR();
-}
-
-async function pollConnection() {
-  try {
-    const res = await fetch('/api/sync/connection-state');
-    const data = await res.json();
-    if (data.connected) {
-      document.getElementById('qrStatus').textContent = '✓ Connected!';
-      updateLoginButtons();
-      setTimeout(closeQRModal, 1000);
-      return;
-    }
-    qrPollTimer = setTimeout(pollConnection, 2000);
-  } catch(e) {
-    qrPollTimer = setTimeout(pollConnection, 3000);
-  }
-}
+// ── Login / Logout ───────────────────────────────────────────────
 
 async function confirmLogout() {
-  if (!confirm('Disconnect WhatsApp? You will need to scan a QR code to reconnect.')) return;
+  if (!confirm('Disconnect WhatsApp? You will need to use the pairing-code flow to reconnect.')) return;
   try {
     const res = await fetch('/api/sync/logout', { method: 'POST' });
     const data = await res.json();
@@ -1178,7 +1079,6 @@ async function updateLoginButtons() {
     const res = await fetch('/api/sync/connection-state');
     const data = await res.json();
     const connected = data.connected;
-    document.getElementById('loginBtn2').style.display = connected ? 'none' : 'inline-block';
     document.getElementById('logoutBtn2').style.display = connected ? 'inline-block' : 'none';
   } catch(e) {
     // leave as-is

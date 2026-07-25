@@ -3332,11 +3332,11 @@ return {
                   <MessageSquare className="h-4 w-4" strokeWidth={1.6} />
                 </div>
                 <div className="text-sm font-bold text-white">
-                  {whatsappDisconnected ? "Scan WhatsApp QR to continue" : accessHealthGate.title}
+                  {whatsappDisconnected ? "Pair WhatsApp to continue" : accessHealthGate.title}
                 </div>
                 <p className="mx-auto mt-2 max-w-[260px] text-xs leading-relaxed text-zinc-500">
                   {whatsappDisconnected
-                    ? "Scan the QR code in Connection Center to unlock Market Inbox and WhatsApp Groups."
+                    ? "Open Connection Center and pair WhatsApp with a code to unlock Market Inbox and WhatsApp Groups."
                     : accessHealthGate.description}
                 </p>
                 <div className="mt-4 flex flex-col items-center gap-2 sm:flex-row sm:justify-center">
@@ -3591,11 +3591,11 @@ return {
                   <MessageSquare className="h-5 w-5" strokeWidth={1.6} />
                 </div>
                 <h3 className="text-lg font-bold text-white">
-                  {whatsappDisconnected ? "Scan WhatsApp QR to continue" : accessHealthGate.title}
+                  {whatsappDisconnected ? "Pair WhatsApp to continue" : accessHealthGate.title}
                 </h3>
                 <p className="mt-2 text-sm leading-relaxed text-zinc-500">
                   {whatsappDisconnected
-                    ? "Scan the QR code in Connection Center to unlock Market Inbox and WhatsApp Groups."
+                    ? "Open Connection Center and pair WhatsApp with a code to unlock Market Inbox and WhatsApp Groups."
                     : accessHealthGate.description}
                 </p>
                 <div className="mt-5 flex flex-col items-center justify-center gap-2 sm:flex-row">

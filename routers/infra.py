@@ -1217,15 +1217,7 @@ def _handle_system_event(event_class: str, event: str, data: dict, instance: str
                  _coerce_whatsapp_timestamp(msg_data.get("timestamp") if isinstance(msg_data,dict) else None) or datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")))
         except Exception as exc:
             print(f"[webhook] whatsapp event persistence failed: {exc}", flush=True)
-    if event_class == "qr":
-        qr_code = msg_data if isinstance(msg_data, dict) else {}
-        if not isinstance(msg_data, dict):
-            try:
-                qr_code = json.loads(msg_data) if isinstance(msg_data, str) else {}
-            except (json.JSONDecodeError, TypeError):
-                qr_code = {}
-        get_bus().publish("qr.updated", {"instance": instance, "qrcode": qr_code.get("qrcode") or msg_data.get("qrcode",""), "pairingCode": qr_code.get("pairingCode") or msg_data.get("pairingCode")})
-    elif event_class == "connection":
+    if event_class == "connection":
         state = ""
         if isinstance(msg_data, dict):
             state = msg_data.get("state", "")

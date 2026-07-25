@@ -130,8 +130,5 @@ class WhatsAppSource(BaseSource):
             "connected": bool(status.get("connected", False)),
         }
 
-    def qr_code(self) -> dict:
-        return {"error": "QR pairing is handled by the new ingestor service."}
-
     def logout(self) -> dict:
         return {"error": "Logout not supported via API. Stop the ingestor, delete auth directory, and restart."}

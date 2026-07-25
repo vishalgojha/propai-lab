@@ -10,7 +10,7 @@ PropAI runs on a Hetzner Cloud VPS managed by Coolify.
 | `app` | Next.js frontend | port 3000 |
 | `ingestor` | WhatsApp ingestor (whatsmeow Go) | port 3001 (internal) |
 
-WhatsApp ingestor connects as a WhatsApp client via QR code, captures group messages, and forwards them to the API webhook. Auth state persists in `/data/auth/` on the shared volume.
+WhatsApp ingestor connects as a WhatsApp client via pairing code, captures group messages, and forwards them to the API webhook. Auth state persists in `/data/auth/` on the shared volume.
 
 ## Persistent data
 

@@ -18,7 +18,7 @@ WhatsApp broker groups -> ingestor -> FastAPI -> Supabase
 
 There are two ingestion paths:
 
-1. WhatsApp ingestor - Go-based `whatsmeow` client that connects via QR code from `services/whatsmeow-ingestor/` and forwards broker group messages to the API webhook.
+1. WhatsApp ingestor - Go-based `whatsmeow` client that connects via WhatsApp pairing code from `services/whatsmeow-ingestor/` and forwards broker group messages to the API webhook.
 2. WhatsApp Cloud API - official Meta API for broker DMs routed via webhook.
 
 ## Production deployment

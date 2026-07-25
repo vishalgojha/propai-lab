@@ -411,27 +411,6 @@ async def business_api_add_team_member(req: BusinessApiTeamMemberRequest, user: 
     return _business_api_member(row)
 
 
-@router.post("/api/sync/refresh-qr")
-async def sync_refresh_qr(user: dict = Depends(require_user)):
-    errors = []
-    async with httpx.AsyncClient(timeout=10) as client:
-        for base_url in _ingestor_urls():
-            try:
-                resp = await client.post(
-                    f"{base_url}/reset?broker_id=default", headers=_ingestor_auth_headers()
-                )
-                if resp.status_code == 200:
-                    return {
-                        "ok": True,
-                        "ingestor_url": base_url,
-                        "message": "Session cleared, QR should appear shortly",
-                    }
-                errors.append(f"{base_url}: {resp.status_code}")
-            except httpx.RequestError as e:
-                errors.append(f"{base_url}: {e}")
-    return {"ok": False, "message": "Cannot reach ingestor", "errors": errors}
-
-
 @router.post("/api/sync/history-backfill")
 async def sync_history_backfill(limit: int = 25, count: int = 50, user: dict = Depends(require_user)):
     limit = max(1, min(int(limit or 25), 100))
@@ -746,7 +725,10 @@ async def pair_code_phone(
     if not phone_number:
         raise HTTPException(400, "phone number is required")
     _, resp = await _first_ingestor_response(
-        "POST", "/pair-code", timeout=15,
+        # The ingestor must establish the websocket and wait for the first
+        # QR-channel event before WhatsMeow can call PairPhone(). That is
+        # asynchronous and may take up to the ingestor's 45s deadline.
+        "POST", "/pair-code", timeout=55,
         params={"broker_id": broker_id},
         json={"phone": phone_number},
     )
