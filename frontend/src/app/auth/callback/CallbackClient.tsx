@@ -17,9 +17,12 @@ export function CallbackClient() {
   useEffect(() => {
     const handleCallback = async () => {
       const params = new URLSearchParams(window.location.search);
+      const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ""));
       const code = params.get("code");
-      const error = params.get("error");
-      const errorDescription = params.get("error_description");
+      const error = params.get("error") || hashParams.get("error");
+      const errorDescription = params.get("error_description") || hashParams.get("error_description");
+      const accessToken = hashParams.get("access_token");
+      const refreshToken = hashParams.get("refresh_token");
       const storedNext = window.localStorage.getItem(AUTH_NEXT_KEY) || "";
       const next = params.get("next") || storedNext || "/";
       if (storedNext) {
@@ -32,20 +35,30 @@ export function CallbackClient() {
         return;
       }
 
-      if (!code) {
+      if (!code && !(accessToken && refreshToken)) {
         setStatus("error");
-        setMessage("No authorization code received");
+        setMessage("No Supabase authorization response received");
         return;
       }
 
       try {
         const supabase = getSupabase();
-        const { error } = await supabase.auth.exchangeCodeForSession(code);
+        const result = code
+          ? await supabase.auth.exchangeCodeForSession(code)
+          : await supabase.auth.setSession({
+              access_token: accessToken!,
+              refresh_token: refreshToken!,
+            });
 
-        if (error) {
+        if (result.error) {
           setStatus("error");
-          setMessage(error.message);
+          setMessage(result.error.message);
           return;
+        }
+
+        // Do not leave access or refresh tokens in the address bar/history.
+        if (window.location.hash) {
+          window.history.replaceState({}, document.title, `${window.location.pathname}${window.location.search}`);
         }
 
         setStatus("success");
