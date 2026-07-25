@@ -60,7 +60,7 @@ def _raw_extraction_lag(tenant_id: str | None = None) -> dict:
     pending_over_60m = 0
     oldest_pending_at = None
     try:
-        query = storage.client.table("raw_messages").select("created_at", count="exact").eq("processed", False).lt("created_at", cutoff_15m)
+        query = storage.client.table("raw_messages").select("created_at", count="exact").eq("processed", False).filter("created_at", "lt", cutoff_15m)
         if tenant_id:
             query = query.eq("tenant_id", tenant_id)
         res = query.execute()
@@ -68,7 +68,7 @@ def _raw_extraction_lag(tenant_id: str | None = None) -> dict:
     except Exception:
         pass
     try:
-        query = storage.client.table("raw_messages").select("created_at", count="exact").eq("processed", False).lt("created_at", cutoff_60m)
+        query = storage.client.table("raw_messages").select("created_at", count="exact").eq("processed", False).filter("created_at", "lt", cutoff_60m)
         if tenant_id:
             query = query.eq("tenant_id", tenant_id)
         res = query.execute()
