@@ -720,6 +720,7 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
                 summary_title=f"[{msg_class}] {sender_name or push_name or 'unknown'}",
                 ai_extraction={"reason": "no_real_estate_anchor", "class": msg_class},
                 broker_id=broker_id,
+                group_name=group_name,
             )
             storage.save_parsed(stub)
         except Exception as exc:
@@ -889,6 +890,7 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
                 ai_item.get("additional_charges") if ai_item else parsed.get("additional_charges")
             ),
             broker_id=broker_id,
+            group_name=group_name,
         )
         try:
             parsed_id = storage.save_parsed(obs)

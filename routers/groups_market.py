@@ -64,20 +64,20 @@ async def groups_health(user: dict = Depends(require_user), tenant_id: str = Dep
     value, and an actionable exit recommendation.
     """
     now = datetime.now(timezone.utc)
-    day_ago = (now - timedelta(hours=24)).strftime("%Y-%m-%dT%H:%M:%SZ")
     seven_ago = (now - timedelta(days=7)).strftime("%Y-%m-%dT%H:%M:%SZ")
     thirty_ago = (now - timedelta(days=30)).strftime("%Y-%m-%dT%H:%M:%SZ")
 
     if not _table_exists("raw_messages"):
         return {"groups": [], "summary": _empty_summary()}
 
-    # ── 1. Per-group activity (fast with composite index) ──
+    # ── 1. Per-group activity (uses composite index, <1s) ──
+    # NOTE: COUNT(DISTINCT sender) is excluded — it forces a hash aggregate
+    # that prevents index-only scans and blows the query past 30s.
     activity_rows = _audit_rows(
         "SELECT group_name, "
         "COUNT(*) AS total, "
         "COUNT(CASE WHEN created_at >= ? THEN 1 END) AS msgs_7d, "
         "COUNT(CASE WHEN created_at >= ? THEN 1 END) AS msgs_30d, "
-        "COUNT(DISTINCT sender) AS senders, "
         "MAX(created_at) AS last_msg "
         "FROM raw_messages "
         "WHERE is_group = true AND group_name IS NOT NULL AND group_name != '' "
@@ -94,8 +94,7 @@ async def groups_health(user: dict = Depends(require_user), tenant_id: str = Dep
         total = int(_audit_row_value(row, ("total", 1), 0) or 0)
         msgs_7d = int(_audit_row_value(row, ("msgs_7d", 2), 0) or 0)
         msgs_30d = int(_audit_row_value(row, ("msgs_30d", 3), 0) or 0)
-        senders = int(_audit_row_value(row, ("senders", 4), 0) or 0)
-        last_msg = _audit_row_value(row, ("last_msg", 5), None)
+        last_msg = _audit_row_value(row, ("last_msg", 4), None)
 
         days_since = 999
         if last_msg:
@@ -113,7 +112,7 @@ async def groups_health(user: dict = Depends(require_user), tenant_id: str = Dep
             "total": total,
             "msgs_7d": msgs_7d,
             "msgs_30d": msgs_30d,
-            "senders": senders,
+            "senders": 0,
             "last_msg": last_msg.isoformat() if hasattr(last_msg, "isoformat") else str(last_msg or ""),
             "days_since_msg": days_since,
             "listings": 0,
@@ -122,18 +121,34 @@ async def groups_health(user: dict = Depends(require_user), tenant_id: str = Dep
         }
 
     # ── 2. Per-group extraction value ──
+    # Use denormalized group_name on parsed_output when available (fast, no JOIN).
+    # Falls back to raw_messages JOIN if column is empty (slow but correct).
     if groups and _table_exists("parsed_output"):
-        value_rows = _audit_rows(
-            "SELECT rm.group_name, "
-            "COUNT(DISTINCT po.id) AS extracted, "
-            "COUNT(DISTINCT CASE WHEN UPPER(po.intent) IN ('BUY','REQUIREMENT','RENTAL_SEEKER','TENANT') THEN po.id END) AS requirements, "
-            "COUNT(DISTINCT CASE WHEN po.id IS NOT NULL AND UPPER(po.intent) NOT IN ('BUY','REQUIREMENT','RENTAL_SEEKER','TENANT') THEN po.id END) AS listings "
-            "FROM parsed_output po "
-            "JOIN raw_messages rm ON po.raw_message_id = rm.id "
-            "WHERE rm.is_group = true AND rm.group_name IS NOT NULL AND rm.group_name != '' "
-            "AND rm.group_name NOT LIKE '%@g.us' "
-            "GROUP BY rm.group_name",
+        has_denorm = _audit_scalar(
+            "SELECT EXISTS(SELECT 1 FROM parsed_output WHERE group_name IS NOT NULL LIMIT 1)"
         )
+        if has_denorm:
+            value_rows = _audit_rows(
+                "SELECT group_name, "
+                "COUNT(*) AS extracted, "
+                "COUNT(CASE WHEN UPPER(intent) IN ('BUY','REQUIREMENT','RENTAL_SEEKER','TENANT') THEN 1 END) AS requirements, "
+                "COUNT(CASE WHEN intent IS NOT NULL AND UPPER(intent) NOT IN ('BUY','REQUIREMENT','RENTAL_SEEKER','TENANT') THEN 1 END) AS listings "
+                "FROM parsed_output "
+                "WHERE group_name IS NOT NULL AND group_name != '' AND group_name NOT LIKE '%@g.us' "
+                "GROUP BY group_name",
+            )
+        else:
+            value_rows = _audit_rows(
+                "SELECT rm.group_name, "
+                "COUNT(DISTINCT po.id) AS extracted, "
+                "COUNT(DISTINCT CASE WHEN UPPER(po.intent) IN ('BUY','REQUIREMENT','RENTAL_SEEKER','TENANT') THEN po.id END) AS requirements, "
+                "COUNT(DISTINCT CASE WHEN po.id IS NOT NULL AND UPPER(po.intent) NOT IN ('BUY','REQUIREMENT','RENTAL_SEEKER','TENANT') THEN po.id END) AS listings "
+                "FROM parsed_output po "
+                "JOIN raw_messages rm ON po.raw_message_id = rm.id "
+                "WHERE rm.is_group = true AND rm.group_name IS NOT NULL AND rm.group_name != '' "
+                "AND rm.group_name NOT LIKE '%@g.us' "
+                "GROUP BY rm.group_name",
+            )
         for row in value_rows:
             gn = str(_audit_row_value(row, ("group_name", 0), "") or "")
             if gn not in groups:
