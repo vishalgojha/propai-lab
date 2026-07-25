@@ -8,6 +8,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import StreamingResponse
+from lab.events import get_bus
 
 from routers.common import (
     storage,
@@ -443,6 +445,72 @@ async def dashboard_graph_growth(user: dict = Depends(require_user)):
             "developers": growth["total_developers"],
         },
         "today_new": today_new,
+    }
+
+
+# ── Placeholders (wired by app.py at startup) ──────────────────
+_count_table = lambda table: 0
+_today_count = lambda table, column="created_at", where="1=1": 0
+
+
+@router.get("/api/events")
+async def event_stream(request: Request, user: dict = Depends(require_user)):
+    """Server-Sent Events endpoint. Subscribe to pipeline events."""
+    bus = get_bus()
+    queue = bus.sse_queue()
+
+    async def generate():
+        try:
+            while True:
+                if await request.is_disconnected():
+                    break
+                try:
+                    event = await asyncio.wait_for(queue.get(), timeout=15)
+                    yield f"event: {event['type']}\ndata: {json.dumps(event)}\n\n"
+                except asyncio.TimeoutError:
+                    yield ": keepalive\n\n"
+        finally:
+            bus.remove_queue(queue)
+
+    return StreamingResponse(generate(), media_type="text/event-stream")
+
+
+@router.get("/api/usage")
+async def get_usage(user: dict = Depends(require_user)):
+    """System-wide usage stats for the sidebar page."""
+    stats = storage.get_stats()
+    groups = _count_table("source_sync_jobs")
+    chat_sessions = _count_table("ai_chat_sessions")
+    chat_messages = _count_table("ai_chat_messages")
+    ai_today = _today_count("ai_usage_log")
+    messages_today = _today_count("raw_messages", "timestamp")
+    last_sync_row = storage.db.execute(
+        "SELECT MAX(timestamp) AS ts FROM raw_messages"
+    ).fetchone()
+    last_sync = last_sync_row["ts"] if last_sync_row else None
+    broker_phone = None
+    try:
+        row = storage.db.execute(
+            "SELECT value FROM business_api_config WHERE key = 'whatsapp_business_number'"
+        ).fetchone()
+        if row and row["value"]:
+            broker_phone = row["value"]
+    except Exception:
+        pass
+    return {
+        "total_messages": stats.get("total_messages", 0),
+        "total_parsed": stats.get("total_parsed", 0),
+        "total_listings": stats.get("total_listings", 0),
+        "total_requirements": stats.get("total_requirements", 0),
+        "total_brokers": stats.get("total_brokers", 0),
+        "total_buildings": stats.get("total_buildings", 0),
+        "total_groups": groups,
+        "total_chat_sessions": chat_sessions,
+        "total_chat_messages": chat_messages,
+        "ai_requests_today": ai_today,
+        "messages_today": messages_today,
+        "last_sync": last_sync,
+        "broker_phone": broker_phone,
     }
 
 

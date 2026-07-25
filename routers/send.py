@@ -384,6 +384,61 @@ async def public_create_lead(req: PublicLeadRequest):
     return {"lead_id": lead["id"], "status": "created"}
 
 
+@router.get("/public/listings")
+async def public_listings(
+    micro_market: str | None = None,
+    bhk: str | None = None,
+    intent: str | None = None,
+    min_price: float | None = None,
+    max_price: float | None = None,
+    limit: int = 20,
+    offset: int = 0,
+):
+    """
+    Public listings endpoint for www.propai.live.
+    No auth required. Filters: micro_market, bhk, intent, min_price, max_price.
+    Returns listings without broker_name/broker_phone.
+    """
+    try:
+        query = """
+            SELECT l.id, l.fingerprint, l.intent, l.bhk, l.price, l.price_unit,
+                   l.price_per_sqft, l.area_sqft, l.furnishing, l.location_label,
+                   l.building_name, l.landmark_name, l.micro_market, l.street_name,
+                   l.developer, l.floor_description, l.view, l.orientation,
+                   l.pic_token, l.listing_source, l.first_seen, l.last_seen,
+                   l.observation_count, l.group_count
+            FROM listings l
+            LEFT JOIN brokers b ON l.broker_name = b.canonical_name
+            WHERE l.last_seen > now() - interval '30 days'
+              AND l.observation_count >= 2
+              AND (b.is_hidden = false OR b.is_hidden IS NULL)
+        """
+        params = []
+
+        if micro_market:
+            params.append(micro_market)
+            query += f" AND l.micro_market = ${len(params)}"
+        if bhk:
+            params.append(bhk)
+            query += f" AND l.bhk = ${len(params)}"
+        if intent:
+            params.append(intent)
+            query += f" AND l.intent = ${len(params)}"
+        if min_price is not None:
+            params.append(min_price)
+            query += f" AND l.price >= ${len(params)}"
+        if max_price is not None:
+            params.append(max_price)
+            query += f" AND l.price <= ${len(params)}"
+
+        query += f" ORDER BY l.last_seen DESC LIMIT {limit} OFFSET {offset}"
+
+        rows = storage.db.execute(query, params)
+        return {"listings": rows.fetchall(), "count": len(rows.fetchall())}
+    except Exception as exc:
+        return JSONResponse(status_code=500, content={"error": str(exc)})
+
+
 @router.post("/api/replay")
 async def replay_all(
     user: dict = Depends(require_user),
