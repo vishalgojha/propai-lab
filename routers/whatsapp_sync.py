@@ -687,6 +687,48 @@ async def connect_phone(
     raise HTTPException(502, _ingestor_failure_message(resp))
 
 
+@router.post("/api/sync/status")
+async def sync_status_update(request: Request):
+    """Receive connection status from the WhatsApp ingestor."""
+    global _memory_status, _previous_status
+    expected_token = (
+        os.getenv("PROPAI_INTERNAL_TOKEN", "").strip()
+        or os.getenv("SUPABASE_SERVICE_KEY", "").strip()
+    )
+    supplied_token = request.headers.get("X-PropAI-Internal-Token", "").strip()
+    if not expected_token:
+        raise HTTPException(503, "Internal service authentication is not configured")
+    if not hmac.compare_digest(supplied_token, expected_token):
+        raise HTTPException(401, "Invalid internal service token")
+    try:
+        body = await request.json()
+        _previous_status = _memory_status
+        _memory_status = body
+        _cache_connection_snapshot(body)
+        broker_id = str(body.get("broker_id") or "").strip()
+        if broker_id:
+            _broker_live_statuses[broker_id] = (body, time.time())
+        phone_number = str(body.get("phone_number") or "").strip()
+        display_name = str(body.get("display_name") or "").strip()
+        if storage and broker_id and (phone_number or display_name):
+            updates: dict[str, object] = {"is_active": True}
+            if phone_number:
+                updates["phone_number"] = phone_number
+            if display_name:
+                updates["instance_name"] = display_name
+            try:
+                await asyncio.to_thread(
+                    storage.update_org_whatsapp_connection_by_broker_id,
+                    broker_id,
+                    updates,
+                )
+            except Exception as exc:
+                print(f"[sync/status] persist failed for broker {broker_id}: {exc}", flush=True)
+        return {"ok": True}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
 @router.post("/api/phones/{phone_id}/pair-code")
 async def pair_code_phone(
     phone_id: int,

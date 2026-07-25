@@ -7,9 +7,10 @@ import os
 import time
 import uuid
 from dataclasses import asdict
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from pydantic import BaseModel
 
 from routers.common import (
     storage,
@@ -414,3 +415,591 @@ async def test_llm_provider(body: dict, user: dict = Depends(require_user)):
 async def delete_llm_provider(provider_id: int, user: dict = Depends(require_user), tenant_id: str | None = Depends(get_tenant_context)):
     ok = storage.delete_llm_provider(provider_id, tenant_id=tenant_id)
     return {"deleted": ok}
+
+
+# ── Placeholders (wired by app.py at startup) ──────────────────
+_connection_details = lambda: {}
+_market_sync_ready = lambda details: False
+_merged_ingestor_list = lambda timeout=2: ({}, False, "")
+_broker_live_statuses: dict[str, tuple[dict, float]] = {}
+_first_ingestor_response = lambda method, path, **kw: (None, None)
+_table_exists = lambda table: False
+_count_table = lambda table: 0
+_business_api_get_config_value = lambda key, env_key="": ""
+
+
+# ── Chat Suggestion Cache ──────────────────────────────────────────
+_chip_cache: dict = {}
+_chip_cache_at: float = 0.0
+
+
+# ── Capabilities constants ─────────────────────────────────────────
+_CAPTURED_UNUSED_CAPS = frozenset({"Read Receipts", "Typing Presence"})
+
+_ALWAYS_ON_CAPS = frozenset({
+    "Outgoing Messages",
+    "History Sync",
+    "Profile Pictures",
+    "Group Directory",
+    "Media Download",
+    "Media Upload",
+    "Self-Chat Agent",
+})
+
+_CAPABILITY_TYPE_KEY: dict[str, str] = {
+    "Text Messages": "text",
+    "Images": "image",
+    "Video": "video",
+    "Audio": "audio",
+    "Documents": "document",
+    "Stickers": "sticker",
+    "Location": "location",
+    "Live Location": "live_location",
+    "Contact Cards": "contact",
+    "Contact Arrays": "contacts_array",
+    "Reactions": "reaction",
+    "Poll Creation": "poll_creation",
+    "Poll Updates": "poll_update",
+    "Edited Messages": "edited",
+}
+
+_FALLBACK_CAPABILITIES: list[dict] = [
+    {"name": "Text Messages", "icon": "MessageSquare", "description": "Plain text from any group, with sender, group, and timestamp."},
+    {"name": "Images", "icon": "Image", "description": "Image messages: caption and sender captured; full media downloaded on demand."},
+    {"name": "Video", "icon": "Video", "description": "Video messages: caption plus thumbnail; full download on demand."},
+    {"name": "Audio", "icon": "Mic", "description": "Voice notes and audio files; transcribed automatically."},
+    {"name": "Documents", "icon": "FileText", "description": "PDFs and file attachments; filename and mimetype captured."},
+    {"name": "Stickers", "icon": "Smile", "description": "Sticker messages: metadata captured, sticker image not stored."},
+    {"name": "Location", "icon": "MapPin", "description": "Static shared locations: latitude, longitude, label, and address."},
+    {"name": "Live Location", "icon": "Navigation", "description": "Real-time location streams from any participant."},
+    {"name": "Contact Cards", "icon": "Users", "description": "Shared vCards: phone, name, and organisation extracted."},
+    {"name": "Contact Arrays", "icon": "Contact", "description": "Multi-contact shares parsed into individual cards."},
+    {"name": "Reactions", "icon": "SmilePlus", "description": "Emoji reactions on any observed message."},
+    {"name": "Poll Creation", "icon": "BarChart3", "description": "Polls created in groups: options and voters captured."},
+    {"name": "Poll Updates", "icon": "Vote", "description": "Per-option vote tally updates as votes come in."},
+    {"name": "Edited Messages", "icon": "Pencil", "description": "Edit events re-linked to the original message."},
+    {"name": "Outgoing Messages", "icon": "ArrowUpRight", "description": "Messages your phone sends, kept in sync for your own listings."},
+    {"name": "History Sync", "icon": "Clock", "description": "Initial backfill of recent messages on first connect."},
+    {"name": "Read Receipts", "icon": "CheckCheck", "description": "Blue-tick events captured but not yet surfaced in the UI."},
+    {"name": "Typing Presence", "icon": "Pencil", "description": "Typing indicators captured but not yet surfaced in the UI."},
+    {"name": "Profile Pictures", "icon": "Camera", "description": "Profile picture changes tracked per JID."},
+    {"name": "Group Directory", "icon": "Users", "description": "Group metadata: name, participants, admins, and subject changes."},
+    {"name": "Media Download", "icon": "Download", "description": "On-demand download of incoming media to workspace storage."},
+    {"name": "Media Upload", "icon": "Upload", "description": "Outbound media uploads for sending files, images, and video."},
+    {"name": "Self-Chat Agent", "icon": "Bot", "description": "Sends structured replies to your Message Yourself chat so PropAI can act on them."},
+]
+
+_CAPABILITY_WINDOW_DAYS = 7
+
+
+# ── Capabilities helpers ───────────────────────────────────────────
+
+def _capability_type_counts(tenant_id: str | None) -> dict[str, dict]:
+    if not _table_exists("raw_messages"):
+        return {}
+    try:
+        rows = storage.db.execute(
+            """
+            SELECT COALESCE(message_type, 'text') AS t,
+                   COUNT(*) AS c,
+                   MAX(created_at) AS last_seen
+            FROM raw_messages
+            WHERE tenant_id = ?
+              AND created_at >= now() - interval '7 days'
+            GROUP BY t
+            """,
+            (tenant_id,),
+        ).fetchall()
+    except Exception as exc:
+        print(f"[capabilities] type-count query failed: {exc}", flush=True)
+        return {}
+    counts: dict[str, dict] = {}
+    for row in rows or []:
+        try:
+            last_seen = row["last_seen"]
+            if last_seen and hasattr(last_seen, "isoformat"):
+                last_seen_str = last_seen.isoformat()
+            else:
+                last_seen_str = str(last_seen) if last_seen else None
+            counts[str(row["t"])] = {
+                "count": int(row["c"] or 0),
+                "last_seen": last_seen_str,
+            }
+        except (KeyError, TypeError, ValueError, AttributeError):
+            continue
+    return counts
+
+
+def _capability_coverage(tenant_id: str | None) -> dict:
+    empty = {"total_messages": 0, "unique_chats": 0, "unique_groups": 0,
+             "unique_broadcasts": 0, "oldest_message": None, "newest_message": None}
+    if not _table_exists("raw_messages"):
+        return empty
+    try:
+        rows = storage.db.execute(
+            """
+            SELECT COUNT(*) AS total,
+                   COUNT(DISTINCT remote_jid) AS chats,
+                   COUNT(DISTINCT CASE WHEN remote_jid LIKE '%@g.us' THEN remote_jid END) AS groups,
+                   COUNT(DISTINCT CASE WHEN remote_jid LIKE '%@broadcast' THEN remote_jid END) AS broadcasts,
+                   MIN(created_at) AS oldest,
+                   MAX(created_at) AS newest
+            FROM (
+                SELECT raw_payload->'data'->'key'->>'remoteJid' AS remote_jid, created_at
+                FROM raw_messages
+                WHERE tenant_id = ?
+                  AND created_at >= now() - interval '7 days'
+            ) sub
+            """,
+            (tenant_id,),
+        ).fetchall()
+    except Exception as exc:
+        print(f"[capabilities] coverage query failed: {exc}", flush=True)
+        return empty
+    if not rows:
+        return empty
+    row = rows[0]
+    try:
+        oldest = row["oldest"]
+        newest = row["newest"]
+        return {
+            "total_messages": int(row["total"] or 0),
+            "unique_chats": int(row["chats"] or 0),
+            "unique_groups": int(row["groups"] or 0),
+            "unique_broadcasts": int(row["broadcasts"] or 0),
+            "oldest_message": oldest.isoformat() if hasattr(oldest, "isoformat") else (str(oldest) if oldest else None),
+            "newest_message": newest.isoformat() if hasattr(newest, "isoformat") else (str(newest) if newest else None),
+        }
+    except (KeyError, TypeError, ValueError, AttributeError):
+        return empty
+
+
+def _compute_capability_status(
+    name: str,
+    type_data: dict[str, dict],
+    any_phone: bool,
+    any_connected: bool,
+) -> tuple[str, int, str | None]:
+    if name in _CAPTURED_UNUSED_CAPS:
+        return "captured_unused", 0, None
+    if name in _ALWAYS_ON_CAPS:
+        if any_connected:
+            return "active", 0, None
+        if any_phone:
+            return "partial", 0, None
+        return "not_available", 0, None
+    type_key = _CAPABILITY_TYPE_KEY.get(name)
+    data = type_data.get(type_key) if type_key else None
+    count = int(data["count"]) if data else 0
+    last_seen = data["last_seen"] if data else None
+    if count > 0:
+        return "active", count, last_seen
+    if any_phone:
+        return "partial", 0, None
+    return "not_available", 0, None
+
+
+# ── Routes ─────────────────────────────────────────────────────────
+
+@router.get("/api/raw")
+async def get_raw_messages(user: dict = Depends(require_user), limit: int = 50, offset: int = 0,
+                           group_name: str = "", sender: str = "",
+                           sender_phone: str = "", sender_jid: str = ""):
+    rows = storage.get_raw_messages(limit, offset, group_name=group_name,
+                                    sender=sender, sender_phone=sender_phone,
+                                    sender_jid=sender_jid)
+    payload = [asdict(r) for r in rows]
+    raw_ids = [row["id"] for row in payload]
+    if raw_ids:
+        try:
+            parsed_res = storage.client.table("parsed_output").select(
+                "raw_message_id,id,intent,broker_name,broker_phone,"
+                "building_name,micro_market,landmark_name,location_raw,confidence"
+            ).in_("raw_message_id", raw_ids).order("confidence", desc=True).order("id", desc=True).execute()
+            parsed_rows = parsed_res.data or []
+            parsed_by_raw: dict[int, dict] = {}
+            for row in parsed_rows:
+                raw_id = row.get("raw_message_id")
+                if raw_id and raw_id not in parsed_by_raw:
+                    has_value = any(
+                        (row.get(f) or "").strip()
+                        for f in ("broker_phone","broker_name","building_name",
+                                  "micro_market","landmark_name","location_raw")
+                    )
+                    if has_value:
+                        parsed_by_raw[raw_id] = row
+            for row in payload:
+                parsed = parsed_by_raw.get(row["id"])
+                if parsed:
+                    row["broker_name"] = parsed.get("broker_name") or ""
+                    row["broker_phone"] = parsed.get("broker_phone") or ""
+                    row["parsed_id"] = parsed.get("parsed_id")
+                    row["parsed_intent"] = parsed.get("intent") or ""
+                    row["building_name"] = parsed.get("building_name") or ""
+                    row["micro_market"] = parsed.get("micro_market") or ""
+                    row["landmark_name"] = parsed.get("landmark_name") or ""
+                    row["location_raw"] = parsed.get("location_raw") or ""
+        except Exception as e:
+            import logging
+            logging.warning(f"[api/raw] parsed_output enrichment failed: {e}")
+    return payload
+
+
+@router.get("/api/chats")
+async def list_chats(user: dict = Depends(require_user), limit: int = 500, offset: int = 0,
+                     tenant_id: str | None = Depends(get_tenant_context)):
+    return storage.get_chats(limit, offset, tenant_id=tenant_id)
+
+
+@router.get("/api/chats/{chat_id}/messages")
+async def chat_messages(chat_id: str, user: dict = Depends(require_user), limit: int = 200, offset: int = 0,
+                        tenant_id: str | None = Depends(get_tenant_context)):
+    rows = storage.get_chat_messages(chat_id, limit, offset, tenant_id=tenant_id)
+    return [asdict(r) for r in rows]
+
+
+@router.get("/api/chats/{chat_id}")
+async def get_chat(chat_id: str, tenant_id: str | None = Depends(get_tenant_context), user: dict = Depends(require_user)):
+    for chat in storage.get_chats(1000, 0, tenant_id=tenant_id):
+        if str(chat.get("chat_id") or chat.get("conversation_key") or "") == chat_id:
+            return chat
+    messages = storage.get_chat_messages(chat_id, 1, 0, tenant_id=tenant_id)
+    if not messages:
+        raise HTTPException(status_code=404, detail="Chat not found")
+    row = asdict(messages[0])
+    row["chat_id"] = chat_id
+    row["conversation_key"] = chat_id
+    row["conversation_name"] = row.get("group_name") or row.get("sender") or chat_id
+    row["message_count"] = 1
+    return row
+
+
+@router.get("/api/stats")
+async def get_stats(
+    user: dict = Depends(require_user),
+    tenant_id: str | None = Depends(get_tenant_context),
+):
+    return await asyncio.to_thread(storage.get_stats)
+
+
+@router.get("/api/markets/{market_name:path}")
+async def get_market_detail(market_name: str, user: dict = Depends(require_user)):
+    name = market_name.strip()
+    if not name:
+        raise HTTPException(400, "Market name is required")
+    like_q = f"%{name}%"
+
+    buildings = [dict(r) for r in storage.db.execute("""
+        SELECT building_name, COUNT(*) AS observation_count,
+               COUNT(DISTINCT broker_name) AS broker_count
+        FROM parsed_output
+        WHERE micro_market LIKE ? AND building_name IS NOT NULL AND building_name != ''
+        GROUP BY building_name
+        ORDER BY observation_count DESC
+        LIMIT 20
+    """, (like_q,)).fetchall()]
+
+    brokers = [dict(r) for r in storage.db.execute("""
+        SELECT b.id, b.canonical_name AS name, b.primary_phone,
+               bms.observation_count, bms.listing_count, bms.requirement_count
+        FROM broker_market_stats bms
+        JOIN brokers b ON b.id = bms.broker_id
+        WHERE bms.micro_market LIKE ?
+        ORDER BY bms.observation_count DESC
+        LIMIT 20
+    """, (like_q,)).fetchall()]
+
+    intents = [dict(r) for r in storage.db.execute("""
+        SELECT intent, COUNT(*) AS c
+        FROM parsed_output
+        WHERE micro_market LIKE ? AND intent IS NOT NULL
+        GROUP BY intent
+        ORDER BY c DESC
+    """, (like_q,)).fetchall()]
+
+    groups = [dict(r) for r in storage.db.execute("""
+        SELECT r.group_name, COUNT(*) AS observation_count, MAX(r.timestamp) AS last_seen
+        FROM parsed_output p
+        JOIN raw_messages r ON r.id = p.raw_message_id
+        WHERE p.micro_market LIKE ? AND r.group_name IS NOT NULL
+        GROUP BY r.group_name
+        ORDER BY last_seen DESC
+        LIMIT 10
+    """, (like_q,)).fetchall()]
+
+    price_ranges = [dict(r) for r in storage.db.execute("""
+        SELECT bhk, COUNT(*) AS sample_count,
+               ROUND(AVG(price), 0) AS avg_price,
+               MIN(price) AS min_price, MAX(price) AS max_price
+        FROM parsed_output
+        WHERE micro_market LIKE ? AND price IS NOT NULL AND price > 0 AND bhk IS NOT NULL
+        GROUP BY bhk
+        ORDER BY sample_count DESC
+    """, (like_q,)).fetchall()]
+
+    return {
+        "name": name,
+        "building_count": len(buildings),
+        "broker_count": len(brokers),
+        "observation_count": sum(b.get("observation_count", 0) for b in buildings) if buildings else 0,
+        "buildings": buildings,
+        "brokers": brokers,
+        "intents": intents,
+        "groups": groups,
+        "price_ranges": price_ranges,
+    }
+
+
+@router.get("/api/ingestor/capabilities")
+async def get_ingestor_capabilities(
+    user: dict = Depends(require_user),
+    tenant_id: str | None = Depends(get_tenant_context),
+):
+    """Return what message types the whatsmeow ingestor captures, with live per-workspace status."""
+    org_id = _resolve_active_organization_id(user, tenant_id)
+    phones = await asyncio.to_thread(storage.list_org_whatsapp_connections, org_id)
+    any_phone = bool(phones)
+
+    statuses_map, _, _ = await _merged_ingestor_list(timeout=2)
+    statuses: list[dict] = list(statuses_map.values())
+    now = time.time()
+    statuses.extend(
+        status for status, seen_at in _broker_live_statuses.values()
+        if now - seen_at <= 45
+    )
+    broker_ids = {str(phone.get("broker_id") or "") for phone in phones}
+    broker_ids.discard("")
+    any_connected = any(
+        bool(status.get("connected"))
+        for status in statuses
+        if str(status.get("broker_id") or "") in broker_ids
+    )
+
+    ingestor_payload: dict | None = None
+    _, resp = await _first_ingestor_response("GET", "/capabilities", timeout=3)
+    if resp is not None and resp.status_code == 200:
+        try:
+            ingestor_payload = resp.json()
+        except Exception:
+            ingestor_payload = None
+    canonical = (ingestor_payload or {}).get("capabilities") or _FALLBACK_CAPABILITIES
+
+    type_data = _capability_type_counts(tenant_id)
+
+    out: list[dict] = []
+    for cap in canonical:
+        entry = {k: v for k, v in cap.items() if k in {"name", "icon", "description"}}
+        status, evidence, last_seen = _compute_capability_status(
+            cap.get("name", ""), type_data, any_phone, any_connected
+        )
+        entry["status"] = status
+        entry["evidence_count"] = evidence
+        if last_seen:
+            entry["last_seen"] = last_seen
+        out.append(entry)
+
+    return {
+        "capabilities": out,
+        "instance": (ingestor_payload or {}).get("instance", "unknown"),
+        "version": (ingestor_payload or {}).get("version", "unknown"),
+        "any_connected": any_connected,
+        "any_phone": any_phone,
+        "window_days": _CAPABILITY_WINDOW_DAYS,
+        "source": "ingestor" if ingestor_payload else "fallback",
+        "coverage": _capability_coverage(tenant_id),
+    }
+
+
+@router.get("/api/market/access")
+async def market_access_status(
+    user: dict | None = Depends(get_current_user),
+    tenant_id: str | None = Depends(get_tenant_context),
+):
+    """Access gate for shared market intelligence."""
+    details = await asyncio.to_thread(_connection_details)
+    connected = bool(details.get("connected"))
+    sync_ready = await asyncio.to_thread(_market_sync_ready, details)
+    paid_active = False
+    trial_active = sync_ready
+    unlocked = paid_active or trial_active
+
+    reason = "ready"
+    message = "Market Inbox is available for this connected workspace."
+    if sync_ready and not connected:
+        reason = "offline_data_available"
+        message = "WhatsApp is temporarily disconnected. Previously synced market data remains available."
+    elif not connected:
+        reason = "connect_whatsapp"
+        message = "Connect WhatsApp and start your trial to unlock your personalized broker market feed."
+    elif not sync_ready:
+        reason = "sync_pending"
+        message = "WhatsApp is connected. PropAI is waiting for the first sync record before opening Market Inbox."
+
+    waba_configured = bool(await asyncio.to_thread(_business_api_get_config_value, "access_token", "WABA_ACCESS_TOKEN"))
+
+    return {
+        "authenticated": bool(user),
+        "tenant_id": tenant_id,
+        "whatsapp_connected": connected,
+        "waba_configured": waba_configured,
+        "initial_sync_complete": sync_ready,
+        "trial_active": trial_active,
+        "paid_active": paid_active,
+        "market_unlocked": unlocked,
+        "trial_started_at": details.get("connected_since") if trial_active else None,
+        "trial_ends_at": None,
+        "reason": reason,
+        "message": message,
+    }
+
+
+# ── Chat Suggestion Chips ──────────────────────────────────────────
+
+@router.get("/api/chat/suggestions")
+async def chat_suggestions(user: dict = Depends(require_user)):
+    now = time.time()
+    if _chip_cache and (now - _chip_cache_at) < 3600:
+        return _chip_cache
+
+    week_ago = (datetime.utcnow() - timedelta(days=7)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    top_building = storage.db.execute("""
+        SELECT p.building_name, COUNT(*) AS cnt FROM parsed_output p
+        JOIN raw_messages r ON r.id = p.raw_message_id
+        WHERE p.building_name IS NOT NULL AND p.building_name != ''
+          AND r.timestamp >= ?
+        GROUP BY p.building_name ORDER BY cnt DESC LIMIT 1
+    """, (week_ago,)).fetchone()
+
+    top_supply_market = storage.db.execute("""
+        SELECT p.micro_market, COUNT(*) AS cnt FROM parsed_output p
+        JOIN raw_messages r ON r.id = p.raw_message_id
+        WHERE p.intent IN ('SELL','RENT','COMMERCIAL')
+          AND p.micro_market IS NOT NULL AND p.micro_market != ''
+          AND r.timestamp >= ?
+        GROUP BY p.micro_market ORDER BY cnt DESC LIMIT 1
+    """, (week_ago,)).fetchone()
+
+    top_demand_market = storage.db.execute("""
+        SELECT p.micro_market, COUNT(*) AS cnt FROM parsed_output p
+        JOIN raw_messages r ON r.id = p.raw_message_id
+        WHERE p.intent IN ('BUY','RENTAL_SEEKER')
+          AND p.micro_market IS NOT NULL AND p.micro_market != ''
+          AND r.timestamp >= ?
+        GROUP BY p.micro_market ORDER BY cnt DESC LIMIT 1
+    """, (week_ago,)).fetchone()
+
+    top_commercial_market = storage.db.execute("""
+        SELECT p.micro_market, COUNT(*) AS cnt FROM parsed_output p
+        JOIN raw_messages r ON r.id = p.raw_message_id
+        WHERE p.intent = 'COMMERCIAL'
+          AND p.micro_market IS NOT NULL AND p.micro_market != ''
+          AND r.timestamp >= ?
+        GROUP BY p.micro_market ORDER BY cnt DESC LIMIT 1
+    """, (week_ago,)).fetchone()
+
+    top_rental_market = storage.db.execute("""
+        SELECT p.micro_market, COUNT(*) AS cnt FROM parsed_output p
+        JOIN raw_messages r ON r.id = p.raw_message_id
+        WHERE p.intent = 'RENT'
+          AND p.micro_market IS NOT NULL AND p.micro_market != ''
+          AND r.timestamp >= ?
+        GROUP BY p.micro_market ORDER BY cnt DESC LIMIT 1
+    """, (week_ago,)).fetchone()
+
+    def _val(row):
+        return row[0] if row else None
+
+    def _with_fallback(seven_day_result, fallback_query, params=()):
+        v = _val(seven_day_result)
+        if v is not None:
+            return v
+        row = storage.db.execute(fallback_query, params).fetchone()
+        return row[0] if row else None
+
+    result = {
+        "top_building": _with_fallback(
+            top_building,
+            "SELECT p.building_name, COUNT(*) AS cnt FROM parsed_output p "
+            "JOIN raw_messages r ON r.id = p.raw_message_id "
+            "WHERE p.building_name IS NOT NULL AND p.building_name != '' "
+            "GROUP BY p.building_name ORDER BY cnt DESC LIMIT 1"
+        ),
+        "top_supply_market": _with_fallback(
+            top_supply_market,
+            "SELECT p.micro_market, COUNT(*) AS cnt FROM parsed_output p "
+            "JOIN raw_messages r ON r.id = p.raw_message_id "
+            "WHERE p.intent IN ('SELL','RENT','COMMERCIAL') "
+            "AND p.micro_market IS NOT NULL AND p.micro_market != '' "
+            "GROUP BY p.micro_market ORDER BY cnt DESC LIMIT 1"
+        ),
+        "top_demand_market": _with_fallback(
+            top_demand_market,
+            "SELECT p.micro_market, COUNT(*) AS cnt FROM parsed_output p "
+            "JOIN raw_messages r ON r.id = p.raw_message_id "
+            "WHERE p.intent IN ('BUY','RENTAL_SEEKER') "
+            "AND p.micro_market IS NOT NULL AND p.micro_market != '' "
+            "GROUP BY p.micro_market ORDER BY cnt DESC LIMIT 1"
+        ),
+        "top_commercial_market": _with_fallback(
+            top_commercial_market,
+            "SELECT p.micro_market, COUNT(*) AS cnt FROM parsed_output p "
+            "JOIN raw_messages r ON r.id = p.raw_message_id "
+            "WHERE p.intent = 'COMMERCIAL' "
+            "AND p.micro_market IS NOT NULL AND p.micro_market != '' "
+            "GROUP BY p.micro_market ORDER BY cnt DESC LIMIT 1"
+        ),
+        "top_rental_market": _with_fallback(
+            top_rental_market,
+            "SELECT p.micro_market, COUNT(*) AS cnt FROM parsed_output p "
+            "JOIN raw_messages r ON r.id = p.raw_message_id "
+            "WHERE p.intent = 'RENT' "
+            "AND p.micro_market IS NOT NULL AND p.micro_market != '' "
+            "GROUP BY p.micro_market ORDER BY cnt DESC LIMIT 1"
+        ),
+    }
+    result["top_broker_building"] = result["top_building"]
+
+    _chip_cache.clear()
+    _chip_cache.update(result)
+    _chip_cache_at = now
+    return result
+
+
+# ── AI Suggestions Queue ───────────────────────────────────────────
+
+class SuggestionAction(BaseModel):
+    status: str = "approved"
+
+
+@router.get("/api/suggestions")
+async def list_suggestions(status: str = "pending", limit: int = 50, offset: int = 0, user: dict = Depends(require_user)):
+    return storage.get_suggestions(status=status, limit=limit, offset=offset)
+
+
+@router.post("/api/suggestions/{sug_id}/{action}")
+async def act_on_suggestion(sug_id: int, action: str, request: Request, user: dict = Depends(require_user)):
+    if action not in ("approve", "reject", "ignore"):
+        raise HTTPException(400, "action must be approve, reject, or ignore")
+    status_map = {"approve": "approved", "reject": "rejected", "ignore": "ignored"}
+    rejection_reason = ""
+    try:
+        body = await request.json()
+        rejection_reason = body.get("rejection_reason", "") if isinstance(body, dict) else ""
+    except Exception:
+        pass
+    storage.update_suggestion_status(sug_id, status_map[action], rejection_reason=rejection_reason)
+    return {"status": "ok"}
+
+
+@router.post("/api/suggestions/batch")
+async def batch_suggestions(request: Request, user: dict = Depends(require_user)):
+    body = await request.json()
+    ids = body.get("ids", [])
+    action = body.get("action", "approve")
+    if action not in ("approve", "reject", "ignore"):
+        raise HTTPException(400, "action must be approve, reject, or ignore")
+    status_map = {"approve": "approved", "reject": "rejected", "ignore": "ignored"}
+    rejection_reason = body.get("rejection_reason", "")
+    storage.batch_update_suggestions(ids, status_map[action], rejection_reason=rejection_reason)
+    return {"status": "ok", "count": len(ids)}
