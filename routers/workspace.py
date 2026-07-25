@@ -39,6 +39,7 @@ _PERMISSION_DEFS = [
     {"key": "export_contacts", "label": "Export Contacts"},
     {"key": "view_broker_numbers", "label": "View Broker Numbers"},
     {"key": "add_team_members", "label": "Add Team Members"},
+    {"key": "remove_team_members", "label": "Remove Team Members"},
     {"key": "delete_data", "label": "Delete Data"},
     {"key": "ai_actions", "label": "AI Actions"},
     {"key": "bulk_broadcast", "label": "Bulk Broadcast"},
@@ -185,7 +186,7 @@ async def update_team_member(member_id: int, body: dict, member: dict = Depends(
 
 @router.delete("/api/workspace/members/{member_id}")
 async def deactivate_team_member(member_id: int, member: dict = Depends(get_current_member)):
-    check_permission(member, "add_team_members")
+    check_permission(member, "remove_team_members")
     ok = storage.deactivate_team_member(member_id)
     return {"deleted": ok}
 

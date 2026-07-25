@@ -24,8 +24,8 @@ create table if not exists public.team_roles (
 
 -- Seed default system roles (mirrors the 4 fixed roles)
 insert into public.team_roles (name, permission_keys, is_system) values
-  ('owner', '["view_inbox","reply_whatsapp","save_requirements","save_listings","export_contacts","view_broker_numbers","add_team_members","delete_data","ai_actions","bulk_broadcast"]', true),
-  ('admin', '["view_inbox","reply_whatsapp","save_requirements","save_listings","export_contacts","view_broker_numbers","add_team_members","ai_actions"]', true),
+  ('owner', '["view_inbox","reply_whatsapp","save_requirements","save_listings","export_contacts","view_broker_numbers","add_team_members","remove_team_members","delete_data","ai_actions","bulk_broadcast"]', true),
+  ('admin', '["view_inbox","reply_whatsapp","save_requirements","save_listings","export_contacts","view_broker_numbers","add_team_members","remove_team_members","ai_actions"]', true),
   ('member', '["view_inbox","reply_whatsapp","save_requirements","save_listings","export_contacts"]', true),
   ('intern', '["view_inbox"]', true)
 on conflict (name) do nothing;
