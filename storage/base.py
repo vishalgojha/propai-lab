@@ -124,6 +124,7 @@ class ParsedObservation:
     # Must NEVER appear in any public-facing API response, search filter,
     # or badge on propai.live / consumer surfaces.
     tenant_nationality_preference: Optional[str] = None
+    group_name: Optional[str] = None
 
 
 @dataclass

@@ -2015,6 +2015,7 @@ class SupabaseStorage(Storage):
         "pet_policy", "tenant_type_preference", "sharing_allowed",
         "company_lease_criteria", "tenant_nationality_preference",
         "broker_id",
+        "group_name",
     }
 
     def save_parsed(self, parsed: ParsedObservation) -> int:
