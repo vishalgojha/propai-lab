@@ -1350,11 +1350,14 @@ def _rest_market_search(client, args: dict) -> str:
         if furnishing and furnishing.lower() != "any":
             query = query.eq("furnishing", furnishing)
         if building:
-            query = query.ilike("building_name", f"%{building}%")
+            for word in building.split():
+                query = query.ilike("building_name", f"%{word}%")
         if broker:
-            query = query.ilike("broker_name", f"%{broker}%")
+            for word in broker.split():
+                query = query.ilike("broker_name", f"%{word}%")
         if market:
-            query = query.ilike("micro_market", f"%{market}%")
+            for word in market.split():
+                query = query.ilike("micro_market", f"%{word}%")
         return query.order("last_seen", desc=True).limit(max(limit * 15, 100)).execute()
 
     responses = [fetch_one_market(market) for market in (markets or [None])]
