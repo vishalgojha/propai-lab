@@ -5,6 +5,12 @@ import { usePathname, useRouter } from "next/navigation";
 import { LogOut, X, Search } from "lucide-react";
 import { useAuth } from "@/lib/AuthProvider";
 
+type NavItem = {
+  href: string;
+  label: string;
+  children?: { href: string; label: string }[];
+};
+
 const baseNavSections = [
   {
     title: "Market",
@@ -28,9 +34,14 @@ const baseNavSections = [
       { href: "/groups", label: "Group Settings" },
       { href: "/whatswow", label: "WhatsWow" },
       { href: "/audit", label: "WhatsApp Audit" },
-      { href: "/profile", label: "My Profile" },
-      { href: "/profile/team", label: "Team" },
-      { href: "/profile/billing", label: "Billing" },
+      {
+        href: "/profile",
+        label: "My Profile",
+        children: [
+          { href: "/profile/team", label: "Team" },
+          { href: "/profile/billing", label: "Billing" },
+        ],
+      },
       { href: "/waba", label: "WABA API" },
       { href: "/workspace/llm-providers", label: "AI Providers" },
       { href: "/usage", label: "Usage" },
@@ -213,30 +224,50 @@ export function MobileDrawer({
               <div className="px-2 mb-1.5 text-[10px] font-bold text-zinc-500 uppercase tracking-[0.15em]">
                 {section.title}
               </div>
-              {section.items.map((item) => {
+              {section.items.map((item: NavItem) => {
                 const active =
                   pathname === item.href ||
                   (item.href !== "/" && pathname.startsWith(item.href));
                 return (
-                  <button
-                    key={item.href}
-                    onClick={() => navigate(item.href)}
-                    className={`w-full text-left px-2.5 py-2 rounded-lg text-sm font-medium transition-all duration-100 mb-0.5 ${
-                      active
-                        ? "bg-white/5 text-white"
-                        : "text-zinc-400 hover:text-white hover:bg-white/5"
-                    }`}
-                  >
-                    <span>{item.label}</span>
-                    {item.href === "/connections" && (
-                      <span className={`float-right text-[10px] ${whatsappConnected ? "text-[#3EE88A]" : "text-zinc-600"}`}>
-                        {whatsappConnected ? whatsappPhone || "Connected" : whatsappConnected === false ? "Offline" : "Checking"}
-                      </span>
+                  <div key={item.href} className="mb-0.5">
+                    <button
+                      onClick={() => navigate(item.href)}
+                      className={`w-full text-left px-2.5 py-2 rounded-lg text-sm font-medium transition-all duration-100 ${
+                        active
+                          ? "bg-white/5 text-white"
+                          : "text-zinc-400 hover:text-white hover:bg-white/5"
+                      }`}
+                    >
+                      <span>{item.label}</span>
+                      {item.href === "/connections" && (
+                        <span className={`float-right text-[10px] ${whatsappConnected ? "text-[#3EE88A]" : "text-zinc-600"}`}>
+                          {whatsappConnected ? whatsappPhone || "Connected" : whatsappConnected === false ? "Offline" : "Checking"}
+                        </span>
+                      )}
+                      {active && (
+                        <span className="float-right mt-1 h-1.5 w-1.5 rounded-full bg-white" />
+                      )}
+                    </button>
+                    {item.children && (
+                      <div className="ml-4 mt-1 space-y-0.5">
+                        {item.children.map((child) => {
+                          const childActive = pathname === child.href || pathname.startsWith(`${child.href}/`);
+                          return (
+                            <button
+                              key={child.href}
+                              onClick={() => navigate(child.href)}
+                              className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors ${
+                                childActive ? "text-white" : "text-zinc-500 hover:text-zinc-300"
+                              }`}
+                            >
+                              <span className={`h-1.5 w-1.5 rounded-full ${childActive ? "bg-[#3EE88A]" : "bg-zinc-700"}`} />
+                              <span>{child.label}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
                     )}
-                    {active && (
-                      <span className="float-right mt-1 h-1.5 w-1.5 rounded-full bg-white" />
-                    )}
-                  </button>
+                  </div>
                 );
               })}
             </div>

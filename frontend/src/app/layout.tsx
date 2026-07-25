@@ -37,6 +37,13 @@ import { MobileDrawer } from "@/components/layout/MobileDrawer";
 import { InstallPrompt } from "@/components/layout/InstallPrompt";
 import { ServiceWorkerRegister } from "@/components/layout/ServiceWorkerRegister";
 
+type NavItem = {
+  href: string;
+  label: string;
+  icon?: any;
+  children?: { href: string; label: string }[];
+};
+
 const baseNavSections = [
   {
     title: "Market",
@@ -61,9 +68,15 @@ const baseNavSections = [
       { href: "/groups", label: "Group Settings", icon: MessageSquare },
       { href: "/whatswow", label: "WhatsWow", icon: Zap },
       { href: "/audit", label: "WhatsApp Audit", icon: MessageSquare },
-      { href: "/profile", label: "My Profile", icon: UserCheck },
-      { href: "/profile/team", label: "Team", icon: UserCog },
-      { href: "/profile/billing", label: "Billing", icon: TrendingUp },
+      {
+        href: "/profile",
+        label: "My Profile",
+        icon: UserCheck,
+        children: [
+          { href: "/profile/team", label: "Team" },
+          { href: "/profile/billing", label: "Billing" },
+        ],
+      },
       { href: "/waba", label: "WABA API", icon: Key },
       { href: "/workspace/llm-providers", label: "AI Providers", icon: Radar },
       { href: "/usage", label: "Usage", icon: BarChart3 },
@@ -500,30 +513,51 @@ function AppShell({ children }: { children: React.ReactNode }) {
               <div className="px-2 mb-1.5 text-[9px] font-bold text-zinc-500 uppercase tracking-[0.15em]">
                 {section.title}
               </div>
-               {section.items.map((item) => {
+              {section.items.map((item: NavItem) => {
                 const active = pathname === item.href || (item.href !== "/" && pathname.startsWith(item.href));
                 const Icon = item.icon;
                 return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    prefetch={true}
-                    className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-[12px] font-medium transition-all duration-100 mb-0.5 ${
-                      active
-                        ? "bg-white/5 text-white"
-                        : "text-zinc-400 hover:text-white hover:bg-white/5"
-                    }`}
-                  >
-                    <Icon className={`w-3.5 h-3.5 shrink-0 ${active ? "text-white" : ""}`} strokeWidth={1.5} />
-                    <span className="truncate">{item.label}</span>
-                    {active && (
-                      <motion.div
-                        layoutId="sidebar-active-dot"
-                        className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-[#3EE88A]"
-                        transition={reduceMotion ? { duration: 0 } : { type: "spring", stiffness: 500, damping: 35 }}
-                      />
+                  <div key={item.href} className="mb-0.5">
+                    <Link
+                      href={item.href}
+                      prefetch={true}
+                      className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-[12px] font-medium transition-all duration-100 ${
+                        active
+                          ? "bg-white/5 text-white"
+                          : "text-zinc-400 hover:text-white hover:bg-white/5"
+                      }`}
+                    >
+                      {Icon ? <Icon className={`w-3.5 h-3.5 shrink-0 ${active ? "text-white" : ""}`} strokeWidth={1.5} /> : <span className="w-3.5 h-3.5 shrink-0" />}
+                      <span className="truncate">{item.label}</span>
+                      {active && (
+                        <motion.div
+                          layoutId="sidebar-active-dot"
+                          className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-[#3EE88A]"
+                          transition={reduceMotion ? { duration: 0 } : { type: "spring", stiffness: 500, damping: 35 }}
+                        />
+                      )}
+                    </Link>
+                    {item.children && (
+                      <div className="ml-5 mt-1 space-y-0.5">
+                        {item.children.map((child) => {
+                          const childActive = pathname === child.href || pathname.startsWith(`${child.href}/`);
+                          return (
+                            <Link
+                              key={child.href}
+                              href={child.href}
+                              prefetch={true}
+                              className={`flex items-center gap-2 rounded-md px-2 py-1 text-[11px] transition-colors ${
+                                childActive ? "text-white" : "text-zinc-500 hover:text-zinc-300"
+                              }`}
+                            >
+                              <span className={`h-1.5 w-1.5 rounded-full ${childActive ? "bg-[#3EE88A]" : "bg-zinc-700"}`} />
+                              <span>{child.label}</span>
+                            </Link>
+                          );
+                        })}
+                      </div>
                     )}
-                  </Link>
+                  </div>
                 );
               })}
             </div>
