@@ -8,6 +8,7 @@ import { useEffect, useState, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
+import ListingCard, { type ListingItem } from "@/components/ListingCard";
 import { useAuth } from "@/lib/AuthProvider";
 import { Plus, MessageSquare, Trash2 } from "lucide-react";
 
@@ -307,8 +308,37 @@ export default function ChatPage() {
                       {messageText(m)}
                     </div>
                   ) : (
-                    <div className="max-w-[90%] w-full">
-                      <div className="text-sm text-zinc-300 whitespace-pre-wrap leading-relaxed">{messageText(m)}</div>
+                    <div className="max-w-[90%] w-full space-y-3">
+                      {(() => {
+                        const textParts = (m.parts || []).filter(
+                          (p: any) => p.type === "text" && p.text
+                        );
+                        const listingParts = (m.parts || []).filter(
+                          (p: any) => p.type === "data-listing_cards"
+                        );
+                        return (
+                          <>
+                            {textParts.length > 0 && (
+                              <div className="text-sm text-zinc-300 whitespace-pre-wrap leading-relaxed">
+                                {textParts.map((p: any, i: number) => (
+                                  <span key={i}>{p.text}</span>
+                                ))}
+                              </div>
+                            )}
+                            {listingParts.map((p: any, i: number) => {
+                              const items: ListingItem[] = p.data?.items || [];
+                              if (items.length === 0) return null;
+                              return (
+                                <div key={`cards-${i}`} className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                  {items.map((item, j) => (
+                                    <ListingCard key={item.fingerprint || j} item={item} />
+                                  ))}
+                                </div>
+                              );
+                            })}
+                          </>
+                        );
+                      })()}
                     </div>
                   )}
                   {m.role === "user" && <span className="text-lg mt-1">👤</span>}

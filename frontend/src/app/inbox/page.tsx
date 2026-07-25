@@ -40,6 +40,7 @@ import {
   Home,
   ChevronLeft,
   Menu,
+  Lock,
 } from "lucide-react";
 import { useLayout } from "@/hooks/useLayout";
 
@@ -1116,6 +1117,27 @@ function InboxPageInner({ defaultView }: InboxPageInnerProps) {
   const { toggleDrawer } = useLayout();
   const [mobileView, setMobileView] = useState<"list" | "conversation">("list");
   const [mobileAiChatOpen, setMobileAiChatOpen] = useState(false);
+  const [isSuperAdmin, setIsSuperAdmin] = useState(true);
+  const [superAdminChecked, setSuperAdminChecked] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    api.getAuthMe()
+      .then((authState) => {
+        if (!cancelled) {
+          setIsSuperAdmin(authState.is_super_admin === true);
+          setSuperAdminChecked(true);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setIsSuperAdmin(false);
+          setSuperAdminChecked(true);
+        }
+      });
+    return () => { cancelled = true; };
+  }, []);
+
   // Left Panel States
   const [messages, setMessages] = useState<api.InboxThread[]>([]);
   const [groups, setGroups] = useState<any[]>([]);
@@ -3153,10 +3175,44 @@ return {
     resolveMessagePhone(selectedMsgDetails?.raw) ||
     resolveMessagePhone(selectedMsg) ||
     extractPhoneFromText(selectedMsgDetails?.raw?.message || selectedMsg?.message);
-  const selectedHasMarketContext = hasMarketContext(selectedMsgDetails);
+    const selectedHasMarketContext = hasMarketContext(selectedMsgDetails);
+
+  if (!superAdminChecked) {
+    return (
+      <div className="flex items-center justify-center h-full bg-black">
+        <div className="text-zinc-500 text-sm">Verifying access...</div>
+      </div>
+    );
+  }
+
+  if (!isSuperAdmin) {
+    return (
+      <div className="flex items-center justify-center h-full bg-black">
+        <div className="max-w-md text-center px-6">
+          <div className="mx-auto mb-5 flex h-12 w-12 items-center justify-center rounded-xl border border-zinc-700 bg-zinc-900 text-zinc-400">
+            <Lock className="h-5 w-5" />
+          </div>
+          <h3 className="text-lg font-bold text-white mb-2">Admin Only</h3>
+          <p className="text-sm text-zinc-400 mb-5">
+            Market Inbox is an internal debugging view. Use the AI Chat for your daily market search.
+          </p>
+          <Link
+            href="/chat"
+            className="inline-flex h-10 items-center justify-center rounded-lg bg-[#3EE88A] px-5 text-sm font-bold text-black hover:bg-[#35d47c]"
+          >
+            Open Search Chat
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="mobile-inbox safe-area-top safe-area-bottom flex flex-col h-[100dvh] min-h-0 max-h-[100dvh] overflow-hidden bg-black lg:h-full lg:max-h-full lg:rounded-2xl lg:border lg:border-white/10">
+
+
+
+
       
       {actionMessage && (
         <div className="bg-[#1e293b] border-b border-[#3EE88A]/30 text-[#3EE88A] px-4 py-2 text-xs font-semibold text-center flex items-center justify-center gap-3 animate-fadeIn">
