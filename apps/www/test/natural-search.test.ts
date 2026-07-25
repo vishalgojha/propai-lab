@@ -29,6 +29,8 @@ function makeRow(over: Partial<NaturalSearchRow>): NaturalSearchRow {
     bhk: "3 BHK",
     price: 250000,
     price_unit: "l",
+    price_model: null,
+    price_per_sqft: null,
     area_sqft: 1200,
     furnishing: "furnished",
     floor_description: null,

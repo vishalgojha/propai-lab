@@ -17,6 +17,8 @@ function base(over: Partial<ListingCardFields>): ListingCardFields {
     bhk: "3 BHK",
     price: 2.5,
     price_unit: "cr",
+    price_model: null,
+    price_per_sqft: null,
     area_sqft: 1450,
     furnishing: "Semi-furnished",
     intent: "sell",
@@ -61,6 +63,20 @@ check("underscore furnishing values render as readable words", () => {
   const vm = toListingCardViewModel(base({ furnishing: "fully_furnished" }), false);
   assert.match(vm.title, /^Fully Furnished /);
   assert.match(vm.specRow, /Fully Furnished/);
+});
+
+check("generic property type does not leak as 'Other'", () => {
+  const vm = toListingCardViewModel(base({ bhk: null, property_type: "Other", asset_type: "commercial" }), false);
+  assert.equal(vm.title, "Semi-Furnished Commercial Space at Bandra East");
+  assert.equal(vm.specRow.includes("Other"), false);
+});
+
+check("price_model psf uses area to compute the public price label", () => {
+  const vm = toListingCardViewModel(
+    base({ price: 750, price_unit: "abs", price_model: "psf", price_per_sqft: 750, area_sqft: 1000, intent: "sell" }),
+    false,
+  );
+  assert.equal(vm.priceLabel, "₹7.5 Lakh");
 });
 
 // Price always carries an explicit unit.

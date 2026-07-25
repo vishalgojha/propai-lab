@@ -26,6 +26,8 @@ export type NaturalSearchRow = {
   bhk: string | null;
   price: number | null;
   price_unit: string | null;
+  price_model: string | null;
+  price_per_sqft: number | null;
   area_sqft: number | null;
   furnishing: string | null;
   floor_description: string | null;
@@ -80,6 +82,8 @@ const LISTING_FIELDS = [
   "bhk",
   "price",
   "price_unit",
+  "price_model",
+  "price_per_sqft",
   "area_sqft",
   "furnishing",
   "floor_description",

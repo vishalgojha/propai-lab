@@ -193,6 +193,27 @@ function titleCase(value: string): string {
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
+function normalizePropertyType(value: string | null): string | null {
+  const raw = (value || "").trim();
+  if (!raw) return null;
+  const lower = raw.toLowerCase().replace(/[_-]+/g, " ");
+  if (
+    lower === "other" ||
+    lower === "unknown" ||
+    lower === "misc" ||
+    lower === "miscellaneous" ||
+    lower === "na" ||
+    lower === "n a" ||
+    lower === "n/a" ||
+    lower === "none" ||
+    lower === "unspecified" ||
+    lower === "not specified"
+  ) {
+    return null;
+  }
+  return titleCase(raw);
+}
+
 function buildTitle(row: ListingCardFields): string {
   // A raw WhatsApp title is evidence, not display copy.  It is often merely
   // a building name (or a noisy poster headline), which made equivalent cards
@@ -200,7 +221,7 @@ function buildTitle(row: ListingCardFields): string {
   // one deterministic title from the structured fields for every card.
   const furnishing = (row.furnishing || "").trim();
   const bhk = (row.bhk || "").trim();
-  const propertyType = (row.property_type || "").trim();
+  const propertyType = normalizePropertyType(row.property_type);
   // Extract first segment before comma — real building names are short and
   // appear at the start (e.g. "Wallfort Tower" from "Wallfort Tower, 2bhk...").
   const rawBuilding = (row.building_name ?? "").trim();
@@ -213,7 +234,7 @@ function buildTitle(row: ListingCardFields): string {
 
   const descriptor = [
     furnishing ? titleCase(furnishing) : "",
-    bhk || (propertyType ? titleCase(propertyType) : "Property"),
+    bhk || propertyType || (assetTypeLabel(row.asset_type, row.intent) === "Commercial" ? "Commercial Space" : "Property"),
   ].filter(Boolean).join(" ");
   const place = building || locality || row.landmark_name?.trim() || null;
 
@@ -225,10 +246,9 @@ function buildTitle(row: ListingCardFields): string {
 
 function buildSpecItems(row: ListingCardFields): ListingSpecItem[] {
   const items: ListingSpecItem[] = [];
-  const ptype = (row.property_type || "").trim();
-  if (ptype && /[a-z]/i.test(ptype)) {
-    const cap = ptype.charAt(0).toUpperCase() + ptype.slice(1);
-    items.push({ kind: "type", label: cap });
+  const ptype = normalizePropertyType(row.property_type);
+  if (ptype) {
+    items.push({ kind: "type", label: ptype });
   }
   if (row.bhk && row.bhk.trim()) {
     items.push({ kind: "bhk", label: row.bhk.trim() });

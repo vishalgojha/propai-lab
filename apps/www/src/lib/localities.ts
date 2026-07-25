@@ -512,7 +512,7 @@ export async function getLocalityListings(
     const { data, error } = await db
       .from("listings")
       .select(
-        "id, bhk, price, price_unit, area_sqft, furnishing, intent, asset_type, property_type, micro_market, building_name, landmark_name, location_label, floor_description, view, representative_raw_message_id, latest_raw_message_id, broker_name, broker_phone, last_seen",
+        "id, bhk, price, price_unit, price_model, price_per_sqft, area_sqft, furnishing, intent, asset_type, property_type, micro_market, building_name, landmark_name, location_label, floor_description, view, representative_raw_message_id, latest_raw_message_id, broker_name, broker_phone, last_seen",
       )
       .in("micro_market", rawValues)
       .range(offset, offset + PAGE - 1);
@@ -727,6 +727,8 @@ export type BuildingListing = {
   bhk: string | null;
   price: number | null;
   price_unit: string | null;
+  price_model?: string | null;
+  price_per_sqft?: number | null;
   furnishing: string | null;
   intent: string | null;
   asset_type: string | null;
@@ -912,6 +914,8 @@ export async function getBuildingListings(name: string): Promise<BuildingListing
     bhk: string | null;
     price: number | null;
     price_unit: string | null;
+    price_model: string | null;
+    price_per_sqft: number | null;
     furnishing: string | null;
     intent: string | null;
     asset_type: string | null;
@@ -931,7 +935,7 @@ export async function getBuildingListings(name: string): Promise<BuildingListing
     const { data, error } = await db
       .from("listings")
       .select(
-        "id, bhk, price, price_unit, furnishing, intent, asset_type, property_type, micro_market, view, floor_description, building_name, broker_name, broker_phone, last_seen, representative_raw_message_id, latest_raw_message_id",
+        "id, bhk, price, price_unit, price_model, price_per_sqft, furnishing, intent, asset_type, property_type, micro_market, view, floor_description, building_name, broker_name, broker_phone, last_seen, representative_raw_message_id, latest_raw_message_id",
       )
       .eq("building_name", target)
       .order("last_seen", { ascending: false })
@@ -956,6 +960,8 @@ export async function getBuildingListings(name: string): Promise<BuildingListing
     bhk: r.bhk,
     price: r.price,
     price_unit: r.price_unit,
+    price_model: r.price_model,
+    price_per_sqft: r.price_per_sqft,
     furnishing: r.furnishing,
     intent: r.intent,
     asset_type: r.asset_type,
@@ -983,7 +989,7 @@ export async function getListingById(id: number): Promise<ListingDetail | null> 
   const { data, error } = await db
     .from("listings")
     .select(
-      "id, bhk, price, price_unit, area_sqft, furnishing, intent, asset_type, property_type, location_label, landmark_name, micro_market, view, floor_description, broker_name, broker_phone, last_seen, building_name, representative_raw_message_id, latest_raw_message_id, deal_tags, additional_charges",
+      "id, bhk, price, price_unit, price_model, price_per_sqft, area_sqft, furnishing, intent, asset_type, property_type, location_label, landmark_name, micro_market, view, floor_description, broker_name, broker_phone, last_seen, building_name, representative_raw_message_id, latest_raw_message_id, deal_tags, additional_charges",
     )
     .eq("id", id)
     .maybeSingle();
@@ -1008,6 +1014,8 @@ export async function getListingById(id: number): Promise<ListingDetail | null> 
     bhk: data.bhk,
     price: data.price,
     price_unit: data.price_unit,
+    price_model: data.price_model ?? null,
+    price_per_sqft: data.price_per_sqft ?? null,
     area_sqft: data.area_sqft,
     furnishing: data.furnishing,
     intent: data.intent,

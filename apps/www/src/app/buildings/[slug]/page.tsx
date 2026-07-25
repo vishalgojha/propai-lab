@@ -53,6 +53,8 @@ function toCardFields(row: BuildingListing): ListingCardFields {
     bhk: row.bhk,
     price: row.price,
     price_unit: row.price_unit,
+    price_model: row.price_model,
+    price_per_sqft: row.price_per_sqft,
     area_sqft: null,
     furnishing: row.furnishing,
     intent: row.intent,
