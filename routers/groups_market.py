@@ -1,6 +1,7 @@
 """Groups, market data, and WhatsApp conversations routes."""
 import asyncio
 import json
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 
@@ -11,6 +12,10 @@ from routers.common import (
     get_tenant_context,
     _resolve_active_organization_id,
     parse_group_name,
+    _audit_rows,
+    _audit_row_value,
+    _audit_scalar,
+    _table_exists,
 )
 
 router = APIRouter(tags=["groups"])
@@ -49,6 +54,182 @@ async def scan_aliases(user: dict = Depends(require_user)):
 async def recompute_price_stats(user: dict = Depends(require_user)):
     storage.recompute_price_stats()
     return {"status": "ok"}
+
+
+@router.get("/api/groups/health")
+async def groups_health(user: dict = Depends(require_user), tenant_id: str = Depends(get_tenant_context)):
+    """Per-group health metrics with exit confidence scoring.
+
+    Returns every group with activity breakdown (7d/30d/total), extraction
+    value, and an actionable exit recommendation.
+    """
+    now = datetime.now(timezone.utc)
+    day_ago = (now - timedelta(hours=24)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    seven_ago = (now - timedelta(days=7)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    thirty_ago = (now - timedelta(days=30)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    if not _table_exists("raw_messages"):
+        return {"groups": [], "summary": _empty_summary()}
+
+    # ── 1. Per-group activity (fast with composite index) ──
+    activity_rows = _audit_rows(
+        "SELECT group_name, "
+        "COUNT(*) AS total, "
+        "COUNT(CASE WHEN created_at >= ? THEN 1 END) AS msgs_7d, "
+        "COUNT(CASE WHEN created_at >= ? THEN 1 END) AS msgs_30d, "
+        "COUNT(DISTINCT sender) AS senders, "
+        "MAX(created_at) AS last_msg "
+        "FROM raw_messages "
+        "WHERE is_group = true AND group_name IS NOT NULL AND group_name != '' "
+        "AND group_name NOT LIKE '%@g.us' "
+        "GROUP BY group_name",
+        (seven_ago, thirty_ago),
+    )
+
+    groups: dict[str, dict] = {}
+    for row in activity_rows:
+        gn = str(_audit_row_value(row, ("group_name", 0), "") or "")
+        if not gn:
+            continue
+        total = int(_audit_row_value(row, ("total", 1), 0) or 0)
+        msgs_7d = int(_audit_row_value(row, ("msgs_7d", 2), 0) or 0)
+        msgs_30d = int(_audit_row_value(row, ("msgs_30d", 3), 0) or 0)
+        senders = int(_audit_row_value(row, ("senders", 4), 0) or 0)
+        last_msg = _audit_row_value(row, ("last_msg", 5), None)
+
+        days_since = 999
+        if last_msg:
+            if isinstance(last_msg, str):
+                try:
+                    last_msg_dt = datetime.fromisoformat(last_msg.replace("Z", "+00:00"))
+                except Exception:
+                    last_msg_dt = now
+            else:
+                last_msg_dt = last_msg if last_msg.tzinfo else last_msg.replace(tzinfo=timezone.utc)
+            days_since = max(0, int((now - last_msg_dt).total_seconds() / 86400))
+
+        groups[gn] = {
+            "name": gn,
+            "total": total,
+            "msgs_7d": msgs_7d,
+            "msgs_30d": msgs_30d,
+            "senders": senders,
+            "last_msg": last_msg.isoformat() if hasattr(last_msg, "isoformat") else str(last_msg or ""),
+            "days_since_msg": days_since,
+            "listings": 0,
+            "requirements": 0,
+            "extracted": 0,
+        }
+
+    # ── 2. Per-group extraction value ──
+    if groups and _table_exists("parsed_output"):
+        value_rows = _audit_rows(
+            "SELECT rm.group_name, "
+            "COUNT(DISTINCT po.id) AS extracted, "
+            "COUNT(DISTINCT CASE WHEN UPPER(po.intent) IN ('BUY','REQUIREMENT','RENTAL_SEEKER','TENANT') THEN po.id END) AS requirements, "
+            "COUNT(DISTINCT CASE WHEN po.id IS NOT NULL AND UPPER(po.intent) NOT IN ('BUY','REQUIREMENT','RENTAL_SEEKER','TENANT') THEN po.id END) AS listings "
+            "FROM parsed_output po "
+            "JOIN raw_messages rm ON po.raw_message_id = rm.id "
+            "WHERE rm.is_group = true AND rm.group_name IS NOT NULL AND rm.group_name != '' "
+            "AND rm.group_name NOT LIKE '%@g.us' "
+            "GROUP BY rm.group_name",
+        )
+        for row in value_rows:
+            gn = str(_audit_row_value(row, ("group_name", 0), "") or "")
+            if gn not in groups:
+                continue
+            groups[gn]["extracted"] = int(_audit_row_value(row, ("extracted", 1), 0) or 0)
+            groups[gn]["requirements"] = int(_audit_row_value(row, ("requirements", 2), 0) or 0)
+            groups[gn]["listings"] = int(_audit_row_value(row, ("listings", 3), 0) or 0)
+
+    # ── 3. Score and classify ──
+    scored = []
+    for g in groups.values():
+        g["recommendation"] = _exit_confidence(g)
+        scored.append(g)
+
+    scored.sort(key=lambda g: (
+        {"safe_exit": 0, "probably_exit": 1, "noise": 2, "low_value": 3, "keep": 4, "essential": 5}.get(g["recommendation"], 3),
+        -g["total"],
+    ))
+
+    safe = sum(1 for g in scored if g["recommendation"] == "safe_exit")
+    probably = sum(1 for g in scored if g["recommendation"] == "probably_exit")
+    noise_count = sum(1 for g in scored if g["recommendation"] == "noise")
+    low = sum(1 for g in scored if g["recommendation"] == "low_value")
+    keep = sum(1 for g in scored if g["recommendation"] == "keep")
+    essential = sum(1 for g in scored if g["recommendation"] == "essential")
+
+    return {
+        "groups": scored,
+        "summary": {
+            "total": len(scored),
+            "safe_exit": safe,
+            "probably_exit": probably,
+            "noise": noise_count,
+            "low_value": low,
+            "keep": keep,
+            "essential": essential,
+            "total_7d": sum(g["msgs_7d"] for g in scored),
+            "total_30d": sum(g["msgs_30d"] for g in scored),
+            "total_listings": sum(g["listings"] for g in scored),
+            "total_requirements": sum(g["requirements"] for g in scored),
+        },
+    }
+
+
+def _exit_confidence(g: dict) -> str:
+    """Classify a group into an exit confidence bucket.
+
+    Categories:
+      safe_exit  — Dead. No activity in 14+ days, few total messages.
+      probably_exit — Fading. <10 msgs in 7d AND no extraction value.
+      noise — Generic/placeholder name (WhatsApp Group XXXX) with minimal activity.
+      low_value — Active but producing zero extraction value.
+      keep — Active with extraction value OR high unique sender count.
+      essential — High volume + extraction value + many unique brokers.
+    """
+    days = g["days_since_msg"]
+    total = g["total"]
+    m7 = g["msgs_7d"]
+    m30 = g["msgs_30d"]
+    listings = g["listings"]
+    reqs = g["requirements"]
+    extracted = g["extracted"]
+    senders = g["senders"]
+    name = g["name"]
+
+    is_noise_name = (
+        name.startswith("WhatsApp Group ")
+        or (len(name) < 5 and total < 10)
+        or name in ("General", "PropAI", "PropAI One")
+    )
+
+    if days >= 14 and total < 50:
+        return "safe_exit"
+    if days >= 30:
+        return "safe_exit"
+    if is_noise_name and total < 20:
+        return "noise"
+    if m7 < 10 and extracted == 0:
+        return "probably_exit"
+    if extracted == 0 and m7 < 20:
+        return "low_value"
+    if extracted > 0 and senders >= 10 and total >= 200:
+        return "essential"
+    if extracted > 0 or (m7 >= 50 and senders >= 5):
+        return "keep"
+    if m7 < 20:
+        return "probably_exit"
+    return "keep"
+
+
+def _empty_summary() -> dict:
+    return {
+        "total": 0, "safe_exit": 0, "probably_exit": 0, "noise": 0,
+        "low_value": 0, "keep": 0, "essential": 0,
+        "total_7d": 0, "total_30d": 0, "total_listings": 0, "total_requirements": 0,
+    }
 
 
 @router.get("/api/groups")

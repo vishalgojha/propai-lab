@@ -507,6 +507,10 @@ export function getGroups() {
   return fetchJSON<any[]>("/groups");
 }
 
+export function getGroupsHealth() {
+  return fetchJSON<{ groups: any[]; summary: any }>("/groups/health");
+}
+
 export function getGroupMembers(jid: string) {
   return fetchJSON<any[]>(`/groups/${encodeURIComponent(jid)}/members`);
 }
