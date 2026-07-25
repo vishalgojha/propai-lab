@@ -21,7 +21,6 @@ export type PublicListingSummary = {
   landmark_name: string | null;
   micro_market: string | null;
   broker_name: string | null;
-  broker_phone: string | null;
   observation_count: number | null;
   last_seen: string | null;
 };
@@ -131,7 +130,7 @@ export async function getPublicDataOverview(options?: {
       db
         .from("listings")
         .select(
-          "id, bhk, price, price_unit, furnishing, location_label, building_name, landmark_name, micro_market, broker_name, broker_phone, observation_count, last_seen",
+          "id, bhk, price, price_unit, furnishing, location_label, building_name, landmark_name, micro_market, broker_name, observation_count, last_seen",
         )
         .order("last_seen", { ascending: false })
         .limit(12),
