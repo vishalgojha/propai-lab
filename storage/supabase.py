@@ -869,6 +869,7 @@ class SupabaseStorage(Storage):
         ("export_contacts", "Export Contacts"),
         ("view_broker_numbers", "View Broker Numbers"),
         ("add_team_members", "Add Team Members"),
+        ("remove_team_members", "Remove Team Members"),
         ("delete_data", "Delete Data"),
         ("ai_actions", "AI Actions"),
         ("bulk_broadcast", "Bulk Broadcast"),
