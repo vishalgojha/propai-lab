@@ -69,6 +69,7 @@ def log_ai_usage(
         pricing = get_model_pricing(model, provider_name)
         cost_usd = (tokens_input * pricing["input"] + tokens_output * pricing["output"]) / 1_000_000
 
+    from datetime import datetime, timezone
     row = {
         "agent": agent,
         "model": model[:120] if model else "",
@@ -77,6 +78,7 @@ def log_ai_usage(
         "cost_usd": round(cost_usd, 8),
         "source": source[:80] if source else "",
         "source_id": source_id,
+        "created_at": datetime.now(timezone.utc).isoformat(),
     }
     if tenant_id:
         row["tenant_id"] = tenant_id
