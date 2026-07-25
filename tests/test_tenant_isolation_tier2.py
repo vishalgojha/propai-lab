@@ -105,7 +105,8 @@ def test_ai_chat_persist_uses_tenant(monkeypatch):
 
 
 def test_profile_endpoints_forward_tenant(monkeypatch):
-    import app
+    import routers.auth_org as _auth
+    import app  # noqa: F401 — wiring side effects
 
     calls = []
 
@@ -118,10 +119,10 @@ def test_profile_endpoints_forward_tenant(monkeypatch):
             calls.append(("save", phone, auth_user_id, tenant_id))
             return {}
 
-    monkeypatch.setattr(app, "storage", FakeStorage())
+    monkeypatch.setattr(_auth, "storage", FakeStorage())
 
-    asyncio.run(app.get_profile(user={"id": "u1"}, tenant_id="org-A"))
-    asyncio.run(app.save_profile(
+    asyncio.run(_auth.get_profile(user={"id": "u1"}, tenant_id="org-A"))
+    asyncio.run(_auth.save_profile(
         body=type("B", (), {"model_dump": lambda self: {}})(),
         user={"id": "u1", "phone": "919999999999"},
         tenant_id="org-A",
@@ -132,7 +133,7 @@ def test_profile_endpoints_forward_tenant(monkeypatch):
 
 
 def test_saved_inbox_views_forward_tenant(monkeypatch):
-    import app
+    import app  # noqa: F401 — wiring side effects
 
     calls = []
 
@@ -158,7 +159,6 @@ def test_saved_inbox_views_forward_tenant(monkeypatch):
             return True
 
     import routers.workspace as _ws
-    monkeypatch.setattr(app, "storage", FakeStorage())
     monkeypatch.setattr(_ws, "storage", FakeStorage())
 
     from routers.workspace import (
@@ -182,7 +182,7 @@ def test_saved_inbox_views_forward_tenant(monkeypatch):
 
 
 def test_llm_providers_forward_tenant(monkeypatch):
-    import app
+    import app  # noqa: F401 — wiring side effects
 
     calls = []
 
@@ -204,7 +204,6 @@ def test_llm_providers_forward_tenant(monkeypatch):
             return True
 
     import routers.workspace as _ws
-    monkeypatch.setattr(app, "storage", FakeStorage())
     monkeypatch.setattr(_ws, "storage", FakeStorage())
 
     from routers.workspace import (

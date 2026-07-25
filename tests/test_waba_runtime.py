@@ -1,13 +1,14 @@
 import asyncio
 from types import SimpleNamespace
 
-import app
+import app  # noqa: F401 — wiring side effects
+import routers.common as _common
 from routers import whatsapp_sync as ws_mod
 
 
 def test_shared_waba_is_available_to_super_admin(monkeypatch):
     values = {
-        "whatsapp_business_number": app.PROPAI_SHARED_WABA_NUMBER,
+        "whatsapp_business_number": ws_mod.PROPAI_SHARED_WABA_NUMBER,
         "phone_number_id": "phone-number-id",
         "access_token": "token",
         "verify_token": "verify",
@@ -27,12 +28,12 @@ def test_shared_waba_is_available_to_super_admin(monkeypatch):
             assert org_id == "org-broker"
             return None
 
-    monkeypatch.setattr(app, "storage", Storage())
-    monkeypatch.setattr(
-        app,
-        "_business_api_get_config_value",
-        lambda key, _env_key="": values.get(key, ""),
-    )
+    _fake_storage = Storage()
+    monkeypatch.setattr(ws_mod, "storage", _fake_storage)
+    monkeypatch.setattr(_common, "storage", _fake_storage)
+    _fake_config = lambda key, _env_key="": values.get(key, "")
+    monkeypatch.setattr(ws_mod, "_business_api_get_config_value", _fake_config)
+    monkeypatch.setattr(_common, "_business_api_get_config_value", _fake_config)
 
     super_config = asyncio.run(ws_mod.business_api_config(user={"id": "super-user"}, tenant_id="org-admin"))
     broker_config = asyncio.run(ws_mod.business_api_config(user={"id": "broker-user"}, tenant_id="org-broker"))
@@ -83,14 +84,18 @@ def test_waba_webhook_stores_inbound_message_once(monkeypatch):
         "is_active": True,
     }
     monkeypatch.setattr(
-        app,
+        ws_mod,
         "storage",
         SimpleNamespace(
             db=Database(),
             get_org_waba_connection_by_phone_number_id=lambda _phone_id: workspace,
         ),
     )
-    monkeypatch.setattr(app, "_waba_session_update", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(_common, "storage", SimpleNamespace(
+        db=Database(),
+        get_org_waba_connection_by_phone_number_id=lambda _phone_id: workspace,
+    ))
+    monkeypatch.setattr(ws_mod, "_waba_session_update", lambda *_args, **_kwargs: None)
 
     result = asyncio.run(ws_mod.business_api_webhook_receive(Request()))
 
@@ -112,7 +117,7 @@ def test_workspace_waba_webhook_resolves_by_phone_number_id(monkeypatch):
         "is_active": True,
     }
     monkeypatch.setattr(
-        app,
+        ws_mod,
         "storage",
         SimpleNamespace(
             get_org_waba_connection_by_phone_number_id=lambda phone_id: (
@@ -120,6 +125,11 @@ def test_workspace_waba_webhook_resolves_by_phone_number_id(monkeypatch):
             )
         ),
     )
+    monkeypatch.setattr(_common, "storage", SimpleNamespace(
+        get_org_waba_connection_by_phone_number_id=lambda phone_id: (
+            workspace if phone_id == "workspace-phone-id" else None
+        )
+    ))
 
     body = {
         "entry": [{
@@ -131,12 +141,12 @@ def test_workspace_waba_webhook_resolves_by_phone_number_id(monkeypatch):
             }]
         }]
     }
-    values, org_id = asyncio.run(app._resolve_waba_webhook_config(body))
+    values, org_id = asyncio.run(ws_mod._resolve_waba_webhook_config(body))
 
     assert values["access_token"] == "workspace-token"
     assert org_id == "org-one"
 
 
 def test_propai_shared_waba_number_is_valid_indian_mobile():
-    assert app.PROPAI_SHARED_WABA_NUMBER == "+917021045254"
-    assert app._mobile_digits(app.PROPAI_SHARED_WABA_NUMBER) == "7021045254"
+    assert ws_mod.PROPAI_SHARED_WABA_NUMBER == "+917021045254"
+    assert ws_mod._mobile_digits(ws_mod.PROPAI_SHARED_WABA_NUMBER) == "7021045254"

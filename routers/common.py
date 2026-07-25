@@ -744,3 +744,1732 @@ def parse_group_name(name: str) -> dict:
         "segments": segments,
         "is_real_estate": bool(markets or segments or any(word in lower for word in ["realty", "realtor", "property", "properties", "estate", "broker"])),
     }
+
+
+# ═══════════════════════════════════════════════════════════════════
+# Shared helpers (moved from app.py)
+# ═══════════════════════════════════════════════════════════════════
+
+import time
+import json as _json
+import httpx
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from typing import Any, Optional
+from fastapi import Depends, Header, HTTPException, Security
+from pydantic import BaseModel
+
+# ── Constants ──────────────────────────────────────────────────────
+PROJECT_DIR = Path(__file__).resolve().parent.parent
+MEDIA_DIR = PROJECT_DIR / "media" / "listing_photos"
+PIC_TOKEN_RE = re.compile(r'\bPIC-(\d+)-([A-F0-9]+)\b')
+BUSINESS_TIMEZONE = "Asia/Kolkata"
+BUSINESS_START_HOUR = 10
+BUSINESS_END_HOUR = 19
+PROBE_OK_LATENCY_THRESHOLD_MS = 5000
+PROVIDER_PROBE_INTERVAL_S = 60
+HISTORY_BACKFILL_INTERVAL_S = 6 * 3600
+PROPAI_SHARED_WABA_NUMBER = "+917021045254"
+INGESTOR_INTERNAL_URL = os.getenv("INGESTOR_INTERNAL_URL", "http://ingestor:3001")
+INGESTOR_PUBLIC_URL = os.getenv("INGESTOR_PUBLIC_URL", "http://egn4dqsw3xxmhb9noorm85do.62.238.18.85.sslip.io")
+
+COMPANION_ROLES = {
+    "administrator": {"label": "Administrator", "permissions": ["full_access", "configure_ai", "configure_waba", "approve_users"]},
+    "manager": {"label": "Manager", "permissions": ["read_all", "update_listings", "manage_buyers", "use_ai"]},
+    "sales_agent": {"label": "Sales Agent", "permissions": ["view_assigned_inventory", "query_ai", "create_requirements", "promote_listings"]},
+    "read_only": {"label": "Read-only", "permissions": ["search_only"]},
+}
+
+# ── Scheduler ──────────────────────────────────────────────────────
+_scheduler = None
+
+def business_window_status() -> dict:
+    from zoneinfo import ZoneInfo
+    now = datetime.now(ZoneInfo(BUSINESS_TIMEZONE))
+    return {"mode": "live_webhook_only", "timezone": BUSINESS_TIMEZONE, "start": "10:00", "end": "19:00", "active": True, "now": now.isoformat(), "label": "24/7 tracking"}
+
+def get_scheduler():
+    global _scheduler
+    if _scheduler is None:
+        from lab.scheduler import SyncScheduler
+        _scheduler = SyncScheduler()
+    return _scheduler
+
+# ── Provider probe ─────────────────────────────────────────────────
+async def _probe_provider(api_key: str, base_url: str, model_name: str, timeout_s: float = 15.0) -> dict:
+    empty = {"status": "error", "latency_ms": 0, "http_status": None, "error_kind": "missing_credentials", "error_msg": "no API key"}
+    if not api_key or not base_url:
+        return empty
+    if not model_name:
+        return {**empty, "error_kind": "missing_model", "error_msg": "no model configured"}
+    url = base_url.rstrip("/") + "/chat/completions"
+    payload = {"model": model_name, "messages": [{"role": "user", "content": "Respond with exactly: OK"}], "max_tokens": 10}
+    start = time.time()
+    try:
+        async with httpx.AsyncClient(timeout=timeout_s) as client:
+            resp = await client.post(url, json=payload, headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"})
+        latency_ms = int((time.time() - start) * 1000)
+        if resp.status_code == 200:
+            status = "slow" if latency_ms > PROBE_OK_LATENCY_THRESHOLD_MS else "ok"
+            return {"status": status, "latency_ms": latency_ms, "http_status": 200, "error_kind": None, "error_msg": None}
+        try:
+            detail = resp.json()
+        except Exception:
+            detail = resp.text[:200]
+        return {"status": "http", "latency_ms": latency_ms, "http_status": resp.status_code, "error_kind": "non_2xx", "error_msg": f"HTTP {resp.status_code}: {str(detail)[:180]}"}
+    except httpx.TimeoutException:
+        latency_ms = int((time.time() - start) * 1000)
+        return {"status": "timeout", "latency_ms": latency_ms, "http_status": None, "error_kind": "timeout", "error_msg": f"Request timed out after {timeout_s}s"}
+    except Exception as exc:
+        latency_ms = int((time.time() - start) * 1000)
+        return {"status": "error", "latency_ms": latency_ms, "http_status": None, "error_kind": type(exc).__name__, "error_msg": str(exc)[:200]}
+
+# ── Provider health / outage evidence ──────────────────────────────
+def _parse_event_ts(event: dict) -> float | None:
+    ts = event.get("ts")
+    if not ts:
+        return None
+    try:
+        if isinstance(ts, str):
+            return datetime.fromisoformat(ts.replace("Z", "+00:00")).timestamp()
+        return float(ts)
+    except Exception:
+        return None
+
+def _classify_provider_status(events: list[dict], now_ts: float) -> str:
+    if not events:
+        return "unknown"
+    newest = events[0]
+    newest_ts = _parse_event_ts(newest)
+    age_s = now_ts - newest_ts if newest_ts else 9e9
+    if age_s > 1800:
+        return "unknown"
+    if newest["status"] in ("timeout", "http", "error"):
+        return "down"
+    if newest["status"] == "slow":
+        return "degraded"
+    cutoff_30 = now_ts - 1800; cutoff_10 = now_ts - 600
+    recent_30 = [e for e in events if (_parse_event_ts(e) or 0) >= cutoff_30]
+    recent_10 = [e for e in events if (_parse_event_ts(e) or 0) >= cutoff_10]
+    if recent_10 and not any(e["status"] in ("ok", "slow") for e in recent_10):
+        return "down"
+    if recent_30:
+        failures = sum(1 for e in recent_30 if e["status"] != "ok")
+        if failures / max(len(recent_30), 1) > 0.20:
+            return "degraded"
+    return "up"
+
+def _summarise_provider(events: list[dict], now_ts: float) -> dict:
+    latencies = [int(e.get("latency_ms") or 0) for e in events if e.get("status") in ("ok", "slow")]
+    latencies.sort()
+    p50 = latencies[len(latencies) // 2] if latencies else 0
+    p95 = latencies[int(len(latencies) * 0.95)] if latencies else 0
+    status = _classify_provider_status(events, now_ts)
+    newest = events[0] if events else {}
+    last_error = next((e for e in events if e.get("status") != "ok"), None)
+    return {"status": status, "probe_count": len(events), "p50_ms": p50, "p95_ms": p95,
+        "last_probe_ts": newest.get("ts"), "last_status": newest.get("status"),
+        "last_latency_ms": int(newest.get("latency_ms") or 0) if newest else 0, "last_error": last_error}
+
+def _bucket_history(events: list[dict], bucket_minutes: int = 5, window_hours: int = 24) -> list[dict]:
+    if not events:
+        return []
+    now_ts = time.time()
+    bucket_s = bucket_minutes * 60
+    cutoff = now_ts - window_hours * 3600
+    bins: dict[int, dict] = {}
+    for e in events:
+        ts = _parse_event_ts(e)
+        if ts is None or ts < cutoff:
+            continue
+        bucket = int(ts // bucket_s) * bucket_s
+        b = bins.setdefault(bucket, {"ts_bucket": bucket, "ok_count": 0, "fail_count": 0, "total": 0})
+        b["total"] += 1
+        if e.get("status") == "ok":
+            b["ok_count"] += 1
+        else:
+            b["fail_count"] += 1
+    return sorted(bins.values(), key=lambda b: -b["ts_bucket"])
+
+# ── WhatsApp session / connection state ────────────────────────────
+_memory_status: dict = {}
+_previous_status: dict = {}
+_broker_live_statuses: dict[str, tuple[dict, float]] = {}
+_last_live_connection_status: dict = {}
+_last_live_connection_seen_at: float = 0.0
+_CONNECTION_CACHE_GRACE_SECONDS = 90.0
+
+def _normalize_connection_snapshot(status: dict | None) -> dict:
+    status = status or {}
+    connected = bool(status.get("connected"))
+    connection_state = str(status.get("connection_state") or ("open" if connected else "unknown")).lower()
+    return {"connected": connected, "connection_state": connection_state,
+        "instance_name": status.get("instance") or status.get("instance_name") or "propai-whatsapp",
+        "device_name": status.get("device_name") or "WhatsApp ingestor",
+        "phone_number": _display_phone_from_whatsapp_id(status.get("phone_number") or ""),
+        "display_name": status.get("display_name") or "", "connected_since": status.get("connected_since") or None,
+        "last_message_at": status.get("last_message_at") or None, "total_groups": status.get("total_groups"),
+        "messages_captured": status.get("messages_captured"), "status_stale": bool(status.get("status_stale"))}
+
+def _digits_from_whatsapp_id(value: str = "") -> str:
+    local_part = str(value or "").split("@")[0].split(":")[0]
+    return "".join(ch for ch in local_part if ch.isdigit())
+
+def _display_phone_from_whatsapp_id(value: str = "") -> str:
+    digits = _digits_from_whatsapp_id(value)
+    if not digits:
+        return ""
+    if digits.startswith("91") and len(digits) >= 12:
+        local = digits[2:12]; return f"+91 {local}"
+    if len(digits) > 10:
+        country = digits[:-10]; local = digits[-10:]
+        return f"+{country} {local[:5]} {local[5:]}"
+    if len(digits) == 10:
+        return f"{digits[:5]} {digits[5:]}"
+    return f"+{digits}"
+
+def _should_cache_connection_snapshot(status: dict | None) -> bool:
+    if not status:
+        return False
+    state = str(status.get("connection_state") or "").lower()
+    return bool(status.get("connected")) or state in {"open", "qr", "connecting", "scanning", "reconnecting"}
+
+def _cache_connection_snapshot(status: dict | None) -> None:
+    global _last_live_connection_status, _last_live_connection_seen_at
+    if not _should_cache_connection_snapshot(status):
+        return
+    _last_live_connection_status = _normalize_connection_snapshot(status)
+    _last_live_connection_seen_at = time.time()
+
+_STATUS_FILE_CANDIDATES_CACHE: list[Path] | None = None
+
+def _status_file() -> dict:
+    candidates = [
+        Path(os.getenv("STATUS_FILE", "")),
+        PROJECT_DIR / "status.json",
+        Path("/data/status.json"),
+        Path("/data/status_default.json"),
+    ]
+    seen: set[str] = set()
+    for path in candidates:
+        key = str(path)
+        if key in seen:
+            continue
+        seen.add(key)
+        try:
+            if path.exists():
+                data = _json.loads(path.read_text())
+                if isinstance(data, dict):
+                    return data
+        except Exception:
+            continue
+    if _memory_status:
+        return _memory_status
+    return {"connection_state": "unknown", "connected": False}
+
+def _status_has_live_signal(status: dict | None) -> bool:
+    if not status:
+        return False
+    state = str(status.get("connection_state") or "").lower()
+    if status.get("connected") or status.get("qr") or status.get("phone_number"):
+        return True
+    return state not in ("", "unknown")
+
+def _connection_details() -> dict:
+    status = _status_file()
+    if _status_has_live_signal(status):
+        _cache_connection_snapshot(status)
+        return _normalize_connection_snapshot(status)
+    cached = _last_live_connection_status if _last_live_connection_status else None
+    if cached and _last_live_connection_seen_at > 0:
+        age = time.time() - _last_live_connection_seen_at
+        if age <= _CONNECTION_CACHE_GRACE_SECONDS:
+            stale = dict(cached); stale["status_stale"] = True; return stale
+    total_groups = 0; messages_captured = 0
+    if storage:
+        try:
+            jobs = storage.get_sync_jobs(limit=500, source="whatsapp") if hasattr(storage, "get_sync_jobs") else []
+            total_groups = len(jobs)
+        except Exception:
+            pass
+        if hasattr(storage, "db") and storage.db:
+            try:
+                messages_captured = storage.db.execute("SELECT COUNT(*) AS c FROM raw_messages").fetchone()["c"]
+            except Exception:
+                pass
+    return {"connected": False, "connection_state": "unknown", "instance_name": "propai-whatsapp",
+        "device_name": "WhatsApp ingestor", "phone_number": "", "display_name": "",
+        "connected_since": None, "last_message_at": None, "total_groups": total_groups,
+        "messages_captured": messages_captured, "status_stale": False}
+
+async def _admin_whatsapp_session(phone: dict, live_status: dict | None = None) -> dict:
+    broker_id = str(phone.get("broker_id") or "").strip()
+    status: dict = live_status or {}
+    if broker_id and live_status is None:
+        status = await _best_ingestor_status_for_broker(broker_id, timeout=2)
+    return {**phone, "connected": bool(status.get("connected")), "connection_state": status.get("connection_state", "unknown"),
+        "phone_number_live": status.get("phone_number") or phone.get("phone_number", ""),
+        "display_name": status.get("display_name") or phone.get("instance_name", ""),
+        "connected_since": status.get("connected_since", ""), "last_message_at": status.get("last_message_at", ""),
+        "qr_available": status.get("qr_available", False), "total_messages_received": status.get("total_messages_received", 0),
+        "live_status_available": bool(status)}
+
+# ── Ingestor helpers ───────────────────────────────────────────────
+def _ingestor_urls() -> list[str]:
+    urls = []
+    for candidate in (INGESTOR_INTERNAL_URL, INGESTOR_PUBLIC_URL):
+        candidate = (candidate or "").rstrip("/")
+        if candidate and candidate not in urls:
+            urls.append(candidate)
+    return urls
+
+def _ingestor_auth_headers() -> dict[str, str]:
+    token = os.getenv("PROPAI_INTERNAL_TOKEN", "").strip() or os.getenv("SUPABASE_SERVICE_KEY", "").strip()
+    return {"X-PropAI-Internal-Token": token} if token else {}
+
+def _normalize_ingestor_status(status: dict | None) -> dict:
+    if not isinstance(status, dict):
+        return {}
+    normalized = dict(status)
+    broker_id = str(normalized.get("broker_id") or "").strip()
+    if broker_id:
+        normalized["broker_id"] = broker_id
+    return normalized
+
+def _status_preference_score(status: dict) -> int:
+    score = 0
+    if status.get("connected"):
+        score += 100
+    state = str(status.get("connection_state") or "").strip().lower()
+    if state in {"open", "connected"}:
+        score += 50
+    elif state not in {"", "unknown", "unavailable"}:
+        score += 10
+    if status.get("qr"):
+        score += 25
+    if status.get("phone_number"):
+        score += 10
+    if status.get("display_name"):
+        score += 5
+    if status.get("connected_since"):
+        score += 5
+    return score
+
+def _looks_like_useful_health_status(status: dict, broker_id: str) -> bool:
+    if not isinstance(status, dict):
+        return False
+    payload_broker_id = str(status.get("broker_id") or "").strip()
+    if broker_id and payload_broker_id and payload_broker_id != broker_id:
+        return False
+    state = str(status.get("connection_state") or "").strip().lower()
+    if state and state not in {"unknown", "unavailable"}:
+        return True
+    return bool(status.get("connected") or status.get("qr") or status.get("phone_number") or status.get("display_name") or status.get("connected_since"))
+
+async def _first_ingestor_response(method: str, path: str, *, timeout: float = 10, **kwargs) -> tuple[str | None, httpx.Response | None]:
+    urls = _ingestor_urls()
+    if not urls:
+        return None, None
+    request_headers = {**_ingestor_auth_headers(), **(kwargs.pop("headers", {}) or {})}
+    first_failure: tuple[str | None, httpx.Response | None] = (None, None)
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        async def request_one(base_url: str) -> tuple[str, httpx.Response | None]:
+            try:
+                return base_url, await client.request(method, f"{base_url}{path}", headers=request_headers, **kwargs)
+            except httpx.RequestError:
+                return base_url, None
+        tasks = [asyncio.create_task(request_one(base_url)) for base_url in urls]
+        try:
+            for completed in asyncio.as_completed(tasks):
+                base_url, response = await completed
+                if response is not None and response.status_code < 300:
+                    return base_url, response
+                if response is not None and first_failure[1] is None:
+                    first_failure = (base_url, response)
+        finally:
+            for task in tasks:
+                if not task.done():
+                    task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+    return first_failure
+
+async def _all_ingestor_responses(method: str, path: str, *, timeout: float = 10, **kwargs) -> list[tuple[str, httpx.Response]]:
+    urls = _ingestor_urls()
+    if not urls:
+        return []
+    request_headers = {**_ingestor_auth_headers(), **(kwargs.pop("headers", {}) or {})}
+    responses: list[tuple[str, httpx.Response]] = []
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        async def request_one(base_url: str) -> tuple[str, httpx.Response | None]:
+            try:
+                return base_url, await client.request(method, f"{base_url}{path}", headers=request_headers, **kwargs)
+            except httpx.RequestError:
+                return base_url, None
+        tasks = [asyncio.create_task(request_one(base_url)) for base_url in urls]
+        try:
+            for completed in asyncio.as_completed(tasks):
+                base_url, response = await completed
+                if response is not None:
+                    responses.append((base_url, response))
+        finally:
+            for task in tasks:
+                if not task.done():
+                    task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+    return responses
+
+async def _best_ingestor_health_status(broker_id: str, *, timeout: float = 2) -> dict:
+    fallback: dict = {}
+    for _, response in await _all_ingestor_responses("GET", "/health", timeout=timeout, params={"broker_id": broker_id}):
+        if response.status_code >= 300:
+            continue
+        try:
+            payload = _normalize_ingestor_status(response.json())
+        except Exception:
+            continue
+        if payload and _looks_like_useful_health_status(payload, broker_id):
+            return payload
+        if not fallback and payload:
+            fallback = payload
+    return fallback
+
+async def _best_ingestor_status_for_broker(broker_id: str, *, timeout: float = 2) -> dict:
+    broker_id = str(broker_id or "").strip()
+    if not broker_id:
+        return {}
+    merged, _, _ = await _merged_ingestor_list(timeout=timeout)
+    status = merged.get(broker_id, {})
+    if status and _looks_like_useful_health_status(status, broker_id):
+        return status
+    status = await _best_ingestor_health_status(broker_id, timeout=timeout)
+    if status and _looks_like_useful_health_status(status, broker_id):
+        return status
+    cached_status, seen_at = _broker_live_statuses.get(broker_id, ({}, 0.0))
+    if cached_status and time.time() - seen_at <= 45:
+        return cached_status
+    return status or {}
+
+async def _merged_ingestor_list(timeout: float = 2) -> tuple[dict[str, dict], bool, str]:
+    merged: dict[str, dict] = {}
+    ingestor_reachable = False
+    ingestor_error = ""
+    for _, response in await _all_ingestor_responses("GET", "/list", timeout=timeout):
+        if response.status_code >= 300:
+            if not ingestor_error:
+                ingestor_error = _ingestor_failure_message(response)
+            continue
+        ingestor_reachable = True
+        try:
+            statuses = response.json()
+        except ValueError:
+            if not ingestor_error:
+                ingestor_error = "WhatsApp service returned an invalid status response."
+            continue
+        if not isinstance(statuses, list):
+            continue
+        for raw_status in statuses:
+            status = _normalize_ingestor_status(raw_status)
+            broker_id = str(status.get("broker_id") or "").strip()
+            if not broker_id:
+                continue
+            current = merged.get(broker_id)
+            if current is None or _status_preference_score(status) >= _status_preference_score(current):
+                merged[broker_id] = status
+    return merged, ingestor_reachable, ingestor_error
+
+def _ingestor_failure_message(response: httpx.Response | None) -> str:
+    if response is None:
+        return "WhatsApp service is unavailable. Try again in a moment."
+    if response.status_code == 401:
+        return "WhatsApp service authentication failed. PROPAI_INTERNAL_TOKEN must match on the API and ingestor services."
+    if response.status_code == 503:
+        return "WhatsApp service authentication is not configured on the ingestor."
+    if response.status_code == 409:
+        return "This phone session is active on another ingestor instance. Redeploy the ingestor once, then retry."
+    try:
+        payload = response.json()
+        detail = str(payload.get("error") or payload.get("detail") or "").strip()
+    except (ValueError, AttributeError):
+        detail = ""
+    return detail or f"WhatsApp service returned HTTP {response.status_code}."
+
+# ── WABA helpers ───────────────────────────────────────────────────
+
+class WabaSendRequest(BaseModel):
+    to: str
+    text: str
+    remote_jid: str = ""
+
+def _mobile_digits(value: str = "") -> str:
+    digits = re.sub(r"\D+", "", value or "")
+    if len(digits) > 10 and digits.startswith("91"):
+        return digits[-10:]
+    return digits
+
+def _is_propai_shared_waba(value: str = "") -> bool:
+    return _mobile_digits(value) == _mobile_digits(PROPAI_SHARED_WABA_NUMBER)
+
+def _json_list(value: str | None) -> list[str]:
+    if not value:
+        return []
+    try:
+        raw = _json.loads(value)
+        if isinstance(raw, list):
+            return [str(item) for item in raw if item]
+    except Exception:
+        return []
+    return []
+
+def _business_api_member(row) -> dict:
+    data = dict(row)
+    data["assigned_markets"] = _json_list(data.get("assigned_markets"))
+    data["active"] = bool(data.get("active"))
+    data["role_label"] = COMPANION_ROLES.get(data.get("role"), {}).get("label", data.get("role"))
+    return data
+
+def _count_table(table: str) -> int:
+    try:
+        return storage.db.execute(f"SELECT COUNT(*) AS c FROM {table}").fetchone()["c"]
+    except Exception:
+        return 0
+
+def _table_exists(table: str) -> bool:
+    try:
+        row = storage.db.execute("SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = ?", (table,)).fetchone()
+        return row is not None
+    except Exception:
+        return False
+
+def _today_count(table: str, column: str = "created_at", where: str = "1=1") -> int:
+    try:
+        return storage.db.execute(f"SELECT COUNT(*) AS c FROM {table} WHERE DATE({column}) = DATE('now') AND {where}").fetchone()["c"]
+    except Exception:
+        return 0
+
+def _business_api_get_config_value(key: str, env_key: str = "") -> str:
+    try:
+        row = storage.db.execute("SELECT value FROM business_api_config WHERE key = ?", (key,)).fetchone()
+        if row and row["value"]:
+            return row["value"]
+    except Exception:
+        pass
+    return os.getenv(env_key or key, "")
+
+def _business_api_set_config_value(key: str, value: str):
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    storage.db.execute("""INSERT INTO business_api_config (key, value, updated_at) VALUES (?,?,?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at""", (key, value, now))
+    storage.db.commit()
+
+def _mask_secret(value: str = "") -> str:
+    if not value:
+        return ""
+    if len(value) <= 8:
+        return "••••"
+    return f"{value[:4]}••••{value[-4:]}"
+
+def _market_sync_ready(details: dict) -> bool:
+    captured = details.get("messages_captured")
+    try:
+        if captured is not None and int(captured) > 0:
+            return True
+    except Exception:
+        pass
+    return _count_table("raw_messages") > 0
+
+def _send_url() -> str:
+    url = os.getenv("PROPAI_SEND_URL", "")
+    if url:
+        return url.rstrip("/")
+    try:
+        status_file = os.getenv("STATUS_FILE", "")
+        if status_file and os.path.exists(status_file):
+            with open(status_file) as f:
+                status = _json.load(f)
+            port = status.get("send_port", 3001)
+            return f"http://127.0.0.1:{port}"
+    except Exception:
+        pass
+    return "http://127.0.0.1:3001"
+
+async def _notify_broker_of_lead(broker_phone: str, text: str) -> dict:
+    digits = "".join(ch for ch in broker_phone if ch.isdigit())
+    if not digits:
+        return {"ok": False, "error": "Invalid broker phone"}
+    if len(digits) == 10:
+        digits = "91" + digits
+    elif len(digits) == 11 and digits.startswith("0"):
+        digits = "91" + digits[1:]
+    elif not digits.startswith("91"):
+        digits = "91" + digits[-10:]
+    remote_jid = f"{digits}@s.whatsapp.net"
+    payload = {"remoteJid": remote_jid, "text": text}
+    url = os.getenv("INGESTOR_INTERNAL_URL", "").rstrip("/")
+    if not url:
+        url = _send_url()
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.post(f"{url}/send-message", json=payload, headers=_ingestor_auth_headers())
+            if resp.status_code < 300:
+                return {"ok": True, "status_code": resp.status_code}
+            return {"ok": False, "error": f"HTTP {resp.status_code}: {resp.text}"}
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
+
+# ── WABA webhook / session / messaging ────────────────────────────
+_BUSINESS_API_PERSISTABLE_TYPES: frozenset[str] = frozenset({"text", "image", "video", "audio", "document", "sticker", "location", "contacts"})
+
+def _platform_waba_values() -> dict:
+    return {"whatsapp_business_number": (_business_api_get_config_value("whatsapp_business_number", "WABA_PHONE_NUMBER") or _business_api_get_config_value("whatsapp_business_number", "WABA_BUSINESS_NUMBER")),
+        "phone_number_id": _business_api_get_config_value("phone_number_id", "WABA_PHONE_NUMBER_ID"),
+        "access_token": _business_api_get_config_value("access_token", "WABA_ACCESS_TOKEN"),
+        "verify_token": _business_api_get_config_value("verify_token", "WABA_VERIFY_TOKEN")}
+
+def _waba_callback_url(org_id: str | None = None) -> str:
+    base = os.getenv("PUBLIC_API_URL", "https://api.propai.live").rstrip("/")
+    path = "/api/whatsapp/cloud/webhook"
+    return f"{base}{path}/{org_id}" if org_id else f"{base}{path}"
+
+async def _workspace_waba_values(org_id: str) -> dict:
+    getter = getattr(storage, "get_org_waba_connection", None)
+    if not getter:
+        return {}
+    try:
+        return await asyncio.to_thread(getter, org_id) or {}
+    except Exception as exc:
+        print(f"[waba-config] workspace lookup failed org={org_id}: {exc}", flush=True)
+        return {}
+
+async def _business_api_config_for(user: dict, tenant_id: str | None) -> dict:
+    is_super_admin = await asyncio.to_thread(storage.is_super_admin, user["id"])
+    if is_super_admin:
+        values = _platform_waba_values()
+        number = values["whatsapp_business_number"]
+        configured = bool(number and values["phone_number_id"] and values["access_token"])
+        return {"is_super_admin": True, "can_manage_platform": True, "whatsapp_business_number": number,
+            "shared_waba_number": PROPAI_SHARED_WABA_NUMBER, "waba_owner": "propai" if number else "none",
+            "outbound_allowed": configured, "phone_number_id": values["phone_number_id"],
+            "has_access_token": bool(values["access_token"]), "access_token_preview": _mask_secret(values["access_token"]),
+            "has_verify_token": bool(values["verify_token"]), "verify_token_preview": _mask_secret(values["verify_token"]),
+            "webhook_callback_url": _waba_callback_url()}
+    org_id = _resolve_active_organization_id(user, tenant_id)
+    values = await _workspace_waba_values(org_id)
+    number = str(values.get("whatsapp_business_number") or "")
+    configured = bool(values.get("is_active", True) and number and values.get("phone_number_id") and values.get("access_token"))
+    return {"is_super_admin": False, "can_manage_platform": False, "whatsapp_business_number": number,
+        "shared_waba_number": PROPAI_SHARED_WABA_NUMBER, "waba_owner": "broker" if number else "none",
+        "outbound_allowed": configured, "phone_number_id": str(values.get("phone_number_id") or ""),
+        "has_access_token": bool(values.get("access_token")), "access_token_preview": "",
+        "has_verify_token": bool(values.get("verify_token")), "verify_token_preview": "",
+        "webhook_callback_url": _waba_callback_url(org_id)}
+
+async def _download_waba_media(media_id: str, access_token: str = "") -> dict | None:
+    access_token = access_token or _business_api_get_config_value("access_token", "WABA_ACCESS_TOKEN")
+    if not access_token:
+        return None
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.get(f"https://graph.facebook.com/v21.0/{media_id}", params={"access_token": access_token})
+            if resp.status_code != 200:
+                return None
+            media_info = resp.json(); url = media_info.get("url"); mime_type = media_info.get("mime_type", "image/jpeg")
+            if not url:
+                return None
+            file_resp = await client.get(url, params={"access_token": access_token})
+            if file_resp.status_code != 200:
+                return None
+            ext = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp"}.get(mime_type, ".jpg")
+            filename = f"{media_id}{ext}"; filepath = str(MEDIA_DIR / filename)
+            MEDIA_DIR.mkdir(parents=True, exist_ok=True)
+            Path(filepath).write_bytes(file_resp.content)
+            return {"filename": filename, "filepath": filepath, "mime_type": mime_type}
+    except Exception:
+        return None
+
+async def _resolve_waba_webhook_config(body: dict, org_id: str | None = None) -> tuple[dict, str | None]:
+    phone_number_id = ""; sender_phone = ""
+    for entry in body.get("entry", []) if isinstance(body, dict) else []:
+        for change in entry.get("changes", []):
+            value = change.get("value") or {}
+            metadata = value.get("metadata") or {}
+            phone_number_id = str(metadata.get("phone_number_id") or "").strip()
+            messages = value.get("messages") or []
+            if messages and not sender_phone:
+                sender_phone = re.sub(r"\D+", "", str(messages[0].get("from") or ""))
+            if phone_number_id:
+                break
+    if org_id:
+        values = await _workspace_waba_values(org_id)
+        if not values or str(values.get("phone_number_id") or "") != phone_number_id:
+            raise HTTPException(403, "Webhook phone number does not belong to this workspace")
+        return values, org_id
+    getter = getattr(storage, "get_org_waba_connection_by_phone_number_id", None)
+    if getter and phone_number_id:
+        try:
+            values = await asyncio.to_thread(getter, phone_number_id)
+            if values:
+                return values, str(values.get("organization_id") or "") or None
+        except Exception as exc:
+            print(f"[waba-webhook] workspace resolve failed: {exc}", flush=True)
+    if sender_phone:
+        try:
+            connection = await asyncio.to_thread(storage.get_active_org_whatsapp_connection_by_phone, sender_phone)
+            if connection and connection.get("organization_id"):
+                return _platform_waba_values(), str(connection["organization_id"])
+        except Exception as exc:
+            print(f"[waba-webhook] QR connection workspace resolve failed: {exc}", flush=True)
+        try:
+            profile = await asyncio.to_thread(storage.get_user_profile, sender_phone, "")
+            auth_user_id = str((profile or {}).get("auth_user_id") or "")
+            if auth_user_id:
+                orgs = await asyncio.to_thread(storage.get_user_organizations, auth_user_id)
+                active = next((row for row in orgs if row.get("id")), None)
+                if active:
+                    return _platform_waba_values(), str(active["id"])
+        except Exception as exc:
+            print(f"[waba-webhook] shared sender workspace resolve failed: {exc}", flush=True)
+    return _platform_waba_values(), None
+
+async def _process_business_api_webhook(body: dict, org_id: str | None = None, resolved_config: dict | None = None):
+    waba_config, resolved_tenant_id = (resolved_config, org_id) if resolved_config is not None else await _resolve_waba_webhook_config(body, org_id)
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    processed = []
+    if not resolved_tenant_id:
+        print("[waba-webhook] WARN: no tenant resolved — skipping message batch", flush=True)
+        return {"status": "skipped", "reason": "unresolved_tenant"}
+    for entry in body.get("entry", []):
+        for change in entry.get("changes", []):
+            value = change.get("value", {})
+            for msg in value.get("messages", []):
+                msg_from = msg.get("from", ""); msg_id = msg.get("id", ""); msg_type = msg.get("type", "")
+                caption = ""; pic_token = ""; media_id = ""; stored_inbound = False; sender_name = ""
+                if msg_type not in _BUSINESS_API_PERSISTABLE_TYPES:
+                    print(f"[waba-webhook] skipping non-persistable msg_type={msg_type!r} id={msg_id} from={msg_from}", flush=True)
+                    processed.append({"type": "msg_type_skipped", "msg_type": msg_type, "id": msg_id})
+                    continue
+                try:
+                    _waba_session_update(msg_from, direction="inbound")
+                except Exception:
+                    pass
+                if msg_type == "image":
+                    img = msg.get("image", {}); media_id = img.get("id", ""); caption = img.get("caption", "") or ""
+                elif msg_type == "text":
+                    caption = msg.get("text", {}).get("body", "")
+                if caption:
+                    m = PIC_TOKEN_RE.search(caption)
+                    if m:
+                        pic_token = m.group(0); listing_id = int(m.group(1))
+                        listing_data = storage.get_listing_by_pic_token(pic_token)
+                        if listing_data:
+                            if msg_type == "image" and media_id:
+                                dl = await _download_waba_media(media_id, str(waba_config.get("access_token") or ""))
+                                if dl:
+                                    contact = (value.get("contacts") or [{}])[0]
+                                    sender_name = contact.get("profile", {}).get("name", "") if contact else ""
+                                    photo_id = storage.save_listing_photo(listing_id=listing_id, pic_token=pic_token, media_id=media_id, filename=dl["filename"], filepath=dl["filepath"], mime_type=dl["mime_type"], caption=caption, sender_phone=msg_from, sender_name=sender_name)
+                                    processed.append({"type": "listing_photo_saved", "listing_id": listing_id, "photo_id": photo_id})
+                                else:
+                                    processed.append({"type": "media_download_failed", "listing_id": listing_id, "media_id": media_id})
+                            elif msg_type == "text":
+                                processed.append({"type": "pic_token_received_no_image", "listing_id": listing_id, "pic_token": pic_token, "from": msg_from})
+                try:
+                    contact = (value.get("contacts") or [{}])[0]
+                    sender_name = contact.get("profile", {}).get("name", "") if contact else ""
+                    now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+                    digits = msg_from.replace("+","").replace(" ","").replace("-","").strip()
+                    if digits.startswith("0"):
+                        digits = digits[1:]
+                    sender_jid = f"{digits}@s.whatsapp.net"
+                    inserted = storage.db.execute(
+                        """INSERT INTO raw_messages (tenant_id, group_name, sender, sender_jid, sender_phone, message, message_type, source, timestamp, raw_payload, message_uid, synced_at, created_at)
+                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING""",
+                        (resolved_tenant_id, sender_jid, sender_name or msg_from, sender_jid, digits,
+                         caption if caption else (msg.get("image",{}).get("caption","") if msg_type=="image" else f"[{msg_type}]"),
+                         msg_type, "WABA_INBOUND", now_iso, _json.dumps({"waba_message_id": msg_id, "from": msg_from}),
+                         f"waba-in-{msg_id}", now_iso, now_iso)).rowcount
+                    stored_inbound = inserted > 0
+                    if stored_inbound:
+                        processed.append({"type": "message_stored", "from": msg_from, "msg_type": msg_type})
+                    else:
+                        processed.append({"type": "duplicate_message_ignored", "from": msg_from, "msg_type": msg_type})
+                except Exception as exc:
+                    print(f"[waba-webhook] failed to store inbound message: {exc}", flush=True)
+                if stored_inbound and msg_type == "text" and caption.strip():
+                    asyncio.create_task(_handle_waba_agent_reply(to=msg_from, text=caption.strip(), inbound_message_id=msg_id, sender_name=sender_name or msg_from, waba_config=waba_config, tenant_id=resolved_tenant_id))
+        for status in value.get("statuses", []):
+            status_id = status.get("id",""); status_status = status.get("status",""); status_timestamp = status.get("timestamp","")
+            if status_id and status_status:
+                try:
+                    storage.db.execute("""UPDATE raw_messages SET delivery_status = ?, delivery_updated_at = ? WHERE message_uid = ? OR message_uid LIKE ?""", (status_status, now, status_id, f"%{status_id}%"))
+                    processed.append({"type": "delivery_status", "message_id": status_id, "status": status_status})
+                except Exception as exc:
+                    print(f"[waba-webhook] failed to update delivery status: {exc}", flush=True)
+    storage.db.execute("""INSERT INTO business_api_audit_log (action, target_type, target_id, status, details, created_at) VALUES (?,?,?,?,?,?)""",
+        ("waba_webhook_received", "business_api_webhook", "meta", "logged", _json.dumps({"object": body.get("object"), "entries": len(body.get("entry",[])) if isinstance(body.get("entry"),list) else 0, "messages_processed": len(processed), "processed": processed}), now))
+    return {"status": "received", "processed": processed}
+
+def _waba_session_update(chat_id: str, direction: str = "inbound"):
+    now = datetime.now(timezone.utc)
+    try:
+        existing = storage.db.execute("SELECT chat_id, last_user_at FROM waba_sessions WHERE chat_id = ?", (chat_id,)).fetchone()
+        if direction == "inbound":
+            if existing:
+                storage.db.execute("UPDATE waba_sessions SET last_user_at = ?, session_active = true, updated_at = ? WHERE chat_id = ?", (now.isoformat(), now.isoformat(), chat_id))
+            else:
+                storage.db.execute("INSERT INTO waba_sessions (chat_id, last_user_at, session_active, created_at, updated_at) VALUES (?, ?, true, ?, ?)", (chat_id, now.isoformat(), now.isoformat(), now.isoformat()))
+        elif direction == "outbound":
+            if existing:
+                storage.db.execute("UPDATE waba_sessions SET updated_at = ? WHERE chat_id = ?", (now.isoformat(), chat_id))
+            else:
+                storage.db.execute("INSERT INTO waba_sessions (chat_id, last_user_at, session_active, created_at, updated_at) VALUES (?, ?, true, ?, ?)", (chat_id, now.isoformat(), now.isoformat(), now.isoformat()))
+    except Exception as exc:
+        print(f"[waba-session] failed to update session for {chat_id}: {exc}", flush=True)
+
+def _waba_session_status(chat_id: str) -> dict:
+    try:
+        row = storage.db.execute("SELECT last_user_at, session_active FROM waba_sessions WHERE chat_id = ?", (chat_id,)).fetchone()
+        if not row:
+            return {"active": False, "remaining_seconds": 0, "last_user_at": None, "expired": True}
+        last_user_at_str = row["last_user_at"]
+        if isinstance(last_user_at_str, str):
+            last_user_at = datetime.fromisoformat(last_user_at_str.replace("Z", "+00:00"))
+        else:
+            last_user_at = last_user_at_str
+        now = datetime.now(timezone.utc)
+        elapsed = (now - last_user_at).total_seconds()
+        remaining = max(0, 86400 - elapsed)
+        active = remaining > 0
+        if not active and row["session_active"]:
+            try:
+                storage.db.execute("UPDATE waba_sessions SET session_active = false WHERE chat_id = ?", (chat_id,))
+            except Exception:
+                pass
+        return {"active": active, "remaining_seconds": int(remaining), "last_user_at": last_user_at_str, "expired": not active}
+    except Exception as exc:
+        print(f"[waba-session] failed to check session for {chat_id}: {exc}", flush=True)
+        return {"active": False, "remaining_seconds": 0, "last_user_at": None, "expired": True}
+
+async def _waba_send_message(to: str, text: str, msg_type: str = "text", waba_config: dict | None = None) -> dict:
+    values = waba_config or _platform_waba_values()
+    phone_number_id = str(values.get("phone_number_id") or ""); access_token = str(values.get("access_token") or "")
+    if not phone_number_id or not access_token:
+        return {"success": False, "error": "WABA not configured (phone_number_id or access_token missing)"}
+    digits = to.replace("+","").replace(" ","").replace("-","").strip()
+    if digits.startswith("0"):
+        digits = digits[1:]
+    if not digits.isdigit() or len(digits) < 10:
+        return {"success": False, "error": f"Invalid phone number: {to}"}
+    url = f"https://graph.facebook.com/v21.0/{phone_number_id}/messages"
+    headers = {"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"}
+    body = {"messaging_product": "whatsapp", "to": digits, "type": msg_type}
+    if msg_type == "text":
+        body["text"] = {"body": text}
+    elif msg_type == "template":
+        body["template"] = text
+    else:
+        body["text"] = {"body": text}
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.post(url, json=body, headers=headers)
+        data = resp.json() if resp.text else {}
+        if resp.status_code == 200 and data.get("messages"):
+            msg_id = data["messages"][0].get("id","")
+            return {"success": True, "message_id": msg_id, "to": digits}
+        error_msg = data.get("error",{}).get("message", resp.text[:500])
+        return {"success": False, "error": error_msg, "status_code": resp.status_code, "response": data}
+    except Exception as exc:
+        return {"success": False, "error": str(exc)}
+
+async def _handle_waba_agent_reply(to: str, text: str, inbound_message_id: str, sender_name: str = "", waba_config: dict | None = None, tenant_id: str | None = None) -> None:
+    if not tenant_id:
+        raise RuntimeError("WABA agent reply requires a tenant_id")
+    try:
+        previous_tenant = get_tenant_id()
+        set_tenant_id(tenant_id)
+        response = await _run_workspace_agent([{"role": "user", "content": text[:1800]}], session_id=f"waba:{tenant_id}:{to}", tenant_id=tenant_id)
+        if isinstance(response, dict) and response.get("error"):
+            raise RuntimeError(response.get("message") or response["error"])
+        reply = _workspace_response_to_whatsapp(response).strip()
+        if not reply:
+            raise RuntimeError("agent returned an empty reply")
+        result = await _waba_send_message(to, reply, waba_config=waba_config)
+        if not result.get("success"):
+            raise RuntimeError(result.get("error") or "WABA send failed")
+        now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        digits = re.sub(r"\D+", "", to); sender_jid = f"{digits}@s.whatsapp.net"
+        storage.db.execute(
+            """INSERT INTO raw_messages (tenant_id, group_name, sender, sender_jid, sender_phone, message, message_type, source, timestamp, raw_payload, message_uid, delivery_status, synced_at, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (tenant_id, sender_jid, "PropAI Agent", sender_jid, digits, reply, "text", "WABA_OUTBOUND", now_iso,
+             _json.dumps({"waba_message_id": result.get("message_id",""), "reply_to": inbound_message_id, "sender_name": sender_name}),
+             f"waba-{result.get('message_id') or uuid.uuid4()}", "sent", now_iso, now_iso))
+        try:
+            _waba_session_update(f"{digits}@s.whatsapp.net", direction="outbound")
+        except Exception:
+            pass
+    except Exception as exc:
+        print(f"[waba-agent] reply failed inbound_message_id={inbound_message_id}: {exc}", flush=True)
+    finally:
+        if 'previous_tenant' in locals():
+            set_tenant_id(previous_tenant)
+
+async def _check_listing_alerts(listing_data: dict, raw_message_id: int = 0):
+    try:
+        intent = (listing_data.get("intent") or "").upper()
+        if not intent or intent not in ("SELL", "RENT", "RENTAL_SEEKER", "BUY", "BUYER"):
+            return
+        if intent in ("SELL", "RENT"):
+            listing_type = "SELL" if intent == "SELL" else "RENT"
+            requirement_intents = ("BUY", "BUYER") if listing_type == "SELL" else ("RENTAL_SEEKER",)
+        else:
+            return
+        requirements = storage.db.execute("SELECT * FROM client_requirements WHERE is_primary = true").fetchall()
+        if not requirements:
+            return
+        matches_sent = 0
+        for req in requirements:
+            req_intent = (req.get("intent") or "").upper()
+            if req_intent not in requirement_intents:
+                continue
+            req_bhk = (req.get("bhk") or "").strip().upper()
+            listing_bhk = (listing_data.get("bhk") or "").strip().upper()
+            if req_bhk and listing_bhk and req_bhk != listing_bhk:
+                continue
+            req_market = (req.get("micro_market") or "").strip().lower()
+            listing_market = (listing_data.get("micro_market") or listing_data.get("area") or "").strip().lower()
+            if req_market and listing_market and req_market not in listing_market and listing_market not in req_market:
+                continue
+            req_building = (req.get("building_name") or "").strip().lower()
+            listing_building = (listing_data.get("building_name") or "").strip().lower()
+            if req_building and listing_building and req_building not in listing_building and listing_building not in req_building:
+                continue
+            req_price_min = req.get("price_min"); req_price_max = req.get("price_max")
+            listing_price = listing_data.get("price")
+            if listing_price and float(listing_price) > 0:
+                if req_price_max and float(req_price_max) > 0 and float(listing_price) > float(req_price_max):
+                    continue
+                if req_price_min and float(req_price_min) > 0 and float(listing_price) < float(req_price_min):
+                    continue
+            client_id = req.get("client_id")
+            if not client_id:
+                continue
+            broker_phone = None
+            try:
+                assignment = storage.db.execute("SELECT tm.phone FROM chat_assignments ca JOIN team_members tm ON ca.team_member_id = tm.id WHERE ca.client_id = $1 AND tm.is_active = true LIMIT 1", (client_id,)).fetchone()
+                if assignment:
+                    broker_phone = assignment["phone"]
+            except Exception:
+                pass
+            if not broker_phone:
+                continue
+            price_str = ""
+            if listing_price and float(listing_price) > 0:
+                price_str = f"\n💰 Price: ₹{float(listing_price):,.0f}"
+            bhk_str = f"🏠 {listing_bhk}" if listing_bhk else ""
+            area_str = listing_data.get("area") or listing_data.get("micro_market") or ""
+            building_str = listing_data.get("building_name") or ""
+            location_parts = [p for p in [building_str, area_str] if p]
+            location_str = " · ".join(location_parts) if location_parts else ""
+            alert_text = f"🔔 *New Listing Match!*\n\n{bhk_str}{' · ' + location_str if location_str else ''}{price_str}\n\n*{intent.title()}* — match for your requirement"
+            if req.get("notes"):
+                alert_text += f"\n📝 {req['notes'][:100]}"
+            try:
+                result = await _waba_send_message(broker_phone, alert_text)
+                if result.get("success"):
+                    matches_sent += 1
+                    print(f"[waba-alert] sent match alert to {broker_phone} for requirement {req['id']}", flush=True)
+                else:
+                    print(f"[waba-alert] failed to send to {broker_phone}: {result.get('error', '')}", flush=True)
+            except Exception as exc:
+                print(f"[waba-alert] error sending to {broker_phone}: {exc}", flush=True)
+        if matches_sent > 0:
+            print(f"[waba-alert] sent {matches_sent} alerts for listing (raw_message_id={raw_message_id})", flush=True)
+    except Exception as exc:
+        print(f"[waba-alert] error in _check_listing_alerts: {exc}", flush=True)
+
+# ── Workspace agent response pipeline ──────────────────────────────
+_KNOWN_MARKETS = ["Bandra East","Bandra West","Bandra","Andheri East","Andheri West","Andheri","Santacruz East","Santacruz West","Santacruz","Juhu","Khar West","Khar","BKC","Lower Parel","Worli","Sion","Goregaon East","Goregaon West","Goregaon","Lokhandwala","Malad East","Malad West","Malad","Powai","Chembur","Dadar","Prabhadevi","Pali Hill","Kalina"]
+_NEARBY_MARKETS = {"Bandra East": ["BKC","Kalina","Santacruz East","Khar West","Bandra West","Santacruz West"],"Bandra West": ["Khar West","Pali Hill","Santacruz West","Bandra East","Juhu","BKC"],"Bandra": ["Bandra West","Bandra East","Khar West","BKC","Santacruz West"],"BKC": ["Bandra East","Kalina","Santacruz East","Khar West","Bandra West"],"Khar West": ["Bandra West","Santacruz West","Pali Hill","Juhu","Bandra East"],"Khar": ["Khar West","Bandra West","Santacruz West","Pali Hill","Juhu"],"Santacruz East": ["Kalina","BKC","Bandra East","Santacruz West","Andheri East"],"Santacruz West": ["Khar West","Juhu","Bandra West","Santacruz East","Andheri West"],"Santacruz": ["Santacruz West","Santacruz East","Khar West","Juhu","Kalina"],"Andheri West": ["Juhu","Lokhandwala","Goregaon West","Santacruz West","Andheri East"],"Andheri East": ["Kalina","Santacruz East","Powai","Andheri West","Goregaon East"],"Andheri": ["Andheri West","Andheri East","Juhu","Lokhandwala","Goregaon East"],"Juhu": ["Santacruz West","Khar West","Andheri West","Bandra West","Lokhandwala"],"Goregaon West": ["Lokhandwala","Andheri West","Malad West","Goregaon East"],"Goregaon East": ["Andheri East","Powai","Goregaon West","Malad East"],"Goregaon": ["Goregaon West","Goregaon East","Andheri West","Malad West"],"Malad West": ["Goregaon West","Malad East","Lokhandwala"],"Malad East": ["Goregaon East","Malad West","Powai"],"Malad": ["Malad West","Malad East","Goregaon West"]}
+_LISTING_SEARCH_BLOCKERS = re.compile(r"\b(broker|brokers|sender|senders|group|groups|duplicate|duplicates|trend|trends|market action|audit|remember|memory)\b", re.IGNORECASE)
+_LISTING_SEARCH_SIGNAL = re.compile(r"\b(\d+(?:\.\d+)?\s*bhk|studio|rent|rental|rentals|lease|sale|sales|sell|buy|purchase|available|availability|flat|apartment|property|listing|listings)\b", re.IGNORECASE)
+_INTENT_SEARCH_VERBS = re.compile(r"\b(show|find|search|list|latest|top|give|fetch|look\s+up|do\s+we\s+have|any|available|availability)\b", re.IGNORECASE)
+_INTENT_SAVE_VERBS = re.compile(r"\b(save|add|store|note|remember)\b", re.IGNORECASE)
+_INTENT_NOTE_VERBS = re.compile(r"\b(note|notes|summari[sz]e|remember|log|record)\b", re.IGNORECASE)
+_INTENT_CORRECTION_VERBS = re.compile(r"\b(correct|correction|update|change|mistake|wrong|actually|remove|delete)\b", re.IGNORECASE)
+_INTENT_REQUIREMENT_NOUNS = re.compile(r"\b(requirement|requirements|buyer|buyers|client|clients|tenant|tenants|demand|against|matches?)\b", re.IGNORECASE)
+_INTENT_LISTING_NOUNS = re.compile(r"\b(listing|listings|property|properties|flat|apartment|rentals?|sale|sell|buy|purchase|available|availability)\b", re.IGNORECASE)
+
+def _user_message_texts(messages: list[dict]) -> list[str]:
+    return [str(m.get("content") or "").strip() for m in messages if m.get("role") == "user" and str(m.get("content") or "").strip()]
+
+def _looks_like_property_terms(text: str) -> bool:
+    lowered = text.lower()
+    return bool(re.search(r"\b\d+(?:\.\d+)?\s*bhk\b|\bstudio\b", lowered)
+                or any(re.search(rf"\b{re.escape(m.lower())}\b", lowered) for m in _KNOWN_MARKETS)
+                or re.search(r"\b(?:₹|rs\.?\s*)?\d+(?:\.\d+)?\s*(?:cr|crore|crores|l|lac|lakh|lakhs|k)\b", lowered))
+
+def _classify_workspace_intent(messages: list[dict]) -> dict:
+    user_messages = _user_message_texts(messages)
+    if not user_messages:
+        return {"intent": "UNKNOWN", "reason": "no_user_message"}
+    latest = user_messages[-1]; latest_lower = latest.lower()
+    combined_with_previous = f"{user_messages[-2]} {latest}" if len(user_messages) > 1 else latest
+    has_save = bool(_INTENT_SAVE_VERBS.search(latest_lower))
+    has_requirement_noun = bool(_INTENT_REQUIREMENT_NOUNS.search(latest_lower))
+    if has_save and (has_requirement_noun or re.search(r"\b(it|this|that)\b", latest_lower)):
+        return {"intent": "SAVE_REQUIREMENT", "reason": "explicit_save_requirement"}
+    has_note = bool(_INTENT_NOTE_VERBS.search(latest_lower))
+    has_correction = bool(_INTENT_CORRECTION_VERBS.search(latest_lower))
+    mentions_client_target = bool(re.search(r"\b(?:for|about|on)\s+[a-z][a-z .'-]{1,50}", latest_lower))
+    if has_correction and (has_note or mentions_client_target):
+        return {"intent": "UPDATE_CLIENT_NOTE", "reason": "client_note_correction"}
+    if has_note and (mentions_client_target or len(user_messages) > 1):
+        return {"intent": "SAVE_CLIENT_NOTE", "reason": "client_note"}
+    if _extract_database_coverage_query(messages):
+        return {"intent": "DATABASE_COVERAGE", "reason": "database_coverage"}
+    if re.search(r"\b(nearby|similar|adjacent|around|other)\s+(market|markets|localit|areas?)\b", latest_lower):
+        return {"intent": "NEARBY_MARKETS", "reason": "nearby_market_terms"}
+    has_search = bool(_INTENT_SEARCH_VERBS.search(latest_lower))
+    if has_search and re.search(r"\b(broker|brokers|agent|agents|dealer|dealers|who deals|who works)\b", latest_lower):
+        return {"intent": "SEARCH_BROKERS", "reason": "broker_search"}
+    if has_search and bool(_INTENT_REQUIREMENT_NOUNS.search(latest_lower)):
+        return {"intent": "SEARCH_REQUIREMENTS", "reason": "requirement_search"}
+    if has_search and (_INTENT_LISTING_NOUNS.search(latest_lower) or _looks_like_property_terms(combined_with_previous)):
+        return {"intent": "SEARCH_LISTINGS", "reason": "listing_search"}
+    return {"intent": "UNKNOWN", "reason": "no_explicit_action"}
+
+def _extract_simple_listing_query(messages: list[dict]) -> dict | None:
+    user_messages = _user_message_texts(messages)
+    if not user_messages:
+        return None
+    text = user_messages[-1]; lowered = text.lower()
+    top_match = re.search(r"\b(?:top|best|show|give|need|want)?\s*(\d{1,2})\s*(?:of\s+)?(?:them|these|those|results|listings|properties)?\b", lowered)
+    followup_limit = int(top_match.group(1)) if top_match else 0
+    is_contextual_listing_followup = bool(followup_limit and re.search(r"\b(them|these|those|results|listings|properties|top|best)\b", lowered))
+    if is_contextual_listing_followup and len(user_messages) > 1:
+        for previous in reversed(user_messages[:-1]):
+            previous_args = _extract_simple_listing_query([{"role": "user", "content": previous}])
+            if previous_args:
+                previous_args = dict(previous_args); previous_args["limit"] = max(1, min(followup_limit, 10))
+                previous_args["followup"] = True; return previous_args
+    if len(text) > 180 or _LISTING_SEARCH_BLOCKERS.search(text) or not _LISTING_SEARCH_SIGNAL.search(text):
+        return None
+    requested_limit_match = re.search(r"\b(?:top|latest|show|give)\s+(\d{1,2})\b", lowered)
+    requested_limit = int(requested_limit_match.group(1)) if requested_limit_match else 5
+    args: dict = {"limit": max(1, min(requested_limit, 10)), "sort_by": "last_seen", "group_by_building": True}
+    bhk_match = re.search(r"\b(\d+(?:\.\d+)?)\s*bhk\b", lowered)
+    if bhk_match:
+        args["bhk"] = bhk_match.group(1)
+    elif re.search(r"\bstudio\b", lowered):
+        args["bhk"] = "STUDIO"
+    if re.search(r"\b(rent|rental|rentals|lease|available|availability)\b", lowered):
+        args["intent"] = "RENT"
+    elif re.search(r"\b(sale|sales|sell|buy|purchase)\b", lowered):
+        args["intent"] = "SELL"
+    for market in _KNOWN_MARKETS:
+        if re.search(rf"\b{re.escape(market.lower())}\b", lowered):
+            args["micro_market"] = market; break
+    if "micro_market" not in args:
+        loc_match = re.search(r"\b(?:in|at|near|around)\s+([a-z][a-z\s]{2,40}?)(?:\s+(?:under|below|above|over|with|for|rent|sale|buy|available)\b|[?.!,]|$)", lowered)
+        if loc_match:
+            locality = " ".join(part.capitalize() for part in loc_match.group(1).split())
+            if locality:
+                args["micro_market"] = locality
+    price_match = re.search(r"\b(?:under|below|upto|up to|max)\s*(?:₹|rs\.?\s*)?(\d+(?:\.\d+)?)\s*(cr|crore|crores|l|lac|lakh|lakhs|k)?\b", lowered)
+    if price_match:
+        amount = float(price_match.group(1)); unit = (price_match.group(2) or "").lower()
+        if unit in {"cr","crore","crores"}:
+            amount *= 1_00_00_000
+        elif unit in {"l","lac","lakh","lakhs"}:
+            amount *= 1_00_000
+        elif unit == "k":
+            amount *= 1_000
+        args["price_max"] = amount
+    if not any(key in args for key in ("bhk", "intent", "micro_market", "building", "price_max")):
+        return None
+    return args
+
+def _extract_nearby_market_query(messages: list[dict]) -> dict | None:
+    user_messages = _user_message_texts(messages)
+    if not user_messages:
+        return None
+    latest = user_messages[-1].lower()
+    if not re.search(r"\b(nearby|similar|adjacent|around|other)\s+(market|markets|localit|areas?)\b", latest):
+        return None
+    for previous in reversed(user_messages[:-1]):
+        args = _extract_simple_listing_query([{"role": "user", "content": previous}])
+        if args and args.get("micro_market"):
+            args = dict(args); args["origin_market"] = args.pop("micro_market"); return args
+    for market in _KNOWN_MARKETS:
+        if re.search(rf"\b{re.escape(market.lower())}\b", latest):
+            return {"origin_market": market, "limit": 10, "sort_by": "last_seen", "group_by_building": True}
+    return {"limit": 10, "sort_by": "last_seen", "group_by_building": True}
+
+def _extract_simple_broker_query(messages: list[dict]) -> dict | None:
+    user_messages = _user_message_texts(messages)
+    if not user_messages:
+        return None
+    text = user_messages[-1]; lowered = text.lower()
+    if not re.search(r"\b(broker|brokers|agent|agents|dealer|dealers|who deals|who works)\b", lowered):
+        return None
+    args: dict = {"limit": 8}
+    for market in _KNOWN_MARKETS:
+        if re.search(rf"\b{re.escape(market.lower())}\b", lowered):
+            args["micro_market"] = market; break
+    if "micro_market" not in args:
+        loc_match = re.search(r"\b(?:in|at|near|around|for)\s+([a-z][a-z\s]{2,40}?)(?:\s+(?:with|who|top|active|broker|brokers|agent|agents)\b|[?.!,]|$)", lowered)
+        if loc_match:
+            locality = " ".join(part.capitalize() for part in loc_match.group(1).split())
+            if locality:
+                args["micro_market"] = locality
+    return args
+
+def _extract_requirement_match_query(messages: list[dict]) -> dict | None:
+    user_messages = _user_message_texts(messages)
+    if not user_messages:
+        return None
+    latest = user_messages[-1].lower()
+    if not re.search(r"\b(requirement|requirements|buyer|buyers|client|clients|demand|against|match|matches)\b", latest):
+        return None
+    args = _extract_simple_listing_query([{"role": "user", "content": user_messages[-1]}])
+    if not args and len(user_messages) > 1:
+        for previous in reversed(user_messages[:-1]):
+            args = _extract_simple_listing_query([{"role": "user", "content": previous}])
+            if args:
+                break
+    if not args:
+        return None
+    args = dict(args); args["limit"] = max(1, min(int(args.get("limit") or 5), 10))
+    return args
+
+def _extract_save_requirement_query(messages: list[dict]) -> dict | None:
+    user_messages = _user_message_texts(messages)
+    if not user_messages:
+        return None
+    latest = user_messages[-1]; latest_lower = latest.lower()
+    if not re.search(r"\b(save|add|store|note|remember)\b.*\b(requirement|requirements|client|buyer|tenant)\b|\b(requirement|requirements)\b.*\b(save|add|store|note|remember)\b", latest_lower):
+        return None
+    source_text = latest
+    if len(user_messages) > 1 and re.search(r"\b(it|this|that)\b", latest_lower):
+        source_text = user_messages[-2]
+    details = source_text.strip()
+    if not details:
+        return None
+    combined = f"{details} {latest}" if source_text != latest else details
+    lowered = combined.lower()
+    args: dict = {"source_text": details, "notes": details}
+    client_match = re.search(r"\bclient\s+([A-Z][A-Za-z.'-]*(?:\s+[A-Z][A-Za-z.'-]*){0,4})", details, flags=re.IGNORECASE)
+    if client_match:
+        name = client_match.group(1).strip()
+        name = re.split(r"\s+(?:looking|needs?|wants?|seeking|requirement)\b", name, maxsplit=1, flags=re.IGNORECASE)[0].strip()
+        if name:
+            args["client_name"] = " ".join(part.capitalize() for part in name.split())
+    if "client_name" not in args:
+        args["client_name"] = "WhatsApp Client"
+    if re.search(r"\b(rent|rental|lease|tenant|per\s+month|lock\s*in|lock-in)\b", lowered):
+        args["intent"] = "RENT"
+    else:
+        args["intent"] = "BUY"
+    bhks = re.findall(r"\b(\d+(?:\.\d+)?)\s*bhk\b", lowered, flags=re.IGNORECASE)
+    if bhks:
+        unique_bhks = []
+        for bhk in bhks:
+            label = f"{bhk:g} BHK" if isinstance(bhk, float) else f"{bhk} BHK"
+            if label not in unique_bhks:
+                unique_bhks.append(label)
+        args["bhk"] = "/".join(unique_bhks[:3])
+    for market in _KNOWN_MARKETS:
+        if re.search(rf"\b{re.escape(market.lower())}\b", lowered):
+            args["micro_market"] = market; break
+    furnishing_parts = []
+    if re.search(r"\bfully\s+furnished\b", lowered):
+        furnishing_parts.append("Fully Furnished")
+    if re.search(r"\bsemi\s+furnished\b", lowered):
+        furnishing_parts.append("Semi Furnished")
+    if furnishing_parts:
+        args["furnishing"] = "/".join(furnishing_parts)
+    budget_match = re.search(r"\bbudget\s*(?:is|of|around|approx(?:imately)?|:)?\s*(?:₹|rs\.?\s*)?(\d+(?:\.\d+)?)\s*(?:-|to|–|—)\s*(\d+(?:\.\d+)?)\s*(cr|crore|crores|l|lac|lakh|lakhs|k)?\b", lowered)
+    if not budget_match:
+        budget_match = re.search(r"\b(?:under|below|upto|up to|max|budget)\s*(?:₹|rs\.?\s*)?(\d+(?:\.\d+)?)\s*(cr|crore|crores|l|lac|lakh|lakhs|k)?\b", lowered)
+    def amount_to_rupees(value: str, unit: str | None) -> float:
+        amount = float(value); unit = (unit or "").lower()
+        if unit in {"cr","crore","crores"}:
+            return amount * 1_00_00_000
+        if unit in {"l","lac","lakh","lakhs"}:
+            return amount * 1_00_000
+        if unit == "k":
+            return amount * 1_000
+        return amount
+    if budget_match:
+        if len(budget_match.groups()) == 3:
+            unit = budget_match.group(3)
+            args["price_min"] = amount_to_rupees(budget_match.group(1), unit)
+            args["price_max"] = amount_to_rupees(budget_match.group(2), unit)
+        else:
+            args["price_max"] = amount_to_rupees(budget_match.group(1), budget_match.group(2))
+    lock_in = re.search(r"\b(\d+(?:\.\d+)?)\s*months?\s+lock\s*in\b|\block\s*in\s*(?:of\s*)?(\d+(?:\.\d+)?)\s*months?\b", lowered)
+    if lock_in:
+        months = lock_in.group(1) or lock_in.group(2)
+        args["notes"] = f"{details}\nLock-in: {months} months"
+    if not any(args.get(key) for key in ("bhk", "micro_market", "price_max", "furnishing")):
+        return None
+    return args
+
+def _format_requirement_budget(args: dict) -> str:
+    price_min = args.get("price_min"); price_max = args.get("price_max")
+    def fmt(value):
+        try:
+            amount = float(value)
+        except (TypeError, ValueError):
+            return ""
+        if amount >= 1_00_00_000:
+            return f"₹{amount / 1_00_00_000:g} Cr"
+        if amount >= 1_00_000:
+            return f"₹{amount / 1_00_000:g} L"
+        return f"₹{amount:,.0f}"
+    if price_min and price_max:
+        return f"{fmt(price_min)}-{fmt(price_max)}"
+    if price_max:
+        return f"up to {fmt(price_max)}"
+    return ""
+
+def _save_requirement_response(args: dict) -> dict:
+    from routers.clients import _get_client_store
+    store = _get_client_store()
+    client_name = str(args.get("client_name") or "WhatsApp Client").strip()
+    resolved = store.resolve_client(client_name) if hasattr(store, "resolve_client") else None
+    client_id = resolved.get("id") if resolved else None
+    if client_id:
+        client_name = resolved.get("name") or client_name
+    else:
+        client_id = store.create_client(client_name, notes="Created from WhatsApp self-chat requirement.")
+    requirement_id = store.add_client_requirement(int(client_id), str(args.get("intent") or "BUY").upper(),
+        bhk=args.get("bhk"), price_min=args.get("price_min"), price_max=args.get("price_max"),
+        micro_market=args.get("micro_market"), furnishing=args.get("furnishing"),
+        notes=args.get("notes") or args.get("source_text") or "")
+    details = " · ".join(part for part in [str(args.get("intent") or "").upper(), str(args.get("bhk") or "").strip(),
+        str(args.get("micro_market") or "").strip(), _format_requirement_budget(args),
+        str(args.get("furnishing") or "").strip()] if part)
+    return {"content": f"Saved requirement for {client_name}." + (f" {details}." if details else ""),
+        "blocks": [{"type": "summary", "title": "Requirement Saved", "body": f"Client #{client_id}, requirement #{requirement_id}."}],
+        "sources": ["clients", "client_requirements"], "status_steps": ["Parsed save request", "Saved client", "Saved requirement"],
+        "trace": {"route": "deterministic_save_requirement", "args": args, "client_id": client_id, "requirement_id": requirement_id}}
+
+def _extract_client_target_and_note(text: str) -> tuple[str, str]:
+    clean = (text or "").strip()
+    patterns = [r"\b(?:for|about|on)\s+([A-Za-z][A-Za-z .'-]{1,50}?)(?:\s*[:,-]\s*|\s+that\s+|\s+is\s+|\s+was\s+)(.+)$",
+               r"\b([A-Za-z][A-Za-z .'-]{1,50}?)\s+(?:note|notes)\s*[:,-]\s*(.+)$",
+               r"\b(?:note|notes|remember|record|log)\s+([A-Za-z][A-Za-z .'-]{1,50}?)(?:\s*[:,-]\s*|\s+that\s+)(.+)$"]
+    for pattern in patterns:
+        match = re.search(pattern, clean, flags=re.IGNORECASE | re.DOTALL)
+        if match:
+            client = re.sub(r"\b(note|notes|correction|update|client)\b", "", match.group(1), flags=re.IGNORECASE)
+            client = re.sub(r"\s+", " ", client).strip(" .,:;-")
+            note = match.group(2).strip()
+            if client and note:
+                return client, note
+    target_only = re.search(r"\b(?:for|about|on)\s+([A-Za-z][A-Za-z .'-]{1,50})\b", clean, flags=re.IGNORECASE)
+    if target_only:
+        client = re.sub(r"\b(note|notes|correction|update|client)\b", "", target_only.group(1), flags=re.IGNORECASE)
+        client = re.sub(r"\s+", " ", client).strip(" .,:;-")
+        return client, ""
+    return "", clean
+
+def _extract_client_note_query(messages: list[dict], correction: bool = False) -> dict | None:
+    user_messages = _user_message_texts(messages)
+    if not user_messages:
+        return None
+    latest = user_messages[-1]
+    client_name, note_body = _extract_client_target_and_note(latest)
+    if not note_body and len(user_messages) > 1:
+        note_body = user_messages[-2].strip()
+    if not client_name:
+        return None
+    remove_latest = bool(re.search(r"\b(remove|delete)\b.*\b(last|latest|previous)\b.*\b(note|notes)\b", latest, re.IGNORECASE))
+    replace_latest = bool(re.search(r"\b(replace|overwrite)\b.*\b(last|latest|previous)\b.*\b(note|notes)\b", latest, re.IGNORECASE))
+    note_body = re.sub(r"^\s*(note|notes|correction|update|remember|record|log)\s*[:,-]?\s*", "", note_body, flags=re.IGNORECASE).strip()
+    if not note_body and not remove_latest:
+        return None
+    return {"client_name": " ".join(part.capitalize() for part in client_name.split()), "body": note_body,
+        "source_text": latest, "note_type": "correction" if correction else "note", "remove_latest": remove_latest, "replace_latest": replace_latest}
+
+def _client_note_response(args: dict) -> dict:
+    from routers.clients import _get_client_store
+    store = _get_client_store()
+    client_query = str(args.get("client_name") or "").strip()
+    resolved = store.resolve_client(client_query) if hasattr(store, "resolve_client") else None
+    if resolved:
+        client_id = int(resolved["id"]); client_name = resolved.get("name") or client_query; match_method = resolved.get("match_method", "exact")
+    else:
+        client_name = client_query; client_id = store.create_client(client_name, notes="Created from WhatsApp self-chat notes."); match_method = "created"
+    if hasattr(store, "add_client_alias"):
+        store.add_client_alias(client_id, client_query, source="whatsapp_note", confidence=0.9)
+    if args.get("remove_latest"):
+        latest_note = store.get_latest_client_note(client_id) if hasattr(store, "get_latest_client_note") else None
+        if not latest_note:
+            return {"content": f"No active notes found for {client_name}.", "blocks": [], "sources": ["client_notes"], "trace": {"route": "deterministic_client_note_remove", "client_id": client_id}}
+        store.update_client_note(int(latest_note["id"]), latest_note["body"], is_active=0)
+        return {"content": f"Removed latest active note for {client_name}.", "blocks": [{"type": "summary", "title": "Note Removed", "body": f"Note #{latest_note['id']} marked inactive."}], "sources": ["client_notes"], "trace": {"route": "deterministic_client_note_remove", "client_id": client_id, "note_id": latest_note["id"]}}
+    supersedes_note_id = None
+    if args.get("replace_latest") and hasattr(store, "get_latest_client_note"):
+        latest_note = store.get_latest_client_note(client_id)
+        supersedes_note_id = int(latest_note["id"]) if latest_note else None
+    note_id = store.add_client_note(client_id, str(args.get("body") or ""), note_type=str(args.get("note_type") or "note"),
+        source_text=str(args.get("source_text") or ""), confidence=0.95 if args.get("note_type") == "correction" else 0.9, supersedes_note_id=supersedes_note_id)
+    action = "Updated notes" if args.get("note_type") == "correction" else "Saved note"
+    return {"content": f"{action} for {client_name}.", "blocks": [{"type": "summary", "title": "Client Note", "body": f"Client #{client_id}, note #{note_id}. Match: {match_method}."}],
+        "sources": ["clients", "client_aliases", "client_notes"], "status_steps": ["Resolved client", "Saved client note"],
+        "trace": {"route": "deterministic_client_note", "client_id": client_id, "note_id": note_id, "args": args}}
+
+def _extract_database_coverage_query(messages: list[dict]) -> bool:
+    user_messages = [str(m.get("content") or "").strip() for m in messages if m.get("role") == "user" and str(m.get("content") or "").strip()]
+    if not user_messages:
+        return False
+    lowered = user_messages[-1].lower()
+    return bool(re.search(r"\b(data|database|db|access|source|sources|coverage|what can you access)\b", lowered) and ("propai" in lowered or "database" in lowered or "db" in lowered))
+
+def _greeting_text(name: str | None = None) -> str:
+    hour = datetime.now().hour
+    display = f" {name}" if name else ""
+    if hour < 12:
+        return f"Morning{display}! What's on your mind?"
+    if hour < 17:
+        return f"Hey{display}, how's it going?"
+    return f"Hey{display}, what are we working on?"
+
+def _casual_small_talk_responses() -> list[str]:
+    return ["Doing great! What can I help you find?", "All good here! What are you looking for?",
+        "Busy as always, but ready to help. What do you need?", "Can't complain! What's up?", "Smooth sailing. How can I assist?"]
+
+def _get_casual_response(messages: list[dict]) -> dict | None:
+    import random
+    latest = ""
+    for message in reversed(messages):
+        if message.get("role") == "user":
+            latest = str(message.get("content") or "").strip(); break
+    if not latest:
+        return None
+    lowered = latest.lower().strip(".!?,;")
+    name = None
+    identity_match = re.search(r"\bi'?m?\s+(.+?)(?:\.|\?|,|$)", latest, re.IGNORECASE)
+    if identity_match:
+        candidate = identity_match.group(1).strip()
+        if candidate.lower() not in {"good","just","not","fine","ok","alright","ready","done","here"}:
+            name = candidate
+    greeting_pattern = re.compile(r"^(hi|hey|hello|howdy|yo|sup|hey there|hello there|hiya|heyy|heyyy)( .+)?[.!]*$", re.IGNORECASE)
+    time_greeting_pattern = re.compile(r"^(good\s+)?(morning|afternoon|evening)(\s+(dude|boss|bro|sir|ma'am|vishal|propai|team))?[.!]*$", re.IGNORECASE)
+    if greeting_pattern.match(lowered) or time_greeting_pattern.match(lowered.strip()):
+        return {"content": _greeting_text(name), "blocks": [{"type": "greeting", "body": _greeting_text(name)}], "sources": [], "trace": {"route": "casual"}}
+    how_are_you_pattern = re.compile(r"^(how (are|'re|was|'s) (you|things|it going|everything|your day)|(what('s| is) up|how's it hanging|how do you do|how are you doing)|(you (good|ok|alright)\??))[.!?]*$", re.IGNORECASE)
+    if how_are_you_pattern.match(lowered):
+        reply = random.choice(_casual_small_talk_responses())
+        return {"content": reply, "blocks": [{"type": "greeting", "body": reply}], "sources": [], "trace": {"route": "casual"}}
+    thanks_pattern = re.compile(r"^(thanks|thank you|thanks a lot|thank you so much|thanks much|appreciate it|appreciate that|cheers|ta|thx|ty)[.!]*$", re.IGNORECASE)
+    if thanks_pattern.match(lowered):
+        reply = random.choice(["You're welcome! Anything else?","Happy to help! What's next?","Anytime! Need anything else?","Glad I could help!"])
+        return {"content": reply, "blocks": [{"type": "greeting", "body": reply}], "sources": [], "trace": {"route": "casual"}}
+    goodbye_pattern = re.compile(r"^(bye|goodbye|see you|see ya|see you later|talk later|talk soon|gotta go|got to go|gotta run|cya|later|catch you later|peace out|take care)[.!]*$", re.IGNORECASE)
+    if goodbye_pattern.match(lowered):
+        reply = random.choice(["See you later!","Take care!","Catch you later!","Bye! Hit me up anytime."])
+        return {"content": reply, "blocks": [{"type": "greeting", "body": reply}], "sources": [], "trace": {"route": "casual"}}
+    ack_pattern = re.compile(r"^(ok|okay|alright|sure|got it|understood|cool|nice|great|awesome|good|fine|perfect|roger|done|works|makes sense)[.!]*$", re.IGNORECASE)
+    if ack_pattern.match(lowered):
+        return {"content": "Got it. What's next?", "blocks": [{"type": "greeting", "body": "Got it. What's next?"}], "sources": [], "trace": {"route": "casual"}}
+    identity_intro = re.compile(r"^(who are you|what are you|tell me about yourself|what can you do|how can you help|what do you do)[.!?]*$", re.IGNORECASE)
+    if identity_intro.match(lowered):
+        reply = ("I'm PropAI — your WhatsApp broker assistant. I help you search listings, "
+                 "track requirements, find brokers, and keep an eye on the market. "
+                 "Just ask me anything about properties, brokers, buildings, or markets.")
+        return {"content": reply, "blocks": [{"type": "greeting", "body": reply}], "sources": [], "trace": {"route": "casual"}}
+    if identity_match and not re.search(r"\b(ring a bell|know me|remember me|who am i)\b", lowered):
+        if name and name.lower() not in {"good","just","fine","ok","alright","ready","done","here"}:
+            reply = f"Nice to meet you, {name}! How can I help?"
+            return {"content": reply, "blocks": [{"type": "greeting", "body": reply}], "sources": [], "trace": {"route": "casual_identity"}}
+    return None
+
+def _format_listing_price(item: dict) -> str:
+    price = item.get("price")
+    if price in (None, ""):
+        return ""
+    try:
+        value = float(price)
+    except (TypeError, ValueError):
+        return str(price)
+    unit = str(item.get("price_unit") or "").lower()
+    is_rent = item.get("intent") == "RENT"
+    suffix = "/month" if is_rent else ""
+    if is_rent and unit in {"","none","null","abs"}:
+        if 0 < value < 100:
+            return f"₹{value:g} L/month"
+        if 100 <= value < 1000:
+            return f"₹{value:g} K/month"
+        if 1000 <= value < 10000:
+            return f"₹{value / 1000:g} L/month"
+    if unit in {"lac","lakh","l"}:
+        return f"₹{value:g} L{suffix}"
+    if unit in {"cr","crore"}:
+        return f"₹{value:g} Cr"
+    if unit == "k":
+        return f"₹{value:g} K{suffix}"
+    if value >= 1_00_00_000:
+        return f"₹{value / 1_00_00_000:.2f} Cr"
+    if value >= 1_00_000:
+        return f"₹{value / 1_00_000:.1f} L{suffix}"
+    return f"₹{value:,.0f}{suffix}"
+
+def _is_plausible_listing_result(item: dict, args: dict) -> bool:
+    requested_intent = str(args.get("intent") or "").upper()
+    item_intent = str(item.get("intent") or "").upper()
+    if requested_intent and item_intent and item_intent != requested_intent:
+        return False
+    requested_bhk = str(args.get("bhk") or "").strip().upper()
+    item_bhk = str(item.get("bhk") or "").strip().upper()
+    if requested_bhk and requested_bhk != "STUDIO":
+        compact_requested = requested_bhk.replace(" ", ""); compact_item = item_bhk.replace(" ", "")
+        if compact_item and compact_requested not in compact_item:
+            return False
+    if requested_intent == "RENT":
+        unit = str(item.get("price_unit") or "").strip().lower()
+        try:
+            price = float(item.get("price")) if item.get("price") not in (None, "") else 0
+        except (TypeError, ValueError):
+            price = 0
+        if unit in {"cr","crore","crores"}:
+            return False
+        if unit in {"abs","absolute","rupees","rs","inr",""} and price >= 1_00_00_000:
+            return False
+    return True
+
+def _raw_listing_fallback(args: dict, limit: int = 10) -> tuple[int, list[dict]]:
+    con = getattr(storage, "db", None) if storage is not None else None
+    if con is None:
+        raise RuntimeError("Database is not available")
+    where_clauses = []; params: list[object] = []
+    intent = str(args.get("intent") or "").strip().upper()
+    if intent:
+        where_clauses.append("EXISTS (SELECT 1 FROM parsed_output p WHERE p.raw_message_id = r.id AND p.intent = ?)"); params.append(intent)
+    bhk = str(args.get("bhk") or "").strip()
+    if bhk:
+        bhk_label = bhk if bhk.upper().endswith("BHK") or bhk.upper() == "STUDIO" else f"{bhk} BHK"
+        bhk_compact = bhk_label.replace(" ", "")
+        where_clauses.append("(r.message LIKE ? OR r.message LIKE ?)"); params.extend([f"%{bhk_label}%", f"%{bhk_compact}%"])
+    market = str(args.get("micro_market") or "").strip()
+    if market:
+        like = f"%{market}%"; where_clauses.append("r.message LIKE ?"); params.append(like)
+    building = str(args.get("building") or "").strip()
+    if building:
+        like = f"%{building}%"; where_clauses.append("r.message LIKE ?"); params.append(like)
+    price_max = args.get("price_max")
+    if price_max:
+        where_clauses.append("EXISTS (SELECT 1 FROM parsed_output p WHERE p.raw_message_id = r.id AND p.price IS NOT NULL AND p.price <= ?)"); params.append(float(price_max))
+    where_sql = " AND ".join(where_clauses) if where_clauses else "1=1"
+    try:
+        broad_total = con.execute(f"SELECT COUNT(DISTINCT r.id) FROM raw_messages r WHERE {where_sql}", params).fetchone()[0]
+        rows = con.execute(
+            f"""SELECT r.id AS raw_message_id, r.group_name, r.sender_phone, r.sender, r.timestamp, r.message AS original_message,
+                (SELECT p.intent FROM parsed_output p WHERE p.raw_message_id = r.id AND p.intent IS NOT NULL AND p.intent != '' ORDER BY p.confidence DESC LIMIT 1) AS intent,
+                (SELECT p.broker_name FROM parsed_output p WHERE p.raw_message_id = r.id AND p.broker_name IS NOT NULL AND p.broker_name != '' ORDER BY p.confidence DESC LIMIT 1) AS broker_name,
+                (SELECT p.broker_phone FROM parsed_output p WHERE p.raw_message_id = r.id AND p.broker_phone IS NOT NULL AND p.broker_phone != '' ORDER BY p.confidence DESC LIMIT 1) AS broker_phone
+                FROM raw_messages r WHERE {where_sql} ORDER BY r.timestamp DESC LIMIT ?""",
+            (*params, max(limit * 100, 250))).fetchall()
+        results: list[dict] = []
+        for row in rows:
+            item = dict(row); message = str(item.get("original_message") or "")
+            needle = market or building or bhk
+            if needle:
+                idx = message.lower().find(needle.lower())
+                if idx >= 0:
+                    start = max(0, idx - 180); end = min(len(message), idx + 420)
+                    snippet = message[start:end].strip()
+                else:
+                    snippet = message[:600].strip()
+            else:
+                snippet = message[:600].strip()
+            if bhk:
+                snippet_lower = snippet.lower()
+                if bhk_label.lower() not in snippet_lower and bhk_compact.lower() not in snippet_lower:
+                    continue
+            item["original_message"] = snippet; item["fingerprint"] = f"raw:{item.get('raw_message_id')}"
+            item["bhk"] = bhk_label if bhk else None; item["price"] = None; item["price_unit"] = ""; item["area_sqft"] = None
+            item["furnishing"] = ""; item["building_name"] = None; item["landmark_name"] = None
+            item["micro_market"] = market or ""; item["location_label"] = market or building or ""
+            item["first_seen"] = item.get("timestamp"); item["last_seen"] = item.get("timestamp"); item["observation_count"] = 1
+            item["group_count"] = 1 if item.get("group_name") else 0
+            item["broker_phone"] = item.get("broker_phone") or item.get("sender_phone") or ""
+            item["broker_name"] = item.get("broker_name") or item.get("sender") or ""
+            item["match_reasons"] = [r for r in [f"Raw message mentions {market}" if market else "", f"Raw message mentions {bhk_label}" if bhk else "", item.get("intent") or ""] if r]
+            item["source"] = "parsed_whatsapp_message"
+            results.append(item)
+        return len(results) if rows else int(broad_total or 0), results[:limit]
+    finally:
+        pass
+
+def _listing_search_response(args: dict) -> dict:
+    from lab import ai_chat_engine as chat_engine_mod
+    requested_limit = max(1, min(int(args.get("limit") or 5), 10))
+    tool_args = dict(args); tool_args["limit"] = max(requested_limit * 3, requested_limit)
+    raw = chat_engine_mod.execute_tool("market_search", tool_args, {}, db_path=getattr(storage, "db", None))
+    try:
+        payload = _json.loads(raw)
+    except Exception:
+        return {"content": "I could not search listings right now.", "blocks": [{"type": "error_state", "title": "Listing search failed", "body": str(raw)}], "sources": ["unique_listings"], "status_steps": ["Searching saved properties"]}
+    results = payload.get("results") or []
+    if isinstance(results, list):
+        results = [item for item in results if isinstance(item, dict) and _is_plausible_listing_result(item, args)]
+        results = results[:requested_limit]
+    for item in results:
+        item["price_formatted"] = _format_listing_price(item)
+    bhk_label = f"{args['bhk']} BHK " if args.get("bhk") and str(args.get("bhk")).upper() != "STUDIO" else ""
+    intent_label = "rentals" if args.get("intent") == "RENT" else "sale properties" if args.get("intent") == "SELL" else "properties"
+    market_label = f" in {args['micro_market']}" if args.get("micro_market") else ""
+    query_label = f"{bhk_label}{intent_label}{market_label}".strip()
+    total = int(payload.get("total") or 0)
+    fallback_total = 0; fallback_results = []
+    if not results:
+        fallback_total, fallback_results = _raw_listing_fallback(args)
+        for item in fallback_results:
+            item["price_formatted"] = _format_listing_price(item)
+    if not results and not fallback_results:
+        suggestions = []
+        if args.get("micro_market"):
+            suggestions.append(f"Show all 3 BHK rentals near {args['micro_market']}" if args.get("bhk") else f"Show all rentals near {args['micro_market']}")
+        suggestions.extend(["Search nearby markets", "Show latest rentals", "Show requirements instead"])
+        return {"content": f"No exact matches found for {query_label}.", "blocks": [{"type": "empty_state", "title": "No exact matches", "body": f"PropAI searched saved WhatsApp property records for {query_label}.", "actions": [{"label": option, "value": option} for option in suggestions[:4]]}, {"type": "suggested_questions", "title": "Try next", "items": suggestions[:4]}], "sources": ["unique_listings"], "status_steps": ["Parsed property search","Searched saved properties","Rendered results"], "trace": {"route": "deterministic_listing_search", "args": args}}
+    if not results and fallback_results:
+        shown = len(fallback_results)
+        return {"content": f"Found {fallback_total} raw WhatsApp matches for {query_label}. Showing the latest {shown}.", "blocks": [{"type": "summary","title": "Raw WhatsApp Matches","body": "These matches came from parsed/raw WhatsApp messages because the normalized property record did not have the locality indexed exactly."}, {"type": "listing_cards","title": query_label.title(),"subtitle": f"{fallback_total} raw WhatsApp matches","items": fallback_results,"body": "Sorted by latest captured message"}, {"type": "suggested_questions","title": "Refine","items": [f"Show brokers for {query_label}",f"Show only sale {query_label}",f"Show only rental {query_label}",f"Search nearby Bandra listings"]}], "sources": ["market_feed","raw_messages","parsed_output"], "status_steps": ["Parsed property search","Searched saved properties","Searched raw WhatsApp messages","Rendered results"], "trace": {"route": "deterministic_listing_raw_fallback", "args": args, "total": fallback_total}}
+    shown = len(results); remaining = max(0, total - shown)
+    return {"content": f"Found {total} {query_label}. Showing the latest {shown}." + (f" {remaining} more available." if remaining else ""), "blocks": [{"type": "summary","title": "Result","body": f"Found {total} {query_label}. Showing the latest {shown} saved from WhatsApp." + (f" {remaining} more available." if remaining else "")}, {"type": "listing_cards","title": query_label.title(),"subtitle": f"{total} matching property records","items": results,"body": "Sorted by latest seen"}, {"type": "suggested_questions","title": "Refine","items": [f"{query_label} under 3 L",f"Furnished {query_label}",f"Show brokers for {query_label}",f"Show original messages for {query_label}"]}], "sources": ["unique_listings"], "status_steps": ["Parsed property search","Searched saved properties","Rendered results"], "trace": {"route": "deterministic_listing_search", "args": args, "total": total}}
+
+def _requirement_match_response(args: dict) -> dict:
+    limit = max(1, min(int(args.get("limit") or 5), 10))
+    listing_intent = str(args.get("intent") or "").upper()
+    requirement_intents = ("RENTAL_SEEKER",) if listing_intent == "RENT" else ("BUY", "BUYER")
+    where = ["p.intent IN ({})".format(",".join("?" for _ in requirement_intents))]
+    params: list[object] = list(requirement_intents)
+    bhk = str(args.get("bhk") or "").strip()
+    if bhk:
+        bhk_label = bhk if bhk.upper().endswith("BHK") else f"{bhk} BHK"
+        where.append("(p.bhk LIKE ? OR r.message LIKE ? OR r.message LIKE ?)"); params.extend([f"%{bhk}%", f"%{bhk_label}%", f"%{bhk_label.replace(' ', '')}%"])
+    market = str(args.get("micro_market") or "").strip()
+    if market:
+        like = f"%{market}%"; where.append("(p.micro_market LIKE ? OR p.location_raw LIKE ? OR p.area LIKE ? OR r.message LIKE ?)"); params.extend([like, like, like, like])
+    building = str(args.get("building") or "").strip()
+    if building:
+        like = f"%{building}%"; where.append("(p.building_name LIKE ? OR r.message LIKE ?)"); params.extend([like, like])
+    price = args.get("price"); price_max = args.get("price_max") or price
+    if price_max:
+        try:
+            where.append("(p.price IS NULL OR p.price = 0 OR p.price >= ?)"); params.append(float(price_max))
+        except (TypeError, ValueError):
+            pass
+    where_sql = " AND ".join(where)
+    def run_query(sql_where: str, sql_params: list[object]):
+        count = storage.db.execute(f"SELECT COUNT(*) FROM parsed_output p JOIN raw_messages r ON r.id = p.raw_message_id WHERE {sql_where}", sql_params).fetchone()[0]
+        result_rows = storage.db.execute(
+            f"""SELECT p.id, p.intent, p.bhk, p.price, p.price_unit, p.area_sqft, p.furnishing, p.building_name,
+                p.micro_market, p.location_raw, p.broker_name, p.broker_phone, p.confidence, r.message, r.group_name,
+                r.sender, r.sender_phone, r.timestamp FROM parsed_output p JOIN raw_messages r ON r.id = p.raw_message_id
+                WHERE {sql_where} GROUP BY r.id ORDER BY COALESCE(r.timestamp, p.created_at, r.created_at) DESC, p.id DESC LIMIT ?""",
+            (*sql_params, max(limit * 3, limit))).fetchall()
+        return count, result_rows
+    total, rows = run_query(where_sql, params)
+    used_broad_fallback = False
+    if not rows and requirement_intents != ("BUY", "BUYER", "RENTAL_SEEKER"):
+        broad_where = ["p.intent IN ('BUY','BUYER','RENTAL_SEEKER')"] + where[1:]
+        broad_params = params[len(requirement_intents):]
+        total, rows = run_query(" AND ".join(broad_where), broad_params)
+        used_broad_fallback = bool(rows)
+    items = []; seen_keys: set[tuple[str, str, str, str]] = set()
+    for row in rows:
+        item = dict(row)
+        item["price_formatted"] = _format_listing_price(item)
+        item["broker_name"] = item.get("broker_name") or item.get("sender") or ""
+        item["broker_phone"] = _normalize_real_phone(item.get("broker_phone")) or _normalize_real_phone(item.get("sender_phone"))
+        if item["broker_phone"] and str(item["broker_name"]).strip().startswith("+"):
+            item["broker_name"] = "Broker"
+        key = (item.get("broker_phone") or item.get("broker_name") or "", str(item.get("bhk") or ""), str(item.get("price") or ""), str(item.get("micro_market") or item.get("location_raw") or "")[:80])
+        if key in seen_keys:
+            continue
+        seen_keys.add(key)
+        item["match_reasons"] = [r for r in [f"{bhk} BHK" if bhk else "", market if market else "", "Rental seeker" if listing_intent == "RENT" else "Buyer requirement"] if r]
+        item["original_message"] = str(item.get("message") or "")[:500]
+        items.append(item)
+        if len(items) >= limit:
+            break
+    bhk_label = f"{bhk} BHK " if bhk else ""
+    intent_label = "rental requirements" if listing_intent == "RENT" and not used_broad_fallback else "buyer/rental requirements"
+    market_label = f" in {market}" if market else ""
+    query_label = f"{bhk_label}{intent_label}{market_label}".strip()
+    if not items:
+        return {"content": f"No matching requirements found for {query_label}.", "blocks": [{"type": "empty_state","title": "No matching requirements","body": f"PropAI searched latest captured buyer/rental requirements for {query_label}.","actions": [{"label": "Try nearby markets","value": "Search nearby markets"},{"label": "Show latest requirements","value": "Show latest requirements"}]}], "sources": ["parsed_output","raw_messages"], "status_steps": ["Parsed property post","Searched requirements","Rendered latest matches"], "trace": {"route": "deterministic_requirement_match", "args": args, "total": total}}
+    remaining = max(0, int(total or 0) - len(items))
+    return {"content": f"Found {total} matching {intent_label}. Showing latest {len(items)}." + (f" {remaining} more available." if remaining else ""), "blocks": [{"type": "matching_buyers","title": query_label.title(),"subtitle": f"{total} matching requirements, latest first","items": items,"body": "Broker details included for direct follow-up."}, {"type": "suggested_questions","title": "Next","items": ["Show next 5 requirements","Only requirements with phone numbers",f"Search nearby markets for {query_label}","Copy WhatsApp summary"]}], "sources": ["parsed_output","raw_messages"], "status_steps": ["Parsed property post","Searched requirements","Sorted latest first","Rendered broker contacts"], "trace": {"route": "deterministic_requirement_match", "args": args, "total": total}}
+
+def _broker_search_response(args: dict) -> dict:
+    market = str(args.get("micro_market") or "").strip()
+    limit = max(1, min(int(args.get("limit") or 8), 20))
+    params: list[object] = []
+    where = "WHERE broker_name IS NOT NULL AND broker_name != ''"
+    if market:
+        where += " AND (micro_market LIKE ? OR location_raw LIKE ? OR building_name LIKE ?)"; like = f"%{market}%"; params.extend([like, like, like])
+    rows = storage.db.execute(f"""SELECT broker_name, COALESCE(NULLIF(broker_phone,''),'') AS broker_phone, COUNT(*) AS posts,
+        SUM(CASE WHEN intent IN ('SELL','RENT','COMMERCIAL','COMMERCIAL_SALE','COMMERCIAL_RENTAL') THEN 1 ELSE 0 END) AS listings,
+        SUM(CASE WHEN intent IN ('BUY','BUYER','RENTAL_SEEKER') THEN 1 ELSE 0 END) AS requirements,
+        COUNT(DISTINCT micro_market) AS markets, COUNT(DISTINCT r.group_name) AS groups, MAX(r.timestamp) AS last_seen
+        FROM parsed_output p JOIN raw_messages r ON r.id = p.raw_message_id {where}
+        GROUP BY broker_name, broker_phone ORDER BY posts DESC LIMIT ?""", (*params, limit)).fetchall()
+    items = [dict(row) for row in rows]
+    label = f" in {market}" if market else ""
+    if not items:
+        return {"content": f"No broker activity found{label}.", "blocks": [{"type": "empty_state","title": "No brokers found","body": f"PropAI searched captured WhatsApp records for broker activity{label}."}], "sources": ["brokers","market_feed"], "status_steps": ["Searched broker activity"], "trace": {"route": "deterministic_broker_search", "args": args}}
+    return {"content": f"Top {len(items)} brokers{label} by captured WhatsApp activity.", "blocks": [{"type": "broker_cards","title": f"Top Brokers{label}","items": [{"name": item.get("broker_name"),"phone": item.get("broker_phone"),"observations": item.get("posts"),"listings": item.get("listings"),"requirements": item.get("requirements"),"groups": item.get("groups"),"last_seen": item.get("last_seen")} for item in items]}], "sources": ["brokers","market_feed"], "status_steps": ["Searched broker activity","Ranked by post count"], "trace": {"route": "deterministic_broker_search", "args": args}}
+
+def _nearby_markets_response(args: dict) -> dict:
+    from lab import ai_chat_engine as chat_engine_mod
+    origin = str(args.get("origin_market") or "").strip()
+    if not origin:
+        return {"content": "Tell me the starting market and I can search nearby areas.", "blocks": [{"type": "empty_state","title": "Starting market needed","body": "PropAI needs a locality such as Bandra East, BKC, Andheri West, or Santacruz West to search nearby markets.","actions": [{"label": "3 BHK rentals near Bandra East","value": "Show 3 BHK rentals near Bandra East"},{"label": "2 BHK rentals near Andheri West","value": "Show 2 BHK rentals near Andheri West"}]}], "sources": ["unique_listings"], "status_steps": ["Waiting for starting market"], "trace": {"route": "deterministic_nearby_markets", "args": args}}
+    nearby = _NEARBY_MARKETS.get(origin)
+    if not nearby:
+        origin_lower = origin.lower()
+        nearby = [m for m in _KNOWN_MARKETS if m != origin and (origin_lower in m.lower() or m.lower() in origin_lower)]
+    nearby = nearby or [m for m in _KNOWN_MARKETS if m != origin][:6]
+    base_args = {k: v for k, v in args.items() if k in {"intent","bhk","building","price_max","price_min","furnishing"}}
+    base_args.update({"limit": 3, "sort_by": "last_seen", "group_by_building": True})
+    rows = []; cards = []; total = 0
+    for market in nearby[:8]:
+        search_args = dict(base_args); search_args["micro_market"] = market
+        raw = chat_engine_mod.execute_tool("market_search", search_args, {}, db_path=getattr(storage, "db", None))
+        try:
+            payload = _json.loads(raw)
+        except Exception:
+            continue
+        count = int(payload.get("total") or 0); total += count
+        if not count:
+            continue
+        items = payload.get("results") or []
+        brokers = len({item.get("broker_name") for item in items if item.get("broker_name")})
+        buildings = len({item.get("building_name") for item in items if item.get("building_name")})
+        rows.append([market, f"{count:,}", f"{brokers} brokers in latest sample, {buildings} buildings"])
+        for item in items:
+            item["price_formatted"] = item.get("price_formatted") or _format_listing_price(item)
+            item["match_reasons"] = [r for r in [f"Nearby market: {market}", f"{args.get('bhk')} BHK" if args.get('bhk') else "", args.get("intent") or ""] if r]
+            cards.append(item)
+    bhk_label = f"{args['bhk']} BHK " if args.get("bhk") and str(args.get("bhk")).upper() != "STUDIO" else ""
+    intent_label = "rentals" if args.get("intent") == "RENT" else "sale properties" if args.get("intent") == "SELL" else "properties"
+    query_label = f"{bhk_label}{intent_label} near {origin}".strip()
+    if not rows:
+        return {"content": f"No nearby market matches found for {query_label}.", "blocks": [{"type": "empty_state","title": "No nearby matches","body": f"PropAI searched nearby markets for {query_label} in saved WhatsApp property records.","actions": [{"label": "Show latest rentals","value": "Show latest rentals"},{"label": f"Show all rentals near {origin}","value": f"Show all rentals near {origin}"}]}], "sources": ["unique_listings"], "status_steps": ["Found nearby markets","Searched saved properties","Rendered results"], "trace": {"route": "deterministic_nearby_markets", "args": args, "nearby": nearby}}
+    return {"content": f"Found {total:,} {query_label} across nearby markets. Showing the latest {min(len(cards), 10)}.", "blocks": [{"type": "table","title": f"Nearby Markets From {origin}","rows": rows}, {"type": "listing_cards","title": query_label.title(),"subtitle": f"{total:,} matching property records across nearby markets","items": cards[:10],"body": "Sorted by latest seen within each nearby market"}, {"type": "suggested_questions","title": "Refine","items": [f"Show all rentals near {origin}",f"{query_label} under 3 L",f"Show brokers near {origin}","Show requirements instead"]}], "sources": ["unique_listings"], "status_steps": ["Found nearby markets","Searched saved properties","Rendered results"], "trace": {"route": "deterministic_nearby_markets", "args": args, "nearby": nearby}}
+
+def _database_coverage_response() -> dict:
+    from lab import ai_chat_engine as chat_engine_mod
+    sources = chat_engine_mod.load_data()
+    sources.update(chat_engine_mod.load_live_data(getattr(storage, "db", None)))
+    labels = {"portal_listings": "Portal listings","buildings": "Building directory","overview": "Platform overview","brokers": "Broker profiles","unique_listings": "WhatsApp unique properties","market_feed": "Recent WhatsApp posts","building_matches": "Building matches","unresolved_messages": "Unresolved messages","pending_suggestions": "Pending suggestions"}
+    fields = {"portal_listings": "building, locality, BHK, sqft, furnishing, price, source","buildings": "building names and localities used for matching","overview": "message, property, broker, and match counts","brokers": "name, phone, activity, markets, groups, last seen","unique_listings": "intent, BHK, price, building, broker, groups, first/last seen","market_feed": "recent group posts, requirements, listings, brokers, timestamps","building_matches": "matched building/landmark, confidence, status","unresolved_messages": "messages needing parser or human review","pending_suggestions": "AI suggestions waiting for review"}
+    rows = []
+    for key, src in sources.items():
+        df = src.get("df") if isinstance(src, dict) else None
+        rows.append([labels.get(key, key.replace("_"," ").title()), f"{len(df):,}" if df is not None else "0", fields.get(key, src.get("description","") if isinstance(src, dict) else "")])
+    return {"content": f"PropAI has read-only access to {len(rows)} local datasets in this workspace: listings, buildings, brokers, WhatsApp messages, parser review data, and suggestions.", "blocks": [{"type": "table","title": "Search Coverage","rows": rows}, {"type": "suggested_questions","title": "Try asking","items": ["Who are top brokers in Bandra?","Show 3 BHK rentals in Andheri","Which messages need review?","Show recent Chandak Unicorn listings"]}], "sources": list(sources.keys()), "status_steps": ["Loaded local PropAI database coverage","Ready for database queries"], "trace": {"route": "deterministic_database_coverage"}}
+
+# ── Evidence cache ─────────────────────────────────────────────────
+def _load_evidence_cache():
+    try:
+        from evidence.resolver import _load_registry, _load_landmarks, CACHE
+        _load_registry(); _load_landmarks()
+        return CACHE
+    except Exception:
+        return {}
+
+# ── Audit helpers ──────────────────────────────────────────────────
+def _audit_row_value(row, key_or_idx, default=None):
+    if row is None:
+        return default
+    keys = key_or_idx if isinstance(key_or_idx, (tuple, list)) else (key_or_idx,)
+    for key in keys:
+        try:
+            return row[key]
+        except Exception:
+            continue
+    return default
+
+def _audit_scalar(sql: str, params=(), default=0):
+    try:
+        row = storage.db.execute(sql, params).fetchone()
+        if row is None:
+            return default
+        value = row[0]
+        return default if value is None else value
+    except Exception as exc:
+        print(f"[audit] scalar failed: {exc} :: {sql[:120]}", flush=True)
+        return default
+
+def _audit_rows(sql: str, params=()):
+    try:
+        return storage.db.execute(sql, params).fetchall()
+    except Exception as exc:
+        print(f"[audit] rows failed: {exc} :: {sql[:120]}", flush=True)
+        return []
+
+def _audit_count(table: str) -> int:
+    return _count_table(table) if _table_exists(table) else 0
+
+def _audit_timestamp(value) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return str(value)
+
+def _audit_group_display_name(jid: str) -> str:
+    value = str(jid or "").strip()
+    if not value:
+        return "Unknown group"
+    if "@" not in value:
+        return value[:80]
+    if value.endswith("@g.us"):
+        raw = value.split("@", 1)[0]
+        suffix = raw[-4:] if len(raw) >= 4 else raw
+        return f"WhatsApp Group {suffix}" if suffix else "WhatsApp Group"
+    return "Unknown group"
+
+_AUDIT_BUILDING_LABEL_PATTERN = r'^[[:space:]*_`🏢]*(?:building|bldg(?:[[:space:]]+name)?|project(?:[[:space:]]+name)?)[[:space:]*_`]*[:=-]+[[:space:]*_`"]*([^\n\r]+)'
+
+_AUDIT_BUILDING_PLACEHOLDERS = {"brand new","brand new building","building","call","details on request","new","new building","on call","please call","preferably new","well maintained"}
+
+def _clean_audit_building_name(value: str | None) -> str | None:
+    name = re.sub(r"\s+", " ", str(value or "")).strip()
+    name = re.sub(r"^[\s:;,\-–—*_`\"'“”‘’]+", "", name)
+    name = re.sub(r"[\s:;,*_`\"'“”‘’]+$", "", name).strip()
+    if not 3 <= len(name) <= 80 or not re.search(r"[A-Za-z]", name):
+        return None
+    comparison = re.sub(r"[^a-z0-9]+", " ", name.casefold()).strip()
+    if comparison in _AUDIT_BUILDING_PLACEHOLDERS:
+        return None
+    if re.search(r"\b(?:available|bhk|budget|call|carpet|details?|floor|furnished|lease|maintained|parking|photo|possession|preferably|rent|request|sale|sqft|video)\b", comparison):
+        return None
+    if re.fullmatch(r"[a-z0-9]+ wing", comparison):
+        return None
+    return name
+
+def _audit_buildings_for_group(tenant_id: str, jid: str, group_name: str, limit: int = 20) -> list[dict]:
+    rows = _audit_rows("""
+        SELECT building_match[1] AS building_name, COUNT(*) AS occurrences
+        FROM raw_messages r CROSS JOIN LATERAL regexp_matches(COALESCE(r.message, ''), ?, 'gim') AS building_match
+        WHERE r.tenant_id = ? AND (r.group_name = ? OR r.group_name = ?)
+        GROUP BY building_match[1] ORDER BY occurrences DESC LIMIT 500""",
+        (_AUDIT_BUILDING_LABEL_PATTERN, tenant_id, jid, group_name))
+    aggregated: dict[str, dict] = {}
+    for row in rows:
+        name = _clean_audit_building_name(_audit_row_value(row, ("building_name", 0), ""))
+        if not name:
+            continue
+        key = re.sub(r"[^a-z0-9]+", " ", name.casefold()).strip()
+        occurrences = int(_audit_row_value(row, ("occurrences", 1), 0) or 0)
+        current = aggregated.setdefault(key, {"building_name": name, "occurrences": 0})
+        current["occurrences"] += occurrences
+    return sorted(aggregated.values(), key=lambda item: (-item["occurrences"], item["building_name"].casefold()))[:limit]

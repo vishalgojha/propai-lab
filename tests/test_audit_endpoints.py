@@ -5,6 +5,7 @@ import httpx
 import pytest
 
 import app
+import routers.common as _common
 from routers import audit as audit_mod
 from routers import whatsapp_sync as ws_mod
 
@@ -41,6 +42,7 @@ def test_capture_health_uses_one_tenant_scoped_query(monkeypatch):
             }])
 
     monkeypatch.setattr(audit_mod, "storage", SimpleNamespace(db=Database()))
+    monkeypatch.setattr(_common, "storage", SimpleNamespace(db=Database()))
     result = audit_mod.audit_capture_health(user={"id": "user"}, tenant_id="tenant")
 
     assert len(calls) == 1
@@ -70,6 +72,7 @@ def test_capture_health_caps_parser_ready(monkeypatch):
             }])
 
     monkeypatch.setattr(audit_mod, "storage", SimpleNamespace(db=Database()))
+    monkeypatch.setattr(_common, "storage", SimpleNamespace(db=Database()))
     result = audit_mod.audit_capture_health(user={"id": "user"}, tenant_id="tenant")
 
     assert result["parser_success_rate"] == 100.0
@@ -97,7 +100,7 @@ def test_duplicate_audit_reads_current_tenant_messages(monkeypatch):
 def test_audit_timestamp_normalizes_datetime_values():
     from datetime import datetime, timezone
 
-    assert app._audit_timestamp(datetime(2026, 7, 17, 4, 30, tzinfo=timezone.utc)) == "2026-07-17T04:30:00Z"
+    assert audit_mod._audit_timestamp(datetime(2026, 7, 17, 4, 30, tzinfo=timezone.utc)) == "2026-07-17T04:30:00Z"
 
 
 def test_audit_group_display_name_does_not_query_storage(monkeypatch):
@@ -105,10 +108,11 @@ def test_audit_group_display_name_does_not_query_storage(monkeypatch):
         def execute(self, *_args, **_kwargs):
             raise AssertionError("display formatting must not query the database")
 
-    monkeypatch.setattr(app, "storage", SimpleNamespace(db=Database()))
+    monkeypatch.setattr(audit_mod, "storage", SimpleNamespace(db=Database()))
+    monkeypatch.setattr(_common, "storage", SimpleNamespace(db=Database()))
 
-    assert app._audit_group_display_name("Bandra Brokers") == "Bandra Brokers"
-    assert app._audit_group_display_name("120363123456789@g.us") == "WhatsApp Group 6789"
+    assert audit_mod._audit_group_display_name("Bandra Brokers") == "Bandra Brokers"
+    assert audit_mod._audit_group_display_name("120363123456789@g.us") == "WhatsApp Group 6789"
 
 
 def test_audit_insights_is_tenant_scoped(monkeypatch):
@@ -119,11 +123,11 @@ def test_audit_insights_is_tenant_scoped(monkeypatch):
         row_calls.append((sql, params))
         return next(result_sets)
 
-    monkeypatch.setattr(app, "_table_exists", lambda table: True)
-    monkeypatch.setattr(app, "_audit_count", lambda table: 0)
-    monkeypatch.setattr(app, "_audit_rows", rows)
+    monkeypatch.setattr(audit_mod, "_table_exists", lambda table: True)
+    monkeypatch.setattr(audit_mod, "_audit_count", lambda table: 0)
+    monkeypatch.setattr(audit_mod, "_audit_rows", rows)
 
-    result = app.audit_insights(user={"id": "user"}, tenant_id="tenant-a")
+    result = audit_mod.audit_insights(user={"id": "user"}, tenant_id="tenant-a")
 
     assert len(row_calls) == 4
     assert all("tenant_id = ?" in sql.lower() for sql, _ in row_calls)
@@ -176,12 +180,12 @@ def test_audit_groups_uses_named_columns_from_supabase_json_rows(monkeypatch):
 
 
 def test_audit_building_names_reject_parser_style_false_positives():
-    assert app._clean_audit_building_name(" *BRIGHT LAND` ") == "BRIGHT LAND"
-    assert app._clean_audit_building_name(": Shadaab Tower*") == "Shadaab Tower"
-    assert app._clean_audit_building_name("Floor: Call") is None
-    assert app._clean_audit_building_name("Photo Available") is None
-    assert app._clean_audit_building_name("Well-Maintained") is None
-    assert app._clean_audit_building_name("388") is None
+    assert audit_mod._clean_audit_building_name(" *BRIGHT LAND` ") == "BRIGHT LAND"
+    assert audit_mod._clean_audit_building_name(": Shadaab Tower*") == "Shadaab Tower"
+    assert audit_mod._clean_audit_building_name("Floor: Call") is None
+    assert audit_mod._clean_audit_building_name("Photo Available") is None
+    assert audit_mod._clean_audit_building_name("Well-Maintained") is None
+    assert audit_mod._clean_audit_building_name("388") is None
 
 
 def test_audit_buildings_use_explicit_tenant_scoped_mentions(monkeypatch):
@@ -196,9 +200,9 @@ def test_audit_buildings_use_explicit_tenant_scoped_mentions(monkeypatch):
             {"building_name": ": Shadaab Tower*", "occurrences": 2},
         ]
 
-    monkeypatch.setattr(app, "_audit_rows", rows)
+    monkeypatch.setattr(audit_mod, "_audit_rows", rows)
 
-    result = app._audit_buildings_for_group(
+    result = audit_mod._audit_buildings_for_group(
         "tenant-a", "group-jid", "Royal Realtors"
     )
 

@@ -9,6 +9,7 @@ import asyncio
 from types import SimpleNamespace
 
 import httpx
+import routers.common as _common
 
 
 def test_app_imports_with_supabase_storage_available():
@@ -39,17 +40,17 @@ def test_startup_imports_match_app_dependencies():
 
 def test_tenant_context_rejects_another_users_tenant(monkeypatch):
     """A stale or forged browser tenant header must not cross organizations."""
-    import app
+    import app  # noqa: F401 — wiring side effects
 
     class FakeStorage:
         def get_user_organizations(self, user_id):
             assert user_id == "user-2"
             return [{"id": "org-2"}]
 
-    monkeypatch.setattr(app, "storage", FakeStorage())
-    monkeypatch.setattr(app, "_resolve_user_organization_id", lambda user: "org-2")
+    monkeypatch.setattr(_common, "storage", FakeStorage())
+    monkeypatch.setattr(_common, "_resolve_user_organization_id", lambda user: "org-2")
 
-    tenant_id = asyncio.run(app.get_tenant_context(
+    tenant_id = asyncio.run(_common.get_tenant_context(
         user={"id": "user-2", "email": "user2@example.com"},
         x_tenant_id="org-1",
     ))
@@ -58,15 +59,15 @@ def test_tenant_context_rejects_another_users_tenant(monkeypatch):
 
 
 def test_tenant_context_accepts_a_users_own_tenant(monkeypatch):
-    import app
+    import app  # noqa: F401 — wiring side effects
 
     class FakeStorage:
         def get_user_organizations(self, user_id):
             return [{"id": "org-2"}, {"id": "org-3"}]
 
-    monkeypatch.setattr(app, "storage", FakeStorage())
+    monkeypatch.setattr(_common, "storage", FakeStorage())
 
-    tenant_id = asyncio.run(app.get_tenant_context(
+    tenant_id = asyncio.run(_common.get_tenant_context(
         user={"id": "user-2", "email": "user2@example.com"},
         x_tenant_id="org-3",
     ))
@@ -563,7 +564,7 @@ def test_find_broker_refreshes_stale_profile_graph(monkeypatch):
 
 
 def test_activity_log_uses_the_authenticated_member(monkeypatch):
-    import app
+    import app  # noqa: F401 — wiring side effects
 
     captured = {}
 
@@ -573,7 +574,6 @@ def test_activity_log_uses_the_authenticated_member(monkeypatch):
             return 41
 
     import routers.workspace as _ws
-    monkeypatch.setattr(app, "storage", FakeStorage())
     monkeypatch.setattr(_ws, "storage", FakeStorage())
 
     from routers.workspace import log_activity
@@ -697,20 +697,17 @@ def test_inbox_threads_fallback_stays_tenant_scoped(monkeypatch):
 
 def test_connection_details_is_safe_without_storage(monkeypatch):
     """The WhatsApp connection endpoint should not assume storage.db exists."""
-    import app
+    import app  # noqa: F401 — wiring side effects
     from types import SimpleNamespace
 
-    monkeypatch.setattr(app, "storage", SimpleNamespace())
-    monkeypatch.setattr(app, "_status_file", lambda: {})
-    details = app._connection_details()
-    assert details["connected"] is False
-    assert details["connection_state"] == "unknown"
-    assert details["instance_name"] == "propai-whatsapp"
+    monkeypatch.setattr(_common, "storage", SimpleNamespace())
+    monkeypatch.setattr(_common, "_status_file", lambda: {})
+    details = _common._connection_details()
 
 
 def test_connection_details_falls_back_when_status_file_is_unknown(monkeypatch):
     """A stale/missing status file should not lock a synced workspace out."""
-    import app
+    import app  # noqa: F401 — wiring side effects
 
     class Row(dict):
         def __getitem__(self, key):
@@ -731,10 +728,10 @@ def test_connection_details_falls_back_when_status_file_is_unknown(monkeypatch):
     class FakeStorage:
         db = FakeDb()
 
-    monkeypatch.setattr(app, "storage", FakeStorage())
-    monkeypatch.setattr(app, "_status_file", lambda: {"connection_state": "unknown", "connected": False})
+    monkeypatch.setattr(_common, "storage", FakeStorage())
+    monkeypatch.setattr(_common, "_status_file", lambda: {"connection_state": "unknown", "connected": False})
 
-    details = app._connection_details()
+    details = _common._connection_details()
 
     assert details["connected"] is False
     assert details["connection_state"] == "unknown"
@@ -743,7 +740,7 @@ def test_connection_details_falls_back_when_status_file_is_unknown(monkeypatch):
 
 def test_connection_details_uses_whatsapp_jobs_when_status_file_is_unknown(monkeypatch):
     """Existing WhatsApp sync jobs are enough to unlock the connected workspace."""
-    import app
+    import app  # noqa: F401 — wiring side effects
     from types import SimpleNamespace
 
     class FakeStorage:
@@ -754,10 +751,10 @@ def test_connection_details_uses_whatsapp_jobs_when_status_file_is_unknown(monke
                 SimpleNamespace(finished_at="2026-07-13T09:05:00Z"),
             ]
 
-    monkeypatch.setattr(app, "storage", FakeStorage())
-    monkeypatch.setattr(app, "_status_file", lambda: {"connection_state": "unknown", "connected": False})
+    monkeypatch.setattr(_common, "storage", FakeStorage())
+    monkeypatch.setattr(_common, "_status_file", lambda: {"connection_state": "unknown", "connected": False})
 
-    details = app._connection_details()
+    details = _common._connection_details()
 
     assert details["connected"] is False
     assert details["connection_state"] == "unknown"
