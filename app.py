@@ -159,6 +159,8 @@ app.include_router(audit_router)
 
 from routers.groups_market import router as groups_market_router
 app.include_router(groups_market_router)
+from routers.onboarding import router as onboarding_router
+app.include_router(onboarding_router)
 
 from routers.admin import router as admin_router
 app.include_router(admin_router)

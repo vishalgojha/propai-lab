@@ -44,6 +44,7 @@ from storage import (
     ResolverDecision,
     Evaluation,
 )
+from routers.onboarding import extraction_allowed_for_group
 from lab.events import get_bus
 from lab.config import FRONTEND_URL
 
@@ -1443,6 +1444,17 @@ async def webhook(request: Request):
             await asyncio.to_thread(storage.touch_whatsapp_conversation, resolved_tenant_id, webhook_broker_id or "legacy", instance, group, conversation_type, message_timestamp)
         except Exception as exc:
             print(f"[webhook] conversation activity update failed: {exc}", flush=True)
+        if not is_dm:
+            try:
+                allowed = await asyncio.to_thread(
+                    extraction_allowed_for_group, resolved_tenant_id, str(group), group_name,
+                )
+                if not allowed:
+                    await asyncio.to_thread(storage.mark_raw_processed, raw_id)
+                    return {"status": "stored_unselected_group", "raw_id": raw_id}
+            except Exception as exc:
+                # A control-plane outage must not drop real WhatsApp evidence.
+                print(f"[webhook] group selection check failed; continuing extraction: {exc}", flush=True)
     except Exception as exc:
         print(f"[webhook] save_raw_message error: {exc}", flush=True)
         return {"error": f"save_raw_message: {exc}", "status": "failed"}

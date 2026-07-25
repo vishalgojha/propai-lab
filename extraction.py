@@ -451,6 +451,25 @@ def _ai_item_matches_boundary(ai_item: dict, boundary: dict, source_text: str) -
     return not conflicts, conflicts
 
 
+def check_share_eligibility(parsed: dict, org_privacy: dict, conv_type: str = "unknown") -> tuple[bool, str]:
+    """Return whether a parsed item may participate in shared-market views.
+
+    Raw messages and tenant-owned observations are always retained. This flag
+    only controls cross-tenant sharing/materialized market surfaces.
+    """
+    mode = str(org_privacy.get("privacy_mode") or "private").lower()
+    if mode in {"private", "tenant_private"}:
+        return False, "organization_privacy_private"
+
+    intent = str(parsed.get("intent") or conv_type or "").upper()
+    is_requirement = intent in {"BUY", "REQUIREMENT", "RENTAL_SEEKER", "TENANT", "DEMAND"}
+    if is_requirement and not org_privacy.get("share_requirements", False):
+        return False, "requirements_sharing_disabled"
+    if not is_requirement and not org_privacy.get("share_listings", False):
+        return False, "listing_sharing_disabled"
+    return True, "eligible"
+
+
 def process_raw_message(raw_id: int, ctx: dict, storage=None):
     """Process a single raw message through the full extraction pipeline.
 
@@ -494,8 +513,9 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
         _parsed_source_text, _demote_weak_property_parse,
         _parsed_has_market_anchor,
     )
-    # NOTE: classify_conversation, _attribution_suffix, check_share_eligibility,
-    # _process_observations were removed as dead code. Inline no-ops for backward compat.
+    # Share eligibility is deterministic and evaluated before persistence. It
+    # keeps private tenant output out of shared-market consumers while leaving
+    # the raw observation available to the owning tenant.
 
     # Skip excluded groups
     try:
@@ -774,12 +794,9 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
     listing_ids: list[int] = []
     for idx, parsed in enumerate(parsed_listings):
         ai_item = ai_extractions_raw[idx] if idx < len(ai_extractions_raw) else None
-        share_eligible, share_reason = True, "ok"
-        # check_share_eligibility removed (dead code) — default to shareable
-        # try:
-        #     share_eligible, share_reason = check_share_eligibility(parsed, org_privacy, conv_type or "unknown")
-        # except Exception:
-        #     pass
+        share_eligible, share_reason = check_share_eligibility(
+            parsed, org_privacy, conv_type or parsed.get("intent") or "unknown"
+        )
         if not share_eligible:
             parsed["_can_share_to_market"] = False
             parsed["_share_reason"] = share_reason

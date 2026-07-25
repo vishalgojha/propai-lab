@@ -6,7 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Activity, Clock, Database, Inbox, List, LogOut, MessageSquare, Plus, RefreshCw, Shield, Smartphone, Trash2, AlertTriangle, Users, Zap, Lock, X, ChevronLeft, MoreVertical, User, MessageCircle, Check, AlertCircle, Hash } from "lucide-react";
 import { useAuth } from "@/lib/AuthProvider";
-import { getPhones, createPhone, deletePhone, resetPhone, disconnectPhone, connectPhone, pairCodePhone, updatePhone, fetchJSON, isLiveWhatsAppConnection, type Phone, type WhatsAppStatus } from "@/lib/api";
+import { getPhones, createPhone, deletePhone, resetPhone, disconnectPhone, connectPhone, pairCodePhone, updatePhone, fetchJSON, isLiveWhatsAppConnection, getOnboardingGroups, checkOnboardingGroup, connectOnboardingGroup, type Phone, type WhatsAppStatus, type OnboardingGroup, type OnboardingGroupCheck, type OnboardingGroupState } from "@/lib/api";
 
 type HealthStatus = "healthy" | "warning" | "error";
 
@@ -600,6 +600,220 @@ function LiveStatusCard({ status, onAddPhone }: { status: WhatsAppStatus | null;
   );
 }
 
+function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; liveStatus: WhatsAppStatus | null; onRefresh: () => Promise<void> | void; }) {
+  const statusAvailable = phone.live_status_available !== false;
+  const isConnected = statusAvailable && (
+    isConnectedPhone(phone) || matchesLiveStatus(phone, liveStatus)
+  );
+  const [data, setData] = useState<OnboardingGroupState | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const [activeGroup, setActiveGroup] = useState<string | null>(null);
+  const [review, setReview] = useState<OnboardingGroupCheck | null>(null);
+  const [reviewGroup, setReviewGroup] = useState<OnboardingGroup | null>(null);
+
+  const loadGroups = useCallback(async () => {
+    if (!isConnected) return;
+    setLoading(true);
+    try {
+      const next = await getOnboardingGroups(phone.id);
+      setData(next);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not load group onboarding data.");
+    } finally {
+      setLoading(false);
+    }
+  }, [isConnected, phone.id]);
+
+  useEffect(() => {
+    setReview(null);
+    setReviewGroup(null);
+    setMessage(null);
+    setError(null);
+    void loadGroups();
+  }, [loadGroups]);
+
+  const handleReview = async (group: OnboardingGroup) => {
+    setActiveGroup(group.group_jid);
+    setError(null);
+    setMessage(null);
+    try {
+      const next = await checkOnboardingGroup(phone.id, group.group_jid);
+      setReview(next);
+      setReviewGroup(group);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not review this group.");
+    } finally {
+      setActiveGroup(null);
+    }
+  };
+
+  const handleConnect = async (group: OnboardingGroup, precheck?: OnboardingGroupCheck) => {
+    setActiveGroup(group.group_jid);
+    setError(null);
+    setMessage(null);
+    try {
+      const check = precheck || await checkOnboardingGroup(phone.id, group.group_jid);
+      const needsConfirm = check.high_overlap || check.cap.soft_warning_at_cap;
+      let confirmOverlap = false;
+      let confirmCap = false;
+      if (needsConfirm) {
+        const details = [
+          check.high_overlap
+            ? `This group overlaps heavily with brokers already in the network (${Math.round(check.overlap_score * 100)}% overlap).`
+            : null,
+          check.cap.soft_warning_at_cap
+            ? `This connection is at the default tier cap (${check.cap.connected_count}/${check.cap.cap}).`
+            : null,
+        ].filter(Boolean);
+        const accepted = window.confirm(`${details.join(" ")} Add it anyway?`);
+        if (!accepted) return;
+        confirmOverlap = check.high_overlap;
+        confirmCap = check.cap.soft_warning_at_cap;
+      }
+      await connectOnboardingGroup(phone.id, group.group_jid, confirmOverlap, confirmCap);
+      setMessage(`Added ${group.group_name}.`);
+      setReview(null);
+      setReviewGroup(null);
+      await loadGroups();
+      await onRefresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not connect the group.");
+    } finally {
+      setActiveGroup(null);
+    }
+  };
+
+  if (!isConnected) {
+    return (
+      <div className="rounded-xl border border-white/10 p-4">
+        <div className="flex items-center gap-2">
+          <Shield className="h-4 w-4 text-zinc-500" />
+          <div className="text-sm font-semibold text-white">Group onboarding</div>
+        </div>
+        <div className="mt-2 text-xs text-zinc-500">
+          Pair this phone first. Group discovery and cap checks appear here after WhatsApp is connected.
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-xl border border-white/10 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="flex items-center gap-2">
+            <Shield className="h-4 w-4 text-zinc-300" />
+            <div className="text-sm font-semibold text-white">Group onboarding</div>
+          </div>
+          <div className="mt-1 text-xs text-zinc-500">
+            {phone.instance_name || formatPhone(phone.phone_number_live || phone.phone_number)} · {data ? `${data.connected_count}/${data.cap} connected` : "loading cap"}
+          </div>
+        </div>
+        {data && (
+          <div className="rounded-full border border-white/10 bg-white/[0.03] px-3 py-1 text-[11px] text-zinc-300">
+            {data.tier} tier{data.overridden ? " · override" : ""}
+          </div>
+        )}
+      </div>
+
+      {loading && <div className="mt-3 text-xs text-zinc-500">Loading group directory...</div>}
+      {error && <div className="mt-3 text-xs text-red-400">{error}</div>}
+      {message && <div className="mt-3 text-xs text-emerald-300">{message}</div>}
+
+      {data && (
+        <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
+          <div className="rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2">
+            <div className="text-zinc-500">Connected</div>
+            <div className="mt-1 font-semibold text-white">{data.connected_count}</div>
+          </div>
+          <div className="rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2">
+            <div className="text-zinc-500">Remaining</div>
+            <div className="mt-1 font-semibold text-white">{data.remaining}</div>
+          </div>
+          <div className="rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2">
+            <div className="text-zinc-500">Cap</div>
+            <div className="mt-1 font-semibold text-white">{data.cap}</div>
+          </div>
+        </div>
+      )}
+
+      <div className="mt-4 space-y-3">
+        {data?.groups?.length ? data.groups.map((group) => (
+          <div key={group.group_jid} className={`rounded-lg border p-3 ${group.connected ? "border-emerald-500/20 bg-emerald-500/[0.03]" : "border-white/10 bg-white/[0.02]"}`}>
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <div className="truncate text-sm font-semibold text-white">{group.group_name}</div>
+                  {group.connected && <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-300">Connected</span>}
+                </div>
+                <div className="mt-1 text-[11px] text-zinc-500">
+                  {group.group_jid} · {group.participants.toLocaleString()} participants · last active {formatTime(group.last_message_at)}
+                </div>
+              </div>
+              {!group.connected && (
+                <div className="flex shrink-0 items-center gap-2">
+                  <button
+                    onClick={() => void handleReview(group)}
+                    disabled={activeGroup === group.group_jid}
+                    className="rounded-lg border border-white/10 bg-transparent px-3 py-1.5 text-[11px] font-semibold text-zinc-300 hover:bg-white/5 disabled:opacity-50"
+                  >
+                    {activeGroup === group.group_jid ? "Checking..." : "Review"}
+                  </button>
+                  <button
+                    onClick={() => void handleConnect(group)}
+                    disabled={activeGroup === group.group_jid}
+                    className="rounded-lg border border-white bg-white px-3 py-1.5 text-[11px] font-semibold text-black hover:bg-zinc-200 disabled:opacity-50"
+                  >
+                    {activeGroup === group.group_jid ? "Adding..." : "Add"}
+                  </button>
+                </div>
+              )}
+            </div>
+            {reviewGroup?.group_jid === group.group_jid && review && (
+              <div className="mt-3 rounded-lg border border-white/10 bg-black/20 px-3 py-3 text-xs text-zinc-300">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="font-semibold text-white">Overlap check</div>
+                  <div className="text-zinc-400">{Math.round(review.overlap_score * 100)}% overlap</div>
+                </div>
+                <div className="mt-2 text-zinc-500">
+                  {review.shared_count} of {review.sample_count} recent sender numbers already appear in the network registry.
+                </div>
+                <div className="mt-3 flex items-center justify-end gap-2">
+                  <button
+                    onClick={() => {
+                      setReview(null);
+                      setReviewGroup(null);
+                    }}
+                    className="rounded-lg border border-white/10 bg-transparent px-3 py-1.5 text-[11px] font-semibold text-zinc-400 hover:bg-white/5 hover:text-white"
+                  >
+                    Close
+                  </button>
+                  {!group.connected && (
+                    <button
+                      onClick={() => void handleConnect(group, review)}
+                      disabled={activeGroup === group.group_jid}
+                      className="rounded-lg border border-white bg-white px-3 py-1.5 text-[11px] font-semibold text-black hover:bg-zinc-200 disabled:opacity-50"
+                    >
+                      Connect anyway
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        )) : !loading && (
+          <div className="rounded-lg border border-dashed border-white/10 px-3 py-4 text-xs text-zinc-500">
+            No group directory is available on this connection yet.
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function ConnectionCenterPage() {
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
@@ -831,6 +1045,29 @@ export default function ConnectionCenterPage() {
               ))}
             </div>
           )}
+
+          {phones.some((phone) => isConnectedPhone(phone) || matchesLiveStatus(phone, liveStatus)) ? (
+            <div className="mb-8">
+              <Section title="Group onboarding">
+                <div className="space-y-4 p-2">
+                  {phones
+                    .filter((phone) => isConnectedPhone(phone) || matchesLiveStatus(phone, liveStatus))
+                    .map((phone) => (
+                      <OnboardingGroupPanel
+                        key={`onboarding-${phone.id}`}
+                        phone={phone}
+                        liveStatus={liveStatus}
+                        onRefresh={refreshData}
+                      />
+                    ))}
+                </div>
+              </Section>
+            </div>
+          ) : phones.length > 0 ? (
+            <div className="mb-8 rounded-xl border border-white/10 p-4 text-xs text-zinc-500">
+              Pair a WhatsApp phone to unlock group onboarding.
+            </div>
+          ) : null}
 
           {extractionLag && extractionLag.status !== "healthy" && (
             <div className={`mb-6 rounded-xl border bg-transparent p-4 ${extractionLag.status === "error" ? "border-red-500/30" : "border-white/10"}`}>

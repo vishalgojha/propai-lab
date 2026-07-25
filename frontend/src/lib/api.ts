@@ -23,6 +23,85 @@ export async function fetchJSON<T>(url: string, init?: RequestInit, timeoutMs = 
   return fetchJSONWithRetry<T>(url, init, timeoutMs, false);
 }
 
+export interface OnboardingGroup {
+  group_jid: string;
+  group_name: string;
+  participants: number;
+  last_message_at: string | null;
+  connected: boolean;
+}
+
+export interface OnboardingGroupCap {
+  tier: string;
+  cap: number;
+  connected_count: number;
+  remaining: number;
+  overridden: boolean;
+  soft_warning_at_cap: boolean;
+  hard_block: boolean;
+}
+
+export interface OnboardingGroupCheck {
+  group: OnboardingGroup;
+  sample_count: number;
+  shared_count: number;
+  overlap_score: number;
+  high_overlap: boolean;
+  sample_phones: string[];
+  threshold: number;
+  cap: OnboardingGroupCap;
+}
+
+export interface OnboardingGroupState extends OnboardingGroupCap {
+  groups: OnboardingGroup[];
+}
+
+export interface OnboardingGroupConnectResult {
+  ok: boolean;
+  group: OnboardingGroup;
+  connection?: Record<string, unknown> | null;
+  cap: OnboardingGroupCap;
+  overlap: OnboardingGroupCheck;
+}
+
+export function getOnboardingGroups(whatsappConnectionId: number) {
+  return fetchJSON<OnboardingGroupState>(`/onboarding/groups?whatsapp_connection_id=${whatsappConnectionId}`);
+}
+
+export function checkOnboardingGroup(
+  whatsappConnectionId: number,
+  groupJid: string,
+  confirmOverlap = false,
+  confirmCap = false,
+) {
+  return fetchJSON<OnboardingGroupCheck>("/onboarding/groups/check", {
+    method: "POST",
+    body: JSON.stringify({
+      whatsapp_connection_id: whatsappConnectionId,
+      group_jid: groupJid,
+      confirm_overlap: confirmOverlap,
+      confirm_cap: confirmCap,
+    }),
+  });
+}
+
+export function connectOnboardingGroup(
+  whatsappConnectionId: number,
+  groupJid: string,
+  confirmOverlap = false,
+  confirmCap = false,
+) {
+  return fetchJSON<OnboardingGroupConnectResult>("/onboarding/groups/connect", {
+    method: "POST",
+    body: JSON.stringify({
+      whatsapp_connection_id: whatsappConnectionId,
+      group_jid: groupJid,
+      confirm_overlap: confirmOverlap,
+      confirm_cap: confirmCap,
+    }),
+  });
+}
+
 export async function fetchFormData<T>(url: string, formData: FormData, timeoutMs = API_TIMEOUT_MS): Promise<T> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
