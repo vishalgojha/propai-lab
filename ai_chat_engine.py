@@ -1346,7 +1346,7 @@ def _rest_market_search(client, args: dict) -> str:
         if intent:
             query = query.eq("intent", intent)
         if bhk and bhk.lower() != "any":
-            query = query.eq("bhk", bhk if bhk.upper().endswith("BHK") else f"{bhk} BHK")
+            query = query.ilike("bhk", f"{bhk}%")
         if furnishing and furnishing.lower() != "any":
             query = query.eq("furnishing", furnishing)
         if building:
