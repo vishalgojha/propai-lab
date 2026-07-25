@@ -63,19 +63,24 @@ async function fetchJSONWithRetry<T>(
 ): Promise<T> {
   const controller = new AbortController();
   let timedOut = false;
-  const abortFromCaller = () => controller.abort(init?.signal?.reason);
-  if (init?.signal?.aborted) abortFromCaller();
-  else init?.signal?.addEventListener("abort", abortFromCaller, { once: true });
   const timeout = setTimeout(() => {
     timedOut = true;
     controller.abort();
   }, timeoutMs);
+  
+  const handleAbort = () => controller.abort();
+  if (init?.signal?.aborted) {
+    handleAbort();
+  } else {
+    init?.signal?.addEventListener("abort", handleAbort, { once: true });
+  }
+  
   try {
     const token = await getAccessToken();
     const tenantId = readActiveTenantId();
     const res = await fetch(`${BASE}${url}`, {
       ...init,
-      signal: init?.signal || controller.signal,
+      signal: controller.signal,
       headers: {
         "Content-Type": "application/json",
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -477,14 +482,6 @@ export function getConnectionState() {
 
 export function getConnectionDetail() {
   return fetchJSON<any>("/sync/connection");
-}
-
-export function getQR() {
-  return fetchJSON<any>("/sync/qr");
-}
-
-export function refreshQR() {
-  return fetchJSON<any>("/sync/refresh-qr", { method: "POST" });
 }
 
 export function logout() {

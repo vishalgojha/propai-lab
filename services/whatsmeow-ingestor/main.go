@@ -44,32 +44,32 @@ var (
 // ── Status ──────────────────────────────────────────────────────────────────
 
 type Status struct {
-	BrokerID              string           `json:"broker_id,omitempty"`
-	Connected             bool             `json:"connected"`
-	ConnectionState       string           `json:"connection_state"`
-	QR                    string           `json:"qr,omitempty"`
-	QRAvailable           bool             `json:"qr_available,omitempty"`
-	PairingCode           string           `json:"pairing_code,omitempty"`
-	PairingPhone          string           `json:"pairing_phone,omitempty"`
-	PhoneNumber           string           `json:"phone_number,omitempty"`
-	DisplayName           string           `json:"display_name,omitempty"`
-	InstanceName          string           `json:"instance_name,omitempty"`
-	ConnectedSince        string           `json:"connected_since,omitempty"`
-	LastMessageAt         string           `json:"last_message_at,omitempty"`
-	DisconnectReason      int              `json:"disconnect_reason,omitempty"`
-	SendPort              int              `json:"send_port,omitempty"`
-	ReconnectCount        int              `json:"reconnect_count,omitempty"`
-	ConsecutiveFailures   int              `json:"consecutive_failures,omitempty"`
-	TotalMessagesReceived int64            `json:"total_messages_received,omitempty"`
-	TotalOutgoing         int64            `json:"total_outgoing,omitempty"`
-	TotalLocations        int64            `json:"total_locations,omitempty"`
-	TotalContacts         int64            `json:"total_contacts,omitempty"`
-	TotalReactions        int64            `json:"total_reactions,omitempty"`
-	MessageTypeCounts     map[string]int64 `json:"message_type_counts,omitempty"`
+	BrokerID              string            `json:"broker_id,omitempty"`
+	Connected             bool              `json:"connected"`
+	ConnectionState       string            `json:"connection_state"`
+	QR                    string            `json:"qr,omitempty"`
+	QRAvailable           bool              `json:"qr_available,omitempty"`
+	PairingCode           string            `json:"pairing_code,omitempty"`
+	PairingPhone          string            `json:"pairing_phone,omitempty"`
+	PhoneNumber           string            `json:"phone_number,omitempty"`
+	DisplayName           string            `json:"display_name,omitempty"`
+	InstanceName          string            `json:"instance_name,omitempty"`
+	ConnectedSince        string            `json:"connected_since,omitempty"`
+	LastMessageAt         string            `json:"last_message_at,omitempty"`
+	DisconnectReason      int               `json:"disconnect_reason,omitempty"`
+	SendPort              int               `json:"send_port,omitempty"`
+	ReconnectCount        int               `json:"reconnect_count,omitempty"`
+	ConsecutiveFailures   int               `json:"consecutive_failures,omitempty"`
+	TotalMessagesReceived int64             `json:"total_messages_received,omitempty"`
+	TotalOutgoing         int64             `json:"total_outgoing,omitempty"`
+	TotalLocations        int64             `json:"total_locations,omitempty"`
+	TotalContacts         int64             `json:"total_contacts,omitempty"`
+	TotalReactions        int64             `json:"total_reactions,omitempty"`
+	MessageTypeCounts     map[string]int64  `json:"message_type_counts,omitempty"`
 	LastSeenByType        map[string]string `json:"last_seen_by_type,omitempty"`
-	LastDisconnectAt      string           `json:"last_disconnect_at,omitempty"`
-	SocketState           string           `json:"socket_state,omitempty"`
-	HeartbeatAt           string           `json:"heartbeat_at,omitempty"`
+	LastDisconnectAt      string            `json:"last_disconnect_at,omitempty"`
+	SocketState           string            `json:"socket_state,omitempty"`
+	HeartbeatAt           string            `json:"heartbeat_at,omitempty"`
 }
 
 // ── Broker session ─────────────────────────────────────────────────────────
@@ -1380,7 +1380,7 @@ type selfChatStreamEvent struct {
 func (sm *SessionManager) handleSelfChatStream(s *BrokerSession, target types.JID, resp *http.Response) {
 	// Flush thresholds — keep each WhatsApp message short and readable.
 	const (
-		flushChars   = 60  // Send a message when buffer reaches this many chars.
+		flushChars   = 60                     // Send a message when buffer reaches this many chars.
 		maxFlushWait = 800 * time.Millisecond // Or after this much wall time.
 	)
 	scanner := bufio.NewScanner(resp.Body)
@@ -1773,6 +1773,9 @@ func (sm *SessionManager) pairCodeHandler(w http.ResponseWriter, r *http.Request
 	session.pairingMode = "code"
 	session.pairingPhone = phone
 	session.mu.Unlock()
+	// Do not let a previous request's code be returned as the new code while
+	// the new websocket is still being established.
+	session.setStatus(Status{Connected: false, ConnectionState: "pairing_requested", PairingPhone: phone})
 
 	// Force the session loop into the QR/code pairing path.
 	//
@@ -1790,29 +1793,43 @@ func (sm *SessionManager) pairCodeHandler(w http.ResponseWriter, r *http.Request
 		session.device.ID = nil
 	}
 
-	// Poll until PairPhone() generates the code or timeout.
+	// Poll until PairPhone() generates the code or timeout. Keep this deadline
+	// aligned with the API proxy timeout; connecting the websocket and receiving
+	// the first QR-channel event can legitimately take several seconds.
 	// PairPhone() runs asynchronously inside runSession after the first QR
 	// event arrives; we wait for the code to appear in the session status.
-	deadline := time.Now().Add(30 * time.Second)
+	deadline := time.Now().Add(45 * time.Second)
 	for time.Now().Before(deadline) {
 		st := session.getStatus()
 		if code := st.PairingCode; code != "" {
 			json.NewEncoder(w).Encode(map[string]interface{}{
-				"ok":              true,
-				"phone":           phone,
-				"pairing_code":    code,
+				"ok":               true,
+				"phone":            phone,
+				"pairing_code":     code,
 				"connection_state": st.ConnectionState,
+			})
+			return
+		}
+		if st.ConnectionState == "error" {
+			w.WriteHeader(http.StatusBadGateway)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"ok":     false,
+				"phone":  phone,
+				"error":  "WhatsApp rejected the pairing-code request; check the ingestor logs",
+				"status": st,
 			})
 			return
 		}
 		time.Sleep(500 * time.Millisecond)
 	}
-	// Timed out — return current status so the frontend can fall back to polling
+	// Timed out — do not claim success without a code. The frontend can show the
+	// real connection state and the broker can retry without seeing "N/A".
 	status := session.getStatus()
+	w.WriteHeader(http.StatusGatewayTimeout)
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"ok":     true,
+		"ok":     false,
 		"phone":  phone,
-		"note":   "Pairing code not yet available. Poll status for updates.",
+		"error":  "Timed out waiting for WhatsApp pairing code",
 		"status": status,
 	})
 }
@@ -2009,12 +2026,12 @@ func (sm *SessionManager) sendMessageHandler(w http.ResponseWriter, r *http.Requ
 // ── Send media handler ──────────────────────────────────────────────────────
 
 type sendMediaRequest struct {
-	BrokerID string `json:"brokerId"`
+	BrokerID  string `json:"brokerId"`
 	RemoteJID string `json:"remoteJid"`
 	MediaType string `json:"mediaType"` // image, video, audio, document
-	MimeType string `json:"mimeType"`
-	FileName string `json:"fileName,omitempty"`
-	Caption string `json:"caption,omitempty"`
+	MimeType  string `json:"mimeType"`
+	FileName  string `json:"fileName,omitempty"`
+	Caption   string `json:"caption,omitempty"`
 }
 
 func (sm *SessionManager) sendMediaHandler(w http.ResponseWriter, r *http.Request) {
@@ -2081,24 +2098,24 @@ func (sm *SessionManager) sendMediaHandler(w http.ResponseWriter, r *http.Reques
 	switch body.MediaType {
 	case "image":
 		message = &waE2E.Message{ImageMessage: &waE2E.ImageMessage{
-			URL:       proto.String(""),
-			Mimetype:  proto.String(body.MimeType),
-			Caption:   proto.String(body.Caption),
+			URL:        proto.String(""),
+			Mimetype:   proto.String(body.MimeType),
+			Caption:    proto.String(body.Caption),
 			FileLength: proto.Uint64(uint64(len(content))),
 			DirectPath: proto.String(""),
 		}}
 	case "video":
 		message = &waE2E.Message{VideoMessage: &waE2E.VideoMessage{
-			URL:       proto.String(""),
-			Mimetype:  proto.String(body.MimeType),
-			Caption:   proto.String(body.Caption),
+			URL:        proto.String(""),
+			Mimetype:   proto.String(body.MimeType),
+			Caption:    proto.String(body.Caption),
 			FileLength: proto.Uint64(uint64(len(content))),
 			DirectPath: proto.String(""),
 		}}
 	case "audio":
 		message = &waE2E.Message{AudioMessage: &waE2E.AudioMessage{
-			URL:       proto.String(""),
-			Mimetype:  proto.String(body.MimeType),
+			URL:        proto.String(""),
+			Mimetype:   proto.String(body.MimeType),
 			FileLength: proto.Uint64(uint64(len(content))),
 			DirectPath: proto.String(""),
 		}}
@@ -2108,10 +2125,10 @@ func (sm *SessionManager) sendMediaHandler(w http.ResponseWriter, r *http.Reques
 			fileName = "document"
 		}
 		message = &waE2E.Message{DocumentMessage: &waE2E.DocumentMessage{
-			URL:       proto.String(""),
-			Mimetype:  proto.String(body.MimeType),
-			FileName:  proto.String(fileName),
-			Caption:   proto.String(body.Caption),
+			URL:        proto.String(""),
+			Mimetype:   proto.String(body.MimeType),
+			FileName:   proto.String(fileName),
+			Caption:    proto.String(body.Caption),
 			FileLength: proto.Uint64(uint64(len(content))),
 			DirectPath: proto.String(""),
 		}}
@@ -2152,7 +2169,7 @@ func (sm *SessionManager) capabilitiesHandler(w http.ResponseWriter, r *http.Req
 		return
 	}
 	capturedUnused := map[string]bool{
-		"Read Receipts":  true,
+		"Read Receipts":   true,
 		"Typing Presence": true,
 	}
 	alwaysOn := map[string]bool{
@@ -2213,11 +2230,11 @@ func (sm *SessionManager) capabilitiesHandler(w http.ResponseWriter, r *http.Req
 	out := computeCapabilityStatuses(definitions, capturedUnused, alwaysOn, typeKey, typeCounts, lastSeenByType, anyConnected, anySession)
 
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"capabilities": out,
-		"instance":     instanceName,
-		"version":      "2.0.0",
+		"capabilities":  out,
+		"instance":      instanceName,
+		"version":       "2.0.0",
 		"any_connected": anyConnected,
-		"any_session":  anySession,
+		"any_session":   anySession,
 	})
 }
 

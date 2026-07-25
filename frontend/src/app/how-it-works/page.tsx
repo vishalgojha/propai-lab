@@ -9,7 +9,7 @@ const steps = [
     title: "Connect your existing WhatsApp",
     description:
       "No new CRM. No migration. No behaviour change. PropAI connects to the WhatsApp groups you're already in — whether you're a broker, landlord, or investor. Once connected, it starts listening without disrupting your workflow.",
-    detail: "Just scan a QR code from your WhatsApp Web session. The connection is encrypted and stays active as long as your phone is online.",
+    detail: "Use WhatsApp's Linked Devices pairing-code flow. The connection is encrypted and stays active as long as your phone is online.",
   },
   {
     num: "02",

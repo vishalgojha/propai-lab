@@ -3,11 +3,10 @@
 export const dynamic = 'force-dynamic';
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import QRCode from "qrcode";
 import { useRouter } from "next/navigation";
-import { Activity, Clock, Database, ImageUp, Inbox, List, LogOut, MessageSquare, Plus, RefreshCw, Shield, Smartphone, Trash2, AlertTriangle, Users, Zap, Lock, X, ChevronLeft, MoreVertical, User, MessageCircle, Check, AlertCircle, Hash } from "lucide-react";
+import { Activity, Clock, Database, Inbox, List, LogOut, MessageSquare, Plus, RefreshCw, Shield, Smartphone, Trash2, AlertTriangle, Users, Zap, Lock, X, ChevronLeft, MoreVertical, User, MessageCircle, Check, AlertCircle, Hash } from "lucide-react";
 import { useAuth } from "@/lib/AuthProvider";
-import { getPhones, getPhone, createPhone, deletePhone, resetPhone, disconnectPhone, connectPhone, pairCodePhone, updatePhone, fetchJSON, isLiveWhatsAppConnection, type Phone, type WhatsAppStatus } from "@/lib/api";
+import { getPhones, createPhone, deletePhone, resetPhone, disconnectPhone, connectPhone, pairCodePhone, updatePhone, fetchJSON, isLiveWhatsAppConnection, type Phone, type WhatsAppStatus } from "@/lib/api";
 
 type HealthStatus = "healthy" | "warning" | "error";
 
@@ -96,50 +95,6 @@ function ActivityItem({ icon, text, time }: { icon: React.ReactNode; text: strin
         <div className="text-xs text-zinc-300">{text}</div>
         <div className="text-[11px] text-zinc-600">{time}</div>
       </div>
-    </div>
-  );
-}
-
-function QRDisplay({ qrText, onRefresh, refreshing }: { qrText: string; onRefresh: () => void; refreshing: boolean }) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-
-  useEffect(() => {
-    if (!canvasRef.current) return;
-    let cancelled = false;
-    const draw = async () => {
-      try {
-        canvasRef.current!.getContext("2d")?.clearRect(0, 0, canvasRef.current!.width, canvasRef.current!.height);
-        await QRCode.toCanvas(canvasRef.current!, qrText, {
-          width: 360,
-          margin: 2,
-          color: { dark: "#000000", light: "#ffffff" },
-        });
-      } catch {
-        if (!cancelled) {
-          canvasRef.current?.getContext("2d")?.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
-        }
-      }
-    };
-    void draw();
-    return () => {
-      cancelled = true;
-    };
-  }, [qrText]);
-
-  return (
-    <div className="flex flex-col items-center">
-      <canvas
-        ref={canvasRef}
-        className="rounded-xl border-[6px] border-white bg-white"
-        style={{ width: "min(360px, 100%)", height: "min(360px, 100%)", aspectRatio: "1/1" }}
-      />
-      <button
-        onClick={onRefresh}
-        disabled={refreshing}
-        className="mt-3 min-h-[44px] w-full max-w-[360px] rounded-md border border-white bg-white px-4 py-2.5 text-xs font-semibold text-black hover:bg-zinc-200 disabled:opacity-50"
-      >
-        {refreshing ? "Refreshing..." : "Refresh QR"}
-      </button>
     </div>
   );
 }
@@ -276,7 +231,7 @@ function CreatePhoneDialog({ open, onClose, onCreated }: { open: boolean; onClos
           <h3 className="text-base font-bold text-white">Add Phone</h3>
           <button onClick={onClose} className="text-zinc-500 hover:text-white"><X className="w-5 h-5" /></button>
         </div>
-        <p className="text-xs text-zinc-500 mb-4">Create a new WhatsApp connection. The phone number will be detected automatically when you scan the QR code.</p>
+        <p className="text-xs text-zinc-500 mb-4">Create a WhatsApp connection, then link it with a pairing code from your phone.</p>
         <div className="space-y-3">
           <div>
             <label className="text-xs font-medium text-zinc-400 mb-1 block">Agency / Workspace Name (optional)</label>
@@ -305,277 +260,16 @@ function CreatePhoneDialog({ open, onClose, onCreated }: { open: boolean; onClos
   );
 }
 
-type ConnectionAttemptState = {
-  attempts: number;
-  startedAt: string | null;
-  lastOutcome: "connected" | "failed" | null;
-  lastDurationSeconds: number | null;
-};
-
-function QRModal({
-  phone,
-  open,
-  onClose,
-  onRefresh,
-  onConnected,
-  attemptState,
-  now,
-}: {
-  phone: Phone;
-  open: boolean;
-  onClose: () => void;
-  onRefresh: () => Promise<void> | void;
-  onConnected: (phoneId: number) => void;
-  attemptState: ConnectionAttemptState | null;
-  now: number;
-}) {
-  const [qrText, setQrText] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
-  const [connected, setConnected] = useState(false);
-  const [qrDrawError, setQrDrawError] = useState<string | null>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  const fetchQR = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    setNotice(null);
-    try {
-      const qrResult = await getPhone(phone.id);
-      if (isConnectedPhone(qrResult)) {
-        setConnected(true);
-        setQrText(null);
-        setNotice(null);
-        onConnected(phone.id);
-        await onRefresh();
-        window.dispatchEvent(new Event("propai_whatsapp_status_updated"));
-        return;
-      }
-      if (qrResult?.qr) {
-        setQrText(qrResult.qr);
-        setError(null);
-        setNotice(null);
-        setQrDrawError(null);
-        return;
-      }
-      setNotice((qrResult as any)?.message || "QR not available yet. Waiting for the ingestor to generate it.");
-      setQrText(null);
-    } catch (error) {
-      setError(error instanceof Error ? error.message : "Failed to fetch QR code. Retry, or reset the phone if it stays stuck.");
-    } finally {
-      setLoading(false);
-    }
-  }, [onConnected, onRefresh, phone.id]);
-
-  const refreshSessionAndFetchQR = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    setNotice(null);
-    try {
-      await resetPhone(phone.id);
-      await new Promise((resolve) => setTimeout(resolve, 1200));
-      await fetchQR();
-    } catch (error) {
-      setError(error instanceof Error ? error.message : "Failed to refresh the session. Retry, or reset the phone if it stays stuck.");
-    } finally {
-      setLoading(false);
-    }
-  }, [fetchQR, phone.id]);
-
-  useEffect(() => {
-    if (open) {
-      setConnected(false);
-      fetchQR();
-    }
-    if (!open) {
-      setQrText(null);
-      setConnected(false);
-      setQrDrawError(null);
-    }
-  }, [open, fetchQR]);
-
-  useEffect(() => {
-    if (!open || connected) {
-      if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
-      return;
-    }
-    pollRef.current = setInterval(async () => {
-      try {
-        const res = await getPhone(phone.id);
-        let confirmedPhone = res;
-        if (!isConnectedPhone(res)) {
-          try {
-            const livePhones = await getPhones(true, 5000);
-            confirmedPhone = livePhones.phones.find((candidate) => candidate.id === phone.id) || res;
-          } catch {
-            // Keep polling the phone-specific status if the aggregate list is temporarily unavailable.
-          }
-        }
-        if (isConnectedPhone(confirmedPhone)) {
-          setConnected(true);
-          setQrText(null);
-          setNotice(null);
-          if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
-          onConnected(phone.id);
-          await onRefresh();
-          window.dispatchEvent(new Event("propai_whatsapp_status_updated"));
-        } else if (res.qr && res.qr !== qrText) {
-          setQrText(res.qr);
-          setNotice(null);
-        }
-      } catch {}
-    }, 3000);
-    return () => { if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; } };
-  }, [open, connected, onConnected, onRefresh, phone.id, qrText]);
-
-  useEffect(() => {
-    if (attemptState?.lastOutcome === "failed" && !connected) {
-      setError(`Connection attempt failed after ${attemptState.lastDurationSeconds ?? 0}s. Retry or refresh the session.`);
-      setLoading(false);
-    }
-  }, [attemptState?.lastDurationSeconds, attemptState?.lastOutcome, connected]);
-
-  useEffect(() => {
-    if (!canvasRef.current || !qrText) return;
-    let cancelled = false;
-    const draw = async () => {
-      try {
-        canvasRef.current!.getContext("2d")?.clearRect(0, 0, canvasRef.current!.width, canvasRef.current!.height);
-        await QRCode.toCanvas(canvasRef.current!, qrText, {
-          width: 320,
-          margin: 2,
-          color: { dark: "#000000", light: "#ffffff" },
-        });
-      } catch {
-        if (!cancelled) {
-          setQrDrawError("QR could not be drawn. Refresh the QR or re-pair the phone.");
-        }
-      }
-    };
-    void draw();
-    return () => {
-      cancelled = true;
-    };
-  }, [qrText]);
-
-  useEffect(() => {
-    if (connected) {
-      const t = setTimeout(onClose, 3000);
-      return () => clearTimeout(t);
-    }
-  }, [connected, onClose]);
-
-  if (!open) return null;
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
-      <div className="bg-zinc-900 border border-white/10 rounded-2xl p-6 w-full max-w-lg mx-4" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-base font-bold text-white">
-            {connected ? "Connected!" : `Scan QR — ${isPlaceholderPhone(phone.phone_number) ? "New Phone" : formatPhone(phone.phone_number)}`}
-          </h3>
-          <button onClick={onClose} className="text-zinc-500 hover:text-white"><X className="w-5 h-5" /></button>
-        </div>
-        {attemptState && (
-          <div className="mb-4 rounded-xl border border-white/10 bg-black/40 px-4 py-3 text-xs text-zinc-400">
-            <div className="flex items-center justify-between gap-3">
-              <span>Connection attempts</span>
-              <span className="font-semibold text-white">{attemptState.attempts}</span>
-            </div>
-            <div className="mt-1 flex items-center justify-between gap-3">
-              <span>Current attempt</span>
-              <span className="font-semibold text-white">
-                {attemptState.startedAt
-                  ? `${formatDuration(Math.max(0, Math.floor((now - new Date(attemptState.startedAt).getTime()) / 1000)))} elapsed`
-                  : "—"}
-              </span>
-            </div>
-            {attemptState.lastOutcome && attemptState.lastDurationSeconds != null && (
-              <div className="mt-1 flex items-center justify-between gap-3">
-                <span>Last result</span>
-                <span className={`font-semibold ${attemptState.lastOutcome === "connected" ? "text-zinc-200" : "text-red-400"}`}>
-                  {attemptState.lastOutcome === "connected" ? "Connected" : "Failed"} in {formatDuration(attemptState.lastDurationSeconds)}
-                </span>
-              </div>
-            )}
-          </div>
-        )}
-        {!connected && notice && !error && !loading && (
-          <div className="mb-4 rounded-lg border border-white/10 bg-white/[0.03] px-4 py-3 text-xs text-zinc-400">
-            {notice}
-          </div>
-        )}
-        {connected && (
-          <div className="flex flex-col items-center py-12 text-center">
-            <div className="mb-4 inline-flex h-16 w-16 items-center justify-center rounded-xl border border-white/10 bg-white/[0.03]">
-              <svg className="h-8 w-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
-            </div>
-            <p className="text-sm font-semibold text-white">WhatsApp connected successfully</p>
-            <p className="text-xs text-zinc-500 mt-1">Closing automatically...</p>
-          </div>
-        )}
-        {!connected && loading && (
-          <div className="flex items-center justify-center py-16">
-            <div className="h-8 w-8 animate-spin rounded-full border-2 border-zinc-700 border-t-white" />
-          </div>
-        )}
-        {!connected && error && (
-          <div className="flex flex-col items-center py-12 text-center">
-            <p className="text-sm text-zinc-400">{error}</p>
-            <button onClick={() => refreshSessionAndFetchQR().catch(() => {})} disabled={loading} className="mt-4 min-h-[44px] rounded-md border border-white bg-white px-6 py-2.5 text-xs font-semibold text-black hover:bg-zinc-200 disabled:opacity-50">
-              Retry
-            </button>
-          </div>
-        )}
-        {!connected && !loading && !error && qrText && (
-          <div className="flex flex-col items-center">
-            <canvas ref={canvasRef} className="rounded-xl border-[6px] border-white bg-white" style={{ width: "min(320px, 100%)", height: "min(320px, 100%)", aspectRatio: "1/1" }} />
-            {qrDrawError && <p className="mt-3 text-xs text-red-300">{qrDrawError}</p>}
-            <ol className="mt-4 space-y-2 text-sm text-zinc-400 text-center">
-              <li>Open <strong className="text-white">WhatsApp</strong> → <strong className="text-white">Settings</strong> → <strong className="text-white">Linked Devices</strong></li>
-              <li>Tap <strong className="text-white">Link a Device</strong> and scan this QR</li>
-            </ol>
-            <p className="mt-3 text-[11px] text-zinc-600">Waiting for scan... (auto-refreshes every 3s)</p>
-            <button onClick={refreshSessionAndFetchQR} disabled={loading} className="mt-3 rounded-lg border border-white/10 bg-zinc-800 text-zinc-300 px-6 py-2.5 text-xs font-bold min-h-[44px] disabled:opacity-50 w-full">
-              Refresh QR
-            </button>
-          </div>
-        )}
-        {!connected && !loading && !error && !qrText && (
-          <div className="flex flex-col items-center py-10 text-center">
-            <div className="flex h-[320px] w-full max-w-[320px] items-center justify-center rounded-xl border border-white/10 bg-white/5 text-zinc-500">
-              QR not ready yet
-            </div>
-            <p className="mt-4 text-xs text-zinc-500">
-              {notice || "Waiting for the ingestor to generate the code."}
-            </p>
-            <button onClick={refreshSessionAndFetchQR} disabled={loading} className="mt-3 rounded-lg border border-white/10 bg-zinc-800 text-zinc-300 px-6 py-2.5 text-xs font-bold min-h-[44px] disabled:opacity-50 w-full">
-              Refresh QR
-            </button>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
 function PhoneCard({
   phone,
   liveStatus,
   onRefresh,
-  onConnect,
   onDeleted,
-  attemptState,
-  now,
 }: {
   phone: Phone;
   liveStatus: WhatsAppStatus | null;
   onRefresh: () => Promise<void> | void;
-  onConnect: (p: Phone) => Promise<void> | void;
   onDeleted: (phoneId: number) => void;
-  attemptState: ConnectionAttemptState | null;
-  now: number;
 }) {
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
@@ -600,15 +294,15 @@ function PhoneCard({
       } else if (action === "self-chat") {
         await updatePhone(phone.id, { self_chat_enabled: !phone.self_chat_enabled });
         setActionMessage(phone.self_chat_enabled ? "Self-chat assistant disabled" : "Self-chat assistant enabled");
-      }       else if (action === "connect" || action === "qr") await onConnect(phone);
+      }
       else if (action === "pair-code") { setShowPairCodeDialog(true); setActionLoading(null); return; }
       else await onRefresh();
-      if (!["connect", "qr", "self-chat"].includes(action)) {
+      if (!["self-chat", "pair-code"].includes(action)) {
         setActionMessage(
           action === "delete"
             ? "Phone removed"
             : action === "reset"
-              ? "Session cleared. Scan the new QR to re-pair this phone."
+              ? "Session cleared. Pair this phone again with a new WhatsApp pairing code."
               : "Phone disconnected"
         );
       }
@@ -631,7 +325,9 @@ function PhoneCard({
       // Ensure the client is connected first — PairPhone requires an active session
       try { await connectPhone(phone.id); } catch (_) { /* may already be connected */ }
       const result = await pairCodePhone(phone.id, pairCodeInput);
-      setPairCodeResult(result.pairing_code || result.code || "N/A");
+      const code = result.pairing_code || result.code || result.status?.pairing_code;
+      if (!code) throw new Error(result.note || result.error || "WhatsApp did not return a pairing code");
+      setPairCodeResult(code);
     } catch (error) {
       setActionError(error instanceof Error ? error.message : "Pair code request failed");
       setShowPairCodeDialog(false);
@@ -690,7 +386,7 @@ function PhoneCard({
             <div className="text-xs text-zinc-500 truncate">{formatPhone(phoneDisplay)}</div>
           )}
           {isUnpaired && (
-            <div className="text-xs text-zinc-500">Scan QR to pair</div>
+            <div className="text-xs text-zinc-500">Pair with a WhatsApp code</div>
           )}
           {!statusAvailable && phone.live_status_error && (
             <div className="text-xs text-red-300">{phone.live_status_error}</div>
@@ -749,7 +445,7 @@ function PhoneCard({
               <div className="px-3 py-2">
                 <div className="flex items-center justify-between">
                   <span className="text-xs text-zinc-500">Connection Attempts</span>
-                  <span className="text-xs text-white font-medium">{attemptState?.attempts ?? 0}</span>
+                  <span className="text-xs text-white font-medium">Use pairing code</span>
                 </div>
               </div>
             </div>
@@ -760,22 +456,10 @@ function PhoneCard({
       {/* Row 2: Action buttons - icon-only, right-aligned */}
       <div className="flex items-center justify-end gap-2 mt-3">
         <button
-          onClick={() => handleAction("qr")}
-          disabled={actionLoading !== null}
-          className="flex h-10 w-10 items-center justify-center rounded-lg border border-white/10 bg-white/[0.03] hover:bg-white/10 transition-colors disabled:opacity-50"
-          title="QR Code"
-        >
-          {actionLoading === "qr" ? (
-            <div className="h-4 w-4 animate-spin rounded-full border-2 border-zinc-500 border-t-white" />
-          ) : (
-            <ImageUp className="h-4 w-4 text-zinc-300" />
-          )}
-        </button>
-        <button
           onClick={() => handleAction("pair-code")}
           disabled={actionLoading !== null}
           className="flex h-10 w-10 items-center justify-center rounded-lg border border-white/10 bg-white/[0.03] hover:bg-white/10 transition-colors disabled:opacity-50"
-          title="Pair with Code"
+          title="Pair with WhatsApp code"
         >
           {actionLoading === "pair-code" ? (
             <div className="h-4 w-4 animate-spin rounded-full border-2 border-zinc-500 border-t-white" />
@@ -784,16 +468,16 @@ function PhoneCard({
           )}
         </button>
         <button
-          onClick={() => handleAction(isConnected ? "disconnect" : "connect")}
+          onClick={() => handleAction(isConnected ? "disconnect" : "pair-code")}
           disabled={actionLoading !== null}
           className={`flex h-10 w-10 items-center justify-center rounded-lg transition-colors disabled:opacity-50 ${
             isConnected
               ? "border border-white/10 bg-white/[0.03] hover:bg-white/10"
-              : "border border-white bg-white text-black hover:bg-zinc-200"
+            : "border border-white bg-white text-black hover:bg-zinc-200"
           }`}
-          title={isConnected ? "Disconnect" : "Connect"}
+          title={isConnected ? "Disconnect" : "Pair with code"}
         >
-          {actionLoading === "connect" || actionLoading === "disconnect" ? (
+          {actionLoading === "disconnect" || actionLoading === "pair-code" ? (
             <div className="h-4 w-4 animate-spin rounded-full border-2 border-zinc-500 border-t-white" />
           ) : isConnected ? (
             <LogOut className="h-4 w-4 text-zinc-300" />
@@ -931,9 +615,6 @@ export default function ConnectionCenterPage() {
   const [phonesLoading, setPhonesLoading] = useState(true);
   const [phonesError, setPhonesError] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
-  const [qrPhone, setQrPhone] = useState<Phone | null>(null);
-  const [connectionAttempts, setConnectionAttempts] = useState<Record<number, ConnectionAttemptState>>({});
-  const [now, setNow] = useState(() => Date.now());
 
   const [totalParsed, setTotalParsed] = useState(0);
   const [totalListings, setTotalListings] = useState(0);
@@ -945,7 +626,6 @@ export default function ConnectionCenterPage() {
   const [extractionPct, setExtractionPct] = useState(0);
   const [recentlyProcessed1h, setRecentlyProcessed1h] = useState(0);
   const [extractionLag, setExtractionLag] = useState<any>(null);
-  const closeQRModal = useCallback(() => setQrPhone(null), []);
 
   const fetchPhones = useCallback(async () => {
     try {
@@ -1033,21 +713,6 @@ export default function ConnectionCenterPage() {
     if (cached.recentlyProcessed1h != null) setRecentlyProcessed1h(cached.recentlyProcessed1h);
   }, [user?.id]);
 
-  useEffect(() => {
-    const interval = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(interval);
-  }, []);
-
-  const updateAttemptState = useCallback((phoneId: number, updater: (current: ConnectionAttemptState) => ConnectionAttemptState) => {
-    setConnectionAttempts((prev) => {
-      const current = prev[phoneId] || { attempts: 0, startedAt: null, lastOutcome: null, lastDurationSeconds: null };
-      return {
-        ...prev,
-        [phoneId]: updater(current),
-      };
-    });
-  }, []);
-
   const refreshData = useCallback(() => {
     void fetchPhones();
     void fetchLiveStatus();
@@ -1070,42 +735,6 @@ export default function ConnectionCenterPage() {
     refreshData();
   }, [refreshData, user?.id]);
 
-  const handleConnect = useCallback(async (phone: Phone): Promise<void> => {
-    updateAttemptState(phone.id, (current) => ({
-      attempts: current.attempts + 1,
-      startedAt: new Date().toISOString(),
-      lastOutcome: null,
-      lastDurationSeconds: null,
-    }));
-    try {
-      await connectPhone(phone.id);
-      setQrPhone(phone);
-      void refreshData();
-      window.dispatchEvent(new Event("propai_whatsapp_status_updated"));
-    } catch (error) {
-      updateAttemptState(phone.id, (current) => ({
-        ...current,
-        startedAt: null,
-        lastOutcome: "failed",
-        lastDurationSeconds: current.startedAt
-          ? Math.max(0, Math.floor((Date.now() - new Date(current.startedAt).getTime()) / 1000))
-          : 0,
-      }));
-      throw error;
-    }
-  }, [refreshData, updateAttemptState]);
-
-  const handleConnectionConfirmed = useCallback((phoneId: number) => {
-    updateAttemptState(phoneId, (current) => ({
-      ...current,
-      startedAt: null,
-      lastOutcome: "connected",
-      lastDurationSeconds: current.startedAt
-        ? Math.max(0, Math.floor((Date.now() - new Date(current.startedAt).getTime()) / 1000))
-        : current.lastDurationSeconds,
-    }));
-  }, [updateAttemptState]);
-
   const handlePhoneDeleted = useCallback((phoneId: number) => {
     setPhones((current) => {
       const next = current.filter((phone) => phone.id !== phoneId);
@@ -1114,7 +743,6 @@ export default function ConnectionCenterPage() {
       }
       return next;
     });
-    setQrPhone((current) => (current?.id === phoneId ? null : current));
   }, [user]);
 
   useEffect(() => {
@@ -1198,10 +826,7 @@ export default function ConnectionCenterPage() {
                   phone={phone}
                   liveStatus={liveStatus}
                   onRefresh={refreshData}
-                  onConnect={handleConnect}
                   onDeleted={handlePhoneDeleted}
-                  attemptState={connectionAttempts[phone.id] || null}
-                  now={now}
                 />
               ))}
             </div>
@@ -1273,17 +898,6 @@ export default function ConnectionCenterPage() {
       )}
 
       <CreatePhoneDialog open={showCreate} onClose={() => setShowCreate(false)} onCreated={handlePhoneCreated} />
-      {qrPhone && (
-        <QRModal
-          phone={qrPhone}
-          open={!!qrPhone}
-          onClose={closeQRModal}
-          onRefresh={refreshData}
-          onConnected={handleConnectionConfirmed}
-          attemptState={connectionAttempts[qrPhone.id] || null}
-          now={now}
-        />
-      )}
     </div>
   );
 }
