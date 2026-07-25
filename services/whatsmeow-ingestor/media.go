@@ -121,7 +121,7 @@ func uploadInboundMedia(ctx context.Context, brokerID, chatJID, messageID string
 	req.Header.Set("apikey", serviceKey)
 	req.Header.Set("Content-Type", media.MIMEType)
 	req.Header.Set("x-upsert", "true")
-	resp, err := webhookHTTPClient.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return "", err
 	}

@@ -209,13 +209,11 @@ func (s *BrokerSession) releaseLock() {
 // ── Session manager ────────────────────────────────────────────────────────
 
 type SessionManager struct {
-	mu           sync.RWMutex
-	deliveryMu   sync.Mutex
-	deliveryWake chan struct{}
-	sessions     map[string]*BrokerSession
-	container    *sqlstore.Container
-	db           *sql.DB
-	sessionWg    sync.WaitGroup
+	mu        sync.RWMutex
+	sessions  map[string]*BrokerSession
+	container *sqlstore.Container
+	db        *sql.DB
+	sessionWg sync.WaitGroup
 }
 
 type inboxThreadCursor struct {
@@ -250,10 +248,9 @@ type selfChatAgentResponse struct {
 
 func NewSessionManager(container *sqlstore.Container, db *sql.DB) *SessionManager {
 	return &SessionManager{
-		sessions:     make(map[string]*BrokerSession),
-		deliveryWake: make(chan struct{}, 1),
-		container:    container,
-		db:           db,
+		sessions:  make(map[string]*BrokerSession),
+		container: container,
+		db:        db,
 	}
 }
 
@@ -774,7 +771,7 @@ func (sm *SessionManager) handleEvent(s *BrokerSession, evt interface{}) {
 		go sm.handleHistorySync(s, v)
 
 	case *events.Receipt:
-		sm.queueWebhook(s.brokerID, fmt.Sprintf("receipt:%s:%d", s.brokerID, time.Now().UnixNano()), map[string]interface{}{
+		fireWebhook(map[string]interface{}{
 			"event": "WHATSAPP_RECEIPT",
 			"data": map[string]interface{}{
 				"broker_id": s.brokerID, "chat_jid": v.Chat.String(), "sender_jid": v.Sender.String(),
@@ -783,19 +780,19 @@ func (sm *SessionManager) handleEvent(s *BrokerSession, evt interface{}) {
 		})
 
 	case *events.Contact:
-		sm.queueWebhook(s.brokerID, fmt.Sprintf("contact:%s:%s:%d", s.brokerID, v.JID.String(), v.Timestamp.Unix()), map[string]interface{}{
+		fireWebhook(map[string]interface{}{
 			"event": "WHATSAPP_CONTACT_UPDATED",
 			"data":  map[string]interface{}{"broker_id": s.brokerID, "jid": v.JID.String(), "timestamp": v.Timestamp.Unix(), "contact": v.Action},
 		})
 
 	case *events.PushName:
-		sm.queueWebhook(s.brokerID, fmt.Sprintf("push-name:%s:%s:%s", s.brokerID, v.JID.String(), v.NewPushName), map[string]interface{}{
+		fireWebhook(map[string]interface{}{
 			"event": "WHATSAPP_CONTACT_UPDATED",
 			"data":  map[string]interface{}{"broker_id": s.brokerID, "jid": v.JID.String(), "jid_alt": v.JIDAlt.String(), "push_name": v.NewPushName},
 		})
 
 	case *events.BusinessName:
-		sm.queueWebhook(s.brokerID, fmt.Sprintf("business-name:%s:%s:%s", s.brokerID, v.JID.String(), v.NewBusinessName), map[string]interface{}{
+		fireWebhook(map[string]interface{}{
 			"event": "WHATSAPP_CONTACT_UPDATED",
 			"data":  map[string]interface{}{"broker_id": s.brokerID, "jid": v.JID.String(), "business_name": v.NewBusinessName},
 		})
@@ -807,7 +804,7 @@ func (sm *SessionManager) handleEvent(s *BrokerSession, evt interface{}) {
 		sm.requestGroupDirectorySync(s, "group updated")
 
 	case *events.ChatPresence:
-		sm.queueWebhook(s.brokerID, fmt.Sprintf("chat-presence:%s:%s:%d", s.brokerID, v.Chat.String(), time.Now().UnixNano()), map[string]interface{}{
+		fireWebhook(map[string]interface{}{
 			"event": "presence.update",
 			"data":  map[string]interface{}{"broker_id": s.brokerID, "chat_jid": v.Chat.String(), "sender_jid": v.Sender.String(), "state": string(v.State), "media": string(v.Media)},
 		})
@@ -891,16 +888,12 @@ func (sm *SessionManager) syncGroups(s *BrokerSession) bool {
 			"is_ephemeral": group.IsEphemeral, "disappearing_timer": group.DisappearingTimer,
 		})
 	}
-	if !sm.queueWebhook(s.brokerID, fmt.Sprintf("group-directory:%s:%d", s.brokerID, time.Now().Unix()/30), map[string]interface{}{
+	fireWebhook(map[string]interface{}{
 		"event": "GROUPS_REFRESHED", "instance": instanceName, "groups": directory,
 		"data": map[string]interface{}{"broker_id": s.brokerID},
-	}) {
-		return false
-	}
+	})
 	return true
 }
-
-// ── Message handling ───────────────────────────────────────────────────────
 
 func (sm *SessionManager) handleMessage(s *BrokerSession, evt *events.Message) {
 	info := evt.Info
@@ -1017,8 +1010,8 @@ func (sm *SessionManager) handleMessage(s *BrokerSession, evt *events.Message) {
 		LastMessageAt:   info.Timestamp.Format(time.RFC3339),
 	})
 
-	eventID := fmt.Sprintf("message:%s:%s:%s", s.brokerID, info.Chat.String(), info.ID)
-	if !sm.queueWebhook(s.brokerID, eventID, payload) {
+	if _, err := sm.insertRawMessage(s.brokerID, payload); err != nil {
+		log.Printf("[broker %s] raw_messages insert failed: %v", s.brokerID, err)
 		return
 	}
 	if strings.EqualFold(getEnv("PROPAI_MARK_MESSAGES_READ", "false"), "true") {
@@ -1503,7 +1496,7 @@ func (sm *SessionManager) handleHistorySync(s *BrokerSession, evt *events.Histor
 		if end > len(directory) {
 			end = len(directory)
 		}
-		sm.queueWebhook(s.brokerID, fmt.Sprintf("conversation-directory:%s:%d:%d", s.brokerID, evt.Data.GetProgress(), start), map[string]interface{}{
+		fireWebhook(map[string]interface{}{
 			"event": "CONVERSATIONS_UPSERT",
 			"data": map[string]interface{}{
 				"broker_id": s.brokerID,
@@ -1628,8 +1621,11 @@ func (sm *SessionManager) postWebMessage(s *BrokerSession, wmsg *waWeb.WebMessag
 		payload["data"].(map[string]interface{})["media"] = media
 	}
 
-	eventID := fmt.Sprintf("message:%s:%s:%s", s.brokerID, remoteJID, messageID)
-	return sm.queueWebhook(s.brokerID, eventID, payload)
+	if _, err := sm.insertRawMessage(s.brokerID, payload); err != nil {
+		log.Printf("[broker %s] history sync raw_messages insert failed: %v", s.brokerID, err)
+		return false
+	}
+	return true
 }
 
 func brokerIDFromRequest(r *http.Request) string {
@@ -2683,9 +2679,6 @@ func main() {
 	if err := ensureGroupMembersTable(db); err != nil {
 		log.Fatalf("error creating group members table: %v", err)
 	}
-	if err := ensureWebhookOutbox(db); err != nil {
-		log.Fatalf("error creating webhook outbox: %v", err)
-	}
 
 	// Open a dedicated connection for whatsmeow with MaxOpenConns(1)
 	// This avoids prepared-statement issues through Supabase's connection pooler.
@@ -2706,9 +2699,6 @@ func main() {
 	}
 
 	sm := NewSessionManager(container, db)
-	dispatcherCtx, stopDispatcher := context.WithCancel(context.Background())
-	defer stopDispatcher()
-	sm.startWebhookDispatcher(dispatcherCtx)
 
 	// Load existing broker sessions from stored device mappings
 	rows, err := db.Query("SELECT broker_id, device_jid FROM broker_whatsapp_devices")
