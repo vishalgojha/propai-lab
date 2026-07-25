@@ -26,7 +26,27 @@ import jwt as pyjwt
 logger = logging.getLogger(__name__)
 
 # ── Storage reference (set by app.py lifespan) ──────────────────────────
-storage: Storage | None = None
+# NOTE: Routers use `from routers.common import storage`, which captures a
+# snapshot at import time.  A plain `storage = None` would leave every router
+# with `None` after the lifespan reassigns this variable.  Instead we expose
+# a proxy that delegates all attribute access to the real instance set during
+# startup.  Routers can keep using `storage.xxx(...)` unchanged.
+class _StorageProxy:
+    """Lazy proxy — resolves to the real Storage at call time."""
+    _real: Storage | None = None
+
+    def __getattr__(self, name: str):
+        if self._real is None:
+            raise RuntimeError(
+                "Storage not initialised yet. "
+                "Ensure the app lifespan has run before handling requests."
+            )
+        return getattr(self._real, name)
+
+    def __repr__(self) -> str:
+        return f"<StorageProxy real={self._real!r}>"
+
+storage = _StorageProxy()
 
 # ── Auth / Tenant helpers ──────────────────────────────────────────────
 

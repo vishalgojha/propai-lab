@@ -130,6 +130,8 @@ def _normalize_india_phone(value: str = "") -> str:
     raw = (value or "").strip()
     if not raw or re.search(r"[xX*•]", raw):
         return ""
+    # Strip WhatsApp JID suffixes: @s.whatsapp.net, :26 linked-device suffix
+    raw = raw.split("@")[0].split(":")[0]
     digits = re.sub(r"\D", "", raw)
     if len(digits) == 12 and digits.startswith("91"):
         digits = digits[-10:]
@@ -1953,15 +1955,6 @@ class SupabaseStorage(Storage):
         canonical = effective_name or effective_phone or "Unknown broker"
         tenant_id = self._tenant_id
 
-        # Try to find existing
-        q = self.client.table("brokers").select("id").eq("identity_key", identity_key)
-        if tenant_id:
-            q = q.eq("tenant_id", tenant_id)
-        res = q.execute()
-        if res.data:
-            return res.data[0]["id"]
-
-        # Insert new broker
         row = {
             "identity_key": identity_key,
             "primary_phone": effective_phone or None,
@@ -1969,7 +1962,23 @@ class SupabaseStorage(Storage):
         }
         if tenant_id:
             row["tenant_id"] = tenant_id
-        res = self.client.table("brokers").insert(row).execute()
+
+        # Upsert — avoids TOCTOU race between concurrent extractions.
+        # On conflict (identity_key), update last_seen_at and return the id.
+        try:
+            res = self.client.table("brokers").upsert(
+                row, on_conflict="identity_key"
+            ).execute()
+            if res.data:
+                return res.data[0]["id"]
+        except Exception:
+            pass
+
+        # Fallback: select if upsert failed (e.g. constraint details differ)
+        q = self.client.table("brokers").select("id").eq("identity_key", identity_key)
+        if tenant_id:
+            q = q.eq("tenant_id", tenant_id)
+        res = q.execute()
         if res.data:
             return res.data[0]["id"]
         return None

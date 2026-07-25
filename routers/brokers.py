@@ -223,13 +223,14 @@ async def get_brokers_feed(
 
 @router.get("/api/brokers/find")
 async def find_broker(name: str = "", phone: str = "", user: dict = Depends(require_user)):
+    from storage.supabase import _normalize_india_phone, _market_name_key
     if not name and not phone:
         raise HTTPException(400, "name or phone is required")
-    digits = re.sub(r"\D+", "", phone or "")
-    if len(digits) >= 10:
-        key = f"phone:{digits[-10:]}"
+    norm_phone = _normalize_india_phone(phone)
+    if norm_phone:
+        key = f"phone:{norm_phone}"
     else:
-        normalized_name = re.sub(r"\s+", " ", (name or "").strip().lower())
+        normalized_name = _market_name_key(name)
         key = f"name:{normalized_name}" if normalized_name else None
     if not key:
         raise HTTPException(404, "Broker identity key could not be resolved")
