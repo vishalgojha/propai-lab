@@ -12,19 +12,6 @@ import ListingCard, { type ListingItem } from "@/components/ListingCard";
 import { useAuth } from "@/lib/AuthProvider";
 import { Plus, MessageSquare, Trash2 } from "lucide-react";
 
-function buildChipLabels(s: api.ChatSuggestions | null): string[] {
-  const chips: string[] = [];
-  if (s?.top_supply_market) chips.push(`Owner listings in ${s.top_supply_market}`);
-  if (s?.top_demand_market) chips.push(`Requirements in ${s.top_demand_market}`);
-  if (s?.top_commercial_market) chips.push(`Who deals in ${s.top_commercial_market} offices?`);
-  if (s?.top_building) chips.push(`Show all ${s.top_building} listings`);
-  if (s?.top_rental_market) chips.push(`Brokers active in ${s.top_rental_market} rentals`);
-  chips.push("Duplicate brokers in database");
-  if (s?.top_broker_building) chips.push(`Which brokers post ${s.top_broker_building} most?`);
-  chips.push("Show me this week's price trends");
-  return chips;
-}
-
 function messageText(message: { parts?: Array<{ type?: string; text?: string }>; content?: string }) {
   if (typeof message.content === "string" && message.content) return message.content;
   return (message.parts || [])
@@ -57,7 +44,6 @@ function formatSessionTime(iso: string) {
 export default function ChatPage() {
   const { user } = useAuth();
   const [input, setInput] = useState("");
-  const [suggestionsData, setSuggestionsData] = useState<api.ChatSuggestions | null>(null);
   const [brokerPhone, setBrokerPhone] = useState("");
   const chatEndRef = useRef<HTMLDivElement>(null);
 
@@ -133,11 +119,6 @@ export default function ChatPage() {
       cancelled = true;
     };
   }, [brokerPhone, loadSessions, sessionId, setMessages]);
-
-  // Load suggestions
-  useEffect(() => {
-    api.getChatSuggestions().then(setSuggestionsData).catch(() => {});
-  }, []);
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -277,20 +258,9 @@ export default function ChatPage() {
             <div className="text-center py-12">
               <div className="text-3xl mb-3">🤖</div>
               <h2 className="text-sm font-semibold text-white mb-2">Ask PropAI anything</h2>
-              <p className="text-xs text-zinc-500 mb-6 max-w-md mx-auto">
+              <p className="text-xs text-zinc-500 max-w-md mx-auto">
                 Natural-language search across market listings, requirements, brokers, buildings, and markets.
               </p>
-              <div className="flex flex-wrap gap-2 justify-center max-w-lg mx-auto">
-                {buildChipLabels(suggestionsData).map((q) => (
-                  <button
-                    key={q}
-                    onClick={() => setInput(q)}
-                    className="text-xs text-zinc-400 border border-white/10 hover:border-blue-500/30 hover:text-white rounded-lg px-2.5 py-1.5 lg:px-3 lg:py-2 transition-colors min-h-[36px]"
-                  >
-                    {q}
-                  </button>
-                ))}
-              </div>
             </div>
           ) : (
             <AnimatePresence initial={false}>
