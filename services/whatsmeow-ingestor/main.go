@@ -215,6 +215,7 @@ type SessionManager struct {
 	sessions     map[string]*BrokerSession
 	container    *sqlstore.Container
 	db           *sql.DB
+	sessionWg    sync.WaitGroup
 }
 
 type inboxThreadCursor struct {
@@ -444,14 +445,21 @@ func (sm *SessionManager) deleteDeviceMapping(ctx context.Context, brokerID stri
 func (sm *SessionManager) runSession(s *BrokerSession) {
 	log.Printf("[broker %s] starting session goroutine", s.brokerID)
 	defer s.releaseLock()
+	defer sm.sessionWg.Done()
+	defer func() {
+		if s.client != nil {
+			s.client.RemoveEventHandlers()
+			s.client.Disconnect()
+		}
+	}()
 
 sessionLoop:
 	for attempt := 0; ; attempt++ {
 		// Check if session was stopped externally
 		select {
 		case <-s.ctx.Done():
-			log.Printf("[broker %s] session cancelled", s.brokerID)
-			return
+			log.Printf("[broker %s] session cancelled, disconnecting", s.brokerID)
+			break sessionLoop
 		default:
 		}
 
@@ -468,7 +476,7 @@ sessionLoop:
 			select {
 			case <-time.After(backoff):
 			case <-s.ctx.Done():
-				return
+				break sessionLoop
 			}
 		}
 
@@ -2782,10 +2790,8 @@ func main() {
 	<-c
 
 	log.Printf("shutting down...")
-	ctxShutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
 
-	// Cancel all broker sessions
+	// Cancel all broker sessions — this signals runSession goroutines to disconnect
 	sm.mu.RLock()
 	for _, s := range sm.sessions {
 		if s.cancel != nil {
@@ -2794,6 +2800,22 @@ func main() {
 	}
 	sm.mu.RUnlock()
 
+	// Wait for all session goroutines to finish their disconnect dance
+	waitDone := make(chan struct{})
+	go func() {
+		sm.sessionWg.Wait()
+		close(waitDone)
+	}()
+
+	select {
+	case <-waitDone:
+		log.Printf("all sessions disconnected gracefully")
+	case <-time.After(10 * time.Second):
+		log.Printf("timed out waiting for sessions to disconnect")
+	}
+
+	ctxShutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
 	server.Shutdown(ctxShutdown)
 }
 
