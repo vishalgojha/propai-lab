@@ -696,6 +696,14 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
         # silently and brokers that only share images/videos appear empty.
         msg_class = msg_class if 'msg_class' in locals() else "unknown"
         try:
+            broker_id = storage.resolve_broker(
+                broker_phone=sender_phone or "",
+                sender_phone=sender_phone or "",
+                sender_jid=sender_jid or "",
+                broker_name=sender_name or push_name or "",
+                profile_name=sender_name or push_name or "",
+                sender=sender_name or push_name or "",
+            )
             stub = ParsedObservation(
                 raw_message_id=raw_id,
                 message_type=msg_class,
@@ -711,6 +719,7 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
                 }),
                 summary_title=f"[{msg_class}] {sender_name or push_name or 'unknown'}",
                 ai_extraction={"reason": "no_real_estate_anchor", "class": msg_class},
+                broker_id=broker_id,
             )
             storage.save_parsed(stub)
         except Exception as exc:
@@ -803,6 +812,20 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
             print(f"  [extract] resolve_parsed error: {exc}", flush=True)
             resolver_result = {}
 
+        # Resolve broker identity for this observation
+        try:
+            broker_id = storage.resolve_broker(
+                broker_phone=parsed.get("broker_phone") or "",
+                sender_phone=sender_phone or "",
+                sender_jid=sender_jid or "",
+                broker_name=parsed.get("broker_name") or "",
+                profile_name=sender_name or push_name or "",
+                sender=sender_name or push_name or "",
+            )
+        except Exception as exc:
+            print(f"  [extract] resolve_broker error: {exc}", flush=True)
+            broker_id = None
+
         obs = ParsedObservation(
             raw_message_id=raw_id,
             listing_index=idx,
@@ -865,6 +888,7 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
             additional_charges=_safe_additional_charges(
                 ai_item.get("additional_charges") if ai_item else parsed.get("additional_charges")
             ),
+            broker_id=broker_id,
         )
         try:
             parsed_id = storage.save_parsed(obs)

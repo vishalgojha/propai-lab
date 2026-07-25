@@ -91,6 +91,7 @@ class ParsedObservation:
     ai_extraction: Optional[dict] = None
     deal_tags: list[str] = field(default_factory=list)
     additional_charges: list[dict] = field(default_factory=list)
+    broker_id: Optional[int] = None
 
     # v2 schema — physical / deal attributes (staging from AI extraction)
     carpet_area_sqft: Optional[float] = None
