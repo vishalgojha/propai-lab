@@ -104,7 +104,7 @@ async def lifespan(app: FastAPI):
     print(f"  Using Supabase backend: {SUPABASE_URL}")
     storage = SupabaseStorage(SUPABASE_URL, SUPABASE_SERVICE_KEY)
     import routers.common as _common
-    _common.storage = storage
+    _common.storage._real = storage
     key_path = PROJECT_DIR / ".api_key"
     if not key_path.exists():
         new_key = str(uuid.uuid4())
