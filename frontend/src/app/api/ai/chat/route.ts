@@ -44,6 +44,37 @@ function textStream(content: string) {
   });
 }
 
+function sseProxyStream(fastapiStream: ReadableStream<Uint8Array>) {
+  return createUIMessageStream({
+    async execute({ writer }) {
+      const decoder = new TextDecoder();
+      const reader = fastapiStream.getReader();
+
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          const text = decoder.decode(value, { stream: true });
+          for (const line of text.split("\n")) {
+            const trimmed = line.trim();
+            if (!trimmed || !trimmed.startsWith("data: ")) continue;
+            const data = trimmed.slice(6);
+            if (data === "[DONE]") return;
+            try {
+              const chunk = JSON.parse(data);
+              writer.write(chunk);
+            } catch {
+              // skip unparseable lines
+            }
+          }
+        }
+      } finally {
+        reader.releaseLock();
+      }
+    },
+  });
+}
+
 async function callFastAPI(messages: { role: string; content: string }[], brokerPhone: string = "", sessionId: string = "", authHeader = "", source: string = "") {
   const fastapi = await fetch(`${API_BASE}/api/ai/chat`, {
     method: "POST",
@@ -54,21 +85,20 @@ async function callFastAPI(messages: { role: string; content: string }[], broker
     body: JSON.stringify({ messages, broker_phone: brokerPhone, session_id: sessionId, source }),
   });
 
-  const raw = await fastapi.text();
-  let json: Record<string, unknown> = {};
-  try {
-    json = JSON.parse(raw);
-  } catch {
-    json = {};
-  }
-
-  if (!fastapi.ok || json.error) {
-    const errorText = (json.message as string) || (json.error as string) || fastapi.statusText;
+  if (!fastapi.ok) {
+    let errorText = fastapi.statusText;
+    try {
+      const json = await fastapi.json();
+      errorText = (json.message as string) || (json.error as string) || errorText;
+    } catch {}
     throw new Error(errorText);
   }
 
-  const content = String(json.content || "").trim() || "I could not find an answer for that yet.";
-  return { content, blocks: json.blocks || [], sources: json.sources || [], status_steps: json.status_steps || [], trace: json.trace };
+  if (!fastapi.body) {
+    throw new Error("Empty response from API");
+  }
+
+  return fastapi.body;
 }
 
 export async function POST(req: Request) {
@@ -86,8 +116,8 @@ export async function POST(req: Request) {
   }
 
   try {
-    const result = await callFastAPI(messages, brokerPhone, sessionId, authHeader, source);
-    return createUIMessageStreamResponse({ stream: textStream(result.content) });
+    const fastapiStream = await callFastAPI(messages, brokerPhone, sessionId, authHeader, source);
+    return createUIMessageStreamResponse({ stream: sseProxyStream(fastapiStream) });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Chat API failed";
     return createUIMessageStreamResponse({ stream: textStream(message) });
@@ -105,8 +135,17 @@ export async function PUT(req: Request) {
 
   try {
     const filtered = messages.filter((m) => m.content && ["system", "user", "assistant"].includes(m.role));
-    const result = await callFastAPI(filtered, brokerPhone, sessionId, authHeader, source);
-    return Response.json(result);
+    const fastapi = await fetch(`${API_BASE}/api/ai/chat`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(authHeader ? { Authorization: authHeader } : {}),
+      },
+      body: JSON.stringify({ messages: filtered, broker_phone: brokerPhone, session_id: sessionId, source }),
+    });
+    if (!fastapi.ok) throw new Error(await fastapi.text());
+    const json = await fastapi.json();
+    return Response.json(json);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Chat API failed";
     return Response.json({ error: message }, { status: 500 });
