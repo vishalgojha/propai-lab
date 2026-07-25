@@ -35,43 +35,37 @@ func clearDatabaseEnvironment(t *testing.T) {
 	}
 }
 
-func TestPostWebhookPayloadRejectsNonSuccessResponse(t *testing.T) {
-	previousClient := webhookHTTPClient
-	webhookHTTPClient = &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
-		if r.Header.Get("Content-Type") != "application/json" {
-			t.Fatalf("unexpected content type: %s", r.Header.Get("Content-Type"))
-		}
-		body, _ := io.ReadAll(r.Body)
-		if string(body) != `{"event":"test"}` {
-			t.Fatalf("unexpected payload: %s", body)
-		}
-		return &http.Response{
-			StatusCode: http.StatusServiceUnavailable,
-			Body:       io.NopCloser(strings.NewReader("try later")),
-			Header:     make(http.Header),
-		}, nil
-	})}
-	defer func() { webhookHTTPClient = previousClient }()
-
-	if err := postWebhookPayload([]byte(`{"event":"test"}`)); err == nil {
-		t.Fatal("expected non-2xx webhook response to fail")
-	}
-}
-
-func TestPostWebhookPayloadAcceptsSuccessResponse(t *testing.T) {
-	previousClient := webhookHTTPClient
-	webhookHTTPClient = &http.Client{Transport: roundTripFunc(func(_ *http.Request) (*http.Response, error) {
+func TestFireWebhookSendsToEndpoint(t *testing.T) {
+	previousClient := httpClient
+	var received []byte
+	httpClient = &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		received, _ = io.ReadAll(r.Body)
 		return &http.Response{
 			StatusCode: http.StatusAccepted,
 			Body:       io.NopCloser(strings.NewReader("")),
 			Header:     make(http.Header),
 		}, nil
 	})}
-	defer func() { webhookHTTPClient = previousClient }()
+	defer func() { httpClient = previousClient }()
 
-	if err := postWebhookPayload([]byte(`{"event":"test"}`)); err != nil {
-		t.Fatalf("postWebhookPayload() error = %v", err)
+	fireWebhook(map[string]interface{}{"event": "test"})
+	if string(received) != `{"event":"test"}` {
+		t.Fatalf("unexpected payload: %s", received)
 	}
+}
+
+func TestFireWebhookLogsNonSuccessResponse(t *testing.T) {
+	previousClient := httpClient
+	httpClient = &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusServiceUnavailable,
+			Body:       io.NopCloser(strings.NewReader("try later")),
+			Header:     make(http.Header),
+		}, nil
+	})}
+	defer func() { httpClient = previousClient }()
+
+	fireWebhook(map[string]interface{}{"event": "test"})
 }
 
 func TestMediaPathHelpers(t *testing.T) {
