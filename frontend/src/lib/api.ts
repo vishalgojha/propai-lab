@@ -1411,62 +1411,11 @@ export function matchClientsToListing(data: {
   });
 }
 
-export function resolveBuilding(text: string) {
-  return fetchJSON<{ resolved: boolean; building_name?: string; details?: any; aliases?: string[]; past_listings?: any[] }>("/actions/resolve-building", {
-    method: "POST",
-    body: JSON.stringify({ text }),
-  });
-}
-
-export function forwardToClient(text: string) {
-  return fetchJSON<{ original: string; cleaned: string }>("/actions/forward-to-client", {
-    method: "POST",
-    body: JSON.stringify({ text }),
-  });
-}
-
-export function summarizeText(text: string) {
-  return fetchJSON<{ summary: string }>("/actions/summarize", {
-    method: "POST",
-    body: JSON.stringify({ text }),
-  }, 30000);
-}
-
-export function askPropAI(text: string, messageId?: number, context?: any) {
-  return fetchJSON<{ response: string }>("/actions/ask-propai", {
-    method: "POST",
-    body: JSON.stringify({ text, message_id: messageId, context }),
-  }, 30000);
-}
-
 export function inlineResolveTrainerTerm(text: string, rawMessageId: number | undefined, status: string, notes = "") {
   return fetchJSON<{ status: string; term: string }>("/trainer/inline-resolve", {
     method: "POST",
     body: JSON.stringify({ text, raw_message_id: rawMessageId, status, notes }),
   });
-}
-
-export function createFollowUp(data: {
-  client_id?: number;
-  message_id?: number;
-  building_name?: string;
-  broker_phone?: string;
-  follow_up_type?: string;
-  title: string;
-  notes?: string;
-  due_date: string;
-  due_time?: string;
-}) {
-  return fetchJSON<{ id: number }>("/follow-ups", {
-    method: "POST",
-    body: JSON.stringify(data),
-  });
-}
-
-export function getFollowUps(clientId?: number, status: string = "pending") {
-  const params = new URLSearchParams({ status });
-  if (clientId) params.set("client_id", String(clientId));
-  return fetchJSON<any[]>(`/follow-ups?${params}`);
 }
 
 export interface SavedView {
