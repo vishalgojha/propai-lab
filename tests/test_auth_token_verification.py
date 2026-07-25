@@ -3,11 +3,12 @@ from datetime import datetime, timedelta, timezone
 import jwt
 
 import app
+from routers import common
 
 
 def test_verify_supabase_token_accepts_configured_hs256_secret(monkeypatch):
     secret = "test-secret-with-enough-entropy-for-hs256"
-    monkeypatch.setattr(app, "SUPABASE_JWT_SECRET", secret)
+    monkeypatch.setattr(common, "SUPABASE_JWT_SECRET", secret)
     token = jwt.encode(
         {
             "sub": "user-123",
@@ -25,7 +26,7 @@ def test_verify_supabase_token_accepts_configured_hs256_secret(monkeypatch):
 
 
 def test_verify_supabase_token_rejects_hs256_with_wrong_secret(monkeypatch):
-    monkeypatch.setattr(app, "SUPABASE_JWT_SECRET", "configured-secret")
+    monkeypatch.setattr(common, "SUPABASE_JWT_SECRET", "configured-secret")
     token = jwt.encode(
         {
             "sub": "user-123",
