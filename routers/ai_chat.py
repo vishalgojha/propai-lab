@@ -92,6 +92,13 @@ def _wrap_sse(response: dict) -> StreamingResponse:
     )
 
 
+def _wrap_chat_response(response: dict, is_inbox: bool = False):
+    """Return SSE for /chat, plain JSON for inbox AI panel."""
+    if is_inbox:
+        return response
+    return _wrap_sse(response)
+
+
 # ═══════════════════════════════════════════════════════════════════
 # Models
 # ═══════════════════════════════════════════════════════════════════
@@ -743,13 +750,13 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
                 _persist("user", last_user)
                 _persist("assistant", text)
                 _maybe_title(last_user)
-                return _wrap_sse({
+                return _wrap_chat_response({
                     "content": text,
                     "blocks": [{"type": "summary", "body": text}],
                     "sources": list(cap_sources.keys()),
                     "status_steps": [],
                     "trace": {"route": "capability_llm"},
-                })
+                }, _is_inbox)
         except Exception:
             pass
 
@@ -770,28 +777,28 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
                 _persist("user", last_user)
                 _persist("assistant", text)
                 _maybe_title(last_user)
-                return _wrap_sse({
+                return _wrap_chat_response({
                     "content": text,
                     "blocks": [{"type": "greeting", "body": text}],
                     "sources": [],
                     "status_steps": [],
                     "trace": {"route": "conversational_llm"},
-                })
+                }, _is_inbox)
             else:
-                return _wrap_sse({
+                return _wrap_chat_response({
                     "content": "AI returned an empty response. Please try again.",
                     "blocks": [{"type": "error", "body": "AI returned an empty response. Please try again."}],
                     "sources": [],
                     "status_steps": [],
                     "trace": {"route": "conversational_empty"},
-                })
+                }, _is_inbox)
         except Exception as exc:
-            return _wrap_sse({
+            return _wrap_chat_response({
                 "content": f"AI chat failed: {exc}. Please try again.",
                 "blocks": [{"type": "error", "body": f"AI chat failed: {exc}. Please try again."}],
                 "sources": [],
                 "trace": {"route": "conversational_error"},
-            })
+            }, _is_inbox)
 
     if last_user and memory.detect_topic_change(last_user) and len(memory.working) > 2:
         memory.compact_topic()
@@ -804,7 +811,7 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
     except Exception:
         pass
     if not sources:
-        return _wrap_sse({"error": "no_data", "content": "No data found. Check CSV files and database."})
+        return _wrap_chat_response({"error": "no_data", "content": "No data found. Check CSV files and database."}, _is_inbox)
 
     deterministic_query = chat_engine.parse_market_search_request(last_user)
     if deterministic_query:
@@ -823,7 +830,7 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
             _persist("user", last_user)
             _persist("assistant", response.get("content", ""))
             _maybe_title(last_user)
-            return _wrap_sse(response)
+            return _wrap_chat_response(response, _is_inbox)
         except Exception as exc:
             _logger.warning("Deterministic market search failed: %s", exc)
             response = chat_engine.deterministic_market_response(
@@ -832,7 +839,7 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
             _persist("user", last_user)
             _persist("assistant", response.get("content", ""))
             _maybe_title(last_user)
-            return _wrap_sse(response)
+            return _wrap_chat_response(response, _is_inbox)
 
     loop = asyncio.get_running_loop()
 
