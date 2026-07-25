@@ -982,7 +982,7 @@ def generate_summary_title(parsed: dict, raw_text: str = "") -> str | None:
     message_type = (parsed.get("message_type") or "").upper()
     def clean_label(value):
         text = re.sub(r"\s+", " ", str(value or "").replace("_", " ")).strip(" ,|-\n\t")
-        if text.upper() in {"", "UNKNOWN", "LISTING", "REQUIREMENT", "PROPERTY", "TEXT"}:
+        if text.upper() in {"", "UNKNOWN", "LISTING", "REQUIREMENT", "PROPERTY", "TEXT", "NONE", "NULL"}:
             return ""
         return text
     def format_price(value, unit: str = "") -> str:
@@ -1089,7 +1089,9 @@ def generate_summary_title(parsed: dict, raw_text: str = "") -> str | None:
     price_text = format_price(parsed.get("price") or parsed.get("monthly_rent") or parsed.get("total_asking_price"), parsed.get("price_unit") or "")
     is_requirement = message_type == "REQUIREMENT" or intent in {"BUY","BUYER","REQUIREMENT","RENTAL_SEEKER","WANTED"}
     is_rent = trans_type in {"RENT","LEASE","RENTAL"}
-    descriptor = " ".join(part for part in (furnishing.lower(), subject) if part).strip()
+    furnishing_clean = (furnishing or "").strip().lower()
+    furnishing_clean = "" if furnishing_clean in {"none", "null", "unknown", ""} else furnishing_clean
+    descriptor = " ".join(part for part in (furnishing_clean, subject) if part).strip()
     if area_text:
         descriptor += f" with {area_text}"
     article = "an" if descriptor[:1].lower() in "aeiou" else "a"

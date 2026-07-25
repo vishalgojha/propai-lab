@@ -3648,9 +3648,16 @@ return {
                       <span className="truncate">{displayPhoneString(resolvedBrokerPhone) || "Number not resolved"}</span>
                       <span>•</span>
                       <span>
-                        {loadingBrokerObs
-                          ? (selectedBroker.observation_count || 0)
-                          : selectedBrokerObservations.length} market items
+                        {loadingBrokerObs ? (
+                          <>
+                            {selectedBroker.observation_count || 0} market items{' '}
+                            <span className="text-[10px] text-zinc-500 ml-1">(loading…)</span>
+                          </>
+                        ) : (
+                          <>
+                            {selectedBroker.observation_count || 0} market items
+                          </>
+                        )}
                       </span>
                       {selectedBroker.building_count > 0 && (
                         <>
