@@ -8,8 +8,10 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
+import json as _json
+
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
 from routers.common import (
@@ -28,6 +30,66 @@ _today_prefix = None
 # ── Lazy-imports ───────────────────────────────────────────────────
 from lab import ai_chat_engine as chat_engine
 from lab.config import ENABLE_AI_PROMO, ENABLE_META_PUBLISHING
+
+
+# ── SSE helpers ────────────────────────────────────────────────────
+
+def _sse_event(data: dict | str) -> str:
+    """Format a single SSE event."""
+    payload = _json.dumps(data, default=str) if isinstance(data, dict) else str(data)
+    return f"data: {payload}\n\n"
+
+
+def _to_sse_chunks(response: dict) -> str:
+    """Convert a workspace response dict into SSE text for DefaultChatTransport.
+
+    Yields text-start, text-delta, data-*, and text-end events so the
+    frontend useChat hook can render both prose and structured listing_cards.
+    """
+    msg_id = f"msg-{uuid.uuid4().hex[:8]}"
+    content = str(response.get("content") or "").strip()
+    blocks = response.get("blocks") or []
+
+    # text-start
+    yield _sse_event({"type": "text-start", "id": msg_id})
+
+    # text-delta from content string
+    if content:
+        yield _sse_event({"type": "text-delta", "delta": content, "id": msg_id})
+
+    # Emit each block as appropriate
+    for block in blocks:
+        block_type = block.get("type", "")
+        if block_type == "listing_cards":
+            yield _sse_event({
+                "type": "data-listing_cards",
+                "id": f"cards-{msg_id}",
+                "data": {
+                    "items": block.get("items") or [],
+                    "title": block.get("title", "Active listings"),
+                },
+            })
+        elif block_type in ("summary", "empty_state", "error_state", "greeting"):
+            body = block.get("body") or ""
+            if body and body != content:
+                yield _sse_event({"type": "text-delta", "delta": f"\n\n{body}", "id": msg_id})
+
+    # text-end
+    yield _sse_event({"type": "text-end", "id": msg_id})
+    yield _sse_event("[DONE]")
+
+
+def _wrap_sse(response: dict) -> StreamingResponse:
+    """Wrap a workspace response as an SSE StreamingResponse."""
+    return StreamingResponse(
+        _to_sse_chunks(response),
+        media_type="text/event-stream",
+        headers={
+            "cache-control": "no-cache",
+            "x-vercel-ai-ui-message-stream": "v1",
+            "x-accel-buffering": "no",
+        },
+    )
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -681,13 +743,13 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
                 _persist("user", last_user)
                 _persist("assistant", text)
                 _maybe_title(last_user)
-                return {
+                return _wrap_sse({
                     "content": text,
                     "blocks": [{"type": "summary", "body": text}],
                     "sources": list(cap_sources.keys()),
                     "status_steps": [],
                     "trace": {"route": "capability_llm"},
-                }
+                })
         except Exception:
             pass
 
@@ -708,28 +770,28 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
                 _persist("user", last_user)
                 _persist("assistant", text)
                 _maybe_title(last_user)
-                return {
+                return _wrap_sse({
                     "content": text,
                     "blocks": [{"type": "greeting", "body": text}],
                     "sources": [],
                     "status_steps": [],
                     "trace": {"route": "conversational_llm"},
-                }
+                })
             else:
-                return {
+                return _wrap_sse({
                     "content": "AI returned an empty response. Please try again.",
                     "blocks": [{"type": "error", "body": "AI returned an empty response. Please try again."}],
                     "sources": [],
                     "status_steps": [],
                     "trace": {"route": "conversational_empty"},
-                }
+                })
         except Exception as exc:
-            return {
+            return _wrap_sse({
                 "content": f"AI chat failed: {exc}. Please try again.",
                 "blocks": [{"type": "error", "body": f"AI chat failed: {exc}. Please try again."}],
                 "sources": [],
                 "trace": {"route": "conversational_error"},
-            }
+            })
 
     if last_user and memory.detect_topic_change(last_user) and len(memory.working) > 2:
         memory.compact_topic()
@@ -742,7 +804,7 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
     except Exception:
         pass
     if not sources:
-        return {"error": "no_data", "message": "No data found. Check CSV files and database."}
+        return _wrap_sse({"error": "no_data", "content": "No data found. Check CSV files and database."})
 
     deterministic_query = chat_engine.parse_market_search_request(last_user)
     if deterministic_query:
@@ -761,7 +823,7 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
             _persist("user", last_user)
             _persist("assistant", response.get("content", ""))
             _maybe_title(last_user)
-            return response
+            return _wrap_sse(response)
         except Exception as exc:
             _logger.warning("Deterministic market search failed: %s", exc)
             response = chat_engine.deterministic_market_response(
@@ -770,7 +832,7 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
             _persist("user", last_user)
             _persist("assistant", response.get("content", ""))
             _maybe_title(last_user)
-            return response
+            return _wrap_sse(response)
 
     loop = asyncio.get_running_loop()
 
@@ -797,7 +859,7 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
         _persist("user", last_user)
         _persist("assistant", response.get("content", ""))
         _maybe_title(last_user)
-        return response
+        return _wrap_sse(response)
     except asyncio.TimeoutError:
         return JSONResponse(
             status_code=504,
