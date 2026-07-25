@@ -113,11 +113,11 @@ def test_profile_endpoints_forward_tenant(monkeypatch):
     class FakeStorage:
         def get_user_profile(self, phone="", auth_user_id="", tenant_id=None):
             calls.append(("get", phone, auth_user_id, tenant_id))
-            return {}
+            return {"phone": phone, "auth_user_id": auth_user_id, "tenant_id": tenant_id}
 
         def save_user_profile(self, phone, data, auth_user_id="", tenant_id=None):
             calls.append(("save", phone, auth_user_id, tenant_id))
-            return {}
+            return {"phone": phone, "auth_user_id": auth_user_id, "tenant_id": tenant_id}
 
     monkeypatch.setattr(_auth, "storage", FakeStorage())
 
@@ -130,6 +130,64 @@ def test_profile_endpoints_forward_tenant(monkeypatch):
 
     assert ("get", "", "u1", "org-A") in calls
     assert ("save", "919999999999", "u1", "org-A") in calls
+
+
+def test_user_profile_save_uses_auth_user_id_globally(monkeypatch):
+    from storage.supabase import SupabaseStorage
+    from types import MethodType
+
+    calls = []
+
+    class FakeQuery:
+        def __init__(self, table):
+            self.table = table
+            self.filters = []
+            self.payload = None
+
+        def update(self, payload):
+            self.payload = payload
+            return self
+
+        def eq(self, key, value):
+            self.filters.append((key, value))
+            return self
+
+        def execute(self):
+            calls.append((self.table, tuple(self.filters), dict(self.payload or {})))
+            return type("R", (), {"data": [{"id": 1, **(self.payload or {})}]})()
+
+    class FakeClient:
+        def table(self, name):
+            return FakeQuery(name)
+
+    s = object.__new__(SupabaseStorage)
+    s._client = FakeClient()
+    s._SupabaseStorage__tenant_id_fallback = None
+
+    def fake_get_user_profile(self, phone="", auth_user_id="", tenant_id=None):
+        calls.append(("lookup", phone, auth_user_id, tenant_id))
+        if auth_user_id == "u1":
+            return {
+                "id": 1,
+                "phone": "919999999999",
+                "auth_user_id": "u1",
+                "tenant_id": "org-B",
+            }
+        return None
+
+    s.get_user_profile = MethodType(fake_get_user_profile, s)
+
+    result = s.save_user_profile(
+        "919999999999",
+        {"first_name": "A", "last_name": "B", "email": "a@example.com", "city": "Mumbai"},
+        auth_user_id="u1",
+        tenant_id="org-A",
+    )
+
+    assert result["auth_user_id"] == "u1"
+    assert ("lookup", "", "u1", None) in calls
+    assert any(entry[0] == "user_profiles" and ("auth_user_id", "u1") in entry[1] for entry in calls if len(entry) == 3)
+    assert all(("tenant_id", "org-A") not in entry[1] for entry in calls if len(entry) == 3 and entry[0] == "user_profiles")
 
 
 def test_saved_inbox_views_forward_tenant(monkeypatch):

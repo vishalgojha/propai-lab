@@ -775,8 +775,6 @@ class SupabaseStorage(Storage):
         if auth_user_id:
             try:
                 q = self.client.table("user_profiles").select("*").eq("auth_user_id", auth_user_id)
-                if tid:
-                    q = q.eq("tenant_id", tid)
                 q = q.limit(1)
                 res = q.execute()
                 if res.data:
@@ -813,14 +811,12 @@ class SupabaseStorage(Storage):
             payload["tenant_id"] = tid
         existing = None
         if auth_user_id:
-            existing = self.get_user_profile(auth_user_id=auth_user_id, tenant_id=tid)
+            existing = self.get_user_profile(auth_user_id=auth_user_id)
         if not existing and norm:
-            existing = self.get_user_profile(phone=norm, tenant_id=tid)
+            existing = self.get_user_profile(phone=norm)
         if existing:
             update_where = ("auth_user_id", existing.get("auth_user_id")) if existing.get("auth_user_id") else ("phone", existing.get("phone", norm))
             uq = self.client.table("user_profiles").update(payload).eq(update_where[0], update_where[1])
-            if tid:
-                uq = uq.eq("tenant_id", tid)
             res = uq.execute()
         else:
             if not norm and auth_user_id:
