@@ -3335,7 +3335,7 @@ class SupabaseStorage(Storage):
             "status": "pending",
             "started_at": None,
             "attempts": 0,
-        }).eq("status", "in_progress").lt("started_at", cutoff).execute()
+        }).eq("status", "in_progress").filter("started_at", "lt", cutoff).execute()
         return len(res.data) if res.data else 0
 
     def get_enrichment_job_by_parsed(self, parsed_id: int) -> Optional[dict]:
