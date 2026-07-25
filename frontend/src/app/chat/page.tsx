@@ -288,24 +288,48 @@ export default function ChatPage() {
                         );
                         return (
                           <>
-                            {textParts.length > 0 && (
-                              <div className="text-sm text-zinc-300 whitespace-pre-wrap leading-relaxed">
-                                {textParts.map((p: any, i: number) => (
-                                  <span key={i}>{p.text}</span>
-                                ))}
-                              </div>
-                            )}
+                            {(() => {
+                              const hasCards = listingParts.length > 0;
+                              if (hasCards && textParts.length > 0) {
+                                // Render AI summary line with bold counts
+                                const summaryText = textParts[0].text || "";
+                                const boldSummary = summaryText.replace(
+                                  /(\d+)\s*(?:active\s+)?(?:matches?|listings?|requirements?)/gi,
+                                  '<b>$1</b> $2'
+                                ).replace(
+                                  /(\d+)\s*(?:active\s+)?(?:match|listing|requirement)/gi,
+                                  '<b>$1</b> $2'
+                                );
+                                return (
+                                  <div
+                                    key="ai-summary"
+                                    className="text-xs text-zinc-400 mb-3"
+                                    dangerouslySetInnerHTML={{ __html: boldSummary }}
+                                  />
+                                );
+                              }
+                              return textParts.map((p: any, i: number) => (
+                                <span key={i}>{p.text}</span>
+                              ));
+                            })()}
                             {listingParts.map((p: any, i: number) => {
                               const items: ListingItem[] = p.data?.items || [];
                               if (items.length === 0) return null;
                               return (
-                                <div key={`cards-${i}`} className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                <div key={`cards-${i}`} className="flex flex-col gap-2.5">
                                   {items.map((item, j) => (
                                     <ListingCard key={item.fingerprint || j} item={item} />
                                   ))}
                                 </div>
                               );
                             })}
+                            {(() => {
+                              const hasCards = listingParts.length > 0;
+                              if (!hasCards) return textParts.map((p: any, i: number) => (
+                                <span key={i}>{p.text}</span>
+                              ));
+                              return null;
+                            })()}
                           </>
                         );
                       })()}
