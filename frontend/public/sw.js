@@ -83,7 +83,7 @@ async function networkOnlyNavigation(request) {
 async function networkFirstWithFallback(request, fallbackUrl) {
   try {
     const response = await fetch(request);
-    if (response.ok) {
+    if (response.ok && request.method === "GET") {
       const cache = await caches.open(CACHE);
       cache.put(request, response.clone());
     }
