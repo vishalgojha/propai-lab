@@ -208,7 +208,7 @@ async function fetchJSONWithRetry<T>(
     throw error;
   } finally {
     clearTimeout(timeout);
-    init?.signal?.removeEventListener("abort", abortFromCaller);
+    init?.signal?.removeEventListener("abort", handleAbort);
   }
 }
 
