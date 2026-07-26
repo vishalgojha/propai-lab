@@ -33,12 +33,13 @@ import (
 )
 
 var (
-	databaseURL  = resolveDatabaseURL()
-	webhookURL   = getEnv("PROPAI_WEBHOOK_URL", "https://api.propai.live/webhook")
-	apiURL       = getEnv("PROPAI_API_URL", "https://api.propai.live")
-	instanceName = getEnv("PROPAI_INSTANCE_NAME", "propai-whatsmeow")
-	sendPort     = getEnv("PROPAI_SEND_PORT", "3001")
-	statusClient = &http.Client{Timeout: 5 * time.Second}
+	databaseURL          = resolveDatabaseURL()
+	webhookURL           = getEnv("PROPAI_WEBHOOK_URL", "https://api.propai.live/webhook")
+	apiURL               = getEnv("PROPAI_API_URL", "https://api.propai.live")
+	extractionTriggerURL = getEnv("PROPAI_EXTRACTION_TRIGGER_URL", apiURL+"/trigger-extraction")
+	instanceName         = getEnv("PROPAI_INSTANCE_NAME", "propai-whatsmeow")
+	sendPort             = getEnv("PROPAI_SEND_PORT", "3001")
+	statusClient         = &http.Client{Timeout: 5 * time.Second}
 )
 
 // ── Status ──────────────────────────────────────────────────────────────────
@@ -1010,10 +1011,16 @@ func (sm *SessionManager) handleMessage(s *BrokerSession, evt *events.Message) {
 		LastMessageAt:   info.Timestamp.Format(time.RFC3339),
 	})
 
-	if _, err := sm.insertRawMessage(s.brokerID, payload); err != nil {
+	rawID, err := sm.insertRawMessage(s.brokerID, payload)
+	if err != nil {
 		log.Printf("[broker %s] raw_messages insert failed: %v", s.brokerID, err)
 		return
 	}
+	// Trigger immediate extraction so the message is processed in seconds
+	// rather than waiting for the polling worker (5s interval).  Fire-and-
+	// forget — the polling worker is the fallback if this fails.
+	tenantID, _ := resolveTenantID(sm.db, s.brokerID)
+	go triggerExtraction(rawID, tenantID)
 	if strings.EqualFold(getEnv("PROPAI_MARK_MESSAGES_READ", "false"), "true") {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()

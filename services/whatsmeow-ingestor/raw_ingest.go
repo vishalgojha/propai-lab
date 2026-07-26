@@ -202,6 +202,44 @@ func fireWebhook(payload map[string]interface{}) {
 	}
 }
 
+// triggerExtraction POSTs to /trigger-extraction so the Python API immediately
+// schedules extraction for the given raw_message.  This is async and
+// non-blocking — the message is already persisted; failure here just means
+// extraction waits for the polling worker.
+func triggerExtraction(rawID int64, tenantID string) {
+	if rawID <= 0 {
+		return
+	}
+	payload := map[string]interface{}{
+		"raw_id": rawID,
+	}
+	if tenantID != "" {
+		payload["tenant_id"] = tenantID
+	}
+	encoded, err := json.Marshal(payload)
+	if err != nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	url := extractionTriggerURL
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(encoded))
+	if err != nil {
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		log.Printf("[trigger-extraction] POST failed for raw_id=%d: %v", rawID, err)
+		return
+	}
+	resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		log.Printf("[trigger-extraction] returned %d for raw_id=%d: %s", resp.StatusCode, rawID, string(body))
+	}
+}
+
 func extractMessageText(msg map[string]interface{}) string {
 	if msg == nil {
 		return ""

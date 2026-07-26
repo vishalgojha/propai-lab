@@ -1534,6 +1534,64 @@ async def ingest_batch(req: BatchIngestRequest, user: dict = Depends(require_use
         results.append(r)
     return {"count": len(results), "results": results}
 
+# ── Lightweight extraction trigger (called by Go ingestor) ─────────
+class TriggerExtractionRequest(BaseModel):
+    raw_id: int
+    tenant_id: Optional[str] = None
+
+@router.post("/trigger-extraction")
+async def trigger_extraction(req: TriggerExtractionRequest):
+    """Trigger extraction for a raw_message already inserted by the Go ingestor.
+
+    This bypasses the full webhook flow (no duplicate insert) and goes
+    straight to the extraction scheduler.  The Go ingestor calls this
+    after a successful insertRawMessage() so extraction happens in
+    seconds rather than waiting for the polling worker.
+    """
+    try:
+        row = await asyncio.to_thread(storage.get_raw_message, req.raw_id)
+    except Exception as exc:
+        raise HTTPException(404, f"raw_message {req.raw_id} not found: {exc}")
+    if not row:
+        raise HTTPException(404, f"raw_message {req.raw_id} not found")
+    if row.processed:
+        return {"status": "already_processed", "raw_id": req.raw_id}
+    ctx = {
+        "sender_name": row.sender or "",
+        "push_name": row.sender or "",
+        "sender_jid": row.sender_jid or "",
+        "sender_phone": row.sender_phone or "",
+        "group": row.group_name or "",
+        "group_name": row.group_name or "",
+        "msg_text": row.message or "",
+        "instance": "",
+        "is_dm": not row.is_group if row.is_group is not None else False,
+        "message_uid": row.message_uid or "",
+        "message_id": (row.message_uid or "").rsplit(":", 1)[-1] if row.message_uid else "",
+        "msg": {},
+        "tenant_id": req.tenant_id or row.tenant_id or "",
+    }
+    raw_payload = {}
+    raw_payload_str = getattr(row, "raw_payload", None)
+    if isinstance(raw_payload_str, str) and raw_payload_str.strip():
+        try:
+            raw_payload = json.loads(raw_payload_str)
+        except (json.JSONDecodeError, TypeError):
+            raw_payload = {}
+    elif isinstance(raw_payload_str, dict):
+        raw_payload = raw_payload_str
+    if isinstance(raw_payload, dict):
+        data = raw_payload.get("data", raw_payload) if isinstance(raw_payload, dict) else {}
+        ctx["msg"] = data.get("message", {}) if isinstance(data, dict) else {}
+        ctx["instance"] = data.get("instance", "") if isinstance(data, dict) else ""
+        key = data.get("key", {}) if isinstance(data, dict) else {}
+        if not ctx["message_id"]:
+            ctx["message_id"] = key.get("id", "")
+    if not _schedule_raw_extraction(req.raw_id, ctx):
+        _retry_schedule_raw_extraction(req.raw_id, ctx)
+    return {"status": "triggered", "raw_id": req.raw_id}
+
+
 @router.get("/")
 async def root():
     return RedirectResponse(FRONTEND_URL)
