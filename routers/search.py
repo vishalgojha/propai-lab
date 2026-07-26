@@ -8,13 +8,13 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from routers.common import storage, require_user
+from routers.common import storage
 
 router = APIRouter(tags=["search"])
 
 
 @router.get("/api/search")
-async def search_messages(q: str = "", user: dict = Depends(require_user)):
+async def search_messages(q: str = ""):
     if not q:
         return []
     q = q.strip()
@@ -27,8 +27,8 @@ async def search_messages(q: str = "", user: dict = Depends(require_user)):
                        location_label, building_name, landmark_name, micro_market,
                        broker_name, broker_phone, observation_count, last_seen
                 FROM listings
-                WHERE broker_name LIKE ? OR building_name LIKE ? OR micro_market LIKE ?
-                   OR bhk LIKE ? OR location_label LIKE ? OR landmark_name LIKE ?
+                WHERE LOWER(broker_name) LIKE LOWER(?) OR LOWER(building_name) LIKE LOWER(?) OR LOWER(micro_market) LIKE LOWER(?)
+                   OR LOWER(bhk) LIKE LOWER(?) OR LOWER(location_label) LIKE LOWER(?) OR LOWER(landmark_name) LIKE LOWER(?)
                 ORDER BY observation_count DESC
                 LIMIT 8
             """, [like_q] * 6).fetchall()]
@@ -41,8 +41,8 @@ async def search_messages(q: str = "", user: dict = Depends(require_user)):
                 FROM parsed_output p
                 JOIN raw_messages r ON r.id = p.raw_message_id
                 WHERE p.intent IN ('BUY','RENTAL_SEEKER')
-                  AND (r.message LIKE ? OR p.broker_name LIKE ? OR p.micro_market LIKE ?
-                       OR p.bhk LIKE ? OR p.location_raw LIKE ?)
+                  AND (LOWER(r.message) LIKE LOWER(?) OR LOWER(p.broker_name) LIKE LOWER(?) OR LOWER(p.micro_market) LIKE LOWER(?)
+                       OR LOWER(p.bhk) LIKE LOWER(?) OR LOWER(p.location_raw) LIKE LOWER(?))
                 ORDER BY p.id DESC
                 LIMIT 6
             """, [like_q] * 5).fetchall()]
@@ -54,7 +54,7 @@ async def search_messages(q: str = "", user: dict = Depends(require_user)):
                        observation_count, listing_count, requirement_count,
                        group_count, market_count, avg_ticket
                 FROM brokers
-                WHERE canonical_name LIKE ? OR primary_phone LIKE ?
+                WHERE LOWER(canonical_name) LIKE LOWER(?) OR LOWER(primary_phone) LIKE LOWER(?)
                 ORDER BY observation_count DESC
                 LIMIT 6
             """, [like_q, like_q]).fetchall()]
@@ -68,7 +68,7 @@ async def search_messages(q: str = "", user: dict = Depends(require_user)):
                 FROM resolver_decisions rd
                 LEFT JOIN parsed_output p ON p.id = rd.parsed_id
                 WHERE rd.building_name IS NOT NULL AND rd.building_name != ''
-                  AND rd.building_name LIKE ?
+                  AND LOWER(rd.building_name) LIKE LOWER(?)
                 GROUP BY rd.building_name
                 ORDER BY occurrence_count DESC
                 LIMIT 6
@@ -82,7 +82,7 @@ async def search_messages(q: str = "", user: dict = Depends(require_user)):
                        COUNT(DISTINCT broker_name) AS broker_count
                 FROM parsed_output
                 WHERE micro_market IS NOT NULL AND micro_market != ''
-                  AND micro_market LIKE ?
+                  AND LOWER(micro_market) LIKE LOWER(?)
                 GROUP BY micro_market
                 ORDER BY observation_count DESC
                 LIMIT 6
@@ -93,7 +93,7 @@ async def search_messages(q: str = "", user: dict = Depends(require_user)):
             result["messages"] = [dict(r) for r in storage.db.execute("""
                 SELECT id, message, group_name, sender, timestamp
                 FROM raw_messages
-                WHERE message LIKE ?
+                WHERE LOWER(message) LIKE LOWER(?)
                 ORDER BY id DESC
                 LIMIT 6
             """, [like_q]).fetchall()]
@@ -106,7 +106,7 @@ async def search_messages(q: str = "", user: dict = Depends(require_user)):
 
 
 @router.get("/api/search/raw")
-async def search_raw_messages(q: str = "", limit: int = 20, offset: int = 0, user: dict = Depends(require_user)):
+async def search_raw_messages(q: str = "", limit: int = 20, offset: int = 0):
     if not q:
         return {"results": [], "count": 0}
     q = q.strip()
