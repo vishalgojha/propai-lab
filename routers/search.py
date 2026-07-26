@@ -8,7 +8,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from routers.common import storage
+from routers.common import storage, require_user
 
 router = APIRouter(tags=["search"])
 
