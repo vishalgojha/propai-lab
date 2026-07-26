@@ -724,14 +724,14 @@ async def pair_code_phone(
     phone_number = body.get("phone", "").strip()
     if not phone_number:
         raise HTTPException(400, "phone number is required")
-    _, resp = await _first_ingestor_response(
-        # The ingestor must establish the websocket and wait for the first
-        # QR-channel event before WhatsMeow can call PairPhone(). That is
-        # asynchronous and may take up to the ingestor's 45s deadline.
-        "POST", "/pair-code", timeout=55,
-        params={"broker_id": broker_id},
-        json={"phone": phone_number},
-    )
+    try:
+        _, resp = await _first_ingestor_response(
+            "POST", "/pair-code", timeout=55,
+            params={"broker_id": broker_id},
+            json={"phone": phone_number},
+        )
+    except Exception as exc:
+        raise HTTPException(502, f"Ingestor unreachable: {exc}")
     if resp is not None and resp.status_code == 200:
         return resp.json()
     raise HTTPException(502, _ingestor_failure_message(resp))
