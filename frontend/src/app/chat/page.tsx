@@ -323,13 +323,7 @@ export default function ChatPage() {
                                 </div>
                               );
                             })}
-                            {(() => {
-                              const hasCards = listingParts.length > 0;
-                              if (!hasCards) return textParts.map((p: any, i: number) => (
-                                <span key={i}>{p.text}</span>
-                              ));
-                              return null;
-                            })()}
+
                           </>
                         );
                       })()}
