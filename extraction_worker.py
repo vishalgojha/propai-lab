@@ -19,6 +19,7 @@ from extraction import get_storage, process_raw_message
 
 POLL_INTERVAL = int(os.getenv("EXTRACTION_WORKER_POLL_SECONDS", "5"))
 BATCH_SIZE = int(os.getenv("EXTRACTION_WORKER_BATCH_SIZE", "50"))
+MAX_RETRIES = int(os.getenv("EXTRACTION_WORKER_MAX_RETRIES", "5"))
 
 
 def row_value(row, key: str, default=None):
@@ -73,17 +74,55 @@ def context_from_raw(row) -> dict:
     }
 
 
-def run_cycle(storage):
+def run_cycle(storage, retry_counts: dict):
+    """Process one batch of unprocessed raw messages.
+
+    ``retry_counts`` is an in-memory dict mapping raw_id → number of
+    failed extraction attempts.  It is intentionally *not* persisted;
+    on worker restart the counters reset which gives transient failures
+    (e.g. a temporarily unavailable LLM) another chance.
+    """
     unprocessed = storage.get_unprocessed_raw_messages(limit=BATCH_SIZE)
+    processed = 0
+    failed = 0
+    dead_lettered = 0
+
     for row in unprocessed:
         raw_id = row_value(row, "id")
+        attempts = retry_counts.get(raw_id, 0)
+
+        if attempts >= MAX_RETRIES:
+            # Permanently stuck — mark processed so it never blocks the
+            # queue again.  A human can re-process via the dashboard.
+            try:
+                storage.mark_raw_processed(raw_id)
+                dead_lettered += 1
+            except Exception:
+                pass
+            continue
+
         try:
             ctx = context_from_raw(row)
             process_raw_message(raw_id, ctx, storage=storage)
+            processed += 1
+            # Clear retry counter on success
+            retry_counts.pop(raw_id, None)
         except Exception:
-            print(f"[worker] Error processing raw_id={raw_id}:", flush=True)
+            retry_counts[raw_id] = attempts + 1
+            failed += 1
+            print(
+                f"[worker] raw_id={raw_id} failed (attempt {attempts + 1}/{MAX_RETRIES}):",
+                flush=True,
+            )
             traceback.print_exc()
-            # Continue to next message
+
+    if dead_lettered:
+        print(
+            f"[worker] dead-lettered {dead_lettered} messages "
+            f"(exceeded {MAX_RETRIES} retries)",
+            flush=True,
+        )
+    return processed, failed, dead_lettered
 
 
 def main():
@@ -92,13 +131,24 @@ def main():
     args = parser.parse_args()
 
     storage = get_storage()
-    print(f"[worker] Extraction worker started — polling every {args.poll}s", flush=True)
+    retry_counts: dict[int, int] = {}
+    print(
+        f"[worker] Extraction worker started — polling every {args.poll}s "
+        f"(max_retries={MAX_RETRIES})",
+        flush=True,
+    )
 
     while True:
         try:
             count = storage.count_unprocessed_raw()
             if count > 0:
-                run_cycle(storage)
+                processed, failed, dead_lettered = run_cycle(storage, retry_counts)
+                if processed or dead_lettered:
+                    print(
+                        f"[worker] cycle done: processed={processed} failed={failed} "
+                        f"dead_lettered={dead_lettered} remaining={max(0, count - processed - dead_lettered)}",
+                        flush=True,
+                    )
         except Exception:
             print("[worker] Cycle error:", flush=True)
             traceback.print_exc()
