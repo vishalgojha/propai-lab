@@ -109,3 +109,4 @@ for the broker's name and consent, then calls `/onboard-broker` before retrying.
 ### Environment variables
 
 - `COMPANION_WEBHOOK_SECRET` — shared secret for webhook auth
+# Build trigger
