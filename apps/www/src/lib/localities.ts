@@ -171,25 +171,32 @@ export async function getLocalityData(rawSlug: string): Promise<LocalityData | n
   if (!canon.standalonePage) return null;
 
   // Paginate listings filtered by canonical_micro_market_slug (indexed).
-  const PAGE = 1000;
-  let rows: ListingRow[] = [];
-  for (let offset = 0; ; offset += PAGE) {
-    const { data: page, error } = await db
-      .from("listings")
-      .select("building_name, bhk, price, price_unit, intent, asset_type, property_type, micro_market")
-      .eq("canonical_micro_market_slug", slug)
-      .range(offset, offset + PAGE - 1);
-    if (error) {
-      console.error("getLocalityData listings error:", error.message);
-      return null;
-    }
-    rows = rows.concat((page ?? []) as ListingRow[]);
-    if (!page || page.length < PAGE) break;
+  // Use the server-side RPC to aggregate building summaries + stats in one
+  // query, avoiding pagination of 10k+ rows into JS memory.
+  const { data: rpcResult, error: rpcError } = await db.rpc("get_locality_summary", { p_slug: slug });
+  if (rpcError || !rpcResult) {
+    console.error("getLocalityData RPC error:", rpcError?.message);
+    return null;
   }
+
+  const rpc = rpcResult as {
+    buildings: Array<{
+      name: string;
+      listing_count: number;
+      min_price: number | null;
+      max_price: number | null;
+      price_unit: string | null;
+      bhk_raw: string | null;
+    }>;
+    total_count: number;
+    rent_count: number;
+    sale_count: number;
+    top_bhk: string | null;
+  };
 
   // Known place, but zero active listings — distinct from a 404 typo.
   // Check buildings table (small, ~4k rows) to confirm the place exists.
-  if (rows.length === 0) {
+  if (rpc.total_count === 0) {
     const { count } = await db
       .from("buildings")
       .select("id", { count: "exact", head: true })
@@ -209,110 +216,51 @@ export async function getLocalityData(rawSlug: string): Promise<LocalityData | n
     };
   }
 
-  // Derive a config mix for the locality description (buyers/renters already
-  // know typical price bands, so we deliberately do NOT surface a derived price
-  // range — source data is too dirty to summarise reliably).
-  let rentCount = 0;
-  let saleCount = 0;
-  const bhkFreq = new Map<number, number>();
-  for (const r of rows) {
-    const i = (r.intent || "").toLowerCase();
-    if (i === "rent" || i === "rental" || i === "lease") rentCount += 1;
-    else if (i === "sale" || i === "sell" || i === "buy") saleCount += 1;
-    for (const n of parseBhkValues(r.bhk)) bhkFreq.set(n, (bhkFreq.get(n) ?? 0) + 1);
-  }
-  const topBhk =
-    bhkFreq.size > 0
-      ? `${[...bhkFreq.entries()].sort((a, b) => b[1] - a[1])[0][0]} BHK`
-      : null;
-
-
-  const buildingNames = Array.from(
-    new Set(
-      rows
-        .map((r) => cleanBuildingName(r.building_name))
-        .filter((name): name is string => Boolean(name) && canonicalLocality(name).slug !== slug),
-    ),
+  // Filter junk building names (broker names, ad fragments, etc.)
+  // and locality-as-building-name entries using the same filter as JS.
+  const rpcBuildings = rpc.buildings.filter(
+    (b) => !isJunkBuildingName(b.name) && canonicalLocality(b.name).slug !== slug,
   );
 
+  // Fetch geo data for the filtered building names.
+  const buildingNames = rpcBuildings.map((b) => b.name);
   const buildingMap = await fetchBuildingsForNames(buildingNames);
-
-  // Aggregate per building name.
-  const agg = new Map<
-    string,
-    {
-      name: string;
-      count: number;
-      prices: number[];
-      priceUnits: string[];
-      bhks: Set<number>;
-      bhkRaw: Set<string>;
-    }
-  >();
-
-  for (const row of rows) {
-    const name = cleanBuildingName(row.building_name);
-    if (!name || canonicalLocality(name).slug === slug) continue;
-    const entry = agg.get(name) ?? {
-      name,
-      count: 0,
-      prices: [] as number[],
-      priceUnits: [] as string[],
-      bhks: new Set<number>(),
-      bhkRaw: new Set<string>(),
-    };
-    entry.count += 1;
-    if (typeof row.price === "number") entry.prices.push(row.price);
-    if (row.price_unit) entry.priceUnits.push(String(row.price_unit));
-    const parsed = parseBhkValues(row.bhk);
-    if (parsed.length) parsed.forEach((n) => entry.bhks.add(n));
-    const lbl = bhkLabel(row.bhk);
-    if (lbl) entry.bhkRaw.add(lbl);
-    agg.set(name, entry);
-  }
 
   const buildings: BuildingOnMap[] = [];
   let mappedCount = 0;
   let unmappedCount = 0;
 
-  for (const entry of agg.values()) {
+  for (const entry of rpcBuildings) {
     const key = entry.name.toLowerCase();
     const geo = buildingMap.get(key);
     const latitude = geo?.latitude ?? null;
     const longitude = geo?.longitude ?? null;
 
+    // Parse BHK range from the SQL-aggregated bhk_raw string.
     let bhkRange: string | null = null;
-    if (entry.bhks.size > 0) {
-      const sorted = Array.from(entry.bhks).sort((a, b) => a - b);
-      bhkRange =
-        sorted.length === 1
-          ? `${sorted[0]} BHK`
-          : `${sorted[0]}-${sorted[sorted.length - 1]} BHK`;
-    } else if (entry.bhkRaw.size > 0) {
-      bhkRange = Array.from(entry.bhkRaw).join(", ");
+    if (entry.bhk_raw) {
+      const parts = entry.bhk_raw.split(",").map((s) => s.trim()).filter(Boolean);
+      const nums = parts.map((p) => parseInt(p, 10)).filter((n) => !isNaN(n) && n > 0);
+      if (nums.length > 0) {
+        nums.sort((a, b) => a - b);
+        bhkRange = nums.length === 1 ? `${nums[0]} BHK` : `${nums[0]}-${nums[nums.length - 1]} BHK`;
+      } else {
+        bhkRange = entry.bhk_raw;
+      }
     }
 
     if (latitude != null && longitude != null) mappedCount += 1;
     else unmappedCount += 1;
-
-    // Dominant price unit for this building's listings (price is stored in the
-    // unit's native scale, e.g. 5.5 Cr, not absolute rupees).
-    let priceUnit: string | null = null;
-    if (entry.priceUnits.length) {
-      const freq = new Map<string, number>();
-      for (const u of entry.priceUnits) freq.set(u, (freq.get(u) ?? 0) + 1);
-      priceUnit = [...freq.entries()].sort((a, b) => b[1] - a[1])[0][0];
-    }
 
     buildings.push({
       name: entry.name,
       id: null,
       latitude,
       longitude,
-      listingCount: entry.count,
-      minPrice: entry.prices.length ? Math.min(...entry.prices) : null,
-      maxPrice: entry.prices.length ? Math.max(...entry.prices) : null,
-      priceUnit,
+      listingCount: entry.listing_count,
+      minPrice: entry.min_price,
+      maxPrice: entry.max_price,
+      priceUnit: entry.price_unit,
       bhkRange,
       address: null,
       developer: null,
@@ -333,11 +281,11 @@ export async function getLocalityData(rawSlug: string): Promise<LocalityData | n
     buildings,
     mappedCount,
     unmappedCount,
-    totalListings: rows.length,
-    hasListings: rows.length > 0,
-    rentCount,
-    saleCount,
-    topBhk,
+    totalListings: rpc.total_count,
+    hasListings: rpc.total_count > 0,
+    rentCount: rpc.rent_count,
+    saleCount: rpc.sale_count,
+    topBhk: rpc.top_bhk,
   };
 }
 
