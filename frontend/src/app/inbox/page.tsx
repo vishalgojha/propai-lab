@@ -1145,6 +1145,7 @@ function InboxPageInner({ defaultView }: InboxPageInnerProps) {
   const [currentSlug, setCurrentSlug] = useState<string>(defaultView === "groups" ? "groups" : "brokers");
   const activeSlug = useMemo(() => slugs.find(s => s.slug === currentSlug) || null, [slugs, currentSlug]);
   const [brokerFeed, setBrokerFeed] = useState<any[]>([]);
+  const [brokerFeedTotal, setBrokerFeedTotal] = useState<number | null>(null);
   const [loadingBrokerFeed, setLoadingBrokerFeed] = useState(defaultView !== "groups");
   const [brokerOffset, setBrokerOffset] = useState(0);
   const [marketAccess, setMarketAccess] = useState<api.MarketAccessStatus | null>(null);
@@ -1754,8 +1755,14 @@ return {
     }
     setLoadingBrokerFeed(true);
     try {
-      const data = await api.getBrokersFeed(BROKER_PAGE_SIZE, requestedOffset);
-      setBrokerFeed(data);
+      const response = await api.getBrokersFeed(BROKER_PAGE_SIZE, requestedOffset, true);
+      if (Array.isArray(response)) {
+        setBrokerFeed(response);
+        setBrokerFeedTotal(null);
+      } else {
+        setBrokerFeed(response.items || []);
+        setBrokerFeedTotal(Number.isFinite(response.total) ? response.total : null);
+      }
     } catch (e) {
       console.error("Failed to load broker feed:", e);
     } finally {
@@ -2286,6 +2293,7 @@ return {
   const showThreadFallback = !isBrokerView || (!loadingBrokerFeed && filteredBrokerFeed.length === 0);
   const brokerHasMore = brokerFeed.length >= BROKER_PAGE_SIZE;
   const brokerPage = Math.floor(brokerOffset / BROKER_PAGE_SIZE) + 1;
+  const brokerTotalPages = Math.max(1, Math.ceil((brokerFeedTotal ?? (brokerOffset + brokerFeed.length)) / BROKER_PAGE_SIZE));
   const messagePage = Math.floor(offset / PAGE_SIZE) + 1;
 
   const leftListEmpty = (() => {
@@ -3525,7 +3533,7 @@ return {
               Prev
             </button>
             <span className="text-[10px] text-zinc-500">
-              Page {isBrokerView ? brokerPage : messagePage}
+              Page {isBrokerView ? brokerPage : messagePage}{isBrokerView ? ` of ${brokerTotalPages}` : ""}
             </span>
             <button
               onClick={() => {
