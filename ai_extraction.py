@@ -212,22 +212,44 @@ def _normalize_extraction(raw: dict) -> dict:
         result["locality"] = {"raw_mention": None, "resolved_locality": None, "confidence": "low"}
 
     # building_name — reject garbage patterns that the LLM sometimes extracts
-    # as building names (furnishing descriptions, price phrases, etc.)
+    # as building names (broker names, ad text, property types, deal terms, etc.)
     bn = raw.get("building_name")
     bn_str = str(bn).strip() if bn and str(bn).strip() else None
     if bn_str:
         bn_lower = bn_str.lower()
         _GARBAGE_BUILDING_PATTERNS = (
-            "stamp duty", "furnished", "carpet", "bhk", "sqft", "sq ft",
+            # deal terms / specs
+            "stamp duty", "furnish", "carpet", "bhk", "sqft", "sq ft",
             "ready to move", "negotiable", "balcony", "sea view",
             "amenities", "parking", "deposit", "possession",
             " available", "available ", "options", "benefit",
             "family", "bachelor", "veg ", " non-veg",
             " near ", "opp ", "opposite", "behind", "floor",
+            "brokerage", "car park", "higher flr", "lower flr",
+            "1st floor", "2nd floor", "3rd floor", " ground ",
+            # ad text
+            "pics ", " video ", "photos ", "virtual tour",
+            "for more details", "contact", "call ", "whatsapp",
+            "limited period", "hurry", "urgent", "exclusive",
+            "convenient nearby", "prime location", "strategic location",
+            "rental inventory", "inventory", "direct inventor",
+            "type ", "size ", "configuration",
+            # property types (not building names)
+            "restaurant", "cafe", "café", "shop ", "retail",
+            "office", "showroom", "warehouse", "godown",
+            " bungalow", "villa ", "penthouse",
+            # broker / firm names
+            "realtor", "estate ", "consultant", "properties",
+            " realty", "real estate", " deals", "advisors",
+            "infra ", "developers", "constructions",
+            "from :", "from:",
         )
         if any(pat in bn_lower for pat in _GARBAGE_BUILDING_PATTERNS):
             bn_str = None
         elif len(bn_str) < 3 or len(bn_str) > 80:
+            bn_str = None
+        # reject if starts with a digit (deal terms like "4.5bhk", "1 Car Park")
+        elif bn_str[0].isdigit():
             bn_str = None
     result["building_name"] = bn_str
 

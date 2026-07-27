@@ -22,20 +22,6 @@ _logger = logging.getLogger(__name__)
 
 _PROVIDERS = []
 
-# Merge Gateway — OpenAI-compatible, only provider
-_merge_key = os.getenv("MERGE_API_KEY", "").strip()
-_merge_model = os.getenv("MERGE_MODEL", "").strip()
-_merge_base = os.getenv("MERGE_BASE_URL", "https://api-gateway.merge.dev/v1/openai").strip()
-if _merge_key and _merge_model:
-    _PROVIDERS.append({
-        "name": "merge",
-        "api_key": _merge_key,
-        "base_url": _merge_base,
-        "model": _merge_model,
-    })
-elif _merge_key:
-    _logger.warning("Skipping merge: set MERGE_MODEL to enable this provider")
-
 # NVIDIA — up to 4 keys for round-robin, all use the same model
 _nvidia_model = os.getenv("NVIDIA_MODEL", "").strip()
 if _nvidia_model:
@@ -61,6 +47,20 @@ if _groq_model:
                 "base_url": "https://api.groq.com/openai/v1",
                 "model": _groq_model,
             })
+
+# Merge Gateway — OpenAI-compatible, tried last as fallback
+_merge_key = os.getenv("MERGE_API_KEY", "").strip()
+_merge_model = os.getenv("MERGE_MODEL", "").strip()
+_merge_base = os.getenv("MERGE_BASE_URL", "https://api-gateway.merge.dev/v1/openai").strip()
+if _merge_key and _merge_model:
+    _PROVIDERS.append({
+        "name": "merge",
+        "api_key": _merge_key,
+        "base_url": _merge_base,
+        "model": _merge_model,
+    })
+elif _merge_key:
+    _logger.warning("Skipping merge: set MERGE_MODEL to enable this provider")
 
 
 class ProviderConfigurationError(RuntimeError):
@@ -154,9 +154,9 @@ def get_provider_name() -> str:
 
 # ── Fast-provider selection (for latency-sensitive paths like WhatsApp self-chat) ──
 
-# Only Merge is configured — fast path uses the same provider.
+# Fast path picks the fastest healthy provider from the chain.
 def _find_fast_working() -> int:
-    """Pick the fastest healthy provider. Only Merge is configured."""
+    """Pick the fastest healthy provider from the configured chain."""
     return _find_working()
 
 
