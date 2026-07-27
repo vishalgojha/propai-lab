@@ -219,7 +219,7 @@ function buildTitle(row: ListingCardFields): string {
   // a building name (or a noisy poster headline), which made equivalent cards
   // read as "Ten BKC", "3 BHK — BKC", and "Available Ten bkc 3bhk".  Build
   // one deterministic title from the structured fields for every card.
-  const furnishing = (row.furnishing || "").trim();
+  const furnishing = /^(none|null|unknown)$/i.test((row.furnishing || "").trim()) ? "" : (row.furnishing || "").trim();
   const bhk = (row.bhk || "").trim();
   const propertyType = normalizePropertyType(row.property_type);
   // Extract first segment before comma — real building names are short and
@@ -256,7 +256,7 @@ function buildSpecItems(row: ListingCardFields): ListingSpecItem[] {
   if (typeof row.area_sqft === "number" && row.area_sqft > 0) {
     items.push({ kind: "area", label: `${row.area_sqft.toLocaleString("en-IN")} sqft` });
   }
-  if (row.furnishing && row.furnishing.trim()) {
+  if (row.furnishing && row.furnishing.trim() && !/^(none|null|unknown)$/i.test(row.furnishing.trim())) {
     items.push({ kind: "furnishing", label: titleCase(row.furnishing) });
   }
   if (row.floor_description && row.floor_description.trim()) {

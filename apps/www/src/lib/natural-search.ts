@@ -853,11 +853,8 @@ export async function searchNaturalLanguageListings(
   const fetchCandidateRows = async (): Promise<NaturalSearchRow[]> => {
     if (parsed.locality) {
       const targetSlug = canonicalLocality(parsed.locality).slug;
-      const rawValues = Array.from(new Set(
-        localities.map((l) => l.locality).filter((raw) => canonicalLocality(raw).slug === targetSlug),
-      ));
       let qb = db.from("listings").select(fields).order("last_seen", { ascending: false });
-      qb = rawValues.length > 0 ? qb.in("micro_market", rawValues) : qb.eq("micro_market", parsed.locality);
+      qb = qb.eq("canonical_micro_market_slug", targetSlug);
       if (parsed.asset) qb = qb.eq("asset_type", parsed.asset);
       const { data, error } = await qb.limit(SEARCH_CANDIDATE_LIMIT);
       if (error) {
