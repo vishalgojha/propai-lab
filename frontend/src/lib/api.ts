@@ -202,6 +202,9 @@ async function fetchJSONWithRetry<T>(
       if (isHtmlResponse) {
         message = `Backend error ${res.status}: ${res.statusText}. Please try again.`;
       }
+      if (!message || message.trim() === "") {
+        message = `Backend error ${res.status}: ${res.statusText}. Please try again.`;
+      }
       throw new Error(`${res.status} ${res.statusText}: ${message}`);
     }
     return await parseJSONBody<T>(res, url);
