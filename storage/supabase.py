@@ -3972,6 +3972,16 @@ class SupabaseStorage(Storage):
                 parsed_rows = direct_rows
             else:
                 parsed_rows = query.limit(5000).execute().data or []
+        elif name_key:
+            # Name-keyed broker cards must use the same identity lookup as
+            # phone-keyed cards. The old path loaded an arbitrary 5,000-row
+            # window and filtered names in Python, so older/name-only brokers
+            # could show a header count but no matching market items.
+            name_pattern = f"%{name_key}%"
+            name_query = query.or_(
+                f"broker_name.ilike.{name_pattern},profile_name.ilike.{name_pattern}"
+            ).limit(max(5000, limit + offset))
+            parsed_rows = name_query.execute().data or []
         else:
             parsed_rows = query.limit(5000).execute().data or []
 
