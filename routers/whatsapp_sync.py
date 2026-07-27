@@ -642,7 +642,10 @@ async def disconnect_phone(
     await _require_org_permission(user, org_id, "manage_whatsapp")
     phone = await _scoped_phone(phone_id, org_id)
     broker_id = phone.get("broker_id", "")
-    _, resp = await _first_ingestor_response("POST", "/disconnect", timeout=10, params={"broker_id": broker_id})
+    try:
+        _, resp = await _first_ingestor_response("POST", "/disconnect", timeout=10, params={"broker_id": broker_id})
+    except Exception as exc:
+        raise HTTPException(502, f"WhatsApp service error: {exc}") from exc
     if resp is not None and resp.status_code == 200:
         return {"ok": True, "message": "Phone disconnected"}
     raise HTTPException(502, _ingestor_failure_message(resp))

@@ -748,10 +748,20 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
                 <div className="flex items-center gap-2">
                   <div className="truncate text-sm font-semibold text-white">{group.group_name}</div>
                   {group.connected && <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-300">Connected</span>}
+                  {!group.connected && group.suggestion && group.suggestion.score >= 0.3 && (
+                    <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-300">
+                      Recommended
+                    </span>
+                  )}
                 </div>
                 <div className="mt-1 text-[11px] text-zinc-500">
                   {group.group_jid} · {group.participants.toLocaleString()} participants · last active {formatTime(group.last_message_at)}
                 </div>
+                {group.suggestion && group.suggestion.reasons.length > 0 && (
+                  <div className="mt-2 text-[11px] text-zinc-400">
+                    {group.suggestion.reasons.join(" · ")}
+                  </div>
+                )}
               </div>
               {!group.connected && (
                 <div className="flex shrink-0 items-center gap-2">

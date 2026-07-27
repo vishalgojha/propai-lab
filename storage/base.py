@@ -92,6 +92,7 @@ class ParsedObservation:
     deal_tags: list[str] = field(default_factory=list)
     additional_charges: list[dict] = field(default_factory=list)
     broker_id: Optional[int] = None
+    group_name: Optional[str] = None
 
     # v2 schema — physical / deal attributes (staging from AI extraction)
     carpet_area_sqft: Optional[float] = None
@@ -124,7 +125,8 @@ class ParsedObservation:
     # Must NEVER appear in any public-facing API response, search filter,
     # or badge on propai.live / consumer surfaces.
     tenant_nationality_preference: Optional[str] = None
-    group_name: Optional[str] = None
+    # Validation flags — set by listing_validation.py during extraction.
+    validation_flags: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -163,6 +165,8 @@ class Listing:
     updated_at: str = ""
     deal_tags: list[str] = field(default_factory=list)
     additional_charges: list[dict] = field(default_factory=list)
+    needs_review: bool = False
+    validation_flags: list[str] = field(default_factory=list)
 
     # v2 schema — physical / deal attributes
     carpet_area_sqft: Optional[float] = None
@@ -194,6 +198,10 @@ class Listing:
     # Must NEVER appear in any public-facing API response, search filter,
     # or badge on propai.live / consumer surfaces.
     tenant_nationality_preference: Optional[str] = None
+
+    # Validation flags — set by listing_validation.py during extraction.
+    # Empty list = no issues.  Each entry is a short code like "price_above_range_APARTMENT_rent".
+    validation_flags: list = field(default_factory=list)
 
 
 @dataclass
