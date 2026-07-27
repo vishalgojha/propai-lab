@@ -18,6 +18,7 @@ from routers.common import (
     storage, require_user, get_tenant_context,
     _doubleword_error_response,
 )
+from llm import ProviderConfigurationError
 
 _logger = logging.getLogger(__name__)
 
@@ -792,8 +793,18 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
                     "status_steps": [],
                     "trace": {"route": "conversational_empty"},
                 }, _is_inbox)
-        except Exception as exc:
+        except ProviderConfigurationError as exc:
+        _logger.error("LLM provider configuration error: %s", exc)
+        return _wrap_chat_response({
+            "content": f"LLM provider not configured. Please check API keys. {exc}",
+            "blocks": [{"type": "error", "body": f"LLM provider not configured. Please check API keys. {exc}"}],
+            "sources": [],
+            "trace": {"route": "conversational_error"},
+        }, _is_inbox)
+    except Exception as exc:
             exc_msg = str(exc) if exc else "no details"
+            if not exc_msg or exc_msg == "None":
+                exc_msg = "LLM provider unavailable or misconfigured"
             _logger.error("AI chat failed: %s", exc_msg)
             return _wrap_chat_response({
                 "content": f"AI chat failed: {exc_msg}. Please try again.",
