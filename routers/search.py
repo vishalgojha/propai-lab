@@ -4,34 +4,192 @@ Search routes — text search, raw FTS, sender/group filtered search, market sea
 import logging
 import re
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 
 from routers.common import storage, require_user
 
 router = APIRouter(tags=["search"])
 
+_logger = logging.getLogger(__name__)
+
+
+class ParsedQuery(BaseModel):
+    query: str
+    bhk: Optional[int] = None
+    intent: Optional[str] = None
+    asset: Optional[str] = None
+    minPrice: Optional[int] = None
+    maxPrice: Optional[int] = None
+    furnishing: Optional[str] = None
+    locality: Optional[str] = None
+    localities: list[str] = []
+    building: Optional[str] = None
+    broker: Optional[str] = None
+
+
+_LOCALITY_NAMES = [
+    "bandra", "andheri", "goregaon", "juhu", "powai", "khar", "chembur",
+    "thane", "navi", "mumbai", "delhi", "bangalore", "bengaluru", "hyderabad",
+    "pune", "chennai", "kolkata", "gurgaon", "gurugram", "noida", "borivali",
+    "kandivali", "parel", "worli", "dadar", "santacruz", "vashi", "malad",
+]
+
+def _extract_localities(query: str) -> list[str]:
+    lower = query.lower()
+    localities = []
+    between_match = re.search(r'\bbetween\s+(\w+)\s+(?:and|to)\s+(\w+)', lower)
+    if between_match:
+        first, second = between_match.group(1), between_match.group(2)
+        for loc in _LOCALITY_NAMES:
+            if loc.startswith(first) or loc.startswith(second):
+                if loc not in localities:
+                    localities.append(loc)
+        if len(localities) >= 2:
+            return localities[:4]
+    for loc in _LOCALITY_NAMES:
+        pattern = rf'\b{loc}\b'
+        if re.search(pattern, lower):
+            if loc not in localities:
+                localities.append(loc)
+    return localities[:4]
+
+
+def _parse_price(text: str) -> tuple[Optional[int], Optional[int]]:
+    text = text.lower()
+    min_val = None
+    max_val = None
+    range_match = re.search(r'(\d+(?:\.\d+)?)\s*(?:to|and|-)\s*(\d+(?:\.\d+)?)\s*(?:l(?:akh)?|cr)', text)
+    if range_match:
+        first = int(float(range_match.group(1)) * (100000 if 'l' in range_match.group(0) else 10000000))
+        second = int(float(range_match.group(2)) * (100000 if 'l' in range_match.group(0) else 10000000))
+        min_val = min(first, second)
+        max_val = max(first, second)
+        return min_val, max_val
+    lakh_match = re.search(r'(\d+(?:\.\d+)?)\s*l(?:akh)?', text)
+    if lakh_match:
+        val = int(float(lakh_match.group(1)) * 100000)
+        min_val = max_val = val
+    crore_match = re.search(r'(\d+(?:\.\d+)?)\s*cr', text)
+    if crore_match:
+        val = int(float(crore_match.group(1)) * 10000000)
+        if min_val is None:
+            min_val = max_val = val
+    return min_val, max_val
+
+
+def _parse_query_simple(query: str) -> ParsedQuery:
+    parsed = ParsedQuery(query=query)
+    lower = query.lower()
+    bhk_match = re.search(r'(\d+(?:\.\d+)?)\s*bhk', lower)
+    if bhk_match:
+        parsed.bhk = int(float(bhk_match.group(1)))
+    if re.search(r'\b(rent|rental|lease)\b', lower):
+        parsed.intent = "rent"
+    elif re.search(r'\b(sale|sell|buy|purchase)\b', lower):
+        parsed.intent = "sale"
+    if re.search(r'\b(commercial|office|shop|showroom|warehouse|retail)\b', lower):
+        parsed.asset = "commercial"
+    if re.search(r'\b(residential|apartment|flat|house)\b', lower):
+        parsed.asset = "residential"
+    if re.search(r'\b(unfurnished)\b', lower):
+        parsed.furnishing = "unfurnished"
+    elif re.search(r'\b(fully\s+furnished|ff|furnished)\b', lower):
+        parsed.furnishing = "furnished"
+    elif re.search(r'\b(semi\s+furnished|sf)\b', lower):
+        parsed.furnishing = "semi_furnished"
+    min_p, max_p = _parse_price(query)
+    parsed.minPrice = min_p
+    parsed.maxPrice = max_p
+    localities = _extract_localities(query)
+    parsed.localities = localities
+    if localities:
+        parsed.locality = localities[0]
+    return parsed
+
+
+async def _parse_query_llm(query: str) -> Optional[ParsedQuery]:
+    try:
+        from llm import get_fast_client, get_fast_model, get_fast_provider_name
+        client = get_fast_client()
+        model = get_fast_model()
+        prompt = f"""
+Parse this Mumbai real estate search query into structured JSON:
+
+Query: "{query}"
+
+Return JSON with: bhk (number or null), intent ("rent"|"sale"|null), minPrice (rupees or null), maxPrice (rupees or null), locality (city/area or null), localities (array of city/area names, for "between X and Y" patterns), building (complex name or null), furnishing (null|"unfurnished"|"semi_furnished"|"fully_furnished"), asset (null|"residential"|"commercial").
+
+Rules:
+- Extract explicit values only, don't infer
+- Convert rupees: 1 Lakh = 100,000, 1 Crore = 10,000,000
+- Locality: extract city/area names like Bandra, Andheri, Powai, etc.
+- For "between X and Y" locality patterns, return both in localities array
+- Building: extract society/complex names like "Kalpataru", "Prestige", etc.
+
+Query: "{query}"
+JSON:"""
+        resp = client.chat.completions.create(model=model, messages=[{"role": "user", "content": prompt}], max_tokens=500, temperature=0)
+        content = resp.choices[0].message.content or ""
+        import json
+        parsed = json.loads(content.strip().lstrip('{').rstrip('}'))
+        result = ParsedQuery(query=query, **parsed)
+        if not result.localities and result.locality:
+            result.localities = [result.locality] if result.locality else []
+        if result.localities:
+            result.locality = result.localities[0]
+        return result
+    except Exception as e:
+        _logger.warning("LLM query parsing failed: %s", str(e)[:100])
+        return None
+
+
+@router.get("/api/search/parse")
+async def parse_query(q: str = ""):
+    if not q:
+        return ParsedQuery(query="").model_dump()
+    q = q.strip()
+    parsed = await _parse_query_llm(q)
+    if not parsed:
+        parsed = _parse_query_simple(q)
+    return parsed.model_dump()
+
 
 @router.get("/api/search")
-async def search_messages(q: str = ""):
+async def search_messages(q: str = "", use_llm: bool = False):
     if not q:
         return []
     q = q.strip()
+    parsed = None
+    if use_llm:
+        parsed = await _parse_query_llm(q)
+    if not parsed:
+        parsed = _parse_query_simple(q)
     like_q = f"%{q}%"
     result = {"listings": [], "requirements": [], "brokers": [], "buildings": [], "markets": [], "messages": []}
     try:
         try:
-            result["listings"] = [dict(r) for r in storage.db.execute("""
+            where_clause = "broker_name ILIKE ? OR building_name ILIKE ? OR micro_market ILIKE ?"
+            params = [like_q] * 3
+            if parsed.bhk:
+                where_clause += " OR bhk = ?"
+                params.append(parsed.bhk)
+            if parsed.intent:
+                where_clause += " OR intent = ?"
+                params.append(parsed.intent.upper())
+            if parsed.minPrice or parsed.maxPrice:
+                where_clause += " OR price IS NOT NULL"
+            result["listings"] = [dict(r) for r in storage.db.execute(f"""
                 SELECT fingerprint, intent, bhk, price, price_unit, area_sqft, furnishing,
                        location_label, building_name, landmark_name, micro_market,
                        broker_name, broker_phone, observation_count, last_seen
                 FROM listings
-                WHERE LOWER(broker_name) LIKE LOWER(?) OR LOWER(building_name) LIKE LOWER(?) OR LOWER(micro_market) LIKE LOWER(?)
-                   OR LOWER(bhk) LIKE LOWER(?) OR LOWER(location_label) LIKE LOWER(?) OR LOWER(landmark_name) LIKE LOWER(?)
+                WHERE {where_clause}
                 ORDER BY observation_count DESC
                 LIMIT 8
-            """, [like_q] * 6).fetchall()]
+            """, params).fetchall()]
         except Exception:
             result["listings"] = []
         try:
@@ -41,11 +199,14 @@ async def search_messages(q: str = ""):
                 FROM parsed_output p
                 JOIN raw_messages r ON r.id = p.raw_message_id
                 WHERE p.intent IN ('BUY','RENTAL_SEEKER')
-                  AND (LOWER(r.message) LIKE LOWER(?) OR LOWER(p.broker_name) LIKE LOWER(?) OR LOWER(p.micro_market) LIKE LOWER(?)
-                       OR LOWER(p.bhk) LIKE LOWER(?) OR LOWER(p.location_raw) LIKE LOWER(?))
+                  AND (
+                    to_tsvector('english', COALESCE(r.message, '')) @@ plainto_tsquery('english', ?)
+                    OR p.broker_name ILIKE ? OR p.micro_market ILIKE ?
+                    OR p.bhk ILIKE ? OR p.location_raw ILIKE ?
+                  )
                 ORDER BY p.id DESC
                 LIMIT 6
-            """, [like_q] * 5).fetchall()]
+            """, [q, like_q, like_q, like_q, like_q]).fetchall()]
         except Exception:
             result["requirements"] = []
         try:
@@ -54,7 +215,7 @@ async def search_messages(q: str = ""):
                        observation_count, listing_count, requirement_count,
                        group_count, market_count, avg_ticket
                 FROM brokers
-                WHERE LOWER(canonical_name) LIKE LOWER(?) OR LOWER(primary_phone) LIKE LOWER(?)
+                WHERE canonical_name ILIKE ? OR primary_phone ILIKE ?
                 ORDER BY observation_count DESC
                 LIMIT 6
             """, [like_q, like_q]).fetchall()]
@@ -68,7 +229,7 @@ async def search_messages(q: str = ""):
                 FROM resolver_decisions rd
                 LEFT JOIN parsed_output p ON p.id = rd.parsed_id
                 WHERE rd.building_name IS NOT NULL AND rd.building_name != ''
-                  AND LOWER(rd.building_name) LIKE LOWER(?)
+                  AND rd.building_name ILIKE ?
                 GROUP BY rd.building_name
                 ORDER BY occurrence_count DESC
                 LIMIT 6
@@ -82,7 +243,7 @@ async def search_messages(q: str = ""):
                        COUNT(DISTINCT broker_name) AS broker_count
                 FROM parsed_output
                 WHERE micro_market IS NOT NULL AND micro_market != ''
-                  AND LOWER(micro_market) LIKE LOWER(?)
+                  AND micro_market ILIKE ?
                 GROUP BY micro_market
                 ORDER BY observation_count DESC
                 LIMIT 6
@@ -93,10 +254,10 @@ async def search_messages(q: str = ""):
             result["messages"] = [dict(r) for r in storage.db.execute("""
                 SELECT id, message, group_name, sender, timestamp
                 FROM raw_messages
-                WHERE LOWER(message) LIKE LOWER(?)
+                WHERE to_tsvector('english', COALESCE(message, '')) @@ plainto_tsquery('english', ?)
                 ORDER BY id DESC
                 LIMIT 6
-            """, [like_q]).fetchall()]
+            """, [q]).fetchall()]
         except Exception:
             result["messages"] = []
     except Exception:
@@ -291,16 +452,18 @@ async def market_search(
 
     if building:
         where_clauses.append("""(
-            l.building_name LIKE ? OR
-            l.building_name IN (SELECT canonical FROM building_aliases WHERE alias LIKE ?) OR
-            l.building_name IN (SELECT alias FROM building_aliases WHERE canonical LIKE ?) OR
-            l.building_name IN (SELECT canonical FROM building_aliases WHERE alias LIKE ?)
+            l.building_name ILIKE ?
+            OR l.building_name IN (
+                SELECT canonical FROM building_aliases WHERE alias ILIKE ?
+                UNION
+                SELECT alias FROM building_aliases WHERE canonical ILIKE ?
+            )
         )""")
         bpattern = f"%{building}%"
-        params.extend([bpattern, bpattern, bpattern, bpattern])
+        params.extend([bpattern, bpattern, bpattern])
 
     if micro_market:
-        where_clauses.append("l.micro_market LIKE ?")
+        where_clauses.append("l.micro_market ILIKE ?")
         params.append(f"%{micro_market}%")
 
     if price_max:
@@ -316,7 +479,7 @@ async def market_search(
         params.append(furnishing)
 
     if broker:
-        where_clauses.append("l.broker_name LIKE ?")
+        where_clauses.append("l.broker_name ILIKE ?")
         params.append(f"%{broker}%")
 
     where_sql = " AND ".join(where_clauses) if where_clauses else "1=1"
