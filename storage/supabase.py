@@ -3961,7 +3961,10 @@ class SupabaseStorage(Storage):
         # Keep a bounded broad fallback only for legacy rows whose phone lives
         # exclusively on raw_messages.
         if normalized_key:
-            direct_query = query.ilike("broker_phone", f"*{normalized_key}").limit(
+            # PostgREST ilike uses SQL wildcards; '*' is a literal character.
+            # The old '*' filter missed every normalized phone and forced the
+            # expensive 5,000-row legacy fallback for large broker histories.
+            direct_query = query.ilike("broker_phone", f"%{normalized_key}%").limit(
                 max(5000, limit + offset)
             )
             direct_rows = direct_query.execute().data or []
