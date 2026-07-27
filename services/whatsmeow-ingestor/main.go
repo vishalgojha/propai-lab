@@ -2816,7 +2816,7 @@ func main() {
 		Addr:         ":" + sendPort,
 		Handler:      recoveryMiddleware(mux),
 		ReadTimeout:  30 * time.Second,
-		WriteTimeout: 30 * time.Second,
+		WriteTimeout: 120 * time.Second,
 		IdleTimeout:  120 * time.Second,
 	}
 
