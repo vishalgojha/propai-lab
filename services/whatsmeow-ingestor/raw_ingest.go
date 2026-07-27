@@ -132,6 +132,10 @@ func (sm *SessionManager) insertRawMessage(brokerID string, payload map[string]i
 			ts = time.Unix(v, 0).UTC().Format(time.RFC3339)
 		case int:
 			ts = time.Unix(int64(v), 0).UTC().Format(time.RFC3339)
+		case string:
+			if t, err := time.Parse(time.RFC3339, v); err == nil {
+				ts = t.UTC().Format(time.RFC3339)
+			}
 		}
 	}
 
