@@ -125,12 +125,12 @@ export default function ListingTile({
           )}
         </div>
 
-        <h3 className="truncate text-xl font-semibold text-white transition-colors group-hover:text-green-300">
+        <h3 className="line-clamp-2 text-xl font-semibold text-white transition-colors group-hover:text-green-300">
           {card.title}
         </h3>
 
         {card.locality && (
-          <p className="mt-2 inline-flex items-center gap-1.5 truncate text-sm text-zinc-400 text-left">
+          <p className="mt-2 inline-flex items-center gap-1.5 line-clamp-1 text-sm text-zinc-400 text-left">
             <MapPin className="h-3.5 w-3.5 shrink-0 text-green-400" aria-hidden="true" />
             {card.locality}
           </p>
@@ -154,7 +154,7 @@ export default function ListingTile({
         )}
 
         <div className="mt-auto flex items-center justify-between gap-3 pt-6">
-          <span className="inline-flex items-center gap-1.5 truncate text-sm text-zinc-400">
+          <span className="inline-flex items-center gap-1.5 line-clamp-1 text-sm text-zinc-400">
             {card.brokerName && (
               <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-green-400" aria-hidden="true" />
             )}
