@@ -211,14 +211,24 @@ async def get_brokers_feed(
     user: dict = Depends(require_user),
     limit: int = 50, offset: int = 0,
     min_observations: int = 2,
+    include_total: bool = False,
     tenant_id: str | None = Depends(get_tenant_context),
 ):
-    return storage.get_brokers_feed(
+    items = storage.get_brokers_feed(
         limit,
         offset,
         min_observations=min_observations,
         tenant_id=tenant_id,
     )
+    if include_total:
+        return {
+            "items": items,
+            "total": storage.get_brokers_feed_total(
+                min_observations=min_observations,
+                tenant_id=tenant_id,
+            ),
+        }
+    return items
 
 
 @router.get("/api/brokers/find")

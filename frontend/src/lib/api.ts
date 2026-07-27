@@ -1534,8 +1534,10 @@ export function getBrokerSummary(name: string, phone: string) {
   return fetchJSON<any>(`/brokers/summary?${params.toString()}`);
 }
 
-export function getBrokersFeed(limit = 100, offset = 0) {
-  return fetchJSON<any[]>(`/brokers/feed?limit=${limit}&offset=${offset}`);
+export function getBrokersFeed(limit = 100, offset = 0, includeTotal = false) {
+  return fetchJSON<any[] | { items: any[]; total: number }>(
+    `/brokers/feed?limit=${limit}&offset=${offset}${includeTotal ? "&include_total=true" : ""}`
+  );
 }
 
 export interface ClientMessagesResponse {

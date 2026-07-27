@@ -4266,6 +4266,21 @@ class SupabaseStorage(Storage):
         except Exception:
             return []
 
+    def get_brokers_feed_total(self, min_observations: int = 1,
+                               tenant_id: str | None = None) -> int:
+        """Return the count used by the broker directory pagination UI."""
+        try:
+            tid = tenant_id or self._tenant_id
+            query = self.client.table("brokers").select("id", count="exact")\
+                .eq("is_hidden", False)\
+                .gte("observation_count", min_observations)
+            if tid:
+                query = query.eq("tenant_id", tid)
+            res = query.execute()
+            return int(res.count or 0)
+        except Exception:
+            return 0
+
     def get_saved_inbox_views(self, tenant_id: str | None = None) -> list[dict]:
         try:
             tid = tenant_id or self._tenant_id
