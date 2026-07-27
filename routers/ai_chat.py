@@ -794,14 +794,14 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
                     "trace": {"route": "conversational_empty"},
                 }, _is_inbox)
         except ProviderConfigurationError as exc:
-        _logger.error("LLM provider configuration error: %s", exc)
-        return _wrap_chat_response({
-            "content": f"LLM provider not configured. Please check API keys. {exc}",
-            "blocks": [{"type": "error", "body": f"LLM provider not configured. Please check API keys. {exc}"}],
-            "sources": [],
-            "trace": {"route": "conversational_error"},
-        }, _is_inbox)
-    except Exception as exc:
+            _logger.error("LLM provider configuration error: %s", exc)
+            return _wrap_chat_response({
+                "content": f"LLM provider not configured. Please check API keys. {exc}",
+                "blocks": [{"type": "error", "body": f"LLM provider not configured. Please check API keys. {exc}"}],
+                "sources": [],
+                "trace": {"route": "conversational_error"},
+            }, _is_inbox)
+        except Exception as exc:
             exc_msg = str(exc) if exc else "no details"
             if not exc_msg or exc_msg == "None":
                 exc_msg = "LLM provider unavailable or misconfigured"
