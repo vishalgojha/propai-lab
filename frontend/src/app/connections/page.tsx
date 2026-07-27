@@ -610,8 +610,6 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [activeGroup, setActiveGroup] = useState<string | null>(null);
-  const [review, setReview] = useState<OnboardingGroupCheck | null>(null);
-  const [reviewGroup, setReviewGroup] = useState<OnboardingGroup | null>(null);
 
   const loadGroups = useCallback(async () => {
     if (!isConnected) return;
@@ -628,27 +626,10 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
   }, [isConnected, phone.id]);
 
   useEffect(() => {
-    setReview(null);
-    setReviewGroup(null);
     setMessage(null);
     setError(null);
     void loadGroups();
   }, [loadGroups]);
-
-  const handleReview = async (group: OnboardingGroup) => {
-    setActiveGroup(group.group_jid);
-    setError(null);
-    setMessage(null);
-    try {
-      const next = await checkOnboardingGroup(phone.id, group.group_jid);
-      setReview(next);
-      setReviewGroup(group);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not review this group.");
-    } finally {
-      setActiveGroup(null);
-    }
-  };
 
   const handleConnect = async (group: OnboardingGroup, precheck?: OnboardingGroupCheck) => {
     setActiveGroup(group.group_jid);
@@ -675,8 +656,6 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
       }
       await connectOnboardingGroup(phone.id, group.group_jid, confirmOverlap, confirmCap);
       setMessage(`Added ${group.group_name}.`);
-      setReview(null);
-      setReviewGroup(null);
       await loadGroups();
       await onRefresh();
     } catch (err) {
@@ -740,6 +719,12 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
         </div>
       )}
 
+      {data && data.groups.length > 0 && (
+        <div className="mt-3 rounded-lg border border-cyan-500/20 bg-cyan-500/[0.04] px-3 py-2 text-[11px] text-zinc-400">
+          Recommendations are ranked by likely new broker reach. Duplicate risk is based on sampled sender numbers already seen across your broker network; connected groups stay visible for comparison.
+        </div>
+      )}
+
       <div className="mt-4 space-y-3">
         {data?.groups?.length ? data.groups.map((group) => (
           <div key={group.group_jid} className={`rounded-lg border p-3 ${group.connected ? "border-emerald-500/20 bg-emerald-500/[0.03]" : "border-white/10 bg-white/[0.02]"}`}>
@@ -757,6 +742,34 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
                 <div className="mt-1 text-[11px] text-zinc-500">
                   {group.group_jid} · {group.participants.toLocaleString()} participants · last active {formatTime(group.last_message_at)}
                 </div>
+                {group.overlap_status && (
+                  <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px]">
+                    <span className={`rounded-full border px-2 py-0.5 font-semibold ${
+                      group.overlap_status === "high_overlap"
+                        ? "border-amber-500/30 bg-amber-500/10 text-amber-300"
+                        : group.overlap_status === "moderate_overlap"
+                          ? "border-yellow-500/30 bg-yellow-500/10 text-yellow-300"
+                          : group.overlap_status === "new_reach"
+                            ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
+                            : "border-white/10 text-zinc-400"
+                    }`}>
+                      {group.overlap_status === "high_overlap"
+                        ? "Likely duplicate"
+                        : group.overlap_status === "moderate_overlap"
+                          ? "Some duplicate reach"
+                          : group.overlap_status === "new_reach"
+                            ? "Likely new reach"
+                            : "No overlap sample"}
+                    </span>
+                    {group.overlap_sample_count ? (
+                      <span className="text-zinc-400">
+                        {Math.round((group.overlap_score || 0) * 100)}% overlap · {group.overlap_shared_count} of {group.overlap_sample_count} sampled senders already known
+                      </span>
+                    ) : (
+                      <span className="text-zinc-500">No recent sender sample available</span>
+                    )}
+                  </div>
+                )}
                 {group.suggestion && group.suggestion.reasons.length > 0 && (
                   <div className="mt-2 text-[11px] text-zinc-400">
                     {group.suggestion.reasons.join(" · ")}
@@ -766,53 +779,15 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
               {!group.connected && (
                 <div className="flex shrink-0 items-center gap-2">
                   <button
-                    onClick={() => void handleReview(group)}
-                    disabled={activeGroup === group.group_jid}
-                    className="rounded-lg border border-white/10 bg-transparent px-3 py-1.5 text-[11px] font-semibold text-zinc-300 hover:bg-white/5 disabled:opacity-50"
-                  >
-                    {activeGroup === group.group_jid ? "Checking..." : "Review"}
-                  </button>
-                  <button
                     onClick={() => void handleConnect(group)}
                     disabled={activeGroup === group.group_jid}
                     className="rounded-lg border border-white bg-white px-3 py-1.5 text-[11px] font-semibold text-black hover:bg-zinc-200 disabled:opacity-50"
                   >
-                    {activeGroup === group.group_jid ? "Adding..." : "Add"}
+                    {activeGroup === group.group_jid ? "Connecting..." : "Connect"}
                   </button>
                 </div>
               )}
             </div>
-            {reviewGroup?.group_jid === group.group_jid && review && (
-              <div className="mt-3 rounded-lg border border-white/10 bg-black/20 px-3 py-3 text-xs text-zinc-300">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="font-semibold text-white">Overlap check</div>
-                  <div className="text-zinc-400">{Math.round(review.overlap_score * 100)}% overlap</div>
-                </div>
-                <div className="mt-2 text-zinc-500">
-                  {review.shared_count} of {review.sample_count} recent sender numbers already appear in the network registry.
-                </div>
-                <div className="mt-3 flex items-center justify-end gap-2">
-                  <button
-                    onClick={() => {
-                      setReview(null);
-                      setReviewGroup(null);
-                    }}
-                    className="rounded-lg border border-white/10 bg-transparent px-3 py-1.5 text-[11px] font-semibold text-zinc-400 hover:bg-white/5 hover:text-white"
-                  >
-                    Close
-                  </button>
-                  {!group.connected && (
-                    <button
-                      onClick={() => void handleConnect(group, review)}
-                      disabled={activeGroup === group.group_jid}
-                      className="rounded-lg border border-white bg-white px-3 py-1.5 text-[11px] font-semibold text-black hover:bg-zinc-200 disabled:opacity-50"
-                    >
-                      Connect anyway
-                    </button>
-                  )}
-                </div>
-              </div>
-            )}
           </div>
         )) : !loading && (
           <div className="rounded-lg border border-dashed border-white/10 px-3 py-4 text-xs text-zinc-500">

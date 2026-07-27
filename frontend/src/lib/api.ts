@@ -33,6 +33,10 @@ export interface OnboardingGroup {
     score: number;
     reasons: string[];
   } | null;
+  overlap_score?: number;
+  overlap_sample_count?: number;
+  overlap_shared_count?: number;
+  overlap_status?: "high_overlap" | "moderate_overlap" | "new_reach" | "unknown";
 }
 
 export interface OnboardingGroupCap {
