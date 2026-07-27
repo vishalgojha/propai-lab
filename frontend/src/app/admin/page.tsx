@@ -5,7 +5,7 @@ export const dynamic = 'force-dynamic';
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Shield, Database, Terminal, Wrench, ArrowLeft, Plus, Smartphone, Sparkles, DollarSign, Table } from "lucide-react";
+import { Shield, Terminal, Wrench, ArrowLeft, Plus, Smartphone, Sparkles, DollarSign, Table } from "lucide-react";
 import { fetchJSON } from "@/lib/api";
 
 interface SuperAdmin {
@@ -170,17 +170,6 @@ export default function AdminPage() {
           </Link>
 
           <Link
-            href="/admin/knowledge"
-            className="block p-4 rounded-xl border border-white/10 hover:border-emerald-400/30 transition-colors"
-          >
-            <div className="flex items-center gap-3 mb-2">
-              <Database className="w-5 h-5 text-emerald-400" />
-              <span className="font-medium text-white">Knowledge Records</span>
-            </div>
-            <p className="text-xs text-zinc-500">Browse extracted knowledge records, search, filter by type</p>
-          </Link>
-
-          <Link
             href="/extractions"
             className="block p-4 rounded-xl border border-white/10 hover:border-emerald-400/30 transition-colors"
           >
@@ -224,16 +213,6 @@ export default function AdminPage() {
             <p className="text-xs text-zinc-500">Token spend by model &amp; agent, daily trend, wasted cost on truncated calls</p>
           </Link>
 
-          <Link
-            href="/admin/knowledge"
-            className="block p-4 rounded-xl border border-white/10 hover:border-emerald-400/30 transition-colors"
-          >
-            <div className="flex items-center gap-3 mb-2">
-              <Database className="w-5 h-5 text-pink-400" />
-              <span className="font-medium text-white">Entity Coverage</span>
-            </div>
-            <p className="text-xs text-zinc-500">Building/broker/location resolution rates, alias coverage, missing entities</p>
-          </Link>
         </div>
       </section>
     </div>
