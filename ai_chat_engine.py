@@ -2259,9 +2259,9 @@ def _log_usage(resp, agent: str, model: str, tenant_id: str | None = None) -> No
         pass
 
 
-def get_conversational_reply(messages, api_key=None, model=None, broker=None):
+def get_conversational_reply(messages, api_key=None, model=None, base_url=None, broker=None):
     """Call the LLM purely conversationally — no tools, no data, no JSON contract."""
-    client = get_client(api_key=api_key)
+    client = get_client(api_key=api_key, base_url=base_url)
     system_prompt = build_conversational_system_prompt(broker=broker)
     msgs = [{"role": "system", "content": _cached_system_blocks(system_prompt)}] + [
         m for m in messages if m.get("role") in ("user", "assistant")
