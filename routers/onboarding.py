@@ -248,12 +248,19 @@ def _group_directory(org_id: str, broker_id: str, connection_id: int) -> list[di
             "suggestion": suggestion,
         })
     
-    # Sort: connected groups first (in original order), then unconnected by suggestion score
+    # Rank recommendations first. Connected groups remain visible below them
+    # so already-onboarded brokers can compare existing coverage with new reach.
     connected_groups = [g for g in scored_groups if g["connected"]]
     unconnected_groups = [g for g in scored_groups if not g["connected"]]
     unconnected_groups.sort(key=lambda g: g.get("suggestion", {}).get("score", 0), reverse=True)
-    
-    return connected_groups + unconnected_groups
+    ranked = unconnected_groups + connected_groups
+    _attach_directory_overlap(org_id, ranked)
+    unconnected_groups = [g for g in ranked if not g["connected"]]
+    connected_groups = [g for g in ranked if g["connected"]]
+    unconnected_groups.sort(key=lambda g: g.get("suggestion", {}).get("score", 0), reverse=True)
+    return unconnected_groups + connected_groups
+
+
 def _sample_senders(org_id: str, group_name: str) -> list[str]:
     rows = (
         storage.client.table("raw_messages")
@@ -297,6 +304,46 @@ def _overlap(org_id: str, group_name: str) -> dict:
         "high_overlap": bool(sample) and score >= OVERLAP_WARNING_THRESHOLD,
         "sample_phones": sample,
     }
+
+
+def _attach_directory_overlap(org_id: str, groups: list[dict], limit: int = 20) -> None:
+    """Add duplicate/new-reach signals without scanning every directory row."""
+    candidates = [group for group in groups if group["connected"]]
+    candidates += [group for group in groups if not group["connected"]][:limit]
+    for group in candidates:
+        try:
+            overlap = _overlap(org_id, group["group_name"])
+        except Exception:
+            continue
+        score = overlap["overlap_score"]
+        if not overlap["sample_count"]:
+            status = "unknown"
+        elif score >= OVERLAP_WARNING_THRESHOLD:
+            status = "high_overlap"
+        elif score >= 0.30:
+            status = "moderate_overlap"
+        else:
+            status = "new_reach"
+        group.update({
+            "overlap_score": score,
+            "overlap_sample_count": overlap["sample_count"],
+            "overlap_shared_count": overlap["shared_count"],
+            "overlap_status": status,
+        })
+        if not group["connected"] and group.get("suggestion"):
+            suggestion = group["suggestion"]
+            if status == "high_overlap":
+                suggestion["score"] = round(max(0.0, suggestion["score"] - 0.20), 3)
+                suggestion["reasons"] = [
+                    "High duplicate overlap with existing broker network",
+                    *suggestion["reasons"],
+                ][:4]
+            elif status == "new_reach":
+                suggestion["score"] = round(min(1.0, suggestion["score"] + 0.10), 3)
+                suggestion["reasons"] = [
+                    "Low overlap — likely new broker reach",
+                    *suggestion["reasons"],
+                ][:4]
 
 
 def _upsert_registry(org_id: str, group_jid: str, phones: list[str]) -> None:
