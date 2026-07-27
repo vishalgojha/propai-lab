@@ -29,6 +29,10 @@ export interface OnboardingGroup {
   participants: number;
   last_message_at: string | null;
   connected: boolean;
+  suggestion?: {
+    score: number;
+    reasons: string[];
+  } | null;
 }
 
 export interface OnboardingGroupCap {

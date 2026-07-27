@@ -333,7 +333,7 @@ def _ai_extraction_to_parsed(ai_extraction: dict, raw_text: str, sender_name: st
 
         "asset_type": asset_type,
         "property_type": None,
-        "transaction_type": None,
+        "transaction_type": listing_type if listing_type in ("sale", "rent") else "sale",
         "commercial_use_type": None,
         "fitout_status": None,
         "occupancy_type": None,
@@ -786,6 +786,23 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
             pass
         return {"raw_id": raw_id, "parsed_ids": [], "listing_ids": []}
 
+    # ── Listing validation (price / locality / general) ────────────
+    # Runs AFTER AI extraction + _ai_extraction_to_parsed() and BEFORE
+    # broker attribution + save_parsed().  Flags are stored on each
+    # parsed dict so they flow through to parsed_output.validation_flags.
+    try:
+        from listing_validation import validate_listing, apply_validation
+        for idx, pl in enumerate(parsed_listings):
+            vr = validate_listing(pl)
+            if vr.flags:
+                _logger.info(
+                    "raw_id=%d validation flags: %s",
+                    raw_id, ", ".join(vr.flags),
+                )
+            parsed_listings[idx] = apply_validation(pl, vr)
+    except Exception as vexc:
+        _logger.warning("raw_id=%d validation error: %s", raw_id, vexc)
+
     # ── Broker attribution ──────────────────────────────────────
     # Only store broker_phone from validated Indian mobile numbers (10-12 digits,
     # starting with 6-9, optional +91/91 prefix).  WhatsApp LIDs (15 digits starting
@@ -943,6 +960,7 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
             ),
             broker_id=broker_id,
             group_name=group_name,
+            validation_flags=parsed.get("validation_flags", []),
         )
         try:
             parsed_id = storage.save_parsed(obs)

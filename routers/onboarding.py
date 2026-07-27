@@ -28,6 +28,28 @@ router = APIRouter(prefix="/api/onboarding", tags=["onboarding"])
 OVERLAP_WARNING_THRESHOLD = 0.60
 SAMPLE_LIMIT = 200
 
+# Real estate broker pattern keywords for group name matching
+REAL_ESTATE_KEYWORDS = [
+    "real", "estate", "property", "realty", "broker", "rent", "sale", "buy",
+    "lease", "flat", "apartment", "flat", "house", "villa", "plot", "land",
+    "llp", "ltd", "developers", "group", "agency", "properties", "realty",
+]
+
+# BHK pattern regex (e.g., "2 BHK", "3 BHK", "1 RK", "Studio")
+_BHK_PATTERN = re.compile(r'\b(\d+(?:\.\d+)?)\s*(?:bhk|rk|bedroom|b ed|b e d|studio)\b', re.IGNORECASE)
+
+# Price pattern regex (e.g., "₹5 Cr", "4.5 L", "30 L", "₹2.75 L/month")
+_PRICE_PATTERN = re.compile(r'₹\s*(\d+(?:\.\d+)?)\s*(?:cr|crore|l|lac|lakh|k|thousand)', re.IGNORECASE)
+
+# Locality keywords for Mumbai
+_LOCALITY_KEYWORDS = [
+    "bandra", "andheri", "goregaon", "juhu", "powai", "khar", "chembur",
+    "thane", "navi", "mumbai", "delhi", "bangalore", "bengaluru",
+    "hyderabad", "pune", "chennai", "kolkata", "gurgaon", "gurugram",
+    "noida", "vile parle", "santacruz", "vashi", "malad", "kandivali",
+    "borivali", "parel", "worli", "dadar",
+]
+
 
 class GroupRequest(BaseModel):
     whatsapp_connection_id: int
@@ -56,6 +78,107 @@ def _tier_cap(org: dict) -> tuple[str, int, bool]:
 
     tier = str(org.get("subscription_tier") or "starter").lower()
     return tier, {"starter": 5, "growth": 8, "scale": 15}.get(tier, 5), False
+
+
+def _suggestion_score(org_id: str, group_name: str, participants: int, last_message_at: str | None) -> dict:
+    """Compute a suggestion score and reasons for a WhatsApp group.
+    
+    Returns a dict with:
+    - score: float between 0 and 1
+    - reasons: list of human-readable reason strings
+    """
+    reasons = []
+    score = 0.0
+    
+    # 1. Name-based signal: real estate keywords
+    name_lower = group_name.lower()
+    keyword_matches = [k for k in REAL_ESTATE_KEYWORDS if k in name_lower]
+    if keyword_matches:
+        score += 0.25
+        reasons.append("Name matches real estate pattern")
+    
+    # 2. Activity signal: participants count (logarithmic scaling)
+    if participants > 0:
+        participant_score = min(0.25, participants / 1000)
+        score += participant_score
+        if participants >= 500:
+            reasons.append(f"{participants:,} participants")
+        elif participants >= 100:
+            reasons.append(f"{participants} participants")
+    
+    # 3. Activity signal: recency of last_message_at
+    if last_message_at:
+        try:
+            last_ts = datetime.fromisoformat(last_message_at.replace("Z", "+00:00"))
+            now = datetime.now(timezone.utc)
+            age_hours = (now - last_ts).total_seconds() / 3600
+            
+            if age_hours < 24:
+                score += 0.2
+                reasons.append("Active in last 24 hours")
+            elif age_hours < 72:
+                score += 0.15
+                reasons.append("Active in last 3 days")
+            elif age_hours < 168:
+                score += 0.1
+                reasons.append("Active in last week")
+            elif age_hours < 720:
+                score += 0.05
+                reasons.append("Active recently")
+        except Exception:
+            pass
+    
+    # 4. Message content signal: check for BHK/price/locality patterns
+    # Sample recent messages from the group
+    try:
+        recent_messages = (
+            storage.client.table("raw_messages")
+            .select("message")
+            .eq("tenant_id", org_id)
+            .eq("group_name", group_name)
+            .order("created_at", desc=True)
+            .limit(10)
+            .execute()
+            .data
+            or []
+        )
+        
+        has_bhk = False
+        has_price = False
+        has_locality = False
+        
+        for msg_row in recent_messages:
+            msg_text = msg_row.get("message") or ""
+            if _BHK_PATTERN.search(msg_text):
+                has_bhk = True
+            if _PRICE_PATTERN.search(msg_text):
+                has_price = True
+            msg_lower = msg_text.lower()
+            if any(loc in msg_lower for loc in _LOCALITY_KEYWORDS):
+                has_locality = True
+            
+            if has_bhk and has_price and has_locality:
+                break
+        
+        if has_bhk and has_price:
+            score += 0.15
+            reasons.append("Recent messages contain BHK/price patterns")
+        elif has_bhk or has_price:
+            score += 0.08
+            if has_bhk:
+                reasons.append("Recent messages contain BHK patterns")
+            if has_price:
+                reasons.append("Recent messages contain price patterns")
+    except Exception:
+        pass
+    
+    # 5. Broker overlap score (lazy - only for top candidates)
+    # This is computed on-demand during the check flow, not here
+    
+    return {
+        "score": round(score, 3),
+        "reasons": reasons[:4],  # Max 4 reasons
+    }
 
 
 def _connection(org_id: str, connection_id: int) -> dict:
@@ -100,17 +223,37 @@ def _group_directory(org_id: str, broker_id: str, connection_id: int) -> list[di
             or []
         )
     }
-    result = []
+    
+    # Compute suggestion scores for all groups
+    scored_groups = []
     for row in rows:
+        group_jid = row.get("conversation_jid") or ""
+        group_name = row.get("display_name") or group_jid
         metadata = row.get("metadata") if isinstance(row.get("metadata"), dict) else {}
-        result.append({
-            "group_jid": row.get("conversation_jid") or "",
-            "group_name": row.get("display_name") or row.get("conversation_jid") or "",
-            "participants": metadata.get("participants", 0),
-            "last_message_at": row.get("last_message_at"),
-            "connected": (row.get("conversation_jid") or "") in connected,
+        participants = metadata.get("participants", 0)
+        last_message_at = row.get("last_message_at")
+        is_connected = group_jid in connected
+        
+        # Compute suggestion score for unconnected groups
+        suggestion = None
+        if not is_connected:
+            suggestion = _suggestion_score(org_id, group_name, participants, last_message_at)
+        
+        scored_groups.append({
+            "group_jid": group_jid,
+            "group_name": group_name,
+            "participants": participants,
+            "last_message_at": last_message_at,
+            "connected": is_connected,
+            "suggestion": suggestion,
         })
-    return result
+    
+    # Sort: connected groups first (in original order), then unconnected by suggestion score
+    connected_groups = [g for g in scored_groups if g["connected"]]
+    unconnected_groups = [g for g in scored_groups if not g["connected"]]
+    unconnected_groups.sort(key=lambda g: g.get("suggestion", {}).get("score", 0), reverse=True)
+    
+    return connected_groups + unconnected_groups
 def _sample_senders(org_id: str, group_name: str) -> list[str]:
     rows = (
         storage.client.table("raw_messages")

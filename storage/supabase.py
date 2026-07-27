@@ -2406,6 +2406,8 @@ class SupabaseStorage(Storage):
             # Must NEVER appear in any public-facing API response, search filter,
             # or badge on propai.live / consumer surfaces.
             tenant_nationality_preference=obs.get("tenant_nationality_preference"),
+            validation_flags=obs.get("validation_flags") or [],
+            needs_review=bool(obs.get("needs_review")),
         )
 
     def rebuild_listings(self, limit: int = 0):
@@ -2481,6 +2483,17 @@ class SupabaseStorage(Storage):
             except Exception:
                 resolver = None
             listing = self._listing_from_parsed(obs, resolver)
+
+            # ── Locality validation (DB-aware, second pass) ──────
+            try:
+                from listing_validation import validate_listing_locality
+                loc_flags = validate_listing_locality(obs, self)
+                if loc_flags:
+                    existing_flags = list(listing.validation_flags or [])
+                    listing.validation_flags = existing_flags + loc_flags
+            except Exception as lve:
+                print(f"[upsert_listing_from_parsed] locality validation error: {lve}", flush=True)
+
             listing_id = self.save_listing(listing)
         except Exception as exc:
             print(f"[upsert_listing_from_parsed] parsed {parsed_id}: {exc}", flush=True)
