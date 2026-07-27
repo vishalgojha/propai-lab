@@ -120,7 +120,19 @@ func (sm *SessionManager) insertRawMessage(brokerID string, payload map[string]i
 
 	var ts interface{} = time.Now().UTC().Format(time.RFC3339)
 	if mt, ok := data["messageTimestamp"]; ok {
-		ts = mt
+		// WhatsApp messageTimestamp is Unix seconds - convert to RFC3339 time string
+		switch v := mt.(type) {
+		case float64:
+			ts = time.Unix(int64(v), 0).UTC().Format(time.RFC3339)
+		case json.Number:
+			if i, err := v.Int64(); err == nil {
+				ts = time.Unix(i, 0).UTC().Format(time.RFC3339)
+			}
+		case int64:
+			ts = time.Unix(v, 0).UTC().Format(time.RFC3339)
+		case int:
+			ts = time.Unix(int64(v), 0).UTC().Format(time.RFC3339)
+		}
 	}
 
 	rawPayload, _ := json.Marshal(payload)
