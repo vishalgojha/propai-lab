@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { LogOut, X, Search } from "lucide-react";
+import { LogOut, X, Search, MessageSquare, Users } from "lucide-react";
 import { useAuth } from "@/lib/AuthProvider";
 
 type NavItem = {
@@ -15,6 +15,7 @@ const baseNavSections = [
   {
     title: "Market",
     items: [
+      { href: "/chat", label: "Search & Chat" },
       { href: "/inbox", label: "Market Inbox" },
       { href: "/brokers", label: "Broker Profiles" },
       { href: "/whatsapp-groups", label: "WhatsApp Groups" },

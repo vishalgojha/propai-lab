@@ -1124,3 +1124,40 @@ export async function getBrokerAreas(
     .slice(0, 5)
     .map(([name]) => name);
 }
+
+export async function getSimilarListingsForExpired(
+  opts: { micro_market: string | null; bhk: string | null; intent: string | null; limit?: number },
+): Promise<Array<{ id: number; micro_market: string | null; bhk: string | null; building_name: string | null; price: number | null; price_unit: string | null; last_seen: string | null; property_type: string | null }>> {
+  const db = getServerSupabase();
+  if (!db) return [];
+
+  const limit = opts.limit ?? 5;
+  const freshnessCutoff = new Date();
+  freshnessCutoff.setDate(freshnessCutoff.getDate() - 90);
+  const freshnessCutoffIso = freshnessCutoff.toISOString();
+
+  let query = db.from("listings").select("id, micro_market, bhk, building_name, price, price_unit, last_seen, property_type").gte("last_seen", freshnessCutoffIso);
+
+  if (opts.micro_market) {
+    query = query.eq("micro_market", opts.micro_market);
+  }
+  if (opts.bhk) {
+    query = query.eq("bhk", opts.bhk);
+  }
+  if (opts.intent) {
+    query = query.eq("intent", opts.intent);
+  }
+
+  const { data, error } = await query.order("last_seen", { ascending: false }).limit(limit);
+  if (error || !data) return [];
+  return data.map((row) => ({
+    id: row.id,
+    micro_market: row.micro_market,
+    bhk: row.bhk,
+    building_name: row.building_name,
+    price: row.price,
+    price_unit: row.price_unit,
+    last_seen: row.last_seen,
+    property_type: row.property_type,
+  }));
+}
