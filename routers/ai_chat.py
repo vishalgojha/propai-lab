@@ -100,6 +100,41 @@ def _wrap_chat_response(response: dict, is_inbox: bool = False):
     return _wrap_sse(response)
 
 
+def _preferred_workspace_provider(tenant_id: str | None) -> dict:
+    """Resolve workspace-saved credentials before deployment environment keys."""
+    try:
+        providers = storage.get_llm_providers(tenant_id=tenant_id)
+        active = [
+            p for p in providers
+            if getattr(p, "is_active", 0) and (getattr(p, "api_key", "") or "").strip()
+            and (getattr(p, "model_name", "") or "").strip()
+        ]
+        if active:
+            # The workspace UI normally keeps one active row. Keep this
+            # deterministic if legacy data contains more than one.
+            active.sort(key=lambda p: (str(getattr(p, "provider_name", "")).lower() == "merge", str(getattr(p, "provider_name", "")).lower()))
+            p = active[0]
+            return {
+                "api_key": p.api_key.strip(),
+                "model": p.model_name.strip(),
+                "base_url": (p.base_url or "https://api.openai.com/v1").strip().rstrip("/"),
+                "provider": p.provider_name,
+            }
+    except Exception as exc:
+        _logger.warning("Workspace LLM provider lookup failed: %s", exc)
+
+    try:
+        import llm as _llm
+        providers = list(_llm.get_configured_providers())
+        providers.sort(key=lambda p: str(p.get("name", "")).lower() == "merge")
+        if providers:
+            p = providers[0]
+            return {"api_key": p["api_key"], "model": p["model"], "base_url": p["base_url"], "provider": p["name"]}
+    except Exception:
+        pass
+    return {"api_key": "", "model": "", "base_url": "", "provider": "none"}
+
+
 # ═══════════════════════════════════════════════════════════════════
 # Models
 # ═══════════════════════════════════════════════════════════════════
@@ -631,14 +666,13 @@ async def promote_generate(req: PromoteRequest, user: dict = Depends(require_use
 # ═══════════════════════════════════════════════════════════════════
 
 @router.get("/api/ai/config")
-async def ai_config(user: dict = Depends(require_user)):
-    import llm as _llm
-    info = _llm.get_provider_info()
+async def ai_config(user: dict = Depends(require_user), tenant_id: str | None = Depends(get_tenant_context)):
+    info = _preferred_workspace_provider(tenant_id)
     return {
-        "has_server_key": info.get("provider_name") != "none",
+        "has_server_key": info.get("provider") != "none",
         "base_url": info.get("base_url", ""),
-        "model": info.get("model_name", ""),
-        "provider": info.get("provider_name", "none"),
+        "model": info.get("model", ""),
+        "provider": info.get("provider", "none"),
     }
 
 
@@ -676,6 +710,10 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
 
     session_id = req.session_id or "default"
     memory = get_memory(session_id)
+    preferred_provider = _preferred_workspace_provider(tenant_id)
+    effective_api_key = (req.api_key or "").strip() or preferred_provider["api_key"]
+    effective_model = (req.model or "").strip() or preferred_provider["model"]
+    effective_base_url = preferred_provider["base_url"]
 
     for msg in req.messages:
         role = msg.get("role", "")
@@ -741,8 +779,8 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
                     loop.run_in_executor(
                         None,
                         lambda: chat_engine.get_model_reply(
-                            cap_msgs, cap_sources, api_key=req.api_key or "",
-                            model=req.model.strip() or None, max_tool_rounds=0,
+                            cap_msgs, cap_sources, api_key=effective_api_key,
+                            model=effective_model or None, base_url=effective_base_url or None, max_tool_rounds=0,
                         ),
                     ),
                     timeout=30,
@@ -768,7 +806,8 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
                 loop.run_in_executor(
                     None,
                     lambda: chat_engine.get_conversational_reply(
-                        req.messages, api_key=req.api_key or "", model=req.model.strip() or None, broker=broker
+                        req.messages, api_key=effective_api_key, model=effective_model or None,
+                        base_url=effective_base_url or None, broker=broker
                     ),
                 ),
                 timeout=30,
@@ -866,8 +905,9 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
         reply = chat_engine.get_model_reply(
             msgs,
             sources,
-            api_key=req.api_key or "",
-            model=req.model.strip() or None,
+            api_key=effective_api_key,
+            model=effective_model or None,
+            base_url=effective_base_url or None,
             max_tool_rounds=2,
         )
         if reply.content:

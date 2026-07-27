@@ -22,14 +22,27 @@ _logger = logging.getLogger(__name__)
 
 _PROVIDERS = []
 
+
+def _numbered_keys(prefix: str) -> list[tuple[str, str]]:
+    """Return a provider's base key plus every numbered Coolify key."""
+    values: list[tuple[str, str]] = []
+    base = os.getenv(prefix, "").strip()
+    if base:
+        values.append((prefix.removesuffix("_API_KEY").lower(), base))
+    numbered = []
+    for env_name, value in os.environ.items():
+        if env_name.startswith(prefix + "_") and env_name[len(prefix) + 1:].isdigit() and value.strip():
+            numbered.append((int(env_name[len(prefix) + 1:]), value.strip()))
+    for number, value in sorted(numbered):
+        values.append((f"{prefix.removesuffix('_API_KEY').lower()}_{number}", value))
+    return values
+
 # NVIDIA — up to 4 keys for round-robin, all use the same model
 _nvidia_model = os.getenv("NVIDIA_MODEL", "").strip()
 if _nvidia_model:
-    for suffix in ("", "_2", "_3", "_4"):
-        key = os.getenv(f"NVIDIA_API_KEY{suffix}", "").strip()
-        if key:
-            _PROVIDERS.append({
-                "name": f"nvidia{suffix}" if suffix else "nvidia",
+    for name, key in _numbered_keys("NVIDIA_API_KEY"):
+        _PROVIDERS.append({
+                "name": name,
                 "api_key": key,
                 "base_url": "https://integrate.api.nvidia.com/v1",
                 "model": _nvidia_model,
@@ -38,11 +51,9 @@ if _nvidia_model:
 # Groq — up to 4 pooled-account keys for round-robin
 _groq_model = os.getenv("GROQ_MODEL", "").strip()
 if _groq_model:
-    for suffix in ("", "_2", "_3", "_4"):
-        key = os.getenv(f"GROQ_API_KEY{suffix}", "").strip()
-        if key:
-            _PROVIDERS.append({
-                "name": f"groq{suffix}" if suffix else "groq",
+    for name, key in _numbered_keys("GROQ_API_KEY"):
+        _PROVIDERS.append({
+                "name": name,
                 "api_key": key,
                 "base_url": "https://api.groq.com/openai/v1",
                 "model": _groq_model,
@@ -131,12 +142,8 @@ def get_client() -> OpenAI:
     if idx >= 0:
         p = _PROVIDERS[idx]
         return OpenAI(api_key=p["api_key"], base_url=p["base_url"])
-    # Preserve a useful configuration error instead of constructing a fake client.
-    if _PROVIDERS:
-        p = _PROVIDERS[-1]
-        return OpenAI(api_key=p["api_key"], base_url=p["base_url"])
     raise ProviderConfigurationError(
-        "No complete LLM provider is configured. Set MERGE_API_KEY and MERGE_MODEL."
+        "No configured LLM provider is healthy. Check provider balances, keys, and models."
     )
 
 
@@ -145,10 +152,8 @@ def get_model() -> str:
     idx = _find_working()
     if idx >= 0:
         return _PROVIDERS[idx]["model"]
-    if _PROVIDERS:
-        return _PROVIDERS[-1]["model"]
     raise ProviderConfigurationError(
-        "No complete LLM provider is configured. Set an API key and its model."
+        "No configured LLM provider is healthy. Check provider balances, keys, and models."
     )
 
 
@@ -187,10 +192,8 @@ def get_fast_model() -> str:
     idx = _find_fast_working()
     if idx >= 0:
         return _PROVIDERS[idx]["model"]
-    if _PROVIDERS:
-        return _PROVIDERS[-1]["model"]
     raise ProviderConfigurationError(
-        "No complete LLM provider is configured. Set MERGE_API_KEY and MERGE_MODEL."
+        "No configured LLM provider is healthy. Check provider balances, keys, and models."
     )
 
 
