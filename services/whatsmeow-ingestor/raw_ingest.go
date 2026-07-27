@@ -187,6 +187,17 @@ func (sm *SessionManager) insertRawMessage(brokerID string, payload map[string]i
 		).Scan(&rawID)
 	}
 	if err != nil {
+		// ON CONFLICT DO NOTHING + RETURNING id yields no rows for duplicates.
+		// Fall back to a SELECT so we return the existing row's ID instead of
+		// treating the duplicate as a hard failure.
+		if err == sql.ErrNoRows {
+			_ = sm.db.QueryRowContext(context.Background(),
+				`SELECT id FROM raw_messages WHERE message_uid = $1`, messageUID,
+			).Scan(&rawID)
+			if rawID > 0 {
+				return rawID, nil
+			}
+		}
 		return 0, fmt.Errorf("raw_messages insert: %w", err)
 	}
 	return rawID, nil
@@ -211,11 +222,11 @@ func fireWebhook(payload map[string]interface{}) {
 		log.Printf("webhook POST failed: %v", err)
 		return
 	}
-	resp.Body.Close()
 	if resp.StatusCode >= 300 {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
 		log.Printf("webhook returned %d: %s", resp.StatusCode, string(body))
 	}
+	resp.Body.Close()
 }
 
 // triggerExtraction POSTs to /trigger-extraction so the Python API immediately
@@ -249,11 +260,11 @@ func triggerExtraction(rawID int64, tenantID string) {
 		log.Printf("[trigger-extraction] POST failed for raw_id=%d: %v", rawID, err)
 		return
 	}
-	resp.Body.Close()
 	if resp.StatusCode >= 300 {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
 		log.Printf("[trigger-extraction] returned %d for raw_id=%d: %s", resp.StatusCode, rawID, string(body))
 	}
+	resp.Body.Close()
 }
 
 func extractMessageText(msg map[string]interface{}) string {

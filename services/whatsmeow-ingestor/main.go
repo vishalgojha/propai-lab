@@ -76,28 +76,29 @@ type Status struct {
 // ── Broker session ─────────────────────────────────────────────────────────
 
 type BrokerSession struct {
-	mu                sync.RWMutex
-	groupSyncMu       sync.Mutex
-	groupSyncRunning  bool
-	brokerID          string
-	client            *whatsmeow.Client
-	device            *store.Device
-	status            Status
-	ctx               context.Context
-	cancel            context.CancelFunc
-	disconnected      chan struct{}
-	disconnectOnce    func() struct{}
-	lockConn          *sql.Conn
-	reconnectFailures int
-	reconnectCount    int
-	totalMessages     int64
-	totalOutgoing     int64
-	totalLocations    int64
-	totalContacts     int64
-	totalReactions    int64
-	totalByType       map[string]int64
-	lastSeenByType    map[string]time.Time
-	statusFile        string
+	mu                 sync.RWMutex
+	groupSyncMu        sync.Mutex
+	groupSyncRunning   bool
+	brokerID           string
+	client             *whatsmeow.Client
+	device             *store.Device
+	status             Status
+	ctx                context.Context
+	cancel             context.CancelFunc
+	disconnected       chan struct{}
+	disconnectOnce     func() struct{}
+	lockConn           *sql.Conn
+	lockReleaseOnce    sync.Once
+	reconnectFailures  int
+	reconnectCount     int
+	totalMessages      int64
+	totalOutgoing      int64
+	totalLocations     int64
+	totalContacts      int64
+	totalReactions     int64
+	totalByType        map[string]int64
+	lastSeenByType     map[string]time.Time
+	statusFile         string
 	pairingMode       string // "qr" or "code"
 	pairingPhone      string // phone number for code pairing
 }
@@ -194,17 +195,21 @@ func (s *BrokerSession) clearDevice() {
 }
 
 func (s *BrokerSession) releaseLock() {
-	if s.lockConn == nil {
-		return
-	}
-	key := brokerLockKey(s.brokerID)
-	if _, err := s.lockConn.ExecContext(context.Background(), "SELECT pg_advisory_unlock($1)", key); err != nil {
-		log.Printf("[broker %s] error releasing session lock: %v", s.brokerID, err)
-	}
-	if err := s.lockConn.Close(); err != nil {
-		log.Printf("[broker %s] error closing session lock connection: %v", s.brokerID, err)
-	}
-	s.lockConn = nil
+	s.lockReleaseOnce.Do(func() {
+		if s.lockConn == nil {
+			return
+		}
+		key := brokerLockKey(s.brokerID)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if _, err := s.lockConn.ExecContext(ctx, "SELECT pg_advisory_unlock($1)", key); err != nil {
+			log.Printf("[broker %s] error releasing session lock: %v", s.brokerID, err)
+		}
+		if err := s.lockConn.Close(); err != nil {
+			log.Printf("[broker %s] error closing session lock connection: %v", s.brokerID, err)
+		}
+		s.lockConn = nil
+	})
 }
 
 // ── Session manager ────────────────────────────────────────────────────────
@@ -349,6 +354,7 @@ func (sm *SessionManager) StartOrGet(brokerID string) *BrokerSession {
 	sm.mu.Lock()
 	sm.sessions[brokerID] = session
 	sm.mu.Unlock()
+	sm.sessionWg.Add(1)
 	go sm.runSession(session)
 	return session
 }
@@ -1658,6 +1664,18 @@ func validInternalRequest(r *http.Request) bool {
 	return expected != "" && supplied != "" && hmac.Equal([]byte(supplied), []byte(expected))
 }
 
+func recoveryMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			if rec := recover(); rec != nil {
+				log.Printf("[PANIC] %s %s: %v", r.Method, r.URL.Path, rec)
+				http.Error(w, `{"error":"internal server error"}`, http.StatusInternalServerError)
+			}
+		}()
+		next.ServeHTTP(w, r)
+	})
+}
+
 func internalOnly(next http.HandlerFunc, allowPublicLiveness bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if allowPublicLiveness && r.Method == http.MethodGet && r.URL.Query().Get("broker_id") == "" && !validInternalRequest(r) {
@@ -1888,9 +1906,16 @@ func (sm *SessionManager) disconnectHandler(w http.ResponseWriter, r *http.Reque
 	if s.cancel != nil {
 		s.cancel()
 	}
-	sm.Remove(brokerID)
-	log.Printf("[broker %s] disconnected and removed", brokerID)
+	// Respond immediately so the caller (Cloudflare/FastAPI) never times out.
+	// Remove() does a blocking DB call (advisory lock release) that must not
+	// hold the HTTP response hostage.
+	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+	// Fire-and-forget cleanup in a separate goroutine.
+	go func() {
+		sm.Remove(brokerID)
+		log.Printf("[broker %s] disconnected and removed", brokerID)
+	}()
 }
 
 func (sm *SessionManager) deleteSessionHandler(w http.ResponseWriter, r *http.Request) {
@@ -2765,6 +2790,7 @@ func main() {
 			sm.mu.Lock()
 			sm.sessions[brokerID] = session
 			sm.mu.Unlock()
+			sm.sessionWg.Add(1)
 			go sm.runSession(session)
 			log.Printf("[broker %s] session restored from device %q", brokerID, deviceJID)
 		}
@@ -2787,8 +2813,11 @@ func main() {
 	mux.HandleFunc("/capabilities", internalOnly(sm.capabilitiesHandler, true))
 
 	server := &http.Server{
-		Addr:    ":" + sendPort,
-		Handler: mux,
+		Addr:         ":" + sendPort,
+		Handler:      recoveryMiddleware(mux),
+		ReadTimeout:  30 * time.Second,
+		WriteTimeout: 30 * time.Second,
+		IdleTimeout:  120 * time.Second,
 	}
 
 	go func() {
