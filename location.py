@@ -311,6 +311,158 @@ def _canonical_micro_market(value: str | None) -> str | None:
     return normalized.title()
 
 
+# ── Canonical locality slug (mirrors apps/www/src/lib/locality-canon.ts) ──
+
+_HIDDEN_BUCKETS = frozenset({
+    "western suburbs prime", "south mumbai central", "eastern suburbs",
+    "central suburbs", "mumbai suburbs", "western line", "central line", "harbour line",
+})
+
+_GENERIC_PARENTS = frozenset({
+    "andheri", "dadar", "thane", "malad", "goregaon", "vile parle", "kandivali", "borivali",
+})
+
+IMPLIED_DIRECTION: dict[str, str] = {
+    "bandra": "Bandra West",
+    "khar": "Khar West",
+    "santacruz": "Santacruz West",
+    "scuz": "Santacruz West",
+}
+
+_REDIRECTS: dict[str, str] = {
+    "bandra bkc": "Bandra East",
+    "bandra bkc east": "Bandra East",
+    "bandra east bkc": "Bandra East",
+    "bkc": "Bandra Kurla Complex",
+    "pali hill": "Bandra West",
+    "mount mary": "Bandra West",
+    "turner road": "Bandra West",
+    "lokhandwala": "Andheri West",
+    "versova": "Andheri West",
+    "oshiwara": "Andheri West",
+    "dn nagar": "Andheri West",
+    "marol": "Andheri East",
+    "sakinaka": "Andheri East",
+    "chandivali": "Andheri East",
+    "juhu scheme": "Juhu",
+    "hiranandani estate": "Thane West",
+    "wagle estate, thane": "Thane West",
+    "kasarvadavali": "Thane West",
+    "kasarvadavli": "Thane West",
+    "kapurbawdi": "Thane West",
+    "ghodbunder road, thane": "Thane West",
+    "mahajanwadi, thane": "Thane West",
+    "mahim west": "Mahim",
+    "matunga east": "Matunga",
+    "wadala west": "Wadala",
+    "vile parle east": "Vile Parle East",
+    "parle east": "Vile Parle East",
+}
+
+_STANDALONE_LOCALITIES: dict[str, str] = {
+    "andheri east": "Andheri East",
+    "andheri west": "Andheri West",
+    "ambernath": "Ambernath",
+    "agripada": "Agripada",
+    "badlapur": "Badlapur",
+    "bandra east": "Bandra East",
+    "bandra kurla complex": "Bandra Kurla Complex",
+    "bandra west": "Bandra West",
+    "bhandup": "Bhandup",
+    "bhayandar": "Bhayandar",
+    "borivali east": "Borivali East",
+    "borivali west": "Borivali West",
+    "byculla": "Byculla",
+    "chembur": "Chembur",
+    "churchgate": "Churchgate",
+    "chowpatty": "Chowpatty",
+    "colaba": "Colaba",
+    "cuffe parade": "Cuffe Parade",
+    "dahisar": "Dahisar",
+    "dadar east": "Dadar East",
+    "dadar west": "Dadar West",
+    "dombivli": "Dombivli",
+    "fort": "Fort",
+    "ghatkopar east": "Ghatkopar East",
+    "ghatkopar west": "Ghatkopar West",
+    "goregaon east": "Goregaon East",
+    "goregaon west": "Goregaon West",
+    "grant road": "Grant Road",
+    "juhu": "Juhu",
+    "jogeshwari east": "Jogeshwari East",
+    "jogeshwari west": "Jogeshwari West",
+    "kalyan": "Kalyan",
+    "kandivali east": "Kandivali East",
+    "kandivali west": "Kandivali West",
+    "khar west": "Khar West",
+    "kurla": "Kurla",
+    "kurla west": "Kurla West",
+    "lalbaug": "Lalbaug",
+    "lower parel": "Lower Parel",
+    "mahalaxmi": "Mahalaxmi",
+    "mahim": "Mahim",
+    "malabar hill": "Malabar Hill",
+    "malad east": "Malad East",
+    "malad west": "Malad West",
+    "marine lines": "Marine Lines",
+    "matunga": "Matunga",
+    "mira road": "Mira Road",
+    "mulund west": "Mulund West",
+    "mumbai central": "Mumbai Central",
+    "nariman point": "Nariman Point",
+    "nagpada": "Nagpada",
+    "nerul": "Nerul",
+    "panvel": "Panvel",
+    "parel": "Parel",
+    "powai": "Powai",
+    "prabhadevi": "Prabhadevi",
+    "pydhonie": "Pydhonie",
+    "santacruz east": "Santacruz East",
+    "santacruz west": "Santacruz West",
+    "sewri": "Sewri",
+    "sion": "Sion",
+    "tardeo": "Tardeo",
+    "thane west": "Thane West",
+    "vile parle west": "Vile Parle West",
+    "vashi": "Vashi",
+    "vasai": "Vasai",
+    "vikhroli": "Vikhroli",
+    "virar": "Virar",
+    "wadala": "Wadala",
+    "worli": "Worli",
+}
+
+
+def _slugify(value: str) -> str:
+    """Mirror apps/www/src/lib/supabase.ts slugify()."""
+    return re.sub(r"^-+|-+$", "", re.sub(r"[^a-z0-9]+", "-", value.strip().lower()))
+
+
+def canonical_micro_market_slug(raw: str | None) -> str | None:
+    """Return the canonical URL slug for a raw micro_market value.
+
+    Returns None for hidden buckets, unknown values, or empty input —
+    matching the TypeScript canonicalLocality() behaviour in locality-canon.ts.
+    """
+    if not raw:
+        return None
+    norm = re.sub(r"\s+", " ", raw.strip().lower())
+    if not norm:
+        return None
+    if norm in _HIDDEN_BUCKETS:
+        return None
+    if norm in _REDIRECTS:
+        return _slugify(_REDIRECTS[norm])
+    if norm in _IMPLIED_DIRECTION:
+        return _slugify(_IMPLIED_DIRECTION[norm])
+    if norm in _GENERIC_PARENTS:
+        return _slugify(raw.strip())
+    label = _STANDALONE_LOCALITIES.get(norm)
+    if label:
+        return _slugify(label)
+    return None
+
+
 def infer_unique_micro_market(text: str | None) -> str | None:
     """Resolve a market only when the text names one unambiguous locality."""
     normalized = f" {(text or '').lower()} "

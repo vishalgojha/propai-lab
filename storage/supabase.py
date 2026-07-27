@@ -28,6 +28,7 @@ from lab.storage.base import (
     dict_to_dataclass,
 )
 from lab.inventory import listing_fingerprint, listing_label
+from location import canonical_micro_market_slug
 
 
 _EMOJI_ICON_RE = re.compile(
@@ -2359,12 +2360,15 @@ class SupabaseStorage(Storage):
             bhk=obs.get("bhk"),
             price=price,
             price_unit=price_unit,
+            price_model=obs.get("price_model"),
+            price_per_sqft=obs.get("price_per_sqft"),
             area_sqft=obs.get("area_sqft"),
             furnishing=obs.get("furnishing"),
             location_label=micro_market or obs.get("location_raw"),
             building_name=building_name,
             landmark_name=obs.get("landmark_name"),
             micro_market=micro_market,
+            canonical_micro_market_slug=canonical_micro_market_slug(micro_market),
             broker_name=broker_name,
             broker_phone=broker_phone,
             latest_raw_message_id=obs.get("raw_message_id"),

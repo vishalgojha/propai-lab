@@ -141,12 +141,15 @@ class Listing:
     bhk: Optional[str] = None
     price: Optional[float] = None
     price_unit: Optional[str] = None
+    price_model: Optional[str] = None
+    price_per_sqft: Optional[float] = None
     area_sqft: Optional[float] = None
     furnishing: Optional[str] = None
     location_label: Optional[str] = None
     building_name: Optional[str] = None
     landmark_name: Optional[str] = None
     micro_market: Optional[str] = None
+    canonical_micro_market_slug: Optional[str] = None
     broker_name: Optional[str] = None
     broker_phone: Optional[str] = None
     first_seen: str = ""

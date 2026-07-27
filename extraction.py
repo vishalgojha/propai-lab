@@ -166,6 +166,34 @@ def _safe_additional_charges(raw) -> list[dict]:
     return out
 
 
+import re as _re
+
+_UNIT_TO_ABS = {
+    "cr": 10_000_000, "crore": 10_000_000,
+    "lac": 100_000, "lakh": 100_000, "l": 100_000,
+    "k": 1_000, "thousand": 1_000,
+}
+
+def _parse_raw_price_to_abs(raw_price_text: str) -> float | None:
+    """Best-effort parse of raw_price_text into absolute rupees.
+
+    Returns None if the text is unparseable.  Used to cross-check the AI
+    extraction amount which sometimes returns 10x/100x the correct value.
+    """
+    if not raw_price_text:
+        return None
+    m = _re.search(r'([\d,]+(?:\.\d+)?)\s*(cr|crore|lac|lakh|l|k|thousand)?', raw_price_text.lower())
+    if not m:
+        return None
+    try:
+        amount = float(m.group(1).replace(",", ""))
+    except ValueError:
+        return None
+    unit = (m.group(2) or "").rstrip("s")
+    multiplier = _UNIT_TO_ABS.get(unit, 1)
+    return amount * multiplier
+
+
 def _ai_extraction_to_parsed(ai_extraction: dict, raw_text: str, sender_name: str, push_name: str) -> dict:
     """Convert AI extraction schema to the existing parsed dict format.
 
@@ -210,6 +238,13 @@ def _ai_extraction_to_parsed(ai_extraction: dict, raw_text: str, sender_name: st
     # price in the stated unit, e.g. 4.4 lac = ₹4,40,000).
     raw_price_text = (price_info.get("raw_price_text") or "").lower() if isinstance(price_info, dict) else ""
     if price is not None:
+        # Cross-check: parse raw_price_text to validate the AI's absolute amount.
+        # AI sometimes returns 10x/100x the correct value (e.g. 4500000 for "4.50 Lacs").
+        _parsed_abs = _parse_raw_price_to_abs(raw_price_text)
+        if _parsed_abs is not None and price > 0 and _parsed_abs > 0:
+            ratio = price / _parsed_abs
+            if ratio > 5 or ratio < 0.2:
+                price = _parsed_abs
         if any(u in raw_price_text for u in ("cr", "crore")):
             price_unit = "cr"
             if price >= 10_000_000:
