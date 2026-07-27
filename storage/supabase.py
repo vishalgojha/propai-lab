@@ -2056,10 +2056,12 @@ class SupabaseStorage(Storage):
             return dict_to_dataclass(ParsedObservation, res.data[0])
         return None
 
-    def get_parsed(self, limit: int = 50, offset: int = 0, intent: str = "") -> list[dict]:
+    def get_parsed(self, limit: int = 50, offset: int = 0, intent: str = "", classified_only: bool = False) -> list[dict]:
         query = self.client.table("parsed_output").select("*").order("created_at", desc=True).limit(limit).offset(offset)
         if intent:
             query = query.eq("intent", intent)
+        if classified_only:
+            query = query.not_.is_("intent", "null").neq("intent", "").neq("intent", "NO_ANCHOR").gt("confidence", 0)
         if self._tenant_id:
             query = query.eq("tenant_id", self._tenant_id)
         res = query.execute()

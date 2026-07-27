@@ -138,8 +138,8 @@ async def upload_listing_photo(listing_id: int, request: Request, user: dict = D
 
 
 @router.get("/api/parsed")
-async def get_parsed(limit: int = 50, offset: int = 0, intent: str = "", user: dict = Depends(require_user)):
-    return storage.get_parsed(limit, offset, intent=intent)
+async def get_parsed(limit: int = 50, offset: int = 0, intent: str = "", classified_only: bool = False, user: dict = Depends(require_user)):
+    return storage.get_parsed(limit, offset, intent=intent, classified_only=classified_only)
 
 
 @router.get("/api/parsed/{parsed_id}/sources")

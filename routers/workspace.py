@@ -605,7 +605,13 @@ def _compute_capability_status(
 @router.get("/api/raw")
 async def get_raw_messages(user: dict = Depends(require_user), limit: int = 50, offset: int = 0,
                            group_name: str = "", sender: str = "",
-                           sender_phone: str = "", sender_jid: str = ""):
+                           sender_phone: str = "", sender_jid: str = "", raw_id: int = 0,
+                           tenant_id: str | None = Depends(get_tenant_context)):
+    if raw_id:
+        row = storage.get_raw_message(raw_id)
+        if row is None or (tenant_id and str(row.tenant_id or "") != str(tenant_id)):
+            raise HTTPException(404, f"Raw message {raw_id} not found")
+        return asdict(row)
     rows = storage.get_raw_messages(limit, offset, group_name=group_name,
                                     sender=sender, sender_phone=sender_phone,
                                     sender_jid=sender_jid)

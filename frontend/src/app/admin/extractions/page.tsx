@@ -30,6 +30,18 @@ interface ParsedRow {
   message_type: string | null;
 }
 
+interface RawMessage {
+  id: number;
+  sender?: string;
+  sender_phone?: string;
+  sender_jid?: string;
+  group_name?: string;
+  message?: string;
+  message_type?: string;
+  timestamp?: string;
+  raw_payload?: unknown;
+}
+
 const LISTING_INTENTS = new Set(["SELL", "RENT", "LEASE", "COMMERCIAL", "PRE-LAUNCH"]);
 
 function intentCategory(row: ParsedRow): "listing" | "requirement" {
@@ -71,6 +83,8 @@ export default function AdminExtractionsPage() {
   const [intentFilter, setIntentFilter] = useState<"all" | "listing" | "requirement">("all");
   const [search, setSearch] = useState("");
   const [selectedRow, setSelectedRow] = useState<ParsedRow | null>(null);
+  const [rawMessage, setRawMessage] = useState<RawMessage | null>(null);
+  const [rawLoading, setRawLoading] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -80,7 +94,8 @@ export default function AdminExtractionsPage() {
       intentFilter === "listing" ? "SELL" :
       intentFilter === "requirement" ? "BUY" : "";
 
-    fetchJSON<ParsedRow[]>(`/parsed?limit=${PAGE_SIZE}&offset=${offset}&intent=${intentParam}`)
+    const classifiedParam = intentFilter === "all" ? "&classified_only=true" : "";
+    fetchJSON<ParsedRow[]>(`/parsed?limit=${PAGE_SIZE}&offset=${offset}&intent=${intentParam}${classifiedParam}`)
       .then((data) => {
         if (active) {
           setRows(data);
@@ -108,6 +123,23 @@ export default function AdminExtractionsPage() {
       return haystack.includes(q);
     });
   }, [rows, search]);
+
+  useEffect(() => {
+    if (!selectedRow?.raw_message_id) {
+      setRawMessage(null);
+      return;
+    }
+    let active = true;
+    setRawLoading(true);
+    setRawMessage(null);
+    fetchJSON<RawMessage | RawMessage[]>(`/raw?raw_id=${selectedRow.raw_message_id}`)
+      .then((data) => {
+        if (active) setRawMessage(Array.isArray(data) ? data[0] || null : data);
+      })
+      .catch(() => { if (active) setRawMessage(null); })
+      .finally(() => { if (active) setRawLoading(false); });
+    return () => { active = false; };
+  }, [selectedRow]);
 
   const handleFilterChange = (f: "all" | "listing" | "requirement") => {
     setIntentFilter(f);
@@ -333,13 +365,27 @@ export default function AdminExtractionsPage() {
             </div>
 
             {selectedRow.raw_message_id ? (
-              <Link
-                href={`/audit?raw=${selectedRow.raw_message_id}`}
-                className="inline-flex items-center gap-1 text-xs font-semibold text-[#58a6ff] hover:text-[#8abfff]"
-                onClick={() => setSelectedRow(null)}
-              >
-                View Raw Message #{selectedRow.raw_message_id}
-              </Link>
+              <div className="border-t border-white/10 pt-4">
+                <div className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">
+                  Raw WhatsApp Message #{selectedRow.raw_message_id}
+                </div>
+                {rawLoading ? (
+                  <div className="mt-2 text-sm text-zinc-500">Loading raw message...</div>
+                ) : rawMessage ? (
+                  <div className="mt-2 space-y-2">
+                    <div className="text-xs text-zinc-500">
+                      {rawMessage.sender || "Unknown sender"}
+                      {rawMessage.sender_phone ? ` · ${rawMessage.sender_phone.replace(/@.*$/, "")}` : ""}
+                      {rawMessage.group_name ? ` · ${rawMessage.group_name}` : ""}
+                    </div>
+                    <div className="max-h-48 overflow-auto whitespace-pre-wrap rounded-lg border border-white/10 bg-black/20 p-3 text-sm text-zinc-200">
+                      {rawMessage.message || "(No text content; see message metadata above.)"}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="mt-2 text-sm text-zinc-500">Raw message unavailable.</div>
+                )}
+              </div>
             ) : null}
           </div>
         </div>
