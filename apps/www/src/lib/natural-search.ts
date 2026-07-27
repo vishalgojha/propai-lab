@@ -327,8 +327,35 @@ function parseBudget(query: string): { minPrice: number | null; maxPrice: number
 }
 
 export function findLocalityMatches(query: string, localities: LocalitySummary[]): LocalitySummary[] {
-  const qSlug = canonicalLocality(query).slug;
   const qText = normalizeText(query);
+  const betweenMatch = qText.match(/\bbetween\s+(.+?)\s+and\s+(.+?)(?:\s+|$)/);
+  if (betweenMatch) {
+    const first = betweenMatch[1].split(/[^a-z0-9]+/)[0];
+    const second = betweenMatch[2].split(/[^a-z0-9]+/)[0];
+    const matches: LocalitySummary[] = [];
+    if (first) {
+      const firstMatches = localities.filter((loc) => {
+        const locText = normalizeText(loc.locality);
+        return locText.includes(first) || locText.split(/\s+/).some((w) => w === first);
+      });
+      matches.push(...firstMatches);
+    }
+    if (second) {
+      const secondMatches = localities.filter((loc) => {
+        const locText = normalizeText(loc.locality);
+        return locText.includes(second) || locText.split(/\s+/).some((w) => w === second);
+      });
+      for (const m of secondMatches) {
+        if (!matches.includes(m)) matches.push(m);
+      }
+    }
+    if (matches.length > 0) {
+      return matches
+        .sort((a, b) => b.listingCount - a.listingCount)
+        .slice(0, 6);
+    }
+  }
+  const qSlug = canonicalLocality(query).slug;
   const scored = localities.map((loc) => {
     const locSlug = canonicalLocality(loc.locality).slug;
     const locText = normalizeText(loc.locality);
@@ -338,18 +365,14 @@ export function findLocalityMatches(query: string, localities: LocalitySummary[]
     else if (qSlug.includes(locSlug) || qText.includes(locText)) score = 80;
     else if (locSlug.includes(qSlug) && qSlug.length >= 3) score = 55;
     else {
-      // Check if ANY word from the locality name appears in the query.
-      // Handles "bandra" matching "Bandra West", "andheri" matching "Andheri West", etc.
       const locWords = locText.split(/\s+/).filter((w) => w.length >= 3);
       const matchingWords = locWords.filter((w) => {
         const wordRe = new RegExp(`\\b${w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`);
         return wordRe.test(qText);
       });
       if (matchingWords.length > 0 && matchingWords.length >= Math.ceil(locWords.length / 2)) {
-        // Most words of the locality name appear in the query → good match
         score = 70;
       } else if (matchingWords.length > 0 && matchingWords[0].length >= 4) {
-        // At least the first/base word appears (e.g. "bandra" in "Bandra West")
         score = 50;
       } else if (
         qText
@@ -359,7 +382,6 @@ export function findLocalityMatches(query: string, localities: LocalitySummary[]
       ) {
         score = 40;
       } else {
-        // Fuzzy fallback: trigram similarity on the full locality phrase.
         const sim = trigramSimilarity(query, loc.locality);
         if (sim >= 0.5) score = Math.round(30 + sim * 20);
       }
@@ -383,10 +405,10 @@ function detectLocalityStated(query: string): boolean {
   const directional = /\b(east|west|north|south|central|e|w|n|s)\b/;
   const baseName = baseNameRegex();
 
-  // "in <locality>" / "at <locality>" / "near <locality>" prepositions
+  if (/\bbetween\s+.+\s+and\s+.+\b/.test(qText)) return true;
+
   if (/\b(in|at|near|around|locality|area)\b/.test(qText)) return true;
 
-  // base name present, optionally followed by a directional suffix
   for (let i = 0; i < parts.length; i += 1) {
     if (baseName.test(parts[i])) {
       const next = parts[i + 1];
@@ -409,6 +431,16 @@ function extractStatedLocalityPhrase(query: string): string | null {
   const directional = /\b(east|west|north|south|central)\b/;
   const baseName = baseNameRegex();
   const stopAfter = /\b(bhk|rk|studio|budget|under|below|max|upto|up to|within|less than|rent|rental|sale|sell|buy|buying|purchase|furnished|semi|unfurnished|sqft|sq\.?\s*ft|area)\b/;
+
+  // Case 0: "between X and Y" range pattern
+  const betweenMatch = qText.match(/\bbetween\s+(.+?)\s+and\s+(.+?)(?:\s+|$)/);
+  if (betweenMatch) {
+    const first = betweenMatch[1].split(stopAfter)[0].trim();
+    const second = betweenMatch[2].split(stopAfter)[0].trim();
+    if (first && second) {
+      return `${titleCase(first)} and ${titleCase(second)}`;
+    }
+  }
 
   // Case 1: "in/at/near <locality> [stop token | end]"
   const prepMatch = qText.match(/\b(in|at|near|around|locality|area)\b\s+(.+)$/);
@@ -626,9 +658,14 @@ function scoreRow(row: NaturalSearchRow, parsed: ParsedNaturalSearch): { score: 
 export function matchesHardFilters(row: NaturalSearchRow, parsed: ParsedNaturalSearch): boolean {
   if (parsed.locality && row.micro_market) {
     const rowSlug = canonicalLocality(row.micro_market).slug;
-    const parsedSlug = canonicalLocality(parsed.locality).slug;
-    if (parsedSlug && rowSlug && rowSlug !== parsedSlug) {
-      return false;
+    if (rowSlug) {
+      const anyMatch = parsed.matchedLocalities.some((loc) => {
+        const locSlug = canonicalLocality(loc.locality).slug;
+        return locSlug && rowSlug === locSlug;
+      });
+      if (!anyMatch) {
+        return false;
+      }
     }
   }
 
@@ -765,6 +802,40 @@ async function browseByAsset(
   };
 }
 
+async function fetchParsedQuery(query: string, localities: LocalitySummary[]): Promise<ParsedNaturalSearch | null> {
+  try {
+    const res = await fetch(`/api/search/parse?q=${encodeURIComponent(query)}`, {
+      method: "GET",
+      headers: { "Accept": "application/json" },
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const backendLocalities = data.localities || [];
+    let matchedLocalities: LocalitySummary[] = [];
+    if (backendLocalities.length > 0) {
+      matchedLocalities = backendLocalities
+        .map((loc: string) => localities.find((l: LocalitySummary) => l.slug === slugify(loc) || l.locality.toLowerCase() === loc.toLowerCase()))
+        .filter((l?: LocalitySummary): l is LocalitySummary => Boolean(l));
+    }
+    return {
+      query,
+      locality: data.locality || null,
+      localityStated: detectLocalityStated(query),
+      statedLocalityText: extractStatedLocalityPhrase(query),
+      bhk: data.bhk ?? null,
+      intent: data.intent ?? null,
+      asset: data.asset ?? null,
+      minPrice: data.minPrice ?? null,
+      maxPrice: data.maxPrice ?? null,
+      furnishing: data.furnishing ?? null,
+      tokens: parsedQueryTokens(query),
+      matchedLocalities,
+    };
+  } catch {
+    return null;
+  }
+}
+
 export async function searchNaturalLanguageListings(
   query: string,
   limit = 24,
@@ -772,8 +843,19 @@ export async function searchNaturalLanguageListings(
 ): Promise<NaturalSearchState> {
   const db = getServerSupabase();
   const localities = await getAllLocalities();
-  const parsed = parseSearchQuery(query, localities);
-  // An explicit UI toggle (asset) overrides whatever the query text implied.
+  let parsed = parseSearchQuery(query, localities);
+  const llmParsed = await fetchParsedQuery(query, localities);
+  if (llmParsed) {
+    const frontendMatches = findLocalityMatches(query, localities);
+    if (frontendMatches.length > 0) {
+      parsed = { ...llmParsed, matchedLocalities: frontendMatches, localityStated: detectLocalityStated(query) };
+      if (!parsed.locality && frontendMatches[0]) {
+        parsed.locality = frontendMatches[0].locality;
+      }
+    } else if (llmParsed.locality) {
+      parsed = { ...llmParsed, localityStated: detectLocalityStated(query) };
+    }
+  }
   if (asset) parsed.asset = asset;
 
   // AI locality extraction: when regex didn't find a locality but the user
@@ -846,17 +928,13 @@ export async function searchNaturalLanguageListings(
 
   const fields = LISTING_FIELDS.join(", ");
 
-  // Database-side candidate retrieval. Exact canonical localities use the
-  // existing btree index; free-text searches use trigram-indexed fields from
-  // the paired migration. The in-memory scorer below only sees this bounded
-  // set, never the full inventory.
   const fetchCandidateRows = async (): Promise<NaturalSearchRow[]> => {
-    if (parsed.locality) {
-      const targetSlug = canonicalLocality(parsed.locality).slug;
+    const localitySlugs = parsed.matchedLocalities.map((l) => canonicalLocality(l.locality).slug).filter(Boolean);
+    if (localitySlugs.length > 0) {
       let qb = db.from("listings").select(fields).order("last_seen", { ascending: false });
-      qb = qb.eq("canonical_micro_market_slug", targetSlug);
+      qb = qb.in("canonical_micro_market_slug", localitySlugs);
       if (parsed.asset) qb = qb.eq("asset_type", parsed.asset);
-      const { data, error } = await qb.limit(SEARCH_CANDIDATE_LIMIT);
+      const { data, error } = await qb.limit(SEARCH_CANDIDATE_LIMIT * localitySlugs.length);
       if (error) {
         console.error("searchNaturalLanguageListings locality candidate error:", error.message);
         return [];
