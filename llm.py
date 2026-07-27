@@ -62,6 +62,10 @@ if _merge_key and _merge_model:
 elif _merge_key:
     _logger.warning("Skipping merge: set MERGE_MODEL to enable this provider")
 
+_logger.info("LLM providers configured: %d", len(_PROVIDERS))
+for p in _PROVIDERS:
+    _logger.info("  - %s: %s @ %s", p["name"], p["model"], p["base_url"])
+
 
 class ProviderConfigurationError(RuntimeError):
     """Raised when no complete LLM provider configuration is available."""
@@ -83,8 +87,12 @@ def _ping_provider(p: dict) -> bool:
             json={"model": p["model"], "messages": [{"role": "user", "content": "hi"}], "max_tokens": 1},
             timeout=8.0,
         )
-        return r.status_code >= 200 and r.status_code < 300
-    except Exception:
+        if r.status_code >= 200 and r.status_code < 300:
+            return True
+        _logger.warning("Provider %s health check failed: HTTP %d", p["name"], r.status_code)
+        return False
+    except Exception as e:
+        _logger.warning("Provider %s health check failed: %s", p["name"], str(e)[:100])
         return False
 
 
