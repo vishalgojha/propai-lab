@@ -3434,6 +3434,7 @@ return {
                             <span className="font-medium text-zinc-300">{coverage}</span>
                           </div>
                           <div className="flex items-center gap-2 text-[9px] text-zinc-500">
+                            <span title="Parsed WhatsApp posts, including repeats and unclassified posts">posts</span>
                             {b.group_evidence_count > 0 && (
                               <span>{b.group_evidence_count}g</span>
                             )}
@@ -3757,7 +3758,7 @@ return {
                 ) : (
                   <>
                     <div className="sticky top-0 z-10 -mx-4 -mt-4 border-b border-white/10 bg-black/95 px-4 py-3 backdrop-blur">
-                      <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center justify-between gap-3">
                         <div className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
                           {filteredBrokerObservationGroups.length} shown
                         </div>
@@ -3989,14 +3990,38 @@ return {
                     <h3 className="text-sm font-bold text-white truncate max-w-[340px]">
                       {selectedTitle}
                     </h3>
-                    <div className="text-[10px] text-zinc-500 flex items-center gap-2 mt-0.5 flex-wrap">
-                      {selectedSubtitle && <span className="truncate">{selectedSubtitle}</span>}
-                      {selectedCount ? (
+                      <div className="text-[10px] text-zinc-500 flex items-center gap-2 mt-0.5 flex-wrap">
+                        {selectedSubtitle && <span className="truncate">{selectedSubtitle}</span>}
+                        {selectedCount ? (
                         <>
                           <span>•</span>
                           <span>{selectedCount.toLocaleString()} messages</span>
                         </>
                       ) : null}
+                      {selectedBroker.observation_count ? (
+                        <>
+                          <span>•</span>
+                          <span title="Total parsed WhatsApp posts; the center feed deduplicates these into market items">
+                            {groupedBrokerObservations.length} market items shown of {selectedBroker.observation_count} posts
+                          </span>
+                        </>
+                      ) : null}
+                      {selectedBroker.last_seen && (
+                        <>
+                          <span>•</span>
+                          <span title="Last WhatsApp message received for this broker">
+                            Last message {formatAgeShort(selectedBroker.last_seen)}
+                          </span>
+                        </>
+                      )}
+                      {groupedBrokerObservations[0]?.last_seen && (
+                        <>
+                          <span>•</span>
+                          <span title="Latest deduplicated market item timestamp">
+                            Last market item {formatAgeShort(groupedBrokerObservations[0].last_seen)}
+                          </span>
+                        </>
+                      )}
                     </div>
                   </div>
                 </div>
