@@ -11,6 +11,8 @@ import ShortlistBar from "@/components/ShortlistBar";
 import RequirementCapture from "@/components/RequirementCapture";
 import SearchAiChat from "@/components/SearchAiChat";
 import SearchResultsView from "@/components/SearchResultsView";
+import RelatedSearches from "@/components/RelatedSearches";
+import { generateSearchRelated } from "@/lib/related-searches";
 import { NOINDEX } from "@/lib/seo";
 
 const MAPBOX_TOKEN =
@@ -64,6 +66,16 @@ export default async function SearchPage({ searchParams }: { searchParams: Searc
   }
 
   const summary = state?.parsed ? describeNaturalSearch(state.parsed) : "";
+
+  // Generate related search suggestions from DB data
+  let relatedSections: Awaited<ReturnType<typeof generateSearchRelated>> = [];
+  if (state?.parsed) {
+    try {
+      relatedSections = await generateSearchRelated(state.parsed);
+    } catch (err) {
+      console.error("generateSearchRelated failed:", err);
+    }
+  }
 
   // Compact, LLM-safe context describing the listings the user is currently
   // looking at, so the "Ask AI" follow-up chat can answer about them.
@@ -224,6 +236,9 @@ export default async function SearchPage({ searchParams }: { searchParams: Searc
                   results={state.results}
                   mapToken={MAPBOX_TOKEN}
                 />
+                {relatedSections.length > 0 && (
+                  <RelatedSearches sections={relatedSections} />
+                )}
               </>
             ) : (
               <div className="grid grid-cols-1 lg:grid-cols-[3fr_1fr] gap-6">
@@ -239,6 +254,9 @@ export default async function SearchPage({ searchParams }: { searchParams: Searc
                   </div>
                 </aside>
               </div>
+            )}
+            {relatedSections.length > 0 && state && state.results.length === 0 && (
+              <RelatedSearches sections={relatedSections} />
             )}
           </section>
         ) : (
