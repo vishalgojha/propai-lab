@@ -33,6 +33,8 @@ import SiteHeader from "@/components/SiteHeader";
 import SiteFooter from "@/components/SiteFooter";
 import ListingSpecs from "@/components/ListingSpecs";
 import BackButton from "@/components/BackButton";
+import RelatedSearches from "@/components/RelatedSearches";
+import { generateListingRelated } from "@/lib/related-searches";
 
 type Params = { params: Promise<{ slug: string; id: string }> };
 
@@ -224,6 +226,14 @@ export default async function ListingPage({ params }: Params) {
 
   // Fetch broker's operating areas from their listing history
   const brokerAreas = await getBrokerAreas(listing.broker_phone);
+
+  // Generate related search suggestions
+  let relatedSections: Awaited<ReturnType<typeof generateListingRelated>> = [];
+  try {
+    relatedSections = await generateListingRelated(listing);
+  } catch (err) {
+    console.error("generateListingRelated failed:", err);
+  }
 
   // If the request slug doesn't match the canonical slug (e.g. external site
   // linked to an older slug after the listing was edited), 301 to the canonical
@@ -558,6 +568,10 @@ export default async function ListingPage({ params }: Params) {
               })()}
             </div>
           </nav>
+        )}
+
+        {relatedSections.length > 0 && (
+          <RelatedSearches sections={relatedSections} />
         )}
       </main>
       <SiteFooter />
