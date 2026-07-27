@@ -3790,6 +3790,13 @@ return {
                       ? obsTime.toLocaleDateString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })
                       : "";
                     const itemSource = obs.source_message || obs.normalized_message || obs.raw_message || "";
+                    const selectedRawText = isSelected
+                      ? String(
+                          selectedMsgDetails?.raw?.message ||
+                          selectedMsgDetails?.raw?.raw_message ||
+                          ""
+                        ).trim()
+                      : "";
                     const marketTitle = buildMarketItemTitle(obs);
                     const opportunityLabel = marketOpportunityLabel({
                       intent: obs.intent,
@@ -3845,6 +3852,16 @@ return {
                           {itemSource && (
                             <div className="mt-1 select-text whitespace-pre-wrap break-words text-[11px] leading-relaxed text-zinc-300">
                               {stripEmojis(itemSource)}
+                            </div>
+                          )}
+                          {selectedRawText && selectedRawText !== String(itemSource || "").trim() && (
+                            <div className="mt-2 border-t border-white/10 pt-2 text-[11px] leading-relaxed text-zinc-200">
+                              <div className="mb-1 text-[9px] font-semibold uppercase tracking-wider text-zinc-500">
+                                Original WhatsApp message
+                              </div>
+                              <div className="select-text whitespace-pre-wrap break-words">
+                                {stripEmojis(selectedRawText)}
+                              </div>
                             </div>
                           )}
                           {/* Key fields as inline text */}
