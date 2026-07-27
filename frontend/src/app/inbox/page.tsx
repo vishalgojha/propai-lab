@@ -40,7 +40,6 @@ import {
   Home,
   ChevronLeft,
   Menu,
-  Lock,
 } from "lucide-react";
 import { useLayout } from "@/hooks/useLayout";
 
@@ -820,7 +819,7 @@ type BrokerObservationRow = {
 
 function cleanMarketField(value?: string) {
   const cleaned = stripEmojis(value || "").replace(/_/g, " ").replace(/\s+/g, " ").trim();
-  return ["", "UNKNOWN", "LISTING", "REQUIREMENT", "PROPERTY", "TEXT"].includes(cleaned.toUpperCase())
+  return ["", "UNKNOWN", "NONE", "NULL", "LISTING", "REQUIREMENT", "PROPERTY", "TEXT"].includes(cleaned.toUpperCase())
     ? ""
     : cleaned;
 }
@@ -1117,22 +1116,19 @@ function InboxPageInner({ defaultView }: InboxPageInnerProps) {
   const { toggleDrawer } = useLayout();
   const [mobileView, setMobileView] = useState<"list" | "conversation">("list");
   const [mobileAiChatOpen, setMobileAiChatOpen] = useState(false);
-  const [isSuperAdmin, setIsSuperAdmin] = useState(true);
-  const [superAdminChecked, setSuperAdminChecked] = useState(false);
+  const [authChecked, setAuthChecked] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     api.getAuthMe()
       .then((authState) => {
         if (!cancelled) {
-          setIsSuperAdmin(authState.is_super_admin === true);
-          setSuperAdminChecked(true);
+          setAuthChecked(true);
         }
       })
       .catch(() => {
         if (!cancelled) {
-          setIsSuperAdmin(false);
-          setSuperAdminChecked(true);
+          setAuthChecked(true);
         }
       });
     return () => { cancelled = true; };
@@ -3177,32 +3173,10 @@ return {
     extractPhoneFromText(selectedMsgDetails?.raw?.message || selectedMsg?.message);
     const selectedHasMarketContext = hasMarketContext(selectedMsgDetails);
 
-  if (!superAdminChecked) {
+  if (!authChecked) {
     return (
       <div className="flex items-center justify-center h-full bg-black">
-        <div className="text-zinc-500 text-sm">Verifying access...</div>
-      </div>
-    );
-  }
-
-  if (!isSuperAdmin) {
-    return (
-      <div className="flex items-center justify-center h-full bg-black">
-        <div className="max-w-md text-center px-6">
-          <div className="mx-auto mb-5 flex h-12 w-12 items-center justify-center rounded-xl border border-zinc-700 bg-zinc-900 text-zinc-400">
-            <Lock className="h-5 w-5" />
-          </div>
-          <h3 className="text-lg font-bold text-white mb-2">Admin Only</h3>
-          <p className="text-sm text-zinc-400 mb-5">
-            Market Inbox is an internal debugging view. Use the AI Chat for your daily market search.
-          </p>
-          <Link
-            href="/chat"
-            className="inline-flex h-10 items-center justify-center rounded-lg bg-[#3EE88A] px-5 text-sm font-bold text-black hover:bg-[#35d47c]"
-          >
-            Open Search Chat
-          </Link>
-        </div>
+        <div className="text-zinc-500 text-sm">Checking authentication...</div>
       </div>
     );
   }

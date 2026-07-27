@@ -34,7 +34,7 @@ Rules:
   for (const provider of providers) {
     try {
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 3000);
+      const timeout = setTimeout(() => controller.abort(), 1200);
 
       const res = await fetch(`${provider.baseURL}/chat/completions`, {
         method: "POST",

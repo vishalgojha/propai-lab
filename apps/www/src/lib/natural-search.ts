@@ -1,4 +1,4 @@
-import { getAllBuildings, getAllLocalities, type BuildingSummary, type LocalitySummary } from "./localities";
+import { getAllBuildings, getAllLocalities, isJunkBuildingName, type BuildingSummary, type LocalitySummary } from "./localities";
 import { canonicalLocality } from "./locality-canon";
 import { getServerSupabase, slugify } from "./supabase";
 import { extractLocalityWithAI } from "./locality-ai";
@@ -710,15 +710,25 @@ async function browseByAsset(
   if (error) console.error("browseByAsset error:", error.message);
   const rows = (data ?? []) as unknown as NaturalSearchRow[];
 
-  let knownBuildings: BuildingSummary[] = [];
-  try {
-    knownBuildings = await getAllBuildings();
-  } catch (err) {
-    console.error("getAllBuildings failed in browseByAsset:", err);
+  const candidateBuildingNames = Array.from(new Set(
+    rows
+      .map((r) => r.building_name?.trim())
+      .filter((n): n is string => Boolean(n) && !isJunkBuildingName(n || ""))
+  ));
+  const buildingNameSet = new Set<string>();
+  if (candidateBuildingNames.length > 0) {
+    try {
+      const { data: matchedBuildings } = await db
+        .from("buildings")
+        .select("canonical_name")
+        .in("canonical_name", candidateBuildingNames);
+      for (const b of matchedBuildings ?? []) {
+        if (b.canonical_name) buildingNameSet.add(slugify(b.canonical_name));
+      }
+    } catch (err) {
+      console.error("Building classification query failed in browseByAsset:", err);
+    }
   }
-  const buildingNameSet = new Set(
-    knownBuildings.map((b: BuildingSummary) => slugify(b.name)).filter(Boolean),
-  );
   const localitySlugSet = new Set(
     localities.map((l: LocalitySummary) => l.slug).filter(Boolean),
   );
@@ -880,17 +890,26 @@ export async function searchNaturalLanguageListings(
 
   const rows = await fetchCandidateRows();
 
-  // Build a set of known building names so we can classify a result as a
-  // building vs a locality (a building must never render as a "Locality" card).
-  let knownBuildings: BuildingSummary[] = [];
-  try {
-    knownBuildings = await getAllBuildings();
-  } catch (err) {
-    console.error("getAllBuildings failed in search:", err);
+  // Match building names for candidate rows against known buildings
+  const candidateBuildingNames = Array.from(new Set(
+    rows
+      .map((r) => r.building_name?.trim())
+      .filter((n): n is string => Boolean(n) && !isJunkBuildingName(n || ""))
+  ));
+  const buildingNameSet = new Set<string>();
+  if (candidateBuildingNames.length > 0 && db) {
+    try {
+      const { data: matchedBuildings } = await db
+        .from("buildings")
+        .select("canonical_name")
+        .in("canonical_name", candidateBuildingNames);
+      for (const b of matchedBuildings ?? []) {
+        if (b.canonical_name) buildingNameSet.add(slugify(b.canonical_name));
+      }
+    } catch (err) {
+      console.error("Building classification query failed in search:", err);
+    }
   }
-  const buildingNameSet = new Set(
-    knownBuildings.map((b: BuildingSummary) => slugify(b.name)).filter(Boolean),
-  );
   const localitySlugSet = new Set(
     localities.map((l: LocalitySummary) => l.slug).filter(Boolean),
   );

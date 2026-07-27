@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowRight, Search, MapPin } from "lucide-react";
+import { ArrowRight, Search, MapPin, Loader2 } from "lucide-react";
 import type { LocalitySummary } from "@/lib/localities";
 import { useAnalytics } from "@/lib/useAnalytics";
 
@@ -20,6 +20,7 @@ export default function SearchBox({
   onSubmit?: (next: { q: string; asset: string }) => void;
 }) {
   const router = useRouter();
+  const [isPending, startTransition] = useTransition();
   const [value, setValue] = useState(query);
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(-1);
@@ -71,7 +72,9 @@ export default function SearchBox({
     if (asset) params.set("asset", asset);
     const qs = params.toString();
     track("search", { query: q, asset });
-    router.push(qs ? `/search?${qs}` : "/search");
+    startTransition(() => {
+      router.push(qs ? `/search?${qs}` : "/search");
+    });
   }
 
   function onKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
@@ -143,7 +146,9 @@ export default function SearchBox({
                       if (value.trim()) params.set("q", value.trim());
                       if (opt.value) params.set("asset", opt.value);
                       const qs = params.toString();
-                      router.push(qs ? `/search?${qs}` : "/search");
+                      startTransition(() => {
+                        router.push(qs ? `/search?${qs}` : "/search");
+                      });
                     }}
                   />
                   {opt.label}
@@ -182,10 +187,20 @@ export default function SearchBox({
             />
             <button
               type="submit"
-              className="absolute right-3 top-1/2 -translate-y-1/2 inline-flex items-center gap-2 rounded-xl bg-green-400 px-4 py-2.5 text-sm font-semibold text-black transition-colors hover:bg-green-300"
+              disabled={isPending}
+              className="absolute right-3 top-1/2 -translate-y-1/2 inline-flex items-center gap-2 rounded-xl bg-green-400 px-4 py-2.5 text-sm font-semibold text-black transition-all hover:bg-green-300 disabled:opacity-80 disabled:cursor-not-allowed"
             >
-              Search
-              <ArrowRight className="h-4 w-4" aria-hidden="true" />
+              {isPending ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin text-black" aria-hidden="true" />
+                  Searching...
+                </>
+              ) : (
+                <>
+                  Search
+                  <ArrowRight className="h-4 w-4" aria-hidden="true" />
+                </>
+              )}
             </button>
           </form>
         </div>

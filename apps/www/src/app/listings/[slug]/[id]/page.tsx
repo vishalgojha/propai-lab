@@ -20,7 +20,7 @@ import {
   ChevronRight,
   Tag,
 } from "lucide-react";
-import { getListingById, getBrokerAreas } from "@/lib/localities";
+import { getListingById, getBrokerAreas, getSimilarListingsForExpired } from "@/lib/localities";
 import { slugify } from "@/lib/supabase";
 import {
   toListingCardViewModel,
@@ -134,6 +134,93 @@ export default async function ListingPage({ params }: Params) {
     notFound();
   }
   if (!listing) notFound();
+
+  const freshnessCutoff = new Date();
+  freshnessCutoff.setDate(freshnessCutoff.getDate() - 90);
+  const isExpired = listing.last_seen ? new Date(listing.last_seen) < freshnessCutoff : true;
+
+  if (isExpired) {
+    const similarListings = await getSimilarListingsForExpired({
+      micro_market: listing.micro_market,
+      bhk: listing.bhk,
+      intent: listing.intent,
+      limit: 5,
+    });
+
+    return (
+      <div className="min-h-screen bg-black text-white">
+        <SiteHeader />
+        <main className="mx-auto max-w-5xl px-4 py-8 lg:px-6 lg:py-12">
+          <div className="mb-6 flex flex-wrap items-center gap-1.5 text-xs text-zinc-500">
+            <Link href="/search" className="hover:text-white transition-colors">
+              Home
+            </Link>
+            <ChevronRight className="h-3 w-3" aria-hidden="true" />
+            <Link href={`/localities/${slugify(listing.micro_market || "")}`} className="hover:text-white transition-colors">
+              {listing.micro_market}
+            </Link>
+            <ChevronRight className="h-3 w-3" aria-hidden="true" />
+            <span className="text-zinc-400">{cleanBuildingName(listing.building_name) || `Listing ${numericId}`}</span>
+          </div>
+
+          <div className="mx-auto max-w-2xl text-center">
+            <h1 className="text-3xl font-bold text-white mb-4">
+              This listing has expired
+            </h1>
+            <p className="text-lg text-zinc-300 mb-6">
+              This property was last mentioned in WhatsApp conversations more than 90 days ago and is no longer active.
+            </p>
+
+            {similarListings.length > 0 && (
+              <>
+                <h2 className="text-xl font-semibold text-white mb-4">
+                  Similar current listings in {listing.micro_market}
+                </h2>
+                <div className="grid gap-4">
+                  {similarListings.map((l) => (
+                    <Link
+                      key={l.id}
+                      href={`/listings/${buildListingSlug({
+                        id: l.id,
+                        bhk: l.bhk,
+                        micro_market: l.micro_market,
+                        building_name: l.building_name,
+                        property_type: l.property_type,
+                      })}/${l.id}`}
+                      className="block rounded-xl border border-white/10 bg-zinc-950/50 p-4 hover:border-green-400/40 transition-colors"
+                    >
+                      <div className="flex justify-between items-start mb-2">
+                        <h3 className="text-lg font-semibold text-white">
+                          {l.building_name || "Property"}
+                        </h3>
+                        <span className="text-green-400 font-semibold">
+                          {l.price} {l.price_unit}
+                        </span>
+                      </div>
+                      <p className="text-zinc-400 text-sm">{l.bhk} • {l.property_type} • {l.micro_market}</p>
+                      <p className="text-xs text-zinc-500 mt-1">
+                        Last seen: {l.last_seen ? new Date(l.last_seen).toLocaleDateString("en-IN") : "recently"}
+                      </p>
+                    </Link>
+                  ))}
+                </div>
+              </>
+            )}
+
+            <div className="mt-8">
+              <Link
+                href="/search"
+                className="inline-flex items-center gap-2 rounded-lg bg-green-400 px-5 py-3 text-sm font-semibold text-black hover:bg-green-300 transition-colors"
+              >
+                Search current listings
+              </Link>
+            </div>
+          </div>
+          <SiteFooter />
+        </main>
+      </div>
+    );
+  }
 
   // Fetch broker's operating areas from their listing history
   const brokerAreas = await getBrokerAreas(listing.broker_phone);

@@ -134,7 +134,12 @@ export async function getPublicDataOverview(options?: {
         )
         .order("last_seen", { ascending: false })
         .limit(12),
-      db.rpc("get_top_brokers_clean", { p_limit: 8 }),
+      db
+        .from("brokers")
+        .select("canonical_name as display_name, listing_count, market_count")
+        .order("listing_count", { ascending: false })
+        .filter("is_hidden", "!=", true)
+        .limit(8),
     ]);
 
     const [rawRowsRes, parsedRowsRes, listingRowsRes] = await Promise.all([
@@ -150,7 +155,11 @@ export async function getPublicDataOverview(options?: {
     }
     if (!brokerRes.error) {
       for (const row of brokerRes.data ?? []) {
-        topBrokers.push(row as PublicBrokerSummary);
+        topBrokers.push({
+          display_name: (row as any).display_name || (row as any).canonical_name || "",
+          listing_count: (row as any).listing_count ?? 0,
+          market_count: (row as any).market_count ?? 0,
+        });
       }
     }
 
