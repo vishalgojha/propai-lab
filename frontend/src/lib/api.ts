@@ -198,6 +198,10 @@ async function fetchJSONWithRetry<T>(
           message = "Backend API did not return a response. Check that the API server is running.";
         }
       }
+      const isHtmlResponse = /<!DOCTYPE\s+html|<html|<\s*div|<\s*body/i.test(body);
+      if (isHtmlResponse) {
+        message = `Backend error ${res.status}: ${res.statusText}. Please try again.`;
+      }
       throw new Error(`${res.status} ${res.statusText}: ${message}`);
     }
     return await parseJSONBody<T>(res, url);

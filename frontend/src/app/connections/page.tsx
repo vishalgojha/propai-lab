@@ -1024,8 +1024,19 @@ export default function ConnectionCenterPage() {
         <>
           {phonesError && (
             <div className="mb-6 rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm text-zinc-300">
-              <div className="font-semibold text-white">Phones are taking longer than usual to load</div>
-              <div className="mt-1 text-xs text-zinc-500">{phonesError}</div>
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="font-semibold text-white">Couldn't load phones</div>
+                  <div className="mt-1 text-xs text-zinc-500">{phonesError}</div>
+                </div>
+                <button
+                  onClick={refreshData}
+                  className="flex items-center gap-2 rounded-lg bg-white/5 px-2.5 py-1.5 text-xs font-medium text-zinc-300 hover:bg-white/10 hover:text-white transition-colors"
+                >
+                  <RefreshCw className="w-3 h-3" />
+                  Retry
+                </button>
+              </div>
             </div>
           )}
           {phones.length === 0 && !phonesError && (
