@@ -793,9 +793,11 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
                     "trace": {"route": "conversational_empty"},
                 }, _is_inbox)
         except Exception as exc:
+            exc_msg = str(exc) if exc else "no details"
+            _logger.error("AI chat failed: %s", exc_msg)
             return _wrap_chat_response({
-                "content": f"AI chat failed: {exc}. Please try again.",
-                "blocks": [{"type": "error", "body": f"AI chat failed: {exc}. Please try again."}],
+                "content": f"AI chat failed: {exc_msg}. Please try again.",
+                "blocks": [{"type": "error", "body": f"AI chat failed: {exc_msg}. Please try again."}],
                 "sources": [],
                 "trace": {"route": "conversational_error"},
             }, _is_inbox)
