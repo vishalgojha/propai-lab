@@ -1338,7 +1338,7 @@ def _rest_market_search(client, args: dict) -> str:
     columns = (
         "fingerprint,intent,bhk,price,price_unit,area_sqft,furnishing,location_label,"
         "building_name,landmark_name,micro_market,broker_name,broker_phone,first_seen,"
-        "last_seen,observation_count,group_count,latest_raw_message_id,confidence"
+        "last_seen,observation_count,group_count,latest_raw_message_id"
     )
 
     def fetch_one_market(market: str | None):
@@ -1402,7 +1402,9 @@ def _rest_market_search(client, args: dict) -> str:
             "last_seen_text": row.get("last_seen") or "",
             "observation_count": row.get("observation_count") or 0,
             "group_count": row.get("group_count") or 0,
-            "confidence": round(float(row.get("confidence") or 0) * 100),
+            # listings has no confidence column; confidence belongs to the
+            # parsed observation layer. Keep the card contract stable.
+            "confidence": 0,
             "raw_message_id": row.get("latest_raw_message_id"),
         })
 

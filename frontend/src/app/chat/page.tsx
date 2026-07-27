@@ -46,6 +46,7 @@ export default function ChatPage() {
   const [input, setInput] = useState("");
   const [brokerPhone, setBrokerPhone] = useState("");
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const sessionIdRef = useRef("");
 
   // Session state
   const [sessionId, setSessionId] = useState<string>("");
@@ -55,7 +56,7 @@ export default function ChatPage() {
   const { messages, sendMessage, status, setMessages, error } = useChat({
     transport: new DefaultChatTransport({
       api: "/api/ai/chat",
-      body: () => ({ broker_phone: brokerPhone, session_id: sessionId }),
+      body: () => ({ broker_phone: brokerPhone, session_id: sessionIdRef.current || sessionId }),
       headers: async () => {
         const headers: Record<string, string> = {};
         const token = await getAccessToken();
@@ -105,6 +106,7 @@ export default function ChatPage() {
       setSessionsLoaded(true);
       if (data.length > 0 && !sessionId) {
         const mostRecent = data[0];
+        sessionIdRef.current = mostRecent.id;
         setSessionId(mostRecent.id);
         try {
           const msgs = await api.getChatSessionMessages(mostRecent.id);
@@ -129,6 +131,7 @@ export default function ChatPage() {
     if (!brokerPhone) return;
     try {
       const session = await api.createChatSession(brokerPhone);
+      sessionIdRef.current = session.id;
       setSessionId(session.id);
       setMessages([]);
       const updated = await loadSessions(brokerPhone);
@@ -140,6 +143,7 @@ export default function ChatPage() {
   const handleSwitchSession = useCallback(async (id: string) => {
     if (id === sessionId) return;
     setSessionId(id);
+    sessionIdRef.current = id;
     try {
       const msgs = await api.getChatSessionMessages(id);
       setMessages(msgs.map((m) => toUIMessage({ id: m.id, role: m.role as "user" | "assistant", content: m.content })));
@@ -171,6 +175,7 @@ export default function ChatPage() {
     // Create session on first message if none exists
     if (!sessionId && brokerPhone) {
       api.createChatSession(brokerPhone, input.trim().slice(0, 80)).then((session) => {
+        sessionIdRef.current = session.id;
         setSessionId(session.id);
         sendMessage({ text: input.trim() });
         setInput("");
