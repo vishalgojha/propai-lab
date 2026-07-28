@@ -1113,23 +1113,6 @@ function InboxPageInner({ defaultView }: InboxPageInnerProps) {
   const isMobile = useIsMobile();
   const { toggleDrawer } = useLayout();
   const [mobileView, setMobileView] = useState<"list" | "conversation">("list");
-  const [authChecked, setAuthChecked] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    api.getAuthMe()
-      .then((authState) => {
-        if (!cancelled) {
-          setAuthChecked(true);
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setAuthChecked(true);
-        }
-      });
-    return () => { cancelled = true; };
-  }, []);
 
   // Left Panel States
   const [messages, setMessages] = useState<api.InboxThread[]>([]);
@@ -3175,14 +3158,6 @@ return {
     resolveMessagePhone(selectedMsg) ||
     extractPhoneFromText(selectedMsgDetails?.raw?.message || selectedMsg?.message);
     const selectedHasMarketContext = hasMarketContext(selectedMsgDetails);
-
-  if (!authChecked) {
-    return (
-      <div className="flex items-center justify-center h-full bg-black">
-        <div className="text-zinc-500 text-sm">Checking authentication...</div>
-      </div>
-    );
-  }
 
   return (
     <div className="mobile-inbox safe-area-top safe-area-bottom flex flex-col h-[100dvh] min-h-0 max-h-[100dvh] overflow-hidden bg-black lg:h-full lg:max-h-full lg:rounded-2xl lg:border lg:border-white/10">
