@@ -173,13 +173,9 @@ export async function getLocalityData(rawSlug: string): Promise<LocalityData | n
   // Paginate listings filtered by canonical_micro_market_slug (indexed).
   // Use the server-side RPC to aggregate building summaries + stats in one
   // query, avoiding pagination of 10k+ rows into JS memory.
-  const { data: rpcResult, error: rpcError } = await db.rpc("get_locality_summary", { p_slug: slug });
-  if (rpcError || !rpcResult) {
-    console.error("getLocalityData RPC error:", rpcError?.message);
-    return null;
-  }
-
-  const rpc = rpcResult as {
+  // Try the RPC first (fast, single query). If it fails (timeout, permission,
+  // network), fall back to direct Supabase queries so the page doesn't 404.
+  let rpc: {
     buildings: Array<{
       name: string;
       listing_count: number;
@@ -192,7 +188,90 @@ export async function getLocalityData(rawSlug: string): Promise<LocalityData | n
     rent_count: number;
     sale_count: number;
     top_bhk: string | null;
-  };
+  } | null = null;
+
+  try {
+    const { data: rpcResult, error: rpcError } = await db.rpc("get_locality_summary", { p_slug: slug });
+    if (!rpcError && rpcResult) {
+      rpc = rpcResult as typeof rpc;
+    } else {
+      console.error("getLocalityData RPC error:", rpcError?.message);
+    }
+  } catch (e) {
+    console.error("getLocalityData RPC exception:", e);
+  }
+
+  // Fallback: if the RPC failed, do a direct query.
+  if (!rpc) {
+    const { data: rows, error: qErr } = await db
+      .from("listings")
+      .select("building_name, bhk, price, price_unit, intent")
+      .eq("canonical_micro_market_slug", slug);
+
+    if (qErr || !rows) {
+      console.error("getLocalityData fallback query error:", qErr?.message);
+      return null;
+    }
+
+    // Aggregate in JS — same logic as the SQL RPC.
+    const buildingMap = new Map<string, { listing_count: number; min_price: number | null; max_price: number | null; price_unit: string | null; bhkSet: Set<string> }>();
+    let rentCount = 0;
+    let saleCount = 0;
+    const bhkNumCounts = new Map<string, number>();
+
+    for (const row of rows) {
+      const intent = (row.intent || "").toLowerCase();
+      if (intent === "rent" || intent === "rental" || intent === "lease") rentCount++;
+      else if (intent === "sale" || intent === "sell" || intent === "buy") saleCount++;
+
+      const bhkMatch = (row.bhk || "").match(/\d+/);
+      if (bhkMatch) {
+        const n = bhkMatch[0];
+        bhkNumCounts.set(n, (bhkNumCounts.get(n) || 0) + 1);
+      }
+
+      const bName = (row.building_name || "").trim();
+      if (!bName) continue;
+      const existing = buildingMap.get(bName);
+      if (existing) {
+        existing.listing_count++;
+        if (row.price != null) {
+          if (existing.min_price == null || row.price < existing.min_price) existing.min_price = row.price;
+          if (existing.max_price == null || row.price > existing.max_price) existing.max_price = row.price;
+        }
+        if (row.bhk) existing.bhkSet.add(row.bhk);
+      } else {
+        buildingMap.set(bName, {
+          listing_count: 1,
+          min_price: row.price ?? null,
+          max_price: row.price ?? null,
+          price_unit: row.price_unit ?? null,
+          bhkSet: row.bhk ? new Set([row.bhk]) : new Set(),
+        });
+      }
+    }
+
+    let topBhk: string | null = null;
+    let topCount = 0;
+    for (const [num, cnt] of bhkNumCounts) {
+      if (cnt > topCount) { topCount = cnt; topBhk = `${num} BHK`; }
+    }
+
+    rpc = {
+      buildings: Array.from(buildingMap.entries()).map(([name, v]) => ({
+        name,
+        listing_count: v.listing_count,
+        min_price: v.min_price,
+        max_price: v.max_price,
+        price_unit: v.price_unit,
+        bhk_raw: Array.from(v.bhkSet).join(", "),
+      })).sort((a, b) => b.listing_count - a.listing_count),
+      total_count: rows.length,
+      rent_count: rentCount,
+      sale_count: saleCount,
+      top_bhk: topBhk,
+    };
+  }
 
   // Known place, but zero active listings — distinct from a 404 typo.
   // Check buildings table (small, ~4k rows) to confirm the place exists.
