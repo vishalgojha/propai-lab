@@ -735,6 +735,11 @@ class SupabaseStorage(Storage):
         self._db = _SupabaseDatabaseAdapter(self._client)
         self.__tenant_id_fallback: str | None = None
         self._stats_cache: dict[str, tuple[float, dict[str, int]]] = {}
+        # Role checks happen on nearly every authenticated request.  Retain
+        # a successful super-admin result briefly so a transient Supabase
+        # statement timeout does not hide platform navigation.  Server-side
+        # permission checks still run normally when the database is healthy.
+        self._super_admin_cache: dict[str, float] = {}
 
     @property
     def client(self) -> Client:
@@ -1120,8 +1125,22 @@ class SupabaseStorage(Storage):
     # ── Multi-Tenant: Super Admin ─────────────────────────────────
 
     def is_super_admin(self, user_id: str) -> bool:
-        res = self.client.table("super_admins").select("id").eq("user_id", user_id).limit(1).execute()
-        return bool(res.data)
+        now = time.monotonic()
+        cached_at = self._super_admin_cache.get(str(user_id))
+        try:
+            res = self.client.table("super_admins").select("id").eq("user_id", user_id).limit(1).execute()
+            allowed = bool(res.data)
+            if allowed:
+                self._super_admin_cache[str(user_id)] = now
+            else:
+                self._super_admin_cache.pop(str(user_id), None)
+            return allowed
+        except Exception:
+            # A cached positive role is only for a previously verified user;
+            # tenant-scoped data queries still run independently.
+            if cached_at is not None and now - cached_at < 600:
+                return True
+            raise
 
     def list_super_admins(self) -> list[dict]:
         res = self.client.table("super_admins").select("*").execute()

@@ -82,7 +82,9 @@ class PeriodicCorrectionRunner:
             logger.info("AI correction cycle already claimed by another worker")
             return
 
-        limit = max(1, int(os.getenv("AI_CORRECTION_SCHEDULE_LIMIT", "500")))
+        # Keep the periodic maintenance pass small enough that it cannot
+        # monopolize Supabase while live phone/admin requests are running.
+        limit = max(1, int(os.getenv("AI_CORRECTION_SCHEDULE_LIMIT", "20")))
         threshold = float(os.getenv("AI_CORRECTION_CONFIDENCE_THRESHOLD", "0.7"))
         summary = RunSummary()
         try:
