@@ -76,29 +76,29 @@ type Status struct {
 // ── Broker session ─────────────────────────────────────────────────────────
 
 type BrokerSession struct {
-	mu                 sync.RWMutex
-	groupSyncMu        sync.Mutex
-	groupSyncRunning   bool
-	brokerID           string
-	client             *whatsmeow.Client
-	device             *store.Device
-	status             Status
-	ctx                context.Context
-	cancel             context.CancelFunc
-	disconnected       chan struct{}
-	disconnectOnce     func() struct{}
-	lockConn           *sql.Conn
-	lockReleaseOnce    sync.Once
-	reconnectFailures  int
-	reconnectCount     int
-	totalMessages      int64
-	totalOutgoing      int64
-	totalLocations     int64
-	totalContacts      int64
-	totalReactions     int64
-	totalByType        map[string]int64
-	lastSeenByType     map[string]time.Time
-	statusFile         string
+	mu                sync.RWMutex
+	groupSyncMu       sync.Mutex
+	groupSyncRunning  bool
+	brokerID          string
+	client            *whatsmeow.Client
+	device            *store.Device
+	status            Status
+	ctx               context.Context
+	cancel            context.CancelFunc
+	disconnected      chan struct{}
+	disconnectOnce    func() struct{}
+	lockConn          *sql.Conn
+	lockReleaseOnce   sync.Once
+	reconnectFailures int
+	reconnectCount    int
+	totalMessages     int64
+	totalOutgoing     int64
+	totalLocations    int64
+	totalContacts     int64
+	totalReactions    int64
+	totalByType       map[string]int64
+	lastSeenByType    map[string]time.Time
+	statusFile        string
 	pairingMode       string // "qr" or "code"
 	pairingPhone      string // phone number for code pairing
 }
@@ -907,6 +907,12 @@ func (sm *SessionManager) handleMessage(s *BrokerSession, evt *events.Message) {
 	if info.ID == "" {
 		return
 	}
+	// WhatsApp status updates are not group conversations and are not part of
+	// PropAI's market mirror. Drop them before logging, counters, media work,
+	// persistence, extraction, or webhook delivery.
+	if info.Chat.String() == "status@broadcast" || strings.HasSuffix(info.Chat.String(), "@broadcast") {
+		return
+	}
 	if info.IsGroup {
 		// This deliberately records receipt before database/webhook work so a
 		// production test can distinguish WhatsApp stream loss from delivery
@@ -1584,6 +1590,9 @@ func (sm *SessionManager) postWebMessage(s *BrokerSession, wmsg *waWeb.WebMessag
 		remoteJID = strings.TrimSpace(chatID)
 	}
 	if remoteJID == "" {
+		return false
+	}
+	if remoteJID == "status@broadcast" || strings.HasSuffix(remoteJID, "@broadcast") {
 		return false
 	}
 

@@ -1243,7 +1243,7 @@ function InboxPageInner({ defaultView }: InboxPageInnerProps) {
     // conversations. It does not use the Market Inbox access gate, and
     // probing that unrelated endpoint here can show a timeout/error even
     // while the group directory is healthy.
-    if (typeof window !== "undefined" && window.location.pathname === "/whatsapp-groups") {
+    if (typeof window !== "undefined" && ["/whatsapp-groups", "/inbox"].includes(window.location.pathname)) {
       setLoadingMarketAccess(false);
       setMarketAccess(null);
       setMarketAccessError(null);
@@ -1275,7 +1275,7 @@ function InboxPageInner({ defaultView }: InboxPageInnerProps) {
   }, []);
 
   useEffect(() => {
-    if (typeof window !== "undefined" && window.location.pathname === "/whatsapp-groups") {
+    if (typeof window !== "undefined" && ["/whatsapp-groups", "/inbox"].includes(window.location.pathname)) {
       // The raw mirror does not need the dashboard WhatsApp status probe.
       // A slow status service must not block or crash the group directory.
       return;
@@ -1657,7 +1657,7 @@ return {
     try {
       const threadMsgs = await api.getInboxThreads(PAGE_SIZE, requestedOffset);
       setMessages((prev) => (append ? [...prev, ...threadMsgs] : threadMsgs));
-      if (!append && !isWhatsAppGroupsRoute) {
+      if (!append && !isWhatsAppGroupsRoute && typeof window !== "undefined" && window.location.pathname !== "/inbox") {
         const suggestionResult = await Promise.allSettled([api.getSuggestions("pending", 100)]);
         if (suggestionResult.status === "fulfilled") {
           setAllSuggestions(suggestionResult.value[0]);
