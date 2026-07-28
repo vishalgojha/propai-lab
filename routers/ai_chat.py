@@ -714,6 +714,7 @@ async def promote_generate(req: PromoteRequest, user: dict = Depends(require_use
 
 @router.get("/api/ai/config")
 async def ai_config(user: dict = Depends(require_user), tenant_id: str | None = Depends(get_tenant_context)):
+    tenant_id = await asyncio.to_thread(_resolve_active_organization_id, user, tenant_id)
     info = _preferred_workspace_provider(tenant_id)
     return {
         "has_server_key": info.get("provider") != "none",
@@ -760,7 +761,11 @@ async def delete_chat_session(session_id: str, user: dict = Depends(require_user
 async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_id: str | None = Depends(get_tenant_context)):
     from ai_chat_engine import get_memory
 
-    tenant_id = tenant_id or await asyncio.to_thread(_resolve_active_organization_id, user, None)
+    # The profile.tenant_id column is legacy data and can point at the default
+    # org even after the user has switched to their active workspace. Resolve
+    # from the authenticated organization membership for every chat request so
+    # workspace-saved provider keys are actually visible to the router.
+    tenant_id = await asyncio.to_thread(_resolve_active_organization_id, user, tenant_id)
     session_id = req.session_id or "default"
     memory = get_memory(session_id)
     effective_model = (req.model or "").strip()

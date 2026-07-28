@@ -343,6 +343,7 @@ async def release_chat(body: dict, member: dict = Depends(get_current_member)):
 
 @router.get("/api/workspace/llm-providers")
 async def list_llm_providers(user: dict = Depends(require_user), tenant_id: str | None = Depends(get_tenant_context)):
+    tenant_id = await asyncio.to_thread(_resolve_active_organization_id, user, tenant_id)
     providers = storage.get_llm_providers(tenant_id=tenant_id)
     for p in providers:
         if p.api_key and len(p.api_key) > 8:
@@ -354,6 +355,7 @@ async def list_llm_providers(user: dict = Depends(require_user), tenant_id: str 
 
 @router.get("/api/workspace/llm-providers/active")
 async def get_active_llm_provider(user: dict = Depends(require_user), tenant_id: str | None = Depends(get_tenant_context)):
+    tenant_id = await asyncio.to_thread(_resolve_active_organization_id, user, tenant_id)
     import llm as _llm
     try:
         active = _llm.get_provider_info()
@@ -376,6 +378,7 @@ async def get_active_llm_provider(user: dict = Depends(require_user), tenant_id:
 
 @router.post("/api/workspace/llm-providers")
 async def save_llm_provider(body: dict, user: dict = Depends(require_user), tenant_id: str | None = Depends(get_tenant_context)):
+    tenant_id = await asyncio.to_thread(_resolve_active_organization_id, user, tenant_id)
     required = ("provider_name",)
     for k in required:
         if k not in body:
@@ -414,6 +417,7 @@ async def test_llm_provider(body: dict, user: dict = Depends(require_user)):
 
 @router.delete("/api/workspace/llm-providers/{provider_id}")
 async def delete_llm_provider(provider_id: int, user: dict = Depends(require_user), tenant_id: str | None = Depends(get_tenant_context)):
+    tenant_id = await asyncio.to_thread(_resolve_active_organization_id, user, tenant_id)
     ok = storage.delete_llm_provider(provider_id, tenant_id=tenant_id)
     return {"deleted": ok}
 
