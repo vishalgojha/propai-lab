@@ -118,6 +118,7 @@ export default function ChatPage() {
   const [input, setInput] = useState("");
   const [brokerPhone, setBrokerPhone] = useState("");
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   const sessionIdRef = useRef("");
 
   // Session state
@@ -212,11 +213,16 @@ export default function ChatPage() {
 
   // Create a new session
   const handleNewChat = useCallback(async () => {
+    // Starting a chat is a local UI action. Do not block it while the
+    // profile phone is still hydrating; the persistent session is created
+    // when the first message is sent.
+    sessionIdRef.current = "";
+    setSessionId("");
+    setMessages([]);
+    setInput("");
+    inputRef.current?.focus();
     if (!brokerPhone) return;
     try {
-      sessionIdRef.current = "";
-      setSessionId("");
-      setMessages([]);
       const session = await api.createChatSession(brokerPhone);
       if (!session?.id) throw new Error("Could not create a new chat session.");
       sessionIdRef.current = session.id;
@@ -459,6 +465,7 @@ export default function ChatPage() {
 
         <form onSubmit={handleSubmit} className="flex gap-2 items-end border-t border-white/10 pt-3 lg:pt-4 pb-2 lg:pb-0">
           <textarea
+            ref={inputRef}
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => {
