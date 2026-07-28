@@ -12,6 +12,7 @@ import hmac
 import logging
 import os
 import re
+import threading
 import uuid
 from typing import Any
 
@@ -47,6 +48,82 @@ class _StorageProxy:
         return f"<StorageProxy real={self._real!r}>"
 
 storage = _StorageProxy()
+
+_provider_rotation_lock = threading.Lock()
+_provider_rotation_offsets: dict[str, int] = {}
+
+
+def _workspace_provider_candidates(tenant_id: str | None, requested_model: str = "") -> list[dict]:
+    """Return the tenant's complete providers in a rotating failover order.
+
+    A workspace may have several keys for the same provider or different
+    providers.  Historically callers selected only the first row, so one
+    exhausted/broken key made the whole chat look unavailable.  Keep active
+    rows first, retain complete inactive legacy rows as fallback, and rotate
+    the starting point between requests without ever exposing key material.
+    """
+    try:
+        rows = storage.get_llm_providers(tenant_id=tenant_id)
+    except Exception as exc:
+        logger.warning("Workspace LLM provider lookup failed: %s", exc)
+        rows = []
+
+    def value(provider, name: str, default=""):
+        if isinstance(provider, dict):
+            return provider.get(name, default)
+        return getattr(provider, name, default)
+
+    complete = []
+    for row in rows:
+        api_key = str(value(row, "api_key") or "").strip()
+        row_model = str(value(row, "model_name") or "").strip()
+        if not api_key or api_key.lower() == "none" or not row_model:
+            continue
+        complete.append({
+            "api_key": api_key,
+            "model": requested_model.strip() or row_model,
+            "base_url": str(value(row, "base_url") or "https://api.openai.com/v1").strip().rstrip("/"),
+            "provider": str(value(row, "provider_name") or "workspace"),
+            "active": bool(value(row, "is_active", 0)),
+        })
+
+    # Active rows are preferred, but all complete saved rows remain usable.
+    complete.sort(key=lambda item: (not item["active"], item["provider"].lower(), item["model"].lower()))
+    if complete:
+        # Avoid retrying the same credential twice if legacy rows duplicate it.
+        unique = []
+        seen = set()
+        for item in complete:
+            identity = (item["api_key"], item["base_url"], item["model"])
+            if identity not in seen:
+                seen.add(identity)
+                unique.append(item)
+        active_count = sum(1 for item in unique if item["active"])
+        active_rows = unique[:active_count]
+        inactive_rows = unique[active_count:]
+        key = str(tenant_id or "global")
+        with _provider_rotation_lock:
+            offset = _provider_rotation_offsets.get(key, 0) % max(1, len(active_rows))
+            _provider_rotation_offsets[key] = offset + 1
+        # Rotate among active keys first; legacy inactive-but-complete keys
+        # remain a fallback after every active key has been attempted.
+        return (active_rows[offset:] + active_rows[:offset]) + inactive_rows
+
+    # No complete workspace provider: use the deployment chain as fallback.
+    try:
+        import llm as _llm
+        env = list(_llm.get_configured_providers())
+        env.sort(key=lambda item: str(item.get("name", "")).lower() == "merge")
+        return [{
+            "api_key": item["api_key"],
+            "model": requested_model.strip() or item["model"],
+            "base_url": str(item["base_url"]).rstrip("/"),
+            "provider": item.get("name", "environment"),
+            "active": True,
+        } for item in env if item.get("api_key") and item.get("model")]
+    except Exception as exc:
+        logger.warning("Environment LLM provider lookup failed: %s", exc)
+        return []
 
 # ── Auth / Tenant helpers ──────────────────────────────────────────────
 
@@ -639,71 +716,13 @@ async def _run_workspace_agent(
     memory.prune()
 
     configured_model = model.strip()
-    api_key = ""
-    base_url = ""
-    provider_name = ""
-
-    # Workspace providers are authoritative.  The deployment environment can
-    # contain an old/empty Merge configuration; resolving it first used to
-    # prevent self-chat from ever reaching keys saved in the workspace.
-    try:
-        providers = await asyncio.to_thread(storage.get_llm_providers, tenant_id=tenant_id)
-
-        def provider_value(provider, name: str, default=""):
-            if isinstance(provider, dict):
-                return provider.get(name, default)
-            return getattr(provider, name, default)
-
-        complete = [
-            provider for provider in providers
-            if str(provider_value(provider, "api_key") or "").strip()
-            and str(provider_value(provider, "model_name") or "").strip()
-        ]
-        active = [provider for provider in complete if bool(provider_value(provider, "is_active", 0))]
-        candidates = active or complete
-        if candidates:
-            # Prefer an explicitly active provider, then keep selection
-            # deterministic when legacy data has multiple active rows.
-            candidates.sort(key=lambda provider: str(provider_value(provider, "provider_name")).lower())
-            provider = candidates[0]
-            api_key = str(provider_value(provider, "api_key") or "").strip()
-            base_url = str(provider_value(provider, "base_url") or "https://api.doubleword.ai/v1").strip().rstrip("/")
-            configured_model = configured_model or str(provider_value(provider, "model_name") or "").strip()
-            provider_name = str(provider_value(provider, "provider_name") or "workspace")
-    except Exception as exc:
-        logger.warning("Workspace LLM provider lookup failed: %s", exc)
-
-    # Only use deployment-level providers when this tenant has no complete
-    # workspace provider. This keeps the old env chain as a safe fallback,
-    # without allowing it to shadow saved workspace credentials.
-    if not api_key or api_key == "none":
-        try:
-            env_client = _llm.get_client()
-            api_key = env_client.api_key
-            base_url = env_client.base_url.base_url.rstrip("/") if hasattr(env_client.base_url, "base_url") else str(env_client.base_url).rstrip("/")
-            configured_model = configured_model or _llm.get_model()
-            provider_name = _llm.get_provider_name()
-        except Exception:
-            pass
-    if not api_key or api_key == "none":
-        provider = await asyncio.to_thread(storage.get_active_llm_provider, tenant_id=tenant_id)
-        if provider:
-            api_key = (provider.api_key or "").strip()
-            base_url = (provider.base_url or "https://api.doubleword.ai/v1").strip().rstrip("/")
-            configured_model = configured_model or (provider.model_name or "").strip()
-            provider_name = provider.provider_name
-    if not api_key or api_key == "none":
+    providers = await asyncio.to_thread(_workspace_provider_candidates, tenant_id, configured_model)
+    if not providers:
         return {
             "error": "api_key_required",
             "message": "No LLM provider is available. Set NVIDIA_API_KEY or another provider key.",
         }
-    logger.info(
-        "Workspace agent resolved provider: %s | model=%s | base_url=%s",
-        provider_name, configured_model, base_url,
-    )
-
-    if configured_model and base_url:
-        _assert_model_url_match(configured_model, base_url)
+    logger.info("Workspace agent provider pool ready: %d providers", len(providers))
 
     sources = _load_data()
     live = _load_live_data(getattr(storage, "db", None))
@@ -717,7 +736,12 @@ async def _run_workspace_agent(
 
     loop = asyncio.get_running_loop()
 
-    def _call():
+    def _call(provider):
+        api_key = provider["api_key"]
+        provider_model = provider["model"]
+        base_url = provider["base_url"]
+        if provider_model and base_url:
+            _assert_model_url_match(provider_model, base_url)
         system_prompt = build_system_prompt(sources)
         system_prompt += """
 
@@ -745,15 +769,15 @@ WHATSAPP SELF-CHAT MODE:
             msgs,
             sources,
             api_key=api_key,
-            model=configured_model or None,
+            model=provider_model or None,
             base_url=base_url,
             max_tool_rounds=2,
             tenant_id=tenant_id,
         )
-        if reply.content:
-            memory.add("assistant", reply.content)
         last_user_inner = next((m.get("content", "") for m in reversed(messages) if m.get("role") == "user"), "")
         assistant_reply = reply.content or ""
+        if not assistant_reply.strip():
+            raise RuntimeError("provider returned an empty response")
         if _looks_like_echo_misfire(last_user_inner, assistant_reply):
             logging.warning(
                 "possible_echo_misfire",
@@ -761,11 +785,29 @@ WHATSAPP SELF-CHAT MODE:
             )
         return normalize_workspace_response(reply.content or "", sources)
 
-    request_context = contextvars.copy_context()
-    return await asyncio.wait_for(
-        loop.run_in_executor(None, request_context.run, _call),
-        timeout=90,
-    )
+    last_error = None
+    deadline = loop.time() + 90
+    for index, provider in enumerate(providers):
+        remaining = deadline - loop.time()
+        if remaining <= 0:
+            break
+        request_context = contextvars.copy_context()
+        try:
+            response = await asyncio.wait_for(
+                loop.run_in_executor(None, request_context.run, _call, provider),
+                timeout=min(25, remaining),
+            )
+            memory.add("assistant", response.get("content", ""))
+            return response
+        except Exception as exc:
+            last_error = exc
+            logger.warning(
+                "Workspace provider attempt %d/%d failed (%s): %s",
+                index + 1, len(providers), provider.get("provider", "unknown"), exc,
+            )
+    if last_error:
+        raise last_error
+    return {"error": "provider_unavailable", "message": "No workspace LLM provider completed the request."}
 
 
 # ── Group name parsing (used by groups_market + audit) ──────────────────
