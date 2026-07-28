@@ -19,8 +19,18 @@ export function getServerSupabase(): SupabaseClient | null {
     );
     return null;
   }
+  // Wrap fetch with a 45s timeout per request so stale connections don't hang.
+  const fetchWithTimeout: typeof fetch = (input, init) => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 45_000);
+    return fetch(input, { ...init, signal: controller.signal }).finally(() =>
+      clearTimeout(timer),
+    );
+  };
+
   client = createClient(supabaseUrl, supabaseServiceKey, {
     auth: { persistSession: false, autoRefreshToken: false },
+    global: { fetch: fetchWithTimeout },
   });
   return client;
 }
