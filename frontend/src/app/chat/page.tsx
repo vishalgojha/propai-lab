@@ -114,7 +114,7 @@ function formatSessionTime(iso: string) {
 }
 
 export default function ChatPage() {
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const [input, setInput] = useState("");
   const [brokerPhone, setBrokerPhone] = useState("");
   const chatEndRef = useRef<HTMLDivElement>(null);
@@ -126,6 +126,8 @@ export default function ChatPage() {
   const [sessions, setSessions] = useState<api.ChatSession[]>([]);
   const [sessionsLoaded, setSessionsLoaded] = useState(false);
   const [showSessions, setShowSessions] = useState(true);
+
+  const activeSessionStorageKey = user?.id ? `propai_active_chat_session:${user.id}` : "";
 
   const { messages, sendMessage, status, setMessages, error } = useChat({
     transport: new DefaultChatTransport({
@@ -173,18 +175,21 @@ export default function ChatPage() {
   }, []);
 
   useEffect(() => {
-    if (!brokerPhone) return;
+    if (authLoading || !brokerPhone) return;
     let cancelled = false;
     void (async () => {
       const data = await loadSessions(brokerPhone);
       if (cancelled) return;
       setSessionsLoaded(true);
       if (data.length > 0 && !sessionId) {
-        const mostRecent = data[0];
-        sessionIdRef.current = mostRecent.id;
-        setSessionId(mostRecent.id);
+        const savedId = activeSessionStorageKey
+          ? window.localStorage.getItem(activeSessionStorageKey)
+          : null;
+        const active = data.find((item) => item.id === savedId) || data[0];
+        sessionIdRef.current = active.id;
+        setSessionId(active.id);
         try {
-          const msgs = await api.getChatSessionMessages(mostRecent.id);
+          const msgs = await api.getChatSessionMessages(active.id);
           if (cancelled) return;
           setMessages(msgs.map((m) => toUIMessage({ id: m.id, role: m.role as "user" | "assistant", content: m.content })));
         } catch {
@@ -195,7 +200,14 @@ export default function ChatPage() {
     return () => {
       cancelled = true;
     };
-  }, [brokerPhone, loadSessions, sessionId, setMessages]);
+  }, [activeSessionStorageKey, authLoading, brokerPhone, loadSessions, sessionId, setMessages]);
+
+  // Keep the selected thread stable across tab switches, refreshes, and route
+  // remounts. Messages themselves remain persisted in Supabase by the API.
+  useEffect(() => {
+    if (!activeSessionStorageKey || !sessionId) return;
+    window.localStorage.setItem(activeSessionStorageKey, sessionId);
+  }, [activeSessionStorageKey, sessionId]);
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -237,13 +249,14 @@ export default function ChatPage() {
     if (id === sessionId) return;
     setSessionId(id);
     sessionIdRef.current = id;
+    if (activeSessionStorageKey) window.localStorage.setItem(activeSessionStorageKey, id);
     try {
       const msgs = await api.getChatSessionMessages(id);
       setMessages(msgs.map((m) => toUIMessage({ id: m.id, role: m.role as "user" | "assistant", content: m.content })));
     } catch {
       setMessages([]);
     }
-  }, [sessionId, setMessages]);
+  }, [activeSessionStorageKey, sessionId, setMessages]);
 
   // Delete a session
   const handleDeleteSession = useCallback(async (id: string, e: React.MouseEvent) => {
