@@ -1239,6 +1239,17 @@ function InboxPageInner({ defaultView }: InboxPageInnerProps) {
   }, [searchText]);
 
   useEffect(() => {
+    // The WhatsApp Groups route is a raw mirror of joined WhatsApp
+    // conversations. It does not use the Market Inbox access gate, and
+    // probing that unrelated endpoint here can show a timeout/error even
+    // while the group directory is healthy.
+    if (typeof window !== "undefined" && window.location.pathname === "/whatsapp-groups") {
+      setLoadingMarketAccess(false);
+      setMarketAccess(null);
+      setMarketAccessError(null);
+      return;
+    }
+
     let cancelled = false;
     (async () => {
       setLoadingMarketAccess(true);
