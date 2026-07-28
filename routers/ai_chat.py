@@ -879,8 +879,20 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
     if not sources:
         return _wrap_chat_response({"error": "no_data", "content": "No data found. Check CSV files and database."}, _is_inbox)
 
+    search_request_text = last_user
+    if last_user and not re.search(r"\b\d+(?:\.5)?\s*(?:bhk|bed(?:room)?s?)\b|\b(?:rent|rental|lease|sale|sell|buy|purchase)\b", last_user, re.IGNORECASE):
+        previous_users = [
+            str(msg.get("content", "")).strip()
+            for msg in req.messages[:-1]
+            if msg.get("role") == "user" and str(msg.get("content", "")).strip()
+        ]
+        if previous_users:
+            # A follow-up such as “Powai has plenty of inventory” should
+            # inherit the active 3 BHK + RENT constraints from the prior turn.
+            search_request_text = f"{previous_users[-1]}\nFollow-up correction: {last_user}"
+
     deterministic_query = chat_engine.parse_market_search_request(
-        last_user,
+        search_request_text,
         api_key=effective_api_key,
         model=effective_model,
         base_url=effective_base_url,
