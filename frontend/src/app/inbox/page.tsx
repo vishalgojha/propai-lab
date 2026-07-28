@@ -3436,9 +3436,13 @@ return {
                               </span>
                             </div>
                             <div className="flex items-center gap-1.5">
-                              <span className="text-[10px] font-bold text-white tabular-nums">
+                              <span
+                                className="text-[10px] font-bold text-white tabular-nums"
+                                title="Parsed market items attributed to this broker, not raw WhatsApp message count"
+                              >
                                 {b.observation_count}
                               </span>
+                              <span className="text-[9px] text-zinc-500">items</span>
                               <div onClick={(e) => { e.stopPropagation(); setOpenMenuBroker(menuOpen ? null : b.primary_phone); }} className="w-5 h-5 flex items-center justify-center rounded hover:bg-[rgba(255,255,255,0.06)] text-zinc-500 hover:text-white transition-colors cursor-pointer">
                                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg>
                               </div>
@@ -3733,8 +3737,6 @@ return {
                             }
                             sender={selectedMsgDetails?.raw?.sender || stripDecorativeEmoji(selectedBroker.canonical_name || selectedBroker.name || "")}
                             senderPhone={resolvedBrokerPhone || selectedMsgDetails?.raw?.broker_phone || ""}
-                            truncate
-                            maxLines={6}
                             flatMultiBlocks
                             className="text-sm text-zinc-200"
                           />
@@ -3750,7 +3752,7 @@ return {
                               {selectedBroker.latest_micro_market}
                             </span>
                           )}
-                          <span>{selectedBroker.observation_count || 0} market items</span>
+                          <span>{selectedBroker.observation_count || 0} parsed market items</span>
                           <span>•</span>
                           <span>{selectedBroker.building_count || 0} buildings</span>
                           <span>•</span>
@@ -3809,7 +3811,10 @@ return {
                     const timeLabel = obsTime
                       ? obsTime.toLocaleDateString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })
                       : "";
-                    const itemSource = obs.source_message || obs.normalized_message || obs.raw_message || "";
+                    // Prefer the actual raw WhatsApp post for display. The
+                    // normalized/summary text is useful for search, but must
+                    // never replace the source message in the inbox UI.
+                    const itemSource = obs.raw_message || obs.source_message || obs.normalized_message || "";
                     const selectedRawText = isSelected
                       ? String(
                           selectedMsgDetails?.raw?.message ||
@@ -3906,13 +3911,6 @@ return {
                           )}
                           {/* Action row */}
                           <div className="mt-2 flex items-center gap-3 text-[10px]">
-                            <button
-                              type="button"
-                              onClick={(e) => { e.stopPropagation(); selectBrokerObservation(obs); }}
-                              className="text-zinc-500 hover:text-white transition-colors"
-                            >
-                              Details
-                            </button>
                             {resolvedBrokerPhone && (
                               <a
                                 href={getWaLinkWithRecall(resolvedBrokerPhone, itemSource || marketTitle)}
