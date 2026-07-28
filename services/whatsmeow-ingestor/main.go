@@ -574,7 +574,10 @@ sessionLoop:
 				select {
 				case evt, ok := <-qrChan:
 					if ok && evt.Event == "code" {
-						code, err := s.client.PairPhone(ctx, phone, false, whatsmeow.PairClientUnknown, "PropAI (Linux)")
+						// WhatsApp validates both fields and rejects unknown/non-browser
+						// identities with a 400. Keep this aligned with WhatsMeow's
+						// documented `Browser (OS)` contract.
+						code, err := s.client.PairPhone(ctx, phone, false, whatsmeow.PairClientChrome, "Chrome (Linux)")
 						if err != nil {
 							log.Printf("[broker %s] PairPhone failed: %v", s.brokerID, err)
 							s.setStatus(Status{ConnectionState: "error"})
