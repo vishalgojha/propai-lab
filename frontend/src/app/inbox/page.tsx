@@ -1888,10 +1888,10 @@ return {
     const digits = normalizeRealPhone(phone);
     if (!digits) return "#";
     const normalized = `91${digits}`;
-    const cleanedExtract = extractedText.trim();
-    const clippedExtract =
-      cleanedExtract.length > 320 ? `${cleanedExtract.slice(0, 320)}...` : cleanedExtract;
-    const recallMessage = `Recall:\n${clippedExtract}\n\nFound on PropAI Live`;
+    // The WhatsApp action is a prefilled copy of the original post. Do not
+    // truncate it or add a "Recall:" command: the raw post itself is what
+    // the broker needs to send back to the contact.
+    const recallMessage = extractedText.trim() || "Hi, I saw this post on PropAI Live.";
     const safe = recallMessage.replace(/[\uD800-\uDFFF]/g, "");
     try {
       return `https://wa.me/${normalized}?text=${encodeURIComponent(recallMessage)}`;
@@ -3388,7 +3388,7 @@ return {
                       <div className="text-[10px] text-zinc-500 leading-relaxed truncate mb-1">
                         {subtitle}
                       </div>
-                      <div className="text-[10px] text-zinc-400 leading-relaxed line-clamp-2">
+                      <div className="max-h-20 overflow-y-auto whitespace-pre-wrap break-words text-[10px] text-zinc-400 leading-relaxed">
                         {snippet || "No text content"}
                       </div>
                     </button>
@@ -3507,7 +3507,7 @@ return {
                         <div className="text-[10px] text-zinc-500 leading-relaxed truncate mb-1">
                           {stripDecorativeEmoji(resolveMessageSenderName(item.latest) || item.subtitle)}
                         </div>
-                        <div className="text-[10px] text-zinc-400 leading-relaxed line-clamp-2">
+                        <div className="max-h-20 overflow-y-auto whitespace-pre-wrap break-words text-[10px] text-zinc-400 leading-relaxed">
                           {stripEmojis(item.latest.message) || "No text content"}
                         </div>
                         <div className="mt-1.5 text-[9px] text-zinc-600">
@@ -4250,7 +4250,7 @@ return {
                                                       target="_blank"
                                                       rel="noopener noreferrer"
                                                       className="inline-flex items-center gap-1.5 rounded-md border border-[#3EE88A]/20 bg-[#3EE88A]/10 px-2 py-1 text-[10px] font-bold text-[#3EE88A] hover:bg-[#3EE88A]/15"
-                                                      title="Message this broker with this item recalled"
+                                                      title="Send this full item to the broker on WhatsApp"
                                                       onClick={(e) => e.stopPropagation()}
                                                     >
                                                       <MessageSquare className="h-3 w-3" strokeWidth={1.8} />
