@@ -2441,8 +2441,7 @@ class SupabaseStorage(Storage):
         creates duplicates. Call without limit to rebuild everything, or pass a
         recent cutoff by feeding only new observations.
 
-        This is the missing link between the parser (extraction.py, which is
-        multi-listing aware via multi_listing.parse_multi_message) and the
+        This is the bridge between AI-produced parsed observations and the
         `listings` table that www reads.
         """
         PAGE = 500

@@ -2,8 +2,9 @@
 
 Provider rotation uses the same deployment-configured chain as chat.
 
-On 429/timeout → immediately retry next key.
-Only fall to regex if ALL 6 keys fail, or AI response fails schema validation twice.
+On 429/timeout → immediately retry next key. There is deliberately no
+deterministic extraction fallback: the model always receives the untouched
+source message and owns listing/requirement boundaries.
 
 Usage:
     from ai_extraction import ai_extract
@@ -11,7 +12,7 @@ Usage:
     if result["extraction_source"] == "ai":
         # Use result["extraction"] (the structured schema)
     else:
-        # Fallback — result["extraction"] has regex-parsed fields
+        # No structured extraction was produced; queue for review.
 """
 
 import json
@@ -82,7 +83,8 @@ possession_status: "ready_to_move" | "under_construction" | date string | null
 possession_date: "YYYY-MM-DD" | null (only if explicit date mentioned)
 deal_tags: ["negotiable", "urgent_sale"...] (only if explicit in message)
 additional_charges: [{label:str, amount:num, amount_type:"fixed"|"percent_of_price"}]
-title: "3 BHK for Rent in Bandra West — ₹2.75L/month" (auto-generated from fields)
+title: preserve a clear explicit source heading/name, otherwise null. Do not
+  invent a marketing headline or restate the whole message.
 
 Physical details (only if explicitly stated):
 bathroom_count: number | null
@@ -112,10 +114,28 @@ company_lease_criteria: {min_paid_up_capital: str|null, company_type: str|null, 
 tenant_nationality_preference: str | null (capture faithfully when stated, e.g. "only Indian tenants")
 
 Rules:
-- One message may contain multiple listings. Put each in a separate items[] entry.
+- Treat the supplied message as authoritative, already-useful broker data.
+  Extract the minimum structure needed for search; do not rewrite, embellish,
+  summarize away, or "improve" explicit facts.
+- When the source is already structured, copy its facts with the least possible
+  transformation beyond the required JSON types and enums.
+- Read the complete untouched message and determine semantic boundaries
+  yourself. One message may contain multiple listings or requirements.
+- Preserve explicit numbering and option boundaries. Emit one items[] entry
+  per independently actionable property/unit. Never merge two numbered
+  properties into one item.
+- If one property contains multiple independently priced unit/floor variants,
+  emit one item per variant and copy only the shared facts explicitly stated
+  for that property.
+- A heading such as "Available for Rent" or "Requirements" applies to its
+  clearly grouped child entries. Do not replace that explicit intent with a
+  guess based on price magnitude.
 - For requirements (broker seeking), listing_type = "requirement".
 - Building name = ONLY proper complex names (e.g. "Kalpataru Vivant"). NEVER features/descriptions.
 - Only extract fields that are EXPLICITLY stated in the message. Never infer or invent a value.
+- Preserve raw_price_text character-for-character from the source. Never add,
+  remove, or shift a zero. The numeric amount must represent exactly that
+  phrase; when uncertain, leave amount null and retain raw_price_text.
 - CRITICAL: For locality — ONLY set raw_mention if the message text literally contains a locality/area name. NEVER infer a locality from the building name. Buildings appear in WhatsApp groups from different areas; the group name or broker's other messages do NOT indicate this listing's locality.
 - If the message is a URL/link with no property text, or is under 20 characters, set ALL text fields (locality, building_name, etc.) to null.
 - If you are unsure whether a locality is mentioned, set raw_mention to null. False locality assignments are worse than missing data.
@@ -675,12 +695,12 @@ def _call_provider(
 
 
 def ai_extract(raw_text: str, ctx: dict | None = None, storage=None) -> dict:
-    """Main entry point: try AI providers in rotation, fall back to regex.
+    """Main entry point: try AI providers in rotation, never deterministic parsing.
 
     Returns a dict with:
         extraction: dict — first normalized extraction result (compatibility)
         extractions: list[dict] — every normalized opportunity in the message
-        extraction_source: "ai" | "regex_fallback" | "image_unprocessed"
+        extraction_source: "ai" | "ai_unavailable" | "image_unprocessed"
         needs_review: bool
         provider_used: str | None
         error: str | None
@@ -718,7 +738,7 @@ def ai_extract(raw_text: str, ctx: dict | None = None, storage=None) -> dict:
 
     # ── Not enough text? ──────────────────────────────────────────
     if not raw_text or len(raw_text.strip()) < 10:
-        result["extraction_source"] = "regex_fallback"
+        result["extraction_source"] = "ai_unavailable"
         result["needs_review"] = True
         result["extraction"] = None
         _logger.info("ai_extract: text too short (%s)", time.time() - start)
@@ -827,8 +847,8 @@ def ai_extract(raw_text: str, ctx: dict | None = None, storage=None) -> dict:
         )
         return result
 
-    # ── All providers failed — flag for regex fallback ────────────
-    result["extraction_source"] = "regex_fallback"
+    # ── All providers failed — retain raw source for review ───────
+    result["extraction_source"] = "ai_unavailable"
     result["needs_review"] = True
     result["error"] = last_error or f"All {len(_PROVIDERS)} providers failed after {attempts} attempts"
 
