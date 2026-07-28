@@ -203,13 +203,61 @@ export async function getLocalityData(rawSlug: string): Promise<LocalityData | n
 
   // Fallback: if the RPC failed, do a direct query.
   if (!rpc) {
-    const { data: rows, error: qErr } = await db
-      .from("listings")
-      .select("building_name, bhk, price, price_unit, intent")
-      .eq("canonical_micro_market_slug", slug);
+    let rows: ListingRow[] | null = null;
+    try {
+      // Use range to avoid pulling 18K+ rows in one shot — Supabase caps
+      // an unpaginated select at 1000 rows, but for the summary we only
+      // need the first page to get building names + stats. For accurate
+      // total_count we fall back to a COUNT query below.
+      const thirtyDaysAgo = new Date(Date.now() - 30 * 86_400_000).toISOString();
+      const PAGE = 1000;
+      const collected: ListingRow[] = [];
+      for (let offset = 0; ; offset += PAGE) {
+        const { data: page, error: qErr } = await db
+          .from("listings")
+          .select("building_name, bhk, price, price_unit, intent")
+          .eq("canonical_micro_market_slug", slug)
+          .gte("last_seen", thirtyDaysAgo)
+          .range(offset, offset + PAGE - 1);
+        if (qErr) {
+          console.error("getLocalityData fallback query error:", qErr.message);
+          break;
+        }
+        if (page) collected.push(...(page as ListingRow[]));
+        if (!page || page.length < PAGE) break;
+      }
+      rows = collected.length > 0 ? collected : null;
+    } catch (e) {
+      console.error("getLocalityData fallback query exception:", e);
+    }
 
-    if (qErr || !rows) {
-      console.error("getLocalityData fallback query error:", qErr?.message);
+    // If we couldn't even fetch a single page, try a COUNT as last resort.
+    // This tells us the place IS populated — we just can't fetch details.
+    if (!rows) {
+      try {
+        const { count } = await db
+          .from("listings")
+          .select("id", { count: "exact", head: true })
+          .eq("canonical_micro_market_slug", slug);
+        if (count && count > 0) {
+          // Return a degraded result — page renders with total count but
+          // no building breakdown. Better than a hard 404.
+          return {
+            locality: canon.label,
+            slug,
+            buildings: [],
+            mappedCount: 0,
+            unmappedCount: 0,
+            totalListings: count,
+            hasListings: true,
+            rentCount: 0,
+            saleCount: 0,
+            topBhk: null,
+          };
+        }
+      } catch (e) {
+        console.error("getLocalityData count fallback exception:", e);
+      }
       return null;
     }
 
@@ -405,6 +453,7 @@ export async function getLocalityListings(
   if (!db) return { locality: canon.label, slug, rows: [] };
 
   const PAGE = 1000;
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 86_400_000).toISOString();
   const collected: ListingCardFields[] = [];
   for (let offset = 0; ; offset += PAGE) {
     const { data, error } = await db
@@ -413,6 +462,7 @@ export async function getLocalityListings(
         "id, bhk, price, price_unit, price_model, price_per_sqft, area_sqft, furnishing, intent, asset_type, property_type, micro_market, building_name, landmark_name, location_label, floor_description, view, representative_raw_message_id, latest_raw_message_id, broker_name, broker_phone, last_seen",
       )
       .eq("canonical_micro_market_slug", slug)
+      .gte("last_seen", thirtyDaysAgo)
       .range(offset, offset + PAGE - 1);
     if (error) {
       console.error("getLocalityListings error:", error.message);
@@ -499,12 +549,14 @@ async function fetchAllLocalities(): Promise<LocalitySummary[]> {
   // Fallback: use pre-computed canonical_micro_market_slug column (indexed).
   console.error("fetchAllLocalities RPC error:", rpcError?.message);
   const PAGE = 1000;
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 86_400_000).toISOString();
   let all: Array<{ canonical_micro_market_slug: string | null }> = [];
   for (let offset = 0; ; offset += PAGE) {
     const res = await db
       .from("listings")
       .select("canonical_micro_market_slug")
       .not("canonical_micro_market_slug", "is", null)
+      .gte("last_seen", thirtyDaysAgo)
       .range(offset, offset + PAGE - 1);
     if (res.error) return [];
     all = all.concat((res.data ?? []) as typeof all);
@@ -574,10 +626,12 @@ async function fetchAllBuildings(limit = 5000): Promise<BuildingSummary[]> {
     if (buildings.length >= limit) break;
   }
 
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 86_400_000).toISOString();
   const { data: listings } = await db
     .from("listings")
     .select("building_name")
-    .not("building_name", "is", null);
+    .not("building_name", "is", null)
+    .gte("last_seen", thirtyDaysAgo);
 
   const counts = new Map<string, number>();
   for (const row of listings ?? []) {
@@ -814,6 +868,7 @@ export async function getBuildingListings(name: string): Promise<BuildingListing
   // Filter at the DB layer (exact canonical name) and paginate past the 1000-row
   // cap so a building with >100 listings shows them all.
   const target = name.trim();
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 86_400_000).toISOString();
   const PAGE = 1000;
   let all: Array<{
     id: number;
@@ -844,6 +899,7 @@ export async function getBuildingListings(name: string): Promise<BuildingListing
         "id, bhk, price, price_unit, price_model, price_per_sqft, furnishing, intent, asset_type, property_type, micro_market, view, floor_description, building_name, broker_name, broker_phone, last_seen, representative_raw_message_id, latest_raw_message_id",
       )
       .eq("building_name", target)
+      .gte("last_seen", thirtyDaysAgo)
       .order("last_seen", { ascending: false })
       .range(offset, offset + PAGE - 1);
 

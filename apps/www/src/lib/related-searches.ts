@@ -203,10 +203,12 @@ async function buildPropertyTypes(
   const db = getServerSupabase();
   if (!db) return null;
 
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 86_400_000).toISOString();
   const { data } = await db
     .from("listings")
     .select("property_type")
     .eq("canonical_micro_market_slug", canon.slug)
+    .gte("last_seen", thirtyDaysAgo)
     .not("property_type", "is", null)
     .neq("property_type", "")
     .limit(500);
@@ -243,10 +245,12 @@ async function buildTopBuildings(
   const db = getServerSupabase();
   if (!db) return null;
 
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 86_400_000).toISOString();
   const { data } = await db
     .from("listings")
     .select("building_name")
     .eq("canonical_micro_market_slug", canon.slug)
+    .gte("last_seen", thirtyDaysAgo)
     .not("building_name", "is", null)
     .neq("building_name", "")
     .limit(500);
@@ -344,10 +348,12 @@ async function buildTopBrokers(
   const db = getServerSupabase();
   if (!db) return null;
 
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 86_400_000).toISOString();
   const { data } = await db
     .from("listings")
     .select("broker_name")
     .eq("canonical_micro_market_slug", canon.slug)
+    .gte("last_seen", thirtyDaysAgo)
     .not("broker_name", "is", null)
     .neq("broker_name", "")
     .limit(500);
@@ -386,10 +392,12 @@ async function buildBuildingDeepLinks(
   const db = getServerSupabase();
   if (!db) return null;
 
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 86_400_000).toISOString();
   const { data } = await db
     .from("listings")
     .select("bhk, intent")
     .eq("building_name", cleanName)
+    .gte("last_seen", thirtyDaysAgo)
     .limit(200);
 
   if (!data || data.length === 0) return null;

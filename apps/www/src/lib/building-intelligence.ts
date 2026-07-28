@@ -191,10 +191,12 @@ export async function getSimilarBuildings(
   if (!canon.slug) return [];
 
   // Get buildings in the same locality with listing counts and avg price
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 86_400_000).toISOString();
   const { data } = await db
     .from("listings")
     .select("building_name, price, price_unit")
     .eq("canonical_micro_market_slug", canon.slug)
+    .gte("last_seen", thirtyDaysAgo)
     .not("building_name", "is", null)
     .neq("building_name", "")
     .neq("building_name", buildingName)
@@ -242,10 +244,12 @@ export async function getLocalityListingCount(microMarket: string | null): Promi
   const canon = canonicalLocality(microMarket);
   if (!canon.slug) return 0;
 
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 86_400_000).toISOString();
   const { count } = await db
     .from("listings")
     .select("id", { count: "exact", head: true })
-    .eq("canonical_micro_market_slug", canon.slug);
+    .eq("canonical_micro_market_slug", canon.slug)
+    .gte("last_seen", thirtyDaysAgo);
 
   return count ?? 0;
 }

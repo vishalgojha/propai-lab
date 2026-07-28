@@ -155,12 +155,19 @@ export async function getPublicDataOverview(options?: {
     }
     if (!brokerRes.error) {
       const seenBrokerNames = new Set<string>();
+      const PHONE_RE = /^[\d\s\+\-\.\(\)∙]+$/;
+      const GENERIC =
+        /^(care|self-contained|regards|deal|deal side by side|all caste welcome|commercial office|for pictures|with just|luxury homes|property|properties|broker|real estate)$/i;
       for (const row of brokerRes.data ?? []) {
-        const key = ((row as any).display_name || "").toLowerCase();
-        if (!key || seenBrokerNames.has(key)) continue;
+        const name = ((row as any).display_name || "").trim();
+        const key = name.toLowerCase();
+        if (!key || key.length < 2) continue;
+        if (seenBrokerNames.has(key)) continue;
+        if (PHONE_RE.test(name)) continue;
+        if (GENERIC.test(key)) continue;
         seenBrokerNames.add(key);
         topBrokers.push({
-          display_name: (row as any).display_name || "",
+          display_name: name,
           listing_count: (row as any).listing_count ?? 0,
           market_count: (row as any).market_count ?? 0,
         });
