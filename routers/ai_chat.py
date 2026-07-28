@@ -16,7 +16,7 @@ from pydantic import BaseModel
 
 from routers.common import (
     storage, require_user, get_tenant_context,
-    _doubleword_error_response,
+    _doubleword_error_response, _workspace_provider_candidates,
 )
 from llm import ProviderConfigurationError
 
@@ -150,6 +150,35 @@ def _preferred_workspace_provider(tenant_id: str | None) -> dict:
     except Exception:
         pass
     return {"api_key": "", "model": "", "base_url": "", "provider": "none"}
+
+
+async def _run_with_provider_failover(call_factory, providers: list[dict], timeout: float = 90):
+    """Run one synchronous LLM operation against the rotating provider pool."""
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout
+    last_error = None
+    for index, provider in enumerate(providers):
+        remaining = deadline - loop.time()
+        if remaining <= 0:
+            break
+        try:
+            result = await asyncio.wait_for(
+                loop.run_in_executor(None, lambda p=provider: call_factory(p)),
+                timeout=min(25, remaining),
+            )
+            result_content = result.get("content", "") if isinstance(result, dict) else getattr(result, "content", "")
+            if result is None or not result_content:
+                raise RuntimeError("provider returned an empty response")
+            return result
+        except Exception as exc:
+            last_error = exc
+            _logger.warning(
+                "AI provider attempt %d/%d failed (%s): %s",
+                index + 1, len(providers), provider.get("provider", "unknown"), exc,
+            )
+    if last_error:
+        raise last_error
+    raise ProviderConfigurationError("No complete LLM provider is configured")
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -725,10 +754,19 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
 
     session_id = req.session_id or "default"
     memory = get_memory(session_id)
-    preferred_provider = _preferred_workspace_provider(tenant_id)
-    effective_api_key = (req.api_key or "").strip() or preferred_provider["api_key"]
-    effective_model = (req.model or "").strip() or preferred_provider["model"]
-    effective_base_url = preferred_provider["base_url"]
+    effective_model = (req.model or "").strip()
+    providers = _workspace_provider_candidates(tenant_id, effective_model)
+    if (req.api_key or "").strip():
+        # Explicit API keys remain supported for internal callers, but saved
+        # workspace providers are still tried after that override fails.
+        providers = [{
+            "api_key": req.api_key.strip(),
+            "model": effective_model or _preferred_workspace_provider(tenant_id).get("model", ""),
+            "base_url": _preferred_workspace_provider(tenant_id).get("base_url", "https://api.openai.com/v1"),
+            "provider": "request",
+        }] + providers
+    if not providers:
+        providers = [{"api_key": "", "model": effective_model, "base_url": "", "provider": "none"}]
 
     for msg in req.messages:
         role = msg.get("role", "")
@@ -789,16 +827,13 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
                     {"role": "system", "content": chat_engine.build_system_prompt(cap_sources, broker=broker)},
                     {"role": "user", "content": last_user},
                 ]
-                loop = asyncio.get_running_loop()
-                cap_reply = await asyncio.wait_for(
-                    loop.run_in_executor(
-                        None,
-                        lambda: chat_engine.get_model_reply(
-                            cap_msgs, cap_sources, api_key=effective_api_key,
-                            model=effective_model or None, base_url=effective_base_url or None, max_tool_rounds=0,
-                        ),
+                cap_reply = await _run_with_provider_failover(
+                    lambda provider: chat_engine.get_model_reply(
+                        cap_msgs, cap_sources, api_key=provider["api_key"],
+                        model=provider["model"] or None, base_url=provider["base_url"] or None, max_tool_rounds=0,
                     ),
-                    timeout=30,
+                    providers,
+                    timeout=60,
                 )
                 text = (cap_reply.content or "").strip() or "I can help with that."
                 _persist("user", last_user)
@@ -816,16 +851,13 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
 
     if last_user and not _has_query_signals(last_user):
         try:
-            loop = asyncio.get_running_loop()
-            reply = await asyncio.wait_for(
-                loop.run_in_executor(
-                    None,
-                    lambda: chat_engine.get_conversational_reply(
-                        req.messages, api_key=effective_api_key, model=effective_model or None,
-                        base_url=effective_base_url or None, broker=broker
-                    ),
+            reply = await _run_with_provider_failover(
+                lambda provider: chat_engine.get_conversational_reply(
+                    req.messages, api_key=provider["api_key"], model=provider["model"] or None,
+                    base_url=provider["base_url"] or None, broker=broker
                 ),
-                timeout=30,
+                providers,
+                timeout=60,
             )
             text = (reply.content or "").strip()
             if text:
@@ -898,9 +930,9 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
 
     deterministic_query = chat_engine.parse_market_search_request(
         search_request_text,
-        api_key=effective_api_key,
-        model=effective_model,
-        base_url=effective_base_url,
+        api_key=providers[0]["api_key"],
+        model=providers[0]["model"],
+        base_url=providers[0]["base_url"],
         db_path=getattr(storage, "db", None),
     )
     if deterministic_query:
@@ -930,9 +962,7 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
             _maybe_title(last_user)
             return _wrap_chat_response(response, _is_inbox)
 
-    loop = asyncio.get_running_loop()
-
-    def _call():
+    def _call(provider):
         system_prompt = chat_engine.build_system_prompt(sources, broker=broker)
         context = memory.build_context()
         msgs = [
@@ -942,17 +972,17 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
         reply = chat_engine.get_model_reply(
             msgs,
             sources,
-            api_key=effective_api_key,
-            model=effective_model or None,
-            base_url=effective_base_url or None,
+            api_key=provider["api_key"],
+            model=provider["model"] or None,
+            base_url=provider["base_url"] or None,
             max_tool_rounds=2,
         )
-        if reply.content:
-            memory.add("assistant", reply.content)
+        if not (reply.content or "").strip():
+            raise RuntimeError("provider returned an empty response")
         return chat_engine.normalize_workspace_response(reply.content or "", sources)
 
     try:
-        response = await asyncio.wait_for(loop.run_in_executor(None, _call), timeout=90)
+        response = await _run_with_provider_failover(lambda provider: _call(provider), providers, timeout=90)
         _persist("user", last_user)
         _persist("assistant", response.get("content", ""))
         _maybe_title(last_user)
