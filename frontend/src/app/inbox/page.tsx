@@ -1275,6 +1275,12 @@ function InboxPageInner({ defaultView }: InboxPageInnerProps) {
   }, []);
 
   useEffect(() => {
+    if (typeof window !== "undefined" && window.location.pathname === "/whatsapp-groups") {
+      // The raw mirror does not need the dashboard WhatsApp status probe.
+      // A slow status service must not block or crash the group directory.
+      return;
+    }
+
     let cancelled = false;
 
     const loadWhatsAppStatus = async () => {
@@ -2226,9 +2232,10 @@ return {
     .sort((a, b) => (messageDateValue(b.latest)?.getTime() || 0) - (messageDateValue(a.latest)?.getTime() || 0));
 
   // Apply search filter to broker feed and direct chats
+  const validBrokerFeed = brokerFeed.filter((b: any) => b && typeof b === "object");
   const filteredBrokerFeed = !query
-    ? brokerFeed
-    : brokerFeed.filter((b: any) => {
+    ? validBrokerFeed
+    : validBrokerFeed.filter((b: any) => {
         const haystack = [
           b.canonical_name,
           b.name,
