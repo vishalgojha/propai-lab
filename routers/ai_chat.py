@@ -103,6 +103,7 @@ def _wrap_chat_response(response: dict, is_inbox: bool = False):
 def _preferred_workspace_provider(tenant_id: str | None) -> dict:
     """Resolve workspace-saved credentials before deployment environment keys."""
     try:
+        import llm as _llm
         providers = storage.get_llm_providers(tenant_id=tenant_id)
         def value(provider, key: str, default=""):
             if isinstance(provider, dict):
@@ -124,12 +125,22 @@ def _preferred_workspace_provider(tenant_id: str | None) -> dict:
             # deterministic if legacy data contains more than one.
             candidates.sort(key=lambda p: (str(value(p, "provider_name")).lower() == "merge", str(value(p, "provider_name")).lower()))
             p = candidates[0]
-            return {
+            workspace_provider = {
                 "api_key": value(p, "api_key").strip(),
                 "model": value(p, "model_name").strip(),
                 "base_url": (value(p, "base_url") or "https://api.openai.com/v1").strip().rstrip("/"),
                 "provider": value(p, "provider_name"),
             }
+            if _llm.is_provider_healthy(
+                workspace_provider["api_key"],
+                workspace_provider["base_url"],
+                workspace_provider["model"],
+            ):
+                return workspace_provider
+            _logger.warning(
+                "Workspace provider %s is unhealthy; falling back to deployment provider chain",
+                workspace_provider["provider"],
+            )
     except Exception as exc:
         _logger.warning("Workspace LLM provider lookup failed: %s", exc)
 
