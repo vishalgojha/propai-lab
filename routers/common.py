@@ -642,15 +642,51 @@ async def _run_workspace_agent(
     api_key = ""
     base_url = ""
     provider_name = ""
+
+    # Workspace providers are authoritative.  The deployment environment can
+    # contain an old/empty Merge configuration; resolving it first used to
+    # prevent self-chat from ever reaching keys saved in the workspace.
     try:
-        api_key = _llm.get_client().api_key
-        base_url = _llm.get_client().base_url.base_url.rstrip("/") if hasattr(_llm.get_client().base_url, "base_url") else str(_llm.get_client().base_url).rstrip("/")
-        configured_model = configured_model or _llm.get_model()
-        provider_name = _llm.get_provider_name()
-    except Exception:
-        pass
+        providers = await asyncio.to_thread(storage.get_llm_providers, tenant_id=tenant_id)
+
+        def provider_value(provider, name: str, default=""):
+            if isinstance(provider, dict):
+                return provider.get(name, default)
+            return getattr(provider, name, default)
+
+        complete = [
+            provider for provider in providers
+            if str(provider_value(provider, "api_key") or "").strip()
+            and str(provider_value(provider, "model_name") or "").strip()
+        ]
+        active = [provider for provider in complete if bool(provider_value(provider, "is_active", 0))]
+        candidates = active or complete
+        if candidates:
+            # Prefer an explicitly active provider, then keep selection
+            # deterministic when legacy data has multiple active rows.
+            candidates.sort(key=lambda provider: str(provider_value(provider, "provider_name")).lower())
+            provider = candidates[0]
+            api_key = str(provider_value(provider, "api_key") or "").strip()
+            base_url = str(provider_value(provider, "base_url") or "https://api.doubleword.ai/v1").strip().rstrip("/")
+            configured_model = configured_model or str(provider_value(provider, "model_name") or "").strip()
+            provider_name = str(provider_value(provider, "provider_name") or "workspace")
+    except Exception as exc:
+        logger.warning("Workspace LLM provider lookup failed: %s", exc)
+
+    # Only use deployment-level providers when this tenant has no complete
+    # workspace provider. This keeps the old env chain as a safe fallback,
+    # without allowing it to shadow saved workspace credentials.
     if not api_key or api_key == "none":
-        provider = await asyncio.to_thread(storage.get_active_llm_provider)
+        try:
+            env_client = _llm.get_client()
+            api_key = env_client.api_key
+            base_url = env_client.base_url.base_url.rstrip("/") if hasattr(env_client.base_url, "base_url") else str(env_client.base_url).rstrip("/")
+            configured_model = configured_model or _llm.get_model()
+            provider_name = _llm.get_provider_name()
+        except Exception:
+            pass
+    if not api_key or api_key == "none":
+        provider = await asyncio.to_thread(storage.get_active_llm_provider, tenant_id=tenant_id)
         if provider:
             api_key = (provider.api_key or "").strip()
             base_url = (provider.base_url or "https://api.doubleword.ai/v1").strip().rstrip("/")
