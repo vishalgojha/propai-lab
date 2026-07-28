@@ -83,6 +83,17 @@ export async function signOut() {
   sessionLoaded = true;
 }
 
+// A failed /auth/v1/user request means the browser has an unusable access
+// token (for example, one persisted before a key/session rotation). Clear
+// only this browser's copy so the app can return to the login screen instead
+// of continuing to render with a stale user object.
+export async function clearInvalidLocalSession() {
+  const { error } = await getSupabase().auth.signOut({ scope: "local" });
+  if (error) throw error;
+  cachedSession = null;
+  sessionLoaded = true;
+}
+
 export async function getSession(): Promise<Session | null> {
   if (sessionLoaded && !sessionNeedsRefresh(cachedSession)) return cachedSession;
   if (sessionLoaded && cachedSession) {
@@ -138,7 +149,8 @@ async function refreshCurrentSession(): Promise<Session | null> {
 }
 
 export async function getUser(): Promise<User | null> {
-  const { data } = await getSupabase().auth.getUser();
+  const { data, error } = await getSupabase().auth.getUser();
+  if (error) throw error;
   return data.user;
 }
 

@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useEffect, useState, ReactNode } from "react";
 import { User, Session } from "@supabase/supabase-js";
-import { getUser, getSession, onAuthStateChange, signOut } from "@/lib/auth";
+import { clearInvalidLocalSession, getUser, getSession, onAuthStateChange, signOut } from "@/lib/auth";
 import { getAuthMe, setActiveTenantId } from "@/lib/api";
 
 interface AuthContextType {
@@ -15,6 +15,11 @@ interface AuthContextType {
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
+
+function isUnauthorizedAuthError(error: unknown) {
+  if (!error || typeof error !== "object") return false;
+  return "status" in error && (error as { status?: unknown }).status === 401;
+}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
@@ -54,6 +59,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let mounted = true;
 
+    const clearUnauthorizedSession = async (error: unknown) => {
+      if (!isUnauthorizedAuthError(error)) return;
+      try {
+        await clearInvalidLocalSession();
+      } catch {
+        // The local storage cleanup is best-effort. Do not retain a user
+        // object after the auth server has rejected its token.
+      }
+      if (!mounted) return;
+      setSession(null);
+      setUser(null);
+      setActiveTenantId(null);
+      setError(null);
+    };
+
     const initAuth = async () => {
       try {
         const sessionData = await withTimeout(getSession(), 5000, "session");
@@ -69,8 +89,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               setUser(userData ?? sessionData?.user ?? null);
               void syncActiveTenant(userData ?? sessionData?.user ?? null);
             })
-            .catch(() => {
-              // Keep the cached session and tenant if the live user lookup is slow.
+            .catch((error) => {
+              // A transport failure can be transient, but an explicit 401 is
+              // definitive: keeping the cached user lets protected routes
+              // render in an inconsistent state.
+              void clearUnauthorizedSession(error);
             });
         }
       } catch (err) {
@@ -115,8 +138,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setUser(userData ?? sessionData?.user ?? null);
           void syncActiveTenant(userData ?? sessionData?.user ?? null);
         })
-        .catch(() => {
-          // Keep the cached session and tenant if the live user lookup is slow.
+        .catch(async (error) => {
+          if (!isUnauthorizedAuthError(error)) return;
+          try {
+            await clearInvalidLocalSession();
+          } catch {
+            // Best-effort local cleanup; state is cleared below either way.
+          }
+          setSession(null);
+          setUser(null);
+          setActiveTenantId(null);
+          setError(null);
         });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to verify your session right now.");
