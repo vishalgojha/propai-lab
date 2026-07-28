@@ -1,6 +1,8 @@
 // Bump this whenever the app shell changes so an old cache cannot keep serving
 // deployment-specific Next.js chunks after a frontend redeploy.
-const CACHE = "propai-v5";
+// Bump on every frontend deployment so cached JS cannot retain stale
+// deployment-time environment values such as the Supabase public key.
+const CACHE = "propai-v6";
 const STATIC_ASSETS = [
   "/offline.html",
   "/pwa-192x192.png",
