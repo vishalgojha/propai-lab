@@ -16,6 +16,7 @@ export type ParsedNaturalSearch = {
   furnishing: "furnished" | "semi-furnished" | "unfurnished" | null;
   tokens: string[];
   matchedLocalities: LocalitySummary[];
+  buildingName?: string | null;
   _confidence?: number;
 };
 
@@ -848,7 +849,10 @@ async function fetchParsedQuery(query: string, localities: LocalitySummary[]): P
     // If confidence is 0, the LLM thinks this isn't a property query at all.
     // Return null so the caller can detect no-intent.
     if (data.confidence === 0) {
-      return { query, locality: null, localityStated: false, statedLocalityText: null, bhk: null, intent: null, asset: null, minPrice: null, maxPrice: null, furnishing: null, tokens: parsedQueryTokens(query), matchedLocalities: [], _confidence: 0 };
+      return { query, locality: null, localityStated: false, statedLocalityText: null, bhk: null, intent: null, asset: null, minPrice: null, maxPrice: null, furnishing: null,       tokens: parsedQueryTokens(query),
+      matchedLocalities: [],
+      buildingName: null,
+      _confidence: 0 };
     }
 
     const backendLocalities = data.localities || [];
@@ -871,6 +875,7 @@ async function fetchParsedQuery(query: string, localities: LocalitySummary[]): P
       furnishing: data.furnishing ?? null,
       tokens: parsedQueryTokens(query),
       matchedLocalities,
+      buildingName: data.buildingName || null,
       _confidence: data.confidence ?? 1,
     };
   } catch {
@@ -905,11 +910,47 @@ export async function searchNaturalLanguageListings(
 
   // ── No-intent detection ──────────────────────────────────────────
   // If the LLM returned confidence 0 (not a property query) AND the
-  // regex parser also found zero real-estate signals, surface a
-  // clarification prompt instead of returning random/unrelated results.
+  // regex parser also found zero real-estate signals, AND no building
+  // name was matched, surface a clarification prompt.
   const llmConfident = llmParsed?._confidence != null && llmParsed._confidence > 0;
   const regexHasIntent = hasRealEstateIntent(query, parsed);
-  if (!llmConfident && !regexHasIntent && query.trim().length > 0) {
+
+  // Building name fallback: if neither LLM nor regex detected intent,
+  // check if any query token matches a known building name in the DB.
+  // Also use the LLM's building name if it provided one.
+  let buildingNameMatch: string | null = parsed.buildingName || null;
+  if (!buildingNameMatch && !llmConfident && !regexHasIntent && db && query.trim().length >= 2) {
+    const tokens = parsedQueryTokens(query);
+    for (const token of tokens) {
+      const like = `%${token}%`;
+      const { data: matches } = await db
+        .from("buildings")
+        .select("canonical_name")
+        .ilike("canonical_name", like)
+        .limit(1);
+      if (matches && matches.length > 0) {
+        buildingNameMatch = matches[0].canonical_name;
+        break;
+      }
+    }
+    // Also check building_name_aliases
+    if (!buildingNameMatch) {
+      for (const token of tokens) {
+        const like = `%${token}%`;
+        const { data: aliasMatches } = await db
+          .from("building_name_aliases")
+          .select("canonical_name")
+          .ilike("alias", like)
+          .limit(1);
+        if (aliasMatches && aliasMatches.length > 0) {
+          buildingNameMatch = aliasMatches[0].canonical_name;
+          break;
+        }
+      }
+    }
+  }
+
+  if (!llmConfident && !regexHasIntent && !buildingNameMatch && query.trim().length > 0) {
     return {
       parsed,
       results: [],
@@ -993,6 +1034,33 @@ export async function searchNaturalLanguageListings(
   const fields = LISTING_FIELDS.join(", ");
 
   const fetchCandidateRows = async (): Promise<NaturalSearchRow[]> => {
+    // Priority 1: Building name match from DB lookup
+    if (buildingNameMatch) {
+      let qb = db.from("listings").select(fields).order("last_seen", { ascending: false });
+      qb = qb.ilike("building_name", buildingNameMatch);
+      if (parsed.asset) qb = qb.eq("asset_type", parsed.asset);
+      const { data, error } = await qb.limit(SEARCH_CANDIDATE_LIMIT);
+      if (error) {
+        console.error("searchNaturalLanguageListings building name candidate error:", error.message);
+        return [];
+      }
+      // Also get the building's locality for the parsed object
+      if (!parsed.locality) {
+        const { data: bData } = await db
+          .from("buildings")
+          .select("micro_market")
+          .ilike("canonical_name", buildingNameMatch)
+          .limit(1);
+        if (bData && bData[0]?.micro_market) {
+          parsed.locality = bData[0].micro_market;
+          parsed.matchedLocalities = localities.filter(
+            (l) => l.locality.toLowerCase() === bData[0].micro_market.toLowerCase()
+          ).slice(0, 1);
+        }
+      }
+      return (data ?? []) as unknown as NaturalSearchRow[];
+    }
+
     const localitySlugs = parsed.matchedLocalities.map((l) => canonicalLocality(l.locality).slug).filter(Boolean);
     if (localitySlugs.length > 0) {
       let qb = db.from("listings").select(fields).order("last_seen", { ascending: false });

@@ -30,6 +30,7 @@ export async function GET(request: Request) {
 You MUST return ONLY valid JSON (no markdown, no explanation) with this exact schema:
 {
   "locality": "string or null — the best-matching locality from the known list",
+  "buildingName": "string or null — building/society name if mentioned (e.g. 'Kalpataru Vivant', 'Lodha Park')",
   "bhk": "number or null — number of bedrooms (0 for studio)",
   "intent": "\"rent\" | \"sale\" | null",
   "asset": "\"residential\" | \"commercial\" | null",
@@ -42,6 +43,7 @@ You MUST return ONLY valid JSON (no markdown, no explanation) with this exact sc
 Known localities: ${localityNames}
 
 Rules:
+- A building/society name alone (e.g. "kalpataru", "lodha park") IS a valid property query — set confidence >= 0.5 and populate buildingName.
 - If the query has NO real-estate intent (greetings, gibberish, unrelated questions), return confidence: 0 and nullify everything except confidence.
 - Map locality abbreviations to full names (e.g. "bandra w" -> "Bandra West", "andheri" -> "Andheri West").
 - Parse budget like "2 to 3 lakh" -> minPrice: 200000, maxPrice: 300000.
@@ -110,6 +112,7 @@ Rules:
       return NextResponse.json({
         locality: matchedLocality,
         localities: matchedLocality ? [matchedLocality] : [],
+        buildingName: typeof parsed.buildingName === "string" ? parsed.buildingName : null,
         bhk: typeof parsed.bhk === "number" ? parsed.bhk : null,
         intent: parsed.intent === "rent" || parsed.intent === "sale" ? parsed.intent : null,
         asset: parsed.asset === "residential" || parsed.asset === "commercial" ? parsed.asset : null,
