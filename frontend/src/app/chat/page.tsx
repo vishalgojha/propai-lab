@@ -125,7 +125,7 @@ export default function ChatPage() {
   const [sessionId, setSessionId] = useState<string>("");
   const [sessions, setSessions] = useState<api.ChatSession[]>([]);
   const [sessionsLoaded, setSessionsLoaded] = useState(false);
-  const [showSessions, setShowSessions] = useState(true);
+  const [showSessions, setShowSessions] = useState(false);
   const [sessionError, setSessionError] = useState("");
 
   const activeSessionStorageKey = user?.id ? `propai_active_chat_session:${user.id}` : "";
@@ -144,14 +144,11 @@ export default function ChatPage() {
   });
   const previousStatus = useRef(status);
 
-  // Load broker phone from profile
+  // The phone is only conversational broker context. Session ownership is
+  // derived server-side from the authenticated user and must never switch
+  // between auth UUID and profile phone while this page is mounted.
   useEffect(() => {
-    // Supabase password sessions may not carry a phone claim. Use the stable
-    // user id as the session owner until the profile phone is available, so
-    // chat persistence does not silently get skipped.
-    const phone = user?.phone || user?.id || "";
-    if (!phone) return;
-    setBrokerPhone(phone);
+    setBrokerPhone(user?.phone || "");
     let cancelled = false;
     void (async () => {
       try {
@@ -166,10 +163,9 @@ export default function ChatPage() {
     };
   }, [user]);
 
-  // Load sessions once brokerPhone is available
-  const loadSessions = useCallback(async (phone: string) => {
+  const loadSessions = useCallback(async () => {
     try {
-      const data = await api.listChatSessions(phone);
+      const data = await api.listChatSessions();
       setSessions(data);
       return data;
     } catch {
@@ -179,10 +175,10 @@ export default function ChatPage() {
   }, []);
 
   useEffect(() => {
-    if (authLoading || !brokerPhone) return;
+    if (authLoading || !user?.id) return;
     let cancelled = false;
     void (async () => {
-      const data = await loadSessions(brokerPhone);
+      const data = await loadSessions();
       if (cancelled) return;
       setSessionsLoaded(true);
       if (data.length > 0 && !sessionId) {
@@ -204,7 +200,7 @@ export default function ChatPage() {
     return () => {
       cancelled = true;
     };
-  }, [activeSessionStorageKey, authLoading, brokerPhone, loadSessions, sessionId, setMessages]);
+  }, [activeSessionStorageKey, authLoading, loadSessions, sessionId, setMessages, user?.id]);
 
   // Keep the selected thread stable across tab switches, refreshes, and route
   // remounts. Messages themselves remain persisted in Supabase by the API.
@@ -221,35 +217,33 @@ export default function ChatPage() {
   // appear immediately instead of only after a full page reload.
   useEffect(() => {
     const wasBusy = previousStatus.current === "submitted" || previousStatus.current === "streaming";
-    if (wasBusy && status === "ready" && brokerPhone) {
-      void loadSessions(brokerPhone);
+    if (wasBusy && status === "ready" && user?.id) {
+      void loadSessions();
     }
     previousStatus.current = status;
-  }, [brokerPhone, loadSessions, status]);
+  }, [loadSessions, status, user?.id]);
 
   // Create a new session
   const handleNewChat = useCallback(async () => {
-    // Starting a chat is a local UI action. Do not block it while the
-    // profile phone is still hydrating; the persistent session is created
-    // when the first message is sent.
+    // Create the durable row immediately. The thread must exist before the
+    // first message, provider call, navigation, or browser refresh.
     sessionIdRef.current = "";
     setSessionId("");
     setMessages([]);
     setInput("");
     setSessionError("");
     inputRef.current?.focus();
-    if (!brokerPhone) return;
     try {
-      const session = await api.createChatSession(brokerPhone);
+      const session = await api.createChatSession();
       if (!session?.id) throw new Error("Could not create a new chat session.");
       sessionIdRef.current = session.id;
       setSessionId(session.id);
-      const updated = await loadSessions(brokerPhone);
+      const updated = await loadSessions();
       setSessions(updated);
     } catch (error) {
       setSessionError(error instanceof Error ? error.message : "Could not create a chat session.");
     }
-  }, [brokerPhone, loadSessions, setMessages]);
+  }, [loadSessions, setMessages]);
 
   // Switch to an existing session
   const handleSwitchSession = useCallback(async (id: string) => {
@@ -270,7 +264,7 @@ export default function ChatPage() {
     e.stopPropagation();
     try {
       await api.deleteChatSession(id);
-      const updated = await loadSessions(brokerPhone);
+      const updated = await loadSessions();
       setSessions(updated);
       if (id === sessionId) {
         if (updated.length > 0) {
@@ -280,22 +274,22 @@ export default function ChatPage() {
         }
       }
     } catch {}
-  }, [brokerPhone, sessionId, loadSessions, handleSwitchSession, handleNewChat]);
+  }, [sessionId, loadSessions, handleSwitchSession, handleNewChat]);
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!input.trim() || status === "submitted") return;
     setSessionError("");
     // Create session on first message if none exists
-    if (!sessionId && brokerPhone) {
+    if (!sessionId) {
       const text = input.trim();
-      api.createChatSession(brokerPhone, text.slice(0, 80)).then((session) => {
+      api.createChatSession(text.slice(0, 80)).then((session) => {
         if (!session?.id) throw new Error("Could not create a chat session.");
         sessionIdRef.current = session.id;
         setSessionId(session.id);
         sendMessage({ text });
         setInput("");
-        return loadSessions(brokerPhone).then(setSessions);
+        return loadSessions().then(setSessions);
       }).catch((error) => {
         setSessionError(error instanceof Error ? error.message : "Could not create a chat session.");
       });
@@ -306,7 +300,7 @@ export default function ChatPage() {
   }
 
   return (
-    <div className="flex h-[calc(100dvh-160px)] lg:h-[calc(100vh-160px)] max-w-7xl mx-auto px-4 lg:px-0">
+    <div className="relative flex h-[calc(100dvh-160px)] lg:h-[calc(100vh-160px)] max-w-7xl mx-auto px-4 lg:px-0">
       <style>{`
         @keyframes typing-bounce {
           0%, 80%, 100% { transform: translateY(0); }
@@ -381,7 +375,15 @@ export default function ChatPage() {
           </div>
         )}
         {/* Mobile: new chat button */}
-        <div className="lg:hidden mb-3 flex justify-end">
+        <div className="lg:hidden mb-3 flex justify-between">
+          <button
+            type="button"
+            onClick={() => setShowSessions((visible) => !visible)}
+            className="flex items-center gap-1.5 rounded-lg border border-white/10 px-3 py-1.5 text-xs font-medium text-zinc-400"
+          >
+            <PanelLeft className="h-3.5 w-3.5" />
+            {showSessions ? "Hide chats" : "Chats"}
+          </button>
           <button
             onClick={handleNewChat}
             className="flex items-center gap-1.5 rounded-lg border border-white/10 px-3 py-1.5 text-xs font-medium text-zinc-400 hover:border-blue-500/30 hover:text-white"
@@ -390,6 +392,25 @@ export default function ChatPage() {
             New chat
           </button>
         </div>
+        {showSessions && (
+          <div className="absolute inset-x-4 top-11 z-30 max-h-[55dvh] overflow-y-auto rounded-xl border border-white/10 bg-black/95 p-2 shadow-2xl lg:hidden">
+            {sessions.map((s) => (
+              <button
+                key={s.id}
+                type="button"
+                onClick={() => { void handleSwitchSession(s.id); setShowSessions(false); }}
+                className={`mb-1 flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs ${s.id === sessionId ? "bg-white/10 text-white" : "text-zinc-400"}`}
+              >
+                <MessageSquare className="h-3.5 w-3.5 shrink-0" />
+                <span className="min-w-0 flex-1 truncate">{s.title}</span>
+                <span className="text-[10px] text-zinc-600">{formatSessionTime(s.updated_at)}</span>
+              </button>
+            ))}
+            {sessionsLoaded && sessions.length === 0 && (
+              <div className="px-3 py-4 text-center text-xs text-zinc-500">No saved chats yet.</div>
+            )}
+          </div>
+        )}
 
         <div className="flex-1 overflow-y-auto space-y-3 mb-4 pr-2">
           {messages.length === 0 ? (

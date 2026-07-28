@@ -276,7 +276,7 @@ export interface RawMessage {
   source: string;
   event_id: string;
   message_uid: string;
-  raw_payload: string;
+  raw_payload: string | Record<string, unknown>;
   attachments?: string | Record<string, boolean>;
   from_me?: boolean | number;
   synced_at: string;
@@ -822,12 +822,12 @@ export interface ChatMessage {
   created_at: string;
 }
 
-export function listChatSessions(brokerPhone: string): Promise<ChatSession[]> {
-  return fetchJSON<ChatSession[]>(`/ai/chat/sessions?broker_phone=${encodeURIComponent(brokerPhone)}`);
+export function listChatSessions(): Promise<ChatSession[]> {
+  return fetchJSON<ChatSession[]>("/ai/chat/sessions");
 }
 
-export function createChatSession(brokerPhone: string, title = "New chat"): Promise<ChatSession> {
-  return fetchJSON<ChatSession>(`/ai/chat/sessions?broker_phone=${encodeURIComponent(brokerPhone)}&title=${encodeURIComponent(title)}`, { method: "POST" });
+export function createChatSession(title = "New chat"): Promise<ChatSession> {
+  return fetchJSON<ChatSession>(`/ai/chat/sessions?title=${encodeURIComponent(title)}`, { method: "POST" });
 }
 
 export function getChatSessionMessages(sessionId: string): Promise<ChatMessage[]> {

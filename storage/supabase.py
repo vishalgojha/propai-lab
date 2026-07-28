@@ -3638,6 +3638,26 @@ class SupabaseStorage(Storage):
         res = q.execute()
         return res.data or []
 
+    def adopt_chat_session_owners(
+        self,
+        owner_keys: list[str],
+        canonical_owner: str,
+        tenant_id: str | None = None,
+    ) -> None:
+        """Move legacy per-phone/per-UUID chat threads to one authenticated owner."""
+        aliases = [str(key).strip() for key in owner_keys if str(key).strip() and str(key).strip() != canonical_owner]
+        if not aliases:
+            return
+        tid = tenant_id or self._tenant_id
+        q = (
+            self.client.table("ai_chat_sessions")
+            .update({"broker_phone": canonical_owner})
+            .in_("broker_phone", aliases)
+        )
+        if tid:
+            q = q.eq("tenant_id", tid)
+        q.execute()
+
     def create_chat_session(self, broker_phone: str, title: str = "New chat", tenant_id: str | None = None) -> dict | None:
         tid = tenant_id or self._tenant_id
         payload = {"broker_phone": broker_phone, "title": title}
@@ -3649,6 +3669,17 @@ class SupabaseStorage(Storage):
             .execute()
         )
         return res.data[0] if res.data else None
+
+    def get_or_create_chat_session(
+        self,
+        owner_key: str,
+        title: str = "New chat",
+        tenant_id: str | None = None,
+    ) -> dict | None:
+        sessions = self.list_chat_sessions(owner_key, limit=1, tenant_id=tenant_id)
+        if sessions:
+            return sessions[0]
+        return self.create_chat_session(owner_key, title=title, tenant_id=tenant_id)
 
     def get_chat_session(self, session_id: str, tenant_id: str | None = None) -> dict | None:
         tid = tenant_id or self._tenant_id
@@ -3673,7 +3704,8 @@ class SupabaseStorage(Storage):
 
     def touch_chat_session(self, session_id: str, tenant_id: str | None = None) -> None:
         tid = tenant_id or self._tenant_id
-        q = self.client.table("ai_chat_sessions").update({"updated_at": "now()"}).eq("id", session_id)
+        updated_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        q = self.client.table("ai_chat_sessions").update({"updated_at": updated_at}).eq("id", session_id)
         if tid:
             q = q.eq("tenant_id", tid)
         q.execute()
@@ -3696,6 +3728,30 @@ class SupabaseStorage(Storage):
             .execute()
         )
         return res.data[0] if res.data else None
+
+    def add_chat_message_if_new(
+        self,
+        session_id: str,
+        role: str,
+        content: str,
+        tenant_id: str | None = None,
+    ) -> dict | None:
+        """Persist a turn once even when a transport retries the same request."""
+        clean = str(content or "").strip()
+        if not clean:
+            return None
+        tid = tenant_id or self._tenant_id
+        q = (
+            self.client.table("ai_chat_messages")
+            .select("id,role,content")
+            .eq("session_id", session_id)
+        )
+        if tid:
+            q = q.eq("tenant_id", tid)
+        latest = q.order("created_at", desc=True).limit(1).execute().data or []
+        if latest and latest[0].get("role") == role and str(latest[0].get("content") or "").strip() == clean:
+            return latest[0]
+        return self.add_chat_message(session_id, role, clean, tenant_id=tenant_id)
 
     def get_ai_chat_messages(self, session_id: str, limit: int = 200, tenant_id: str | None = None) -> list[dict]:
         """Return persisted AI-chat messages.

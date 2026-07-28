@@ -724,17 +724,54 @@ async def ai_config(user: dict = Depends(require_user), tenant_id: str | None = 
     }
 
 
+async def _chat_owner_context(user: dict, tenant_id: str | None) -> tuple[str, list[str]]:
+    """Return one durable owner plus legacy aliases created by older clients."""
+    user_id = str(user.get("id") or "").strip()
+    if not user_id:
+        raise HTTPException(401, "Authenticated user id is missing")
+    canonical = f"user:{user_id}"
+    aliases = [canonical, user_id, str(user.get("phone") or "").strip()]
+    try:
+        profile = await asyncio.to_thread(
+            storage.get_user_profile,
+            auth_user_id=user_id,
+            tenant_id=tenant_id,
+        )
+        aliases.extend([
+            str((profile or {}).get("phone") or "").strip(),
+            str((profile or {}).get("whatsapp_number") or "").strip(),
+        ])
+    except Exception:
+        pass
+    return canonical, list(dict.fromkeys(alias for alias in aliases if alias))
+
+
+async def _owned_chat_session(session_id: str, user: dict, tenant_id: str | None) -> dict:
+    session = await asyncio.to_thread(storage.get_chat_session, session_id, tenant_id)
+    if not session:
+        raise HTTPException(404, "Session not found")
+    canonical, aliases = await _chat_owner_context(user, tenant_id)
+    if str(session.get("broker_phone") or "") not in aliases:
+        raise HTTPException(403, "Session does not belong to this user")
+    if session.get("broker_phone") != canonical:
+        await asyncio.to_thread(storage.adopt_chat_session_owners, aliases, canonical, tenant_id)
+        session["broker_phone"] = canonical
+    return session
+
+
 @router.get("/api/ai/chat/sessions")
 async def list_chat_sessions(broker_phone: str = "", limit: int = 50, user: dict = Depends(require_user), tenant_id: str | None = Depends(get_tenant_context)):
     tenant_id = tenant_id or await asyncio.to_thread(_resolve_active_organization_id, user, None)
-    owner_key = broker_phone.strip() or (user.get("phone") or "").strip() or f"user:{user.get('id', '')}"
+    owner_key, aliases = await _chat_owner_context(user, tenant_id)
+    await asyncio.to_thread(storage.adopt_chat_session_owners, aliases, owner_key, tenant_id)
     return storage.list_chat_sessions(owner_key, limit=limit, tenant_id=tenant_id)
 
 
 @router.post("/api/ai/chat/sessions")
 async def create_chat_session(broker_phone: str = "", title: str = "New chat", user: dict = Depends(require_user), tenant_id: str | None = Depends(get_tenant_context)):
     tenant_id = tenant_id or await asyncio.to_thread(_resolve_active_organization_id, user, None)
-    owner_key = broker_phone.strip() or (user.get("phone") or "").strip() or f"user:{user.get('id', '')}"
+    owner_key, aliases = await _chat_owner_context(user, tenant_id)
+    await asyncio.to_thread(storage.adopt_chat_session_owners, aliases, owner_key, tenant_id)
     session = await asyncio.to_thread(storage.create_chat_session, owner_key, title, tenant_id)
     if not session:
         raise HTTPException(500, "Could not create chat session")
@@ -744,15 +781,14 @@ async def create_chat_session(broker_phone: str = "", title: str = "New chat", u
 @router.get("/api/ai/chat/sessions/{session_id}/messages")
 async def get_chat_session_messages(session_id: str, user: dict = Depends(require_user), tenant_id: str | None = Depends(get_tenant_context)):
     tenant_id = tenant_id or await asyncio.to_thread(_resolve_active_organization_id, user, None)
-    session = storage.get_chat_session(session_id, tenant_id=tenant_id)
-    if not session:
-        raise HTTPException(404, "Session not found")
+    await _owned_chat_session(session_id, user, tenant_id)
     return storage.get_ai_chat_messages(session_id, tenant_id=tenant_id)
 
 
 @router.delete("/api/ai/chat/sessions/{session_id}")
 async def delete_chat_session(session_id: str, user: dict = Depends(require_user), tenant_id: str | None = Depends(get_tenant_context)):
     tenant_id = tenant_id or await asyncio.to_thread(_resolve_active_organization_id, user, None)
+    await _owned_chat_session(session_id, user, tenant_id)
     storage.delete_chat_session(session_id, tenant_id=tenant_id)
     return {"ok": True}
 
@@ -766,8 +802,35 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
     # from the authenticated organization membership for every chat request so
     # workspace-saved provider keys are actually visible to the router.
     tenant_id = await asyncio.to_thread(_resolve_active_organization_id, user, tenant_id)
+    if req.session_id:
+        await _owned_chat_session(req.session_id, user, tenant_id)
     session_id = req.session_id or "default"
-    memory = get_memory(session_id)
+    persisted_messages = (
+        await asyncio.to_thread(storage.get_ai_chat_messages, req.session_id, 200, tenant_id)
+        if req.session_id
+        else []
+    )
+    effective_messages = [
+        {"role": row.get("role"), "content": str(row.get("content") or "")}
+        for row in persisted_messages
+        if row.get("role") in {"user", "assistant", "system"} and str(row.get("content") or "").strip()
+    ]
+    for incoming in req.messages:
+        content = str(incoming.get("content") or "").strip()
+        role = incoming.get("role")
+        if role not in {"user", "assistant", "system"} or not content:
+            continue
+        if not effective_messages or effective_messages[-1] != {"role": role, "content": content}:
+            effective_messages.append({"role": role, "content": content})
+    # The database transcript is authoritative. Use a fresh in-process memory
+    # key for each durable turn so a long-lived API worker cannot append the
+    # same restored history repeatedly after refreshes or retries.
+    memory_revision = (
+        str(persisted_messages[-1].get("id") or len(persisted_messages))
+        if persisted_messages
+        else "new"
+    )
+    memory = get_memory(f"{session_id}:{memory_revision}:{len(effective_messages)}")
     effective_model = (req.model or "").strip()
     providers = _workspace_provider_candidates(tenant_id, effective_model)
     if (req.api_key or "").strip():
@@ -782,7 +845,7 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
     if not providers:
         providers = [{"api_key": "", "model": effective_model, "base_url": "", "provider": "none"}]
 
-    for msg in req.messages:
+    for msg in effective_messages:
         role = msg.get("role", "")
         content = str(msg.get("content", "")).strip()
         if content:
@@ -793,7 +856,7 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
         if not req.session_id or not content:
             return
         try:
-            storage.add_chat_message(req.session_id, role, content, tenant_id=tenant_id)
+            storage.add_chat_message_if_new(req.session_id, role, content, tenant_id=tenant_id)
             storage.touch_chat_session(req.session_id, tenant_id=tenant_id)
         except Exception as exc:
             _logger.exception("Could not persist AI chat message session=%s role=%s: %s", req.session_id, role, exc)
@@ -824,10 +887,15 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
             pass
 
     last_user = ""
-    for msg in reversed(req.messages):
+    for msg in reversed(effective_messages):
         if msg.get("role") == "user":
             last_user = str(msg.get("content", "")).strip()
             break
+    # Save the user turn before any provider/search work. A failed provider
+    # must not make the conversation disappear on refresh.
+    if last_user:
+        _persist("user", last_user)
+        _maybe_title(last_user)
 
     _is_inbox = req.source == "inbox"
 
@@ -867,7 +935,7 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
         try:
             reply = await _run_with_provider_failover(
                 lambda provider: chat_engine.get_conversational_reply(
-                    req.messages, api_key=provider["api_key"], model=provider["model"] or None,
+                    effective_messages, api_key=provider["api_key"], model=provider["model"] or None,
                     base_url=provider["base_url"] or None, broker=broker
                 ),
                 providers,
@@ -934,7 +1002,7 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
     if last_user and not re.search(r"\b\d+(?:\.5)?\s*(?:bhk|bed(?:room)?s?)\b|\b(?:rent|rental|lease|sale|sell|buy|purchase)\b", last_user, re.IGNORECASE):
         previous_users = [
             str(msg.get("content", "")).strip()
-            for msg in req.messages[:-1]
+            for msg in effective_messages[:-1]
             if msg.get("role") == "user" and str(msg.get("content", "")).strip()
         ]
         if previous_users:
