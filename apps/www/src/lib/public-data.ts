@@ -139,7 +139,7 @@ export async function getPublicDataOverview(options?: {
         .select("canonical_name as display_name, listing_count, market_count")
         .order("listing_count", { ascending: false })
         .filter("is_hidden", "!=", true)
-        .limit(8),
+        .limit(20),
     ]);
 
     const [rawRowsRes, parsedRowsRes, listingRowsRes] = await Promise.all([
@@ -154,9 +154,13 @@ export async function getPublicDataOverview(options?: {
       }
     }
     if (!brokerRes.error) {
+      const seenBrokerNames = new Set<string>();
       for (const row of brokerRes.data ?? []) {
+        const key = ((row as any).display_name || "").toLowerCase();
+        if (!key || seenBrokerNames.has(key)) continue;
+        seenBrokerNames.add(key);
         topBrokers.push({
-          display_name: (row as any).display_name || (row as any).canonical_name || "",
+          display_name: (row as any).display_name || "",
           listing_count: (row as any).listing_count ?? 0,
           market_count: (row as any).market_count ?? 0,
         });
