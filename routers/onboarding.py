@@ -86,6 +86,7 @@ def _suggestion_score(
     participants: int,
     last_message_at: str | None,
     *,
+    group_jid: str = "",
     include_content: bool = False,
 ) -> dict:
     """Compute a suggestion score and reasons for a WhatsApp group.
@@ -142,17 +143,27 @@ def _suggestion_score(
     # request this richer signal for one selected group only.
     if include_content:
         try:
-            recent_messages = (
-                storage.client.table("raw_messages")
-                .select("message")
-                .eq("tenant_id", org_id)
-                .eq("group_name", group_name)
-                .order("created_at", desc=True)
-                .limit(10)
-                .execute()
-                .data
-                or []
-            )
+            recent_messages = []
+            seen_ids = set()
+            for identity in dict.fromkeys([group_name, group_jid]):
+                if not identity:
+                    continue
+                rows = (
+                    storage.client.table("raw_messages")
+                    .select("id,message")
+                    .eq("tenant_id", org_id)
+                    .eq("group_name", identity)
+                    .order("created_at", desc=True)
+                    .limit(10)
+                    .execute()
+                    .data
+                    or []
+                )
+                for row in rows:
+                    if row.get("id") not in seen_ids:
+                        seen_ids.add(row.get("id"))
+                        recent_messages.append(row)
+            recent_messages = recent_messages[:10]
 
             has_bhk = False
             has_price = False
@@ -244,7 +255,9 @@ def _group_directory(org_id: str, broker_id: str, connection_id: int) -> list[di
         # Compute suggestion score for unconnected groups
         suggestion = None
         if not is_connected:
-            suggestion = _suggestion_score(org_id, group_name, participants, last_message_at)
+            suggestion = _suggestion_score(
+                org_id, group_name, participants, last_message_at, group_jid=group_jid
+            )
         
         scored_groups.append({
             "group_jid": group_jid,
@@ -268,18 +281,22 @@ def _group_directory(org_id: str, broker_id: str, connection_id: int) -> list[di
     return unconnected_groups + connected_groups
 
 
-def _sample_senders(org_id: str, group_name: str) -> list[str]:
-    rows = (
-        storage.client.table("raw_messages")
-        .select("sender_phone,sender_jid")
-        .eq("tenant_id", org_id)
-        .eq("group_name", group_name)
-        .order("created_at", desc=True)
-        .limit(SAMPLE_LIMIT)
-        .execute()
-        .data
-        or []
-    )
+def _sample_senders(org_id: str, group_name: str, group_jid: str = "") -> list[str]:
+    rows = []
+    for identity in dict.fromkeys([group_name, group_jid]):
+        if not identity:
+            continue
+        rows.extend(
+            storage.client.table("raw_messages")
+            .select("sender_phone,sender_jid")
+            .eq("tenant_id", org_id)
+            .eq("group_name", identity)
+            .order("created_at", desc=True)
+            .limit(SAMPLE_LIMIT)
+            .execute()
+            .data
+            or []
+        )
     phones = set()
     for row in rows:
         phone = _normalize_real_phone(row.get("sender_phone"))
@@ -290,8 +307,8 @@ def _sample_senders(org_id: str, group_name: str) -> list[str]:
     return sorted(phones)
 
 
-def _overlap(org_id: str, group_name: str) -> dict:
-    sample = _sample_senders(org_id, group_name)
+def _overlap(org_id: str, group_name: str, group_jid: str = "") -> dict:
+    sample = _sample_senders(org_id, group_name, group_jid)
     known = set()
     if sample:
         known_rows = (
@@ -319,7 +336,7 @@ def _attach_directory_overlap(org_id: str, groups: list[dict], limit: int = 20) 
     candidates += [group for group in groups if not group["connected"]][:limit]
     for group in candidates:
         try:
-            overlap = _overlap(org_id, group["group_name"])
+            overlap = _overlap(org_id, group["group_name"], group.get("group_jid", ""))
         except Exception:
             continue
         score = overlap["overlap_score"]
@@ -338,6 +355,14 @@ def _attach_directory_overlap(org_id: str, groups: list[dict], limit: int = 20) 
             "overlap_status": status,
         })
         if not group["connected"] and group.get("suggestion"):
+            group["suggestion"] = _suggestion_score(
+                org_id,
+                group["group_name"],
+                group.get("participants", 0),
+                group.get("last_message_at"),
+                group_jid=group.get("group_jid", ""),
+                include_content=True,
+            )
             suggestion = group["suggestion"]
             if status == "high_overlap":
                 suggestion["score"] = round(max(0.0, suggestion["score"] - 0.20), 3)
@@ -489,7 +514,7 @@ async def check_group(
     group = next((item for item in groups if item["group_jid"] == body.group_jid), None)
     if not group:
         raise HTTPException(404, "Group is not available on this WhatsApp connection")
-    overlap = _overlap(org_id, group["group_name"])
+    overlap = _overlap(org_id, group["group_name"], group["group_jid"])
     return {"group": group, **overlap, "threshold": OVERLAP_WARNING_THRESHOLD, "cap": _cap_state(org_id, body.whatsapp_connection_id)}
 
 
@@ -508,7 +533,7 @@ async def connect_group(
         raise HTTPException(404, "Group is not available on this WhatsApp connection")
 
     cap = _cap_state(org_id, body.whatsapp_connection_id)
-    overlap = _overlap(org_id, group["group_name"])
+    overlap = _overlap(org_id, group["group_name"], group["group_jid"])
     warnings = []
     if overlap["high_overlap"] and not body.confirm_overlap:
         warnings.append("This group overlaps heavily with brokers already in the network.")
@@ -532,3 +557,26 @@ async def connect_group(
     }, on_conflict="organization_id,whatsapp_connection_id,group_jid").execute()
     _upsert_registry(org_id, body.group_jid, overlap["sample_phones"])
     return {"ok": True, "group": group, "connection": (row.data or [None])[0], "cap": _cap_state(org_id, body.whatsapp_connection_id), "overlap": overlap}
+
+
+@router.post("/groups/disconnect")
+async def disconnect_group(
+    body: GroupRequest,
+    user: dict = Depends(require_user),
+    tenant_id: str | None = Depends(get_tenant_context),
+):
+    org_id = _resolve_active_organization_id(user, tenant_id)
+    await _require_org_permission(user, org_id, "manage_whatsapp")
+    _connection(org_id, body.whatsapp_connection_id)
+    result = (
+        storage.client.table("organization_group_connections")
+        .update({"is_active": False, "updated_at": datetime.now(timezone.utc).isoformat()})
+        .eq("organization_id", org_id)
+        .eq("whatsapp_connection_id", body.whatsapp_connection_id)
+        .eq("group_jid", body.group_jid)
+        .eq("is_active", True)
+        .execute()
+    )
+    if not result.data:
+        raise HTTPException(404, "Connected group not found")
+    return {"ok": True, "message": "Group disconnected", "cap": _cap_state(org_id, body.whatsapp_connection_id)}

@@ -110,6 +110,16 @@ export function connectOnboardingGroup(
   });
 }
 
+export function disconnectOnboardingGroup(whatsappConnectionId: number, groupJid: string) {
+  return fetchJSON<{ ok: boolean; message: string; cap: OnboardingGroupCap }>("/onboarding/groups/disconnect", {
+    method: "POST",
+    body: JSON.stringify({
+      whatsapp_connection_id: whatsappConnectionId,
+      group_jid: groupJid,
+    }),
+  });
+}
+
 export async function fetchFormData<T>(url: string, formData: FormData, timeoutMs = API_TIMEOUT_MS): Promise<T> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);

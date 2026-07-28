@@ -182,6 +182,19 @@ async def _run_self_chat_agent(
     casual: bool = False,
     tenant_id: str | None = None,
 ) -> dict:
+    # WhatsApp self-chat must use the same workspace provider routing as the
+    # portal. This includes active providers saved in the workspace, rather
+    # than only deployment-level environment variables.
+    return await _run_workspace_agent(
+        messages,
+        model=model,
+        session_id=session_id,
+        tenant_id=tenant_id,
+    )
+
+    # Kept below temporarily while preserving the old implementation during
+    # rollout; it is unreachable and can be removed after deployment parity is
+    # verified.
     import llm as _llm
     from lab import ai_chat_engine as chat_engine
     from ai_chat_engine import get_memory
@@ -385,13 +398,8 @@ def _stream_self_chat_enabled() -> bool:
 
 async def _self_chat_ndjson(text: str, broker_id: str, casual: bool):
     try:
-        if casual:
-            reply = await _stream_self_chat_reply(text)
-            if reply:
-                yield _ndjson_line({"event": "chunk", "delta": reply})
-                yield _ndjson_line({"event": "done", "reply": reply})
-                return
-            _logger.info("self-chat streaming returned None; falling back to sync path")
+        # Do not use the legacy env-only fast stream here. The workspace agent
+        # resolves the saved provider/key and is authoritative for self-chat.
         response = await _run_self_chat_agent(
             [{"role": "user", "content": text[:1800]}],
             session_id=f"whatsmeow:{broker_id}",

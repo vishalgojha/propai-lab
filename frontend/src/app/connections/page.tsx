@@ -6,7 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Activity, Clock, Database, Inbox, List, LogOut, MessageSquare, Plus, RefreshCw, Shield, Smartphone, Trash2, AlertTriangle, Users, Zap, Lock, X, ChevronLeft, MoreVertical, User, MessageCircle, Check, AlertCircle, Hash } from "lucide-react";
 import { useAuth } from "@/lib/AuthProvider";
-import { getPhones, createPhone, deletePhone, resetPhone, disconnectPhone, connectPhone, pairCodePhone, updatePhone, fetchJSON, isLiveWhatsAppConnection, getOnboardingGroups, checkOnboardingGroup, connectOnboardingGroup, type Phone, type WhatsAppStatus, type OnboardingGroup, type OnboardingGroupCheck, type OnboardingGroupState } from "@/lib/api";
+import { getPhones, createPhone, deletePhone, resetPhone, disconnectPhone, connectPhone, pairCodePhone, updatePhone, fetchJSON, isLiveWhatsAppConnection, getOnboardingGroups, checkOnboardingGroup, connectOnboardingGroup, disconnectOnboardingGroup, type Phone, type WhatsAppStatus, type OnboardingGroup, type OnboardingGroupCheck, type OnboardingGroupState } from "@/lib/api";
 
 type HealthStatus = "healthy" | "warning" | "error";
 
@@ -665,6 +665,23 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
     }
   };
 
+  const handleDisconnect = async (group: OnboardingGroup) => {
+    if (!window.confirm(`Disconnect ${group.group_name}? Existing raw messages will be preserved.`)) return;
+    setActiveGroup(group.group_jid);
+    setError(null);
+    setMessage(null);
+    try {
+      await disconnectOnboardingGroup(phone.id, group.group_jid);
+      setMessage(`Disconnected ${group.group_name}. Raw messages were preserved.`);
+      await loadGroups();
+      await onRefresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not disconnect the group.");
+    } finally {
+      setActiveGroup(null);
+    }
+  };
+
   if (!isConnected) {
     return (
       <div className="rounded-xl border border-white/10 p-4">
@@ -776,7 +793,15 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
                   </div>
                 )}
               </div>
-              {!group.connected && (
+              {group.connected ? (
+                <button
+                  onClick={() => void handleDisconnect(group)}
+                  disabled={activeGroup === group.group_jid}
+                  className="rounded-lg border border-red-400/30 px-3 py-1.5 text-[11px] font-semibold text-red-300 hover:bg-red-500/10 disabled:opacity-50"
+                >
+                  {activeGroup === group.group_jid ? "Disconnecting..." : "Disconnect"}
+                </button>
+              ) : (
                 <div className="flex shrink-0 items-center gap-2">
                   <button
                     onClick={() => void handleConnect(group)}
