@@ -114,26 +114,30 @@ async def lifespan(app: FastAPI):
         key_path.write_text(new_key)
         print(f"  Generated API key: {new_key}")
     print(f"  Supabase: {SUPABASE_URL}")
-    provider_probe_task = asyncio.create_task(_provider_probe_loop())
-    backfill_task = asyncio.create_task(_history_backfill_loop())
-    enrichment_task = asyncio.create_task(_enrichment_loop())
-    print(f"  Background loops: provider-probe, history-backfill, enrichment")
-    yield
-    enrichment_task.cancel()
+    # Never run maintenance consumers inside the HTTP serving process by
+    # default. Uvicorn starts more than one worker, so every process used to
+    # run the same enrichment, provider-probe, and history-backfill loops.
+    # Those duplicate Supabase queries exhausted the database statement
+    # timeout and starved ordinary requests such as /api/profile and WhatsApp
+    # pairing. Enrichment has its own worker service; the remaining loops can
+    # be enabled only for a deliberately single-process maintenance service.
+    background_tasks: list[asyncio.Task] = []
+    if os.getenv("PROPAI_RUN_API_MAINTENANCE_LOOPS", "").strip().lower() in {"1", "true", "yes"}:
+        background_tasks = [
+            asyncio.create_task(_provider_probe_loop()),
+            asyncio.create_task(_history_backfill_loop()),
+            asyncio.create_task(_enrichment_loop()),
+        ]
+        print("  Background loops enabled: provider-probe, history-backfill, enrichment")
+    else:
+        print("  Background loops disabled in API web workers")
     try:
-        await enrichment_task
-    except (asyncio.CancelledError, Exception):
-        pass
-    backfill_task.cancel()
-    try:
-        await backfill_task
-    except (asyncio.CancelledError, Exception):
-        pass
-    provider_probe_task.cancel()
-    try:
-        await provider_probe_task
-    except (asyncio.CancelledError, Exception):
-        pass
+        yield
+    finally:
+        for task in background_tasks:
+            task.cancel()
+        if background_tasks:
+            await asyncio.gather(*background_tasks, return_exceptions=True)
 
 
 app = FastAPI(
