@@ -182,128 +182,66 @@ async def _run_self_chat_agent(
     casual: bool = False,
     tenant_id: str | None = None,
 ) -> dict:
-    # WhatsApp self-chat must use the same workspace provider routing as the
-    # portal. This includes active providers saved in the workspace, rather
-    # than only deployment-level environment variables.
-    return await _run_workspace_agent(
-        messages,
+    # WhatsApp transport processes restart independently of the API. Keep the
+    # thread in the same durable tables used by web chat, under a channel-
+    # specific owner, and hydrate the agent from that history on every turn.
+    durable_session = None
+    durable_messages = messages
+    if tenant_id:
+        durable_session = await asyncio.to_thread(
+            storage.get_or_create_chat_session,
+            session_id,
+            "WhatsApp self chat",
+            tenant_id,
+        )
+        if durable_session:
+            for message in messages:
+                role = str(message.get("role") or "")
+                content = str(message.get("content") or "").strip()
+                if role in {"user", "assistant"} and content:
+                    await asyncio.to_thread(
+                        storage.add_chat_message_if_new,
+                        durable_session["id"],
+                        role,
+                        content,
+                        tenant_id,
+                    )
+            rows = await asyncio.to_thread(
+                storage.get_ai_chat_messages,
+                durable_session["id"],
+                60,
+                tenant_id,
+            )
+            durable_messages = [
+                {"role": row.get("role"), "content": str(row.get("content") or "")}
+                for row in rows
+                if row.get("role") in {"user", "assistant"} and str(row.get("content") or "").strip()
+            ]
+
+    # Rebuild memory from the durable transcript for this turn. A fresh key
+    # prevents process-local memory from appending the same restored history
+    # again after each WhatsApp event.
+    memory_turn_key = str((durable_session or {}).get("id") or session_id)
+    if durable_session and rows:
+        memory_turn_key = f"{memory_turn_key}:{rows[-1].get('id') or len(rows)}"
+    response = await _run_workspace_agent(
+        durable_messages,
         model=model,
-        session_id=session_id,
+        session_id=memory_turn_key,
         tenant_id=tenant_id,
     )
-
-    # Kept below temporarily while preserving the old implementation during
-    # rollout; it is unreachable and can be removed after deployment parity is
-    # verified.
-    import llm as _llm
-    from lab import ai_chat_engine as chat_engine
-    from ai_chat_engine import get_memory
-
-    if not casual:
-        memory = get_memory(session_id)
-        for msg in messages:
-            role = msg.get("role", "")
-            content = str(msg.get("content", "")).strip()
-            if content:
-                if not memory.working or memory.working[-1].get("content") != content:
-                    memory.add(role, content)
-
-    configured_model = model.strip()
-    api_key = ""
-    base_url = ""
-    provider_name = ""
-    try:
-        configured_model = configured_model or _llm.get_model()
-        provider_name = _llm.get_provider_name()
-    except Exception:
-        pass
-    if not provider_name or provider_name == "none":
-        return {
-            "error": "api_key_required",
-            "message": "No LLM provider is available for self-chat.",
-        }
-
-    _logger.info(
-        "Self-chat agent resolved provider: %s | model=%s | casual=%s",
-        provider_name, configured_model, casual,
-    )
-
-    sources: dict = {}
-    if not casual:
-        sources = chat_engine.load_data()
-        live = chat_engine.load_live_data(getattr(storage, "db", None))
-        if isinstance(live, dict):
-            sources.update(live)
-        if not sources:
-            return {"error": "no_data", "message": "No PropAI data is available yet."}
-
-        last_user = next(
-            (str(message.get("content") or "").strip() for message in reversed(messages)
-             if message.get("role") == "user"),
-            "",
-        )
-        deterministic_query = chat_engine.parse_market_search_request(last_user)
-        if deterministic_query:
-            try:
-                result = await asyncio.to_thread(
-                    chat_engine.execute_tool,
-                    "market_search",
-                    deterministic_query,
-                    sources,
-                    getattr(storage, "db", None),
-                    tenant_id,
-                )
-                return chat_engine.deterministic_market_response(
-                    deterministic_query, result, sources
-                )
-            except Exception as exc:
-                _logger.warning("Self-chat deterministic market search failed: %s", exc)
-                return chat_engine.deterministic_market_response(
-                    deterministic_query, "", sources
-                )
-
-    loop = asyncio.get_running_loop()
-
-    def _call():
-        system_prompt = _build_self_chat_system_prompt(sources)
-        max_rounds = 0 if casual else 1
-        context_parts: list[str] = []
-        if not casual:
-            try:
-                memory = get_memory(session_id)
-                context_parts.append(memory.build_context())
-            except Exception:
-                pass
-        context_parts.append(messages[-1].get("content", "") if messages else "")
-        context = "\n\n".join(p for p in context_parts if p).strip()
-        msgs = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": context or "Hello."},
-        ]
-        reply = chat_engine.get_model_reply(
-            msgs,
-            sources,
-            model=configured_model or None,
-            max_tool_rounds=max_rounds,
-            db_path=getattr(storage, "db", None),
-            tenant_id=tenant_id,
-        )
-        if reply.content and not casual:
-            try:
-                memory = get_memory(session_id)
-                memory.add("assistant", reply.content)
-            except Exception:
-                pass
-        return chat_engine.normalize_workspace_response(reply.content or "", sources)
-
-    request_context = contextvars.copy_context()
-    try:
-        return await asyncio.wait_for(
-            loop.run_in_executor(None, request_context.run, _call),
-            timeout=30,
-        )
-    except asyncio.TimeoutError:
-        return {"error": "agent_timeout", "message": "Self-chat agent timed out."}
+    if durable_session and not response.get("error"):
+        assistant_content = str(response.get("content") or "").strip()
+        if assistant_content:
+            await asyncio.to_thread(
+                storage.add_chat_message_if_new,
+                durable_session["id"],
+                "assistant",
+                assistant_content,
+                tenant_id,
+            )
+            await asyncio.to_thread(storage.touch_chat_session, durable_session["id"], tenant_id)
+    return response
 
 
 async def _stream_self_chat_reply(text: str) -> dict | None:
@@ -396,7 +334,12 @@ def _stream_self_chat_enabled() -> bool:
     return val in {"1", "true", "yes", "on"}
 
 
-async def _self_chat_ndjson(text: str, broker_id: str, casual: bool):
+async def _self_chat_ndjson(
+    text: str,
+    broker_id: str,
+    casual: bool,
+    tenant_id: str | None = None,
+):
     try:
         # Do not use the legacy env-only fast stream here. The workspace agent
         # resolves the saved provider/key and is authoritative for self-chat.
@@ -404,7 +347,7 @@ async def _self_chat_ndjson(text: str, broker_id: str, casual: bool):
             [{"role": "user", "content": text[:1800]}],
             session_id=f"whatsmeow:{broker_id}",
             casual=casual,
-            tenant_id=get_tenant_id(),
+            tenant_id=tenant_id,
         )
         if isinstance(response, dict) and response.get("error"):
             yield _ndjson_line({"event": "error", "message": response.get("message") or response.get("error") or "agent_error"})
@@ -474,7 +417,7 @@ async def internal_self_chat(req: InternalSelfChatRequest, request: Request):
 
     if wants_stream:
         return StreamingResponse(
-            _self_chat_ndjson(text, req.broker_id, casual=casual),
+            _self_chat_ndjson(text, req.broker_id, casual=casual, tenant_id=org_id),
             media_type="application/x-ndjson",
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )

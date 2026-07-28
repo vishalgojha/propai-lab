@@ -64,6 +64,49 @@ function stripEmojis(text: string | null | undefined): string {
   return text.replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F1E0}-\u{1F1FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{FE00}-\u{FE0F}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FA6F}\u{1FA70}-\u{1FAFF}\u{200D}\u{20E3}\u{231A}-\u{23FF}\u{25A0}-\u{25FF}\u{2934}-\u{2935}\u{2B05}-\u{2B55}\u{3030}\u{303D}\u{3297}\u{3299}\u{2122}\u{2139}\u{24C2}\u{25B6}\u{25C0}\u{25FB}-\u{25FE}\u{2600}-\u{27EB}]/gu, "").trim();
 }
 
+function whatsappPayloadObject(value: api.RawMessage["raw_payload"]): Record<string, any> {
+  if (value && typeof value === "object") return value as Record<string, any>;
+  if (typeof value !== "string" || !value.trim()) return {};
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function whatsappPayloadText(message: api.RawMessage): string {
+  const payload = whatsappPayloadObject(message.raw_payload);
+  const data = payload.data && typeof payload.data === "object" ? payload.data : payload;
+  const body = data.message && typeof data.message === "object" ? data.message : {};
+  const candidates = [
+    body.conversation,
+    body.extendedTextMessage?.text,
+    body.imageMessage?.caption,
+    body.videoMessage?.caption,
+    body.documentMessage?.caption,
+    data.text,
+    data.body,
+  ];
+  return candidates.find((candidate) => typeof candidate === "string" && candidate.trim())?.trim() || "";
+}
+
+function actualWhatsAppMessageText(message: api.RawMessage): string {
+  const stored = String(message.message || "").trim();
+  const recovered = whatsappPayloadText(message);
+  const senderKeys = [
+    message.sender,
+    message.broker_name,
+    message.conversation_name,
+    message.chat_name,
+  ]
+    .map((value) => stripEmojis(value || "").toLowerCase())
+    .filter(Boolean);
+  const storedKey = stripEmojis(stored).toLowerCase();
+  if (stored && !senderKeys.includes(storedKey)) return stored;
+  return recovered && !senderKeys.includes(stripEmojis(recovered).toLowerCase()) ? recovered : "";
+}
+
 function isLikelyBrokerDisplayName(value?: string): boolean {
   const text = stripEmojis(value || "").trim();
   if (!text || text.length < 3 || text.toLowerCase() === "unknown") return false;
@@ -2120,7 +2163,7 @@ return {
 
   const filteredMessages = messages.filter((m) => {
     const haystack = [
-      m.message,
+      actualWhatsAppMessageText(m),
       m.sender,
       m.sender_phone || "",
       m.sender_jid || "",
@@ -2195,7 +2238,7 @@ return {
           conversation_type: "group",
           conversation_name: groupName,
           group_name: jid,
-          message: hasHistory ? "WhatsApp history synced; market evidence is loading." : "No captured messages yet.",
+          message: "",
           message_count: historyCount,
           timestamp: group.last_message_at || "",
         } as api.InboxThread);
@@ -2204,7 +2247,7 @@ return {
           title: groupName,
           subtitle: captured
             ? (conversationType === "broadcast" ? "WhatsApp broadcast" : "WhatsApp group")
-            : `${conversationType === "broadcast" ? "WhatsApp broadcast" : "WhatsApp group"} · ${hasHistory ? "market history synced" : "awaiting evidence"}`,
+            : `${conversationType === "broadcast" ? "WhatsApp broadcast" : "WhatsApp group"} · ${hasHistory ? `${historyCount} captured messages` : "No captured messages yet"}`,
           latest: {
             ...latest,
             chat_id: jid,
@@ -3531,7 +3574,7 @@ return {
                           {stripDecorativeEmoji(resolveMessageSenderName(item.latest) || item.subtitle)}
                         </div>
                         <div className="max-h-20 overflow-y-auto whitespace-pre-wrap break-words text-[10px] text-zinc-400 leading-relaxed">
-                          {stripEmojis(item.latest.message) || "No text content"}
+                          {stripEmojis(actualWhatsAppMessageText(item.latest)) || (item.count > 0 ? "Open to view captured messages" : "No captured messages yet")}
                         </div>
                         <div className="mt-1.5 text-[9px] text-zinc-600">
                           {formatAgeShort(item.latest.timestamp || item.latest.created_at || item.latest.latest_message_at)}
@@ -4189,7 +4232,9 @@ return {
                                           <span className="whitespace-nowrap">{messageTimeLabel(m)}</span>
                                         </div>
                                         <div className="text-xs text-zinc-200 whitespace-pre-wrap leading-relaxed text-left propai-message-content">
-                                          {m.message || ""}
+                                          {actualWhatsAppMessageText(m) || (
+                                            <span className="italic text-zinc-500">This WhatsApp event has no text body.</span>
+                                          )}
                                         </div>
                                       </div>
                                     );

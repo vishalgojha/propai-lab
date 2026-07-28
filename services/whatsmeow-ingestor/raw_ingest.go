@@ -72,7 +72,7 @@ func (sm *SessionManager) insertRawMessage(brokerID string, payload map[string]i
 
 	key, _ := data["key"].(map[string]interface{})
 	senderData, _ := data["sender"].(map[string]interface{})
-	msg, _ := data["message"].(map[string]interface{})
+	msg := messagePayloadMap(data["message"])
 
 	groupJID := ""
 	if v, ok := key["remoteJid"].(string); ok {
@@ -265,6 +265,32 @@ func triggerExtraction(rawID int64, tenantID string) {
 		log.Printf("[trigger-extraction] returned %d for raw_id=%d: %s", resp.StatusCode, rawID, string(body))
 	}
 	resp.Body.Close()
+}
+
+// marshalMessage returns json.RawMessage. Decode that value before extracting
+// the body; a direct map assertion silently failed and stored blank text for
+// otherwise valid WhatsApp messages.
+func messagePayloadMap(value interface{}) map[string]interface{} {
+	switch typed := value.(type) {
+	case map[string]interface{}:
+		return typed
+	case json.RawMessage:
+		var decoded map[string]interface{}
+		if json.Unmarshal(typed, &decoded) == nil {
+			return decoded
+		}
+	case []byte:
+		var decoded map[string]interface{}
+		if json.Unmarshal(typed, &decoded) == nil {
+			return decoded
+		}
+	case string:
+		var decoded map[string]interface{}
+		if json.Unmarshal([]byte(typed), &decoded) == nil {
+			return decoded
+		}
+	}
+	return nil
 }
 
 func extractMessageText(msg map[string]interface{}) string {
