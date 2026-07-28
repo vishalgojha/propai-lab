@@ -77,6 +77,10 @@ type Status struct {
 
 type BrokerSession struct {
 	mu                sync.RWMutex
+	statusPostMu      sync.Mutex
+	lastStatusPost    time.Time
+	lastPostedState   string
+	lastPostedCode    string
 	groupSyncMu       sync.Mutex
 	groupSyncRunning  bool
 	brokerID          string
@@ -168,6 +172,24 @@ func (s *BrokerSession) setStatus(st Status) {
 }
 
 func (s *BrokerSession) postStatus(st Status) {
+	s.statusPostMu.Lock()
+	stateKey := fmt.Sprintf(
+		"%t|%s|%s|%s",
+		st.Connected,
+		st.ConnectionState,
+		st.PhoneNumber,
+		st.DisplayName,
+	)
+	importantChange := stateKey != s.lastPostedState || st.PairingCode != s.lastPostedCode
+	if !importantChange && time.Since(s.lastStatusPost) < 30*time.Second {
+		s.statusPostMu.Unlock()
+		return
+	}
+	s.lastStatusPost = time.Now()
+	s.lastPostedState = stateKey
+	s.lastPostedCode = st.PairingCode
+	s.statusPostMu.Unlock()
+
 	b, _ := json.Marshal(st)
 	req, err := http.NewRequest(http.MethodPost, apiURL+"/api/sync/status", strings.NewReader(string(b)))
 	if err != nil {
@@ -1028,11 +1050,13 @@ func (sm *SessionManager) handleMessage(s *BrokerSession, evt *events.Message) {
 		log.Printf("[broker %s] raw_messages insert failed: %v", s.brokerID, err)
 		return
 	}
-	// Trigger immediate extraction so the message is processed in seconds
-	// rather than waiting for the polling worker (5s interval).  Fire-and-
-	// forget — the polling worker is the fallback if this fails.
-	tenantID, _ := resolveTenantID(sm.db, s.brokerID)
-	go triggerExtraction(rawID, tenantID)
+	// The dedicated extraction worker polls persisted raw messages. Calling the
+	// API once per message is intentionally opt-in: bursts otherwise starve
+	// pairing and auth endpoints even though the raw message is already safe.
+	if strings.EqualFold(getEnv("PROPAI_TRIGGER_EXTRACTION_INLINE", "false"), "true") {
+		tenantID, _ := resolveTenantID(sm.db, s.brokerID)
+		go triggerExtraction(rawID, tenantID)
+	}
 	if strings.EqualFold(getEnv("PROPAI_MARK_MESSAGES_READ", "false"), "true") {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
