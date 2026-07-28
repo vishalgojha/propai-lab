@@ -27,6 +27,78 @@ function toUIMessage(m: { id: string; role: "user" | "assistant"; content: strin
   };
 }
 
+function inlineMarkdown(text: string, keyPrefix: string) {
+  return text.split(/(\*\*[^*]+\*\*|`[^`]+`|\*[^*]+\*)/g).map((part, index) => {
+    if (part.startsWith("**") && part.endsWith("**")) {
+      return <strong key={`${keyPrefix}-b-${index}`}>{part.slice(2, -2)}</strong>;
+    }
+    if (part.startsWith("*") && part.endsWith("*")) {
+      return <em key={`${keyPrefix}-i-${index}`}>{part.slice(1, -1)}</em>;
+    }
+    if (part.startsWith("`") && part.endsWith("`")) {
+      return <code key={`${keyPrefix}-c-${index}`} className="rounded bg-white/10 px-1 py-0.5 text-[0.9em]">{part.slice(1, -1)}</code>;
+    }
+    return <span key={`${keyPrefix}-t-${index}`}>{part}</span>;
+  });
+}
+
+function markdownTableRow(line: string) {
+  return line.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map((cell) => cell.trim());
+}
+
+function isMarkdownDivider(line: string) {
+  const cells = markdownTableRow(line);
+  return cells.length > 1 && cells.every((cell) => /^:?-{3,}:?$/.test(cell));
+}
+
+function MarkdownMessage({ text }: { text: string }) {
+  const lines = text.replace(/\r/g, "").split("\n");
+  const blocks: React.ReactNode[] = [];
+  let index = 0;
+  while (index < lines.length) {
+    const line = lines[index];
+    if (line.includes("|") && index + 1 < lines.length && isMarkdownDivider(lines[index + 1])) {
+      const headers = markdownTableRow(line);
+      const rows: string[][] = [];
+      index += 2;
+      while (index < lines.length && lines[index].includes("|")) {
+        rows.push(markdownTableRow(lines[index]));
+        index += 1;
+      }
+      blocks.push(
+        <div key={`table-${index}`} className="my-2 overflow-x-auto rounded-lg border border-white/10">
+          <table className="min-w-full text-left text-xs">
+            <thead className="bg-white/[0.05] text-zinc-300"><tr>{headers.map((cell, cellIndex) => <th key={cellIndex} className="px-3 py-2 font-semibold">{inlineMarkdown(cell, `h-${index}-${cellIndex}`)}</th>)}</tr></thead>
+            <tbody>{rows.map((row, rowIndex) => <tr key={rowIndex} className="border-t border-white/10">{row.map((cell, cellIndex) => <td key={cellIndex} className="px-3 py-2 text-zinc-400">{inlineMarkdown(cell, `r-${index}-${rowIndex}-${cellIndex}`)}</td>)}</tr>)}</tbody>
+          </table>
+        </div>,
+      );
+      continue;
+    }
+    if (!line.trim()) {
+      index += 1;
+      continue;
+    }
+    const heading = line.match(/^(#{1,4})\s+(.+)$/);
+    if (heading) {
+      const Heading = heading[1].length <= 2 ? "h3" : "h4";
+      blocks.push(<Heading key={`heading-${index}`} className="mt-2 font-semibold text-white">{inlineMarkdown(heading[2], `heading-${index}`)}</Heading>);
+    } else if (/^\s*[-*]\s+/.test(line)) {
+      const items: string[] = [];
+      while (index < lines.length && /^\s*[-*]\s+/.test(lines[index])) {
+        items.push(lines[index].replace(/^\s*[-*]\s+/, ""));
+        index += 1;
+      }
+      blocks.push(<ul key={`list-${index}`} className="my-1 list-disc space-y-1 pl-5">{items.map((item, itemIndex) => <li key={itemIndex}>{inlineMarkdown(item, `item-${index}-${itemIndex}`)}</li>)}</ul>);
+      continue;
+    } else {
+      blocks.push(<p key={`paragraph-${index}`} className="whitespace-pre-wrap">{inlineMarkdown(line, `paragraph-${index}`)}</p>);
+    }
+    index += 1;
+  }
+  return <div className="space-y-1 text-sm text-zinc-300">{blocks}</div>;
+}
+
 function formatSessionTime(iso: string) {
   const d = new Date(iso);
   const now = new Date();
@@ -323,23 +395,10 @@ export default function ChatPage() {
                               if (hasCards && textParts.length > 0) {
                                 // Render AI summary line with bold counts
                                 const summaryText = textParts[0].text || "";
-                                const boldSummary = summaryText.replace(
-                                  /(\d+)\s*(?:active\s+)?(?:matches?|listings?|requirements?)/gi,
-                                  '<b>$1</b> $2'
-                                ).replace(
-                                  /(\d+)\s*(?:active\s+)?(?:match|listing|requirement)/gi,
-                                  '<b>$1</b> $2'
-                                );
-                                return (
-                                  <div
-                                    key="ai-summary"
-                                    className="text-xs text-zinc-400 mb-3"
-                                    dangerouslySetInnerHTML={{ __html: boldSummary }}
-                                  />
-                                );
+                                return <div key="ai-summary" className="mb-3 text-xs text-zinc-400"><MarkdownMessage text={summaryText} /></div>;
                               }
                               return textParts.map((p: any, i: number) => (
-                                <span key={i}>{p.text}</span>
+                                <MarkdownMessage key={i} text={p.text} />
                               ));
                             })()}
                             {listingParts.map((p: any, i: number) => {

@@ -879,7 +879,13 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
     if not sources:
         return _wrap_chat_response({"error": "no_data", "content": "No data found. Check CSV files and database."}, _is_inbox)
 
-    deterministic_query = chat_engine.parse_market_search_request(last_user)
+    deterministic_query = chat_engine.parse_market_search_request(
+        last_user,
+        api_key=effective_api_key,
+        model=effective_model,
+        base_url=effective_base_url,
+        db_path=getattr(storage, "db", None),
+    )
     if deterministic_query:
         try:
             search_result = await asyncio.to_thread(
