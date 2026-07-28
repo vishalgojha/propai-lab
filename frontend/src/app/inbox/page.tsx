@@ -4002,7 +4002,7 @@ return {
                           <span>{selectedCount.toLocaleString()} messages</span>
                         </>
                       ) : null}
-                      {selectedBroker.observation_count ? (
+                      {selectedBroker?.observation_count ? (
                         <>
                           <span>•</span>
                           <span title="Total parsed WhatsApp posts; the center feed deduplicates these into market items">
@@ -4010,7 +4010,7 @@ return {
                           </span>
                         </>
                       ) : null}
-                      {selectedBroker.last_seen && (
+                      {selectedBroker?.last_seen && (
                         <>
                           <span>•</span>
                           <span title="Last WhatsApp message received for this broker">
