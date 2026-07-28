@@ -2,7 +2,7 @@
 // deployment-specific Next.js chunks after a frontend redeploy.
 // Bump on every frontend deployment so cached JS cannot retain stale
 // deployment-time environment values such as the Supabase public key.
-const CACHE = "propai-v7";
+const CACHE = "propai-v8";
 const STATIC_ASSETS = [
   "/offline.html",
   "/pwa-192x192.png",
@@ -48,6 +48,14 @@ self.addEventListener("activate", (event) => {
 self.addEventListener("fetch", (event) => {
   const { request } = event;
   const url = new URL(request.url);
+
+  // Never let an older worker cache the worker script itself. The registration
+  // code also uses a versioned URL, so every frontend deploy can retire stale
+  // workers and their deployment-specific bundles.
+  if (url.pathname === "/sw.js") {
+    event.respondWith(fetch(request, { cache: "no-store" }));
+    return;
+  }
 
   // API requests: network-first, fallback to offline
   if (url.pathname.startsWith("/api/")) {

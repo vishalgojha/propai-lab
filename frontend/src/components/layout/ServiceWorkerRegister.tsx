@@ -2,6 +2,10 @@
 
 import { useEffect } from "react";
 
+// Changing this URL forces browsers that still have an older worker cached to
+// install the current worker instead of continuing to serve the old app shell.
+const SERVICE_WORKER_VERSION = "20260728-2";
+
 export function ServiceWorkerRegister() {
   useEffect(() => {
     if ("serviceWorker" in navigator) {
@@ -15,7 +19,7 @@ export function ServiceWorkerRegister() {
 
       navigator.serviceWorker.addEventListener("controllerchange", activateFreshShell);
       navigator.serviceWorker
-        .register("/sw.js", { updateViaCache: "none" })
+        .register(`/sw.js?v=${SERVICE_WORKER_VERSION}`, { updateViaCache: "none" })
         .then(async (registration) => {
           console.log("[SW] Registered:", registration.scope);
           await registration.update();
