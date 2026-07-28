@@ -1724,20 +1724,7 @@ export interface AuthMeResponse {
 }
 
 export function getAuthMe() {
-  return (async () => {
-    const token = await getAccessToken();
-    const res = await fetch(`${BASE}/auth/me`, {
-      headers: {
-        "Content-Type": "application/json",
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      },
-    });
-    if (!res.ok) {
-      const body = await res.text();
-      throw new Error(`${res.status} ${res.statusText}: ${body || "Failed to load auth state"}`);
-    }
-    return (await res.json()) as AuthMeResponse;
-  })();
+  return fetchJSON<AuthMeResponse>("/auth/me", undefined, 8000);
 }
 
 
