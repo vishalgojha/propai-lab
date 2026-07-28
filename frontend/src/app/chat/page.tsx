@@ -126,6 +126,7 @@ export default function ChatPage() {
   const [sessions, setSessions] = useState<api.ChatSession[]>([]);
   const [sessionsLoaded, setSessionsLoaded] = useState(false);
   const [showSessions, setShowSessions] = useState(true);
+  const [sessionError, setSessionError] = useState("");
 
   const activeSessionStorageKey = user?.id ? `propai_active_chat_session:${user.id}` : "";
 
@@ -235,6 +236,7 @@ export default function ChatPage() {
     setSessionId("");
     setMessages([]);
     setInput("");
+    setSessionError("");
     inputRef.current?.focus();
     if (!brokerPhone) return;
     try {
@@ -244,7 +246,9 @@ export default function ChatPage() {
       setSessionId(session.id);
       const updated = await loadSessions(brokerPhone);
       setSessions(updated);
-    } catch {}
+    } catch (error) {
+      setSessionError(error instanceof Error ? error.message : "Could not create a chat session.");
+    }
   }, [brokerPhone, loadSessions, setMessages]);
 
   // Switch to an existing session
@@ -281,15 +285,20 @@ export default function ChatPage() {
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!input.trim() || status === "submitted") return;
+    setSessionError("");
     // Create session on first message if none exists
     if (!sessionId && brokerPhone) {
-      api.createChatSession(brokerPhone, input.trim().slice(0, 80)).then((session) => {
+      const text = input.trim();
+      api.createChatSession(brokerPhone, text.slice(0, 80)).then((session) => {
+        if (!session?.id) throw new Error("Could not create a chat session.");
         sessionIdRef.current = session.id;
         setSessionId(session.id);
-        sendMessage({ text: input.trim() });
+        sendMessage({ text });
         setInput("");
-        loadSessions(brokerPhone);
-      }).catch(() => {});
+        return loadSessions(brokerPhone).then(setSessions);
+      }).catch((error) => {
+        setSessionError(error instanceof Error ? error.message : "Could not create a chat session.");
+      });
       return;
     }
     sendMessage({ text: input.trim() });
@@ -366,6 +375,11 @@ export default function ChatPage() {
             {showSessions ? "Hide chats" : "Show chats"}
           </button>
         </div>
+        {sessionError && (
+          <div className="mb-2 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300">
+            Chat session could not be saved: {sessionError}
+          </div>
+        )}
         {/* Mobile: new chat button */}
         <div className="lg:hidden mb-3 flex justify-end">
           <button

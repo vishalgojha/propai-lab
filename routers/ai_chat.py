@@ -17,6 +17,7 @@ from pydantic import BaseModel
 from routers.common import (
     storage, require_user, get_tenant_context,
     _doubleword_error_response, _workspace_provider_candidates,
+    _resolve_active_organization_id,
 )
 from llm import ProviderConfigurationError
 
@@ -724,18 +725,24 @@ async def ai_config(user: dict = Depends(require_user), tenant_id: str | None = 
 
 @router.get("/api/ai/chat/sessions")
 async def list_chat_sessions(broker_phone: str = "", limit: int = 50, user: dict = Depends(require_user), tenant_id: str | None = Depends(get_tenant_context)):
+    tenant_id = tenant_id or await asyncio.to_thread(_resolve_active_organization_id, user, None)
     owner_key = broker_phone.strip() or (user.get("phone") or "").strip() or f"user:{user.get('id', '')}"
     return storage.list_chat_sessions(owner_key, limit=limit, tenant_id=tenant_id)
 
 
 @router.post("/api/ai/chat/sessions")
 async def create_chat_session(broker_phone: str = "", title: str = "New chat", user: dict = Depends(require_user), tenant_id: str | None = Depends(get_tenant_context)):
+    tenant_id = tenant_id or await asyncio.to_thread(_resolve_active_organization_id, user, None)
     owner_key = broker_phone.strip() or (user.get("phone") or "").strip() or f"user:{user.get('id', '')}"
-    return storage.create_chat_session(owner_key, title=title, tenant_id=tenant_id) or {}
+    session = await asyncio.to_thread(storage.create_chat_session, owner_key, title, tenant_id)
+    if not session:
+        raise HTTPException(500, "Could not create chat session")
+    return session
 
 
 @router.get("/api/ai/chat/sessions/{session_id}/messages")
 async def get_chat_session_messages(session_id: str, user: dict = Depends(require_user), tenant_id: str | None = Depends(get_tenant_context)):
+    tenant_id = tenant_id or await asyncio.to_thread(_resolve_active_organization_id, user, None)
     session = storage.get_chat_session(session_id, tenant_id=tenant_id)
     if not session:
         raise HTTPException(404, "Session not found")
@@ -744,6 +751,7 @@ async def get_chat_session_messages(session_id: str, user: dict = Depends(requir
 
 @router.delete("/api/ai/chat/sessions/{session_id}")
 async def delete_chat_session(session_id: str, user: dict = Depends(require_user), tenant_id: str | None = Depends(get_tenant_context)):
+    tenant_id = tenant_id or await asyncio.to_thread(_resolve_active_organization_id, user, None)
     storage.delete_chat_session(session_id, tenant_id=tenant_id)
     return {"ok": True}
 
@@ -752,6 +760,7 @@ async def delete_chat_session(session_id: str, user: dict = Depends(require_user
 async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_id: str | None = Depends(get_tenant_context)):
     from ai_chat_engine import get_memory
 
+    tenant_id = tenant_id or await asyncio.to_thread(_resolve_active_organization_id, user, None)
     session_id = req.session_id or "default"
     memory = get_memory(session_id)
     effective_model = (req.model or "").strip()
