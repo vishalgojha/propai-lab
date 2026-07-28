@@ -2,7 +2,7 @@
 // deployment-specific Next.js chunks after a frontend redeploy.
 // Bump on every frontend deployment so cached JS cannot retain stale
 // deployment-time environment values such as the Supabase public key.
-const CACHE = "propai-v8";
+const CACHE = "propai-v9";
 const STATIC_ASSETS = [
   "/offline.html",
   "/pwa-192x192.png",
