@@ -33,6 +33,7 @@ from lab.storage.base import RawMessage, ParsedObservation, ResolverDecision
 from storage import SupabaseStorage
 from lab.embedding import create_engine, observation_text, pack_embedding
 from lab.events import get_bus
+from agents.building_alias_engine import fuzzy_score, normalize_building_name
 
 
 def get_storage():
@@ -88,6 +89,101 @@ def _sanitize_parsed_value(value):
     return value
 
 
+# ── Building name normalization against known buildings ────────────
+# The LLM often extracts ad text, locality names, or broker phrases as
+# building_name.  We fuzzy-match against the canonical building names
+# and aliases already in the DB to normalize to the correct name.
+
+_BUILDING_DICT: dict | None = None  # {normalized_name: canonical_name}
+
+
+def _load_building_dict() -> dict:
+    """Load buildings + aliases into a fuzzy-matchable dict.
+
+    Returns {normalized_name: canonical_name} for all known buildings
+    and their aliases.  Cached for the lifetime of the worker.
+    """
+    global _BUILDING_DICT
+    if _BUILDING_DICT is not None:
+        return _BUILDING_DICT
+
+    try:
+        url = os.getenv("SUPABASE_URL", "")
+        key = os.getenv("SUPABASE_SERVICE_KEY", "")
+        if not url or not key:
+            _BUILDING_DICT = {}
+            return _BUILDING_DICT
+
+        from supabase import create_client
+        client = create_client(url, key)
+
+        # Load canonical names
+        resp = client.table("buildings").select("canonical_name").execute()
+        rows = resp.data or []
+
+        # Load aliases
+        alias_resp = client.table("building_name_aliases").select("alias,canonical_name").execute()
+        alias_rows = alias_resp.data or []
+
+        d: dict[str, str] = {}
+        for r in rows:
+            cn = (r.get("canonical_name") or "").strip()
+            if len(cn) >= 3:
+                d[normalize_building_name(cn)] = cn
+        for r in alias_rows:
+            alias = (r.get("alias") or "").strip()
+            cn = (r.get("canonical_name") or "").strip()
+            if len(alias) >= 3 and len(cn) >= 3:
+                d[normalize_building_name(alias)] = cn
+
+        _BUILDING_DICT = d
+        _logger.info("Loaded %d normalized building name entries", len(d))
+    except Exception as exc:
+        _logger.warning("Failed to load building dict: %s", exc)
+        _BUILDING_DICT = {}
+
+    return _BUILDING_DICT
+
+
+def _normalize_building_to_canonical(name: str) -> str | None:
+    """Match an extracted building name against known buildings.
+
+    Returns the canonical name if a close match is found (>=0.80 score),
+    or the original name unchanged if no match — never silently drops it.
+    """
+    if not name or len(name.strip()) < 3:
+        return name
+
+    bdict = _load_building_dict()
+    if not bdict:
+        return name
+
+    norm = normalize_building_name(name)
+
+    # 1. Exact match after normalization
+    if norm in bdict:
+        return bdict[norm]
+
+    # 2. Fuzzy match against all known names
+    best_canonical = None
+    best_score = 0.0
+    for norm_cn, canonical in bdict.items():
+        score = fuzzy_score(name, canonical)
+        if score > best_score:
+            best_score = score
+            best_canonical = canonical
+
+    if best_score >= 0.80 and best_canonical:
+        _logger.debug(
+            "Building name normalized: %r -> %r (score %.2f)",
+            name, best_canonical, best_score,
+        )
+        return best_canonical
+
+    # 3. No good match — return original unchanged
+    return name
+
+
 def _sanitize_parsed_listing(parsed: dict) -> dict:
     cleaned = {key: _sanitize_parsed_value(value) for key, value in parsed.items()}
 
@@ -105,6 +201,12 @@ def _sanitize_parsed_listing(parsed: dict) -> dict:
     # locality or allowed to replace an explicit sibling building.
     if not cleaned.get("building_name") and cleaned.get("project_name"):
         cleaned["building_name"] = cleaned["project_name"]
+
+    # Normalize building_name against known buildings in the DB.
+    # The LLM often extracts ad text, locality names, or broker phrases;
+    # fuzzy-matching against the 4,000+ canonical names catches most of these.
+    if cleaned.get("building_name"):
+        cleaned["building_name"] = _normalize_building_to_canonical(cleaned["building_name"])
 
     payload = cleaned.get("raw_payload")
     if isinstance(payload, dict):
