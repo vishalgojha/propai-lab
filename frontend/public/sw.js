@@ -1,4 +1,6 @@
-const CACHE = "propai-v4";
+// Bump this whenever the app shell changes so an old cache cannot keep serving
+// deployment-specific Next.js chunks after a frontend redeploy.
+const CACHE = "propai-v5";
 const STATIC_ASSETS = [
   "/offline.html",
   "/pwa-192x192.png",
