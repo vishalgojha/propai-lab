@@ -131,7 +131,7 @@ Rules:
   clearly grouped child entries. Do not replace that explicit intent with a
   guess based on price magnitude.
 - For requirements (broker seeking), listing_type = "requirement".
-- Building name = ONLY proper complex names (e.g. "Kalpataru Vivant"). NEVER features/descriptions.
+- Building name = the proper noun that identifies the building/society (e.g. "Golden Peak", "Lodha Park", "Sapphire Tower"). Set to null if the message only contains descriptions like "brand new building", "available for lease", locality names like "Khar West", or broker phrases like "sole mandate". A building name is a specific name, not a description.
 - Only extract fields that are EXPLICITLY stated in the message. Never infer or invent a value.
 - Preserve raw_price_text character-for-character from the source. Never add,
   remove, or shift a zero. The numeric amount must represent exactly that
