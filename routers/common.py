@@ -233,13 +233,26 @@ async def get_tenant_context(
     set_tenant_id(None)
     tid = None
     if user:
-        orgs = await asyncio.to_thread(storage.get_user_organizations, user["id"])
+        org_lookup_ok = True
+        try:
+            orgs = await asyncio.to_thread(storage.get_user_organizations, user["id"])
+        except Exception as exc:
+            # A temporary Supabase/Auth database failure must not turn every
+            # authenticated profile request into a 500.  Fail closed: no
+            # tenant is selected, and require_tenant will return 403.
+            logger.error("Tenant lookup failed for user %s: %s", user.get("id"), exc)
+            orgs = []
+            org_lookup_ok = False
         allowed_ids = {str(org.get("id")) for org in orgs if org.get("id")}
         requested_id = str(x_tenant_id or "").strip()
         if requested_id and requested_id in allowed_ids:
             tid = requested_id
-        else:
-            tid = await asyncio.to_thread(_resolve_user_organization_id, user)
+        elif org_lookup_ok:
+            try:
+                tid = await asyncio.to_thread(_resolve_user_organization_id, user)
+            except Exception as exc:
+                logger.error("Active tenant resolution failed for user %s: %s", user.get("id"), exc)
+                tid = None
     if not tid:
         tid = None
     set_tenant_id(tid)

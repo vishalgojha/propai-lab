@@ -20,6 +20,7 @@ from routers.common import (
 )
 
 router = APIRouter(tags=["auth"])
+logger = logging.getLogger(__name__)
 
 # Placeholders set by app.py at startup
 _first_ingestor_response = None
@@ -109,13 +110,22 @@ async def auth_me(
 ):
     if not user:
         return {"authenticated": False}
-    orgs = storage.get_user_organizations(user["id"]) if user else []
+    try:
+        orgs = storage.get_user_organizations(user["id"])
+    except Exception as exc:
+        logger.error("Could not load organizations for auth/me user %s: %s", user.get("id"), exc)
+        orgs = []
+    try:
+        is_super_admin = storage.is_super_admin(user["id"])
+    except Exception as exc:
+        logger.error("Could not check super-admin status for user %s: %s", user.get("id"), exc)
+        is_super_admin = False
     return {
         "authenticated": True,
         "user": user,
         "organizations": orgs,
         "active_tenant": tenant_id,
-        "is_super_admin": storage.is_super_admin(user["id"]) if user else False,
+        "is_super_admin": is_super_admin,
     }
 
 
