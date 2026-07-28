@@ -1543,11 +1543,21 @@ class TriggerExtractionRequest(BaseModel):
 async def trigger_extraction(req: TriggerExtractionRequest):
     """Trigger extraction for a raw_message already inserted by the Go ingestor.
 
-    This bypasses the full webhook flow (no duplicate insert) and goes
-    straight to the extraction scheduler.  The Go ingestor calls this
-    after a successful insertRawMessage() so extraction happens in
-    seconds rather than waiting for the polling worker.
+    Raw messages are processed by the dedicated extraction worker. API web
+    workers must not run extraction by default because a WhatsApp burst can
+    otherwise consume every web worker and starve health, auth, and pairing.
+    The old immediate path remains opt-in for local/single-process setups.
     """
+    immediate_enabled = os.getenv(
+        "PROPAI_API_IMMEDIATE_EXTRACTION",
+        "",
+    ).strip().lower() in {"1", "true", "yes"}
+    if not immediate_enabled:
+        return {
+            "status": "queued_for_worker",
+            "raw_id": req.raw_id,
+        }
+
     try:
         row = await asyncio.to_thread(storage.get_raw_message, req.raw_id)
     except Exception as exc:

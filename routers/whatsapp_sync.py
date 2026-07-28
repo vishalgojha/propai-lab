@@ -704,11 +704,25 @@ async def sync_status_update(request: Request):
         _memory_status = body
         _cache_connection_snapshot(body)
         broker_id = str(body.get("broker_id") or "").strip()
+        previous_broker_entry = _broker_live_statuses.get(broker_id)
+        previous_status = (
+            previous_broker_entry[0]
+            if previous_broker_entry and isinstance(previous_broker_entry[0], dict)
+            else {}
+        )
         if broker_id:
             _broker_live_statuses[broker_id] = (body, time.time())
         phone_number = str(body.get("phone_number") or "").strip()
         display_name = str(body.get("display_name") or "").strip()
-        if storage and broker_id and (phone_number or display_name):
+        state_changed = (
+            not previous_status
+            or bool(previous_status.get("connected")) != bool(body.get("connected"))
+            or str(previous_status.get("connection_state") or "")
+            != str(body.get("connection_state") or "")
+            or str(previous_status.get("phone_number") or "") != phone_number
+            or str(previous_status.get("display_name") or "") != display_name
+        )
+        if storage and broker_id and (phone_number or display_name) and state_changed:
             updates: dict[str, object] = {"is_active": True}
             if phone_number:
                 updates["phone_number"] = phone_number
