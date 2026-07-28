@@ -1193,7 +1193,14 @@ def _llm_market_search_request(text: str, api_key: str = "", model: str = "", ba
     if not api_key or not model:
         return None
     prompt = (
-        "Extract a real-estate marketplace search into JSON only. Do not infer "
+        "Extract a real-estate marketplace search into JSON only. Return {} "
+        "when the user is asking for an opinion, area suitability, advice, "
+        "explanation, or general market insight rather than asking to find/show "
+        "specific available listings or requirements. For example, 'is Bandra "
+        "West good for expats?', 'tell me about Powai', and 'what is this area "
+        "like?' must return {} and stay on the conversational AI path. Do not "
+        "turn a locality mentioned in an advice question into a listing filter. "
+        "For concrete inventory requests, extract the search. Do not infer "
         "intermediate locations. For between A and B, return only "
         "between_start and between_end; the application resolves geography. "
         "Keys: bhk, intent (RENT/SELL/null), furnishing, price_min, price_max, "
