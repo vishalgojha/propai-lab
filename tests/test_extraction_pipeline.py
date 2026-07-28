@@ -7,6 +7,28 @@ import lab.config
 import multi_listing
 
 
+def test_price_normalization_uses_explicit_broker_unit_not_ai_scale():
+    base = {
+        "listing_type": "sale",
+        "property_category": "residential",
+        "bhk": 2,
+        "locality": {"raw_mention": "Andheri West", "resolved_locality": "Andheri West"},
+        "furnishing_status": None,
+        "title": None,
+        "extraction_confidence": "high",
+    }
+
+    for raw, ai_amount, expected, unit in [
+        ("Asking: 1.15.Cr", 11500000, 1.15, "cr"),
+        ("Price: 75.Lakh", 7500000, 75.0, "lac"),
+        ("Quote: 2.80 Crore", 2800, 2.80, "cr"),
+    ]:
+        item = {**base, "price": {"amount": ai_amount, "unit": "total", "raw_price_text": raw}}
+        parsed = extraction._ai_extraction_to_parsed(item, raw, "Broker", "Broker")
+        assert parsed["price"] == expected
+        assert parsed["price_unit"] == unit
+
+
 class _Storage:
     def __init__(self):
         self.tenant_id = None

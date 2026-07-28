@@ -218,6 +218,10 @@ function formatCurrency(val: number, unit?: string) {
   let normalized = val;
   if (unit) {
     const u = unit.toLowerCase();
+    // A native value in the thousands of crores is not a plausible Mumbai
+    // listing and historically indicates an extraction scale error (for
+    // example 2.80 Cr persisted as 2800 Cr). Never render that as fact.
+    if ((u === "cr" || u === "crore") && val > 1000) return "Price needs review";
     if (u === "cr" || u === "crore") normalized = val * 10000000;
     else if (u === "lac" || u === "lakh" || u === "l") normalized = val * 100000;
     else if (u === "k" || u === "thousand") normalized = val * 1000;
@@ -3850,7 +3854,7 @@ return {
                         {/* Time Divider */}
                         <div className="flex items-center gap-3 mb-3">
                           <div className="h-px flex-1 bg-[rgba(255,255,255,0.06)]" />
-                          <span className="text-[9px] uppercase tracking-wider text-zinc-500 font-semibold">{timeLabel}</span>
+                          <span className="text-[10px] uppercase tracking-wider text-zinc-300 font-semibold">{timeLabel}</span>
                           <div className="h-px flex-1 bg-[rgba(255,255,255,0.06)]" />
                         </div>
                         {/* WhatsApp-style message bubble */}
@@ -3873,7 +3877,7 @@ return {
                             <span className="text-[10px] font-semibold text-[#3EE88A]">
                               {observationTypeIcon(obs.observation_type)} {opportunityLabel}
                             </span>
-                            <span className="text-[9px] text-zinc-500 tabular-nums">{timeLabel}</span>
+                            <span className="text-[10px] text-zinc-300 tabular-nums">{timeLabel}</span>
                           </div>
                           {/* Property summary line */}
                           <div className="flex items-center gap-1.5 text-[11px] text-zinc-300 flex-wrap">
@@ -3906,6 +3910,11 @@ return {
                           {/* Posted In */}
                           {(groupChannels.length > 0 || dmCount > 0) && (
                             <div className="mt-1 flex flex-wrap gap-1 items-center text-[8px]">
+                              {groupChannels.length > 0 && (
+                                <span className="rounded-full border border-sky-400/30 bg-sky-400/10 px-1.5 py-0.5 font-semibold uppercase tracking-wider text-sky-300">
+                                  Shared market
+                                </span>
+                              )}
                               {groupChannels.slice(0, 3).map((src: string, i: number) => (
                                 <span key={i} className="text-zinc-500">
                                   {displayGroupName(src) || src.slice(-8)}
