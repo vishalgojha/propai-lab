@@ -919,6 +919,7 @@ export async function searchNaturalLanguageListings(
   // check if any query token matches a known building name in the DB.
   // Also use the LLM's building name if it provided one.
   let buildingNameMatch: string | null = parsed.buildingName || null;
+  let brokerNameMatch: string | null = null;
   if (!buildingNameMatch && !llmConfident && !regexHasIntent && db && query.trim().length >= 2) {
     const tokens = parsedQueryTokens(query);
     for (const token of tokens) {
@@ -948,9 +949,23 @@ export async function searchNaturalLanguageListings(
         }
       }
     }
+    // Broker name fallback: check if query matches a known broker
+    if (!buildingNameMatch) {
+      const fullQuery = query.trim();
+      const { data: brokerMatches } = await db
+        .from("listings")
+        .select("broker_name")
+        .ilike("broker_name", `%${fullQuery}%`)
+        .not("broker_name", "is", null)
+        .neq("broker_name", "")
+        .limit(1);
+      if (brokerMatches && brokerMatches.length > 0 && brokerMatches[0].broker_name) {
+        brokerNameMatch = brokerMatches[0].broker_name;
+      }
+    }
   }
 
-  if (!llmConfident && !regexHasIntent && !buildingNameMatch && query.trim().length > 0) {
+  if (!llmConfident && !regexHasIntent && !buildingNameMatch && !brokerNameMatch && query.trim().length > 0) {
     return {
       parsed,
       results: [],
@@ -1057,6 +1072,19 @@ export async function searchNaturalLanguageListings(
             (l) => l.locality.toLowerCase() === bData[0].micro_market.toLowerCase()
           ).slice(0, 1);
         }
+      }
+      return (data ?? []) as unknown as NaturalSearchRow[];
+    }
+
+    // Priority 2: Broker name match
+    if (brokerNameMatch) {
+      let qb = db.from("listings").select(fields).order("last_seen", { ascending: false });
+      qb = qb.ilike("broker_name", brokerNameMatch);
+      if (parsed.asset) qb = qb.eq("asset_type", parsed.asset);
+      const { data, error } = await qb.limit(SEARCH_CANDIDATE_LIMIT);
+      if (error) {
+        console.error("searchNaturalLanguageListings broker name candidate error:", error.message);
+        return [];
       }
       return (data ?? []) as unknown as NaturalSearchRow[];
     }
