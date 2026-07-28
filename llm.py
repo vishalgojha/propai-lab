@@ -86,6 +86,7 @@ class ProviderConfigurationError(RuntimeError):
 _cached_index: int | None = None
 _cached_ts: float = 0
 _CACHE_TTL = 5 * 60  # 5 minutes
+_workspace_health: dict[tuple[str, str], tuple[bool, float]] = {}
 
 
 def _ping_provider(p: dict) -> bool:
@@ -105,6 +106,18 @@ def _ping_provider(p: dict) -> bool:
     except Exception as e:
         _logger.warning("Provider %s health check failed: %s", p["name"], str(e)[:100])
         return False
+
+
+def is_provider_healthy(api_key: str, base_url: str, model: str, ttl: float = 60.0) -> bool:
+    """Check a workspace-saved provider without probing it on every request."""
+    cache_key = (str(base_url or "").rstrip("/"), str(model or ""))
+    now = time.time()
+    cached = _workspace_health.get(cache_key)
+    if cached and now - cached[1] < ttl:
+        return cached[0]
+    healthy = _ping_provider({"api_key": api_key, "base_url": cache_key[0], "model": model})
+    _workspace_health[cache_key] = (healthy, now)
+    return healthy
 
 
 def _find_working() -> int:
