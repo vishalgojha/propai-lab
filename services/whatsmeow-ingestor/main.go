@@ -331,10 +331,16 @@ func (sm *SessionManager) acquireBrokerLock(ctx context.Context, brokerID string
 	return conn, true, nil
 }
 
-func (sm *SessionManager) StartOrGet(brokerID string) *BrokerSession {
+func (sm *SessionManager) startOrGet(
+	brokerID string,
+	configureBeforeStart func(*BrokerSession),
+) *BrokerSession {
 	sm.mu.Lock()
 	if existing, ok := sm.sessions[brokerID]; ok {
 		sm.mu.Unlock()
+		if configureBeforeStart != nil {
+			configureBeforeStart(existing)
+		}
 		return existing
 	}
 	sm.mu.Unlock()
@@ -373,12 +379,33 @@ func (sm *SessionManager) StartOrGet(brokerID string) *BrokerSession {
 
 	session := sm.newSession(brokerID, device)
 	session.lockConn = lockConn
+	if configureBeforeStart != nil {
+		configureBeforeStart(session)
+	}
 	sm.mu.Lock()
 	sm.sessions[brokerID] = session
 	sm.mu.Unlock()
 	sm.sessionWg.Add(1)
 	go sm.runSession(session)
 	return session
+}
+
+func (sm *SessionManager) StartOrGet(brokerID string) *BrokerSession {
+	return sm.startOrGet(brokerID, nil)
+}
+
+func (sm *SessionManager) StartOrGetForCodePairing(brokerID, phone string) *BrokerSession {
+	return sm.startOrGet(brokerID, func(session *BrokerSession) {
+		session.mu.Lock()
+		session.pairingMode = "code"
+		session.pairingPhone = phone
+		session.mu.Unlock()
+		session.setStatus(Status{
+			Connected:       false,
+			ConnectionState: "pairing_requested",
+			PairingPhone:    phone,
+		})
+	})
 }
 
 func (sm *SessionManager) restoreSessionWhenAvailable(brokerID string) {
@@ -1840,20 +1867,15 @@ func (sm *SessionManager) pairCodeHandler(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	session := sm.StartOrGet(brokerID)
+	// Configure code pairing before a newly-created session goroutine starts.
+	// Otherwise runSession can observe the empty default pairing mode and enter
+	// the QR loop, leaving this request waiting until the proxy times out.
+	session := sm.StartOrGetForCodePairing(brokerID, phone)
 	if session == nil {
 		w.WriteHeader(http.StatusConflict)
 		json.NewEncoder(w).Encode(map[string]string{"error": "session is already active in another ingestor instance"})
 		return
 	}
-	// Set pairing mode before the session loop picks it up
-	session.mu.Lock()
-	session.pairingMode = "code"
-	session.pairingPhone = phone
-	session.mu.Unlock()
-	// Do not let a previous request's code be returned as the new code while
-	// the new websocket is still being established.
-	session.setStatus(Status{Connected: false, ConnectionState: "pairing_requested", PairingPhone: phone})
 
 	// Force the session loop into the QR/code pairing path.
 	//

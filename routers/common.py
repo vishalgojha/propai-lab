@@ -1182,6 +1182,26 @@ async def _first_ingestor_response(method: str, path: str, *, timeout: float = 1
     if not urls:
         return None, None
     request_headers = {**_ingestor_auth_headers(), **(kwargs.pop("headers", {}) or {})}
+    # Never fan out a mutating request to every URL. The internal and public
+    # URLs normally point at the same ingestor, so doing this for pair/connect/
+    # reset can run the same state transition twice and race the session loop.
+    # Try aliases in order only when the previous alias was unreachable. Once
+    # an ingestor returns any HTTP response, that instance owns the mutation.
+    if method.upper() not in {"GET", "HEAD", "OPTIONS"}:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            for base_url in urls:
+                try:
+                    response = await client.request(
+                        method,
+                        f"{base_url}{path}",
+                        headers=request_headers,
+                        **kwargs,
+                    )
+                except httpx.RequestError:
+                    continue
+                return base_url, response
+        return None, None
+
     first_failure: tuple[str | None, httpx.Response | None] = (None, None)
     async with httpx.AsyncClient(timeout=timeout) as client:
         async def request_one(base_url: str) -> tuple[str, httpx.Response | None]:
