@@ -2767,7 +2767,18 @@ return {
               }
             : {}),
         } as api.RawMessage | api.InboxThread);
-        loadMessageDetails(detailTarget.id);
+        // The WhatsApp Groups page is a raw mirror. Its message ids are raw-message
+        // ids, not observation ids, so asking the observation endpoint here produces
+        // noisy 404s and can trigger unrelated broker/building lookups.
+        const isRawMirrorRoute = typeof window !== "undefined" && window.location.pathname === "/whatsapp-groups";
+        if (isRawMirrorRoute) {
+          setSelectedMsgDetails(null);
+          setSelectedBroker(null);
+          setSelectedBuilding(null);
+          setPriceStats(null);
+        } else {
+          loadMessageDetails(detailTarget.id);
+        }
       } else {
         setSelectedMsgDetails(null);
       }
@@ -2782,7 +2793,15 @@ return {
   const selectMessage = useCallback((msg: api.RawMessage) => {
     setSelectedMsg(msg as any);
     if (isMobile) setMobileView("conversation");
-    loadMessageDetails(msg.id);
+    const isRawMirrorRoute = typeof window !== "undefined" && window.location.pathname === "/whatsapp-groups";
+    if (isRawMirrorRoute) {
+      setSelectedMsgDetails(null);
+      setSelectedBroker(null);
+      setSelectedBuilding(null);
+      setPriceStats(null);
+    } else {
+      loadMessageDetails(msg.id);
+    }
     updateUrlMessage((msg as any).chat_id || (msg as any).conversation_key || msg.group_name || "", msg.id);
     const el = messageRefs.current[msg.id];
     if (el) {
