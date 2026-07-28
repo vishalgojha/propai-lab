@@ -294,7 +294,7 @@ export default function ChatPage() {
   }
 
   return (
-    <div className="flex h-[calc(100dvh-160px)] lg:h-[calc(100vh-160px)] max-w-6xl mx-auto px-4 lg:px-0">
+    <div className="flex h-[calc(100dvh-160px)] lg:h-[calc(100vh-160px)] max-w-7xl mx-auto px-4 lg:px-0">
       <style>{`
         @keyframes typing-bounce {
           0%, 80%, 100% { transform: translateY(0); }
@@ -307,7 +307,7 @@ export default function ChatPage() {
       `}</style>
 
       {/* ═══════ Session Sidebar ═══════ */}
-      {showSessions && <aside className="hidden lg:flex w-52 flex-col border-r border-white/10 shrink-0 mr-4">
+      {showSessions && <aside className="hidden lg:flex w-40 flex-col border-r border-white/10 shrink-0 mr-2">
         <div className="flex items-center justify-between px-3 pt-3 pb-2">
           <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-[0.15em]">Chats</span>
           <button
