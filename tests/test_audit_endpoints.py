@@ -397,10 +397,14 @@ def test_connect_phone_maps_ingestor_unauthorized_to_dependency_error(monkeypatc
     async def ingestor(method, path, **kwargs):
         return "http://ingestor:3001", httpx.Response(401, json={"error": "invalid token"})
 
+    async def inline_to_thread(function, *args, **kwargs):
+        return function(*args, **kwargs)
+
     monkeypatch.setattr(ws_mod, "_resolve_active_organization_id", lambda user, tenant_id: "workspace-real")
     monkeypatch.setattr(ws_mod, "_require_org_permission", allow_phone_management)
     monkeypatch.setattr(ws_mod, "_scoped_phone", scoped_phone)
     monkeypatch.setattr(ws_mod, "_first_ingestor_response", ingestor)
+    monkeypatch.setattr(asyncio, "to_thread", inline_to_thread)
 
     with pytest.raises(ws_mod.HTTPException) as exc:
         asyncio.run(ws_mod.connect_phone(13, user={"id": "user"}, tenant_id="workspace-real"))

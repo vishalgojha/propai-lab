@@ -41,7 +41,11 @@ class ProfileUpdate(BaseModel):
 @router.get("/api/profile")
 async def get_profile(user: dict = Depends(require_user), tenant_id: str | None = Depends(get_tenant_context)):
     try:
-        profile = storage.get_user_profile(auth_user_id=user.get("id", ""), tenant_id=tenant_id)
+        profile = await asyncio.to_thread(
+            storage.get_user_profile,
+            auth_user_id=user.get("id", ""),
+            tenant_id=tenant_id,
+        )
         return profile or {}
     except Exception as exc:
         # Profile data is optional.  Keep a transient Supabase failure from

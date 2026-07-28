@@ -112,6 +112,18 @@ _get_org_waba_connection_by_phone_number_id: object = None
 
 # ── Routes ────────────────────────────────────────────────────────
 
+async def _request_organization_id(user: dict, tenant_id: str | None) -> str:
+    """Resolve the request organization without blocking the event loop."""
+    try:
+        org_id = await asyncio.to_thread(_resolve_active_organization_id, user, tenant_id)
+    except Exception as exc:
+        _logger.error("WhatsApp organization lookup failed for user %s: %s", user.get("id"), exc)
+        raise HTTPException(503, "Workspace lookup is temporarily unavailable") from exc
+    if not org_id:
+        raise HTTPException(403, "No organization membership found")
+    return str(org_id)
+
+
 @router.post("/api/sources/stop")
 async def scheduler_stop(user: dict = Depends(require_user)):
     scheduler = get_scheduler()
@@ -458,8 +470,12 @@ async def list_phones(
     tenant_id: str | None = Depends(get_tenant_context),
     include_live: bool = True,
 ):
-    org_id = _resolve_active_organization_id(user, tenant_id)
-    phones = await asyncio.to_thread(storage.list_org_whatsapp_connections, org_id)
+    org_id = await _request_organization_id(user, tenant_id)
+    try:
+        phones = await asyncio.to_thread(storage.list_org_whatsapp_connections, org_id)
+    except Exception as exc:
+        _logger.error("WhatsApp phone lookup failed for org %s: %s", org_id, exc)
+        raise HTTPException(503, "Phone list is temporarily unavailable") from exc
     ingestor_statuses = {}
     ingestor_reachable = False
     ingestor_error = ""
@@ -503,7 +519,7 @@ async def create_phone(
         import uuid as _uuid
         phone_number = body.get("phone_number", "").strip()
         instance_name = body.get("instance_name", "").strip()
-        org_id = _resolve_active_organization_id(user, tenant_id)
+        org_id = await _request_organization_id(user, tenant_id)
         await _require_org_permission(user, org_id, "manage_whatsapp")
         existing_phones = await asyncio.to_thread(storage.list_org_whatsapp_connections, org_id)
         if not phone_number:
@@ -547,7 +563,7 @@ async def get_phone(
     user: dict = Depends(require_user),
     tenant_id: str | None = Depends(get_tenant_context),
 ):
-    org_id = _resolve_active_organization_id(user, tenant_id)
+    org_id = await _request_organization_id(user, tenant_id)
     phone = await _scoped_phone(phone_id, org_id)
     broker_id = phone.get("broker_id", "")
     status = await _best_ingestor_status_for_broker(broker_id, timeout=2)
@@ -574,7 +590,7 @@ async def update_phone(
     user: dict = Depends(require_user),
     tenant_id: str | None = Depends(get_tenant_context),
 ):
-    org_id = _resolve_active_organization_id(user, tenant_id)
+    org_id = await _request_organization_id(user, tenant_id)
     await _require_org_permission(user, org_id, "manage_whatsapp")
     await _scoped_phone(phone_id, org_id)
     allowed = {"instance_name", "self_chat_enabled"}
@@ -598,7 +614,7 @@ async def delete_phone(
     user: dict = Depends(require_user),
     tenant_id: str | None = Depends(get_tenant_context),
 ):
-    org_id = _resolve_active_organization_id(user, tenant_id)
+    org_id = await _request_organization_id(user, tenant_id)
     await _require_org_permission(user, org_id, "manage_whatsapp")
     phone = await _scoped_phone(phone_id, org_id)
     broker_id = phone.get("broker_id", "")
@@ -622,7 +638,7 @@ async def reset_phone(
     user: dict = Depends(require_user),
     tenant_id: str | None = Depends(get_tenant_context),
 ):
-    org_id = _resolve_active_organization_id(user, tenant_id)
+    org_id = await _request_organization_id(user, tenant_id)
     await _require_org_permission(user, org_id, "manage_whatsapp")
     phone = await _scoped_phone(phone_id, org_id)
     broker_id = phone.get("broker_id", "")
@@ -638,7 +654,7 @@ async def disconnect_phone(
     user: dict = Depends(require_user),
     tenant_id: str | None = Depends(get_tenant_context),
 ):
-    org_id = _resolve_active_organization_id(user, tenant_id)
+    org_id = await _request_organization_id(user, tenant_id)
     await _require_org_permission(user, org_id, "manage_whatsapp")
     phone = await _scoped_phone(phone_id, org_id)
     broker_id = phone.get("broker_id", "")
@@ -657,7 +673,7 @@ async def connect_phone(
     user: dict = Depends(require_user),
     tenant_id: str | None = Depends(get_tenant_context),
 ):
-    org_id = _resolve_active_organization_id(user, tenant_id)
+    org_id = await _request_organization_id(user, tenant_id)
     await _require_org_permission(user, org_id, "manage_whatsapp")
     phone = await _scoped_phone(phone_id, org_id)
     broker_id = phone.get("broker_id", "")
@@ -718,7 +734,7 @@ async def pair_code_phone(
     user: dict = Depends(require_user),
     tenant_id: str | None = Depends(get_tenant_context),
 ):
-    org_id = _resolve_active_organization_id(user, tenant_id)
+    org_id = await _request_organization_id(user, tenant_id)
     await _require_org_permission(user, org_id, "manage_whatsapp")
     phone = await _scoped_phone(phone_id, org_id)
     broker_id = phone.get("broker_id", "")
