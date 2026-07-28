@@ -271,6 +271,19 @@ func extractMessageText(msg map[string]interface{}) string {
 	if msg == nil {
 		return ""
 	}
+	if protocol, ok := msg["protocolMessage"].(map[string]interface{}); ok {
+		if kind, ok := protocol["type"].(string); ok && strings.EqualFold(kind, "REVOKE") {
+			return "Message recalled"
+		}
+		// Protobuf JSON may encode enum values numerically. The WhatsApp
+		// REVOKE enum is 0 in the current whatsmeow schema; the presence of a
+		// revoke key is still stronger evidence than a text command.
+		if _, ok := protocol["key"]; ok {
+			if _, hasEdited := protocol["editedMessage"]; !hasEdited {
+				return "Message recalled"
+			}
+		}
+	}
 	if v, ok := msg["conversation"].(string); ok && strings.TrimSpace(v) != "" {
 		return strings.TrimSpace(v)
 	}
@@ -310,11 +323,11 @@ func buildAttachments(msg map[string]interface{}, data map[string]interface{}) j
 	}
 	media, _ := data["media"].(map[string]interface{})
 	attachments := map[string]interface{}{
-		"image":       msg["imageMessage"] != nil,
-		"video":       msg["videoMessage"] != nil,
-		"audio":       msg["audioMessage"] != nil,
-		"document":    msg["documentMessage"] != nil,
-		"sticker":     msg["stickerMessage"] != nil,
+		"image":    msg["imageMessage"] != nil,
+		"video":    msg["videoMessage"] != nil,
+		"audio":    msg["audioMessage"] != nil,
+		"document": msg["documentMessage"] != nil,
+		"sticker":  msg["stickerMessage"] != nil,
 	}
 	for _, kind := range []string{"image", "video", "audio", "document", "sticker"} {
 		if sub, ok := msg[kind+"Message"].(map[string]interface{}); ok {

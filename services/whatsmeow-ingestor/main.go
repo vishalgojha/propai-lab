@@ -1043,6 +1043,9 @@ func (sm *SessionManager) handleMessage(s *BrokerSession, evt *events.Message) {
 }
 
 func selfChatCommand(s *BrokerSession, evt *events.Message) (types.JID, string, bool) {
+	if isRevokeMessage(evt.Message) {
+		return types.EmptyJID, "", false
+	}
 	if s == nil || s.client == nil || s.client.Store.ID == nil || evt == nil {
 		return types.EmptyJID, "", false
 	}
@@ -1082,6 +1085,9 @@ func isOwnWhatsAppJID(s *BrokerSession, candidate types.JID) bool {
 func messageText(msg *waE2E.Message) string {
 	if msg == nil {
 		return ""
+	}
+	if isRevokeMessage(msg) {
+		return "Message recalled"
 	}
 	if text := strings.TrimSpace(msg.GetConversation()); text != "" {
 		return text
@@ -1126,6 +1132,8 @@ func extractMessageType(msg *waE2E.Message) string {
 		return "unknown"
 	}
 	switch {
+	case isRevokeMessage(msg):
+		return "recalled"
 	case msg.GetConversation() != "" || msg.GetExtendedTextMessage() != nil:
 		return "text"
 	case msg.GetImageMessage() != nil:
@@ -1169,6 +1177,14 @@ func extractMessageType(msg *waE2E.Message) string {
 	default:
 		return "unknown"
 	}
+}
+
+// isRevokeMessage uses WhatsApp's protocol metadata rather than looking for a
+// word in the message body. A delete-for-everyone event has no ordinary text;
+// its ProtocolMessage carries the REVOKE type and the key of the target.
+func isRevokeMessage(msg *waE2E.Message) bool {
+	return msg != nil && msg.GetProtocolMessage() != nil &&
+		msg.GetProtocolMessage().GetType() == waE2E.ProtocolMessage_REVOKE
 }
 
 func extractLocation(msg *waE2E.Message) map[string]interface{} {
@@ -1627,6 +1643,7 @@ func (sm *SessionManager) postWebMessage(s *BrokerSession, wmsg *waWeb.WebMessag
 		"data": map[string]interface{}{
 			"key":              key,
 			"message":          marshalMessage(wmsg.GetMessage()),
+			"message_type":     extractMessageType(wmsg.GetMessage()),
 			"pushName":         pushName,
 			"messageTimestamp": timestamp,
 			"sender": map[string]interface{}{
