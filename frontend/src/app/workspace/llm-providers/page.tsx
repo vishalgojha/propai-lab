@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from "react";
 import { Plus, Check, X, Play, AlertCircle, Globe, Zap } from "lucide-react";
 import { fetchJSON } from "@/lib/api";
+import { useAuth } from "@/lib/AuthProvider";
 
 interface Provider {
   id: number;
@@ -30,6 +31,7 @@ export default function LLMProvidersPage() {
   const [providers, setProviders] = useState<Provider[]>([]);
   const [activeProvider, setActiveProvider] = useState<ActiveProvider | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [isAdding, setIsAdding] = useState(false);
   const [editingProvider, setEditingProvider] = useState<Provider | null>(null);
   const [testResult, setTestResult] = useState<{ success: boolean; latency?: number; error?: string } | null>(null);
@@ -45,27 +47,25 @@ export default function LLMProvidersPage() {
     is_active: false,
   });
 
+  const { user, loading: authLoading } = useAuth();
+
   useEffect(() => {
-    loadProviders();
-  }, []);
+    if (!authLoading && user) void loadProviders();
+  }, [authLoading, user?.id]);
 
   async function loadProviders() {
     setLoading(true);
+    setLoadError(null);
     try {
-      const [provData, activeData] = await Promise.all([
-        fetchJSON<any>("/workspace/llm-providers").catch(() => ({ providers: [] })),
-        fetchJSON<any>("/workspace/llm-providers/active").catch(() => null),
-      ]);
-      if (provData && typeof provData === "object" && provData.providers) {
-        setProviders(provData.providers || []);
-      } else {
-        setProviders([]);
-      }
+      const provData = await fetchJSON<any>("/workspace/llm-providers");
+      const activeData = await fetchJSON<any>("/workspace/llm-providers/active").catch(() => null);
+      setProviders(provData?.providers || []);
       setActiveProvider(activeData && typeof activeData === "object" ? activeData : null);
     } catch (e) {
       console.error(e);
       setProviders([]);
       setActiveProvider(null);
+      setLoadError(e instanceof Error ? e.message : "Failed to load providers");
     } finally {
       setLoading(false);
     }
@@ -182,7 +182,7 @@ export default function LLMProvidersPage() {
           : ""
   );
 
-  if (loading) return <div className="p-8 text-gray-400">Loading providers...</div>;
+  if (authLoading || loading) return <div className="p-8 text-gray-400">Loading providers...</div>;
 
   return (
     <div className="p-8 max-w-5xl mx-auto">
@@ -190,6 +190,7 @@ export default function LLMProvidersPage() {
         <div>
           <h1 className="text-2xl font-bold text-white">LLM Providers & Keys</h1>
           <p className="text-gray-400 text-sm">Manage API keys and switch between inference providers</p>
+          {loadError && <p className="mt-2 text-sm text-red-400">{loadError}</p>}
         </div>
         <button
           onClick={openAddModal}
