@@ -93,6 +93,10 @@ export const MCP_TOOL_NAMES = [
   "save_thread_listing",
   "create_thread_follow_up",
   "summarise_thread",
+  // ChatGPT-compatible aliases
+  "search_listings",
+  "get_listing",
+  "get_building",
 ] as const;
 
 function textResponse(text: string, structured?: unknown) {

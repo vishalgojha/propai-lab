@@ -1,115 +1,223 @@
 """
 Mumbai location hierarchy.
 
-Maps every known area/locality to its micro market.
-Based on standard Mumbai real estate market segmentation.
+Maps every known area/locality to its parent micro-market.
+Based on standard Mumbai real estate market segmentation used by
+99acres, MagicBricks, Housing.com, and MumbaiPropertyExchange.
+
+IMPORTANT: Every micro_market value must be a real, specific locality
+that property portals recognize. No fake aggregate buckets like
+"Western Suburbs Prime" or "South Mumbai Central".
 """
 
-# Micro markets → areas they contain
+# Micro markets → sub-areas they contain
+# Each micro_market is a real locality name.
 MICRO_MARKETS: dict[str, list[str]] = {
-    "South Mumbai Prime": [
+    "Malabar Hill": [
         "Altamount Road",
         "Breach Candy",
-        "Cuffe Parade",
-        "Colaba",
-        "Churchgate",
-        "Marine Drive",
-        "Nariman Point",
         "Walkeshwar",
-        "Malabar Hill",
         "Kemps Corner",
         "Peddar Road",
-        "Tardeo",
-        "Nepean Sea Road",
         "Carmichael Road",
+        "Nepean Sea Road",
+    ],
+    "Colaba": [
+        "Colaba",
+        "Cuffe Parade",
+    ],
+    "Churchgate": [
+        "Churchgate",
+        "Nariman Point",
+        "Marine Lines",
+        "Fort",
+    ],
+    "Tardeo": [
+        "Tardeo",
         "Gamdevi",
         "Nana Chowk",
     ],
-    "South Mumbai Central": [
-        "Mahalakshmi",
-        "Prabhadevi",
+    "Worli": [
         "Worli",
         "Worli Naka",
         "Worli Sea Face",
+        "Mahalakshmi",
+    ],
+    "Prabhadevi": [
+        "Prabhadevi",
+    ],
+    "Lower Parel": [
         "Lower Parel",
-        "Parel",
         "Elphinstone",
+        "Kamla Mill Compound",
+    ],
+    "Parel": [
+        "Parel",
+        "Lalbaug",
+    ],
+    "Byculla": [
         "Byculla",
         "Byculla West",
-        "Lalbaug",
+    ],
+    "Dadar West": [
+        "Dadar West",
+    ],
+    "Dadar East": [
+        "Dadar East",
+    ],
+    "Matunga": [
+        "Matunga",
+        "Matunga East",
+    ],
+    "Sion": [
+        "Sion",
+    ],
+    "Wadala": [
+        "Wadala",
+        "Wadala East",
+    ],
+    "Sewri": [
+        "Sewri",
+    ],
+    "Mumbai Central": [
         "Mumbai Central",
         "Grant Road",
         "Girgaon",
-        "Dadar West",
-        "Dadar East",
     ],
-    "Western Suburbs Prime": [
+    "Bandra West": [
         "Bandra West",
+        "Pali Hill",
+    ],
+    "Bandra East": [
         "Bandra East",
         "BKC",
+        "Bandra Kurla Complex",
+    ],
+    "Khar West": [
         "Khar West",
+    ],
+    "Khar East": [
         "Khar East",
+    ],
+    "Santacruz West": [
         "Santacruz West",
+        "Vakola",
+    ],
+    "Santacruz East": [
         "Santacruz East",
-        "Pali Hill",
+        "Kalina",
+    ],
+    "Juhu": [
         "Juhu",
         "Juhu Tara Road",
         "JVPD Scheme",
+    ],
+    "Vile Parle West": [
         "Vile Parle West",
+    ],
+    "Vile Parle East": [
         "Vile Parle East",
     ],
-    "Western Suburbs Mid": [
+    "Andheri West": [
         "Andheri West",
-        "Andheri East",
         "Lokhandwala",
         "Versova",
         "Yari Road",
         "Oshiwara",
         "DN Nagar",
         "Seven Bungalow",
+        "Seven Bungalows",
         "Azad Nagar",
-        "Jogeshwari",
-        "Jogeshwari West",
-        "Jogeshwari East",
+    ],
+    "Andheri East": [
+        "Andheri East",
         "Marol",
         "Sakinaka",
         "Veera Desai",
     ],
-    "Western Suburbs Extended": [
-        "Goregaon West",
-        "Goregaon East",
-        "Malad West",
-        "Malad East",
-        "Kandivali West",
-        "Kandivali East",
-        "Borivali West",
-        "Borivali East",
-        "Dahisar East",
-        "Ram Mandir",
-        "Thakur Village",
+    "Jogeshwari West": [
+        "Jogeshwari West",
+        "Jogeshwari",
     ],
-    "Western Suburbs Far": [
+    "Jogeshwari East": [
+        "Jogeshwari East",
+    ],
+    "Goregaon West": [
+        "Goregaon West",
+    ],
+    "Goregaon East": [
+        "Goregaon East",
+    ],
+    "Malad West": [
+        "Malad West",
+    ],
+    "Malad East": [
+        "Malad East",
+    ],
+    "Kandivali West": [
+        "Kandivali West",
+        "Thakur Village",
+        "Ram Mandir",
+        "Charkop",
+    ],
+    "Kandivali East": [
+        "Kandivali East",
+    ],
+    "Borivali West": [
+        "Borivali West",
+    ],
+    "Borivali East": [
+        "Borivali East",
+    ],
+    "Dahisar": [
+        "Dahisar East",
+        "Dahisar West",
+    ],
+    "Mira Road": [
         "Mira Road",
         "Mira Road East",
+    ],
+    "Virar": [
         "Virar",
     ],
-    "Eastern Suburbs": [
-        "Kurla",
-        "Vikhroli",
-        "Ghatkopar West",
-        "Ghatkopar East",
+    "Powai": [
         "Powai",
         "Chandivali",
-        "Kanjur Marg",
-        "Kanjurmarg East",
+    ],
+    "Vikhroli": [
+        "Vikhroli",
+    ],
+    "Ghatkopar": [
+        "Ghatkopar West",
+        "Ghatkopar East",
+    ],
+    "Kurla": [
+        "Kurla",
+    ],
+    "Bhandup": [
         "Bhandup",
         "Bhandup West",
+    ],
+    "Mulund": [
         "Mulund West",
         "Mulund East",
         "Nahur",
-        "LBS Marg",
+    ],
+    "Kanjur Marg": [
+        "Kanjur Marg",
+        "Kanjurmarg East",
         "Pant Nagar",
         "Samartha Nagar",
+    ],
+    "Chembur": [
+        "Chembur",
+    ],
+    "Thane West": [
+        "Thane West",
+        "Thane East",
+        "Majiwada",
+        "Waghbil",
+        "Kolshet",
     ],
     "Navi Mumbai": [
         "Belapur",
@@ -121,25 +229,6 @@ MICRO_MARKETS: dict[str, list[str]] = {
         "Kalamboli",
         "New Panvel",
     ],
-    "Thane": [
-        "Thane West",
-        "Thane East",
-        "Majiwada",
-        "Waghbil",
-        "Kolshet",
-    ],
-    "Central Suburbs": [
-        "Matunga",
-        "Matunga East",
-        "Sewri",
-        "Wadala",
-        "Wadala East",
-        "Sion",
-    ],
-    "Mumbai Trans Harbour": [
-        "Uran",
-        "Nhava",
-    ],
 }
 
 # Reverse mapping: area → micro market
@@ -147,6 +236,7 @@ AREA_TO_MARKET: dict[str, str] = {}
 for market, areas in MICRO_MARKETS.items():
     for area in areas:
         AREA_TO_MARKET[area.lower()] = market
+
 
 # Also add direct mappings for known aliases/variants
 AREA_ALIASES: dict[str, str] = {
@@ -160,7 +250,7 @@ AREA_ALIASES: dict[str, str] = {
     "lokhandwala complex back road": "Lokhandwala",
     "lokhandwala market": "Lokhandwala",
     "hiranandani gardens powai": "Powai",
-    "hiranandani": "Hiranandani",  # Powai specific
+    "hiranandani": "Hiranandani",
     "pali hill": "Pali Hill",
     "worli naka": "Worli Naka",
     "worli sea face": "Worli Sea Face",
@@ -170,7 +260,6 @@ AREA_ALIASES: dict[str, str] = {
     "peddar road": "Peddar Road",
     "pedder road": "Peddar Road",
     "grant road": "Grant Road",
-    "navi mumbai": "Kharghar",  # too broad, map to a default
     "jvpd": "JVPD Scheme",
     "jvpd scheme": "JVPD Scheme",
     "elphinstone": "Elphinstone",
@@ -185,7 +274,6 @@ AREA_ALIASES: dict[str, str] = {
     "yamuna nagar": "Powai",
     "ram mandir": "Ram Mandir",
     "thakur village": "Thakur Village",
-    # Building-specific or too vague — keep as-is
     "belapur": "Belapur",
     "nerul": "Nerul",
     "kharghar": "Kharghar",
@@ -208,19 +296,20 @@ AREA_ALIASES: dict[str, str] = {
     "ghatkopar": "Ghatkopar West",
     "kandivali west": "Kandivali West",
     "kandivali east": "Kandivali East",
-    "kandivali": "Kandivali West",  # default
+    "kandivali": "Kandivali West",
     "borivali west": "Borivali West",
     "borivali east": "Borivali East",
     "mulund west": "Mulund West",
     "mulund east": "Mulund East",
-    "mulund": "Mulund West",  # default
+    "mulund": "Mulund West",
     "dahisar east": "Dahisar East",
-    "goregaon": "Goregaon West",  # default bare
-    "malad": "Malad West",  # default bare
-    "andheri": "Andheri West",  # default bare
-    "bandra": "Bandra West",  # default bare
-    "khar": "Khar West",  # default bare
-    "santacruz": "Santacruz West",  # default bare
+    "dahisar west": "Dahisar West",
+    "goregaon": "Goregaon West",
+    "malad": "Malad West",
+    "andheri": "Andheri West",
+    "bandra": "Bandra West",
+    "khar": "Khar West",
+    "santacruz": "Santacruz West",
     "oshibara": "Oshiwara",
     "sewree": "Sewri",
     "sewri west": "Sewri",
@@ -229,7 +318,6 @@ AREA_ALIASES: dict[str, str] = {
     "wadala east": "Wadala East",
     "kamla mill compound": "Lower Parel",
     "kemps corner": "Kemps Corner",
-    "tardeo": "Tardeo",
     "lower parel east": "Lower Parel",
     "lower parel west": "Lower Parel",
     "byculla": "Byculla",
@@ -251,18 +339,13 @@ AREA_ALIASES: dict[str, str] = {
     "gamdevi": "Gamdevi",
     "nana chowk": "Nana Chowk",
     "lalbaug": "Lalbaug",
-    "grant road": "Grant Road",
     "mumbai central": "Mumbai Central",
-    "altamount road": "Altamount Road",
     "nepean sea road": "Nepean Sea Road",
-    "peddar road": "Peddar Road",
-    "tardeo": "Tardeo",
+    "tardio": "Tardeo",
+    "tardo": "Tardeo",
     "mahalakshmi": "Mahalakshmi",
     "prabhadevi": "Prabhadevi",
     "worli": "Worli",
-    "lower parel": "Lower Parel",
-    "parel": "Parel",
-    "elphinstone": "Elphinstone",
     "juhu": "Juhu",
     "versova": "Versova",
     "oshiwara": "Oshiwara",
@@ -279,24 +362,25 @@ AREA_ALIASES: dict[str, str] = {
     "kanjurmarg east": "Kanjurmarg East",
     "bhandup west": "Bhandup West",
     "bhandup": "Bhandup West",
+    "chembur": "Chembur",
 }
 
 
 def get_micro_market(area: str) -> str:
     """Get the micro market for a given area name."""
     key = area.strip().lower()
-    
+
     # First try area alias resolution
     if key in AREA_ALIASES:
         resolved = AREA_ALIASES[key]
         if not resolved:
             return ""
         key = resolved.lower()
-    
+
     # Then look up in the reverse mapping
     if key in AREA_TO_MARKET:
         return AREA_TO_MARKET[key]
-    
+
     return ""
 
 

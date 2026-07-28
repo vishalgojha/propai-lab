@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Sparkles } from "lucide-react";
+import { Sparkles, MessageSquare } from "lucide-react";
 import { describeNaturalSearch, searchNaturalLanguageListings } from "@/lib/natural-search";
 import { getAllLocalities } from "@/lib/localities";
 import { slugify } from "@/lib/supabase";
@@ -9,7 +9,6 @@ import SiteFooter from "@/components/SiteFooter";
 import { ShortlistProvider } from "@/components/ShortlistProvider";
 import ShortlistBar from "@/components/ShortlistBar";
 import RequirementCapture from "@/components/RequirementCapture";
-import SearchAiChat from "@/components/SearchAiChat";
 import SearchResultsView from "@/components/SearchResultsView";
 import RelatedSearches from "@/components/RelatedSearches";
 import { generateSearchRelated } from "@/lib/related-searches";
@@ -18,9 +17,6 @@ import { NOINDEX } from "@/lib/seo";
 const MAPBOX_TOKEN =
   process.env.NEXT_PUBLIC_MAPBOX_TOKEN || process.env.MAPBOX_TOKEN || null;
 
-// Locality/building lists change gradually; a few minutes of staleness is fine
-// and avoids re-scanning the full tables on every navigation. ISR caches the
-// rendered page for 5 min so link clicks feel instant.
 export const revalidate = 300;
 
 export const metadata = {
@@ -34,12 +30,6 @@ export const metadata = {
 };
 
 type SearchParams = Promise<{ q?: string; asset?: string }>;
-
-const ASSET_OPTIONS: Array<{ value: string; label: string }> = [
-  { value: "", label: "All" },
-  { value: "residential", label: "Residential" },
-  { value: "commercial", label: "Commercial" },
-];
 
 export default async function SearchPage({ searchParams }: { searchParams: SearchParams }) {
   const { q = "", asset: assetParam = "" } = await searchParams;
@@ -67,7 +57,6 @@ export default async function SearchPage({ searchParams }: { searchParams: Searc
 
   const summary = state?.parsed ? describeNaturalSearch(state.parsed) : "";
 
-  // Generate related search suggestions from DB data
   let relatedSections: Awaited<ReturnType<typeof generateSearchRelated>> = [];
   if (state?.parsed) {
     try {
@@ -77,34 +66,9 @@ export default async function SearchPage({ searchParams }: { searchParams: Searc
     }
   }
 
-  // Compact, LLM-safe context describing the listings the user is currently
-  // looking at, so the "Ask AI" follow-up chat can answer about them.
-  const aiContext = state
-    ? (() => {
-        const lines: string[] = [];
-        if (query) lines.push(`Search query: "${query}"`);
-        if (asset) lines.push(`Asset type: ${asset}`);
-        const rows = state.results.slice(0, 15);
-        lines.push(`Showing ${state.results.length} result(s); listing up to ${rows.length} below:`);
-        for (const r of rows) {
-          const parts = [
-            r.building_name || r.location_label || "Unknown location",
-            r.bhk ? `${r.bhk} BHK` : null,
-            r.priceLabel !== "Price on request" ? r.priceLabel : null,
-            r.intent ? `(${r.intent})` : null,
-            r.micro_market ? `@ ${r.micro_market}` : null,
-            r.broker_name ? `broker: ${r.broker_name}` : null,
-          ].filter(Boolean);
-          lines.push("- " + parts.join(" "));
-        }
-        return lines.join("\n");
-      })()
-    : "";
-  // Results render whenever a search/browse produced a state — including an
-  // asset-only browse like /search?asset=commercial (no free-text query).
   const hasResults = Boolean(state);
 
-   return (
+  return (
     <div className="min-h-screen bg-black text-white">
       <SiteHeader />
       <ShortlistProvider>
@@ -123,11 +87,6 @@ export default async function SearchPage({ searchParams }: { searchParams: Searc
 
           <div className="mt-8 max-w-2xl">
             <SearchBox query={query} asset={assetParam} localities={knownLocalities} />
-            {aiContext && state && state.results.length > 0 && (
-              <div className="mt-4">
-                <SearchAiChat context={aiContext} />
-              </div>
-            )}
           </div>
 
           {!query && (
@@ -176,29 +135,76 @@ export default async function SearchPage({ searchParams }: { searchParams: Searc
           </section>
         ) : hasResults ? (
           <section className="mt-10 space-y-6">
-            <div className="flex flex-wrap items-center gap-2 text-sm">
-              {query && (
-                <>
-                  <span className="text-zinc-500">Searching for:</span>
-                  <span className="rounded-full border border-white/10 bg-zinc-900 px-3 py-1 text-zinc-200">{query}</span>
-                </>
-              )}
-              {summary && (
-                <span className="rounded-full border border-green-400/20 bg-green-400/10 px-3 py-1 text-green-200">
-                  {summary}
-                </span>
-              )}
-              {asset && (
-                <span className="rounded-full border border-green-400/20 bg-green-400/10 px-3 py-1 text-green-200 capitalize">
-                  {asset}
-                </span>
-              )}
-              {!query && asset && (
-                <span className="text-zinc-500">Showing {asset} listings</span>
-              )}
-            </div>
+            {/* ── No-intent clarification ─────────────────────────── */}
+            {state?.noResultsReason === "no_intent" && (
+              <div className="rounded-2xl border border-amber-400/20 bg-amber-400/5 p-6 lg:p-8">
+                <div className="flex items-start gap-3">
+                  <MessageSquare className="h-5 w-5 mt-0.5 shrink-0 text-amber-400" aria-hidden="true" />
+                  <div>
+                    <h2 className="text-lg font-semibold text-white mb-2">
+                      I couldn&apos;t find property criteria in that
+                    </h2>
+                    <p className="text-sm text-zinc-400 mb-4">
+                      Try something like:
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {[
+                        "3 BHK in Bandra West under 2 Cr",
+                        "2 BHK for rent in Andheri West",
+                        "Furnished flat in Powai budget 1 to 2 lakh",
+                        "Office space in BKC",
+                      ].map((example) => (
+                        <Link
+                          key={example}
+                          href={`/search?q=${encodeURIComponent(example)}`}
+                          className="rounded-full border border-white/10 bg-zinc-900/70 px-4 py-2 text-sm text-zinc-300 hover:border-green-400/40 hover:text-white transition-colors"
+                        >
+                          {example}
+                        </Link>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
 
-            {state && state.parsed.locality && (
+            {/* ── No matches (has intent but no results) ──────────── */}
+            {state?.noResultsReason === "no_matches" && (
+              <div className="rounded-2xl border border-white/10 bg-zinc-950/80 p-6 lg:p-8">
+                <h2 className="text-lg font-semibold text-white mb-2">No matches found</h2>
+                <p className="text-sm text-zinc-400">
+                  We couldn&apos;t find listings matching your criteria. Try broadening your search —
+                  remove the budget filter, try a nearby locality, or check back later when new inventory arrives.
+                </p>
+              </div>
+            )}
+
+            {/* ── Standard results header ─────────────────────────── */}
+            {state?.noResultsReason !== "no_intent" && (
+              <div className="flex flex-wrap items-center gap-2 text-sm">
+                {query && (
+                  <>
+                    <span className="text-zinc-500">Searching for:</span>
+                    <span className="rounded-full border border-white/10 bg-zinc-900 px-3 py-1 text-zinc-200">{query}</span>
+                  </>
+                )}
+                {summary && (
+                  <span className="rounded-full border border-green-400/20 bg-green-400/10 px-3 py-1 text-green-200">
+                    {summary}
+                  </span>
+                )}
+                {asset && (
+                  <span className="rounded-full border border-green-400/20 bg-green-400/10 px-3 py-1 text-green-200 capitalize">
+                    {asset}
+                  </span>
+                )}
+                {!query && asset && (
+                  <span className="text-zinc-500">Showing {asset} listings</span>
+                )}
+              </div>
+            )}
+
+            {state && state.parsed.locality && state.noResultsReason !== "no_intent" && (
               <div className="rounded-2xl border border-white/10 bg-zinc-950/80 p-4 text-sm text-zinc-400">
                 We found matching results in{" "}
                 <Link
@@ -240,7 +246,7 @@ export default async function SearchPage({ searchParams }: { searchParams: Searc
                   <RelatedSearches sections={relatedSections} />
                 )}
               </>
-            ) : (
+            ) : state?.noResultsReason !== "no_intent" && (
               <div className="grid grid-cols-1 lg:grid-cols-[3fr_1fr] gap-6">
                 <RequirementCapture query={query} />
 
@@ -255,7 +261,7 @@ export default async function SearchPage({ searchParams }: { searchParams: Searc
                 </aside>
               </div>
             )}
-            {relatedSections.length > 0 && state && state.results.length === 0 && (
+            {relatedSections.length > 0 && state && state.results.length === 0 && state.noResultsReason !== "no_intent" && (
               <RelatedSearches sections={relatedSections} />
             )}
           </section>

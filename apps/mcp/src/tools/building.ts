@@ -57,6 +57,26 @@ export function registerBuildingTools(server: McpServer, context: ToolContext) {
     );
   });
 
+  server.registerTool("get_building", {
+    description: "Get comprehensive profile for a building — ChatGPT-compatible alias for building_profile",
+    inputSchema: {
+      building_name: z.string().describe("Building name"),
+      location: z.string().optional(),
+      days_back: z.number().optional().default(90),
+    },
+  }, async (input) => {
+    const id = brokerId(context);
+    await logToolCall(id, "get_building", input);
+    const result = await getBuildingIntel({ building_name: input.building_name, locality: input.location, days_back: input.days_back });
+    if (!result.building_name) return textResponse(`No data for "${input.building_name}".`, null);
+    const sale = result.price_benchmarks?.sale;
+    const rent = result.price_benchmarks?.rent;
+    return textResponse(
+      `${result.building_name} @ ${result.matched_localities?.join(", ") || "N/A"}\nSale: ${fmtPpsfRange(sale)} (${sale?.listing_count || 0} samples)\nRent: ${fmtPpsfRange(rent)} (${rent?.listing_count || 0} samples)`,
+      result,
+    );
+  });
+
   server.registerTool("building_inventory", {
     description: "Get inventory overview — configuration/unit mix for a building",
     inputSchema: {
