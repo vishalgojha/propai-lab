@@ -41,8 +41,14 @@ export type CanonicalLocality = {
 // Non-place internal buckets → hidden from all public surfaces.
 const HIDDEN_BUCKETS = new Set<string>([
   "western suburbs prime",
+  "western suburbs mid",
+  "western suburbs extended",
+  "western suburbs far",
   "south mumbai central",
+  "south mumbai prime",
   "eastern suburbs",
+  "eastern suburbs prime",
+  "eastern suburbs extended",
   "central suburbs",
   "mumbai suburbs",
   "western line",
