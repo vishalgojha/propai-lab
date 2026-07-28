@@ -10,7 +10,7 @@ import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
 import ListingCard, { type ListingItem } from "@/components/ListingCard";
 import { useAuth } from "@/lib/AuthProvider";
-import { Plus, MessageSquare, Trash2 } from "lucide-react";
+import { Plus, MessageSquare, Trash2, PanelLeft, PanelLeftClose } from "lucide-react";
 
 function messageText(message: { parts?: Array<{ type?: string; text?: string }>; content?: string }) {
   if (typeof message.content === "string" && message.content) return message.content;
@@ -52,6 +52,7 @@ export default function ChatPage() {
   const [sessionId, setSessionId] = useState<string>("");
   const [sessions, setSessions] = useState<api.ChatSession[]>([]);
   const [sessionsLoaded, setSessionsLoaded] = useState(false);
+  const [showSessions, setShowSessions] = useState(true);
 
   const { messages, sendMessage, status, setMessages, error } = useChat({
     transport: new DefaultChatTransport({
@@ -65,6 +66,7 @@ export default function ChatPage() {
       },
     }),
   });
+  const previousStatus = useRef(status);
 
   // Load broker phone from profile
   useEffect(() => {
@@ -126,14 +128,27 @@ export default function ChatPage() {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, status]);
 
+  // Refresh the sidebar after a response finishes so newly created chats
+  // appear immediately instead of only after a full page reload.
+  useEffect(() => {
+    const wasBusy = previousStatus.current === "submitted" || previousStatus.current === "streaming";
+    if (wasBusy && status === "ready" && brokerPhone) {
+      void loadSessions(brokerPhone);
+    }
+    previousStatus.current = status;
+  }, [brokerPhone, loadSessions, status]);
+
   // Create a new session
   const handleNewChat = useCallback(async () => {
     if (!brokerPhone) return;
     try {
+      sessionIdRef.current = "";
+      setSessionId("");
+      setMessages([]);
       const session = await api.createChatSession(brokerPhone);
+      if (!session?.id) throw new Error("Could not create a new chat session.");
       sessionIdRef.current = session.id;
       setSessionId(session.id);
-      setMessages([]);
       const updated = await loadSessions(brokerPhone);
       setSessions(updated);
     } catch {}
@@ -201,7 +216,7 @@ export default function ChatPage() {
       `}</style>
 
       {/* ═══════ Session Sidebar ═══════ */}
-      <aside className="hidden lg:flex w-52 flex-col border-r border-white/10 shrink-0 mr-4">
+      {showSessions && <aside className="hidden lg:flex w-52 flex-col border-r border-white/10 shrink-0 mr-4">
         <div className="flex items-center justify-between px-3 pt-3 pb-2">
           <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-[0.15em]">Chats</span>
           <button
@@ -243,10 +258,20 @@ export default function ChatPage() {
             </div>
           )}
         </div>
-      </aside>
+      </aside>}
 
       {/* ═══════ Chat Area ═══════ */}
       <div className="flex-1 flex flex-col min-w-0">
+        <div className="hidden lg:flex items-center justify-between mb-2">
+          <button
+            type="button"
+            onClick={() => setShowSessions((visible) => !visible)}
+            className="flex items-center gap-1.5 rounded-lg border border-white/10 px-2.5 py-1.5 text-[11px] text-zinc-400 hover:border-white/20 hover:text-white"
+          >
+            {showSessions ? <PanelLeftClose className="h-3.5 w-3.5" /> : <PanelLeft className="h-3.5 w-3.5" />}
+            {showSessions ? "Hide chats" : "Show chats"}
+          </button>
+        </div>
         {/* Mobile: new chat button */}
         <div className="lg:hidden mb-3 flex justify-end">
           <button

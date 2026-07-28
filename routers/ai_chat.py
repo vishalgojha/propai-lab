@@ -738,8 +738,8 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
         try:
             storage.add_chat_message(req.session_id, role, content, tenant_id=tenant_id)
             storage.touch_chat_session(req.session_id, tenant_id=tenant_id)
-        except Exception:
-            pass
+        except Exception as exc:
+            _logger.exception("Could not persist AI chat message session=%s role=%s: %s", req.session_id, role, exc)
 
     def _maybe_title(text: str) -> None:
         if not req.session_id or not text:
