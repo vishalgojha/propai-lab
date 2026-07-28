@@ -124,6 +124,12 @@ async def _request_organization_id(user: dict, tenant_id: str | None) -> str:
     return str(org_id)
 
 
+def _normalized_whatsapp_phone(value: object) -> str:
+    """Return the stable subscriber-number key used to reject formatting duplicates."""
+    digits = re.sub(r"\D+", "", str(value or ""))
+    return digits[-10:] if len(digits) >= 10 else ""
+
+
 @router.post("/api/sources/stop")
 async def scheduler_stop(user: dict = Depends(require_user)):
     scheduler = get_scheduler()
@@ -757,6 +763,24 @@ async def pair_code_phone(
     phone_number = body.get("phone", "").strip()
     if not phone_number:
         raise HTTPException(400, "phone number is required")
+    normalized_phone = _normalized_whatsapp_phone(phone_number)
+    if not normalized_phone:
+        raise HTTPException(400, "Enter a valid WhatsApp phone number with country code")
+    existing_phones = await asyncio.to_thread(storage.list_org_whatsapp_connections, org_id)
+    duplicate = next(
+        (
+            row for row in existing_phones
+            if int(row.get("id") or 0) != phone_id
+            and _normalized_whatsapp_phone(row.get("phone_number")) == normalized_phone
+        ),
+        None,
+    )
+    if duplicate:
+        raise HTTPException(
+            409,
+            f"This WhatsApp number is already saved as {duplicate.get('instance_name') or 'another phone'}. "
+            "Remove this empty phone card instead of pairing the same number twice.",
+        )
     try:
         _, resp = await _first_ingestor_response(
             "POST", "/pair-code", timeout=55,
