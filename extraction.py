@@ -182,7 +182,15 @@ def _parse_raw_price_to_abs(raw_price_text: str) -> float | None:
     """
     if not raw_price_text:
         return None
-    m = _re.search(r'([\d,]+(?:\.\d+)?)\s*(cr|crore|lac|lakh|l|k|thousand)?', raw_price_text.lower())
+    # Brokers commonly write prices as `1.15.Cr`, `75.Lakh`, or
+    # `₹2.80 to 3.35 Crore`.  The old expression stopped at the decimal
+    # punctuation and therefore could validate the AI value against `1.15`
+    # rupees instead of 1.15 crore.
+    m = _re.search(
+        r'([\d,]+(?:\.\d+)?)\s*[.:/\-]*\s*'
+        r'(cr|crores?|crore|lac?s?|lakhs?|l|k|thousands?|thousand)\b',
+        raw_price_text.lower(),
+    )
     if not m:
         return None
     try:
@@ -192,6 +200,35 @@ def _parse_raw_price_to_abs(raw_price_text: str) -> float | None:
     unit = (m.group(2) or "").rstrip("s")
     multiplier = _UNIT_TO_ABS.get(unit, 1)
     return amount * multiplier
+
+
+def _parse_raw_price_native(raw_price_text: str) -> tuple[float, str] | None:
+    """Return the first explicitly stated broker price in its native unit.
+
+    This is deliberately source-grounded.  The model is asked for absolute
+    rupees, but persisted inbox values use native units (Cr/Lac/K).  If the
+    source contains an explicit unit, it is safer to use that source value
+    than to trust a model conversion which can be off by 10x/1000x.
+    """
+    if not raw_price_text:
+        return None
+    m = _re.search(
+        r'([\d,]+(?:\.\d+)?)\s*[.:/\-]*\s*'
+        r'(cr|crores?|crore|lac?s?|lakhs?|l|k|thousands?|thousand)\b',
+        raw_price_text.lower(),
+    )
+    if not m:
+        return None
+    try:
+        amount = float(m.group(1).replace(",", ""))
+    except ValueError:
+        return None
+    unit = m.group(2).rstrip("s")
+    if unit in {"crore", "cr"}:
+        return amount, "cr"
+    if unit in {"lac", "lakh", "l"}:
+        return amount, "lac"
+    return amount, "K"
 
 
 def _ai_extraction_to_parsed(ai_extraction: dict, raw_text: str, sender_name: str, push_name: str) -> dict:
@@ -238,27 +275,22 @@ def _ai_extraction_to_parsed(ai_extraction: dict, raw_text: str, sender_name: st
     # price in the stated unit, e.g. 4.4 lac = ₹4,40,000).
     raw_price_text = (price_info.get("raw_price_text") or "").lower() if isinstance(price_info, dict) else ""
     if price is not None:
-        # Cross-check: parse raw_price_text to validate the AI's absolute amount.
-        # AI sometimes returns 10x/100x the correct value (e.g. 4500000 for "4.50 Lacs").
-        _parsed_abs = _parse_raw_price_to_abs(raw_price_text)
-        if _parsed_abs is not None and price > 0 and _parsed_abs > 0:
-            ratio = price / _parsed_abs
-            if ratio > 5 or ratio < 0.2:
-                price = _parsed_abs
-        if any(u in raw_price_text for u in ("cr", "crore")):
-            price_unit = "cr"
-            if price >= 10_000_000:
-                price = price / 1_00_00_000
-        elif any(u in raw_price_text for u in ("lac", "lakh", "l ")):
-            price_unit = "lac"
-            if price >= 100_000:
-                price = price / 1_00_000
-        elif any(u in raw_price_text for u in ("k", "thousand")):
-            price_unit = "K"
-            if price >= 10_000:
-                price = price / 1_000
+        # When the broker explicitly supplied a unit, the raw phrase is the
+        # authority for the persisted native value.  This prevents values
+        # such as AI amount=2,800 being stored as 2,800 Cr for source text
+        # that says "2.80 Cr".
+        _native_price = _parse_raw_price_native(raw_price_text)
+        if _native_price is not None:
+            price, price_unit = _native_price
         else:
-            # No unit keyword — store as absolute rupees
+            # Cross-check: parse raw_price_text to validate the AI's absolute amount.
+            # AI sometimes returns 10x/100x the correct value (e.g. 4500000 for "4.50 Lacs").
+            _parsed_abs = _parse_raw_price_to_abs(raw_price_text)
+            if _parsed_abs is not None and price > 0 and _parsed_abs > 0:
+                ratio = price / _parsed_abs
+                if ratio > 5 or ratio < 0.2:
+                    price = _parsed_abs
+            # No explicit unit — store as absolute rupees.
             price_unit = "abs"
     else:
         price_unit = None
