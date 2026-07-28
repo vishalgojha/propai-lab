@@ -4365,6 +4365,72 @@ class SupabaseStorage(Storage):
         res = q.execute()
         return bool(res.data)
 
+    def get_building_profile(self, building_db_id: int | str) -> dict | None:
+        """Return the enrichment/profile view used by the building detail API.
+
+        Keep the optional enrichment tables best-effort: a missing or partially
+        migrated enrichment table must not turn a normal building lookup into a
+        500 response.
+        """
+        try:
+            building_res = self.client.table("buildings").select("*").eq("id", building_db_id).limit(1).execute()
+            if not building_res.data:
+                return None
+            building = building_res.data[0]
+
+            def read(table: str, columns: str = "*", *, order: str | None = None, limit: int | None = None, filters: dict | None = None) -> list[dict]:
+                try:
+                    query = self.client.table(table).select(columns)
+                    for key, value in (filters or {}).items():
+                        query = query.eq(key, value)
+                    if order:
+                        query = query.order(order, desc=True)
+                    if limit:
+                        query = query.limit(limit)
+                    result = query.execute()
+                    return result.data or []
+                except Exception:
+                    return []
+
+            aliases = read("building_name_aliases", filters={"building_id": building["id"]})
+            sources = read("building_enrichment_sources", order="enriched_at", filters={"building_id": building["id"]})
+            history = read("building_enrichment_history", order="created_at", limit=50, filters={"building_id": building["id"]})
+
+            canonical_name = building.get("canonical_name") or ""
+            listings_count = 0
+            brokers_count = 0
+            requirements_count = 0
+            try:
+                listings_count = self.client.table("listings").select("id", count="exact").eq("building_name", canonical_name).execute().count or 0
+            except Exception:
+                pass
+            try:
+                brokers_count = self.client.table("parsed_output").select("broker_name", count="exact").eq("building_name", canonical_name).not_.is_("broker_name", "null").neq("broker_name", "").execute().count or 0
+            except Exception:
+                pass
+            try:
+                requirements_count = self.client.table("parsed_output").select("id", count="exact").eq("building_name", canonical_name).in_("intent", ["BUY", "RENTAL_SEEKER", "BUYER", "REQUIREMENT"]).execute().count or 0
+            except Exception:
+                pass
+
+            price_stats = read("price_stats", filters={"micro_market": building.get("micro_market")})
+            landmarks = read("building_landmarks", filters={"building_id": building["id"]})
+            return {
+                **building,
+                "aliases": aliases,
+                "sources": sources,
+                "history": history,
+                "observed_listings": listings_count,
+                "observed_brokers": brokers_count,
+                "observed_requirements": requirements_count,
+                "price_stats": price_stats,
+                "landmarks": landmarks,
+                "markets": [],
+            }
+        except Exception as exc:
+            print(f"Error getting building profile: {exc}")
+            return None
+
 
         try:
             # Get building by database ID
