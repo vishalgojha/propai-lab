@@ -1150,7 +1150,89 @@ def _market_price_to_rupees(value: str, unit: str) -> float:
     return amount
 
 
-def parse_market_search_request(text: str) -> dict | None:
+def _resolve_between_localities(db_path, start: str, end: str) -> list[str]:
+    """Resolve between endpoints from persisted locality geography."""
+    client = getattr(db_path, "_client", None) if db_path is not None else None
+    if client is None or not start or not end:
+        return []
+    try:
+        rows = (
+            client.table("locality_reference")
+            .select("parent_locality,sub_locality,sort_order")
+            .not_.is_("sort_order", "null")
+            .order("sort_order")
+            .execute()
+            .data
+            or []
+        )
+    except Exception:
+        return []
+
+    def key(value: str) -> str:
+        return re.sub(r"[^a-z0-9]+", " ", (value or "").lower()).strip()
+
+    start_key, end_key = key(start), key(end)
+    ordered = [(int(row["sort_order"]), str(row.get("sub_locality") or row.get("parent_locality") or "").strip()) for row in rows]
+    ordered = [(order, name) for order, name in ordered if name]
+    start_index = next((i for i, (_, name) in enumerate(ordered) if key(name) == start_key), None)
+    end_index = next((i for i, (_, name) in enumerate(ordered) if key(name) == end_key), None)
+    if start_index is None or end_index is None:
+        return []
+    lo, hi = sorted((start_index, end_index))
+    result, seen = [], set()
+    for _, name in ordered[lo : hi + 1]:
+        normalized = key(name)
+        if normalized not in seen:
+            seen.add(normalized)
+            result.append(name)
+    return result
+
+
+def _llm_market_search_request(text: str, api_key: str = "", model: str = "", base_url: str = "", db_path=None) -> dict | None:
+    """Let the selected LLM extract filters; keep geography resolution in Supabase."""
+    if not api_key or not model:
+        return None
+    prompt = (
+        "Extract a real-estate marketplace search into JSON only. Do not infer "
+        "intermediate locations. For between A and B, return only "
+        "between_start and between_end; the application resolves geography. "
+        "Keys: bhk, intent (RENT/SELL/null), furnishing, price_min, price_max, "
+        "micro_markets (explicit names only), between_start, between_end. "
+        "Prices must be numeric rupees. User query: " + text
+    )
+    try:
+        response = get_client(api_key=api_key, base_url=base_url or None).chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": "You extract search filters. Return valid JSON only."},
+                {"role": "user", "content": prompt},
+            ],
+            max_tokens=300,
+            temperature=0,
+        )
+        raw = re.sub(r"^```(?:json)?\s*|\s*```$", "", (response.choices[0].message.content or "").strip(), flags=re.IGNORECASE)
+        parsed = json.loads(raw)
+        if not isinstance(parsed, dict):
+            return None
+        markets = [str(item).strip() for item in (parsed.get("micro_markets") or []) if str(item).strip()]
+        between_start = str(parsed.get("between_start") or "").strip()
+        between_end = str(parsed.get("between_end") or "").strip()
+        if between_start and between_end:
+            markets = _resolve_between_localities(db_path, between_start, between_end) or [between_start, between_end]
+        if not markets and not parsed.get("bhk"):
+            return None
+        result = {"limit": 10, "offset": 0, "sort_by": "last_seen", "group_by_building": False, "micro_markets": markets}
+        for field in ("bhk", "intent", "furnishing", "price_min", "price_max"):
+            if parsed.get(field) not in (None, ""):
+                result[field] = parsed[field]
+        if between_start and between_end:
+            result["between"] = {"start": between_start, "end": between_end, "resolved": markets}
+        return result
+    except Exception:
+        return None
+
+
+def parse_market_search_request(text: str, api_key: str = "", model: str = "", base_url: str = "", db_path=None) -> dict | None:
     """Parse an ordinary broker search message into safe market filters.
 
     This intentionally recognises only concrete property language. Generic
@@ -1161,6 +1243,10 @@ def parse_market_search_request(text: str) -> dict | None:
     lower = raw.lower()
     if not raw:
         return None
+
+    llm_result = _llm_market_search_request(raw, api_key, model, base_url, db_path)
+    if llm_result:
+        return llm_result
 
     bhk_match = re.search(r"\b(\d+(?:\.5)?)\s*(?:bhk|bed(?:room)?s?)\b", lower)
     localities = [
