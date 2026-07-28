@@ -80,7 +80,14 @@ def _tier_cap(org: dict) -> tuple[str, int, bool]:
     return tier, {"starter": 5, "growth": 8, "scale": 15}.get(tier, 5), False
 
 
-def _suggestion_score(org_id: str, group_name: str, participants: int, last_message_at: str | None) -> dict:
+def _suggestion_score(
+    org_id: str,
+    group_name: str,
+    participants: int,
+    last_message_at: str | None,
+    *,
+    include_content: bool = False,
+) -> dict:
     """Compute a suggestion score and reasons for a WhatsApp group.
     
     Returns a dict with:
@@ -128,49 +135,49 @@ def _suggestion_score(org_id: str, group_name: str, participants: int, last_mess
         except Exception:
             pass
     
-    # 4. Message content signal: check for BHK/price/locality patterns
-    # Sample recent messages from the group
-    try:
-        recent_messages = (
-            storage.client.table("raw_messages")
-            .select("message")
-            .eq("tenant_id", org_id)
-            .eq("group_name", group_name)
-            .order("created_at", desc=True)
-            .limit(10)
-            .execute()
-            .data
-            or []
-        )
-        
-        has_bhk = False
-        has_price = False
-        has_locality = False
-        
-        for msg_row in recent_messages:
-            msg_text = msg_row.get("message") or ""
-            if _BHK_PATTERN.search(msg_text):
-                has_bhk = True
-            if _PRICE_PATTERN.search(msg_text):
-                has_price = True
-            msg_lower = msg_text.lower()
-            if any(loc in msg_lower for loc in _LOCALITY_KEYWORDS):
-                has_locality = True
-            
-            if has_bhk and has_price and has_locality:
-                break
-        
-        if has_bhk and has_price:
-            score += 0.15
-            reasons.append("Recent messages contain BHK/price patterns")
-        elif has_bhk or has_price:
-            score += 0.08
-            if has_bhk:
-                reasons.append("Recent messages contain BHK patterns")
-            if has_price:
-                reasons.append("Recent messages contain price patterns")
-    except Exception:
-        pass
+    # 4. Message content signal is intentionally opt-in.  This function is
+    # called once per directory row; querying raw_messages for every one of
+    # up to 1,000 groups creates an N+1 timeout on onboarding.  Directory
+    # ranking must use the already-loaded metadata.  A future detail view can
+    # request this richer signal for one selected group only.
+    if include_content:
+        try:
+            recent_messages = (
+                storage.client.table("raw_messages")
+                .select("message")
+                .eq("tenant_id", org_id)
+                .eq("group_name", group_name)
+                .order("created_at", desc=True)
+                .limit(10)
+                .execute()
+                .data
+                or []
+            )
+
+            has_bhk = False
+            has_price = False
+            has_locality = False
+            for msg_row in recent_messages:
+                msg_text = msg_row.get("message") or ""
+                has_bhk = has_bhk or bool(_BHK_PATTERN.search(msg_text))
+                has_price = has_price or bool(_PRICE_PATTERN.search(msg_text))
+                has_locality = has_locality or any(
+                    loc in msg_text.lower() for loc in _LOCALITY_KEYWORDS
+                )
+                if has_bhk and has_price and has_locality:
+                    break
+
+            if has_bhk and has_price:
+                score += 0.15
+                reasons.append("Recent messages contain BHK/price patterns")
+            elif has_bhk or has_price:
+                score += 0.08
+                if has_bhk:
+                    reasons.append("Recent messages contain BHK patterns")
+                if has_price:
+                    reasons.append("Recent messages contain price patterns")
+        except Exception:
+            pass
     
     # 5. Broker overlap score (lazy - only for top candidates)
     # This is computed on-demand during the check flow, not here
