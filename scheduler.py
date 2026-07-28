@@ -41,7 +41,9 @@ class PeriodicCorrectionRunner:
         self._thread: Optional[threading.Thread] = None
 
     def start(self) -> None:
-        enabled = os.getenv("AI_CORRECTION_SCHEDULE_ENABLED", "true").lower() == "true"
+        # Correction is maintenance work, not part of the live request path.
+        # Keep it opt-in so a Supabase slowdown cannot take down the app.
+        enabled = os.getenv("AI_CORRECTION_SCHEDULE_ENABLED", "false").lower() == "true"
         if not enabled or (self._thread and self._thread.is_alive()):
             return
         self._thread = threading.Thread(

@@ -91,8 +91,11 @@ sys.path.insert(0, str(PROJECT_DIR))
 
 PROVIDER_PROBE_INTERVAL_S = 60
 HISTORY_BACKFILL_INTERVAL_S = 6 * 3600
-ENRICHMENT_POLL_INTERVAL = 30
-ENRICHMENT_BATCH_SIZE = 20
+# Keep maintenance work from starving authenticated API requests when the
+# Supabase project is under load.  It can be increased deliberately once the
+# live request path is stable.
+ENRICHMENT_POLL_INTERVAL = 60
+ENRICHMENT_BATCH_SIZE = 5
 
 
 @asynccontextmanager
