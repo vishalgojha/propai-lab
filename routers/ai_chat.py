@@ -104,21 +104,31 @@ def _preferred_workspace_provider(tenant_id: str | None) -> dict:
     """Resolve workspace-saved credentials before deployment environment keys."""
     try:
         providers = storage.get_llm_providers(tenant_id=tenant_id)
-        active = [
+        def value(provider, key: str, default=""):
+            if isinstance(provider, dict):
+                return provider.get(key, default)
+            return getattr(provider, key, default)
+
+        complete = [
             p for p in providers
-            if getattr(p, "is_active", 0) and (getattr(p, "api_key", "") or "").strip()
-            and (getattr(p, "model_name", "") or "").strip()
+            if (value(p, "api_key") or "").strip()
+            and (value(p, "model_name") or "").strip()
         ]
-        if active:
+        active = [p for p in complete if bool(value(p, "is_active", 0))]
+        # Legacy workspace rows can contain valid credentials but have a
+        # false/NULL active flag. Prefer active rows, but do not discard the
+        # only complete workspace provider and silently fall back to Merge.
+        candidates = active or complete
+        if candidates:
             # The workspace UI normally keeps one active row. Keep this
             # deterministic if legacy data contains more than one.
-            active.sort(key=lambda p: (str(getattr(p, "provider_name", "")).lower() == "merge", str(getattr(p, "provider_name", "")).lower()))
-            p = active[0]
+            candidates.sort(key=lambda p: (str(value(p, "provider_name")).lower() == "merge", str(value(p, "provider_name")).lower()))
+            p = candidates[0]
             return {
-                "api_key": p.api_key.strip(),
-                "model": p.model_name.strip(),
-                "base_url": (p.base_url or "https://api.openai.com/v1").strip().rstrip("/"),
-                "provider": p.provider_name,
+                "api_key": value(p, "api_key").strip(),
+                "model": value(p, "model_name").strip(),
+                "base_url": (value(p, "base_url") or "https://api.openai.com/v1").strip().rstrip("/"),
+                "provider": value(p, "provider_name"),
             }
     except Exception as exc:
         _logger.warning("Workspace LLM provider lookup failed: %s", exc)
@@ -834,9 +844,13 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
                 }, _is_inbox)
         except ProviderConfigurationError as exc:
             _logger.error("LLM provider configuration error: %s", exc)
+            error_text = f"LLM provider not configured. Please check API keys. {exc}"
+            _persist("user", last_user)
+            _persist("assistant", error_text)
+            _maybe_title(last_user)
             return _wrap_chat_response({
-                "content": f"LLM provider not configured. Please check API keys. {exc}",
-                "blocks": [{"type": "error", "body": f"LLM provider not configured. Please check API keys. {exc}"}],
+                "content": error_text,
+                "blocks": [{"type": "error", "body": error_text}],
                 "sources": [],
                 "trace": {"route": "conversational_error"},
             }, _is_inbox)
