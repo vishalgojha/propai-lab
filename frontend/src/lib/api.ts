@@ -451,6 +451,10 @@ export function getRaw(
   return fetchJSON<RawMessage[]>(`/raw?${params.toString()}`, undefined, timeoutMs);
 }
 
+export function getRawMessage(id: number, timeoutMs = 10000) {
+  return fetchJSON<RawMessage>(`/raw?raw_id=${encodeURIComponent(String(id))}`, undefined, timeoutMs);
+}
+
 export function getInboxThreads(limit = 500, offset = 0) {
   const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
   return fetchJSON<InboxThread[]>(`/inbox/threads?${params.toString()}`);

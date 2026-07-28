@@ -2927,9 +2927,21 @@ return {
       setSelectedBuilding(null);
     }
     setPriceStats(null);
+    let rawMessage: api.RawMessage | null = null;
+    try {
+      // The observation endpoint also enriches the message, but a parsed row
+      // can disappear or be unavailable while the raw WhatsApp message is
+      // still valid. Always load the source text independently so the inbox
+      // never falls back to a truncated parsed summary.
+      rawMessage = await api.getRawMessage(msgId);
+      setSelectedMsgDetails((current: any) => ({ ...(current || {}), raw: rawMessage }));
+      if (options.setSelectedRaw && rawMessage) setSelectedMsg(rawMessage);
+    } catch (e) {
+      console.warn("Failed to load raw WhatsApp message:", e);
+    }
     try {
       const details = await api.getObservation(msgId);
-      setSelectedMsgDetails(details);
+      setSelectedMsgDetails({ ...details, raw: details.raw || rawMessage });
       if (options.setSelectedRaw && details.raw?.id) {
         setSelectedMsg(details.raw);
       }
@@ -2957,7 +2969,10 @@ return {
       }
 
     } catch (e) {
-      console.error("Failed to load message details:", e);
+      // Raw text has already been loaded above; only the optional enrichment
+      // failed. Keep rendering the full source message instead of replacing
+      // it with an error or a normalized preview.
+      if (!rawMessage) console.error("Failed to load message details:", e);
     }
   };
 
@@ -3752,7 +3767,7 @@ return {
                               {selectedBroker.latest_micro_market}
                             </span>
                           )}
-                          <span>{selectedBroker.observation_count || 0} parsed market items</span>
+                          <span title="Repeated parsed posts, not unique listings">{selectedBroker.observation_count || 0} parsed posts</span>
                           <span>•</span>
                           <span>{selectedBroker.building_count || 0} buildings</span>
                           <span>•</span>
