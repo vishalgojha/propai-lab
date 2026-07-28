@@ -25,6 +25,7 @@ function buildRecallMessage(
   },
   listingId: number,
   canonicalPath: string,
+  rawMessage?: string | null,
 ): string {
   const parts: string[] = [];
   const ptype = (row.property_type || row.asset_type || "").trim();
@@ -43,6 +44,13 @@ function buildRecallMessage(
 
   const listingUrl = `https://www.propai.live${canonicalPath}`;
   parts.push(`Hi, I came across ${subject} on PropAI — ${listingUrl} — and I'm interested.`);
+  const context = String(rawMessage || "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 700);
+  if (context) {
+    parts.push(`Here is the original post for reference: ${context}`);
+  }
   parts.push("Could you please share availability, price details and photos?");
   return parts.join(" ");
 }
@@ -67,7 +75,7 @@ export async function GET(
 
   const { data, error } = await db
     .from("listings")
-    .select("id, bhk, micro_market, building_name, property_type, broker_phone")
+    .select("id, bhk, micro_market, building_name, property_type, broker_phone, representative_raw_message_id, latest_raw_message_id")
     .eq("id", listingId)
     .maybeSingle();
 
@@ -95,6 +103,17 @@ export async function GET(
   });
   const canonicalPath = `/listings/${slug ?? "listing"}/${data.id}`;
 
-  const text = encodeURIComponent(buildRecallMessage(data, listingId, canonicalPath));
+  let rawMessage = "";
+  const rawMessageId = data.latest_raw_message_id ?? data.representative_raw_message_id;
+  if (rawMessageId != null) {
+    const raw = await db
+      .from("raw_messages")
+      .select("message")
+      .eq("id", rawMessageId)
+      .maybeSingle();
+    rawMessage = raw.data?.message || "";
+  }
+
+  const text = encodeURIComponent(buildRecallMessage(data, listingId, canonicalPath, rawMessage));
   return NextResponse.redirect(new URL(`https://wa.me/91${local}?text=${text}`), { status: 302 });
 }
