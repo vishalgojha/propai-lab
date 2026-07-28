@@ -4,9 +4,12 @@ This module contains the shared extraction logic used by both:
   - The webhook background thread (runs per-message when webhook fires)
   - The extraction worker (poll-based, picks up unprocessed messages)
 
-Extraction order:
-  1. AI extraction (primary) — calls ai_extraction.ai_extract()
-  2. Regex fallback — existing parse_message() pipeline
+Extraction contract:
+  1. Send the untouched source message to ai_extraction.ai_extract() once.
+  2. Persist each AI-returned opportunity with the full source as evidence.
+
+There is intentionally no deterministic classification, splitting, or parsing
+path in this module.
 
 Import pattern:
   from extraction import process_raw_message
@@ -556,8 +559,6 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
     if ctx.get("tenant_id"):
         storage.tenant_id = ctx["tenant_id"]
 
-    from lab import multi_listing
-    from lab.location import enrich_parsed_location
     from lab.config import load_excluded_groups
 
     msg_text = ctx["msg_text"]
@@ -575,10 +576,7 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
 
     # Re-import app-level helpers (they depend on app.py globals)
     from app import (
-        generate_summary_title,
-        compute_embedding, resolve_parsed, parse_message,
-        _parsed_source_text, _demote_weak_property_parse,
-        _parsed_has_market_anchor,
+        generate_summary_title, compute_embedding, resolve_parsed,
     )
     # Share eligibility is deterministic and evaluated before persistence. It
     # keeps private tenant output out of shared-market consumers while leaving
@@ -648,7 +646,7 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
         except Exception as exc:
             print(f"  [extract] create_knowledge_record error for {raw_id}: {exc}", flush=True)
 
-    # ── Parse (AI first, regex fallback) ────────────────────────
+    # ── Parse (AI only, untouched source) ───────────────────────
     preparsed_input = ctx.get("preparsed_listings")
     parsed_listings: list[dict] = (
         [
@@ -659,34 +657,14 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
         if isinstance(preparsed_input, list)
         else []
     )
-    # Kept index-aligned with parsed_listings. A deterministic fallback must
-    # never inherit a mixed whole-message AI result merely because it shares
-    # the same source message.
+    # Kept index-aligned with parsed_listings.
     ai_extractions_raw: list[dict | None] = []
     extraction_source: str | None = None
 
-    # Detect multi-option posts so the AI response can be held to the same
-    # one-structured-item-per-listing standard as the deterministic splitter.
-    try:
-        msg_class = multi_listing.classify_message(msg_text)
-    except Exception as exc:
-        print(f"  [extract] classify_message error for {raw_id}: {exc}", flush=True)
-        msg_class = "single"
-
-    # Establish property boundaries before asking AI to repair a multi-unit
-    # post. The deterministic parser supplies boundaries; AI remains the
-    # preferred source for the structured fields.
-    split_source_texts: list[str] = []
-    if msg_class == "multi":
-        try:
-            split_source_texts = multi_listing.split_multi_message(
-                msg_text, profile_name=sender_name or push_name
-            )
-        except Exception as exc:
-            _logger.warning("raw_id=%d multi-listing block split failed: %s", raw_id, exc)
-
-    # 1. Try AI extraction. Multi-listing messages send each block to AI
-    # independently; no regex boundary comparison.
+    # AI receives the original message exactly once. Do not classify, split,
+    # rank, rewrite, or retry deterministic fragments before extraction.
+    # The model owns semantic boundaries and returns one item per opportunity.
+    # Every item retains the complete original message as its source evidence.
     try:
         from ai_extraction import ai_extract
         ai_result = (
@@ -697,60 +675,13 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
         extraction_source = ai_result.get("extraction_source")
         raw_ai_items = ai_result.get("extractions") or ([ai_result["extraction"]] if ai_result.get("extraction") else [])
         ai_items = [item for item in raw_ai_items if isinstance(item, dict)]
-        whole_ai_is_valid = extraction_source == "ai" and bool(ai_items)
-
-        if whole_ai_is_valid and msg_class == "multi":
-            # For multi-listing: AI must return exactly as many items as split blocks
-            whole_ai_is_valid = (
-                len(ai_items) == len(split_source_texts)
-                and len(ai_items) >= 2
-            )
-
-        if whole_ai_is_valid:
-            source_texts = split_source_texts if msg_class == "multi" else [msg_text] * len(ai_items)
+        if extraction_source == "ai" and ai_items:
             parsed_listings = [
-                _ai_extraction_to_parsed(item, source_texts[idx], sender_name, push_name)
-                for idx, item in enumerate(ai_items)
+                _ai_extraction_to_parsed(item, msg_text, sender_name, push_name)
+                for item in ai_items
             ]
             ai_extractions_raw = ai_items
             _logger.info("raw_id=%d AI extraction: %d structured item(s) via %s", raw_id, len(ai_items), ai_result.get("provider_used"))
-        elif msg_class == "multi" and extraction_source == "ai" and split_source_texts:
-            _logger.warning(
-                "raw_id=%d multi-listing AI result rejected (%d item(s), %d block(s)); retrying blocks independently",
-                raw_id,
-                len(ai_items),
-                len(split_source_texts),
-            )
-
-            # Retry every detected property block independently so fields
-            # cannot bleed between units.
-            block_ai_items: list[dict] = []
-            block_parsed: list[dict] = []
-            for block_text in split_source_texts:
-                block_result = ai_extract(block_text, ctx, storage=storage)
-                block_raw_items = block_result.get("extractions") or (
-                    [block_result["extraction"]] if block_result.get("extraction") else []
-                )
-                block_items = [item for item in block_raw_items if isinstance(item, dict)]
-                if block_result.get("extraction_source") != "ai" or len(block_items) != 1:
-                    block_ai_items = []
-                    block_parsed = []
-                    break
-                block_ai_items.append(block_items[0])
-                block_parsed.append(
-                    _ai_extraction_to_parsed(
-                        block_items[0], block_text, sender_name, push_name
-                    )
-                )
-
-            if block_parsed and len(block_parsed) == len(split_source_texts):
-                parsed_listings = block_parsed
-                ai_extractions_raw = block_ai_items
-                _logger.info(
-                    "raw_id=%d recovered %d isolated AI listing(s) from property blocks",
-                    raw_id,
-                    len(block_parsed),
-                )
     except Exception as exc:
         _logger.warning("raw_id=%d ai_extract error: %s", raw_id, exc)
 
@@ -781,7 +712,7 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
         # feed (broker cards show message_count, not just listing_count).
         # Without this, [Image]/[Video] placeholders get marked processed
         # silently and brokers that only share images/videos appear empty.
-        msg_class = msg_class if 'msg_class' in locals() else "unknown"
+        msg_class = "unstructured"
         try:
             broker_id = storage.resolve_broker(
                 broker_phone=sender_phone or "",
@@ -869,8 +800,8 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
             "raw_id": raw_id,
             "parsed_listings": parsed_listings,
             "proposed_count": len(parsed_listings),
-            "message_class": msg_class,
-            "extraction_source": extraction_source or "regex_fallback",
+            "message_class": "ai_structured" if parsed_listings else "unstructured",
+            "extraction_source": extraction_source or "ai_unavailable",
         }
 
     # ── Save parsed observations ────────────────────────────────

@@ -1,10 +1,23 @@
 import json
+import inspect
 from types import SimpleNamespace
 
+import ai_extraction
 import app
 import extraction
 import lab.config
-import multi_listing
+
+
+def test_production_extraction_has_no_deterministic_preprocessor():
+    source = inspect.getsource(extraction.process_raw_message)
+    forbidden = (
+        "multi_listing",
+        "classify_message",
+        "split_multi_message",
+        "parse_multi_message",
+        "parse_message(",
+    )
+    assert not [name for name in forbidden if name in source]
 
 
 def test_price_normalization_uses_explicit_broker_unit_not_ai_scale():
@@ -68,7 +81,6 @@ def test_single_message_worker_uses_property_parser(monkeypatch):
     }
 
     monkeypatch.setattr(lab.config, "load_excluded_groups", lambda: set())
-    monkeypatch.setattr(multi_listing, "classify_message", lambda _text: "single")
     monkeypatch.setattr(ai_extraction, "ai_extract", lambda *_args, **_kwargs: {
         "extraction_source": "ai", "extraction": ai_item, "extractions": [ai_item], "provider_used": "fake",
     })
@@ -106,10 +118,7 @@ def test_single_message_worker_uses_property_parser(monkeypatch):
 
 
 def test_multi_listing_post_uses_one_ai_result_per_option(monkeypatch):
-    """A multi-option post must persist each validated AI extraction."""
-    import ai_extraction
-    import lab.multi_listing as extraction_multi_listing
-
+    """AI owns boundaries and every item retains the untouched source."""
     storage = _Storage()
     ai_items = [
         {
@@ -127,11 +136,6 @@ def test_multi_listing_post_uses_one_ai_result_per_option(monkeypatch):
     ]
 
     monkeypatch.setattr(lab.config, "load_excluded_groups", lambda: set())
-    monkeypatch.setattr(extraction_multi_listing, "classify_message", lambda _text: "multi")
-    monkeypatch.setattr(extraction_multi_listing, "parse_multi_message", lambda *_args, **_kwargs: [
-        {"raw_payload": {"full_text": "Option 1"}},
-        {"raw_payload": {"full_text": "Option 2"}},
-    ])
     monkeypatch.setattr(ai_extraction, "ai_extract", lambda *_args, **_kwargs: {
         "extraction_source": "ai",
         "extraction": ai_items[0],
@@ -161,16 +165,97 @@ def test_multi_listing_post_uses_one_ai_result_per_option(monkeypatch):
     assert [row.price for row in storage.saved] == [100000.0, 160000.0]
     assert [row.summary_title for row in storage.saved] == ["Option 1", "Option 2"]
     assert [json.loads(row.raw_payload)["full_text"] for row in storage.saved] == [
-        "Option 1",
-        "Option 2",
+        "Option 1\nOption 2",
+        "Option 1\nOption 2",
     ]
+
+
+def test_numbered_rental_inventory_keeps_ai_boundaries_and_full_evidence(monkeypatch):
+    """Regression for raw 579267: floor labels cannot hijack six numbered items."""
+    message = """Available for Rent
+1. Bandra West, 3 BHK, Rent 2 L
+2. Vijaydeep, Khar West, 3 BHK, Rent 2.25 L
+3. Ekam, Santacruz West, 3 BHK, Rent 2.5 L
+4. Juhu Tara Road, 5 BHK, Rent 15 L, Deposit 1 Cr
+5. Trinity Khar, 5 BHK, 14th Floor 12.5 L, 8th Floor 12 L
+6. Simran Plaza, office, Rent 1.35 L"""
+    specs = [
+        ("Bandra West", None, 3, 200000),
+        ("Khar West", "Vijaydeep", 3, 225000),
+        ("Santacruz West", "Ekam", 3, 250000),
+        ("Juhu", None, 5, 1500000),
+        ("Khar West", "Trinity Khar", 5, 1250000),
+        (None, "Simran Plaza", None, 135000),
+    ]
+    ai_items = [
+        {
+            "listing_type": "rent",
+            "property_category": "commercial" if index == 5 else "residential",
+            "bhk": bhk,
+            "price": {
+                "amount": amount,
+                "unit": "total",
+                "period": "per_month",
+                "raw_price_text": f"{amount}",
+            },
+            "locality": {
+                "raw_mention": locality,
+                "resolved_locality": locality,
+                "confidence": "high",
+            },
+            "building_name": building,
+            "title": f"Option {index + 1}",
+            "extraction_confidence": "high",
+        }
+        for index, (locality, building, bhk, amount) in enumerate(specs)
+    ]
+    calls = []
+
+    def fake_ai_extract(text, *_args, **_kwargs):
+        calls.append(text)
+        return {
+            "extraction_source": "ai",
+            "extraction": ai_items[0],
+            "extractions": ai_items,
+            "provider_used": "fake",
+        }
+
+    storage = _Storage()
+    monkeypatch.setattr(lab.config, "load_excluded_groups", lambda: set())
+    monkeypatch.setattr(ai_extraction, "ai_extract", fake_ai_extract)
+    monkeypatch.setattr(app, "compute_embedding", lambda _parsed: None)
+    monkeypatch.setattr(app, "resolve_parsed", lambda *_args: {})
+    monkeypatch.setattr(extraction, "get_bus", lambda: SimpleNamespace(publish=lambda *_args: None))
+
+    extraction.process_raw_message(
+        579267,
+        {
+            "sender_name": "Broker",
+            "push_name": "Broker",
+            "sender_jid": "919999999999@s.whatsapp.net",
+            "sender_phone": "919999999999",
+            "group": "group@g.us",
+            "group_name": "Broker Group",
+            "msg_text": message,
+            "instance": "test",
+            "is_dm": False,
+            "message_uid": "raw-579267",
+            "message_id": "579267",
+            "msg": {},
+        },
+        storage=storage,
+    )
+
+    assert calls == [message]
+    assert len(storage.saved) == 6
+    assert [row.intent for row in storage.saved] == ["RENT"] * 6
+    assert [json.loads(row.raw_payload)["full_text"] for row in storage.saved] == [
+        message
+    ] * 6
 
 
 def test_reviewed_reparse_preview_is_read_only_and_apply_reuses_exact_cards(monkeypatch):
     """Preview must not write or call AI; apply must save that exact generation."""
-    import ai_extraction
-    import lab.multi_listing as extraction_multi_listing
-
     storage = _Storage()
     reviewed = [
         {
@@ -201,12 +286,6 @@ def test_reviewed_reparse_preview_is_read_only_and_apply_reuses_exact_cards(monk
         raise AssertionError("reviewed reparse must not call an AI provider again")
 
     monkeypatch.setattr(lab.config, "load_excluded_groups", lambda: set())
-    monkeypatch.setattr(extraction_multi_listing, "classify_message", lambda _text: "multi")
-    monkeypatch.setattr(
-        extraction_multi_listing,
-        "parse_multi_message",
-        lambda *_args, **_kwargs: [dict(item) for item in reviewed],
-    )
     monkeypatch.setattr(ai_extraction, "ai_extract", fail_if_ai_runs)
     monkeypatch.setattr(app, "compute_embedding", lambda _parsed: None)
     monkeypatch.setattr(app, "resolve_parsed", lambda *_args: {})
@@ -255,11 +334,8 @@ def test_reviewed_reparse_preview_is_read_only_and_apply_reuses_exact_cards(monk
     ]
 
 
-def test_merged_multi_listing_ai_result_is_retried_per_property_block(monkeypatch):
-    """A model's mixed one-item result must never become one mixed inbox card."""
-    import ai_extraction
-    import lab.multi_listing as extraction_multi_listing
-
+def test_multi_listing_message_is_sent_to_ai_once_without_preprocessing(monkeypatch):
+    """Production must never classify, split, or rewrite source text before AI."""
     storage = _Storage()
     message = """A Fantastic 2BHK available for sale, 700 sqft, society has a direct beach access,
 Location:-Greenfields, Juhu
@@ -269,54 +345,34 @@ Bandra West, Quote 4.75 cr Negotiable
 Vibrant Properties
 Aaron 8655245101"""
 
-    blocks = [
-        """A Fantastic 2BHK available for sale, 700 sqft, society has a direct beach access,
-Location:-Greenfields, Juhu
-Quote 4.40cr negotiable""",
-        """WestBay 3BHK available for sale 950 usable 908 on the agreement,
-Bandra West, Quote 4.75 cr Negotiable
-Vibrant Properties
-Aaron 8655245101""",
-    ]
-    boundary_rows = [
-        {"raw_payload": {"full_text": blocks[0]}},
-        {"raw_payload": {"full_text": blocks[1]}},
-    ]
-    mixed_item = {
-        "listing_type": "sale", "property_category": "residential", "bhk": 3,
-        "carpet_area_sqft": 700, "price": {"amount": 47500000, "unit": "total"},
-        "locality": {"raw_mention": "Juhu / Bandra West", "resolved_locality": "Bandra West", "confidence": "low"},
-        "title": "Mixed 2 BHK and 3 BHK sale options", "extraction_confidence": "low",
-    }
-    block_items = {
-        blocks[0]: {
+    ai_items = [
+        {
             "listing_type": "sale", "property_category": "residential", "bhk": 2,
             "carpet_area_sqft": 700, "price": {"amount": 44000000, "unit": "total"},
             "locality": {"raw_mention": "Greenfields, Juhu", "resolved_locality": "Juhu", "confidence": "high"},
             "building_name": "Greenfields", "title": "2 BHK for sale at Greenfields, Juhu",
             "extraction_confidence": "high",
         },
-        blocks[1]: {
+        {
             "listing_type": "sale", "property_category": "residential", "bhk": 3,
             "carpet_area_sqft": 950, "price": {"amount": 47500000, "unit": "total"},
             "locality": {"raw_mention": "Bandra West", "resolved_locality": "Bandra West", "confidence": "high"},
             "building_name": "WestBay", "title": "3 BHK for sale at WestBay, Bandra West",
             "extraction_confidence": "high",
         },
-    }
+    ]
+    ai_calls = []
 
     def fake_ai_extract(text, *_args, **_kwargs):
-        item = mixed_item if text == message else block_items[text]
+        ai_calls.append(text)
         return {
             "extraction_source": "ai",
-            "extraction": item,
-            "extractions": [item],
+            "extraction": ai_items[0],
+            "extractions": ai_items,
             "provider_used": "fake",
         }
 
     monkeypatch.setattr(lab.config, "load_excluded_groups", lambda: set())
-    monkeypatch.setattr(extraction_multi_listing, "classify_message", lambda _text: "multi")
-    monkeypatch.setattr(extraction_multi_listing, "parse_multi_message", lambda *_args, **_kwargs: boundary_rows)
     monkeypatch.setattr(ai_extraction, "ai_extract", fake_ai_extract)
     monkeypatch.setattr(app, "compute_embedding", lambda _parsed: None)
     monkeypatch.setattr(app, "resolve_parsed", lambda *_args: {})
@@ -340,9 +396,9 @@ Aaron 8655245101""",
     assert [row.bhk for row in storage.saved] == ["2 BHK", "3 BHK"]
     assert [row.price for row in storage.saved] == [44000000.0, 47500000.0]
     assert [row.building_name for row in storage.saved] == ["Greenfields", "WestBay"]
+    assert ai_calls == [message]
     evidence = [json.loads(row.raw_payload)["full_text"] for row in storage.saved]
-    assert "WestBay" not in evidence[0]
-    assert "Greenfields" not in evidence[1]
+    assert evidence == [message, message]
 
 
 def _run_broker_attribution(monkeypatch, sender_phone: str) -> dict:
@@ -356,7 +412,6 @@ def _run_broker_attribution(monkeypatch, sender_phone: str) -> dict:
         "furnishing_status": None, "title": None, "extraction_confidence": "high",
     }
     monkeypatch.setattr(lab.config, "load_excluded_groups", lambda: set())
-    monkeypatch.setattr(multi_listing, "classify_message", lambda _text: "single")
     monkeypatch.setattr(ai_extraction, "ai_extract", lambda *_args, **_kwargs: {
         "extraction_source": "ai", "extraction": ai_item, "extractions": [ai_item], "provider_used": "fake",
     })
@@ -418,8 +473,6 @@ def test_broker_attribution_phone_empty(monkeypatch):
 
 # ── Deal tags + additional charges ────────────────────────────────────
 
-import ai_extraction
-
 
 def _run_with_ai_extraction(monkeypatch, ai_extraction_payload: dict) -> _Storage:
     """Helper: process a single message whose `ai_extract()` returns the given
@@ -437,7 +490,6 @@ def _run_with_ai_extraction(monkeypatch, ai_extraction_payload: dict) -> _Storag
     # the ParsedObservation fields that the existing tests assert against.
     monkeypatch.setattr(ai_extraction, "ai_extract", lambda *_args, **_kwargs: ai_result)
     monkeypatch.setattr(lab.config, "load_excluded_groups", lambda: set())
-    monkeypatch.setattr(multi_listing, "classify_message", lambda _text: "single")
     monkeypatch.setattr(app, "compute_embedding", lambda _parsed: None)
     monkeypatch.setattr(app, "resolve_parsed", lambda *_args: {})
     monkeypatch.setattr(app, "_parsed_source_text", lambda item, fallback: item["raw_payload"]["full_text"] or fallback)
