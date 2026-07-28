@@ -380,6 +380,10 @@ function AppShell({ children }: { children: React.ReactNode }) {
     };
     void getBusinessApiConfig(15000).then((config) => {
       setWabaConfig(config);
+      // /auth/me and /business-api/config are both server-side role checks.
+      // Keep the admin navigation visible if either trusted response confirms
+      // the role; a slow auth-me request must not hide platform tools.
+      if (config.is_super_admin === true) setIsSuperAdmin(true);
     }).catch(() => {});
     load();
     const t = setInterval(load, 30000);
