@@ -1351,13 +1351,20 @@ def deterministic_market_response(query: dict, result: str, sources: dict | None
         }
 
     shown = len(results)
+    applied_filters = []
+    if query.get("bhk"):
+        applied_filters.append(f"{query['bhk']} BHK")
+    if query.get("intent"):
+        applied_filters.append(str(query["intent"]).upper())
+    applied_filters.extend(str(market) for market in (query.get("micro_markets") or []))
+    filter_text = " · ".join(applied_filters)
     return {
         "content": f"Found {total} active match{'es' if total != 1 else ''}; showing the {shown} most recently seen.",
         "blocks": [
             {
                 "type": "summary",
                 "title": "Live market search",
-                "body": "Results are structured from broker posts and ranked by most recent evidence.",
+                "body": f"Applied filters: {filter_text}. Results are structured from broker posts and ranked by most recent evidence.",
                 "metrics": [
                     {"label": "Matches", "value": str(total), "tone": "success"},
                     {"label": "Showing", "value": str(shown), "tone": "neutral"},
@@ -1408,8 +1415,10 @@ def _rest_market_search(client, args: dict) -> str:
     statement timeouts under marketplace load. This path is simple indexed
     filters plus a small in-process price normalization step.
     """
-    intent = str(args.get("intent") or "").upper()
+    intent = str(args.get("intent") or "").upper().strip()
     bhk = str(args.get("bhk") or "").strip()
+    bhk_match = re.search(r"\d+(?:\.5)?", bhk)
+    requested_bhk = float(bhk_match.group(0)) if bhk_match else None
     building = str(args.get("building") or "").strip()
     broker = str(args.get("broker") or "").strip()
     furnishing = str(args.get("furnishing") or "").strip()
@@ -1429,12 +1438,8 @@ def _rest_market_search(client, args: dict) -> str:
 
     def fetch_one_market(market: str | None):
         query = client.table("listings").select(columns, count="exact")
-        if intent:
-            query = query.eq("intent", intent)
-        if bhk and bhk.lower() != "any":
-            query = query.ilike("bhk", f"{bhk}%")
         if furnishing and furnishing.lower() != "any":
-            query = query.eq("furnishing", furnishing)
+            query = query.ilike("furnishing", furnishing)
         if building:
             for word in building.split():
                 query = query.ilike("building_name", f"%{word}%")
@@ -1456,6 +1461,13 @@ def _rest_market_search(client, args: dict) -> str:
                 continue
             if key:
                 seen.add(key)
+            row_intent = str(row.get("intent") or "").upper().strip()
+            if intent and row_intent != intent:
+                continue
+            if requested_bhk is not None:
+                row_bhk_match = re.search(r"\d+(?:\.5)?", str(row.get("bhk") or ""))
+                if row_bhk_match is None or float(row_bhk_match.group(0)) != requested_bhk:
+                    continue
             normalized_price = _listing_price_in_rupees(row)
             if price_min is not None and (normalized_price is None or normalized_price < float(price_min)):
                 continue
