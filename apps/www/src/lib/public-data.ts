@@ -132,7 +132,7 @@ export async function getPublicDataOverview(options?: {
         .select(
           "id, bhk, price, price_unit, furnishing, location_label, building_name, landmark_name, micro_market, broker_name, observation_count, last_seen",
         )
-        .order("last_seen", { ascending: false })
+        .order("created_at", { ascending: false })
         .limit(12),
       db
         .from("brokers")
