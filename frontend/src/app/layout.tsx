@@ -370,7 +370,9 @@ function AppShell({ children }: { children: React.ReactNode }) {
     const load = async () => {
       const [phonesRes, status] = await Promise.all([
         getPhones(true, 15000).catch(() => null),
-        getWhatsAppStatus().catch(() => null),
+        // Focused workspaces do not use the dashboard status probe. Avoid
+        // making inbox/group pages wait on a slow WhatsMeow status request.
+        isFocusedWorkspace ? Promise.resolve(null) : getWhatsAppStatus().catch(() => null),
       ]);
       if (phonesRes) {
         setPhones(phonesRes.phones || []);
@@ -396,7 +398,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
       clearInterval(t);
       window.removeEventListener("propai_whatsapp_status_updated", onStatusUpdate);
     };
-  }, [authLoading, user]);
+  }, [authLoading, user, isFocusedWorkspace]);
 
   // PWA manifest link (static in RootLayout, this is for dynamic fallback)
   useEffect(() => {

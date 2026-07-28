@@ -1645,7 +1645,7 @@ class SupabaseStorage(Storage):
             "id,tenant_id,group_name,sender,sender_phone,sender_jid,timestamp,created_at,message_uid,message,raw_payload,is_group"
         )\
             .order("timestamp", desc=True)\
-            .limit(max(5000, limit + offset))
+            .limit(max(1500, limit + offset))
         if tenant_id:
             query = query.eq("tenant_id", tenant_id)
 
@@ -1758,10 +1758,13 @@ class SupabaseStorage(Storage):
     def _get_parsed_market_threads(self, limit: int, offset: int, tenant_id: str | None = None) -> list[dict]:
         tid = tenant_id or self._tenant_id
 
+        # The inbox renders one page at a time. Pulling 50k parsed rows on
+        # every refresh made this endpoint stall and prevented new raw
+        # messages from appearing in the fallback feed.
         query = self.client.table("parsed_output")\
             .select("id,raw_message_id,message_type,intent,asset_type,property_type,transaction_type,bhk,configuration,price,price_unit,monthly_rent,total_asking_price,area_sqft,furnishing,location_raw,building_name,landmark_name,micro_market,floor_range,commercial_use_type,occupancy_type,broker_name,broker_phone,profile_name,listing_index,confidence,summary_title,normalized_message,created_at")\
             .order("created_at", desc=True)\
-            .limit(max(50000, limit + offset))
+            .limit(max(1500, limit + offset))
         if tid:
             query = query.eq("tenant_id", tid)
         parsed_rows = query.execute().data or []
@@ -3086,7 +3089,38 @@ class SupabaseStorage(Storage):
         # PostgREST already puts null timestamps after dated conversations for
         # this descending directory order.
         result = query.order("last_message_at", desc=True).limit(limit).execute()
-        return result.data or []
+        directory = result.data or []
+
+        # The Go WhatsMeow ingestor writes raw_messages directly for low-latency
+        # delivery. Keep the directory live even when the conversation summary
+        # row has not been updated yet (or the summary worker is delayed).
+        try:
+            raw_chats = self.get_chats(limit=min(limit, 1000), offset=0, tenant_id=tenant_id)
+            requested = set(types or [])
+            by_id = {str(row.get("conversation_jid") or row.get("chat_id") or row.get("id")): row for row in directory}
+            for chat in raw_chats:
+                if requested and chat.get("chat_type") not in requested:
+                    continue
+                chat_id = str(chat.get("chat_id") or chat.get("conversation_key") or "")
+                if not chat_id:
+                    continue
+                existing = by_id.get(chat_id)
+                latest = chat.get("latest_message_at") or ""
+                if existing is None or str(existing.get("last_message_at") or "") < str(latest):
+                    by_id[chat_id] = {
+                        **(existing or {}),
+                        "conversation_jid": chat_id,
+                        "conversation_name": chat.get("chat_name") or chat_id,
+                        "conversation_type": chat.get("chat_type"),
+                        "message_count": chat.get("message_count") or 0,
+                        "last_message_at": latest,
+                        "source": "raw_messages",
+                    }
+            directory = list(by_id.values())
+            directory.sort(key=lambda row: str(row.get("last_message_at") or ""), reverse=True)
+            return directory[:limit]
+        except Exception:
+            return directory
 
     def get_group_markets(self) -> dict[str, list[str]]:
         """Derived tags: aggregate distinct micro_markets per WhatsApp group

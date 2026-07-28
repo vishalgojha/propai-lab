@@ -1,33 +1,38 @@
-import { convertToModelMessages, createUIMessageStreamResponse, streamText, toUIMessageStream, type UIMessage } from "ai";
-import { getConfiguredModel } from "@/lib/ai-provider";
-
 export const runtime = "edge";
 
-const SYSTEM_PROMPT = `You are PropAI, a real estate market intelligence assistant. You help brokers analyze listings, requirements, and market data.
-
-Guidelines:
-- Be concise and direct — brokers are busy
-- When asked about data you don't have, say so clearly
-- Use natural, varied language — don't repeat the same phrasing
-- If the user asks something outside real estate, politely redirect
-- Support your claims with numbers and specifics when possible`;
-
 export async function POST(req: Request) {
-  const model = getConfiguredModel();
-  if (!model) {
-    return new Response(
-      JSON.stringify({ error: "No complete LLM provider is configured. Set an API key and model." }),
-      { status: 503, headers: { "Content-Type": "application/json" } },
-    );
-  }
-  const { messages } = await req.json() as { messages?: UIMessage[] };
-  const modelMessages = await convertToModelMessages(messages || []);
-  const result = streamText({
-    model,
-    system: SYSTEM_PROMPT,
-    messages: modelMessages,
+  const body = await req.json() as {
+    messages?: Array<{ role?: string; content?: string; parts?: Array<{ type?: string; text?: string }> }>;
+    session_id?: string;
+    broker_phone?: string;
+  };
+  const messages = (body.messages || []).map((message) => ({
+    role: message.role || "user",
+    content: message.content || (message.parts || [])
+      .filter((part) => part.type === "text")
+      .map((part) => part.text || "")
+      .join(""),
+  }));
+  const apiBase = process.env.LAB_API_BASE_URL || "http://localhost:8000";
+  const upstream = await fetch(`${apiBase.replace(/\/$/, "")}/api/ai/chat`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(req.headers.get("authorization") ? { Authorization: req.headers.get("authorization")! } : {}),
+    },
+    body: JSON.stringify({
+      messages,
+      session_id: body.session_id || "",
+      broker_phone: body.broker_phone || "",
+      source: "chat",
+    }),
   });
-  return createUIMessageStreamResponse({
-    stream: toUIMessageStream({ stream: result.stream }),
+  return new Response(upstream.body, {
+    status: upstream.status,
+    headers: {
+      "Content-Type": upstream.headers.get("content-type") || "text/event-stream",
+      "Cache-Control": "no-cache",
+      "x-accel-buffering": "no",
+    },
   });
 }
