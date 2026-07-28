@@ -6,7 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Activity, Clock, Database, Inbox, List, LogOut, MessageSquare, Plus, RefreshCw, Shield, Smartphone, Trash2, AlertTriangle, Users, Zap, Lock, X, ChevronLeft, MoreVertical, User, MessageCircle, Check, AlertCircle, Hash } from "lucide-react";
 import { useAuth } from "@/lib/AuthProvider";
-import { getPhones, createPhone, deletePhone, resetPhone, disconnectPhone, connectPhone, pairCodePhone, updatePhone, fetchJSON, isLiveWhatsAppConnection, getOnboardingGroups, checkOnboardingGroup, connectOnboardingGroup, disconnectOnboardingGroup, type Phone, type WhatsAppStatus, type OnboardingGroup, type OnboardingGroupCheck, type OnboardingGroupState } from "@/lib/api";
+import { getPhones, createPhone, deletePhone, resetPhone, disconnectPhone, pairCodePhone, updatePhone, fetchJSON, isLiveWhatsAppConnection, getOnboardingGroups, checkOnboardingGroup, connectOnboardingGroup, disconnectOnboardingGroup, type Phone, type WhatsAppStatus, type OnboardingGroup, type OnboardingGroupCheck, type OnboardingGroupState } from "@/lib/api";
 
 type HealthStatus = "healthy" | "warning" | "error";
 
@@ -322,8 +322,8 @@ function PhoneCard({
     setActionLoading("pair-code");
     setActionError(null);
     try {
-      // Ensure the client is connected first — PairPhone requires an active session
-      try { await connectPhone(phone.id); } catch (_) { /* may already be connected */ }
+      // Pair-code owns session setup. Starting QR/connect immediately before it
+      // races two WhatsApp pairing modes and causes intermittent 502 responses.
       const result = await pairCodePhone(phone.id, pairCodeInput);
       const code = result.pairing_code || result.code || result.status?.pairing_code;
       if (!code) throw new Error(result.note || result.error || "WhatsApp did not return a pairing code");
@@ -448,6 +448,20 @@ function PhoneCard({
                   <span className="text-xs text-white font-medium">Use pairing code</span>
                 </div>
               </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowMenu(false);
+                  if (window.confirm(`Remove ${isUnpaired ? "this empty phone" : (phone.instance_name || formatPhone(phoneDisplay))} from this workspace?`)) {
+                    void handleAction("delete");
+                  }
+                }}
+                disabled={actionLoading !== null}
+                className="flex w-full items-center gap-2 border-t border-white/10 px-3 py-2.5 text-left text-xs font-semibold text-red-300 hover:bg-red-500/10 disabled:opacity-50"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                Remove phone
+              </button>
             </div>
           )}
         </div>
