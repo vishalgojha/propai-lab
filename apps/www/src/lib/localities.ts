@@ -570,6 +570,13 @@ export type AdditionalCharge = {
   amount_type: "fixed" | "percent_of_price";
 };
 
+export type RawMessageInfo = {
+  message: string | null;
+  sender: string | null;
+  groupName: string | null;
+  timestamp: string | null;
+};
+
 export type ListingDetail = BuildingListing & {
   area_sqft: number | null;
   landmark_name: string | null;
@@ -578,6 +585,7 @@ export type ListingDetail = BuildingListing & {
   localitySlug: string | null;
   deal_tags: string[];
   additional_charges: AdditionalCharge[];
+  rawMessage: RawMessageInfo | null;
 };
 
 // A real building name is short and Proper-noun-like. Ingestion sometimes
@@ -828,6 +836,29 @@ export async function getListingById(id: number): Promise<ListingDetail | null> 
     (data.latest_raw_message_id != null ? titleMap.get(data.latest_raw_message_id) : null) ??
     null;
 
+  // Fetch the raw WhatsApp message for the "View original message" section.
+  const rawMsgId = data.representative_raw_message_id ?? data.latest_raw_message_id;
+  let rawMessage: RawMessageInfo | null = null;
+  if (rawMsgId) {
+    try {
+      const { data: rm } = await db
+        .from("raw_messages")
+        .select("message, sender, group_name, timestamp")
+        .eq("id", rawMsgId)
+        .maybeSingle();
+      if (rm) {
+        rawMessage = {
+          message: rm.message ?? null,
+          sender: rm.sender ?? null,
+          groupName: rm.group_name ?? null,
+          timestamp: rm.timestamp ?? null,
+        };
+      }
+    } catch {
+      // Non-critical; don't block the page
+    }
+  }
+
   return {
     id: data.id,
     bhk: data.bhk,
@@ -857,6 +888,7 @@ export async function getListingById(id: number): Promise<ListingDetail | null> 
     buildingSlug:
       data.building_name && !isJunkBuildingName(data.building_name) ? slugify(data.building_name) : null,
     localitySlug: data.micro_market ? slugify(data.micro_market) : null,
+    rawMessage,
   };
 }
 

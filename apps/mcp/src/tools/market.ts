@@ -33,6 +33,22 @@ export function registerMarketTools(server: McpServer, context: ToolContext) {
     return textResponse(items.length ? `${items.length} result(s) for "${input.query}"` : 'No results found. Try a broader search.', result);
   });
 
+  server.registerTool("search_listings", {
+    description: "Search for property listings — ChatGPT-compatible alias for market_search",
+    inputSchema: {
+      query: z.string().describe("Search query (e.g. '3 BHK in Bandra West under 2 Cr')"),
+      location: z.string().optional().describe("Locality to narrow results"),
+      city: z.string().optional().describe("City (defaults to Mumbai)"),
+      limit: z.number().optional().default(20),
+    },
+  }, async (input) => {
+    const id = brokerId(context);
+    await logToolCall(id, "search_listings", input);
+    const result = await executeMarketSearch({ query: input.query, locality: input.location, city: input.city, limit: input.limit });
+    const items = result.results || [];
+    return textResponse(items.length ? `${items.length} result(s) for "${input.query}"` : 'No results found. Try a broader search.', result);
+  });
+
   server.registerTool("market_summary", {
     description: "Get a summary of market activity — listing volume, price bands, top localities",
     inputSchema: {

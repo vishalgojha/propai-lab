@@ -31,6 +31,22 @@ export function registerListingTools(server: McpServer, context: ToolContext) {
     );
   });
 
+  server.registerTool("get_listing", {
+    description: "Get full details for a listing by ID — ChatGPT-compatible alias for listing_get",
+    inputSchema: {
+      listing_id: z.string().describe("The listing source_message_id"),
+    },
+  }, async (input) => {
+    const id = brokerId(context);
+    await logToolCall(id, "get_listing", input);
+    const listing = await fetchListingById(input.listing_id);
+    if (!listing) return textResponse(`Listing "${input.listing_id}" not found.`, { listing: null });
+    return textResponse(
+      `${listing.title || "Listing"} — ₹${listing.price || "N/A"} Cr · ${listing.bhk || "?"} BHK · ${listing.sub_area || listing.area || listing.location || ""}${listing.primary_contact_name ? ` · ${listing.primary_contact_name}` : ""}`,
+      listing,
+    );
+  });
+
   server.registerTool("listing_similar", {
     description: "Find similar listings by location, BHK, or budget",
     inputSchema: {

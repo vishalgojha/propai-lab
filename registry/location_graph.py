@@ -22,26 +22,25 @@ LOCATION_GRAPH_PATH = os.path.join(BASE_DIR, "data", "location_graph.csv")
 # ── Zone → Micro Market definitions ────────────────────────────
 ZONES = {
     "South Mumbai": [
-        "South Mumbai Prime", "South Mumbai Central", "Fort", "Colaba",
-        "Nariman Point", "Malabar Hill", "Prabhadevi", "Lower Parel",
-        "Worli", "Mahalaxmi", "Parel", "Byculla", "Dadar West",
-        "Grant Road", "Marine Drive", "Tardeo", "Breach Candy",
-        "Cuffe Parade", "Churchgate", "Mumbai Central", "Girgaon",
-        "Kemps Corner", "Nana Chowk", "Opera House", "Walkeshwar",
+        "Colaba", "Churchgate", "Nariman Point", "Fort",
+        "Malabar Hill", "Prabhadevi", "Lower Parel", "Worli",
+        "Mahalaxmi", "Parel", "Byculla", "Dadar West",
+        "Mumbai Central", "Marine Drive", "Tardeo", "Breach Candy",
+        "Cuffe Parade", "Girgaon", "Kemps Corner", "Nana Chowk",
+        "Opera House", "Walkeshwar",
     ],
     "Western Suburbs": [
         "Bandra West", "Bandra East", "Khar West", "Santacruz West",
         "Vile Parle West", "Andheri West", "Andheri East", "Jogeshwari West",
         "Goregaon West", "Goregaon East", "Malad West", "Kandivali West",
-        "Kandivali East", "Borivali West", "Borivali East", "Dahisar West",
-        "Dahisar East", "Juhu", "Versova", "Powai", "Oshiwara",
+        "Kandivali East", "Borivali West", "Borivali East", "Dahisar",
+        "Juhu", "Versova", "Powai", "Oshiwara",
         "Lokhandwala", "Mahim", "JVPD", "Vile Parle East",
         "Khar East", "Santacruz East", "Jogeshwari East",
     ],
     "Eastern Suburbs": [
         "Kurla", "Sion", "Chembur", "Ghatkopar West", "Ghatkopar East",
-        "Vikhroli", "Kanjur Marg", "Bhandup West", "Bhandup East",
-        "Mulund West", "Mulund East", "Nahur", "Kanjurmarg East",
+        "Vikhroli", "Kanjur Marg", "Bhandup", "Mulund West", "Mulund East", "Nahur",
     ],
     "Navi Mumbai": [
         "Navi Mumbai", "Airoli", "Ghansoli", "Koparkhairne", "Vashi",

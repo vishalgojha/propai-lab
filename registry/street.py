@@ -29,17 +29,17 @@ STREET_SUFFIXES = {"road", "street", "marg", "lane", "avenue", "drive", "highway
 # Each: (name, aliases, micro_market, pincodes, buildings_along_this_street)
 KNOWN_MUMBAI_STREETS = [
     # South Mumbai
-    ("Altamount Road", ["Altamount Rd", "Altamont Road", "Dr Gopalrao Deshmukh Marg"], "South Mumbai Prime", ["400026"]),
-    ("Nepean Sea Road", ["Nepean Sea Rd", "Nepean Road", "Lady Hardinge Road"], "South Mumbai Prime", ["400036"]),
-    ("Peddar Road", ["Peddar Rd", "Pedar Road"], "South Mumbai Prime", ["400026"]),
-    ("Marine Drive", ["Marine Dr", "Netaji Subhash Chandra Bose Road", "Queens Necklace"], "South Mumbai Prime", ["400020"]),
-    ("Carmichael Road", ["Carmichael Rd", "Carmichael"], "South Mumbai Prime", ["400026"]),
-    ("Warden Road", ["Warden Rd", "Dr Bhadkamkar Marg"], "South Mumbai Prime", ["400026"]),
-    ("Hughes Road", ["Hughes Rd", "Bhulabhai Desai Marg"], "South Mumbai Prime", ["400036"]),
-    ("Grant Road", ["Grant Rd", "Maulana Shaukat Ali Marg"], "South Mumbai Central", ["400036"]),
-    ("Breach Candy", ["Breach Candy Marg", "Bhulabhai Desai Road"], "South Mumbai Prime", ["400026"]),
-    ("LBS Marg", ["Lbs Road", "Lal Bahadur Shastri Marg", "L B S Marg"], "Eastern Suburbs", ["400070"]),
-    ("Cuffe Parade", ["Cuffe Parade Marg"], "South Mumbai Prime", ["400005"]),
+    ("Altamount Road", ["Altamount Rd", "Altamont Road", "Dr Gopalrao Deshmukh Marg"], "Malabar Hill", ["400026"]),
+    ("Nepean Sea Road", ["Nepean Sea Rd", "Nepean Road", "Lady Hardinge Road"], "Malabar Hill", ["400036"]),
+    ("Peddar Road", ["Peddar Rd", "Pedar Road"], "Prabhadevi", ["400026"]),
+    ("Marine Drive", ["Marine Dr", "Netaji Subhash Chandra Bose Road", "Queens Necklace"], "Churchgate", ["400020"]),
+    ("Carmichael Road", ["Carmichael Rd", "Carmichael"], "Malabar Hill", ["400026"]),
+    ("Warden Road", ["Warden Rd", "Dr Bhadkamkar Marg"], "Breach Candy", ["400026"]),
+    ("Hughes Road", ["Hughes Rd", "Bhulabhai Desai Marg"], "Gamdevi", ["400036"]),
+    ("Grant Road", ["Grant Rd", "Maulana Shaukat Ali Marg"], "Mumbai Central", ["400036"]),
+    ("Breach Candy", ["Breach Candy Marg", "Bhulabhai Desai Road"], "Breach Candy", ["400026"]),
+    ("LBS Marg", ["Lbs Road", "Lal Bahadur Shastri Marg", "L B S Marg"], "Kurla", ["400070"]),
+    ("Cuffe Parade", ["Cuffe Parade Marg"], "Colaba", ["400005"]),
     
     # Western Suburbs
     ("Linking Road", ["Linking Rd", "Link Road"], "Bandra West", ["400050", "400052", "400064"]),
@@ -54,12 +54,12 @@ KNOWN_MUMBAI_STREETS = [
     ("Marol Maroshi Road", ["Marol Maroshi Rd", "Marol Road"], "Andheri East", ["400059"]),
     ("Western Express Highway", ["Weh", "Mumbai Western Express Highway", "Western Exp Highway", "Western Express Hwy"], "Andheri West", ["400058", "400060", "400047", "400063"]),
     ("New Link Road", ["New Link Rd", "Nlr"], "Kandivali West", ["400064", "400067"]),
-    ("Mira Road", ["Mira Road East", "Mira Bhayander Road"], "Western Suburbs Far", ["400601"]),
+    ("Mira Road", ["Mira Road East", "Mira Bhayander Road"], "Mira Road", ["400601"]),
     
     # Eastern Suburbs
     ("Eastern Express Highway", ["Eastern Exp Highway", "Eastern Express Hwy", "Eeh"], "Chembur", ["400022", "400024"]),
     ("Sion Road", ["Sion Rd", "Sion"], "Sion", ["400022"]),
-    ("LBS Marg", ["Lbs Road", "Lal Bahadur Shastri Marg", "L B S Marg"], "Eastern Suburbs", ["400070"]),
+    ("LBS Marg", ["Lbs Road", "Lal Bahadur Shastri Marg", "L B S Marg"], "Kurla", ["400070"]),
     ("MG Road", ["M G Road", "Mahatma Gandhi Road"], "Ghatkopar West", ["400077", "400086"]),
     
     # Navi Mumbai
@@ -74,18 +74,18 @@ KNOWN_MUMBAI_STREETS = [
 # Micro market hierarchy
 MUMBAI_ZONES = {
     "South Mumbai": [
-        "South Mumbai Prime", "South Mumbai Central", "Fort", "Colaba", "Nariman Point",
+        "Colaba", "Churchgate", "Nariman Point", "Fort",
         "Malabar Hill", "Prabhadevi", "Lower Parel", "Worli", "Mahalaxmi", "Parel",
-        "Byculla", "Dadar West", "Grant Road", "Marine Drive", "Tardeo", "Breach Candy",
+        "Byculla", "Dadar West", "Mumbai Central", "Marine Drive", "Tardeo", "Breach Candy",
     ],
     "Western Suburbs": [
         "Bandra West", "Bandra East", "Khar West", "Santacruz West", "Vile Parle West",
         "Andheri West", "Andheri East", "Jogeshwari West", "Goregaon West", "Malad West",
-        "Kandivali West", "Borivali West", "Dahisar West", "Juhu", "Versova", "Powai",
-        "Oshiwara", "Lokhandwala", "Mahim", "Western Suburbs Mid", "Western Suburbs Far",
+        "Kandivali West", "Borivali West", "Dahisar", "Juhu", "Versova", "Powai",
+        "Oshiwara", "Lokhandwala", "Mahim",
     ],
     "Eastern Suburbs": [
-        "Eastern Suburbs", "Kurla", "Sion", "Chembur", "Ghatkopar West", "Ghatkopar East",
+        "Kurla", "Sion", "Chembur", "Ghatkopar West", "Ghatkopar East",
         "Vikhroli", "Kanjur Marg", "Bhandup", "Mulund West", "Nahur",
     ],
     "Navi Mumbai": [

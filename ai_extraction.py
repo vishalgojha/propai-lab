@@ -116,6 +116,9 @@ Rules:
 - For requirements (broker seeking), listing_type = "requirement".
 - Building name = ONLY proper complex names (e.g. "Kalpataru Vivant"). NEVER features/descriptions.
 - Only extract fields that are EXPLICITLY stated in the message. Never infer or invent a value.
+- CRITICAL: For locality — ONLY set raw_mention if the message text literally contains a locality/area name. NEVER infer a locality from the building name. Buildings appear in WhatsApp groups from different areas; the group name or broker's other messages do NOT indicate this listing's locality.
+- If the message is a URL/link with no property text, or is under 20 characters, set ALL text fields (locality, building_name, etc.) to null.
+- If you are unsure whether a locality is mentioned, set raw_mention to null. False locality assignments are worse than missing data.
 - Return ONLY valid JSON. No markdown, no code blocks, no extra text."""
 
 
@@ -392,6 +395,70 @@ def resolve_locality(raw_mention: str | None, storage=None) -> dict:
         _logger.warning("locality_reference query failed for %r", mention, exc_info=True)
 
     return {"resolved_locality": None, "confidence": "low", "raw_mention": mention}
+
+
+def locality_from_building_name(building_name: str | None, storage=None) -> dict:
+    """Look up a building's known locality from the buildings table.
+
+    Used as a fallback when the raw message didn't mention a locality but
+    the LLM extracted a building name. Returns the building's
+    micro_market if found, so the listing gets the correct locality
+    instead of inheriting one from the WhatsApp group name.
+    """
+    if not building_name or not building_name.strip():
+        return {"resolved_locality": None, "confidence": "low"}
+
+    if storage is None:
+        return {"resolved_locality": None, "confidence": "low"}
+
+    try:
+        db = storage.client if hasattr(storage, "client") else None
+        if not db:
+            return {"resolved_locality": None, "confidence": "low"}
+
+        name = building_name.strip()
+        res = db.table("buildings").select("micro_market").eq(
+            "canonical_name", name
+        ).limit(1).execute()
+        if res.data and res.data[0].get("micro_market"):
+            return {
+                "resolved_locality": res.data[0]["micro_market"],
+                "confidence": "high",
+                "source": "buildings_table",
+            }
+
+        # Case-insensitive fallback
+        res = db.table("buildings").select("micro_market").ilike(
+            "canonical_name", name
+        ).limit(1).execute()
+        if res.data and res.data[0].get("micro_market"):
+            return {
+                "resolved_locality": res.data[0]["micro_market"],
+                "confidence": "high",
+                "source": "buildings_table",
+            }
+
+        # Try building_name_aliases
+        res = db.table("building_name_aliases").select("canonical_name").ilike(
+            "alias", name
+        ).limit(1).execute()
+        if res.data:
+            canonical = res.data[0].get("canonical_name")
+            if canonical:
+                res2 = db.table("buildings").select("micro_market").eq(
+                    "canonical_name", canonical
+                ).limit(1).execute()
+                if res2.data and res2.data[0].get("micro_market"):
+                    return {
+                        "resolved_locality": res2.data[0]["micro_market"],
+                        "confidence": "medium",
+                        "source": "building_name_aliases",
+                    }
+
+    except Exception:
+        _logger.warning("building_name locality lookup failed for %r", building_name, exc_info=True)
+
+    return {"resolved_locality": None, "confidence": "low"}
 
 
 # ── Title generation (shared between app + www) ────────────────────────
@@ -702,6 +769,43 @@ def ai_extract(raw_text: str, ctx: dict | None = None, storage=None) -> dict:
                 if resolved["resolved_locality"]:
                     loc["resolved_locality"] = resolved["resolved_locality"]
                     loc["confidence"] = resolved["confidence"]
+
+            # ── Link-only / ultra-short message guard ────────────────
+            # When the source message is just a URL or under 30 chars,
+            # the LLM cannot have extracted any real property data.
+            # Null the locality and furnishing to prevent hallucinated
+            # values from leaking through. Keep building_name — the
+            # building-name cross-reference fallback below needs it to
+            # resolve the correct locality from the buildings table.
+            _msg_lower = raw_text.strip().lower()
+            _is_link_only = bool(re.match(r"^https?://\S+$", _msg_lower))
+            _is_ultra_short = len(raw_text.strip()) < 30
+            if _is_link_only or _is_ultra_short:
+                if isinstance(loc, dict):
+                    loc["raw_mention"] = None
+                    loc["resolved_locality"] = None
+                    loc["confidence"] = "low"
+                normalized["furnishing_status"] = None
+
+            # ── Building-name locality fallback ──────────────────────
+            # When the message didn't mention a locality but the LLM
+            # extracted a building name, look up the building in our
+            # database to get the correct locality. This prevents
+            # link-only messages (e.g. YouTube links to Kalpataru
+            # Vivante) from inheriting a wrong locality from the
+            # extraction hallucination.
+            if (
+                isinstance(loc, dict)
+                and not loc.get("resolved_locality")
+                and normalized.get("building_name")
+                and storage is not None
+            ):
+                bld_result = locality_from_building_name(
+                    normalized["building_name"], storage=storage
+                )
+                if bld_result.get("resolved_locality"):
+                    loc["resolved_locality"] = bld_result["resolved_locality"]
+                    loc["confidence"] = bld_result["confidence"]
 
             if not normalized.get("title"):
                 normalized["title"] = generate_title(normalized)

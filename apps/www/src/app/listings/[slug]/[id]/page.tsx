@@ -18,6 +18,7 @@ import {
   Flag,
   Target,
   ChevronRight,
+  ChevronDown,
   Tag,
 } from "lucide-react";
 import { getListingById, getBrokerAreas, getSimilarListingsForExpired } from "@/lib/localities";
@@ -35,6 +36,59 @@ import ListingSpecs from "@/components/ListingSpecs";
 import BackButton from "@/components/BackButton";
 import RelatedSearches from "@/components/RelatedSearches";
 import { generateListingRelated } from "@/lib/related-searches";
+
+function RawSourceMessage({
+  message,
+  sender,
+  groupName,
+  timestamp,
+}: {
+  message: string | null;
+  sender: string | null;
+  groupName: string | null;
+  timestamp: string | null;
+}) {
+  if (!message) return null;
+
+  // Strip external links (YouTube, Instagram, Facebook, Twitter, etc.)
+  // but preserve the text around them so the message is still readable.
+  const stripped = message
+    .replace(/https?:\/\/(?:www\.)?(?:youtube\.com|youtu\.be|instagram\.com|facebook\.com|fb\.com|twitter\.com|x\.com|t\.co|tiktok\.com|linkedin\.com)\/\S*/gi, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+
+  // If the entire message was just links with no property text, don't show it
+  if (!stripped) return null;
+
+  const formattedTime = timestamp
+    ? new Date(timestamp).toLocaleDateString("en-IN", {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      })
+    : null;
+
+  return (
+    <div className="mt-7">
+      <details className="group rounded-xl border border-white/10 bg-zinc-950/60">
+        <summary className="flex cursor-pointer items-center gap-2 px-4 py-3 text-sm font-semibold text-zinc-300 select-none hover:text-white transition-colors">
+          <ChevronDown className="h-4 w-4 text-zinc-500 transition-transform group-open:rotate-180" aria-hidden="true" />
+          View original message
+        </summary>
+        <div className="border-t border-white/5 px-4 py-4">
+          <p className="text-sm leading-relaxed text-zinc-400 whitespace-pre-wrap">{stripped}</p>
+          <div className="mt-3 flex flex-wrap items-center gap-3 text-[11px] text-zinc-600">
+            {groupName && <span>{groupName}</span>}
+            {sender && <span>Sender: {sender}</span>}
+            {formattedTime && <span>{formattedTime}</span>}
+          </div>
+        </div>
+      </details>
+    </div>
+  );
+}
 
 type Params = { params: Promise<{ slug: string; id: string }> };
 
@@ -434,6 +488,16 @@ export default async function ListingPage({ params }: Params) {
                   </li>
                 </ul>
               </div>
+            )}
+
+            {/* Raw source message — collapsible trust/debug section */}
+            {listing.rawMessage && (
+              <RawSourceMessage
+                message={listing.rawMessage.message}
+                sender={listing.rawMessage.sender}
+                groupName={listing.rawMessage.groupName}
+                timestamp={listing.rawMessage.timestamp}
+              />
             )}
           </div>
 

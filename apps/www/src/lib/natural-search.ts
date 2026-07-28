@@ -16,6 +16,7 @@ export type ParsedNaturalSearch = {
   furnishing: "furnished" | "semi-furnished" | "unfurnished" | null;
   tokens: string[];
   matchedLocalities: LocalitySummary[];
+  _confidence?: number;
 };
 
 export type NaturalSearchRow = {
@@ -52,6 +53,8 @@ export type NaturalSearchResult = NaturalSearchRow & {
   resultType: "locality" | "building";
 };
 
+export type NoResultsReason = "no_intent" | "locality_unmatched" | "no_matches" | null;
+
 export type NaturalSearchState = {
   parsed: ParsedNaturalSearch;
   results: NaturalSearchResult[];
@@ -60,6 +63,7 @@ export type NaturalSearchState = {
   hasData: boolean;
   localityUnmatched: boolean;
   localitySuggestions: LocalitySummary[];
+  noResultsReason: NoResultsReason;
 };
 
 const MONEY_UNITS: Record<string, number> = {
@@ -502,6 +506,35 @@ function parsedQueryTokens(query: string): string[] {
     .filter((token) => token.length >= 3 && !stopwords.has(token));
 }
 
+// Detect whether a query has ANY real-estate signal. Returns false for greetings,
+// gibberish, single words with no property meaning, etc.
+function hasRealEstateIntent(query: string, parsed: ParsedNaturalSearch): boolean {
+  // Explicit signals from regex
+  if (parsed.bhk != null) return true;
+  if (parsed.intent != null) return true;
+  if (parsed.furnishing != null) return true;
+  if (parsed.minPrice != null || parsed.maxPrice != null) return true;
+  if (parsed.locality != null) return true;
+  if (parsed.matchedLocalities.length > 0) return true;
+  if (parsed.asset != null) return true;
+
+  // Check if any tokens matched known buildings or landmarks
+  const tokens = parsedQueryTokens(query);
+  if (tokens.some((t) => t.length >= 4)) {
+    // Has substantial tokens — could be a building name or landmark
+    // but only if they look like property-related words
+    const propertyWords = new Set([
+      "flat", "apartment", "villa", "house", "office", "shop", "plot",
+      "buy", "rent", "sale", "lease", "purchase", "tenant", "landlord",
+      "furnished", "unfurnished", "parking", "terrace", "balcony",
+      "society", "complex", "tower", "wing", "block",
+    ]);
+    if (tokens.some((t) => propertyWords.has(t))) return true;
+  }
+
+  return false;
+}
+
 export function parseSearchQuery(query: string, localities: LocalitySummary[]): ParsedNaturalSearch {
   const parsedBhk = parseBhk(query);
   const parsedIntent = parseIntent(query);
@@ -799,6 +832,7 @@ async function browseByAsset(
     hasData: true,
     localityUnmatched: false,
     localitySuggestions: [],
+    noResultsReason: null,
   };
 }
 
@@ -810,6 +844,13 @@ async function fetchParsedQuery(query: string, localities: LocalitySummary[]): P
     });
     if (!res.ok) return null;
     const data = await res.json();
+
+    // If confidence is 0, the LLM thinks this isn't a property query at all.
+    // Return null so the caller can detect no-intent.
+    if (data.confidence === 0) {
+      return { query, locality: null, localityStated: false, statedLocalityText: null, bhk: null, intent: null, asset: null, minPrice: null, maxPrice: null, furnishing: null, tokens: parsedQueryTokens(query), matchedLocalities: [], _confidence: 0 };
+    }
+
     const backendLocalities = data.localities || [];
     let matchedLocalities: LocalitySummary[] = [];
     if (backendLocalities.length > 0) {
@@ -830,6 +871,7 @@ async function fetchParsedQuery(query: string, localities: LocalitySummary[]): P
       furnishing: data.furnishing ?? null,
       tokens: parsedQueryTokens(query),
       matchedLocalities,
+      _confidence: data.confidence ?? 1,
     };
   } catch {
     return null;
@@ -858,6 +900,28 @@ export async function searchNaturalLanguageListings(
   }
   if (asset) parsed.asset = asset;
 
+  const matchedSuggestions =
+    parsed.matchedLocalities.length > 0 ? parsed.matchedLocalities : localities.slice(0, 6);
+
+  // ── No-intent detection ──────────────────────────────────────────
+  // If the LLM returned confidence 0 (not a property query) AND the
+  // regex parser also found zero real-estate signals, surface a
+  // clarification prompt instead of returning random/unrelated results.
+  const llmConfident = llmParsed?._confidence != null && llmParsed._confidence > 0;
+  const regexHasIntent = hasRealEstateIntent(query, parsed);
+  if (!llmConfident && !regexHasIntent && query.trim().length > 0) {
+    return {
+      parsed,
+      results: [],
+      totalScanned: 0,
+      suggestions: matchedSuggestions,
+      hasData: Boolean(db),
+      localityUnmatched: false,
+      localitySuggestions: [],
+      noResultsReason: "no_intent",
+    };
+  }
+
   // AI locality extraction: when regex didn't find a locality but the user
   // mentioned one, try LLM extraction as a smarter fallback. This handles
   // typos ("bhi", "bandar"), abbreviations, and compound queries.
@@ -875,9 +939,6 @@ export async function searchNaturalLanguageListings(
     }
   }
 
-  const matchedSuggestions =
-    parsed.matchedLocalities.length > 0 ? parsed.matchedLocalities : localities.slice(0, 6);
-
   // The user named a locality that we could not resolve to any tracked
   // gazetteer entry. Do NOT silently fall back to a broad, locality-less
   // search — that erodes trust by mixing unrelated localities. Surface a
@@ -891,6 +952,7 @@ export async function searchNaturalLanguageListings(
       hasData: Boolean(db),
       localityUnmatched: true,
       localitySuggestions: localities.slice(0, 6),
+      noResultsReason: "locality_unmatched",
     };
   }
 
@@ -903,6 +965,7 @@ export async function searchNaturalLanguageListings(
       hasData: false,
       localityUnmatched: false,
       localitySuggestions: [],
+      noResultsReason: null,
     };
   }
 
@@ -923,6 +986,7 @@ export async function searchNaturalLanguageListings(
       hasData: Boolean(db),
       localityUnmatched: false,
       localitySuggestions: [],
+      noResultsReason: null,
     };
   }
 
@@ -1023,6 +1087,7 @@ export async function searchNaturalLanguageListings(
     hasData: true,
     localityUnmatched: false,
     localitySuggestions: [],
+    noResultsReason: ranked.length === 0 ? "no_matches" : null,
   };
 }
 

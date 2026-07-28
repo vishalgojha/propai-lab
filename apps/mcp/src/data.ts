@@ -291,7 +291,16 @@ function filterPublicListingRows(rows: PublicListing[], input: {
   });
 }
 
-async function fetchParsedMarketRows(limit: number, since?: string) {
+async function fetchParsedMarketRows(limit: number, since?: string, filters?: {
+  locality?: string;
+  city?: string;
+  buildingName?: string;
+  bhk?: number;
+  propertyType?: "sale" | "rent" | "lease" | "all";
+  maxBudgetCr?: number;
+  budgetMinCr?: number;
+  listingKind?: "listing" | "requirement";
+}) {
   let query = supabase
     .from("parsed_output")
     .select(PARSED_MARKET_COLUMNS)
@@ -300,6 +309,34 @@ async function fetchParsedMarketRows(limit: number, since?: string) {
 
   if (since) {
     query = query.gte("created_at", since);
+  }
+
+  if (filters?.locality) {
+    const locality = filters.locality.trim().toLowerCase();
+    query = query.or(`micro_market.ilike.%${locality}%,area.ilike.%${locality}%,location_raw.ilike.%${locality}%,building_name.ilike.%${locality}%`);
+  }
+
+  if (filters?.city) {
+    const city = filters.city.trim().toLowerCase();
+    query = query.or(`micro_market.ilike.%${city}%,area.ilike.%${city}%,location_raw.ilike.%${city}%`);
+  }
+
+  if (filters?.buildingName) {
+    query = query.ilike("building_name", `%${filters.buildingName}%`);
+  }
+
+  if (filters?.bhk != null) {
+    query = query.eq("bhk", String(filters.bhk));
+  }
+
+  if (filters?.propertyType && filters.propertyType !== "all") {
+    query = query.or(`intent.eq.${filters.propertyType},intent.eq.listing_${filters.propertyType}`);
+  }
+
+  if (filters?.listingKind === "requirement") {
+    query = query.eq("intent", "requirement");
+  } else if (filters?.listingKind === "listing") {
+    query = query.neq("intent", "requirement");
   }
 
   const { data, error } = await query;
@@ -334,7 +371,15 @@ export async function searchPublicListings(input: {
   limit?: number;
 }) {
   const limit = clampLimit(input.limit);
-  const rows = await fetchParsedMarketRows(Math.max(limit * 20, 500));
+  const rows = await fetchParsedMarketRows(limit * 3, undefined, {
+    locality: input.locality,
+    city: input.city,
+    bhk: input.bhk,
+    propertyType: input.property_type,
+    maxBudgetCr: input.max_budget_cr,
+    budgetMinCr: input.budget_min_cr,
+    listingKind: input.listingKind,
+  });
   return normalizePublicListings(filterPublicListingRows(rows, input)).slice(0, limit);
 }
 
@@ -342,7 +387,7 @@ export async function getFreshStream(input: { hours?: number; city?: string; lim
   const hours = Math.min(Math.max(input.hours ?? 72, 1), 168);
   const since = new Date(Date.now() - hours * 3600000).toISOString();
   const limit = clampLimit(input.limit, 50, 100);
-  const rows = await fetchParsedMarketRows(Math.max(limit * 10, 250), since);
+  const rows = await fetchParsedMarketRows(limit * 2, since);
   return normalizePublicListings(filterPublicListingRows(rows, { city: input.city })).slice(0, limit);
 }
 
@@ -1648,19 +1693,16 @@ export async function getBuildingIntel(input: {
   days_back?: number;
 }): Promise<BuildingIntelResponse> {
   const normalizedBuilding = normalizeBuildingName(input.building_name);
+  const buildingTokens = normalizedBuilding.split(/\s+/).filter(Boolean);
   const daysBack = Math.min(Math.max(input.days_back ?? 90, 7), 365);
   const since = new Date(Date.now() - daysBack * 86400000).toISOString();
 
-  const buildingTokens = normalizedBuilding.split(/\s+/).filter(Boolean);
-  const parsedRows = await fetchParsedMarketRows(500, since);
+  const parsedRows = await fetchParsedMarketRows(500, since, {
+    buildingName: input.building_name,
+    locality: input.locality,
+  });
+
   const allRows = normalizePublicListings(parsedRows)
-    .filter((row) => {
-      const building = normalizeBuildingName(row.title || row.description || row.raw_message || "");
-      const locality = normalizeLocality(row.location || row.sub_area || row.area);
-      const buildingMatch = buildingTokens.every((token) => building.includes(token));
-      const localityMatch = input.locality ? locality.includes(normalizeLocality(input.locality)) : true;
-      return buildingMatch && localityMatch;
-    })
     .map((row) => ({
       source_message_id: row.source_message_id,
       building_name: row.title || input.building_name,
@@ -1825,12 +1867,43 @@ export async function findBrokers(input: {
       phone: primaryPhone,
       city: input.city || "Mumbai",
       locations: input.locality ? [input.locality] : [],
-      agency_name: "",
-      app_role: "broker",
-      observation_count: broker.observation_count,
-      listing_count: broker.listing_count,
-      requirement_count: broker.requirement_count,
-      last_seen_at: broker.last_seen_at,
+agency_name: "",
+       app_role: "broker",
+       observation_count: broker.observation_count,
+       listing_count: broker.listing_count,
+       requirement_count: broker.requirement_count,
+       last_seen_at: broker.last_seen_at,
     };
   });
+}
+
+export async function searchKnowledgeRecords(input: {
+  query: string;
+  source_type?: string;
+  limit?: number;
+}) {
+  const limit = clampLimit(input.limit, 20, 100);
+  const queryText = input.query.trim();
+
+  const { data, error } = await supabase
+    .from("knowledge_records")
+    .select("id, source_type, source_id, raw_content, processed_content, sender_jid, sender_name, message_timestamp, created_at")
+    .ilike("raw_content", `%${queryText}%`)
+    .order("created_at", { ascending: false })
+    .limit(limit);
+
+  if (error) throw new Error(error.message);
+
+  return (data || []).map((row: any) => ({
+    id: row.id,
+    source_type: row.source_type,
+    source_id: row.source_id,
+    content: row.raw_content,
+    processed: row.processed_content,
+    sender: {
+      jid: row.sender_jid,
+      name: row.sender_name,
+    },
+    timestamp: row.message_timestamp || row.created_at,
+  }));
 }
