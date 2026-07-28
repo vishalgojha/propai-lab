@@ -3438,11 +3438,11 @@ return {
                             <div className="flex items-center gap-1.5">
                               <span
                                 className="text-[10px] font-bold text-white tabular-nums"
-                                title="Parsed market items attributed to this broker, not raw WhatsApp message count"
+                                title="Parsed WhatsApp posts attributed to this broker; repeated posts can represent one unique market item"
                               >
                                 {b.observation_count}
                               </span>
-                              <span className="text-[9px] text-zinc-500">items</span>
+                              <span className="text-[9px] text-zinc-500">posts</span>
                               <div onClick={(e) => { e.stopPropagation(); setOpenMenuBroker(menuOpen ? null : b.primary_phone); }} className="w-5 h-5 flex items-center justify-center rounded hover:bg-[rgba(255,255,255,0.06)] text-zinc-500 hover:text-white transition-colors cursor-pointer">
                                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg>
                               </div>
@@ -3453,7 +3453,7 @@ return {
                             <span className="font-medium text-zinc-300">{coverage}</span>
                           </div>
                           <div className="flex items-center gap-2 text-[9px] text-zinc-500">
-                            <span title="Parsed WhatsApp posts, including repeats and unclassified posts">posts</span>
+                            <span title="Parsed WhatsApp posts, including repeated copies">parsed</span>
                             {b.group_evidence_count > 0 && (
                               <span>{b.group_evidence_count}g</span>
                             )}
@@ -3644,12 +3644,12 @@ return {
                       <span>
                         {loadingBrokerObs ? (
                           <>
-                            {selectedBroker.observation_count || 0} market items{' '}
+                            {selectedBroker.observation_count || 0} parsed posts{' '}
                             <span className="text-[10px] text-zinc-500 ml-1">(loading…)</span>
                           </>
                         ) : (
                           <>
-                            {selectedBroker.observation_count || 0} market items
+                            {selectedBroker.observation_count || 0} parsed posts
                           </>
                         )}
                       </span>
@@ -3822,6 +3822,7 @@ return {
                           ""
                         ).trim()
                       : "";
+                    const fullSourceText = selectedRawText || String(itemSource || "").trim();
                     const marketTitle = buildMarketItemTitle(obs);
                     const opportunityLabel = marketOpportunityLabel({
                       intent: obs.intent,
@@ -3874,19 +3875,9 @@ return {
                             </div>
                           )}
                           {/* Source text */}
-                          {itemSource && (
+                          {fullSourceText && (
                             <div className="mt-1 select-text whitespace-pre-wrap break-words text-[11px] leading-relaxed text-zinc-300">
-                              {stripEmojis(itemSource)}
-                            </div>
-                          )}
-                          {selectedRawText && selectedRawText !== String(itemSource || "").trim() && (
-                            <div className="mt-2 border-t border-white/10 pt-2 text-[11px] leading-relaxed text-zinc-200">
-                              <div className="mb-1 text-[9px] font-semibold uppercase tracking-wider text-zinc-500">
-                                Original WhatsApp message
-                              </div>
-                              <div className="select-text whitespace-pre-wrap break-words">
-                                {stripEmojis(selectedRawText)}
-                              </div>
+                              {stripEmojis(fullSourceText)}
                             </div>
                           )}
                           {/* Key fields as inline text */}
@@ -4023,7 +4014,7 @@ return {
                         <>
                           <span>•</span>
                           <span title="Total parsed WhatsApp posts; the center feed deduplicates these into market items">
-                            {groupedBrokerObservations.length} market items shown of {selectedBroker.observation_count} posts
+                            {groupedBrokerObservations.length} unique items shown of {selectedBroker.observation_count} parsed posts
                           </span>
                         </>
                       ) : null}
