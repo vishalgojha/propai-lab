@@ -145,7 +145,10 @@ export default function ChatPage() {
 
   // Load broker phone from profile
   useEffect(() => {
-    const phone = user?.phone || "";
+    // Supabase password sessions may not carry a phone claim. Use the stable
+    // user id as the session owner until the profile phone is available, so
+    // chat persistence does not silently get skipped.
+    const phone = user?.phone || user?.id || "";
     if (!phone) return;
     setBrokerPhone(phone);
     let cancelled = false;

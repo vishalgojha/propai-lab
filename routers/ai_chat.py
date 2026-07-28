@@ -131,16 +131,12 @@ def _preferred_workspace_provider(tenant_id: str | None) -> dict:
                 "base_url": (value(p, "base_url") or "https://api.openai.com/v1").strip().rstrip("/"),
                 "provider": value(p, "provider_name"),
             }
-            if _llm.is_provider_healthy(
-                workspace_provider["api_key"],
-                workspace_provider["base_url"],
-                workspace_provider["model"],
-            ):
-                return workspace_provider
-            _logger.warning(
-                "Workspace provider %s is unhealthy; falling back to deployment provider chain",
-                workspace_provider["provider"],
-            )
+            # Do not discard a saved provider because a probe is temporarily
+            # slow, rate-limited, or uses a provider endpoint that does not
+            # support the tiny health-check request. The actual completion
+            # path is responsible for reporting provider failure and routing
+            # can then move to the next configured key.
+            return workspace_provider
     except Exception as exc:
         _logger.warning("Workspace LLM provider lookup failed: %s", exc)
 
@@ -699,16 +695,14 @@ async def ai_config(user: dict = Depends(require_user), tenant_id: str | None = 
 
 @router.get("/api/ai/chat/sessions")
 async def list_chat_sessions(broker_phone: str = "", limit: int = 50, user: dict = Depends(require_user), tenant_id: str | None = Depends(get_tenant_context)):
-    if not broker_phone:
-        return []
-    return storage.list_chat_sessions(broker_phone, limit=limit, tenant_id=tenant_id)
+    owner_key = broker_phone.strip() or (user.get("phone") or "").strip() or f"user:{user.get('id', '')}"
+    return storage.list_chat_sessions(owner_key, limit=limit, tenant_id=tenant_id)
 
 
 @router.post("/api/ai/chat/sessions")
 async def create_chat_session(broker_phone: str = "", title: str = "New chat", user: dict = Depends(require_user), tenant_id: str | None = Depends(get_tenant_context)):
-    if not broker_phone:
-        raise HTTPException(400, "broker_phone required")
-    return storage.create_chat_session(broker_phone, title=title, tenant_id=tenant_id) or {}
+    owner_key = broker_phone.strip() or (user.get("phone") or "").strip() or f"user:{user.get('id', '')}"
+    return storage.create_chat_session(owner_key, title=title, tenant_id=tenant_id) or {}
 
 
 @router.get("/api/ai/chat/sessions/{session_id}/messages")
