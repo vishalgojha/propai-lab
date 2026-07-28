@@ -3410,27 +3410,25 @@ class SupabaseStorage(Storage):
 
     def recover_stale_enrichment_jobs(self, stale_seconds: int = 600) -> int:
         """Reset enrichment_jobs stuck in_progress for longer than stale_seconds.
-        
+
         Handles both cases: jobs with old started_at AND jobs with NULL started_at
         (from before started_at tracking was added).
-        Uses raw SQL to avoid postgrest-py version compatibility issues with .lt()/.filter().
+        This storage implementation uses Supabase REST, so do not assume a
+        psycopg connection exists on the adapter.
         """
         from datetime import datetime, timezone, timedelta
         cutoff = (datetime.now(timezone.utc) - timedelta(seconds=stale_seconds)).isoformat()
-        sql = """
-            UPDATE enrichment_jobs
-            SET status = 'pending', started_at = NULL, attempts = 0
-            WHERE status = 'in_progress'
-              AND (started_at < %s OR started_at IS NULL)
-        """
-        from psycopg2.extras import RealDictCursor
-        conn = self.db._conn
-        cur = conn.cursor()
-        cur.execute(sql, (cutoff,))
-        affected = cur.rowcount
-        conn.commit()
-        cur.close()
-        return affected
+        stale = self.client.table("enrichment_jobs").select("id") \
+            .eq("status", "in_progress") \
+            .or_(f"started_at.lt.{cutoff},started_at.is.null") \
+            .execute()
+        ids = [row.get("id") for row in (stale.data or []) if row.get("id") is not None]
+        if not ids:
+            return 0
+        updated = self.client.table("enrichment_jobs").update({
+            "status": "pending", "started_at": None, "attempts": 0,
+        }).eq("status", "in_progress").in_("id", ids).execute()
+        return len(updated.data or ids)
 
     def get_enrichment_job_by_parsed(self, parsed_id: int) -> Optional[dict]:
         res = self.client.table("enrichment_jobs").select("*").eq("parsed_id", parsed_id).limit(1).execute()
