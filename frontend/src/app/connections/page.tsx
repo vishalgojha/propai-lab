@@ -530,38 +530,36 @@ function PhoneCard({
         </div>
       </div>
 
-      {/* Row 2: Action buttons - icon-only, right-aligned */}
+      {/* One pairing path while disconnected; never offer two competing ways
+          to start the same WhatsApp code flow. */}
       <div className="flex items-center justify-end gap-2 mt-3">
-        <button
-          onClick={() => handleAction("pair-code")}
-          disabled={actionLoading !== null}
-          className="flex h-10 w-10 items-center justify-center rounded-lg border border-white/10 bg-white/[0.03] hover:bg-white/10 transition-colors disabled:opacity-50"
-          title="Pair with WhatsApp code"
-        >
-          {actionLoading === "pair-code" ? (
+        {isConnected ? (
+          <button
+            onClick={() => handleAction("disconnect")}
+            disabled={actionLoading !== null}
+            className="flex h-10 w-10 items-center justify-center rounded-lg border border-white/10 bg-white/[0.03] transition-colors hover:bg-white/10 disabled:opacity-50"
+            title="Disconnect"
+          >
+            {actionLoading === "disconnect" ? (
+              <div className="h-4 w-4 animate-spin rounded-full border-2 border-zinc-500 border-t-white" />
+            ) : (
+              <LogOut className="h-4 w-4 text-zinc-300" />
+            )}
+          </button>
+        ) : (
+          <button
+            onClick={() => handleAction("pair-code")}
+            disabled={actionLoading !== null}
+            className="flex h-10 items-center gap-2 rounded-lg bg-white px-3 text-xs font-semibold text-black transition-colors hover:bg-zinc-200 disabled:opacity-50"
+          >
+            {actionLoading === "pair-code" ? (
             <div className="h-4 w-4 animate-spin rounded-full border-2 border-zinc-500 border-t-white" />
-          ) : (
-            <Hash className="h-4 w-4 text-zinc-300" />
-          )}
-        </button>
-        <button
-          onClick={() => handleAction(isConnected ? "disconnect" : "pair-code")}
-          disabled={actionLoading !== null}
-          className={`flex h-10 w-10 items-center justify-center rounded-lg transition-colors disabled:opacity-50 ${
-            isConnected
-              ? "border border-white/10 bg-white/[0.03] hover:bg-white/10"
-            : "border border-white bg-white text-black hover:bg-zinc-200"
-          }`}
-          title={isConnected ? "Disconnect" : "Pair with code"}
-        >
-          {actionLoading === "disconnect" || actionLoading === "pair-code" ? (
-            <div className="h-4 w-4 animate-spin rounded-full border-2 border-zinc-500 border-t-white" />
-          ) : isConnected ? (
-            <LogOut className="h-4 w-4 text-zinc-300" />
-          ) : (
-            <RefreshCw className="h-4 w-4 text-black" />
-          )}
-        </button>
+            ) : (
+              <Hash className="h-4 w-4" />
+            )}
+            Pair WhatsApp
+          </button>
+        )}
       </div>
 
       {/* Row 3: Stat chips inline */}

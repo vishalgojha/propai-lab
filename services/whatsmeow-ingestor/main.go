@@ -361,15 +361,17 @@ func (sm *SessionManager) startOrGet(
 	configureBeforeStart func(*BrokerSession),
 ) *BrokerSession {
 	sm.mu.Lock()
+	defer sm.mu.Unlock()
 	if existing, ok := sm.sessions[brokerID]; ok {
-		sm.mu.Unlock()
 		if configureBeforeStart != nil {
 			configureBeforeStart(existing)
 		}
 		return existing
 	}
-	sm.mu.Unlock()
 
+	// Keep session creation serialized. Without this, two concurrent pair-code
+	// requests can both see no in-memory session; the loser sees the advisory
+	// lock held by the winner and incorrectly returns a 502 to the dashboard.
 	ctx := context.Background()
 	lockConn, locked, err := sm.acquireBrokerLock(ctx, brokerID)
 	if err != nil {
@@ -407,9 +409,7 @@ func (sm *SessionManager) startOrGet(
 	if configureBeforeStart != nil {
 		configureBeforeStart(session)
 	}
-	sm.mu.Lock()
 	sm.sessions[brokerID] = session
-	sm.mu.Unlock()
 	sm.sessionWg.Add(1)
 	go sm.runSession(session)
 	return session
