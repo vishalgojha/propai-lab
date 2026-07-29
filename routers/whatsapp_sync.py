@@ -821,6 +821,16 @@ async def pair_code_phone(
     normalized_phone = _normalized_whatsapp_phone(phone_number)
     if not normalized_phone:
         raise HTTPException(400, "Enter a valid WhatsApp phone number with country code")
+    # Never turn a live linked device into a pairing session. A pairing code is
+    # only valid after an explicit reset has removed PropAI's linked-device
+    # credentials; disconnecting a live session here can make a healthy phone
+    # appear logged out and risks an unnecessary re-pair.
+    live_status = await _best_ingestor_status_for_broker(broker_id, timeout=2)
+    if live_status and live_status.get("connected"):
+        raise HTTPException(
+            409,
+            "This WhatsApp phone is already connected. Use Reset & re-pair only if you intentionally want to remove PropAI's linked-device session.",
+        )
     # A connected card is bound to its authenticated WhatsApp account. A
     # disconnected/unpaired card may still carry an old persisted identity
     # from a prior device session, however; allow its authorized workspace
@@ -828,12 +838,6 @@ async def pair_code_phone(
     # WhatsApp itself still verifies control of the new number before pairing.
     connection_phone = _normalized_whatsapp_phone(phone.get("phone_number"))
     if connection_phone and normalized_phone != connection_phone:
-        live_status = await _best_ingestor_status_for_broker(broker_id, timeout=2)
-        if live_status and live_status.get("connected"):
-            raise HTTPException(
-                409,
-                "Disconnect or reset this active WhatsApp session before pairing a different number.",
-            )
         cleared_connection = await asyncio.to_thread(
             storage.update_org_whatsapp_connection,
             phone_id,
