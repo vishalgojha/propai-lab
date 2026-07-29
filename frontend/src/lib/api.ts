@@ -1834,7 +1834,14 @@ export function resetPhone(phoneId: number) {
   const directApiBase = typeof window !== "undefined" && window.location.hostname === "app.propai.live"
     ? "https://api.propai.live/api"
     : BASE;
-  return fetchJSONWithRetry<{ ok: boolean; message: string; reset_at?: string; pairing_required?: boolean }>(
+  return fetchJSONWithRetry<{
+    ok: boolean;
+    message: string;
+    reset_at?: string;
+    pairing_required?: boolean;
+    remote_unlink_confirmed?: boolean;
+    remote_unlink_warning?: string | null;
+  }>(
     `/phones/${phoneId}/reset`,
     { method: "POST" },
     API_TIMEOUT_MS,
