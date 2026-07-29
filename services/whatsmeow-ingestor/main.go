@@ -2048,12 +2048,21 @@ func (sm *SessionManager) resetHandler(w http.ResponseWriter, r *http.Request) {
 	log.Printf("[broker %s] SESSION_WIPED reason=http_reset timestamp=%s reconnectFailures=%d reconnectCount=%d",
 		brokerID, time.Now().UTC().Format(time.RFC3339), s.reconnectFailures, s.reconnectCount)
 	resetAt := time.Now().UTC()
-	whatsAppUnlinked, err := s.unlinkAndClearDevice()
-	if err != nil {
-		log.Printf("[broker %s] WhatsApp unlink during reset failed: %v", brokerID, err)
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{"error": "failed to unlink the WhatsApp linked device; session was left unchanged"})
-		return
+	whatsAppUnlinked, unlinkErr := s.unlinkAndClearDevice()
+	remoteUnlinkWarning := ""
+	if unlinkErr != nil {
+		// A remote Logout can time out after the reset has begun. Do not leave
+		// the local Signal identity behind or report that the session was
+		// unchanged: clearing it is the essential reset operation and allows a
+		// fresh pairing. The user can remove a lingering linked device from the
+		// WhatsApp app if the remote revoke was not confirmed.
+		log.Printf("[broker %s] WhatsApp unlink during reset was not confirmed: %v", brokerID, unlinkErr)
+		if clearErr := s.clearDevice(); clearErr != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(map[string]string{"error": "failed to clear persisted WhatsApp credentials"})
+			return
+		}
+		remoteUnlinkWarning = "WhatsApp did not confirm removal of the old linked device. Remove PropAI in WhatsApp Linked Devices if it is still listed."
 	}
 	if err := sm.deleteDeviceMapping(context.Background(), brokerID, "http_reset"); err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
@@ -2066,13 +2075,14 @@ func (sm *SessionManager) resetHandler(w http.ResponseWriter, r *http.Request) {
 		s.disconnectOnce()
 	}
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"ok":                  true,
-		"broker_id":           brokerID,
-		"credentials_deleted": true,
-		"mapping_deleted":     true,
-		"whatsapp_unlinked":   whatsAppUnlinked,
-		"pairing_required":    true,
-		"reset_at":            resetAt.Format(time.RFC3339),
+		"ok":                    true,
+		"broker_id":             brokerID,
+		"credentials_deleted":   true,
+		"mapping_deleted":       true,
+		"whatsapp_unlinked":     whatsAppUnlinked,
+		"remote_unlink_warning": remoteUnlinkWarning,
+		"pairing_required":      true,
+		"reset_at":              resetAt.Format(time.RFC3339),
 	})
 }
 

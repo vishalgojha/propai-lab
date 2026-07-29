@@ -279,6 +279,7 @@ function PhoneCard({
   const [showResetDialog, setShowResetDialog] = useState(false);
   const [showPairCodeDialog, setShowPairCodeDialog] = useState(false);
   const [resetReceipt, setResetReceipt] = useState<string | null>(null);
+  const [resetWarning, setResetWarning] = useState<string | null>(null);
   const [pairCodeInput, setPairCodeInput] = useState("");
   const [pairCodeResult, setPairCodeResult] = useState<string | null>(null);
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
@@ -382,7 +383,8 @@ function PhoneCard({
       setPairCodeInput(isPlaceholderPhone(phone.phone_number) ? "" : normalizePhoneDigits(phone.phone_number));
       setShowPairCodeDialog(true);
       setResetReceipt(receipt.reset_at);
-      setActionMessage("Saved WhatsApp session cleared. A fresh pairing code is now required.");
+      setResetWarning(receipt.remote_unlink_warning || null);
+      setActionMessage(receipt.message || "Saved WhatsApp session cleared. A fresh pairing code is now required.");
       await onRefresh();
     } catch (error) {
       setActionError(error instanceof Error ? error.message : "Could not reset the WhatsApp session");
@@ -626,20 +628,26 @@ function PhoneCard({
 
       {/* Pair Code Dialog */}
       {showPairCodeDialog && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={() => { setShowPairCodeDialog(false); setPairCodeResult(null); setPairCodeInput(""); setResetReceipt(null); }}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={() => { setShowPairCodeDialog(false); setPairCodeResult(null); setPairCodeInput(""); setResetReceipt(null); setResetWarning(null); }}>
           <div className="w-full max-w-sm rounded-xl bg-zinc-900 border border-white/10 shadow-xl" onClick={(e) => e.stopPropagation()}>
             {!pairCodeResult ? (
               <>
                 <div className="flex items-center gap-3 px-5 py-4 border-b border-white/10">
                   <Hash className="h-5 w-5 text-zinc-400" />
                   <div className="text-sm font-semibold text-white">{resetReceipt ? "Session cleared — pair again" : "Pair with Code"}</div>
-                  <button onClick={() => { setShowPairCodeDialog(false); setPairCodeInput(""); setResetReceipt(null); }} className="ml-auto text-zinc-500 hover:text-white"><X className="h-4 w-4" /></button>
+                  <button onClick={() => { setShowPairCodeDialog(false); setPairCodeInput(""); setResetReceipt(null); setResetWarning(null); }} className="ml-auto text-zinc-500 hover:text-white"><X className="h-4 w-4" /></button>
                 </div>
                 <div className="px-5 py-4 space-y-3">
                   {resetReceipt && (
                     <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs leading-5 text-emerald-200">
                       <div className="font-semibold">Reset confirmed</div>
                       <div>Saved credentials and device mapping were deleted at {formatTime(resetReceipt)}. This phone now requires a fresh pairing code.</div>
+                    </div>
+                  )}
+                  {resetWarning && (
+                    <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs leading-5 text-amber-100">
+                      <div className="font-semibold">Manual check needed</div>
+                      <div>{resetWarning}</div>
                     </div>
                   )}
                   <p className="text-xs text-zinc-400">
@@ -669,7 +677,7 @@ function PhoneCard({
                   </p>
                 </div>
                 <div className="flex justify-end gap-2 px-5 py-3 border-t border-white/10">
-                  <button onClick={() => { setShowPairCodeDialog(false); setPairCodeInput(""); setResetReceipt(null); }} className="px-3 py-1.5 text-xs text-zinc-400 hover:text-white">Cancel</button>
+                  <button onClick={() => { setShowPairCodeDialog(false); setPairCodeInput(""); setResetReceipt(null); setResetWarning(null); }} className="px-3 py-1.5 text-xs text-zinc-400 hover:text-white">Cancel</button>
                   <button
                     onClick={handlePairCodeSubmit}
                     disabled={pairCodeInput.length < 10 || actionLoading === "pair-code"}
@@ -684,7 +692,7 @@ function PhoneCard({
                 <div className="flex items-center gap-3 px-5 py-4 border-b border-white/10">
                   <Check className="h-5 w-5 text-emerald-400" />
                   <div className="text-sm font-semibold text-white">Pairing Code</div>
-                  <button onClick={() => { setShowPairCodeDialog(false); setPairCodeResult(null); setPairCodeInput(""); setResetReceipt(null); }} className="ml-auto text-zinc-500 hover:text-white"><X className="h-4 w-4" /></button>
+                  <button onClick={() => { setShowPairCodeDialog(false); setPairCodeResult(null); setPairCodeInput(""); setResetReceipt(null); setResetWarning(null); }} className="ml-auto text-zinc-500 hover:text-white"><X className="h-4 w-4" /></button>
                 </div>
                 <div className="px-5 py-4 text-center space-y-3">
                   <p className="text-xs text-zinc-400">Open WhatsApp → Settings → Linked Devices → Link a Device → <span className="font-semibold text-white">Link with phone number instead</span>.</p>
@@ -695,7 +703,7 @@ function PhoneCard({
                   <p className="text-[11px] text-zinc-500">Code expires in ~2 minutes</p>
                 </div>
                 <div className="flex justify-end px-5 py-3 border-t border-white/10">
-                  <button onClick={() => { setShowPairCodeDialog(false); setPairCodeResult(null); setPairCodeInput(""); setResetReceipt(null); }} className="px-3 py-1.5 text-xs text-zinc-400 hover:text-white">Done</button>
+                  <button onClick={() => { setShowPairCodeDialog(false); setPairCodeResult(null); setPairCodeInput(""); setResetReceipt(null); setResetWarning(null); }} className="px-3 py-1.5 text-xs text-zinc-400 hover:text-white">Done</button>
                 </div>
               </>
             )}

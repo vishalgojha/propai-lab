@@ -667,13 +667,19 @@ async def reset_phone(
             receipt = {}
         if not receipt.get("credentials_deleted") or not receipt.get("mapping_deleted"):
             raise HTTPException(502, "WhatsApp reset was not confirmed by the ingestor")
-        if not receipt.get("whatsapp_unlinked"):
-            raise HTTPException(502, "WhatsApp linked-device removal was not confirmed; session was left unchanged")
+        remote_unlink_confirmed = bool(receipt.get("whatsapp_unlinked"))
+        message = (
+            "WhatsApp linked device and session credentials were removed. Pairing is now required."
+            if remote_unlink_confirmed
+            else "Saved WhatsApp session credentials were removed. Pair again now; remove PropAI from WhatsApp Linked Devices if it is still listed."
+        )
         return {
             "ok": True,
-            "message": "WhatsApp linked device and session credentials were removed. Pairing is now required.",
+            "message": message,
             "reset_at": receipt.get("reset_at"),
             "pairing_required": bool(receipt.get("pairing_required")),
+            "remote_unlink_confirmed": remote_unlink_confirmed,
+            "remote_unlink_warning": receipt.get("remote_unlink_warning") or None,
         }
     raise HTTPException(502, _ingestor_failure_message(resp))
 
