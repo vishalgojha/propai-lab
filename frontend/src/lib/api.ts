@@ -1852,10 +1852,19 @@ export function connectPhone(phoneId: number) {
 }
 
 export function pairCodePhone(phoneId: number, phone: string) {
-  return fetchJSON<any>(`/phones/${phoneId}/pair-code`, {
-    method: "POST",
-    body: JSON.stringify({ phone }),
-  });
+  // Pairing takes up to a minute while WhatsApp opens its websocket. The
+  // frontend's same-origin rewrite points at a host-local port, which is not
+  // the API container in Coolify. Use the API origin directly, as reset does.
+  const directApiBase = typeof window !== "undefined" && window.location.hostname === "app.propai.live"
+    ? "https://api.propai.live/api"
+    : BASE;
+  return fetchJSONWithRetry<any>(
+    `/phones/${phoneId}/pair-code`,
+    { method: "POST", body: JSON.stringify({ phone }) },
+    API_TIMEOUT_MS,
+    false,
+    directApiBase,
+  );
 }
 
 export function updatePhone(phoneId: number, data: { instance_name?: string; self_chat_enabled?: boolean }) {
