@@ -1826,7 +1826,7 @@ export function deletePhone(phoneId: number) {
 }
 
 export function resetPhone(phoneId: number) {
-  return fetchJSON<{ ok: boolean; message: string }>(`/phones/${phoneId}/reset`, { method: "POST" });
+  return fetchJSON<{ ok: boolean; message: string; reset_at?: string; pairing_required?: boolean }>(`/phones/${phoneId}/reset`, { method: "POST" });
 }
 
 export function disconnectPhone(phoneId: number) {

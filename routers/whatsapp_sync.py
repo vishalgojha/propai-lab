@@ -650,7 +650,18 @@ async def reset_phone(
     broker_id = phone.get("broker_id", "")
     _, resp = await _first_ingestor_response("POST", "/reset", timeout=10, params={"broker_id": broker_id})
     if resp is not None and resp.status_code == 200:
-        return {"ok": True, "message": "Session cleared, QR should appear shortly"}
+        try:
+            receipt = resp.json()
+        except ValueError:
+            receipt = {}
+        if not receipt.get("credentials_deleted") or not receipt.get("mapping_deleted"):
+            raise HTTPException(502, "WhatsApp reset was not confirmed by the ingestor")
+        return {
+            "ok": True,
+            "message": "WhatsApp session credentials were deleted. Pairing is now required.",
+            "reset_at": receipt.get("reset_at"),
+            "pairing_required": bool(receipt.get("pairing_required")),
+        }
     raise HTTPException(502, _ingestor_failure_message(resp))
 
 
