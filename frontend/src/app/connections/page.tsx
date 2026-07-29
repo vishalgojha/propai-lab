@@ -399,8 +399,15 @@ function PhoneCard({
   const isConnected = statusAvailable && (
     isConnectedPhone(phone) || matchesLiveStatus(phone, liveStatus)
   );
-  const phoneDisplay = phone.phone_number_live || phone.phone_number;
-  const isUnpaired = !isConnected && isPlaceholderPhone(phoneDisplay);
+  // An unpaired connection has no canonical WhatsApp account yet. Never use a
+  // transient ingestor status value as its identity: that can belong to a
+  // stale device/session and makes the card appear to have selected a random
+  // account number. A live number becomes displayable only after pairing.
+  const canonicalPhone = phone.phone_number;
+  const phoneDisplay = isPlaceholderPhone(canonicalPhone)
+    ? canonicalPhone
+    : (phone.phone_number_live || canonicalPhone);
+  const isUnpaired = !isConnected && isPlaceholderPhone(canonicalPhone);
   const isReconnecting = statusAvailable && ["connecting", "reconnecting"].includes(phone.connection_state);
   const statusLabel = isConnected
     ? "Connected"
@@ -473,7 +480,7 @@ function PhoneCard({
               </div>
               <div className="px-3 py-2 border-b border-white/10">
                 <div className="text-xs text-zinc-500">Account Number</div>
-                <div className="text-xs text-white font-medium">{formatPhone(phoneDisplay)}</div>
+                <div className="text-xs text-white font-medium">{isPlaceholderPhone(phoneDisplay) ? "Not paired" : formatPhone(phoneDisplay)}</div>
               </div>
               <div className="px-3 py-2 border-b border-white/10">
                 <div className="text-xs text-zinc-500">Last Active</div>

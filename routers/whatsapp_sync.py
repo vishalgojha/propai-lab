@@ -497,13 +497,18 @@ async def list_phones(
         status = ingestor_statuses.get(broker_id)
         has_live_status = ingestor_reachable or status is not None
         status = status or {}
+        # Do not let a transient status number become the apparent identity of
+        # an unpaired connection. A WhatsApp number is authoritative only once
+        # the broker session is connected (PairSuccess/open), not while QR/code
+        # setup or a stale device is being reconciled.
+        live_phone = status.get("phone_number") if status.get("connected") else ""
         result.append({
             **phone,
             "connected": bool(status.get("connected")) if has_live_status else None,
             "connection_state": status.get(
                 "connection_state", "stopped" if ingestor_reachable else "unavailable"
             ),
-            "phone_number_live": status.get("phone_number") or phone.get("phone_number", ""),
+            "phone_number_live": live_phone or phone.get("phone_number", ""),
             "display_name": status.get("display_name") or phone.get("instance_name", ""),
             "connected_since": status.get("connected_since", ""),
             "last_message_at": status.get("last_message_at", ""),
@@ -574,11 +579,12 @@ async def get_phone(
     broker_id = phone.get("broker_id", "")
     status = await _best_ingestor_status_for_broker(broker_id, timeout=2)
     has_live_status = bool(status)
+    live_phone = status.get("phone_number") if status.get("connected") else ""
     return {
         **phone,
         "connected": bool(status.get("connected")) if has_live_status else None,
         "connection_state": status.get("connection_state", "unknown"),
-        "phone_number_live": status.get("phone_number") or phone.get("phone_number", ""),
+        "phone_number_live": live_phone or phone.get("phone_number", ""),
         "display_name": status.get("display_name") or phone.get("instance_name", ""),
         "connected_since": status.get("connected_since", ""),
         "last_message_at": status.get("last_message_at", ""),
@@ -741,9 +747,12 @@ async def sync_status_update(request: Request):
             or str(previous_status.get("phone_number") or "") != phone_number
             or str(previous_status.get("display_name") or "") != display_name
         )
-        if storage and broker_id and (phone_number or display_name) and state_changed:
+        # Persist a number only after WhatsApp has authenticated this session.
+        # Pairing/QR/reconnect updates can carry stale device metadata and must
+        # never overwrite an unpaired connection's canonical number.
+        if storage and broker_id and (display_name or (phone_number and body.get("connected"))) and state_changed:
             updates: dict[str, object] = {"is_active": True}
-            if phone_number:
+            if phone_number and body.get("connected"):
                 updates["phone_number"] = phone_number
             if display_name:
                 updates["instance_name"] = display_name
