@@ -156,7 +156,12 @@ app = FastAPI(
 # development), and allow the bearer-token headers used by the dashboard.
 _cors_origins = {
     origin.rstrip("/")
-    for origin in (FRONTEND_URL, "http://localhost:3000", "http://127.0.0.1:3000")
+    for origin in (
+        FRONTEND_URL,
+        "https://app.propai.live",
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    )
     if origin
 }
 app.add_middleware(
