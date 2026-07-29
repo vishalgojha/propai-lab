@@ -980,6 +980,7 @@ func (sm *SessionManager) handleMessage(s *BrokerSession, evt *events.Message) {
 	if target, text, ok := selfChatCommand(s, evt); ok {
 		// Never let a slow AI/database request block Whatsmeow's event loop.
 		// The raw self-message continues through normal ingestion below.
+		log.Printf("[broker %s] self-chat command received chat=%s id=%s from_me=%t", s.brokerID, target.String(), info.ID, info.IsFromMe)
 		go sm.handleSelfChatCommand(s, target, info.ID, text)
 	}
 
@@ -1454,6 +1455,8 @@ func (sm *SessionManager) handleSelfChatCommand(s *BrokerSession, target types.J
 		&waE2E.Message{Conversation: proto.String(strings.TrimSpace(agentResponse.Reply))},
 	); err != nil {
 		log.Printf("[broker %s] self-chat reply send failed: %v", s.brokerID, err)
+	} else {
+		log.Printf("[broker %s] self-chat reply sent chat=%s", s.brokerID, target.String())
 	}
 }
 
@@ -1497,6 +1500,8 @@ func (sm *SessionManager) handleSelfChatStream(s *BrokerSession, target types.JI
 			&waE2E.Message{Conversation: proto.String(text)},
 		); err != nil {
 			log.Printf("[broker %s] self-chat chunk send failed: %v", s.brokerID, err)
+		} else {
+			log.Printf("[broker %s] self-chat reply chunk sent chat=%s", s.brokerID, target.String())
 		}
 		buffer.Reset()
 		flushTimer.Reset(maxFlushWait)
