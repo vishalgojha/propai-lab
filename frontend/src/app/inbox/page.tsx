@@ -43,6 +43,10 @@ import { useLayout } from "@/hooks/useLayout";
 
 const PAGE_SIZE = 100;
 const BROKER_PAGE_SIZE = 25;
+// Parsed observations are intentionally unavailable until the extraction
+// pipeline is rebuilt. Keep this surface honest rather than showing a stale
+// broker/message projection from an old parse run.
+const MARKET_INBOX_PAUSED = true;
 
 type TrainingPrompt = {
   text: string;
@@ -1156,6 +1160,22 @@ interface InboxPageInnerProps {
 }
 
 function InboxPageInner({ defaultView }: InboxPageInnerProps) {
+  if (MARKET_INBOX_PAUSED) {
+    return (
+      <div className="flex h-[calc(100dvh-10rem)] min-h-[420px] w-full items-center justify-center rounded-xl border border-white/10 bg-black px-6 text-center">
+        <div className="max-w-md">
+          <div className="mx-auto mb-4 flex h-11 w-11 items-center justify-center rounded-full border border-amber-400/30 bg-amber-400/10 text-amber-300">⏸</div>
+          <h1 className="text-lg font-semibold text-white">Market Inbox is paused</h1>
+          <p className="mt-2 text-sm leading-6 text-zinc-400">
+            Extraction is paused while the new pipeline is rebuilt. Historical parsed messages and broker records are hidden so this screen cannot imply live inventory.
+          </p>
+          <Link href="/whatsapp-groups" className="mt-5 inline-flex rounded-lg border border-emerald-400/30 bg-emerald-400/10 px-3 py-2 text-sm font-medium text-emerald-300 transition-colors hover:bg-emerald-400/15">
+            Open WhatsApp Groups
+          </Link>
+        </div>
+      </div>
+    );
+  }
   const router = useRouter();
   const isMobile = useIsMobile();
   const { toggleDrawer } = useLayout();

@@ -320,6 +320,7 @@ async def list_group_members(jid: str, user: dict = Depends(require_user)):
             members.append({
                 "name": name,
                 "phone": phone,
+                "jid": str(r.get("member_jid") or ""),
                 "is_admin": bool(r.get("is_admin")),
                 "last_seen": r.get("last_seen_at"),
             })

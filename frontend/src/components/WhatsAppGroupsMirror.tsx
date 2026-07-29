@@ -16,6 +16,9 @@ type Group = {
   metadata?: { participants?: number };
 };
 
+type GroupMember = { name?: string; phone?: string; jid?: string };
+const MESSAGE_PAGE_SIZE = 300;
+
 function messageText(message: api.RawMessage) {
   if (message.message?.trim()) return message.message.trim();
   if (typeof message.raw_payload !== "string") return "";
@@ -38,19 +41,28 @@ function isFromCurrentPhone(message: api.RawMessage) {
   }
 }
 
-function senderLabel(message: api.RawMessage) {
-  if (message.sender?.trim()) return message.sender.trim();
+function identityKeys(value: unknown) {
+  const text = String(value || "").trim();
+  const digits = text.split("@")[0].replace(/\D/g, "");
+  return [text.toLowerCase(), digits].filter(Boolean);
+}
+
+function senderLabel(message: api.RawMessage, memberNames: Record<string, string>) {
   try {
     const payload = typeof message.raw_payload === "string" ? JSON.parse(message.raw_payload) : {};
     const data = payload?.data || payload || {};
     const sender = data.sender || {};
     const name = sender.name || data.pushName || payload.pushName;
     if (typeof name === "string" && name.trim()) return name.trim();
-    const identity = sender.phone || sender.id || message.sender_phone || message.sender_jid || "";
-    const digits = String(identity).split("@")[0].replace(/\D/g, "");
-    if (digits) return `+${digits}`;
+    for (const key of [sender.id, sender.phone, message.sender_jid, message.sender_phone].flatMap(identityKeys)) {
+      if (memberNames[key]) return memberNames[key];
+    }
   } catch {
     // Use the persisted sender fields below when an older raw payload is malformed.
+  }
+  if (message.sender?.trim() && !/^\+?[\d\s()-]+$/.test(message.sender.trim())) return message.sender.trim();
+  for (const key of [message.sender_jid, message.sender_phone, message.sender].flatMap(identityKeys)) {
+    if (memberNames[key]) return memberNames[key];
   }
   const digits = String(message.sender_phone || message.sender_jid || "").split("@")[0].replace(/\D/g, "");
   return digits ? `+${digits}` : "WhatsApp member";
@@ -78,16 +90,21 @@ export default function WhatsAppGroupsMirror() {
   const [draft, setDraft] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshingGroups, setRefreshingGroups] = useState(false);
   const [loadingMessages, setLoadingMessages] = useState(false);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const [hasMoreHistory, setHasMoreHistory] = useState(true);
+  const [memberNames, setMemberNames] = useState<Record<string, string>>({});
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [showConversation, setShowConversation] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
+  const hasLoadedGroups = useRef(false);
 
-  const loadGroups = useCallback(async () => {
-    setLoading(true);
-    setError("");
+  const loadGroups = useCallback(async (manual = false) => {
+    if (!hasLoadedGroups.current) setLoading(true);
+    if (manual) setRefreshingGroups(true);
     try {
       const directory = await api.getWhatsAppConversations("group");
       const liveGroups = directory
@@ -100,7 +117,9 @@ export default function WhatsAppGroupsMirror() {
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Could not load your WhatsApp groups.");
     } finally {
+      hasLoadedGroups.current = true;
       setLoading(false);
+      setRefreshingGroups(false);
     }
   }, []);
 
@@ -109,32 +128,63 @@ export default function WhatsAppGroupsMirror() {
     setNotice("Refreshing your live WhatsApp group directory…");
     try {
       await api.refreshWhatsAppGroupDirectory();
-      window.setTimeout(() => void loadGroups(), 2_500);
-      window.setTimeout(() => void loadGroups(), 7_500);
+      window.setTimeout(() => void loadGroups(true), 2_500);
+      window.setTimeout(() => void loadGroups(true), 7_500);
     } catch (reason) {
       setNotice("");
       setError(reason instanceof Error ? reason.message : "Could not refresh the live WhatsApp group directory.");
     }
   };
 
-  const loadMessages = useCallback(async () => {
+  const loadMessages = useCallback(async (offset = 0, append = false) => {
     if (!selectedJid) {
       setMessages([]);
       return;
     }
-    setLoadingMessages(true);
+    if (append) setLoadingOlder(true);
+    else setLoadingMessages(true);
     try {
-      const rows = await api.getChatMessages(selectedJid, 300);
-      setMessages([...rows].sort((a, b) => String(a.timestamp || a.created_at || "").localeCompare(String(b.timestamp || b.created_at || ""))));
+      const rows = await api.getChatMessages(selectedJid, MESSAGE_PAGE_SIZE, offset);
+      setHasMoreHistory(rows.length >= MESSAGE_PAGE_SIZE);
+      setMessages((current) => {
+        const byId = new Map<number, api.RawMessage>();
+        for (const row of append ? [...current, ...rows] : [...rows, ...current]) byId.set(row.id, row);
+        return [...byId.values()].sort((a, b) => String(a.timestamp || a.created_at || "").localeCompare(String(b.timestamp || b.created_at || "")));
+      });
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Could not load this group’s messages.");
     } finally {
       setLoadingMessages(false);
+      setLoadingOlder(false);
+    }
+  }, [selectedJid]);
+
+  const loadMembers = useCallback(async () => {
+    if (!selectedJid) {
+      setMemberNames({});
+      return;
+    }
+    try {
+      const members = await api.getGroupMembers(selectedJid) as GroupMember[];
+      const names: Record<string, string> = {};
+      for (const member of members) {
+        const name = String(member.name || "").trim();
+        if (!name || name === "Unknown") continue;
+        for (const key of [member.jid, member.phone].flatMap(identityKeys)) names[key] = name;
+      }
+      setMemberNames(names);
+    } catch {
+      setMemberNames({});
     }
   }, [selectedJid]);
 
   useEffect(() => { void loadGroups(); }, [loadGroups]);
-  useEffect(() => { void loadMessages(); }, [loadMessages]);
+  useEffect(() => {
+    setMessages([]);
+    setHasMoreHistory(true);
+    void loadMessages();
+    void loadMembers();
+  }, [loadMessages, loadMembers]);
   useEffect(() => {
     const id = window.setInterval(() => { void loadGroups(); void loadMessages(); }, 30_000);
     return () => window.clearInterval(id);
@@ -180,7 +230,7 @@ export default function WhatsAppGroupsMirror() {
               <h1 className="text-sm font-bold uppercase tracking-wider text-white">WhatsApp Groups</h1>
               <p className="mt-1 text-xs text-zinc-500">All joined groups · {groups.length} groups</p>
             </div>
-            <button onClick={() => void refreshLiveGroups()} className="flex h-9 w-9 items-center justify-center rounded-lg border border-white/10 text-zinc-300 transition-colors hover:bg-white/5 hover:text-white" title="Refresh live groups"><RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} /></button>
+            <button onClick={() => void refreshLiveGroups()} className="flex h-9 w-9 items-center justify-center rounded-lg border border-white/10 text-zinc-300 transition-colors hover:bg-white/5 hover:text-white" title="Refresh live groups"><RefreshCw className={`h-4 w-4 ${refreshingGroups ? "animate-spin" : ""}`} /></button>
           </div>
           <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search groups" className="mt-3 h-9 w-full rounded-lg border border-white/10 bg-transparent px-3 text-sm text-white outline-none placeholder:text-zinc-600 focus:border-emerald-400" />
         </div>
@@ -195,7 +245,7 @@ export default function WhatsAppGroupsMirror() {
         </div>
       </aside>
       <main className={`${showConversation ? "flex" : "hidden md:flex"} min-w-0 flex-1 flex-col`}>
-        {selected ? <><header className="flex items-center gap-3 border-b border-white/10 px-5 py-3"><button onClick={() => setShowConversation(false)} className="rounded-lg p-1 text-zinc-300 hover:bg-white/10 md:hidden" aria-label="Back to groups"><ChevronLeft className="h-5 w-5" /></button><div className="flex h-9 w-9 items-center justify-center rounded-lg border border-white/10 text-zinc-300"><Users className="h-4 w-4" /></div><div className="min-w-0"><div className="truncate text-sm font-semibold text-white">{selected.display_name || selected.conversation_name || selected.name}</div><div className="mt-0.5 text-xs text-zinc-500">WhatsApp group</div></div></header><div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-5">{loadingMessages ? <p className="text-sm text-zinc-500">Loading messages…</p> : messages.length === 0 ? <p className="text-sm text-zinc-500">No captured messages in this group yet.</p> : messages.map((message) => { const fromMe = isFromCurrentPhone(message); return <div key={message.id} className={`flex ${fromMe ? "justify-end" : "justify-start"}`}><div className={`max-w-[78%] rounded-xl border px-3 py-2 text-sm ${fromMe ? "border-emerald-400/30 bg-emerald-400/[0.08] text-zinc-100" : "border-white/10 bg-white/[0.03] text-zinc-100"}`}><div className="mb-1 text-xs font-semibold text-emerald-300">{fromMe ? "You" : senderLabel(message)}</div><div className="whitespace-pre-wrap break-words">{messageText(message) || "Media message"}</div><div className="mt-1 text-right text-[10px] text-zinc-500">{timeLabel(message.timestamp || message.created_at)}</div></div></div>; })}</div><form onSubmit={send} className="border-t border-white/10 p-3"><div className="flex items-center gap-2"><input ref={fileInput} type="file" className="hidden" onChange={(event) => setFile(event.target.files?.[0] || null)} /><button type="button" onClick={() => fileInput.current?.click()} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-white/10 text-zinc-300 transition-colors hover:bg-white/5 hover:text-white" title="Attach media"><FileUp className="h-4 w-4" /></button><input value={draft} onChange={(event) => setDraft(event.target.value)} placeholder={file ? `Attach: ${file.name}` : "Message this group"} className="h-10 min-w-0 flex-1 rounded-lg border border-white/10 bg-transparent px-3 text-sm text-white outline-none placeholder:text-zinc-600 focus:border-emerald-400" /><button disabled={sending || (!draft.trim() && !file)} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-white bg-white text-black transition-colors hover:bg-zinc-200 disabled:opacity-40" aria-label="Send">{sending ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}</button></div>{file && <p className="mt-1 text-xs text-zinc-500">{file.name}</p>}{error && <p className="mt-2 text-xs text-red-300">{error}</p>}{notice && <p className="mt-2 text-xs text-emerald-300">{notice}</p>}</form></> : <div className="flex flex-1 items-center justify-center text-sm text-zinc-500">Select a WhatsApp group.</div>}
+        {selected ? <><header className="flex items-center gap-3 border-b border-white/10 px-5 py-3"><button onClick={() => setShowConversation(false)} className="rounded-lg p-1 text-zinc-300 hover:bg-white/10 md:hidden" aria-label="Back to groups"><ChevronLeft className="h-5 w-5" /></button><div className="flex h-9 w-9 items-center justify-center rounded-lg border border-white/10 text-zinc-300"><Users className="h-4 w-4" /></div><div className="min-w-0"><div className="truncate text-sm font-semibold text-white">{selected.display_name || selected.conversation_name || selected.name}</div><div className="mt-0.5 text-xs text-zinc-500">WhatsApp group</div></div></header><div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-5">{hasMoreHistory && messages.length > 0 && <button type="button" onClick={() => void loadMessages(messages.length, true)} disabled={loadingOlder} className="rounded-lg border border-white/10 px-3 py-2 text-xs font-semibold text-zinc-300 hover:bg-white/5 disabled:opacity-50">{loadingOlder ? "Loading older messages…" : "Load older messages"}</button>}{loadingMessages && messages.length === 0 ? <p className="text-sm text-zinc-500">Loading messages…</p> : messages.length === 0 ? <p className="text-sm text-zinc-500">No captured messages in this group yet.</p> : messages.map((message) => { const fromMe = isFromCurrentPhone(message); return <div key={message.id} className={`flex ${fromMe ? "justify-end" : "justify-start"}`}><div className={`max-w-[78%] rounded-xl border px-3 py-2 text-sm ${fromMe ? "border-emerald-400/30 bg-emerald-400/[0.08] text-zinc-100" : "border-white/10 bg-white/[0.03] text-zinc-100"}`}><div className="mb-1 text-xs font-semibold text-emerald-300">{fromMe ? "You" : senderLabel(message, memberNames)}</div><div className="whitespace-pre-wrap break-words">{messageText(message) || "Media message"}</div><div className="mt-1 text-right text-[10px] text-zinc-500">{timeLabel(message.timestamp || message.created_at)}</div></div></div>; })}</div><form onSubmit={send} className="border-t border-white/10 p-3"><div className="flex items-center gap-2"><input ref={fileInput} type="file" className="hidden" onChange={(event) => setFile(event.target.files?.[0] || null)} /><button type="button" onClick={() => fileInput.current?.click()} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-white/10 text-zinc-300 transition-colors hover:bg-white/5 hover:text-white" title="Attach media"><FileUp className="h-4 w-4" /></button><input value={draft} onChange={(event) => setDraft(event.target.value)} placeholder={file ? `Attach: ${file.name}` : "Message this group"} className="h-10 min-w-0 flex-1 rounded-lg border border-white/10 bg-transparent px-3 text-sm text-white outline-none placeholder:text-zinc-600 focus:border-emerald-400" /><button disabled={sending || (!draft.trim() && !file)} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-white bg-white text-black transition-colors hover:bg-zinc-200 disabled:opacity-40" aria-label="Send">{sending ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}</button></div>{file && <p className="mt-1 text-xs text-zinc-500">{file.name}</p>}{error && <p className="mt-2 text-xs text-red-300">{error}</p>}{notice && <p className="mt-2 text-xs text-emerald-300">{notice}</p>}</form></> : <div className="flex flex-1 items-center justify-center text-sm text-zinc-500">Select a WhatsApp group.</div>}
       </main>
     </div>
   );
