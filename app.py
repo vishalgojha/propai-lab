@@ -12,6 +12,7 @@ from pathlib import Path
 
 import httpx
 from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from routers.common import (
@@ -146,6 +147,24 @@ app = FastAPI(
     lifespan=lifespan,
     docs_url=None,
     redoc_url=None,
+)
+
+# The dashboard normally proxies API calls through its own Next.js server.
+# A session reset deliberately calls the API origin directly: a linked-device
+# wipe must not be made unreliable by an intermediate app-server connection.
+# Keep this narrowly scoped to the configured dashboard origin (plus local
+# development), and allow the bearer-token headers used by the dashboard.
+_cors_origins = {
+    origin.rstrip("/")
+    for origin in (FRONTEND_URL, "http://localhost:3000", "http://127.0.0.1:3000")
+    if origin
+}
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=sorted(_cors_origins),
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-Tenant-Id"],
 )
 
 
