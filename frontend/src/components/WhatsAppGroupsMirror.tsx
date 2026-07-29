@@ -153,7 +153,7 @@ export default function WhatsAppGroupsMirror() {
   };
 
   return (
-    <div className="mx-auto flex h-[calc(100dvh-10rem)] min-h-[540px] max-w-7xl overflow-hidden rounded-xl border border-white/10 bg-black">
+    <div className="flex h-[calc(100dvh-10rem)] min-h-[540px] w-full overflow-hidden rounded-xl border border-white/10 bg-black">
       <aside className={`${showConversation ? "hidden md:flex" : "flex"} w-full max-w-sm shrink-0 flex-col border-r border-white/10 bg-black md:w-80`}>
         <div className="border-b border-white/10 px-4 py-3">
           <div className="flex items-center justify-between gap-3">
