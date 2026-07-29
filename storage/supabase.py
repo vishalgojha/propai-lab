@@ -3075,6 +3075,34 @@ class SupabaseStorage(Storage):
             "source": "live",
         }])
 
+    def prune_whatsapp_conversations(
+        self,
+        tenant_id: str,
+        broker_id: str,
+        keep_jids: set[str],
+        conversation_types: set[str] | None = None,
+    ) -> int:
+        """Remove directory entries absent from a complete WhatsApp refresh.
+
+        A joined-group directory is authoritative. Retaining rows after a
+        complete refresh made groups that the user had left remain visible in
+        the mirror indefinitely.
+        """
+        if not tenant_id or not broker_id:
+            return 0
+        query = self.client.table("whatsapp_conversations").select("id,conversation_jid").eq(
+            "tenant_id", tenant_id
+        ).eq("broker_id", broker_id)
+        if conversation_types:
+            query = query.in_("conversation_type", sorted(conversation_types))
+        removed = 0
+        keep = {str(jid).strip() for jid in keep_jids if str(jid).strip()}
+        for row in query.execute().data or []:
+            if str(row.get("conversation_jid") or "") not in keep:
+                self.client.table("whatsapp_conversations").delete().eq("id", row["id"]).execute()
+                removed += 1
+        return removed
+
     def get_whatsapp_conversations(
         self,
         tenant_id: str,
@@ -3105,6 +3133,11 @@ class SupabaseStorage(Storage):
                     continue
                 existing = by_id.get(chat_id)
                 latest = chat.get("latest_message_at") or ""
+                # Joined groups are authoritative. Historical raw messages
+                # must not resurrect a group the user has left after the
+                # directory refresh pruned it.
+                if chat.get("chat_type") == "group" and existing is None:
+                    continue
                 if existing is None or str(existing.get("last_message_at") or "") < str(latest):
                     by_id[chat_id] = {
                         **(existing or {}),

@@ -1947,6 +1947,32 @@ func (sm *SessionManager) connectHandler(w http.ResponseWriter, r *http.Request)
 	json.NewEncoder(w).Encode(status)
 }
 
+// syncGroupsHandler asks one already-linked WhatsApp session to publish its
+// current joined-group directory. It is deliberately asynchronous: GetJoinedGroups
+// can take a few seconds and the dashboard should never hold an HTTP request
+// open while WhatsApp is responding.
+func (sm *SessionManager) syncGroupsHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if !requireMethod(w, r, http.MethodPost) {
+		return
+	}
+	brokerID := brokerIDFromRequest(r)
+	if brokerID == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "broker_id is required"})
+		return
+	}
+	session := sm.Get(brokerID)
+	if session == nil || session.client == nil || !session.client.IsConnected() {
+		w.WriteHeader(http.StatusConflict)
+		json.NewEncoder(w).Encode(map[string]string{"error": "WhatsApp is not connected for this phone"})
+		return
+	}
+	sm.requestGroupDirectorySync(session, "dashboard refresh")
+	w.WriteHeader(http.StatusAccepted)
+	json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "broker_id": brokerID, "state": "refreshing"})
+}
+
 func (sm *SessionManager) pairCodeHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if !requireMethod(w, r, http.MethodPost) {
@@ -3138,6 +3164,7 @@ func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", internalOnly(sm.healthHandler, true))
 	mux.HandleFunc("/connect", internalOnly(sm.connectHandler, false))
+	mux.HandleFunc("/sync-groups", internalOnly(sm.syncGroupsHandler, false))
 	mux.HandleFunc("/pair-code", internalOnly(sm.pairCodeHandler, false))
 	mux.HandleFunc("/pair-code/start", internalOnly(sm.pairCodeStartHandler, false))
 	mux.HandleFunc("/pair-code/status", internalOnly(sm.pairCodeStatusHandler, false))
