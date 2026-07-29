@@ -8,6 +8,7 @@ type Group = {
   conversation_jid?: string;
   conversation_name?: string;
   conversation_type?: string;
+  broker_id?: string;
   display_name?: string;
   name?: string;
   message_count?: number;
@@ -154,9 +155,9 @@ export default function WhatsAppGroupsMirror() {
     try {
       if (file) {
         const mediaType = file.type.startsWith("image/") ? "image" : file.type.startsWith("video/") ? "video" : file.type.startsWith("audio/") ? "audio" : "document";
-        await api.sendMediaMessage({ remote_jid: selectedJid, media_type: mediaType, caption: draft.trim(), file, file_name: file.name, mime_type: file.type });
+        await api.sendMediaMessage({ remote_jid: selectedJid, media_type: mediaType, caption: draft.trim(), file, file_name: file.name, mime_type: file.type, broker_id: selected?.broker_id });
       } else {
-        await api.sendMessage({ remote_jid: selectedJid, text: draft.trim() });
+        await api.sendMessage({ remote_jid: selectedJid, text: draft.trim(), broker_id: selected?.broker_id });
       }
       setDraft("");
       setFile(null);
@@ -177,7 +178,7 @@ export default function WhatsAppGroupsMirror() {
           <div className="flex items-center justify-between gap-3">
             <div>
               <h1 className="text-sm font-bold uppercase tracking-wider text-white">WhatsApp Groups</h1>
-              <p className="mt-1 text-xs text-zinc-500">Live group mirror · {groups.length} groups</p>
+              <p className="mt-1 text-xs text-zinc-500">All joined groups · {groups.length} groups</p>
             </div>
             <button onClick={() => void refreshLiveGroups()} className="flex h-9 w-9 items-center justify-center rounded-lg border border-white/10 text-zinc-300 transition-colors hover:bg-white/5 hover:text-white" title="Refresh live groups"><RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} /></button>
           </div>

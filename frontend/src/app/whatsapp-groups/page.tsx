@@ -1,5 +1,5 @@
-import { redirect } from "next/navigation";
+import WhatsAppGroupsMirror from "@/components/WhatsAppGroupsMirror";
 
 export default function WhatsAppGroupsPage() {
-  redirect("/connections");
+  return <WhatsAppGroupsMirror />;
 }

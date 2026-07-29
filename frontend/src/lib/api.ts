@@ -476,6 +476,7 @@ export function getChatMessages(chatId: string, limit = 300, offset = 0) {
 export interface SendMessageRequest {
   remote_jid: string;
   text: string;
+  broker_id?: string;
   quoted_message_id?: string;
   quoted_remote_jid?: string;
   quoted_participant?: string;
