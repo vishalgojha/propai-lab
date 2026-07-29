@@ -664,7 +664,8 @@ function PhoneCard({
                   <button onClick={() => { setShowPairCodeDialog(false); setPairCodeResult(null); setPairCodeInput(""); setResetReceipt(null); }} className="ml-auto text-zinc-500 hover:text-white"><X className="h-4 w-4" /></button>
                 </div>
                 <div className="px-5 py-4 text-center space-y-3">
-                  <p className="text-xs text-zinc-400">Open WhatsApp → Settings → Linked Devices → Link a Device</p>
+                  <p className="text-xs text-zinc-400">Open WhatsApp → Settings → Linked Devices → Link a Device → <span className="font-semibold text-white">Link with phone number instead</span>.</p>
+                  <p className="text-[11px] text-zinc-500">Then enter this code exactly as shown. Do not use the QR scanner for a pairing code.</p>
                   <div className="text-2xl font-mono font-bold text-white tracking-[0.3em] bg-white/[0.03] rounded-lg py-3 border border-white/10">
                     {pairCodeResult}
                   </div>
