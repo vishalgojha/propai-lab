@@ -2805,17 +2805,20 @@ func main() {
 		log.Fatalf("error creating group members table: %v", err)
 	}
 
-	// Open a dedicated connection for whatsmeow with MaxOpenConns(1)
-	// This avoids prepared-statement issues through Supabase's connection pooler.
+	// Whatsmeow persists Signal sessions and identity keys while encrypting and
+	// decrypting messages. A single shared connection lets one slow query block
+	// every identity check, which makes outbound self-chat replies fail with a
+	// context deadline instead of sending. Keep this pool deliberately small,
+	// but allow concurrent Signal-store reads and writes.
 	containerDB, err := sql.Open("pgx", databaseURL)
 	if err != nil {
 		log.Fatalf("error opening container database: %v", err)
 	}
 	defer containerDB.Close()
-	containerDB.SetMaxOpenConns(1)
-	containerDB.SetMaxIdleConns(1)
-	containerDB.SetConnMaxLifetime(0)
-	containerDB.SetConnMaxIdleTime(0)
+	containerDB.SetMaxOpenConns(4)
+	containerDB.SetMaxIdleConns(2)
+	containerDB.SetConnMaxLifetime(30 * time.Minute)
+	containerDB.SetConnMaxIdleTime(5 * time.Minute)
 
 	ctx := context.Background()
 	container := sqlstore.NewWithDB(containerDB, "postgres", waLog.Noop)
