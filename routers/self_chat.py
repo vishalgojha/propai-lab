@@ -61,6 +61,16 @@ _DATA_QUERY_SIGNAL = re.compile(
     re.IGNORECASE,
 )
 
+_SELF_CHAT_SEARCH_SIGNAL = re.compile(
+    r"\b("
+    r"(?:\d+(?:\.\d+)?\s*bhk)|"
+    r"(?:find|search|show|look\s*for|looking\s*for|need|want|searching\s*for)|"
+    r"(?:rent|rental|lease|sale|buy|purchase|shortlist|inventory|availability|available)|"
+    r"(?:budget|price|quote|locality|area|building|broker|flat|apartment|property|listing)"
+    r")\b",
+    re.IGNORECASE,
+)
+
 
 # ── Self-chat helpers ─────────────────────────────────────────────
 
@@ -73,17 +83,73 @@ def _is_casual_self_chat(text: str) -> bool:
     return bool(_CASUAL_CHAT_SIGNAL.match(stripped))
 
 
-def _build_self_chat_system_prompt(sources: dict) -> str:
+def _is_explicit_self_chat_search(text: str) -> bool:
+    stripped = (text or "").strip()
+    if not stripped:
+        return False
+    if _DATA_QUERY_SIGNAL.search(stripped) or _SELF_CHAT_SEARCH_SIGNAL.search(stripped):
+        lower = stripped.lower()
+        if "list a property" in lower or "post a property" in lower or "add a property" in lower:
+            return False
+        if re.search(r"\b(find|search|show|look\s*for|looking\s*for|need|want)\b", stripped, re.IGNORECASE):
+            return True
+        if re.search(r"\b(\d+(?:\.\d+)?\s*bhk|rent|rental|lease|sale|buy|purchase|budget|price|locality|area)\b", stripped, re.IGNORECASE):
+            return True
+    return False
+
+
+def _self_chat_identity_summary(identity: dict | None) -> str:
+    if not identity:
+        return "Registered WhatsApp user"
+    name = str(identity.get("name") or "").strip()
+    phone = str(identity.get("phone") or "").strip()
+    if name and phone:
+        return f"{name} ({phone})"
+    if name:
+        return name
+    if phone:
+        return phone
+    return "Registered WhatsApp user"
+
+
+async def _load_self_chat_identity(connection: dict, tenant_id: str | None) -> dict:
+    phone = re.sub(r"\D+", "", str(connection.get("phone_number") or ""))[-10:]
+    profile = None
+    if phone:
+        try:
+            profile = await asyncio.to_thread(storage.get_user_profile, phone, "", tenant_id)
+        except Exception:
+            profile = None
+    first = str((profile or {}).get("first_name") or "").strip()
+    last = str((profile or {}).get("last_name") or "").strip()
+    display_name = " ".join(part for part in [first, last] if part).strip()
+    if not display_name:
+        display_name = str(connection.get("instance_name") or "").strip()
+    if not display_name and phone:
+        display_name = phone
+    return {
+        "name": display_name or "Registered WhatsApp user",
+        "phone": phone,
+        "first_name": first,
+        "last_name": last,
+        "registered": bool(profile),
+    }
+
+
+def _build_self_chat_system_prompt(sources: dict, identity: dict | None = None) -> str:
     from lab import ai_chat_engine as chat_engine
     from datetime import datetime
-    identity = chat_engine._read_prompt_file("identity.md")
+    prompt_identity = chat_engine._read_prompt_file("identity.md")
     now = datetime.now()
     time_str = now.strftime("%a, %d %b %Y %I:%M %p")
     overview = sources.get("overview", "") or ""
     overview_line = f"\nDATA SNAPSHOT:\n{overview[:600]}\n" if overview else ""
-    return f"""{identity or 'You are PropAI, a Mumbai real-estate broker assistant.'}
+    self_chat_identity = _self_chat_identity_summary(identity)
+    return f"""{prompt_identity or 'You are PropAI, a Mumbai real-estate broker assistant.'}
 
 You are PropAI in WhatsApp Message-Yourself chat. Today is {time_str}.
+The linked WhatsApp user is a registered workspace user: {self_chat_identity}.
+Treat the user as known and authenticated. Never ask them to log in or create a profile.
 
 OUTPUT RULES — non-negotiable:
 - EVERY reply uses bulleted points. Use '• ' prefix for each bullet.
@@ -94,7 +160,9 @@ OUTPUT RULES — non-negotiable:
 - Maximum 3 bullets per reply. If you have more, pick the most important.
 - For greetings or identity questions, respond with 1-2 bullets only.
 - This QR-linked self-chat is authenticated. Never ask the user to log in to the portal.
-- For a listing/requirement search, use market_search against the global published marketplace. Never claim database access is unavailable before trying it.
+- For a listing/requirement search, use market_search against the global published marketplace.
+- For conversational messages, stay human and direct; do not switch into schema language.
+- Do not turn a property-intent message like "list a property" into a database tutorial.
 - Do not claim a listing was found, saved, or updated unless a tool result confirms it.
 - For real-estate queries, format like:
   • <Property>: <price>, <bhk>, <area> sqft — <micro_market>
@@ -182,6 +250,7 @@ async def _run_self_chat_agent(
     session_id: str = "whatsapp",
     casual: bool = False,
     tenant_id: str | None = None,
+    identity: dict | None = None,
 ) -> dict:
     # WhatsApp transport processes restart independently of the API. Keep the
     # thread in the same durable tables used by web chat, under a channel-
@@ -230,6 +299,18 @@ async def _run_self_chat_agent(
         model=model,
         session_id=memory_turn_key,
         tenant_id=tenant_id,
+        system_suffix=(
+            f"""
+
+REGISTERED WHATSAPP USER:
+- Name: {identity.get('name') or identity.get('phone') or 'Unknown'}
+- Phone: {identity.get('phone') or 'Unknown'}
+- This is the account owner's WhatsApp self-chat.
+- Keep the answer direct and personal; avoid schema language unless the message is clearly a search request.
+"""
+            if identity
+            else ""
+        ),
     )
     if durable_session and not response.get("error"):
         assistant_content = str(response.get("content") or "").strip()
@@ -245,7 +326,7 @@ async def _run_self_chat_agent(
     return response
 
 
-async def _quick_self_chat_reply(text: str, tenant_id: str | None) -> dict:
+async def _quick_self_chat_reply(text: str, tenant_id: str | None, identity: dict | None = None) -> dict:
     """Use the owner's saved provider for short conversational WhatsApp turns.
 
     This deliberately avoids loading listings, observations, tools, and the
@@ -256,10 +337,14 @@ async def _quick_self_chat_reply(text: str, tenant_id: str | None) -> dict:
     if not providers:
         return {"error": "workspace_provider_required"}
 
-    system_prompt = """You are PropAI, a concise Mumbai real-estate assistant in a WhatsApp self-chat.
-Reply naturally to the user. Use one to three short bullet points starting with •.
-You can help find properties, capture listing details, and answer real-estate questions.
-Do not claim that you searched, saved, or updated anything unless the user asked a specific task and a tool confirmed it.
+    system_prompt = f"""You are PropAI in a WhatsApp self-chat.
+Reply naturally and briefly to the linked, registered workspace user: {_self_chat_identity_summary(identity)}.
+Use one to three short bullet points starting with •.
+Never mention schemas, tables, or database access.
+If the user is greeting or chatting, stay conversational.
+If they say they want to list a property, ask for the minimum missing details.
+If they ask for search, only ask a concise follow-up if needed.
+Do not claim that you searched, saved, or updated anything unless a tool confirmed it.
 Never return JSON, markdown tables, or a canned template."""
     user_text = (text or "").strip()[:1800] or "Hello."
 
@@ -357,11 +442,13 @@ async def _self_chat_ndjson(
     text: str,
     broker_id: str,
     casual: bool,
+    search_like: bool,
     tenant_id: str | None = None,
+    identity: dict | None = None,
 ):
     try:
-        if casual:
-            quick = await _quick_self_chat_reply(text, tenant_id)
+        if casual or not search_like:
+            quick = await _quick_self_chat_reply(text, tenant_id, identity=identity)
             if quick.get("reply"):
                 await _persist_quick_self_chat_turn(text, quick["reply"], broker_id, tenant_id)
                 yield _ndjson_line({"event": "chunk", "delta": quick["reply"]})
@@ -378,6 +465,7 @@ async def _self_chat_ndjson(
             session_id=f"whatsmeow:{broker_id}",
             casual=casual,
             tenant_id=tenant_id,
+            identity=identity,
         )
         if isinstance(response, dict) and response.get("error"):
             reply = _self_chat_error_reply(str(response.get("error") or "agent_error"))
@@ -444,22 +532,39 @@ async def internal_self_chat(req: InternalSelfChatRequest, request: Request):
     if not org_id:
         raise HTTPException(500, "WhatsApp connection has no organization_id")
     set_tenant_id(org_id)
+    identity = await _load_self_chat_identity(connection, org_id)
     casual = _is_casual_self_chat(text)
-    wants_stream = casual or _stream_self_chat_enabled()
+    search_like = _is_explicit_self_chat_search(text)
+    wants_stream = casual or (not search_like and _stream_self_chat_enabled())
 
     if wants_stream:
         return StreamingResponse(
-            _self_chat_ndjson(text, req.broker_id, casual=casual, tenant_id=org_id),
+            _self_chat_ndjson(
+                text,
+                req.broker_id,
+                casual=casual,
+                search_like=search_like,
+                tenant_id=org_id,
+                identity=identity,
+            ),
             media_type="application/x-ndjson",
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
 
     try:
+        if not search_like:
+            quick = await _quick_self_chat_reply(text, org_id, identity=identity)
+            if quick.get("reply"):
+                await _persist_quick_self_chat_turn(text, quick["reply"], req.broker_id, org_id)
+                return {"reply": quick["reply"]}
+            return {"reply": _self_chat_error_reply(str(quick.get("error") or "provider_unavailable"))}
+
         response = await _run_self_chat_agent(
             [{"role": "user", "content": text[:1800]}],
             session_id=f"whatsmeow:{req.broker_id}",
             casual=casual,
             tenant_id=connection.get("organization_id"),
+            identity=identity,
         )
         if isinstance(response, dict) and response.get("error"):
             return {"reply": _self_chat_error_reply(str(response.get("error") or "agent_error"))}
@@ -480,6 +585,34 @@ async def self_chat(req: SelfChatRequest, user: dict = Depends(require_user)):
     if not text:
         return {"reply": ""}
 
+    tenant_id = get_tenant_id()
+    profile = None
+    try:
+        profile = await asyncio.to_thread(
+            storage.get_user_profile,
+            auth_user_id=user.get("id", ""),
+            tenant_id=tenant_id,
+        )
+    except Exception:
+        profile = None
+    identity = {
+        "name": " ".join(
+            part for part in [
+                str((profile or {}).get("first_name") or "").strip() or str(user.get("name") or "").strip(),
+                str((profile or {}).get("last_name") or "").strip(),
+            ]
+            if part
+        ).strip()
+        or str(user.get("name") or "").strip()
+        or str(user.get("email") or "").split("@", 1)[0]
+        or "Registered user",
+        "phone": str((profile or {}).get("phone") or user.get("phone") or "").strip(),
+        "first_name": str((profile or {}).get("first_name") or "").strip(),
+        "last_name": str((profile or {}).get("last_name") or "").strip(),
+        "registered": True,
+    }
+    search_like = _is_explicit_self_chat_search(text)
+
     messages = []
     for item in (req.messages or [])[-10:]:
         if not isinstance(item, dict):
@@ -492,7 +625,25 @@ async def self_chat(req: SelfChatRequest, user: dict = Depends(require_user)):
         messages.append({"role": "user", "content": text})
 
     try:
-        response = await _run_workspace_agent(messages, req.model, session_id=req.sender_jid or "whatsapp")
+        if not search_like:
+            quick = await _quick_self_chat_reply(text, tenant_id, identity=identity)
+            if quick.get("reply"):
+                return {"reply": quick["reply"]}
+            return {"reply": _self_chat_error_reply(str(quick.get("error") or "provider_unavailable"))}
+
+        response = await _run_workspace_agent(
+            messages,
+            req.model,
+            session_id=req.sender_jid or "whatsapp",
+            system_suffix=f"""
+
+REGISTERED SELF-CHAT USER:
+- Name: {identity.get('name') or 'Unknown'}
+- Phone: {identity.get('phone') or 'Unknown'}
+- This is an authenticated account owner, not an anonymous visitor.
+- Keep the tone personal and avoid schema-heavy phrasing unless the user explicitly asks for a search.
+""",
+        )
         return {
             "reply": _workspace_response_to_whatsapp(response),
             "sources": response.get("sources", []) if isinstance(response, dict) else [],

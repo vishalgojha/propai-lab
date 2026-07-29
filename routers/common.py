@@ -673,6 +673,7 @@ async def _run_workspace_agent(
     model: str = "",
     session_id: str = "whatsapp",
     tenant_id: str | None = None,
+    system_suffix: str = "",
 ) -> dict:
     from ai_chat_engine import get_memory, load_data as _load_data, load_live_data as _load_live_data
     from ai_chat_engine import build_system_prompt, get_model_reply, normalize_workspace_response
@@ -723,6 +724,8 @@ async def _run_workspace_agent(
         if provider_model and base_url:
             _assert_model_url_match(provider_model, base_url)
         system_prompt = build_system_prompt(sources)
+        if system_suffix:
+            system_prompt += "\n" + str(system_suffix).strip()
         system_prompt += """
 
 WHATSAPP SELF-CHAT MODE:
