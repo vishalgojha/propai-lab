@@ -944,9 +944,15 @@ def _classify_provider_status(events: list[dict], now_ts: float) -> str:
     recent_10 = [e for e in events if (_parse_event_ts(e) or 0) >= cutoff_10]
     if recent_10 and not any(e["status"] in ("ok", "slow") for e in recent_10):
         return "down"
+    # A provider that just recovered from a timeout/HTTP failure can still
+    # serve the next request, but is not honestly "up" yet. Keep it degraded
+    # until it has a clean recent window instead of letting one green probe
+    # erase a fresh 429/5xx from the operator view.
+    if any(e["status"] in ("timeout", "http", "error") for e in recent_10):
+        return "degraded"
     if recent_30:
         failures = sum(1 for e in recent_30 if e["status"] != "ok")
-        if failures / max(len(recent_30), 1) > 0.20:
+        if failures / max(len(recent_30), 1) >= 0.20:
             return "degraded"
     return "up"
 
