@@ -45,13 +45,17 @@ var (
 // ── Status ──────────────────────────────────────────────────────────────────
 
 type Status struct {
-	BrokerID              string            `json:"broker_id,omitempty"`
-	Connected             bool              `json:"connected"`
-	ConnectionState       string            `json:"connection_state"`
-	QR                    string            `json:"qr,omitempty"`
-	QRAvailable           bool              `json:"qr_available,omitempty"`
-	PairingCode           string            `json:"pairing_code,omitempty"`
-	PairingPhone          string            `json:"pairing_phone,omitempty"`
+	BrokerID        string `json:"broker_id,omitempty"`
+	Connected       bool   `json:"connected"`
+	ConnectionState string `json:"connection_state"`
+	QR              string `json:"qr,omitempty"`
+	QRAvailable     bool   `json:"qr_available,omitempty"`
+	PairingCode     string `json:"pairing_code,omitempty"`
+	PairingPhone    string `json:"pairing_phone,omitempty"`
+	// PairingError is retained for the short-lived code-pairing flow so an
+	// upstream WhatsApp rejection (especially rate-overlimit) cannot be
+	// overwritten by a reconnect event before the dashboard polls it.
+	PairingError          string            `json:"pairing_error,omitempty"`
 	PhoneNumber           string            `json:"phone_number,omitempty"`
 	DisplayName           string            `json:"display_name,omitempty"`
 	InstanceName          string            `json:"instance_name,omitempty"`
@@ -145,6 +149,13 @@ func (s *BrokerSession) setStatus(st Status) {
 	}
 	if st.HeartbeatAt == "" {
 		st.HeartbeatAt = cur.HeartbeatAt
+	}
+	if st.ConnectionState == "pairing_requested" || st.ConnectionState == "open" {
+		// A fresh attempt or a successful pair clears an earlier attempt's
+		// terminal error.
+		st.PairingError = ""
+	} else if st.PairingError == "" {
+		st.PairingError = cur.PairingError
 	}
 	st.ReconnectCount = s.reconnectCount
 	st.ConsecutiveFailures = s.reconnectFailures
@@ -350,6 +361,27 @@ func brokerLockKey(brokerID string) int64 {
 	return int64(hasher.Sum64() & ^(uint64(1) << 63))
 }
 
+func pairingErrorMessage(err error) string {
+	message := strings.ToLower(strings.TrimSpace(err.Error()))
+	if strings.Contains(message, "429") || strings.Contains(message, "rate-overlimit") || strings.Contains(message, "rate limit") {
+		return "WhatsApp temporarily limited pairing-code requests for this number. Do not reset or retry now; wait at least 30 minutes, then request one new code."
+	}
+	return "WhatsApp could not issue a pairing code. Do not reset repeatedly; wait a minute and request one new code."
+}
+
+func (s *BrokerSession) failCodePairing(message string) {
+	s.mu.Lock()
+	s.pairingMode = ""
+	s.pairingPhone = ""
+	s.mu.Unlock()
+	s.setStatus(Status{
+		Connected:       false,
+		ConnectionState: "pairing_error",
+		SocketState:     "closed",
+		PairingError:    message,
+	})
+}
+
 func (sm *SessionManager) acquireBrokerLock(ctx context.Context, brokerID string) (*sql.Conn, bool, error) {
 	conn, err := sm.db.Conn(ctx)
 	if err != nil {
@@ -431,6 +463,19 @@ func (sm *SessionManager) StartOrGet(brokerID string) *BrokerSession {
 }
 
 func (sm *SessionManager) StartOrGetForCodePairing(brokerID, phone string) *BrokerSession {
+	// A terminal pairing failure intentionally remains readable through the
+	// status endpoint so the dashboard can show its cause. Discard it only when
+	// the user explicitly starts a fresh attempt.
+	sm.mu.Lock()
+	previous := sm.sessions[brokerID]
+	if previous != nil && previous.getStatus().ConnectionState == "pairing_error" {
+		delete(sm.sessions, brokerID)
+	}
+	sm.mu.Unlock()
+	if previous != nil && previous.getStatus().ConnectionState == "pairing_error" {
+		previous.cancel()
+		previous.releaseLock()
+	}
 	return sm.startOrGet(brokerID, func(session *BrokerSession) {
 		session.mu.Lock()
 		session.resetting = false
@@ -657,8 +702,9 @@ sessionLoop:
 						}
 						if !s.client.IsConnected() {
 							log.Printf("[broker %s] pairing websocket did not become ready", s.brokerID)
-							s.setStatus(Status{ConnectionState: "error"})
-							break
+							s.failCodePairing("WhatsApp did not become ready to issue a pairing code. Wait a moment, then try once.")
+							stopHeartbeat()
+							return
 						}
 						// WhatsApp validates both fields and rejects unknown/non-browser
 						// identities with a 400. Keep this aligned with WhatsMeow's
@@ -666,7 +712,9 @@ sessionLoop:
 						code, err := s.client.PairPhone(ctx, phone, true, whatsmeow.PairClientChrome, "Chrome (Windows)")
 						if err != nil {
 							log.Printf("[broker %s] PairPhone failed: %v", s.brokerID, err)
-							s.setStatus(Status{ConnectionState: "error"})
+							s.failCodePairing(pairingErrorMessage(err))
+							stopHeartbeat()
+							return
 						} else {
 							log.Printf("[broker %s] pairing code: %s", s.brokerID, code)
 							s.setStatus(Status{Connected: false, ConnectionState: "code_pairing", PairingCode: code, PairingPhone: phone, QRAvailable: true})
@@ -1986,12 +2034,6 @@ func (sm *SessionManager) startCodePairing(w http.ResponseWriter, brokerID, phon
 		w.WriteHeader(http.StatusConflict)
 		json.NewEncoder(w).Encode(map[string]string{"error": "pairing session is still releasing; retry in a few seconds"})
 		return nil, false
-	}
-	if session.client != nil {
-		session.client.Disconnect()
-	}
-	if session.device != nil && session.device.ID != nil {
-		session.device.ID = nil
 	}
 	return session, true
 }

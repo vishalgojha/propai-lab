@@ -388,13 +388,14 @@ function PhoneCard({
           setPairCodePending(false);
           return;
         }
-        if (["error", "not_started"].includes(String(result.state || ""))) {
-          setActionError("WhatsApp did not start pairing. Please request a new code.");
+        const pairingError = String(result.pairing_error || result.status?.pairing_error || "").trim();
+        if (pairingError || ["error", "pairing_error", "not_started"].includes(String(result.state || ""))) {
+          setActionError(pairingError || "WhatsApp did not start pairing. Wait a minute, then request one new code.");
           setPairCodePending(false);
           return;
         }
         if (Date.now() - startedAt > 70_000) {
-          setActionError("WhatsApp is taking too long to generate a code. Please try again.");
+          setActionError("WhatsApp is taking too long to generate a code. Do not reset the session; close this window and try one new code later.");
           setPairCodePending(false);
         }
       } catch {
@@ -747,7 +748,7 @@ function PhoneCard({
                   <div className="text-sm font-semibold text-white">Generating pairing code</div>
                 </div>
                 <div className="px-5 py-6 text-center text-xs leading-5 text-zinc-400">
-                  WhatsApp is preparing the code. This usually takes a few seconds; this window will update automatically.
+                  WhatsApp is preparing the code. This usually takes a few seconds; this window will update automatically. Do not reset or request another code while this is running.
                 </div>
                 <div className="flex justify-end px-5 py-3 border-t border-white/10">
                   <button onClick={() => { setShowPairCodeDialog(false); setPairCodePending(false); setPairCodeInput(""); setResetReceipt(null); setResetWarning(null); }} className="px-3 py-1.5 text-xs text-zinc-400 hover:text-white">Cancel</button>
