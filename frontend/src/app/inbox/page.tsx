@@ -40,7 +40,6 @@ import {
   Menu,
 } from "lucide-react";
 import { useLayout } from "@/hooks/useLayout";
-import WhatsAppGroupsMirror from "@/components/WhatsAppGroupsMirror";
 
 const PAGE_SIZE = 100;
 const BROKER_PAGE_SIZE = 25;
@@ -4645,7 +4644,11 @@ return {
 }
 
 export default function BrokerWorkspacePage() {
-  return <WhatsAppGroupsMirror />;
+  return (
+    <Suspense fallback={<div className="flex-1 flex items-center justify-center text-zinc-500 text-sm">Loading...</div>}>
+      <InboxPageInner />
+    </Suspense>
+  );
 }
 
 export function WhatsAppGroupsWorkspacePage() {

@@ -49,6 +49,7 @@ const baseNavSections = [
     items: [
       { href: "/chat", label: "Search & Chat", icon: Search },
       { href: "/inbox", label: "Market Inbox", icon: MessageSquare },
+      { href: "/whatsapp-groups", label: "WhatsApp Groups", icon: Users },
       { href: "/brokers", label: "Broker Profiles", icon: Users },
     ],
   },
