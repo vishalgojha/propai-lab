@@ -105,6 +105,7 @@ type BrokerSession struct {
 	statusFile        string
 	pairingMode       string // "qr" or "code"
 	pairingPhone      string // phone number for code pairing
+	resetting         bool   // suppress stale events from a session being wiped
 }
 
 func (s *BrokerSession) getStatus() Status {
@@ -115,6 +116,16 @@ func (s *BrokerSession) getStatus() Status {
 
 func (s *BrokerSession) setStatus(st Status) {
 	s.mu.Lock()
+	// Reset can race late Connected/heartbeat events from the old client. Those
+	// events must never bring a wiped session back to "Connected" in the API.
+	if s.resetting && st.Connected {
+		st.Connected = false
+		st.ConnectionState = "pairing_required"
+		st.SocketState = "closed"
+		st.QR = ""
+		st.QRAvailable = false
+		st.PairingCode = ""
+	}
 	// Preserve current values for fields not explicitly set in the new status
 	cur := s.status
 	if st.PhoneNumber == "" {
@@ -422,6 +433,7 @@ func (sm *SessionManager) StartOrGet(brokerID string) *BrokerSession {
 func (sm *SessionManager) StartOrGetForCodePairing(brokerID, phone string) *BrokerSession {
 	return sm.startOrGet(brokerID, func(session *BrokerSession) {
 		session.mu.Lock()
+		session.resetting = false
 		session.pairingMode = "code"
 		session.pairingPhone = phone
 		session.mu.Unlock()
@@ -2045,6 +2057,18 @@ func (sm *SessionManager) resetHandler(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+	s.mu.Lock()
+	s.resetting = true
+	s.pairingMode = ""
+	s.pairingPhone = ""
+	s.mu.Unlock()
+	// Publish an explicit offline state before the network logout begins. This
+	// replaces any cached Connected state in the API immediately.
+	s.setStatus(Status{
+		Connected:       false,
+		ConnectionState: "pairing_required",
+		SocketState:     "closed",
+	})
 	log.Printf("[broker %s] SESSION_WIPED reason=http_reset timestamp=%s reconnectFailures=%d reconnectCount=%d",
 		brokerID, time.Now().UTC().Format(time.RFC3339), s.reconnectFailures, s.reconnectCount)
 	resetAt := time.Now().UTC()
