@@ -356,15 +356,6 @@ async def list_llm_providers(user: dict = Depends(require_user), tenant_id: str 
 @router.get("/api/workspace/llm-providers/active")
 async def get_active_llm_provider(user: dict = Depends(require_user), tenant_id: str | None = Depends(get_tenant_context)):
     tenant_id = await asyncio.to_thread(_resolve_active_organization_id, user, tenant_id)
-    import llm as _llm
-    try:
-        active = _llm.get_provider_info()
-        if active.get("provider_name") and active.get("provider_name") != "none":
-            active["source"] = "runtime_env"
-            active["source_label"] = "Runtime config (Coolify / env)"
-            return active
-    except Exception:
-        pass
     provider = storage.get_active_llm_provider(tenant_id=tenant_id)
     if not provider:
         return {"provider_name": "none", "base_url": "", "model_name": "", "source": "none", "source_label": "Unconfigured"}

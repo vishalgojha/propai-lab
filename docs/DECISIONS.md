@@ -2,6 +2,14 @@
 
 Record significant technical and product decisions. Format: date, decision, context, outcome.
 
+## 2026-07-29 — Workspace-owned AI keys only for tenant chat
+
+**Decision:** WhatsApp self-chat and workspace AI chat use only active keys saved for that workspace. They never fall back to deployment/Coolify environment keys.
+
+**Context:** A linked WhatsApp connection is authenticated to one organization. Falling back to a platform credential would cross the tenant boundary for billing, rate limits, and data handling.
+
+**Outcome:** Each workspace controls its own provider usage. If it has no active provider key, chat returns a clear setup message instead of silently using a platform key.
+
 ## 2026-07-22 — Removed deterministic AI chat responses
 
 **Decision:** All AI chat replies come from the LLM. No canned/fallback responses.

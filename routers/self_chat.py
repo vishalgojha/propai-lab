@@ -13,7 +13,8 @@ from pydantic import BaseModel
 
 from routers.common import (
     storage, require_user, set_tenant_id, get_tenant_id,
-    _run_workspace_agent, _workspace_response_to_whatsapp, _doubleword_error_response,
+    _run_workspace_agent, _workspace_provider_candidates,
+    _workspace_response_to_whatsapp, _doubleword_error_response,
 )
 
 _logger = logging.getLogger(__name__)
@@ -209,7 +210,7 @@ async def _run_self_chat_agent(
             rows = await asyncio.to_thread(
                 storage.get_ai_chat_messages,
                 durable_session["id"],
-                60,
+                20,
                 tenant_id,
             )
             durable_messages = [
@@ -244,89 +245,107 @@ async def _run_self_chat_agent(
     return response
 
 
-async def _stream_self_chat_reply(text: str) -> dict | None:
-    import llm as _llm
-    from lab import ai_chat_engine as chat_engine
+async def _quick_self_chat_reply(text: str, tenant_id: str | None) -> dict:
+    """Use the owner's saved provider for short conversational WhatsApp turns.
 
-    api_key = ""
-    base_url = ""
-    configured_model = ""
-    try:
-        fast = _llm.get_fast_client()
-        api_key = fast.api_key
-        base_url = (
-            fast.base_url.base_url.rstrip("/")
-            if hasattr(fast.base_url, "base_url")
-            else str(fast.base_url).rstrip("/")
-        )
-        configured_model = _llm.get_fast_model()
-    except Exception:
-        pass
-    if not api_key or api_key == "none":
-        return None
+    This deliberately avoids loading listings, observations, tools, and the
+    full agent prompt.  It is still an LLM response, but should return within
+    seconds for greetings and simple conversational messages.
+    """
+    providers = await asyncio.to_thread(_workspace_provider_candidates, tenant_id)
+    if not providers:
+        return {"error": "workspace_provider_required"}
 
-    sources: dict = {}
-    try:
-        sources = chat_engine.load_data()
-        live = chat_engine.load_live_data(getattr(storage, "db", None))
-        if isinstance(live, dict):
-            sources.update(live)
-    except Exception:
-        pass
-
-    system_prompt = _build_self_chat_system_prompt(sources)
+    system_prompt = """You are PropAI, a concise Mumbai real-estate assistant in a WhatsApp self-chat.
+Reply naturally to the user. Use one to three short bullet points starting with •.
+You can help find properties, capture listing details, and answer real-estate questions.
+Do not claim that you searched, saved, or updated anything unless the user asked a specific task and a tool confirmed it.
+Never return JSON, markdown tables, or a canned template."""
     user_text = (text or "").strip()[:1800] or "Hello."
 
-    try:
+    def complete(provider: dict) -> tuple[str, object]:
         from openai import OpenAI
 
-        client = OpenAI(api_key=api_key, base_url=base_url)
-        stream = client.chat.completions.create(
-            model=configured_model or _llm.get_fast_model(),
+        client = OpenAI(
+            api_key=provider["api_key"],
+            base_url=provider["base_url"],
+            timeout=12.0,
+        )
+        result = client.chat.completions.create(
+            model=provider["model"],
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_text},
             ],
-            stream=True,
-            stream_options={"include_usage": True},
-            max_tokens=400,
-            temperature=0.4,
+            max_tokens=160,
+            temperature=0.45,
         )
-        chunks: list[str] = []
-        usage_info = None
-        for chunk in stream:
-            try:
-                delta = (
-                    chunk.choices[0].delta.content
-                    if chunk.choices and chunk.choices[0].delta
-                    else None
-                )
-            except (AttributeError, IndexError):
-                delta = None
-            if delta:
-                chunks.append(delta)
-            if getattr(chunk, "usage", None):
-                usage_info = chunk.usage
+        return str(result.choices[0].message.content or "").strip(), getattr(result, "usage", None)
+
+    for provider in providers:
         try:
-            from usage_logger import log_ai_usage
-            log_ai_usage(
-                agent="self_chat",
-                model=configured_model or _llm.get_fast_model(),
-                tokens_input=getattr(usage_info, "prompt_tokens", 0) or 0,
-                tokens_output=getattr(usage_info, "completion_tokens", 0) or 0,
-            )
-        except Exception:
-            pass
-        full = "".join(chunks).strip()
-        if not full:
-            return None
-        formatted = _format_self_chat_response(full)
-        if not formatted:
-            return None
-        return "PropAI- " + formatted
+            raw, usage = await asyncio.wait_for(asyncio.to_thread(complete, provider), timeout=15)
+            reply = _format_self_chat_response(raw)
+            if reply:
+                try:
+                    from usage_logger import log_ai_usage
+                    log_ai_usage(
+                        agent="self_chat",
+                        model=provider["model"],
+                        tokens_input=getattr(usage, "prompt_tokens", 0) or 0,
+                        tokens_output=getattr(usage, "completion_tokens", 0) or 0,
+                    )
+                except Exception:
+                    pass
+                return {"reply": "PropAI- " + reply}
+            raise RuntimeError("provider returned an empty response")
+        except Exception as exc:
+            _logger.warning("Quick self-chat provider failed (%s): %s", provider.get("provider", "workspace"), exc)
+
+    return {"error": "provider_unavailable"}
+
+
+def _self_chat_error_reply(error: str) -> str:
+    if error == "workspace_provider_required":
+        return "PropAI- • Add an active AI provider in Workspace → AI Providers to use self-chat."
+    return "PropAI- • I couldn't answer that just now. Please try again in a moment."
+
+
+async def _persist_quick_self_chat_turn(
+    text: str,
+    reply: str,
+    broker_id: str,
+    tenant_id: str | None,
+) -> None:
+    """Keep quick conversational turns in the same durable WhatsApp thread."""
+    if not tenant_id or not reply:
+        return
+    try:
+        session = await asyncio.to_thread(
+            storage.get_or_create_chat_session,
+            f"whatsmeow:{broker_id}",
+            "WhatsApp self chat",
+            tenant_id,
+        )
+        if not session:
+            return
+        await asyncio.to_thread(
+            storage.add_chat_message_if_new,
+            session["id"],
+            "user",
+            text[:1800],
+            tenant_id,
+        )
+        await asyncio.to_thread(
+            storage.add_chat_message_if_new,
+            session["id"],
+            "assistant",
+            reply,
+            tenant_id,
+        )
+        await asyncio.to_thread(storage.touch_chat_session, session["id"], tenant_id)
     except Exception as exc:
-        _logger.warning("self-chat streaming failed: %s", exc)
-        return None
+        _logger.warning("Could not persist quick self-chat turn: %s", exc)
 
 
 def _stream_self_chat_enabled() -> bool:
@@ -341,8 +360,19 @@ async def _self_chat_ndjson(
     tenant_id: str | None = None,
 ):
     try:
-        # Do not use the legacy env-only fast stream here. The workspace agent
-        # resolves the saved provider/key and is authoritative for self-chat.
+        if casual:
+            quick = await _quick_self_chat_reply(text, tenant_id)
+            if quick.get("reply"):
+                await _persist_quick_self_chat_turn(text, quick["reply"], broker_id, tenant_id)
+                yield _ndjson_line({"event": "chunk", "delta": quick["reply"]})
+                yield _ndjson_line({"event": "done", "reply": quick["reply"]})
+                return
+            error = str(quick.get("error") or "provider_unavailable")
+            reply = _self_chat_error_reply(error)
+            yield _ndjson_line({"event": "chunk", "delta": reply})
+            yield _ndjson_line({"event": "done", "reply": reply})
+            return
+
         response = await _run_self_chat_agent(
             [{"role": "user", "content": text[:1800]}],
             session_id=f"whatsmeow:{broker_id}",
@@ -350,7 +380,9 @@ async def _self_chat_ndjson(
             tenant_id=tenant_id,
         )
         if isinstance(response, dict) and response.get("error"):
-            yield _ndjson_line({"event": "error", "message": response.get("message") or response.get("error") or "agent_error"})
+            reply = _self_chat_error_reply(str(response.get("error") or "agent_error"))
+            yield _ndjson_line({"event": "chunk", "delta": reply})
+            yield _ndjson_line({"event": "done", "reply": reply})
             return
         raw_reply = _workspace_response_to_whatsapp(response) if response.get("content") or response.get("blocks") else ""
         if not raw_reply:
@@ -430,7 +462,7 @@ async def internal_self_chat(req: InternalSelfChatRequest, request: Request):
             tenant_id=connection.get("organization_id"),
         )
         if isinstance(response, dict) and response.get("error"):
-            return JSONResponse(status_code=503, content=response)
+            return {"reply": _self_chat_error_reply(str(response.get("error") or "agent_error"))}
         raw_reply = _workspace_response_to_whatsapp(response) if response.get("content") or response.get("blocks") else ""
         if not raw_reply:
             raw_reply = response.get("content") or ""
