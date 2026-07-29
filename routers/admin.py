@@ -58,7 +58,7 @@ async def admin_update_whatsapp_session(
         broker_id = str(phone.get("broker_id") or "").strip()
         if broker_id:
             await _first_ingestor_response(
-                "POST", "/disconnect", timeout=10, params={"broker_id": broker_id}
+                "POST", "/disconnect", timeout=10, headers={"X-Broker-Id": broker_id}
             )
     return await _admin_whatsapp_session(result or phone)
 
