@@ -17,7 +17,7 @@ from pydantic import BaseModel
 from routers.common import (
     storage, require_user, get_tenant_context,
     _doubleword_error_response, _workspace_provider_candidates,
-    _resolve_active_organization_id,
+    _resolve_active_organization_id, _raw_listing_fallback,
 )
 from llm import ProviderConfigurationError
 
@@ -192,6 +192,136 @@ class ChatRequest(BaseModel):
     session_id: str = ""
     broker_phone: str = ""
     source: str = ""
+
+
+def _normalize_chat_source(source: str) -> str:
+    source = (source or "").strip().lower()
+    if source in {"groups", "parsed", "inbox"}:
+        return source
+    return "parsed"
+
+
+def _group_post_title(message: str) -> str:
+    text = re.sub(r"\s+", " ", (message or "").strip())
+    if not text:
+        return "WhatsApp group post"
+    for line in re.split(r"[\r\n]+", message or ""):
+        candidate = re.sub(r"\s+", " ", line).strip()
+        if candidate:
+            return candidate[:90]
+    return text[:90]
+
+
+def _group_search_response(args: dict) -> dict:
+    requested_limit = max(1, min(int(args.get("limit") or 5), 10))
+    fallback_total, fallback_results = _raw_listing_fallback(args, limit=max(requested_limit * 4, requested_limit))
+    if not fallback_results:
+        query_label = "group posts"
+        if args.get("bhk"):
+            query_label = f"{args['bhk']} BHK group posts"
+        if args.get("intent") == "RENT":
+            query_label = f"rental {query_label}"
+        elif args.get("intent") == "SELL":
+            query_label = f"sale {query_label}"
+        if args.get("micro_market"):
+            query_label = f"{query_label} in {args['micro_market']}"
+        return {
+            "content": f"No WhatsApp group posts matched {query_label}.",
+            "blocks": [{
+                "type": "empty_state",
+                "title": "No WhatsApp group matches",
+                "body": f"PropAI searched the live WhatsApp group feed for {query_label}.",
+                "actions": [
+                    {"label": "Search parsed data instead", "value": "Search parsed data instead"},
+                    {"label": "Show latest group posts", "value": "Show latest group posts"},
+                ],
+            }],
+            "sources": ["WhatsApp groups"],
+            "status_steps": ["Searching WhatsApp group feed"],
+            "trace": {"route": "deterministic_group_search", "args": args, "total": 0},
+        }
+
+    deduped: list[dict] = []
+    seen: dict[tuple[str, str, str, str], dict] = {}
+    for item in fallback_results:
+        original = str(item.get("original_message") or "").strip()
+        collapsed = re.sub(r"\s+", " ", original).lower()
+        collapsed = re.sub(r"\b\d{8,}\b", "", collapsed)
+        broker_key = str(item.get("broker_phone") or item.get("broker_name") or item.get("sender_phone") or item.get("sender") or "").strip().lower()
+        market_key = str(item.get("micro_market") or args.get("micro_market") or "").strip().lower()
+        intent_key = str(item.get("intent") or args.get("intent") or "").strip().upper()
+        bhk_key = str(item.get("bhk") or args.get("bhk") or "").strip().upper()
+        key = (broker_key, market_key, intent_key, f"{bhk_key}:{collapsed[:180]}")
+        existing = seen.get(key)
+        if existing:
+            existing["duplicate_count"] = int(existing.get("duplicate_count") or 1) + 1
+            groups = existing.setdefault("duplicate_group_names", [])
+            group_name = str(item.get("group_name") or "").strip()
+            if group_name and group_name not in groups:
+                groups.append(group_name)
+            continue
+
+        group_name = str(item.get("group_name") or "").strip()
+        title = _group_post_title(original)
+        item["building_name"] = title
+        item["location_label"] = group_name or item.get("location_label") or "WhatsApp group"
+        item["micro_market"] = str(args.get("micro_market") or item.get("micro_market") or "")
+        item["broker_name"] = item.get("broker_name") or item.get("sender") or ""
+        item["broker_phone"] = item.get("broker_phone") or item.get("sender_phone") or ""
+        item["price_formatted"] = ""
+        item["duplicate_count"] = 1
+        item["duplicate_group_names"] = [group_name] if group_name else []
+        item["source"] = "whatsapp_groups"
+        item["original_message"] = original[:600]
+        seen[key] = item
+        deduped.append(item)
+        if len(deduped) >= requested_limit:
+            break
+
+    shown = len(deduped)
+    query_bits = []
+    if args.get("bhk"):
+        query_bits.append(f"{args['bhk']} BHK")
+    if args.get("intent") == "RENT":
+        query_bits.append("rentals")
+    elif args.get("intent") == "SELL":
+        query_bits.append("sales")
+    if args.get("micro_market"):
+        query_bits.append(f"in {args['micro_market']}")
+    query_label = " ".join(query_bits) if query_bits else "group posts"
+    return {
+        "content": f"Found {fallback_total} WhatsApp group posts for {query_label}. Showing the latest {shown} unique broker posts.",
+        "blocks": [
+            {
+                "type": "summary",
+                "title": "WhatsApp groups",
+                "body": f"Unique broker-post clusters from the live group feed. Duplicate cross-posts are collapsed before rendering.",
+                "metrics": [
+                    {"label": "Unique posts", "value": str(shown), "tone": "success"},
+                    {"label": "Raw matches", "value": str(fallback_total), "tone": "neutral"},
+                ],
+            },
+            {
+                "type": "listing_cards",
+                "title": query_label.title(),
+                "subtitle": "Live WhatsApp group feed",
+                "items": deduped,
+                "body": "Deduplicated across repeated broker cross-posts and ranked by recency.",
+            },
+            {
+                "type": "suggested_questions",
+                "title": "Refine",
+                "items": [
+                    f"Search parsed data for {query_label}",
+                    "Show latest group posts",
+                    f"Only rentals in {args['micro_market']}" if args.get("micro_market") else "Search a nearby locality",
+                ],
+            },
+        ],
+        "sources": ["WhatsApp groups", "raw messages"],
+        "status_steps": ["Parsed request", "Searched live WhatsApp groups", "Collapsed duplicate posts", "Rendered results"],
+        "trace": {"route": "deterministic_group_search", "args": args, "total": fallback_total},
+    }
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -883,7 +1013,8 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
         _persist("user", last_user)
         _maybe_title(last_user)
 
-    _is_inbox = req.source == "inbox"
+    source_mode = _normalize_chat_source(req.source)
+    _is_inbox = source_mode == "inbox"
 
     if last_user and _CAPABILITY_SIGNALS.search(last_user):
         try:
@@ -984,6 +1115,20 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
     if not sources:
         return _wrap_chat_response({"error": "no_data", "content": "No data found. Check CSV files and database."}, _is_inbox)
 
+    active_sources = sources
+    if source_mode == "groups":
+        active_sources = {
+            key: value
+            for key, value in sources.items()
+            if key in {"overview", "market_feed", "brokers", "unresolved_messages"}
+        } or sources
+    elif source_mode == "parsed":
+        active_sources = {
+            key: value
+            for key, value in sources.items()
+            if key in {"overview", "unique_listings", "buildings", "brokers", "building_matches"}
+        } or sources
+
     search_request_text = last_user
     if last_user and not re.search(r"\b\d+(?:\.5)?\s*(?:bhk|bed(?:room)?s?)\b|\b(?:rent|rental|lease|sale|sell|buy|purchase)\b", last_user, re.IGNORECASE):
         previous_users = [
@@ -1005,17 +1150,20 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
     )
     if deterministic_query:
         try:
-            search_result = await asyncio.to_thread(
-                chat_engine.execute_tool,
-                "market_search",
-                deterministic_query,
-                sources,
-                getattr(storage, "db", None),
-                tenant_id,
-            )
-            response = chat_engine.deterministic_market_response(
-                deterministic_query, search_result, sources
-            )
+            if source_mode == "groups":
+                response = _group_search_response(deterministic_query)
+            else:
+                search_result = await asyncio.to_thread(
+                    chat_engine.execute_tool,
+                    "market_search",
+                    deterministic_query,
+                    active_sources,
+                    getattr(storage, "db", None),
+                    tenant_id,
+                )
+                response = chat_engine.deterministic_market_response(
+                    deterministic_query, search_result, active_sources
+                )
             _persist("user", last_user)
             _persist("assistant", response.get("content", ""))
             _maybe_title(last_user)
@@ -1023,7 +1171,7 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
         except Exception as exc:
             _logger.exception("Deterministic market search failed for filters=%s", deterministic_query)
             response = chat_engine.deterministic_market_response(
-                deterministic_query, "", sources
+                deterministic_query, "", active_sources
             )
             _persist("user", last_user)
             _persist("assistant", response.get("content", ""))
@@ -1031,7 +1179,7 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
             return _wrap_chat_response(response, _is_inbox)
 
     def _call(provider):
-        system_prompt = chat_engine.build_system_prompt(sources, broker=broker)
+        system_prompt = chat_engine.build_system_prompt(active_sources, broker=broker)
         context = memory.build_context()
         msgs = [
             {"role": "system", "content": system_prompt},
@@ -1039,7 +1187,7 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
         ]
         reply = chat_engine.get_model_reply(
             msgs,
-            sources,
+            active_sources,
             api_key=provider["api_key"],
             model=provider["model"] or None,
             base_url=provider["base_url"] or None,
@@ -1047,7 +1195,7 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
         )
         if not (reply.content or "").strip():
             raise RuntimeError("provider returned an empty response")
-        return chat_engine.normalize_workspace_response(reply.content or "", sources)
+        return chat_engine.normalize_workspace_response(reply.content or "", active_sources)
 
     try:
         response = await _run_with_provider_failover(lambda provider: _call(provider), providers, timeout=90)
