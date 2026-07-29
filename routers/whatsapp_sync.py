@@ -670,6 +670,24 @@ async def reset_phone(
         # Do not let the 45-second in-memory live-status fallback show the
         # pre-reset connected session while the ingestor transitions to pairing.
         _broker_live_statuses.pop(broker_id, None)
+        # Reset means the linked-device identity is no longer authoritative.
+        # Clear the persisted canonical number as well, otherwise the UI can
+        # show (and lock) an old device number and reject the next owner's
+        # pairing request as a different phone. PairSuccess is the only event
+        # allowed to write the next canonical number back to this row.
+        cleared_connection = await asyncio.to_thread(
+            storage.update_org_whatsapp_connection,
+            phone_id,
+            {
+                "phone_number": f"Unpaired:{broker_id}",
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            },
+        )
+        if not cleared_connection:
+            raise HTTPException(
+                502,
+                "WhatsApp credentials were cleared, but the connection could not be prepared for a new phone number. Refresh and try reset once more.",
+            )
         remote_unlink_confirmed = bool(receipt.get("whatsapp_unlinked"))
         message = (
             "WhatsApp linked device and session credentials were removed. Pairing is now required."
@@ -683,6 +701,7 @@ async def reset_phone(
             "pairing_required": bool(receipt.get("pairing_required")),
             "remote_unlink_confirmed": remote_unlink_confirmed,
             "remote_unlink_warning": receipt.get("remote_unlink_warning") or None,
+            "phone_number_cleared": True,
         }
     raise HTTPException(502, _ingestor_failure_message(resp))
 
