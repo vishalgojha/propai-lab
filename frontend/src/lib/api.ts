@@ -157,6 +157,7 @@ async function fetchJSONWithRetry<T>(
   init: RequestInit | undefined,
   timeoutMs: number,
   retried: boolean,
+  requestBase = BASE,
 ): Promise<T> {
   const controller = new AbortController();
   let timedOut = false;
@@ -175,7 +176,7 @@ async function fetchJSONWithRetry<T>(
   try {
     const token = await getAccessToken();
     const tenantId = readActiveTenantId();
-    const res = await fetch(`${BASE}${url}`, {
+    const res = await fetch(`${requestBase}${url}`, {
       ...init,
       signal: controller.signal,
       headers: {
@@ -190,7 +191,7 @@ async function fetchJSONWithRetry<T>(
       // and retry once with the fresh token before surfacing the error.
       const fresh = await forceRefreshToken();
       if (fresh) {
-        const retryRes = await fetch(`${BASE}${url}`, {
+        const retryRes = await fetch(`${requestBase}${url}`, {
           ...init,
           signal: controller.signal,
           headers: {
@@ -1826,7 +1827,20 @@ export function deletePhone(phoneId: number) {
 }
 
 export function resetPhone(phoneId: number) {
-  return fetchJSON<{ ok: boolean; message: string; reset_at?: string; pairing_required?: boolean }>(`/phones/${phoneId}/reset`, { method: "POST" });
+  // The normal same-origin proxy can occasionally reset its socket while it
+  // loops from the dashboard back through the public API. A WhatsApp reset is
+  // destructive, so send it directly to the API origin and rely on explicit
+  // CORS rather than treating a proxy 502 as a reset result.
+  const directApiBase = typeof window !== "undefined" && window.location.hostname === "app.propai.live"
+    ? "https://api.propai.live/api"
+    : BASE;
+  return fetchJSONWithRetry<{ ok: boolean; message: string; reset_at?: string; pairing_required?: boolean }>(
+    `/phones/${phoneId}/reset`,
+    { method: "POST" },
+    API_TIMEOUT_MS,
+    false,
+    directApiBase,
+  );
 }
 
 export function disconnectPhone(phoneId: number) {
