@@ -18,6 +18,7 @@ from routers.common import (
     storage, require_user, get_tenant_context,
     _doubleword_error_response, _workspace_provider_candidates,
     _resolve_active_organization_id, _raw_listing_fallback,
+    _raw_group_message_search,
 )
 from llm import ProviderConfigurationError
 
@@ -226,11 +227,19 @@ def _group_post_title(message: str) -> str:
     return text[:90]
 
 
-def _group_search_response(args: dict) -> dict:
+def _group_search_response(query_text: str, args: dict) -> dict:
     requested_limit = max(1, min(int(args.get("limit") or 5), 10))
-    fallback_total, fallback_results = _raw_listing_fallback(args, limit=max(requested_limit * 4, requested_limit))
+    fallback_total, fallback_results = _raw_group_message_search(
+        query_text,
+        limit=max(requested_limit * 4, requested_limit),
+    )
     if not fallback_results:
-        query_label = "group posts"
+        fallback_total, fallback_results = _raw_listing_fallback(
+            args,
+            limit=max(requested_limit * 4, requested_limit),
+        )
+    if not fallback_results:
+        query_label = str(query_text or "").strip() or "group posts"
         if args.get("bhk"):
             query_label = f"{args['bhk']} BHK group posts"
         if args.get("intent") == "RENT":
@@ -244,15 +253,15 @@ def _group_search_response(args: dict) -> dict:
             "blocks": [{
                 "type": "empty_state",
                 "title": "No WhatsApp group matches",
-                "body": f"PropAI searched the live WhatsApp group feed for {query_label}.",
+                "body": f"PropAI searched raw WhatsApp group messages for {query_label}.",
                 "actions": [
                     {"label": "Search parsed data instead", "value": "Search parsed data instead"},
                     {"label": "Show latest group posts", "value": "Show latest group posts"},
                 ],
             }],
             "sources": ["WhatsApp groups"],
-            "status_steps": ["Searching WhatsApp group feed"],
-            "trace": {"route": "deterministic_group_search", "args": args, "total": 0},
+            "status_steps": ["Searching raw WhatsApp group messages"],
+            "trace": {"route": "deterministic_group_raw_search", "args": args, "query": query_text, "total": 0},
             "source_mode": "groups",
         }
 
@@ -310,7 +319,7 @@ def _group_search_response(args: dict) -> dict:
             {
                 "type": "summary",
                 "title": "WhatsApp groups",
-                "body": f"Unique broker-post clusters from the live group feed. Duplicate cross-posts are collapsed before rendering.",
+                "body": f"Unique broker-post clusters from raw WhatsApp group messages. Duplicate cross-posts are collapsed before rendering.",
                 "metrics": [
                     {"label": "Unique posts", "value": str(shown), "tone": "success"},
                     {"label": "Raw matches", "value": str(fallback_total), "tone": "neutral"},
@@ -334,8 +343,8 @@ def _group_search_response(args: dict) -> dict:
             },
         ],
         "sources": ["WhatsApp groups", "raw messages"],
-        "status_steps": ["Parsed request", "Searched live WhatsApp groups", "Collapsed duplicate posts", "Rendered results"],
-        "trace": {"route": "deterministic_group_search", "args": args, "total": fallback_total},
+        "status_steps": ["Parsed request", "Searched raw WhatsApp group messages", "Collapsed duplicate posts", "Rendered results"],
+        "trace": {"route": "deterministic_group_raw_search", "args": args, "query": query_text, "total": fallback_total},
         "source_mode": "groups",
     }
 
@@ -1167,7 +1176,7 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
     if deterministic_query:
         try:
             if source_mode == "groups":
-                response = _group_search_response(deterministic_query)
+                response = _group_search_response(search_request_text, deterministic_query)
             else:
                 search_result = await asyncio.to_thread(
                     chat_engine.execute_tool,
@@ -1195,6 +1204,17 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
             _persist("assistant", response.get("content", ""))
             _maybe_title(last_user)
             return _wrap_chat_response(response, _is_inbox)
+
+    if source_mode == "groups" and last_user:
+        try:
+            response = _group_search_response(search_request_text, {})
+            response = _annotate_chat_response(response, source_mode)
+            _persist("user", last_user)
+            _persist("assistant", response.get("content", ""))
+            _maybe_title(last_user)
+            return _wrap_chat_response(response, _is_inbox)
+        except Exception:
+            _logger.exception("Raw group search failed")
 
     def _call(provider):
         system_prompt = chat_engine.build_system_prompt(active_sources, broker=broker)

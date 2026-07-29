@@ -2323,6 +2323,114 @@ def _raw_listing_fallback(args: dict, limit: int = 10) -> tuple[int, list[dict]]
     finally:
         pass
 
+
+def _raw_group_message_search(query_text: str, limit: int = 10, offset: int = 0) -> tuple[int, list[dict]]:
+    con = getattr(storage, "db", None) if storage is not None else None
+    if con is None:
+        raise RuntimeError("Database is not available")
+
+    def _resolve_group_name(group_name: str) -> str:
+        if group_name and "@g.us" in group_name:
+            resolved = con.execute(
+                "SELECT group_name FROM source_sync_jobs WHERE group_id = ? LIMIT 1",
+                (group_name,),
+            ).fetchone()
+            if resolved:
+                return str(resolved[0] or group_name)
+        return group_name
+
+    def _row_to_result(row: tuple, snippet: str | None = None) -> dict:
+        return {
+            "id": row[0],
+            "group_name": _resolve_group_name(str(row[1] or "")),
+            "sender": row[2] or "",
+            "sender_phone": row[3] or "",
+            "message": row[4] or "",
+            "timestamp": row[5] or "",
+            "source": row[6] or "",
+            "snippet": snippet if snippet is not None else ((row[4] or "")[:240]),
+        }
+
+    q = str(query_text or "").strip()
+    if not q:
+        rows = con.execute(
+            """
+            SELECT id, group_name, sender, sender_phone, message, timestamp, source
+            FROM raw_messages
+            ORDER BY timestamp DESC, id DESC
+            LIMIT ? OFFSET ?
+            """,
+            (max(limit, 1), max(offset, 0)),
+        ).fetchall()
+        total_row = con.execute("SELECT COUNT(*) FROM raw_messages").fetchone()
+        total = int(total_row[0] if total_row else 0)
+        return total, [_row_to_result(row) for row in rows]
+
+    try:
+        rows = con.execute(
+            """
+            SELECT rm.id, rm.group_name, rm.sender, rm.sender_phone,
+                   rm.message, rm.timestamp, rm.source,
+                   snippet(raw_messages_fts, 0, '<mark>', '</mark>', '...', 40) AS snippet
+            FROM raw_messages_fts fts
+            JOIN raw_messages rm ON rm.id = fts.rowid
+            WHERE raw_messages_fts MATCH ?
+            ORDER BY rank
+            LIMIT ? OFFSET ?
+            """,
+            (q, max(limit, 1), max(offset, 0)),
+        ).fetchall()
+        total_row = con.execute(
+            "SELECT COUNT(*) FROM raw_messages_fts WHERE raw_messages_fts MATCH ?",
+            (q,),
+        ).fetchone()
+        total = int(total_row[0] if total_row else 0)
+        return total, [_row_to_result(row, row[7]) for row in rows]
+    except Exception:
+        like_q = f"%{q}%"
+        try:
+            rows = con.execute(
+                """
+                SELECT id, group_name, sender, sender_phone, message, timestamp, source
+                FROM raw_messages
+                WHERE message LIKE ? OR group_name LIKE ? OR sender LIKE ? OR sender_phone LIKE ? OR source LIKE ?
+                ORDER BY timestamp DESC, id DESC
+                LIMIT ? OFFSET ?
+                """,
+                (like_q, like_q, like_q, like_q, like_q, max(limit, 1), max(offset, 0)),
+            ).fetchall()
+            total_row = con.execute(
+                """
+                SELECT COUNT(*)
+                FROM raw_messages
+                WHERE message LIKE ? OR group_name LIKE ? OR sender LIKE ? OR sender_phone LIKE ? OR source LIKE ?
+                """,
+                (like_q, like_q, like_q, like_q, like_q),
+            ).fetchone()
+            total = int(total_row[0] if total_row else 0)
+            return total, [_row_to_result(row) for row in rows]
+        except Exception:
+            rows = con.execute(
+                """
+                SELECT id, group_name, sender, sender_phone, message, timestamp, source
+                FROM raw_messages
+                ORDER BY timestamp DESC, id DESC
+                LIMIT ? OFFSET ?
+                """,
+                (max(limit * 10, 1000), 0),
+            ).fetchall()
+            needle = q.casefold()
+            filtered: list[dict] = []
+            for row in rows:
+                haystack = " ".join(
+                    str(part or "")
+                    for part in (row[4], row[1], row[2], row[3], row[6])
+                ).casefold()
+                if needle in haystack:
+                    filtered.append(_row_to_result(row))
+            total = len(filtered)
+            return total, filtered[offset:offset + limit]
+
 def _listing_search_response(args: dict) -> dict:
     from lab import ai_chat_engine as chat_engine_mod
     requested_limit = max(1, min(int(args.get("limit") or 5), 10))
