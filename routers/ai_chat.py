@@ -51,9 +51,17 @@ def _to_sse_chunks(response: dict) -> str:
     msg_id = f"msg-{uuid.uuid4().hex[:8]}"
     content = str(response.get("content") or "").strip()
     blocks = response.get("blocks") or []
+    source_mode = str(response.get("source_mode") or "").strip()
 
     # text-start
     yield _sse_event({"type": "text-start", "id": msg_id})
+
+    if source_mode:
+        yield _sse_event({
+            "type": "data-chat_context",
+            "id": f"context-{msg_id}",
+            "data": {"source_mode": source_mode},
+        })
 
     # text-delta from content string
     if content:
@@ -201,6 +209,12 @@ def _normalize_chat_source(source: str) -> str:
     return "parsed"
 
 
+def _annotate_chat_response(response: dict, source_mode: str) -> dict:
+    annotated = dict(response or {})
+    annotated["source_mode"] = source_mode
+    return annotated
+
+
 def _group_post_title(message: str) -> str:
     text = re.sub(r"\s+", " ", (message or "").strip())
     if not text:
@@ -239,6 +253,7 @@ def _group_search_response(args: dict) -> dict:
             "sources": ["WhatsApp groups"],
             "status_steps": ["Searching WhatsApp group feed"],
             "trace": {"route": "deterministic_group_search", "args": args, "total": 0},
+            "source_mode": "groups",
         }
 
     deduped: list[dict] = []
@@ -321,6 +336,7 @@ def _group_search_response(args: dict) -> dict:
         "sources": ["WhatsApp groups", "raw messages"],
         "status_steps": ["Parsed request", "Searched live WhatsApp groups", "Collapsed duplicate posts", "Rendered results"],
         "trace": {"route": "deterministic_group_search", "args": args, "total": fallback_total},
+        "source_mode": "groups",
     }
 
 
@@ -1164,6 +1180,7 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
                 response = chat_engine.deterministic_market_response(
                     deterministic_query, search_result, active_sources
                 )
+            response = _annotate_chat_response(response, source_mode)
             _persist("user", last_user)
             _persist("assistant", response.get("content", ""))
             _maybe_title(last_user)
@@ -1173,6 +1190,7 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
             response = chat_engine.deterministic_market_response(
                 deterministic_query, "", active_sources
             )
+            response = _annotate_chat_response(response, source_mode)
             _persist("user", last_user)
             _persist("assistant", response.get("content", ""))
             _maybe_title(last_user)
@@ -1199,6 +1217,7 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
 
     try:
         response = await _run_with_provider_failover(lambda provider: _call(provider), providers, timeout=90)
+        response = _annotate_chat_response(response, source_mode)
         _persist("user", last_user)
         _persist("assistant", response.get("content", ""))
         _maybe_title(last_user)
