@@ -177,9 +177,9 @@ export default function WhatsAppGroupsMirror() {
         return names;
       });
       setMessages((current) => {
-        const byId = new Map<number, api.RawMessage>();
-        for (const row of append ? [...current, ...rows] : [...rows, ...current]) byId.set(row.id, row);
-        return [...byId.values()].sort((a, b) => String(a.timestamp || a.created_at || "").localeCompare(String(b.timestamp || b.created_at || "")));
+        const byKey = new Map<string, api.RawMessage>();
+        for (const row of [...current, ...rows]) byKey.set(row.message_uid || String(row.id), row);
+        return [...byKey.values()].sort((a, b) => String(a.timestamp || a.created_at || "").localeCompare(String(b.timestamp || b.created_at || "")));
       });
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Could not load this group’s messages.");
@@ -234,17 +234,64 @@ export default function WhatsAppGroupsMirror() {
     setError("");
     setNotice("");
     try {
+      let sendResult: any = null;
       if (file) {
         const mediaType = file.type.startsWith("image/") ? "image" : file.type.startsWith("video/") ? "video" : file.type.startsWith("audio/") ? "audio" : "document";
-        await api.sendMediaMessage({ remote_jid: selectedJid, media_type: mediaType, caption: draft.trim(), file, file_name: file.name, mime_type: file.type, broker_id: selected?.broker_id });
+        sendResult = await api.sendMediaMessage({ remote_jid: selectedJid, media_type: mediaType, caption: draft.trim(), file, file_name: file.name, mime_type: file.type, broker_id: selected?.broker_id });
       } else {
-        await api.sendMessage({ remote_jid: selectedJid, text: draft.trim(), broker_id: selected?.broker_id });
+        sendResult = await api.sendMessage({ remote_jid: selectedJid, text: draft.trim(), broker_id: selected?.broker_id });
       }
+      const nowIso = new Date().toISOString();
+      const messageUid = String(sendResult?.message_id || `local-${Date.now()}`);
+      setMessages((current) => {
+        const optimistic: api.RawMessage = {
+          id: -Date.now(),
+          chat_id: selectedJid,
+          chat_type: "group",
+          chat_name: selected?.display_name || selected?.conversation_name || selected?.name || "",
+          conversation_type: "group",
+          conversation_key: selectedJid,
+          conversation_name: selected?.display_name || selected?.conversation_name || selected?.name || "",
+          group_name: selected?.display_name || selected?.conversation_name || selected?.name || selectedJid,
+          sender: "You",
+          sender_jid: selectedJid,
+          sender_phone: "",
+          broker_name: "",
+          broker_phone: "",
+          building_name: "",
+          micro_market: "",
+          landmark_name: "",
+          parsed_intent: "",
+          message_count: 0,
+          latest_message_at: nowIso,
+          duplicate_count: 1,
+          duplicate_group_names: [],
+          message: draft.trim() || (file ? `Attachment: ${file.name}` : ""),
+          message_type: file ? file.type.split("/")[0] || "document" : "text",
+          timestamp: sendResult?.timestamp || nowIso,
+          created_at: nowIso,
+          source: "WHATSAPP_OUTBOUND",
+          event_id: messageUid,
+          message_uid: messageUid,
+          raw_payload: JSON.stringify({
+            local: true,
+            fromMe: true,
+            message: {
+              conversation: draft.trim() || (file ? `Attachment: ${file.name}` : ""),
+            },
+          }),
+          synced_at: nowIso,
+          pipeline_version: "propai-web-send",
+          from_me: true,
+          delivery_status: "sent",
+          delivery_updated_at: nowIso,
+        };
+        return [...current.filter((item) => (item.message_uid || String(item.id)) !== messageUid), optimistic];
+      });
       setDraft("");
       setFile(null);
       if (fileInput.current) fileInput.current.value = "";
       setNotice("Sent to WhatsApp.");
-      window.setTimeout(() => void loadMessages(), 800);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "WhatsApp could not send this message.");
     } finally {
@@ -266,7 +313,7 @@ export default function WhatsAppGroupsMirror() {
           <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search groups" className="mt-3 h-9 w-full rounded-lg border border-white/10 bg-transparent px-3 text-sm text-white outline-none placeholder:text-zinc-600 focus:border-emerald-400" />
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto">
-          {loading ? <p className="p-4 text-sm text-zinc-500">Loading your joined groups…</p> : visibleGroups.length === 0 ? <p className="p-4 text-sm text-zinc-500">No joined WhatsApp groups yet.</p> : visibleGroups.map((group) => {
+          {loading ? <p className="p-4 text-sm text-zinc-500">Loading your joined groups…</p> : visibleGroups.length === 0 ? <p className="p-4 text-sm text-zinc-500">{query.trim() ? "No groups match your search." : "No joined WhatsApp groups yet."}</p> : visibleGroups.map((group) => {
             const jid = String(group.conversation_jid || "");
             const name = String(group.display_name || group.conversation_name || group.name || "WhatsApp Group");
             return <button key={jid} onClick={() => { setSelectedJid(jid); setShowConversation(true); }} className={`w-full border-b border-white/[0.06] px-4 py-3 text-left transition-colors hover:bg-white/[0.03] ${selectedJid === jid ? "border-l-2 border-l-emerald-400 bg-white/[0.04] pl-[14px]" : ""}`}>
