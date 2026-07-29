@@ -117,6 +117,7 @@ export default function ChatPage() {
   const { user, loading: authLoading } = useAuth();
   const [input, setInput] = useState("");
   const [brokerPhone, setBrokerPhone] = useState("");
+  const [searchSource, setSearchSource] = useState<"groups" | "parsed">("parsed");
   const chatEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const sessionIdRef = useRef("");
@@ -129,11 +130,12 @@ export default function ChatPage() {
   const [sessionError, setSessionError] = useState("");
 
   const activeSessionStorageKey = user?.id ? `propai_active_chat_session:${user.id}` : "";
+  const searchSourceStorageKey = user?.id ? `propai_chat_search_source:${user.id}` : "";
 
   const { messages, sendMessage, status, setMessages, error } = useChat({
     transport: new DefaultChatTransport({
       api: "/api/ai/chat",
-      body: () => ({ broker_phone: brokerPhone, session_id: sessionIdRef.current || sessionId }),
+      body: () => ({ broker_phone: brokerPhone, session_id: sessionIdRef.current || sessionId, source: searchSource }),
       headers: async () => {
         const headers: Record<string, string> = {};
         const token = await getAccessToken();
@@ -162,6 +164,19 @@ export default function ChatPage() {
       cancelled = true;
     };
   }, [user]);
+
+  useEffect(() => {
+    if (!searchSourceStorageKey) return;
+    const saved = window.localStorage.getItem(searchSourceStorageKey);
+    if (saved === "groups" || saved === "parsed") {
+      setSearchSource(saved);
+    }
+  }, [searchSourceStorageKey]);
+
+  useEffect(() => {
+    if (!searchSourceStorageKey) return;
+    window.localStorage.setItem(searchSourceStorageKey, searchSource);
+  }, [searchSource, searchSourceStorageKey]);
 
   const loadSessions = useCallback(async () => {
     try {
@@ -368,6 +383,31 @@ export default function ChatPage() {
             {showSessions ? <PanelLeftClose className="h-3.5 w-3.5" /> : <PanelLeft className="h-3.5 w-3.5" />}
             {showSessions ? "Hide chats" : "Show chats"}
           </button>
+          <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.02] p-1">
+            <span className="px-2 text-[10px] uppercase tracking-[0.18em] text-zinc-500">Search</span>
+            <button
+              type="button"
+              onClick={() => setSearchSource("groups")}
+              className={`rounded-lg px-3 py-1.5 text-[11px] font-medium transition-colors ${
+                searchSource === "groups"
+                  ? "bg-emerald-500/15 text-emerald-300"
+                  : "text-zinc-400 hover:bg-white/5 hover:text-white"
+              }`}
+            >
+              WhatsApp groups
+            </button>
+            <button
+              type="button"
+              onClick={() => setSearchSource("parsed")}
+              className={`rounded-lg px-3 py-1.5 text-[11px] font-medium transition-colors ${
+                searchSource === "parsed"
+                  ? "bg-blue-500/15 text-blue-300"
+                  : "text-zinc-400 hover:bg-white/5 hover:text-white"
+              }`}
+            >
+              Parsed data
+            </button>
+          </div>
         </div>
         {sessionError && (
           <div className="mb-2 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300">
@@ -390,6 +430,30 @@ export default function ChatPage() {
           >
             <Plus className="w-3 h-3" />
             New chat
+          </button>
+        </div>
+        <div className="lg:hidden mb-3 flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.02] p-1">
+          <button
+            type="button"
+            onClick={() => setSearchSource("groups")}
+            className={`flex-1 rounded-lg px-3 py-2 text-xs font-medium transition-colors ${
+              searchSource === "groups"
+                ? "bg-emerald-500/15 text-emerald-300"
+                : "text-zinc-400"
+            }`}
+          >
+            WhatsApp groups
+          </button>
+          <button
+            type="button"
+            onClick={() => setSearchSource("parsed")}
+            className={`flex-1 rounded-lg px-3 py-2 text-xs font-medium transition-colors ${
+              searchSource === "parsed"
+                ? "bg-blue-500/15 text-blue-300"
+                : "text-zinc-400"
+            }`}
+          >
+            Parsed data
           </button>
         </div>
         {showSessions && (
@@ -418,8 +482,34 @@ export default function ChatPage() {
               <div className="text-3xl mb-3">🤖</div>
               <h2 className="text-sm font-semibold text-white mb-2">Ask PropAI anything</h2>
               <p className="text-xs text-zinc-500 max-w-md mx-auto">
-                Natural-language search across market listings, requirements, brokers, buildings, and markets.
+                {searchSource === "groups"
+                  ? "Search the live WhatsApp group feed first. Switch to parsed data when you want the deduped inventory index."
+                  : "Search the deduped inventory index first. Switch to WhatsApp groups when you want raw broker posts."}
               </p>
+              <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setSearchSource("groups")}
+                  className={`rounded-full border px-3 py-1.5 text-[11px] font-medium transition-colors ${
+                    searchSource === "groups"
+                      ? "border-emerald-400/40 bg-emerald-500/15 text-emerald-200"
+                      : "border-white/10 bg-white/[0.03] text-zinc-400 hover:border-white/20 hover:text-white"
+                  }`}
+                >
+                  Search WhatsApp groups
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSearchSource("parsed")}
+                  className={`rounded-full border px-3 py-1.5 text-[11px] font-medium transition-colors ${
+                    searchSource === "parsed"
+                      ? "border-blue-400/40 bg-blue-500/15 text-blue-200"
+                      : "border-white/10 bg-white/[0.03] text-zinc-400 hover:border-white/20 hover:text-white"
+                  }`}
+                >
+                  Search parsed data
+                </button>
+              </div>
             </div>
           ) : (
             <AnimatePresence initial={false}>
@@ -525,7 +615,7 @@ export default function ChatPage() {
                 handleSubmit(e);
               }
             }}
-            placeholder="Ask a question about your market data..."
+            placeholder={searchSource === "groups" ? "Ask about WhatsApp groups..." : "Ask a question about your market data..."}
             rows={2}
             className="flex-1 bg-zinc-900 border border-white/10 rounded-xl px-3 lg:px-4 py-2.5 text-sm text-white placeholder-[#64748b] resize-none max-h-[120px]"
           />
