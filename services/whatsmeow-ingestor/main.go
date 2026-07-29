@@ -218,6 +218,22 @@ func (s *BrokerSession) clearDevice() error {
 	return nil
 }
 
+// unlinkAndClearDevice revokes the linked device at WhatsApp before deleting
+// local credentials. Deleting the local store alone leaves the old companion
+// active on WhatsApp, which can retain stale Signal counters and break later
+// self-chat sends after a seemingly fresh pair.
+func (s *BrokerSession) unlinkAndClearDevice() (bool, error) {
+	if s.client != nil && s.client.Store.ID != nil && s.client.IsConnected() {
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer cancel()
+		if err := s.client.Logout(ctx); err != nil {
+			return false, err
+		}
+		return true, nil
+	}
+	return false, s.clearDevice()
+}
+
 func (s *BrokerSession) releaseLock() {
 	s.lockReleaseOnce.Do(func() {
 		if s.lockConn == nil {
@@ -2004,9 +2020,11 @@ func (sm *SessionManager) resetHandler(w http.ResponseWriter, r *http.Request) {
 	log.Printf("[broker %s] SESSION_WIPED reason=http_reset timestamp=%s reconnectFailures=%d reconnectCount=%d",
 		brokerID, time.Now().UTC().Format(time.RFC3339), s.reconnectFailures, s.reconnectCount)
 	resetAt := time.Now().UTC()
-	if err := s.clearDevice(); err != nil {
+	whatsAppUnlinked, err := s.unlinkAndClearDevice()
+	if err != nil {
+		log.Printf("[broker %s] WhatsApp unlink during reset failed: %v", brokerID, err)
 		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{"error": "failed to delete persisted WhatsApp credentials"})
+		json.NewEncoder(w).Encode(map[string]string{"error": "failed to unlink the WhatsApp linked device; session was left unchanged"})
 		return
 	}
 	if err := sm.deleteDeviceMapping(context.Background(), brokerID, "http_reset"); err != nil {
@@ -2024,6 +2042,7 @@ func (sm *SessionManager) resetHandler(w http.ResponseWriter, r *http.Request) {
 		"broker_id":           brokerID,
 		"credentials_deleted": true,
 		"mapping_deleted":     true,
+		"whatsapp_unlinked":   whatsAppUnlinked,
 		"pairing_required":    true,
 		"reset_at":            resetAt.Format(time.RFC3339),
 	})
