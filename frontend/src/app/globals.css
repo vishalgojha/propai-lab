@@ -560,3 +560,9 @@ body.no-scroll { overflow: hidden; }
 }
 
 /* ── Reduced motion ── */
+
+/* Keep the deployed global stylesheet fingerprint distinct across recovery
+   releases, so a stale edge/container asset cannot leave the app unstyled. */
+:root {
+  --propai-static-release: "2026-07-29-ui-recovery";
+}
