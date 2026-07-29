@@ -102,9 +102,8 @@ def _wrap_chat_response(response: dict, is_inbox: bool = False):
 
 
 def _preferred_workspace_provider(tenant_id: str | None) -> dict:
-    """Resolve workspace-saved credentials before deployment environment keys."""
+    """Resolve an active provider saved by this workspace only."""
     try:
-        import llm as _llm
         providers = storage.get_llm_providers(tenant_id=tenant_id)
         def value(provider, key: str, default=""):
             if isinstance(provider, dict):
@@ -117,10 +116,7 @@ def _preferred_workspace_provider(tenant_id: str | None) -> dict:
             and (value(p, "model_name") or "").strip()
         ]
         active = [p for p in complete if bool(value(p, "is_active", 0))]
-        # Legacy workspace rows can contain valid credentials but have a
-        # false/NULL active flag. Prefer active rows, but do not discard the
-        # only complete workspace provider and silently fall back to Merge.
-        candidates = active or complete
+        candidates = active
         if candidates:
             # The workspace UI normally keeps one active row. Keep this
             # deterministic if legacy data contains more than one.
@@ -140,16 +136,6 @@ def _preferred_workspace_provider(tenant_id: str | None) -> dict:
             return workspace_provider
     except Exception as exc:
         _logger.warning("Workspace LLM provider lookup failed: %s", exc)
-
-    try:
-        import llm as _llm
-        providers = list(_llm.get_configured_providers())
-        providers.sort(key=lambda p: str(p.get("name", "")).lower() == "merge")
-        if providers:
-            p = providers[0]
-            return {"api_key": p["api_key"], "model": p["model"], "base_url": p["base_url"], "provider": p["name"]}
-    except Exception:
-        pass
     return {"api_key": "", "model": "", "base_url": "", "provider": "none"}
 
 

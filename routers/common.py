@@ -54,13 +54,12 @@ _provider_rotation_offsets: dict[str, int] = {}
 
 
 def _workspace_provider_candidates(tenant_id: str | None, requested_model: str = "") -> list[dict]:
-    """Return the tenant's complete providers in a rotating failover order.
+    """Return only this workspace's active saved providers in failover order.
 
-    A workspace may have several keys for the same provider or different
-    providers.  Historically callers selected only the first row, so one
-    exhausted/broken key made the whole chat look unavailable.  Keep active
-    rows first, retain complete inactive legacy rows as fallback, and rotate
-    the starting point between requests without ever exposing key material.
+    Credentials are tenant-owned data.  A request from a linked WhatsApp
+    connection must never silently consume a deployment/Coolify credential or
+    an inactive workspace key.  Multiple active workspace keys still provide
+    safe, per-tenant failover and are rotated without exposing key material.
     """
     try:
         rows = storage.get_llm_providers(tenant_id=tenant_id)
@@ -87,43 +86,24 @@ def _workspace_provider_candidates(tenant_id: str | None, requested_model: str =
             "active": bool(value(row, "is_active", 0)),
         })
 
-    # Active rows are preferred, but all complete saved rows remain usable.
-    complete.sort(key=lambda item: (not item["active"], item["provider"].lower(), item["model"].lower()))
-    if complete:
+    active = [item for item in complete if item["active"]]
+    active.sort(key=lambda item: (item["provider"].lower(), item["model"].lower()))
+    if active:
         # Avoid retrying the same credential twice if legacy rows duplicate it.
         unique = []
         seen = set()
-        for item in complete:
+        for item in active:
             identity = (item["api_key"], item["base_url"], item["model"])
             if identity not in seen:
                 seen.add(identity)
                 unique.append(item)
-        active_count = sum(1 for item in unique if item["active"])
-        active_rows = unique[:active_count]
-        inactive_rows = unique[active_count:]
         key = str(tenant_id or "global")
         with _provider_rotation_lock:
-            offset = _provider_rotation_offsets.get(key, 0) % max(1, len(active_rows))
+            offset = _provider_rotation_offsets.get(key, 0) % len(unique)
             _provider_rotation_offsets[key] = offset + 1
-        # Rotate among active keys first; legacy inactive-but-complete keys
-        # remain a fallback after every active key has been attempted.
-        return (active_rows[offset:] + active_rows[:offset]) + inactive_rows
+        return unique[offset:] + unique[:offset]
 
-    # No complete workspace provider: use the deployment chain as fallback.
-    try:
-        import llm as _llm
-        env = list(_llm.get_configured_providers())
-        env.sort(key=lambda item: str(item.get("name", "")).lower() == "merge")
-        return [{
-            "api_key": item["api_key"],
-            "model": requested_model.strip() or item["model"],
-            "base_url": str(item["base_url"]).rstrip("/"),
-            "provider": item.get("name", "environment"),
-            "active": True,
-        } for item in env if item.get("api_key") and item.get("model")]
-    except Exception as exc:
-        logger.warning("Environment LLM provider lookup failed: %s", exc)
-        return []
+    return []
 
 # ── Auth / Tenant helpers ──────────────────────────────────────────────
 
@@ -719,8 +699,8 @@ async def _run_workspace_agent(
     providers = await asyncio.to_thread(_workspace_provider_candidates, tenant_id, configured_model)
     if not providers:
         return {
-            "error": "api_key_required",
-            "message": "No LLM provider is available. Set NVIDIA_API_KEY or another provider key.",
+            "error": "workspace_provider_required",
+            "message": "No active AI provider is configured for this workspace. Add your own key in Workspace → AI Providers.",
         }
     logger.info("Workspace agent provider pool ready: %d providers", len(providers))
 
