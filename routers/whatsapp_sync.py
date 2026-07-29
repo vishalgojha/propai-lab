@@ -110,6 +110,11 @@ get_scheduler: object = None
 _get_org_waba_connection_by_phone_number_id: object = None
 
 
+def _ingestor_broker_headers(broker_id: str) -> dict[str, str]:
+    """Route a control request without relying on proxy query-string handling."""
+    return {"X-Broker-Id": str(broker_id or "").strip()}
+
+
 # ── Routes ────────────────────────────────────────────────────────
 
 async def _request_organization_id(user: dict, tenant_id: str | None) -> str:
@@ -548,7 +553,7 @@ async def create_phone(
                         placeholder = updated
                 broker_id = placeholder.get("broker_id", "")
                 if broker_id:
-                    await _first_ingestor_response("POST", "/connect", timeout=10, params={"broker_id": broker_id})
+                    await _first_ingestor_response("POST", "/connect", timeout=10, headers=_ingestor_broker_headers(broker_id))
                 return placeholder
         if len(existing_phones) >= 3:
             raise HTTPException(400, "Maximum 3 phones per organization")
@@ -558,7 +563,7 @@ async def create_phone(
         result = storage.add_org_whatsapp_connection(org_id, phone_number, instance_name, broker_id)
         if not result:
             raise HTTPException(400, "Failed to create phone")
-        await _first_ingestor_response("POST", "/connect", timeout=10, params={"broker_id": broker_id})
+        await _first_ingestor_response("POST", "/connect", timeout=10, headers=_ingestor_broker_headers(broker_id))
         return result
     except HTTPException:
         raise
@@ -632,11 +637,11 @@ async def delete_phone(
     broker_id = phone.get("broker_id", "")
     if broker_id:
         _, cleanup_response = await _first_ingestor_response(
-            "POST", "/delete-session", timeout=10, params={"broker_id": broker_id}
+            "POST", "/delete-session", timeout=10, headers=_ingestor_broker_headers(broker_id)
         )
         if cleanup_response is not None and cleanup_response.status_code == 404:
             await _first_ingestor_response(
-                "POST", "/disconnect", timeout=10, params={"broker_id": broker_id}
+                "POST", "/disconnect", timeout=10, headers=_ingestor_broker_headers(broker_id)
             )
     ok = await asyncio.to_thread(storage.remove_org_whatsapp_connection, phone_id)
     if not ok:
@@ -654,7 +659,7 @@ async def reset_phone(
     await _require_org_permission(user, org_id, "manage_whatsapp")
     phone = await _scoped_phone(phone_id, org_id)
     broker_id = phone.get("broker_id", "")
-    _, resp = await _first_ingestor_response("POST", "/reset", timeout=10, params={"broker_id": broker_id})
+    _, resp = await _first_ingestor_response("POST", "/reset", timeout=10, headers=_ingestor_broker_headers(broker_id))
     if resp is not None and resp.status_code == 200:
         try:
             receipt = resp.json()
@@ -684,7 +689,7 @@ async def disconnect_phone(
     phone = await _scoped_phone(phone_id, org_id)
     broker_id = phone.get("broker_id", "")
     try:
-        _, resp = await _first_ingestor_response("POST", "/disconnect", timeout=10, params={"broker_id": broker_id})
+        _, resp = await _first_ingestor_response("POST", "/disconnect", timeout=10, headers=_ingestor_broker_headers(broker_id))
     except Exception as exc:
         raise HTTPException(502, f"WhatsApp service error: {exc}") from exc
     if resp is not None and resp.status_code == 200:
@@ -704,7 +709,7 @@ async def connect_phone(
     broker_id = phone.get("broker_id", "")
     if not broker_id:
         raise HTTPException(400, "Phone is missing broker_id")
-    _, resp = await _first_ingestor_response("POST", "/connect", timeout=10, params={"broker_id": broker_id})
+    _, resp = await _first_ingestor_response("POST", "/connect", timeout=10, headers=_ingestor_broker_headers(broker_id))
     if resp is not None and resp.status_code == 200:
         return resp.json()
     raise HTTPException(502, _ingestor_failure_message(resp))
@@ -819,7 +824,7 @@ async def pair_code_phone(
     try:
         _, resp = await fetch_func(
             "POST", "/pair-code", timeout=55,
-            params={"broker_id": broker_id},
+            headers=_ingestor_broker_headers(broker_id),
             json={"phone": phone_number},
         )
     except Exception as exc:
