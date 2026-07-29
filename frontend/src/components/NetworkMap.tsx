@@ -514,10 +514,10 @@ export default function NetworkMap({
               </div>
             </div>
             <Link
-              href={`/audit/groups/${encodeURIComponent(selectedNode.jid)}`}
+              href="/connections"
               className="flex items-center gap-1 rounded-md border border-white/10 px-2.5 py-1.5 text-[10px] font-medium text-zinc-300 transition hover:bg-white/[0.05]"
             >
-              View group <ArrowUpRight className="h-3 w-3" />
+              Manage groups <ArrowUpRight className="h-3 w-3" />
             </Link>
           </div>
           {overlappingPairs.length > 0 && (

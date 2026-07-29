@@ -73,8 +73,8 @@ export default function ExtractionsPage() {
           <Link href="/knowledge" className="rounded-lg bg-[#3EE88A] px-3 py-2 text-xs font-semibold text-black">
             Open Knowledge Base
           </Link>
-          <Link href="/audit" className="rounded-lg border border-white/10 bg-zinc-800 px-3 py-2 text-xs font-semibold text-zinc-400 hover:text-white">
-            Open WhatsApp Audit
+          <Link href="/connections" className="rounded-lg border border-white/10 bg-zinc-800 px-3 py-2 text-xs font-semibold text-zinc-400 hover:text-white">
+            Manage WhatsApp connections
           </Link>
         </div>
       </div>

@@ -51,7 +51,6 @@ const baseNavSections = [
       { href: "/chat", label: "Search & Chat", icon: Search },
       { href: "/inbox", label: "Market Inbox", icon: MessageSquare },
       { href: "/brokers", label: "Broker Profiles", icon: Users },
-      { href: "/whatsapp-groups", label: "WhatsApp Groups", icon: MessageSquare },
     ],
   },
   {
@@ -65,9 +64,7 @@ const baseNavSections = [
     title: "Settings",
     items: [
       { href: "/connections", label: "Connect WhatsApp", icon: Wifi },
-      { href: "/groups", label: "Group Settings", icon: MessageSquare },
       { href: "/whatswow", label: "WhatsWow", icon: Zap },
-      { href: "/audit", label: "WhatsApp Audit", icon: MessageSquare },
       {
         href: "/profile",
         label: "My Profile",
@@ -200,7 +197,7 @@ function PaletteModal({ open, onClose }: { open: boolean; onClose: () => void })
 
 function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const isFocusedWorkspace = pathname === "/inbox" || pathname.startsWith("/whatsapp-groups");
+  const isFocusedWorkspace = pathname === "/inbox";
   const reduceMotion = useReducedMotion();
   const router = useRouter();
   const { user, loading: authLoading, error: authError, refresh: refreshAuth } = useAuth();
