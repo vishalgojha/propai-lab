@@ -627,6 +627,27 @@ sessionLoop:
 				select {
 				case evt, ok := <-qrChan:
 					if ok && evt.Event == "code" {
+						// The QR event can arrive a fraction before the websocket is
+						// marked connected. PairPhone called during that window fails
+						// with "websocket not connected" and leaves the UI with no code.
+						readyDeadline := time.Now().Add(10 * time.Second)
+						for !s.client.IsConnected() && time.Now().Before(readyDeadline) {
+							select {
+							case <-disconnected:
+								stopHeartbeat()
+								continue sessionLoop
+							case <-s.ctx.Done():
+								stopHeartbeat()
+								s.client.Disconnect()
+								return
+							case <-time.After(200 * time.Millisecond):
+							}
+						}
+						if !s.client.IsConnected() {
+							log.Printf("[broker %s] pairing websocket did not become ready", s.brokerID)
+							s.setStatus(Status{ConnectionState: "error"})
+							break
+						}
 						// WhatsApp validates both fields and rejects unknown/non-browser
 						// identities with a 400. Keep this aligned with WhatsMeow's
 						// documented `Browser (OS)` contract.
