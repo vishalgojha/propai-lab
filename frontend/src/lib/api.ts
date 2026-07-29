@@ -1840,6 +1840,7 @@ export function resetPhone(phoneId: number) {
     message: string;
     reset_at?: string;
     pairing_required?: boolean;
+    phone_number_cleared?: boolean;
     remote_unlink_confirmed?: boolean;
     remote_unlink_warning?: string | null;
   }>(

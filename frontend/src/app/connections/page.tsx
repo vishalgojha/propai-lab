@@ -378,9 +378,10 @@ function PhoneCard({
         throw new Error("WhatsApp did not confirm that the saved session was cleared");
       }
       setShowResetDialog(false);
-      // Keep the number ready for the next, explicit pairing-code step. This
-      // avoids an accidental request for a code for the wrong WhatsApp phone.
-      setPairCodeInput(isPlaceholderPhone(phone.phone_number) ? "" : normalizePhoneDigits(phone.phone_number));
+      // A reset clears the prior linked-device identity. Always require the
+      // owner to enter the number for the new pairing attempt; never reuse a
+      // stale live/device number from the old session.
+      setPairCodeInput("");
       setShowPairCodeDialog(true);
       setResetReceipt(receipt.reset_at);
       setResetWarning(receipt.remote_unlink_warning || null);
@@ -410,6 +411,10 @@ function PhoneCard({
     ? canonicalPhone
     : (phone.phone_number_live || canonicalPhone);
   const isUnpaired = !isConnected && isPlaceholderPhone(canonicalPhone);
+  // A reset response arrives before the parent refresh finishes. Keep this
+  // field editable during that short window even if the old prop is still
+  // present, so the user can never be trapped with a stale phone identity.
+  const pairingPhoneEditable = isPlaceholderPhone(phone.phone_number) || Boolean(resetReceipt);
   const isReconnecting = statusAvailable && ["connecting", "reconnecting"].includes(phone.connection_state);
   const statusLabel = isConnected
     ? "Connected"
@@ -614,7 +619,7 @@ function PhoneCard({
             </div>
             <div className="space-y-3 px-5 py-4 text-xs leading-5 text-zinc-400">
               <p>This signs PropAI out as a linked device. Your phone&apos;s chats are not deleted.</p>
-              <p>After reset, you&apos;ll request a new pairing code and link <span className="font-medium text-white">{formatPhone(phoneDisplay)}</span> in WhatsApp → Settings → Linked devices.</p>
+              <p>After reset, enter the WhatsApp number you want to link, request a new pairing code, then use WhatsApp → Settings → Linked devices.</p>
             </div>
             <div className="flex justify-end gap-2 border-t border-white/10 px-5 py-3">
               <button onClick={() => setShowResetDialog(false)} disabled={actionLoading === "reset"} className="px-3 py-1.5 text-xs text-zinc-400 hover:text-white disabled:opacity-50">Cancel</button>
@@ -651,7 +656,7 @@ function PhoneCard({
                     </div>
                   )}
                   <p className="text-xs text-zinc-400">
-                    {isPlaceholderPhone(phone.phone_number)
+                    {pairingPhoneEditable
                       ? "Enter the WhatsApp number to pair, including country code:"
                       : "Pairing this connection&apos;s WhatsApp number:"}
                   </p>
@@ -659,19 +664,19 @@ function PhoneCard({
                     type="tel"
                     value={pairCodeInput}
                     onChange={(e) => {
-                      if (isPlaceholderPhone(phone.phone_number)) {
+                      if (pairingPhoneEditable) {
                         setPairCodeInput(e.target.value.replace(/[^0-9]/g, ""));
                       }
                     }}
-                    readOnly={!isPlaceholderPhone(phone.phone_number)}
+                    readOnly={!pairingPhoneEditable}
                     aria-label="WhatsApp number being paired"
-                    placeholder={isPlaceholderPhone(phone.phone_number) ? "e.g. 919820056180" : undefined}
-                    autoFocus={isPlaceholderPhone(phone.phone_number)}
-                    className={`w-full rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2.5 text-sm text-white placeholder:text-zinc-600 ${isPlaceholderPhone(phone.phone_number) ? "focus:border-emerald-500/50 focus:outline-none" : "cursor-default"}`}
+                    placeholder={pairingPhoneEditable ? "e.g. 919820056180" : undefined}
+                    autoFocus={pairingPhoneEditable}
+                    className={`w-full rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2.5 text-sm text-white placeholder:text-zinc-600 ${pairingPhoneEditable ? "focus:border-emerald-500/50 focus:outline-none" : "cursor-default"}`}
                     onKeyDown={(e) => { if (e.key === "Enter" && pairCodeInput.length >= 10) handlePairCodeSubmit(); }}
                   />
                   <p className="text-[11px] text-zinc-500">
-                    {isPlaceholderPhone(phone.phone_number)
+                    {pairingPhoneEditable
                       ? "This number will be saved to this connection once WhatsApp pairing succeeds."
                       : "To pair a different number, add it as a new phone first."}
                   </p>
