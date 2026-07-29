@@ -10,7 +10,7 @@ import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
 import ListingCard, { type ListingItem } from "@/components/ListingCard";
 import { useAuth } from "@/lib/AuthProvider";
-import { Plus, MessageSquare, Trash2, PanelLeft, PanelLeftClose } from "lucide-react";
+import { Plus, MessageSquare, Trash2, PanelLeft, PanelLeftClose, EyeOff } from "lucide-react";
 
 function messageText(message: { parts?: Array<{ type?: string; text?: string }>; content?: string }) {
   if (typeof message.content === "string" && message.content) return message.content;
@@ -113,6 +113,23 @@ function formatSessionTime(iso: string) {
   return d.toLocaleDateString("en-IN", { day: "numeric", month: "short" });
 }
 
+function normalizePhoneKey(value?: string | null) {
+  const digits = (value || "").replace(/\D+/g, "");
+  if (!digits) return "";
+  if (digits.length >= 12 && digits.startsWith("91")) return digits.slice(-10);
+  if (digits.length >= 10) return digits.slice(-10);
+  return digits;
+}
+
+function looksLikePhoneOrJid(value?: string | null) {
+  const text = (value || "").trim();
+  if (!text) return true;
+  if (/^\+?\d[\d\s().@:-]{6,}$/.test(text)) return true;
+  if (/^\d{6,}$/.test(text.replace(/\D+/g, ""))) return true;
+  if (/@(?:s\.whatsapp\.net|g\.us|lid|broadcast|newsletter)$/i.test(text)) return true;
+  return false;
+}
+
 type ChatSourceMode = "groups" | "parsed" | "inbox" | "";
 type GroupMirrorItem = ListingItem & {
   original_message?: string;
@@ -120,6 +137,8 @@ type GroupMirrorItem = ListingItem & {
   duplicate_group_names?: string[];
   source?: string;
   last_seen_text?: string;
+  sender_phone?: string;
+  match_reasons?: string[];
 };
 
 function getAssistantSourceMode(message: { parts?: Array<{ type?: string; data?: any }> }) {
@@ -128,14 +147,25 @@ function getAssistantSourceMode(message: { parts?: Array<{ type?: string; data?:
   return sourceMode === "groups" || sourceMode === "parsed" || sourceMode === "inbox" ? sourceMode : "";
 }
 
-function GroupMirrorCard({ item }: { item: GroupMirrorItem }) {
+function GroupMirrorCard({
+  item,
+  hidden,
+  onHideBroker,
+}: {
+  item: GroupMirrorItem;
+  hidden?: boolean;
+  onHideBroker?: (phone: string, label: string) => void;
+}) {
   const message = (item.original_message || item.building_name || "").trim();
   const groupNames = Array.from(new Set((item.duplicate_group_names || []).map((group) => group.trim()).filter(Boolean)));
-  const senderLabel = item.broker_name || "WhatsApp member";
+  const brokerPhoneKey = normalizePhoneKey(item.broker_phone || item.sender_phone || "");
+  const senderLabel = !looksLikePhoneOrJid(item.broker_name) ? (item.broker_name || "WhatsApp member") : "WhatsApp member";
   const locationLabel = item.location_label || item.micro_market || "WhatsApp group";
   const duplicateLabel = item.duplicate_count && item.duplicate_count > 1
     ? `${item.duplicate_count} posts collapsed`
     : "Single group post";
+
+  if (hidden) return null;
 
   return (
     <div className="rounded-2xl border border-emerald-500/15 bg-emerald-500/[0.04] shadow-[0_0_0_1px_rgba(16,185,129,0.04)]">
@@ -177,6 +207,30 @@ function GroupMirrorCard({ item }: { item: GroupMirrorItem }) {
           <span>{duplicateLabel}</span>
           <span className="truncate">{item.micro_market || item.location_label || ""}</span>
         </div>
+        {item.match_reasons && item.match_reasons.length > 0 && (
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {item.match_reasons.slice(0, 4).map((reason) => (
+              <span
+                key={reason}
+                className="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-200"
+              >
+                {reason}
+              </span>
+            ))}
+          </div>
+        )}
+        {brokerPhoneKey && onHideBroker && (
+          <div className="mt-3 flex justify-end">
+            <button
+              type="button"
+              onClick={() => onHideBroker(brokerPhoneKey, senderLabel)}
+              className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-zinc-300 transition-colors hover:border-red-500/40 hover:bg-red-500/10 hover:text-red-200"
+            >
+              <EyeOff className="h-3 w-3" strokeWidth={1.5} />
+              Hide broker
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -187,9 +241,12 @@ export default function ChatPage() {
   const [input, setInput] = useState("");
   const [brokerPhone, setBrokerPhone] = useState("");
   const [searchSource, setSearchSource] = useState<"groups" | "parsed">("parsed");
+  const [hiddenBrokerPhones, setHiddenBrokerPhones] = useState<Set<string>>(() => new Set());
+  const [brokerActionMessage, setBrokerActionMessage] = useState("");
   const chatEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const sessionIdRef = useRef("");
+  const brokerActionTimer = useRef<number | null>(null);
 
   // Session state
   const [sessionId, setSessionId] = useState<string>("");
@@ -214,6 +271,36 @@ export default function ChatPage() {
     }),
   });
   const previousStatus = useRef(status);
+
+  const hideBrokerLocally = useCallback(async (phone: string, label: string) => {
+    const key = normalizePhoneKey(phone);
+    if (!key) return;
+    setHiddenBrokerPhones((prev) => {
+      const next = new Set(prev);
+      next.add(key);
+      return next;
+    });
+    try {
+      await api.hideBroker(key);
+      setBrokerActionMessage(`Hidden broker: ${label}`);
+    } catch {
+      setHiddenBrokerPhones((prev) => {
+        const next = new Set(prev);
+        next.delete(key);
+        return next;
+      });
+      setBrokerActionMessage("Failed to hide broker");
+    } finally {
+      if (brokerActionTimer.current) window.clearTimeout(brokerActionTimer.current);
+      brokerActionTimer.current = window.setTimeout(() => setBrokerActionMessage(""), 3000);
+    }
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (brokerActionTimer.current) window.clearTimeout(brokerActionTimer.current);
+    };
+  }, []);
 
   // The phone is only conversational broker context. Session ownership is
   // derived server-side from the authenticated user and must never switch
@@ -485,6 +572,11 @@ export default function ChatPage() {
             Chat session could not be saved: {sessionError}
           </div>
         )}
+        {brokerActionMessage && (
+          <div className="mb-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-200">
+            {brokerActionMessage}
+          </div>
+        )}
         {/* Mobile: new chat button */}
         <div className="lg:hidden mb-3 flex justify-between">
           <button
@@ -603,7 +695,7 @@ export default function ChatPage() {
                         const assistantMode = (getAssistantSourceMode(m) || searchSource) as ChatSourceMode;
                         const textParts = (m.parts || []).filter(
                           (p: any) => p.type === "text" && p.text
-                        );
+                        ) as Array<{ text: string }>;
                         const listingParts = (m.parts || []).filter(
                           (p: any) => p.type === "data-listing_cards"
                         );
@@ -639,12 +731,22 @@ export default function ChatPage() {
                             )}
                             {listingParts.map((p: any, i: number) => {
                               const items: GroupMirrorItem[] = p.data?.items || [];
-                              if (items.length === 0) return null;
+                              const visibleItems = items.filter((item) => {
+                                const key = normalizePhoneKey(item.broker_phone || item.sender_phone || "");
+                                return !key || !hiddenBrokerPhones.has(key);
+                              });
+                              if (visibleItems.length === 0) return null;
                               return (
                                 <div key={`cards-${i}`} className="flex flex-col gap-2.5">
-                                  {items.map((item, j) => (
+                                  {visibleItems.map((item, j) => (
                                     assistantMode === "groups"
-                                      ? <GroupMirrorCard key={item.fingerprint || j} item={item} />
+                                      ? (
+                                        <GroupMirrorCard
+                                          key={item.fingerprint || j}
+                                          item={item}
+                                          onHideBroker={hideBrokerLocally}
+                                        />
+                                      )
                                       : <ListingCard key={item.fingerprint || j} item={item} />
                                   ))}
                                 </div>

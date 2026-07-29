@@ -8,6 +8,7 @@ Shared dependencies for all routers.
 """
 import asyncio
 import contextvars
+import math
 import hmac
 import logging
 import os
@@ -2329,6 +2330,27 @@ def _raw_group_message_search(query_text: str, limit: int = 10, offset: int = 0)
     if con is None:
         raise RuntimeError("Database is not available")
 
+    def _hidden_broker_phones() -> set[str]:
+        phones: set[str] = set()
+        try:
+            rows = con.execute(
+                """
+                SELECT DISTINCT COALESCE(NULLIF(primary_phone, ''), NULLIF(phone, '')) AS phone
+                FROM brokers
+                WHERE is_hidden = true
+                  AND COALESCE(NULLIF(primary_phone, ''), NULLIF(phone, '')) IS NOT NULL
+                """
+            ).fetchall()
+        except Exception:
+            rows = []
+        for row in rows:
+            phone = _normalize_real_phone(row[0])
+            if phone:
+                phones.add(phone)
+        return phones
+
+    hidden_brokers = _hidden_broker_phones()
+
     def _resolve_group_name(group_name: str) -> str:
         if group_name and "@g.us" in group_name:
             resolved = con.execute(
@@ -2344,12 +2366,51 @@ def _raw_group_message_search(query_text: str, limit: int = 10, offset: int = 0)
             "id": row[0],
             "group_name": _resolve_group_name(str(row[1] or "")),
             "sender": row[2] or "",
-            "sender_phone": row[3] or "",
+            "sender_phone": _normalize_real_phone(row[3] or ""),
             "message": row[4] or "",
             "timestamp": row[5] or "",
             "source": row[6] or "",
             "snippet": snippet if snippet is not None else ((row[4] or "")[:240]),
         }
+
+    def _message_info_score(message: str, sender: str = "", sender_phone: str = "", group_name: str = "") -> tuple[int, list[str]]:
+        text = " ".join(str(part or "") for part in (message, sender, sender_phone, group_name)).strip()
+        lowered = text.casefold()
+        score = 0
+        reasons: list[str] = []
+
+        if re.search(r"(?:₹|rs\.?|inr)?\s*\d[\d,\.]*(?:\s*(?:cr|crore|lac|lakh|k|month|mo|yr|year))?", lowered):
+            score += 3
+            reasons.append("Price mentioned")
+        if re.search(r"\b\d+(?:\.\d+)?\s*(?:bhk|bedroom|bedrooms)\b", lowered):
+            score += 3
+            reasons.append("BHK mentioned")
+        if re.search(r"\b(?:sq\.?\s*ft|sqft|carpet|built[- ]?up|area)\b", lowered):
+            score += 2
+            reasons.append("Area mentioned")
+        if re.search(r"\b(?:furnished|semi[- ]?furnished|unfurnished|fully furnished|part furnished)\b", lowered):
+            score += 2
+            reasons.append("Furnishing mentioned")
+        if re.search(r"\b(?:bandra|santacruz|juhu|andheri|bkc|powai|mumbai|thane|malad|goregaon|chembur|khar|vile parle|borivali|lower parel|worli)\b", lowered):
+            score += 2
+            reasons.append("Location mentioned")
+        if re.search(r"\b(?:call|contact|whatsapp|mobile|phone)\b", lowered) or re.search(r"\b(?:\+?91[-\s]?)?[6-9]\d{9}\b", lowered):
+            score += 1
+            reasons.append("Contact included")
+        if len(set(re.findall(r"[a-z0-9]+", lowered))) >= 18:
+            score += 1
+            reasons.append("Detailed post")
+        if sender and not re.fullmatch(r"[\d+\-\s()@.a-z]{1,32}", sender.casefold()):
+            score += 1
+            reasons.append("Named sender")
+        return score, reasons
+
+    def _broker_key(item: dict) -> str:
+        phone = _normalize_real_phone(item.get("broker_phone") or item.get("sender_phone") or "")
+        if phone:
+            return f"phone:{phone}"
+        name = str(item.get("broker_name") or item.get("sender") or "").strip().casefold()
+        return f"name:{re.sub(r'[^a-z0-9]+', ' ', name).strip()}" if name else ""
 
     q = str(query_text or "").strip()
     if not q:
@@ -2364,28 +2425,36 @@ def _raw_group_message_search(query_text: str, limit: int = 10, offset: int = 0)
         ).fetchall()
         total_row = con.execute("SELECT COUNT(*) FROM raw_messages").fetchone()
         total = int(total_row[0] if total_row else 0)
-        return total, [_row_to_result(row) for row in rows]
+        items = []
+        for row in rows:
+            item = _row_to_result(row)
+            broker_phone = _normalize_real_phone(item.get("sender_phone") or item.get("broker_phone") or "")
+            if broker_phone and broker_phone in hidden_brokers:
+                continue
+            item["broker_phone"] = broker_phone
+            item["broker_name"] = item.get("sender") or item.get("broker_name") or ""
+            items.append(item)
+        return total, items
 
     try:
         rows = con.execute(
             """
             SELECT rm.id, rm.group_name, rm.sender, rm.sender_phone,
                    rm.message, rm.timestamp, rm.source,
-                   snippet(raw_messages_fts, 0, '<mark>', '</mark>', '...', 40) AS snippet
+            snippet(raw_messages_fts, 0, '<mark>', '</mark>', '...', 40) AS snippet
             FROM raw_messages_fts fts
             JOIN raw_messages rm ON rm.id = fts.rowid
             WHERE raw_messages_fts MATCH ?
             ORDER BY rank
             LIMIT ? OFFSET ?
             """,
-            (q, max(limit, 1), max(offset, 0)),
+            (q, max(limit * 12, 120), max(offset, 0)),
         ).fetchall()
         total_row = con.execute(
             "SELECT COUNT(*) FROM raw_messages_fts WHERE raw_messages_fts MATCH ?",
             (q,),
         ).fetchone()
         total = int(total_row[0] if total_row else 0)
-        return total, [_row_to_result(row, row[7]) for row in rows]
     except Exception:
         like_q = f"%{q}%"
         try:
@@ -2397,7 +2466,7 @@ def _raw_group_message_search(query_text: str, limit: int = 10, offset: int = 0)
                 ORDER BY timestamp DESC, id DESC
                 LIMIT ? OFFSET ?
                 """,
-                (like_q, like_q, like_q, like_q, like_q, max(limit, 1), max(offset, 0)),
+                (like_q, like_q, like_q, like_q, like_q, max(limit * 12, 120), max(offset, 0)),
             ).fetchall()
             total_row = con.execute(
                 """
@@ -2408,7 +2477,6 @@ def _raw_group_message_search(query_text: str, limit: int = 10, offset: int = 0)
                 (like_q, like_q, like_q, like_q, like_q),
             ).fetchone()
             total = int(total_row[0] if total_row else 0)
-            return total, [_row_to_result(row) for row in rows]
         except Exception:
             rows = con.execute(
                 """
@@ -2417,19 +2485,111 @@ def _raw_group_message_search(query_text: str, limit: int = 10, offset: int = 0)
                 ORDER BY timestamp DESC, id DESC
                 LIMIT ? OFFSET ?
                 """,
-                (max(limit * 10, 1000), 0),
+                (max(limit * 20, 1000), 0),
             ).fetchall()
             needle = q.casefold()
-            filtered: list[dict] = []
+            filtered_rows: list[tuple] = []
             for row in rows:
                 haystack = " ".join(
                     str(part or "")
                     for part in (row[4], row[1], row[2], row[3], row[6])
                 ).casefold()
                 if needle in haystack:
-                    filtered.append(_row_to_result(row))
-            total = len(filtered)
-            return total, filtered[offset:offset + limit]
+                    filtered_rows.append(row)
+            rows = filtered_rows
+            total = len(filtered_rows)
+
+    candidates: list[dict] = []
+    for row in rows:
+        item = _row_to_result(row, row[7] if len(row) > 7 else None)
+        broker_phone = _normalize_real_phone(item.get("sender_phone") or item.get("broker_phone") or "")
+        if broker_phone and broker_phone in hidden_brokers:
+            continue
+        item["broker_phone"] = broker_phone
+        item["broker_name"] = item.get("sender") or item.get("broker_name") or ""
+        info_score, info_reasons = _message_info_score(
+            item.get("message") or "",
+            sender=item.get("sender") or "",
+            sender_phone=item.get("sender_phone") or "",
+            group_name=item.get("group_name") or "",
+        )
+        item["info_score"] = info_score
+        item["match_reasons"] = info_reasons
+        item["broker_key"] = _broker_key(item)
+        item["match_score"] = 0.0
+        candidates.append(item)
+
+    if not candidates:
+        return total, []
+
+    tokens = [tok for tok in re.findall(r"[a-z0-9]+", q.casefold()) if len(tok) > 2]
+    broker_groups: dict[str, list[dict]] = {}
+    for item in candidates:
+        haystack = " ".join(
+            str(part or "")
+            for part in (item.get("message"), item.get("group_name"), item.get("sender"), item.get("sender_phone"), item.get("source"))
+        ).casefold()
+        query_hits = sum(1 for tok in tokens if tok in haystack)
+        if q.casefold() in haystack:
+            query_hits += 2
+        recency_bonus = 0.0
+        ts = str(item.get("timestamp") or "").strip()
+        if ts:
+            try:
+                parsed_ts = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+                age_hours = max(0.0, (datetime.now(timezone.utc) - parsed_ts).total_seconds() / 3600.0)
+                recency_bonus = max(0.0, 4.0 - min(age_hours, 72.0) / 18.0)
+            except Exception:
+                recency_bonus = 0.0
+        item["match_score"] = float(query_hits * 3 + item["info_score"] * 2 + recency_bonus)
+        broker_groups.setdefault(item["broker_key"] or f"row:{item['id']}", []).append(item)
+
+    broker_rank: dict[str, float] = {}
+    for broker_key, items in broker_groups.items():
+        broker_rank[broker_key] = max(i["match_score"] for i in items) + min(len(items), 6) * 0.35 + min(len({i.get("group_name") for i in items if i.get("group_name")}), 5) * 0.25
+        items.sort(key=lambda i: (i["match_score"], i.get("timestamp") or "", i.get("id") or 0), reverse=True)
+
+    ordered_brokers = sorted(
+        broker_groups.items(),
+        key=lambda kv: (broker_rank.get(kv[0], 0.0), kv[1][0].get("timestamp") or "", kv[1][0].get("id") or 0),
+        reverse=True,
+    )
+    selected: list[dict] = []
+    seen_keys: set[tuple[str, str, str, str]] = set()
+    per_broker_cap = 2
+    per_broker_counts: dict[str, int] = {}
+    target_count = max(limit + max(offset, 0), limit)
+    while len(selected) < target_count:
+        progressed = False
+        for broker_key, items in ordered_brokers:
+            if len(selected) >= target_count:
+                break
+            if per_broker_counts.get(broker_key, 0) >= per_broker_cap:
+                continue
+            while items:
+                item = items.pop(0)
+                original = str(item.get("message") or "").strip()
+                collapsed = re.sub(r"\s+", " ", original).lower()
+                collapsed = re.sub(r"\b\d{8,}\b", "", collapsed)
+                key = (broker_key, str(item.get("group_name") or "").strip().lower(), str(item.get("source") or "").strip().lower(), f"{collapsed[:180]}")
+                if key in seen_keys:
+                    continue
+                seen_keys.add(key)
+                item["duplicate_count"] = int(item.get("duplicate_count") or 1)
+                item["duplicate_group_names"] = [str(item.get("group_name") or "").strip()] if item.get("group_name") else []
+                item["original_message"] = original[:600]
+                item["source"] = item.get("source") or "whatsapp_groups"
+                item["broker_rank"] = round(broker_rank.get(broker_key, 0.0), 2)
+                item["broker_post_count"] = len(broker_groups.get(broker_key, []))
+                selected.append(item)
+                per_broker_counts[broker_key] = per_broker_counts.get(broker_key, 0) + 1
+                progressed = True
+                break
+        if not progressed:
+            break
+
+    total = len(candidates)
+    return total, selected[offset:offset + limit]
 
 def _listing_search_response(args: dict) -> dict:
     from lab import ai_chat_engine as chat_engine_mod
