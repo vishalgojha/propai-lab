@@ -276,6 +276,7 @@ function PhoneCard({
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [showMenu, setShowMenu] = useState(false);
+  const [showResetDialog, setShowResetDialog] = useState(false);
   const [showPairCodeDialog, setShowPairCodeDialog] = useState(false);
   const [pairCodeInput, setPairCodeInput] = useState("");
   const [pairCodeResult, setPairCodeResult] = useState<string | null>(null);
@@ -349,6 +350,27 @@ function PhoneCard({
         : msg
       );
       setShowPairCodeDialog(false);
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleResetAndRepair = async () => {
+    setActionLoading("reset");
+    setActionMessage(null);
+    setActionError(null);
+    try {
+      await resetPhone(phone.id);
+      setShowResetDialog(false);
+      // Keep the number ready for the next, explicit pairing-code step. This
+      // avoids an accidental request for a code for the wrong WhatsApp phone.
+      setPairCodeInput(normalizePhoneDigits(phoneDisplay));
+      setShowPairCodeDialog(true);
+      setActionMessage("Session reset. Request a fresh pairing code to reconnect this phone.");
+      await onRefresh();
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "Could not reset the WhatsApp session");
+      await onRefresh();
     } finally {
       setActionLoading(null);
     }
@@ -476,6 +498,18 @@ function PhoneCard({
                 type="button"
                 onClick={() => {
                   setShowMenu(false);
+                  setShowResetDialog(true);
+                }}
+                disabled={actionLoading !== null}
+                className="flex w-full items-center gap-2 border-t border-white/10 px-3 py-2.5 text-left text-xs font-semibold text-amber-200 hover:bg-amber-500/10 disabled:opacity-50"
+              >
+                <RefreshCw className="h-3.5 w-3.5" />
+                Reset &amp; re-pair WhatsApp
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowMenu(false);
                   if (window.confirm(`Remove ${isUnpaired ? "this empty phone" : (phone.instance_name || formatPhone(phoneDisplay))} from this workspace?`)) {
                     void handleAction("delete");
                   }
@@ -546,6 +580,28 @@ function PhoneCard({
       {/* Action feedback */}
       {actionMessage && <p className="text-xs text-zinc-300 mt-2">{actionMessage}</p>}
       {actionError && <p className="text-xs text-red-400 mt-2">{actionError}</p>}
+
+      {showResetDialog && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={() => setShowResetDialog(false)}>
+          <div className="w-full max-w-sm rounded-xl border border-white/10 bg-zinc-900 shadow-xl" onClick={(event) => event.stopPropagation()}>
+            <div className="flex items-center gap-3 border-b border-white/10 px-5 py-4">
+              <AlertTriangle className="h-5 w-5 text-amber-300" />
+              <div className="text-sm font-semibold text-white">Reset WhatsApp session?</div>
+              <button onClick={() => setShowResetDialog(false)} className="ml-auto text-zinc-500 hover:text-white" aria-label="Close"><X className="h-4 w-4" /></button>
+            </div>
+            <div className="space-y-3 px-5 py-4 text-xs leading-5 text-zinc-400">
+              <p>This signs PropAI out as a linked device. Your phone&apos;s chats are not deleted.</p>
+              <p>After reset, you&apos;ll request a new pairing code and link <span className="font-medium text-white">{formatPhone(phoneDisplay)}</span> in WhatsApp → Settings → Linked devices.</p>
+            </div>
+            <div className="flex justify-end gap-2 border-t border-white/10 px-5 py-3">
+              <button onClick={() => setShowResetDialog(false)} disabled={actionLoading === "reset"} className="px-3 py-1.5 text-xs text-zinc-400 hover:text-white disabled:opacity-50">Cancel</button>
+              <button onClick={handleResetAndRepair} disabled={actionLoading === "reset"} className="rounded-lg bg-amber-400 px-3 py-1.5 text-xs font-semibold text-black hover:bg-amber-300 disabled:opacity-50">
+                {actionLoading === "reset" ? "Resetting…" : "Reset & continue"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Pair Code Dialog */}
       {showPairCodeDialog && (
