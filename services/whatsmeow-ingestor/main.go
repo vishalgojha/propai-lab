@@ -2095,9 +2095,18 @@ func (sm *SessionManager) resetHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	s.device = sm.container.NewDevice()
 	s.reconnectFailures = 0
-	if s.disconnectOnce != nil {
-		s.disconnectOnce()
+	// A reset is not a temporary network disconnect. Cancelling this session
+	// prevents the run loop from reconnecting the old client after we have
+	// deleted its credentials. A later /pair-code creates the only permitted
+	// replacement session.
+	if s.client != nil {
+		s.client.RemoveEventHandlers()
+		s.client.Disconnect()
 	}
+	if s.cancel != nil {
+		s.cancel()
+	}
+	sm.Remove(brokerID)
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"ok":                    true,
 		"broker_id":             brokerID,

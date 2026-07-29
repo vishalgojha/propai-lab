@@ -294,17 +294,31 @@ function AppShell({ children }: { children: React.ReactNode }) {
   }, [authLoading, authError, user, pathname, router]);
 
   useEffect(() => {
-    if (authLoading || !user) {
+    if (authLoading) return;
+    if (!user) {
       setIsSuperAdmin(false);
+      localStorage.removeItem("propai_super_admin_user");
       return;
+    }
+    // Restore only a role verified for this same Supabase user. A role from a
+    // previous browser account must never influence this account's navigation.
+    if (localStorage.getItem("propai_super_admin_user") === user.id) {
+      setIsSuperAdmin(true);
     }
     let cancelled = false;
     void getAuthMe()
       .then((authState) => {
-        if (!cancelled) setIsSuperAdmin(authState.is_super_admin === true);
+        if (cancelled) return;
+        if (authState.is_super_admin === true) {
+          setIsSuperAdmin(true);
+          localStorage.setItem("propai_super_admin_user", user.id);
+        } else if (authState.role_check_available !== false) {
+          setIsSuperAdmin(false);
+          localStorage.removeItem("propai_super_admin_user");
+        }
       })
       .catch(() => {
-        if (!cancelled) setIsSuperAdmin(false);
+        // Retain the last verified role during a network/API interruption.
       });
     return () => { cancelled = true; };
   }, [authLoading, user?.id]);
@@ -381,6 +395,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
       // Keep the admin navigation visible if either trusted response confirms
       // the role; a slow auth-me request must not hide platform tools.
       if (config.is_super_admin === true) setIsSuperAdmin(true);
+      if (config.is_super_admin === true && user?.id) localStorage.setItem("propai_super_admin_user", user.id);
     }).catch(() => {});
     load();
     const t = setInterval(load, 30000);

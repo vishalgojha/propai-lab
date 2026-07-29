@@ -127,15 +127,21 @@ async def auth_me(
         orgs = []
     try:
         is_super_admin = storage.is_super_admin(user["id"])
+        role_check_available = True
     except Exception as exc:
         logger.error("Could not check super-admin status for user %s: %s", user.get("id"), exc)
-        is_super_admin = False
+        # Do not turn a transient database timeout into a false permission
+        # result. The dashboard retains an already-verified platform role and
+        # retries on the next auth refresh.
+        is_super_admin = None
+        role_check_available = False
     return {
         "authenticated": True,
         "user": user,
         "organizations": orgs,
         "active_tenant": tenant_id,
         "is_super_admin": is_super_admin,
+        "role_check_available": role_check_available,
     }
 
 

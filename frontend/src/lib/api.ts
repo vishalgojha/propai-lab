@@ -1738,6 +1738,7 @@ export interface AuthMeResponse {
   organizations?: { id: string; name?: string; slug?: string }[];
   active_tenant?: string | null;
   is_super_admin?: boolean;
+  role_check_available?: boolean;
 }
 
 export function getAuthMe() {
