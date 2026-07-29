@@ -231,7 +231,14 @@ func (s *BrokerSession) unlinkAndClearDevice() (bool, error) {
 		}
 		return true, nil
 	}
-	return false, s.clearDevice()
+	// A previous reset may already have removed the companion and left this
+	// in-memory session waiting for a new QR/pairing code. That is a confirmed
+	// clean state, not an error: make Reset idempotent so a retry can continue
+	// into pairing instead of surfacing a misleading 502.
+	if err := s.clearDevice(); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 func (s *BrokerSession) releaseLock() {
