@@ -779,6 +779,16 @@ async def pair_code_phone(
     normalized_phone = _normalized_whatsapp_phone(phone_number)
     if not normalized_phone:
         raise HTTPException(400, "Enter a valid WhatsApp phone number with country code")
+    # A connection represents one specific WhatsApp account. Accepting a
+    # different number here can associate its device session with the wrong
+    # broker card, and makes a simple digit typo look like an ingestor failure.
+    connection_phone = _normalized_whatsapp_phone(phone.get("phone_number"))
+    if connection_phone and normalized_phone != connection_phone:
+        raise HTTPException(
+            400,
+            "This pairing request does not match the phone saved on this connection. "
+            "Add a new phone to pair a different WhatsApp number.",
+        )
     existing_phones = await asyncio.to_thread(storage.list_org_whatsapp_connections, org_id)
     duplicate = next(
         (
