@@ -1,7 +1,8 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ChevronLeft, FileUp, RefreshCw, Send, Users } from "lucide-react";
+import { ChevronLeft, FileUp, Image as ImageIcon, Music2, RefreshCw, Send, Sticker, Users, Video, FileText, MapPin, Contact } from "lucide-react";
+import { useRouter } from "next/navigation";
 import * as api from "@/lib/api";
 
 type Group = {
@@ -17,6 +18,15 @@ type Group = {
 };
 
 type GroupMember = { name?: string; phone?: string; jid?: string };
+type MessageAttachment = {
+  kind: string;
+  mimeType: string;
+  fileName: string;
+  fileLength?: number;
+  storagePath: string;
+  captureError: string;
+  deferred: boolean;
+};
 const MESSAGE_PAGE_SIZE = 300;
 
 function messageText(message: api.RawMessage) {
@@ -41,6 +51,92 @@ function displayMessageText(message: api.RawMessage) {
     .map((line) => line.replace(/[ \f\v]{2,}/g, " ").trimEnd())
     .join("\n")
     .trim();
+}
+
+function attachmentFromMessage(message: api.RawMessage): MessageAttachment | null {
+  try {
+    const payload = typeof message.raw_payload === "string" ? JSON.parse(message.raw_payload) : message.raw_payload;
+    const data = payload?.data || payload || {};
+    const attachments = Array.isArray(data.attachments) ? data.attachments[0] || {} : data.attachments || {};
+    const media = data.media || {};
+    const kind =
+      (data.message_type as string | undefined) ||
+      (media.kind as string | undefined) ||
+      (attachments.image ? "image" : attachments.video ? "video" : attachments.audio ? "audio" : attachments.document ? "document" : attachments.sticker ? "sticker" : "") ||
+      (data.message?.imageMessage ? "image" : data.message?.videoMessage ? "video" : data.message?.audioMessage ? "audio" : data.message?.documentMessage ? "document" : data.message?.stickerMessage ? "sticker" : "");
+    if (!kind || kind === "text" || kind === "unknown") return null;
+    return {
+      kind,
+      mimeType: String(attachments.mime_type || media.mime_type || data.message?.imageMessage?.mimetype || data.message?.videoMessage?.mimetype || data.message?.audioMessage?.mimetype || data.message?.documentMessage?.mimetype || ""),
+      fileName: String(attachments.file_name || media.file_name || data.message?.documentMessage?.fileName || ""),
+      fileLength: typeof attachments.file_length === "number" ? attachments.file_length : typeof media.file_length === "number" ? media.file_length : undefined,
+      storagePath: String(attachments.storage_path || media.storage_path || ""),
+      captureError: String(attachments.capture_error || media.error || ""),
+      deferred: Boolean(media.deferred),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function kindIcon(kind: string) {
+  switch (kind) {
+    case "image":
+      return <ImageIcon className="h-4 w-4" />;
+    case "video":
+      return <Video className="h-4 w-4" />;
+    case "audio":
+      return <Music2 className="h-4 w-4" />;
+    case "document":
+      return <FileText className="h-4 w-4" />;
+    case "sticker":
+      return <Sticker className="h-4 w-4" />;
+    case "location":
+    case "live_location":
+      return <MapPin className="h-4 w-4" />;
+    case "contact":
+    case "contacts_array":
+      return <Contact className="h-4 w-4" />;
+    default:
+      return <FileText className="h-4 w-4" />;
+  }
+}
+
+function kindLabel(kind: string) {
+  switch (kind) {
+    case "image":
+      return "Image";
+    case "video":
+      return "Video";
+    case "audio":
+      return "Audio";
+    case "document":
+      return "Document";
+    case "sticker":
+      return "Sticker";
+    case "location":
+      return "Location";
+    case "live_location":
+      return "Live location";
+    case "contact":
+      return "Contact card";
+    case "contacts_array":
+      return "Contact array";
+    default:
+      return kind || "Media";
+  }
+}
+
+function formatBytes(value?: number) {
+  if (!value || value <= 0) return "";
+  const units = ["B", "KB", "MB", "GB"];
+  let size = value;
+  let unit = 0;
+  while (size >= 1024 && unit < units.length - 1) {
+    size /= 1024;
+    unit += 1;
+  }
+  return `${size >= 10 || unit === 0 ? Math.round(size) : size.toFixed(1)} ${units[unit]}`;
 }
 
 function isFromCurrentPhone(message: api.RawMessage) {
@@ -88,6 +184,17 @@ function senderLabel(message: api.RawMessage, memberNames: Record<string, string
   return digits ? `+${digits}` : "Unnamed WhatsApp member";
 }
 
+function senderSearchValue(message: api.RawMessage, memberNames: Record<string, string>, messageNames: Record<string, string>) {
+  const explicitName = explicitSenderName(message);
+  if (explicitName) return explicitName;
+  for (const key of [message.sender_jid, message.sender_phone, message.sender].flatMap(identityKeys)) {
+    if (memberNames[key]) return memberNames[key];
+    if (messageNames[key]) return messageNames[key];
+  }
+  const digits = String(message.sender_phone || message.sender_jid || message.sender || "").split("@")[0].replace(/\D/g, "");
+  return digits.length >= 10 ? `+${digits.slice(-10)}` : "";
+}
+
 function timeLabel(value?: string) {
   if (!value) return "";
   const date = new Date(value);
@@ -103,6 +210,7 @@ function dateLabel(value?: string) {
 }
 
 export default function WhatsAppGroupsMirror() {
+  const router = useRouter();
   const [groups, setGroups] = useState<Group[]>([]);
   const [selectedJid, setSelectedJid] = useState("");
   const [messages, setMessages] = useState<api.RawMessage[]>([]);
@@ -227,6 +335,12 @@ export default function WhatsAppGroupsMirror() {
     return name.includes(query.trim().toLowerCase());
   }), [groups, query]);
 
+  const messageViews = useMemo(() => messages.map((message) => ({
+    message,
+    attachment: attachmentFromMessage(message),
+    text: displayMessageText(message),
+  })), [messages]);
+
   const send = async (event: FormEvent) => {
     event.preventDefault();
     if (!selectedJid || (!draft.trim() && !file) || sending) return;
@@ -299,6 +413,13 @@ export default function WhatsAppGroupsMirror() {
     }
   };
 
+  const openSenderSearch = (message: api.RawMessage) => {
+    if (isFromCurrentPhone(message)) return;
+    const queryValue = senderSearchValue(message, memberNames, messageNames);
+    if (!queryValue) return;
+    router.push(`/brokers?q=${encodeURIComponent(queryValue)}`);
+  };
+
   return (
     <div className="flex h-[calc(100dvh-44px)] min-h-[540px] w-full overflow-hidden rounded-xl border border-white/10 bg-black">
       <aside className={`${showConversation ? "hidden md:flex" : "flex"} w-full max-w-sm shrink-0 flex-col border-r border-white/10 bg-black md:w-80`}>
@@ -323,7 +444,7 @@ export default function WhatsAppGroupsMirror() {
         </div>
       </aside>
       <main className={`${showConversation ? "flex" : "hidden md:flex"} min-w-0 flex-1 flex-col`}>
-        {selected ? <><header className="flex items-center gap-3 border-b border-white/10 px-5 py-3"><button onClick={() => setShowConversation(false)} className="rounded-lg p-1 text-zinc-300 hover:bg-white/10 md:hidden" aria-label="Back to groups"><ChevronLeft className="h-5 w-5" /></button><div className="flex h-9 w-9 items-center justify-center rounded-lg border border-white/10 text-zinc-300"><Users className="h-4 w-4" /></div><div className="min-w-0"><div className="truncate text-sm font-semibold text-white">{selected.display_name || selected.conversation_name || selected.name}</div><div className="mt-0.5 text-xs text-zinc-500">WhatsApp group</div></div></header><div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-5">{hasMoreHistory && messages.length > 0 && <button type="button" onClick={() => void loadMessages(messages.length, true)} disabled={loadingOlder} className="rounded-lg border border-white/10 px-3 py-2 text-xs font-semibold text-zinc-300 hover:bg-white/5 disabled:opacity-50">{loadingOlder ? "Loading older messages…" : "Load older messages"}</button>}{loadingMessages && messages.length === 0 ? <p className="text-sm text-zinc-500">Loading messages…</p> : messages.length === 0 ? <p className="text-sm text-zinc-500">No captured messages in this group yet.</p> : messages.map((message) => { const fromMe = isFromCurrentPhone(message); return <div key={message.id} className={`flex ${fromMe ? "justify-end" : "justify-start"}`}><div className={`w-full max-w-none rounded-xl border px-4 py-3 text-sm ${fromMe ? "border-emerald-400/30 bg-emerald-400/[0.08] text-zinc-100" : "border-white/10 bg-white/[0.03] text-zinc-100"}`}><div className="mb-1 text-xs font-semibold text-emerald-300">{fromMe ? "You" : senderLabel(message, { ...memberNames, ...messageNames })}</div><div className="whitespace-pre-wrap break-words leading-6 [overflow-wrap:anywhere]">{displayMessageText(message) || "Media message"}</div><div className="mt-1 text-right text-[10px] text-zinc-500">{timeLabel(message.timestamp || message.created_at)}</div></div></div>; })}</div><form onSubmit={send} className="border-t border-white/10 p-3"><div className="flex items-center gap-2"><input ref={fileInput} type="file" className="hidden" onChange={(event) => setFile(event.target.files?.[0] || null)} /><button type="button" onClick={() => fileInput.current?.click()} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-white/10 text-zinc-300 transition-colors hover:bg-white/5 hover:text-white" title="Attach media"><FileUp className="h-4 w-4" /></button><input value={draft} onChange={(event) => setDraft(event.target.value)} placeholder={file ? `Attach: ${file.name}` : "Message this group"} className="h-10 min-w-0 flex-1 rounded-lg border border-white/10 bg-transparent px-3 text-sm text-white outline-none placeholder:text-zinc-600 focus:border-emerald-400" /><button disabled={sending || (!draft.trim() && !file)} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-white bg-white text-black transition-colors hover:bg-zinc-200 disabled:opacity-40" aria-label="Send">{sending ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}</button></div>{file && <p className="mt-1 text-xs text-zinc-500">{file.name}</p>}{error && <p className="mt-2 text-xs text-red-300">{error}</p>}{notice && <p className="mt-2 text-xs text-emerald-300">{notice}</p>}</form></> : <div className="flex flex-1 items-center justify-center text-sm text-zinc-500">Select a WhatsApp group.</div>}
+        {selected ? <><header className="flex items-center gap-3 border-b border-white/10 px-5 py-3"><button onClick={() => setShowConversation(false)} className="rounded-lg p-1 text-zinc-300 hover:bg-white/10 md:hidden" aria-label="Back to groups"><ChevronLeft className="h-5 w-5" /></button><div className="flex h-9 w-9 items-center justify-center rounded-lg border border-white/10 text-zinc-300"><Users className="h-4 w-4" /></div><div className="min-w-0"><div className="truncate text-sm font-semibold text-white">{selected.display_name || selected.conversation_name || selected.name}</div><div className="mt-0.5 text-xs text-zinc-500">WhatsApp group</div></div></header><div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-5 md:px-5">{hasMoreHistory && messages.length > 0 && <button type="button" onClick={() => void loadMessages(messages.length, true)} disabled={loadingOlder} className="rounded-lg border border-white/10 px-3 py-2 text-xs font-semibold text-zinc-300 hover:bg-white/5 disabled:opacity-50">{loadingOlder ? "Loading older messages…" : "Load older messages"}</button>}{loadingMessages && messages.length === 0 ? <p className="text-sm text-zinc-500">Loading messages…</p> : messages.length === 0 ? <p className="text-sm text-zinc-500">No captured messages in this group yet.</p> : messageViews.map(({ message, attachment, text }) => { const fromMe = isFromCurrentPhone(message); const sender = fromMe ? "You" : senderLabel(message, { ...memberNames, ...messageNames }); const senderClickable = !fromMe && Boolean(senderSearchValue(message, memberNames, messageNames)); const kind = attachment?.kind || message.message_type || "text"; const body = text || (attachment ? `${kindLabel(kind)}` : "Message"); const showMeta = attachment || message.delivery_status || !fromMe; return <div key={message.message_uid || message.id} className={`flex ${fromMe ? "justify-end" : "justify-start"}`}><div className={`w-full max-w-[min(900px,86%)] rounded-2xl border px-4 py-3 text-sm shadow-sm ${fromMe ? "border-emerald-400/30 bg-emerald-400/[0.08] text-zinc-100" : "border-white/10 bg-white/[0.03] text-zinc-100"}`}><div className="mb-2 flex items-center gap-2"><button type="button" onClick={() => senderClickable ? openSenderSearch(message) : undefined} disabled={!senderClickable} className={`min-w-0 truncate text-left text-xs font-semibold ${fromMe ? "text-emerald-300" : "text-zinc-200"} ${senderClickable ? "hover:text-emerald-200 hover:underline" : "cursor-default"}`}>{sender}</button>{attachment && <span className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-black/20 px-2 py-0.5 text-[10px] font-medium text-zinc-300">{kindIcon(kind)}{kindLabel(kind)}</span>}{fromMe && <span className="rounded-full border border-emerald-400/30 bg-emerald-400/10 px-2 py-0.5 text-[10px] font-medium text-emerald-200">Sent</span>}</div><div className="whitespace-pre-wrap break-words leading-6 [overflow-wrap:anywhere]">{body}</div>{attachment && <div className="mt-3 rounded-xl border border-white/10 bg-black/20 p-3 text-xs text-zinc-300"><div className="flex items-center gap-2 text-zinc-100"><span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-white/5 text-zinc-200">{kindIcon(kind)}</span><div className="min-w-0"><div className="truncate font-semibold">{attachment.fileName || `${kindLabel(kind)} attachment`}</div><div className="mt-0.5 text-[11px] text-zinc-500">{[attachment.mimeType, formatBytes(attachment.fileLength), attachment.deferred ? "queued download" : "", attachment.storagePath ? "stored" : "", attachment.captureError ? `error: ${attachment.captureError}` : ""].filter(Boolean).join(" · ")}</div></div></div></div>}{showMeta && <div className="mt-2 flex items-center justify-between gap-2 text-[10px] text-zinc-500"><span>{attachment?.storagePath ? "Stored media" : message.delivery_status ? `Status: ${message.delivery_status}` : ""}</span><span>{timeLabel(message.timestamp || message.created_at)}</span></div>}</div></div>; })}</div><form onSubmit={send} className="border-t border-white/10 p-3"><div className="flex items-center gap-2"><input ref={fileInput} type="file" className="hidden" onChange={(event) => setFile(event.target.files?.[0] || null)} /><button type="button" onClick={() => fileInput.current?.click()} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-white/10 text-zinc-300 transition-colors hover:bg-white/5 hover:text-white" title="Attach media"><FileUp className="h-4 w-4" /></button><input value={draft} onChange={(event) => setDraft(event.target.value)} placeholder={file ? `Attach: ${file.name}` : "Message this group"} className="h-10 min-w-0 flex-1 rounded-lg border border-white/10 bg-transparent px-3 text-sm text-white outline-none placeholder:text-zinc-600 focus:border-emerald-400" /><button disabled={sending || (!draft.trim() && !file)} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-white bg-white text-black transition-colors hover:bg-zinc-200 disabled:opacity-40" aria-label="Send">{sending ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}</button></div>{file && <p className="mt-1 text-xs text-zinc-500">{file.name}</p>}{error && <p className="mt-2 text-xs text-red-300">{error}</p>}{notice && <p className="mt-2 text-xs text-emerald-300">{notice}</p>}</form></> : <div className="flex flex-1 items-center justify-center text-sm text-zinc-500">Select a WhatsApp group.</div>}
       </main>
     </div>
   );
