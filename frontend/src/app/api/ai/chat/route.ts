@@ -44,6 +44,15 @@ function textStream(content: string) {
   });
 }
 
+function sanitizeChatErrorMessage(input: string, fallback: string) {
+  const text = String(input || "").trim();
+  if (!text) return fallback;
+  if (/<!doctype html|<html[\s>]|<body[\s>]|cloudflare|bad gateway|error code 502|error 502/i.test(text)) {
+    return fallback;
+  }
+  return text.length > 240 ? `${text.slice(0, 237).trim()}...` : text;
+}
+
 function sseProxyStream(fastapiStream: ReadableStream<Uint8Array>) {
   return createUIMessageStream({
     async execute({ writer }) {
@@ -91,7 +100,7 @@ async function callFastAPI(messages: { role: string; content: string }[], broker
       const json = await fastapi.json();
       errorText = (json.message as string) || (json.error as string) || errorText;
     } catch {}
-    throw new Error(errorText);
+    throw new Error(sanitizeChatErrorMessage(errorText, "AI search is temporarily unavailable. Please try again."));
   }
 
   if (!fastapi.body) {
@@ -120,7 +129,9 @@ export async function POST(req: Request) {
     return createUIMessageStreamResponse({ stream: sseProxyStream(fastapiStream) });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Chat API failed";
-    return createUIMessageStreamResponse({ stream: textStream(message) });
+    return createUIMessageStreamResponse({
+      stream: textStream(sanitizeChatErrorMessage(message, "AI search is temporarily unavailable. Please try again.")),
+    });
   }
 }
 
@@ -143,7 +154,14 @@ export async function PUT(req: Request) {
       },
       body: JSON.stringify({ messages: filtered, broker_phone: brokerPhone, session_id: sessionId, source }),
     });
-    if (!fastapi.ok) throw new Error(await fastapi.text());
+    if (!fastapi.ok) {
+      throw new Error(
+        sanitizeChatErrorMessage(
+          await fastapi.text(),
+          "AI search is temporarily unavailable. Please try again."
+        )
+      );
+    }
     const json = await fastapi.json();
     return Response.json(json);
   } catch (error) {
