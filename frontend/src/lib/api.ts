@@ -1876,6 +1876,19 @@ export function pairCodePhone(phoneId: number, phone: string) {
   );
 }
 
+export function getPairCodePhoneStatus(phoneId: number) {
+  const directApiBase = typeof window !== "undefined" && window.location.hostname === "app.propai.live"
+    ? "https://api.propai.live/api"
+    : BASE;
+  return fetchJSONWithRetry<any>(
+    `/phones/${phoneId}/pair-code/status`,
+    { method: "GET" },
+    8_000,
+    false,
+    directApiBase,
+  );
+}
+
 export function updatePhone(phoneId: number, data: { instance_name?: string; self_chat_enabled?: boolean }) {
   return fetchJSON<Phone>(`/phones/${phoneId}`, {
     method: "PATCH",

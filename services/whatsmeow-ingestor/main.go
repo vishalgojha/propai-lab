@@ -1931,30 +1931,9 @@ func (sm *SessionManager) pairCodeHandler(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// Configure code pairing before a newly-created session goroutine starts.
-	// Otherwise runSession can observe the empty default pairing mode and enter
-	// the QR loop, leaving this request waiting until the proxy times out.
-	session := sm.StartOrGetForCodePairing(brokerID, phone)
-	if session == nil {
-		w.WriteHeader(http.StatusConflict)
-		json.NewEncoder(w).Encode(map[string]string{"error": "session is already active in another ingestor instance"})
+	session, ok := sm.startCodePairing(w, brokerID, phone)
+	if !ok {
 		return
-	}
-
-	// Force the session loop into the QR/code pairing path.
-	//
-	// We must NOT cancel the context: ctx.Done() causes runSession to return
-	// (goroutine dies, no restart). Instead we disconnect the client which
-	// fires the `disconnected` channel — that path loops back to the top of
-	// the for-loop where pairingMode is re-read.
-	//
-	// If the device already has an ID (previously-paired session), nil it so
-	// runSession enters the pairing path instead of "connect directly".
-	if session.client != nil {
-		session.client.Disconnect()
-	}
-	if session.device != nil && session.device.ID != nil {
-		session.device.ID = nil
 	}
 
 	// Poll until PairPhone() generates the code or timeout. Keep this deadline
@@ -1995,6 +1974,87 @@ func (sm *SessionManager) pairCodeHandler(w http.ResponseWriter, r *http.Request
 		"phone":  phone,
 		"error":  "Timed out waiting for WhatsApp pairing code",
 		"status": status,
+	})
+}
+
+// startCodePairing starts WhatsApp's asynchronous phone-code flow without
+// making the caller wait for a websocket QR event. The dashboard polls status
+// afterwards, avoiding proxy/Cloudflare timeouts during normal 5-20s setup.
+func (sm *SessionManager) startCodePairing(w http.ResponseWriter, brokerID, phone string) (*BrokerSession, bool) {
+	session := sm.StartOrGetForCodePairing(brokerID, phone)
+	if session == nil {
+		w.WriteHeader(http.StatusConflict)
+		json.NewEncoder(w).Encode(map[string]string{"error": "pairing session is still releasing; retry in a few seconds"})
+		return nil, false
+	}
+	if session.client != nil {
+		session.client.Disconnect()
+	}
+	if session.device != nil && session.device.ID != nil {
+		session.device.ID = nil
+	}
+	return session, true
+}
+
+func (sm *SessionManager) pairCodeStartHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if !requireMethod(w, r, http.MethodPost) {
+		return
+	}
+	brokerID := brokerIDFromRequest(r)
+	if brokerID == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "broker_id is required"})
+		return
+	}
+	var body struct {
+		Phone string `json:"phone"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Phone == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "phone number is required"})
+		return
+	}
+	phone := ""
+	for _, c := range body.Phone {
+		if c >= '0' && c <= '9' {
+			phone += string(c)
+		}
+	}
+	if len(phone) < 10 {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "invalid phone number"})
+		return
+	}
+	if _, ok := sm.startCodePairing(w, brokerID, phone); !ok {
+		return
+	}
+	w.WriteHeader(http.StatusAccepted)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"ok": true, "broker_id": brokerID, "phone": phone, "state": "generating",
+	})
+}
+
+func (sm *SessionManager) pairCodeStatusHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if !requireMethod(w, r, http.MethodGet) {
+		return
+	}
+	brokerID := brokerIDFromRequest(r)
+	if brokerID == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "broker_id is required"})
+		return
+	}
+	session := sm.Get(brokerID)
+	if session == nil {
+		json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "state": "not_started"})
+		return
+	}
+	status := session.getStatus()
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"ok": true, "state": status.ConnectionState, "status": status,
+		"pairing_code": status.PairingCode,
 	})
 }
 
@@ -3037,6 +3097,8 @@ func main() {
 	mux.HandleFunc("/health", internalOnly(sm.healthHandler, true))
 	mux.HandleFunc("/connect", internalOnly(sm.connectHandler, false))
 	mux.HandleFunc("/pair-code", internalOnly(sm.pairCodeHandler, false))
+	mux.HandleFunc("/pair-code/start", internalOnly(sm.pairCodeStartHandler, false))
+	mux.HandleFunc("/pair-code/status", internalOnly(sm.pairCodeStatusHandler, false))
 	mux.HandleFunc("/reset", internalOnly(sm.resetHandler, false))
 	mux.HandleFunc("/disconnect", internalOnly(sm.disconnectHandler, false))
 	mux.HandleFunc("/delete-session", internalOnly(sm.deleteSessionHandler, false))
