@@ -132,7 +132,7 @@ export default function DashboardPage() {
             { label: "Open Market Inbox", count: "→", icon: "💬", href: "/inbox", detail: "WhatsApp-style broker workspace" },
             { label: "Search Knowledge", count: "→", icon: "🔎", href: "/knowledge", detail: "Find any property, broker, group" },
             { label: "Review Items", count: suggestionPending || "→", icon: "✅", href: "/chat?tab=review", detail: "Records needing confirmation" },
-            { label: "Capture Health", count: suggestionPending || "→", icon: "📡", href: "/audit", detail: "Groups and messages being remembered" },
+            { label: "Manage Groups", count: suggestionPending || "→", icon: "📡", href: "/connections", detail: "Choose groups to connect for parsing" },
           ].map(card => (
             <button
               key={card.label}

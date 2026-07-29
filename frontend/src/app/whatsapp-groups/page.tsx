@@ -1,5 +1,5 @@
-import { WhatsAppGroupsWorkspacePage } from "../inbox/page";
+import { redirect } from "next/navigation";
 
 export default function WhatsAppGroupsPage() {
-  return <WhatsAppGroupsWorkspacePage />;
+  redirect("/connections");
 }

@@ -16,6 +16,20 @@ function timeAgo(ts: string) {
 }
 
 export default function GroupDetailPage() {
+  return (
+    <div className="mx-auto max-w-3xl py-16 text-center">
+      <h1 className="text-xl font-semibold text-white">Group analytics are paused</h1>
+      <p className="mt-3 text-sm text-zinc-400">
+        Extraction paused — data will resume once the new pipeline is live.
+      </p>
+      <a href="/connections" className="mt-6 inline-flex rounded-lg bg-[#3EE88A] px-4 py-2 text-sm font-semibold text-black hover:bg-[#74f0a5]">
+        Manage WhatsApp connections
+      </a>
+    </div>
+  );
+}
+
+function GroupDetailWorkspacePage() {
   const params = useParams();
   const requestedGroup = decodeURIComponent(params.jid as string);
   const [group, setGroup] = useState<any>(null);

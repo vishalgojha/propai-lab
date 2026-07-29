@@ -1382,7 +1382,7 @@ return {
         description:
           marketAccess?.message ||
           "WhatsApp is connected. PropAI is waiting for the first synced messages before opening Market Inbox.",
-        href: "/audit",
+        href: "/connections",
         cta: "Open Audit",
       };
     }
@@ -1550,7 +1550,7 @@ return {
 
   useEffect(() => {
     if (searchParams.get("view") === "groups") {
-      router.replace("/whatsapp-groups");
+      router.replace("/connections");
     }
   }, [searchParams, router]);
 

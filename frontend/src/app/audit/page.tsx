@@ -86,6 +86,20 @@ function SignalTrace({ points }: { points: api.AuditInsights["daily_flow"] }) {
 }
 
 export default function AuditPage() {
+  return (
+    <div className="mx-auto max-w-3xl py-16 text-center">
+      <h1 className="text-xl font-semibold text-white">WhatsApp audit is paused</h1>
+      <p className="mt-3 text-sm text-zinc-400">
+        Extraction paused — data will resume once the new pipeline is live.
+      </p>
+      <a href="/connections" className="mt-6 inline-flex rounded-lg bg-[#3EE88A] px-4 py-2 text-sm font-semibold text-black hover:bg-[#74f0a5]">
+        Manage WhatsApp connections
+      </a>
+    </div>
+  );
+}
+
+function AuditWorkspacePage() {
   const [state, setState] = useState<State>(emptyState);
   const [loading, setLoading] = useState(true);
   const load = useCallback(async () => {
