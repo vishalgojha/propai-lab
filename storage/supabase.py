@@ -3852,11 +3852,11 @@ class SupabaseStorage(Storage):
                 existing = eq.execute()
                 if existing.data and existing.data[0].get("api_key"):
                     data["api_key"] = existing.data[0]["api_key"]
-            if provider.is_active:
-                du = self.client.table("llm_providers").update({"is_active": 0}).neq("id", provider.id)
-                if tid:
-                    du = du.eq("tenant_id", tid)
-                du.execute()
+            # NOTE: multiple providers may be active at once — this is what
+            # feeds _workspace_provider_candidates()/_run_workspace_agent()'s
+            # failover rotation. Do not force-deactivate other rows here; a
+            # broker toggling one provider on must never silently turn off
+            # their other configured keys.
             up = self.client.table("llm_providers").update(data).eq("id", provider.id)
             if tid:
                 up = up.eq("tenant_id", tid)
@@ -3864,11 +3864,7 @@ class SupabaseStorage(Storage):
             return provider.id
         else:
             data.pop("id", None)
-            if provider.is_active:
-                da = self.client.table("llm_providers").update({"is_active": 0})
-                if tid:
-                    da = da.eq("tenant_id", tid)
-                da.execute()
+            # Same note as above — do not force-deactivate other rows.
             res = self.client.table("llm_providers").insert(data).execute()
             return res.data[0]["id"] if res.data else 0
 
