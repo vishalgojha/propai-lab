@@ -821,16 +821,30 @@ async def pair_code_phone(
     normalized_phone = _normalized_whatsapp_phone(phone_number)
     if not normalized_phone:
         raise HTTPException(400, "Enter a valid WhatsApp phone number with country code")
-    # A connection represents one specific WhatsApp account. Accepting a
-    # different number here can associate its device session with the wrong
-    # broker card, and makes a simple digit typo look like an ingestor failure.
+    # A connected card is bound to its authenticated WhatsApp account. A
+    # disconnected/unpaired card may still carry an old persisted identity
+    # from a prior device session, however; allow its authorized workspace
+    # owner to replace that stale identity through the explicit pairing flow.
+    # WhatsApp itself still verifies control of the new number before pairing.
     connection_phone = _normalized_whatsapp_phone(phone.get("phone_number"))
     if connection_phone and normalized_phone != connection_phone:
-        raise HTTPException(
-            400,
-            "This pairing request does not match the phone saved on this connection. "
-            "Add a new phone to pair a different WhatsApp number.",
+        live_status = await _best_ingestor_status_for_broker(broker_id, timeout=2)
+        if live_status and live_status.get("connected"):
+            raise HTTPException(
+                409,
+                "Disconnect or reset this active WhatsApp session before pairing a different number.",
+            )
+        cleared_connection = await asyncio.to_thread(
+            storage.update_org_whatsapp_connection,
+            phone_id,
+            {
+                "phone_number": f"Unpaired:{broker_id}",
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            },
         )
+        if not cleared_connection:
+            raise HTTPException(502, "Could not prepare this disconnected phone for a new pairing request")
+        phone = cleared_connection
     existing_phones = await asyncio.to_thread(storage.list_org_whatsapp_connections, org_id)
     duplicate = next(
         (
