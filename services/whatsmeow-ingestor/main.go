@@ -554,6 +554,7 @@ sessionLoop:
 		s.disconnectOnce = sync.OnceValue(func() struct{} { close(disconnected); return struct{}{} })
 
 		s.client = whatsmeow.NewClient(s.device, waLog.Noop)
+		s.client.QRClientType = whatsmeow.PairClientChrome
 		s.client.AddEventHandler(func(evt interface{}) {
 			sm.handleEvent(s, evt)
 		})
@@ -604,7 +605,7 @@ sessionLoop:
 						// WhatsApp validates both fields and rejects unknown/non-browser
 						// identities with a 400. Keep this aligned with WhatsMeow's
 						// documented `Browser (OS)` contract.
-						code, err := s.client.PairPhone(ctx, phone, false, whatsmeow.PairClientChrome, "Chrome (Linux)")
+						code, err := s.client.PairPhone(ctx, phone, true, whatsmeow.PairClientChrome, "Chrome (Windows)")
 						if err != nil {
 							log.Printf("[broker %s] PairPhone failed: %v", s.brokerID, err)
 							s.setStatus(Status{ConnectionState: "error"})

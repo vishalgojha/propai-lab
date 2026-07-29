@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { Activity, Clock, Database, Inbox, List, LogOut, MessageSquare, Plus, RefreshCw, Shield, Smartphone, Trash2, AlertTriangle, Users, Zap, Lock, X, ChevronLeft, MoreVertical, User, MessageCircle, Check, AlertCircle, Hash } from "lucide-react";
 import { useAuth } from "@/lib/AuthProvider";
 import { getPhones, createPhone, deletePhone, resetPhone, disconnectPhone, pairCodePhone, updatePhone, fetchJSON, isLiveWhatsAppConnection, getOnboardingGroups, checkOnboardingGroup, connectOnboardingGroup, disconnectOnboardingGroup, type Phone, type WhatsAppStatus, type OnboardingGroup, type OnboardingGroupCheck, type OnboardingGroupState } from "@/lib/api";
+import QRCode from "qrcode";
 
 type HealthStatus = "healthy" | "warning" | "error";
 
@@ -278,7 +279,18 @@ function PhoneCard({
   const [showPairCodeDialog, setShowPairCodeDialog] = useState(false);
   const [pairCodeInput, setPairCodeInput] = useState("");
   const [pairCodeResult, setPairCodeResult] = useState<string | null>(null);
+  const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (phone.qr_available && phone.qr) {
+      QRCode.toDataURL(phone.qr, { width: 200, margin: 1, color: { dark: "#ffffff", light: "#18181b" } })
+        .then(setQrDataUrl)
+        .catch(() => setQrDataUrl(null));
+    } else {
+      setQrDataUrl(null);
+    }
+  }, [phone.qr_available, phone.qr]);
 
   const handleAction = async (action: string) => {
     setActionLoading(action);
@@ -329,7 +341,13 @@ function PhoneCard({
       if (!code) throw new Error(result.note || result.error || "WhatsApp did not return a pairing code");
       setPairCodeResult(code);
     } catch (error) {
-      setActionError(error instanceof Error ? error.message : "Pair code request failed");
+      const msg = error instanceof Error ? error.message : "Pair code request failed";
+      // Show a clear message when the server is unreachable (502 from proxy).
+      const isServerError = /502|503|unreachable|unavailable/i.test(msg);
+      setActionError(isServerError
+        ? "The WhatsApp service is not reachable right now. Check that the backend server is running, then try again."
+        : msg
+      );
       setShowPairCodeDialog(false);
     } finally {
       setActionLoading(null);
@@ -390,6 +408,12 @@ function PhoneCard({
           )}
           {!statusAvailable && phone.live_status_error && (
             <div className="text-xs text-red-300">{phone.live_status_error}</div>
+          )}
+          {qrDataUrl && !isConnected && (
+            <div className="mt-3 flex flex-col items-center gap-1.5">
+              <img src={qrDataUrl} alt="WhatsApp QR code" className="w-32 h-32 rounded-lg" />
+              <span className="text-[10px] text-zinc-500">Or scan QR with WhatsApp</span>
+            </div>
           )}
         </div>
         {/* ⋮ Menu */}
