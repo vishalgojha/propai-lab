@@ -1281,6 +1281,18 @@ def _handle_system_event(event_class: str, event: str, data: dict, instance: str
                 storage.upsert_whatsapp_conversations(tenant_id, broker_id, instance, directory_rows)
             except Exception as exc:
                 print(f"[webhook] group directory conversation persistence failed: {exc}", flush=True)
+        if is_full_refresh:
+            try:
+                removed_conversations = storage.prune_whatsapp_conversations(
+                    tenant_id=tenant_id,
+                    broker_id=broker_id,
+                    keep_jids=incoming_jids,
+                    conversation_types={"group"},
+                )
+                if removed_conversations:
+                    print(f"  Removed {removed_conversations} stale WhatsApp group conversations", flush=True)
+            except Exception as exc:
+                print(f"[webhook] prune WhatsApp conversation directory failed: {exc}", flush=True)
         if data.get("groups") and incoming_jids:
             try:
                 removed = storage.prune_sync_jobs(source="whatsapp", instance=instance, keep_jids=incoming_jids)

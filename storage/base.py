@@ -447,6 +447,11 @@ class Storage(ABC):
     def get_chats(self, limit: int = 500, offset: int = 0, tenant_id: str | None = None) -> list[dict]: ...
 
     @abstractmethod
+    def prune_whatsapp_conversations(self, tenant_id: str, broker_id: str,
+                                     keep_jids: set[str],
+                                     conversation_types: set[str] | None = None) -> int: ...
+
+    @abstractmethod
     def get_chat_messages(self, chat_id: str, limit: int = 200, offset: int = 0, tenant_id: str | None = None) -> list[RawMessage]: ...
 
     @abstractmethod

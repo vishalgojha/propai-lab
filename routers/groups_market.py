@@ -11,6 +11,9 @@ from routers.common import (
     require_user,
     get_tenant_context,
     _resolve_active_organization_id,
+    _require_org_permission,
+    _first_ingestor_response,
+    _ingestor_failure_message,
     parse_group_name,
     _audit_rows,
     _audit_row_value,
@@ -342,6 +345,38 @@ async def list_whatsapp_conversations(
         requested or ["group", "broadcast"],
         1000,
     )
+
+
+@router.post("/api/whatsapp/conversations/refresh")
+async def refresh_whatsapp_group_directory(
+    user: dict = Depends(require_user),
+    tenant_id: str | None = Depends(get_tenant_context),
+):
+    """Ask each connected workspace phone to republish its live group directory."""
+    org_id = await asyncio.to_thread(_resolve_active_organization_id, user, tenant_id)
+    if not org_id:
+        raise HTTPException(403, "No organization membership found")
+    await _require_org_permission(user, org_id, "manage_whatsapp")
+    phones = await asyncio.to_thread(storage.list_org_whatsapp_connections, org_id)
+    requested: list[str] = []
+    unavailable: list[str] = []
+    for phone in phones:
+        broker_id = str(phone.get("broker_id") or "").strip()
+        if not broker_id:
+            continue
+        _, response = await _first_ingestor_response(
+            "POST", "/sync-groups", timeout=4, headers={"X-Broker-Id": broker_id},
+        )
+        if response is not None and response.status_code == 202:
+            requested.append(broker_id)
+        else:
+            unavailable.append(broker_id)
+    if not requested:
+        detail = _ingestor_failure_message(None)
+        if unavailable:
+            detail = "No linked WhatsApp phone is currently connected. Reconnect a phone, then refresh groups."
+        raise HTTPException(409, detail)
+    return {"ok": True, "state": "refreshing", "requested": requested, "unavailable": unavailable}
 
 
 @router.get("/api/groups/opt-out")
