@@ -6,7 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Activity, Clock, Database, Inbox, List, LogOut, MessageSquare, Plus, RefreshCw, Shield, Smartphone, Trash2, AlertTriangle, Users, Zap, Lock, X, ChevronLeft, MoreVertical, User, MessageCircle, Check, AlertCircle, Hash } from "lucide-react";
 import { useAuth } from "@/lib/AuthProvider";
-import { getPhones, createPhone, deletePhone, resetPhone, disconnectPhone, pairCodePhone, updatePhone, fetchJSON, isLiveWhatsAppConnection, getOnboardingGroups, checkOnboardingGroup, connectOnboardingGroup, disconnectOnboardingGroup, type Phone, type WhatsAppStatus, type OnboardingGroup, type OnboardingGroupCheck, type OnboardingGroupState } from "@/lib/api";
+import { getPhones, createPhone, deletePhone, resetPhone, disconnectPhone, pairCodePhone, getPairCodePhoneStatus, updatePhone, fetchJSON, isLiveWhatsAppConnection, getOnboardingGroups, checkOnboardingGroup, connectOnboardingGroup, disconnectOnboardingGroup, type Phone, type WhatsAppStatus, type OnboardingGroup, type OnboardingGroupCheck, type OnboardingGroupState } from "@/lib/api";
 import QRCode from "qrcode";
 
 type HealthStatus = "healthy" | "warning" | "error";
@@ -282,6 +282,7 @@ function PhoneCard({
   const [resetWarning, setResetWarning] = useState<string | null>(null);
   const [pairCodeInput, setPairCodeInput] = useState("");
   const [pairCodeResult, setPairCodeResult] = useState<string | null>(null);
+  const [pairCodePending, setPairCodePending] = useState(false);
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -317,6 +318,7 @@ function PhoneCard({
         // canonical number yet, so their input must start empty and editable.
         setPairCodeInput(isPlaceholderPhone(phone.phone_number) ? "" : normalizePhoneDigits(phone.phone_number));
         setPairCodeResult(null);
+        setPairCodePending(false);
         setResetReceipt(null);
         setShowPairCodeDialog(true);
         setActionLoading(null);
@@ -352,8 +354,13 @@ function PhoneCard({
       // races two WhatsApp pairing modes and causes intermittent 502 responses.
       const result = await pairCodePhone(phone.id, pairCodeInput);
       const code = result.pairing_code || result.code || result.status?.pairing_code;
-      if (!code) throw new Error(result.note || result.error || "WhatsApp did not return a pairing code");
-      setPairCodeResult(code);
+      if (code) {
+        setPairCodeResult(code);
+      } else if (result.state === "generating") {
+        setPairCodePending(true);
+      } else {
+        throw new Error(result.note || result.error || "WhatsApp did not start pairing-code generation");
+      }
     } catch (error) {
       const msg = error instanceof Error ? error.message : "Pair code request failed";
       // Show a clear message when the server is unreachable (502 from proxy).
@@ -362,11 +369,50 @@ function PhoneCard({
         ? "The WhatsApp service is not reachable right now. Check that the backend server is running, then try again."
         : msg
       );
-      setShowPairCodeDialog(false);
     } finally {
       setActionLoading(null);
     }
   };
+
+  useEffect(() => {
+    if (!pairCodePending || !showPairCodeDialog) return;
+    let cancelled = false;
+    const startedAt = Date.now();
+    const poll = async () => {
+      try {
+        const result = await getPairCodePhoneStatus(phone.id);
+        const code = result.pairing_code || result.code || result.status?.pairing_code;
+        if (cancelled) return;
+        if (code) {
+          setPairCodeResult(code);
+          setPairCodePending(false);
+          return;
+        }
+        if (["error", "not_started"].includes(String(result.state || ""))) {
+          setActionError("WhatsApp did not start pairing. Please request a new code.");
+          setPairCodePending(false);
+          return;
+        }
+        if (Date.now() - startedAt > 70_000) {
+          setActionError("WhatsApp is taking too long to generate a code. Please try again.");
+          setPairCodePending(false);
+        }
+      } catch {
+        // A short API or proxy blip must not discard an in-progress WhatsApp
+        // pairing session. Keep polling until the bounded generation window.
+        if (!cancelled && Date.now() - startedAt > 70_000) {
+          setActionError("Could not read pairing status. Please try again.");
+          setPairCodePending(false);
+        }
+      }
+    };
+    void poll();
+    const interval = window.setInterval(() => void poll(), 2_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [pairCodePending, showPairCodeDialog, phone.id]);
 
   const handleResetAndRepair = async () => {
     setActionLoading("reset");
@@ -382,6 +428,7 @@ function PhoneCard({
       // owner to enter the number for the new pairing attempt; never reuse a
       // stale live/device number from the old session.
       setPairCodeInput("");
+      setPairCodePending(false);
       setShowPairCodeDialog(true);
       setResetReceipt(receipt.reset_at);
       setResetWarning(receipt.remote_unlink_warning || null);
@@ -633,14 +680,14 @@ function PhoneCard({
 
       {/* Pair Code Dialog */}
       {showPairCodeDialog && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={() => { setShowPairCodeDialog(false); setPairCodeResult(null); setPairCodeInput(""); setResetReceipt(null); setResetWarning(null); }}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={() => { setShowPairCodeDialog(false); setPairCodeResult(null); setPairCodePending(false); setPairCodeInput(""); setResetReceipt(null); setResetWarning(null); }}>
           <div className="w-full max-w-sm rounded-xl bg-zinc-900 border border-white/10 shadow-xl" onClick={(e) => e.stopPropagation()}>
-            {!pairCodeResult ? (
+            {!pairCodeResult && !pairCodePending ? (
               <>
                 <div className="flex items-center gap-3 px-5 py-4 border-b border-white/10">
                   <Hash className="h-5 w-5 text-zinc-400" />
                   <div className="text-sm font-semibold text-white">{resetReceipt ? "Session cleared — pair again" : "Pair with Code"}</div>
-                  <button onClick={() => { setShowPairCodeDialog(false); setPairCodeInput(""); setResetReceipt(null); setResetWarning(null); }} className="ml-auto text-zinc-500 hover:text-white"><X className="h-4 w-4" /></button>
+                  <button onClick={() => { setShowPairCodeDialog(false); setPairCodeInput(""); setPairCodePending(false); setResetReceipt(null); setResetWarning(null); }} className="ml-auto text-zinc-500 hover:text-white"><X className="h-4 w-4" /></button>
                 </div>
                 <div className="px-5 py-4 space-y-3">
                   {resetReceipt && (
@@ -655,6 +702,7 @@ function PhoneCard({
                       <div>{resetWarning}</div>
                     </div>
                   )}
+                  {actionError && <p className="text-xs text-red-400">{actionError}</p>}
                   <p className="text-xs text-zinc-400">
                     {pairingPhoneEditable
                       ? "Enter the WhatsApp number to pair, including country code:"
@@ -682,7 +730,7 @@ function PhoneCard({
                   </p>
                 </div>
                 <div className="flex justify-end gap-2 px-5 py-3 border-t border-white/10">
-                  <button onClick={() => { setShowPairCodeDialog(false); setPairCodeInput(""); setResetReceipt(null); setResetWarning(null); }} className="px-3 py-1.5 text-xs text-zinc-400 hover:text-white">Cancel</button>
+                  <button onClick={() => { setShowPairCodeDialog(false); setPairCodeInput(""); setPairCodePending(false); setResetReceipt(null); setResetWarning(null); }} className="px-3 py-1.5 text-xs text-zinc-400 hover:text-white">Cancel</button>
                   <button
                     onClick={handlePairCodeSubmit}
                     disabled={pairCodeInput.length < 10 || actionLoading === "pair-code"}
@@ -692,12 +740,25 @@ function PhoneCard({
                   </button>
                 </div>
               </>
+            ) : pairCodePending ? (
+              <>
+                <div className="flex items-center gap-3 px-5 py-4 border-b border-white/10">
+                  <RefreshCw className="h-5 w-5 animate-spin text-emerald-400" />
+                  <div className="text-sm font-semibold text-white">Generating pairing code</div>
+                </div>
+                <div className="px-5 py-6 text-center text-xs leading-5 text-zinc-400">
+                  WhatsApp is preparing the code. This usually takes a few seconds; this window will update automatically.
+                </div>
+                <div className="flex justify-end px-5 py-3 border-t border-white/10">
+                  <button onClick={() => { setShowPairCodeDialog(false); setPairCodePending(false); setPairCodeInput(""); setResetReceipt(null); setResetWarning(null); }} className="px-3 py-1.5 text-xs text-zinc-400 hover:text-white">Cancel</button>
+                </div>
+              </>
             ) : (
               <>
                 <div className="flex items-center gap-3 px-5 py-4 border-b border-white/10">
                   <Check className="h-5 w-5 text-emerald-400" />
                   <div className="text-sm font-semibold text-white">Pairing Code</div>
-                  <button onClick={() => { setShowPairCodeDialog(false); setPairCodeResult(null); setPairCodeInput(""); setResetReceipt(null); setResetWarning(null); }} className="ml-auto text-zinc-500 hover:text-white"><X className="h-4 w-4" /></button>
+                  <button onClick={() => { setShowPairCodeDialog(false); setPairCodeResult(null); setPairCodePending(false); setPairCodeInput(""); setResetReceipt(null); setResetWarning(null); }} className="ml-auto text-zinc-500 hover:text-white"><X className="h-4 w-4" /></button>
                 </div>
                 <div className="px-5 py-4 text-center space-y-3">
                   <p className="text-xs text-zinc-400">Open WhatsApp → Settings → Linked Devices → Link a Device → <span className="font-semibold text-white">Link with phone number instead</span>.</p>

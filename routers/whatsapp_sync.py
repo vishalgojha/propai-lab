@@ -865,15 +865,43 @@ async def pair_code_phone(
         raise HTTPException(502, "WhatsApp ingestor is not configured. Check PROPAI_INGESTOR_URL.")
     try:
         _, resp = await fetch_func(
-            "POST", "/pair-code", timeout=55,
+            "POST", "/pair-code/start", timeout=10,
             headers=_ingestor_broker_headers(broker_id),
             json={"phone": phone_number},
         )
     except Exception as exc:
         raise HTTPException(502, f"Ingestor unreachable: {exc}")
-    if resp is not None and resp.status_code == 200:
+    if resp is not None and resp.status_code in {200, 202}:
         try:
-            return resp.json()
+            result = resp.json()
+            if not isinstance(result, dict):
+                raise ValueError("response is not an object")
+            result.setdefault("state", "generating")
+            return result
         except Exception as exc:
             raise HTTPException(502, f"Ingestor returned invalid response: {exc}")
     raise HTTPException(502, _ingestor_failure_message(resp) if callable(_ingestor_failure_message) else "WhatsApp service is unavailable. Try again in a moment.")
+
+
+@router.get("/api/phones/{phone_id}/pair-code/status")
+async def pair_code_status(
+    phone_id: int,
+    user: dict = Depends(require_user),
+    tenant_id: str | None = Depends(get_tenant_context),
+):
+    """Return the short-lived code-generation state without holding a request open."""
+    org_id = await _request_organization_id(user, tenant_id)
+    await _require_org_permission(user, org_id, "manage_whatsapp")
+    phone = await _scoped_phone(phone_id, org_id)
+    broker_id = str(phone.get("broker_id") or "").strip()
+    if not broker_id:
+        raise HTTPException(400, "Phone is missing broker_id")
+    _, resp = await _first_ingestor_response(
+        "GET", "/pair-code/status", timeout=5, headers=_ingestor_broker_headers(broker_id)
+    )
+    if resp is not None and resp.status_code == 200:
+        try:
+            return resp.json()
+        except ValueError as exc:
+            raise HTTPException(502, f"Ingestor returned invalid pairing status: {exc}")
+    raise HTTPException(502, _ingestor_failure_message(resp))
