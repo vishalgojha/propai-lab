@@ -958,6 +958,13 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
     ]
     for incoming in req.messages:
         content = str(incoming.get("content") or "").strip()
+        if not content:
+            parts = incoming.get("parts") or []
+            for p in parts:
+                if p.get("type") == "text":
+                    content = str(p.get("text") or "").strip()
+                    if content:
+                        break
         role = incoming.get("role")
         if role not in {"user", "assistant", "system"} or not content:
             continue
