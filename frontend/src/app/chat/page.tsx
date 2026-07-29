@@ -276,8 +276,8 @@ export default function ChatPage() {
           const msgs = await api.getChatSessionMessages(active.id);
           if (cancelled) return;
           setMessages(msgs.map((m) => toUIMessage({ id: m.id, role: m.role as "user" | "assistant", content: m.content })));
-        } catch {
-          // Ignore resume failures and start from an empty thread.
+        } catch (e) {
+          setSessionError(e instanceof Error ? e.message : "Could not resume previous chat");
         }
       }
     })();
@@ -333,13 +333,15 @@ export default function ChatPage() {
   const handleSwitchSession = useCallback(async (id: string) => {
     if (id === sessionId) return;
     setSessionId(id);
+    setSessionError("");
     sessionIdRef.current = id;
     if (activeSessionStorageKey) window.localStorage.setItem(activeSessionStorageKey, id);
     try {
       const msgs = await api.getChatSessionMessages(id);
       setMessages(msgs.map((m) => toUIMessage({ id: m.id, role: m.role as "user" | "assistant", content: m.content })));
-    } catch {
+    } catch (e) {
       setMessages([]);
+      setSessionError(e instanceof Error ? e.message : "Could not load this chat");
     }
   }, [activeSessionStorageKey, sessionId, setMessages]);
 
@@ -397,7 +399,7 @@ export default function ChatPage() {
       `}</style>
 
       {/* ═══════ Session Sidebar ═══════ */}
-      {showSessions && <aside className="hidden lg:flex w-40 flex-col border-r border-white/10 shrink-0 mr-2">
+      {showSessions && <aside className="hidden lg:flex w-64 flex-col border-r border-white/10 shrink-0 mr-2">
         <div className="flex items-center justify-between px-3 pt-3 pb-2">
           <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-[0.15em]">Chats</span>
           <button

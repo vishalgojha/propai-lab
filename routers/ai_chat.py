@@ -905,7 +905,7 @@ async def list_chat_sessions(broker_phone: str = "", limit: int = 50, user: dict
     tenant_id = tenant_id or await asyncio.to_thread(_resolve_active_organization_id, user, None)
     owner_key, aliases = await _chat_owner_context(user, tenant_id)
     await asyncio.to_thread(storage.adopt_chat_session_owners, aliases, owner_key, tenant_id)
-    return storage.list_chat_sessions(owner_key, limit=limit, tenant_id=tenant_id)
+    return await asyncio.to_thread(storage.list_chat_sessions, owner_key, limit=limit, tenant_id=tenant_id)
 
 
 @router.post("/api/ai/chat/sessions")
@@ -923,14 +923,14 @@ async def create_chat_session(broker_phone: str = "", title: str = "New chat", u
 async def get_chat_session_messages(session_id: str, user: dict = Depends(require_user), tenant_id: str | None = Depends(get_tenant_context)):
     tenant_id = tenant_id or await asyncio.to_thread(_resolve_active_organization_id, user, None)
     await _owned_chat_session(session_id, user, tenant_id)
-    return storage.get_ai_chat_messages(session_id, tenant_id=tenant_id)
+    return await asyncio.to_thread(storage.get_ai_chat_messages, session_id, tenant_id=tenant_id)
 
 
 @router.delete("/api/ai/chat/sessions/{session_id}")
 async def delete_chat_session(session_id: str, user: dict = Depends(require_user), tenant_id: str | None = Depends(get_tenant_context)):
     tenant_id = tenant_id or await asyncio.to_thread(_resolve_active_organization_id, user, None)
     await _owned_chat_session(session_id, user, tenant_id)
-    storage.delete_chat_session(session_id, tenant_id=tenant_id)
+    await asyncio.to_thread(storage.delete_chat_session, session_id, tenant_id=tenant_id)
     return {"ok": True}
 
 
