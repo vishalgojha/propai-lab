@@ -1,8 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, RefreshCw, Smartphone } from "lucide-react";
+import { ArrowLeft, Ban, RefreshCw, Search, Smartphone } from "lucide-react";
 import {
   getAdminWhatsAppSessions,
   updateAdminWhatsAppSession,
@@ -22,6 +22,7 @@ export default function AdminWhatsAppPage() {
   const [loading, setLoading] = useState(true);
   const [actionKey, setActionKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -55,6 +56,20 @@ export default function AdminWhatsAppPage() {
     }
   }
 
+  const filteredSessions = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    if (!needle) return sessions;
+    return sessions.filter((session) => [
+      session.instance_name,
+      session.display_name,
+      session.phone_number_live,
+      session.phone_number,
+      session.organizations?.name,
+      session.organizations?.slug,
+      session.broker_id,
+    ].some((value) => String(value || "").toLowerCase().includes(needle)));
+  }, [query, sessions]);
+
   return (
     <main className="mx-auto max-w-7xl p-6">
       <div className="mb-7 flex flex-wrap items-start justify-between gap-4">
@@ -71,43 +86,48 @@ export default function AdminWhatsAppPage() {
       </div>
 
       {error && <div className="mb-5 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">{error}</div>}
+      <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+        <label className="relative block w-full max-w-md">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" />
+          <input
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Search workspace, phone, or session"
+            className="h-10 w-full rounded-lg border border-white/10 bg-zinc-950 pl-9 pr-3 text-sm text-white outline-none placeholder:text-zinc-600 focus:border-emerald-500/60"
+          />
+        </label>
+        <div className="text-xs text-zinc-500">{filteredSessions.length} of {sessions.length} sessions</div>
+      </div>
+
       {loading && sessions.length === 0 ? (
         <div className="rounded-xl border border-white/10 p-12 text-center text-zinc-500">Loading sessions…</div>
-      ) : sessions.length === 0 ? (
-        <div className="rounded-xl border border-white/10 p-12 text-center text-zinc-500">No WhatsApp phones configured.</div>
+      ) : filteredSessions.length === 0 ? (
+        <div className="rounded-xl border border-white/10 p-12 text-center text-zinc-500">No sessions match this search.</div>
       ) : (
-        <div className="grid gap-4 lg:grid-cols-2">
-          {sessions.map((session) => {
+        <div className="overflow-hidden rounded-xl border border-white/10 bg-zinc-950">
+          <div className="hidden grid-cols-[minmax(11rem,1.4fr)_minmax(9rem,1fr)_6.5rem_7rem_7rem_8rem] items-center gap-4 border-b border-white/10 bg-white/[0.025] px-5 py-3 text-[10px] font-semibold uppercase tracking-wider text-zinc-500 lg:grid">
+            <div>Phone / workspace</div><div>Status</div><div>Messages</div><div>Self-chat</div><div>Access</div><div className="text-right">Actions</div>
+          </div>
+          <div className="divide-y divide-white/10">
+          {filteredSessions.map((session) => {
             const connected = Boolean(session.connected);
             const busy = actionKey?.startsWith(`${session.id}:`) ?? false;
             const organization = session.organizations;
             return (
-              <section key={session.id} className="rounded-xl border border-white/10 bg-zinc-950 p-5">
-                <div className="flex items-start gap-3">
-                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-white/[0.04]"><Smartphone className="h-5 w-5 text-zinc-300" /></div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <h2 className="truncate font-semibold text-white">{session.instance_name || session.display_name || "WhatsApp phone"}</h2>
-                      <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${connected ? "bg-emerald-500/15 text-emerald-300" : "bg-zinc-800 text-zinc-400"}`}>{connected ? "Connected" : session.connection_state || "Offline"}</span>
-                    </div>
-                    <div className="mt-1 truncate font-mono text-xs text-zinc-500">{session.phone_number_live || session.phone_number}</div>
-                    <div className="mt-1 text-xs text-zinc-400">{organization?.name || session.organization_id}</div>
-                  </div>
+              <section key={session.id} className="grid gap-4 px-4 py-4 sm:px-5 lg:grid-cols-[minmax(11rem,1.4fr)_minmax(9rem,1fr)_6.5rem_7rem_7rem_8rem] lg:items-center">
+                <div className="flex min-w-0 items-center gap-3">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white/[0.04]"><Smartphone className="h-4 w-4 text-zinc-300" /></div>
+                  <div className="min-w-0"><div className="truncate text-sm font-semibold text-white">{session.instance_name || session.display_name || "WhatsApp phone"}</div><div className="truncate font-mono text-xs text-zinc-500">{session.phone_number_live || session.phone_number}</div><div className="truncate text-xs text-zinc-400">{organization?.name || "Unknown workspace"}</div></div>
                 </div>
-
-                <div className="my-5 grid grid-cols-2 divide-x divide-white/10 rounded-lg border border-white/10 py-3 text-center">
-                  <div><div className="text-[10px] uppercase text-zinc-600">Messages</div><div className="mt-1 text-sm font-semibold text-white">{session.total_messages_received?.toLocaleString() || "0"}</div></div>
-                  <div><div className="text-[10px] uppercase text-zinc-600">Broker ID</div><div className="mt-1 truncate px-2 font-mono text-xs text-zinc-300">{session.broker_id || "—"}</div></div>
-                </div>
-
-                <div className="space-y-3 border-y border-white/10 py-4">
-                  <div className="flex items-center justify-between gap-4"><div><div className="text-sm font-medium text-white">Self-chat assistant</div><div className="text-xs text-zinc-500">Allow commands sent to the phone itself</div></div><Toggle checked={session.self_chat_enabled !== false} disabled={busy} label="Toggle self-chat assistant" onChange={() => void updateSession(session, "self_chat_enabled")} /></div>
-                  <div className="flex items-center justify-between gap-4"><div><div className="text-sm font-medium text-white">Enabled</div><div className="text-xs text-zinc-500">Flip off to ban this session</div></div><Toggle checked={session.is_active !== false} disabled={busy} label="Toggle session enabled" onChange={() => void updateSession(session, "is_active")} /></div>
-                </div>
-
+                <div><span className={`inline-flex rounded-full px-2 py-1 text-[10px] font-bold uppercase ${connected ? "bg-emerald-500/15 text-emerald-300" : "bg-zinc-800 text-zinc-400"}`}>{connected ? "Connected" : session.connection_state || "Offline"}</span></div>
+                <div className="text-sm font-medium text-white">{session.total_messages_received?.toLocaleString() || "0"}</div>
+                <div className="flex items-center gap-2"><Toggle checked={session.self_chat_enabled !== false} disabled={busy} label="Toggle self-chat assistant" onChange={() => void updateSession(session, "self_chat_enabled")} /><span className="text-xs text-zinc-400">{session.self_chat_enabled !== false ? "On" : "Off"}</span></div>
+                <div><span className={`inline-flex rounded-full px-2 py-1 text-[10px] font-bold uppercase ${session.is_active !== false ? "bg-emerald-500/15 text-emerald-300" : "bg-red-500/15 text-red-300"}`}>{session.is_active !== false ? "Allowed" : "Banned"}</span></div>
+                <div className="flex justify-end"><button type="button" disabled={busy} onClick={() => { if (window.confirm(session.is_active !== false ? "Ban this WhatsApp session and disconnect it?" : "Restore this WhatsApp session?")) void updateSession(session, "is_active"); }} className={`inline-flex min-h-9 items-center gap-1.5 rounded-lg border px-3 text-xs font-semibold disabled:opacity-50 ${session.is_active !== false ? "border-red-500/30 text-red-300 hover:bg-red-500/10" : "border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/10"}`}><Ban className="h-3.5 w-3.5" />{session.is_active !== false ? "Ban" : "Restore"}</button></div>
               </section>
             );
           })}
+          </div>
         </div>
       )}
     </main>
