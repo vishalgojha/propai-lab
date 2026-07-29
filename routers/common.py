@@ -431,6 +431,8 @@ def _group_jid_to_name(jid: str) -> str:
 def _doubleword_error_response(exc: Exception) -> Any:
     from fastapi.responses import JSONResponse
     msg = str(exc)
+    if re.search(r"<!doctype html|<html[\s>]|<body[\s>]|cloudflare|bad gateway|error code 502|error 502", msg, re.IGNORECASE):
+        msg = "AI search is temporarily unavailable. Please try again."
     if "credits" in msg.lower() or "quota" in msg.lower():
         return JSONResponse(
             status_code=429,
