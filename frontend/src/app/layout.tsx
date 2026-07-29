@@ -31,7 +31,6 @@ import {
 } from "lucide-react";
 import { AuthProvider, useAuth } from "@/lib/AuthProvider";
 import { LayoutProvider, useLayout } from "@/hooks/useLayout";
-import { useIsMobile } from "@/hooks/useMediaQuery";
 import { BottomNav } from "@/components/layout/BottomNav";
 import { MobileDrawer } from "@/components/layout/MobileDrawer";
 import { InstallPrompt } from "@/components/layout/InstallPrompt";
@@ -201,7 +200,6 @@ function AppShell({ children }: { children: React.ReactNode }) {
   const reduceMotion = useReducedMotion();
   const router = useRouter();
   const { user, loading: authLoading, error: authError, refresh: refreshAuth } = useAuth();
-  const isMobile = useIsMobile();
   const { drawerOpen, setDrawerOpen, toggleDrawer, setLastTab } = useLayout();
   const [phones, setPhones] = useState<Phone[]>([]);
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -438,7 +436,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
 
   if (authError) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-black text-white px-4">
+      <div className="flex min-h-[100svh] items-center justify-center bg-black px-4 text-white lg:min-h-screen">
         <div className="max-w-md rounded-xl border border-red-500/30 bg-transparent p-6 text-center">
           <div className="mx-auto mb-3 h-10 w-10 rounded-full border-2 border-red-400/30 border-t-red-400" />
           <div className="text-sm font-semibold">Session check stalled</div>
@@ -464,7 +462,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
 
   if (authLoading || !user) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-black text-white">
+      <div className="flex min-h-[100svh] items-center justify-center bg-black text-white lg:min-h-screen">
         <div className="text-center">
           <div className="mx-auto mb-3 h-10 w-10 animate-spin rounded-full border-2 border-white/10 border-t-white" />
           <div className="text-sm font-semibold">
@@ -481,11 +479,10 @@ function AppShell({ children }: { children: React.ReactNode }) {
   const navSections = isSuperAdmin
     ? [...baseNavSections, adminNavSection]
     : baseNavSections;
-  const hideGlobalChromeOnMobile = isFocusedWorkspace && isMobile;
+  const hideGlobalChromeOnMobile = isFocusedWorkspace;
 
   return (
-    <div className="flex h-screen overflow-hidden bg-black">
-      <ServiceWorkerRegister />
+    <div className="flex h-[100svh] overflow-hidden bg-black lg:h-screen">
       <PaletteModal open={paletteOpen} onClose={() => setPaletteOpen(false)} />
       <MobileDrawer
         open={drawerOpen}
@@ -644,8 +641,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
       {/* ═══════ Main Content ═══════ */}
       <main className="flex-1 flex flex-col overflow-hidden bg-black min-w-0">
         {/* ═══ Top Bar ═══ */}
-        {!hideGlobalChromeOnMobile && (
-          <div className="flex min-h-9 items-center gap-2 border-b border-white/5 bg-black/80 px-2 py-1 lg:min-h-[44px] lg:px-5 lg:py-2">
+        <div className={`${hideGlobalChromeOnMobile ? "max-lg:hidden " : ""}flex min-h-9 items-center gap-2 border-b border-white/5 bg-black/80 px-2 py-1 lg:min-h-[44px] lg:px-5 lg:py-2`}>
             {/* Hamburger (mobile) */}
             <button
               onClick={toggleDrawer}
@@ -695,7 +691,6 @@ function AppShell({ children }: { children: React.ReactNode }) {
               <LogOut className="h-3.5 w-3.5" strokeWidth={1.5} />
             </button>
           </div>
-        )}
 
         {/* Page content */}
         <div className="flex-1 min-h-0 overflow-y-auto text-white relative">
@@ -704,7 +699,9 @@ function AppShell({ children }: { children: React.ReactNode }) {
       </main>
 
       {/* ═══════ Bottom Navigation (mobile) ═══════ */}
-      {!isFocusedWorkspace && <BottomNav onTabChange={setLastTab} />}
+      <div className={isFocusedWorkspace ? "max-lg:hidden" : ""}>
+        <BottomNav onTabChange={setLastTab} />
+      </div>
 
       {/* Install Prompt */}
       <InstallPrompt />
@@ -744,6 +741,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <meta name="mobile-web-app-capable" content="yes" />
       </head>
       <body className={isStandalone ? "" : "lg:overflow-hidden"}>
+        <ServiceWorkerRegister />
         {isStandalone ? (
           <LandingLayout>{children}</LandingLayout>
         ) : (

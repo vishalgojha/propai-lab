@@ -2,7 +2,7 @@
 // deployment-specific Next.js chunks after a frontend redeploy.
 // Bump on every frontend deployment so cached JS cannot retain stale
 // deployment-time environment values such as the Supabase public key.
-const CACHE = "propai-v9";
+const CACHE = "propai-v10";
 const STATIC_ASSETS = [
   "/offline.html",
   "/pwa-192x192.png",
@@ -45,13 +45,18 @@ self.addEventListener("activate", (event) => {
   );
 });
 
+self.addEventListener("message", (event) => {
+  if (event.data?.type === "SKIP_WAITING") {
+    self.skipWaiting();
+  }
+});
+
 self.addEventListener("fetch", (event) => {
   const { request } = event;
   const url = new URL(request.url);
 
-  // Never let an older worker cache the worker script itself. The registration
-  // code also uses a versioned URL, so every frontend deploy can retire stale
-  // workers and their deployment-specific bundles.
+  // Never let an older worker cache the worker script itself. The app retires
+  // legacy registrations on load, so this stays network-only during migration.
   if (url.pathname === "/sw.js") {
     event.respondWith(fetch(request, { cache: "no-store" }));
     return;
@@ -70,13 +75,15 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // Static assets (fonts, images, JS, CSS): cache-first
+  // Deployment assets must be network-first. Next hashes its bundles, but an
+  // old worker can otherwise keep serving a stale chunk until every tab closes.
+  // The cache remains an offline fallback only.
   if (
     url.pathname.startsWith("/_next/static/") ||
     url.pathname.startsWith("/fonts/") ||
     url.pathname.match(/\.(png|jpg|jpeg|svg|ico|woff2?|css|js)$/)
   ) {
-    event.respondWith(cacheFirst(request));
+    event.respondWith(networkFirstWithFallback(request, "/offline.html"));
     return;
   }
 
@@ -106,20 +113,5 @@ async function networkFirstWithFallback(request, fallbackUrl) {
     const fallback = await caches.match(fallbackUrl);
     if (fallback) return fallback;
     return new Response("Offline", { status: 503 });
-  }
-}
-
-async function cacheFirst(request) {
-  const cached = await caches.match(request);
-  if (cached) return cached;
-  try {
-    const response = await fetch(request);
-    if (response.ok) {
-      const cache = await caches.open(CACHE);
-      cache.put(request, response.clone());
-    }
-    return response;
-  } catch {
-    return new Response("", { status: 408 });
   }
 }
