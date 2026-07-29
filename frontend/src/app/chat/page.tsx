@@ -473,7 +473,7 @@ export default function ChatPage() {
   }
 
   return (
-    <div className="relative flex h-[calc(100svh-160px)] lg:h-[calc(100vh-160px)] max-w-7xl mx-auto px-4 lg:px-0">
+    <div className="relative flex h-[calc(100svh-160px)] lg:h-[calc(100vh-160px)] max-w-[1800px] mx-auto px-4 lg:px-6">
       <style>{`
         @keyframes typing-bounce {
           0%, 80%, 100% { transform: translateY(0); }
