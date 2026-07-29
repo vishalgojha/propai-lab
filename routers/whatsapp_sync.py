@@ -667,6 +667,9 @@ async def reset_phone(
             receipt = {}
         if not receipt.get("credentials_deleted") or not receipt.get("mapping_deleted"):
             raise HTTPException(502, "WhatsApp reset was not confirmed by the ingestor")
+        # Do not let the 45-second in-memory live-status fallback show the
+        # pre-reset connected session while the ingestor transitions to pairing.
+        _broker_live_statuses.pop(broker_id, None)
         remote_unlink_confirmed = bool(receipt.get("whatsapp_unlinked"))
         message = (
             "WhatsApp linked device and session credentials were removed. Pairing is now required."
