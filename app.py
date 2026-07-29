@@ -461,7 +461,6 @@ routers.whatsapp_sync._display_phone_from_whatsapp_id = _display_phone_from_what
 routers.whatsapp_sync.get_scheduler = get_scheduler
 
 import routers.send
-routers.send._send_url = _send_url
 routers.send._ingestor_auth_headers = _ingestor_auth_headers
 routers.send._notify_broker_of_lead = _notify_broker_of_lead
 
