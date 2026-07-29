@@ -113,6 +113,75 @@ function formatSessionTime(iso: string) {
   return d.toLocaleDateString("en-IN", { day: "numeric", month: "short" });
 }
 
+type ChatSourceMode = "groups" | "parsed" | "inbox" | "";
+type GroupMirrorItem = ListingItem & {
+  original_message?: string;
+  duplicate_count?: number;
+  duplicate_group_names?: string[];
+  source?: string;
+  last_seen_text?: string;
+};
+
+function getAssistantSourceMode(message: { parts?: Array<{ type?: string; data?: any }> }) {
+  const contextPart = (message.parts || []).find((part) => part?.type === "data-chat_context");
+  const sourceMode = contextPart?.data?.source_mode;
+  return sourceMode === "groups" || sourceMode === "parsed" || sourceMode === "inbox" ? sourceMode : "";
+}
+
+function GroupMirrorCard({ item }: { item: GroupMirrorItem }) {
+  const message = (item.original_message || item.building_name || "").trim();
+  const groupNames = Array.from(new Set((item.duplicate_group_names || []).map((group) => group.trim()).filter(Boolean)));
+  const senderLabel = item.broker_name || "WhatsApp member";
+  const locationLabel = item.location_label || item.micro_market || "WhatsApp group";
+  const duplicateLabel = item.duplicate_count && item.duplicate_count > 1
+    ? `${item.duplicate_count} posts collapsed`
+    : "Single group post";
+
+  return (
+    <div className="rounded-2xl border border-emerald-500/15 bg-emerald-500/[0.04] shadow-[0_0_0_1px_rgba(16,185,129,0.04)]">
+      <div className="flex items-start justify-between gap-3 border-b border-white/5 px-4 py-3">
+        <div>
+          <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-emerald-300/80">
+            WhatsApp group mirror
+          </div>
+          <div className="mt-1 text-sm font-semibold text-white">{senderLabel}</div>
+          <div className="text-[11px] text-zinc-500">{locationLabel}</div>
+        </div>
+        <div className="text-right text-[11px] text-zinc-500">
+          {item.last_seen_text ? <div>{item.last_seen_text}</div> : null}
+          <div>{duplicateLabel}</div>
+        </div>
+      </div>
+      <div className="px-4 py-3">
+        <div className="whitespace-pre-wrap text-sm leading-6 text-zinc-100">
+          {message || "No message body available."}
+        </div>
+        {groupNames.length > 0 && (
+          <div className="mt-3 flex flex-wrap gap-1.5">
+            {groupNames.slice(0, 4).map((group) => (
+              <span
+                key={group}
+                className="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-1 text-[10px] font-medium text-emerald-200"
+              >
+                {group}
+              </span>
+            ))}
+            {groupNames.length > 4 && (
+              <span className="rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[10px] font-medium text-zinc-400">
+                +{groupNames.length - 4} more
+              </span>
+            )}
+          </div>
+        )}
+        <div className="mt-3 flex items-center justify-between gap-3 text-[11px] text-zinc-500">
+          <span>{duplicateLabel}</span>
+          <span className="truncate">{item.micro_market || item.location_label || ""}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function ChatPage() {
   const { user, loading: authLoading } = useAuth();
   const [input, setInput] = useState("");
@@ -529,6 +598,7 @@ export default function ChatPage() {
                   ) : (
                     <div className="max-w-[90%] w-full space-y-3">
                       {(() => {
+                        const assistantMode = (getAssistantSourceMode(m) || searchSource) as ChatSourceMode;
                         const textParts = (m.parts || []).filter(
                           (p: any) => p.type === "text" && p.text
                         );
@@ -542,19 +612,38 @@ export default function ChatPage() {
                               if (hasCards && textParts.length > 0) {
                                 // Render AI summary line with bold counts
                                 const summaryText = textParts[0].text || "";
-                                return <div key="ai-summary" className="mb-3 text-xs text-zinc-400"><MarkdownMessage text={summaryText} /></div>;
+                                return (
+                                  <div key="ai-summary" className="mb-3 text-xs text-zinc-400">
+                                    <MarkdownMessage text={summaryText} />
+                                  </div>
+                                );
                               }
                               return textParts.map((p: any, i: number) => (
                                 <MarkdownMessage key={i} text={p.text} />
                               ));
                             })()}
+                            {listingParts.length > 0 && (
+                              <div className="flex items-center gap-2">
+                                <span
+                                  className={`inline-flex items-center rounded-full border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] ${
+                                    assistantMode === "groups"
+                                      ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-200"
+                                      : "border-blue-500/20 bg-blue-500/10 text-blue-200"
+                                  }`}
+                                >
+                                  {assistantMode === "groups" ? "Live WhatsApp groups" : "Parsed inventory"}
+                                </span>
+                              </div>
+                            )}
                             {listingParts.map((p: any, i: number) => {
-                              const items: ListingItem[] = p.data?.items || [];
+                              const items: GroupMirrorItem[] = p.data?.items || [];
                               if (items.length === 0) return null;
                               return (
                                 <div key={`cards-${i}`} className="flex flex-col gap-2.5">
                                   {items.map((item, j) => (
-                                    <ListingCard key={item.fingerprint || j} item={item} />
+                                    assistantMode === "groups"
+                                      ? <GroupMirrorCard key={item.fingerprint || j} item={item} />
+                                      : <ListingCard key={item.fingerprint || j} item={item} />
                                   ))}
                                 </div>
                               );
