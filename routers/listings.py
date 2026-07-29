@@ -1,6 +1,7 @@
 """
 Listing routes — listings, parsed sources, listing photos, media serving.
 """
+import re
 import uuid
 from pathlib import Path
 
@@ -58,6 +59,13 @@ async def get_listing_detail(listing_id: int, user: dict = Depends(require_user)
                 ).eq("id", raw_msg_id).limit(1).execute()
                 if raw_res.data:
                     raw_msg = raw_res.data[0]
+                    content = raw_msg.get("content", "")
+                    phone_digits_pattern = re.compile(r'[6-9]\d{9}')
+                    def mask_phone(match):
+                        digits = match.group(0)
+                        return digits[:2] + 'XXXXXX' + digits[-2:]
+                    content = phone_digits_pattern.sub(mask_phone, content)
+                    raw_msg = {**raw_msg, "content": content}
             except Exception:
                 pass
         return {**listing, "sources": sources, "photos": photos, "raw_message": raw_msg}

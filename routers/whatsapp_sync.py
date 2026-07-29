@@ -781,8 +781,11 @@ async def pair_code_phone(
             f"This WhatsApp number is already saved as {duplicate.get('instance_name') or 'another phone'}. "
             "Remove this empty phone card instead of pairing the same number twice.",
         )
+    fetch_func = _first_ingestor_response
+    if fetch_func is None:
+        raise HTTPException(502, "WhatsApp ingestor is not configured. Check PROPAI_INGESTOR_URL.")
     try:
-        _, resp = await _first_ingestor_response(
+        _, resp = await fetch_func(
             "POST", "/pair-code", timeout=55,
             params={"broker_id": broker_id},
             json={"phone": phone_number},
@@ -790,5 +793,8 @@ async def pair_code_phone(
     except Exception as exc:
         raise HTTPException(502, f"Ingestor unreachable: {exc}")
     if resp is not None and resp.status_code == 200:
-        return resp.json()
-    raise HTTPException(502, _ingestor_failure_message(resp))
+        try:
+            return resp.json()
+        except Exception as exc:
+            raise HTTPException(502, f"Ingestor returned invalid response: {exc}")
+    raise HTTPException(502, _ingestor_failure_message(resp) if callable(_ingestor_failure_message) else "WhatsApp service is unavailable. Try again in a moment.")

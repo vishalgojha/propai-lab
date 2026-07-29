@@ -218,10 +218,12 @@ async function fetchJSONWithRetry<T>(
       }
       const isHtmlResponse = /<!DOCTYPE\s+html|<html|<\s*div|<\s*body/i.test(body);
       if (isHtmlResponse) {
-        message = `Backend error ${res.status}: ${res.statusText}. Please try again.`;
+        const statusLabel = res.statusText || (res.status >= 500 ? "Server error" : "Request failed");
+        message = `Backend error ${res.status}: ${statusLabel}. Please try again.`;
       }
       if (!message || message.trim() === "") {
-        message = `Backend error ${res.status}: ${res.statusText}. Please try again.`;
+        const statusLabel = res.statusText || (res.status >= 500 ? "Server error" : "Request failed");
+        message = `Backend error ${res.status}: ${statusLabel}. Please try again.`;
       }
       throw new Error(`${res.status} ${res.statusText}: ${message}`);
     }
