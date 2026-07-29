@@ -312,8 +312,9 @@ function PhoneCard({
       else if (action === "pair-code") {
         // A connection has one canonical WhatsApp number. Keeping this value
         // fixed avoids accidentally issuing a pairing code for a mistyped or
-        // stale live-status number.
-        setPairCodeInput(normalizePhoneDigits(phone.phone_number || phoneDisplay));
+        // stale live-status number. New/unpaired cards deliberately have no
+        // canonical number yet, so their input must start empty and editable.
+        setPairCodeInput(isPlaceholderPhone(phone.phone_number) ? "" : normalizePhoneDigits(phone.phone_number));
         setPairCodeResult(null);
         setResetReceipt(null);
         setShowPairCodeDialog(true);
@@ -378,7 +379,7 @@ function PhoneCard({
       setShowResetDialog(false);
       // Keep the number ready for the next, explicit pairing-code step. This
       // avoids an accidental request for a code for the wrong WhatsApp phone.
-      setPairCodeInput(normalizePhoneDigits(phone.phone_number || phoneDisplay));
+      setPairCodeInput(isPlaceholderPhone(phone.phone_number) ? "" : normalizePhoneDigits(phone.phone_number));
       setShowPairCodeDialog(true);
       setResetReceipt(receipt.reset_at);
       setActionMessage("Saved WhatsApp session cleared. A fresh pairing code is now required.");
@@ -634,16 +635,31 @@ function PhoneCard({
                       <div>Saved credentials and device mapping were deleted at {formatTime(resetReceipt)}. This phone now requires a fresh pairing code.</div>
                     </div>
                   )}
-                  <p className="text-xs text-zinc-400">Pairing this connection&apos;s WhatsApp number:</p>
+                  <p className="text-xs text-zinc-400">
+                    {isPlaceholderPhone(phone.phone_number)
+                      ? "Enter the WhatsApp number to pair, including country code:"
+                      : "Pairing this connection&apos;s WhatsApp number:"}
+                  </p>
                   <input
                     type="tel"
                     value={pairCodeInput}
-                    readOnly
+                    onChange={(e) => {
+                      if (isPlaceholderPhone(phone.phone_number)) {
+                        setPairCodeInput(e.target.value.replace(/[^0-9]/g, ""));
+                      }
+                    }}
+                    readOnly={!isPlaceholderPhone(phone.phone_number)}
                     aria-label="WhatsApp number being paired"
-                    className="w-full cursor-default rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2.5 text-sm text-white"
+                    placeholder={isPlaceholderPhone(phone.phone_number) ? "e.g. 919820056180" : undefined}
+                    autoFocus={isPlaceholderPhone(phone.phone_number)}
+                    className={`w-full rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2.5 text-sm text-white placeholder:text-zinc-600 ${isPlaceholderPhone(phone.phone_number) ? "focus:border-emerald-500/50 focus:outline-none" : "cursor-default"}`}
                     onKeyDown={(e) => { if (e.key === "Enter" && pairCodeInput.length >= 10) handlePairCodeSubmit(); }}
                   />
-                  <p className="text-[11px] text-zinc-500">To pair a different number, add it as a new phone first.</p>
+                  <p className="text-[11px] text-zinc-500">
+                    {isPlaceholderPhone(phone.phone_number)
+                      ? "This number will be saved to this connection once WhatsApp pairing succeeds."
+                      : "To pair a different number, add it as a new phone first."}
+                  </p>
                 </div>
                 <div className="flex justify-end gap-2 px-5 py-3 border-t border-white/10">
                   <button onClick={() => { setShowPairCodeDialog(false); setPairCodeInput(""); setResetReceipt(null); }} className="px-3 py-1.5 text-xs text-zinc-400 hover:text-white">Cancel</button>
