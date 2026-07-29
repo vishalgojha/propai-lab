@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-from routers.common import storage, require_user, get_tenant_context, get_current_team_member, check_permission, _select_reply_broker_id
+from routers.common import storage, require_user, get_tenant_context, get_current_team_member, check_permission, _select_reply_broker_id, _first_ingestor_response
 
 router = APIRouter(tags=["send"])
 
@@ -45,9 +45,25 @@ class ReplayStats(BaseModel):
 
 # ── Placeholders (wired by app.py at startup) ───────────────────
 
-_send_url: object = None
 _ingestor_auth_headers: object = None
 _notify_broker_of_lead: object = None
+
+
+def _normalize_upstream_response(response: httpx.Response | None) -> dict:
+    if response is None:
+        return {"success": False, "error": "WhatsApp service is unavailable. Try again in a moment."}
+    if response.text:
+        try:
+            body = response.json()
+            if isinstance(body, dict):
+                return body
+            return {"success": True, "data": body}
+        except Exception:
+            if response.status_code < 400:
+                return {"success": True, "raw": response.text[:1000]}
+    if response.status_code < 400:
+        return {"success": True}
+    return {"success": False, "error": f"WhatsApp service returned HTTP {response.status_code}. Please try again in a moment."}
 
 
 # ── Routes ────────────────────────────────────────────────────────
@@ -62,7 +78,6 @@ async def send_message(req: SendMessageRequest, member: dict = Depends(get_curre
         return JSONResponse(status_code=400, content={"success": False, "error": "remote_jid is required"})
 
     try:
-        ingestor_url = _send_url()
         payload = {
             "remoteJid": req.remote_jid,
             "text": text,
@@ -76,22 +91,20 @@ async def send_message(req: SendMessageRequest, member: dict = Depends(get_curre
             payload["quotedParticipant"] = req.quoted_participant
             payload["quotedFromMe"] = req.quoted_from_me
 
-        async with httpx.AsyncClient(timeout=30) as client:
-            response = await client.post(
-                f"{ingestor_url}/send-message", json=payload, headers=_ingestor_auth_headers()
-            )
-
-        response_body = {}
-        if response.text:
-            try:
-                response_body = response.json()
-            except Exception:
-                response_body = {"raw": response.text[:1000]}
+        base_url, response = await _first_ingestor_response(
+            "POST",
+            "/send-message",
+            timeout=30,
+            json=payload,
+            headers=_ingestor_auth_headers(),
+        )
+        status_code = response.status_code if response is not None else 502
+        response_body = _normalize_upstream_response(response)
 
         try:
             storage.log_activity(
                 team_member_id=member["id"],
-                action="reply_whatsapp_sent" if response.status_code < 400 else "reply_whatsapp_failed",
+                action="reply_whatsapp_sent" if status_code < 400 else "reply_whatsapp_failed",
                 target_type="whatsapp_conversation",
                 target_id=req.remote_jid,
                 details={
@@ -101,16 +114,17 @@ async def send_message(req: SendMessageRequest, member: dict = Depends(get_curre
                     "quoted_remote_jid": req.quoted_remote_jid or "",
                     "quoted_participant": req.quoted_participant or "",
                     "quoted_from_me": bool(req.quoted_from_me),
-                    "transport_status_code": response.status_code,
+                    "transport_status_code": status_code,
                     "transport_response": response_body,
+                    "transport_base_url": base_url or "",
                 },
             )
         except Exception as exc:
             print(f"[activity-log] failed to record whatsapp reply: {exc}", flush=True)
 
         return JSONResponse(
-            status_code=response.status_code,
-            content=response_body if response.text else {"success": False, "error": "empty response"},
+            status_code=status_code,
+            content=response_body,
         )
     except httpx.ConnectError:
         try:
@@ -182,7 +196,6 @@ async def send_media(req: Request, member: dict = Depends(get_current_team_membe
     try:
         content = await file.read()
         selected_broker_id = await _select_reply_broker_id(member, requested_broker_id)
-        ingestor_url = _send_url()
         data = {
             "remoteJid": remote_jid,
             "mediaType": media_type,
@@ -203,25 +216,21 @@ async def send_media(req: Request, member: dict = Depends(get_current_team_membe
             )
         }
 
-        async with httpx.AsyncClient(timeout=60) as client:
-            response = await client.post(
-                f"{ingestor_url}/send-media",
-                data=data,
-                files=files,
-                headers=_ingestor_auth_headers(),
-            )
-
-        response_body = {}
-        if response.text:
-            try:
-                response_body = response.json()
-            except Exception:
-                response_body = {"raw": response.text[:1000]}
+        base_url, response = await _first_ingestor_response(
+            "POST",
+            "/send-media",
+            timeout=60,
+            data=data,
+            files=files,
+            headers=_ingestor_auth_headers(),
+        )
+        status_code = response.status_code if response is not None else 502
+        response_body = _normalize_upstream_response(response)
 
         try:
             storage.log_activity(
                 team_member_id=member["id"],
-                action="reply_whatsapp_sent" if response.status_code < 400 else "reply_whatsapp_failed",
+                action="reply_whatsapp_sent" if status_code < 400 else "reply_whatsapp_failed",
                 target_type="whatsapp_conversation",
                 target_id=remote_jid,
                 details={
@@ -229,16 +238,17 @@ async def send_media(req: Request, member: dict = Depends(get_current_team_membe
                     "reply_text": caption[:500],
                     "media_type": media_type,
                     "file_name": file_name,
-                    "transport_status_code": response.status_code,
+                    "transport_status_code": status_code,
                     "transport_response": response_body,
+                    "transport_base_url": base_url or "",
                 },
             )
         except Exception as exc:
             print(f"[activity-log] failed to record whatsapp media reply: {exc}", flush=True)
 
         return JSONResponse(
-            status_code=response.status_code,
-            content=response_body if response.text else {"success": False, "error": "empty response"},
+            status_code=status_code,
+            content=response_body,
         )
     except httpx.ConnectError:
         try:
