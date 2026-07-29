@@ -111,16 +111,17 @@ export default function LLMProvidersPage() {
     }
   }
 
-  async function handleActivate(provider: Provider) {
+  async function handleToggleActive(provider: Provider) {
     try {
       const { api_key, ...rest } = provider;
+      const nextActive = !provider.is_active;
       await fetchJSON("/workspace/llm-providers", {
         method: "POST",
-        body: JSON.stringify({ ...rest, id: provider.id, is_active: true, api_key: "" }),
+        body: JSON.stringify({ ...rest, id: provider.id, is_active: nextActive, api_key: "" }),
       });
       loadProviders();
     } catch (e) {
-      alert(e instanceof Error ? e.message : "Error activating provider");
+      alert(e instanceof Error ? e.message : "Error updating provider");
     }
   }
 
@@ -213,6 +214,11 @@ export default function LLMProvidersPage() {
                 {activeProviderType ? <span className="text-green-400"> {" "}({activeProviderType})</span> : null}
               </div>
               <div className="text-green-400 text-xs">Model: {activeProvider?.model_name || "—"}</div>
+              {providers.filter(p => p.is_active).length > 1 && (
+                <div className="text-yellow-400 text-[10px] mt-0.5">
+                  +{providers.filter(p => p.is_active).length - 1} more active — requests fail over across all active providers
+                </div>
+              )}
               {activeProviderSource && (
                 <div className="mt-1 inline-flex items-center gap-1 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-emerald-300">
                   Runtime source: {activeProviderSource}
@@ -265,9 +271,16 @@ export default function LLMProvidersPage() {
                   </td>
                   <td className="px-4 py-3 text-right">
                     <div className="flex justify-end gap-2">
-                      {!p.is_active && (
+                      {p.is_active ? (
                         <button
-                          onClick={() => handleActivate(p)}
+                          onClick={() => handleToggleActive(p)}
+                          className="px-2 py-1 bg-gray-600/20 text-gray-400 hover:bg-gray-600/30 rounded text-xs font-medium transition-colors"
+                        >
+                          Deactivate
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => handleToggleActive(p)}
                           className="px-2 py-1 bg-green-600/20 text-green-400 hover:bg-green-600/30 rounded text-xs font-medium transition-colors"
                         >
                           Activate
@@ -447,7 +460,7 @@ export default function LLMProvidersPage() {
                   onChange={(e) => setFormData({ ...formData, is_active: e.target.checked })}
                 />
                 <label htmlFor="is_active" className="text-sm text-gray-300">
-                  Set as active provider (will replace current active)
+                  Active — included in the failover pool (other active providers stay on)
                 </label>
               </div>
             </div>
