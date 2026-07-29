@@ -52,8 +52,8 @@ function writeConnectionSnapshot(userId: string, patch: ConnectionSnapshot) {
 }
 
 function StatusDot({ status }: { status: HealthStatus }) {
-  const colors = { healthy: "bg-zinc-200", warning: "bg-zinc-500", error: "bg-red-400" };
-  return <span className={`w-2 h-2 rounded-full ${colors[status]} shrink-0`} />;
+  const colors = { healthy: "bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.85)] animate-pulse", warning: "bg-amber-300", error: "bg-red-400" };
+  return <span aria-label={status === "healthy" ? "Connected" : status} className={`w-2 h-2 rounded-full ${colors[status]} shrink-0`} />;
 }
 
 function StatBox({ icon, label, value, status }: { icon: React.ReactNode; label: string; value: string; status?: HealthStatus }) {
@@ -478,7 +478,7 @@ function PhoneCard({
                     disabled={actionLoading !== null}
                     className={`relative h-5 w-9 shrink-0 rounded-full transition-colors disabled:opacity-50 ${phone.self_chat_enabled !== false ? "bg-emerald-500" : "bg-zinc-700"}`}
                   >
-                    <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-transform ${phone.self_chat_enabled !== false ? "translate-x-4" : "translate-x-0.5"}`} />
+                    <span className={`absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white transition-transform ${phone.self_chat_enabled !== false ? "translate-x-4" : "translate-x-0"}`} />
                   </button>
                 </div>
               </div>
