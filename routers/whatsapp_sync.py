@@ -656,9 +656,11 @@ async def reset_phone(
             receipt = {}
         if not receipt.get("credentials_deleted") or not receipt.get("mapping_deleted"):
             raise HTTPException(502, "WhatsApp reset was not confirmed by the ingestor")
+        if not receipt.get("whatsapp_unlinked"):
+            raise HTTPException(502, "WhatsApp linked-device removal was not confirmed; session was left unchanged")
         return {
             "ok": True,
-            "message": "WhatsApp session credentials were deleted. Pairing is now required.",
+            "message": "WhatsApp linked device and session credentials were removed. Pairing is now required.",
             "reset_at": receipt.get("reset_at"),
             "pairing_required": bool(receipt.get("pairing_required")),
         }
