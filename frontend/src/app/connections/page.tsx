@@ -6,7 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Activity, Clock, Database, Inbox, List, LogOut, MessageSquare, Plus, RefreshCw, Shield, Smartphone, Trash2, AlertTriangle, Users, Zap, Lock, X, ChevronLeft, MoreVertical, User, MessageCircle, Check, AlertCircle, Hash } from "lucide-react";
 import { useAuth } from "@/lib/AuthProvider";
-import { getPhones, createPhone, deletePhone, resetPhone, disconnectPhone, pairCodePhone, getPairCodePhoneStatus, updatePhone, fetchJSON, isLiveWhatsAppConnection, getOnboardingGroups, checkOnboardingGroup, connectOnboardingGroup, disconnectOnboardingGroup, type Phone, type WhatsAppStatus, type OnboardingGroup, type OnboardingGroupCheck, type OnboardingGroupState } from "@/lib/api";
+import { getPhones, createPhone, deletePhone, resetPhone, disconnectPhone, pairCodePhone, getPairCodePhoneStatus, updatePhone, fetchJSON, isLiveWhatsAppConnection, getOnboardingGroups, checkOnboardingGroup, connectOnboardingGroup, disconnectOnboardingGroup, getCurrentOrg, updateOrganization, type Phone, type WhatsAppStatus, type OnboardingGroup, type OnboardingGroupCheck, type OnboardingGroupState } from "@/lib/api";
 import QRCode from "qrcode";
 
 type HealthStatus = "healthy" | "warning" | "error";
@@ -204,7 +204,7 @@ function matchesLiveStatus(phone: Phone, status: WhatsAppStatus | null) {
   return candidateDigits.includes(liveDigits);
 }
 
-function CreatePhoneDialog({ open, onClose, onCreated }: { open: boolean; onClose: () => void; onCreated: (phone: Phone) => void }) {
+function CreatePhoneDialog({ open, onClose, onCreated, onWorkspaceRenamed }: { open: boolean; onClose: () => void; onCreated: (phone: Phone) => void; onWorkspaceRenamed: (newName: string) => void }) {
   const [instanceName, setInstanceName] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -213,7 +213,19 @@ function CreatePhoneDialog({ open, onClose, onCreated }: { open: boolean; onClos
     setLoading(true);
     setError(null);
     try {
-      const phone = await createPhone({ instance_name: instanceName.trim() || undefined });
+      const trimmed = instanceName.trim();
+      if (trimmed) {
+        try {
+          const current = await getCurrentOrg();
+          if (current?.id && current.name !== trimmed) {
+            await updateOrganization(current.id, { name: trimmed });
+            onWorkspaceRenamed(trimmed);
+          }
+        } catch (renameErr) {
+          console.warn("[connections] rename workspace failed:", renameErr);
+        }
+      }
+      const phone = await createPhone({ instance_name: trimmed || undefined });
       setInstanceName("");
       onCreated(phone);
       onClose();
@@ -1052,6 +1064,7 @@ export default function ConnectionCenterPage() {
   const [phonesLoading, setPhonesLoading] = useState(true);
   const [phonesError, setPhonesError] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
+  const [workspaceToast, setWorkspaceToast] = useState<string | null>(null);
 
   const [totalParsed, setTotalParsed] = useState(0);
   const [totalListings, setTotalListings] = useState(0);
@@ -1155,6 +1168,12 @@ export default function ConnectionCenterPage() {
     void fetchLiveStatus();
   }, [fetchPhones, fetchLiveStatus]);
 
+  const handleWorkspaceRenamed = useCallback((newName: string) => {
+    setWorkspaceToast(`Workspace renamed to “${newName}”.`);
+    window.setTimeout(() => setWorkspaceToast(null), 4000);
+    router.refresh();
+  }, [router]);
+
   const handlePhoneCreated = useCallback((created: Phone) => {
     setPhones((current) => {
       const next = current.some((phone) => phone.id === created.id)
@@ -1240,6 +1259,12 @@ export default function ConnectionCenterPage() {
           )}
         </div>
       </div>
+
+      {workspaceToast && (
+        <div className="mb-6 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200">
+          {workspaceToast}
+        </div>
+      )}
 
       {phonesLoading ? (
         <div className="flex items-center justify-center py-16 text-sm text-zinc-500">Loading phones...</div>
@@ -1368,7 +1393,7 @@ export default function ConnectionCenterPage() {
         </>
       )}
 
-      <CreatePhoneDialog open={showCreate} onClose={() => setShowCreate(false)} onCreated={handlePhoneCreated} />
+      <CreatePhoneDialog open={showCreate} onClose={() => setShowCreate(false)} onCreated={handlePhoneCreated} onWorkspaceRenamed={handleWorkspaceRenamed} />
     </div>
   );
 }
