@@ -132,5 +132,33 @@ services:
       - api
     restart: unless-stopped
 
+  building-enrichment-worker:
+    build:
+      context: ../..
+      dockerfile: Dockerfile.api
+    command: ["python", "building_enrichment_worker.py"]
+    environment:
+      SUPABASE_URL: ${SUPABASE_URL}
+      SUPABASE_SERVICE_KEY: ${SUPABASE_SERVICE_KEY}
+      NVIDIA_API_KEY: ${NVIDIA_API_KEY}
+      NVIDIA_API_KEY_2: ${NVIDIA_API_KEY_2:-}
+      NVIDIA_API_KEY_3: ${NVIDIA_API_KEY_3:-}
+      NVIDIA_API_KEY_4: ${NVIDIA_API_KEY_4:-}
+      NVIDIA_MODEL: ${NVIDIA_MODEL:-}
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      GROQ_API_KEY_2: ${GROQ_API_KEY_2:-}
+      GROQ_API_KEY_3: ${GROQ_API_KEY_3:-}
+      GROQ_API_KEY_4: ${GROQ_API_KEY_4:-}
+      GROQ_MODEL: ${GROQ_MODEL:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      CEREBRAS_API_KEY: ${CEREBRAS_API_KEY:-}
+      BUILDING_ENRICHMENT_WORKER_BATCH_SIZE: 10
+      BUILDING_ENRICHMENT_WORKER_POLL_SECONDS: 30
+      BUILDING_ENRICHMENT_CONFIDENCE_THRESHOLD: 0.7
+      BUILDING_ENRICHMENT_MAX_RETRIES: 3
+    depends_on:
+      - api
+    restart: unless-stopped
+
 volumes:
   propai-data:

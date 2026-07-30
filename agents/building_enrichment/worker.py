@@ -182,12 +182,8 @@ class BuildingEnrichmentWorker:
             self.storage.db.execute("""
                 UPDATE buildings
                 SET last_enriched = datetime('now'),
-                    enrichment_confidence = MAX(enrichment_confidence, ?),
-                    enrichment_sources = json_insert(
-                        COALESCE(enrichment_sources, '[]'),
-                        '$[' || json_array_length(COALESCE(enrichment_sources, '[]')) || ']',
-                        ?
-                    ),
+                    enrichment_confidence = GREATEST(COALESCE(enrichment_confidence, 0), ?),
+                    enrichment_sources = COALESCE(enrichment_sources, '[]'::jsonb) || to_jsonb(?::text),
                     updated_at = datetime('now')
                 WHERE id = ?
             """, (result.confidence, provider_name, building_db_id))

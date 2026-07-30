@@ -133,7 +133,7 @@ class BuildingDiscovery:
             SELECT building_name, COUNT(*) as obs_count,
                    COUNT(DISTINCT micro_market) as markets,
                    COUNT(DISTINCT broker_name) as brokers,
-                   GROUP_CONCAT(DISTINCT micro_market) as market_list,
+                   STRING_AGG(DISTINCT micro_market, ',') as market_list,
                    (
                      SELECT micro_market
                      FROM parsed_output p2
