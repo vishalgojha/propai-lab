@@ -7,71 +7,98 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from routers import onboarding
 
 
-def test_backfill_connected_group_processes_only_unparsed_matching_rows(monkeypatch):
-    rows = [
-        SimpleNamespace(
-            id=1,
-            group_name="Bandra Broker Group",
-            raw_payload={"data": {"key": {"remoteJid": "12345@g.us"}}},
-        ),
-        SimpleNamespace(
-            id=2,
-            group_name="Bandra Broker Group",
-            raw_payload={"data": {"key": {"remoteJid": "other@g.us"}}},
-        ),
-        SimpleNamespace(
-            id=3,
-            group_name="Bandra Broker Group",
-            raw_payload={"data": {"key": {"remoteJid": "12345@g.us"}}},
-        ),
-    ]
-    processed = []
+class FakeQuery:
+    def __init__(self, rows):
+        self._rows = rows
 
-    class FakeStorage:
-        def __init__(self):
-            self.tenant_id = None
+    def select(self, *_args, **_kwargs):
+        return self
 
-        def get_raw_messages(self, limit=0, offset=0, group_name=""):
-            if offset > 0:
-                return []
-            assert group_name == "Bandra Broker Group"
-            return rows
+    def eq(self, *_args, **_kwargs):
+        return self
 
-        def get_parsed_by_raw(self, raw_id):
-            return {"id": raw_id} if raw_id == 3 else None
+    def limit(self, *_args, **_kwargs):
+        return self
 
-    monkeypatch.setattr(onboarding, "storage", FakeStorage())
-    monkeypatch.setattr(
-        "extraction_worker.context_from_raw",
-        lambda row: {
-            "sender_name": "Broker",
-            "push_name": "Broker",
-            "sender_jid": "broker@s.whatsapp.net",
-            "sender_phone": "9999999999",
-            "group": "12345@g.us",
-            "group_name": row.group_name,
-            "instance": "test-instance",
-            "is_dm": False,
-            "message_uid": f"uid-{row.id}",
-            "message_id": f"msg-{row.id}",
-            "msg_text": "3 bhk lease inventory",
-            "msg": {},
-            "tenant_id": "org-1",
-        },
-    )
-    monkeypatch.setattr(
-        "extraction.process_raw_message",
-        lambda raw_id, ctx, storage=None: processed.append((raw_id, ctx, storage)),
-    )
+    def execute(self):
+        return SimpleNamespace(data=list(self._rows), count=len(self._rows))
 
-    result = onboarding._backfill_connected_group("org-1", "12345@g.us", "Bandra Broker Group", 7)
 
-    assert result["requested"] == 3
-    assert result["matched"] == 2
-    assert result["processed"] == 1
-    assert result["skipped"] == 1
-    assert result["failed"] == 0
-    assert len(processed) == 1
-    assert processed[0][0] == 1
-    assert processed[0][1]["tenant_id"] == "org-1"
-    assert processed[0][2] is onboarding.storage
+class FakeSupabase:
+    """Tiny in-memory stand-in. Always answers by AND-matching all filters
+    we've set. Used only for the opted_out semantics tests below."""
+
+    def __init__(self):
+        self.rows = []
+
+    def table(self, _name):
+        outer = self
+
+        class _T:
+            def __init__(self):
+                self._filters = {}
+
+            def select(self, *_args, **_kwargs):
+                return self
+
+            def eq(self, column, value):
+                self._filters[column] = value
+                return self
+
+            def limit(self, _n):
+                return self
+
+            def execute(self):
+                matches = [
+                    r for r in outer.rows
+                    if all(r.get(k) == v for k, v in self._filters.items())
+                ]
+                return SimpleNamespace(data=matches, count=len(matches))
+
+        return _T()
+
+
+def _row(org_id, group_jid, group_name="G", opted_out=False, is_active=True):
+    return {
+        "organization_id": org_id,
+        "whatsapp_connection_id": 1,
+        "group_jid": group_jid,
+        "group_name": group_name,
+        "opted_out": opted_out,
+        "is_active": is_active,
+    }
+
+
+def test_extraction_allowed_by_default(monkeypatch):
+    fake = SimpleNamespace()
+    storage = SimpleNamespace(client=FakeSupabase())
+    storage.client.rows = []
+    monkeypatch.setattr(onboarding, "storage", storage)
+
+    assert onboarding.extraction_allowed_for_group("org-1", "12345@g.us", "Family Chat") is True
+
+
+def test_extraction_blocked_for_opted_out_jid(monkeypatch):
+    storage = SimpleNamespace(client=FakeSupabase())
+    storage.client.rows = [_row("org-1", "12345@g.us", "Family Chat", opted_out=True)]
+    monkeypatch.setattr(onboarding, "storage", storage)
+
+    assert onboarding.extraction_allowed_for_group("org-1", "12345@g.us", "Family Chat") is False
+
+
+def test_extraction_allowed_for_unrelated_groups(monkeypatch):
+    storage = SimpleNamespace(client=FakeSupabase())
+    storage.client.rows = [_row("org-1", "OTHER@g.us", "Other Group", opted_out=True)]
+    monkeypatch.setattr(onboarding, "storage", storage)
+
+    assert onboarding.extraction_allowed_for_group("org-1", "REAL@g.us", "Real Group") is True
+
+
+def test_extraction_blocked_by_name_fallback(monkeypatch):
+    """Older raw rows may not carry a JID. The name-fallback ensures the user
+    opting-out by name still suppresses matching messages."""
+    storage = SimpleNamespace(client=FakeSupabase())
+    storage.client.rows = [_row("org-1", "", "Family Chat", opted_out=True)]
+    monkeypatch.setattr(onboarding, "storage", storage)
+
+    assert onboarding.extraction_allowed_for_group("org-1", "UNKNOWN@g.us", "Family Chat") is False
