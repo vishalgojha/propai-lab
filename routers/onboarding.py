@@ -673,47 +673,53 @@ async def connect_group(
     user: dict = Depends(require_user),
     tenant_id: str | None = Depends(get_tenant_context),
 ):
-    org_id = _resolve_active_organization_id(user, tenant_id)
-    await _require_org_permission(user, org_id, "manage_whatsapp")
-    connection = _connection(org_id, body.whatsapp_connection_id)
-    groups = _group_directory(org_id, str(connection.get("broker_id") or ""), body.whatsapp_connection_id)
-    group = next((item for item in groups if item["group_jid"] == body.group_jid), None)
-    if not group:
-        raise HTTPException(404, "Group is not available on this WhatsApp connection")
+    try:
+        org_id = _resolve_active_organization_id(user, tenant_id)
+        await _require_org_permission(user, org_id, "manage_whatsapp")
+        connection = _connection(org_id, body.whatsapp_connection_id)
+        groups = _group_directory(org_id, str(connection.get("broker_id") or ""), body.whatsapp_connection_id)
+        group = next((item for item in groups if item["group_jid"] == body.group_jid), None)
+        if not group:
+            raise HTTPException(404, "Group is not available on this WhatsApp connection")
 
-    cap = _cap_state(org_id, body.whatsapp_connection_id)
-    overlap = _overlap(org_id, group["group_name"], group["group_jid"])
-    warnings = []
-    if overlap["high_overlap"] and not body.confirm_overlap:
-        warnings.append("This group overlaps heavily with brokers already in the network.")
-    if cap["soft_warning_at_cap"] and not body.confirm_cap:
-        warnings.append("This group is at the default tier cap and may add low marginal value.")
-    if cap["hard_block"]:
-        return JSONResponse(status_code=409, content={"message": "This WhatsApp connection is well above its group cap.", "hard_block": True, "cap": cap, "overlap": overlap})
-    if warnings:
-        return JSONResponse(status_code=409, content={"message": "Confirmation required before adding this group.", "warnings": warnings, "cap": cap, "overlap": overlap, "requires_confirmation": True})
+        cap = _cap_state(org_id, body.whatsapp_connection_id)
+        overlap = _overlap(org_id, group["group_name"], group["group_jid"])
+        warnings = []
+        if overlap["high_overlap"] and not body.confirm_overlap:
+            warnings.append("This group overlaps heavily with brokers already in the network.")
+        if cap["soft_warning_at_cap"] and not body.confirm_cap:
+            warnings.append("This group is at the default tier cap and may add low marginal value.")
+        if cap["hard_block"]:
+            return JSONResponse(status_code=409, content={"message": "This WhatsApp connection is well above its group cap.", "hard_block": True, "cap": cap, "overlap": overlap})
+        if warnings:
+            return JSONResponse(status_code=409, content={"message": "Confirmation required before adding this group.", "warnings": warnings, "cap": cap, "overlap": overlap, "requires_confirmation": True})
 
-    row = storage.client.table("organization_group_connections").upsert({
-        "organization_id": org_id,
-        "whatsapp_connection_id": body.whatsapp_connection_id,
-        "group_jid": body.group_jid,
-        "group_name": group["group_name"],
-        "is_active": True,
-        "overlap_score": overlap["overlap_score"],
-        "overlap_sample_count": overlap["sample_count"],
-        "overlap_shared_count": overlap["shared_count"],
-        "overlap_confirmed": bool(body.confirm_overlap),
-    }, on_conflict="organization_id,whatsapp_connection_id,group_jid").execute()
-    _upsert_registry(org_id, body.group_jid, overlap["sample_phones"])
-    asyncio.create_task(_schedule_group_backfill(org_id, body.whatsapp_connection_id, body.group_jid, group["group_name"]))
-    return {
-        "ok": True,
-        "group": group,
-        "connection": (row.data or [None])[0],
-        "cap": _cap_state(org_id, body.whatsapp_connection_id),
-        "overlap": overlap,
-        "backfill_started": True,
-    }
+        row = storage.client.table("organization_group_connections").upsert({
+            "organization_id": org_id,
+            "whatsapp_connection_id": body.whatsapp_connection_id,
+            "group_jid": body.group_jid,
+            "group_name": group["group_name"],
+            "is_active": True,
+            "overlap_score": overlap["overlap_score"],
+            "overlap_sample_count": overlap["sample_count"],
+            "overlap_shared_count": overlap["shared_count"],
+            "overlap_confirmed": bool(body.confirm_overlap),
+        }, on_conflict="organization_id,whatsapp_connection_id,group_jid").execute()
+        _upsert_registry(org_id, body.group_jid, overlap["sample_phones"])
+        asyncio.create_task(_schedule_group_backfill(org_id, body.whatsapp_connection_id, body.group_jid, group["group_name"]))
+        return {
+            "ok": True,
+            "group": group,
+            "connection": (row.data or [None])[0],
+            "cap": _cap_state(org_id, body.whatsapp_connection_id),
+            "overlap": overlap,
+            "backfill_started": True,
+        }
+    except HTTPException:
+        raise
+    except Exception:
+        _logger.exception("connect_group crashed for org=%s connection=%s group=%s", org_id, body.whatsapp_connection_id, body.group_jid)
+        raise
 
 
 @router.post("/groups/disconnect")

@@ -322,7 +322,7 @@ _GENERIC_PARENTS = frozenset({
     "andheri", "dadar", "thane", "malad", "goregaon", "vile parle", "kandivali", "borivali",
 })
 
-IMPLIED_DIRECTION: dict[str, str] = {
+_IMPLIED_DIRECTION: dict[str, str] = {
     "bandra": "Bandra West",
     "khar": "Khar West",
     "santacruz": "Santacruz West",

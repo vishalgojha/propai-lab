@@ -28,6 +28,8 @@ import {
   X,
   Zap,
   Sparkles,
+  Volume2,
+  VolumeX,
 } from "lucide-react";
 import { AuthProvider, useAuth } from "@/lib/AuthProvider";
 import { LayoutProvider, useLayout } from "@/hooks/useLayout";
@@ -35,6 +37,7 @@ import { BottomNav } from "@/components/layout/BottomNav";
 import { MobileDrawer } from "@/components/layout/MobileDrawer";
 import { InstallPrompt } from "@/components/layout/InstallPrompt";
 import { ServiceWorkerRegister } from "@/components/layout/ServiceWorkerRegister";
+import { isMuted, toggleMute } from "@/lib/sounds";
 
 type NavItem = {
   href: string;
@@ -209,6 +212,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
   const [wabaConfig, setWabaConfig] = useState<BusinessApiConfig | null>(null);
   const [liveStatus, setLiveStatus] = useState<WhatsAppStatus | null>(null);
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
+  const [soundsMuted, setSoundsMuted] = useState(true);
   const { signOut: authSignOut } = useAuth();
   const fallbackFullName = String(user?.user_metadata?.full_name || user?.email?.split("@")[0] || "Account").trim();
   const [fallbackFirstName = "Account", ...fallbackLastName] = fallbackFullName.split(/\s+/);
@@ -241,6 +245,18 @@ function AppShell({ children }: { children: React.ReactNode }) {
       window.removeEventListener("propai_profile_updated", readProfile);
     };
   }, [user?.id]);
+
+  // Read initial sound mute state
+  useEffect(() => {
+    import("@/lib/sounds").then((s) => setSoundsMuted(s.isMuted()));
+  }, []);
+
+  const handleToggleSounds = useCallback(() => {
+    import("@/lib/sounds").then((s) => {
+      s.toggleMute();
+      setSoundsMuted(s.isMuted());
+    });
+  }, []);
 
   // Hydrate localStorage profile from server when missing
   useEffect(() => {
@@ -617,6 +633,14 @@ function AppShell({ children }: { children: React.ReactNode }) {
             <Search className="w-3.5 h-3.5 shrink-0" strokeWidth={1.5} />
             <span>Search</span>
             <kbd className="ml-auto text-[9px] bg-white/5 px-1.5 py-0.5 rounded text-zinc-500">⌘K</kbd>
+          </button>
+          <button
+            onClick={handleToggleSounds}
+            className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[11px] text-zinc-500 hover:text-zinc-300 hover:bg-white/5 transition-colors"
+            title={soundsMuted ? "Unmute sounds" : "Mute sounds"}
+          >
+            {soundsMuted ? <VolumeX className="w-3.5 h-3.5 shrink-0" strokeWidth={1.5} /> : <Volume2 className="w-3.5 h-3.5 shrink-0" strokeWidth={1.5} />}
+            <span>{soundsMuted ? "Sounds off" : "Sounds on"}</span>
           </button>
           <a
             href="/connections"
