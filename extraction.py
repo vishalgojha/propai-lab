@@ -647,13 +647,19 @@ _INDIAN_MOBILE_IN_TEXT = re.compile(r'(?<!\d)(?:\+?91[-.\s]?)?[6-9]\d{9}(?!\d)')
 
 _REDACTED_MARKER = "[Contact redacted — see agent]"
 _INDIAN_MOBILE_LOOSE = re.compile(r'(?<!\d)(?:\+?91[-.\s]?)?[6-9]\d{4}[-\s.]?\d{5}(?!\d)')
+# 11-digit bare phones (with optional '0' STD prefix) that real brokers paste
+# without separators. The strict LOOSE pattern misses them because its
+# 5-trailing-digit lookahead hits the leftover 11th digit. Lookbehind/lookahead
+# keep the digit boundary tight (no embedding in longer runs).
+_INDIAN_MOBILE_LONG = re.compile(r'(?<!\d)(?:0[6-9]\d{9}|[6-9]\d{10})(?!\d)')
 
 def _redact_indian_mobiles(text: str) -> str:
     """Replace Indian mobile numbers with a redaction marker for display.
 
-    Matches both compact (9876543210, +91 9876543210) and hyphenated
-    (98765-43210, +91 98765 43210) phone formats. The original digits still
-    live in raw_payload.full_text for audit and broker-resolution paths.
+    Catches standard 10-digit (9876543210, +91 9876543210, 98765-43210),
+    11-digit bare phones (90048427759, 84335469487) and 12-digit STD-prefixed
+    numbers (09004842775). The original digits still live in
+    raw_payload.full_text for audit and broker-resolution paths.
 
     Note: 3+3+4 / 2+2+2+2+2 obfuscation is intentionally NOT covered —
     a pre-cleaning regex would mangle prices like "Rs8.5L" into "Rs85L".
@@ -661,7 +667,7 @@ def _redact_indian_mobiles(text: str) -> str:
     if not text:
         return ""
     cleaned = _INDIAN_MOBILE_LOOSE.sub(_REDACTED_MARKER, text)
-    # Catch the remaining unobfuscated case that _INDIAN_MOBILE_IN_TEXT matches.
+    cleaned = _INDIAN_MOBILE_LONG.sub(_REDACTED_MARKER, cleaned)
     cleaned = _INDIAN_MOBILE_IN_TEXT.sub(_REDACTED_MARKER, cleaned)
     while _REDACTED_MARKER + " " + _REDACTED_MARKER in cleaned:
         cleaned = cleaned.replace(_REDACTED_MARKER + " " + _REDACTED_MARKER, _REDACTED_MARKER)
