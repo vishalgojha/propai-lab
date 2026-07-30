@@ -142,8 +142,12 @@ async def workspace_me(member: dict = Depends(get_current_team_member)):
 
 
 @router.get("/api/workspace/members")
-async def list_team_members(member: dict = Depends(get_current_member)):
-    members = storage.list_team_members()
+async def list_team_members(
+    member: dict = Depends(get_current_member),
+    tenant_id: str | None = Depends(get_tenant_context),
+):
+    target_org_id = (member or {}).get("organization_id") or tenant_id
+    members = storage.list_team_members(org_id=target_org_id)
     for m in members:
         m["permission_keys"] = storage._perm_keys(m["permissions"])
     return {"members": members}
