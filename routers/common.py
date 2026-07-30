@@ -204,7 +204,11 @@ async def require_user(user: dict | None = Depends(get_current_user)) -> dict:
 
 
 def _resolve_user_organization_id(user: dict) -> str | None:
-    orgs = storage.get_user_organizations(user["id"])
+    try:
+        orgs = storage.get_user_organizations(user["id"])
+    except Exception as exc:
+        print(f"[auth] get_user_organizations failed: {exc}", flush=True)
+        return None
     if orgs:
         try:
             for org in sorted(orgs, key=lambda o: o.get("created_at") or "", reverse=True):
@@ -261,7 +265,11 @@ def _resolve_active_organization_id(user: dict, tenant_id: str | None) -> str:
                 return tenant_id
         except Exception:
             pass
-    resolved = _resolve_user_organization_id(user)
+    resolved: str | None = None
+    try:
+        resolved = _resolve_user_organization_id(user)
+    except Exception as exc:
+        print(f"[auth] _resolve_user_organization_id failed: {exc}", flush=True)
     if resolved:
         return resolved
     return tenant_id or ""

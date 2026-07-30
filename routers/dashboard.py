@@ -519,8 +519,13 @@ async def dashboard_whatsapp_status(
     user: dict = Depends(require_user),
     tenant_id: str | None = Depends(get_tenant_context),
 ):
-    org_id = _resolve_active_organization_id(user, tenant_id)
-    phones = await asyncio.to_thread(storage.list_org_whatsapp_connections, org_id)
+    try:
+        org_id = _resolve_active_organization_id(user, tenant_id)
+        phones = await asyncio.to_thread(storage.list_org_whatsapp_connections, org_id)
+    except Exception as exc:
+        print(f"[dashboard] whatsapp-status filter failed: {exc}", flush=True)
+        org_id = ""
+        phones = []
     details: dict = {}
     if phones:
         statuses_map, ingestor_reachable, ingestor_error = await _merged_ingestor_list(timeout=2)
