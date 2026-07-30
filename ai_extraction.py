@@ -1,10 +1,14 @@
-"""AI-first extraction pipeline — primary path for all listing/requirement parsing.
+"""Structured extraction pipeline for broker WhatsApp messages.
 
 Provider rotation uses the same deployment-configured chain as chat.
 
-On 429/timeout → immediately retry next key. There is deliberately no
-deterministic extraction fallback: the model always receives the untouched
-source message and owns listing/requirement boundaries.
+The pipeline does a deterministic document pass first:
+1) reconstruct the message into logical listing blocks
+2) classify the document
+3) pass the reconstructed document to the model for field extraction
+
+The model still owns the final structured fields, but it no longer sees a
+flat blob of text with no document shape.
 
 Usage:
     from ai_extraction import ai_extract
@@ -65,7 +69,13 @@ def _next_provider() -> dict | None:
 
 # ── Extraction prompt ─────────────────────────────────────────────────
 
-_EXTRACTION_SYSTEM_PROMPT = """You parse Mumbai real estate broker WhatsApp messages into JSON.
+_EXTRACTION_SYSTEM_PROMPT = """You are a deterministic real-estate message parser for Indian WhatsApp broker groups.
+
+You are NOT a chatbot.
+You are NOT allowed to summarise.
+You are NOT allowed to invent data.
+
+Your job is to turn a reconstructed WhatsApp document into structured listing objects.
 
 Return {"items": [<one object per listing>]} with exactly these fields per item:
 
@@ -114,19 +124,18 @@ company_lease_criteria: {min_paid_up_capital: str|null, company_type: str|null, 
 tenant_nationality_preference: str | null (capture faithfully when stated, e.g. "only Indian tenants")
 
 Rules:
-- Treat the supplied message as authoritative, already-useful broker data.
+- Treat the supplied reconstructed document as authoritative broker data.
   Extract the minimum structure needed for search; do not rewrite, embellish,
   summarize away, or "improve" explicit facts.
-- When the source is already structured, copy its facts with the least possible
-  transformation beyond the required JSON types and enums.
-- Read the complete untouched message and determine semantic boundaries
-  yourself. One message may contain multiple listings or requirements.
-- Preserve explicit numbering and option boundaries. Emit one items[] entry
-  per independently actionable property/unit. Never merge two numbered
-  properties into one item.
-- If one property contains multiple independently priced unit/floor variants,
+- The input already contains a deterministic document segmentation. Use it.
+  The segmentation is authoritative for block boundaries; do not flatten it
+  back into a line-by-line read.
+- One document may contain multiple blocks. Emit one items[] entry per
+  independently actionable property/unit. Never merge two numbered properties
+  into one item.
+- If one block contains multiple independently priced unit/floor variants,
   emit one item per variant and copy only the shared facts explicitly stated
-  for that property.
+  for that block.
 - A heading such as "Available for Rent" or "Requirements" applies to its
   clearly grouped child entries. Do not replace that explicit intent with a
   guess based on price magnitude.
@@ -160,6 +169,160 @@ _VALID_DEAL_TAGS = frozenset({
     "price_drop",
 })
 _VALID_CHARGE_TYPES = frozenset({"fixed", "percent_of_price"})
+
+
+_BLOCK_START_KEYWORDS = (
+    "available", "requirement", "requirements", "wanted", "looking for",
+    "need", "offer", "offering", "for sale", "for rent", "lease",
+    "rental", "inventory", "project", "building", "tower", "flat",
+    "apartment", "residential", "commercial", "office", "shop", "plot",
+    "showroom", "warehouse", "godown", "villa", "bungalow", "duplex",
+    "jodi", "pre launch", "prelaunch", "new launch", "market update",
+    "update", "broadcast", "group", "broker", "property", "realty",
+    "estate", "exclusive", "urgent", "hot", "direct", "with pictures",
+)
+
+
+def _document_lines(raw_text: str) -> list[str]:
+    return [line.rstrip() for line in raw_text.splitlines()]
+
+
+def _is_separator_line(line: str) -> bool:
+    stripped = line.strip()
+    if not stripped:
+        return False
+    return bool(re.fullmatch(r"[-=*_•\s]{3,}", stripped))
+
+
+def _is_numbered_item(line: str) -> bool:
+    return bool(re.match(r"^\s*\d{1,3}[\)\.\-:](?!\d)\s*\S+", line))
+
+
+def _is_explicit_heading(line: str) -> bool:
+    stripped = line.strip()
+    if not stripped:
+        return False
+    lowered = stripped.lower()
+    if re.fullmatch(r"\d+(?:\.\d+)?\s*(?:bhk|rk)", lowered):
+        return False
+    if re.fullmatch(r"\d+(?:\.\d+)?\s*(?:carpet|built[- ]?up|super[- ]?built[- ]?up|sq\.?\s*ft\.?|sqft|sq\.?\s*m\.?)", lowered):
+        return False
+    if re.fullmatch(r"(?:rent|quote|price|deposit)\s*[:\-]?\s*.*", lowered):
+        return False
+    if re.fullmatch(r"(?:lower|middle|higher)\s+floor", lowered):
+        return False
+    if re.fullmatch(r"(?:semi|fully)\s*furnished", lowered) or lowered in {"unfurnished", "furnished"}:
+        return False
+    if lowered.startswith(("available", "requirement", "requirements")):
+        return True
+    if any(keyword in lowered for keyword in _BLOCK_START_KEYWORDS):
+        # Keep the heuristic conservative: short title-like lines only.
+        word_count = len(re.findall(r"\b[\w&/-]+\b", stripped))
+        if word_count <= 12 and len(stripped) <= 96:
+            return True
+    if stripped == stripped.upper() and len(stripped) <= 96:
+        # Uppercase broker headings and project names.
+        alpha_count = sum(1 for ch in stripped if ch.isalpha())
+        return alpha_count >= 4
+    if len(stripped) <= 64 and stripped[0].isalpha() and stripped[-1] not in ".!?":
+        # Title-case / project-name lines like "Bandra Broker Group".
+        word_count = len(re.findall(r"\b[\w&/-]+\b", stripped))
+        if 1 <= word_count <= 8:
+            titleish = stripped == stripped.title() or any(part.isupper() for part in stripped.split())
+            if titleish and any(keyword in lowered for keyword in ("bhk", "rent", "sale", "lease", "group", "tower", "project", "building", "flat", "apartment", "estate", "realty", "properties", "available")):
+                return True
+    return False
+
+
+def _is_block_start(line: str) -> bool:
+    stripped = line.strip()
+    if not stripped:
+        return False
+    return _is_numbered_item(stripped) or _is_explicit_heading(stripped)
+
+
+def _classify_document(lines: list[str]) -> str:
+    """Classify the WhatsApp document before extraction."""
+    non_empty = [line.strip() for line in lines if line.strip()]
+    if not non_empty:
+        return "Unknown"
+
+    starts = [line for line in non_empty if _is_block_start(line)]
+    if not starts:
+        lowered = " ".join(non_empty).lower()
+        if any(word in lowered for word in ("hello", "hi", "thanks", "thank you", "good morning", "good evening", "how are you")):
+            return "Discussion"
+        if any(word in lowered for word in ("update", "today", "yesterday", "status")):
+            return "Update"
+        return "Unknown"
+
+    lowered = " ".join(non_empty).lower()
+    has_requirement = any(word in lowered for word in ("requirement", "wanted", "looking for", "need "))
+    has_listing = any(word in lowered for word in ("available", "for rent", "for sale", "lease", "inventory", "offer"))
+    if has_requirement and has_listing:
+        return "Mixed Listing + Requirement"
+    if has_requirement:
+        return "Requirement"
+    if len(starts) > 1:
+        return "Multi Listing"
+    return "Single Listing"
+
+
+def _segment_document(raw_text: str) -> dict:
+    """Reconstruct a WhatsApp message into logical blocks."""
+    lines = _document_lines(raw_text)
+    header_lines: list[str] = []
+    blocks: list[dict] = []
+    current: list[str] = []
+    current_start_index: int | None = None
+
+    def flush() -> None:
+        nonlocal current, current_start_index
+        if current:
+            blocks.append({
+                "index": len(blocks),
+                "start_line": current_start_index,
+                "line_count": len(current),
+                "text": "\n".join(current).strip(),
+                "lines": current[:],
+            })
+            current = []
+            current_start_index = None
+
+    for idx, line in enumerate(lines):
+        stripped = line.strip()
+        if not stripped:
+            if current:
+                current.append(line)
+            elif header_lines:
+                header_lines.append(line)
+            continue
+
+        if _is_separator_line(stripped):
+            flush()
+            continue
+
+        if _is_block_start(stripped):
+            flush()
+            current = [line]
+            current_start_index = idx
+            continue
+
+        if current:
+            current.append(line)
+        else:
+            header_lines.append(line)
+
+    flush()
+
+    document_type = _classify_document(lines)
+    return {
+        "document_type": document_type,
+        "header": "\n".join(header_lines).strip() or None,
+        "block_count": len(blocks),
+        "blocks": blocks,
+        "raw_text": raw_text,
+    }
 
 
 def _normalize_extraction(raw: dict) -> dict:
@@ -713,6 +876,7 @@ def ai_extract(raw_text: str, ctx: dict | None = None, storage=None) -> dict:
         "needs_review": False,
         "provider_used": None,
         "error": None,
+        "document": None,
     }
 
     # ── Image-only message? ──────────────────────────────────────
@@ -744,10 +908,20 @@ def ai_extract(raw_text: str, ctx: dict | None = None, storage=None) -> dict:
         _logger.info("ai_extract: text too short (%s)", time.time() - start)
         return result
 
+    document = _segment_document(raw_text)
+    result["document"] = document
+
     # ── Build messages ────────────────────────────────────────────
     messages = [
         {"role": "system", "content": _EXTRACTION_SYSTEM_PROMPT},
-        {"role": "user", "content": f"Extract listing data from this WhatsApp broker message:\n\n{raw_text}"},
+        {
+            "role": "user",
+            "content": (
+                "Extract structured listing data from this reconstructed WhatsApp document.\n"
+                "Use the block boundaries and document_type exactly as given.\n\n"
+                f"{json.dumps(document, ensure_ascii=False)}"
+            ),
+        },
     ]
 
     # Try providers in round-robin, up to total provider count attempts

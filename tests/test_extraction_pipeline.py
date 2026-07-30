@@ -42,6 +42,68 @@ def test_price_normalization_uses_explicit_broker_unit_not_ai_scale():
         assert parsed["price_unit"] == unit
 
 
+def test_segment_document_reconstructs_blocks_and_classifies_multi_listing():
+    message = """1. RUSTOMJEE PARAMOUNT
+3 BHK
+1350 carpet
+10.5 Cr
+
+2. RUSTOMJEE PARAMOUNT
+4 BHK
+1800 carpet
+13 Cr"""
+
+    document = ai_extraction._segment_document(message)
+
+    assert document["document_type"] == "Multi Listing"
+    assert document["block_count"] == 2
+    assert document["blocks"][0]["text"].startswith("1. RUSTOMJEE PARAMOUNT")
+    assert document["blocks"][1]["text"].startswith("2. RUSTOMJEE PARAMOUNT")
+
+
+def test_ai_extract_sends_reconstructed_document_to_provider(monkeypatch):
+    message = """1. RUSTOMJEE PARAMOUNT
+3 BHK
+1350 carpet
+10.5 Cr
+
+2. RUSTOMJEE PARAMOUNT
+4 BHK
+1800 carpet
+13 Cr"""
+    captured = {}
+
+    def fake_call_provider(_provider, messages, **_kwargs):
+        captured["messages"] = messages
+        return [
+            {
+                "listing_type": "sale",
+                "property_category": "residential",
+                "bhk": 3,
+                "price": {"amount": 105000000, "unit": "total", "period": "one_time", "raw_price_text": "10.5 Cr"},
+                "locality": {"raw_mention": "Bandra West", "resolved_locality": "Bandra West", "confidence": "high"},
+                "building_name": "RUSTOMJEE PARAMOUNT",
+                "title": "3 BHK for Sale in Bandra West — RUSTOMJEE PARAMOUNT",
+                "extraction_confidence": "high",
+            }
+        ]
+
+    monkeypatch.setattr(ai_extraction, "_call_provider", fake_call_provider)
+    monkeypatch.setattr(ai_extraction, "_PROVIDERS", [{"name": "fake", "api_key": "x", "base_url": "http://x", "model": "y"}])
+    monkeypatch.setattr(ai_extraction, "_rr_index", 0)
+
+    result = ai_extraction.ai_extract(message, ctx={})
+
+    assert result["extraction_source"] == "ai"
+    assert result["document"]["document_type"] == "Multi Listing"
+    assert result["document"]["block_count"] == 2
+    content = captured["messages"][1]["content"]
+    payload = json.loads(content[content.index("{"):])
+    assert payload["document_type"] == "Multi Listing"
+    assert len(payload["blocks"]) == 2
+    assert result["extraction"]["building_name"] == "RUSTOMJEE PARAMOUNT"
+
+
 class _Storage:
     def __init__(self):
         self.tenant_id = None
