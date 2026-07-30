@@ -2033,6 +2033,7 @@ class SupabaseStorage(Storage):
         "broker_name", "broker_phone", "profile_name", "listing_index",
         "forwarded", "confidence", "raw_payload", "created_at",
         "summary_title", "reparsed_at", "event_id", "tenant_id",
+        "normalized_message",
         "asset_type", "property_type", "transaction_type",
         "commercial_use_type", "fitout_status", "occupancy_type",
         "floor_range", "rent_per_sqft",

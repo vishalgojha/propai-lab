@@ -336,7 +336,7 @@ def _parse_raw_price_native(raw_price_text: str) -> tuple[float, str] | None:
     return amount, "K"
 
 
-def _ai_extraction_to_parsed(ai_extraction: dict, raw_text: str, sender_name: str, push_name: str) -> dict:
+def _ai_extraction_to_parsed(ai_extraction: dict, raw_text: str, sender_name: str, push_name: str, slice_text: str | None = None) -> dict:
     """Convert AI extraction schema to the existing parsed dict format.
 
     This bridges the new AI extraction result to the legacy parsed_observation
@@ -493,7 +493,8 @@ def _ai_extraction_to_parsed(ai_extraction: dict, raw_text: str, sender_name: st
         "broker_phone": None,
         "forwarded": 0,
         "confidence": 1.0,
-        "raw_payload": {"full_text": raw_text},
+        "raw_payload": {"full_text": raw_text, "slice_text": slice_text or raw_text},
+        "normalized_message": _redact_indian_mobiles(slice_text or raw_text),
         "location": None,
         "message_type": listing_type,
 
@@ -643,6 +644,55 @@ def check_share_eligibility(parsed: dict, org_privacy: dict, conv_type: str = "u
 
 
 _INDIAN_MOBILE_IN_TEXT = re.compile(r'(?<!\d)(?:\+?91[-.\s]?)?[6-9]\d{9}(?!\d)')
+
+_REDACTED_MARKER = "[Contact redacted — see agent]"
+_INDIAN_MOBILE_LOOSE = re.compile(r'(?<!\d)(?:\+?91[-.\s]?)?[6-9]\d{4}[-\s.]?\d{5}(?!\d)')
+
+def _redact_indian_mobiles(text: str) -> str:
+    """Replace Indian mobile numbers with a redaction marker for display.
+
+    Matches both compact (9876543210, +91 9876543210) and hyphenated
+    (98765-43210, +91 98765 43210) phone formats. The original digits still
+    live in raw_payload.full_text for audit and broker-resolution paths.
+
+    Note: 3+3+4 / 2+2+2+2+2 obfuscation is intentionally NOT covered —
+    a pre-cleaning regex would mangle prices like "Rs8.5L" into "Rs85L".
+    """
+    if not text:
+        return ""
+    cleaned = _INDIAN_MOBILE_LOOSE.sub(_REDACTED_MARKER, text)
+    # Catch the remaining unobfuscated case that _INDIAN_MOBILE_IN_TEXT matches.
+    cleaned = _INDIAN_MOBILE_IN_TEXT.sub(_REDACTED_MARKER, cleaned)
+    while _REDACTED_MARKER + " " + _REDACTED_MARKER in cleaned:
+        cleaned = cleaned.replace(_REDACTED_MARKER + " " + _REDACTED_MARKER, _REDACTED_MARKER)
+    while "  " in cleaned:
+        cleaned = cleaned.replace("  ", " ")
+    return cleaned.strip()
+
+
+def _slice_blocks_for_ai_items(msg_text: str, ai_items: list) -> list[str]:
+    """Assign per-listing slice text from the document segmenter output.
+
+    Pairs ai_items[i] with _segment_document(msg_text).blocks[i] when the
+    counts match; otherwise every item falls back to the full message so
+    bad slicing can never render wrong text. Both lists are returned in
+    document order by their respective pipelines.
+    """
+    if not ai_items:
+        return []
+    try:
+        from ai_extraction import _segment_document
+        segments = _segment_document(msg_text or "")
+    except Exception:
+        return [msg_text] * len(ai_items)
+    blocks = (segments or {}).get("blocks") or []
+    if len(blocks) == len(ai_items):
+        out = []
+        for b in blocks:
+            t = (b.get("text") or "").strip()
+            out.append(t if t else msg_text)
+        return out
+    return [msg_text] * len(ai_items)
 
 
 def _extract_broker_contact_from_text(text: str) -> tuple[str | None, str | None]:
@@ -815,9 +865,10 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
         raw_ai_items = ai_result.get("extractions") or ([ai_result["extraction"]] if ai_result.get("extraction") else [])
         ai_items = [item for item in raw_ai_items if isinstance(item, dict)]
         if extraction_source == "ai" and ai_items:
+            slice_texts = _slice_blocks_for_ai_items(msg_text, ai_items)
             parsed_listings = [
-                _ai_extraction_to_parsed(item, msg_text, sender_name, push_name)
-                for item in ai_items
+                _ai_extraction_to_parsed(item, msg_text, sender_name, push_name, slice_text=sl)
+                for item, sl in zip(ai_items, slice_texts)
             ]
             ai_extractions_raw = ai_items
             _logger.info("raw_id=%d AI extraction: %d structured item(s) via %s", raw_id, len(ai_items), ai_result.get("provider_used"))
@@ -1068,6 +1119,7 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
             raw_payload=json.dumps(parsed.get("raw_payload", {})),
             embedding=embedding_blob,
             summary_title=ai_item.get("title") if ai_item else generate_summary_title(parsed, source_text),
+            normalized_message=parsed.get("normalized_message"),
             ai_extraction=ai_item,
             # deal_tags + additional_charges are AI-only signals (regex parser
             # doesn't know about them). When AI extraction fails/times out we
