@@ -33,8 +33,10 @@
 
   /* ── Text ── */
   --color-text-primary: #ffffff;
-  --color-text-secondary: #a1a1aa;
-  --color-text-muted: #52525b;
+  /* On a pure-black UI, the default zinc grays are too faint for metadata,
+     timestamps, and counters. Keep secondary text readable by default. */
+  --color-text-secondary: #cbd5e1;
+  --color-text-muted: #94a3b8;
 
   /* ── Shadows ── */
   --shadow-card: 0 0 0 1px rgba(255, 255, 255, 0.06);
@@ -71,6 +73,16 @@ body {
   font-size: 15px;
   line-height: 1.5;
 }
+
+/* ── Contrast overrides ──
+   Tailwind's zinc/gray 500-600 shades are too dim against the PropAI black
+   surfaces, especially for timestamps, counts, and light metadata labels.
+   Brighten them globally so shared UI stays readable without patching every
+   page individually. */
+:where(.text-zinc-400, .text-gray-400) { color: #cbd5e1; }
+:where(.text-zinc-500, .text-gray-500) { color: #94a3b8; }
+:where(.text-zinc-600, .text-gray-600) { color: #64748b; }
+:where(.text-zinc-700, .text-gray-700) { color: #475569; }
 
 /* ── Typography utilities ── */
 .text-display { font-size: 32px; font-weight: 700; line-height: 1.2; letter-spacing: -0.02em; }
