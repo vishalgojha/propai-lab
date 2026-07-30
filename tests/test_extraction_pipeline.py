@@ -717,3 +717,53 @@ def test_normalize_extraction_junk_safe():
     assert len(out["additional_charges"]) == 1
     assert out["additional_charges"][0]["label"] == "OK"
     assert out["additional_charges"][0]["amount"] == 1000.0
+
+
+def test_redact_indian_mobiles_preserves_prices_redacts_phones():
+    src_in = "Available Sagar Resham 2BHK Rs8.5L area 850 sqft contact +91 9876543210"
+    out = extraction._redact_indian_mobiles(src_in)
+    assert out == "Available Sagar Resham 2BHK Rs8.5L area 850 sqft contact [Contact redacted — see agent]"
+
+
+def test_redact_indian_mobiles_handles_obfuscated_formats():
+    assert extraction._redact_indian_mobiles("Call 98765-43210 now") == "Call [Contact redacted — see agent] now"
+    assert extraction._redact_indian_mobiles("Call +91 98765 43210 now") == "Call [Contact redacted — see agent] now"
+    assert extraction._redact_indian_mobiles("Phone 9876543210 / 9123456789") == "Phone [Contact redacted — see agent] / [Contact redacted — see agent]"
+
+
+def test_redact_indian_mobiles_leaves_landlines_and_prices_alone():
+    assert extraction._redact_indian_mobiles("Office 01234567890 desk 5") == "Office 01234567890 desk 5"
+    assert extraction._redact_indian_mobiles("Rent 75000 deposit 50000") == "Rent 75000 deposit 50000"
+
+
+def test_ai_extraction_to_parsed_writes_redacted_normalized_message():
+    """The per-listing normalized_message must redact broker phones while
+    raw_payload.full_text still preserves the digits for audit and
+    broker-resolution paths."""
+    raw = (
+        "2BHK Available Sagar Resham Rent 75000 "
+        "Contact +91 9876543210"
+    )
+    parsed = extraction._ai_extraction_to_parsed(
+        {
+            "listing_type": "rent",
+            "bhk": 2,
+            "price": {"amount": 75000, "unit": "abs"},
+            "locality": {"resolved_locality": "Bandra West"},
+        },
+        raw,
+        "Broker",
+        "Broker",
+        slice_text=raw,
+    )
+
+    assert parsed["normalized_message"], "normalized_message must be populated"
+    assert "9876543210" not in parsed["normalized_message"], (
+        "broker digits must NOT appear in normalized_message (display path)"
+    )
+    assert "[Contact redacted" in parsed["normalized_message"]
+    # Audit fidelity: raw_payload.full_text still has the original digits
+    assert "9876543210" in parsed["raw_payload"]["full_text"], (
+        "raw_payload.full_text must preserve broker digits for audit"
+    )
+    assert parsed["raw_payload"]["slice_text"] == raw
