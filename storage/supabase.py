@@ -1702,12 +1702,25 @@ class SupabaseStorage(Storage):
                 group_rows = groups.pop(name_key, [])
                 groups.setdefault(phone, []).extend(group_rows)
 
-        latest_ids = [msgs[0].get("id") for msgs in groups.values() if msgs and msgs[0].get("id")]
+        # Collect all raw message IDs across all threads (not just the newest per
+        # thread) so we can find enrichment even when the latest message in a
+        # thread is still awaiting extraction.
+        MAX_PARSE_LOOKUP = 1000
+        all_ids = []
+        for msgs in groups.values():
+            for m in msgs:
+                mid = m.get("id")
+                if mid is not None:
+                    all_ids.append(mid)
+                    if len(all_ids) >= MAX_PARSE_LOOKUP:
+                        break
+            if len(all_ids) >= MAX_PARSE_LOOKUP:
+                break
         parsed_map: dict[int, dict] = {}
-        if latest_ids:
+        if all_ids:
             parsed_res = self.client.table("parsed_output")\
                 .select("raw_message_id,intent,building_name,micro_market,landmark_name,location_raw,broker_name,broker_phone,confidence")\
-                .in_("raw_message_id", latest_ids[: max(1, limit + offset)])\
+                .in_("raw_message_id", all_ids)\
                 .order("confidence", desc=True)\
                 .order("id", desc=True)\
                 .execute()
@@ -1720,7 +1733,15 @@ class SupabaseStorage(Storage):
         for key, msgs in groups.items():
             latest = msgs[0]
             ts = latest.get("timestamp") or latest.get("created_at") or ""
-            p = parsed_map.get(latest["id"])
+            # Scan messages newest-first for the first one with real parsed
+            # enrichment data, instead of only checking the single newest
+            # message (which may still be awaiting extraction).
+            p = None
+            for m in msgs:
+                candidate = parsed_map.get(m.get("id"))
+                if candidate and (candidate.get("building_name") or candidate.get("micro_market")):
+                    p = candidate
+                    break
             conv_name = _raw_broker_label(latest, p)
             phone = (
                 _normalize_india_phone(latest.get("sender_jid") or "")
