@@ -104,3 +104,71 @@ For any new post in a connected WhatsApp group, a broker can open Market Inbox a
 2. a clearly labelled processing/review item explaining why it has not become structured yet.
 
 No valid post silently disappears.
+
+## Locality backfill — apply path
+
+The Market Inbox broker coverage label reads
+`broker.specialty_localities` and `broker.latest_micro_market` from
+`parsed_output.micro_market`. Empty values surface as the
+"No parsed locality yet" empty state at
+`frontend/src/app/inbox/page.tsx:159`, which is a data-not-a-bug state.
+
+`backfill_localities.py` now has an `--apply` path that fills
+`parsed_output.micro_market` (and `parsed_output.location_raw` when
+empty, with a matched span or clipped raw snippet — never the resolved
+value) and `listings.micro_market`. The shared resolver lives at
+`registry/locality_resolver.py`.
+
+Operator workflow:
+
+```bash
+# 1) Inventory only (no writes).
+python backfill_localities.py --target parsed_output \
+    --tenant-id <tenant_ulid> --dry-run
+
+# 2) Dry-run apply to inspect every row before write.
+python backfill_localities.py --apply \
+    --target {listings|parsed_output|both} \
+    --tenant-id <tenant_ulid> \
+    --dry-run-apply \
+    --audit-csv /tmp/backfill_audit.csv
+
+# 3) Real apply. Idempotent — default only fills empty values.
+python backfill_localities.py --apply \
+    --target both \
+    --tenant-id <tenant_ulid> \
+    --audit-csv /var/log/propai/backfill_<UTC>.csv
+
+# 4) Force refresh (CAREFUL — overrides existing micro_market values):
+python backfill_localities.py --apply \
+    --target both \
+    --tenant-id <tenant_ulid> \
+    --overwrite-existing \
+    --min-confidence high \
+    --audit-csv /var/log/propai/backfill_<UTC>.csv
+```
+
+Hard rules (never overridden):
+
+- `--apply` errors out without `--tenant-id` — both target tables
+  became tenant-scoped (NOT NULL `tenant_id`) at
+  `20260719010000`. Cross-tenant writes are blocked at the CLI.
+- `location_raw` is reserved as the raw message snippet per
+  `docs/DATA_QUALITY.md`. The apply path writes the matched span or
+  the clipped raw text — never the resolved/normalized value.
+- Default fill is empty-only. `--overwrite-existing` is opt-in, never
+  silent. The audit CSV records before/after for every row so a
+  reviewer can spot changed values.
+- Confidence filtering: `--min-confidence medium` (default) skips
+  `low` confidence resolutions; `--min-confidence low` opens
+  everything. `docs/DATA_QUALITY.md` "never guess" rule still applies —
+  every audit row has `source` + `matched_sub` for review.
+- Dry-run is the safety net: re-run `--dry-run-apply` against a fresh
+  audit path and confirm counts match a prior real-apply before any
+  follow-up write.
+
+Why data-only: the broker coverage label is computed in
+`storage/supabase.py:1840 _get_parsed_market_threads` and
+`frontend/src/app/inbox/page.tsx:150 brokerCoverageLabel` from data
+that already exists in `parsed_output`. No code change is required
+there — filling `micro_market` makes those labels appear.
