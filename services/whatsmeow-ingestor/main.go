@@ -1257,6 +1257,24 @@ func messageText(msg *waE2E.Message) string {
 	if text := strings.TrimSpace(msg.GetExtendedTextMessage().GetText()); text != "" {
 		return text
 	}
+	if img := msg.GetImageMessage(); img != nil {
+		if cap := strings.TrimSpace(img.GetCaption()); cap != "" {
+			return cap
+		}
+		return "📷 Photo"
+	}
+	if vid := msg.GetVideoMessage(); vid != nil {
+		if cap := strings.TrimSpace(vid.GetCaption()); cap != "" {
+			return cap
+		}
+		return "🎥 Video"
+	}
+	if doc := msg.GetDocumentMessage(); doc != nil {
+		if cap := strings.TrimSpace(doc.GetCaption()); cap != "" {
+			return cap
+		}
+		return fmt.Sprintf("📄 %s", doc.GetFileName())
+	}
 	if loc := msg.GetLocationMessage(); loc != nil {
 		return fmt.Sprintf("📍 Location: %s (%.6f, %.6f)", loc.GetName(), loc.GetDegreesLatitude(), loc.GetDegreesLongitude())
 	}
