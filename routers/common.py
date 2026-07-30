@@ -401,9 +401,12 @@ async def _select_reply_broker_id(member: dict, requested_broker_id: str = "") -
     return str(connections[0].get("broker_id") or "").strip()
 
 
-async def get_current_member(x_team_member_id: int = Header(None)) -> dict:
+async def get_current_member(
+    x_team_member_id: int = Header(None),
+    tenant_id: str | None = Depends(get_tenant_context),
+) -> dict:
     if not x_team_member_id:
-        members = storage.list_team_members()
+        members = storage.list_team_members(org_id=tenant_id)
         owner = next((m for m in members if m["role"] == "owner"), None)
         return owner or {"id": 0, "permissions": 1023, "name": "System"}
 
