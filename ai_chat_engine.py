@@ -75,15 +75,80 @@ _TOPIC_END_SIGNALS = re.compile(
 
 
 class ConversationMemory:
-    def __init__(self, max_working_turns: int = 8):
+    def __init__(self, max_working_turns: int = 8, session_id: str | None = None):
         self.working: list[dict] = []
         self.summaries: list[str] = []
         self.domain: dict[str, str] = {}
         self._topic_start: int = 0
         self.max_working_turns = max_working_turns
+        self.session_id = session_id
+        self._hydrated = False
+        self._dirty = False
+        self._last_save_at = 0.0
+
+    def hydrate(self) -> None:
+        """Load previously saved state from Supabase once per process lifetime.
+
+        Falls back silently if storage is unreachable so chat remains
+        functional even if the persistence layer is down."""
+        if self._hydrated or not self.session_id:
+            return
+        self._hydrated = True
+        try:
+            from storage import supabase as _storage  # type: ignore
+            db = _storage.SupabaseStorage().db
+            row = db.execute(
+                "select json_state from public.conversation_state where session_id = ?",
+                (self.session_id,),
+            ).fetchone()
+            if not row:
+                return
+            payload = row[0]
+            if isinstance(payload, str):
+                payload = json.loads(payload)
+            self.working = list(payload.get("working") or [])
+            self.summaries = list(payload.get("summaries") or [])
+            self.domain = dict(payload.get("domain") or {})
+            self._topic_start = int(payload.get("topic_start") or 0)
+        except Exception:
+            return
+
+    def persist(self) -> None:
+        """Snapshot working memory to Supabase. Rate-limited to one write per
+        1.5 seconds per session so repeated tool-round message appends during
+        a single chat turn don't generate a write storm."""
+        if not self.session_id or not self._dirty:
+            return
+        now = time.time()
+        if now - self._last_save_at < 1.5:
+            return
+        snapshot = {
+            "working": self.working,
+            "summaries": self.summaries,
+            "domain": self.domain,
+            "topic_start": self._topic_start,
+        }
+        try:
+            from storage import supabase as _storage  # type: ignore
+            db = _storage.SupabaseStorage().db
+            db.execute(
+                """
+                insert into public.conversation_state (session_id, json_state, updated_at)
+                values (?, ?::jsonb, now())
+                on conflict (session_id) do update
+                  set json_state = excluded.json_state,
+                      updated_at = now()
+                """,
+                (self.session_id, json.dumps(snapshot)),
+            )
+            self._last_save_at = now
+            self._dirty = False
+        except Exception:
+            return
 
     def add(self, role: str, content: str) -> None:
         self.working.append({"role": role, "content": content})
+        self._dirty = True
 
     def detect_topic_change(self, message: str) -> bool:
         if not self.working:
@@ -179,8 +244,16 @@ _memory_store: dict[str, ConversationMemory] = {}
 
 def get_memory(session_id: str) -> ConversationMemory:
     if session_id not in _memory_store:
-        _memory_store[session_id] = ConversationMemory()
+        mem = ConversationMemory(session_id=session_id)
+        mem.hydrate()
+        _memory_store[session_id] = mem
     return _memory_store[session_id]
+
+
+def persist_memory(session_id: str) -> None:
+    mem = _memory_store.get(session_id)
+    if mem is not None:
+        mem.persist()
 
 
 def get_client(api_key=None, base_url=None):
@@ -520,12 +593,47 @@ only retrieved values as facts. Concrete property and requirement requests are
 searched against the live global marketplace before you answer. Never claim
 that the database is unavailable when verified search results are present.
 
+PLANNER RULE — READ FIRST:
+If the user's latest message contains any concrete filter (BHK, locality,
+building name, price range, transaction type, furnishing, parking, pets),
+you MUST call `market_search` before producing any listing card, count
+claim, or list. Never emit a count like "Found 119 listings" without a
+matching tool result in this turn. Never invent listings, broker names,
+addresses, or phone numbers — every listing card you render must carry
+listing_id / message_id / cluster_id so readers can verify the source.
+If a search returns zero rows, say zero. If you want to ask a clarifying
+question, do it AFTER the search, not before.
+
+CONFIDENCE RULE:
+After you return a result, state how confident you are (0.0-1.0). If the
+search returned fuzzy matches (limited rows, locality inferred), say so.
+If your own confidence is below 0.6, surface the uncertainty in your
+`content` field instead of presenting the matches as certain.
+
+CONVERSATION MEMORY:
+A working memory keeps your last known filters (area, BHK, intent, price,
+kind of building). When the user says "youve just repeated data" or
+"the same as before", do NOT re-run a search — re-use the last shown
+listings and respond conversationally. If the user switches topic,
+the previous topic is auto-summarized and you will receive it.
+
+NO DUPLICATE OUTPUT RULE:
+Do not emit the same paragraph twice in the same response. Do not quote
+your own previous turn verbatim unless the user explicitly requested it
+("repeat that", "show again"). The renderer now drops duplicated text
+automatically, so non-compliance produces an empty response — please
+follow this rule so the user sees the right content.
+
 AVAILABLE DATA:
 {build_overview(sources)}
 
 For workspace data, return valid JSON with a short `content` field and UI
 `blocks`. Use `summary`, `listing_cards`, `broker_cards`, `table`,
-`empty_state`, or `error_state`. Keep cards factual and compact."""
+`empty_state`, or `error_state`. Keep cards factual and compact. Every
+listing_cards item MUST include at least one of: listing_id, message_id,
+cluster_id, raw_message_id, whatsapp_message_id. Items missing these
+fields are removed by the renderer and replaced with an error_state
+block."""
 
 
 WORKSPACE_BLOCK_TYPES = {
