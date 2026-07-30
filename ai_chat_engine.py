@@ -555,8 +555,99 @@ WORKSPACE_BLOCK_TYPES = {
 }
 
 
+_THINK_TAG_RE = re.compile(r"<think[^>]*>.*?</think>|</think>", re.DOTALL | re.IGNORECASE)
+_LISTING_PROVENANCE_FIELDS = (
+    "listing_id",
+    "message_id",
+    "cluster_id",
+    "raw_message_id",
+    "whatsapp_message_id",
+)
+
+
+def _collapse_halved_repeat(text: str) -> str:
+    cleaned = text.strip()
+    if len(cleaned) < 40 or len(cleaned) % 2 != 0:
+        return cleaned
+    half = len(cleaned) // 2
+    if cleaned[:half] == cleaned[half:]:
+        return cleaned[:half].strip()
+    return cleaned
+
+
+def strip_think_blocks(text) -> str:
+    if not text:
+        return ""
+    cleaned = _THINK_TAG_RE.sub("", text)
+    cleaned = _collapse_halved_repeat(cleaned)
+    return cleaned.strip()
+
+
+def _drop_echoed_assistant_content(messages: list[dict]) -> None:
+    """If the most recent assistant message was immediately followed by tool
+    results and a second assistant turn produced prose that matches the
+    earlier prose byte-for-byte, collapse the second copy into an empty
+    content string. Stops the LLM from quoting itself when re-prompted."""
+    for idx in range(len(messages) - 1, 0, -1):
+        msg = messages[idx]
+        if msg.get("role") != "assistant":
+            continue
+        prev_assistant = None
+        for j in range(idx - 1, -1, -1):
+            if messages[j].get("role") == "assistant":
+                prev_assistant = messages[j]
+                break
+        if prev_assistant is None:
+            return
+        prev_text = strip_think_blocks(prev_assistant.get("content") or "").strip()
+        cur_text = strip_think_blocks(msg.get("content") or "").strip()
+        if (
+            prev_text
+            and cur_text
+            and prev_text == cur_text
+            and msg.get("tool_calls")
+        ):
+            msg["content"] = ""
+        return
+
+
+def _has_provenance(item: dict) -> bool:
+    if not isinstance(item, dict):
+        return False
+    return any(item.get(field) for field in _LISTING_PROVENANCE_FIELDS)
+
+
+def _purify_listing_blocks(blocks: list[dict]) -> tuple[list[dict], int]:
+    """Drop listing_cards items that carry no provenance field. A single
+    item that lacks listing_id / message_id / cluster_id is treated as
+    hallucinated inventory and removed. If everything in a block is
+    purgable, the block collapses to an error_state explaining why."""
+    cleaned: list[dict] = []
+    dropped_count = 0
+    for block in blocks:
+        if not isinstance(block, dict):
+            cleaned.append(block)
+            continue
+        if block.get("type") in ("listing_cards", "buyer_cards", "broker_cards"):
+            items = block.get("items")
+            if isinstance(items, list):
+                kept = [it for it in items if _has_provenance(it) or not isinstance(it, dict)]
+                removed = len(items) - len(kept) if all(isinstance(it, dict) for it in items) else 0
+                dropped_count += max(removed, 0)
+                if not kept:
+                    cleaned.append({
+                        "type": "error_state",
+                        "title": "Listings unavailable",
+                        "body": "PropAI didn't return a verifiable source for these listings. Please refresh or rephrase your search.",
+                    })
+                    continue
+                block = {**block, "items": kept}
+        cleaned.append(block)
+    return cleaned, dropped_count
+
+
 def _strip_json_fences(text: str) -> str:
-    cleaned = (text or "").strip()
+    cleaned = strip_think_blocks(text)
     if cleaned.startswith("```"):
         cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned, flags=re.IGNORECASE)
         cleaned = re.sub(r"\s*```$", "", cleaned)
@@ -631,6 +722,7 @@ def normalize_workspace_response(content: str | None, sources: dict):
             normalized = _normalize_block(block)
             if normalized:
                 blocks.append(normalized)
+        blocks, dropped_listings = _purify_listing_blocks(blocks)
         response = {
             "content": str(parsed.get("content") or parsed.get("summary") or raw_text).strip(),
             "blocks": blocks,
@@ -2427,8 +2519,10 @@ def get_model_reply(messages, sources, api_key=None, db_path=None, model=None, b
     _log_usage(resp, "ai_chat", _used_model, tenant_id=tenant_id)
     msg = resp.choices[0].message
 
-    # Append as dict, not as raw object
-    msg_dict = {"role": "assistant", "content": msg.content or ""}
+    # Append as dict, not as raw object; strip leaked chain-of-thought so it
+    # neither reaches the user nor gets echoed back into the next LLM round.
+    sanitized_content = strip_think_blocks(msg.content or "")
+    msg_dict = {"role": "assistant", "content": sanitized_content}
     if msg.tool_calls:
         cleaned_calls = []
         for tc in msg.tool_calls:
@@ -2448,6 +2542,7 @@ def get_model_reply(messages, sources, api_key=None, db_path=None, model=None, b
     messages.append(msg_dict)
 
     if msg.tool_calls:
+        _drop_echoed_assistant_content(messages)
         for tc in msg.tool_calls:
             fn_name = tc.function.name
             try:
