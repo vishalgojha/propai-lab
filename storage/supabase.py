@@ -2416,6 +2416,7 @@ class SupabaseStorage(Storage):
             broker_phone=broker_phone,
             latest_raw_message_id=obs.get("raw_message_id"),
             representative_raw_message_id=obs.get("raw_message_id"),
+            representative_listing_index=obs.get("listing_index"),
             last_seen=obs.get("created_at") or None,
             first_seen=obs.get("created_at") or None,
             observation_count=1,
