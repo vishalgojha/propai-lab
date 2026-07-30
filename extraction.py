@@ -666,6 +666,12 @@ def _extract_broker_contact_from_text(text: str) -> tuple[str | None, str | None
             phone = num_clean
             line_start = cleaned.rfind('\n', 0, m.start()) + 1
             preceding = cleaned[line_start:m.start()].strip().rstrip(':,').strip()
+            if not preceding or re.search(r'\d', preceding):
+                lines_before = cleaned[:line_start].rstrip('\n').split('\n')
+                if lines_before:
+                    candidate = lines_before[-1].strip().rstrip(':,').strip()
+                    if candidate and not re.search(r'\d', candidate) and 1 < len(candidate) <= 60:
+                        preceding = candidate
             if preceding and not re.search(r'\d', preceding) and len(preceding) > 1:
                 name = preceding
         elif num_clean != phone:
