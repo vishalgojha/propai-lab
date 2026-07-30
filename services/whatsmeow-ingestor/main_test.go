@@ -247,3 +247,70 @@ func TestHealthAllowsMinimalPublicLiveness(t *testing.T) {
 		t.Fatalf("status=%d body=%v", recorder.Code, body)
 	}
 }
+
+func TestMessageTextExtractsMediaCaptions(t *testing.T) {
+	imageWithCaption := &waE2E.Message{
+		ImageMessage: &waE2E.ImageMessage{
+			Mimetype: proto.String("image/jpeg"),
+			Caption:  proto.String("2BHK Worli 1.2Cr call Rohan"),
+		},
+	}
+	if got := messageText(imageWithCaption); got != "2BHK Worli 1.2Cr call Rohan" {
+		t.Fatalf("messageText(image + caption) = %q", got)
+	}
+
+	imageWithoutCaption := &waE2E.Message{
+		ImageMessage: &waE2E.ImageMessage{Mimetype: proto.String("image/jpeg")},
+	}
+	if got := messageText(imageWithoutCaption); got != "📷 Photo" {
+		t.Fatalf("messageText(image no caption) = %q", got)
+	}
+
+	imageCaptionTrimmedSpaces := &waE2E.Message{
+		ImageMessage: &waE2E.ImageMessage{
+			Mimetype: proto.String("image/jpeg"),
+			Caption:  proto.String("   "),
+		},
+	}
+	if got := messageText(imageCaptionTrimmedSpaces); got != "📷 Photo" {
+		t.Fatalf("messageText(image whitespace caption) = %q", got)
+	}
+
+	videoWithCaption := &waE2E.Message{
+		VideoMessage: &waE2E.VideoMessage{
+			Mimetype: proto.String("video/mp4"),
+			Caption:  proto.String("Walkthrough 3BHK Bandra 95L"),
+		},
+	}
+	if got := messageText(videoWithCaption); got != "Walkthrough 3BHK Bandra 95L" {
+		t.Fatalf("messageText(video + caption) = %q", got)
+	}
+
+	videoWithoutCaption := &waE2E.Message{
+		VideoMessage: &waE2E.VideoMessage{Mimetype: proto.String("video/mp4")},
+	}
+	if got := messageText(videoWithoutCaption); got != "🎥 Video" {
+		t.Fatalf("messageText(video no caption) = %q", got)
+	}
+
+	docWithCaption := &waE2E.Message{
+		DocumentMessage: &waE2E.DocumentMessage{
+			Mimetype: proto.String("application/pdf"),
+			FileName: proto.String("inventory.pdf"),
+			Caption:  proto.String("Full inventory — 4 flats available"),
+		},
+	}
+	if got := messageText(docWithCaption); got != "Full inventory — 4 flats available" {
+		t.Fatalf("messageText(doc + caption) = %q", got)
+	}
+
+	docWithoutCaption := &waE2E.Message{
+		DocumentMessage: &waE2E.DocumentMessage{
+			Mimetype: proto.String("application/pdf"),
+			FileName: proto.String("inventory.pdf"),
+		},
+	}
+	if got := messageText(docWithoutCaption); got != "📄 inventory.pdf" {
+		t.Fatalf("messageText(doc no caption) = %q", got)
+	}
+}
