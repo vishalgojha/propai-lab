@@ -819,6 +819,7 @@ export function getChatSuggestions(): Promise<ChatSuggestions> {
 
 export interface ChatSession {
   id: string;
+  slug: string;
   broker_phone: string;
   title: string;
   source: string;
@@ -831,6 +832,7 @@ export interface ChatMessage {
   session_id: string;
   role: "user" | "assistant" | "system";
   content: string;
+  blocks?: WorkspaceBlock[];
   created_at: string;
 }
 
@@ -848,6 +850,17 @@ export function getChatSessionMessages(sessionId: string): Promise<ChatMessage[]
 
 export function deleteChatSession(sessionId: string): Promise<{ ok: boolean }> {
   return fetchJSON<{ ok: boolean }>(`/ai/chat/sessions/${sessionId}`, { method: "DELETE" });
+}
+
+export function renameChatSession(sessionId: string, title: string): Promise<ChatSession> {
+  return fetchJSON<ChatSession>(`/ai/chat/sessions/${sessionId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ title }),
+  });
+}
+
+export function resolveBrokerContact(listingId: number): Promise<{ contact_url: string }> {
+  return fetchJSON<{ contact_url: string }>(`/contact-broker/${listingId}`, { method: "POST" });
 }
 
 export function getGraphGrowth() {

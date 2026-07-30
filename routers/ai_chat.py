@@ -7,6 +7,7 @@ import time
 import uuid
 from datetime import datetime, timezone
 from typing import Any
+from urllib.parse import quote
 
 import json as _json
 
@@ -208,6 +209,20 @@ def _normalize_chat_source(source: str) -> str:
     if source in {"groups", "parsed", "inbox"}:
         return source
     return "parsed"
+
+
+def _chat_session_slug(session: dict) -> str:
+    """Create a readable, stable history URL without storing a second key."""
+    title = re.sub(r"[^a-z0-9]+", "-", str(session.get("title") or "chat").lower()).strip("-")
+    title = title[:60].strip("-") or "chat"
+    return f"{title}--{session.get('id')}"
+
+
+def _session_response(session: dict) -> dict:
+    """Keep UUID ownership internal while giving the client a shareable slug."""
+    result = dict(session)
+    result["slug"] = _chat_session_slug(result)
+    return result
 
 
 def _annotate_chat_response(response: dict, source_mode: str) -> dict:
@@ -905,7 +920,8 @@ async def list_chat_sessions(broker_phone: str = "", limit: int = 50, user: dict
     tenant_id = tenant_id or await asyncio.to_thread(_resolve_active_organization_id, user, None)
     owner_key, aliases = await _chat_owner_context(user, tenant_id)
     await asyncio.to_thread(storage.adopt_chat_session_owners, aliases, owner_key, tenant_id)
-    return await asyncio.to_thread(storage.list_chat_sessions, owner_key, limit=limit, tenant_id=tenant_id)
+    sessions = await asyncio.to_thread(storage.list_chat_sessions, owner_key, limit=limit, tenant_id=tenant_id)
+    return [_session_response(session) for session in sessions]
 
 
 @router.post("/api/ai/chat/sessions")
@@ -916,7 +932,30 @@ async def create_chat_session(broker_phone: str = "", title: str = "New chat", s
     session = await asyncio.to_thread(storage.create_chat_session, owner_key, title, source, tenant_id)
     if not session:
         raise HTTPException(500, "Could not create chat session")
-    return session
+    return _session_response(session)
+
+
+class RenameChatSessionRequest(BaseModel):
+    title: str
+
+
+@router.patch("/api/ai/chat/sessions/{session_id}")
+async def rename_chat_session(
+    session_id: str,
+    body: RenameChatSessionRequest,
+    user: dict = Depends(require_user),
+    tenant_id: str | None = Depends(get_tenant_context),
+):
+    tenant_id = tenant_id or await asyncio.to_thread(_resolve_active_organization_id, user, None)
+    session = await _owned_chat_session(session_id, user, tenant_id)
+    title = re.sub(r"\s+", " ", body.title or "").strip()
+    if not title:
+        raise HTTPException(400, "Chat name cannot be empty")
+    if len(title) > 120:
+        raise HTTPException(400, "Chat name must be 120 characters or fewer")
+    await asyncio.to_thread(storage.update_chat_session_title, session_id, title, tenant_id=tenant_id)
+    session["title"] = title
+    return _session_response(session)
 
 
 @router.get("/api/ai/chat/sessions/{session_id}/messages")
@@ -932,6 +971,40 @@ async def delete_chat_session(session_id: str, user: dict = Depends(require_user
     await _owned_chat_session(session_id, user, tenant_id)
     await asyncio.to_thread(storage.delete_chat_session, session_id, tenant_id=tenant_id)
     return {"ok": True}
+
+
+@router.post("/api/contact-broker/{listing_id}")
+async def resolve_broker_contact(
+    listing_id: int,
+    user: dict = Depends(require_user),
+    tenant_id: str | None = Depends(get_tenant_context),
+):
+    """Resolve a broker's WhatsApp link only after an authenticated click."""
+    tenant_id = tenant_id or await asyncio.to_thread(_resolve_active_organization_id, user, None)
+    try:
+        query = storage.client.table("listings").select(
+            "id,broker_phone,bhk,building_name,micro_market,intent"
+        ).eq("id", listing_id)
+        if tenant_id:
+            query = query.eq("tenant_id", tenant_id)
+        rows = await asyncio.to_thread(lambda: query.limit(1).execute().data or [])
+    except Exception as exc:
+        _logger.exception("Could not resolve broker contact for listing=%s: %s", listing_id, exc)
+        raise HTTPException(503, "Broker contact is temporarily unavailable")
+    if not rows:
+        raise HTTPException(404, "Listing not found")
+    listing = rows[0]
+    phone = re.sub(r"\D", "", str(listing.get("broker_phone") or ""))[-10:]
+    if len(phone) != 10:
+        raise HTTPException(410, "This listing does not have a contactable broker")
+    subject = " ".join(
+        value for value in (
+            str(listing.get("bhk") or "").strip(),
+            str(listing.get("building_name") or "").strip() or str(listing.get("micro_market") or "").strip(),
+        ) if value
+    ) or "this listing"
+    message = quote(f"Hi, I found {subject} on PropAI. Is it still available?")
+    return {"contact_url": f"https://wa.me/91{phone}?text={message}"}
 
 
 @router.post("/api/ai/chat")
@@ -1000,11 +1073,11 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
             if not memory.working or memory.working[-1].get("content") != content:
                 memory.add(role, content)
 
-    def _persist(role: str, content: str) -> None:
+    def _persist(role: str, content: str, blocks: list | None = None) -> None:
         if not req.session_id or not content:
             return
         try:
-            storage.add_chat_message_if_new(req.session_id, role, content, tenant_id=tenant_id)
+            storage.add_chat_message_if_new(req.session_id, role, content, tenant_id=tenant_id, blocks=blocks)
             storage.touch_chat_session(req.session_id, tenant_id=tenant_id)
         except Exception as exc:
             _logger.exception("Could not persist AI chat message session=%s role=%s: %s", req.session_id, role, exc)
@@ -1198,7 +1271,7 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
                 )
             response = _annotate_chat_response(response, source_mode)
             _persist("user", last_user)
-            _persist("assistant", response.get("content", ""))
+            _persist("assistant", response.get("content", ""), blocks=response.get("blocks"))
             _maybe_title(last_user)
             return _wrap_chat_response(response, _is_inbox)
         except Exception as exc:
@@ -1208,7 +1281,7 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
             )
             response = _annotate_chat_response(response, source_mode)
             _persist("user", last_user)
-            _persist("assistant", response.get("content", ""))
+            _persist("assistant", response.get("content", ""), blocks=response.get("blocks"))
             _maybe_title(last_user)
             return _wrap_chat_response(response, _is_inbox)
 
@@ -1217,7 +1290,7 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
             response = _group_search_response(search_request_text, {})
             response = _annotate_chat_response(response, source_mode)
             _persist("user", last_user)
-            _persist("assistant", response.get("content", ""))
+            _persist("assistant", response.get("content", ""), blocks=response.get("blocks"))
             _maybe_title(last_user)
             return _wrap_chat_response(response, _is_inbox)
         except Exception:
@@ -1246,7 +1319,7 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
         response = await _run_with_provider_failover(lambda provider: _call(provider), providers, timeout=90)
         response = _annotate_chat_response(response, source_mode)
         _persist("user", last_user)
-        _persist("assistant", response.get("content", ""))
+        _persist("assistant", response.get("content", ""), blocks=response.get("blocks"))
         _maybe_title(last_user)
         return _wrap_sse(response)
     except asyncio.TimeoutError:
