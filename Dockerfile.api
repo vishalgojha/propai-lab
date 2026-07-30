@@ -20,6 +20,7 @@ COPY . .
 RUN python3 -m compileall -q routers/ storage/ agents/ knowledge/ \
     && python3 -m py_compile app.py \
     && python3 -m py_compile extraction.py \
+    && python3 -m py_compile building_enrichment_worker.py \
     && python3 -m py_compile ai_extraction.py \
     && python3 -m py_compile location.py \
     && python3 -m py_compile llm.py \
