@@ -4,8 +4,8 @@ export const dynamic = 'force-dynamic';
 
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ChevronDown, Smartphone, Save, Users, CreditCard, Key, Settings, Mail, MapPin, User } from "lucide-react";
-import { getProfile, saveProfile, getCurrentOrg, getPhones, isLiveWhatsAppConnection, updateOrganization, type Phone } from "@/lib/api";
+import { ChevronDown, Smartphone, Save, Users, CreditCard, Key, Settings, Mail, User, Plus, Trash2 } from "lucide-react";
+import { getProfile, saveProfile, getCurrentOrg, getPhones, isLiveWhatsAppConnection, updateOrganization, type Phone, getPhoneDirectory, addPhoneDirectory, patchPhoneDirectory, removePhoneDirectory, type PhoneDirectoryEntry } from "@/lib/api";
 import { useAuth } from "@/lib/AuthProvider";
 
 const CITIES = [
@@ -33,6 +33,20 @@ export default function ProfilePage() {
   const [dirty, setDirty] = useState(false);
   const [org, setOrg] = useState<{ id: string; name?: string; slug?: string } | null>(null);
   const [phones, setPhones] = useState<Phone[]>([]);
+  const [directoryEntries, setDirectoryEntries] = useState<PhoneDirectoryEntry[]>([]);
+  const [directoryCap, setDirectoryCap] = useState<3 | number>(3);
+  const [directoryUsed, setDirectoryUsed] = useState(0);
+  const [directoryLoading, setDirectoryLoading] = useState(false);
+  const [directoryError, setDirectoryError] = useState<string | null>(null);
+  const [addOpen, setAddOpen] = useState(false);
+  const [addPhone, setAddPhone] = useState("");
+  const [addLabel, setAddLabel] = useState("");
+  const [addSubmitting, setAddSubmitting] = useState(false);
+  const [editEntryId, setEditEntryId] = useState<string | null>(null);
+  const [editPhone, setEditPhone] = useState("");
+  const [editLabel, setEditLabel] = useState("");
+  const [editSubmitting, setEditSubmitting] = useState(false);
+  const [removeEntryId, setRemoveEntryId] = useState<string | null>(null);
   const next = searchParams.get("next") || "";
 
   // Load profile from API on mount
@@ -94,7 +108,90 @@ export default function ProfilePage() {
     getPhones(false, 12000).then((data) => setPhones(data.phones || [])).catch(() => {});
   }, []);
 
+  const reloadDirectory = (orgId: string) => {
+    setDirectoryLoading(true);
+    setDirectoryError(null);
+    getPhoneDirectory(orgId)
+      .then((res) => {
+        setDirectoryEntries(res.entries || []);
+        setDirectoryCap(res.cap ?? 3);
+        setDirectoryUsed(res.used ?? (res.entries || []).length);
+      })
+      .catch((err: any) => {
+        setDirectoryError(err?.message || "Failed to load phone directory");
+        setDirectoryEntries([]);
+        setDirectoryUsed(0);
+      })
+      .finally(() => setDirectoryLoading(false));
+  };
+
+  useEffect(() => {
+    if (org?.id) reloadDirectory(org.id);
+  }, [org?.id]);
+
   const markDirty = () => setDirty(true);
+
+  const handleAddPhone = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!addPhone.trim() || !org?.id || addSubmitting) return;
+    setAddSubmitting(true);
+    try {
+      const created = await addPhoneDirectory(org.id, {
+        phone_number: addPhone.trim(),
+        display_label: addLabel.trim() || null,
+      });
+      setDirectoryEntries((prev) => [...prev, created]);
+      setDirectoryUsed((u) => u + 1);
+      setAddOpen(false);
+      setAddPhone("");
+      setAddLabel("");
+      setDirectoryError(null);
+    } catch (err: any) {
+      setDirectoryError(err?.message || "Failed to add phone");
+    } finally {
+      setAddSubmitting(false);
+    }
+  };
+
+  const beginEdit = (entry: PhoneDirectoryEntry) => {
+    setEditEntryId(entry.id);
+    setEditPhone(entry.phone_number);
+    setEditLabel(entry.display_label || "");
+  };
+
+  const handleEditPhone = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editEntryId || !org?.id || editSubmitting) return;
+    setEditSubmitting(true);
+    try {
+      const updated = await patchPhoneDirectory(org.id, editEntryId, {
+        phone_number: editPhone.trim() || undefined,
+        display_label: editLabel.trim() || null,
+      });
+      setDirectoryEntries((prev) => prev.map((e) => (e.id === editEntryId ? updated : e)));
+      setEditEntryId(null);
+      setEditPhone("");
+      setEditLabel("");
+      setDirectoryError(null);
+    } catch (err: any) {
+      setDirectoryError(err?.message || "Failed to update phone");
+    } finally {
+      setEditSubmitting(false);
+    }
+  };
+
+  const confirmRemove = async () => {
+    if (!removeEntryId || !org?.id) return;
+    try {
+      await removePhoneDirectory(org.id, removeEntryId);
+      setDirectoryEntries((prev) => prev.filter((e) => e.id !== removeEntryId));
+      setDirectoryUsed((u) => Math.max(0, u - 1));
+      setRemoveEntryId(null);
+      setDirectoryError(null);
+    } catch (err: any) {
+      setDirectoryError(err?.message || "Failed to remove phone");
+    }
+  };
 
   const finalCity = city === "__other__" ? customCity.trim() : (city || profile?.city || "");
   const cityMissing = !finalCity;
@@ -279,6 +376,182 @@ export default function ProfilePage() {
                   </div>
                 </div>
               </div>
+            </section>
+
+            {/* WhatsApp Phone Directory */}
+            <section className="rounded-2xl border border-white/10 p-6">
+              <div className="flex items-center justify-between mb-5">
+                <h2 className="flex items-center gap-2 text-sm font-bold text-white">
+                  <Smartphone className="w-4 h-4 text-emerald-400" />
+                  WhatsApp Phone Directory
+                </h2>
+                <span className="text-[11px] text-zinc-500 shrink-0">
+                  {directoryUsed} / {directoryCap} used
+                </span>
+              </div>
+              <p className="text-xs text-zinc-500 mb-4">
+                Add the WhatsApp numbers your brokers use. Connection (pair / reset / repair) is managed from the
+                <button type="button" onClick={() => router.push("/connections")} className="mx-1 underline underline-offset-2 hover:text-emerald-400">Connections</button>
+                page. Removing here permanently deletes the connection.
+              </p>
+
+              {directoryError && (
+                <div className="mb-4 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300">
+                  {directoryError}
+                </div>
+              )}
+
+              <ul className="space-y-3">
+                {directoryLoading ? (
+                  <li className="text-xs text-zinc-500">Loading…</li>
+                ) : directoryEntries.length === 0 ? (
+                  <li className="text-xs text-zinc-500">No numbers added yet.</li>
+                ) : (
+                  directoryEntries.map((entry) => (
+                    <li key={entry.id} className="rounded-lg border border-white/10 bg-zinc-800/40 p-3 flex items-center gap-3">
+                      <Smartphone className="w-4 h-4 text-zinc-500 shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        {editEntryId === entry.id ? (
+                          <form onSubmit={handleEditPhone} className="grid grid-cols-1 sm:grid-cols-[1fr_1fr_auto] gap-2">
+                            <input
+                              value={editPhone}
+                              onChange={(e) => { setEditPhone(e.target.value); markDirty(); }}
+                              required
+                              className="rounded-md border border-white/10 bg-zinc-900 px-2 py-1.5 text-sm text-white outline-none focus:border-emerald-500/50"
+                              placeholder="+91XXXXXXXXXX"
+                            />
+                            <input
+                              value={editLabel}
+                              onChange={(e) => { setEditLabel(e.target.value); markDirty(); }}
+                              className="rounded-md border border-white/10 bg-zinc-900 px-2 py-1.5 text-sm text-white outline-none focus:border-emerald-500/50"
+                              placeholder="Label (e.g. Sales)"
+                            />
+                            <div className="flex gap-2 justify-end">
+                              <button
+                                type="button"
+                                onClick={() => { setEditEntryId(null); setEditPhone(""); setEditLabel(""); }}
+                                className="px-2 py-1 rounded-md text-[11px] text-zinc-400 hover:bg-white/5"
+                              >
+                                Cancel
+                              </button>
+                              <button
+                                type="submit"
+                                disabled={editSubmitting || !editPhone.trim()}
+                                className="px-2 py-1 rounded-md bg-emerald-400 text-black text-[11px] font-bold disabled:opacity-50"
+                              >
+                                {editSubmitting ? "Saving…" : "Save"}
+                              </button>
+                            </div>
+                          </form>
+                        ) : (
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-mono text-white text-sm">{entry.phone_number || "—"}</span>
+                            {entry.display_label && (
+                              <span className="text-[11px] text-zinc-300 bg-white/5 px-2 py-0.5 rounded">{entry.display_label}</span>
+                            )}
+                            {!entry.is_active && (
+                              <span className="text-[11px] text-amber-300 bg-amber-400/10 px-2 py-0.5 rounded">Disabled</span>
+                            )}
+                          </div>
+                        )}
+                        <div className="text-[10px] text-zinc-500 font-mono mt-1 break-all">broker: {entry.broker_id}</div>
+                      </div>
+                      {editEntryId !== entry.id && (
+                        <div className="flex gap-1 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => beginEdit(entry)}
+                            className="px-2 py-1 rounded-md text-[11px] text-zinc-300 hover:bg-white/5"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setRemoveEntryId(entry.id)}
+                            className="px-2 py-1 rounded-md text-[11px] text-red-300 hover:bg-red-500/10"
+                          >
+                            <Trash2 className="w-3 h-3 inline" /> Remove
+                          </button>
+                        </div>
+                      )}
+                    </li>
+                  ))
+                )}
+              </ul>
+
+              {addOpen ? (
+                <form onSubmit={handleAddPhone} className="mt-4 grid grid-cols-1 sm:grid-cols-[1fr_1fr_auto] gap-2">
+                  <input
+                    value={addPhone}
+                    onChange={(e) => setAddPhone(e.target.value)}
+                    placeholder="+91XXXXXXXXXX"
+                    required
+                    className="rounded-md border border-white/10 bg-zinc-900 px-2 py-1.5 text-sm text-white outline-none focus:border-emerald-500/50"
+                  />
+                  <input
+                    value={addLabel}
+                    onChange={(e) => setAddLabel(e.target.value)}
+                    placeholder="Label (optional)"
+                    className="rounded-md border border-white/10 bg-zinc-900 px-2 py-1.5 text-sm text-white outline-none focus:border-emerald-500/50"
+                  />
+                  <div className="flex gap-2 justify-end">
+                    <button
+                      type="button"
+                      onClick={() => { setAddOpen(false); setAddPhone(""); setAddLabel(""); }}
+                      className="px-2 py-1 rounded-md text-[11px] text-zinc-400 hover:bg-white/5"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={addSubmitting || !addPhone.trim()}
+                      className="px-2 py-1 rounded-md bg-emerald-400 text-black text-[11px] font-bold disabled:opacity-50"
+                    >
+                      {addSubmitting ? "Adding…" : "Add"}
+                    </button>
+                  </div>
+                </form>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setAddOpen(true)}
+                  disabled={directoryUsed >= directoryCap}
+                  className="mt-4 w-full flex items-center justify-center gap-1 rounded-lg border border-dashed border-white/15 px-3 py-2 text-xs font-medium text-zinc-300 hover:bg-white/5 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  <Plus className="w-3 h-3" />
+                  {directoryUsed >= directoryCap
+                    ? `Cap reached (${directoryCap} numbers)`
+                    : `Add WhatsApp number (${directoryCap - directoryUsed} slot${directoryCap - directoryUsed === 1 ? "" : "s"} left)`}
+                </button>
+              )}
+
+              {removeEntryId && (
+                <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/70 p-4">
+                  <div className="w-full max-w-sm rounded-2xl border border-white/10 bg-zinc-950 p-5">
+                    <h3 className="text-sm font-bold text-white">Remove this number?</h3>
+                    <p className="mt-2 text-xs text-zinc-400">
+                      The WhatsApp connection will be disconnected and the broker record deleted from this workspace.
+                      Use the Connections page to reset or reconnect instead — only remove when you're done with this number.
+                    </p>
+                    <div className="mt-4 flex justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setRemoveEntryId(null)}
+                        className="px-3 py-1.5 rounded-md text-[11px] text-zinc-300 hover:bg-white/5"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        onClick={confirmRemove}
+                        className="px-3 py-1.5 rounded-md bg-red-500 text-white text-[11px] font-bold"
+                      >
+                        Remove permanently
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
             </section>
 
             {/* Workspace Info (read-only) */}

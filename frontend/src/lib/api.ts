@@ -1957,3 +1957,60 @@ export function getProfilePicture(jid: string, brokerId?: string) {
   const qs = params.toString();
   return fetchJSON<ProfilePictureResponse>(`/profile-picture/${encodeURIComponent(jid)}${qs ? "?" + qs : ""}`, undefined, 5000);
 }
+
+export interface PhoneDirectoryEntry {
+  id: string;
+  organization_id: string;
+  broker_id: string;
+  phone_number: string;
+  display_label: string | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PhoneDirectoryListResult {
+  entries: PhoneDirectoryEntry[];
+  cap: number;
+  used: number;
+}
+
+export function getPhoneDirectory(orgId: string) {
+  return fetchJSON<PhoneDirectoryListResult>(
+    `/orgs/${encodeURIComponent(orgId)}/phone-directory`,
+  );
+}
+
+export function addPhoneDirectory(
+  orgId: string,
+  data: { phone_number: string; display_label?: string | null },
+) {
+  return fetchJSON<PhoneDirectoryEntry>(
+    `/orgs/${encodeURIComponent(orgId)}/phone-directory`,
+    {
+      method: "POST",
+      body: JSON.stringify(data),
+    },
+  );
+}
+
+export function patchPhoneDirectory(
+  orgId: string,
+  entryId: string,
+  data: { phone_number?: string; display_label?: string | null; is_active?: boolean },
+) {
+  return fetchJSON<PhoneDirectoryEntry>(
+    `/orgs/${encodeURIComponent(orgId)}/phone-directory/${encodeURIComponent(entryId)}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    },
+  );
+}
+
+export function removePhoneDirectory(orgId: string, entryId: string) {
+  return fetchJSON<{ ok: boolean; message: string }>(
+    `/orgs/${encodeURIComponent(orgId)}/phone-directory/${encodeURIComponent(entryId)}`,
+    { method: "DELETE" },
+  );
+}

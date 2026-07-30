@@ -4,9 +4,9 @@ export const dynamic = 'force-dynamic';
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Activity, Clock, Database, Inbox, List, LogOut, MessageSquare, Plus, RefreshCw, Shield, Smartphone, Trash2, AlertTriangle, Users, Zap, Lock, X, ChevronLeft, MoreVertical, User, MessageCircle, Check, AlertCircle, Hash } from "lucide-react";
+import { Clock, Database, List, LogOut, MessageSquare, RefreshCw, Shield, Smartphone, AlertTriangle, Users, Zap, X, ChevronLeft, MoreVertical, User, Check, Hash } from "lucide-react";
 import { useAuth } from "@/lib/AuthProvider";
-import { getPhones, createPhone, deletePhone, resetPhone, disconnectPhone, pairCodePhone, getPairCodePhoneStatus, updatePhone, fetchJSON, isLiveWhatsAppConnection, getOnboardingGroups, checkOnboardingGroup, connectOnboardingGroup, disconnectOnboardingGroup, getCurrentOrg, updateOrganization, type Phone, type WhatsAppStatus, type OnboardingGroup, type OnboardingGroupCheck, type OnboardingGroupState } from "@/lib/api";
+import { getPhones, deletePhone, resetPhone, disconnectPhone, pairCodePhone, getPairCodePhoneStatus, updatePhone, fetchJSON, isLiveWhatsAppConnection, getOnboardingGroups, checkOnboardingGroup, connectOnboardingGroup, disconnectOnboardingGroup, type Phone, type WhatsAppStatus, type OnboardingGroup, type OnboardingGroupCheck, type OnboardingGroupState } from "@/lib/api";
 import QRCode from "qrcode";
 
 type HealthStatus = "healthy" | "warning" | "error";
@@ -202,75 +202,6 @@ function matchesLiveStatus(phone: Phone, status: WhatsAppStatus | null) {
     .map(normalizePhoneDigits)
     .filter(Boolean);
   return candidateDigits.includes(liveDigits);
-}
-
-function CreatePhoneDialog({ open, onClose, onCreated, onWorkspaceRenamed }: { open: boolean; onClose: () => void; onCreated: (phone: Phone) => void; onWorkspaceRenamed: (newName: string) => void }) {
-  const [instanceName, setInstanceName] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const handleSubmit = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const trimmed = instanceName.trim();
-      if (trimmed) {
-        try {
-          const current = await getCurrentOrg();
-          if (current?.id && current.name !== trimmed) {
-            await updateOrganization(current.id, { name: trimmed });
-            onWorkspaceRenamed(trimmed);
-          }
-        } catch (renameErr) {
-          console.warn("[connections] rename workspace failed:", renameErr);
-        }
-      }
-      const phone = await createPhone({ instance_name: trimmed || undefined });
-      setInstanceName("");
-      onCreated(phone);
-      onClose();
-    } catch (e: any) {
-      setError(e?.message || "Failed to create phone");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  if (!open) return null;
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
-      <div className="bg-zinc-900 border border-white/10 rounded-2xl p-6 w-full max-w-md mx-4" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-base font-bold text-white">Add Phone</h3>
-          <button onClick={onClose} className="text-zinc-500 hover:text-white"><X className="w-5 h-5" /></button>
-        </div>
-        <p className="text-xs text-zinc-500 mb-4">Create a WhatsApp connection, then link it with a pairing code from your phone.</p>
-        <div className="space-y-3">
-          <div>
-            <label className="text-xs font-medium text-zinc-400 mb-1 block">Agency / Workspace Name (optional)</label>
-            <input
-              type="text"
-              value={instanceName}
-              onChange={(e) => setInstanceName(e.target.value)}
-              placeholder="e.g. Ananta Realty"
-              className="w-full rounded-lg border border-white/10 bg-zinc-800 px-3 py-2.5 text-sm text-white placeholder-zinc-600 focus:border-white/30 focus:outline-none"
-            />
-          </div>
-          {error && <p className="text-xs text-red-400">{error}</p>}
-        </div>
-        <div className="flex gap-3 mt-6">
-          <button onClick={onClose} className="min-h-[44px] flex-1 rounded-md border border-white/10 bg-transparent px-4 py-2.5 text-xs font-semibold text-zinc-300 hover:bg-white/5">Cancel</button>
-          <button
-            onClick={handleSubmit}
-            disabled={loading}
-            className="min-h-[44px] flex-1 rounded-md border border-white bg-white px-4 py-2.5 text-xs font-semibold text-black hover:bg-zinc-200 disabled:opacity-50"
-          >
-            {loading ? "Creating..." : "Create Phone"}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
 }
 
 function PhoneCard({
@@ -596,20 +527,9 @@ function PhoneCard({
                 <RefreshCw className="h-3.5 w-3.5" />
                 Reset &amp; re-pair WhatsApp
               </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setShowMenu(false);
-                  if (window.confirm(`Remove ${isUnpaired ? "this empty phone" : (phone.instance_name || formatPhone(phoneDisplay))} from this workspace?`)) {
-                    void handleAction("delete");
-                  }
-                }}
-                disabled={actionLoading !== null}
-                className="flex w-full items-center gap-2 border-t border-white/10 px-3 py-2.5 text-left text-xs font-semibold text-red-300 hover:bg-red-500/10 disabled:opacity-50"
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-                Remove phone
-              </button>
+              <div className="px-3 py-2 text-[11px] text-zinc-500 leading-snug">
+                To permanently remove this number and disconnect WhatsApp, delete it from your Profile page.
+              </div>
             </div>
           )}
         </div>
@@ -793,9 +713,8 @@ function PhoneCard({
   );
 }
 
-function LiveStatusCard({ status, onAddPhone }: { status: WhatsAppStatus | null; onAddPhone: () => void }) {
-  const connected = Boolean(status?.connected || status?.state === "open" || status?.state === "connected" || status?.connected_since);
-
+function EmptyConnectionsHint() {
+  const router = useRouter();
   return (
     <div className="mb-8 rounded-xl border border-white/10 p-5">
       <div className="flex items-center gap-3">
@@ -803,21 +722,17 @@ function LiveStatusCard({ status, onAddPhone }: { status: WhatsAppStatus | null;
           <Smartphone className="h-5 w-5 text-zinc-200" />
         </div>
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-bold text-white">{connected ? "WhatsApp connected" : "Checking WhatsApp connection"}</span>
-            <StatusDot status={connected ? "healthy" : "warning"} />
-          </div>
-          <div className="text-xs text-zinc-500 mt-0.5">
-            {connected ? "Live WhatsApp session detected" : "Live session state is being checked"}
-          </div>
+          <div className="text-sm font-bold text-white">No WhatsApp phones in this workspace</div>
+          <p className="mt-1 text-xs text-zinc-500">
+            Add the WhatsApp numbers your brokers use from your Profile page (3 numbers per workspace). Pairing and reset live here.
+          </p>
         </div>
-      </div>
-      <div className="mt-4">
         <button
-          onClick={onAddPhone}
-          className="min-h-[44px] rounded-md border border-white bg-white px-4 py-2.5 text-xs font-semibold text-black hover:bg-zinc-200"
+          type="button"
+          onClick={() => router.push("/profile")}
+          className="flex h-10 items-center gap-2 rounded-lg border border-white bg-white px-4 py-2.5 text-xs font-semibold text-black hover:bg-zinc-200 transition-colors shrink-0"
         >
-          Add Phone
+          Open Profile
         </button>
       </div>
     </div>
@@ -1063,8 +978,6 @@ export default function ConnectionCenterPage() {
   const [liveStatus, setLiveStatus] = useState<WhatsAppStatus | null>(null);
   const [phonesLoading, setPhonesLoading] = useState(true);
   const [phonesError, setPhonesError] = useState<string | null>(null);
-  const [showCreate, setShowCreate] = useState(false);
-  const [workspaceToast, setWorkspaceToast] = useState<string | null>(null);
 
   const [totalParsed, setTotalParsed] = useState(0);
   const [totalListings, setTotalListings] = useState(0);
@@ -1168,29 +1081,6 @@ export default function ConnectionCenterPage() {
     void fetchLiveStatus();
   }, [fetchPhones, fetchLiveStatus]);
 
-  const handleWorkspaceRenamed = useCallback((newName: string) => {
-    setWorkspaceToast(`Workspace renamed to “${newName}”.`);
-    window.setTimeout(() => setWorkspaceToast(null), 4000);
-    router.refresh();
-  }, [router]);
-
-  const handlePhoneCreated = useCallback((created: Phone) => {
-    setPhones((current) => {
-      const next = current.some((phone) => phone.id === created.id)
-        ? current.map((phone) => (phone.id === created.id ? { ...phone, ...created } : phone))
-        : [...current, created];
-      if (user?.id) {
-        localStorage.setItem(`propai_phones:${user.id}`, JSON.stringify(next));
-      }
-      return next;
-    });
-    setPhonesLoading(false);
-    setPhonesError(null);
-    // Creation already succeeded. Refresh live status in the background so a
-    // slow status endpoint cannot turn success into a misleading 500 error.
-    refreshData();
-  }, [refreshData, user?.id]);
-
   const handlePhoneDeleted = useCallback((phoneId: number) => {
     setPhones((current) => {
       const next = current.filter((phone) => phone.id !== phoneId);
@@ -1249,22 +1139,8 @@ export default function ConnectionCenterPage() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          {phones.length < 3 && (
-            <button
-              onClick={() => setShowCreate(true)}
-              className="flex h-10 items-center gap-2 rounded-lg border border-white bg-white px-4 py-2.5 text-xs font-semibold text-black hover:bg-zinc-200"
-            >
-              <Plus className="w-4 h-4" /> Add Phone
-            </button>
-          )}
         </div>
       </div>
-
-      {workspaceToast && (
-        <div className="mb-6 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200">
-          {workspaceToast}
-        </div>
-      )}
 
       {phonesLoading ? (
         <div className="flex items-center justify-center py-16 text-sm text-zinc-500">Loading phones...</div>
@@ -1288,7 +1164,7 @@ export default function ConnectionCenterPage() {
             </div>
           )}
           {phones.length === 0 && !phonesError && (
-            <LiveStatusCard status={liveStatus} onAddPhone={() => setShowCreate(true)} />
+            <EmptyConnectionsHint />
           )}
           {/* Phone Cards - Compact Grid */}
           {phones.length > 0 && (
@@ -1392,8 +1268,6 @@ export default function ConnectionCenterPage() {
           </Section>
         </>
       )}
-
-      <CreatePhoneDialog open={showCreate} onClose={() => setShowCreate(false)} onCreated={handlePhoneCreated} onWorkspaceRenamed={handleWorkspaceRenamed} />
     </div>
   );
 }

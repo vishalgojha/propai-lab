@@ -1208,6 +1208,70 @@ class SupabaseStorage(Storage):
         # representation as the success signal.
         return bool(res.data) or self.get_whatsapp_connection_unscoped(conn_id) is None
 
+    def list_org_whatsapp_phone_directory(self, org_id: str) -> list[dict]:
+        res = self.client.table("org_whatsapp_phone_directory").select("*")\
+            .eq("organization_id", org_id).order("created_at", desc=False).execute()
+        return res.data or []
+
+    def get_org_whatsapp_phone_directory(self, entry_id: str) -> dict | None:
+        res = self.client.table("org_whatsapp_phone_directory").select("*")\
+            .eq("id", entry_id).limit(1).execute()
+        if not res.data:
+            return None
+        if self._tenant_id and str(res.data[0].get("organization_id") or "") != str(self._tenant_id):
+            return None
+        return res.data[0]
+
+    def get_org_whatsapp_phone_directory_by_broker_id(self, broker_id: str) -> dict | None:
+        broker_id = (broker_id or "").strip()
+        if not broker_id:
+            return None
+        res = self.client.table("org_whatsapp_phone_directory").select("*")\
+            .eq("broker_id", broker_id).limit(1).execute()
+        return res.data[0] if res.data else None
+
+    def add_org_whatsapp_phone_directory(
+        self,
+        org_id: str,
+        broker_id: str,
+        phone_number: str,
+        display_label: str = "",
+        is_active: bool = True,
+    ) -> dict | None:
+        data = {
+            "organization_id": org_id,
+            "broker_id": broker_id,
+            "phone_number": phone_number,
+            "display_label": display_label or "",
+            "is_active": bool(is_active),
+        }
+        res = self.client.table("org_whatsapp_phone_directory").insert(data).execute()
+        return res.data[0] if res.data else None
+
+    def update_org_whatsapp_phone_directory(self, entry_id: str, updates: dict) -> dict | None:
+        payload = {k: v for k, v in (updates or {}).items() if v is not None}
+        if not payload:
+            return self.get_org_whatsapp_phone_directory(entry_id)
+        payload.setdefault("updated_at", datetime.now(timezone.utc).isoformat())
+        res = self.client.table("org_whatsapp_phone_directory")\
+            .update(payload).eq("id", entry_id).execute()
+        return res.data[0] if res.data else None
+
+    def remove_org_whatsapp_phone_directory(self, entry_id: str) -> bool:
+        res = self.client.table("org_whatsapp_phone_directory")\
+            .delete().eq("id", entry_id).execute()
+        return bool(res.data) or self.get_org_whatsapp_phone_directory(entry_id) is None
+
+    def update_org_whatsapp_phone_directory_by_broker_id(self, broker_id: str, updates: dict) -> dict | None:
+        broker_id = (broker_id or "").strip()
+        payload = {k: v for k, v in (updates or {}).items() if v is not None}
+        if not broker_id or not payload:
+            return None
+        payload.setdefault("updated_at", datetime.now(timezone.utc).isoformat())
+        res = self.client.table("org_whatsapp_phone_directory")\
+            .update(payload).eq("broker_id", broker_id).execute()
+        return res.data[0] if res.data else None
+
     def get_org_whatsapp_connection(self, conn_id: int) -> dict | None:
         query = self.client.table("org_whatsapp_connections").select("*").eq("id", conn_id).limit(1)
         if self._tenant_id:
