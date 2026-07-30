@@ -211,6 +211,9 @@ app.include_router(knowledge_router)
 from routers.whatsapp_sync import router as whatsapp_sync_router
 app.include_router(whatsapp_sync_router)
 
+from routers.phone_directory import router as phone_directory_router
+app.include_router(phone_directory_router)
+
 from routers.send import router as send_router
 app.include_router(send_router)
 
@@ -441,6 +444,9 @@ routers.whatsapp_sync._ingestor_failure_message = _ingestor_failure_message
 routers.whatsapp_sync._memory_status = _memory_status
 routers.whatsapp_sync._previous_status = _previous_status
 routers.whatsapp_sync._cache_connection_snapshot = _cache_connection_snapshot
+
+import routers.phone_directory
+routers.phone_directory._first_ingestor_response = _first_ingestor_response
 routers.whatsapp_sync._platform_waba_values = _platform_waba_values
 routers.whatsapp_sync._workspace_waba_values = _workspace_waba_values
 routers.whatsapp_sync._resolve_waba_webhook_config = _resolve_waba_webhook_config
