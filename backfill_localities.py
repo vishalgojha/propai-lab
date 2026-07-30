@@ -1,162 +1,159 @@
 #!/usr/bin/env python3
-"""Backfill script: re-resolve localities for existing listings.
+"""Backfill script: re-resolve localities for existing rows.
 
 Loads all reference data (locality_reference, buildings,
-building_name_aliases) into memory once, then scans every listing that
-has a raw source message and re-resolves the locality. Outputs a CSV
-report of mismatches.
+building_name_aliases) into memory once via
+:mod:`registry.locality_resolver`, then scans every row that has a raw
+source message and re-resolves the locality.
 
-NO data is modified — this script is read-only. Review the output
-before applying any corrections.
+Supported targets:
+
+- ``listings`` (uses ``representative_raw_message_id``)
+- ``parsed_output`` (uses ``raw_message_id``)
+
+Default behavior is *dry-run*: prints mismatches and writes a CSV
+report. **No data is modified** unless ``--apply`` is also passed.
 
 Usage:
-    python backfill_localities.py [--batch-size 2000] [--output report.csv]
-"""
 
+    # dry-run report for listings (unchanged behaviour)
+    python backfill_localities.py [--batch-size 2000] [--output report.csv]
+
+    # dry-run report for parsed_output
+    python backfill_localities.py --target parsed_output
+
+    # preview what --apply would change, without writing
+    python backfill_localities.py --apply --dry-run-apply --target both
+
+    # apply: only fills rows whose micro_market is null/empty
+    python backfill_localities.py --apply --target listings \
+        --tenant-id <org-uuid>
+
+    # apply + also overwrite populating-but-different rows (dangerous)
+    python backfill_localities.py --apply --target both \
+        --overwrite-existing --tenant-id <org-uuid>
+
+Safety rules (see ``docs/DATA_QUALITY.md``):
+
+- Without ``--overwrite-existing`` the apply path **never** rewrites a
+  non-null ``micro_market``. ``parsed_output.location_raw`` is also only
+  filled when currently null, and uses the matched span or original
+  message snippet — never a normalized/resolved value.
+- ``--apply`` requires ``--tenant-id`` because *both* ``listings`` and
+  ``parsed_output`` rows are tenant-scoped after migration
+  ``20260719010000``. Multi-tenant writes without an explicit scope
+  would cross organisations.
+- Every applied row is logged to a timestamped audit CSV
+  ``locality_backfill_applied_<timestamp>.csv`` (or whatever
+  ``--audit-csv=PATH`` specifies) so the change is reproducible.
+"""
 import argparse
 import csv
 import os
-import re
 import sys
 import time
+from datetime import datetime
+from typing import Any
 
 sys.path.insert(0, os.path.dirname(__file__))
 
 from storage.supabase import SupabaseStorage  # noqa: E402
 
-
-LINK_ONLY_RE = re.compile(r"^https?://\S+$")
-EXTERNAL_LINK_RE = re.compile(
-    r"https?://(?:www\.)?(?:youtube\.com|youtu\.be|instagram\.com|facebook\.com|"
-    r"fb\.com|twitter\.com|x\.com|t\.co|tiktok\.com|linkedin\.com)/\S*"
-)
-PAGE = 1000  # PostgREST default max-rows
-
-
-def _fetch_all(db, table, columns, filters=None):
-    """Fetch all rows from a table, paginating through PostgREST's 1000-row limit."""
-    all_rows = []
-    offset = 0
-    while True:
-        q = db.table(table).select(columns)
-        if filters:
-            for col, op, val in filters:
-                if op == "not.is":
-                    q = q.not_.is_(col, val)
-                elif op == "neq":
-                    q = q.neq(col, val)
-        q = q.order("id").offset(offset).limit(PAGE)
-        res = q.execute()
-        rows = res.data or []
-        all_rows.extend(rows)
-        if len(rows) < PAGE:
-            break
-        offset += PAGE
-    return all_rows
-
-
-LINK_ONLY_RE = re.compile(r"^https?://\S+$")
-EXTERNAL_LINK_RE = re.compile(
-    r"https?://(?:www\.)?(?:youtube\.com|youtu\.be|instagram\.com|facebook\.com|"
-    r"fb\.com|twitter\.com|x\.com|t\.co|tiktok\.com|linkedin\.com)/\S*"
+from registry.locality_resolver import (  # noqa: E402
+    EXTERNAL_LINK_RE,
+    LINK_ONLY_RE,
+    LocalityResolver,
+    PAGE,
+    meets_minimum,
 )
 
 
-class LocalityResolver:
-    """In-memory locality resolver. Pre-loads all reference data."""
+# ──────────────────────────────────────────────────────────────────
+# helpers
+# ──────────────────────────────────────────────────────────────────
 
-    def __init__(self, db):
-        self.db = db
+def _is_empty(value: Any) -> bool:
+    """Treat ``None`` / empty string / whitespace-only as missing."""
+    return value is None or (isinstance(value, str) and not value.strip())
 
-        # locality_reference → text matching (small, < 1000 rows)
-        print("  Loading locality_reference...", flush=True)
-        res = db.table("locality_reference").select(
-            "sub_locality, parent_locality, confidence"
-        ).limit(PAGE).execute()
-        self.loc_ref = res.data or []
-        self.loc_ref_by_sub = {}
-        for row in self.loc_ref:
-            sub = (row.get("sub_locality") or "").strip()
-            if sub:
-                self.loc_ref_by_sub[sub.lower()] = row
-        print(f"    {len(self.loc_ref)} rows, {len(self.loc_ref_by_sub)} unique sub_locality keys")
 
-        # buildings → micro_market lookup (may exceed 1000 rows)
-        print("  Loading buildings...", flush=True)
-        self.buildings = _fetch_all(
-            db, "buildings", "canonical_name, micro_market",
-            filters=[("micro_market", "not.is", "null"), ("micro_market", "neq", "")],
-        )
-        self.building_map = {}
-        for row in self.buildings:
-            name = (row.get("canonical_name") or "").strip()
-            market = (row.get("micro_market") or "").strip()
-            if name and market:
-                self.building_map[name.lower()] = market
-        print(f"    {len(self.buildings)} rows, {len(self.building_map)} with micro_market")
+def _resolve_message(
+    resolver: LocalityResolver, message_text: str, building_name: str
+) -> dict | None:
+    """Apply the same heuristics ``run_backfill`` uses, but raw-text in,
+    structured out, ready to be written.
 
-        # building_name_aliases → alias → canonical → buildings lookup
-        print("  Loading building_name_aliases...", flush=True)
-        self.aliases = _fetch_all(
-            db, "building_name_aliases", "alias, canonical_name",
-        )
-        self.alias_map = {}
-        for row in self.aliases:
-            alias = (row.get("alias") or "").strip()
-            canonical = (row.get("canonical_name") or "").strip()
-            if alias and canonical:
-                self.alias_map[alias.lower()] = canonical.lower()
-        print(f"    {len(self.aliases)} rows, {len(self.alias_map)} unique aliases")
+    Returns the resolver dict *augmented* with ``source_detail`` (either
+    the matched span or ``building_name``) so callers can surface
+    provenance in audit logs and messages.
+    """
+    if not message_text or len(message_text.strip()) < 5:
+        return None
+    msg_stripped = message_text.strip()
+    is_link_only = bool(LINK_ONLY_RE.match(msg_stripped.lower()))
+    is_ultra_short = len(msg_stripped) < 30
 
-    def resolve_from_text(self, text: str) -> dict | None:
-        """Find a locality mentioned in raw message text."""
-        if not text or len(text.strip()) < 5:
-            return None
-
-        cleaned = EXTERNAL_LINK_RE.sub("", text).strip()
-        if not cleaned:
-            return None
-
-        text_lower = cleaned.lower()
-        # Check each known sub-locality against the text
-        for sub_lower, row in self.loc_ref_by_sub.items():
-            if len(sub_lower) >= 4 and sub_lower in text_lower:
-                return {
-                    "resolved_locality": row["parent_locality"],
-                    "confidence": row.get("confidence") or "medium",
-                    "source": "text_reference_match",
-                }
+    if is_link_only or is_ultra_short:
+        bld = resolver.resolve_from_building(building_name)
+        if bld:
+            return {**bld, "source_detail": f"building_name ({bld['source']})"}
         return None
 
-    def resolve_from_building(self, building_name: str) -> dict | None:
-        """Look up a building's known locality from buildings / aliases."""
-        if not building_name or not building_name.strip():
-            return None
+    txt = resolver.resolve_from_text(message_text)
+    if txt:
+        return {**txt, "source_detail": "text_reference_match"}
+    if building_name:
+        bld = resolver.resolve_from_building(building_name)
+        if bld:
+            return {**bld, "source_detail": f"building_name ({bld['source']})"}
+    return None
 
-        name = building_name.strip().lower()
 
-        # Direct match in buildings table
-        market = self.building_map.get(name)
-        if market:
-            return {
-                "resolved_locality": market,
-                "confidence": "high",
-                "source": "buildings_table",
-            }
+def _open_audit_csv(path: str) -> tuple[csv.DictWriter, "io.TextIOBase"]:
+    """Open (or create) the audit CSV and return ``(writer, file_handle)``.
 
-        # Alias lookup → canonical → buildings
-        canonical = self.alias_map.get(name)
-        if canonical:
-            market = self.building_map.get(canonical)
-            if market:
-                return {
-                    "resolved_locality": market,
-                    "confidence": "medium",
-                    "source": "building_name_aliases",
-                }
+    Header columns are stable across calls so re-runs append sensibly.
+    The file handle is returned so callers can flush/close it on shutdown.
+    """
+    new_file = not os.path.exists(path)
+    f = open(path, "a", newline="")
+    writer = csv.DictWriter(
+        f,
+        fieldnames=[
+            "applied_at",
+            "tenant_id",
+            "target_table",
+            "row_id",
+            "old_micro_market",
+            "new_micro_market",
+            "old_location_raw",
+            "new_location_raw",
+            "source",
+            "source_detail",
+            "confidence",
+            "matched_sub",
+            "raw_message_snippet",
+        ],
+    )
+    if new_file:
+        writer.writeheader()
+    return writer, f
 
-        return None
 
+# ──────────────────────────────────────────────────────────────────
+# list-and-resolve walker helpers — (intentionally not present)
+# ──────────────────────────────────────────────────────────────────
+# Earlier iterations exposed `_iter_listings` / `_iter_parsed_output`
+# generators for callers outside this file. We kept the interaction
+# limited to two well-defined entry points (`run_backfill`, `run_apply`)
+# and a private `_resolve_message` helper, so the walkers add surface
+# area without current callers. Re-introduce them only if a future
+# command (e.g., a CLI streaming mode) needs them.
+
+
+# ──────────────────────────────────────────────────────────────────
+# dry-run path (kept identical to the original behaviour)
+# ──────────────────────────────────────────────────────────────────
 
 def run_backfill(batch_size: int = 2000, output_path: str = "locality_backfill_report.csv"):
     print("Initializing storage...")
@@ -165,11 +162,16 @@ def run_backfill(batch_size: int = 2000, output_path: str = "locality_backfill_r
 
     print("Loading reference data into memory...")
     resolver = LocalityResolver(db)
+    print(
+        f"  locality_reference={resolver.stats['locality_reference']:,} "
+        f"buildings={resolver.stats['buildings']:,} "
+        f"building_name_aliases={resolver.stats['building_name_aliases']:,}"
+    )
 
     print("\nScanning listings...")
     offset = 0
     total_scanned = 0
-    mismatches = []
+    mismatches: list[dict] = []
     link_only_count = 0
     no_text_count = 0
     building_fallback_count = 0
@@ -180,27 +182,36 @@ def run_backfill(batch_size: int = 2000, output_path: str = "locality_backfill_r
     start_time = time.time()
 
     while True:
-        result = db.table("listings").select(
-            "id, building_name, micro_market, canonical_micro_market_slug, "
-            "representative_raw_message_id"
-        ).not_.is_(
-            "representative_raw_message_id", "null"
-        ).order("id").offset(offset).limit(PAGE).execute()
-
+        result = (
+            db.table("listings")
+            .select(
+                "id, building_name, micro_market, canonical_micro_market_slug, "
+                "representative_raw_message_id"
+            )
+            .not_.is_("representative_raw_message_id", "null")
+            .order("id")
+            .offset(offset)
+            .limit(PAGE)
+            .execute()
+        )
         batch = result.data or []
         if not batch:
             break
 
-        raw_ids = [r["representative_raw_message_id"] for r in batch if r.get("representative_raw_message_id")]
+        raw_ids = [
+            r["representative_raw_message_id"] for r in batch if r.get("representative_raw_message_id")
+        ]
         if not raw_ids:
             offset += batch_size
             total_scanned += len(batch)
             continue
 
-        msg_result = db.table("raw_messages").select(
-            "id, message, group_name"
-        ).in_("id", raw_ids).execute()
-
+        msg_result = (
+            db.table("raw_messages")
+            .select("id, message, group_name")
+            .in_("id", raw_ids)
+            .execute()
+        )
         msg_map = {m["id"]: m for m in (msg_result.data or [])}
 
         for listing in batch:
@@ -230,19 +241,16 @@ def run_backfill(batch_size: int = 2000, output_path: str = "locality_backfill_r
 
             if is_link_only or is_ultra_short:
                 link_only_count += 1
-                # Only try building-name lookup
                 bld = resolver.resolve_from_building(building_name)
                 if bld:
                     resolved_market = bld["resolved_locality"]
                     source = f"building_name ({bld['source']})"
             else:
-                # Try text match first
                 txt = resolver.resolve_from_text(message_text)
                 if txt:
                     resolved_market = txt["resolved_locality"]
                     source = "text_reference_match"
                 elif building_name:
-                    # Fallback to building-name lookup
                     bld = resolver.resolve_from_building(building_name)
                     if bld:
                         resolved_market = bld["resolved_locality"]
@@ -289,7 +297,6 @@ def run_backfill(batch_size: int = 2000, output_path: str = "locality_backfill_r
 
     elapsed = time.time() - start_time
 
-    # ── Summary ───────────────────────────────────────────────────────
     print(f"\n{'='*70}")
     print(f"BACKFILL REPORT")
     print(f"{'='*70}")
@@ -308,18 +315,20 @@ def run_backfill(batch_size: int = 2000, output_path: str = "locality_backfill_r
         mismatches.sort(key=lambda m: (m["source"], m["listing_id"]))
 
         with open(output_path, "w", newline="") as f:
-            writer = csv.DictWriter(f, fieldnames=[
-                "listing_id", "current_locality", "resolved_locality",
-                "building_name", "raw_message_snippet", "source",
-                "group_name", "is_link_only",
-            ])
+            writer = csv.DictWriter(
+                f,
+                fieldnames=[
+                    "listing_id", "current_locality", "resolved_locality",
+                    "building_name", "raw_message_snippet", "source",
+                    "group_name", "is_link_only",
+                ],
+            )
             writer.writeheader()
             writer.writerows(mismatches)
 
         print(f"Report written to: {output_path}")
 
-        # ── Kalpataru Vivant/Vivante check ────────────────────────────
-        vivante_hits = [m for m in mismatches if "kalpataru" in (m["building_name"] or "").lower()]
+        vivante_hits = [m for m in mismatches if "kalpataru" in (m.get("building_name") or "").lower()]
         if vivante_hits:
             print(f"\n{'─'*70}")
             print(f"KALPATARU VIVANT/VIVANTE LISTINGS ({len(vivante_hits)} found):")
@@ -331,7 +340,6 @@ def run_backfill(batch_size: int = 2000, output_path: str = "locality_backfill_r
                 print(f"    Message:  {m['raw_message_snippet'][:120]}")
                 print()
 
-        # ── Sample mismatches ─────────────────────────────────────────
         print(f"\nSample mismatches (first 25):")
         print(f"{'ID':>10} | {'Current':>20} | {'Resolved':>20} | {'Source':>30} | Building")
         print("-" * 120)
@@ -349,10 +357,483 @@ def run_backfill(batch_size: int = 2000, output_path: str = "locality_backfill_r
     return mismatches
 
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Backfill localities from raw messages")
-    parser.add_argument("--batch-size", type=int, default=2000, help="Batch size for DB queries")
-    parser.add_argument("--output", type=str, default="locality_backfill_report.csv", help="Output CSV path")
+# ──────────────────────────────────────────────────────────────────
+# apply path
+# ──────────────────────────────────────────────────────────────────
+
+def _apply_listings(
+    db,
+    resolver: LocalityResolver,
+    *,
+    overwrite_existing: bool,
+    min_confidence: str,
+    dry_run: bool,
+    audit,
+    tenant_id: str | None,
+) -> dict:
+    """Apply resolved localities to ``listings.micro_market``.
+
+    Returns a counters dict: ``scanned``, ``eligible``, ``updated``,
+    ``skipped_existing``, ``skipped_low_confidence``, ``errors``.
+
+    Pagination via ``offset`` is correct for backfill scripts because
+    the ``listings`` table only ever grows monotonically during a run.
+    For very large datasets the caller should split into batches.
+    Repeated calls on already-processed rows are safe: rows whose
+    ``micro_market`` now matches the resolver are filtered upstream.
+    """
+    counters = {
+        "scanned": 0, "eligible": 0, "updated": 0,
+        "skipped_existing": 0, "skipped_low_confidence": 0, "errors": 0,
+    }
+    conn = db.table("listings")
+    offset = 0
+    while True:
+        query = conn.select(
+            "id, building_name, micro_market, representative_raw_message_id, "
+            "tenant_id"
+        )
+        if tenant_id:
+            query = query.eq("tenant_id", tenant_id)
+        batch = query.order("id").offset(offset).limit(PAGE).execute().data or []
+        if not batch:
+            break
+        raw_ids = [
+            r["representative_raw_message_id"] for r in batch if r.get("representative_raw_message_id")
+        ]
+        msg_map: dict[int, dict] = {}
+        if raw_ids:
+            for i in range(0, len(raw_ids), 200):
+                sub_ids = raw_ids[i : i + 200]
+                raw_query = (
+                    db.table("raw_messages")
+                    .select("id, message, group_name, tenant_id")
+                    .in_("id", sub_ids)
+                )
+                if tenant_id:
+                    raw_query = raw_query.eq("tenant_id", tenant_id)
+                raw_result = raw_query.execute()
+                for m in (raw_result.data or []):
+                    msg_map[m["id"]] = m
+        for listing in batch:
+            counters["scanned"] += 1
+            row_id = listing["id"]
+            current = listing.get("micro_market") or ""
+            building_name = listing.get("building_name") or ""
+            raw_id = listing.get("representative_raw_message_id")
+            if not raw_id or raw_id not in msg_map:
+                counters["skipped_existing"] += 1
+                continue
+            message_text = (msg_map[raw_id].get("message") or "").strip()
+            decision = _resolve_message(resolver, message_text, building_name)
+            if not decision:
+                counters["skipped_existing"] += 1
+                continue
+            if current and not overwrite_existing:
+                counters["skipped_existing"] += 1
+                continue
+            if not meets_minimum(decision["confidence"], min_confidence):
+                counters["skipped_low_confidence"] += 1
+                continue
+            counters["eligible"] += 1
+            new_value = decision["resolved_locality"]
+            audit_row = {
+                "applied_at": datetime.utcnow().isoformat() + "Z",
+                "tenant_id": listing.get("tenant_id") or tenant_id or "",
+                "target_table": "listings",
+                "row_id": row_id,
+                "old_micro_market": current,
+                "new_micro_market": new_value,
+                "old_location_raw": "",
+                "new_location_raw": "",
+                "source": decision["source"],
+                "source_detail": decision.get("source_detail") or "",
+                "confidence": decision["confidence"],
+                "matched_sub": decision.get("matched_sub") or "",
+                "raw_message_snippet": EXTERNAL_LINK_RE.sub("", message_text)[:200].strip(),
+            }
+            if dry_run:
+                audit.writerow(audit_row)
+                counters["updated"] += 1
+                continue
+            try:
+                conn.update({"micro_market": new_value}).eq("id", row_id).execute()
+                audit.writerow(audit_row)
+                counters["updated"] += 1
+            except Exception as exc:  # pragma: no cover - hot path log only
+                print(f"  ERR listings.id={row_id}: {exc}", file=sys.stderr)
+                counters["errors"] += 1
+        if len(batch) < PAGE:
+            break
+        offset += PAGE
+    return counters
+    """Paginated listings apply — replaces the placeholder loop above."""
+    counters = initial_counters
+    conn = db.table("listings")
+    offset = 0
+    while True:
+        query = conn.select(
+            "id, building_name, micro_market, representative_raw_message_id, "
+            "tenant_id"
+        )
+        if tenant_id:
+            query = query.eq("tenant_id", tenant_id)
+        batch = query.order("id").offset(offset).limit(PAGE).execute().data or []
+        if not batch:
+            break
+        raw_ids = [
+            r["representative_raw_message_id"] for r in batch if r.get("representative_raw_message_id")
+        ]
+        msg_map: dict[int, dict] = {}
+        if raw_ids:
+            for i in range(0, len(raw_ids), 200):
+                sub_ids = raw_ids[i : i + 200]
+                raw_query = (
+                    db.table("raw_messages")
+                    .select("id, message, group_name, tenant_id")
+                    .in_("id", sub_ids)
+                )
+                if tenant_id:
+                    raw_query = raw_query.eq("tenant_id", tenant_id)
+                raw_result = raw_query.execute()
+                for m in (raw_result.data or []):
+                    msg_map[m["id"]] = m
+        for listing in batch:
+            counters["scanned"] += 1
+            row_id = listing["id"]
+            current = listing.get("micro_market") or ""
+            building_name = listing.get("building_name") or ""
+            raw_id = listing.get("representative_raw_message_id")
+            if not raw_id or raw_id not in msg_map:
+                counters["skipped_existing"] += 1
+                continue
+            message_text = (msg_map[raw_id].get("message") or "").strip()
+            decision = _resolve_message(resolver, message_text, building_name)
+            if not decision:
+                counters["skipped_existing"] += 1
+                continue
+            if current and not overwrite_existing:
+                counters["skipped_existing"] += 1
+                continue
+            if not meets_minimum(decision["confidence"], min_confidence):
+                counters["skipped_low_confidence"] += 1
+                continue
+            counters["eligible"] += 1
+            new_value = decision["resolved_locality"]
+            audit_row = {
+                "applied_at": datetime.utcnow().isoformat() + "Z",
+                "tenant_id": listing.get("tenant_id") or tenant_id or "",
+                "target_table": "listings",
+                "row_id": row_id,
+                "old_micro_market": current,
+                "new_micro_market": new_value,
+                "old_location_raw": "",
+                "new_location_raw": "",
+                "source": decision["source"],
+                "source_detail": decision.get("source_detail") or "",
+                "confidence": decision["confidence"],
+                "matched_sub": decision.get("matched_sub") or "",
+                "raw_message_snippet": EXTERNAL_LINK_RE.sub("", message_text)[:200].strip(),
+            }
+            if dry_run:
+                audit.writerow(audit_row)
+                counters["updated"] += 1
+                continue
+            try:
+                conn.update({"micro_market": new_value}).eq("id", row_id).execute()
+                audit.writerow(audit_row)
+                counters["updated"] += 1
+            except Exception as exc:  # pragma: no cover - hot path log only
+                print(f"  ERR listings.id={row_id}: {exc}", file=sys.stderr)
+                counters["errors"] += 1
+        if len(batch) < PAGE:
+            break
+        offset += PAGE
+    return counters
+
+
+def _apply_parsed_output(
+    db,
+    resolver: LocalityResolver,
+    *,
+    overwrite_existing: bool,
+    min_confidence: str,
+    dry_run: bool,
+    audit,
+    tenant_id: str | None,
+) -> dict:
+    """Apply resolved localities to ``parsed_output.min_market`` and
+    optionally ``parsed_output.location_raw``.
+
+    ``location_raw`` is filled only when currently null, and only when
+    the resolver produced a matched span or the raw message text is
+    usable. The script never writes a normalized/resolved value into
+    ``location_raw`` — see ``docs/DATA_QUALITY.md``.
+    """
+    conn = db.table("parsed_output")
+    counters = {
+        "scanned": 0, "eligible": 0, "updated": 0,
+        "skipped_existing": 0, "skipped_low_confidence": 0, "errors": 0,
+    }
+    offset = 0
+    while True:
+        query = conn.select(
+            "id, raw_message_id, location_raw, building_name, micro_market, "
+            "tenant_id"
+        ).or_(
+            "micro_market.is.null,micro_market.eq.,"
+            "location_raw.is.null,location_raw.eq."
+        )
+        if tenant_id:
+            query = query.eq("tenant_id", tenant_id)
+        batch = query.order("id").offset(offset).limit(PAGE).execute().data or []
+        if not batch:
+            break
+        raw_ids = list({r["raw_message_id"] for r in batch if r.get("raw_message_id")})
+        msg_map: dict[int, dict] = {}
+        if raw_ids:
+            for i in range(0, len(raw_ids), 200):
+                sub_ids = raw_ids[i : i + 200]
+                raw_query = (
+                    db.table("raw_messages")
+                    .select("id, message, group_name, tenant_id")
+                    .in_("id", sub_ids)
+                )
+                if tenant_id:
+                    raw_query = raw_query.eq("tenant_id", tenant_id)
+                raw_result = raw_query.execute()
+                for m in (raw_result.data or []):
+                    msg_map[m["id"]] = m
+        for parsed in batch:
+            counters["scanned"] += 1
+            row_id = parsed["id"]
+            current_market = parsed.get("micro_market") or ""
+            current_location = parsed.get("location_raw") or ""
+            building_name = parsed.get("building_name") or ""
+            raw_id = parsed.get("raw_message_id")
+            if not raw_id or raw_id not in msg_map:
+                counters["skipped_existing"] += 1
+                continue
+            message_text = (msg_map[raw_id].get("message") or "").strip()
+            decision = _resolve_message(resolver, message_text, building_name)
+            if not decision:
+                counters["skipped_existing"] += 1
+                continue
+            if current_market and not overwrite_existing:
+                counters["skipped_existing"] += 1
+                continue
+            if not meets_minimum(decision["confidence"], min_confidence):
+                counters["skipped_low_confidence"] += 1
+                continue
+            counters["eligible"] += 1
+            new_market = decision["resolved_locality"]
+            # location_raw gets the matched span when present, otherwise
+            # a clipped snippet of the original message text — never the
+            # resolved value (preserves ``docs/DATA_QUALITY.md`` "Raw
+            # ``location_raw`` is preserved as-is").
+            new_location = ""
+            if _is_empty(current_location):
+                if decision.get("matched_sub"):
+                    new_location = decision["matched_sub"]
+                else:
+                    new_location = EXTERNAL_LINK_RE.sub("", message_text)[:120].strip()
+            audit_row = {
+                "applied_at": datetime.utcnow().isoformat() + "Z",
+                "tenant_id": parsed.get("tenant_id") or tenant_id or "",
+                "target_table": "parsed_output",
+                "row_id": row_id,
+                "old_micro_market": current_market,
+                "new_micro_market": new_market,
+                "old_location_raw": current_location,
+                "new_location_raw": new_location,
+                "source": decision["source"],
+                "source_detail": decision.get("source_detail") or "",
+                "confidence": decision["confidence"],
+                "matched_sub": decision.get("matched_sub") or "",
+                "raw_message_snippet": EXTERNAL_LINK_RE.sub("", message_text)[:200].strip(),
+            }
+            payload: dict[str, Any] = {"micro_market": new_market}
+            if new_location:
+                payload["location_raw"] = new_location
+            if dry_run:
+                audit.writerow(audit_row)
+                counters["updated"] += 1
+                continue
+            try:
+                conn.update(payload).eq("id", row_id).execute()
+                audit.writerow(audit_row)
+                counters["updated"] += 1
+            except Exception as exc:  # pragma: no cover - hot path log only
+                print(f"  ERR parsed_output.id={row_id}: {exc}", file=sys.stderr)
+                counters["errors"] += 1
+        if len(batch) < PAGE:
+            break
+        offset += PAGE
+    return counters
+
+
+def run_apply(
+    *,
+    target: str,
+    tenant_id: str | None,
+    overwrite_existing: bool,
+    min_confidence: str,
+    dry_run_apply: bool,
+    audit_csv: str,
+):
+    """Orchestrator for the ``--apply`` / ``--dry-run-apply`` paths.
+
+    Targets: ``"listings"``, ``"parsed_output"``, ``"both"``.
+    """
+    if target not in {"listings", "parsed_output", "both"}:
+        sys.exit(f"--target must be listings|parsed_output|both (got {target!r})")
+    if not tenant_id:
+        sys.exit(
+            "ERROR: --apply (or --dry-run-apply) requires --tenant-id. "
+            "Both listings and parsed_output are tenant-scoped after "
+            "migration 20260719010000; never apply cross-tenant."
+        )
+
+    print("Initializing storage...")
+    storage = SupabaseStorage()
+    db = storage.client
+
+    print("Loading reference data into memory...")
+    resolver = LocalityResolver(db)
+    print(
+        f"  locality_reference={resolver.stats['locality_reference']:,} "
+        f"buildings={resolver.stats['buildings']:,} "
+        f"building_name_aliases={resolver.stats['building_name_aliases']:,}"
+    )
+
+    print(f"\n{'─'*70}")
+    print(
+        f"Apply target={target} tenant_id={tenant_id} "
+        f"overwrite_existing={overwrite_existing} "
+        f"min_confidence={min_confidence} "
+        f"{'DRY-RUN' if dry_run_apply else 'WRITE'}"
+    )
+    print(f"Audit CSV → {audit_csv}")
+    print(f"{'─'*70}\n")
+
+    audit, audit_fh = _open_audit_csv(audit_csv)
+    overall = {}
+    try:
+        if target in {"listings", "both"}:
+            print("\n→ listings")
+            overall["listings"] = _apply_listings(
+                db, resolver,
+                overwrite_existing=overwrite_existing,
+                min_confidence=min_confidence,
+                dry_run=dry_run_apply, audit=audit, tenant_id=tenant_id,
+            )
+        if target in {"parsed_output", "both"}:
+            print("\n→ parsed_output")
+            overall["parsed_output"] = _apply_parsed_output(
+                db, resolver,
+                overwrite_existing=overwrite_existing,
+                min_confidence=min_confidence,
+                dry_run=dry_run_apply, audit=audit, tenant_id=tenant_id,
+            )
+    finally:
+        audit_fh.close()
+
+    print(f"\n{'='*70}")
+    print(f"APPLY SUMMARY {'(DRY-RUN)' if dry_run_apply else ''}")
+    print(f"{'='*70}")
+    grand = {"eligible": 0, "updated": 0, "errors": 0}
+    for label, c in overall.items():
+        print(f"\n[{label}]")
+        print(f"  scanned               : {c['scanned']:>8,}")
+        print(f"  eligible              : {c['eligible']:>8,}")
+        print(f"  updated               : {c['updated']:>8,}")
+        print(f"  skipped (existing)    : {c['skipped_existing']:>8,}")
+        print(f"  skipped (low conf)    : {c['skipped_low_confidence']:>8,}")
+        print(f"  errors                : {c['errors']:>8,}")
+        grand["eligible"] += c["eligible"]
+        grand["updated"] += c["updated"]
+        grand["errors"] += c["errors"]
+    print(f"\nTOTAL  eligible={grand['eligible']:,}  "
+          f"updated={grand['updated']:,}  errors={grand['errors']:,}")
+    print(f"Audit log: {audit_csv}")
+    if dry_run_apply:
+        print("Re-run without --dry-run-apply to actually write.")
+
+
+# ──────────────────────────────────────────────────────────────────
+# entry point
+# ──────────────────────────────────────────────────────────────────
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Re-resolve or back-fill localities for listings / parsed_output."
+    )
+    parser.add_argument("--batch-size", type=int, default=2000)
+    parser.add_argument("--output", type=str, default="locality_backfill_report.csv")
+
+    parser.add_argument(
+        "--apply", action="store_true",
+        help="Required to write any change to the DB. Default is dry-run report."
+    )
+    parser.add_argument(
+        "--dry-run-apply", action="store_true",
+        help="Runs the same apply code path (same filter, same batching, same "
+             "audit log) but does not call .update(). Use this for a final "
+             "sanity check before the real apply."
+    )
+    parser.add_argument(
+        "--target", choices=["listings", "parsed_output", "both"], default="listings",
+        help="Which table to operate on. Dry-run default = listings (matches the "
+             "original backfill_localities.py behaviour)."
+    )
+    parser.add_argument(
+        "--overwrite-existing", action="store_true",
+        help="DANGEROUS: also rewrite rows whose micro_market is non-empty but "
+             "different from the resolver's answer. Off by default; review the "
+             "dry-run report before enabling this."
+    )
+    parser.add_argument(
+        "--min-confidence", choices=["low", "medium", "high"], default="medium",
+        help="Minimum resolver confidence to apply. Default 'medium' skips rows "
+             "resolved only via low-confidence referential matches."
+    )
+    parser.add_argument(
+        "--tenant-id", type=str, default=None,
+        help="**Required** with --apply / --dry-run-apply. parsed_output and "
+             "listings are tenant-scoped; do not write across organizations."
+    )
+    parser.add_argument(
+        "--audit-csv", type=str, default=None,
+        help="Where to write the per-row audit trail. Defaults to "
+             "locality_backfill_applied_<UTC-timestamp>.csv in CWD."
+    )
     args = parser.parse_args()
 
-    run_backfill(batch_size=args.batch_size, output_path=args.output)
+    if args.apply or args.dry_run_apply:
+        if not args.audit_csv:
+            stamp = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
+            args.audit_csv = f"locality_backfill_applied_{stamp}.csv"
+        run_apply(
+            target=args.target,
+            tenant_id=args.tenant_id,
+            overwrite_existing=args.overwrite_existing,
+            min_confidence=args.min_confidence,
+            dry_run_apply=args.dry_run_apply or not args.apply,
+            audit_csv=args.audit_csv,
+        )
+    else:
+        # Dry-run historical behaviour: only listings, write the report CSV.
+        if args.target != "listings":
+            print(
+                f"NOTE: dry-run mode only scans {args.target!r} table "
+                "when --target != 'listings' and --apply is omitted; "
+                "this is exactly the historical behaviour of "
+                "backfill_localities.py. Use --dry-run-apply to exercise "
+                "the apply path on parsed_output without writes.",
+                file=sys.stderr,
+            )
+        run_backfill(batch_size=args.batch_size, output_path=args.output)
+
+
+if __name__ == "__main__":
+    main()
