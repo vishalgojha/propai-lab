@@ -909,11 +909,11 @@ async def list_chat_sessions(broker_phone: str = "", limit: int = 50, user: dict
 
 
 @router.post("/api/ai/chat/sessions")
-async def create_chat_session(broker_phone: str = "", title: str = "New chat", user: dict = Depends(require_user), tenant_id: str | None = Depends(get_tenant_context)):
+async def create_chat_session(broker_phone: str = "", title: str = "New chat", source: str = "parsed", user: dict = Depends(require_user), tenant_id: str | None = Depends(get_tenant_context)):
     tenant_id = tenant_id or await asyncio.to_thread(_resolve_active_organization_id, user, None)
     owner_key, aliases = await _chat_owner_context(user, tenant_id)
     await asyncio.to_thread(storage.adopt_chat_session_owners, aliases, owner_key, tenant_id)
-    session = await asyncio.to_thread(storage.create_chat_session, owner_key, title, tenant_id)
+    session = await asyncio.to_thread(storage.create_chat_session, owner_key, title, source, tenant_id)
     if not session:
         raise HTTPException(500, "Could not create chat session")
     return session

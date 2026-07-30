@@ -246,6 +246,8 @@ export default function ChatPage() {
   const chatEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const sessionIdRef = useRef("");
+  const sessionCreationInFlightRef = useRef(false);
+  const pendingMessageRef = useRef("");
   const brokerActionTimer = useRef<number | null>(null);
 
   // Session state
@@ -406,7 +408,7 @@ export default function ChatPage() {
     setSessionError("");
     inputRef.current?.focus();
     try {
-      const session = await api.createChatSession();
+      const session = await api.createChatSession("New chat", searchSource);
       if (!session?.id) throw new Error("Could not create a new chat session.");
       sessionIdRef.current = session.id;
       setSessionId(session.id);
@@ -415,7 +417,7 @@ export default function ChatPage() {
     } catch (error) {
       setSessionError(error instanceof Error ? error.message : "Could not create a chat session.");
     }
-  }, [loadSessions, setMessages]);
+  }, [loadSessions, setMessages, searchSource]);
 
   // Switch to an existing session
   const handleSwitchSession = useCallback(async (id: string) => {
@@ -454,10 +456,17 @@ export default function ChatPage() {
     e.preventDefault();
     if (!input.trim() || status === "submitted") return;
     setSessionError("");
-    // Create session on first message if none exists
-    if (!sessionId) {
+    if (!sessionIdRef.current) {
+      // Guard: only one createChatSession() call per burst.
+      if (sessionCreationInFlightRef.current) {
+        const queued = input.trim();
+        pendingMessageRef.current = queued;
+        setInput("");
+        return;
+      }
+      sessionCreationInFlightRef.current = true;
       const text = input.trim();
-      api.createChatSession(text.slice(0, 80)).then((session) => {
+      api.createChatSession(text.slice(0, 80), searchSource).then((session) => {
         if (!session?.id) throw new Error("Could not create a chat session.");
         sessionIdRef.current = session.id;
         setSessionId(session.id);
@@ -467,6 +476,13 @@ export default function ChatPage() {
         return loadSessions().then(setSessions);
       }).catch((error) => {
         setSessionError(error instanceof Error ? error.message : "Could not create a chat session.");
+      }).finally(() => {
+        sessionCreationInFlightRef.current = false;
+        const queued = pendingMessageRef.current;
+        if (queued) {
+          pendingMessageRef.current = "";
+          sendMessage({ text: queued });
+        }
       });
       return;
     }
@@ -505,15 +521,18 @@ export default function ChatPage() {
             <button
               key={s.id}
               onClick={() => handleSwitchSession(s.id)}
-              className={`w-full text-left px-2.5 py-2 rounded-lg text-xs transition-colors group flex items-start gap-2 ${
+              className={`w-full text-left px-2.5 py-2 rounded-lg text-xs transition-colors group flex items-start gap-2 border-l-2 ${
                 s.id === sessionId
-                  ? "bg-white/5 text-white"
-                  : "text-zinc-400 hover:text-white hover:bg-white/5"
+                  ? "bg-white/10 text-white border-l-2 border-[#3EE88A]"
+                  : "text-zinc-400 hover:text-white hover:bg-white/5 border-l-2 border-transparent"
               }`}
             >
+              <span className={`h-1.5 w-1.5 rounded-full shrink-0 mt-1 ${
+                s.source === "groups" ? "bg-emerald-400" : "bg-blue-400"
+              }`} />
               <MessageSquare className="w-3.5 h-3.5 mt-0.5 shrink-0 opacity-50" />
               <div className="flex-1 min-w-0">
-                <div className="truncate leading-tight">{s.title}</div>
+                <div className={`truncate leading-tight ${s.id === sessionId ? "font-medium" : ""}`}>{s.title}</div>
                 <div className="text-[10px] text-zinc-600 mt-0.5">{formatSessionTime(s.updated_at)}</div>
               </div>
               <button
@@ -629,10 +648,15 @@ export default function ChatPage() {
                 key={s.id}
                 type="button"
                 onClick={() => { void handleSwitchSession(s.id); setShowSessions(false); }}
-                className={`mb-1 flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs ${s.id === sessionId ? "bg-white/10 text-white" : "text-zinc-400"}`}
+                className={`mb-1 flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs border-l-2 ${
+                  s.id === sessionId ? "bg-white/10 text-white border-l-2 border-[#3EE88A]" : "text-zinc-400 border-l-2 border-transparent"
+                }`}
               >
+                <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${
+                  s.source === "groups" ? "bg-emerald-400" : "bg-blue-400"
+                }`} />
                 <MessageSquare className="h-3.5 w-3.5 shrink-0" />
-                <span className="min-w-0 flex-1 truncate">{s.title}</span>
+                <span className={`min-w-0 flex-1 truncate ${s.id === sessionId ? "font-medium" : ""}`}>{s.title}</span>
                 <span className="text-[10px] text-zinc-600">{formatSessionTime(s.updated_at)}</span>
               </button>
             ))}
