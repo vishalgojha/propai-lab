@@ -821,6 +821,7 @@ export interface ChatSession {
   id: string;
   broker_phone: string;
   title: string;
+  source: string;
   created_at: string;
   updated_at: string;
 }
@@ -837,8 +838,8 @@ export function listChatSessions(): Promise<ChatSession[]> {
   return fetchJSON<ChatSession[]>("/ai/chat/sessions");
 }
 
-export function createChatSession(title = "New chat"): Promise<ChatSession> {
-  return fetchJSON<ChatSession>(`/ai/chat/sessions?title=${encodeURIComponent(title)}`, { method: "POST" });
+export function createChatSession(title = "New chat", source = "parsed"): Promise<ChatSession> {
+  return fetchJSON<ChatSession>(`/ai/chat/sessions?title=${encodeURIComponent(title)}&source=${encodeURIComponent(source)}`, { method: "POST" });
 }
 
 export function getChatSessionMessages(sessionId: string): Promise<ChatMessage[]> {

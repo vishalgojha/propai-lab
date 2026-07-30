@@ -3687,9 +3687,9 @@ class SupabaseStorage(Storage):
             q = q.eq("tenant_id", tid)
         q.execute()
 
-    def create_chat_session(self, broker_phone: str, title: str = "New chat", tenant_id: str | None = None) -> dict | None:
+    def create_chat_session(self, broker_phone: str, title: str = "New chat", source: str = "parsed", tenant_id: str | None = None) -> dict | None:
         tid = tenant_id or self._tenant_id
-        payload = {"broker_phone": broker_phone, "title": title}
+        payload = {"broker_phone": broker_phone, "title": title, "source": source}
         if tid:
             payload["tenant_id"] = tid
         res = (
