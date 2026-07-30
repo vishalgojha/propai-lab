@@ -642,6 +642,37 @@ def check_share_eligibility(parsed: dict, org_privacy: dict, conv_type: str = "u
     return True, "eligible"
 
 
+_INDIAN_MOBILE_IN_TEXT = re.compile(r'(?<!\d)(?:\+?91[-.\s]?)?[6-9]\d{9}(?!\d)')
+
+
+def _extract_broker_contact_from_text(text: str) -> tuple[str | None, str | None]:
+    """Extract Indian mobile number and optional broker name from message body text.
+
+    Returns (phone, name) where phone is the 10-digit validated number (first
+    match), and name is any text on the same line immediately before the number
+    that doesn't look like another number.
+    """
+    if not text:
+        return None, None
+    cleaned = re.sub(r'(?<=\d)[-\s.]+(?=\d)', '', text)
+    phone = None
+    name = None
+    for m in _INDIAN_MOBILE_IN_TEXT.finditer(cleaned):
+        num = m.group()
+        num_clean = num[-10:] if re.match(r'^\+?91', num) else num
+        if not re.fullmatch(r'[6-9]\d{9}', num_clean):
+            continue
+        if phone is None:
+            phone = num_clean
+            line_start = cleaned.rfind('\n', 0, m.start()) + 1
+            preceding = cleaned[line_start:m.start()].strip().rstrip(':,').strip()
+            if preceding and not re.search(r'\d', preceding) and len(preceding) > 1:
+                name = preceding
+        elif num_clean != phone:
+            break
+    return phone, name
+
+
 def process_raw_message(raw_id: int, ctx: dict, storage=None):
     """Process a single raw message through the full extraction pipeline.
 
@@ -872,6 +903,9 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
     # Only store broker_phone from validated Indian mobile numbers (10-12 digits,
     # starting with 6-9, optional +91/91 prefix).  WhatsApp LIDs (15 digits starting
     # with 1-2) are never valid phone numbers — reject them silently.
+    # When sender_phone is empty (e.g. @lid senders), fall back to scanning the
+    # message body text for explicitly stated contact numbers — brokers routinely
+    # self-publish their number in posts.
     for pl in parsed_listings:
         is_valid_mobile = bool(re.fullmatch(r'^(\+?91)?[6-9]\d{9}$', sender_phone or ''))
         if not pl.get("broker_name") or not pl.get("broker_phone"):
@@ -883,6 +917,24 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
             if not pl.get("broker_phone"):
                 if is_valid_mobile:
                     pl["broker_phone"] = sender_phone[-10:]
+
+        # Text-based fallback: if broker_phone is still missing, scan the message
+        # body for explicitly stated Indian mobile numbers.
+        if not pl.get("broker_phone"):
+            raw_text_body = ""
+            rp = pl.get("raw_payload")
+            if isinstance(rp, dict):
+                raw_text_body = rp.get("full_text") or ""
+            if not raw_text_body:
+                raw_text_body = msg_text if msg_text else ""
+            phone_from_text, name_from_text = _extract_broker_contact_from_text(raw_text_body)
+            if phone_from_text:
+                pl["broker_phone"] = phone_from_text
+                if name_from_text and not pl.get("broker_name"):
+                    pl["broker_name"] = name_from_text
+                existing_flags = list(pl.get("validation_flags") or [])
+                existing_flags.append("broker_phone_text_extracted")
+                pl["validation_flags"] = existing_flags
 
     if parsed_listings:
         for pl in parsed_listings:
