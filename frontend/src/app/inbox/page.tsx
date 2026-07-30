@@ -43,10 +43,8 @@ import { useLayout } from "@/hooks/useLayout";
 
 const PAGE_SIZE = 100;
 const BROKER_PAGE_SIZE = 25;
-// Parsed observations are intentionally unavailable until the extraction
-// pipeline is rebuilt. Keep this surface honest rather than showing a stale
-// broker/message projection from an old parse run.
-const MARKET_INBOX_PAUSED = true;
+// Inbox is live again now that the reconstructed parsing pipeline is back.
+const MARKET_INBOX_PAUSED = false;
 
 type TrainingPrompt = {
   text: string;
@@ -3298,6 +3296,12 @@ return {
           )}
         </div>
       )}
+
+      {/* Extraction paused banner */}
+      <div className="flex items-center gap-2 border-b border-amber-500/20 bg-amber-500/[0.04] px-4 py-2 text-xs text-amber-200/80">
+        <span className="h-1.5 w-1.5 rounded-full bg-amber-400 shrink-0" />
+        Locality/listing extraction is paused — raw messages are still being captured normally.
+      </div>
 
       {/* Main Layout Grid */}
       <div className="flex-1 flex min-h-0 overflow-hidden">
