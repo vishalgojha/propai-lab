@@ -159,6 +159,55 @@ _VALID_FURNISHING = frozenset({"unfurnished", "semi_furnished", "fully_furnished
 _VALID_CONFIDENCE = frozenset({"high", "medium", "low"})
 _VALID_PRICE_UNITS = frozenset({"total", "per_sqft"})
 _VALID_PRICE_PERIODS = frozenset({"one_time", "per_month"})
+
+# Alias maps bridge common LLM variants to the canonical enum values used
+# downstream.  Higher recall here directly means more rows survive
+# `_normalize_extraction` instead of being dropped with "no valid listings".
+_LISTING_TYPE_ALIASES = {
+    "sale": "sale",
+    "for_sale": "sale",
+    "selling": "sale",
+    "sell": "sale",
+    "rent": "rent",
+    "for_rent": "rent",
+    "rental": "rent",
+    "rentals": "rent",
+    "rent_out": "rent",
+    "lease": "rent",
+    "requirement": "requirement",
+    "requirements": "requirement",
+    "needed": "requirement",
+    "need": "requirement",
+    "wanted": "requirement",
+    "want": "requirement",
+    "seeking": "requirement",
+    "looking_for": "requirement",
+}
+_CATEGORY_ALIASES = {
+    "residential": "residential",
+    "resi": "residential",
+    "residential_apartment": "residential",
+    "residential_property": "residential",
+    "home": "residential",
+    "commercial": "commercial",
+    "comm": "commercial",
+    "commercial_property": "commercial",
+    "office": "commercial",
+    "shop": "commercial",
+    "retail": "commercial",
+}
+_FURNISHING_ALIASES = {
+    "unfurnished": "unfurnished",
+    "bare": "unfurnished",
+    "semi_furnished": "semi_furnished",
+    "semi-furnished": "semi_furnished",
+    "semifurnished": "semi_furnished",
+    "semi": "semi_furnished",
+    "fully_furnished": "fully_furnished",
+    "fully-furnished": "fully_furnished",
+    "full_furnished": "fully_furnished",
+    "furnished": "fully_furnished",
+}
 _VALID_DEAL_TAGS = frozenset({
     "distress_sale",
     "urgent_sale",
@@ -268,6 +317,79 @@ def _classify_document(lines: list[str]) -> str:
     return "Single Listing"
 
 
+def _extract_json_object(raw: str | None) -> object | None:
+    """Robustly extract a JSON object/array from LLM output.
+
+    Many providers occasionally:
+    - add a sentence of prose before/after the JSON ("Here is the JSON:")
+    - wrap in ```json fences and forget a closing fence
+    - JSON is the last `{}` block in the response
+
+    Strategy:
+    1. Direct ``json.loads`` on the trimmed response.
+    2. Find the first balanced ``{...}`` or ``[...]`` substring (string-aware
+       so embedded braces in strings do not throw off depth tracking) and try
+       ``json.loads`` on each one until success.
+
+    Returns the parsed Python value, or ``None`` if nothing usable is found.
+    """
+    if not raw:
+        return None
+    s = raw.strip()
+
+    # Strip a single ``` / ```json fence pair if present at the start.
+    if s.startswith("```"):
+        rest = s.split("\n", 1)[-1] if "\n" in s else s[3:]
+        # Drop trailing ``` boundary if present, otherwise keep everything.
+        if rest.rstrip().endswith("```"):
+            rest = rest.rstrip()[:-3]
+        s = rest.strip()
+
+    if not s:
+        return None
+
+    try:
+        return json.loads(s)
+    except json.JSONDecodeError:
+        pass
+
+    for opener, closer in (('{', '}'), ('[', ']')):
+        idx = s.find(opener)
+        while idx != -1:
+            depth = 0
+            in_str = False
+            esc = False
+            end = -1
+            for i in range(idx, len(s)):
+                c = s[i]
+                if esc:
+                    esc = False
+                    continue
+                if in_str:
+                    if c == '\\':
+                        esc = True
+                    elif c == '"':
+                        in_str = False
+                    continue
+                if c == '"':
+                    in_str = True
+                    continue
+                if c == opener:
+                    depth += 1
+                elif c == closer:
+                    depth -= 1
+                    if depth == 0:
+                        end = i
+                        break
+            if end != -1:
+                try:
+                    return json.loads(s[idx:end + 1])
+                except json.JSONDecodeError:
+                    pass
+            idx = s.find(opener, idx + 1)
+    return None
+
+
 def _segment_document(raw_text: str) -> dict:
     """Reconstruct a WhatsApp message into logical blocks."""
     lines = _document_lines(raw_text)
@@ -329,19 +451,18 @@ def _normalize_extraction(raw: dict) -> dict:
     """Normalize and validate LLM extraction response."""
     result = {}
 
-    # listing_type
-    lt = str(raw.get("listing_type", "")).strip().lower()
-    if lt in _VALID_LISTING_TYPES:
-        result["listing_type"] = lt
-    else:
-        result["listing_type"] = None
+    # listing_type — accept enum value directly, then map common LLM variants
+    # to the canonical set.  Without this normalization step, providers often
+    # emit "for_sale"/"rental"/"wanted" which currently drop the entire
+    # candidate as "no valid listings".
+    lt_raw = str(raw.get("listing_type", "")).strip().lower()
+    lt_raw = lt_raw.replace(" ", "_").replace("-", "_")
+    result["listing_type"] = _LISTING_TYPE_ALIASES.get(lt_raw)
 
-    # property_category
-    pc = str(raw.get("property_category", "")).strip().lower()
-    if pc in _VALID_CATEGORIES:
-        result["property_category"] = pc
-    else:
-        result["property_category"] = None
+    # property_category — same alias pattern
+    pc_raw = str(raw.get("property_category", "")).strip().lower()
+    pc_raw = pc_raw.replace(" ", "_").replace("-", "_")
+    result["property_category"] = _CATEGORY_ALIASES.get(pc_raw)
 
     # bhk
     bhk = raw.get("bhk")
@@ -439,12 +560,14 @@ def _normalize_extraction(raw: dict) -> dict:
             bn_str = None
     result["building_name"] = bn_str
 
-    # furnishing_status
-    fs = str(raw.get("furnishing_status", "")).strip().lower().replace(" ", "_")
-    if fs in _VALID_FURNISHING:
-        result["furnishing_status"] = fs
-    elif fs and fs != "null":
-        result["furnishing_status"] = fs
+    # furnishing_status — enum + aliases (LLM writes "semi-furnished",
+    # "fully furnished", "bare" etc.)
+    fs_raw = str(raw.get("furnishing_status", "")).strip().lower()
+    fs_raw = fs_raw.replace(" ", "_").replace("-", "_")
+    if fs_raw in _FURNISHING_ALIASES:
+        result["furnishing_status"] = _FURNISHING_ALIASES[fs_raw]
+    elif fs_raw and fs_raw != "null":
+        result["furnishing_status"] = fs_raw
     else:
         result["furnishing_status"] = None
 
@@ -762,7 +885,7 @@ def _has_flyer_image(ctx: dict) -> bool:
 def _call_provider(
     provider: dict,
     messages: list[dict],
-    timeout: int = 45,
+    timeout: int = 60,
     *,
     source_id: int | None = None,
     tenant_id: str | None = None,
@@ -780,7 +903,7 @@ def _call_provider(
             model=provider["model"],
             messages=messages,
             temperature=0.1,
-            max_tokens=2048,
+            max_tokens=4096,
             timeout=timeout,
         )
         # Enable JSON mode for providers that support it (Haiku 4.5, etc.)
@@ -838,7 +961,10 @@ def _call_provider(
             cleaned = cleaned.split("\n", 1)[-1] if "\n" in cleaned else cleaned[3:]
             if cleaned.endswith("```"):
                 cleaned = cleaned[:-3].strip()
-        parsed = json.loads(cleaned)
+        parsed = _extract_json_object(cleaned)
+        if parsed is None:
+            _logger.warning("Provider %s returned unparseable output (%d chars)", provider["name"], len(raw))
+            return "MALFORMED"
         # The structured-output envelope keeps JSON mode compatible with both
         # single and multi-listing broker posts.  Keep accepting the legacy
         # object/array shape from non-Doubleword providers during rollout.
@@ -847,7 +973,7 @@ def _call_provider(
         return parsed
     except json.JSONDecodeError:
         _logger.warning("Provider %s returned malformed JSON", provider["name"])
-        return None
+        return "MALFORMED"
     except Exception as exc:
         status = getattr(exc, "status_code", None) or getattr(exc, "code", None)
         if status == 429:
@@ -940,10 +1066,18 @@ def ai_extract(raw_text: str, ctx: dict | None = None, storage=None) -> dict:
         attempts += 1
         raw_extraction = _call_provider(provider, messages, source_id=_src_id, tenant_id=_tid)
 
+        if raw_extraction == "MALFORMED":
+            # Provider returned content but it can't be parsed as JSON.
+            # No point sleeping — try the next provider immediately; they
+            # produce structurally different outputs so ask Gemini next
+            # instead of looping the same lane.
+            continue
+
         if raw_extraction is None:
-            # Backoff before trying next provider (avoids cascading rate limits)
+            # Network/429/empty — small backoff suits a few concurrent workers
+            # sharing rate-limited headroom without burning the whole timeout.
             import time as _time
-            _time.sleep(min(attempts * 1.5, 8))
+            _time.sleep(min(attempts * 1.0, 3))
             continue
 
         candidates = raw_extraction if isinstance(raw_extraction, list) else [raw_extraction]

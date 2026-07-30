@@ -73,6 +73,23 @@ if _merge_key and _merge_model:
 elif _merge_key:
     _logger.warning("Skipping merge: set MERGE_MODEL to enable this provider")
 
+# Cerebras — OpenAI-compatible, fast inference. Configure via
+# CEREBRAS_API_KEY + CEREBRAS_MODEL; optional CEREBRAS_BASE_URL override.
+# Skipped when CEREBRAS_MODEL is empty so a missing model name doesn't
+# 404 every request.
+_cerebras_model = os.getenv("CEREBRAS_MODEL", "").strip()
+_cerebras_base = os.getenv("CEREBRAS_BASE_URL", "https://api.cerebras.ai/v1").strip()
+if _cerebras_model:
+    for name, key in _numbered_keys("CEREBRAS_API_KEY"):
+        _PROVIDERS.append({
+            "name": name,
+            "api_key": key,
+            "base_url": _cerebras_base,
+            "model": _cerebras_model,
+        })
+else:
+    _logger.info("CEREBRAS_API_KEY present but CEREBRAS_MODEL unset — skipping cerebras")
+
 _logger.info("LLM providers configured: %d", len(_PROVIDERS))
 for p in _PROVIDERS:
     _logger.info("  - %s: %s @ %s", p["name"], p["model"], p["base_url"])
