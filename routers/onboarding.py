@@ -6,9 +6,13 @@ only groups explicitly connected here count toward onboarding caps and are
 eligible for extraction once an organization has made its first selection.
 """
 
+import asyncio
+import json
+import logging
 import os
 import re
 from datetime import datetime, timezone
+from threading import Lock
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
@@ -24,9 +28,11 @@ from routers.common import (
 )
 
 router = APIRouter(prefix="/api/onboarding", tags=["onboarding"])
+_logger = logging.getLogger(__name__)
 
 OVERLAP_WARNING_THRESHOLD = 0.60
 SAMPLE_LIMIT = 200
+GROUP_BACKFILL_PAGE_SIZE = 250
 
 # Real estate broker pattern keywords for group name matching
 REAL_ESTATE_KEYWORDS = [
@@ -56,6 +62,149 @@ class GroupRequest(BaseModel):
     group_jid: str
     confirm_overlap: bool = False
     confirm_cap: bool = False
+
+
+_ACTIVE_GROUP_BACKFILLS: set[tuple[str, int, str]] = set()
+_ACTIVE_GROUP_BACKFILLS_LOCK = Lock()
+
+
+def _claim_group_backfill(job_key: tuple[str, int, str]) -> bool:
+    with _ACTIVE_GROUP_BACKFILLS_LOCK:
+        if job_key in _ACTIVE_GROUP_BACKFILLS:
+            return False
+        _ACTIVE_GROUP_BACKFILLS.add(job_key)
+        return True
+
+
+def _release_group_backfill(job_key: tuple[str, int, str]) -> None:
+    with _ACTIVE_GROUP_BACKFILLS_LOCK:
+        _ACTIVE_GROUP_BACKFILLS.discard(job_key)
+
+
+def _raw_row_value(row, key: str, default=None):
+    if isinstance(row, dict):
+        return row.get(key, default)
+    return getattr(row, key, default)
+
+
+def _row_payload(row) -> dict:
+    payload = _raw_row_value(row, "raw_payload", {})
+    if isinstance(payload, dict):
+        return payload
+    if isinstance(payload, str) and payload.strip():
+        try:
+            parsed = json.loads(payload)
+            return parsed if isinstance(parsed, dict) else {}
+        except (json.JSONDecodeError, TypeError):
+            return {}
+    return {}
+
+
+def _matches_connected_group(row, group_jid: str, group_name: str) -> bool:
+    payload = _row_payload(row)
+    data = payload.get("data") if isinstance(payload.get("data"), dict) else payload
+    key = data.get("key") if isinstance(data, dict) and isinstance(data.get("key"), dict) else {}
+    remote_jid = key.get("remoteJid") or payload.get("remoteJid") or payload.get("from") or ""
+    raw_group_name = str(_raw_row_value(row, "group_name", "") or "")
+    if remote_jid and remote_jid == group_jid:
+        return True
+    if remote_jid:
+        return False
+    return raw_group_name == group_name or raw_group_name == group_jid
+
+
+def _backfill_connected_group(org_id: str, group_jid: str, group_name: str, connection_id: int) -> dict:
+    """Best-effort historical parse for a group that has just been connected."""
+    job_key = (org_id, connection_id, group_jid)
+    if not _claim_group_backfill(job_key):
+        return {"requested": 0, "matched": 0, "processed": 0, "skipped": 0, "failed": 0, "already_running": True}
+
+    from extraction import process_raw_message
+    from extraction_worker import context_from_raw
+
+    previous_tenant = storage.tenant_id
+    storage.tenant_id = org_id
+
+    requested = 0
+    matched = 0
+    processed = 0
+    skipped = 0
+    failed = 0
+    offset = 0
+
+    try:
+        while True:
+            rows = storage.get_raw_messages(
+                limit=GROUP_BACKFILL_PAGE_SIZE,
+                offset=offset,
+                group_name=group_name,
+            )
+            if not rows:
+                break
+            requested += len(rows)
+            offset += len(rows)
+
+            for row in rows:
+                if not _matches_connected_group(row, group_jid, group_name):
+                    continue
+                matched += 1
+                raw_id = _raw_row_value(row, "id")
+                if not raw_id:
+                    continue
+                try:
+                    if storage.get_parsed_by_raw(int(raw_id)):
+                        skipped += 1
+                        continue
+                except Exception:
+                    failed += 1
+                    _logger.exception(
+                        "Group backfill lookup failed for org=%s connection=%s group=%s raw_id=%s",
+                        org_id, connection_id, group_jid, raw_id,
+                    )
+                    continue
+
+                ctx = context_from_raw(row)
+                ctx["tenant_id"] = org_id
+                try:
+                    process_raw_message(int(raw_id), ctx, storage=storage)
+                    processed += 1
+                except Exception:
+                    failed += 1
+                    _logger.exception(
+                        "Group backfill failed for org=%s connection=%s group=%s raw_id=%s",
+                        org_id, connection_id, group_jid, raw_id,
+                    )
+    finally:
+        storage.tenant_id = previous_tenant
+        _release_group_backfill(job_key)
+
+    return {
+        "requested": requested,
+        "matched": matched,
+        "processed": processed,
+        "skipped": skipped,
+        "failed": failed,
+        "already_running": False,
+    }
+
+
+async def _schedule_group_backfill(org_id: str, connection_id: int, group_jid: str, group_name: str) -> None:
+    try:
+        result = await asyncio.to_thread(_backfill_connected_group, org_id, group_jid, group_name, connection_id)
+        _logger.info(
+            "Scheduled group backfill finished for org=%s connection=%s group=%s: %s",
+            org_id,
+            connection_id,
+            group_jid,
+            result,
+        )
+    except Exception:
+        _logger.exception(
+            "Scheduled group backfill crashed for org=%s connection=%s group=%s",
+            org_id,
+            connection_id,
+            group_jid,
+        )
 
 
 def _tier_cap(org: dict) -> tuple[str, int, bool]:
@@ -556,7 +705,15 @@ async def connect_group(
         "overlap_confirmed": bool(body.confirm_overlap),
     }, on_conflict="organization_id,whatsapp_connection_id,group_jid").execute()
     _upsert_registry(org_id, body.group_jid, overlap["sample_phones"])
-    return {"ok": True, "group": group, "connection": (row.data or [None])[0], "cap": _cap_state(org_id, body.whatsapp_connection_id), "overlap": overlap}
+    asyncio.create_task(_schedule_group_backfill(org_id, body.whatsapp_connection_id, body.group_jid, group["group_name"]))
+    return {
+        "ok": True,
+        "group": group,
+        "connection": (row.data or [None])[0],
+        "cap": _cap_state(org_id, body.whatsapp_connection_id),
+        "overlap": overlap,
+        "backfill_started": True,
+    }
 
 
 @router.post("/groups/disconnect")
