@@ -390,6 +390,7 @@ export default function ChatPage() {
     const wasBusy = previousStatus.current === "submitted" || previousStatus.current === "streaming";
     if (wasBusy && status === "ready" && user?.id) {
       void loadSessions();
+      import("@/lib/sounds").then(({ playChatResponse }) => playChatResponse());
     }
     previousStatus.current = status;
   }, [loadSessions, status, user?.id]);
@@ -462,6 +463,7 @@ export default function ChatPage() {
         setSessionId(session.id);
         sendMessage({ text });
         setInput("");
+        import("@/lib/sounds").then((s) => s.playMessageSent());
         return loadSessions().then(setSessions);
       }).catch((error) => {
         setSessionError(error instanceof Error ? error.message : "Could not create a chat session.");
@@ -470,6 +472,7 @@ export default function ChatPage() {
     }
     sendMessage({ text: input.trim() });
     setInput("");
+    import("@/lib/sounds").then((s) => s.playMessageSent());
   }
 
   return (

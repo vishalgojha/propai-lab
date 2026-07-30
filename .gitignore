@@ -66,5 +66,9 @@ _sqlite3.Connection*
 # Supabase migrations (applied directly, not tracked in repo)
 supabase/migrations/
 
+# MCP build artifacts (not real work)
+apps/mcp/dist/
+apps/mcp/package-lock.json
+
 # OS files
 .DS_Store

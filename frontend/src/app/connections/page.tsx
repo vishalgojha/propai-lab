@@ -868,6 +868,7 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
       }
       await connectOnboardingGroup(phone.id, group.group_jid, confirmOverlap, confirmCap);
       setMessage(`Added ${group.group_name}.`);
+      import("@/lib/sounds").then(({ playGroupConnected }) => playGroupConnected());
       await loadGroups();
       await onRefresh();
     } catch (err) {

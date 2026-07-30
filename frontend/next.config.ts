@@ -1,9 +1,7 @@
 import type { NextConfig } from "next";
 
-const configuredApiBase = process.env.LAB_API_BASE_URL || "http://localhost:8000";
-const API_BASE = configuredApiBase;
-
 const nextConfig: NextConfig = {
+  outputFileTracingRoot: "/home/vishal/Propai/frontend",
   typescript: { ignoreBuildErrors: true },
   transpilePackages: [
     "d3-force",
@@ -23,7 +21,7 @@ const nextConfig: NextConfig = {
       },
       {
         source: "/api/:path*",
-        destination: `${API_BASE}/api/:path*`,
+        destination: "http://127.0.0.1:8443/api/:path*",
       },
       {
         source: "/manifest",
