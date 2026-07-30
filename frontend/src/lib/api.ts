@@ -28,7 +28,7 @@ export interface OnboardingGroup {
   group_name: string;
   participants: number;
   last_message_at: string | null;
-  connected: boolean;
+  opted_out: boolean;
   suggestion?: {
     score: number;
     reasons: string[];
@@ -42,7 +42,7 @@ export interface OnboardingGroup {
 export interface OnboardingGroupCap {
   tier: string;
   cap: number;
-  connected_count: number;
+  opted_out_count: number;
   remaining: number;
   overridden: boolean;
   soft_warning_at_cap: boolean;
@@ -64,12 +64,11 @@ export interface OnboardingGroupState extends OnboardingGroupCap {
   groups: OnboardingGroup[];
 }
 
-export interface OnboardingGroupConnectResult {
+export interface OnboardingGroupToggleResult {
   ok: boolean;
   group: OnboardingGroup;
-  connection?: Record<string, unknown> | null;
   cap: OnboardingGroupCap;
-  overlap: OnboardingGroupCheck;
+  opted_out: boolean;
 }
 
 export function getOnboardingGroups(whatsappConnectionId: number) {
@@ -79,7 +78,6 @@ export function getOnboardingGroups(whatsappConnectionId: number) {
 export function checkOnboardingGroup(
   whatsappConnectionId: number,
   groupJid: string,
-  confirmOverlap = false,
   confirmCap = false,
 ) {
   return fetchJSON<OnboardingGroupCheck>("/onboarding/groups/check", {
@@ -87,31 +85,28 @@ export function checkOnboardingGroup(
     body: JSON.stringify({
       whatsapp_connection_id: whatsappConnectionId,
       group_jid: groupJid,
-      confirm_overlap: confirmOverlap,
       confirm_cap: confirmCap,
     }),
   });
 }
 
-export function connectOnboardingGroup(
+export function optOutOnboardingGroup(
   whatsappConnectionId: number,
   groupJid: string,
-  confirmOverlap = false,
   confirmCap = false,
 ) {
-  return fetchJSON<OnboardingGroupConnectResult>("/onboarding/groups/connect", {
+  return fetchJSON<OnboardingGroupToggleResult>("/onboarding/groups/opt-out", {
     method: "POST",
     body: JSON.stringify({
       whatsapp_connection_id: whatsappConnectionId,
       group_jid: groupJid,
-      confirm_overlap: confirmOverlap,
       confirm_cap: confirmCap,
     }),
   });
 }
 
-export function disconnectOnboardingGroup(whatsappConnectionId: number, groupJid: string) {
-  return fetchJSON<{ ok: boolean; message: string; cap: OnboardingGroupCap }>("/onboarding/groups/disconnect", {
+export function optInOnboardingGroup(whatsappConnectionId: number, groupJid: string) {
+  return fetchJSON<{ ok: boolean; message: string; cap: OnboardingGroupCap }>("/onboarding/groups/opt-in", {
     method: "POST",
     body: JSON.stringify({
       whatsapp_connection_id: whatsappConnectionId,

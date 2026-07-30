@@ -6,7 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Clock, Database, List, LogOut, MessageSquare, RefreshCw, Shield, Smartphone, AlertTriangle, Users, Zap, X, ChevronLeft, MoreVertical, User, Check, Hash } from "lucide-react";
 import { useAuth } from "@/lib/AuthProvider";
-import { getPhones, deletePhone, resetPhone, disconnectPhone, pairCodePhone, getPairCodePhoneStatus, updatePhone, fetchJSON, isLiveWhatsAppConnection, getOnboardingGroups, checkOnboardingGroup, connectOnboardingGroup, disconnectOnboardingGroup, type Phone, type WhatsAppStatus, type OnboardingGroup, type OnboardingGroupCheck, type OnboardingGroupState } from "@/lib/api";
+import { getPhones, deletePhone, resetPhone, disconnectPhone, pairCodePhone, getPairCodePhoneStatus, updatePhone, fetchJSON, isLiveWhatsAppConnection, getOnboardingGroups, checkOnboardingGroup, optOutOnboardingGroup, optInOnboardingGroup, type Phone, type WhatsAppStatus, type OnboardingGroup, type OnboardingGroupCheck, type OnboardingGroupState } from "@/lib/api";
 import QRCode from "qrcode";
 
 type HealthStatus = "healthy" | "warning" | "error";
@@ -770,53 +770,49 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
     void loadGroups();
   }, [loadGroups]);
 
-  const handleConnect = async (group: OnboardingGroup, precheck?: OnboardingGroupCheck) => {
+  const handleOptOut = async (group: OnboardingGroup, precheck?: OnboardingGroupCheck) => {
     setActiveGroup(group.group_jid);
     setError(null);
     setMessage(null);
     try {
       const check = precheck || await checkOnboardingGroup(phone.id, group.group_jid);
-      const needsConfirm = check.high_overlap || check.cap.soft_warning_at_cap;
-      let confirmOverlap = false;
       let confirmCap = false;
-      if (needsConfirm) {
-        const details = [
-          check.high_overlap
-            ? `This group overlaps heavily with brokers already in the network (${Math.round(check.overlap_score * 100)}% overlap).`
-            : null,
-          check.cap.soft_warning_at_cap
-            ? `This connection is at the default tier cap (${check.cap.connected_count}/${check.cap.cap}).`
-            : null,
-        ].filter(Boolean);
-        const accepted = window.confirm(`${details.join(" ")} Add it anyway?`);
-        if (!accepted) return;
-        confirmOverlap = check.high_overlap;
-        confirmCap = check.cap.soft_warning_at_cap;
+      const overCap = check.cap.hard_block;
+      const atCap = check.cap.soft_warning_at_cap;
+      if (overCap) {
+        setError(`Opt-out cap reached on this connection (${check.cap.opted_out_count}/${check.cap.cap}).`);
+        return;
       }
-      await connectOnboardingGroup(phone.id, group.group_jid, confirmOverlap, confirmCap);
-      setMessage(`Added ${group.group_name}.`);
-      import("@/lib/sounds").then(({ playGroupConnected }) => playGroupConnected());
+      if (atCap) {
+        const accepted = window.confirm(
+          `This WhatsApp phone is at the default tier cap for opted-out groups (${check.cap.opted_out_count}/${check.cap.cap}). Opt this group out anyway?`,
+        );
+        if (!accepted) return;
+        confirmCap = true;
+      }
+      await optOutOnboardingGroup(phone.id, group.group_jid, confirmCap);
+      setMessage(`Opted-out ${group.group_name}.`);
       await loadGroups();
       await onRefresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not connect the group.");
+      setError(err instanceof Error ? err.message : "Could not opt-out the group.");
     } finally {
       setActiveGroup(null);
     }
   };
 
-  const handleDisconnect = async (group: OnboardingGroup) => {
-    if (!window.confirm(`Disconnect ${group.group_name}? Existing raw messages will be preserved.`)) return;
+  const handleOptIn = async (group: OnboardingGroup) => {
+    if (!window.confirm(`Resume extraction for ${group.group_name}?`)) return;
     setActiveGroup(group.group_jid);
     setError(null);
     setMessage(null);
     try {
-      await disconnectOnboardingGroup(phone.id, group.group_jid);
-      setMessage(`Disconnected ${group.group_name}. Raw messages were preserved.`);
+      await optInOnboardingGroup(phone.id, group.group_jid);
+      setMessage(`Re-enabled extraction for ${group.group_name}.`);
       await loadGroups();
       await onRefresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not disconnect the group.");
+      setError(err instanceof Error ? err.message : "Could not re-enable the group.");
     } finally {
       setActiveGroup(null);
     }
@@ -827,10 +823,10 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
       <div className="rounded-xl border border-white/10 p-4">
         <div className="flex items-center gap-2">
           <Shield className="h-4 w-4 text-zinc-500" />
-          <div className="text-sm font-semibold text-white">Group onboarding</div>
+          <div className="text-sm font-semibold text-white">Active groups</div>
         </div>
         <div className="mt-2 text-xs text-zinc-500">
-          Pair this phone first. Group discovery and cap checks appear here after WhatsApp is connected.
+          Pair this phone first. After pairing, every WhatsApp group is extracted by default; you can opt out of up to {data?.cap ?? 5} groups per connection.
         </div>
       </div>
     );
@@ -842,10 +838,10 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
         <div>
           <div className="flex items-center gap-2">
             <Shield className="h-4 w-4 text-zinc-300" />
-            <div className="text-sm font-semibold text-white">Group onboarding</div>
+            <div className="text-sm font-semibold text-white">Active groups</div>
           </div>
           <div className="mt-1 text-xs text-zinc-500">
-            {phone.instance_name || formatPhone(phone.phone_number_live || phone.phone_number)} · {data ? `${data.connected_count}/${data.cap} connected` : "loading cap"}
+            {phone.instance_name || formatPhone(phone.phone_number_live || phone.phone_number)} · {data ? `${data.opted_out_count}/${data.cap} opted-out` : "loading cap"}
           </div>
         </div>
         {data && (
@@ -862,8 +858,8 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
       {data && (
         <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
           <div className="rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2">
-            <div className="text-zinc-500">Connected</div>
-            <div className="mt-1 font-semibold text-white">{data.connected_count}</div>
+            <div className="text-zinc-500">Opted-out</div>
+            <div className="mt-1 font-semibold text-white">{data.opted_out_count}</div>
           </div>
           <div className="rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2">
             <div className="text-zinc-500">Remaining</div>
@@ -878,19 +874,23 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
 
       {data && data.groups.length > 0 && (
         <div className="mt-3 rounded-lg border border-cyan-500/20 bg-cyan-500/[0.04] px-3 py-2 text-[11px] text-zinc-400">
-          Recommendations are ranked by likely new broker reach. Duplicate risk is based on sampled sender numbers already seen across your broker network; connected groups stay visible for comparison.
+          All connected groups are extracted by default. Opt-out up to {data.cap} per connection — e.g. personal or family groups you don't want indexed. Duplicate risk is based on sampled sender numbers already seen across your broker network.
         </div>
       )}
 
       <div className="mt-4 space-y-3">
         {data?.groups?.length ? data.groups.map((group) => (
-          <div key={group.group_jid} className={`rounded-lg border p-3 ${group.connected ? "border-emerald-500/20 bg-emerald-500/[0.03]" : "border-white/10 bg-white/[0.02]"}`}>
+          <div key={group.group_jid} className={`rounded-lg border p-3 ${group.opted_out ? "border-red-500/30 bg-red-500/[0.04]" : "border-emerald-500/20 bg-emerald-500/[0.03]"}`}>
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
                   <div className="truncate text-sm font-semibold text-white">{group.group_name}</div>
-                  {group.connected && <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-300">Connected</span>}
-                  {!group.connected && group.suggestion && group.suggestion.score >= 0.3 && (
+                  {group.opted_out ? (
+                    <span className="rounded-full border border-red-500/30 bg-red-500/10 px-2 py-0.5 text-[10px] font-semibold text-red-300">Opted-out</span>
+                  ) : (
+                    <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-300">Active · extracting</span>
+                  )}
+                  {!group.opted_out && group.suggestion && group.suggestion.score >= 0.3 && (
                     <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-300">
                       Recommended
                     </span>
@@ -933,22 +933,22 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
                   </div>
                 )}
               </div>
-              {group.connected ? (
+              {group.opted_out ? (
                 <button
-                  onClick={() => void handleDisconnect(group)}
+                  onClick={() => void handleOptIn(group)}
                   disabled={activeGroup === group.group_jid}
-                  className="rounded-lg border border-red-400/30 px-3 py-1.5 text-[11px] font-semibold text-red-300 hover:bg-red-500/10 disabled:opacity-50"
+                  className="rounded-lg border border-emerald-400/30 px-3 py-1.5 text-[11px] font-semibold text-emerald-300 hover:bg-emerald-500/10 disabled:opacity-50"
                 >
-                  {activeGroup === group.group_jid ? "Disconnecting..." : "Disconnect"}
+                  {activeGroup === group.group_jid ? "Re-enabling..." : "Resume extraction"}
                 </button>
               ) : (
                 <div className="flex shrink-0 items-center gap-2">
                   <button
-                    onClick={() => void handleConnect(group)}
-                    disabled={activeGroup === group.group_jid}
-                    className="rounded-lg border border-white bg-white px-3 py-1.5 text-[11px] font-semibold text-black hover:bg-zinc-200 disabled:opacity-50"
+                    onClick={() => void handleOptOut(group)}
+                    disabled={activeGroup === group.group_jid || (data ? data.cap - data.opted_out_count <= 0 : false)}
+                    className="rounded-lg border border-white/10 px-3 py-1.5 text-[11px] font-semibold text-zinc-300 hover:border-red-400/40 hover:text-red-300 disabled:opacity-50"
                   >
-                    {activeGroup === group.group_jid ? "Connecting..." : "Connect"}
+                    {activeGroup === group.group_jid ? "Saving..." : (data && data.cap - data.opted_out_count <= 0 ? "Cap reached" : "Opt out")}
                   </button>
                 </div>
               )}
@@ -1183,13 +1183,13 @@ export default function ConnectionCenterPage() {
 
           {phones.some((phone) => isConnectedPhone(phone) || matchesLiveStatus(phone, liveStatus)) ? (
             <div className="mb-8">
-              <Section title="Group onboarding">
+              <Section title="Active groups">
                 <div className="space-y-4 p-2">
                   {phones
                     .filter((phone) => isConnectedPhone(phone) || matchesLiveStatus(phone, liveStatus))
                     .map((phone) => (
                       <OnboardingGroupPanel
-                        key={`onboarding-${phone.id}`}
+                        key={`active-groups-${phone.id}`}
                         phone={phone}
                         liveStatus={liveStatus}
                         onRefresh={refreshData}
@@ -1200,7 +1200,7 @@ export default function ConnectionCenterPage() {
             </div>
           ) : phones.length > 0 ? (
             <div className="mb-8 rounded-xl border border-white/10 p-4 text-xs text-zinc-500">
-              Pair a WhatsApp phone to unlock group onboarding.
+              Pair a WhatsApp phone to manage active groups.
             </div>
           ) : null}
 

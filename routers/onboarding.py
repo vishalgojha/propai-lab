@@ -563,6 +563,8 @@ def _upsert_registry(org_id: str, group_jid: str, phones: list[str]) -> None:
 
 
 def _cap_state(org_id: str, connection_id: int) -> dict:
+    """Opt-out model: the cap is the number of groups the broker has excluded from
+    extraction on this WhatsApp connection. Extracting groups are uncapped."""
     org = storage.get_organization(org_id) or {"id": org_id}
     tier, cap, overridden = _tier_cap(org)
     rows = (
@@ -570,14 +572,14 @@ def _cap_state(org_id: str, connection_id: int) -> dict:
         .select("id", count="exact")
         .eq("organization_id", org_id)
         .eq("whatsapp_connection_id", connection_id)
-        .eq("is_active", True)
+        .eq("opted_out", True)
         .execute()
     )
     count = int(getattr(rows, "count", None) or len(rows.data or []))
     return {
         "tier": tier,
         "cap": cap,
-        "connected_count": count,
+        "opted_out_count": count,
         "remaining": max(0, cap - count),
         "overridden": overridden,
         "soft_warning_at_cap": not overridden and count >= cap,
@@ -586,40 +588,30 @@ def _cap_state(org_id: str, connection_id: int) -> dict:
 
 
 def extraction_allowed_for_group(org_id: str, group_jid: str, group_name: str) -> bool:
-    """Keep legacy organizations unrestricted until onboarding selects a group."""
-    configured = (
-        storage.client.table("organization_group_connections")
-        .select("id")
-        .eq("organization_id", org_id)
-        .eq("is_active", True)
-        .limit(1)
-        .execute()
-        .data
-        or []
-    )
-    if not configured:
-        return True
-    selected = (
+    """Default-on semantics: every connected WhatsApp group is eligible for
+    extraction unless the broker tenant has explicitly opted it out. Only an
+    explicit `opted_out=true` row on (org, group_jid) suppresses extraction;
+    a fallback to `group_name` covers older raw records whose JID was not
+    preserved."""
+    opted_out = (
         storage.client.table("organization_group_connections")
         .select("id")
         .eq("organization_id", org_id)
         .eq("group_jid", group_jid)
-        .eq("is_active", True)
+        .eq("opted_out", True)
         .limit(1)
         .execute()
         .data
         or []
     )
-    if selected:
-        return True
-    # Group names are retained as a fallback for older raw records whose JID
-    # was not preserved, but the JID is always the primary identity.
-    return bool(
+    if opted_out:
+        return False
+    return not bool(
         storage.client.table("organization_group_connections")
         .select("id")
         .eq("organization_id", org_id)
         .eq("group_name", group_name)
-        .eq("is_active", True)
+        .eq("opted_out", True)
         .limit(1)
         .execute()
         .data
@@ -673,6 +665,24 @@ async def connect_group(
     user: dict = Depends(require_user),
     tenant_id: str | None = Depends(get_tenant_context),
 ):
+    """Deprecated: opt-in model has been replaced by opt-out. Kept as a 410-style
+    no-op for one release so any stale cache/client surface returns a clear
+    explanation instead of a 404."""
+    raise HTTPException(
+        status_code=410,
+        detail="Group connection is no longer supported. Every connected WhatsApp group is now extracted by default; use POST /api/onboarding/groups/opt-out to suppress a group.",
+    )
+
+
+@router.post("/groups/opt-out")
+async def opt_out_group(
+    body: GroupRequest,
+    user: dict = Depends(require_user),
+    tenant_id: str | None = Depends(get_tenant_context),
+):
+    """Mark a WhatsApp group as opted-out from extraction. Default is all groups
+    eligible; this endpoint only creates a suppression row capped at the tenant
+    subscription tier."""
     try:
         org_id = _resolve_active_organization_id(user, tenant_id)
         await _require_org_permission(user, org_id, "manage_whatsapp")
@@ -685,61 +695,58 @@ async def connect_group(
         cap = _cap_state(org_id, body.whatsapp_connection_id)
         overlap = _overlap(org_id, group["group_name"], group["group_jid"])
         warnings = []
-        if overlap["high_overlap"] and not body.confirm_overlap:
-            warnings.append("This group overlaps heavily with brokers already in the network.")
         if cap["soft_warning_at_cap"] and not body.confirm_cap:
-            warnings.append("This group is at the default tier cap and may add low marginal value.")
+            warnings.append("You are at the default tier cap for opted-out groups on this connection.")
         if cap["hard_block"]:
-            return JSONResponse(status_code=409, content={"message": "This WhatsApp connection is well above its group cap.", "hard_block": True, "cap": cap, "overlap": overlap})
+            return JSONResponse(status_code=409, content={"message": "Opted-out cap reached on this WhatsApp connection.", "hard_block": True, "cap": cap, "overlap": overlap})
         if warnings:
-            return JSONResponse(status_code=409, content={"message": "Confirmation required before adding this group.", "warnings": warnings, "cap": cap, "overlap": overlap, "requires_confirmation": True})
+            return JSONResponse(status_code=409, content={"message": "Confirmation required before opting out.", "warnings": warnings, "cap": cap, "overlap": overlap, "requires_confirmation": True})
 
+        now = datetime.now(timezone.utc).isoformat()
         row = storage.client.table("organization_group_connections").upsert({
             "organization_id": org_id,
             "whatsapp_connection_id": body.whatsapp_connection_id,
             "group_jid": body.group_jid,
             "group_name": group["group_name"],
-            "is_active": True,
-            "overlap_score": overlap["overlap_score"],
-            "overlap_sample_count": overlap["sample_count"],
-            "overlap_shared_count": overlap["shared_count"],
-            "overlap_confirmed": bool(body.confirm_overlap),
+            "opted_out": True,
+            "is_active": False,
+            "updated_at": now,
+            "connected_at": now,
         }, on_conflict="organization_id,whatsapp_connection_id,group_jid").execute()
-        _upsert_registry(org_id, body.group_jid, overlap["sample_phones"])
-        asyncio.create_task(_schedule_group_backfill(org_id, body.whatsapp_connection_id, body.group_jid, group["group_name"]))
         return {
             "ok": True,
             "group": group,
             "connection": (row.data or [None])[0],
             "cap": _cap_state(org_id, body.whatsapp_connection_id),
             "overlap": overlap,
-            "backfill_started": True,
+            "opted_out": True,
         }
     except HTTPException:
         raise
     except Exception:
-        _logger.exception("connect_group crashed for org=%s connection=%s group=%s", org_id, body.whatsapp_connection_id, body.group_jid)
+        _logger.exception("opt_out_group crashed for org=%s connection=%s group=%s", org_id, body.whatsapp_connection_id, body.group_jid)
         raise
 
 
-@router.post("/groups/disconnect")
-async def disconnect_group(
+@router.post("/groups/opt-in")
+async def opt_in_group(
     body: GroupRequest,
     user: dict = Depends(require_user),
     tenant_id: str | None = Depends(get_tenant_context),
 ):
+    """Clear an opt-out suppression. The group returns to the default extract-everything state."""
     org_id = _resolve_active_organization_id(user, tenant_id)
     await _require_org_permission(user, org_id, "manage_whatsapp")
     _connection(org_id, body.whatsapp_connection_id)
     result = (
         storage.client.table("organization_group_connections")
-        .update({"is_active": False, "updated_at": datetime.now(timezone.utc).isoformat()})
+        .update({"opted_out": False, "is_active": False, "updated_at": datetime.now(timezone.utc).isoformat()})
         .eq("organization_id", org_id)
         .eq("whatsapp_connection_id", body.whatsapp_connection_id)
         .eq("group_jid", body.group_jid)
-        .eq("is_active", True)
+        .eq("opted_out", True)
         .execute()
     )
     if not result.data:
-        raise HTTPException(404, "Connected group not found")
-    return {"ok": True, "message": "Group disconnected", "cap": _cap_state(org_id, body.whatsapp_connection_id)}
+        raise HTTPException(404, "Opted-out group not found")
+    return {"ok": True, "message": "Group re-enabled for extraction", "cap": _cap_state(org_id, body.whatsapp_connection_id)}
