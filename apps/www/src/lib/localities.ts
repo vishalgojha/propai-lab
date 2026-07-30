@@ -951,7 +951,7 @@ export async function getListingById(id: number): Promise<ListingDetail | null> 
   const { data, error } = await db
     .from("listings")
     .select(
-      "id, bhk, price, price_unit, price_model, price_per_sqft, area_sqft, furnishing, intent, asset_type, property_type, location_label, landmark_name, micro_market, view, floor_description, broker_name, broker_phone, last_seen, building_name, representative_raw_message_id, latest_raw_message_id, deal_tags, additional_charges",
+      "id, bhk, price, price_unit, price_model, price_per_sqft, area_sqft, furnishing, intent, asset_type, property_type, location_label, landmark_name, micro_market, view, floor_description, broker_name, broker_phone, last_seen, building_name, representative_raw_message_id, representative_listing_index, latest_raw_message_id, deal_tags, additional_charges",
     )
     .eq("id", id)
     .maybeSingle();
@@ -971,22 +971,33 @@ export async function getListingById(id: number): Promise<ListingDetail | null> 
     (data.latest_raw_message_id != null ? titleMap.get(data.latest_raw_message_id) : null) ??
     null;
 
-  // Fetch the raw WhatsApp message for the "View original message" section.
   const rawMsgId = data.representative_raw_message_id ?? data.latest_raw_message_id;
+  const listingIndex = data.representative_listing_index ?? 0;
+
   let rawMessage: RawMessageInfo | null = null;
   if (rawMsgId) {
     try {
-      const { data: rm } = await db
-        .from("raw_messages")
-        .select("message, sender, group_name, timestamp")
-        .eq("id", rawMsgId)
-        .maybeSingle();
-      if (rm) {
+      const [ctxRes, sliceRes] = await Promise.all([
+        db
+          .from("raw_messages")
+          .select("sender, group_name, timestamp")
+          .eq("id", rawMsgId)
+          .maybeSingle(),
+        db
+          .from("parsed_output")
+          .select("normalized_message")
+          .eq("raw_message_id", rawMsgId)
+          .eq("listing_index", listingIndex)
+          .maybeSingle(),
+      ]);
+      const ctx = ctxRes.data ?? null;
+      const slice = sliceRes.data ?? null;
+      if (ctx || slice) {
         rawMessage = {
-          message: rm.message ?? null,
-          sender: rm.sender ?? null,
-          groupName: rm.group_name ?? null,
-          timestamp: rm.timestamp ?? null,
+          message: slice?.normalized_message ?? null,
+          sender: ctx?.sender ?? null,
+          groupName: ctx?.group_name ?? null,
+          timestamp: ctx?.timestamp ?? null,
         };
       }
     } catch {
