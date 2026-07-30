@@ -1219,6 +1219,7 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
         pass
     if not sources:
         return _wrap_chat_response({"error": "no_data", "content": "No data found. Check CSV files and database."}, _is_inbox)
+    memory.persist()
 
     active_sources = sources
     if source_mode == "groups":
