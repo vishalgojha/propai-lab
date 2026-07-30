@@ -695,6 +695,80 @@ def test_inbox_threads_fallback_stays_tenant_scoped(monkeypatch):
     assert ("eq", "raw_messages", ("tenant_id", "tenant-a"), {}) in calls
 
 
+def test_inbox_threads_prefers_raw_messages_even_when_parsed_rows_exist(monkeypatch):
+    from types import SimpleNamespace
+    from storage.supabase import SupabaseStorage
+
+    calls = []
+
+    class Query:
+        def __init__(self, table_name: str):
+            self.table_name = table_name
+
+        def select(self, *args, **kwargs):
+            calls.append(("select", self.table_name, args, kwargs))
+            return self
+
+        def order(self, *args, **kwargs):
+            calls.append(("order", self.table_name, args, kwargs))
+            return self
+
+        def limit(self, *args, **kwargs):
+            calls.append(("limit", self.table_name, args, kwargs))
+            return self
+
+        def eq(self, *args, **kwargs):
+            calls.append(("eq", self.table_name, args, kwargs))
+            return self
+
+        def in_(self, *args, **kwargs):
+            calls.append(("in_", self.table_name, args, kwargs))
+            return self
+
+        def execute(self):
+            calls.append(("execute", self.table_name, (), {}))
+            if self.table_name == "raw_messages":
+                return SimpleNamespace(data=[{
+                    "id": 11,
+                    "tenant_id": "tenant-a",
+                    "group_name": "Royal Realtors @g.us",
+                    "sender": "Broker One",
+                    "sender_phone": "919820000000",
+                    "sender_jid": "919820000000@s.whatsapp.net",
+                    "timestamp": "2026-07-19T04:00:00Z",
+                    "created_at": "2026-07-19T04:00:00Z",
+                    "message_uid": "uid-11",
+                    "message": "Hello from raw",
+                    "raw_payload": {},
+                    "is_group": True,
+                }])
+            if self.table_name == "parsed_output":
+                return SimpleNamespace(data=[{
+                    "raw_message_id": 11,
+                    "intent": "RENT",
+                    "broker_name": "Broker One",
+                    "broker_phone": "919820000000",
+                    "confidence": 0.9,
+                }])
+            return SimpleNamespace(data=[])
+
+    class Client:
+        def table(self, name):
+            calls.append(("table", name, (), {}))
+            return Query(name)
+
+    storage = object.__new__(SupabaseStorage)
+    storage._SupabaseStorage__tenant_id_fallback = None
+    storage._client = Client()
+
+    threads = storage.get_inbox_threads(limit=10, offset=0, tenant_id="tenant-a")
+
+    assert threads and threads[0]["message"] == "Hello from raw"
+    assert threads[0]["intent"] == "RENT"
+    assert ("table", "raw_messages", (), {}) in calls
+    assert ("table", "parsed_output", (), {}) in calls
+
+
 def test_connection_details_is_safe_without_storage(monkeypatch):
     """The WhatsApp connection endpoint should not assume storage.db exists."""
     import app  # noqa: F401 — wiring side effects

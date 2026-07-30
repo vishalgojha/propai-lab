@@ -1634,13 +1634,10 @@ class SupabaseStorage(Storage):
         return [dict_to_dataclass(RawMessage, row) for row in rows[offset:offset + limit]]
 
     def get_inbox_threads(self, limit: int = 500, offset: int = 0, tenant_id: str | None = None) -> list[dict]:
-        try:
-            parsed_threads = self._get_parsed_market_threads(limit, offset, tenant_id=tenant_id)
-            if parsed_threads:
-                return parsed_threads
-        except Exception:
-            pass
-
+        # Always build the inbox from raw_messages first so fresh WhatsApp
+        # activity appears even when extraction is paused or lagging.
+        # Parsed rows are used only as enrichment for the newest raw message in
+        # each grouped thread.
         query = self.client.table("raw_messages").select(
             "id,tenant_id,group_name,sender,sender_phone,sender_jid,timestamp,created_at,message_uid,message,raw_payload,is_group"
         )\
