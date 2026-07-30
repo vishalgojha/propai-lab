@@ -731,6 +731,18 @@ def test_redact_indian_mobiles_handles_obfuscated_formats():
     assert extraction._redact_indian_mobiles("Phone 9876543210 / 9123456789") == "Phone [Contact redacted — see agent] / [Contact redacted — see agent]"
 
 
+def test_redact_indian_mobiles_handles_11digit_bare_phones():
+    r"""Real brokers paste 11-digit bare phones (90048427759, 84335469487)
+    that lack separators and the strict 10-digit pattern misses because
+    the trailing digit still satisfies "(?!\d)"."""
+    assert extraction._redact_indian_mobiles("Agent - 90048427759*") == "Agent - [Contact redacted — see agent]*"
+    assert extraction._redact_indian_mobiles("Maya Deshmukh - 84335469487") == "Maya Deshmukh - [Contact redacted — see agent]"
+    # STD-style 0-prefix should also go
+    assert extraction._redact_indian_mobiles("Phone 09004842775 desk") == "Phone [Contact redacted — see agent] desk"
+    # Pricing & area must remain intact
+    assert extraction._redact_indian_mobiles("Rs 8.5L 900 sqft 98201-12345") == "Rs 8.5L 900 sqft [Contact redacted — see agent]"
+
+
 def test_redact_indian_mobiles_leaves_landlines_and_prices_alone():
     assert extraction._redact_indian_mobiles("Office 01234567890 desk 5") == "Office 01234567890 desk 5"
     assert extraction._redact_indian_mobiles("Rent 75000 deposit 50000") == "Rent 75000 deposit 50000"
