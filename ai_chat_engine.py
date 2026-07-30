@@ -1438,7 +1438,7 @@ def _rest_market_search(client, args: dict) -> str:
     offset = max(0, int(args.get("offset") or 0))
 
     columns = (
-        "fingerprint,intent,bhk,price,price_unit,area_sqft,furnishing,location_label,"
+        "id,fingerprint,intent,bhk,price,price_unit,area_sqft,furnishing,location_label,"
         "building_name,landmark_name,micro_market,broker_name,broker_phone,first_seen,"
         "last_seen,observation_count,group_count,latest_raw_message_id"
     )
@@ -1488,6 +1488,7 @@ def _rest_market_search(client, args: dict) -> str:
     results = []
     for row in result_rows:
         results.append({
+            "listing_id": row.get("id"),
             "fingerprint": row.get("fingerprint"),
             "intent": row.get("intent"),
             "bhk": row.get("bhk"),
@@ -1816,7 +1817,7 @@ def execute_tool(name, args, sources, db_path=None, tenant_id: str | None = None
             total_count = con.execute(total_query, params).fetchone()[0]
 
             listing_query = f"""
-                SELECT l.fingerprint, l.intent, l.bhk, l.price, l.price_unit, l.area_sqft,
+                SELECT l.id AS listing_id, l.fingerprint, l.intent, l.bhk, l.price, l.price_unit, l.area_sqft,
                        l.furnishing, l.location_label, l.building_name, l.landmark_name,
                        l.micro_market, l.broker_name, l.broker_phone,
                        l.first_seen, l.last_seen, l.observation_count, l.group_count,
@@ -1897,6 +1898,7 @@ def execute_tool(name, args, sources, db_path=None, tenant_id: str | None = None
                 confidence_pct = round((d.get("confidence") or 0) * 100) if d.get("confidence") else 0
 
                 results.append({
+                    "listing_id": d.get("listing_id"),
                     "fingerprint": d.get("fingerprint"),
                     "intent": d.get("intent"),
                     "bhk": d.get("bhk"),

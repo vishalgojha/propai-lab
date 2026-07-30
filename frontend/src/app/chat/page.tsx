@@ -5,12 +5,13 @@ export const dynamic = 'force-dynamic';
 import * as api from "@/lib/api";
 import { getAccessToken } from "@/lib/auth";
 import { useEffect, useState, useRef, useCallback } from "react";
+import { useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
 import ListingCard, { type ListingItem } from "@/components/ListingCard";
 import { useAuth } from "@/lib/AuthProvider";
-import { Plus, MessageSquare, Trash2, PanelLeft, PanelLeftClose, EyeOff } from "lucide-react";
+import { Check, Pencil, Plus, MessageSquare, Trash2, PanelLeft, PanelLeftClose, EyeOff, X } from "lucide-react";
 
 function messageText(message: { parts?: Array<{ type?: string; text?: string }>; content?: string }) {
   if (typeof message.content === "string" && message.content) return message.content;
@@ -19,12 +20,16 @@ function messageText(message: { parts?: Array<{ type?: string; text?: string }>;
     .join("");
 }
 
-function toUIMessage(m: { id: string; role: "user" | "assistant"; content: string }) {
-  return {
-    id: m.id,
-    role: m.role,
-    parts: [{ type: "text" as const, text: m.content }],
-  };
+function toUIMessage(m: { id: string; role: "user" | "assistant"; content: string; blocks?: Array<{ type: string; title?: string; items?: unknown[] }> }) {
+  const parts: Array<{ type: string; text?: string; data?: unknown }> = [{ type: "text" as const, text: m.content }];
+  if (m.blocks) {
+    for (const block of m.blocks) {
+      if (block.type === "listing_cards") {
+        parts.push({ type: "data-listing_cards" as const, data: { items: block.items ?? [], title: block.title ?? "Active listings" } });
+      }
+    }
+  }
+  return { id: m.id, role: m.role, parts };
 }
 
 function inlineMarkdown(text: string, keyPrefix: string) {
@@ -111,6 +116,22 @@ function formatSessionTime(iso: string) {
   const diffDays = Math.floor(diffHrs / 24);
   if (diffDays < 7) return `${diffDays}d ago`;
   return d.toLocaleDateString("en-IN", { day: "numeric", month: "short" });
+}
+
+function chatSessionSlug(title: string, id: string) {
+  const label = title
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 60) || "chat";
+  return `${label}--${id}`;
+}
+
+function sessionIdFromParam(value: string | null) {
+  if (!value) return "";
+  const match = value.match(/--([0-9a-f-]{36})$/i);
+  return match?.[1] || (/^[0-9a-f-]{36}$/i.test(value) ? value : "");
 }
 
 function normalizePhoneKey(value?: string | null) {
@@ -238,6 +259,8 @@ function GroupMirrorCard({
 
 export default function ChatPage() {
   const { user, loading: authLoading } = useAuth();
+  const searchParams = useSearchParams();
+  const sessionParam = searchParams.get("session");
   const [input, setInput] = useState("");
   const [brokerPhone, setBrokerPhone] = useState("");
   const [searchSource, setSearchSource] = useState<"groups" | "parsed">("parsed");
@@ -256,6 +279,9 @@ export default function ChatPage() {
   const [sessionsLoaded, setSessionsLoaded] = useState(false);
   const [showSessions, setShowSessions] = useState(false);
   const [sessionError, setSessionError] = useState("");
+  const [renamingSessionId, setRenamingSessionId] = useState("");
+  const [renameValue, setRenameValue] = useState("");
+  const [contactingListingId, setContactingListingId] = useState<number | null>(null);
 
   const activeSessionStorageKey = user?.id ? `propai_active_chat_session:${user.id}` : "";
   const searchSourceStorageKey = user?.id ? `propai_chat_search_source:${user.id}` : "";
@@ -336,6 +362,19 @@ export default function ChatPage() {
     window.localStorage.setItem(searchSourceStorageKey, searchSource);
   }, [searchSource, searchSourceStorageKey]);
 
+  const updateUrlSession = useCallback((id: string, title?: string) => {
+    const url = new URL(window.location.href);
+    const session = sessions.find((item) => item.id === id);
+    url.searchParams.set("session", title ? chatSessionSlug(title, id) : (session?.slug || chatSessionSlug("chat", id)));
+    window.history.replaceState({}, "", url.toString());
+  }, [sessions]);
+
+  const clearUrlSession = useCallback(() => {
+    const url = new URL(window.location.href);
+    url.searchParams.delete("session");
+    window.history.replaceState({}, "", url.toString());
+  }, []);
+
   const loadSessions = useCallback(async () => {
     try {
       const data = await api.listChatSessions();
@@ -364,7 +403,7 @@ export default function ChatPage() {
         try {
           const msgs = await api.getChatSessionMessages(active.id);
           if (cancelled) return;
-          setMessages(msgs.map((m) => toUIMessage({ id: m.id, role: m.role as "user" | "assistant", content: m.content })));
+          setMessages(msgs.map((m) => toUIMessage({ id: m.id, role: m.role as "user" | "assistant", content: m.content, blocks: m.blocks })));
         } catch (e) {
           setSessionError(e instanceof Error ? e.message : "Could not resume previous chat");
         }
@@ -407,11 +446,13 @@ export default function ChatPage() {
     setInput("");
     setSessionError("");
     inputRef.current?.focus();
+    clearUrlSession();
     try {
       const session = await api.createChatSession("New chat", searchSource);
       if (!session?.id) throw new Error("Could not create a new chat session.");
       sessionIdRef.current = session.id;
       setSessionId(session.id);
+      updateUrlSession(session.id, session.title);
       const updated = await loadSessions();
       setSessions(updated);
     } catch (error) {
@@ -422,13 +463,14 @@ export default function ChatPage() {
   // Switch to an existing session
   const handleSwitchSession = useCallback(async (id: string) => {
     if (id === sessionId) return;
+    updateUrlSession(id);
     setSessionId(id);
     setSessionError("");
     sessionIdRef.current = id;
     if (activeSessionStorageKey) window.localStorage.setItem(activeSessionStorageKey, id);
     try {
       const msgs = await api.getChatSessionMessages(id);
-      setMessages(msgs.map((m) => toUIMessage({ id: m.id, role: m.role as "user" | "assistant", content: m.content })));
+      setMessages(msgs.map((m) => toUIMessage({ id: m.id, role: m.role as "user" | "assistant", content: m.content, blocks: m.blocks })));
     } catch (e) {
       setMessages([]);
       setSessionError(e instanceof Error ? e.message : "Could not load this chat");
@@ -452,6 +494,54 @@ export default function ChatPage() {
     } catch {}
   }, [sessionId, loadSessions, handleSwitchSession, handleNewChat]);
 
+  const handleRenameSession = useCallback(async (id: string) => {
+    const title = renameValue.trim();
+    if (!title) return;
+    try {
+      const renamed = await api.renameChatSession(id, title);
+      setSessions((current) => current.map((session) => session.id === id ? renamed : session));
+      if (id === sessionId) updateUrlSession(id, renamed.title);
+      setRenamingSessionId("");
+      setRenameValue("");
+    } catch (error) {
+      setSessionError(error instanceof Error ? error.message : "Could not rename this chat");
+    }
+  }, [renameValue, sessionId, updateUrlSession]);
+
+  const handleContactBroker = useCallback(async (listingId: number) => {
+    setContactingListingId(listingId);
+    const contactWindow = window.open("", "_blank");
+    try {
+      const { contact_url } = await api.resolveBrokerContact(listingId);
+      if (contactWindow) {
+        contactWindow.opener = null;
+        contactWindow.location.assign(contact_url);
+      } else {
+        window.location.assign(contact_url);
+      }
+    } catch (error) {
+      contactWindow?.close();
+      setSessionError(error instanceof Error ? error.message : "Broker contact could not be opened");
+    } finally {
+      setContactingListingId(null);
+    }
+  }, []);
+
+  // Navigate to session from URL on initial load
+  const initialNavDone = useRef(false);
+  useEffect(() => {
+    if (initialNavDone.current) return;
+    if (!sessionsLoaded) return;
+    initialNavDone.current = true;
+    const requestedSessionId = sessionIdFromParam(sessionParam);
+    if (requestedSessionId && sessions.length > 0) {
+      const target = sessions.find((s) => s.id === requestedSessionId);
+      if (target) {
+        handleSwitchSession(target.id);
+      }
+    }
+  }, [sessionParam, sessions, sessionsLoaded, handleSwitchSession]);
+
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!input.trim() || status === "submitted") return;
@@ -470,6 +560,7 @@ export default function ChatPage() {
         if (!session?.id) throw new Error("Could not create a chat session.");
         sessionIdRef.current = session.id;
         setSessionId(session.id);
+        updateUrlSession(session.id, session.title);
         sendMessage({ text });
         setInput("");
         import("@/lib/sounds").then((s) => s.playMessageSent());
@@ -518,10 +609,18 @@ export default function ChatPage() {
         </div>
         <div className="flex-1 overflow-y-auto px-1.5 pb-2 space-y-0.5">
           {sessions.map((s) => (
-            <button
+            <div
               key={s.id}
-              onClick={() => handleSwitchSession(s.id)}
-              className={`w-full text-left px-2.5 py-2 rounded-lg text-xs transition-colors group flex items-start gap-2 border-l-2 ${
+              role="button"
+              tabIndex={0}
+              onClick={() => void handleSwitchSession(s.id)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  void handleSwitchSession(s.id);
+                }
+              }}
+              className={`w-full text-left px-2.5 py-2 rounded-lg text-xs transition-colors group flex items-start gap-2 border-l-2 cursor-pointer ${
                 s.id === sessionId
                   ? "bg-white/10 text-white border-l-2 border-[#3EE88A]"
                   : "text-zinc-400 hover:text-white hover:bg-white/5 border-l-2 border-transparent"
@@ -532,17 +631,43 @@ export default function ChatPage() {
               }`} />
               <MessageSquare className="w-3.5 h-3.5 mt-0.5 shrink-0 opacity-50" />
               <div className="flex-1 min-w-0">
-                <div className={`truncate leading-tight ${s.id === sessionId ? "font-medium" : ""}`}>{s.title}</div>
+                {renamingSessionId === s.id ? (
+                  <div className="flex items-center gap-1" onClick={(event) => event.stopPropagation()}>
+                    <input
+                      autoFocus
+                      value={renameValue}
+                      onChange={(event) => setRenameValue(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") void handleRenameSession(s.id);
+                        if (event.key === "Escape") setRenamingSessionId("");
+                      }}
+                      aria-label="Chat name"
+                      className="min-w-0 flex-1 rounded border border-white/20 bg-black px-1.5 py-1 text-xs text-white outline-none"
+                    />
+                    <button type="button" onClick={() => void handleRenameSession(s.id)} className="p-1 text-emerald-300" aria-label="Save chat name"><Check className="h-3 w-3" /></button>
+                    <button type="button" onClick={() => setRenamingSessionId("")} className="p-1 text-zinc-400" aria-label="Cancel rename"><X className="h-3 w-3" /></button>
+                  </div>
+                ) : <div className={`truncate leading-tight ${s.id === sessionId ? "font-medium" : ""}`}>{s.title}</div>}
                 <div className="text-[10px] text-zinc-600 mt-0.5">{formatSessionTime(s.updated_at)}</div>
               </div>
               <button
+                type="button"
+                onClick={(event) => { event.stopPropagation(); setRenamingSessionId(s.id); setRenameValue(s.title); }}
+                className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-white/10 transition-all shrink-0"
+                title="Rename chat"
+                aria-label="Rename chat"
+              >
+                <Pencil className="w-3 h-3" />
+              </button>
+              <button
+                type="button"
                 onClick={(e) => handleDeleteSession(s.id, e)}
                 className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-red-500/10 hover:text-red-400 transition-all shrink-0"
                 title="Delete chat"
               >
                 <Trash2 className="w-3 h-3" />
               </button>
-            </button>
+            </div>
           ))}
           {sessionsLoaded && sessions.length === 0 && (
             <div className="text-[11px] text-zinc-600 px-2.5 py-4 text-center">
@@ -644,11 +769,12 @@ export default function ChatPage() {
         {showSessions && (
           <div className="absolute inset-x-4 top-11 z-30 max-h-[55dvh] overflow-y-auto rounded-xl border border-white/10 bg-black/95 p-2 shadow-2xl lg:hidden">
             {sessions.map((s) => (
-              <button
+              <div
                 key={s.id}
-                type="button"
                 onClick={() => { void handleSwitchSession(s.id); setShowSessions(false); }}
-                className={`mb-1 flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs border-l-2 ${
+                role="button"
+                tabIndex={0}
+                className={`mb-1 flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs border-l-2 cursor-pointer ${
                   s.id === sessionId ? "bg-white/10 text-white border-l-2 border-[#3EE88A]" : "text-zinc-400 border-l-2 border-transparent"
                 }`}
               >
@@ -656,9 +782,30 @@ export default function ChatPage() {
                   s.source === "groups" ? "bg-emerald-400" : "bg-blue-400"
                 }`} />
                 <MessageSquare className="h-3.5 w-3.5 shrink-0" />
-                <span className={`min-w-0 flex-1 truncate ${s.id === sessionId ? "font-medium" : ""}`}>{s.title}</span>
+                {renamingSessionId === s.id ? (
+                  <div className="flex min-w-0 flex-1 items-center gap-1" onClick={(event) => event.stopPropagation()}>
+                    <input
+                      autoFocus
+                      value={renameValue}
+                      onChange={(event) => setRenameValue(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") void handleRenameSession(s.id);
+                        if (event.key === "Escape") setRenamingSessionId("");
+                      }}
+                      aria-label="Chat name"
+                      className="min-w-0 flex-1 rounded border border-white/20 bg-black px-1.5 py-1 text-xs text-white outline-none"
+                    />
+                    <button type="button" onClick={() => void handleRenameSession(s.id)} className="p-1 text-emerald-300" aria-label="Save chat name"><Check className="h-3 w-3" /></button>
+                  </div>
+                ) : <span className={`min-w-0 flex-1 truncate ${s.id === sessionId ? "font-medium" : ""}`}>{s.title}</span>}
+                {renamingSessionId !== s.id && <button
+                  type="button"
+                  onClick={(event) => { event.stopPropagation(); setRenamingSessionId(s.id); setRenameValue(s.title); }}
+                  className="p-1 text-zinc-400"
+                  aria-label="Rename chat"
+                ><Pencil className="h-3 w-3" /></button>}
                 <span className="text-[10px] text-zinc-600">{formatSessionTime(s.updated_at)}</span>
-              </button>
+              </div>
             ))}
             {sessionsLoaded && sessions.length === 0 && (
               <div className="px-3 py-4 text-center text-xs text-zinc-500">No saved chats yet.</div>
@@ -774,7 +921,12 @@ export default function ChatPage() {
                                           onHideBroker={hideBrokerLocally}
                                         />
                                       )
-                                      : <ListingCard key={item.fingerprint || j} item={item} />
+                                      : <ListingCard
+                                          key={item.fingerprint || j}
+                                          item={item}
+                                          onContactBroker={handleContactBroker}
+                                          contacting={contactingListingId === item.listing_id}
+                                        />
                                   ))}
                                 </div>
                               );

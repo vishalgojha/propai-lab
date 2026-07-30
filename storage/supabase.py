@@ -3767,11 +3767,13 @@ class SupabaseStorage(Storage):
             q = q.eq("tenant_id", tid)
         q.execute()
 
-    def add_chat_message(self, session_id: str, role: str, content: str, tenant_id: str | None = None) -> dict | None:
+    def add_chat_message(self, session_id: str, role: str, content: str, tenant_id: str | None = None, blocks: list | None = None) -> dict | None:
         tid = tenant_id or self._tenant_id
         payload = {"session_id": session_id, "role": role, "content": content}
         if tid:
             payload["tenant_id"] = tid
+        if blocks:
+            payload["blocks"] = blocks
         res = (
             self.client.table("ai_chat_messages")
             .insert(payload)
@@ -3785,6 +3787,7 @@ class SupabaseStorage(Storage):
         role: str,
         content: str,
         tenant_id: str | None = None,
+        blocks: list | None = None,
     ) -> dict | None:
         """Persist a turn once even when a transport retries the same request."""
         clean = str(content or "").strip()
@@ -3801,7 +3804,7 @@ class SupabaseStorage(Storage):
         latest = q.order("created_at", desc=True).limit(1).execute().data or []
         if latest and latest[0].get("role") == role and str(latest[0].get("content") or "").strip() == clean:
             return latest[0]
-        return self.add_chat_message(session_id, role, clean, tenant_id=tenant_id)
+        return self.add_chat_message(session_id, role, clean, tenant_id=tenant_id, blocks=blocks)
 
     def get_ai_chat_messages(self, session_id: str, limit: int = 200, tenant_id: str | None = None) -> list[dict]:
         """Return persisted AI-chat messages.
@@ -4391,7 +4394,7 @@ class SupabaseStorage(Storage):
                     FROM brokers b
                     JOIN observations o ON right(o.broker_key, 10) = b.primary_phone
                     JOIN observation_evidence oe ON oe.observation_id = o.id
-                    WHERE b.observation_count >= $1
+                    WHERE (b.listing_count > 0 OR b.requirement_count > 0)
                       AND b.is_hidden = false
                       {tenant_filter}
                    GROUP BY b.id, b.identity_key, b.primary_phone, b.canonical_name,
@@ -4426,7 +4429,7 @@ class SupabaseStorage(Storage):
             tid = tenant_id or self._tenant_id
             query = self.client.table("brokers").select("id", count="exact")\
                 .eq("is_hidden", False)\
-                .gte("observation_count", min_observations)
+                .or_("listing_count.gt.0,requirement_count.gt.0")
             if tid:
                 query = query.eq("tenant_id", tid)
             res = query.execute()

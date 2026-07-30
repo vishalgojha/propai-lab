@@ -1654,23 +1654,15 @@ return {
         }
         selectBroker(broker);
       } else {
-        // A deep-linked broker does not need to be present on the current
-        // feed page. Resolve the canonical identity directly so name-only
-        // brokers remain usable while the left list paginates independently.
-        const fallbackName = brokerParam.replace(/^name:/i, "").trim();
-        // Only use phone if it's a valid 10-digit number
-        const validPhone = brokerParamPhone && brokerParamPhone.length === 10 ? brokerParamPhone : undefined;
-        selectBroker({
-          id: brokerParam,
-          identity_key: brokerParam,
-          primary_phone: validPhone,
-          canonical_name: fallbackName || (brokerParamPhone ? `+91 ${brokerParamPhone}` : "Broker"),
-          observation_count: 0,
-          listing_count: 0,
-          requirement_count: 0,
-          building_count: 0,
-          channels: [],
-        });
+        // The broker no longer exists in this workspace. Do not construct a
+        // fake profile; reset the stale deep link and leave the Inbox usable.
+        initialNavDone.current = true;
+        const url = new URL(window.location.href);
+        url.searchParams.delete("broker");
+        url.searchParams.delete("observation");
+        url.searchParams.delete("message");
+        url.searchParams.delete("conversation");
+        window.history.replaceState({}, "", url.toString());
       }
     } else if (observationParam && Number(observationParam) > 0) {
       initialNavDone.current = true;
@@ -1702,8 +1694,18 @@ return {
           }
         })();
       }
+    } else if (brokerParam && !loadingBrokerFeed && brokerFeed.length === 0) {
+      initialNavDone.current = true;
+      // The feed has finished loading with no contactable brokers, so a
+      // broker URL cannot resolve. Keep the workspace on a clean Inbox URL.
+      const url = new URL(window.location.href);
+      url.searchParams.delete("broker");
+      url.searchParams.delete("observation");
+      url.searchParams.delete("message");
+      url.searchParams.delete("conversation");
+      window.history.replaceState({}, "", url.toString());
     }
-  }, [brokerParam, observationParam, brokerFeed, slugs]);
+  }, [brokerParam, observationParam, brokerFeed, slugs, loadingBrokerFeed]);
 
   // 1. Initial Load of Feed & Suggestions
   const loadFeed = useCallback(async (append = false, requestedOffset = offset) => {

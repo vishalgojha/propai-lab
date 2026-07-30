@@ -1,8 +1,9 @@
 "use client";
 
-import { MessageSquare, Clock, Building2 } from "lucide-react";
+import { Building2, Layers3, MapPin, MessageSquare, Ruler, UserRound } from "lucide-react";
 
 export interface ListingItem {
+  listing_id?: number;
   intent?: string;
   building_name?: string;
   micro_market?: string;
@@ -18,6 +19,13 @@ export interface ListingItem {
   confidence?: number;
   fingerprint?: string;
   landmark_name?: string;
+  floor?: number | string;
+  wing?: string;
+  flat_number?: string;
+  property_type?: string;
+  first_seen_text?: string;
+  observation_count?: number;
+  original_message?: string;
 }
 
 function relativeTime(text: string): string {
@@ -40,7 +48,15 @@ function relativeTime(text: string): string {
   }
 }
 
-export default function ListingCard({ item }: { item: ListingItem }) {
+export default function ListingCard({
+  item,
+  onContactBroker,
+  contacting = false,
+}: {
+  item: ListingItem;
+  onContactBroker?: (listingId: number) => void;
+  contacting?: boolean;
+}) {
   const intent = (item.intent || "").toUpperCase();
   const isWanted = intent === "REQUIREMENT";
   const isSale = intent === "SELL" || intent === "SALE";
@@ -51,17 +67,18 @@ export default function ListingCard({ item }: { item: ListingItem }) {
   const badgeClass = isWanted ? "badge wanted" : "badge sale";
 
   const location = item.micro_market || item.location_label || item.landmark_name || "";
-  const waLink = item.broker_phone
-    ? `https://wa.me/${item.broker_phone.replace(/[^0-9]/g, "")}?text=${encodeURIComponent(`Hi, I saw your listing on PropAI. Is this still available?`)}`
-    : "";
+  const unit = [item.wing && `Wing ${item.wing}`, item.floor !== undefined && item.floor !== null && `Floor ${item.floor}`, item.flat_number && `Flat ${item.flat_number}`].filter(Boolean);
+  const sourceSummary = item.group_count && item.group_count > 0
+    ? `${item.group_count} WhatsApp ${item.group_count === 1 ? "group" : "groups"}`
+    : "WhatsApp broker network";
 
   return (
-    <div className={cardClass}>
+    <div className={`${cardClass} overflow-hidden`}>
       <div className="card-top">
         <div>
           <span className={badgeClass}>{badgeLabel}</span>
-          <div className="building">{item.building_name || "Unknown Building"}</div>
-          {location && <div className="locality">{location}</div>}
+          <div className="building flex items-center gap-1.5"><Building2 className="h-3.5 w-3.5 text-zinc-500" />{item.building_name || "Property from broker network"}</div>
+          {location && <div className="locality flex items-center gap-1"><MapPin className="h-3 w-3" />{location}</div>}
         </div>
         {item.price_formatted && (
           <div className="price">
@@ -70,33 +87,40 @@ export default function ListingCard({ item }: { item: ListingItem }) {
           </div>
         )}
       </div>
-      <div className="specs">
-        {item.bhk && <span><b>{item.bhk}</b> BHK</span>}
-        {item.area_sqft && <span><b>{item.area_sqft}</b> sqft</span>}
+      <div className="specs flex-wrap">
+        {item.bhk && <span><b>{item.bhk}</b>{!item.bhk.toUpperCase().includes("BHK") ? " BHK" : ""}</span>}
+        {item.area_sqft && <span className="inline-flex items-center gap-1"><Ruler className="h-3 w-3" /><b>{item.area_sqft}</b> sqft</span>}
         {item.furnishing && item.furnishing !== "None" && (
           <span><b>{item.furnishing}</b></span>
         )}
+        {unit.map((detail) => <span key={detail} className="inline-flex items-center gap-1"><Layers3 className="h-3 w-3" />{detail}</span>)}
       </div>
+      {(item.landmark_name || item.property_type || item.observation_count) && (
+        <div className="mx-4 mb-3 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-zinc-500">
+          {item.property_type && <span>{item.property_type}</span>}
+          {item.landmark_name && <span>Near {item.landmark_name}</span>}
+          {item.observation_count && item.observation_count > 1 && <span>{item.observation_count} verified mentions</span>}
+        </div>
+      )}
       <div className="card-bottom">
         <div>
           {item.broker_name && (
-            <div className="broker"><b>{item.broker_name}</b></div>
+            <div className="broker inline-flex items-center gap-1"><UserRound className="h-3 w-3 text-zinc-500" /><b>{item.broker_name}</b></div>
           )}
           <div className="meta">
-            {item.group_count && item.group_count > 0 && `${item.group_count} grp · `}
-            {item.last_seen_text && relativeTime(item.last_seen_text)}
+            {sourceSummary}{item.last_seen_text && ` · Active ${relativeTime(item.last_seen_text)}`}
           </div>
         </div>
-        {waLink && (
-          <a
-            href={waLink}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="wa-btn"
+        {item.listing_id && onContactBroker && (
+          <button
+            type="button"
+            onClick={() => onContactBroker(item.listing_id!)}
+            disabled={contacting}
+            className="wa-btn disabled:cursor-wait disabled:opacity-60"
           >
             <MessageSquare className="w-3.5 h-3.5" />
-            WhatsApp
-          </a>
+            {contacting ? "Opening…" : "Contact broker"}
+          </button>
         )}
       </div>
     </div>
