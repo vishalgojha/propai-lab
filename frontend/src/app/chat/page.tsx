@@ -583,7 +583,7 @@ export default function ChatPage() {
   }
 
   return (
-    <div className="relative flex h-[calc(100svh-160px)] lg:h-[calc(100vh-160px)] max-w-[1800px] mx-auto px-4 lg:px-6">
+    <div className="relative flex h-[calc(100svh-128px)] lg:h-[calc(100vh-128px)] max-w-[1800px] mx-auto px-4 lg:px-6">
       <style>{`
         @keyframes typing-bounce {
           0%, 80%, 100% { transform: translateY(0); }
@@ -864,7 +864,7 @@ export default function ChatPage() {
                       {messageText(m)}
                     </div>
                   ) : (
-                    <div className="max-w-[90%] w-full space-y-3">
+                    <div className="max-w-[95%] w-full space-y-3">
                       {(() => {
                         const assistantMode = (getAssistantSourceMode(m) || searchSource) as ChatSourceMode;
                         const textParts = (m.parts || []).filter(
@@ -910,8 +910,11 @@ export default function ChatPage() {
                                 return !key || !hiddenBrokerPhones.has(key);
                               });
                               if (visibleItems.length === 0) return null;
+                              const gridClass = assistantMode === "parsed"
+                                ? "grid gap-3 md:grid-cols-2 xl:grid-cols-2"
+                                : "flex flex-col gap-2.5";
                               return (
-                                <div key={`cards-${i}`} className="flex flex-col gap-2.5">
+                                <div key={`cards-${i}`} className={gridClass}>
                                   {visibleItems.map((item, j) => (
                                     assistantMode === "groups"
                                       ? (
@@ -921,12 +924,15 @@ export default function ChatPage() {
                                           onHideBroker={hideBrokerLocally}
                                         />
                                       )
-                                      : <ListingCard
-                                          key={item.fingerprint || j}
-                                          item={item}
-                                          onContactBroker={handleContactBroker}
-                                          contacting={contactingListingId === item.listing_id}
-                                        />
+                                      : (
+                                        <div key={item.fingerprint || j} className="h-full">
+                                          <ListingCard
+                                            item={item}
+                                            onContactBroker={handleContactBroker}
+                                            contacting={contactingListingId === item.listing_id}
+                                          />
+                                        </div>
+                                      )
                                   ))}
                                 </div>
                               );
@@ -976,7 +982,7 @@ export default function ChatPage() {
           <div ref={chatEndRef} />
         </div>
 
-        <form onSubmit={handleSubmit} className="flex gap-2 items-end border-t border-white/10 pt-3 lg:pt-4 pb-2 lg:pb-0">
+        <form onSubmit={handleSubmit} className="flex gap-2 items-end border-t border-white/10 pt-4 lg:pt-5 pb-2 lg:pb-0">
           <textarea
             ref={inputRef}
             value={input}
