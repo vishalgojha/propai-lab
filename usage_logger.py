@@ -88,7 +88,9 @@ def log_ai_usage(
     try:
         storage.client.table("ai_usage_log").insert(row).execute()
     except Exception as exc:
+        _resp = getattr(exc, "response", None)
+        _body = _resp.text[:300] if _resp is not None else ""
         _logger.error(
-            "usage_logger: failed to insert ai_usage_log row for agent=%s model=%s: %s",
-            agent, model, exc,
+            "usage_logger: failed to insert ai_usage_log row for agent=%s model=%s: %s body=%s",
+            agent, model, exc, _body,
         )
