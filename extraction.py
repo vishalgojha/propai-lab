@@ -862,11 +862,28 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
     # Every item retains the complete original message as its source evidence.
     try:
         from ai_extraction import ai_extract
-        ai_result = (
-            {"extraction_source": "reviewed_reparse_preview", "extractions": []}
-            if isinstance(preparsed_input, list)
-            else ai_extract(msg_text, ctx, storage=storage)
-        )
+        from extraction_dedup import cache_lookup, cache_store
+
+        _tenant_for_cache = ctx.get("tenant_id") or getattr(storage, "_tenant_id", "") or ""
+
+        if isinstance(preparsed_input, list):
+            ai_result = {"extraction_source": "reviewed_reparse_preview", "extractions": []}
+        else:
+            # Identical forwarded text is extracted once per tenant. The copy
+            # still gets its own parsed_output/listings rows below — only the
+            # provider round-trip is skipped, never the provenance.
+            ai_result = cache_lookup(storage, _tenant_for_cache, msg_text)
+            if ai_result is not None:
+                _logger.info("raw_id=%d extraction cache hit", raw_id)
+            else:
+                ai_result = ai_extract(msg_text, ctx, storage=storage)
+                cache_store(
+                    storage,
+                    _tenant_for_cache,
+                    msg_text,
+                    ai_result,
+                    provider_used=ai_result.get("provider_used"),
+                )
         extraction_source = ai_result.get("extraction_source")
         raw_ai_items = ai_result.get("extractions") or ([ai_result["extraction"]] if ai_result.get("extraction") else [])
         ai_items = [item for item in raw_ai_items if isinstance(item, dict)]

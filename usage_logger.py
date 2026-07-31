@@ -80,6 +80,8 @@ def log_ai_usage(
         "source_id": source_id,
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
+    if provider_name:
+        row["provider_name"] = provider_name[:80]
     if tenant_id:
         row["tenant_id"] = tenant_id
 

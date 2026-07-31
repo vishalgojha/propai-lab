@@ -83,22 +83,35 @@ OBS_TYPES = [
 ]
 
 # ── Per-model LLM pricing (USD per million tokens) ─────────────────
-# Keys must match the model name returned by the provider (what appears in
-# the `model` field of OpenAI-compatible responses).  Unknown models fall
-# back to DEFAULT_MODEL_PRICING so logging never silently drops a row.
+# Keys may be either a provider name (what llm.py / ai_extraction.py pass
+# as `name`, e.g. "grid", "grid_1") or a model name.  Numbered provider
+# variants ("grid_1") match their base key via prefix lookup.  Unknown
+# models fall back to DEFAULT_MODEL_PRICING so logging never silently
+# drops a row.
 MODEL_PRICING: dict[str, dict[str, float]] = {
-    # NVIDIA NIM — Qwen 3.6
+    # NVIDIA NIM — llama-3.1-8b-instruct
     "nvidia-nim": {"input": 0.20, "output": 0.60},
+    "nvidia": {"input": 0.20, "output": 0.60},
     # Merge Gateway — Claude Haiku 4.5
     "merge": {"input": 1.00, "output": 5.00},
+    # Grid (code-max / text-max) — dynamic "as low as" pricing; blended proxy
+    "grid": {"input": 1.40, "output": 1.40},
+    # Groq — llama-3.1-8b-instant
+    "groq": {"input": 0.05, "output": 0.08},
+    # Cerebras — 8B family
+    "cerebras": {"input": 0.10, "output": 0.30},
+    # Google Gemini — flash-lite class
+    "gemini": {"input": 0.10, "output": 0.40},
 }
 DEFAULT_MODEL_PRICING: dict[str, float] = {"input": 0.20, "output": 0.60}
 
 
 def get_model_pricing(model_name: str = "", provider_name: str = "") -> dict[str, float]:
     """Return per-million-token pricing for a model/provider pair."""
-    if provider_name and provider_name in MODEL_PRICING:
-        return MODEL_PRICING[provider_name]
+    if provider_name:
+        for key, price in MODEL_PRICING.items():
+            if provider_name == key or provider_name.startswith(f"{key}_"):
+                return price
     if model_name and model_name in MODEL_PRICING:
         return MODEL_PRICING[model_name]
     return DEFAULT_MODEL_PRICING

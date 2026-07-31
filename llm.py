@@ -37,6 +37,20 @@ def _numbered_keys(prefix: str) -> list[tuple[str, str]]:
         values.append((f"{prefix.removesuffix('_API_KEY').lower()}_{number}", value))
     return values
 
+# The Grid — OpenAI-compatible, code-max model. Primary for extraction.
+_grid_model = os.getenv("GRID_MODEL", "").strip()
+_grid_base = os.getenv("GRID_BASE_URL", "https://api.thegrid.ai/v1").strip()
+if _grid_model:
+    for name, key in _numbered_keys("GRID_API_KEY"):
+        _PROVIDERS.append({
+            "name": name,
+            "api_key": key,
+            "base_url": _grid_base,
+            "model": _grid_model,
+        })
+elif os.getenv("GRID_API_KEY", "").strip():
+    _logger.warning("Skipping grid: set GRID_MODEL to enable this provider")
+
 # NVIDIA — up to 4 keys for round-robin, all use the same model
 _nvidia_model = os.getenv("NVIDIA_MODEL", "").strip()
 if _nvidia_model:
