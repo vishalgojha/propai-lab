@@ -1,5 +1,7 @@
 import type { NextConfig } from "next";
 
+const apiBaseUrl = (process.env.LAB_API_BASE_URL || "http://api:8000").replace(/\/$/, "");
+
 const nextConfig: NextConfig = {
   typescript: { ignoreBuildErrors: true },
   transpilePackages: [
@@ -20,7 +22,7 @@ const nextConfig: NextConfig = {
       },
       {
         source: "/api/:path*",
-        destination: "http://127.0.0.1:8443/api/:path*",
+        destination: `${apiBaseUrl}/api/:path*`,
       },
       {
         source: "/manifest",
