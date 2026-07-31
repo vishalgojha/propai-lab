@@ -2,6 +2,8 @@ import json
 import inspect
 from types import SimpleNamespace
 
+import pytest
+
 import ai_extraction
 import app
 import extraction
@@ -779,3 +781,44 @@ def test_ai_extraction_to_parsed_writes_redacted_normalized_message():
         "raw_payload.full_text must preserve broker digits for audit"
     )
     assert parsed["raw_payload"]["slice_text"] == raw
+
+
+def test_provider_outage_never_consumes_message(monkeypatch):
+    """When every provider is down, process_raw_message must raise and leave
+    the raw message unprocessed — a NO_ANCHOR stub would mark a real listing
+    as consumed and lose it forever."""
+    storage = _Storage()
+
+    monkeypatch.setattr(lab.config, "load_excluded_groups", lambda: set())
+    monkeypatch.setattr(ai_extraction, "ai_extract", lambda *_args, **_kwargs: {
+        "extraction_source": "ai_unavailable",
+        "needs_review": True,
+        "error": "All 3 providers failed after 6 attempts",
+    })
+    monkeypatch.setattr(app, "compute_embedding", lambda _parsed: None)
+    monkeypatch.setattr(app, "resolve_parsed", lambda *_args: {})
+    monkeypatch.setattr(app, "generate_summary_title", lambda *_args: "3 BHK in Bandra West")
+    monkeypatch.setattr(extraction, "get_bus", lambda: SimpleNamespace(publish=lambda *_args: None))
+
+    with pytest.raises(RuntimeError, match="extraction unavailable"):
+        extraction.process_raw_message(
+            55,
+            {
+                "sender_name": "Broker",
+                "push_name": "Broker",
+                "sender_jid": "919999999999@s.whatsapp.net",
+                "sender_phone": "919999999999",
+                "group": "group@g.us",
+                "group_name": "Bandra Brokers",
+                "msg_text": "2 BHK for rent in Bandra West at 75k",
+                "instance": "test",
+                "is_dm": False,
+                "message_uid": "test-55",
+                "message_id": "55",
+                "msg": {},
+            },
+            storage=storage,
+        )
+
+    assert storage.processed == [], "message must NOT be marked processed on provider outage"
+    assert storage.saved == [], "no NO_ANCHOR stub may be written on provider outage"
