@@ -1412,7 +1412,7 @@ class SupabaseStorage(Storage):
 
     RAW_MESSAGE_COLUMNS = {
         "group_name", "sender", "sender_jid", "sender_phone",
-        "message", "message_type", "attachments", "reply_context",
+        "message", "message_hash", "message_type", "attachments", "reply_context",
         "timestamp", "source", "raw_payload", "message_uid",
         "is_group", "processed", "processed_at", "tenant_id",
         "created_at",
@@ -1450,7 +1450,7 @@ class SupabaseStorage(Storage):
                           source: str = "") -> list[RawMessage]:
         # Select only columns needed for RawMessage dataclass to avoid full row fetch
         cols = (
-            "id, group_name, sender, sender_jid, sender_phone, message, message_type, "
+            "id, group_name, sender, sender_jid, sender_phone, message, message_hash, message_type, "
             "attachments, reply_context, timestamp, source, raw_payload, message_uid, "
             "is_group, pipeline_version, synced_at, event_id, processed, processed_at, tenant_id, created_at"
         )
@@ -1475,6 +1475,45 @@ class SupabaseStorage(Storage):
         if res.data:
             return dict_to_dataclass(RawMessage, res.data[0])
         return None
+
+    def get_raw_message_by_hash(
+        self,
+        message_hash: str,
+        *,
+        tenant_id: str | None = None,
+        processed: bool | None = None,
+        exclude_raw_id: int | None = None,
+        with_parsed: bool = False,
+    ) -> dict | None:
+        digest = (message_hash or "").strip()
+        if not digest:
+            return None
+        query = self.client.table("raw_messages").select("*").eq("message_hash", digest).order("id", desc=False).limit(20)
+        tid = tenant_id or self._tenant_id
+        if tid:
+            query = query.eq("tenant_id", tid)
+        if processed is not None:
+            query = query.eq("processed", bool(processed))
+        if exclude_raw_id is not None:
+            query = query.neq("id", int(exclude_raw_id))
+        res = query.execute()
+        rows = res.data or []
+        if not rows:
+            return None
+        if with_parsed:
+            for row in rows:
+                parsed = self.get_parsed_by_raw(int(row.get("id") or 0))
+                if parsed:
+                    return {"raw": row, "parsed": [dict(item.__dict__) for item in parsed]}
+            return None
+        return rows[0]
+
+    def set_raw_message_hash(self, raw_id: int, message_hash: str) -> None:
+        if not raw_id or not message_hash:
+            return
+        self.client.table("raw_messages").update({
+            "message_hash": message_hash,
+        }).eq("id", raw_id).execute()
 
     def get_raw_by_uid(self, message_uid: str) -> Optional[RawMessage]:
         res = self.client.table("raw_messages").select("*").eq("message_uid", message_uid).limit(1).execute()
@@ -1506,6 +1545,69 @@ class SupabaseStorage(Storage):
         res = self.client.table("raw_messages").select("id", count="exact")\
             .eq("processed", False).execute()
         return res.count if hasattr(res, "count") else 0
+
+    # ── Sender splitter cache ─────────────────────────────────────
+
+    def get_sender_splitter_cache(
+        self,
+        sender_key: str,
+        *,
+        tenant_id: str | None = None,
+    ) -> dict | None:
+        sender_key = (sender_key or "").strip()
+        if not sender_key:
+            return None
+        query = self.client.table("raw_message_splitter_cache").select("*").eq("sender_key", sender_key).limit(1)
+        tid = tenant_id or self._tenant_id
+        if tid:
+            query = query.eq("tenant_id", tid)
+        res = query.execute()
+        return res.data[0] if res.data else None
+
+    def upsert_sender_splitter_cache(
+        self,
+        *,
+        sender_key: str,
+        pattern_id: str,
+        tenant_id: str | None = None,
+        sender_phone: str | None = None,
+        sender_jid: str | None = None,
+        message_hash: str | None = None,
+        revalidated: bool = False,
+    ) -> dict | None:
+        sender_key = (sender_key or "").strip()
+        pattern_id = (pattern_id or "").strip()
+        if not sender_key or not pattern_id:
+            return None
+        payload = {
+            "tenant_id": tenant_id or self._tenant_id,
+            "sender_key": sender_key,
+            "sender_phone": sender_phone or None,
+            "sender_jid": sender_jid or None,
+            "pattern_id": pattern_id,
+            "last_message_hash": message_hash or None,
+            "last_validated_at": datetime.now(timezone.utc).isoformat(),
+            "last_seen_at": datetime.now(timezone.utc).isoformat(),
+        }
+        try:
+            existing = self.get_sender_splitter_cache(sender_key, tenant_id=payload["tenant_id"])
+            if existing and existing.get("id"):
+                updates = {
+                    "pattern_id": pattern_id,
+                    "last_message_hash": payload["last_message_hash"],
+                    "last_validated_at": payload["last_validated_at"] if revalidated or not existing.get("last_validated_at") else existing.get("last_validated_at"),
+                    "last_seen_at": payload["last_seen_at"],
+                    "message_count": int(existing.get("message_count") or 0) + 1,
+                    "validated_count": int(existing.get("validated_count") or 0) + (1 if revalidated else 0),
+                }
+                res = self.client.table("raw_message_splitter_cache").update(updates).eq("id", existing["id"]).execute()
+                return res.data[0] if res.data else existing
+            payload["message_count"] = 1
+            payload["validated_count"] = 1 if revalidated else 0
+            res = self.client.table("raw_message_splitter_cache").insert(payload).execute()
+            return res.data[0] if res.data else None
+        except Exception:
+            return None
 
     @staticmethod
     def _payload_dict(value) -> dict:
