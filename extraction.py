@@ -860,6 +860,7 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
     # rank, rewrite, or retry deterministic fragments before extraction.
     # The model owns semantic boundaries and returns one item per opportunity.
     # Every item retains the complete original message as its source evidence.
+    ai_result: dict | None = None
     try:
         from ai_extraction import ai_extract
         from extraction_dedup import cache_lookup, cache_store
@@ -897,6 +898,16 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
             _logger.info("raw_id=%d AI extraction: %d structured item(s) via %s", raw_id, len(ai_items), ai_result.get("provider_used"))
     except Exception as exc:
         _logger.warning("raw_id=%d ai_extract error: %s", raw_id, exc)
+
+    # Provider failure is never a "no anchor". When every provider is down
+    # (or the AI call itself raised), the message must stay unprocessed so a
+    # later cycle retries it. Treating it as a non-listing here would mark a
+    # real listing as consumed with a NO_ANCHOR stub and lose it forever.
+    if ai_result is None or ai_result.get("extraction_source") == "ai_unavailable":
+        raise RuntimeError(
+            f"raw_id={raw_id} extraction unavailable — "
+            f"{ai_result.get('error') if ai_result else 'no provider response'}"
+        )
 
     # No regex fallback — AI is the only extraction path. If AI fails, the
     # message gets a NO_ANCHOR stub below so it still surfaces in the inbox.

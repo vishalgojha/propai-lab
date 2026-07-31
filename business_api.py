@@ -312,21 +312,29 @@ async def save_listing_webhook(
         # pipeline creates parsed_output, broker evidence and one listing per
         # option; it deliberately does not copy "location" into micro_market.
         from extraction import process_raw_message
-        result = await asyncio.to_thread(process_raw_message, raw_id, {
-            "sender_name": broker.get("canonical_name") or body.name or broker_phone,
-            "push_name": broker.get("canonical_name") or body.name or broker_phone,
-            "sender_jid": f"{broker_phone}@s.whatsapp.net",
-            "sender_phone": broker_phone,
-            "group": f"waba-agent:{broker_phone}",
-            "group_name": f"WABA agent · {broker.get('canonical_name') or broker_phone}",
-            "msg_text": body.raw_text.strip(),
-            "instance": "waba-agent",
-            "is_dm": True,
-            "message_uid": message_uid,
-            "message_id": body.source_message_id or message_uid,
-            "msg": {},
-            "tenant_id": tenant_id,
-        }) or {}
+        try:
+            result = await asyncio.to_thread(process_raw_message, raw_id, {
+                "sender_name": broker.get("canonical_name") or body.name or broker_phone,
+                "push_name": broker.get("canonical_name") or body.name or broker_phone,
+                "sender_jid": f"{broker_phone}@s.whatsapp.net",
+                "sender_phone": broker_phone,
+                "group": f"waba-agent:{broker_phone}",
+                "group_name": f"WABA agent · {broker.get('canonical_name') or broker_phone}",
+                "msg_text": body.raw_text.strip(),
+                "instance": "waba-agent",
+                "is_dm": True,
+                "message_uid": message_uid,
+                "message_id": body.source_message_id or message_uid,
+                "msg": {},
+                "tenant_id": tenant_id,
+            }) or {}
+        except Exception as exc:
+            print(f"[business-api] extraction unavailable for listing raw_id={raw_id}: {exc}", flush=True)
+            raise HTTPException(503, {
+                "saved": False,
+                "message": "Extraction is temporarily unavailable. The broker can retry.",
+                "raw_id": raw_id,
+            })
     listing_ids = result.get("listing_ids") or []
     if not listing_ids:
         raise HTTPException(422, {
@@ -392,21 +400,29 @@ async def create_requirement_webhook(
         parsed_ids = [parsed.id for parsed in storage.get_parsed_by_message(raw_id)]
     else:
         from extraction import process_raw_message
-        result = await asyncio.to_thread(process_raw_message, raw_id, {
-            "sender_name": broker.get("canonical_name") or broker_phone,
-            "push_name": broker.get("canonical_name") or broker_phone,
-            "sender_jid": f"{broker_phone}@s.whatsapp.net",
-            "sender_phone": broker_phone,
-            "group": f"waba-agent:{broker_phone}",
-            "group_name": f"WABA agent · {broker.get('canonical_name') or broker_phone}",
-            "msg_text": body.raw_text.strip(),
-            "instance": "waba-agent",
-            "is_dm": True,
-            "message_uid": message_uid,
-            "message_id": source_message_id or message_uid,
-            "msg": {},
-            "tenant_id": tenant_id,
-        }) or {}
+        try:
+            result = await asyncio.to_thread(process_raw_message, raw_id, {
+                "sender_name": broker.get("canonical_name") or body.name or broker_phone,
+                "push_name": broker.get("canonical_name") or body.name or broker_phone,
+                "sender_jid": f"{broker_phone}@s.whatsapp.net",
+                "sender_phone": broker_phone,
+                "group": f"waba-agent:{broker_phone}",
+                "group_name": f"WABA agent · {broker.get('canonical_name') or broker_phone}",
+                "msg_text": body.raw_text.strip(),
+                "instance": "waba-agent",
+                "is_dm": True,
+                "message_uid": message_uid,
+                "message_id": source_message_id or message_uid,
+                "msg": {},
+                "tenant_id": tenant_id,
+            }) or {}
+        except Exception as exc:
+            print(f"[business-api] extraction unavailable for requirement raw_id={raw_id}: {exc}", flush=True)
+            raise HTTPException(503, {
+                "saved": False,
+                "message": "Extraction is temporarily unavailable. The broker can retry.",
+                "raw_id": raw_id,
+            })
         parsed_ids = result.get("parsed_ids") or []
     if not parsed_ids:
         raise HTTPException(422, {
