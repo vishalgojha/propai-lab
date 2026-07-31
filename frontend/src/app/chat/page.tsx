@@ -11,7 +11,7 @@ import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
 import ListingCard, { type ListingItem } from "@/components/ListingCard";
 import { useAuth } from "@/lib/AuthProvider";
-import { Check, Pencil, Plus, MessageSquare, Trash2, PanelLeft, PanelLeftClose, EyeOff, X } from "lucide-react";
+import { Check, Pencil, Plus, MessageSquare, Trash2, PanelLeft, PanelLeftClose, EyeOff, Phone, Users, X } from "lucide-react";
 
 function messageText(message: { parts?: Array<{ type?: string; text?: string }>; content?: string }) {
   if (typeof message.content === "string" && message.content) return message.content;
@@ -20,12 +20,14 @@ function messageText(message: { parts?: Array<{ type?: string; text?: string }>;
     .join("");
 }
 
+const CHAT_CARD_BLOCK_TYPES = new Set(["listing_cards", "buyer_cards", "broker_cards", "matching_buyers"]);
+
 function toUIMessage(m: { id: string; role: "user" | "assistant"; content: string; blocks?: Array<{ type: string; title?: string; items?: unknown[] }> }) {
   const parts: Array<{ type: string; text?: string; data?: unknown }> = [{ type: "text" as const, text: m.content }];
   if (m.blocks) {
     for (const block of m.blocks) {
-      if (block.type === "listing_cards") {
-        parts.push({ type: "data-listing_cards" as const, data: { items: block.items ?? [], title: block.title ?? "Active listings" } });
+      if (block && CHAT_CARD_BLOCK_TYPES.has(block.type)) {
+        parts.push({ type: `data-${block.type}` as const, data: block });
       }
     }
   }
@@ -162,10 +164,134 @@ type GroupMirrorItem = ListingItem & {
   match_reasons?: string[];
 };
 
+type BrokerCardItem = {
+  name?: string;
+  phone?: string;
+  observations?: number | string;
+  listings?: number | string;
+  requirements?: number | string;
+  groups?: number | string;
+  last_seen?: string;
+};
+
 function getAssistantSourceMode(message: { parts?: Array<{ type?: string; data?: any }> }) {
   const contextPart = (message.parts || []).find((part) => part?.type === "data-chat_context");
   const sourceMode = contextPart?.data?.source_mode;
   return sourceMode === "groups" || sourceMode === "parsed" || sourceMode === "inbox" ? sourceMode : "";
+}
+
+function BrokerSummaryCard({ item }: { item: BrokerCardItem }) {
+  const meta = [
+    item.observations != null ? `${item.observations} posts` : "",
+    item.listings != null ? `${item.listings} listings` : "",
+    item.requirements != null ? `${item.requirements} requirements` : "",
+    item.groups != null ? `${item.groups} groups` : "",
+  ].filter(Boolean);
+
+  return (
+    <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 shadow-sm">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 text-sm font-semibold text-white">
+            <Users className="h-4 w-4 text-[#3EE88A]" strokeWidth={1.8} />
+            <span className="truncate">{item.name || "Broker"}</span>
+          </div>
+          {item.phone && <div className="mt-1 text-xs text-zinc-500">{item.phone}</div>}
+        </div>
+        {item.last_seen && <div className="text-[11px] text-zinc-500">{item.last_seen}</div>}
+      </div>
+
+      {meta.length > 0 && (
+        <div className="mt-3 flex flex-wrap gap-1.5">
+          {meta.map((label) => (
+            <span
+              key={label}
+              className="rounded-full border border-white/10 bg-black/20 px-2.5 py-1 text-[10px] font-medium text-zinc-300"
+            >
+              {label}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {item.phone && (
+        <div className="mt-3 inline-flex items-center gap-1.5 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-1 text-[10px] font-semibold text-emerald-200">
+          <Phone className="h-3 w-3" strokeWidth={1.8} />
+          Call broker
+        </div>
+      )}
+    </div>
+  );
+}
+
+function renderWorkspaceCardBlock({
+  part,
+  keyName,
+  assistantMode,
+  hiddenBrokerPhones,
+  hideBrokerLocally,
+  handleContactBroker,
+  contactingListingId,
+}: {
+  part: { type?: string; data?: any };
+  keyName: string;
+  assistantMode: ChatSourceMode;
+  hiddenBrokerPhones: Set<string>;
+  hideBrokerLocally: (phone: string, label: string) => void;
+  handleContactBroker: (listingId: number) => void;
+  contactingListingId: number | null;
+}) {
+  const blockType = part.type?.replace(/^data-/, "") || "";
+  const block = part.data || {};
+  const items = Array.isArray(block.items) ? block.items : [];
+
+  if (!CHAT_CARD_BLOCK_TYPES.has(blockType)) return null;
+
+  if (blockType === "broker_cards") {
+    const visibleItems = (items as BrokerCardItem[]).filter((item) => {
+      const key = normalizePhoneKey(item.phone || "");
+      return !key || !hiddenBrokerPhones.has(key);
+    });
+    if (visibleItems.length === 0) return null;
+    return (
+      <div key={keyName} className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+        {visibleItems.map((item, index) => (
+          <BrokerSummaryCard key={`${item.phone || item.name || index}`} item={item} />
+        ))}
+      </div>
+    );
+  }
+
+  const visibleItems = (items as GroupMirrorItem[]).filter((item) => {
+    const key = normalizePhoneKey(item.broker_phone || item.sender_phone || "");
+    return !key || !hiddenBrokerPhones.has(key);
+  });
+  if (visibleItems.length === 0) return null;
+  const gridClass = assistantMode === "parsed"
+    ? "grid gap-3 md:grid-cols-2 xl:grid-cols-2"
+    : "flex flex-col gap-2.5";
+
+  return (
+    <div key={keyName} className={gridClass}>
+      {visibleItems.map((item, index) => (
+        assistantMode === "groups" ? (
+          <GroupMirrorCard
+            key={item.fingerprint || index}
+            item={item}
+            onHideBroker={hideBrokerLocally}
+          />
+        ) : (
+          <div key={item.fingerprint || index} className="h-full">
+            <ListingCard
+              item={item}
+              onContactBroker={handleContactBroker}
+              contacting={contactingListingId === item.listing_id}
+            />
+          </div>
+        )
+      ))}
+    </div>
+  );
 }
 
 function GroupMirrorCard({
@@ -870,13 +996,13 @@ export default function ChatPage() {
                         const textParts = (m.parts || []).filter(
                           (p: any) => p.type === "text" && p.text
                         ) as Array<{ text: string }>;
-                        const listingParts = (m.parts || []).filter(
-                          (p: any) => p.type === "data-listing_cards"
+                        const cardParts = (m.parts || []).filter(
+                          (p: any) => typeof p.type === "string" && p.type.startsWith("data-") && CHAT_CARD_BLOCK_TYPES.has(p.type.slice(5))
                         );
                         return (
                           <>
                             {(() => {
-                              const hasCards = listingParts.length > 0;
+                              const hasCards = cardParts.length > 0;
                               if (hasCards && textParts.length > 0) {
                                 // Render AI summary line with bold counts
                                 const summaryText = textParts[0].text || "";
@@ -890,7 +1016,7 @@ export default function ChatPage() {
                                 <MarkdownMessage key={i} text={p.text} />
                               ));
                             })()}
-                            {listingParts.length > 0 && (
+                            {cardParts.length > 0 && (
                               <div className="flex items-center gap-2">
                                 <span
                                   className={`inline-flex items-center rounded-full border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] ${
@@ -903,40 +1029,15 @@ export default function ChatPage() {
                                 </span>
                               </div>
                             )}
-                            {listingParts.map((p: any, i: number) => {
-                              const items: GroupMirrorItem[] = p.data?.items || [];
-                              const visibleItems = items.filter((item) => {
-                                const key = normalizePhoneKey(item.broker_phone || item.sender_phone || "");
-                                return !key || !hiddenBrokerPhones.has(key);
-                              });
-                              if (visibleItems.length === 0) return null;
-                              const gridClass = assistantMode === "parsed"
-                                ? "grid gap-3 md:grid-cols-2 xl:grid-cols-2"
-                                : "flex flex-col gap-2.5";
-                              return (
-                                <div key={`cards-${i}`} className={gridClass}>
-                                  {visibleItems.map((item, j) => (
-                                    assistantMode === "groups"
-                                      ? (
-                                        <GroupMirrorCard
-                                          key={item.fingerprint || j}
-                                          item={item}
-                                          onHideBroker={hideBrokerLocally}
-                                        />
-                                      )
-                                      : (
-                                        <div key={item.fingerprint || j} className="h-full">
-                                          <ListingCard
-                                            item={item}
-                                            onContactBroker={handleContactBroker}
-                                            contacting={contactingListingId === item.listing_id}
-                                          />
-                                        </div>
-                                      )
-                                  ))}
-                                </div>
-                              );
-                            })}
+                            {cardParts.map((p: any, i: number) => renderWorkspaceCardBlock({
+                              part: p,
+                              keyName: `cards-${i}`,
+                              assistantMode,
+                              hiddenBrokerPhones,
+                              hideBrokerLocally,
+                              handleContactBroker,
+                              contactingListingId,
+                            }))}
 
                           </>
                         );
