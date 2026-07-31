@@ -72,14 +72,11 @@ def _to_sse_chunks(response: dict) -> str:
     # Emit each block as appropriate
     for block in blocks:
         block_type = block.get("type", "")
-        if block_type == "listing_cards":
+        if block_type in {"listing_cards", "buyer_cards", "broker_cards", "matching_buyers"}:
             yield _sse_event({
-                "type": "data-listing_cards",
+                "type": f"data-{block_type}",
                 "id": f"cards-{msg_id}",
-                "data": {
-                    "items": block.get("items") or [],
-                    "title": block.get("title", "Active listings"),
-                },
+                "data": block,
             })
         elif block_type in ("summary", "empty_state", "error_state", "greeting"):
             body = block.get("body") or ""

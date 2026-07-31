@@ -58,7 +58,7 @@ export default function ListingCard({
   contacting?: boolean;
 }) {
   const intent = (item.intent || "").toUpperCase();
-  const isWanted = intent === "REQUIREMENT";
+  const isWanted = intent === "REQUIREMENT" || intent === "BUY" || intent === "BUYER" || intent === "RENTAL_SEEKER";
   const isSale = intent === "SELL" || intent === "SALE";
   const isRent = intent === "RENT";
 
