@@ -18,6 +18,7 @@ Import pattern:
 import json
 import logging
 import os
+import hashlib
 import re
 import sys
 import time
@@ -34,6 +35,7 @@ from storage import SupabaseStorage
 from lab.embedding import create_engine, observation_text, pack_embedding
 from lab.events import get_bus
 from agents.building_alias_engine import fuzzy_score, normalize_building_name
+from deterministic_splitters import parse_message as parse_template_message
 
 
 def get_storage():
@@ -182,6 +184,109 @@ def _normalize_building_to_canonical(name: str) -> str | None:
 
     # 3. No good match — return original unchanged
     return name
+
+
+def _message_hash(text: str) -> str:
+    return hashlib.md5((text or "").encode("utf-8")).hexdigest()
+
+
+def _sender_template_key(sender_phone: str = "", sender_jid: str = "") -> str:
+    phone = re.sub(r"\D+", "", sender_phone or "")
+    if phone:
+        if len(phone) >= 12 and phone.startswith("91"):
+            phone = phone[-10:]
+        if len(phone) >= 10:
+            return f"phone:{phone[-10:]}"
+    jid = (sender_jid or "").strip()
+    if jid:
+        return f"jid:{jid}"
+    return ""
+
+
+def _clone_parsed_rows(storage, source_raw_id: int, target_raw_id: int) -> tuple[list[int], list[int]]:
+    """Copy parsed_output rows for a duplicate raw message to the new raw_id."""
+    try:
+        res = (
+            storage.client.table("parsed_output")
+            .select("*")
+            .eq("raw_message_id", source_raw_id)
+            .order("listing_index")
+            .execute()
+        )
+    except Exception:
+        return [], []
+    rows = res.data or []
+    if not rows:
+        return [], []
+
+    parsed_ids: list[int] = []
+    listing_ids: list[int] = []
+    for row in rows:
+        payload = dict(row)
+        payload.pop("id", None)
+        payload.pop("created_at", None)
+        payload.pop("updated_at", None)
+        payload["raw_message_id"] = target_raw_id
+        try:
+            res_insert = storage.client.table("parsed_output").insert(payload).execute()
+            new_id = res_insert.data[0]["id"] if res_insert.data else 0
+            if new_id:
+                parsed_ids.append(new_id)
+                try:
+                    listing_id = storage.upsert_listing_from_parsed(new_id)
+                    if listing_id:
+                        listing_ids.append(listing_id)
+                except Exception as exc:
+                    print(f"  [extract] duplicate listing upsert error for {target_raw_id}: {exc}", flush=True)
+        except Exception as exc:
+            print(f"  [extract] duplicate parsed_output clone error for {target_raw_id}: {exc}", flush=True)
+    return parsed_ids, listing_ids
+
+
+def _run_template_splitter(
+    storage,
+    msg_text: str,
+    *,
+    tenant_id: str | None,
+    sender_phone: str = "",
+    sender_jid: str = "",
+) -> tuple[str | None, list[dict]]:
+    """Try the per-sender cached splitter first, then the full pattern set."""
+    sender_key = _sender_template_key(sender_phone, sender_jid)
+    cache_row = None
+    if sender_key:
+        try:
+            cache_row = storage.get_sender_splitter_cache(sender_key, tenant_id=tenant_id)
+        except Exception:
+            cache_row = None
+
+    # Fast path: cached pattern, revalidated only every 50th hit.
+    if cache_row and cache_row.get("pattern_id"):
+        try:
+            message_count = int(cache_row.get("message_count") or 0)
+        except (TypeError, ValueError):
+            message_count = 0
+        should_revalidate = (message_count + 1) % 50 == 0
+        if not should_revalidate:
+            selected_pattern, parsed = parse_template_message(msg_text, preferred_pattern=str(cache_row.get("pattern_id") or ""))
+            if selected_pattern == cache_row.get("pattern_id") and parsed:
+                return selected_pattern, parsed
+
+    selected_pattern, parsed = parse_template_message(msg_text)
+    if selected_pattern and parsed and sender_key:
+        try:
+            storage.upsert_sender_splitter_cache(
+                sender_key=sender_key,
+                pattern_id=selected_pattern,
+                tenant_id=tenant_id,
+                sender_phone=sender_phone,
+                sender_jid=sender_jid,
+                message_hash=_message_hash(msg_text),
+                revalidated=bool(cache_row and cache_row.get("pattern_id") == selected_pattern),
+            )
+        except Exception:
+            pass
+    return selected_pattern, parsed
 
 
 def _sanitize_parsed_listing(parsed: dict) -> dict:
@@ -841,7 +946,7 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
         except Exception as exc:
             print(f"  [extract] create_knowledge_record error for {raw_id}: {exc}", flush=True)
 
-    # ── Parse (AI only, untouched source) ───────────────────────
+    # ── Parse (dedup first, deterministic splitter second, AI last) ───
     preparsed_input = ctx.get("preparsed_listings")
     parsed_listings: list[dict] = (
         [
@@ -852,27 +957,73 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
         if isinstance(preparsed_input, list)
         else []
     )
-    # Kept index-aligned with parsed_listings.
     ai_extractions_raw: list[dict | None] = []
     extraction_source: str | None = None
-
-    # AI receives the original message exactly once. Do not classify, split,
-    # rank, rewrite, or retry deterministic fragments before extraction.
-    # The model owns semantic boundaries and returns one item per opportunity.
-    # Every item retains the complete original message as its source evidence.
     ai_result: dict | None = None
-    try:
-        from ai_extraction import ai_extract
-        from extraction_dedup import cache_lookup, cache_store
+    message_hash = (ctx.get("message_hash") or "").strip() or _message_hash(msg_text)
+    if message_hash:
+        try:
+            storage.set_raw_message_hash(raw_id, message_hash)
+        except Exception:
+            pass
 
-        _tenant_for_cache = ctx.get("tenant_id") or getattr(storage, "_tenant_id", "") or ""
+    if isinstance(preparsed_input, list):
+        extraction_source = "reviewed_reparse_preview"
+        ai_result = {"extraction_source": extraction_source, "extractions": []}
+    elif not parsed_listings:
+        duplicate_source = None
+        if message_hash:
+            try:
+                duplicate_source = storage.get_raw_message_by_hash(
+                    message_hash,
+                    tenant_id=org_id,
+                    processed=True,
+                    exclude_raw_id=raw_id,
+                    with_parsed=True,
+                )
+            except Exception:
+                duplicate_source = None
+        if duplicate_source and duplicate_source.get("raw") and duplicate_source.get("parsed"):
+            parsed_ids, listing_ids = _clone_parsed_rows(storage, int(duplicate_source["raw"]["id"]), raw_id)
+            if parsed_ids:
+                try:
+                    storage.mark_raw_processed(raw_id)
+                except Exception:
+                    pass
+                return {
+                    "raw_id": raw_id,
+                    "parsed_ids": parsed_ids,
+                    "listing_ids": listing_ids,
+                    "extraction_source": "hash_duplicate",
+                }
 
-        if isinstance(preparsed_input, list):
-            ai_result = {"extraction_source": "reviewed_reparse_preview", "extractions": []}
-        else:
-            # Identical forwarded text is extracted once per tenant. The copy
-            # still gets its own parsed_output/listings rows below — only the
-            # provider round-trip is skipped, never the provenance.
+        selected_pattern, parsed_chunks = _run_template_splitter(
+            storage,
+            msg_text,
+            tenant_id=org_id,
+            sender_phone=sender_phone or "",
+            sender_jid=sender_jid or "",
+        )
+        if selected_pattern and parsed_chunks:
+            parsed_listings = [
+                _sanitize_parsed_listing(dict(item))
+                for item in parsed_chunks
+                if isinstance(item, dict)
+            ]
+            ai_extractions_raw = [None] * len(parsed_listings)
+            extraction_source = f"deterministic:{selected_pattern}"
+            ai_result = {"extraction_source": extraction_source, "extractions": []}
+
+    if not parsed_listings:
+        # AI receives the original message exactly once. Do not classify, split,
+        # rank, rewrite, or retry deterministic fragments before extraction.
+        # The model owns semantic boundaries and returns one item per opportunity.
+        # Every item retains the complete original message as its source evidence.
+        try:
+            from ai_extraction import ai_extract
+            from extraction_dedup import cache_lookup, cache_store
+
+            _tenant_for_cache = ctx.get("tenant_id") or getattr(storage, "_tenant_id", "") or ""
             ai_result = cache_lookup(storage, _tenant_for_cache, msg_text)
             if ai_result is not None:
                 _logger.info("raw_id=%d extraction cache hit", raw_id)
@@ -885,45 +1036,29 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
                     ai_result,
                     provider_used=ai_result.get("provider_used"),
                 )
-        extraction_source = ai_result.get("extraction_source")
-        raw_ai_items = ai_result.get("extractions") or ([ai_result["extraction"]] if ai_result.get("extraction") else [])
-        ai_items = [item for item in raw_ai_items if isinstance(item, dict)]
-        if extraction_source == "ai" and ai_items:
-            slice_texts = _slice_blocks_for_ai_items(msg_text, ai_items)
-            parsed_listings = [
-                _ai_extraction_to_parsed(item, msg_text, sender_name, push_name, slice_text=sl)
-                for item, sl in zip(ai_items, slice_texts)
-            ]
-            ai_extractions_raw = ai_items
-            _logger.info("raw_id=%d AI extraction: %d structured item(s) via %s", raw_id, len(ai_items), ai_result.get("provider_used"))
-    except Exception as exc:
-        _logger.warning("raw_id=%d ai_extract error: %s", raw_id, exc)
+            extraction_source = ai_result.get("extraction_source")
+            raw_ai_items = ai_result.get("extractions") or ([ai_result["extraction"]] if ai_result.get("extraction") else [])
+            ai_items = [item for item in raw_ai_items if isinstance(item, dict)]
+            if extraction_source == "ai" and ai_items:
+                slice_texts = _slice_blocks_for_ai_items(msg_text, ai_items)
+                parsed_listings = [
+                    _ai_extraction_to_parsed(item, msg_text, sender_name, push_name, slice_text=sl)
+                    for item, sl in zip(ai_items, slice_texts)
+                ]
+                ai_extractions_raw = ai_items
+                _logger.info("raw_id=%d AI extraction: %d structured item(s) via %s", raw_id, len(ai_items), ai_result.get("provider_used"))
+        except Exception as exc:
+            _logger.warning("raw_id=%d ai_extract error: %s", raw_id, exc)
 
-    # Provider failure is never a "no anchor". When every provider is down
-    # (or the AI call itself raised), the message must stay unprocessed so a
-    # later cycle retries it. Treating it as a non-listing here would mark a
-    # real listing as consumed with a NO_ANCHOR stub and lose it forever.
-    if ai_result is None or ai_result.get("extraction_source") == "ai_unavailable":
-        raise RuntimeError(
-            f"raw_id={raw_id} extraction unavailable — "
-            f"{ai_result.get('error') if ai_result else 'no provider response'}"
-        )
-
-    # No regex fallback — AI is the only extraction path. If AI fails, the
-    # message gets a NO_ANCHOR stub below so it still surfaces in the inbox.
-
-    # Historical reparses are previewed before any derived rows are changed.
-    # Applying a reviewed preview must use those exact item boundaries instead
-    # of trusting a second, potentially different, AI response.
-    preparsed_listings = ctx.get("preparsed_listings")
-    if isinstance(preparsed_listings, list):
-        parsed_listings = [
-            _sanitize_parsed_listing(dict(item))
-            for item in preparsed_listings
-            if isinstance(item, dict)
-        ]
-        ai_extractions_raw = [None] * len(parsed_listings)
-        extraction_source = "reviewed_reparse_preview"
+        # Provider failure is never a "no anchor". When every provider is down
+        # (or the AI call itself raised), the message must stay unprocessed so a
+        # later cycle retries it. Treating it as a non-listing here would mark a
+        # real listing as consumed with a NO_ANCHOR stub and lose it forever.
+        if ai_result is None or ai_result.get("extraction_source") == "ai_unavailable":
+            raise RuntimeError(
+                f"raw_id={raw_id} extraction unavailable — "
+                f"{ai_result.get('error') if ai_result else 'no provider response'}"
+            )
 
     if not parsed_listings:
         try:
@@ -971,7 +1106,7 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
             storage.mark_raw_processed(raw_id)
         except Exception:
             pass
-        return {"raw_id": raw_id, "parsed_ids": [], "listing_ids": []}
+        return {"raw_id": raw_id, "parsed_ids": [], "listing_ids": [], "extraction_source": "excluded_group"}
 
     # ── Listing validation (price / locality / general) ────────────
     # Runs AFTER AI extraction + _ai_extraction_to_parsed() and BEFORE
@@ -1297,9 +1432,14 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
             "all parsed_output inserts failed",
             flush=True,
         )
-        return {"raw_id": raw_id, "parsed_ids": [], "listing_ids": []}
+        return {"raw_id": raw_id, "parsed_ids": [], "listing_ids": [], "extraction_source": extraction_source or "no_anchor"}
     try:
         storage.mark_raw_processed(raw_id)
     except Exception as exc:
         print(f"  [extract] mark_raw_processed error: {exc}", flush=True)
-    return {"raw_id": raw_id, "parsed_ids": parsed_ids, "listing_ids": listing_ids}
+    return {
+        "raw_id": raw_id,
+        "parsed_ids": parsed_ids,
+        "listing_ids": listing_ids,
+        "extraction_source": extraction_source or "ai",
+    }

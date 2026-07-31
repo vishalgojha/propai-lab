@@ -100,6 +100,7 @@ def context_from_raw(row) -> dict:
         "push_name": data.get("pushName") or sender_name,
         "sender_jid": sender_jid,
         "sender_phone": sender_phone,
+        "message_hash": row_value(row, "message_hash") or "",
         "group": group,
         "group_name": row_value(row, "group_name") or "",
         "instance": data.get("instance") or raw_payload.get("instance") or "",

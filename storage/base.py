@@ -16,6 +16,7 @@ class RawMessage:
     sender_jid: Optional[str] = None
     sender_phone: Optional[str] = None
     message: str = ""
+    message_hash: Optional[str] = None
     message_type: str = "text"
     attachments: str = "[]"
     reply_context: str = "{}"

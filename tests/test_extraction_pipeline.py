@@ -1,8 +1,12 @@
 import json
 import inspect
+import os
+import sys
 from types import SimpleNamespace
 
 import pytest
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import ai_extraction
 import app
@@ -134,6 +138,9 @@ class _Storage:
     def mark_raw_processed(self, raw_id):
         self.processed.append(raw_id)
 
+    def resolve_broker(self, *args, **kwargs):
+        return None
+
 
 def test_single_message_worker_uses_property_parser(monkeypatch):
     storage = _Storage()
@@ -234,8 +241,8 @@ def test_multi_listing_post_uses_one_ai_result_per_option(monkeypatch):
     ]
 
 
-def test_numbered_rental_inventory_keeps_ai_boundaries_and_full_evidence(monkeypatch):
-    """Regression for raw 579267: floor labels cannot hijack six numbered items."""
+def test_numbered_rental_inventory_is_handled_deterministically(monkeypatch):
+    """Regression for raw 579267: numbered templates should bypass AI and keep six items."""
     message = """Available for Rent
 1. Bandra West, 3 BHK, Rent 2 L
 2. Vijaydeep, Khar West, 3 BHK, Rent 2.25 L
@@ -243,46 +250,11 @@ def test_numbered_rental_inventory_keeps_ai_boundaries_and_full_evidence(monkeyp
 4. Juhu Tara Road, 5 BHK, Rent 15 L, Deposit 1 Cr
 5. Trinity Khar, 5 BHK, 14th Floor 12.5 L, 8th Floor 12 L
 6. Simran Plaza, office, Rent 1.35 L"""
-    specs = [
-        ("Bandra West", None, 3, 200000),
-        ("Khar West", "Vijaydeep", 3, 225000),
-        ("Santacruz West", "Ekam", 3, 250000),
-        ("Juhu", None, 5, 1500000),
-        ("Khar West", "Trinity Khar", 5, 1250000),
-        (None, "Simran Plaza", None, 135000),
-    ]
-    ai_items = [
-        {
-            "listing_type": "rent",
-            "property_category": "commercial" if index == 5 else "residential",
-            "bhk": bhk,
-            "price": {
-                "amount": amount,
-                "unit": "total",
-                "period": "per_month",
-                "raw_price_text": f"{amount}",
-            },
-            "locality": {
-                "raw_mention": locality,
-                "resolved_locality": locality,
-                "confidence": "high",
-            },
-            "building_name": building,
-            "title": f"Option {index + 1}",
-            "extraction_confidence": "high",
-        }
-        for index, (locality, building, bhk, amount) in enumerate(specs)
-    ]
     calls = []
 
     def fake_ai_extract(text, *_args, **_kwargs):
         calls.append(text)
-        return {
-            "extraction_source": "ai",
-            "extraction": ai_items[0],
-            "extractions": ai_items,
-            "provider_used": "fake",
-        }
+        raise AssertionError("AI should not run for numbered templates")
 
     storage = _Storage()
     monkeypatch.setattr(lab.config, "load_excluded_groups", lambda: set())
@@ -291,7 +263,7 @@ def test_numbered_rental_inventory_keeps_ai_boundaries_and_full_evidence(monkeyp
     monkeypatch.setattr(app, "resolve_parsed", lambda *_args: {})
     monkeypatch.setattr(extraction, "get_bus", lambda: SimpleNamespace(publish=lambda *_args: None))
 
-    extraction.process_raw_message(
+    result = extraction.process_raw_message(
         579267,
         {
             "sender_name": "Broker",
@@ -310,12 +282,13 @@ def test_numbered_rental_inventory_keeps_ai_boundaries_and_full_evidence(monkeyp
         storage=storage,
     )
 
-    assert calls == [message]
+    assert calls == []
+    assert result["extraction_source"] == "deterministic:numbered"
     assert len(storage.saved) == 6
-    assert [row.intent for row in storage.saved] == ["RENT"] * 6
-    assert [json.loads(row.raw_payload)["full_text"] for row in storage.saved] == [
-        message
-    ] * 6
+    assert [row.intent for row in storage.saved] == ["RENT", "RENT", "RENT", "RENT", None, "RENT"]
+    assert [row.bhk for row in storage.saved] == ["3 BHK", "3 BHK", "3 BHK", "5 BHK", "5 BHK", None]
+    assert [row.price_unit for row in storage.saved] == ["lac", "lac", "lac", "lac", "lac", "lac"]
+    assert [row.price for row in storage.saved] == [2.0, 2.25, 2.5, 15.0, 12.5, 1.35]
 
 
 def test_reviewed_reparse_preview_is_read_only_and_apply_reuses_exact_cards(monkeypatch):
@@ -463,6 +436,129 @@ Aaron 8655245101"""
     assert ai_calls == [message]
     evidence = [json.loads(row.raw_payload)["full_text"] for row in storage.saved]
     assert evidence == [message, message]
+
+
+def test_numbered_template_path_skips_ai_and_saves_multiple_cards(monkeypatch):
+    class _TemplateStorage(_Storage):
+        def __init__(self):
+            super().__init__()
+            self.hashes = []
+            self.splitter_cache = []
+
+        def set_raw_message_hash(self, raw_id, message_hash):
+            self.hashes.append((raw_id, message_hash))
+
+        def get_raw_message_by_hash(self, *_args, **_kwargs):
+            return None
+
+        def get_sender_splitter_cache(self, *_args, **_kwargs):
+            return None
+
+        def upsert_sender_splitter_cache(self, **kwargs):
+            self.splitter_cache.append(kwargs)
+            return kwargs
+
+        def resolve_broker(self, *args, **kwargs):
+            return 99
+
+    storage = _TemplateStorage()
+    message = """1. For sale A Wing
+3 BHK
+1500 carpet
+5.25 Cr
+
+2. For sale B Wing
+4 BHK
+1800 carpet
+6.25 Cr"""
+
+    monkeypatch.setattr(lab.config, "load_excluded_groups", lambda: set())
+    monkeypatch.setattr(app, "compute_embedding", lambda _parsed: None)
+    monkeypatch.setattr(app, "resolve_parsed", lambda *_args: {})
+    monkeypatch.setattr(app, "generate_summary_title", lambda *_args: "template")
+    monkeypatch.setattr(ai_extraction, "ai_extract", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("AI should not run for numbered templates")))
+    monkeypatch.setattr(extraction, "get_bus", lambda: SimpleNamespace(publish=lambda *_args: None))
+
+    result = extraction.process_raw_message(
+        1234,
+        {
+            "sender_name": "Broker",
+            "push_name": "Broker",
+            "sender_jid": "919999999999@s.whatsapp.net",
+            "sender_phone": "919999999999",
+            "group": "group@g.us",
+            "group_name": "Bandra Brokers",
+            "msg_text": message,
+            "instance": "test",
+            "is_dm": False,
+            "message_uid": "test-1234",
+            "message_id": "1234",
+            "msg": {},
+            "skip_knowledge_record": True,
+            "tenant_id": "11111111-1111-1111-1111-111111111111",
+        },
+        storage=storage,
+    )
+
+    assert result["extraction_source"] == "deterministic:numbered"
+    assert len(storage.saved) == 2
+    assert [row.listing_index for row in storage.saved] == [0, 1]
+    assert [row.price_unit for row in storage.saved] == ["cr", "cr"]
+    assert [row.bhk for row in storage.saved] == ["3 BHK", "4 BHK"]
+    assert storage.hashes and storage.hashes[0][1]
+    assert storage.listing_ids == [41, 41]
+
+
+def test_duplicate_hash_reuses_existing_parsed_rows(monkeypatch):
+    class _DuplicateStorage(_Storage):
+        def __init__(self):
+            super().__init__()
+            self.hashes = []
+
+        def set_raw_message_hash(self, raw_id, message_hash):
+            self.hashes.append((raw_id, message_hash))
+
+        def get_raw_message_by_hash(self, *_args, **_kwargs):
+            return {"raw": {"id": 9001}, "parsed": [{"id": 88}]}
+
+        def get_sender_splitter_cache(self, *_args, **_kwargs):
+            return None
+
+        def upsert_sender_splitter_cache(self, **kwargs):
+            return kwargs
+
+    storage = _DuplicateStorage()
+
+    monkeypatch.setattr(lab.config, "load_excluded_groups", lambda: set())
+    monkeypatch.setattr(extraction, "_clone_parsed_rows", lambda *_args, **_kwargs: ([77, 78], [177, 178]))
+    monkeypatch.setattr(ai_extraction, "ai_extract", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("AI should not run for duplicate hashes")))
+    monkeypatch.setattr(extraction, "get_bus", lambda: SimpleNamespace(publish=lambda *_args: None))
+
+    result = extraction.process_raw_message(
+        1235,
+        {
+            "sender_name": "Broker",
+            "push_name": "Broker",
+            "sender_jid": "919999999999@s.whatsapp.net",
+            "sender_phone": "919999999999",
+            "group": "group@g.us",
+            "group_name": "Bandra Brokers",
+            "msg_text": "duplicate body",
+            "instance": "test",
+            "is_dm": False,
+            "message_uid": "test-1235",
+            "message_id": "1235",
+            "msg": {},
+            "skip_knowledge_record": True,
+            "tenant_id": "11111111-1111-1111-1111-111111111111",
+            "message_hash": "abc123",
+        },
+        storage=storage,
+    )
+
+    assert result["extraction_source"] == "hash_duplicate"
+    assert result["parsed_ids"] == [77, 78]
+    assert result["listing_ids"] == [177, 178]
 
 
 def _run_broker_attribution(monkeypatch, sender_phone: str) -> dict:
