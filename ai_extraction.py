@@ -34,9 +34,14 @@ _logger = logging.getLogger(__name__)
 
 # ── Provider configuration ────────────────────────────────────────────
 
-# One provider registry for chat, WhatsApp, and extraction.  Models are always
-# deployment configuration; changing a key/model in Coolify changes every path
-# together after redeploy.
+# Chat and WhatsApp share one provider chain; extraction intentionally
+# diverges from it.  Structured field extraction needs precision, not deep
+# reasoning, and premium models (grid/merge) cost 15-30x more per token.
+# Small fast models are therefore tried first and premium ones are kept as
+# an escalation fallback for when every cheap provider fails or returns
+# malformed JSON.  Set EXTRACTION_MODEL (e.g. "llama-3.1-8b-instant") to
+# pin a specific model ahead of all others; otherwise any non-premium model
+# present in the chain is preferred.
 _PROVIDERS: list[dict] = list(get_configured_providers())
 
 # Append Gemini as a fallback provider (used when MERGE key is exhausted).
@@ -51,6 +56,32 @@ if _gemini_key:
         "base_url": "https://generativelanguage.googleapis.com/v1beta/openai",
         "model": "gemini-3.1-flash-lite",
     })
+
+_EXTRACTION_MODEL = os.getenv("EXTRACTION_MODEL", "").strip().lower()
+_PREMIUM_MODEL_HINTS = (
+    "claude", "opus", "sonnet", "haiku",
+    "code-max", "code_max", "text-max", "text_max",
+    "gpt-", "o1", "o3", "o4",
+)
+
+
+def _extraction_provider_priority(provider: dict) -> int:
+    """Sort key used to order extraction providers cheap-first.
+
+    Tier 0 = pinned/preferred cheap model, tier 1 = any other non-premium
+    model, tier 2 = premium escalation.  The sort is stable, so within a
+    tier the original chain order is preserved and round-robin still
+    distributes load evenly across equal-cost providers.
+    """
+    model = (provider.get("model") or "").lower()
+    if _EXTRACTION_MODEL and _EXTRACTION_MODEL in model:
+        return 0
+    if any(hint in model for hint in _PREMIUM_MODEL_HINTS):
+        return 2
+    return 1 if _EXTRACTION_MODEL else 0
+
+
+_PROVIDERS.sort(key=_extraction_provider_priority)
 
 # Round-robin pointer
 _rr_index = 0
