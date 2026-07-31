@@ -1,0 +1,30 @@
+FROM python:3.11-slim AS base
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1
+
+WORKDIR /app
+
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends build-essential curl \
+  && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY . .
+
+RUN python3 -m compileall -q routers/ storage/ agents/ knowledge/ \
+    && python3 -m py_compile app.py \
+    && python3 -m py_compile extraction.py \
+    && python3 -m py_compile extraction_worker.py \
+    && python3 -m py_compile ai_extraction.py \
+    && python3 -m py_compile location.py \
+    && python3 -m py_compile llm.py \
+    && python3 -c "from routers import ai_chat, infra, search, workspace; print('router imports OK')" \
+    || (echo "BUILD FAILED: syntax or import error" && exit 1)
+
+RUN mkdir -p /data
+
+CMD ["python3", "extraction_worker.py", "--poll", "5"]
