@@ -73,7 +73,7 @@ export default function ListingCard({
     : "WhatsApp broker network";
 
   return (
-    <div className={`${cardClass} overflow-hidden`}>
+    <div className={`${cardClass} h-full overflow-hidden`}>
       <div className="card-top">
         <div>
           <span className={badgeClass}>{badgeLabel}</span>
