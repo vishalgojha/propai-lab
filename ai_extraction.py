@@ -1086,6 +1086,8 @@ def ai_extract(raw_text: str, ctx: dict | None = None, storage=None) -> dict:
     max_attempts = len(_PROVIDERS) * 2  # Allow two full rotations
     last_error = None
     _src_id = ctx.get("message_id") if ctx else None
+    if not isinstance(_src_id, int):
+        _src_id = None
     _tid = ctx.get("tenant_id") if ctx else None
 
     while attempts < max_attempts:
