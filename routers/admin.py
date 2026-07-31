@@ -122,6 +122,15 @@ async def admin_ai_usage(days: int = 7, user: dict = Depends(require_user)):
     return storage.get_ai_usage_stats(days=min(max(days, 1), 90))
 
 
+@router.get("/api/admin/extraction-progress")
+async def admin_extraction_progress(
+    hours: int = 24, user: dict = Depends(require_user)
+):
+    if not await asyncio.to_thread(storage.is_super_admin, user["id"]):
+        raise HTTPException(403, "Super admin only")
+    return storage.get_extraction_progress(rate_window_hours=min(max(hours, 1), 168))
+
+
 @router.get("/api/admin/providers/health")
 async def admin_provider_health(user: dict = Depends(require_user)):
     providers = await asyncio.to_thread(storage.list_all_llm_providers)
