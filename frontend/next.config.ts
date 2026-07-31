@@ -1,7 +1,6 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  outputFileTracingRoot: "/home/vishal/Propai/frontend",
   typescript: { ignoreBuildErrors: true },
   transpilePackages: [
     "d3-force",
