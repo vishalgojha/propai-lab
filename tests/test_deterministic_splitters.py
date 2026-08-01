@@ -88,3 +88,180 @@ Rustomjee Paramount
     assert pattern_id == "bare_bhk_header"
     assert len(chunks) == 2
     assert [chunk["bhk"] for chunk in chunks] == ["3 BHK", "4 BHK"]
+
+
+def test_bare_bhk_accepts_house_emoji_between_marker_and_configuration():
+    text = """*🏡 2 BHK for Rent*
+Matai Mansion
+1200 sqft
+85 L
+*🏡3Bhk's*
+Another Mansion
+1400 sqft
+95 L"""
+
+    pattern_id, chunks = parse_message(text, preferred_pattern="bare_bhk_header")
+
+    assert pattern_id == "bare_bhk_header"
+    assert len(chunks) == 2
+    assert [chunk["bhk"] for chunk in chunks] == ["2 BHK", "3 BHK"]
+
+
+def test_pushpin_bullet_template_splits_into_two_chunks():
+    text = """RESIDENTIAL LEASE LISTINGS
+📍 Rustomjee Paramount
+2 BHK
+85 L
+📍 Another Mansion
+3 BHK
+1.25 Cr"""
+
+    pattern_id, chunks = parse_message(text)
+
+    assert pattern_id == "emoji_bullet"
+    assert len(chunks) == 2
+    assert [chunk["bhk"] for chunk in chunks] == ["2 BHK", "3 BHK"]
+
+
+def test_markdown_wrapped_house_and_pushpin_markers_are_structural():
+    text = """_🏡Matai Mansion_
+_📍John Baptist Road Bandra_
+_2 BHK_
+85 L
+_🏡Another Mansion_
+_📍Hill Road Bandra_
+_3 BHK_
+1.25 Cr"""
+
+    pattern_id, chunks = parse_message(text, preferred_pattern="bare_bhk_header")
+
+    assert pattern_id == "bare_bhk_header"
+    assert len(chunks) == 2
+    assert [chunk["bhk"] for chunk in chunks] == ["2 BHK", "3 BHK"]
+
+
+def test_real_emoji_bullet_broadcast_keeps_missing_bullet_anchor_as_its_own_chunk():
+    text = """🔑 RESIDENTIAL LEASE LISTINGS
+━━━━━━━━━━━━━━━━━
+
+📍 Andheri West – Vandana Building
+(Near Kokilaben Hospital)
+• 3 BHK | 1200 Sq.ft
+• Fully Furnished
+• 1 Parking
+• Ample Storage
+• 1 Km from DN Nagar Metro
+💰 Rent: ₹1.20 Lac
+💰 Deposit: ₹5 Lac
+Only for family
+
+📍 Andheri East – Brindaban ?Poonam Nagar
+• 3 BHK Fully Furnished
+• 1 Parking
+• Immediate Possession
+💰 Rent: ₹1.20 Lac
+💰 Deposit: ₹3 Lac
+Only for family
+
+Andheri West – HDIL Metropolis
+• 3 BHK Semi Furnished
+• Approx. 1400 Sq.ft
+• 28th Floor
+• Full Sunlight & Open View
+• 3 Bathrooms + Helper’s Bathroom
+• Balconies in Hall, Kitchen & Bedrooms
+• 2 Car Parks
+💰 Rent: ₹2.10 Lac (Negotiable)
+✅ Pure Veg Families Only
+
+📍 Andheri West – Prime Rose Tower
+(Azad Nagar, Veera Desai Road)
+• 3 BHK Semi Furnished
+• 1300 Carpet
+• Immediate Possession
+💰 Rent: ₹1.20 Lac
+💰 Deposit: 3 Months"""
+
+    pattern_id, chunks = parse_message(text)
+
+    assert pattern_id == "emoji_bullet"
+    assert len(chunks) == 4
+    assert chunks[0]["building_name"] == "Andheri West – Vandana Building"
+    assert chunks[1]["building_name"].startswith("Andheri East")
+    assert "HDIL Metropolis" not in chunks[1]["building_name"]
+    assert chunks[2]["building_name"] == "HDIL Metropolis"
+    assert chunks[2]["location_raw"] == "Andheri West"
+    assert chunks[3]["building_name"].startswith("Andheri West – Prime Rose Tower")
+
+
+def test_real_dash_separated_anchor_line_populates_building_and_location():
+    text = """🔑 PREMIUM RESIDENTIAL LEASE LISTINGS
+━━━━━━━━━━━━━━━━━━
+📍 Andheri West – Raheja Classic
+• 3 BHK Lavish Fully Furnished Apartment
+• 1150 Sq.ft Carpet
+• 1 Parking
+• Lower Floor
+• Internal Garden View
+💰 Rent: ₹1.85 Lac (Final)
+
+📍 Andheri West – HDIL Metropolis
+• 3 BHK Semi Furnished Apartment
+• Approx. 1400 Sq.ft
+• 28th Floor
+• Full Sunlight & Open View
+• 3 Bathrooms + Helper’s Bathroom
+• Balconies in Hall, Kitchen & Bedrooms
+• 2 Car Parks
+💰 Rent: ₹2.10 Lac for family
+For Bachelor-2.25 lac
+✅ Pure Veg Families Only"""
+
+    pattern_id, chunks = parse_message(text)
+
+    assert pattern_id == "emoji_bullet"
+    assert len(chunks) == 2
+    assert chunks[0]["building_name"] == "Raheja Classic"
+    assert chunks[0]["location_raw"] == "Andheri West"
+    assert chunks[1]["building_name"] == "HDIL Metropolis"
+    assert chunks[1]["location_raw"] == "Andheri West"
+
+
+def test_real_611019_third_listing_keeps_full_location_line():
+    text = """*🏡 2 BHK for Rent*
+Hill Dream, Pali Mala Road, Bandra (West)
+📐 Carpet Area: 750 sq. ft.
+🚗 Parking: 1
+🛋️ Condition: Semi Furnished
+💰 Rent: ₹1.80 Lac
+
+*📞 For Inspection & More Details:*
+👤 Rajesh: 9920098794
+👤 Nandu: 9869489519
+📱 9619133319
+
+*2 BHK for Rent*
+👉 Building: Bajaj Jade
+👉 Location: Union Park, Bandra (West)
+👉 Carpet : 850 Sq.Ft.
+👉 Condition : Fully Furnished
+👉 Rent : 2.50 Lac
+
+*📞 For More Details*
+👤 Rajesh 9920098794
+👤 Nandu : 9869489549
+📱 9619133319
+
+*3 BHK for Rent*
+👉 Location : Near Almeida Park, Bandra (West)
+👉 Carpet : 1000 Sq.Ft.
+👉 Condition: Semi Furnished
+👉 Parking : 1
+👉 Rent : 1.85 Lac"""
+
+    pattern_id, chunks = parse_message(text)
+
+    assert pattern_id == "bare_bhk_header"
+    assert len(chunks) == 3
+    assert chunks[2]["building_name"] is None
+    assert "Near Almeida Park, Bandra (West)" in chunks[2]["location_raw"]
