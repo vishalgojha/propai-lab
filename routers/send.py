@@ -454,80 +454,77 @@ async def replay_all(
     user: dict = Depends(require_user),
     tenant_id: str | None = Depends(get_tenant_context),
 ):
-    from evidence.resolver import CACHE as R_CACHE
-    from evidence.resolver import _load_landmarks
-    from evidence.resolver import resolve as core_resolve
-    from evidence.resolver import resolve_by_street
+    from extraction import process_raw_message
+    from extraction_worker import context_from_raw
 
-    raws = storage.get_all_raw_for_replay(tenant_id=tenant_id)
-
-    def parse_message(raw_text: str, profile_name: str | None = None) -> dict:
-        from evidence.parsers import parse as broker_parse
-        return broker_parse(raw_text, profile_name=profile_name)
-
-    def resolve_parsed(parsed: dict, raw_text: str) -> dict:
-        method = "resolved"
-        final_confidence = 0.0
-        failure_category = ""
-        try:
-            resolved_from_list = core_resolve(parsed)
-            if resolved_from_list:
-                final_confidence = resolved_from_list["confidence"]
-            resolver_result = resolved_from_list
-            if not resolver_result:
-                resolver_result = resolve_by_landmark(parsed)
-                if resolver_result:
-                    final_confidence = resolver_result["confidence"]
-            if not resolver_result:
-                resolver_result = resolve_by_street(parsed)
-                if resolver_result:
-                    final_confidence = resolver_result["confidence"]
-            if not resolver_result:
-                method = "unresolved"
-                failure_category = "no_resolver_match"
-            return {
-                "method": method,
-                "final_confidence": final_confidence,
-                "failure_category": failure_category,
-            }
-        except Exception as e:
-            return {
-                "method": "error",
-                "final_confidence": 0.0,
-                "failure_category": str(e)[:100],
-            }
-
-    def resolve_by_landmark(parsed: dict) -> dict | None:
-        try:
-            R_CACHE.clear()
-            _load_landmarks()
-            return core_resolve(parsed)
-        except Exception:
-            return None
+    cols = (
+        "id, group_name, sender, sender_jid, sender_phone, message, message_hash, message_type, "
+        "attachments, reply_context, timestamp, source, raw_payload, message_uid, "
+        "is_group, pipeline_version, synced_at, event_id, processed, processed_at, tenant_id, created_at"
+    )
 
     stats = ReplayStats()
-    stats.total = len(raws)
-    failure_counts = {}
+    failure_counts: dict[str, int] = {}
+    scanned = 0
+    skipped_existing = 0
+    offset = 0
+    batch_size = 200
 
-    for msg in raws:
-        raw_text = msg.message
-        parsed_result = parse_message(raw_text)
-        resolver_result = resolve_parsed(parsed_result, raw_text)
+    while True:
+        query = storage.client.table("raw_messages").select(cols).order("timestamp", desc=True).limit(batch_size).offset(offset)
+        if tenant_id:
+            query = query.eq("tenant_id", tenant_id)
+        res = query.execute()
+        rows = res.data or []
+        if not rows:
+            break
 
-        if resolver_result["method"] == "resolved":
-            stats.resolved += 1
-            stats.avg_confidence += resolver_result.get("final_confidence", 0.0)
-        elif resolver_result["method"] == "unresolved":
-            stats.unresolved += 1
-        else:
-            stats.errors += 1
+        scanned += len(rows)
+        offset += len(rows)
 
-        fc = resolver_result.get("failure_category") or "unknown"
-        failure_counts[fc] = failure_counts.get(fc, 0) + 1
+        for row in rows:
+            raw_id = row.get("id")
+            if not raw_id:
+                continue
 
+            try:
+                if storage.get_parsed_by_raw(int(raw_id)):
+                    skipped_existing += 1
+                    continue
+            except Exception as exc:
+                stats.errors += 1
+                failure_counts[exc.__class__.__name__] = failure_counts.get(exc.__class__.__name__, 0) + 1
+                continue
+
+            try:
+                ctx = context_from_raw(row)
+                if tenant_id:
+                    ctx["tenant_id"] = tenant_id
+                result = await asyncio.to_thread(process_raw_message, int(raw_id), ctx, storage)
+                parsed_ids = result.get("parsed_ids") or []
+                if parsed_ids:
+                    stats.resolved += 1
+                    try:
+                        parsed_rows = storage.get_parsed_by_message(int(raw_id))
+                        if parsed_rows:
+                            confs = [float(getattr(p, "confidence", 0.0) or 0.0) for p in parsed_rows]
+                            if confs:
+                                stats.avg_confidence += sum(confs) / len(confs)
+                    except Exception:
+                        pass
+                else:
+                    stats.unresolved += 1
+            except Exception as exc:
+                stats.errors += 1
+                failure_counts[exc.__class__.__name__] = failure_counts.get(exc.__class__.__name__, 0) + 1
+
+    stats.total = scanned
     if stats.resolved > 0:
         stats.avg_confidence = round(stats.avg_confidence / stats.resolved, 4)
-
     stats.failure_breakdown = dict(sorted(failure_counts.items(), key=lambda x: -x[1]))
-
-    return stats.model_dump()
+    return {
+        **stats.model_dump(),
+        "scanned": scanned,
+        "skipped_existing": skipped_existing,
+        "replayed": stats.resolved + stats.unresolved + stats.errors,
+    }
