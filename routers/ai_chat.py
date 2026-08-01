@@ -47,8 +47,9 @@ def _sse_event(data: dict | str) -> str:
 def _to_sse_chunks(response: dict) -> str:
     """Convert a workspace response dict into SSE text for DefaultChatTransport.
 
-    Yields text-start, text-delta, data-*, and text-end events so the
-    frontend useChat hook can render both prose and structured listing_cards.
+    Yields text-start, text-delta, data-*, and text-end events. The chat
+    surface now serializes structured blocks into Markdown tables on the
+    client, so the data events remain available as transport metadata.
     """
     msg_id = f"msg-{uuid.uuid4().hex[:8]}"
     content = str(response.get("content") or "").strip()

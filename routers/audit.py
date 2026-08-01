@@ -1,12 +1,15 @@
 """Audit routes."""
+import json
 import re
 from datetime import datetime, timedelta, timezone
 from collections import defaultdict
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import PlainTextResponse
+from pydantic import BaseModel
 
 from routers.common import storage, require_user, require_tenant
+from lab import ai_chat_engine as chat_engine
 
 router = APIRouter(tags=["audit"])
 
@@ -25,6 +28,110 @@ _AUDIT_BUILDING_LABEL_PATTERN = None
 _AUDIT_BUILDING_PLACEHOLDERS = None
 _count_table = None
 parse_group_name = None
+
+
+class SearchCoverageRequest(BaseModel):
+    query: str
+    response: dict | None = None
+    source_mode: str = "parsed"
+
+
+def _rendered_listing_ids(response: dict | None) -> list[str]:
+    blocks = (response or {}).get("blocks") or []
+    listing_ids: list[str] = []
+    for block in blocks:
+        if not isinstance(block, dict) or block.get("type") != "listing_cards":
+            continue
+        for item in block.get("items") or []:
+            if not isinstance(item, dict):
+                continue
+            for field in ("listing_id", "message_id", "cluster_id", "raw_message_id", "whatsapp_message_id"):
+                value = item.get(field)
+                if value is not None and str(value).strip():
+                    listing_ids.append(str(value))
+                    break
+    return listing_ids
+
+
+def _expected_listing_ids_for_query(query: str, tenant_id: str) -> tuple[dict | None, list[str]]:
+    parsed = chat_engine.parse_market_search_request(
+        query,
+        api_key="",
+        model="",
+        base_url="",
+        db_path=getattr(storage, "db", None),
+        allow_llm=False,
+    )
+    if not parsed:
+        return None, []
+
+    expected_raw = chat_engine.execute_tool(
+        "market_search",
+        parsed,
+        {},
+        db_path=getattr(storage, "db", None),
+        tenant_id=tenant_id,
+    )
+    try:
+        expected_payload = json.loads(expected_raw)
+    except Exception:
+        return parsed, []
+
+    expected_ids: list[str] = []
+    for row in expected_payload.get("results") or []:
+        if not isinstance(row, dict):
+            continue
+        for field in ("listing_id", "message_id", "cluster_id", "raw_message_id", "whatsapp_message_id"):
+            value = row.get(field)
+            if value is not None and str(value).strip():
+                expected_ids.append(str(value))
+                break
+    return parsed, expected_ids
+
+
+@router.post("/api/audit/search-coverage")
+def audit_search_coverage(
+    payload: SearchCoverageRequest,
+    user: dict = Depends(require_user),
+    tenant_id: str = Depends(require_tenant),
+):
+    """Compare an agent response against the database truth for a search query."""
+    parsed, expected_ids = _expected_listing_ids_for_query(payload.query, tenant_id)
+    if not parsed:
+        return {
+            "auditable": False,
+            "reason": "query_not_parseable",
+            "query": payload.query,
+            "source_mode": payload.source_mode,
+            "rendered_count": len(_rendered_listing_ids(payload.response)),
+            "expected_count": 0,
+            "complete": False,
+            "missing_ids": [],
+            "extra_ids": [],
+        }
+
+    rendered_ids = _rendered_listing_ids(payload.response)
+    expected_set = set(expected_ids)
+    rendered_set = set(rendered_ids)
+    missing_ids = [listing_id for listing_id in expected_ids if listing_id not in rendered_set]
+    extra_ids = [listing_id for listing_id in rendered_ids if listing_id not in expected_set]
+    complete = not missing_ids and not extra_ids
+    coverage_pct = round((len(rendered_set & expected_set) / max(1, len(expected_set))) * 100, 1) if expected_set else 100.0
+
+    return {
+        "auditable": True,
+        "query": payload.query,
+        "source_mode": payload.source_mode,
+        "parsed": parsed,
+        "expected_count": len(expected_ids),
+        "rendered_count": len(rendered_ids),
+        "coverage_pct": coverage_pct,
+        "complete": complete,
+        "missing_count": len(missing_ids),
+        "extra_count": len(extra_ids),
+        "missing_ids": missing_ids[:50],
+        "extra_ids": extra_ids[:50],
+    }
 
 
 @router.get("/api/audit/dashboard")

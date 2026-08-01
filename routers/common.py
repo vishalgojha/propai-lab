@@ -2343,26 +2343,8 @@ def _raw_group_message_search(query_text: str, limit: int = 10, offset: int = 0)
     if con is None:
         raise RuntimeError("Database is not available")
 
-    def _hidden_broker_phones() -> set[str]:
-        phones: set[str] = set()
-        try:
-            rows = con.execute(
-                """
-                SELECT DISTINCT COALESCE(NULLIF(primary_phone, ''), NULLIF(phone, '')) AS phone
-                FROM brokers
-                WHERE is_hidden = true
-                  AND COALESCE(NULLIF(primary_phone, ''), NULLIF(phone, '')) IS NOT NULL
-                """
-            ).fetchall()
-        except Exception:
-            rows = []
-        for row in rows:
-            phone = _normalize_real_phone(row[0])
-            if phone:
-                phones.add(phone)
-        return phones
-
-    hidden_brokers = _hidden_broker_phones()
+    hidden_brokers = _hidden_broker_phones_for_search()
+    hidden_listing_ids, hidden_raw_message_ids = _hidden_market_item_ids_for_search()
 
     def _resolve_group_name(group_name: str) -> str:
         if group_name and "@g.us" in group_name:
@@ -2444,6 +2426,8 @@ def _raw_group_message_search(query_text: str, limit: int = 10, offset: int = 0)
             broker_phone = _normalize_real_phone(item.get("sender_phone") or item.get("broker_phone") or "")
             if broker_phone and broker_phone in hidden_brokers:
                 continue
+            if item.get("id") and int(item["id"]) in hidden_raw_message_ids:
+                continue
             item["broker_phone"] = broker_phone
             item["broker_name"] = item.get("sender") or item.get("broker_name") or ""
             items.append(item)
@@ -2517,6 +2501,8 @@ def _raw_group_message_search(query_text: str, limit: int = 10, offset: int = 0)
         item = _row_to_result(row, row[7] if len(row) > 7 else None)
         broker_phone = _normalize_real_phone(item.get("sender_phone") or item.get("broker_phone") or "")
         if broker_phone and broker_phone in hidden_brokers:
+            continue
+        if item.get("id") and int(item["id"]) in hidden_raw_message_ids:
             continue
         item["broker_phone"] = broker_phone
         item["broker_name"] = item.get("sender") or item.get("broker_name") or ""
@@ -2615,7 +2601,18 @@ def _listing_search_response(args: dict) -> dict:
         return {"content": "I could not search listings right now.", "blocks": [{"type": "error_state", "title": "Listing search failed", "body": str(raw)}], "sources": ["unique_listings"], "status_steps": ["Searching saved properties"]}
     results = payload.get("results") or []
     if isinstance(results, list):
-        results = [item for item in results if isinstance(item, dict) and _is_plausible_listing_result(item, args)]
+        hidden_listing_ids, hidden_raw_message_ids = _hidden_market_item_ids_for_search()
+        hidden_brokers = _hidden_broker_phones_for_search()
+        results = [
+            item for item in results
+            if isinstance(item, dict)
+            and _is_plausible_listing_result(item, args)
+            and not (
+                (item.get("listing_id") and int(item["listing_id"]) in hidden_listing_ids)
+                or (item.get("raw_message_id") and int(item["raw_message_id"]) in hidden_raw_message_ids)
+                or (_normalize_real_phone(item.get("broker_phone") or item.get("sender_phone") or "") in hidden_brokers)
+            )
+        ]
         results = results[:requested_limit]
     for item in results:
         item["price_formatted"] = _format_listing_price(item)
@@ -2681,6 +2678,8 @@ def _requirement_match_response(args: dict) -> dict:
         total, rows = run_query(" AND ".join(broad_where), broad_params)
         used_broad_fallback = bool(rows)
     items = []; seen_keys: set[tuple[str, str, str, str]] = set()
+    hidden_listing_ids, hidden_raw_message_ids = _hidden_market_item_ids_for_search()
+    hidden_brokers = _hidden_broker_phones_for_search()
     for row in rows:
         item = dict(row)
         item["price_formatted"] = _format_listing_price(item)
@@ -2688,6 +2687,14 @@ def _requirement_match_response(args: dict) -> dict:
         item["broker_phone"] = _normalize_real_phone(item.get("broker_phone")) or _normalize_real_phone(item.get("sender_phone"))
         if item["broker_phone"] and str(item["broker_name"]).strip().startswith("+"):
             item["broker_name"] = "Broker"
+        if item.get("broker_phone") and item["broker_phone"] in hidden_brokers:
+            continue
+        if item.get("id") and int(item["id"]) in hidden_raw_message_ids:
+            continue
+        if item.get("raw_message_id") and int(item["raw_message_id"]) in hidden_raw_message_ids:
+            continue
+        if item.get("listing_id") and int(item["listing_id"]) in hidden_listing_ids:
+            continue
         key = (item.get("broker_phone") or item.get("broker_name") or "", str(item.get("bhk") or ""), str(item.get("price") or ""), str(item.get("micro_market") or item.get("location_raw") or "")[:80])
         if key in seen_keys:
             continue
@@ -2719,7 +2726,13 @@ def _broker_search_response(args: dict) -> dict:
         COUNT(DISTINCT micro_market) AS markets, COUNT(DISTINCT r.group_name) AS groups, MAX(r.timestamp) AS last_seen
         FROM parsed_output p JOIN raw_messages r ON r.id = p.raw_message_id {where}
         GROUP BY broker_name, broker_phone ORDER BY posts DESC LIMIT ?""", (*params, limit)).fetchall()
-    items = [dict(row) for row in rows]
+    hidden_brokers = _hidden_broker_phones_for_search()
+    items = []
+    for row in rows:
+        item = dict(row)
+        if _normalize_real_phone(item.get("broker_phone")) in hidden_brokers:
+            continue
+        items.append(item)
     label = f" in {market}" if market else ""
     if not items:
         return {"content": f"No broker activity found{label}.", "blocks": [{"type": "empty_state","title": "No brokers found","body": f"PropAI searched captured WhatsApp records for broker activity{label}."}], "sources": ["brokers","market_feed"], "status_steps": ["Searched broker activity"], "trace": {"route": "deterministic_broker_search", "args": args}}
@@ -2783,6 +2796,76 @@ def _load_evidence_cache():
         return CACHE
     except Exception:
         return {}
+
+# ── Search visibility helpers ──────────────────────────────────────
+def _hidden_broker_phones_for_search() -> set[str]:
+    con = getattr(storage, "db", None)
+    if con is None:
+        return set()
+    tenant_id = get_tenant_id()
+    params: list[object] = []
+    where = ""
+    if tenant_id:
+        where = "AND (tenant_id IS NULL OR tenant_id = ?)"
+        params.append(tenant_id)
+    try:
+        rows = con.execute(
+            f"""
+            SELECT DISTINCT COALESCE(NULLIF(primary_phone, ''), NULLIF(phone, '')) AS phone
+            FROM brokers
+            WHERE is_hidden = true
+              AND COALESCE(NULLIF(primary_phone, ''), NULLIF(phone, '')) IS NOT NULL
+              {where}
+            """,
+            tuple(params),
+        ).fetchall()
+    except Exception:
+        return set()
+    phones: set[str] = set()
+    for row in rows:
+        phone = _normalize_real_phone(row[0])
+        if phone:
+            phones.add(phone)
+    return phones
+
+
+def _hidden_market_item_ids_for_search() -> tuple[set[int], set[int]]:
+    con = getattr(storage, "db", None)
+    if con is None:
+        return set(), set()
+    tenant_id = get_tenant_id()
+    params: list[object] = []
+    where = ""
+    if tenant_id:
+        where = "WHERE tenant_id IS NULL OR tenant_id = ?"
+        params.append(tenant_id)
+    try:
+        rows = con.execute(
+            f"""
+            SELECT listing_id, raw_message_id
+            FROM hidden_market_items
+            {where}
+            """,
+            tuple(params),
+        ).fetchall()
+    except Exception:
+        return set(), set()
+    listing_ids: set[int] = set()
+    raw_message_ids: set[int] = set()
+    for row in rows:
+        listing_id = row[0]
+        raw_message_id = row[1]
+        if listing_id is not None:
+            try:
+                listing_ids.add(int(listing_id))
+            except Exception:
+                pass
+        if raw_message_id is not None:
+            try:
+                raw_message_ids.add(int(raw_message_id))
+            except Exception:
+                pass
+    return listing_ids, raw_message_ids
 
 # ── Audit helpers ──────────────────────────────────────────────────
 def _audit_row_value(row, key_or_idx, default=None):

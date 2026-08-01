@@ -1750,6 +1750,30 @@ return {
     }
   }, [marketAccess, offset]);
 
+  useEffect(() => {
+    if (typeof window === "undefined" || window.location.pathname !== "/inbox") return;
+
+    const refreshFeed = () => {
+      if (document.hidden || loadingLeft || connectionPending) return;
+      void loadFeed(false, offset);
+    };
+
+    const interval = window.setInterval(refreshFeed, 30000);
+    const onVisibilityChange = () => {
+      if (!document.hidden) refreshFeed();
+    };
+    const onFocus = () => refreshFeed();
+
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    window.addEventListener("focus", onFocus);
+
+    return () => {
+      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      window.removeEventListener("focus", onFocus);
+    };
+  }, [connectionPending, loadFeed, loadingLeft, offset]);
+
   const resetSelectionForPageChange = useCallback(() => {
     autoSelectedThreadRef.current = "";
     setSelectedBroker(null);
@@ -1823,19 +1847,82 @@ return {
     setLoadingBrokerFeed(true);
     try {
       const response = await api.getBrokersFeed(BROKER_PAGE_SIZE, requestedOffset, true);
+      const items = Array.isArray(response) ? response : (response.items || []);
       if (Array.isArray(response)) {
-        setBrokerFeed(response);
+        setBrokerFeed(items);
         setBrokerFeedTotal(null);
       } else {
-        setBrokerFeed(response.items || []);
+        setBrokerFeed(items);
         setBrokerFeedTotal(Number.isFinite(response.total) ? response.total : null);
+      }
+      if (selectedBroker && items.length > 0) {
+        const selectedPhone = normalizeRealPhone(selectedBroker.phone || selectedBroker.primary_phone || selectedBroker.identity_key || selectedBroker.id || "");
+        const selectedKey = (selectedBroker.identity_key || selectedBroker.id || selectedBroker.phone || selectedPhone || "").toString().trim().toLowerCase();
+        const refreshed = items.find((broker: any) => {
+          const brokerPhone = normalizeRealPhone(broker.primary_phone || broker.phone || broker.identity_key || broker.id || "");
+          const brokerKey = (broker.identity_key || broker.id || broker.primary_phone || brokerPhone || "").toString().trim().toLowerCase();
+          return (
+            (selectedPhone && brokerPhone && selectedPhone === brokerPhone) ||
+            (selectedKey && brokerKey && selectedKey === brokerKey)
+          );
+        });
+        if (refreshed) {
+          setSelectedBroker((current: any) => (current ? { ...current, ...refreshed } : current));
+        }
       }
     } catch (e) {
       console.error("Failed to load broker feed:", e);
     } finally {
       setLoadingBrokerFeed(false);
     }
-  }, [connectionPending, brokerOffset]);
+  }, [brokerOffset, connectionPending, selectedBroker]);
+
+  const refreshSelectedBrokerObservations = useCallback(async () => {
+    if (connectionPending || !selectedBroker) return;
+
+    const brokerPhone = normalizeRealPhone(
+      selectedBroker.primary_phone || selectedBroker.phone || selectedBroker.identity_key || selectedBroker.id || ""
+    );
+    const rawBrokerName = stripDecorativeEmoji(selectedBroker.canonical_name || selectedBroker.name || "").trim();
+    const brokerName = isLikelyBrokerDisplayName(rawBrokerName) ? rawBrokerName : "";
+    const brokerIdentityKey = (selectedBroker.identity_key || selectedBroker.id || selectedBroker.primary_phone || brokerPhone || brokerName || "").toString().trim();
+
+    brokerObservationRequestRef.current?.abort();
+    const request = new AbortController();
+    brokerObservationRequestRef.current = request;
+    setBrokerObsError("");
+    setLoadingBrokerObs(true);
+
+    try {
+      const observationKey = brokerPhone
+        || (/^name:/i.test(brokerIdentityKey) ? brokerIdentityKey : "")
+        || (brokerName ? `name:${brokerName}` : brokerIdentityKey);
+      const obs = await api.getObservationsFeed(200, 0, observationKey, request.signal);
+      if (request.signal.aborted || brokerObservationRequestRef.current !== request) return;
+      setSelectedBrokerObservations(obs);
+      const rawId = obs?.[0]?.latest_raw_message_id || obs?.[0]?.raw_message_id;
+      if (rawId) {
+        loadMessageDetails(rawId, { setSelectedRaw: true, preserveProfiles: true });
+      }
+    } catch (e) {
+      if (request.signal.aborted || brokerObservationRequestRef.current !== request) return;
+      console.error("Failed to refresh broker observations:", e);
+      setBrokerObsError("Market items could not be refreshed. Please retry.");
+    } finally {
+      if (brokerObservationRequestRef.current === request) {
+        setLoadingBrokerObs(false);
+        brokerObservationRequestRef.current = null;
+      }
+    }
+  }, [connectionPending, loadMessageDetails, selectedBroker]);
+
+  const handleRefreshInbox = useCallback(async () => {
+    await Promise.all([
+      loadFeed(false, offset),
+      loadBrokerFeed(brokerOffset),
+      refreshSelectedBrokerObservations(),
+    ]);
+  }, [brokerOffset, loadBrokerFeed, loadFeed, offset, refreshSelectedBrokerObservations]);
 
   // Load broker feed when switching to a slug whose view_type needs brokers feed
   const prevBrokerOffsetRef = useRef(0);
@@ -3337,10 +3424,7 @@ return {
                 </button>
                 <button
                   onClick={() => {
-                    resetSelectionForPageChange();
-                    setOffset(0);
-                    prevOffsetRef.current = 0;
-                    loadFeed(false, 0);
+                    void handleRefreshInbox();
                   }}
                   className="text-[10px] sm:text-xs text-[#3EE88A] hover:underline"
                   disabled={loadingLeft}

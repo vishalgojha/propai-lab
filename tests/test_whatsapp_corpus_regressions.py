@@ -7,6 +7,7 @@ toy strings.
 
 import evidence.resolver
 
+from ai_chat_engine import parse_market_search_request
 from app import parse_message, resolve_parsed
 from location import enrich_parsed_location, parse_location
 
@@ -110,6 +111,14 @@ def test_residential_schema_fields_are_normalized_without_blocking():
     assert parsed["availability_status"] == "coming_soon"
     assert parsed["available_from"] == "15 Aug"
     assert parsed["price_model"] == "total"
+
+
+def test_market_chat_parser_routes_office_space_to_commercial_intent():
+    parsed = parse_market_search_request("any office space on rent in bandra west?")
+
+    assert parsed is not None
+    assert parsed["intent"] == "COMMERCIAL"
+    assert parsed["micro_markets"] == ["Bandra West"]
 
 
 def test_known_locality_is_promoted_to_micro_market():

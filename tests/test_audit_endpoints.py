@@ -230,6 +230,40 @@ def test_audit_overlap_uses_named_columns_from_supabase_json_rows(monkeypatch):
     assert {item["name"] for item in result["groups"]} == {"Group A", "Group B"}
 
 
+def test_search_coverage_audit_flags_missing_listing_cards(monkeypatch):
+    monkeypatch.setattr(
+        audit_mod.chat_engine,
+        "execute_tool",
+        lambda *_args, **_kwargs: '{"results":[{"listing_id":101},{"listing_id":102}]}',
+    )
+
+    result = audit_mod.audit_search_coverage(
+        audit_mod.SearchCoverageRequest(
+            query="any office space on rent in bandra west?",
+            response={
+                "blocks": [
+                    {
+                        "type": "listing_cards",
+                        "items": [
+                            {"listing_id": 101, "title": "Office A"},
+                        ],
+                    }
+                ]
+            },
+        ),
+        user={"id": "user"},
+        tenant_id="tenant-a",
+    )
+
+    assert result["auditable"] is True
+    assert result["complete"] is False
+    assert result["expected_count"] == 2
+    assert result["rendered_count"] == 1
+    assert result["missing_count"] == 1
+    assert result["missing_ids"] == ["102"]
+    assert result["extra_ids"] == []
+
+
 def test_phone_list_resolves_authenticated_workspace(monkeypatch):
     seen = []
 
