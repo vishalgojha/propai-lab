@@ -1311,7 +1311,7 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
             _logger.exception("Deterministic market search failed for filters=%s", deterministic_query)
             response = chat_engine.deterministic_market_response(
                 deterministic_query,
-                json.dumps({
+                _json.dumps({
                     "type": "market_search_error",
                     "error": "market_search_failed",
                     "detail": str(exc)[:400],
