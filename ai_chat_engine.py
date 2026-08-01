@@ -677,11 +677,18 @@ _LISTING_PROVENANCE_FIELDS = (
 
 def _collapse_halved_repeat(text: str) -> str:
     cleaned = text.strip()
-    if len(cleaned) < 40 or len(cleaned) % 2 != 0:
+    if len(cleaned) < 40:
         return cleaned
-    half = len(cleaned) // 2
-    if cleaned[:half] == cleaned[half:]:
-        return cleaned[:half].strip()
+    if len(cleaned) % 2 == 0:
+        half = len(cleaned) // 2
+        if cleaned[:half] == cleaned[half:]:
+            return cleaned[:half].strip()
+    # A model that echoes its answer after a dangling "</think>" often leaves a
+    # separating newline between the two copies; tolerate that whitespace.
+    for split in range(40, len(cleaned) // 2 + 1):
+        first, rest = cleaned[:split], cleaned[split:]
+        if rest.lstrip() == first:
+            return first
     return cleaned
 
 
@@ -1420,6 +1427,7 @@ def _llm_market_search_request(text: str, api_key: str = "", model: str = "", ba
             ],
             max_tokens=300,
             temperature=0,
+            timeout=20,
         )
         raw = re.sub(r"^```(?:json)?\s*|\s*```$", "", (response.choices[0].message.content or "").strip(), flags=re.IGNORECASE)
         parsed = json.loads(raw)
@@ -2742,7 +2750,9 @@ def get_conversational_reply(messages, api_key=None, model=None, base_url=None, 
         max_tokens=1000,
     )
     _log_usage(resp, "ai_chat", used_model)
-    return resp.choices[0].message
+    msg = resp.choices[0].message
+    msg.content = strip_think_blocks(msg.content or "")
+    return msg
 
 
 def _get_fallback_model() -> str:
