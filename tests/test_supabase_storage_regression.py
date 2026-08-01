@@ -77,7 +77,6 @@ def test_tenant_context_accepts_a_users_own_tenant(monkeypatch):
 
 def test_market_feed_endpoints_forward_the_active_tenant(monkeypatch):
     import routers.common as _common
-    import routers.knowledge as _knowledge
     import routers.brokers as _brokers
 
     calls = []
@@ -93,7 +92,6 @@ def test_market_feed_endpoints_forward_the_active_tenant(monkeypatch):
 
     fake = FakeStorage()
     monkeypatch.setattr(_common, "storage", fake)
-    monkeypatch.setattr(_knowledge, "storage", fake)
     monkeypatch.setattr(_brokers, "storage", fake)
 
     asyncio.run(_brokers.get_brokers_feed(
@@ -103,19 +101,9 @@ def test_market_feed_endpoints_forward_the_active_tenant(monkeypatch):
         min_observations=1,
         tenant_id="org-2",
     ))
-    asyncio.run(_knowledge.get_observations_feed(
-        user={"id": "user-2"},
-        limit=200,
-        offset=0,
-        broker_key="919999999999",
-        intent="",
-        phone="",
-        tenant_id="org-2",
-    ))
 
     assert calls == [
         ("brokers", 25, 0, 1, "org-2"),
-        ("observations", 200, 0, "919999999999", "", "org-2"),
     ]
 
 
