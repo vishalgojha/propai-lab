@@ -401,7 +401,7 @@ export default function ChatPage() {
   const sessionParam = searchParams.get("session");
   const [input, setInput] = useState("");
   const [brokerPhone, setBrokerPhone] = useState("");
-  const [searchSource, setSearchSource] = useState<"groups" | "parsed">("parsed");
+  const searchSource: "parsed" = "parsed";
   const [hiddenBrokerPhones, setHiddenBrokerPhones] = useState<Set<string>>(() => new Set());
   const [hiddenMarketKeys, setHiddenMarketKeys] = useState<Set<string>>(() => new Set());
   const [brokerActionMessage, setBrokerActionMessage] = useState("");
@@ -424,8 +424,6 @@ export default function ChatPage() {
   const [contactingListingId, setContactingListingId] = useState<number | null>(null);
 
   const activeSessionStorageKey = user?.id ? `propai_active_chat_session:${user.id}` : "";
-  const searchSourceStorageKey = user?.id ? `propai_chat_search_source:${user.id}` : "";
-
   const { messages, sendMessage, status, setMessages, error } = useChat({
     transport: new DefaultChatTransport({
       api: "/api/ai/chat",
@@ -589,19 +587,6 @@ export default function ChatPage() {
     };
   }, [user]);
 
-  useEffect(() => {
-    if (!searchSourceStorageKey) return;
-    const saved = window.localStorage.getItem(searchSourceStorageKey);
-    if (saved === "groups" || saved === "parsed") {
-      setSearchSource(saved);
-    }
-  }, [searchSourceStorageKey]);
-
-  useEffect(() => {
-    if (!searchSourceStorageKey) return;
-    window.localStorage.setItem(searchSourceStorageKey, searchSource);
-  }, [searchSource, searchSourceStorageKey]);
-
   const updateUrlSession = useCallback((id: string, title?: string) => {
     const url = new URL(window.location.href);
     const session = sessions.find((item) => item.id === id);
@@ -638,13 +623,9 @@ export default function ChatPage() {
           ? window.localStorage.getItem(activeSessionStorageKey)
           : null;
         const saved = data.find((item) => item.id === savedId);
-        const preferred = saved && saved.source !== "groups"
-          ? saved
-          : data.find((item) => item.source === "parsed") || data[0];
-        const active = preferred;
+        const active = saved || data.find((item) => item.source === "parsed") || data[0];
         sessionIdRef.current = active.id;
         setSessionId(active.id);
-        setSearchSource(active.source === "groups" ? "groups" : "parsed");
         try {
           const msgs = await api.getChatSessionMessages(active.id);
           if (cancelled) return;
@@ -717,7 +698,7 @@ export default function ChatPage() {
     inputRef.current?.focus();
     clearUrlSession();
     try {
-      const session = await api.createChatSession("New chat", searchSource);
+      const session = await api.createChatSession("New chat", "parsed");
       if (!session?.id) throw new Error("Could not create a new chat session.");
       sessionIdRef.current = session.id;
       setSessionId(session.id);
@@ -727,7 +708,7 @@ export default function ChatPage() {
     } catch (error) {
       setSessionError(error instanceof Error ? error.message : "Could not create a chat session.");
     }
-  }, [loadSessions, setMessages, searchSource]);
+  }, [clearUrlSession, loadSessions, setMessages, updateUrlSession]);
 
   // Switch to an existing session
   const handleSwitchSession = useCallback(async (id: string) => {
@@ -738,15 +719,13 @@ export default function ChatPage() {
     sessionIdRef.current = id;
     if (activeSessionStorageKey) window.localStorage.setItem(activeSessionStorageKey, id);
     try {
-      const session = sessions.find((item) => item.id === id);
-      setSearchSource(session?.source === "groups" ? "groups" : "parsed");
       const msgs = await api.getChatSessionMessages(id);
       setMessages(msgs.map((m) => toUIMessage({ id: m.id, role: m.role as "user" | "assistant", content: m.content, blocks: m.blocks })));
     } catch (e) {
       setMessages([]);
       setSessionError(e instanceof Error ? e.message : "Could not load this chat");
     }
-  }, [activeSessionStorageKey, sessionId, sessions, setMessages]);
+  }, [activeSessionStorageKey, sessionId, setMessages, updateUrlSession]);
 
   // Delete a session
   const handleDeleteSession = useCallback(async (id: string, e: React.MouseEvent) => {
@@ -827,7 +806,7 @@ export default function ChatPage() {
       }
       sessionCreationInFlightRef.current = true;
       const text = input.trim();
-      api.createChatSession(text.slice(0, 80), searchSource).then((session) => {
+      api.createChatSession(text.slice(0, 80), "parsed").then((session) => {
         if (!session?.id) throw new Error("Could not create a chat session.");
         sessionIdRef.current = session.id;
         setSessionId(session.id);
@@ -972,31 +951,6 @@ export default function ChatPage() {
             {showSessions ? <PanelLeftClose className="h-3.5 w-3.5" /> : <PanelLeft className="h-3.5 w-3.5" />}
             {showSessions ? "Hide chats" : "Show chats"}
           </button>
-          <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.02] p-1">
-            <span className="px-2 text-[10px] uppercase tracking-[0.18em] text-zinc-500">Search</span>
-            <button
-              type="button"
-              onClick={() => setSearchSource("groups")}
-              className={`rounded-lg px-3 py-1.5 text-[11px] font-medium transition-colors ${
-                searchSource === "groups"
-                  ? "bg-emerald-500/15 text-emerald-300"
-                  : "text-zinc-400 hover:bg-white/5 hover:text-white"
-              }`}
-            >
-              WhatsApp groups
-            </button>
-            <button
-              type="button"
-              onClick={() => setSearchSource("parsed")}
-              className={`rounded-lg px-3 py-1.5 text-[11px] font-medium transition-colors ${
-                searchSource === "parsed"
-                  ? "bg-blue-500/15 text-blue-300"
-                  : "text-zinc-400 hover:bg-white/5 hover:text-white"
-              }`}
-            >
-              Parsed data
-            </button>
-          </div>
           <div className="rounded-xl border border-white/10 bg-white/[0.02] px-3 py-2 text-[11px] text-zinc-400">
             Markdown output
           </div>
@@ -1029,35 +983,9 @@ export default function ChatPage() {
             New chat
           </button>
         </div>
-        <div className="lg:hidden mb-3 flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.02] p-1">
-          <button
-            type="button"
-            onClick={() => setSearchSource("groups")}
-            className={`flex-1 rounded-lg px-3 py-2 text-xs font-medium transition-colors ${
-              searchSource === "groups"
-                ? "bg-emerald-500/15 text-emerald-300"
-                : "text-zinc-400"
-            }`}
-          >
-            WhatsApp groups
-          </button>
-          <button
-            type="button"
-            onClick={() => setSearchSource("parsed")}
-            className={`flex-1 rounded-lg px-3 py-2 text-xs font-medium transition-colors ${
-              searchSource === "parsed"
-                ? "bg-blue-500/15 text-blue-300"
-                : "text-zinc-400"
-            }`}
-          >
-            Parsed data
-          </button>
+        <div className="lg:hidden mb-3 rounded-xl border border-white/10 bg-white/[0.02] px-3 py-2 text-xs text-zinc-400">
+          Markdown output
         </div>
-        {searchSource === "parsed" && (
-          <div className="lg:hidden mb-3 rounded-xl border border-white/10 bg-white/[0.02] px-3 py-2 text-xs text-zinc-400">
-            Markdown output
-          </div>
-        )}
         {showSessions && (
           <div className="absolute inset-x-4 top-11 z-30 max-h-[55dvh] overflow-y-auto rounded-xl border border-white/10 bg-black/95 p-2 shadow-2xl lg:hidden">
             {sessions.map((s) => (
@@ -1111,34 +1039,8 @@ export default function ChatPage() {
               <div className="text-3xl mb-3">🤖</div>
               <h2 className="text-sm font-semibold text-white mb-2">Ask PropAI anything</h2>
               <p className="text-xs text-zinc-500 max-w-md mx-auto">
-                {searchSource === "groups"
-                  ? "Search the live WhatsApp group feed first. Switch to parsed data when you want the deduped inventory index."
-                  : "Search the deduped inventory index first. Switch to WhatsApp groups when you want raw broker posts."}
+                Search the parsed inventory index. Results are grounded in database rows and rendered as markdown tables.
               </p>
-              <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setSearchSource("groups")}
-                  className={`rounded-full border px-3 py-1.5 text-[11px] font-medium transition-colors ${
-                    searchSource === "groups"
-                      ? "border-emerald-400/40 bg-emerald-500/15 text-emerald-200"
-                      : "border-white/10 bg-white/[0.03] text-zinc-400 hover:border-white/20 hover:text-white"
-                  }`}
-                >
-                  Search WhatsApp groups
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSearchSource("parsed")}
-                  className={`rounded-full border px-3 py-1.5 text-[11px] font-medium transition-colors ${
-                    searchSource === "parsed"
-                      ? "border-blue-400/40 bg-blue-500/15 text-blue-200"
-                      : "border-white/10 bg-white/[0.03] text-zinc-400 hover:border-white/20 hover:text-white"
-                  }`}
-                >
-                  Search parsed data
-                </button>
-              </div>
             </div>
           ) : (
             <AnimatePresence initial={false}>
@@ -1158,7 +1060,6 @@ export default function ChatPage() {
                   ) : (
                     <div className="max-w-[95%] w-full space-y-3">
                       {(() => {
-                        const assistantMode = (getAssistantSourceMode(m) || searchSource) as ChatSourceMode;
                         const textParts = (m.parts || []).filter(
                           (p: any) => p.type === "text" && p.text
                         ) as Array<{ text: string }>;
@@ -1167,14 +1068,8 @@ export default function ChatPage() {
                           <>
                             {hasTable && (
                               <div className="flex items-center gap-2">
-                                <span
-                                  className={`inline-flex items-center rounded-full border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] ${
-                                    assistantMode === "groups"
-                                      ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-200"
-                                      : "border-blue-500/20 bg-blue-500/10 text-blue-200"
-                                  }`}
-                                >
-                                  {assistantMode === "groups" ? "Live WhatsApp groups" : "Parsed inventory"}
+                                <span className="inline-flex items-center rounded-full border border-blue-500/20 bg-blue-500/10 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-blue-200">
+                                  Parsed inventory
                                 </span>
                                 <div className="ml-auto flex items-center gap-1.5">
                                   <button
@@ -1231,9 +1126,7 @@ export default function ChatPage() {
               <div className="flex-1 max-w-[95%] rounded-2xl border border-white/10 bg-white/[0.03] p-4">
                 <div className="flex items-center gap-2 mb-3">
                   <span className="table-skeleton-line w-28" />
-                  <span className="text-[10px] uppercase tracking-[0.18em] text-zinc-500">
-                    {searchSource === "groups" ? "Searching WhatsApp groups…" : "Searching the market…"}
-                  </span>
+                  <span className="text-[10px] uppercase tracking-[0.18em] text-zinc-500">Searching the market…</span>
                 </div>
                 <div className="flex gap-3">
                   {["Building", "Locality", "Type", "Rent/Sale", "Broker", "Last seen"].map((h) => (
@@ -1284,7 +1177,7 @@ export default function ChatPage() {
                 handleSubmit(e);
               }
             }}
-            placeholder={searchSource === "groups" ? "Ask about WhatsApp groups..." : "Ask a question about your market data..."}
+            placeholder="Ask a question about your market data..."
             rows={2}
             className="flex-1 bg-zinc-900 border border-white/10 rounded-xl px-3 lg:px-4 py-2.5 text-sm text-white placeholder-[#64748b] resize-none max-h-[120px]"
           />
