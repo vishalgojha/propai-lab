@@ -1276,7 +1276,13 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
         except Exception as exc:
             _logger.exception("Deterministic market search failed for filters=%s", deterministic_query)
             response = chat_engine.deterministic_market_response(
-                deterministic_query, "", active_sources
+                deterministic_query,
+                json.dumps({
+                    "type": "market_search_error",
+                    "error": "market_search_failed",
+                    "detail": str(exc)[:400],
+                }),
+                active_sources,
             )
             response = _annotate_chat_response(response, source_mode)
             _persist("user", last_user)
