@@ -400,6 +400,26 @@ _CAPABILITY_SIGNALS = re.compile(
     re.IGNORECASE,
 )
 
+_ANALYTICS_ACTION_SIGNALS = re.compile(
+    r"\b("
+    r"how many (?:listings?|properties?|brokers?|messages?|posts?)\b|"
+    r"(?:average|avg|mean|median|total|count|volume|trend|trends?)\s+(?:rent|rents|price|prices|listings?|properties?|brokers?|messages?|posts?)\b|"
+    r"top brokers?(?:\s+(?:in|by|for)\b|\b)|"
+    r"market stats?\b|broker stats?\b|inventory stats?\b|"
+    r"(?:analytics?|reports?|summary|summaries|dashboard|metrics?)\b|"
+    r"(?:admin|ops?|operations?|system health|uptime|quota|billing|errors?|logs?|jobs?|pipeline|ingest(?:ion)?)\s+(?:status|stats?|metrics?|health)\b"
+    r")",
+    re.IGNORECASE,
+)
+
+
+def _is_analytics_or_ops_query(text: str) -> bool:
+    try:
+        return bool(_ANALYTICS_ACTION_SIGNALS.search(text or ""))
+    except Exception:
+        _logger.exception("Analytics intent check failed for text=%r", (text or "")[:200])
+        return False
+
 
 def _has_query_signals(text: str) -> bool:
     lowered = text.lower()
@@ -1205,9 +1225,9 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
                     "status_steps": [],
                     "trace": {"route": "conversational_empty"},
                 }, _is_inbox)
-        except ProviderConfigurationError as exc:
-            _logger.error("LLM provider configuration error: %s", exc)
-            error_text = f"LLM provider not configured. Please check API keys. {exc}"
+        except ProviderConfigurationError:
+            _logger.exception("LLM provider configuration error")
+            error_text = "LLM provider is not configured. Please check workspace API keys."
             _persist("user", last_user)
             _persist("assistant", error_text)
             _maybe_title(last_user)
@@ -1217,14 +1237,12 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
                 "sources": [],
                 "trace": {"route": "conversational_error"},
             }, _is_inbox)
-        except Exception as exc:
-            exc_msg = str(exc) if exc else "no details"
-            if not exc_msg or exc_msg == "None":
-                exc_msg = "LLM provider unavailable or misconfigured"
-            _logger.error("AI chat failed: %s", exc_msg)
+        except Exception:
+            _logger.exception("AI chat failed during conversational fallback")
+            error_text = "AI chat is temporarily unavailable. Please try again."
             return _wrap_chat_response({
-                "content": f"AI chat failed: {exc_msg}. Please try again.",
-                "blocks": [{"type": "error", "body": f"AI chat failed: {exc_msg}. Please try again."}],
+                "content": error_text,
+                "blocks": [{"type": "error", "body": error_text}],
                 "sources": [],
                 "trace": {"route": "conversational_error"},
             }, _is_inbox)
@@ -1307,7 +1325,11 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
             base_url="",
             allow_llm=False,
         )
-    if deterministic_query:
+    use_grounded_market_search = bool(deterministic_query)
+    if use_grounded_market_search:
+        use_grounded_market_search = not _is_analytics_or_ops_query(last_user)
+
+    if deterministic_query and use_grounded_market_search:
         try:
             if source_mode == "groups":
                 response = _group_search_response(search_request_text, deterministic_query)
@@ -1328,14 +1350,13 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
             _persist("assistant", response.get("content", ""), blocks=response.get("blocks"))
             _maybe_title(last_user)
             return _wrap_chat_response(response, _is_inbox)
-        except Exception as exc:
+        except Exception:
             _logger.exception("Deterministic market search failed for filters=%s", deterministic_query)
             response = chat_engine.deterministic_market_response(
                 deterministic_query,
                 _json.dumps({
                     "type": "market_search_error",
                     "error": "market_search_failed",
-                    "detail": str(exc)[:400],
                 }),
                 active_sources,
             )
@@ -1401,6 +1422,7 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
                 status_code=503,
                 content={"error": "ai_unavailable", "message": "AI service credits exhausted. Extraction and chat will resume once credits are added."},
             )
+        _logger.exception("AI chat failed during provider failover")
         return _doubleword_error_response(exc)
 
 

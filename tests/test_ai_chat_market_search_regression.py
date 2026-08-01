@@ -1,0 +1,74 @@
+import asyncio
+import json
+import sys
+from pathlib import Path
+from types import SimpleNamespace
+
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+
+
+def test_plain_inventory_query_uses_grounded_market_search(monkeypatch):
+    import routers.ai_chat as ai_chat
+
+    calls = []
+    monkeypatch.setattr(ai_chat, "storage", SimpleNamespace(db=None))
+    
+    async def _to_thread(func, /, *args, **kwargs):
+        return func(*args, **kwargs)
+
+    monkeypatch.setattr(ai_chat, "_resolve_active_organization_id", lambda user, tenant_id: tenant_id)
+    monkeypatch.setattr(ai_chat, "_workspace_provider_candidates", lambda tenant_id, model: [{"api_key": "k", "model": "m", "base_url": "https://example.invalid/v1"}])
+    monkeypatch.setattr(ai_chat.asyncio, "to_thread", _to_thread)
+    monkeypatch.setattr(ai_chat, "_wrap_chat_response", lambda response, is_inbox=False: response)
+    monkeypatch.setattr(ai_chat.chat_engine, "load_data", lambda: {"overview": {"total_listings": 1}, "unique_listings": {"items": []}, "buildings": {}, "brokers": {}})
+    monkeypatch.setattr(ai_chat.chat_engine, "load_live_data", lambda db: {})
+    monkeypatch.setattr(
+        ai_chat.chat_engine,
+        "parse_market_search_request",
+        lambda *args, **kwargs: {"intent": "RENT", "bhk": 3, "micro_markets": ["Borivali West"]},
+    )
+    monkeypatch.setattr(ai_chat, "_run_with_provider_failover", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("LLM fallback should not run")))
+    monkeypatch.setattr(
+        ai_chat.chat_engine,
+        "execute_tool",
+        lambda tool_name, tool_args, active_sources, db_path=None, tenant_id=None: calls.append(
+            (tool_name, tool_args, sorted(active_sources.keys()), tenant_id)
+        ) or json.dumps(
+            {
+                "results": [
+                    {
+                        "listing_id": 1,
+                        "building_name": "Orbit Heights",
+                        "micro_market": "Borivali West",
+                        "bhk": "3 BHK",
+                        "price_formatted": "₹95,000",
+                        "broker_name": "Ravi",
+                    }
+                ],
+                "total": 1,
+            }
+        ),
+    )
+
+    req = SimpleNamespace(
+        session_id=None,
+        source="parsed",
+        broker_phone="",
+        model="",
+        api_key="",
+        messages=[{"role": "user", "content": "any 3 bhk for rent in Borivali West"}],
+    )
+
+    response = asyncio.run(ai_chat.ai_chat(req, user={"id": "u1"}, tenant_id="org-1"))
+
+    assert calls, "market_search was not called"
+    assert calls[0][0] == "market_search"
+    assert calls[0][1]["bhk"] == 3
+    assert calls[0][1]["intent"] == "RENT"
+    assert calls[0][1]["micro_markets"] == ["Borivali West"]
+    assert ai_chat._is_analytics_or_ops_query("how many listings in Bandra West") is True
+    assert ai_chat._is_analytics_or_ops_query("any 3 bhk for rent in Borivali West") is False
+    assert response["trace"]["route"] == "deterministic_market_search"
+    assert response["content"].startswith("Found 1 active match")
