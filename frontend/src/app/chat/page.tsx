@@ -91,6 +91,10 @@ function isMarkdownDivider(line: string) {
   return cells.length > 1 && cells.every((cell) => /^:?-{3,}:?$/.test(cell));
 }
 
+function textHasTable(text: string) {
+  return /^\s*\|.*\|\s*$/m.test(text);
+}
+
 function MarkdownMessage({ text }: { text: string }) {
   const lines = text.replace(/\r/g, "").split("\n");
   const blocks: React.ReactNode[] = [];
@@ -830,6 +834,19 @@ export default function ChatPage() {
         .typing-dot:nth-child(1) { animation-delay: -0.32s; }
         .typing-dot:nth-child(2) { animation-delay: -0.16s; }
         .typing-dot:nth-child(3) { animation-delay: 0s; }
+        @keyframes table-shimmer {
+          0% { background-position: -400px 0; }
+          100% { background-position: 400px 0; }
+        }
+        .table-skeleton-line,
+        .table-skeleton-bar {
+          background: linear-gradient(90deg, rgba(255,255,255,0.05) 25%, rgba(255,255,255,0.12) 50%, rgba(255,255,255,0.05) 75%);
+          background-size: 800px 100%;
+          animation: table-shimmer 1.4s infinite linear;
+          border-radius: 4px;
+        }
+        .table-skeleton-line { height: 8px; }
+        .table-skeleton-bar { height: 14px; }
       `}</style>
 
       {/* ═══════ Session Sidebar ═══════ */}
@@ -1115,27 +1132,10 @@ export default function ChatPage() {
                         const textParts = (m.parts || []).filter(
                           (p: any) => p.type === "text" && p.text
                         ) as Array<{ text: string }>;
-                        const cardParts = (m.parts || []).filter(
-                          (p: any) => typeof p.type === "string" && p.type.startsWith("data-") && CHAT_CARD_BLOCK_TYPES.has(p.type.slice(5))
-                        );
+                        const hasTable = textParts.some((p) => textHasTable(p.text));
                         return (
                           <>
-                            {(() => {
-                              const hasCards = cardParts.length > 0;
-                              if (hasCards && textParts.length > 0) {
-                                // Render AI summary line with bold counts
-                                const summaryText = textParts[0].text || "";
-                                return (
-                                  <div key="ai-summary" className="mb-3 text-xs text-zinc-400">
-                                    <MarkdownMessage text={summaryText} />
-                                  </div>
-                                );
-                              }
-                              return textParts.map((p: any, i: number) => (
-                                <MarkdownMessage key={i} text={p.text} />
-                              ));
-                            })()}
-                            {cardParts.length > 0 && (
+                            {hasTable && (
                               <div className="flex items-center gap-2">
                                 <span
                                   className={`inline-flex items-center rounded-full border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] ${
@@ -1148,18 +1148,9 @@ export default function ChatPage() {
                                 </span>
                               </div>
                             )}
-                            {cardParts.length > 0 && (() => {
-                              const markdown = cardParts
-                                .map((part: any) => workspaceBlockToMarkdown(part, assistantMode, hiddenBrokerPhones, hiddenMarketKeys))
-                                .filter(Boolean)
-                                .join("\n\n");
-                              return markdown ? (
-                                <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-                                  <MarkdownMessage text={markdown} />
-                                </div>
-                              ) : null;
-                            })()}
-
+                            {textParts.map((p: any, i: number) => (
+                              <MarkdownMessage key={i} text={p.text} />
+                            ))}
                           </>
                         );
                       })()}
@@ -1179,10 +1170,29 @@ export default function ChatPage() {
               className="flex gap-3"
             >
               <span className="text-lg mt-1">🤖</span>
-              <div className="bg-zinc-900 border border-white/10 rounded-xl px-4 py-3 text-sm text-zinc-400 flex items-center gap-1.5 min-w-[60px]">
-                <span className="typing-dot" />
-                <span className="typing-dot" />
-                <span className="typing-dot" />
+              <div className="flex-1 max-w-[95%] rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <span className="table-skeleton-line w-28" />
+                  <span className="text-[10px] uppercase tracking-[0.18em] text-zinc-500">
+                    {searchSource === "groups" ? "Searching WhatsApp groups…" : "Searching the market…"}
+                  </span>
+                </div>
+                <div className="flex gap-3">
+                  {["Building", "Locality", "Type", "Rent/Sale", "Broker"].map((h) => (
+                    <div key={h} className="flex-1 table-skeleton-line" />
+                  ))}
+                  <div className="w-16 table-skeleton-line" />
+                </div>
+                {[0, 1, 2, 3].map((row) => (
+                  <div key={row} className="flex gap-3 mt-3">
+                    <div className="flex-1 table-skeleton-bar" />
+                    <div className="flex-1 table-skeleton-bar" />
+                    <div className="flex-1 table-skeleton-bar" />
+                    <div className="flex-1 table-skeleton-bar" />
+                    <div className="flex-1 table-skeleton-bar" />
+                    <div className="w-16 table-skeleton-bar" />
+                  </div>
+                ))}
               </div>
             </motion.div>
           )}
