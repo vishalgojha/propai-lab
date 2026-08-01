@@ -52,6 +52,65 @@ function relativeTime(text: string): string {
   }
 }
 
+function normalizeWhatsappPhone(phone?: string | null) {
+  const digits = String(phone || "").replace(/\D+/g, "");
+  if (!digits) return "";
+  if (digits.length >= 12 && digits.startsWith("91")) return digits.slice(-10);
+  if (digits.length >= 10) return digits.slice(-10);
+  return digits;
+}
+
+function buildPrefilledWhatsAppLink(item: ListingItem): string {
+  const phone = normalizeWhatsappPhone(item.broker_phone);
+  if (!phone) return "";
+
+  const broker = item.broker_name || "there";
+  const building = item.building_name || "the property";
+  const locality = item.micro_market || item.location_label || item.landmark_name || "";
+  const bhk = item.bhk || item.property_type || "";
+  const price = item.price_formatted || "";
+  const furnishing = item.furnishing || "";
+  const baseLines = [
+    `Hi ${broker},`,
+    "",
+  ];
+
+  const isWanted = (item.intent || "").toUpperCase() === "REQUIREMENT"
+    || (item.intent || "").toUpperCase() === "BUY"
+    || (item.intent || "").toUpperCase() === "BUYER"
+    || (item.intent || "").toUpperCase() === "RENTAL_SEEKER";
+
+  if (isWanted) {
+    baseLines.push(
+      "I saw your requirement on PropAI.",
+      "",
+      `• ${building}`,
+      locality ? `• ${locality}` : "",
+      bhk ? `• ${bhk}` : "",
+      price ? `• ${price}` : "",
+      furnishing ? `• ${furnishing}` : "",
+      "",
+      "Is this still open?",
+    );
+  } else {
+    baseLines.push(
+      "I found your listing on PropAI.",
+      "",
+      `• ${building}`,
+      locality ? `• ${locality}` : "",
+      bhk ? `• ${bhk}` : "",
+      price ? `• ${price}` : "",
+      furnishing ? `• ${furnishing}` : "",
+      "",
+      "Is this still available?",
+    );
+  }
+
+  baseLines.push("", "Sent via PropAI");
+  const text = baseLines.join("\n").trim();
+  return `https://wa.me/91${phone}?text=${encodeURIComponent(text)}`;
+}
+
 export default function ListingCard({
   item,
   onContactBroker,
@@ -86,6 +145,7 @@ export default function ListingCard({
   const hideLabel = isWanted ? "Hide requirement" : "Hide listing";
   const brokerPhone = (item.broker_phone || "").trim();
   const brokerLabel = item.broker_name || "Broker";
+  const waLink = buildPrefilledWhatsAppLink(item);
 
   return (
     <div className={`${cardClass} h-full overflow-hidden ${compact ? "text-[12px]" : ""}`}>
@@ -157,17 +217,31 @@ export default function ListingCard({
             </div>
           )}
         </div>
-        {item.listing_id && onContactBroker && (
-          <button
-            type="button"
-            onClick={() => onContactBroker(item.listing_id!)}
-            disabled={contacting}
-            className="wa-btn disabled:cursor-wait disabled:opacity-60"
-          >
-            <MessageSquare className="w-3.5 h-3.5" />
-            {contacting ? "Opening…" : "Contact broker"}
-          </button>
-        )}
+        <div className="flex flex-col gap-1.5">
+          {item.listing_id && onContactBroker && (
+            <button
+              type="button"
+              onClick={() => onContactBroker(item.listing_id!)}
+              disabled={contacting}
+              className="wa-btn disabled:cursor-wait disabled:opacity-60"
+            >
+              <MessageSquare className="w-3.5 h-3.5" />
+              {contacting ? "Opening…" : "Contact broker"}
+            </button>
+          )}
+          {waLink && (
+            <a
+              href={waLink}
+              target="_blank"
+              rel="noreferrer"
+              className="wa-btn inline-flex items-center gap-1.5"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <MessageSquare className="w-3.5 h-3.5" />
+              WhatsApp
+            </a>
+          )}
+        </div>
       </div>
     </div>
   );
