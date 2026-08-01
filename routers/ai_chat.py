@@ -44,6 +44,24 @@ def _sse_event(data: dict | str) -> str:
     return f"data: {payload}\n\n"
 
 
+_RAW_MARKUP_PREFIX = re.compile(r"^\s*(?:<!doctype|<html|<head|<body)", re.IGNORECASE)
+_RAW_MARKUP_ERROR = "Something went wrong generating a response. Please try again."
+
+
+def _guard_against_raw_markup(content: str) -> str:
+    """Never render an infra-level error page (e.g. a Cloudflare 524 HTML page)
+    as assistant text. If the payload looks like markup rather than a model
+    reply, swap in a clean generic error and log the raw payload for debugging.
+    """
+    if _RAW_MARKUP_PREFIX.match(content or ""):
+        _logger.error(
+            "Blocked non-LLM markup from reaching chat UI: %.500s",
+            content,
+        )
+        return _RAW_MARKUP_ERROR
+    return content
+
+
 def _to_sse_chunks(response: dict) -> str:
     """Convert a workspace response dict into SSE text for DefaultChatTransport.
 
@@ -52,7 +70,7 @@ def _to_sse_chunks(response: dict) -> str:
     client, so the data events remain available as transport metadata.
     """
     msg_id = f"msg-{uuid.uuid4().hex[:8]}"
-    content = str(response.get("content") or "").strip()
+    content = _guard_against_raw_markup(str(response.get("content") or "").strip())
     blocks = response.get("blocks") or []
     source_mode = str(response.get("source_mode") or "").strip()
 
@@ -105,7 +123,9 @@ def _wrap_sse(response: dict) -> StreamingResponse:
 def _wrap_chat_response(response: dict, is_inbox: bool = False):
     """Return SSE for /chat, plain JSON for inbox AI panel."""
     if is_inbox:
-        return response
+        guarded = dict(response)
+        guarded["content"] = _guard_against_raw_markup(str(guarded.get("content") or "").strip())
+        return guarded
     return _wrap_sse(response)
 
 
@@ -1245,13 +1265,27 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
             # inherit the active 3 BHK + RENT constraints from the prior turn.
             search_request_text = f"{previous_users[-1]}\nFollow-up correction: {last_user}"
 
-    deterministic_query = chat_engine.parse_market_search_request(
-        search_request_text,
-        api_key=providers[0]["api_key"],
-        model=providers[0]["model"],
-        base_url=providers[0]["base_url"],
-        db_path=getattr(storage, "db", None),
-    )
+    try:
+        deterministic_query = await asyncio.wait_for(
+            asyncio.to_thread(
+                chat_engine.parse_market_search_request,
+                search_request_text,
+                providers[0]["api_key"],
+                providers[0]["model"],
+                providers[0]["base_url"],
+                getattr(storage, "db", None),
+            ),
+            timeout=25,
+        )
+    except asyncio.TimeoutError:
+        _logger.warning("Market-search request parse timed out; using regex fallback")
+        deterministic_query = chat_engine.parse_market_search_request(
+            search_request_text,
+            api_key="",
+            model="",
+            base_url="",
+            allow_llm=False,
+        )
     if deterministic_query:
         try:
             if source_mode == "groups":
