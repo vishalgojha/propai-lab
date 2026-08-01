@@ -124,6 +124,7 @@ export async function fetchFormData<T>(url: string, formData: FormData, timeoutM
     const res = await fetch(`${BASE}${url}`, {
       method: "POST",
       body: formData,
+      cache: "no-store",
       signal: controller.signal,
       headers: {
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -173,6 +174,7 @@ async function fetchJSONWithRetry<T>(
     const tenantId = readActiveTenantId();
     const res = await fetch(`${requestBase}${url}`, {
       ...init,
+      cache: "no-store",
       signal: controller.signal,
       headers: {
         "Content-Type": "application/json",

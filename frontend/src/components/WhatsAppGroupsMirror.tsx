@@ -199,14 +199,26 @@ function timeLabel(value?: string) {
   if (!value) return "";
   const date = new Date(value);
   if (Number.isNaN(date.valueOf())) return "";
-  return new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" }).format(date);
+  return new Intl.DateTimeFormat("en-IN", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+    timeZone: "Asia/Kolkata",
+  }).format(date);
 }
 
-function dateLabel(value?: string) {
+function dateTimeLabel(value?: string) {
   if (!value) return "";
   const date = new Date(value);
   if (Number.isNaN(date.valueOf())) return "";
-  return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" }).format(date);
+  return `${new Intl.DateTimeFormat("en-IN", {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+    timeZone: "Asia/Kolkata",
+  }).format(date)} IST`;
 }
 
 export default function WhatsAppGroupsMirror() {
@@ -438,7 +450,7 @@ export default function WhatsAppGroupsMirror() {
             const jid = String(group.conversation_jid || "");
             const name = String(group.display_name || group.conversation_name || group.name || "WhatsApp Group");
             return <button key={jid} onClick={() => { setSelectedJid(jid); setShowConversation(true); }} className={`w-full border-b border-white/[0.06] px-4 py-3 text-left transition-colors hover:bg-white/[0.03] ${selectedJid === jid ? "border-l-2 border-l-emerald-400 bg-white/[0.04] pl-[14px]" : ""}`}>
-              <div className="flex items-center gap-3"><div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-white/10 text-zinc-300"><Users className="h-4 w-4" /></div><div className="min-w-0 flex-1"><div className="truncate text-sm font-semibold text-white">{name}</div><div className="mt-1 text-xs text-zinc-500">{Number(group.metadata?.participants || 0) ? `${group.metadata?.participants} participants` : `${group.message_count || 0} messages`}</div></div><span className="text-[10px] text-zinc-600">{dateLabel(group.last_message_at)}</span></div>
+            <div className="flex items-center gap-3"><div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-white/10 text-zinc-300"><Users className="h-4 w-4" /></div><div className="min-w-0 flex-1"><div className="truncate text-sm font-semibold text-white">{name}</div><div className="mt-1 text-xs text-zinc-500">{Number(group.metadata?.participants || 0) ? `${group.metadata?.participants} participants` : `${group.message_count || 0} messages`}</div></div><span className="text-[10px] text-zinc-600">{dateTimeLabel(group.last_message_at)}</span></div>
             </button>;
           })}
         </div>
