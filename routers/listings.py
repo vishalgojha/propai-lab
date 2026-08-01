@@ -4,6 +4,9 @@ Listing routes — listings, parsed sources, listing photos, media serving.
 import re
 import uuid
 from pathlib import Path
+from typing import Literal
+
+from pydantic import BaseModel
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse
@@ -14,6 +17,130 @@ router = APIRouter(tags=["listings"])
 
 # ── Media storage for listing photos (wired from app.py) ──
 MEDIA_DIR: Path = Path("/tmp")
+
+
+class HiddenMarketItemPayload(BaseModel):
+    item_kind: Literal["listing", "requirement"]
+    listing_id: int | None = None
+    raw_message_id: int | None = None
+    broker_phone: str | None = None
+    broker_name: str | None = None
+    source_label: str | None = None
+    hidden_reason: str | None = None
+
+
+def _hidden_market_key(payload: HiddenMarketItemPayload) -> str:
+    if payload.item_kind == "listing":
+        if payload.listing_id is None:
+            raise HTTPException(400, "listing_id is required for listing hides")
+        return f"listing:{payload.listing_id}"
+    if payload.raw_message_id is None:
+        raise HTTPException(400, "raw_message_id is required for requirement hides")
+    return f"requirement:{payload.raw_message_id}"
+
+
+def _tenant_id() -> str | None:
+    try:
+        return getattr(storage, "tenant_id", None) or getattr(storage, "_tenant_id", None)
+    except Exception:
+        return None
+
+
+@router.get("/api/listings/hidden-items")
+async def list_hidden_market_items(user: dict = Depends(require_user)):
+    try:
+        tenant_id = _tenant_id()
+        params: list[object] = []
+        where = ""
+        if tenant_id:
+            where = "WHERE tenant_id IS NULL OR tenant_id = ?"
+            params.append(tenant_id)
+        rows = storage.db.execute(
+            f"""
+            SELECT hidden_key, item_kind, listing_id, raw_message_id, broker_phone,
+                   broker_name, source_label, hidden_reason, hidden_at
+            FROM hidden_market_items
+            {where}
+            ORDER BY hidden_at DESC
+            """,
+            tuple(params),
+        ).fetchall()
+        return {"items": [dict(row) for row in rows]}
+    except Exception as exc:
+        raise HTTPException(500, f"Failed to load hidden items: {exc}")
+
+
+@router.post("/api/listings/hide")
+async def hide_market_item(payload: HiddenMarketItemPayload, user: dict = Depends(require_user)):
+    try:
+        hidden_key = _hidden_market_key(payload)
+        row = {
+            "hidden_key": hidden_key,
+            "tenant_id": _tenant_id(),
+            "item_kind": payload.item_kind,
+            "listing_id": payload.listing_id,
+            "raw_message_id": payload.raw_message_id,
+            "broker_phone": payload.broker_phone,
+            "broker_name": payload.broker_name,
+            "source_label": payload.source_label,
+            "hidden_reason": payload.hidden_reason,
+            "hidden_by": user.get("id"),
+        }
+        storage.db.execute(
+            """
+            insert into hidden_market_items
+                (hidden_key, tenant_id, item_kind, listing_id, raw_message_id,
+                 broker_phone, broker_name, source_label, hidden_reason, hidden_by, hidden_at)
+            values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, now())
+            on conflict (hidden_key) do update set
+                tenant_id = excluded.tenant_id,
+                item_kind = excluded.item_kind,
+                listing_id = excluded.listing_id,
+                raw_message_id = excluded.raw_message_id,
+                broker_phone = excluded.broker_phone,
+                broker_name = excluded.broker_name,
+                source_label = excluded.source_label,
+                hidden_reason = excluded.hidden_reason,
+                hidden_by = excluded.hidden_by,
+                hidden_at = now()
+            """,
+            (
+                row["hidden_key"],
+                row["tenant_id"],
+                row["item_kind"],
+                row["listing_id"],
+                row["raw_message_id"],
+                row["broker_phone"],
+                row["broker_name"],
+                row["source_label"],
+                row["hidden_reason"],
+                row["hidden_by"],
+            ),
+        )
+        if hasattr(storage.db, "commit"):
+            storage.db.commit()
+        return {"success": True, **row}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(500, f"Failed to hide item: {exc}")
+
+
+@router.post("/api/listings/unhide")
+async def unhide_market_item(payload: HiddenMarketItemPayload, user: dict = Depends(require_user)):
+    try:
+        hidden_key = _hidden_market_key(payload)
+        storage.db.execute(
+            "delete from hidden_market_items where hidden_key = ?",
+            (hidden_key,),
+        )
+        if hasattr(storage.db, "commit"):
+            storage.db.commit()
+        return {"success": True, "hidden_key": hidden_key}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(500, f"Failed to unhide item: {exc}")
 
 
 @router.get("/api/listings")

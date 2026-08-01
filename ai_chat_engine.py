@@ -628,12 +628,14 @@ AVAILABLE DATA:
 {build_overview(sources)}
 
 For workspace data, return valid JSON with a short `content` field and UI
-`blocks`. Use `summary`, `listing_cards`, `broker_cards`, `table`,
-`empty_state`, or `error_state`. Keep cards factual and compact. Every
-listing_cards item MUST include at least one of: listing_id, message_id,
-cluster_id, raw_message_id, whatsapp_message_id. Items missing these
-fields are removed by the renderer and replaced with an error_state
-block."""
+`blocks`. Keep the `content` field as concise GitHub Flavored Markdown.
+Use `summary`, `listing_cards`, `broker_cards`, `table`, `empty_state`,
+or `error_state`. Every listing_cards item MUST include at least one of:
+listing_id, message_id, cluster_id, raw_message_id,
+whatsapp_message_id. Items missing these fields are removed by the
+renderer and replaced with an error_state block. The chat surface renders
+the structured blocks as Markdown tables, so do not rely on card-style UI
+for readability."""
 
 
 WORKSPACE_BLOCK_TYPES = {
@@ -1400,8 +1402,10 @@ def _llm_market_search_request(text: str, api_key: str = "", model: str = "", ba
         "West good for expats?', 'tell me about Powai', and 'what is this area "
         "like?' must return {} and stay on the conversational AI path. Do not "
         "turn a locality mentioned in an advice question into a listing filter. "
-        "For concrete inventory requests, extract the search. Do not infer "
-        "intermediate locations. For between A and B, return only "
+        "For concrete inventory requests, extract the search. If the user asks "
+        "for office space, shop, showroom, warehouse, godown, retail, or other "
+        "commercial inventory, set intent to COMMERCIAL rather than RENT. Do not "
+        "infer intermediate locations. For between A and B, return only "
         "between_start and between_end; the application resolves geography. "
         "Keys: bhk, intent (RENT/SELL/null), furnishing, price_min, price_max, "
         "micro_markets (explicit names only), between_start, between_end. "
@@ -1439,7 +1443,14 @@ def _llm_market_search_request(text: str, api_key: str = "", model: str = "", ba
         return None
 
 
-def parse_market_search_request(text: str, api_key: str = "", model: str = "", base_url: str = "", db_path=None) -> dict | None:
+def parse_market_search_request(
+    text: str,
+    api_key: str = "",
+    model: str = "",
+    base_url: str = "",
+    db_path=None,
+    allow_llm: bool = True,
+) -> dict | None:
     """Parse an ordinary broker search message into safe market filters.
 
     This intentionally recognises only concrete property language. Generic
@@ -1451,9 +1462,10 @@ def parse_market_search_request(text: str, api_key: str = "", model: str = "", b
     if not raw:
         return None
 
-    llm_result = _llm_market_search_request(raw, api_key, model, base_url, db_path)
-    if llm_result:
-        return llm_result
+    if allow_llm:
+        llm_result = _llm_market_search_request(raw, api_key, model, base_url, db_path)
+        if llm_result:
+            return llm_result
 
     bhk_match = re.search(r"\b(\d+(?:\.5)?)\s*(?:bhk|bed(?:room)?s?)\b", lower)
     localities = [
@@ -1470,7 +1482,8 @@ def parse_market_search_request(text: str, api_key: str = "", model: str = "", b
         r"building|tower|society|project|available|need|looking for|find|search)\b",
         lower,
     )
-    if not (bhk_match or localities) or not property_words:
+    commercial_signal = re.search(r"\b(?:commercial|office|shop|showroom|warehouse|godown|retail)\b", lower)
+    if not (bhk_match or localities or commercial_signal) or not property_words:
         return None
 
     args: dict[str, object] = {
@@ -1488,6 +1501,10 @@ def parse_market_search_request(text: str, api_key: str = "", model: str = "", b
         args["intent"] = "RENT"
     elif re.search(r"\b(?:sale|sell|buy|purchase)\b", lower):
         args["intent"] = "SELL"
+    if commercial_signal:
+        # Commercial queries should not be routed as generic residential rent
+        # searches. The downstream search path already understands COMMERCIAL.
+        args["intent"] = "COMMERCIAL"
 
     if localities:
         # Preserve "Bandra East or BKC" rather than silently searching only
@@ -1615,7 +1632,48 @@ def _listing_price_in_rupees(row: dict) -> float | None:
     return value
 
 
-def _rest_market_search(client, args: dict) -> str:
+def _hidden_broker_phones(client, tenant_id: str | None = None) -> set[str]:
+    try:
+        query = client.table("brokers").select("primary_phone, phone").eq("is_hidden", True)
+        if tenant_id:
+            query = query.eq("tenant_id", tenant_id)
+        rows = query.execute().data or []
+    except Exception:
+        return set()
+    phones: set[str] = set()
+    for row in rows:
+        phone = _normalize_real_phone((row.get("primary_phone") if isinstance(row, dict) else None) or (row.get("phone") if isinstance(row, dict) else None) or "")
+        if phone:
+            phones.add(phone)
+    return phones
+
+
+def _hidden_market_item_ids(client, tenant_id: str | None = None) -> tuple[set[int], set[int]]:
+    try:
+        query = client.table("hidden_market_items").select("tenant_id, listing_id, raw_message_id")
+        rows = query.execute().data or []
+    except Exception:
+        return set(), set()
+    listing_ids: set[int] = set()
+    raw_message_ids: set[int] = set()
+    for row in rows:
+        row_tenant = str(row.get("tenant_id") or "").strip()
+        if tenant_id and row_tenant and row_tenant != tenant_id:
+            continue
+        if row.get("listing_id") is not None:
+            try:
+                listing_ids.add(int(row["listing_id"]))
+            except Exception:
+                pass
+        if row.get("raw_message_id") is not None:
+            try:
+                raw_message_ids.add(int(row["raw_message_id"]))
+            except Exception:
+                pass
+    return listing_ids, raw_message_ids
+
+
+def _rest_market_search(client, args: dict, tenant_id: str | None = None) -> str:
     """Read global listings through Supabase's table API, not the SQL bridge.
 
     The SQL bridge is useful for internal diagnostics but has a history of
@@ -1636,6 +1694,8 @@ def _rest_market_search(client, args: dict) -> str:
     price_max = args.get("price_max")
     limit = max(1, min(int(args.get("limit") or 10), 50))
     offset = max(0, int(args.get("offset") or 0))
+    hidden_brokers = _hidden_broker_phones(client, tenant_id)
+    hidden_listing_ids, hidden_raw_message_ids = _hidden_market_item_ids(client, tenant_id)
 
     columns = (
         "id,fingerprint,intent,bhk,price,price_unit,area_sqft,furnishing,location_label,"
@@ -1675,6 +1735,13 @@ def _rest_market_search(client, args: dict) -> str:
                 row_bhk_match = re.search(r"\d+(?:\.5)?", str(row.get("bhk") or ""))
                 if row_bhk_match is None or float(row_bhk_match.group(0)) != requested_bhk:
                     continue
+            broker_phone = _normalize_real_phone(row.get("broker_phone") or "")
+            if broker_phone and broker_phone in hidden_brokers:
+                continue
+            if row.get("id") is not None and int(row["id"]) in hidden_listing_ids:
+                continue
+            if row.get("latest_raw_message_id") is not None and int(row["latest_raw_message_id"]) in hidden_raw_message_ids:
+                continue
             normalized_price = _listing_price_in_rupees(row)
             if price_min is not None and (normalized_price is None or normalized_price < float(price_min)):
                 continue
@@ -1925,7 +1992,7 @@ def execute_tool(name, args, sources, db_path=None, tenant_id: str | None = None
         try:
             rest_client = getattr(con, "_client", None)
             if rest_client is not None and hasattr(rest_client, "table"):
-                return _rest_market_search(rest_client, args)
+                return _rest_market_search(rest_client, args, tenant_id=tenant_id)
 
             import math
             from datetime import datetime, timezone, timedelta
@@ -1943,6 +2010,54 @@ def execute_tool(name, args, sources, db_path=None, tenant_id: str | None = None
             limit = args.get("limit", 10)
             offset = args.get("offset", 0)
             group_by_building = args.get("group_by_building", True)
+
+            hidden_brokers: set[str] = set()
+            hidden_listing_ids: set[int] = set()
+            hidden_raw_message_ids: set[int] = set()
+            try:
+                hidden_broker_sql = """
+                    SELECT DISTINCT COALESCE(NULLIF(primary_phone, ''), NULLIF(phone, '')) AS phone
+                    FROM brokers
+                    WHERE is_hidden = true
+                      AND COALESCE(NULLIF(primary_phone, ''), NULLIF(phone, '')) IS NOT NULL
+                """
+                hidden_broker_params: tuple[object, ...] = ()
+                if tenant_id:
+                    hidden_broker_sql += " AND (tenant_id IS NULL OR tenant_id = ?)"
+                    hidden_broker_params = (tenant_id,)
+                broker_rows = con.execute(
+                    hidden_broker_sql,
+                    hidden_broker_params,
+                ).fetchall()
+                for row in broker_rows:
+                    phone = _normalize_real_phone(row[0])
+                    if phone:
+                        hidden_brokers.add(phone)
+            except Exception:
+                pass
+            try:
+                hidden_market_sql = "SELECT listing_id, raw_message_id FROM hidden_market_items"
+                hidden_market_params: tuple[object, ...] = ()
+                if tenant_id:
+                    hidden_market_sql += " WHERE tenant_id IS NULL OR tenant_id = ?"
+                    hidden_market_params = (tenant_id,)
+                hidden_rows = con.execute(
+                    hidden_market_sql,
+                    hidden_market_params,
+                ).fetchall()
+                for row in hidden_rows:
+                    if row[0] is not None:
+                        try:
+                            hidden_listing_ids.add(int(row[0]))
+                        except Exception:
+                            pass
+                    if row[1] is not None:
+                        try:
+                            hidden_raw_message_ids.add(int(row[1]))
+                        except Exception:
+                            pass
+            except Exception:
+                pass
 
             where_clauses = []
             params = []
@@ -2002,6 +2117,16 @@ def execute_tool(name, args, sources, db_path=None, tenant_id: str | None = None
             if broker:
                 where_clauses.append("l.broker_name LIKE ?")
                 params.append(f"%{broker}%")
+
+            if hidden_brokers:
+                where_clauses.append("COALESCE(l.broker_phone, '') NOT IN (" + ",".join("?" for _ in hidden_brokers) + ")")
+                params.extend(hidden_brokers)
+            if hidden_listing_ids:
+                where_clauses.append("l.id NOT IN (" + ",".join("?" for _ in hidden_listing_ids) + ")")
+                params.extend(hidden_listing_ids)
+            if hidden_raw_message_ids:
+                where_clauses.append("COALESCE(l.latest_raw_message_id, -1) NOT IN (" + ",".join("?" for _ in hidden_raw_message_ids) + ")")
+                params.extend(hidden_raw_message_ids)
 
             where_sql = " AND ".join(where_clauses) if where_clauses else "1=1"
 

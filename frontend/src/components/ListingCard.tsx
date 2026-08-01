@@ -4,6 +4,7 @@ import { Building2, Layers3, MapPin, MessageSquare, Ruler, UserRound } from "luc
 
 export interface ListingItem {
   listing_id?: number;
+  raw_message_id?: number;
   intent?: string;
   building_name?: string;
   micro_market?: string;
@@ -15,6 +16,7 @@ export interface ListingItem {
   broker_name?: string;
   broker_phone?: string;
   last_seen_text?: string;
+  first_seen_text?: string;
   group_count?: number;
   confidence?: number;
   fingerprint?: string;
@@ -23,9 +25,11 @@ export interface ListingItem {
   wing?: string;
   flat_number?: string;
   property_type?: string;
-  first_seen_text?: string;
   observation_count?: number;
   original_message?: string;
+  match_reasons?: string[];
+  sender_phone?: string;
+  source?: string;
 }
 
 function relativeTime(text: string): string {
@@ -51,11 +55,19 @@ function relativeTime(text: string): string {
 export default function ListingCard({
   item,
   onContactBroker,
+  onHideBroker,
+  onHideListing,
+  onHideRequirement,
   contacting = false,
+  compact = false,
 }: {
   item: ListingItem;
   onContactBroker?: (listingId: number) => void;
+  onHideBroker?: (phone: string, label: string) => void;
+  onHideListing?: (item: ListingItem) => void;
+  onHideRequirement?: (item: ListingItem) => void;
   contacting?: boolean;
+  compact?: boolean;
 }) {
   const intent = (item.intent || "").toUpperCase();
   const isWanted = intent === "REQUIREMENT" || intent === "BUY" || intent === "BUYER" || intent === "RENTAL_SEEKER";
@@ -71,9 +83,12 @@ export default function ListingCard({
   const sourceSummary = item.group_count && item.group_count > 0
     ? `${item.group_count} WhatsApp ${item.group_count === 1 ? "group" : "groups"}`
     : "WhatsApp broker network";
+  const hideLabel = isWanted ? "Hide requirement" : "Hide listing";
+  const brokerPhone = (item.broker_phone || "").trim();
+  const brokerLabel = item.broker_name || "Broker";
 
   return (
-    <div className={`${cardClass} h-full overflow-hidden`}>
+    <div className={`${cardClass} h-full overflow-hidden ${compact ? "text-[12px]" : ""}`}>
       <div className="card-top">
         <div>
           <span className={badgeClass}>{badgeLabel}</span>
@@ -110,6 +125,37 @@ export default function ListingCard({
           <div className="meta">
             {sourceSummary}{item.last_seen_text && ` · Active ${relativeTime(item.last_seen_text)}`}
           </div>
+          {(onHideBroker || onHideListing || onHideRequirement) && (
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {onHideListing && item.listing_id && (
+                <button
+                  type="button"
+                  onClick={() => onHideListing(item)}
+                  className="inline-flex items-center rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-300 hover:border-red-500/40 hover:bg-red-500/10 hover:text-red-200"
+                >
+                  {hideLabel}
+                </button>
+              )}
+              {onHideRequirement && item.raw_message_id && isWanted && (
+                <button
+                  type="button"
+                  onClick={() => onHideRequirement(item)}
+                  className="inline-flex items-center rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-300 hover:border-red-500/40 hover:bg-red-500/10 hover:text-red-200"
+                >
+                  Hide requirement
+                </button>
+              )}
+              {onHideBroker && brokerPhone && (
+                <button
+                  type="button"
+                  onClick={() => onHideBroker(brokerPhone, brokerLabel)}
+                  className="inline-flex items-center rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-300 hover:border-red-500/40 hover:bg-red-500/10 hover:text-red-200"
+                >
+                  Hide broker
+                </button>
+              )}
+            </div>
+          )}
         </div>
         {item.listing_id && onContactBroker && (
           <button
