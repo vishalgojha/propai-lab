@@ -1559,6 +1559,24 @@ def deterministic_market_response(query: dict, result: str, sources: dict | None
             "trace": {"route": "deterministic_market_search", "sources": source_names},
         }
 
+    if payload.get("type") == "market_search_error" or payload.get("error"):
+        detail = payload.get("detail") or payload.get("error") or "Search backend failed."
+        return {
+            "content": f"Market search failed: {detail}",
+            "blocks": [{
+                "type": "error_state",
+                "title": "Market search unavailable",
+                "body": detail,
+            }],
+            "sources": source_names,
+            "status_steps": ["Searching live marketplace"],
+            "trace": {
+                "route": "deterministic_market_search",
+                "sources": source_names,
+                "error": detail,
+            },
+        }
+
     results = payload.get("results") or []
     total = int(payload.get("total") or 0)
     if not results:
@@ -1988,11 +2006,22 @@ def execute_tool(name, args, sources, db_path=None, tenant_id: str | None = None
         con = db_path if hasattr(db_path, "execute") else _open_db()
         close_con = con is not db_path
         if not con:
-            return "Database not available"
+            return json.dumps({
+                "type": "market_search_error",
+                "error": "Database not available",
+                "detail": "Search backend is not connected to a database.",
+            })
         try:
             rest_client = getattr(con, "_client", None)
             if rest_client is not None and hasattr(rest_client, "table"):
-                return _rest_market_search(rest_client, args, tenant_id=tenant_id)
+                try:
+                    return _rest_market_search(rest_client, args, tenant_id=tenant_id)
+                except Exception as exc:
+                    return json.dumps({
+                        "type": "market_search_error",
+                        "error": "market_search_failed",
+                        "detail": str(exc)[:400],
+                    })
 
             import math
             from datetime import datetime, timezone, timedelta
@@ -2279,6 +2308,12 @@ def execute_tool(name, args, sources, db_path=None, tenant_id: str | None = None
                     "buildings": buildings_found,
                 },
             }, default=str)
+        except Exception as exc:
+            return json.dumps({
+                "type": "market_search_error",
+                "error": "market_search_failed",
+                "detail": str(exc)[:400],
+            })
         finally:
             if close_con:
                 con.close()

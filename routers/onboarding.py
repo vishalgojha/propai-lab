@@ -365,69 +365,73 @@ def _connection(org_id: str, connection_id: int) -> dict:
 
 
 def _group_directory(org_id: str, broker_id: str, connection_id: int) -> list[dict]:
-    rows = (
-        storage.client.table("whatsapp_conversations")
-        .select("conversation_jid,display_name,metadata,last_message_at")
-        .eq("tenant_id", org_id)
-        .eq("broker_id", broker_id)
-        .eq("conversation_type", "group")
-        .order("display_name")
-        .limit(1000)
-        .execute()
-        .data
-        or []
-    )
-    connected = {
-        row["group_jid"]
-        for row in (
-            storage.client.table("organization_group_connections")
-            .select("group_jid")
-            .eq("organization_id", org_id)
-            .eq("whatsapp_connection_id", connection_id)
-            .eq("is_active", True)
+    try:
+        rows = (
+            storage.client.table("whatsapp_conversations")
+            .select("conversation_jid,display_name,metadata,last_message_at")
+            .eq("tenant_id", org_id)
+            .eq("broker_id", broker_id)
+            .eq("conversation_type", "group")
+            .order("display_name")
+            .limit(1000)
             .execute()
             .data
             or []
         )
-    }
-    
-    # Compute suggestion scores for all groups
-    scored_groups = []
-    for row in rows:
-        group_jid = row.get("conversation_jid") or ""
-        group_name = row.get("display_name") or group_jid
-        metadata = row.get("metadata") if isinstance(row.get("metadata"), dict) else {}
-        participants = metadata.get("participants", 0)
-        last_message_at = row.get("last_message_at")
-        is_connected = group_jid in connected
-        
-        # Compute suggestion score for unconnected groups
-        suggestion = None
-        if not is_connected:
-            suggestion = _suggestion_score(
-                org_id, group_name, participants, last_message_at, group_jid=group_jid
+        connected = {
+            row["group_jid"]
+            for row in (
+                storage.client.table("organization_group_connections")
+                .select("group_jid")
+                .eq("organization_id", org_id)
+                .eq("whatsapp_connection_id", connection_id)
+                .eq("is_active", True)
+                .execute()
+                .data
+                or []
             )
-        
-        scored_groups.append({
-            "group_jid": group_jid,
-            "group_name": group_name,
-            "participants": participants,
-            "last_message_at": last_message_at,
-            "connected": is_connected,
-            "suggestion": suggestion,
-        })
-    
-    # Rank recommendations first. Connected groups remain visible below them
-    # so already-onboarded brokers can compare existing coverage with new reach.
-    connected_groups = [g for g in scored_groups if g["connected"]]
-    unconnected_groups = [g for g in scored_groups if not g["connected"]]
-    unconnected_groups.sort(key=lambda g: g.get("suggestion", {}).get("score", 0), reverse=True)
-    ranked = unconnected_groups + connected_groups
-    _attach_directory_overlap(org_id, ranked)
-    unconnected_groups = [g for g in ranked if not g["connected"]]
-    connected_groups = [g for g in ranked if g["connected"]]
-    unconnected_groups.sort(key=lambda g: g.get("suggestion", {}).get("score", 0), reverse=True)
-    return unconnected_groups + connected_groups
+        }
+
+        # Compute suggestion scores for all groups
+        scored_groups = []
+        for row in rows:
+            group_jid = row.get("conversation_jid") or ""
+            group_name = row.get("display_name") or group_jid
+            metadata = row.get("metadata") if isinstance(row.get("metadata"), dict) else {}
+            participants = metadata.get("participants", 0)
+            last_message_at = row.get("last_message_at")
+            is_connected = group_jid in connected
+
+            # Compute suggestion score for unconnected groups
+            suggestion = None
+            if not is_connected:
+                suggestion = _suggestion_score(
+                    org_id, group_name, participants, last_message_at, group_jid=group_jid
+                )
+
+            scored_groups.append({
+                "group_jid": group_jid,
+                "group_name": group_name,
+                "participants": participants,
+                "last_message_at": last_message_at,
+                "connected": is_connected,
+                "suggestion": suggestion,
+            })
+
+        # Rank recommendations first. Connected groups remain visible below them
+        # so already-onboarded brokers can compare existing coverage with new reach.
+        connected_groups = [g for g in scored_groups if g["connected"]]
+        unconnected_groups = [g for g in scored_groups if not g["connected"]]
+        unconnected_groups.sort(key=lambda g: g.get("suggestion", {}).get("score", 0), reverse=True)
+        ranked = unconnected_groups + connected_groups
+        _attach_directory_overlap(org_id, ranked)
+        unconnected_groups = [g for g in ranked if not g["connected"]]
+        connected_groups = [g for g in ranked if g["connected"]]
+        unconnected_groups.sort(key=lambda g: g.get("suggestion", {}).get("score", 0), reverse=True)
+        return unconnected_groups + connected_groups
+    except Exception:
+        _logger.exception("Group directory lookup failed for org=%s connection=%s broker=%s", org_id, connection_id, broker_id)
+        return []
 
 
 def _sample_senders(org_id: str, group_name: str, group_jid: str = "") -> list[str]:
@@ -626,8 +630,20 @@ async def group_cap(
 ):
     org_id = _resolve_active_organization_id(user, tenant_id)
     await _require_org_permission(user, org_id, "manage_whatsapp")
-    _connection(org_id, whatsapp_connection_id)
-    return _cap_state(org_id, whatsapp_connection_id)
+    try:
+        _connection(org_id, whatsapp_connection_id)
+        return _cap_state(org_id, whatsapp_connection_id)
+    except Exception:
+        _logger.exception("group_cap failed for org=%s connection=%s", org_id, whatsapp_connection_id)
+        return {
+            "tier": "unknown",
+            "cap": 0,
+            "opted_out_count": 0,
+            "remaining": 0,
+            "overridden": False,
+            "soft_warning_at_cap": False,
+            "hard_block": False,
+        }
 
 
 @router.get("/groups")
@@ -638,8 +654,21 @@ async def onboarding_groups(
 ):
     org_id = _resolve_active_organization_id(user, tenant_id)
     await _require_org_permission(user, org_id, "manage_whatsapp")
-    connection = _connection(org_id, whatsapp_connection_id)
-    return {"groups": _group_directory(org_id, str(connection.get("broker_id") or ""), whatsapp_connection_id), **_cap_state(org_id, whatsapp_connection_id)}
+    try:
+        connection = _connection(org_id, whatsapp_connection_id)
+        return {"groups": _group_directory(org_id, str(connection.get("broker_id") or ""), whatsapp_connection_id), **_cap_state(org_id, whatsapp_connection_id)}
+    except Exception:
+        _logger.exception("onboarding_groups failed for org=%s connection=%s", org_id, whatsapp_connection_id)
+        return {
+            "groups": [],
+            "tier": "unknown",
+            "cap": 0,
+            "opted_out_count": 0,
+            "remaining": 0,
+            "overridden": False,
+            "soft_warning_at_cap": False,
+            "hard_block": False,
+        }
 
 
 @router.post("/groups/check")
