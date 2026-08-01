@@ -100,6 +100,44 @@ def test_market_search_allow_llm_false_skips_client():
     assert result.get("bhk") == "3"
 
 
+def test_execute_tool_json_is_module_scoped_not_local():
+    con = Mock()
+    con.execute.return_value.fetchone.return_value = (7,)
+    con.commit = Mock()
+    result = ai_chat_engine.execute_tool(
+        "create_suggestion",
+        {"agent": "test", "suggestion_type": "review", "title": "T", "description": "D"},
+        sources={},
+        db_path=con,
+    )
+    assert isinstance(result, str)
+    assert "Suggestion created" in result
+
+
+def test_execute_tool_market_search_returns_valid_json():
+    class FakeCon:
+        def execute(self, sql, params=None):
+            if "COUNT(*)" in sql:
+                class Row:
+                    def fetchone(self):
+                        return (0,)
+                return Row()
+            class Rows:
+                def fetchall(self):
+                    return []
+            return Rows()
+
+    result = ai_chat_engine.execute_tool(
+        "market_search",
+        {"intent": "RENT", "bhk": "3", "micro_markets": ["Bandra West"]},
+        sources={},
+        db_path=FakeCon(),
+    )
+    payload = json.loads(result)
+    assert payload["type"] == "listing_results"
+    assert payload["results"] == []
+
+
 def test_guard_against_raw_markup_swaps_clean_error():
     raw = "<!DOCTYPE html><html><body>Error 524: A timeout occurred</body></html>"
     assert ai_chat_router._guard_against_raw_markup(raw) == ai_chat_router._RAW_MARKUP_ERROR
