@@ -763,6 +763,18 @@ def _purify_listing_blocks(blocks: list[dict]) -> tuple[list[dict], int]:
     return cleaned, dropped_count
 
 
+def _normalize_real_phone(value) -> str:
+    """Return the 10-digit real phone number, or '' when the value isn't a real line."""
+    digits = re.sub(r"\D+", "", str(value or ""))
+    if len(digits) == 10:
+        return digits
+    if len(digits) == 12 and digits.startswith("91"):
+        return digits[-10:]
+    if len(digits) == 11 and digits.startswith("0"):
+        return digits[-10:]
+    return ""
+
+
 def _strip_json_fences(text: str) -> str:
     cleaned = strip_think_blocks(text)
     if cleaned.startswith("```"):

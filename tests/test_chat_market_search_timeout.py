@@ -138,6 +138,14 @@ def test_execute_tool_market_search_returns_valid_json():
     assert payload["results"] == []
 
 
+def test_normalize_real_phone_is_defined_and_works():
+    assert ai_chat_engine._normalize_real_phone("+919876543210") == "9876543210"
+    assert ai_chat_engine._normalize_real_phone("09876543210") == "9876543210"
+    assert ai_chat_engine._normalize_real_phone("9876543210") == "9876543210"
+    assert ai_chat_engine._normalize_real_phone("+1 555 1234") == ""
+    assert ai_chat_engine._normalize_real_phone("") == ""
+
+
 def test_guard_against_raw_markup_swaps_clean_error():
     raw = "<!DOCTYPE html><html><body>Error 524: A timeout occurred</body></html>"
     assert ai_chat_router._guard_against_raw_markup(raw) == ai_chat_router._RAW_MARKUP_ERROR
