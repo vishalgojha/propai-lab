@@ -247,9 +247,6 @@ app.include_router(workspace_router)
 from routers.clients import router as clients_router
 app.include_router(clients_router)
 
-from routers.knowledge import router as knowledge_router
-app.include_router(knowledge_router)
-
 from routers.whatsapp_sync import router as whatsapp_sync_router
 app.include_router(whatsapp_sync_router)
 
