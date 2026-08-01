@@ -188,8 +188,8 @@ export default function ListingDetailPage() {
     return (
       <div className="max-w-4xl mx-auto py-12 text-center">
         <div className="text-sm text-zinc-400">{error || "Listing not found"}</div>
-        <Link href="/knowledge" className="mt-3 inline-flex items-center gap-1 text-xs text-[#3EE88A] hover:text-white">
-          <ArrowLeft className="h-3 w-3" /> Back to Knowledge
+        <Link href="/search" className="mt-3 inline-flex items-center gap-1 text-xs text-[#3EE88A] hover:text-white">
+          <ArrowLeft className="h-3 w-3" /> Back to Search
         </Link>
       </div>
     );
@@ -207,10 +207,10 @@ export default function ListingDetailPage() {
       {/* Header */}
       <div>
         <Link
-          href="/knowledge"
+          href="/search"
           className="text-xs text-zinc-500 hover:text-white transition-colors flex items-center gap-1"
         >
-          <ArrowLeft className="h-3 w-3" /> Knowledge
+          <ArrowLeft className="h-3 w-3" /> Search
         </Link>
 
         <div className="mt-3 flex flex-wrap items-start justify-between gap-3">

@@ -70,8 +70,8 @@ export default function ExtractionsPage() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Link href="/knowledge" className="rounded-lg bg-[#3EE88A] px-3 py-2 text-xs font-semibold text-black">
-            Open Knowledge Base
+          <Link href="/search" className="rounded-lg bg-[#3EE88A] px-3 py-2 text-xs font-semibold text-black">
+            Open Search
           </Link>
           <Link href="/connections" className="rounded-lg border border-white/10 bg-zinc-800 px-3 py-2 text-xs font-semibold text-zinc-400 hover:text-white">
             Manage WhatsApp connections

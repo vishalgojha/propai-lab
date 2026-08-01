@@ -763,34 +763,6 @@ export function getBuildingEnrichmentHistory(buildingId?: string, limit = 50) {
   return fetchJSON<any[]>(`/buildings/enrichment/history?${params.toString()}`);
 }
 
-export function getIGRDistricts(restOfMaharashtra = true) {
-  return fetchJSON<any[]>(`/igr/districts?rest_of_maharashtra=${restOfMaharashtra}`);
-}
-
-export function getIGRTahsils(districtCode: string) {
-  return fetchJSON<any[]>(`/igr/tahsils?district_code=${districtCode}`);
-}
-
-export function getIGRVillages(districtCode: string, tahsilCode: string) {
-  return fetchJSON<any[]>(`/igr/villages?district_code=${districtCode}&tahsil_code=${encodeURIComponent(tahsilCode)}`);
-}
-
-export function searchIGR(params: {
-  district_code?: string;
-  tahsil_code?: string;
-  village?: string;
-  property_no?: string;
-  year?: number;
-}) {
-  const sp = new URLSearchParams();
-  if (params.district_code) sp.set("district_code", params.district_code);
-  if (params.tahsil_code) sp.set("tahsil_code", params.tahsil_code);
-  if (params.village) sp.set("village", params.village);
-  if (params.property_no) sp.set("property_no", params.property_no);
-  if (params.year) sp.set("year", String(params.year));
-  return fetchJSON<any>(`/igr/search?${sp.toString()}`);
-}
-
 export function getMarketDetail(name: string) {
   return fetchJSON<any>(`/markets/${encodeURIComponent(name)}`);
 }
