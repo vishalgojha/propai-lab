@@ -54,7 +54,7 @@ def test_plain_inventory_query_uses_grounded_market_search(monkeypatch):
 
     req = SimpleNamespace(
         session_id=None,
-        source="parsed",
+        source="groups",
         broker_phone="",
         model="",
         api_key="",
@@ -68,7 +68,9 @@ def test_plain_inventory_query_uses_grounded_market_search(monkeypatch):
     assert calls[0][1]["bhk"] == 3
     assert calls[0][1]["intent"] == "RENT"
     assert calls[0][1]["micro_markets"] == ["Borivali West"]
+    assert response["source_mode"] == "parsed"
     assert ai_chat._is_analytics_or_ops_query("how many listings in Bandra West") is True
     assert ai_chat._is_analytics_or_ops_query("any 3 bhk for rent in Borivali West") is False
     assert response["trace"]["route"] == "deterministic_market_search"
     assert response["content"].startswith("Found 1 active match")
+    assert "WhatsApp group" not in response["content"]
