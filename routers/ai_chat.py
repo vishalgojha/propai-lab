@@ -346,8 +346,12 @@ def _group_search_response(query_text: str, args: dict) -> dict:
     if args.get("micro_market"):
         query_bits.append(f"in {args['micro_market']}")
     query_label = " ".join(query_bits) if query_bits else "group posts"
+    table = chat_engine.listing_table_from_items(deduped)
+    content_parts = [f"Found {fallback_total} WhatsApp group posts for {query_label}. Showing the latest {shown} unique broker posts."]
+    if table:
+        content_parts.append(table)
     return {
-        "content": f"Found {fallback_total} WhatsApp group posts for {query_label}. Showing the latest {shown} unique broker posts.",
+        "content": "\n\n".join(content_parts),
         "blocks": [
             {
                 "type": "summary",

@@ -3,6 +3,7 @@ import json
 import datetime
 import re
 from pathlib import Path
+from urllib.parse import quote
 import pandas as pd
 from openai import OpenAI
 import time
@@ -1565,6 +1566,98 @@ def parse_market_search_request(
     return args
 
 
+def _md_cell(value) -> str:
+    """Escape a value for a single GFM markdown table cell."""
+    text = str(value) if value not in (None, "") else "—"
+    return re.sub(r"\s+", " ", text).replace("|", "\\|").strip()
+
+
+def _whatsapp_enquiry(item: dict) -> str:
+    """Deterministic prefilled WhatsApp enquiry message for a listing row."""
+    building = str(item.get("building_name") or "the listing").strip()
+    configuration = str(item.get("bhk") or item.get("property_type") or "property").strip()
+    price = str(item.get("price_formatted") or "").strip()
+    carpet = f"{item.get('area_sqft')} sqft" if item.get("area_sqft") else ""
+    furnishing = str(item.get("furnishing") or "Unspecified").strip()
+    locality = str(
+        item.get("micro_market") or item.get("location_label") or item.get("landmark_name") or "Unknown locality"
+    ).strip()
+    broker = str(item.get("broker_name") or "there").strip()
+    lines = [
+        f"Hi {broker},",
+        "",
+        "I found your listing through PropAI.",
+        "",
+        "Property:",
+        f"• {building}",
+        f"• {configuration}",
+    ]
+    if carpet:
+        lines.append(f"• {carpet}")
+    if price:
+        lines.append(f"• {price}")
+    lines += [
+        f"• {furnishing}",
+        f"• {locality}",
+        "",
+        "Is this still available?",
+        "",
+        "If yes, please share:",
+        "• Photos",
+        "• Availability",
+        "• Inspection timing",
+        "• Brokerage",
+        "",
+        "Sent via PropAI",
+    ]
+    return "\n".join(lines)
+
+
+def _whatsapp_link(item: dict) -> str:
+    """wa.me deep link with the prefilled enquiry; '' when no real phone."""
+    phone = _normalize_real_phone(item.get("broker_phone") or "")
+    if not phone:
+        return ""
+    return f"https://wa.me/91{phone}?text={quote(_whatsapp_enquiry(item), safe='')}"
+
+
+def listing_table_from_items(results: list[dict]) -> str:
+    """Render verified search rows as a GFM markdown table.
+
+    Deterministic and portable across web, WhatsApp, email, and plain
+    markdown viewers. Phone numbers are never exposed in plain text — each
+    row's WhatsApp cell is a prefilled wa.me deep link instead."""
+    if not results:
+        return ""
+    lines = [
+        "| Building | Locality | Type | Rent/Sale | Carpet | Furnishing | Broker | WhatsApp |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- |",
+    ]
+    for item in results:
+        phone_link = _whatsapp_link(item)
+        cells = [
+            _md_cell(item.get("building_name") or "—"),
+            _md_cell(item.get("micro_market") or item.get("location_label") or item.get("landmark_name") or "—"),
+            _md_cell(item.get("bhk") or item.get("property_type") or "—"),
+            _md_cell(item.get("price_formatted") or "—"),
+            _md_cell(f"{item.get('area_sqft')} sqft" if item.get("area_sqft") else "—"),
+            _md_cell(item.get("furnishing") or "—"),
+            _md_cell(item.get("broker_name") or "—"),
+            f"[💬 Open Chat]({phone_link})" if phone_link else "💬 Open Chat",
+        ]
+        lines.append("| " + " | ".join(cells) + " |")
+    return "\n".join(lines)
+
+
+def listing_table_markdown(result: str) -> str:
+    """Build the GFM table from a market-search result payload."""
+    try:
+        payload = json.loads(result)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return ""
+    return listing_table_from_items(payload.get("results") or [])
+
+
 def deterministic_market_response(query: dict, result: str, sources: dict | None = None) -> dict:
     """Convert the verified market search output into a workspace response."""
     source_names = list((sources or {}).keys())
@@ -1621,20 +1714,16 @@ def deterministic_market_response(query: dict, result: str, sources: dict | None
     applied_filters.extend(str(market) for market in (query.get("micro_markets") or []))
     filter_text = " · ".join(applied_filters)
 
+    parts = [f"Found {total} active match{'es' if total != 1 else ''}; showing the {shown} most recently seen."]
+    if filter_text:
+        parts.append(f"**Applied filters:** {filter_text}")
+    table = listing_table_markdown(result)
+    if table:
+        parts.append(table)
+
     return {
-        "content": (
-            f"Found {total} active match{'es' if total != 1 else ''}; showing the {shown} most recently seen."
-        ),
+        "content": "\n\n".join(parts),
         "blocks": [
-            {
-                "type": "summary",
-                "title": "Live market search",
-                "body": f"Applied filters: {filter_text}. Results are structured from broker posts and ranked by most recent evidence.",
-                "metrics": [
-                    {"label": "Matches", "value": str(total), "tone": "success"},
-                    {"label": "Showing", "value": str(shown), "tone": "neutral"},
-                ],
-            },
             {
                 "type": "listing_cards",
                 "title": "Active listings",
