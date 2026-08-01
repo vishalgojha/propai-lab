@@ -1621,29 +1621,9 @@ def deterministic_market_response(query: dict, result: str, sources: dict | None
     applied_filters.extend(str(market) for market in (query.get("micro_markets") or []))
     filter_text = " · ".join(applied_filters)
 
-    def _cell(value):
-        return str(value or "—").replace("|", "\\|").replace("\r", " ").replace("\n", " ").strip() or "—"
-
-    table_rows = ["| Building | Locality | BHK | Price | Area | Furnishing | Broker |",
-                  "| --- | --- | --- | --- | --- | --- | --- |"]
-    for r in results:
-        table_rows.append(
-            "| " + " | ".join([
-                _cell(r.get("building_name") or r.get("location_label")),
-                _cell(r.get("micro_market") or r.get("location_label") or r.get("landmark_name")),
-                _cell(r.get("bhk")),
-                _cell(r.get("price_formatted")),
-                _cell(f"{r['area_sqft']} sqft" if r.get("area_sqft") else None),
-                _cell(r.get("furnishing")),
-                _cell(r.get("broker_name")),
-            ]) + " |"
-        )
-    markdown_table = "\n".join(table_rows)
-
     return {
         "content": (
-            f"Found {total} active match{'es' if total != 1 else ''}; showing the {shown} most recently seen.\n\n"
-            f"{markdown_table}"
+            f"Found {total} active match{'es' if total != 1 else ''}; showing the {shown} most recently seen."
         ),
         "blocks": [
             {

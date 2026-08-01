@@ -146,7 +146,7 @@ def test_normalize_real_phone_is_defined_and_works():
     assert ai_chat_engine._normalize_real_phone("") == ""
 
 
-def test_deterministic_market_response_embeds_markdown_table():
+def test_deterministic_market_response_keeps_clean_content_with_listing_cards_block():
     results = [
         {"building_name": "Sunrise Tower", "micro_market": "Bandra West", "bhk": "3 BHK",
          "price_formatted": "₹1.8 Cr", "area_sqft": 1200, "furnishing": "Furnished",
@@ -160,10 +160,12 @@ def test_deterministic_market_response_embeds_markdown_table():
         {"bhk": "3", "intent": "RENT", "micro_markets": ["Bandra West"]}, payload
     )
     content = resp["content"]
-    assert "| Building | Locality | BHK | Price | Area | Furnishing | Broker |" in content
-    assert "| --- | --- | --- | --- | --- | --- | --- |" in content
-    assert "Sunrise Tower | Bandra West | 3 BHK | ₹1.8 Cr | 1200 sqft | Furnished | Rajesh" in content
-    assert "Linking Road | Linking Road | 3 BHK | ₹2.1 Cr | — | — | —" in content
+    assert "| Building |" not in content
+    assert "| --- |" not in content
+    assert "Found 2 active matches; showing the 2 most recently seen." in content
+    blocks = {b["type"]: b for b in resp["blocks"]}
+    assert "listing_cards" in blocks
+    assert blocks["listing_cards"]["items"] == results
 
 
 def test_guard_against_raw_markup_swaps_clean_error():
