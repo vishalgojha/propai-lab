@@ -449,11 +449,7 @@ async def public_listings(
         return JSONResponse(status_code=500, content={"error": str(exc)})
 
 
-@router.post("/api/replay")
-async def replay_all(
-    user: dict = Depends(require_user),
-    tenant_id: str | None = Depends(get_tenant_context),
-):
+async def replay_raw_messages(tenant_id: str | None = None, *, batch_size: int = 200) -> dict:
     from extraction import process_raw_message
     from extraction_worker import context_from_raw
 
@@ -468,7 +464,6 @@ async def replay_all(
     scanned = 0
     skipped_existing = 0
     offset = 0
-    batch_size = 200
 
     while True:
         query = storage.client.table("raw_messages").select(cols).order("timestamp", desc=True).limit(batch_size).offset(offset)
@@ -528,3 +523,11 @@ async def replay_all(
         "skipped_existing": skipped_existing,
         "replayed": stats.resolved + stats.unresolved + stats.errors,
     }
+
+
+@router.post("/api/replay")
+async def replay_all(
+    user: dict = Depends(require_user),
+    tenant_id: str | None = Depends(get_tenant_context),
+):
+    return await replay_raw_messages(tenant_id=tenant_id)

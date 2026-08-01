@@ -1,5 +1,6 @@
 """Local Intelligence Lab — Webhook Receiver + Pipeline + Admin API."""
 import asyncio
+import fcntl
 import json
 import logging
 import os
@@ -82,6 +83,7 @@ from routers.infra import (
     router as infra_router,
     get_embedder,
 )
+from routers.send import replay_raw_messages as replay_market_inbox
 from storage import SupabaseStorage, ProviderOutageEvent
 from lab.config import HOST, PORT, SUPABASE_URL, SUPABASE_SERVICE_KEY, FRONTEND_URL
 
@@ -97,6 +99,7 @@ HISTORY_BACKFILL_INTERVAL_S = 6 * 3600
 # live request path is stable.
 ENRICHMENT_POLL_INTERVAL = 60
 ENRICHMENT_BATCH_SIZE = 5
+STARTUP_REPLAY_LOCK = "/tmp/propai-market-inbox-replay.lock"
 
 
 @asynccontextmanager
@@ -128,6 +131,7 @@ async def lifespan(app: FastAPI):
             asyncio.create_task(_provider_probe_loop()),
             asyncio.create_task(_history_backfill_loop()),
             asyncio.create_task(_enrichment_loop()),
+            asyncio.create_task(_startup_replay_once()),
         ]
         print("  Background loops enabled: provider-probe, history-backfill, enrichment")
     else:
@@ -139,6 +143,44 @@ async def lifespan(app: FastAPI):
             task.cancel()
         if background_tasks:
             await asyncio.gather(*background_tasks, return_exceptions=True)
+
+
+async def _startup_replay_once() -> None:
+    """Replay raw messages into parsed_output/listings once after startup."""
+    lock_fd = None
+    try:
+        lock_fd = os.open(STARTUP_REPLAY_LOCK, os.O_CREAT | os.O_RDWR, 0o600)
+        try:
+            fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            print("  [startup-replay] another worker already owns the replay lock; skipping", flush=True)
+            return
+
+        target_tenant = (os.getenv("PROPAI_REPLAY_TENANT_ID", "") or "").strip() or None
+        print(
+            "  [startup-replay] replaying raw messages into parsed_output/listings "
+            + (f"for tenant={target_tenant}" if target_tenant else "for all tenants"),
+            flush=True,
+        )
+        result = await replay_market_inbox(tenant_id=target_tenant)
+        print(
+            "  [startup-replay] complete: "
+            f"scanned={result.get('scanned', 0)} "
+            f"skipped_existing={result.get('skipped_existing', 0)} "
+            f"replayed={result.get('replayed', 0)} "
+            f"resolved={result.get('resolved', 0)} "
+            f"unresolved={result.get('unresolved', 0)} "
+            f"errors={result.get('errors', 0)}",
+            flush=True,
+        )
+    except Exception as exc:
+        print(f"  [startup-replay] failed: {exc.__class__.__name__}: {exc}", flush=True)
+    finally:
+        try:
+            if lock_fd is not None:
+                os.close(lock_fd)
+        except Exception:
+            pass
 
 
 app = FastAPI(
