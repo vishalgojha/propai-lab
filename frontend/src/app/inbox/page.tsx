@@ -1555,6 +1555,65 @@ return {
     }
   };
 
+  // 4. Load detailed analysis, broker, and building data
+  const loadMessageDetails = async (
+    msgId: number,
+    options: { setSelectedRaw?: boolean; preserveProfiles?: boolean } = {}
+  ) => {
+    if (!options.preserveProfiles) {
+      setSelectedBroker(null);
+      setSelectedBuilding(null);
+    }
+    setPriceStats(null);
+    let rawMessage: api.RawMessage | null = null;
+    try {
+      // The observation endpoint also enriches the message, but a parsed row
+      // can disappear or be unavailable while the raw WhatsApp message is
+      // still valid. Always load the source text independently so the inbox
+      // never falls back to a truncated parsed summary.
+      rawMessage = await api.getRawMessage(msgId);
+      setSelectedMsgDetails((current: any) => ({ ...(current || {}), raw: rawMessage }));
+      if (options.setSelectedRaw && rawMessage) setSelectedMsg(rawMessage);
+    } catch (e) {
+      console.warn("Failed to load raw WhatsApp message:", e);
+    }
+    try {
+      const details = await api.getObservation(msgId);
+      setSelectedMsgDetails({ ...details, raw: details.raw || rawMessage });
+      if (options.setSelectedRaw && details.raw?.id) {
+        setSelectedMsg(details.raw);
+      }
+
+      // Resolve Broker if possible
+      const brokerName = details.parsed?.broker_name || details.parsed?.profile_name || details.raw?.sender;
+      const brokerPhone = details.parsed?.broker_phone;
+      if (brokerName || brokerPhone) {
+        loadBrokerDetails(brokerName, brokerPhone);
+      }
+
+      // Resolve Building if possible
+      const buildingName = details.resolver?.building_name || details.parsed?.building_name;
+      if (buildingName) {
+        loadBuildingDetails(buildingName);
+      }
+
+      // Load Price Stats if price, bhk, and market are present
+      const price = details.parsed?.price;
+      const bhk = details.parsed?.bhk;
+      const market = details.parsed?.micro_market;
+      const intent = details.parsed?.intent?.toLowerCase() === "rent" ? "rental" : "listing";
+      if (price && bhk && market) {
+        loadPriceStats(market, bhk, intent);
+      }
+
+    } catch (e) {
+      // Raw text has already been loaded above; only the optional enrichment
+      // failed. Keep rendering the full source message instead of replacing
+      // it with an error or a normalized preview.
+      if (!rawMessage) console.error("Failed to load message details:", e);
+    }
+  };
+
   const messageAreaRef = useRef<HTMLDivElement>(null);
   const messageRefs = useRef<Record<number, HTMLDivElement | null>>({});
 
@@ -3070,65 +3129,6 @@ return {
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, [flatBlocks, selectedMsg, selectMessage]);
-
-  // 4. Load detailed analysis, broker, and building data
-  const loadMessageDetails = async (
-    msgId: number,
-    options: { setSelectedRaw?: boolean; preserveProfiles?: boolean } = {}
-  ) => {
-    if (!options.preserveProfiles) {
-      setSelectedBroker(null);
-      setSelectedBuilding(null);
-    }
-    setPriceStats(null);
-    let rawMessage: api.RawMessage | null = null;
-    try {
-      // The observation endpoint also enriches the message, but a parsed row
-      // can disappear or be unavailable while the raw WhatsApp message is
-      // still valid. Always load the source text independently so the inbox
-      // never falls back to a truncated parsed summary.
-      rawMessage = await api.getRawMessage(msgId);
-      setSelectedMsgDetails((current: any) => ({ ...(current || {}), raw: rawMessage }));
-      if (options.setSelectedRaw && rawMessage) setSelectedMsg(rawMessage);
-    } catch (e) {
-      console.warn("Failed to load raw WhatsApp message:", e);
-    }
-    try {
-      const details = await api.getObservation(msgId);
-      setSelectedMsgDetails({ ...details, raw: details.raw || rawMessage });
-      if (options.setSelectedRaw && details.raw?.id) {
-        setSelectedMsg(details.raw);
-      }
-      
-      // Resolve Broker if possible
-      const brokerName = details.parsed?.broker_name || details.parsed?.profile_name || details.raw?.sender;
-      const brokerPhone = details.parsed?.broker_phone;
-      if (brokerName || brokerPhone) {
-        loadBrokerDetails(brokerName, brokerPhone);
-      }
-
-      // Resolve Building if possible
-      const buildingName = details.resolver?.building_name || details.parsed?.building_name;
-      if (buildingName) {
-        loadBuildingDetails(buildingName);
-      }
-
-      // Load Price Stats if price, bhk, and market are present
-      const price = details.parsed?.price;
-      const bhk = details.parsed?.bhk;
-      const market = details.parsed?.micro_market;
-      const intent = details.parsed?.intent?.toLowerCase() === "rent" ? "rental" : "listing";
-      if (price && bhk && market) {
-        loadPriceStats(market, bhk, intent);
-      }
-
-    } catch (e) {
-      // Raw text has already been loaded above; only the optional enrichment
-      // failed. Keep rendering the full source message instead of replacing
-      // it with an error or a normalized preview.
-      if (!rawMessage) console.error("Failed to load message details:", e);
-    }
-  };
 
   const selectBrokerObservation = (obs: any) => {
     const rawId = obs.latest_raw_message_id || obs.raw_message_id;
