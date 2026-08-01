@@ -9,9 +9,9 @@ import { useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
-import ListingCard, { type ListingItem } from "@/components/ListingCard";
+import type { ListingItem } from "@/components/ListingCard";
 import { useAuth } from "@/lib/AuthProvider";
-import { Check, Pencil, Plus, MessageSquare, Trash2, PanelLeft, PanelLeftClose, EyeOff, Phone, Users, X } from "lucide-react";
+import { Check, Pencil, Plus, MessageSquare, Trash2, PanelLeft, PanelLeftClose, X } from "lucide-react";
 
 function messageText(message: { parts?: Array<{ type?: string; text?: string }>; content?: string }) {
   if (typeof message.content === "string" && message.content) return message.content;
@@ -35,7 +35,21 @@ function toUIMessage(m: { id: string; role: "user" | "assistant"; content: strin
 }
 
 function inlineMarkdown(text: string, keyPrefix: string) {
-  return text.split(/(\*\*[^*]+\*\*|`[^`]+`|\*[^*]+\*)/g).map((part, index) => {
+  return text.split(/(\[[^\]]+\]\([^)]+\)|\*\*[^*]+\*\*|`[^`]+`|\*[^*]+\*)/g).map((part, index) => {
+    const linkMatch = part.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
+    if (linkMatch) {
+      return (
+        <a
+          key={`${keyPrefix}-l-${index}`}
+          href={linkMatch[2]}
+          target="_blank"
+          rel="noreferrer"
+          className="text-emerald-300 underline underline-offset-2"
+        >
+          {linkMatch[1]}
+        </a>
+      );
+    }
     if (part.startsWith("**") && part.endsWith("**")) {
       return <strong key={`${keyPrefix}-b-${index}`}>{part.slice(2, -2)}</strong>;
     }
@@ -50,7 +64,26 @@ function inlineMarkdown(text: string, keyPrefix: string) {
 }
 
 function markdownTableRow(line: string) {
-  return line.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map((cell) => cell.trim());
+  const cells: string[] = [];
+  let cell = "";
+  let escaped = false;
+  const source = line.trim().replace(/^\|/, "").replace(/\|$/, "");
+  for (const character of source) {
+    if (escaped) {
+      cell += character;
+      escaped = false;
+    } else if (character === "\\") {
+      escaped = true;
+    } else if (character === "|") {
+      cells.push(cell.trim());
+      cell = "";
+    } else {
+      cell += character;
+    }
+  }
+  if (escaped) cell += "\\";
+  cells.push(cell.trim());
+  return cells;
 }
 
 function isMarkdownDivider(line: string) {
@@ -106,6 +139,181 @@ function MarkdownMessage({ text }: { text: string }) {
   return <div className="space-y-1 text-sm text-zinc-300">{blocks}</div>;
 }
 
+function escapeMarkdownTableCell(value: unknown) {
+  const text = value == null ? "" : String(value);
+  return text.replace(/\|/g, "\\|").replace(/\r?\n/g, " ").trim();
+}
+
+function normalizeWhatsappPhone(phone?: string | null) {
+  const key = normalizePhoneKey(phone || "");
+  return key ? `91${key}` : "";
+}
+
+function buildWhatsAppLink(item: ListingItem) {
+  const phone = normalizeWhatsappPhone(item.broker_phone || item.sender_phone || "");
+  if (!phone) return "";
+  const building = item.building_name || "the listing";
+  const configuration = item.bhk || item.property_type || "property";
+  const price = item.price_formatted || "";
+  const carpet = item.area_sqft ? `${item.area_sqft} sqft` : "";
+  const furnishing = item.furnishing || "Unspecified";
+  const locality = item.micro_market || item.location_label || item.landmark_name || "Unknown locality";
+  const message = [
+    `Hi ${item.broker_name || "there"},`,
+    "",
+    "I found your listing through PropAI.",
+    "",
+    "Property:",
+    `• ${building}`,
+    `• ${configuration}`,
+    carpet ? `• ${carpet}` : "",
+    price ? `• ${price}` : "",
+    `• ${furnishing}`,
+    `• ${locality}`,
+    "",
+    "Is this still available?",
+    "",
+    "If yes, please share:",
+    "• Photos",
+    "• Availability",
+    "• Inspection timing",
+    "• Brokerage",
+    "",
+    "Sent via PropAI",
+  ].filter(Boolean).join("\n");
+  return `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
+}
+
+function listingTableMarkdown(items: ListingItem[]) {
+  const lines = [
+    "| Building | Locality | Type | Rent/Sale | Carpet | Furnishing | Broker | WhatsApp |",
+    "| --- | --- | --- | --- | --- | --- | --- | --- |",
+  ];
+  for (const item of items) {
+    const whatsapp = buildWhatsAppLink(item);
+    lines.push(
+      [
+        escapeMarkdownTableCell(item.building_name || "—"),
+        escapeMarkdownTableCell(item.micro_market || item.location_label || item.landmark_name || "—"),
+        escapeMarkdownTableCell(item.bhk || item.property_type || "—"),
+        escapeMarkdownTableCell(item.price_formatted || "—"),
+        escapeMarkdownTableCell(item.area_sqft ? `${item.area_sqft} sqft` : "—"),
+        escapeMarkdownTableCell(item.furnishing || "—"),
+        escapeMarkdownTableCell(item.broker_name || "—"),
+        whatsapp ? `[💬 Open Chat](${whatsapp})` : "💬 Open Chat",
+      ].join(" | "),
+    );
+  }
+  return lines.join("\n");
+}
+
+function brokerTableMarkdown(items: BrokerCardItem[]) {
+  const lines = [
+    "| Broker | Phone | Posts | Listings | Requirements | Groups | Last Seen | WhatsApp |",
+    "| --- | --- | --- | --- | --- | --- | --- | --- |",
+  ];
+  for (const item of items) {
+    const phone = normalizeWhatsappPhone(item.phone || "");
+    lines.push(
+      [
+        escapeMarkdownTableCell(item.name || "Broker"),
+        escapeMarkdownTableCell(item.phone || "—"),
+        escapeMarkdownTableCell(item.observations ?? "—"),
+        escapeMarkdownTableCell(item.listings ?? "—"),
+        escapeMarkdownTableCell(item.requirements ?? "—"),
+        escapeMarkdownTableCell(item.groups ?? "—"),
+        escapeMarkdownTableCell(item.last_seen || "—"),
+        phone ? `[💬 Open Chat](https://wa.me/${phone})` : "💬 Open Chat",
+      ].join(" | "),
+    );
+  }
+  return lines.join("\n");
+}
+
+function genericCardTableMarkdown(items: Array<Record<string, unknown>>, titleMap: Array<[string, string]>) {
+  const lines = [
+    `| ${titleMap.map((pair) => pair[0]).join(" | ")} |`,
+    `| ${titleMap.map(() => "---").join(" | ")} |`,
+  ];
+  for (const item of items) {
+    lines.push(
+      [
+        ...titleMap.map(([, key]) => escapeMarkdownTableCell(item[key] || "—")),
+      ].join(" | "),
+    );
+  }
+  return lines.join("\n");
+}
+
+function workspaceBlockToMarkdown(part: { type?: string; data?: any }, assistantMode: ChatSourceMode, hiddenBrokerPhones: Set<string>, hiddenMarketKeys: Set<string>) {
+  const blockType = part.type?.replace(/^data-/, "") || "";
+  const block = part.data || {};
+  const items = Array.isArray(block.items) ? block.items : [];
+
+  if (!CHAT_CARD_BLOCK_TYPES.has(blockType)) return "";
+
+  if (blockType === "broker_cards") {
+    const visibleItems = (items as BrokerCardItem[]).filter((item) => {
+      const key = normalizePhoneKey(item.phone || "");
+      return !key || !hiddenBrokerPhones.has(key);
+    });
+    if (visibleItems.length === 0) return "";
+    const lines = [];
+    if (block.title) lines.push(`### ${block.title}`);
+    if (block.subtitle) lines.push(block.subtitle);
+    if (block.body) lines.push(block.body);
+    lines.push("", brokerTableMarkdown(visibleItems));
+    return lines.join("\n");
+  }
+
+  const visibleItems = (items as GroupMirrorItem[]).filter((item) => {
+    const key = normalizePhoneKey(item.broker_phone || item.sender_phone || "");
+    if (key && hiddenBrokerPhones.has(key)) return false;
+    const listingKey = hiddenListingKey(item);
+    const requirementKey = hiddenRequirementKey(item);
+    if (listingKey && hiddenMarketKeys.has(listingKey)) return false;
+    if (requirementKey && hiddenMarketKeys.has(requirementKey)) return false;
+    return true;
+  });
+  if (visibleItems.length === 0) return "";
+
+  const lines = [];
+  if (block.title) lines.push(`### ${block.title}`);
+  if (block.subtitle) lines.push(block.subtitle);
+  if (block.body) lines.push(block.body);
+  lines.push("");
+
+  if (blockType === "listing_cards") {
+    lines.push(listingTableMarkdown(visibleItems as ListingItem[]));
+  } else if (blockType === "buyer_cards" || blockType === "matching_buyers") {
+    lines.push(
+      genericCardTableMarkdown(visibleItems as Array<Record<string, unknown>>, [
+        ["Buyer", "name"],
+        ["Locality", "micro_market"],
+        ["BHK", "bhk"],
+        ["Budget", "price_formatted"],
+        ["Broker", "broker_name"],
+        ["Last Seen", "last_seen_text"],
+      ]),
+    );
+  } else {
+    lines.push(
+      genericCardTableMarkdown(visibleItems as Array<Record<string, unknown>>, [
+        ["Name", "name"],
+        ["Locality", "micro_market"],
+        ["BHK", "bhk"],
+        ["Price", "price_formatted"],
+        ["Broker", "broker_name"],
+      ]),
+    );
+  }
+
+  if (assistantMode === "groups") {
+    lines.push("", "Generated by **PropAI**", "Smarter search for real estate professionals.");
+  }
+  return lines.join("\n");
+}
+
 function formatSessionTime(iso: string) {
   const d = new Date(iso);
   const now = new Date();
@@ -144,15 +352,6 @@ function normalizePhoneKey(value?: string | null) {
   return digits;
 }
 
-function looksLikePhoneOrJid(value?: string | null) {
-  const text = (value || "").trim();
-  if (!text) return true;
-  if (/^\+?\d[\d\s().@:-]{6,}$/.test(text)) return true;
-  if (/^\d{6,}$/.test(text.replace(/\D+/g, ""))) return true;
-  if (/@(?:s\.whatsapp\.net|g\.us|lid|broadcast|newsletter)$/i.test(text)) return true;
-  return false;
-}
-
 type ChatSourceMode = "groups" | "parsed" | "inbox" | "";
 type GroupMirrorItem = ListingItem & {
   original_message?: string;
@@ -174,215 +373,19 @@ type BrokerCardItem = {
   last_seen?: string;
 };
 
+function hiddenListingKey(item: { listing_id?: number | null }) {
+  return item.listing_id ? `listing:${item.listing_id}` : "";
+}
+
+function hiddenRequirementKey(item: { raw_message_id?: number | null }) {
+  return item.raw_message_id ? `requirement:${item.raw_message_id}` : "";
+}
+
 function getAssistantSourceMode(message: { parts?: Array<{ type?: string; data?: any }> }) {
   const contextPart = (message.parts || []).find((part) => part?.type === "data-chat_context");
   const sourceMode = contextPart?.data?.source_mode;
   return sourceMode === "groups" || sourceMode === "parsed" || sourceMode === "inbox" ? sourceMode : "";
 }
-
-function BrokerSummaryCard({ item }: { item: BrokerCardItem }) {
-  const meta = [
-    item.observations != null ? `${item.observations} posts` : "",
-    item.listings != null ? `${item.listings} listings` : "",
-    item.requirements != null ? `${item.requirements} requirements` : "",
-    item.groups != null ? `${item.groups} groups` : "",
-  ].filter(Boolean);
-
-  return (
-    <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 shadow-sm">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2 text-sm font-semibold text-white">
-            <Users className="h-4 w-4 text-[#3EE88A]" strokeWidth={1.8} />
-            <span className="truncate">{item.name || "Broker"}</span>
-          </div>
-          {item.phone && <div className="mt-1 text-xs text-zinc-500">{item.phone}</div>}
-        </div>
-        {item.last_seen && <div className="text-[11px] text-zinc-500">{item.last_seen}</div>}
-      </div>
-
-      {meta.length > 0 && (
-        <div className="mt-3 flex flex-wrap gap-1.5">
-          {meta.map((label) => (
-            <span
-              key={label}
-              className="rounded-full border border-white/10 bg-black/20 px-2.5 py-1 text-[10px] font-medium text-zinc-300"
-            >
-              {label}
-            </span>
-          ))}
-        </div>
-      )}
-
-      {item.phone && (
-        <div className="mt-3 inline-flex items-center gap-1.5 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-1 text-[10px] font-semibold text-emerald-200">
-          <Phone className="h-3 w-3" strokeWidth={1.8} />
-          Call broker
-        </div>
-      )}
-    </div>
-  );
-}
-
-function renderWorkspaceCardBlock({
-  part,
-  keyName,
-  assistantMode,
-  hiddenBrokerPhones,
-  hideBrokerLocally,
-  handleContactBroker,
-  contactingListingId,
-}: {
-  part: { type?: string; data?: any };
-  keyName: string;
-  assistantMode: ChatSourceMode;
-  hiddenBrokerPhones: Set<string>;
-  hideBrokerLocally: (phone: string, label: string) => void;
-  handleContactBroker: (listingId: number) => void;
-  contactingListingId: number | null;
-}) {
-  const blockType = part.type?.replace(/^data-/, "") || "";
-  const block = part.data || {};
-  const items = Array.isArray(block.items) ? block.items : [];
-
-  if (!CHAT_CARD_BLOCK_TYPES.has(blockType)) return null;
-
-  if (blockType === "broker_cards") {
-    const visibleItems = (items as BrokerCardItem[]).filter((item) => {
-      const key = normalizePhoneKey(item.phone || "");
-      return !key || !hiddenBrokerPhones.has(key);
-    });
-    if (visibleItems.length === 0) return null;
-    return (
-      <div key={keyName} className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-        {visibleItems.map((item, index) => (
-          <BrokerSummaryCard key={`${item.phone || item.name || index}`} item={item} />
-        ))}
-      </div>
-    );
-  }
-
-  const visibleItems = (items as GroupMirrorItem[]).filter((item) => {
-    const key = normalizePhoneKey(item.broker_phone || item.sender_phone || "");
-    return !key || !hiddenBrokerPhones.has(key);
-  });
-  if (visibleItems.length === 0) return null;
-  const gridClass = assistantMode === "parsed"
-    ? "grid gap-3 md:grid-cols-2 xl:grid-cols-2"
-    : "flex flex-col gap-2.5";
-
-  return (
-    <div key={keyName} className={gridClass}>
-      {visibleItems.map((item, index) => (
-        assistantMode === "groups" ? (
-          <GroupMirrorCard
-            key={item.fingerprint || index}
-            item={item}
-            onHideBroker={hideBrokerLocally}
-          />
-        ) : (
-          <div key={item.fingerprint || index} className="h-full">
-            <ListingCard
-              item={item}
-              onContactBroker={handleContactBroker}
-              contacting={contactingListingId === item.listing_id}
-            />
-          </div>
-        )
-      ))}
-    </div>
-  );
-}
-
-function GroupMirrorCard({
-  item,
-  hidden,
-  onHideBroker,
-}: {
-  item: GroupMirrorItem;
-  hidden?: boolean;
-  onHideBroker?: (phone: string, label: string) => void;
-}) {
-  const message = (item.original_message || item.building_name || "").trim();
-  const groupNames = Array.from(new Set((item.duplicate_group_names || []).map((group) => group.trim()).filter(Boolean)));
-  const brokerPhoneKey = normalizePhoneKey(item.broker_phone || item.sender_phone || "");
-  const senderLabel = !looksLikePhoneOrJid(item.broker_name) ? (item.broker_name || "WhatsApp member") : "WhatsApp member";
-  const locationLabel = item.location_label || item.micro_market || "WhatsApp group";
-  const duplicateLabel = item.duplicate_count && item.duplicate_count > 1
-    ? `${item.duplicate_count} posts collapsed`
-    : "Single group post";
-
-  if (hidden) return null;
-
-  return (
-    <div className="rounded-2xl border border-emerald-500/15 bg-emerald-500/[0.04] shadow-[0_0_0_1px_rgba(16,185,129,0.04)]">
-      <div className="flex items-start justify-between gap-3 border-b border-white/5 px-4 py-3">
-        <div>
-          <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-emerald-300/80">
-            WhatsApp group mirror
-          </div>
-          <div className="mt-1 text-sm font-semibold text-white">{senderLabel}</div>
-          <div className="text-[11px] text-zinc-500">{locationLabel}</div>
-        </div>
-        <div className="text-right text-[11px] text-zinc-500">
-          {item.last_seen_text ? <div>{item.last_seen_text}</div> : null}
-          <div>{duplicateLabel}</div>
-        </div>
-      </div>
-      <div className="px-4 py-3">
-        <div className="whitespace-pre-wrap text-sm leading-6 text-zinc-100">
-          {message || "No message body available."}
-        </div>
-        {groupNames.length > 0 && (
-          <div className="mt-3 flex flex-wrap gap-1.5">
-            {groupNames.slice(0, 4).map((group) => (
-              <span
-                key={group}
-                className="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-1 text-[10px] font-medium text-emerald-200"
-              >
-                {group}
-              </span>
-            ))}
-            {groupNames.length > 4 && (
-              <span className="rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[10px] font-medium text-zinc-400">
-                +{groupNames.length - 4} more
-              </span>
-            )}
-          </div>
-        )}
-        <div className="mt-3 flex items-center justify-between gap-3 text-[11px] text-zinc-500">
-          <span>{duplicateLabel}</span>
-          <span className="truncate">{item.micro_market || item.location_label || ""}</span>
-        </div>
-        {item.match_reasons && item.match_reasons.length > 0 && (
-          <div className="mt-2 flex flex-wrap gap-1.5">
-            {item.match_reasons.slice(0, 4).map((reason) => (
-              <span
-                key={reason}
-                className="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-200"
-              >
-                {reason}
-              </span>
-            ))}
-          </div>
-        )}
-        {brokerPhoneKey && onHideBroker && (
-          <div className="mt-3 flex justify-end">
-            <button
-              type="button"
-              onClick={() => onHideBroker(brokerPhoneKey, senderLabel)}
-              className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-zinc-300 transition-colors hover:border-red-500/40 hover:bg-red-500/10 hover:text-red-200"
-            >
-              <EyeOff className="h-3 w-3" strokeWidth={1.5} />
-              Hide broker
-            </button>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
 export default function ChatPage() {
   const { user, loading: authLoading } = useAuth();
   const searchParams = useSearchParams();
@@ -391,6 +394,7 @@ export default function ChatPage() {
   const [brokerPhone, setBrokerPhone] = useState("");
   const [searchSource, setSearchSource] = useState<"groups" | "parsed">("parsed");
   const [hiddenBrokerPhones, setHiddenBrokerPhones] = useState<Set<string>>(() => new Set());
+  const [hiddenMarketKeys, setHiddenMarketKeys] = useState<Set<string>>(() => new Set());
   const [brokerActionMessage, setBrokerActionMessage] = useState("");
   const chatEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -450,11 +454,111 @@ export default function ChatPage() {
     }
   }, []);
 
+  const hideListingLocally = useCallback(async (item: ListingItem) => {
+    const key = hiddenListingKey(item);
+    if (!key || !item.listing_id) return;
+    setHiddenMarketKeys((prev) => {
+      const next = new Set(prev);
+      next.add(key);
+      return next;
+    });
+    try {
+      await api.hideMarketItem({
+        item_kind: "listing",
+        listing_id: item.listing_id,
+        raw_message_id: item.raw_message_id || null,
+        broker_phone: item.broker_phone || null,
+        broker_name: item.broker_name || null,
+        source_label: item.building_name || item.micro_market || item.location_label || null,
+        hidden_reason: "hidden_from_chat",
+      });
+      setBrokerActionMessage(`Hidden listing: ${item.building_name || "listing"}`);
+    } catch {
+      setHiddenMarketKeys((prev) => {
+        const next = new Set(prev);
+        next.delete(key);
+        return next;
+      });
+      setBrokerActionMessage("Failed to hide listing");
+    } finally {
+      if (brokerActionTimer.current) window.clearTimeout(brokerActionTimer.current);
+      brokerActionTimer.current = window.setTimeout(() => setBrokerActionMessage(""), 3000);
+    }
+  }, []);
+
+  const hideRequirementLocally = useCallback(async (item: ListingItem) => {
+    const key = hiddenRequirementKey(item);
+    if (!key || !item.raw_message_id) return;
+    setHiddenMarketKeys((prev) => {
+      const next = new Set(prev);
+      next.add(key);
+      return next;
+    });
+    try {
+      await api.hideMarketItem({
+        item_kind: "requirement",
+        raw_message_id: item.raw_message_id,
+        broker_phone: item.broker_phone || null,
+        broker_name: item.broker_name || null,
+        source_label: item.building_name || item.micro_market || item.location_label || null,
+        hidden_reason: "hidden_from_chat",
+      });
+      setBrokerActionMessage(`Hidden requirement: ${item.building_name || "item"}`);
+    } catch {
+      setHiddenMarketKeys((prev) => {
+        const next = new Set(prev);
+        next.delete(key);
+        return next;
+      });
+      setBrokerActionMessage("Failed to hide requirement");
+    } finally {
+      if (brokerActionTimer.current) window.clearTimeout(brokerActionTimer.current);
+      brokerActionTimer.current = window.setTimeout(() => setBrokerActionMessage(""), 3000);
+    }
+  }, []);
+
+  const loadHiddenBrokerState = useCallback(async () => {
+    try {
+      const data = await api.fetchJSON<{ brokers?: Array<{ primary_phone?: string; phone?: string }> }>("/brokers/hidden");
+      const phones = new Set<string>();
+      for (const broker of data?.brokers || []) {
+        const key = normalizePhoneKey(broker.primary_phone || broker.phone || "");
+        if (key) phones.add(key);
+      }
+      setHiddenBrokerPhones(phones);
+    } catch {
+      // Best effort only.
+    }
+  }, []);
+
+  const loadHiddenMarketState = useCallback(async () => {
+    try {
+      const data = await api.listHiddenMarketItems();
+      const keys = new Set<string>();
+      for (const item of data.items || []) {
+        if (typeof item?.hidden_key === "string" && item.hidden_key) {
+          keys.add(item.hidden_key);
+          continue;
+        }
+        if (item?.item_kind === "listing" && item?.listing_id) keys.add(`listing:${item.listing_id}`);
+        if (item?.item_kind === "requirement" && item?.raw_message_id) keys.add(`requirement:${item.raw_message_id}`);
+      }
+      setHiddenMarketKeys(keys);
+    } catch {
+      // Best effort only.
+    }
+  }, []);
+
   useEffect(() => {
     return () => {
       if (brokerActionTimer.current) window.clearTimeout(brokerActionTimer.current);
     };
   }, []);
+
+  useEffect(() => {
+    void loadHiddenBrokerState();
+    void loadHiddenMarketState();
+  }, [loadHiddenBrokerState, loadHiddenMarketState, user?.id]);
 
   // The phone is only conversational broker context. Session ownership is
   // derived server-side from the authenticated user and must never switch
@@ -839,6 +943,9 @@ export default function ChatPage() {
               Parsed data
             </button>
           </div>
+          <div className="rounded-xl border border-white/10 bg-white/[0.02] px-3 py-2 text-[11px] text-zinc-400">
+            Markdown output
+          </div>
         </div>
         {sessionError && (
           <div className="mb-2 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300">
@@ -892,6 +999,11 @@ export default function ChatPage() {
             Parsed data
           </button>
         </div>
+        {searchSource === "parsed" && (
+          <div className="lg:hidden mb-3 rounded-xl border border-white/10 bg-white/[0.02] px-3 py-2 text-xs text-zinc-400">
+            Markdown output
+          </div>
+        )}
         {showSessions && (
           <div className="absolute inset-x-4 top-11 z-30 max-h-[55dvh] overflow-y-auto rounded-xl border border-white/10 bg-black/95 p-2 shadow-2xl lg:hidden">
             {sessions.map((s) => (
@@ -1029,15 +1141,17 @@ export default function ChatPage() {
                                 </span>
                               </div>
                             )}
-                            {cardParts.map((p: any, i: number) => renderWorkspaceCardBlock({
-                              part: p,
-                              keyName: `cards-${i}`,
-                              assistantMode,
-                              hiddenBrokerPhones,
-                              hideBrokerLocally,
-                              handleContactBroker,
-                              contactingListingId,
-                            }))}
+                            {cardParts.length > 0 && (() => {
+                              const markdown = cardParts
+                                .map((part: any) => workspaceBlockToMarkdown(part, assistantMode, hiddenBrokerPhones, hiddenMarketKeys))
+                                .filter(Boolean)
+                                .join("\n\n");
+                              return markdown ? (
+                                <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+                                  <MarkdownMessage text={markdown} />
+                                </div>
+                              ) : null;
+                            })()}
 
                           </>
                         );
