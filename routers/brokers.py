@@ -206,6 +206,37 @@ async def broker_summary(name: str = "", phone: str = "", user: dict = Depends(r
     }
 
 
+@router.get("/api/brokers/hidden")
+async def get_hidden_brokers(
+    user: dict = Depends(require_user),
+    tenant_id: str | None = Depends(get_tenant_context),
+):
+    try:
+        params: list[object] = []
+        where = "WHERE is_hidden = true"
+        if tenant_id:
+            where += " AND (tenant_id IS NULL OR tenant_id = ?)"
+            params.append(tenant_id)
+        rows = storage.db.execute(
+            f"""
+            SELECT id, canonical_name AS name, primary_phone, phone, observation_count,
+                   listing_count, requirement_count, last_seen_at
+            FROM brokers
+            {where}
+            ORDER BY last_seen_at DESC, observation_count DESC
+            """,
+            tuple(params),
+        ).fetchall()
+        brokers = []
+        for row in rows:
+            broker = dict(row)
+            broker["primary_phone"] = broker.get("primary_phone") or broker.get("phone") or ""
+            brokers.append(broker)
+        return {"brokers": brokers}
+    except Exception as exc:
+        return {"brokers": []}
+
+
 @router.get("/api/brokers/feed")
 async def get_brokers_feed(
     user: dict = Depends(require_user),

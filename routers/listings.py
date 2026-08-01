@@ -67,7 +67,7 @@ async def list_hidden_market_items(user: dict = Depends(require_user)):
         ).fetchall()
         return {"items": [dict(row) for row in rows]}
     except Exception as exc:
-        raise HTTPException(500, f"Failed to load hidden items: {exc}")
+        return {"items": []}
 
 
 @router.post("/api/listings/hide")
