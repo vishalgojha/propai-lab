@@ -146,6 +146,26 @@ def test_normalize_real_phone_is_defined_and_works():
     assert ai_chat_engine._normalize_real_phone("") == ""
 
 
+def test_deterministic_market_response_embeds_markdown_table():
+    results = [
+        {"building_name": "Sunrise Tower", "micro_market": "Bandra West", "bhk": "3 BHK",
+         "price_formatted": "₹1.8 Cr", "area_sqft": 1200, "furnishing": "Furnished",
+         "broker_name": "Rajesh"},
+        {"building_name": None, "location_label": "Linking Road", "bhk": "3 BHK",
+         "price_formatted": "₹2.1 Cr", "area_sqft": None, "furnishing": None,
+         "broker_name": None},
+    ]
+    payload = json.dumps({"type": "listing_results", "total": 2, "results": results})
+    resp = ai_chat_engine.deterministic_market_response(
+        {"bhk": "3", "intent": "RENT", "micro_markets": ["Bandra West"]}, payload
+    )
+    content = resp["content"]
+    assert "| Building | Locality | BHK | Price | Area | Furnishing | Broker |" in content
+    assert "| --- | --- | --- | --- | --- | --- | --- |" in content
+    assert "Sunrise Tower | Bandra West | 3 BHK | ₹1.8 Cr | 1200 sqft | Furnished | Rajesh" in content
+    assert "Linking Road | Linking Road | 3 BHK | ₹2.1 Cr | — | — | —" in content
+
+
 def test_guard_against_raw_markup_swaps_clean_error():
     raw = "<!DOCTYPE html><html><body>Error 524: A timeout occurred</body></html>"
     assert ai_chat_router._guard_against_raw_markup(raw) == ai_chat_router._RAW_MARKUP_ERROR
