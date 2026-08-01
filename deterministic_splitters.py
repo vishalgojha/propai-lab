@@ -29,13 +29,22 @@ PATTERN_ORDER = [
     PATTERN_BARE_BHK,
 ]
 
-_BHK_HEADER_RE = re.compile(
-    r"(?im)^\s*(?:\*+)?\s*(?:[🏡▪️▫️•]\s*)?(?:\d+(?:\.\d+)?\s*(?:bhk|rk)\b|\brk\b)"
+_BHK_HEADER_PATTERN = (
+    r"^\s*(?:[*_~]+\s*)?(?:[🏡▪️▫️•]\s*)?"
+    r"(?:\d+(?:\.\d+)?\s*(?:bhk|rk)\b|\brk\b)"
 )
+_BHK_HEADER_RE = re.compile(r"(?im)" + _BHK_HEADER_PATTERN)
 _DASH_LINE_RE = re.compile(r"^\s*(?:[-–—_=]{3,}|[─━]{3,}|•{3,}|·{3,})\s*$")
 _NUMBERED_LINE_RE = re.compile(r"^\s*\d+[.)]\s+")
-_EMOJI_BULLET_LINE_RE = re.compile(r"^\s*(?:🏡|▪️|▫️|•|‣|➤)\s+")
-_BHK_LINE_RE = re.compile(r"(?im)^\s*(?:\*+)?\s*(?:\d+(?:\.\d+)?\s*(?:bhk|rk)\b|\brk\b)")
+_EMOJI_BULLET_GLYPHS = ("🏡", "📍", "▪️", "▫️", "•", "‣", "➤")
+# Keep the line matcher structurally identical to the header matcher. The
+# former determines split points while the latter determines acceptance.
+_BHK_LINE_RE = re.compile(r"(?im)" + _BHK_HEADER_PATTERN)
+_LISTING_HEADER_RE = re.compile(
+    r"(?i)^\s*(?:[*_~]+\s*)?(?:[🏡▪️▫️•‣➤]\s*)?"
+    r"(?:\d+(?:\.\d+)?\s*(?:bhk|rk)\b|\brk\b)"
+    r"(?:.*\b(?:for\s+rent|for\s+sale|lease|lease\s+out)\b.*)?\s*$"
+)
 
 _FURNISHING_RE = re.compile(
     r"(?i)\b("
@@ -56,6 +65,93 @@ _PRICE_RE = re.compile(
 _INTENT_RENT_RE = re.compile(r"(?i)\b(?:rent|rental|lease|lease\s+out|for\s+rent)\b")
 _INTENT_SALE_RE = re.compile(r"(?i)\b(?:sale|sell|selling|for\s+sale)\b")
 _INTENT_REQ_RE = re.compile(r"(?i)\b(?:requirement|required|wanted|looking\s+for|need)\b")
+_LOCATION_HINT_RE = re.compile(
+    r"(?i)\b("
+    r"andheri|bandra|khar|juhu|santacruz|bkc|lokhandwala|powai|worli|"
+    r"goregaon|malad|jogeshwari|vile\s+parle|versova|borivali|thane|mulund|"
+    r"mahim|pali\s+hill|pali\s+naka|waterfield|turner\s+road|linking\s+road|"
+    r"carter\s+road|sv\s+road|road|street|lane|nagar|phase|sector|metro|station|"
+    r"exchange|complex|garden|heights|tower|building|apartment|residency|estate"
+    r")\b"
+)
+_BOILERPLATE_RE = re.compile(
+    r"(?i)\b(?:note|notes|inspection|contact|details?|profile|client|family|bachelor|"
+    r"veg|non[-\s]?veg|allow|allowed|welcome|thank(?:s| you)?|regards?)\b"
+)
+
+def _looks_like_location(text: str) -> bool:
+    compact = _compact(text)
+    if not compact:
+        return False
+    return bool(_LOCATION_HINT_RE.search(compact))
+
+
+def _looks_like_anchor_line(line: str) -> bool:
+    cleaned = _normalize_match_line(line).strip()
+    if not cleaned or _is_signal_line(cleaned):
+        return False
+    if _NUMBERED_LINE_RE.match(cleaned) or _DASH_LINE_RE.match(cleaned):
+        return False
+    if _BHK_LINE_RE.match(cleaned):
+        return False
+    if re.search(r"(?i)\b(?:building\s*name|location)\b", cleaned):
+        return True
+    parts = re.split(r"\s+[–—-]\s+", cleaned, maxsplit=1)
+    if len(parts) != 2:
+        return False
+    left, right = [part.strip() for part in parts]
+    if not left or not right:
+        return False
+    left_is_location = _looks_like_location(left)
+    right_is_location = _looks_like_location(right)
+    return left_is_location != right_is_location
+
+
+def _anchor_candidate_text(line: str) -> str | None:
+    raw = _normalize_match_line(line).strip()
+    if not raw:
+        return None
+    cleaned = _strip_markers(raw)
+    if not cleaned:
+        return None
+    if re.search(r"(?i)^\s*(?:building\s*name|building)\s*[:\-]\s*", cleaned):
+        return cleaned
+    if re.search(r"(?i)^\s*(?:location|loc\.?)\s*[:\-]\s*", cleaned):
+        return cleaned
+    if _looks_like_anchor_line(raw):
+        return cleaned
+    if not _is_signal_line(raw):
+        return None
+    if _BHK_LINE_RE.match(_normalize_match_line(cleaned)):
+        return None
+    if re.search(r"\b(?:building\s*name|location)\b", cleaned):
+        return cleaned
+    if re.search(r"\s+[–—-]\s+", cleaned):
+        return cleaned
+    if _BOILERPLATE_RE.search(cleaned):
+        return None
+    if re.search(r"(?i)\b(?:floor|parking|carpet|sqft|rent|sale|lakh|lac|crore|cr|k|furnished|unfurnished)\b", cleaned):
+        return None
+    if len(cleaned.split()) <= 1:
+        return None
+    return cleaned
+
+
+def _listing_anchor_count(text: str) -> int:
+    count = 0
+    for line in _line_items(text):
+        cleaned = _normalize_match_line(line).strip()
+        if not cleaned:
+            continue
+        if re.match(r"^(?:🏡|📍)\s+", cleaned):
+            count += 1
+            continue
+        if re.match(r"^\d+[.)]\s+", cleaned):
+            count += 1
+            continue
+        if re.search(r"(?i)\b(?:building\s*name|location)\b", cleaned):
+            count += 1
+    return count
 
 
 def _line_items(text: str) -> list[str]:
@@ -66,8 +162,19 @@ def _compact(text: str) -> str:
     return re.sub(r"\s+", " ", (text or "").strip())
 
 
+def _normalize_match_line(line: str) -> str:
+    """Ignore WhatsApp markdown wrappers before testing structural markers."""
+    normalized = re.sub(r"^\s*(?:[*_~]+\s*)+", "", line or "")
+    return re.sub(r"[*_~]+\s*$", "", normalized)
+
+
+def _emoji_bullet_re(glyph: str) -> re.Pattern[str]:
+    return re.compile(rf"^\s*(?:[*_~]+\s*)?(?:{re.escape(glyph)}\s*)")
+
+
 def _header_count(text: str) -> int:
-    return len(_BHK_HEADER_RE.findall(text or ""))
+    normalized = "\n".join(_normalize_match_line(line) for line in _line_items(text))
+    return len(_BHK_HEADER_RE.findall(normalized))
 
 
 def _normalize_bhk(text: str) -> str | None:
@@ -170,14 +277,14 @@ def _extract_intent(text: str) -> str | None:
 
 
 def _is_signal_line(line: str) -> bool:
-    cleaned = line.strip()
+    cleaned = _normalize_match_line(line).strip()
     if not cleaned:
         return False
     if _DASH_LINE_RE.match(cleaned):
         return True
     if _NUMBERED_LINE_RE.match(cleaned):
         return True
-    if _EMOJI_BULLET_LINE_RE.match(cleaned):
+    if any(_emoji_bullet_re(glyph).match(cleaned) for glyph in _EMOJI_BULLET_GLYPHS):
         return True
     if _BHK_LINE_RE.match(cleaned):
         return True
@@ -186,10 +293,19 @@ def _is_signal_line(line: str) -> bool:
 
 def _choose_text_line(lines: list[str]) -> str | None:
     for line in lines:
-        cleaned = line.strip(" \t*•▪️▫️🏡")
+        anchor_candidate = _anchor_candidate_text(line)
+        if anchor_candidate:
+            return anchor_candidate
+    for line in lines:
+        raw = _normalize_match_line(line)
+        if not raw:
+            continue
+        if _is_signal_line(raw):
+            continue
+        cleaned = _strip_markers(line)
         if not cleaned:
             continue
-        if _is_signal_line(cleaned):
+        if _BOILERPLATE_RE.search(cleaned):
             continue
         if re.search(r"(?i)\b(?:floor|parking|carpet|sqft|rent|sale|lakh|lac|crore|cr|k|furnished|unfurnished)\b", cleaned):
             continue
@@ -201,10 +317,10 @@ def _choose_text_line(lines: list[str]) -> str | None:
 
 def _strip_markers(line: str) -> str:
     cleaned = line.strip()
+    cleaned = re.sub(r"^[*_~]+\s*", "", cleaned)
     cleaned = re.sub(r"^\d+[.)]\s+", "", cleaned)
-    cleaned = re.sub(r"^(?:🏡|▪️|▫️|•|‣|➤)\s+", "", cleaned)
-    cleaned = re.sub(r"^\*+", "", cleaned)
-    cleaned = re.sub(r"\*+$", "", cleaned)
+    cleaned = re.sub(r"^(?:🏡|📍|▪️|▫️|•|‣|➤|👉|👈|➡️|➡|➤|↪️)\s*", "", cleaned)
+    cleaned = re.sub(r"[*_~]+$", "", cleaned)
     return cleaned.strip()
 
 
@@ -252,16 +368,42 @@ def _split_numbered(text: str) -> list[str] | None:
 
 def _split_emoji_bullet(text: str) -> list[str] | None:
     lines = _line_items(text)
-    if not any(_EMOJI_BULLET_LINE_RE.match(line or "") for line in lines):
-        return None
-    chunks = _split_on_predicate(lines, lambda line: bool(_EMOJI_BULLET_LINE_RE.match(line or "")))
-    chunks = [chunk for chunk in chunks if _extract_bhk(chunk) or _PRICE_RE.search(chunk) or _AREA_RE.search(chunk)]
-    return chunks or None
+    headers = _header_count(text)
+    has_anchor_like_boundary = any(_looks_like_anchor_line(line) for line in lines)
+    accepted_chunks: list[str] | None = None
+    for glyph in _EMOJI_BULLET_GLYPHS:
+        glyph_re = _emoji_bullet_re(glyph)
+        if not any(glyph_re.match(_normalize_match_line(line)) for line in lines):
+            continue
+        chunks = _split_on_predicate(
+            lines,
+            lambda line, glyph_re=glyph_re: bool(glyph_re.match(_normalize_match_line(line)))
+            or bool(_LISTING_HEADER_RE.match(_normalize_match_line(line)))
+            or _looks_like_anchor_line(line),
+        )
+        chunks = [
+            chunk
+            for chunk in chunks
+            if _extract_bhk(chunk) or _PRICE_RE.search(chunk) or _AREA_RE.search(chunk)
+        ]
+        if len(chunks) >= 2 and (
+            headers == 0
+            or len(chunks) == headers
+            or (len(chunks) == headers + 1 and has_anchor_like_boundary)
+        ):
+            return chunks
+        if accepted_chunks is None and len(chunks) >= 2 and headers == 0:
+            accepted_chunks = chunks
+    return accepted_chunks or None
 
 
 def _split_bare_bhk(text: str) -> list[str] | None:
     lines = _line_items(text)
-    start_indices = [idx for idx, line in enumerate(lines) if _BHK_LINE_RE.match(line or "")]
+    start_indices = [
+        idx
+        for idx, line in enumerate(lines)
+        if _BHK_LINE_RE.match(_normalize_match_line(line))
+    ]
     if len(start_indices) < 2:
         return None
     chunks: list[str] = []
@@ -271,6 +413,8 @@ def _split_bare_bhk(text: str) -> list[str] | None:
         if chunk:
             chunks.append(chunk)
     chunks = [chunk for chunk in chunks if _extract_bhk(chunk) or _PRICE_RE.search(chunk) or _AREA_RE.search(chunk)]
+    if any(_listing_anchor_count(chunk) > 1 for chunk in chunks):
+        return None
     return chunks or None
 
 
@@ -293,10 +437,21 @@ def split_message_into_chunks(text: str, preferred_pattern: str | None = None) -
     headers = _header_count(text)
     pattern_ids = [preferred_pattern] if preferred_pattern in PATTERN_ORDER else []
     pattern_ids.extend(pid for pid in PATTERN_ORDER if pid != preferred_pattern)
+    has_anchor_like_boundary = any(_looks_like_anchor_line(line) for line in _line_items(text))
     for pattern_id in pattern_ids:
         splitter = pattern_to_splitter[pattern_id]
         chunks = splitter(text) or []
-        if len(chunks) >= 2 and (headers == 0 or len(chunks) == headers):
+        if len(chunks) >= 2 and (
+            headers == 0
+            or len(chunks) == headers
+            or (
+                pattern_id == PATTERN_EMOJI_BULLET
+                and has_anchor_like_boundary
+                and len(chunks) == headers + 1
+            )
+        ):
+            if pattern_id == PATTERN_BARE_BHK and any(_listing_anchor_count(chunk) > 1 for chunk in chunks):
+                continue
             return pattern_id, chunks
     return None, []
 
@@ -318,16 +473,39 @@ def parse_chunk(chunk: str) -> dict:
     building_name = None
     location_raw = None
     if first_text_line:
-        if "," in first_text_line:
+        labelled_building = re.search(r"(?i)^\s*(?:building\s*name|building)\s*[:\-]\s*(.+)$", first_text_line)
+        labelled_location = re.search(r"(?i)^\s*(?:location|loc\.?)\s*[:\-]\s*(.+)$", first_text_line)
+        if labelled_building:
+            building_name = labelled_building.group(1).strip()
+        elif labelled_location:
+            location_raw = first_text_line
+        elif re.search(r"(?i)\b(?:near|at|location|loc\.?)\b", first_text_line):
+            location_raw = first_text_line
+        elif "," in first_text_line:
             left, right = [part.strip() for part in first_text_line.split(",", 1)]
             if left and len(left.split()) >= 2:
                 building_name = left
             if right:
                 location_raw = right
-        elif re.search(r"(?i)\b(?:near|at|location|loc\.?)\b", first_text_line):
-            location_raw = first_text_line
         else:
-            building_name = first_text_line
+            dash_match = re.split(r"\s+[–—-]\s+", first_text_line, maxsplit=1)
+            if len(dash_match) == 2:
+                left, right = [part.strip() for part in dash_match]
+                left_is_location = _looks_like_location(left)
+                right_is_location = _looks_like_location(right)
+                if left and right and left_is_location != right_is_location:
+                    if left_is_location:
+                        location_raw = left
+                        building_name = right
+                    else:
+                        building_name = left
+                        location_raw = right
+                elif left and right:
+                    building_name = first_text_line
+                elif first_text_line:
+                    building_name = first_text_line
+            else:
+                building_name = first_text_line
 
     result = {
         "intent": intent,
