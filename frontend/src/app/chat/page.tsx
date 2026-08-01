@@ -627,9 +627,14 @@ export default function ChatPage() {
         const savedId = activeSessionStorageKey
           ? window.localStorage.getItem(activeSessionStorageKey)
           : null;
-        const active = data.find((item) => item.id === savedId) || data[0];
+        const saved = data.find((item) => item.id === savedId);
+        const preferred = saved && saved.source !== "groups"
+          ? saved
+          : data.find((item) => item.source === "parsed") || data[0];
+        const active = preferred;
         sessionIdRef.current = active.id;
         setSessionId(active.id);
+        setSearchSource(active.source === "groups" ? "groups" : "parsed");
         try {
           const msgs = await api.getChatSessionMessages(active.id);
           if (cancelled) return;
@@ -699,13 +704,15 @@ export default function ChatPage() {
     sessionIdRef.current = id;
     if (activeSessionStorageKey) window.localStorage.setItem(activeSessionStorageKey, id);
     try {
+      const session = sessions.find((item) => item.id === id);
+      setSearchSource(session?.source === "groups" ? "groups" : "parsed");
       const msgs = await api.getChatSessionMessages(id);
       setMessages(msgs.map((m) => toUIMessage({ id: m.id, role: m.role as "user" | "assistant", content: m.content, blocks: m.blocks })));
     } catch (e) {
       setMessages([]);
       setSessionError(e instanceof Error ? e.message : "Could not load this chat");
     }
-  }, [activeSessionStorageKey, sessionId, setMessages]);
+  }, [activeSessionStorageKey, sessionId, sessions, setMessages]);
 
   // Delete a session
   const handleDeleteSession = useCallback(async (id: string, e: React.MouseEvent) => {
