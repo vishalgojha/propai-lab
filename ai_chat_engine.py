@@ -2655,7 +2655,6 @@ def execute_tool(name, args, sources, db_path=None, tenant_id: str | None = None
             return "Error: to_phone and text are required"
         try:
             from config import SUPABASE_URL, SUPABASE_SERVICE_KEY
-            import json
             phone_number_id = None
             access_token = None
             
