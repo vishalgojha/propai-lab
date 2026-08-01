@@ -1572,17 +1572,84 @@ def _md_cell(value) -> str:
     return re.sub(r"\s+", " ", text).replace("|", "\\|").strip()
 
 
+_FURNISHING_CANON = {
+    "fully_furnished": "Fully Furnished",
+    "semi_furnished": "Semi Furnished",
+    "partly_furnished": "Partly Furnished",
+    "partially_furnished": "Partly Furnished",
+    "almost_furnished": "Almost Furnished",
+    "well_furnished": "Well Furnished",
+    "luxury_fully_furnished": "Luxury Fully Furnished",
+    "lavishly_furnished": "Lavishly Furnished",
+    "unfurnished": "Unfurnished",
+    "furnished": "Furnished",
+    "bare_shell": "Bare Shell",
+    "bareshell": "Bare Shell",
+    "warm_shell": "Warm Shell",
+    "builder_furnished": "Builder Furnished",
+    "builder_finish": "Builder Finish",
+    "empty": "Empty",
+    "sf": "Semi Furnished",
+}
+
+
+def _md_furnishing(item: dict) -> str:
+    """Human-readable furnishing label from the stored snake_case enum."""
+    raw = item.get("furnishing")
+    if raw in (None, ""):
+        return "—"
+    normalized = re.sub(r"[- ]", "_", str(raw)).strip().lower()
+    if normalized in ("none", "na", "n/a", "*"):
+        return "—"
+    if normalized in _FURNISHING_CANON:
+        return _FURNISHING_CANON[normalized]
+    words = [word for word in re.split(r"[_\s]+", normalized) if word]
+    if not words:
+        return "—"
+    return " ".join(word.capitalize() for word in words)
+
+
+def _md_broker(item: dict) -> str:
+    """Broker name with WhatsApp bold markers, instruction prefixes, and
+    trailing separators removed; generic post fragments render as —."""
+    raw = item.get("broker_name")
+    if raw in (None, ""):
+        return "—"
+    cleaned = re.sub(r"[*_]+", "", str(raw)).strip()
+    match = re.match(r"(?i)^(?:contact|call|pls|please)\s*:?\s*[-–—]*\s*(.+)$", cleaned)
+    if match:
+        cleaned = match.group(1).strip()
+    cleaned = re.sub(r"[\s\-–—/:]+$", "", cleaned).strip()
+    if not cleaned:
+        return "—"
+    if (
+        re.fullmatch(r"[a-z\s\-–—/:]+", cleaned)
+        and re.search(r"(?i)\b(call|contact|pls|please|inspection|visit|availability)\b", cleaned)
+    ):
+        return "—"
+    return cleaned
+
+
+def _strip_stars(value) -> str:
+    """Drop WhatsApp bold markers from a stored text value."""
+    return re.sub(r"\*+", "", str(value) if value not in (None, "") else "").strip()
+
+
 def _whatsapp_enquiry(item: dict) -> str:
     """Deterministic prefilled WhatsApp enquiry message for a listing row."""
-    building = str(item.get("building_name") or "the listing").strip()
+    building = _strip_stars(item.get("building_name")) or "the listing"
     configuration = str(item.get("bhk") or item.get("property_type") or "property").strip()
     price = str(item.get("price_formatted") or "").strip()
     carpet = f"{item.get('area_sqft')} sqft" if item.get("area_sqft") else ""
-    furnishing = str(item.get("furnishing") or "Unspecified").strip()
-    locality = str(
-        item.get("micro_market") or item.get("location_label") or item.get("landmark_name") or "Unknown locality"
-    ).strip()
-    broker = str(item.get("broker_name") or "there").strip()
+    furnishing = _md_furnishing(item)
+    if furnishing == "—":
+        furnishing = "Unspecified"
+    locality = _strip_stars(
+        item.get("micro_market") or item.get("location_label") or item.get("landmark_name")
+    ) or "Unknown locality"
+    broker = _md_broker(item)
+    if broker == "—":
+        broker = "there"
     lines = [
         f"Hi {broker},",
         "",
@@ -1621,6 +1688,19 @@ def _whatsapp_link(item: dict) -> str:
     return f"https://wa.me/91{phone}?text={quote(_whatsapp_enquiry(item), safe='')}"
 
 
+def _md_last_seen(item: dict) -> str:
+    """Absolute local date/time the listing was last seen; falls back to the
+    relative age string when no parseable timestamp exists."""
+    raw = item.get("last_seen") or item.get("last_seen_text") or ""
+    if not raw:
+        return "—"
+    try:
+        parsed = datetime.datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+        return parsed.strftime("%d %b %Y, %H:%M")
+    except (TypeError, ValueError):
+        return str(raw)
+
+
 def listing_table_from_items(results: list[dict]) -> str:
     """Render verified search rows as a GFM markdown table.
 
@@ -1630,20 +1710,21 @@ def listing_table_from_items(results: list[dict]) -> str:
     if not results:
         return ""
     lines = [
-        "| Building | Locality | Type | Rent/Sale | Carpet | Furnishing | Broker | WhatsApp |",
-        "| --- | --- | --- | --- | --- | --- | --- | --- |",
+        "| Building | Locality | Type | Rent/Sale | Carpet | Furnishing | Broker | Last seen | WhatsApp |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
     ]
     for item in results:
         phone_link = _whatsapp_link(item)
         cells = [
-            _md_cell(item.get("building_name") or "—"),
-            _md_cell(item.get("micro_market") or item.get("location_label") or item.get("landmark_name") or "—"),
+            _md_cell(_strip_stars(item.get("building_name")) or "—"),
+            _md_cell(_strip_stars(item.get("micro_market") or item.get("location_label") or item.get("landmark_name")) or "—"),
             _md_cell(item.get("bhk") or item.get("property_type") or "—"),
             _md_cell(item.get("price_formatted") or "—"),
             _md_cell(f"{item.get('area_sqft')} sqft" if item.get("area_sqft") else "—"),
-            _md_cell(item.get("furnishing") or "—"),
-            _md_cell(item.get("broker_name") or "—"),
-            f"[💬 Open Chat]({phone_link})" if phone_link else "💬 Open Chat",
+            _md_furnishing(item),
+            _md_broker(item),
+            _md_cell(_md_last_seen(item)),
+            f"[💬 Open Chat]({phone_link})" if phone_link else "—",
         ]
         lines.append("| " + " | ".join(cells) + " |")
     return "\n".join(lines)
@@ -1735,6 +1816,198 @@ def deterministic_market_response(query: dict, result: str, sources: dict | None
         "sources": ["global marketplace", "WhatsApp broker posts"],
         "status_steps": ["Parsed request", "Searched live marketplace", "Ranked by recent evidence"],
         "trace": {"route": "deterministic_market_search", "filters": query, "total": total},
+    }
+
+
+_PROPERTY_INTENT_RE = re.compile(
+    r"\b(flat|apartment|property|properties|listing|listings|inventory|"
+    r"rent|rental|rentals|lease|sale|sell|buy|purchase|furnished|unfurnished|"
+    r"building|tower|society|project|office|shop|commercial|requirement|"
+    r"available|looking for|find|search|price|budget|area|sqft|bhk|"
+    r"thousand|lakh|lac|crore)\b",
+    re.IGNORECASE,
+)
+
+
+def has_property_intent(text: str) -> bool:
+    """True when the message is about property inventory in any concrete way."""
+    lower = (text or "").lower()
+    if re.search(r"\b\d+(?:\.5)?\s*(?:bhk|bed(?:room)?s?)\b", lower):
+        return True
+    if _PROPERTY_INTENT_RE.search(lower):
+        return True
+    return any(
+        re.search(rf"(?<!\w){re.escape(locality.lower())}(?!\w)", lower)
+        for locality in _MARKET_LOCALITIES
+    )
+
+
+def relaxed_market_query(text: str) -> dict:
+    """Extract any market filters from text without requiring strict property
+    language, so a DB-first answer still searches when the strict parser finds
+    no inventory intent. Always returns a searchable query — hints only, or a
+    plain recent-listings query when nothing concrete is mentioned."""
+    raw = (text or "").strip()
+    lower = raw.lower()
+    args: dict[str, object] = {
+        "limit": 10,
+        "offset": 0,
+        "sort_by": "last_seen",
+        "group_by_building": False,
+    }
+    bhk_match = re.search(r"\b(\d+(?:\.5)?)\s*(?:bhk|bed(?:room)?s?)\b", lower)
+    if bhk_match:
+        args["bhk"] = bhk_match.group(1)
+
+    localities = [
+        locality for locality in _MARKET_LOCALITIES
+        if re.search(rf"(?<!\w){re.escape(locality.lower())}(?!\w)", lower)
+    ]
+    localities = [
+        locality for locality in localities
+        if not any(locality != other and locality.lower() in other.lower() for other in localities)
+    ]
+    if localities:
+        args["micro_markets"] = sorted(set(localities), key=len, reverse=True)
+
+    if re.search(r"\b(?:rent|rental|lease|leave\s*(?:&|and)\s*license|l&l)\b", lower):
+        args["intent"] = "RENT"
+    elif re.search(r"\b(?:sale|sell|buy|purchase)\b", lower):
+        args["intent"] = "SELL"
+
+    if re.search(r"\bsemi[-\s]?furnished\b", lower):
+        args["furnishing"] = "Semi Furnished"
+    elif re.search(r"\bunfurnished\b", lower):
+        args["furnishing"] = "Unfurnished"
+    elif re.search(r"\bfully\s+furnished\b|\bfurnished\b", lower):
+        args["furnishing"] = "Furnished"
+
+    amount_pattern = r"(\d+(?:\.\d+)?)\s*(cr|crore|crores|karod|karods|l|lac|lacs|lakh|lakhs|k|thousand|thousands|hazaar|hazar)\b"
+    range_match = re.search(
+        rf"(?:between\s+)?{amount_pattern}\s*(?:to|[-–])\s*{amount_pattern}", lower
+    )
+    if range_match:
+        first = _market_price_to_rupees(range_match.group(1), range_match.group(2))
+        second = _market_price_to_rupees(range_match.group(3), range_match.group(4))
+        args["price_min"], args["price_max"] = sorted((first, second))
+    else:
+        shared_unit_range = re.search(
+            r"(?:between\s+)?(\d+(?:\.\d+)?)\s*(?:to|[-–])\s*"
+            r"(\d+(?:\.\d+)?)\s*(cr|crore|crores|karod|karods|l|lac|lacs|lakh|lakhs|k|thousand|thousands|hazaar|hazar)\b",
+            lower,
+        )
+        if shared_unit_range:
+            first = _market_price_to_rupees(shared_unit_range.group(1), shared_unit_range.group(3))
+            second = _market_price_to_rupees(shared_unit_range.group(2), shared_unit_range.group(3))
+            args["price_min"], args["price_max"] = sorted((first, second))
+        else:
+            ceiling = re.search(
+                rf"(?:under|below|upto|up to|max(?:imum)?|budget\s*(?:of)?\s*)\s*(?:₹|rs\.?\s*)?{amount_pattern}",
+                lower,
+            )
+            if ceiling:
+                args["price_max"] = _market_price_to_rupees(ceiling.group(1), ceiling.group(2))
+
+    return args
+
+
+def llm_summarize_search(text: str, query: dict, result_json: str, api_key: str = "", model: str = "", base_url: str = "") -> str | None:
+    """Have the LLM write a short answer strictly grounded in the verified
+    search rows. Returns None (caller keeps the canned response) if there are
+    no rows or the provider fails — never a fabricated summary."""
+    if not api_key or not model:
+        return None
+    try:
+        payload = json.loads(result_json)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return None
+    results = payload.get("results") or []
+    if not results:
+        return None
+    total = int(payload.get("total") or 0)
+    digest_lines = []
+    for row in results[:10]:
+        name = str(row.get("building_name") or "Unknown building").strip()
+        locality = str(row.get("micro_market") or row.get("location_label") or "").strip()
+        price = str(row.get("price_formatted") or "").strip()
+        bhk = str(row.get("bhk") or "").strip()
+        intent = str(row.get("intent") or "").upper().strip()
+        parts = [part for part in (name, bhk, intent, locality, price) if part]
+        digest_lines.append("- " + " · ".join(parts))
+    digest = "\n".join(digest_lines)
+    prompt = (
+        f"The user asked: {(text or '').strip()}\n\n"
+        f"A verified live search returned {total} matches. Here are up to the 10 most recent rows:\n"
+        f"{digest}\n\n"
+        "Write a short answer (2-4 sentences) that directly addresses the user's question using ONLY these rows. "
+        "Summarize what is actually available: localities, BHKs, price range, and sale/rent mix. Do not invent "
+        "buildings, brokers, prices, or counts that are not in the rows above. If the rows do not answer the "
+        "question, say that plainly. Never mention a listing that is not in the rows."
+    )
+    try:
+        response = get_client(api_key=api_key, base_url=base_url or None).chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": "You summarize verified property search results. You never invent data."},
+                {"role": "user", "content": prompt},
+            ],
+            max_tokens=300,
+            temperature=0.2,
+        )
+        return (response.choices[0].message.content or "").strip() or None
+    except Exception:
+        return None
+
+
+def live_overview_counts(db_path=None) -> dict:
+    """Deterministic live database counts for capability answers. Returns {}
+    (unavailable) when the database cannot be reached, never a guess."""
+    con = db_path if hasattr(db_path, "execute") else _open_db()
+    if con is None:
+        return {}
+    try:
+        return {
+            "total_messages": con.execute("SELECT COUNT(*) FROM raw_messages").fetchone()[0],
+            "total_properties_posted": con.execute("SELECT COUNT(*) FROM parsed_output").fetchone()[0],
+            "unique_properties": con.execute("SELECT COUNT(*) FROM listings").fetchone()[0],
+            "total_brokers": con.execute("SELECT COUNT(*) FROM brokers").fetchone()[0],
+        }
+    except Exception:
+        return {}
+    finally:
+        if con is not db_path:
+            con.close()
+
+
+def capability_response(db_path=None) -> dict:
+    """Answer capability questions with real, live database numbers. No LLM,
+    no room to invent access claims."""
+    counts = live_overview_counts(db_path)
+    if counts:
+        metrics = [
+            {"label": "Listings", "value": f"{counts['unique_properties']:,}", "tone": "success"},
+            {"label": "Property posts", "value": f"{counts['total_properties_posted']:,}", "tone": "neutral"},
+            {"label": "Brokers", "value": f"{counts['total_brokers']:,}", "tone": "neutral"},
+            {"label": "Messages", "value": f"{counts['total_messages']:,}", "tone": "neutral"},
+        ]
+        content = (
+            "I work directly on PropAI's live database of WhatsApp property posts — "
+            f"{counts['unique_properties']:,} unique listings, "
+            f"{counts['total_properties_posted']:,} property posts from "
+            f"{counts['total_brokers']:,} brokers across {counts['total_messages']:,} messages. "
+            "Every listing, count, and comparison I show is fetched from that database at the moment you ask. "
+            "I can search listings by BHK, price, locality, and sale/rent; query broker activity; look up raw "
+            "WhatsApp messages; and create Review Center suggestions for changes like new buildings or broker merges."
+        )
+    else:
+        metrics = [{"label": "Database", "value": "unavailable", "tone": "neutral"}]
+        content = "I search PropAI's live property database, but the database is temporarily unreachable right now."
+    return {
+        "content": content,
+        "blocks": [{"type": "summary", "title": "What I can access", "body": content, "metrics": metrics}],
+        "sources": ["live database"],
+        "status_steps": ["Read live database counts"],
+        "trace": {"route": "deterministic_capability", "counts": counts or None},
     }
 
 

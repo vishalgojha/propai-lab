@@ -150,7 +150,8 @@ def test_deterministic_market_response_embeds_gfm_table():
     results = [
         {"building_name": "Sunrise Tower", "micro_market": "Bandra West", "bhk": "3 BHK",
          "price_formatted": "₹1.8 Cr", "area_sqft": 1200, "furnishing": "Furnished",
-         "broker_name": "Rajesh", "broker_phone": "+919876543210"},
+         "broker_name": "Rajesh", "broker_phone": "+919876543210",
+         "last_seen": "2026-08-01T14:30:00+00:00"},
         {"building_name": None, "location_label": "Linking Road", "bhk": "3 BHK",
          "price_formatted": "₹2.1 Cr", "area_sqft": None, "furnishing": None,
          "broker_name": None, "broker_phone": ""},
@@ -162,9 +163,10 @@ def test_deterministic_market_response_embeds_gfm_table():
     content = resp["content"]
     assert "Found 2 active matches; showing the 2 most recently seen." in content
     assert "**Applied filters:** 3 BHK · RENT · Bandra West" in content
-    assert "| Building | Locality | Type | Rent/Sale | Carpet | Furnishing | Broker | WhatsApp |" in content
-    assert "| --- | --- | --- | --- | --- | --- | --- | --- |" in content
-    assert "| Sunrise Tower | Bandra West | 3 BHK | ₹1.8 Cr | 1200 sqft | Furnished | Rajesh |" in content
+    assert "| Building | Locality | Type | Rent/Sale | Carpet | Furnishing | Broker | Last seen | WhatsApp |" in content
+    assert "| --- | --- | --- | --- | --- | --- | --- | --- | --- |" in content
+    assert "| Sunrise Tower | Bandra West | 3 BHK | ₹1.8 Cr | 1200 sqft | Furnished | Rajesh | 01 Aug 2026, 14:30 |" in content
+    assert "| — | Linking Road | 3 BHK | ₹2.1 Cr | — | — | — | — | — |" in content
     assert "https://wa.me/919876543210?text=" in content
     assert content.count("9876543210") == 1
     blocks = {b["type"]: b for b in resp["blocks"]}

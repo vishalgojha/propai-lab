@@ -1258,7 +1258,24 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
         } or sources
 
     search_request_text = last_user
-    if last_user and not re.search(r"\b\d+(?:\.5)?\s*(?:bhk|bed(?:room)?s?)\b|\b(?:rent|rental|lease|sale|sell|buy|purchase)\b", last_user, re.IGNORECASE):
+    is_pagination = bool(last_user and re.match(r"^(?:more|next|show\s+more|load\s+more|more\s+results|next\s+page)$", last_user, re.IGNORECASE))
+    pagination_count = 0
+    if is_pagination:
+        previous_market_queries = [
+            str(msg.get("content", "")).strip()
+            for msg in effective_messages[:-1]
+            if msg.get("role") == "user" and not re.match(r"^(?:more|next|show\s+more|load\s+more|more\s+results|next\s+page)$", str(msg.get("content", "")).strip())
+        ]
+        if previous_market_queries:
+            search_request_text = previous_market_queries[-1]
+        for msg in reversed(effective_messages[:-1]):
+            content_str = str(msg.get("content", "")).strip()
+            if msg.get("role") == "user":
+                if re.match(r"^(?:more|next|show\s+more|load\s+more|more\s+results|next\s+page)$", content_str, re.IGNORECASE):
+                    pagination_count += 1
+                else:
+                    break
+    elif last_user and not re.search(r"\b\d+(?:\.5)?\s*(?:bhk|bed(?:room)?s?)\b|\b(?:rent|rental|lease|sale|sell|buy|purchase)\b", last_user, re.IGNORECASE):
         previous_users = [
             str(msg.get("content", "")).strip()
             for msg in effective_messages[:-1]
@@ -1322,22 +1339,29 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
                 }),
                 active_sources,
             )
-            response = _annotate_chat_response(response, source_mode)
-            _persist("user", last_user)
-            _persist("assistant", response.get("content", ""), blocks=response.get("blocks"))
-            _maybe_title(last_user)
-            return _wrap_chat_response(response, _is_inbox)
+        response = _annotate_chat_response(response, source_mode)
+        _persist("user", last_user)
+        _persist("assistant", response.get("content", ""), blocks=response.get("blocks"))
+        _maybe_title(last_user)
+        return _wrap_chat_response(response, _is_inbox)
 
-    if source_mode == "groups" and last_user:
+    # DB-first fallback: no strict inventory filters, but not an analytics or
+    # ops question. Search the live marketplace with whatever hints the message
+    # carries (locality, intent, price, BHK) or the most recent listings, and
+    # let the LLM summarize only those verified rows.
+    if last_user and not _ANALYTICS_ACTION_SIGNALS.search(last_user):
         try:
-            response = _group_search_response(search_request_text, {})
+            relaxed_query = chat_engine.relaxed_market_query(last_user)
+            response = await _market_search_with_summary(
+                relaxed_query, active_sources, providers, last_user, tenant_id
+            )
             response = _annotate_chat_response(response, source_mode)
             _persist("user", last_user)
             _persist("assistant", response.get("content", ""), blocks=response.get("blocks"))
             _maybe_title(last_user)
             return _wrap_chat_response(response, _is_inbox)
-        except Exception:
-            _logger.exception("Raw group search failed")
+        except Exception as exc:
+            _logger.exception("Relaxed market search failed: %s", exc)
 
     def _call(provider):
         system_prompt = chat_engine.build_system_prompt(active_sources, broker=broker)
