@@ -451,7 +451,7 @@ def _doubleword_error_response(exc: Exception) -> Any:
         )
     return JSONResponse(
         status_code=502,
-        content={"error": "llm_error", "message": msg[:500]},
+        content={"error": "llm_error", "message": "AI search is temporarily unavailable. Please try again."},
     )
 
 

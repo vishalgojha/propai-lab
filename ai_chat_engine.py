@@ -2,6 +2,7 @@ import os
 import json
 import datetime
 import re
+import logging
 from pathlib import Path
 from urllib.parse import quote
 import pandas as pd
@@ -14,6 +15,8 @@ _lab_dir = os.path.realpath(os.path.dirname(os.path.abspath(__file__)))
 _propai_data = os.path.realpath(os.path.join(_lab_dir, "..", "propai", "data"))
 DATA_DIR = _propai_data if os.path.isdir(_propai_data) else os.path.join(_lab_dir, "data")
 PROMPT_DIR = Path(_lab_dir) / "prompts"
+
+_logger = logging.getLogger(__name__)
 
 _CACHE_TTL = "1h"
 _CACHE_BOUNDARY = "\nCurrent date and time: "
@@ -1754,20 +1757,19 @@ def deterministic_market_response(query: dict, result: str, sources: dict | None
         }
 
     if payload.get("type") == "market_search_error" or payload.get("error"):
-        detail = payload.get("detail") or payload.get("error") or "Search backend failed."
         return {
-            "content": f"Market search failed: {detail}",
+            "content": "I couldn't fetch the latest market listings right now.",
             "blocks": [{
                 "type": "error_state",
                 "title": "Market search unavailable",
-                "body": detail,
+                "body": "Please try again shortly.",
             }],
             "sources": source_names,
             "status_steps": ["Searching live marketplace"],
             "trace": {
                 "route": "deterministic_market_search",
                 "sources": source_names,
-                "error": detail,
+                "error": "market_search_failed",
             },
         }
 
@@ -2402,6 +2404,7 @@ def execute_tool(name, args, sources, db_path=None, tenant_id: str | None = None
                 try:
                     return _rest_market_search(rest_client, args, tenant_id=tenant_id)
                 except Exception as exc:
+                    _logger.exception("REST market search failed")
                     return json.dumps({
                         "type": "market_search_error",
                         "error": "market_search_failed",
@@ -2694,6 +2697,7 @@ def execute_tool(name, args, sources, db_path=None, tenant_id: str | None = None
                 },
             }, default=str)
         except Exception as exc:
+            _logger.exception("Market search query failed")
             return json.dumps({
                 "type": "market_search_error",
                 "error": "market_search_failed",
