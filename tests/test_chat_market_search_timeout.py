@@ -100,6 +100,29 @@ def test_market_search_allow_llm_false_skips_client():
     assert result.get("bhk") == "3"
 
 
+def test_requirement_matching_query_uses_requirement_scope():
+    result = ai_chat_engine.parse_market_search_request(
+        "any 3 bhk for rent in bandra east any requirements that match?",
+        allow_llm=False,
+    )
+    assert result is not None
+    assert result.get("search_scope") == "requirements"
+    payload = json.dumps({
+        "type": "requirement_results",
+        "total": 1,
+        "results": [{
+            "raw_message_id": 42,
+            "intent": "BUY",
+            "bhk": "3 BHK",
+            "micro_market": "Bandra East",
+            "broker_name": "Broker A",
+        }],
+    })
+    response = ai_chat_engine.deterministic_market_response(result, payload)
+    assert response["blocks"][0]["title"] == "Matching broker requirements"
+    assert "Active listings" not in response["content"]
+
+
 def test_execute_tool_json_is_module_scoped_not_local():
     con = Mock()
     con.execute.return_value.fetchone.return_value = (7,)
