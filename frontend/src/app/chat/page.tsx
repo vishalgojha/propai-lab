@@ -952,6 +952,7 @@ export default function ChatPage() {
                       value={renameValue}
                       onChange={(event) => setRenameValue(event.target.value)}
                       onKeyDown={(event) => {
+                        event.stopPropagation();
                         if (event.key === "Enter") void handleRenameSession(s.id);
                         if (event.key === "Escape") setRenamingSessionId("");
                       }}
@@ -1058,6 +1059,7 @@ export default function ChatPage() {
                       value={renameValue}
                       onChange={(event) => setRenameValue(event.target.value)}
                       onKeyDown={(event) => {
+                        event.stopPropagation();
                         if (event.key === "Enter") void handleRenameSession(s.id);
                         if (event.key === "Escape") setRenamingSessionId("");
                       }}
