@@ -6,7 +6,6 @@ import { useEffect, useState, useRef, useCallback, useMemo, Suspense } from "rea
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 import * as api from "@/lib/api";
-import BrokerAvatar from "@/components/BrokerAvatar";
 import WhatsAppMessage, { MessageEntity } from "@/components/WhatsAppMessage";
 import NotesPanel from "@/components/notes/NotesPanel";
 import ResizablePanel from "@/components/ResizablePanel";
@@ -3602,10 +3601,7 @@ return {
                         >
                           <div className="flex items-center justify-between mb-1">
                             <div className="flex items-center gap-2 min-w-0">
-                              <div className="relative">
-                                <BrokerAvatar phone={b.primary_phone} size="sm" />
-                                {isActiveNow && <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-emerald-400 border border-[#0a0e13]" />}
-                              </div>
+                              {isActiveNow && <span className="h-2 w-2 shrink-0 rounded-full bg-emerald-400" title="Active recently" />}
                               <span className="text-[12px] font-bold text-white truncate max-w-[160px]">
                                 {stripDecorativeEmoji(b.canonical_name || b.name) || "Unknown"}
                               </span>
@@ -3808,7 +3804,6 @@ return {
                       <ChevronLeft className="w-5 h-5" />
                     </button>
                   )}
-                  <BrokerAvatar phone={resolvedBrokerPhone} size="md" />
                   <div className="min-w-0">
                     <h3 className="text-sm font-bold text-white truncate max-w-[340px]">
                       {stripDecorativeEmoji(selectedBroker.canonical_name || selectedBroker.name || selectedMsgDetails?.parsed?.broker_name || selectedMsgDetails?.parsed?.profile_name || "Broker")}
