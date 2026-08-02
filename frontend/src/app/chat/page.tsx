@@ -454,6 +454,7 @@ export default function ChatPage() {
   const [renamingSessionId, setRenamingSessionId] = useState("");
   const [renameValue, setRenameValue] = useState("");
   const [contactingListingId, setContactingListingId] = useState<number | null>(null);
+  const [showFreshChatNotice, setShowFreshChatNotice] = useState(false);
 
   const activeSessionStorageKey = user?.id ? `propai_active_chat_session:${user.id}` : "";
   const { messages, sendMessage, status, setMessages, error } = useChat({
@@ -721,6 +722,7 @@ export default function ChatPage() {
   const handleNewChat = useCallback(async () => {
     // Create the durable row immediately. The thread must exist before the
     // first message, provider call, navigation, or browser refresh.
+    setShowFreshChatNotice(true);
     sessionIdRef.current = "";
     setSessionId("");
     setMessages([]);
@@ -737,6 +739,7 @@ export default function ChatPage() {
       const updated = await loadSessions();
       setSessions(updated);
     } catch (error) {
+      setShowFreshChatNotice(false);
       setSessionError(error instanceof Error ? error.message : "Could not create a chat session.");
     }
   }, [clearUrlSession, loadSessions, setMessages, updateUrlSession]);
@@ -744,6 +747,7 @@ export default function ChatPage() {
   // Switch to an existing session
   const handleSwitchSession = useCallback(async (id: string) => {
     if (id === sessionId) return;
+    setShowFreshChatNotice(false);
     updateUrlSession(id);
     setSessionId(id);
     setSessionError("");
@@ -844,6 +848,7 @@ export default function ChatPage() {
         updateUrlSession(session.id, session.title);
         sendMessage({ text });
         setInput("");
+        setShowFreshChatNotice(false);
         import("@/lib/sounds").then((s) => s.playMessageSent());
         return loadSessions().then(setSessions);
       }).catch((error) => {
@@ -860,6 +865,7 @@ export default function ChatPage() {
     }
     sendMessage({ text: input.trim() });
     setInput("");
+    setShowFreshChatNotice(false);
     import("@/lib/sounds").then((s) => s.playMessageSent());
   }
 
@@ -987,6 +993,11 @@ export default function ChatPage() {
         {sessionError && (
           <div className="mb-2 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300">
             Chat session could not be saved: {sessionError}
+          </div>
+        )}
+        {showFreshChatNotice && messages.length === 0 && (
+          <div className="mb-2 rounded-lg border border-blue-500/30 bg-blue-500/10 px-3 py-2 text-xs text-blue-200">
+            New chat — saved to history automatically.
           </div>
         )}
         {brokerActionMessage && (
