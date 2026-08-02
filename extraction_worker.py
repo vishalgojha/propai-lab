@@ -15,6 +15,7 @@ import sys
 import time
 import traceback
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime, timedelta, timezone
 from threading import Lock
 
 from extraction import get_storage, process_raw_message
@@ -28,6 +29,26 @@ MAX_RETRIES = int(os.getenv("EXTRACTION_WORKER_MAX_RETRIES", "5"))
 # in-flight request with `429 concurrency_limit_exceeded`, so the default
 # stays at 5 and is overridable for deployments with different headroom.
 CONCURRENCY = int(os.getenv("EXTRACTION_WORKER_CONCURRENCY", "5"))
+
+# Keep fresh WhatsApp messages moving while the historical queue drains. The
+# total remains CONCURRENCY; these knobs only divide the existing pool.
+RECENT_WINDOW_HOURS = float(os.getenv("EXTRACTION_WORKER_RECENT_WINDOW_HOURS", "24"))
+_default_fast_slots = max(1, min(3, CONCURRENCY - 1)) if CONCURRENCY > 1 else 1
+_requested_fast_slots = int(os.getenv("EXTRACTION_WORKER_FAST_LANE_SLOTS", str(_default_fast_slots)))
+_requested_backlog_raw = os.getenv("EXTRACTION_WORKER_BACKLOG_LANE_SLOTS", "").strip()
+if _requested_backlog_raw:
+    # If both lane knobs are supplied, keep their sum within the existing
+    # provider ceiling; backlog's explicit reservation wins the conflict.
+    BACKLOG_LANE_SLOTS = max(0, min(CONCURRENCY, int(_requested_backlog_raw)))
+    FAST_LANE_SLOTS = max(0, min(CONCURRENCY - BACKLOG_LANE_SLOTS, _requested_fast_slots))
+else:
+    if CONCURRENCY > 1:
+        # Keep at least one slot available for backlog unless the deployment
+        # has only one total provider slot, where a split is impossible.
+        FAST_LANE_SLOTS = max(0, min(CONCURRENCY - 1, _requested_fast_slots))
+    else:
+        FAST_LANE_SLOTS = max(0, min(CONCURRENCY, _requested_fast_slots))
+    BACKLOG_LANE_SLOTS = max(0, CONCURRENCY - FAST_LANE_SLOTS)
 
 # Optional hard ceiling on cumulative extraction spend (USD), read from
 # ai_usage_log.agent = 'extraction'.  When the budget is exhausted the
@@ -113,6 +134,140 @@ def context_from_raw(row) -> dict:
     }
 
 
+def recent_cutoff(now=None) -> str:
+    """Return the UTC cutoff shared by both mutually-exclusive lane queries."""
+    current = now or datetime.now(timezone.utc)
+    return (current - timedelta(hours=RECENT_WINDOW_HOURS)).isoformat()
+
+
+def next_fast_batch(storage, cutoff: str, limit: int = BATCH_SIZE):
+    """Fetch one FIFO batch from the recent lane."""
+    return storage.get_unprocessed_raw_messages_since(cutoff, limit=limit)
+
+
+def next_backlog_batch(storage, cutoff: str, limit: int = BATCH_SIZE):
+    """Fetch one FIFO batch from the historical lane."""
+    return storage.get_unprocessed_raw_messages_before(cutoff, limit=limit)
+
+
+def _legacy_lane_batch(storage, cutoff: str, lane: str, limit: int):
+    """Compatibility fallback for older test/dry-run storage doubles.
+
+    Production SupabaseStorage implements the two indexed queries above. This
+    fallback keeps local tooling that only implements the original storage
+    method usable while filtering conservatively in memory.
+    """
+    rows = storage.get_unprocessed_raw_messages(limit=limit)
+    cutoff_dt = datetime.fromisoformat(cutoff)
+    selected = []
+    for row in rows:
+        value = row_value(row, "timestamp", "")
+        if not value:
+            is_recent = False
+        else:
+            try:
+                is_recent = datetime.fromisoformat(str(value).replace("Z", "+00:00")) >= cutoff_dt
+            except ValueError:
+                is_recent = False
+        if is_recent == (lane == "fast"):
+            selected.append(row)
+    return selected
+
+
+def _fetch_lane(storage, lane: str, cutoff: str, limit: int):
+    if lane == "fast" and hasattr(storage, "get_unprocessed_raw_messages_since"):
+        return next_fast_batch(storage, cutoff, limit)
+    if lane == "backlog" and hasattr(storage, "get_unprocessed_raw_messages_before"):
+        return next_backlog_batch(storage, cutoff, limit)
+    return _legacy_lane_batch(storage, cutoff, lane, limit)
+
+
+def _process_lane(storage, rows, lane: str, slots: int, retry_counts: dict):
+    """Run the existing per-message pipeline for one reserved lane."""
+    stats = {
+        "lane": lane,
+        "fetched": len(rows),
+        "processed": 0,
+        "failed": 0,
+        "dead_lettered": 0,
+        "skipped": 0,
+        "skip_reasons": {},
+        "latency_seconds": 0.0,
+        "max_latency_seconds": 0.0,
+    }
+    extractable = []
+
+    for row in rows:
+        raw_id = row_value(row, "id")
+        attempts = retry_counts.get(raw_id, 0)
+
+        if attempts >= MAX_RETRIES:
+            try:
+                storage.mark_raw_processed(raw_id)
+                stats["dead_lettered"] += 1
+            except Exception:
+                pass
+            continue
+
+        reason = should_skip(row_value(row, "message"))
+        if reason:
+            try:
+                storage.mark_raw_processed(raw_id)
+                stats["skipped"] += 1
+                stats["skip_reasons"][reason] = stats["skip_reasons"].get(reason, 0) + 1
+            except Exception:
+                pass
+            continue
+
+        extractable.append(row)
+
+    if extractable and slots > 0:
+        lock = Lock()
+
+        def _handle(row):
+            raw_id = row_value(row, "id")
+            attempts = retry_counts.get(raw_id, 0)
+            started = time.perf_counter()
+            try:
+                ctx = context_from_raw(row)
+                process_raw_message(raw_id, ctx, storage=storage)
+                elapsed = time.perf_counter() - started
+                with lock:
+                    stats["processed"] += 1
+                    stats["latency_seconds"] += elapsed
+                    stats["max_latency_seconds"] = max(stats["max_latency_seconds"], elapsed)
+                    retry_counts.pop(raw_id, None)
+            except Exception:
+                elapsed = time.perf_counter() - started
+                with lock:
+                    retry_counts[raw_id] = attempts + 1
+                    stats["failed"] += 1
+                    stats["latency_seconds"] += elapsed
+                    stats["max_latency_seconds"] = max(stats["max_latency_seconds"], elapsed)
+                print(
+                    f"[worker] lane={lane} raw_id={raw_id} failed "
+                    f"(attempt {attempts + 1}/{MAX_RETRIES}):",
+                    flush=True,
+                )
+                traceback.print_exc()
+
+        workers = max(1, min(slots, len(extractable)))
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            for future in as_completed(pool.submit(_handle, row) for row in extractable):
+                future.result()
+
+    completed = stats["processed"] + stats["failed"]
+    avg_ms = (stats["latency_seconds"] / completed * 1000) if completed else 0.0
+    print(
+        f"[worker] lane={lane} fetched={stats['fetched']} "
+        f"processed={stats['processed']} failed={stats['failed']} "
+        f"skipped={stats['skipped']} dead_lettered={stats['dead_lettered']} "
+        f"avg_latency_ms={avg_ms:.1f} max_latency_ms={stats['max_latency_seconds'] * 1000:.1f}",
+        flush=True,
+    )
+    return stats
+
+
 def run_cycle(storage, retry_counts: dict):
     """Process one batch of unprocessed raw messages.
 
@@ -121,80 +276,42 @@ def run_cycle(storage, retry_counts: dict):
     on worker restart the counters reset which gives transient failures
     (e.g. a temporarily unavailable LLM) another chance.
 
-    Three stages, cheapest first:
+    Four stages, cheapest first:
 
     1. Dead-letter rows that exhausted their retries.
     2. Skip rows that cannot contain a listing (no provider call at all).
-    3. Extract the remainder across a bounded thread pool, sized to the
-       provider's concurrent-request ceiling.
+    3. Fetch recent and historical rows through separate FIFO lane queries.
+    4. Extract each lane across its reserved bounded thread pool; the two
+       pools' combined size is the provider's concurrent-request ceiling.
     """
-    unprocessed = storage.get_unprocessed_raw_messages(limit=BATCH_SIZE)
-    processed = 0
-    failed = 0
-    dead_lettered = 0
-    skipped = 0
+    cutoff = recent_cutoff()
+    lane_specs = (
+        ("fast", FAST_LANE_SLOTS),
+        ("backlog", BACKLOG_LANE_SLOTS),
+    )
+    lane_rows = [
+        (lane, slots, _fetch_lane(storage, lane, cutoff, BATCH_SIZE))
+        for lane, slots in lane_specs
+    ]
+    # The lane executors reserve disjoint slot pools, so both lanes can make
+    # progress at once while their combined extraction calls remain bounded
+    # by CONCURRENCY.
+    with ThreadPoolExecutor(max_workers=2) as lane_pool:
+        futures = [
+            lane_pool.submit(_process_lane, storage, rows, lane, slots, retry_counts)
+            for lane, slots, rows in lane_rows
+            if slots > 0
+        ]
+        lane_stats = [future.result() for future in futures]
+
+    processed = sum(item["processed"] for item in lane_stats)
+    failed = sum(item["failed"] for item in lane_stats)
+    dead_lettered = sum(item["dead_lettered"] for item in lane_stats)
+    skipped = sum(item["skipped"] for item in lane_stats)
     skip_reasons: dict[str, int] = {}
-
-    extractable = []
-
-    for row in unprocessed:
-        raw_id = row_value(row, "id")
-        attempts = retry_counts.get(raw_id, 0)
-
-        if attempts >= MAX_RETRIES:
-            # Permanently stuck — mark processed so it never blocks the
-            # queue again.  A human can re-process via the dashboard.
-            try:
-                storage.mark_raw_processed(raw_id)
-                dead_lettered += 1
-            except Exception:
-                pass
-            continue
-
-        # Deterministic pre-LLM filter. A skipped message is marked
-        # processed so it leaves the queue, but no parsed_output row is
-        # written — it never claimed to be a listing.
-        reason = should_skip(row_value(row, "message"))
-        if reason:
-            try:
-                storage.mark_raw_processed(raw_id)
-                skipped += 1
-                skip_reasons[reason] = skip_reasons.get(reason, 0) + 1
-            except Exception:
-                pass
-            continue
-
-        extractable.append(row)
-
-    if extractable:
-        lock = Lock()
-
-        def _handle(row):
-            nonlocal processed, failed
-            raw_id = row_value(row, "id")
-            attempts = retry_counts.get(raw_id, 0)
-            try:
-                ctx = context_from_raw(row)
-                process_raw_message(raw_id, ctx, storage=storage)
-                with lock:
-                    processed += 1
-                    retry_counts.pop(raw_id, None)
-            except Exception:
-                with lock:
-                    retry_counts[raw_id] = attempts + 1
-                    failed += 1
-                print(
-                    f"[worker] raw_id={raw_id} failed (attempt {attempts + 1}/{MAX_RETRIES}):",
-                    flush=True,
-                )
-                traceback.print_exc()
-
-        workers = max(1, min(CONCURRENCY, len(extractable)))
-        with ThreadPoolExecutor(max_workers=workers) as pool:
-            for future in as_completed(pool.submit(_handle, r) for r in extractable):
-                # _handle swallows its own errors; this surfaces anything
-                # that escaped (e.g. a failure inside the executor itself).
-                future.result()
+    for item in lane_stats:
+        for reason, count in item["skip_reasons"].items():
+            skip_reasons[reason] = skip_reasons.get(reason, 0) + count
 
     if dead_lettered:
         print(
@@ -218,6 +335,8 @@ def main():
     print(
         f"[worker] Extraction worker started — polling every {args.poll}s "
         f"(batch={BATCH_SIZE} concurrency={CONCURRENCY} max_retries={MAX_RETRIES} "
+        f"recent_window_hours={RECENT_WINDOW_HOURS:g} "
+        f"lane_slots=fast:{FAST_LANE_SLOTS}/backlog:{BACKLOG_LANE_SLOTS} "
         f"budget={'$' + format(EXTRACTION_BUDGET_USD, '.2f') if EXTRACTION_BUDGET_USD is not None else 'unlimited'})",
         flush=True,
     )
