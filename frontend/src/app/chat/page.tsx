@@ -9,7 +9,7 @@ import { useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
-import type { ListingItem } from "@/components/ListingCard";
+import ListingCard, { type ListingItem } from "@/components/ListingCard";
 import { useAuth } from "@/lib/AuthProvider";
 import { Check, Pencil, Plus, MessageSquare, Trash2, PanelLeft, PanelLeftClose, X } from "lucide-react";
 
@@ -93,6 +93,22 @@ function isMarkdownDivider(line: string) {
 
 function textHasTable(text: string) {
   return /^\s*\|.*\|\s*$/m.test(text);
+}
+
+function removeMarkdownTables(text: string) {
+  const lines = text.replace(/\r/g, "").split("\n");
+  const kept: string[] = [];
+  let index = 0;
+  while (index < lines.length) {
+    if (lines[index].includes("|") && index + 1 < lines.length && isMarkdownDivider(lines[index + 1])) {
+      index += 2;
+      while (index < lines.length && lines[index].includes("|")) index += 1;
+      continue;
+    }
+    kept.push(lines[index]);
+    index += 1;
+  }
+  return kept.join("\n").trim();
 }
 
 function csvEscapeCell(value: unknown) {
@@ -1097,10 +1113,19 @@ export default function ChatPage() {
                         const textParts = (m.parts || []).filter(
                           (p: any) => p.type === "text" && p.text
                         ) as Array<{ text: string }>;
+                        const dataParts = parts.filter((p) => {
+                          const type = p.type || "";
+                          return type.startsWith("data-") && CHAT_CARD_BLOCK_TYPES.has(type.slice(5));
+                        });
+                        const structuredItems = dataParts.flatMap((part) => {
+                          const block = part.data || {};
+                          return Array.isArray(block.items) ? block.items : [];
+                        }) as ListingItem[];
+                        const hasStructuredItems = structuredItems.length > 0;
                         const hasTable = textParts.some((p) => textHasTable(p.text));
                         return (
                           <>
-                            {hasTable && (
+                            {(hasTable || hasStructuredItems) && (
                               <div className="flex items-center gap-2">
                                 <span className="inline-flex items-center rounded-full border border-blue-500/20 bg-blue-500/10 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-blue-200">
                                   Parsed inventory
@@ -1136,8 +1161,37 @@ export default function ChatPage() {
                               </div>
                             )}
                             {textParts.map((p: any, i: number) => (
-                              <MarkdownMessage key={i} text={p.text} />
+                              <MarkdownMessage key={i} text={hasStructuredItems ? removeMarkdownTables(p.text) : p.text} />
                             ))}
+                            {dataParts.map((part: any, blockIndex: number) => {
+                              const block = part.data || {};
+                              const items = Array.isArray(block.items) ? block.items as ListingItem[] : [];
+                              const visibleItems = items.filter((item) => {
+                                const phone = normalizePhoneKey(item.broker_phone || item.sender_phone || "");
+                                if (phone && hiddenBrokerPhones.has(phone)) return false;
+                                const listingKey = hiddenListingKey(item);
+                                const requirementKey = hiddenRequirementKey(item);
+                                return (!listingKey || !hiddenMarketKeys.has(listingKey))
+                                  && (!requirementKey || !hiddenMarketKeys.has(requirementKey));
+                              });
+                              if (!visibleItems.length) return null;
+                              return (
+                                <div key={`structured-${blockIndex}`} className="space-y-3">
+                                  {block.title && <h3 className="mt-2 font-semibold text-white">{block.title}</h3>}
+                                  <div className="grid gap-3 xl:grid-cols-2">
+                                    {visibleItems.map((item, itemIndex) => (
+                                      <ListingCard
+                                        key={`${item.listing_id || item.raw_message_id || "item"}-${itemIndex}`}
+                                        item={item}
+                                        onHideBroker={hideBrokerLocally}
+                                        onHideListing={hideListingLocally}
+                                        onHideRequirement={hideRequirementLocally}
+                                      />
+                                    ))}
+                                  </div>
+                                </div>
+                              );
+                            })}
                           </>
                         );
                       })()}
