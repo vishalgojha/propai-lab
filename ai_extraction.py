@@ -167,6 +167,19 @@ Rules:
 - If one block contains multiple independently priced unit/floor variants,
   emit one item per variant and copy only the shared facts explicitly stated
   for that block.
+- Never average, blend, or borrow price/area/BHK values across sibling blocks.
+  If a message contains two explicit unit blocks, treat them as two separate
+  opportunities even when they share a broker line or a contact footer.
+- Explicit labels win over guesswork:
+  - If the source says `RENT - 4 LAKHS` or `LEASE - 4 LAKHS`, listing_type
+    must be `rent` for that block.
+  - If the source says `SELL`, `SALE`, or `FOR SALE`, listing_type must be
+    `sale` for that block.
+  - Never derive intent from price magnitude, number of rooms, or the presence
+    of sale/rent words in a neighboring block.
+- Price and area must be anchored to the literal labeled values in the same
+  block. Do not pull `2300`, `5500`, parking counts, floor numbers, or other
+  unrelated numbers into price/area fields.
 - A heading such as "Available for Rent" or "Requirements" applies to its
   clearly grouped child entries. Do not replace that explicit intent with a
   guess based on price magnitude.
