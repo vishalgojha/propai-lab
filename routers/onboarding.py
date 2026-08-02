@@ -1,21 +1,18 @@
 """Broker onboarding controls for WhatsApp groups.
 
 This router deliberately keeps group selection separate from the ingestor's
-directory discovery. WhatsMeow may know about every group on the phone, but
-only groups explicitly connected here count toward onboarding caps and are
-eligible for extraction once an organization has made its first selection.
+directory discovery. WhatsMeow may know about every group on the phone; all
+groups are eligible by default and users can suppress any number of them.
 """
 
 import asyncio
 import json
 import logging
-import os
 import re
 from datetime import datetime, timezone
 from threading import Lock
 
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from routers.common import (
@@ -205,28 +202,6 @@ async def _schedule_group_backfill(org_id: str, connection_id: int, group_jid: s
             connection_id,
             group_jid,
         )
-
-
-def _tier_cap(org: dict) -> tuple[str, int, bool]:
-    override = org.get("group_cap_override")
-    if override:
-        return "custom", int(override), True
-
-    allowlist = {
-        item.strip().lower()
-        for item in os.getenv("PROPAI_GROUP_CAP_ALLOWLIST", "").split(",")
-        if item.strip()
-    }
-    identifiers = {
-        str(org.get("id") or "").lower(),
-        str(org.get("name") or "").lower(),
-        str(org.get("slug") or "").lower(),
-    }
-    if allowlist.intersection(identifiers):
-        return "allowlisted", 10_000, True
-
-    tier = str(org.get("subscription_tier") or "starter").lower()
-    return tier, {"starter": 5, "growth": 8, "scale": 15}.get(tier, 5), False
 
 
 def _suggestion_score(
@@ -567,10 +542,7 @@ def _upsert_registry(org_id: str, group_jid: str, phones: list[str]) -> None:
 
 
 def _cap_state(org_id: str, connection_id: int) -> dict:
-    """Opt-out model: the cap is the number of groups the broker has excluded from
-    extraction on this WhatsApp connection. Extracting groups are uncapped."""
-    org = storage.get_organization(org_id) or {"id": org_id}
-    tier, cap, overridden = _tier_cap(org)
+    """Return opt-out state. Opting out is intentionally unlimited per connection."""
     rows = (
         storage.client.table("organization_group_connections")
         .select("id", count="exact")
@@ -581,13 +553,14 @@ def _cap_state(org_id: str, connection_id: int) -> dict:
     )
     count = int(getattr(rows, "count", None) or len(rows.data or []))
     return {
-        "tier": tier,
-        "cap": cap,
+        "tier": "unlimited",
+        "cap": None,
         "opted_out_count": count,
-        "remaining": max(0, cap - count),
-        "overridden": overridden,
-        "soft_warning_at_cap": not overridden and count >= cap,
-        "hard_block": not overridden and count >= cap * 2,
+        "remaining": None,
+        "overridden": True,
+        "unlimited": True,
+        "soft_warning_at_cap": False,
+        "hard_block": False,
     }
 
 
@@ -640,10 +613,11 @@ async def group_cap(
         _logger.exception("group_cap failed for org=%s connection=%s", org_id, whatsapp_connection_id)
         return {
             "tier": "unknown",
-            "cap": 0,
+            "cap": None,
             "opted_out_count": 0,
-            "remaining": 0,
-            "overridden": False,
+            "remaining": None,
+            "overridden": True,
+            "unlimited": True,
             "soft_warning_at_cap": False,
             "hard_block": False,
         }
@@ -668,10 +642,11 @@ async def onboarding_groups(
         return {
             "groups": [],
             "tier": "unknown",
-            "cap": 0,
+            "cap": None,
             "opted_out_count": 0,
-            "remaining": 0,
-            "overridden": False,
+            "remaining": None,
+            "overridden": True,
+            "unlimited": True,
             "soft_warning_at_cap": False,
             "hard_block": False,
         }
@@ -716,8 +691,7 @@ async def opt_out_group(
     tenant_id: str | None = Depends(get_tenant_context),
 ):
     """Mark a WhatsApp group as opted-out from extraction. Default is all groups
-    eligible; this endpoint only creates a suppression row capped at the tenant
-    subscription tier."""
+    eligible, and users may exclude any number of groups per connection."""
     try:
         org_id = _resolve_active_organization_id(user, tenant_id)
         await _require_org_permission(user, org_id, "manage_whatsapp")
@@ -727,15 +701,7 @@ async def opt_out_group(
         if not group:
             raise HTTPException(404, "Group is not available on this WhatsApp connection")
 
-        cap = _cap_state(org_id, body.whatsapp_connection_id)
         overlap = _overlap(org_id, group["group_name"], group["group_jid"])
-        warnings = []
-        if cap["soft_warning_at_cap"] and not body.confirm_cap:
-            warnings.append("You are at the default tier cap for opted-out groups on this connection.")
-        if cap["hard_block"]:
-            return JSONResponse(status_code=409, content={"message": "Opted-out cap reached on this WhatsApp connection.", "hard_block": True, "cap": cap, "overlap": overlap})
-        if warnings:
-            return JSONResponse(status_code=409, content={"message": "Confirmation required before opting out.", "warnings": warnings, "cap": cap, "overlap": overlap, "requires_confirmation": True})
 
         now = datetime.now(timezone.utc).isoformat()
         row = storage.client.table("organization_group_connections").upsert({
