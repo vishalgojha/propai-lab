@@ -71,6 +71,43 @@ _EMOJI_ICON_RE = re.compile(
 )
 
 
+_EXPLICIT_REQUIREMENT_HEADING_RE = re.compile(
+    r"^\s*[\W_]*(?:(?:very|urgent)\s+)*(?:(?:buyer|tenant|client)\s+)?"
+    r"(?:requirements?|wanted|looking\s+for|seeking|need(?:s)?)\b",
+    re.IGNORECASE,
+)
+
+
+def _has_explicit_requirement_heading(text: str) -> bool:
+    """Recognize a requirement heading without treating listing copy as one."""
+    for line in (text or "").splitlines():
+        if _EXPLICIT_REQUIREMENT_HEADING_RE.search(line):
+            return True
+    return False
+
+
+def _apply_requirement_source_guard(ai_items: list[dict], full_text: str, slices: list[str]) -> list[dict]:
+    """Correct an LLM listing label when the source explicitly heads a demand.
+
+    A broker can write "VERY URGENT REQUIREMENT" and then mention the asset
+    they want to buy. The word "sale" inside that description must not turn
+    the buyer demand into inventory. Mixed documents remain item-scoped: only
+    an item whose source slice has a requirement heading is corrected, while a
+    single-item document may use the full source heading.
+    """
+    full_requirement = _has_explicit_requirement_heading(full_text)
+    corrected: list[dict] = []
+    for index, item in enumerate(ai_items):
+        source = slices[index] if index < len(slices) else full_text
+        is_requirement = _has_explicit_requirement_heading(source) or (
+            len(ai_items) == 1 and full_requirement
+        )
+        if is_requirement and item.get("listing_type") != "requirement":
+            item = {**item, "listing_type": "requirement"}
+        corrected.append(item)
+    return corrected
+
+
 def _strip_icons(text):
     if text is None:
         return None
@@ -1025,10 +1062,31 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
 
             _tenant_for_cache = ctx.get("tenant_id") or getattr(storage, "_tenant_id", "") or ""
             ai_result = cache_lookup(storage, _tenant_for_cache, msg_text)
+            cache_needs_store = ai_result is None
             if ai_result is not None:
                 _logger.info("raw_id=%d extraction cache hit", raw_id)
             else:
                 ai_result = ai_extract(msg_text, ctx, storage=storage)
+            extraction_source = ai_result.get("extraction_source")
+            raw_ai_items = ai_result.get("extractions") or ([ai_result["extraction"]] if ai_result.get("extraction") else [])
+            ai_items = [item for item in raw_ai_items if isinstance(item, dict)]
+            if extraction_source == "ai" and ai_items:
+                slice_texts = _slice_blocks_for_ai_items(msg_text, ai_items)
+                guarded_items = _apply_requirement_source_guard(ai_items, msg_text, slice_texts)
+                if guarded_items != ai_items:
+                    cache_needs_store = True
+                    ai_items = guarded_items
+                    if ai_result.get("extractions") is not None:
+                        ai_result = {**ai_result, "extractions": ai_items}
+                    else:
+                        ai_result = {**ai_result, "extraction": ai_items[0]}
+                parsed_listings = [
+                    _ai_extraction_to_parsed(item, msg_text, sender_name, push_name, slice_text=sl)
+                    for item, sl in zip(ai_items, slice_texts)
+                ]
+                ai_extractions_raw = ai_items
+                _logger.info("raw_id=%d AI extraction: %d structured item(s) via %s", raw_id, len(ai_items), ai_result.get("provider_used"))
+            if cache_needs_store:
                 cache_store(
                     storage,
                     _tenant_for_cache,
@@ -1036,17 +1094,6 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
                     ai_result,
                     provider_used=ai_result.get("provider_used"),
                 )
-            extraction_source = ai_result.get("extraction_source")
-            raw_ai_items = ai_result.get("extractions") or ([ai_result["extraction"]] if ai_result.get("extraction") else [])
-            ai_items = [item for item in raw_ai_items if isinstance(item, dict)]
-            if extraction_source == "ai" and ai_items:
-                slice_texts = _slice_blocks_for_ai_items(msg_text, ai_items)
-                parsed_listings = [
-                    _ai_extraction_to_parsed(item, msg_text, sender_name, push_name, slice_text=sl)
-                    for item, sl in zip(ai_items, slice_texts)
-                ]
-                ai_extractions_raw = ai_items
-                _logger.info("raw_id=%d AI extraction: %d structured item(s) via %s", raw_id, len(ai_items), ai_result.get("provider_used"))
         except Exception as exc:
             _logger.warning("raw_id=%d ai_extract error: %s", raw_id, exc)
 

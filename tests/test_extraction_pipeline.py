@@ -48,6 +48,22 @@ def test_price_normalization_uses_explicit_broker_unit_not_ai_scale():
         assert parsed["price_unit"] == unit
 
 
+def test_explicit_requirement_heading_overrides_sale_like_description():
+    item = {
+        "listing_type": "sale",
+        "property_category": "commercial",
+        "title": "50+ room hotel on sale",
+        "extraction_confidence": "high",
+    }
+    source = """VERY URGENT REQUIREMENT
+50 + ROOM HOTEL ON SALE IN MUMBAI, NAVI MUMBAI AND GOA
+BUDGET 100CR TO 200CR"""
+
+    corrected = extraction._apply_requirement_source_guard([item], source, [source])
+
+    assert corrected[0]["listing_type"] == "requirement"
+
+
 def test_segment_document_reconstructs_blocks_and_classifies_multi_listing():
     message = """1. RUSTOMJEE PARAMOUNT
 3 BHK

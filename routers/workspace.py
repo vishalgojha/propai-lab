@@ -65,6 +65,25 @@ async def inbox_threads(
     return storage.get_inbox_threads(limit, offset, tenant_id=tenant_id)
 
 
+@router.get("/api/observations/feed")
+async def observations_feed(
+    limit: int = 50,
+    offset: int = 0,
+    broker_key: str = "",
+    intent: str = "",
+    user: dict = Depends(require_user),
+    tenant_id: str | None = Depends(get_tenant_context),
+):
+    """Return parsed market observations for the Market Inbox timeline."""
+    return storage.get_observations_feed(
+        limit=min(max(limit, 1), 500),
+        offset=max(offset, 0),
+        broker_key=broker_key,
+        intent=intent,
+        tenant_id=tenant_id,
+    )
+
+
 @router.get("/api/inbox/slugs")
 async def inbox_slugs(user: dict = Depends(require_user)):
     return [
