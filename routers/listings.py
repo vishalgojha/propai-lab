@@ -10,7 +10,8 @@ from typing import Literal
 from pydantic import BaseModel
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
+from urllib.parse import quote
 
 from routers.common import storage, require_user, get_tenant_context
 
@@ -169,21 +170,24 @@ async def list_listings(limit: int = 50, offset: int = 0, user: dict = Depends(r
 
 
 @router.get("/api/listings/{listing_id}")
-async def get_listing_detail(listing_id: int, user: dict = Depends(require_user)):
+async def get_listing_detail(listing_id: int, user: dict = Depends(require_user), tenant_id: str | None = Depends(get_tenant_context)):
     try:
         # The listing, its sources and its photos only depend on listing_id,
         # so fetch them in parallel (3 round-trips collapsed into 1) instead
         # of 4 sequential Supabase queries.
+        def scoped(query):
+            return query.eq("tenant_id", tenant_id) if tenant_id else query
+
         res, src_res, ph_res = await asyncio.gather(
-            asyncio.to_thread(lambda: storage.client.table("listings").select("*").eq("id", listing_id).limit(1).execute()),
+            asyncio.to_thread(lambda: scoped(storage.client.table("listings").select("*").eq("id", listing_id)).limit(1).execute()),
             asyncio.to_thread(lambda: storage.client.table("parsed").select(
                 "id, intent, role, message_type, bhk, price, price_unit, "
                 "area_sqft, furnishing, building_name, micro_market, confidence, "
                 "created_at, raw_message_id"
             ).eq("listing_id", listing_id).order("created_at", desc=True).limit(50).execute()),
-            asyncio.to_thread(lambda: storage.client.table("listing_photos").select(
-                "id, media_id, filename, mime_type, caption, sender_phone, sender_name, created_at"
-            ).eq("listing_id", listing_id).order("created_at", desc=True).limit(20).execute()),
+            asyncio.to_thread(lambda: scoped(storage.client.table("listing_photos").select(
+                "id, media_id, filename, mime_type, caption, sender_phone, sender_name, storage_path, created_at"
+            ).eq("listing_id", listing_id)).order("created_at", desc=True).limit(20).execute()),
             return_exceptions=True,
         )
         if isinstance(res, BaseException):
@@ -232,8 +236,8 @@ async def get_listing_sources(listing_id: int, user: dict = Depends(require_user
 
 
 @router.get("/api/listings/{listing_id}/photos")
-async def list_listing_photos(listing_id: int, user: dict = Depends(require_user)):
-    photos = storage.get_listing_photos(listing_id)
+async def list_listing_photos(listing_id: int, user: dict = Depends(require_user), tenant_id: str | None = Depends(get_tenant_context)):
+    photos = storage.get_listing_photos(listing_id, tenant_id)
     return [{
         "id": p["id"],
         "media_id": p["media_id"],
@@ -242,19 +246,37 @@ async def list_listing_photos(listing_id: int, user: dict = Depends(require_user
         "caption": p["caption"],
         "sender_phone": p["sender_phone"],
         "sender_name": p["sender_name"],
+        "storage_path": p.get("storage_path", ""),
         "created_at": p["created_at"],
         "url": f"/api/media/photos/{p['id']}",
     } for p in photos]
 
 
 @router.get("/api/media/photos/{photo_id}")
-async def serve_listing_photo(photo_id: int, user: dict = Depends(require_user)):
-    row = storage.db.execute(
-        "SELECT * FROM listing_photos WHERE id = ?", (photo_id,)
-    ).fetchone()
-    if not row:
+async def serve_listing_photo(photo_id: int, user: dict = Depends(require_user), tenant_id: str | None = Depends(get_tenant_context)):
+    query = storage.client.table("listing_photos").select(
+        "id,filepath,storage_path,mime_type,tenant_id"
+    ).eq("id", photo_id).limit(1)
+    if tenant_id:
+        query = query.eq("tenant_id", tenant_id)
+    rows = query.execute().data or []
+    if not rows:
         raise HTTPException(404, "Photo not found")
-    p = dict(row)
+    p = rows[0]
+    storage_path = str(p.get("storage_path") or "").strip()
+    if storage_path:
+        base_url = str(getattr(storage.client, "_base_url", "")).rstrip("/")
+        if not base_url:
+            raise HTTPException(503, "Media storage is unavailable")
+        try:
+            upstream = storage.client._http.get(
+                f"{base_url}/storage/v1/object/whatsapp-media/{quote(storage_path, safe='/')}",
+                timeout=30,
+            )
+            upstream.raise_for_status()
+        except Exception:
+            raise HTTPException(404, "Photo file not found")
+        return Response(content=upstream.content, media_type=p.get("mime_type") or "image/jpeg")
     filepath = p.get("filepath", "")
     if not filepath or not Path(filepath).exists():
         raise HTTPException(404, "Photo file not found on disk")
@@ -263,7 +285,7 @@ async def serve_listing_photo(photo_id: int, user: dict = Depends(require_user))
 
 
 @router.post("/api/listings/{listing_id}/photos")
-async def upload_listing_photo(listing_id: int, request: Request, user: dict = Depends(require_user)):
+async def upload_listing_photo(listing_id: int, request: Request, user: dict = Depends(require_user), tenant_id: str | None = Depends(get_tenant_context)):
     pic_token = storage.get_or_create_pic_token(listing_id)
     if not pic_token:
         raise HTTPException(500, "Could not generate PIC token")
@@ -292,6 +314,7 @@ async def upload_listing_photo(listing_id: int, request: Request, user: dict = D
         caption=caption,
         sender_phone=sender_phone,
         sender_name=sender_name,
+        tenant_id=tenant_id,
     )
     return {"id": photo_id, "filename": filename, "url": f"/api/media/photos/{photo_id}"}
 

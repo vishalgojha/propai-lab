@@ -2723,6 +2723,154 @@ class SupabaseStorage(Storage):
         res = query.execute()
         return [dict_to_dataclass(Listing, d) for d in res.data]
 
+    # ── Listing media / self-chat drafts ──────────────────────────────
+
+    def get_listing_photos(self, listing_id: int, tenant_id: str | None = None) -> list[dict]:
+        query = self.client.table("listing_photos").select(
+            "id,listing_id,pic_token,media_id,filename,filepath,storage_path,mime_type,"
+            "caption,sender_phone,sender_name,source_message_id,created_at"
+        ).eq("listing_id", listing_id).order("created_at", desc=True).limit(50)
+        tid = tenant_id or self._tenant_id
+        if tid:
+            query = query.eq("tenant_id", tid)
+        return query.execute().data or []
+
+    def save_listing_photo(self, listing_id: int, pic_token: str = "", media_id: str = "",
+                           filename: str = "", filepath: str = "", mime_type: str = "image/jpeg",
+                           caption: str = "", sender_phone: str = "", sender_name: str = "",
+                           storage_path: str = "", source_message_id: str = "",
+                           tenant_id: str | None = None) -> int:
+        data = {
+            "listing_id": listing_id,
+            "pic_token": pic_token,
+            "media_id": media_id,
+            "filename": filename or media_id or "property-image",
+            "filepath": filepath,
+            "storage_path": storage_path,
+            "mime_type": mime_type or "image/jpeg",
+            "caption": caption or "",
+            "sender_phone": sender_phone or "",
+            "sender_name": sender_name or "",
+            "source_message_id": source_message_id or "",
+        }
+        tid = tenant_id or self._tenant_id
+        if tid:
+            data["tenant_id"] = tid
+        result = self.client.table("listing_photos").insert(data).execute()
+        return int(result.data[0]["id"]) if result.data else 0
+
+    def get_or_create_listing_media_draft(self, tenant_id: str, broker_phone: str,
+                                          session_key: str) -> dict | None:
+        query = self.client.table("listing_media_drafts").select("*")
+        row = query.eq("tenant_id", tenant_id).eq("broker_phone", broker_phone).eq(
+            "session_key", session_key
+        ).limit(1).execute().data
+        if row:
+            return row[0]
+        result = self.client.table("listing_media_drafts").insert({
+            "tenant_id": tenant_id,
+            "broker_phone": broker_phone,
+            "session_key": session_key,
+            "status": "collecting",
+            "details": {},
+        }).execute()
+        return result.data[0] if result.data else None
+
+    def add_listing_media_draft_item(self, draft_id: int, tenant_id: str, storage_path: str,
+                                     media_id: str = "", filename: str = "",
+                                     mime_type: str = "image/jpeg", file_length: int | None = None,
+                                     caption: str = "", source_message_id: str = "") -> dict | None:
+        data = {
+            "draft_id": draft_id, "tenant_id": tenant_id, "storage_path": storage_path,
+            "media_id": media_id or "", "filename": filename or "",
+            "mime_type": mime_type or "image/jpeg", "caption": caption or "",
+            "source_message_id": source_message_id or "",
+        }
+        if file_length is not None:
+            data["file_length"] = file_length
+        result = self.client.table("listing_media_draft_items").upsert(
+            data, on_conflict="draft_id,storage_path"
+        ).execute()
+        return result.data[0] if result.data else None
+
+    def reset_listing_media_draft(self, draft_id: int, tenant_id: str) -> None:
+        self.client.table("listing_media_draft_items").delete().eq(
+            "draft_id", draft_id
+        ).eq("tenant_id", tenant_id).execute()
+        self.client.table("listing_media_drafts").update({
+            "status": "collecting", "listing_id": None, "details": {},
+        }).eq("id", draft_id).eq("tenant_id", tenant_id).execute()
+
+    def get_listing_media_draft_items(self, draft_id: int, tenant_id: str) -> list[dict]:
+        return self.client.table("listing_media_draft_items").select("*").eq(
+            "draft_id", draft_id
+        ).eq("tenant_id", tenant_id).order("created_at", desc=False).limit(20).execute().data or []
+
+    def update_listing_media_draft(self, draft_id: int, tenant_id: str, **values) -> dict | None:
+        allowed = {key: value for key, value in values.items() if key in {"status", "listing_id", "details"}}
+        if not allowed:
+            return None
+        result = self.client.table("listing_media_drafts").update(allowed).eq(
+            "id", draft_id
+        ).eq("tenant_id", tenant_id).execute()
+        return result.data[0] if result.data else None
+
+    def attach_listing_media_draft(self, draft_id: int, tenant_id: str) -> int:
+        """Attach a draft's uploaded images to its parsed listing, if ready."""
+        draft_rows = self.client.table("listing_media_drafts").select("*").eq(
+            "id", draft_id
+        ).eq("tenant_id", tenant_id).limit(1).execute().data or []
+        if not draft_rows:
+            return 0
+        draft = draft_rows[0]
+        if draft.get("listing_id"):
+            listing_id = int(draft["listing_id"])
+        else:
+            items = self.get_listing_media_draft_items(draft_id, tenant_id)
+            raw_ids: set[int] = set()
+            for item in items:
+                message_id = str(item.get("source_message_id") or "").strip()
+                if not message_id:
+                    continue
+                raw = self.client.table("raw_messages").select("id").eq(
+                    "tenant_id", tenant_id
+                ).like("message_uid", f"%:{message_id}").limit(1).execute().data or []
+                if raw:
+                    raw_ids.add(int(raw[0]["id"]))
+            if not raw_ids:
+                return 0
+            listings = self.client.table("listings").select("id").eq(
+                "tenant_id", tenant_id
+            ).in_("latest_raw_message_id", list(raw_ids)).limit(1).execute().data or []
+            if not listings:
+                listings = self.client.table("listings").select("id").eq(
+                    "tenant_id", tenant_id
+                ).in_("representative_raw_message_id", list(raw_ids)).limit(1).execute().data or []
+            if not listings:
+                return 0
+            listing_id = int(listings[0]["id"])
+            self.client.table("listing_media_drafts").update({"listing_id": listing_id}).eq(
+                "id", draft_id
+            ).eq("tenant_id", tenant_id).execute()
+
+        attached = 0
+        for item in self.get_listing_media_draft_items(draft_id, tenant_id):
+            exists = self.client.table("listing_photos").select("id").eq(
+                "listing_id", listing_id
+            ).eq("storage_path", item.get("storage_path") or "").eq(
+                "tenant_id", tenant_id
+            ).limit(1).execute().data or []
+            if exists:
+                continue
+            if self.save_listing_photo(
+                listing_id=listing_id, media_id=item.get("media_id", ""),
+                filename=item.get("filename", ""), mime_type=item.get("mime_type", "image/jpeg"),
+                caption=item.get("caption", ""), storage_path=item.get("storage_path", ""),
+                source_message_id=item.get("source_message_id", ""), tenant_id=tenant_id,
+            ):
+                attached += 1
+        return attached
+
     def get_listing_by_fingerprint(self, fingerprint: str) -> Listing | None:
         query = self.client.table("listings").select("*").eq("fingerprint", fingerprint).limit(1)
         if self._tenant_id:

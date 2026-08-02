@@ -2286,6 +2286,21 @@ def _rest_market_search(client, args: dict, tenant_id: str | None = None) -> str
     rows.sort(key=lambda row: str(row.get("last_seen") or ""), reverse=True)
     total = len(rows)
     result_rows = rows[offset : offset + limit]
+    photo_counts: dict[int, int] = {}
+    listing_ids = [int(row["id"]) for row in result_rows if row.get("id") is not None]
+    if listing_ids:
+        try:
+            photo_query = client.table("listing_photos").select("listing_id").in_("listing_id", listing_ids)
+            if tenant_id:
+                photo_query = photo_query.eq("tenant_id", tenant_id)
+            for photo in photo_query.execute().data or []:
+                listing_id = photo.get("listing_id")
+                if listing_id is not None:
+                    photo_counts[int(listing_id)] = photo_counts.get(int(listing_id), 0) + 1
+        except Exception:
+            # Photo availability is enrichment; a schema rollout or transient
+            # storage error must never make a listing search disappear.
+            photo_counts = {}
     results = []
     for row in result_rows:
         results.append({
@@ -2313,6 +2328,8 @@ def _rest_market_search(client, args: dict, tenant_id: str | None = None) -> str
             # parsed observation layer. Keep the card contract stable.
             "confidence": 0,
             "raw_message_id": row.get("latest_raw_message_id"),
+            "photo_count": photo_counts.get(int(row["id"]), 0) if row.get("id") is not None else 0,
+            "has_images": bool(photo_counts.get(int(row["id"]), 0)) if row.get("id") is not None else False,
         })
 
     return json.dumps({
