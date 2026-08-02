@@ -467,6 +467,7 @@ export default function ChatPage() {
   const [sessionsLoaded, setSessionsLoaded] = useState(false);
   const [showSessions, setShowSessions] = useState(false);
   const [sessionError, setSessionError] = useState("");
+  const [sessionLoading, setSessionLoading] = useState(false);
   const [renamingSessionId, setRenamingSessionId] = useState("");
   const [renameValue, setRenameValue] = useState("");
   const [contactingListingId, setContactingListingId] = useState<number | null>(null);
@@ -660,6 +661,34 @@ export default function ChatPage() {
     }
   }, []);
 
+  // Keep message hydration separate from the sidebar query. A saved session
+  // without its transcript must never look like a fresh chat merely because
+  // the second request is still pending (or lost a race with navigation).
+  const hydrationRequest = useRef(0);
+  const loadSessionMessages = useCallback(async (id: string) => {
+    const request = ++hydrationRequest.current;
+    setSessionLoading(true);
+    setSessionError("");
+    try {
+      const msgs = await api.getChatSessionMessages(id);
+      if (request !== hydrationRequest.current) return;
+      setMessages(msgs
+        .filter((m) => m.role === "user" || m.role === "assistant")
+        .map((m) => toUIMessage({
+          id: m.id,
+          role: m.role as "user" | "assistant",
+          content: m.content,
+          blocks: m.blocks,
+        })));
+    } catch (e) {
+      if (request !== hydrationRequest.current) return;
+      setMessages([]);
+      setSessionError(e instanceof Error ? e.message : "Could not load this saved chat");
+    } finally {
+      if (request === hydrationRequest.current) setSessionLoading(false);
+    }
+  }, [setMessages]);
+
   useEffect(() => {
     if (authLoading || !user?.id) return;
     let cancelled = false;
@@ -668,26 +697,23 @@ export default function ChatPage() {
       if (cancelled) return;
       setSessionsLoaded(true);
       if (data.length > 0 && !sessionId) {
+        const requestedId = sessionIdFromParam(sessionParam);
         const savedId = activeSessionStorageKey
           ? window.localStorage.getItem(activeSessionStorageKey)
           : null;
-        const saved = data.find((item) => item.id === savedId);
+        const saved = data.find((item) => item.id === requestedId)
+          || data.find((item) => item.id === savedId);
         const active = saved || data.find((item) => item.source === "parsed") || data[0];
         sessionIdRef.current = active.id;
         setSessionId(active.id);
-        try {
-          const msgs = await api.getChatSessionMessages(active.id);
-          if (cancelled) return;
-          setMessages(msgs.map((m) => toUIMessage({ id: m.id, role: m.role as "user" | "assistant", content: m.content, blocks: m.blocks })));
-        } catch (e) {
-          setSessionError(e instanceof Error ? e.message : "Could not resume previous chat");
-        }
+        updateUrlSession(active.id, active.title);
+        await loadSessionMessages(active.id);
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [activeSessionStorageKey, authLoading, loadSessions, sessionId, setMessages, user?.id]);
+  }, [activeSessionStorageKey, authLoading, loadSessions, loadSessionMessages, sessionId, sessionParam, updateUrlSession, user?.id]);
 
   // Keep the selected thread stable across tab switches, refreshes, and route
   // remounts. Messages themselves remain persisted in Supabase by the API.
@@ -762,21 +788,14 @@ export default function ChatPage() {
 
   // Switch to an existing session
   const handleSwitchSession = useCallback(async (id: string) => {
-    if (id === sessionId) return;
     setShowFreshChatNotice(false);
     updateUrlSession(id);
     setSessionId(id);
     setSessionError("");
     sessionIdRef.current = id;
     if (activeSessionStorageKey) window.localStorage.setItem(activeSessionStorageKey, id);
-    try {
-      const msgs = await api.getChatSessionMessages(id);
-      setMessages(msgs.map((m) => toUIMessage({ id: m.id, role: m.role as "user" | "assistant", content: m.content, blocks: m.blocks })));
-    } catch (e) {
-      setMessages([]);
-      setSessionError(e instanceof Error ? e.message : "Could not load this chat");
-    }
-  }, [activeSessionStorageKey, sessionId, setMessages, updateUrlSession]);
+    await loadSessionMessages(id);
+  }, [activeSessionStorageKey, loadSessionMessages, updateUrlSession]);
 
   // Delete a session
   const handleDeleteSession = useCallback(async (id: string, e: React.MouseEvent) => {
@@ -827,21 +846,6 @@ export default function ChatPage() {
       setContactingListingId(null);
     }
   }, []);
-
-  // Navigate to session from URL on initial load
-  const initialNavDone = useRef(false);
-  useEffect(() => {
-    if (initialNavDone.current) return;
-    if (!sessionsLoaded) return;
-    initialNavDone.current = true;
-    const requestedSessionId = sessionIdFromParam(sessionParam);
-    if (requestedSessionId && sessions.length > 0) {
-      const target = sessions.find((s) => s.id === requestedSessionId);
-      if (target) {
-        handleSwitchSession(target.id);
-      }
-    }
-  }, [sessionParam, sessions, sessionsLoaded, handleSwitchSession]);
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -1009,7 +1013,7 @@ export default function ChatPage() {
         </div>
         {sessionError && (
           <div className="mb-2 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300">
-            Chat session could not be saved: {sessionError}
+            Chat history could not be loaded: {sessionError}
           </div>
         )}
         {brokerActionMessage && (
@@ -1085,12 +1089,17 @@ export default function ChatPage() {
         )}
 
         <div className="flex-1 min-h-0 overflow-y-auto space-y-3 mb-2 pr-2">
-          {messages.length === 0 ? (
+          {sessionLoading ? (
+            <div className="text-center py-12 text-sm text-zinc-400">
+              <div className="text-2xl mb-3 animate-pulse">💬</div>
+              Loading saved chat…
+            </div>
+          ) : messages.length === 0 ? (
             <div className="text-center py-12">
               <div className="text-3xl mb-3">🤖</div>
-              <h2 className="text-sm font-semibold text-white mb-2">Ask PropAI anything</h2>
+              <h2 className="text-sm font-semibold text-white mb-2">{sessionId ? "No messages in this chat yet" : "Ask PropAI anything"}</h2>
               <p className="text-xs text-zinc-500 max-w-md mx-auto">
-                Search the parsed inventory index. Results are grounded in database rows and rendered as markdown tables.
+                {sessionId ? "Your saved replies will appear here after the chat is refreshed." : "Search the parsed inventory index. Results are grounded in database rows and rendered as markdown tables."}
               </p>
             </div>
           ) : (
@@ -1289,15 +1298,29 @@ export default function ChatPage() {
             <div className="flex items-center gap-2">
               <span
                 className={`inline-flex items-center rounded-full border px-2 py-1 font-medium uppercase tracking-[0.14em] ${
-                  showFreshChatNotice && messages.length === 0
+                  sessionLoading
+                    ? "border-amber-500/25 bg-amber-500/10 text-amber-200"
+                    : sessionError
+                      ? "border-red-500/25 bg-red-500/10 text-red-200"
+                      : showFreshChatNotice && messages.length === 0
                     ? "border-emerald-500/25 bg-emerald-500/10 text-emerald-200"
                     : "border-white/10 bg-white/[0.03] text-zinc-400"
                 }`}
               >
-                {showFreshChatNotice && messages.length === 0 ? "Saved in history" : "History saved"}
+                {sessionLoading
+                  ? "Loading history"
+                  : sessionError
+                    ? "History unavailable"
+                    : showFreshChatNotice && messages.length === 0
+                      ? "Saved in history"
+                      : "History saved"}
               </span>
               <span className="text-zinc-500">
-                {showFreshChatNotice && messages.length === 0
+                {sessionLoading
+                  ? "Restoring this chat from the database…"
+                  : sessionError
+                    ? "The saved thread could not be restored."
+                    : showFreshChatNotice && messages.length === 0
                   ? "New chat thread created. The first reply will be stored automatically."
                   : "Replies are saved to history automatically."}
               </span>
