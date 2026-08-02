@@ -621,7 +621,7 @@ def test_legacy_storage_tenant_reads_use_request_context():
         set_tenant_id(None)
 
 
-def test_inbox_threads_fallback_stays_tenant_scoped(monkeypatch):
+def test_inbox_threads_uses_parsed_market_threads(monkeypatch):
     from storage.supabase import SupabaseStorage
 
     calls = []
@@ -675,15 +675,15 @@ def test_inbox_threads_fallback_stays_tenant_scoped(monkeypatch):
     storage = object.__new__(SupabaseStorage)
     storage._SupabaseStorage__tenant_id_fallback = None
     storage._client = Client()
-    storage._get_parsed_market_threads = lambda *args, **kwargs: []
+    storage._get_parsed_market_threads = lambda *args, **kwargs: [{"tenant_id": "tenant-a", "broker_name": "Broker One"}]
 
     threads = storage.get_inbox_threads(limit=10, offset=0, tenant_id="tenant-a")
 
-    assert threads and threads[0]["tenant_id"] == "tenant-a"
-    assert ("eq", "raw_messages", ("tenant_id", "tenant-a"), {}) in calls
+    assert threads == [{"tenant_id": "tenant-a", "broker_name": "Broker One"}]
+    assert calls == []
 
 
-def test_inbox_threads_prefers_raw_messages_even_when_parsed_rows_exist(monkeypatch):
+def test_inbox_threads_does_not_read_raw_messages_directly(monkeypatch):
     from types import SimpleNamespace
     from storage.supabase import SupabaseStorage
 
@@ -748,13 +748,18 @@ def test_inbox_threads_prefers_raw_messages_even_when_parsed_rows_exist(monkeypa
     storage = object.__new__(SupabaseStorage)
     storage._SupabaseStorage__tenant_id_fallback = None
     storage._client = Client()
+    storage._get_parsed_market_threads = lambda *args, **kwargs: [{
+        "message": "Parsed source evidence",
+        "intent": "RENT",
+        "broker_name": "Broker One",
+    }]
 
     threads = storage.get_inbox_threads(limit=10, offset=0, tenant_id="tenant-a")
 
-    assert threads and threads[0]["message"] == "Hello from raw"
+    assert threads and threads[0]["message"] == "Parsed source evidence"
     assert threads[0]["intent"] == "RENT"
-    assert ("table", "raw_messages", (), {}) in calls
-    assert ("table", "parsed_output", (), {}) in calls
+    assert ("table", "raw_messages", (), {}) not in calls
+    assert ("table", "parsed_output", (), {}) not in calls
 
 
 def test_connection_details_is_safe_without_storage(monkeypatch):

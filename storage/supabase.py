@@ -1822,144 +1822,10 @@ class SupabaseStorage(Storage):
         return [dict_to_dataclass(RawMessage, row) for row in rows[offset:offset + limit]]
 
     def get_inbox_threads(self, limit: int = 500, offset: int = 0, tenant_id: str | None = None) -> list[dict]:
-        # Always build the inbox from raw_messages first so fresh WhatsApp
-        # activity appears even when extraction is paused or lagging.
-        # Parsed rows are used only as enrichment for the newest raw message in
-        # each grouped thread.
-        query = self.client.table("raw_messages").select(
-            "id,tenant_id,group_name,sender,sender_phone,sender_jid,timestamp,created_at,message_uid,message,raw_payload,is_group"
-        )\
-            .order("timestamp", desc=True)\
-            .limit(max(1500, limit + offset))
-        if tenant_id:
-            query = query.eq("tenant_id", tenant_id)
-
-        res = query.execute()
-        rows = res.data if res.data else []
-        if not rows:
-            return []
-
-        def _raw_broker_key(r: dict, parsed: dict | None = None) -> str:
-            parsed = parsed or {}
-            raw_phone = (
-                _normalize_india_phone(r.get("sender_jid") or "")
-                or _normalize_india_phone(r.get("sender_phone") or "")
-                or _normalize_india_phone(parsed.get("broker_phone") or "")
-            )
-            if raw_phone:
-                return raw_phone
-            name = _clean_person_name(parsed.get("broker_name") or "")
-            if name:
-                return f"name:{_market_name_key(name)}"
-            name = _clean_person_name(r.get("sender") or "")
-            if name:
-                return f"name:{_market_name_key(name)}"
-            return "unknown"
-
-        def _raw_broker_label(r: dict, parsed: dict | None = None) -> str:
-            parsed = parsed or {}
-            return (
-                _clean_person_name(parsed.get("broker_name") or "")
-                or _clean_person_name(r.get("sender") or "")
-                or _normalize_india_phone(parsed.get("broker_phone") or "")
-                or _normalize_india_phone(r.get("sender_phone") or "")
-                or _normalize_india_phone(r.get("sender_jid") or "")
-                or "Unknown broker"
-            )
-
-        groups: dict[str, list[dict]] = {}
-        phone_counts: dict[str, set[str]] = {}
-        unknown_senders: dict[str, list[dict]] = {}
-        for row in rows:
-            if not row.get("is_group", False):
-                continue
-            key = _raw_broker_key(row)
-            groups.setdefault(key, []).append(row)
-            phone = _normalize_india_phone(row.get("sender_jid") or "") or _normalize_india_phone(row.get("sender_phone") or "")
-            if phone and key.startswith("name:"):
-                name_part = key[5:]
-                phone_counts.setdefault(name_part, set()).add(phone)
-            if key == "unknown":
-                jid = (row.get("sender_jid") or "").strip()
-                unknown_senders.setdefault(jid, []).append(row)
-
-        for name_part, phones in phone_counts.items():
-            name_key = f"name:{name_part}"
-            if len(phones) == 1 and name_key not in groups:
-                phone = next(iter(phones))
-                group_rows = groups.pop(name_key, [])
-                groups.setdefault(phone, []).extend(group_rows)
-
-        # Collect all raw message IDs across all threads (not just the newest per
-        # thread) so we can find enrichment even when the latest message in a
-        # thread is still awaiting extraction.
-        MAX_PARSE_LOOKUP = 1000
-        all_ids = []
-        for msgs in groups.values():
-            for m in msgs:
-                mid = m.get("id")
-                if mid is not None:
-                    all_ids.append(mid)
-                    if len(all_ids) >= MAX_PARSE_LOOKUP:
-                        break
-            if len(all_ids) >= MAX_PARSE_LOOKUP:
-                break
-        parsed_map: dict[int, dict] = {}
-        if all_ids:
-            parsed_res = self.client.table("parsed_output")\
-                .select("raw_message_id,intent,building_name,micro_market,landmark_name,location_raw,broker_name,broker_phone,confidence")\
-                .in_("raw_message_id", all_ids)\
-                .order("confidence", desc=True)\
-                .order("id", desc=True)\
-                .execute()
-            for p in (parsed_res.data or []):
-                rid = p.get("raw_message_id")
-                if rid and rid not in parsed_map:
-                    parsed_map[rid] = p
-
-        threads = []
-        for key, msgs in groups.items():
-            latest = msgs[0]
-            ts = latest.get("timestamp") or latest.get("created_at") or ""
-            # Scan messages newest-first for the first one with real parsed
-            # enrichment data, instead of only checking the single newest
-            # message (which may still be awaiting extraction).
-            p = None
-            for m in msgs:
-                candidate = parsed_map.get(m.get("id"))
-                if candidate and (candidate.get("building_name") or candidate.get("micro_market")):
-                    p = candidate
-                    break
-            conv_name = _raw_broker_label(latest, p)
-            phone = (
-                _normalize_india_phone(latest.get("sender_jid") or "")
-                or _normalize_india_phone(latest.get("sender_phone") or "")
-                or _normalize_india_phone((p or {}).get("broker_phone") or "")
-            )
-            chat_id = phone or key
-            group_name = latest.get("group_name") or ""
-            is_group = "@g.us" in group_name or "_broadcast" in group_name
-            latest["chat_id"] = chat_id
-            latest["chat_type"] = "group" if is_group else "direct"
-            latest["chat_name"] = conv_name
-            latest["conversation_key"] = key
-            latest["conversation_type"] = "group" if is_group else "direct"
-            latest["conversation_name"] = conv_name
-            latest["message_count"] = len(msgs)
-            latest["latest_message_at"] = ts
-            latest["market_scope"] = (
-                "workspace"
-                if tenant_id and str(latest.get("tenant_id") or "") == str(tenant_id)
-                else "shared"
-            )
-            if p:
-                for field in ("intent", "building_name", "micro_market", "landmark_name", "location_raw", "broker_name", "broker_phone"):
-                    if p.get(field):
-                        latest[field] = p[field]
-            threads.append(latest)
-
-        threads.sort(key=lambda t: (t.get("timestamp") or t.get("created_at") or ""), reverse=True)
-        return threads[offset:offset + limit]
+        # Market Inbox is a parsed broker feed.  The raw message is joined by
+        # _get_parsed_market_threads only so the UI can open source evidence;
+        # raw_messages must never determine which broker posts appear here.
+        return self._get_parsed_market_threads(limit, offset, tenant_id=tenant_id)
 
     def _get_parsed_market_threads(self, limit: int, offset: int, tenant_id: str | None = None) -> list[dict]:
         tid = tenant_id or self._tenant_id
@@ -2013,9 +1879,6 @@ class SupabaseStorage(Storage):
                         parsed.get("raw_message_id"), parsed.get("id"),
                     )
                 continue
-            if not raw.get("is_group", False):
-                continue
-
             phone = (
                 _normalize_india_phone(parsed.get("broker_phone") or "")
                 or _normalize_india_phone(raw.get("sender_phone") or "")
