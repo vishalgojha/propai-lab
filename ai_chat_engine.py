@@ -1489,6 +1489,8 @@ def parse_market_search_request(
     if allow_llm:
         llm_result = _llm_market_search_request(raw, api_key, model, base_url, db_path)
         if llm_result:
+            if re.search(r"\b(?:requirement|requirements|wanted|need|needed|looking\s+for)\b", lower):
+                llm_result["search_scope"] = "requirements"
             return llm_result
 
     bhk_match = re.search(r"\b(\d+(?:\.5)?)\s*(?:bhk|bed(?:room)?s?)\b", lower)
@@ -1516,6 +1518,8 @@ def parse_market_search_request(
         "sort_by": "last_seen",
         "group_by_building": False,
     }
+    if re.search(r"\b(?:requirement|requirements|wanted|need|needed|looking\s+for)\b", lower):
+        args["search_scope"] = "requirements"
     if bhk_match:
         args["bhk"] = bhk_match.group(1)
 
@@ -1774,6 +1778,7 @@ def deterministic_market_response(query: dict, result: str, sources: dict | None
         }
 
     results = payload.get("results") or []
+    is_requirement_search = payload.get("type") == "requirement_results" or query.get("search_scope") == "requirements"
     total = int(payload.get("total") or 0)
     if not results:
         return {
@@ -1781,7 +1786,7 @@ def deterministic_market_response(query: dict, result: str, sources: dict | None
             "blocks": [{
                 "type": "empty_state",
                 "title": "No exact market matches",
-                "body": payload.get("suggestion") or "Try a nearby locality, a wider budget, or the latest listings.",
+                "body": payload.get("suggestion") or f"{fallback_body} Try a different locality, a wider budget, or the latest listings.",
             }],
             "sources": ["global marketplace"],
             "status_steps": ["Searched live marketplace"],
@@ -1797,7 +1802,11 @@ def deterministic_market_response(query: dict, result: str, sources: dict | None
     applied_filters.extend(str(market) for market in (query.get("micro_markets") or []))
     filter_text = " · ".join(applied_filters)
 
-    parts = [f"Found {total} active match{'es' if total != 1 else ''}; showing the {shown} most recently seen."]
+    if is_requirement_search:
+        result_label = "matching broker requirement" if total == 1 else "matching broker requirements"
+    else:
+        result_label = "active match" if total == 1 else "active matches"
+    parts = [f"Found {total} {result_label}; showing the {shown} most recently seen."]
     if filter_text:
         parts.append(f"**Applied filters:** {filter_text}")
     table = listing_table_markdown(result)
@@ -1809,8 +1818,8 @@ def deterministic_market_response(query: dict, result: str, sources: dict | None
         "blocks": [
             {
                 "type": "listing_cards",
-                "title": "Active listings",
-                "subtitle": "Global PropAI marketplace",
+                "title": "Matching broker requirements" if is_requirement_search else "Active listings",
+                "subtitle": "Parsed demand records from WhatsApp broker posts" if is_requirement_search else "Global PropAI marketplace",
                 "items": results,
                 "sources": ["WhatsApp broker posts"],
             },
@@ -1857,6 +1866,8 @@ def relaxed_market_query(text: str) -> dict:
         "sort_by": "last_seen",
         "group_by_building": False,
     }
+    if re.search(r"\b(?:requirement|requirements|wanted|need|needed|looking\s+for)\b", lower):
+        args["search_scope"] = "requirements"
     bhk_match = re.search(r"\b(\d+(?:\.5)?)\s*(?:bhk|bed(?:room)?s?)\b", lower)
     if bhk_match:
         args["bhk"] = bhk_match.group(1)
@@ -2078,6 +2089,90 @@ def _hidden_market_item_ids(client, tenant_id: str | None = None) -> tuple[set[i
     return listing_ids, raw_message_ids
 
 
+def _rest_requirement_search(client, args: dict, tenant_id: str | None = None) -> str:
+    """Search parsed demand records, not the listings projection.
+
+    Requirements live in parsed_output because they describe what a broker or
+    client is looking for; they are deliberately not promoted into listings.
+    """
+    bhk = str(args.get("bhk") or "").strip()
+    bhk_match = re.search(r"\d+(?:\.5)?", bhk)
+    requested_bhk = float(bhk_match.group(0)) if bhk_match else None
+    broker = str(args.get("broker") or "").strip()
+    markets = [str(value).strip() for value in (args.get("micro_markets") or []) if str(value).strip()]
+    if not markets and args.get("micro_market"):
+        markets = [str(args["micro_market"]).strip()]
+    limit = max(1, min(int(args.get("limit") or 10), 50))
+    offset = max(0, int(args.get("offset") or 0))
+    hidden_brokers = _hidden_broker_phones(client, tenant_id)
+    _, hidden_raw_message_ids = _hidden_market_item_ids(client, tenant_id)
+    demand_intents = ["BUY", "BUYER", "REQUIREMENT", "RENTAL_SEEKER", "TENANT", "DEMAND"]
+    columns = (
+        "id,raw_message_id,message_type,intent,bhk,price,price_unit,area_sqft,"
+        "furnishing,location_raw,building_name,landmark_name,micro_market,"
+        "broker_name,broker_phone,confidence,created_at"
+    )
+    query = client.table("parsed_output").select(columns, count="exact").in_("intent", demand_intents)
+    if tenant_id:
+        query = query.eq("tenant_id", tenant_id)
+    if broker:
+        for word in broker.split():
+            query = query.ilike("broker_name", f"%{word}%")
+    response = query.order("created_at", desc=True).limit(max(limit * 20, 100)).execute()
+    rows = []
+    for row in response.data or []:
+        row_bhk = re.search(r"\d+(?:\.5)?", str(row.get("bhk") or ""))
+        if requested_bhk is not None and (row_bhk is None or float(row_bhk.group(0)) != requested_bhk):
+            continue
+        if markets:
+            haystack = " ".join(str(row.get(key) or "") for key in ("micro_market", "location_raw", "landmark_name", "building_name")).lower()
+            if not any(all(word.lower() in haystack for word in market.split()) for market in markets):
+                continue
+        phone = _normalize_real_phone(row.get("broker_phone") or "")
+        if phone and phone in hidden_brokers:
+            continue
+        raw_id = row.get("raw_message_id")
+        if raw_id is not None and int(raw_id) in hidden_raw_message_ids:
+            continue
+        rows.append(row)
+    total = len(rows)
+    results = []
+    for row in rows[offset:offset + limit]:
+        results.append({
+            "listing_id": None,
+            "raw_message_id": row.get("raw_message_id"),
+            "fingerprint": None,
+            "intent": row.get("intent") or "REQUIREMENT",
+            "bhk": row.get("bhk"),
+            "price": row.get("price"),
+            "price_unit": row.get("price_unit"),
+            "price_formatted": fmt_listing_price(row.get("price"), row.get("price_unit"), "RENT"),
+            "area_sqft": row.get("area_sqft"),
+            "furnishing": row.get("furnishing"),
+            "location_label": row.get("location_raw"),
+            "building_name": row.get("building_name") or "Requirement",
+            "landmark_name": row.get("landmark_name"),
+            "micro_market": row.get("micro_market"),
+            "broker_name": row.get("broker_name"),
+            "broker_phone": row.get("broker_phone"),
+            "first_seen": row.get("created_at"),
+            "last_seen": row.get("created_at"),
+            "last_seen_text": row.get("created_at") or "",
+            "observation_count": 1,
+            "group_count": 1,
+            "confidence": row.get("confidence") or 0,
+        })
+    return json.dumps({
+        "type": "requirement_results",
+        "total": total,
+        "results": results,
+        "showing": len(results),
+        "offset": offset,
+        "has_more": total > offset + limit,
+        "remaining": max(0, total - offset - limit),
+    }, default=str)
+
+
 def _rest_market_search(client, args: dict, tenant_id: str | None = None) -> str:
     """Read global listings through Supabase's table API, not the SQL bridge.
 
@@ -2085,6 +2180,8 @@ def _rest_market_search(client, args: dict, tenant_id: str | None = None) -> str
     statement timeouts under marketplace load. This path is simple indexed
     filters plus a small in-process price normalization step.
     """
+    if str(args.get("search_scope") or "").lower() == "requirements":
+        return _rest_requirement_search(client, args, tenant_id=tenant_id)
     intent = str(args.get("intent") or "").upper().strip()
     bhk = str(args.get("bhk") or "").strip()
     bhk_match = re.search(r"\d+(?:\.5)?", bhk)
