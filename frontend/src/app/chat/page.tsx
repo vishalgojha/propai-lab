@@ -136,7 +136,7 @@ function exportRowsFromParts(parts: Array<{ type?: string; text?: string; data?:
         listing.area_sqft ? `${listing.area_sqft} sqft` : "—",
         listing.furnishing || "—",
         listing.broker_name || "—",
-        buildWhatsAppLink(listing) || "—",
+        listing.broker_phone || listing.sender_phone || "—",
         listing.last_seen || "—",
       ]);
     }
@@ -145,7 +145,7 @@ function exportRowsFromParts(parts: Array<{ type?: string; text?: string; data?:
 }
 
 function tableExportCsv(parts: Array<{ type?: string; text?: string; data?: any }>) {
-  const headers = ["Building", "Locality", "Type", "Rent/Sale", "Carpet", "Furnishing", "Broker", "WhatsApp Link", "Last Seen"];
+  const headers = ["Building", "Locality", "Type", "Rent/Sale", "Carpet", "Furnishing", "Broker", "Broker Phone", "Last Seen"];
   const rows = exportRowsFromParts(parts);
   const body = [csvLine(headers), ...rows.map(csvLine)].join("\n");
   return `${body}\n`;
