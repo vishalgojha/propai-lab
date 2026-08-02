@@ -6,7 +6,9 @@ import type { PublicListing } from "./types.js";
 export const PUBLIC_LISTING_COLUMNS =
   "source_message_id, source_group_name, listing_type, area, sub_area, location, price, price_type, size_sqft, furnishing, bhk, property_type, title, description, raw_message, cleaned_message, primary_contact_name, primary_contact_number, primary_contact_wa, message_timestamp";
 const PARSED_MARKET_COLUMNS =
-  "id, raw_message_id, listing_index, message_type, intent, bhk, price, price_unit, area_sqft, furnishing, location_raw, area, micro_market, building_name, broker_name, broker_phone, profile_name, raw_payload, summary_title, created_at, raw_messages(group_name, sender, sender_phone, message, timestamp)";
+  "id, raw_message_id, listing_index, message_type, intent, transaction_type, bhk, price, price_unit, area_sqft, furnishing, location_raw, area, micro_market, building_name, broker_name, broker_phone, profile_name, raw_payload, summary_title, created_at, raw_messages(group_name, sender, sender_phone, message, timestamp)";
+const LISTING_MARKET_COLUMNS =
+  "id, intent, transaction_type, property_type, bhk, price, price_unit, area_sqft, furnishing, location_label, landmark_name, micro_market, building_name, broker_name, broker_phone, listing_source, latest_raw_message_id, representative_raw_message_id, first_seen, last_seen, created_at, updated_at";
 const PLACEHOLDER_LOCALITIES = new Set([
   "unknown",
   "mumbai market",
@@ -69,6 +71,7 @@ function inferListingTypeFromParsed(row: Record<string, unknown>, rawText: strin
   const text = [
     row.intent,
     row.message_type,
+    row.transaction_type,
     row.price_unit,
     row.summary_title,
     rawText,
@@ -78,6 +81,52 @@ function inferListingTypeFromParsed(row: Record<string, unknown>, rawText: strin
   if (/(rent|lease|monthly|tenant)/.test(text)) return "listing_rent";
   if (/(sale|sell|outright|resale|distress|auction|cr\b|crore)/.test(text)) return "listing_sale";
   return "listing";
+}
+
+function inferListingTypeFromListing(row: Record<string, unknown>) {
+  const text = [row.transaction_type, row.property_type, row.intent].filter(Boolean).join(" ").toLowerCase();
+  if (/(requirement|wanted|need|buy)/.test(text)) return "requirement";
+  if (/(rent|lease|pre.?leased)/.test(text)) return "listing_rent";
+  if (/(sale|sell|purchase|outright)/.test(text)) return "listing_sale";
+  return "listing";
+}
+
+function mapListingRowToPublicListing(row: Record<string, unknown>): PublicListing {
+  const listingType = inferListingTypeFromListing(row);
+  const locality = firstString(row.micro_market, row.location_label, row.landmark_name);
+  const title = firstString(row.building_name, row.location_label, row.micro_market);
+  const sourceMessageId = [
+    row.latest_raw_message_id,
+    row.representative_raw_message_id,
+    row.id,
+  ].find((value) => value != null && String(value).trim()) != null
+    ? String([row.latest_raw_message_id, row.representative_raw_message_id, row.id]
+      .find((value) => value != null && String(value).trim()))
+    : "listing";
+
+  return {
+    source_message_id: `${sourceMessageId}:0`,
+    source_group_name: null,
+    listing_type: listingType,
+    area: firstString(row.location_label, row.micro_market, row.landmark_name),
+    sub_area: locality,
+    location: locality,
+    price: normalizeParsedPrice(row.price, row.price_unit),
+    price_type: firstString(row.price_unit),
+    size_sqft: toNumber(row.area_sqft),
+    furnishing: firstString(row.furnishing),
+    bhk: parseBhk(row.bhk),
+    property_type: firstString(row.property_type, row.transaction_type),
+    title,
+    description: null,
+    raw_message: null,
+    cleaned_message: null,
+    primary_contact_name: firstString(row.broker_name),
+    primary_contact_number: firstString(row.broker_phone),
+    primary_contact_wa: firstString(row.broker_phone),
+    message_timestamp: firstString(row.last_seen, row.updated_at, row.created_at),
+    created_at: firstString(row.created_at),
+  };
 }
 
 function parsedSourceId(row: Record<string, unknown>) {
@@ -326,11 +375,15 @@ async function fetchParsedMarketRows(limit: number, since?: string, filters?: {
   }
 
   if (filters?.bhk != null) {
-    query = query.eq("bhk", String(filters.bhk));
+    // `bhk` is stored as a configuration string in parsed_output (for example
+    // `3 BHK`), not as the bare number returned by the NL parser.
+    const bhk = String(filters.bhk);
+    query = query.or(`bhk.eq.${bhk} BHK,bhk.eq.${bhk}BHK,bhk.eq.${bhk}`);
   }
 
   if (filters?.propertyType && filters.propertyType !== "all") {
-    query = query.or(`intent.eq.${filters.propertyType},intent.eq.listing_${filters.propertyType}`);
+    const type = filters.propertyType === "lease" ? "rent" : filters.propertyType;
+    query = query.or(`transaction_type.ilike.%${type}%,intent.eq.${type},intent.eq.listing_${type}`);
   }
 
   if (filters?.listingKind === "requirement") {
@@ -342,6 +395,52 @@ async function fetchParsedMarketRows(limit: number, since?: string, filters?: {
   const { data, error } = await query;
   if (error) throw new Error(error.message);
   return ((data || []) as Record<string, unknown>[]).map(mapParsedRowToPublicListing);
+}
+
+async function fetchListingTableRows(limit: number, since?: string, filters?: {
+  locality?: string;
+  city?: string;
+  buildingName?: string;
+  bhk?: number;
+  propertyType?: "sale" | "rent" | "lease" | "all";
+  maxBudgetCr?: number;
+  budgetMinCr?: number;
+}) {
+  let query = supabase
+    .from("listings")
+    .select(LISTING_MARKET_COLUMNS)
+    .order("last_seen", { ascending: false, nullsFirst: false })
+    .limit(limit);
+
+  if (since) query = query.gte("last_seen", since);
+
+  // Keep the database pre-filter broad, then apply the same normalized
+  // locality check below. This avoids treating a parsed locality as a SQL
+  // token or accidentally matching a partial word.
+  const cleanFilter = (value: string) => value.trim().replace(/[%,()]/g, " ");
+  if (filters?.locality) {
+    const locality = cleanFilter(filters.locality);
+    query = query.or(`micro_market.ilike.%${locality}%,location_label.ilike.%${locality}%,landmark_name.ilike.%${locality}%,building_name.ilike.%${locality}%`);
+  }
+  if (filters?.city) {
+    const city = cleanFilter(filters.city);
+    query = query.or(`micro_market.ilike.%${city}%,location_label.ilike.%${city}%,landmark_name.ilike.%${city}%`);
+  }
+  if (filters?.buildingName) {
+    query = query.ilike("building_name", `%${cleanFilter(filters.buildingName)}%`);
+  }
+  if (filters?.bhk != null) {
+    const bhk = String(filters.bhk);
+    query = query.or(`bhk.ilike.${bhk} BHK,bhk.ilike.${bhk}BHK,bhk.eq.${bhk}`);
+  }
+  if (filters?.propertyType && filters.propertyType !== "all") {
+    const type = filters.propertyType === "lease" ? "rent" : filters.propertyType;
+    query = query.or(`transaction_type.ilike.%${type}%,property_type.ilike.%${type}%,intent.ilike.%${type}%`);
+  }
+
+  const { data, error } = await query;
+  if (error) throw new Error(error.message);
+  return ((data || []) as Record<string, unknown>[]).map(mapListingRowToPublicListing);
 }
 
 export async function logToolCall(brokerId: string | undefined, toolName: string, input: unknown) {
@@ -371,7 +470,7 @@ export async function searchPublicListings(input: {
   limit?: number;
 }) {
   const limit = clampLimit(input.limit);
-  const rows = await fetchParsedMarketRows(limit * 3, undefined, {
+  const filters = {
     locality: input.locality,
     city: input.city,
     bhk: input.bhk,
@@ -379,8 +478,37 @@ export async function searchPublicListings(input: {
     maxBudgetCr: input.max_budget_cr,
     budgetMinCr: input.budget_min_cr,
     listingKind: input.listingKind,
-  });
+  };
+  // Canonical inventory lives in `listings`. Requirements remain in
+  // parsed_output because they are demand-side observations, not inventory.
+  const rows = input.listingKind === "requirement"
+    ? await fetchParsedMarketRows(limit * 3, undefined, filters)
+    : await fetchListingTableRows(limit * 3, undefined, filters);
   return normalizePublicListings(filterPublicListingRows(rows, input)).slice(0, limit);
+}
+
+/** Stable, row-shaped payload for MCP clients. Raw WhatsApp text is omitted. */
+export function toMarketSearchRow(row: PublicListing): Record<string, unknown> {
+  const dealType = inferPublicDealType(row);
+  return {
+    id: row.source_message_id,
+    source_message_id: row.source_message_id,
+    building_name: row.title,
+    micro_market: row.sub_area || row.location || row.area,
+    locality: row.sub_area || row.location || row.area,
+    transaction_type: dealType,
+    listing_type: row.listing_type,
+    bhk: row.bhk == null ? null : `${row.bhk} BHK`,
+    price: row.price,
+    price_unit: row.price_type,
+    price_formatted: row.price == null ? null : formatCurrencyCr(row.price),
+    area_sqft: row.size_sqft,
+    furnishing: row.furnishing,
+    broker_name: row.primary_contact_name,
+    broker_phone: row.primary_contact_number,
+    whatsapp_number: row.primary_contact_number,
+    last_seen: row.message_timestamp || row.created_at,
+  };
 }
 
 export async function getFreshStream(input: { hours?: number; city?: string; limit?: number }) {

@@ -1,6 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { getMarketSummary, logToolCall } from "../data.ts";
+import { getMarketSummary, logToolCall, toMarketSearchRow } from "../data.ts";
 import { executeMarketSearch } from "../marketSearch.ts";
 import { formatCurrencyCr } from "../format.ts";
 import type { ToolContext } from "../types.js";
@@ -16,6 +16,16 @@ function brokerId(context?: ToolContext) {
   return context?.user?.broker_id || context?.user?.id;
 }
 
+function marketText(result: { query: string; explanation: string; results?: unknown[] }) {
+  const rows = (result.results || []).map((row) => {
+    const value = row as Record<string, unknown>;
+    return value.listing_type ? toMarketSearchRow(value as any) : value;
+  });
+  return rows.length
+    ? JSON.stringify({ query: result.query, explanation: result.explanation, results: rows })
+    : "No results found. Try a broader search.";
+}
+
 export function registerMarketTools(server: McpServer, context: ToolContext) {
   server.registerTool("market_search", {
     description: "Search the property market for listings, requirements, brokers — understands natural language like '3 BHK in Bandra West under 2 Cr'",
@@ -29,8 +39,13 @@ export function registerMarketTools(server: McpServer, context: ToolContext) {
     const id = brokerId(context);
     await logToolCall(id, "market_search", input);
     const result = await executeMarketSearch({ query: input.query, locality: input.location, city: input.city, limit: input.limit });
-    const items = result.results || [];
-    return textResponse(items.length ? `${items.length} result(s) for "${input.query}"` : 'No results found. Try a broader search.', result);
+    return textResponse(marketText(result), {
+      ...result,
+      results: (result.results || []).map((row) => {
+        const value = row as Record<string, unknown>;
+        return value.listing_type ? toMarketSearchRow(value as any) : value;
+      }),
+    });
   });
 
   server.registerTool("search_listings", {
@@ -45,8 +60,13 @@ export function registerMarketTools(server: McpServer, context: ToolContext) {
     const id = brokerId(context);
     await logToolCall(id, "search_listings", input);
     const result = await executeMarketSearch({ query: input.query, locality: input.location, city: input.city, limit: input.limit });
-    const items = result.results || [];
-    return textResponse(items.length ? `${items.length} result(s) for "${input.query}"` : 'No results found. Try a broader search.', result);
+    return textResponse(marketText(result), {
+      ...result,
+      results: (result.results || []).map((row) => {
+        const value = row as Record<string, unknown>;
+        return value.listing_type ? toMarketSearchRow(value as any) : value;
+      }),
+    });
   });
 
   server.registerTool("market_summary", {
