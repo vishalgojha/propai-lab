@@ -330,32 +330,6 @@ function inferAttachmentMediaType(file: File): "image" | "video" | "audio" | "do
   return "document";
 }
 
-function toInboxThread(message: api.RawMessage): api.InboxThread {
-  const conversationType =
-    message.conversation_type ||
-    message.chat_type ||
-    (message.group_name && message.group_name !== "seed" && message.group_name !== "seed-bot" ? "group" : "direct");
-  const conversationKey = (
-    message.conversation_key ||
-    message.chat_id ||
-    message.sender_jid ||
-    message.group_name ||
-    ""
-  ).trim();
-
-  return {
-    ...message,
-    conversation_type: conversationType === "group" ? "group" : "direct",
-    conversation_key: conversationKey,
-    conversation_name: message.conversation_name || message.chat_name || message.group_name || message.sender || "Conversation",
-    message_count: message.message_count || 1,
-    chat_id: message.chat_id,
-    chat_type: message.chat_type,
-    chat_name: message.chat_name,
-    latest_message_at: message.latest_message_at,
-  } as api.InboxThread;
-}
-
 function normalizeMessageTimestamp(message?: Partial<api.RawMessage> | null) {
   if (!message) return "";
   const candidates = [
@@ -1793,15 +1767,12 @@ return {
       }
     } catch (e) {
       console.error("Failed to load feed:", e);
-      try {
-        const rawMsgs = await api.getRaw(PAGE_SIZE, requestedOffset);
-        const fallbackThreads = rawMsgs.map(toInboxThread);
-        setMessages((prev) => (append ? [...prev, ...fallbackThreads] : fallbackThreads));
-        if (!append) {
-          setAllSuggestions([]);
-        }
-      } catch (fallbackError) {
-        console.error("Failed to load raw inbox fallback:", fallbackError);
+      // Do not fall back to raw WhatsApp messages here.  Market Inbox is a
+      // parsed broker feed; the raw mirror lives on /whatsapp-groups and raw
+      // messages are loaded only as evidence after selecting a parsed item.
+      if (!append) {
+        setMessages([]);
+        setAllSuggestions([]);
       }
     } finally {
       await directoryRequest;
