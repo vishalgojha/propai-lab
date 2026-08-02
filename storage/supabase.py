@@ -3189,36 +3189,37 @@ class SupabaseStorage(Storage):
         result = query.order("last_message_at", desc=True).limit(limit).execute()
         directory = result.data or []
 
+        # The durable directory is the authoritative source for joined groups.
+        # Do not scan raw_messages on every page load: that table is large and
+        # this endpoint is polled by the Groups mirror.  A raw-message fallback
+        # is retained only for tenants whose directory has not been populated
+        # yet (for example, immediately after an older deployment/backfill).
+        if directory:
+            return directory[:limit]
+
         # The Go WhatsMeow ingestor writes raw_messages directly for low-latency
-        # delivery. Keep the directory live even when the conversation summary
-        # row has not been updated yet (or the summary worker is delayed).
+        # delivery. Bootstrap the directory from that evidence only when the
+        # durable directory is genuinely empty.
         try:
-            raw_chats = self.get_chats(limit=min(limit, 1000), offset=0, tenant_id=tenant_id)
+            raw_chats = self.get_chats(limit=min(limit, 500), offset=0, tenant_id=tenant_id)
             requested = set(types or [])
-            by_id = {str(row.get("conversation_jid") or row.get("chat_id") or row.get("id")): row for row in directory}
+            by_id: dict[str, dict] = {}
             for chat in raw_chats:
                 if requested and chat.get("chat_type") not in requested:
                     continue
                 chat_id = str(chat.get("chat_id") or chat.get("conversation_key") or "")
                 if not chat_id:
                     continue
-                existing = by_id.get(chat_id)
                 latest = chat.get("latest_message_at") or ""
-                # Joined groups are authoritative. Historical raw messages
-                # must not resurrect a group the user has left after the
-                # directory refresh pruned it.
-                if chat.get("chat_type") == "group" and existing is None:
-                    continue
-                if existing is None or str(existing.get("last_message_at") or "") < str(latest):
-                    by_id[chat_id] = {
-                        **(existing or {}),
-                        "conversation_jid": chat_id,
-                        "conversation_name": chat.get("chat_name") or chat_id,
-                        "conversation_type": chat.get("chat_type"),
-                        "message_count": chat.get("message_count") or 0,
-                        "last_message_at": latest,
-                        "source": "raw_messages",
-                    }
+                by_id[chat_id] = {
+                    "conversation_jid": chat_id,
+                    "conversation_name": chat.get("chat_name") or chat_id,
+                    "display_name": chat.get("chat_name") or chat_id,
+                    "conversation_type": chat.get("chat_type"),
+                    "message_count": chat.get("message_count") or 0,
+                    "last_message_at": latest,
+                    "source": "raw_messages",
+                }
             directory = list(by_id.values())
             directory.sort(key=lambda row: str(row.get("last_message_at") or ""), reverse=True)
             return directory[:limit]
