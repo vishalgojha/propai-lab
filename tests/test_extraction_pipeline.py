@@ -241,6 +241,153 @@ def test_multi_listing_post_uses_one_ai_result_per_option(monkeypatch):
     ]
 
 
+def test_bundled_two_unit_message_falls_back_to_block_split(monkeypatch):
+    """A merged AI draft must not merge a two-block rent message into one row."""
+    storage = _Storage()
+    message = """*Carpet* 2300 Sq.Feet Higher Floor with 02 Car Parkings
+*RENT - 4 LAKHS*
+
+*4BHK+4BHK Jodi*
+*Carpet* 5500 Sq.Feet Higher Floor with 05 Car Parkings
+*RENT - 9.50 LAKHS*
+
+*Contact Holy homes*
+Ekta- 9619599882"""
+
+    ai_calls: list[str] = []
+
+    def fake_ai_extract(text, *_args, **_kwargs):
+        ai_calls.append(text)
+        if text == message:
+            return {
+                "extraction_source": "ai",
+                "document": {
+                    "document_type": "Multi Listing",
+                    "block_count": 2,
+                    "blocks": [
+                        {"text": "*Carpet* 2300 Sq.Feet Higher Floor with 02 Car Parkings\n*RENT - 4 LAKHS*"},
+                        {"text": "*4BHK+4BHK Jodi*\n*Carpet* 5500 Sq.Feet Higher Floor with 05 Car Parkings\n*RENT - 9.50 LAKHS*"},
+                    ],
+                },
+                "extraction": {
+                    "listing_type": "rent",
+                    "property_category": "residential",
+                    "bhk": 4,
+                    "carpet_area_sqft": 3050,
+                    "price": {"amount": 30, "unit": "total", "period": "per_month", "raw_price_text": "30"},
+                    "locality": {"raw_mention": "Bandra East", "resolved_locality": "Bandra East", "confidence": "high"},
+                    "building_name": "Holy homes",
+                    "title": "Merged draft",
+                    "extraction_confidence": "high",
+                },
+                "extractions": [{
+                    "listing_type": "rent",
+                    "property_category": "residential",
+                    "bhk": 4,
+                    "carpet_area_sqft": 3050,
+                    "price": {"amount": 30, "unit": "total", "period": "per_month", "raw_price_text": "30"},
+                    "locality": {"raw_mention": "Bandra East", "resolved_locality": "Bandra East", "confidence": "high"},
+                    "building_name": "Holy homes",
+                    "title": "Merged draft",
+                    "extraction_confidence": "high",
+                }],
+                "provider_used": "fake",
+            }
+        if "2300 Sq.Feet" in text:
+            return {
+                "extraction_source": "ai",
+                "document": {"document_type": "Single Listing", "block_count": 1, "blocks": [{"text": text}]},
+                "extraction": {
+                    "listing_type": "rent",
+                    "property_category": "residential",
+                    "bhk": 2,
+                    "carpet_area_sqft": 2300,
+                    "price": {"amount": 4.0, "unit": "lac", "period": "per_month", "raw_price_text": "RENT - 4 LAKHS"},
+                    "locality": {"raw_mention": "Bandra East", "resolved_locality": "Bandra East", "confidence": "high"},
+                    "building_name": None,
+                    "title": "2300 sqft rent",
+                    "extraction_confidence": "high",
+                },
+                "extractions": [{
+                    "listing_type": "rent",
+                    "property_category": "residential",
+                    "bhk": 2,
+                    "carpet_area_sqft": 2300,
+                    "price": {"amount": 4.0, "unit": "lac", "period": "per_month", "raw_price_text": "RENT - 4 LAKHS"},
+                    "locality": {"raw_mention": "Bandra East", "resolved_locality": "Bandra East", "confidence": "high"},
+                    "building_name": None,
+                    "title": "2300 sqft rent",
+                    "extraction_confidence": "high",
+                }],
+                "provider_used": "fake",
+            }
+        return {
+            "extraction_source": "ai",
+            "document": {"document_type": "Single Listing", "block_count": 1, "blocks": [{"text": text}]},
+            "extraction": {
+                "listing_type": "rent",
+                "property_category": "residential",
+                "bhk": 4,
+                "carpet_area_sqft": 5500,
+                "price": {"amount": 9.5, "unit": "lac", "period": "per_month", "raw_price_text": "RENT - 9.50 LAKHS"},
+                "locality": {"raw_mention": "Bandra East", "resolved_locality": "Bandra East", "confidence": "high"},
+                "building_name": None,
+                "title": "5500 sqft rent",
+                "extraction_confidence": "high",
+            },
+            "extractions": [{
+                "listing_type": "rent",
+                "property_category": "residential",
+                "bhk": 4,
+                "carpet_area_sqft": 5500,
+                "price": {"amount": 9.5, "unit": "lac", "period": "per_month", "raw_price_text": "RENT - 9.50 LAKHS"},
+                "locality": {"raw_mention": "Bandra East", "resolved_locality": "Bandra East", "confidence": "high"},
+                "building_name": None,
+                "title": "5500 sqft rent",
+                "extraction_confidence": "high",
+            }],
+            "provider_used": "fake",
+        }
+
+    monkeypatch.setattr(lab.config, "load_excluded_groups", lambda: set())
+    monkeypatch.setattr(ai_extraction, "ai_extract", fake_ai_extract)
+    monkeypatch.setattr(app, "compute_embedding", lambda _parsed: None)
+    monkeypatch.setattr(app, "resolve_parsed", lambda *_args: {})
+    monkeypatch.setattr(app, "generate_summary_title", lambda parsed, *_args: parsed["raw_payload"]["full_text"])
+    monkeypatch.setattr(extraction, "get_bus", lambda: SimpleNamespace(publish=lambda *_args: None))
+
+    result = extraction.process_raw_message(
+        82320,
+        {
+            "sender_name": "Broker",
+            "push_name": "Broker",
+            "sender_jid": "919999999999@s.whatsapp.net",
+            "sender_phone": "919999999999",
+            "group": "group@g.us",
+            "group_name": "Bandra Brokers",
+            "msg_text": message,
+            "instance": "test",
+            "is_dm": False,
+            "message_uid": "raw-82320",
+            "message_id": "22818",
+            "msg": {},
+        },
+        storage=storage,
+    )
+
+    assert result["extraction_source"] == "ai"
+    assert len(storage.saved) == 2
+    assert [row.price for row in storage.saved] == [4.0, 9.5]
+    assert [row.price_unit for row in storage.saved] == ["lac", "lac"]
+    assert [row.area_sqft for row in storage.saved] == [2300.0, 5500.0]
+    assert [row.intent for row in storage.saved] == ["RENT", "RENT"]
+    assert all("price_not_source_grounded" not in (row.validation_flags or []) for row in storage.saved)
+    assert all("area_not_source_grounded" not in (row.validation_flags or []) for row in storage.saved)
+    assert all((row.confidence or 0) >= 0.4 for row in storage.saved)
+    assert any("2300 Sq.Feet" in call for call in ai_calls)
+    assert any("5500 Sq.Feet" in call for call in ai_calls)
+
+
 def test_numbered_rental_inventory_is_handled_deterministically(monkeypatch):
     """Regression for raw 579267: numbered templates should bypass AI and keep six items."""
     message = """Available for Rent

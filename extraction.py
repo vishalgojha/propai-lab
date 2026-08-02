@@ -683,6 +683,135 @@ def _meaningful_name_tokens(value) -> set[str]:
     }
 
 
+_PRICE_MENTION_RE = re.compile(
+    r"(?:"
+    r"\b(?:rent|lease|price|quote|asking|budget|sale|sell)\b"
+    r"[^\d₹]{0,30}₹?\s*([\d,]+(?:\.\d+)?)\s*(cr|crore|crores|lac|lakh|lakhs|lacs|l|k|thousand|thousands)\b"
+    r"|₹\s*([\d,]+(?:\.\d+)?)\s*(cr|crore|crores|lac|lakh|lakhs|lacs|l|k|thousand|thousands)\b"
+    r"|([\d,]+(?:\.\d+)?)\s*(cr|crore|crores|lac|lakh|lakhs|lacs|l|k|thousand|thousands)\b"
+    r")",
+    re.IGNORECASE,
+)
+
+_AREA_MENTION_RE = re.compile(
+    r"(?:"
+    r"\b(?:carpet|built[- ]?up|super[- ]?built[- ]?up|area)\b"
+    r"[^\d]{0,25}([\d,]+(?:\.\d+)?)\s*(?:sq\.?\s*ft|sqft|sq\.?\s?feet|feet|sq\.?\s?m|sqm)\b"
+    r"|([\d,]+(?:\.\d+)?)\s*(?:sq\.?\s*ft|sqft|sq\.?\s?feet|feet)\b"
+    r")",
+    re.IGNORECASE,
+)
+
+
+def _explicit_listing_intent(source_text: str | None) -> str | None:
+    """Return the explicit labeled intent if the source text states one."""
+    if not source_text:
+        return None
+    lowered = source_text.lower()
+    rent_hits = bool(re.search(r"\b(?:rent|lease)\b", lowered))
+    sale_hits = bool(re.search(r"\b(?:sell|sale|for\s+sale)\b", lowered))
+    if rent_hits and not sale_hits:
+        return "RENT"
+    if sale_hits and not rent_hits:
+        return "SELL"
+    return None
+
+
+def _numeric_mentions_from_match(match: re.Match[str] | None) -> list[float]:
+    if not match:
+        return []
+    nums: list[float] = []
+    groups = match.groups()
+    # Patterns are arranged in pairs; the first non-empty pair carries the hit.
+    for idx in range(0, len(groups), 2):
+        amount = groups[idx]
+        unit = groups[idx + 1] if idx + 1 < len(groups) else None
+        if not amount:
+            continue
+        try:
+            value = float(amount.replace(",", ""))
+        except ValueError:
+            continue
+        unit = (unit or "").strip().lower().rstrip("s")
+        if unit in {"cr", "crore"}:
+            nums.append(value * 1_00_00_000)
+        elif unit in {"lac", "lakh", "l"}:
+            nums.append(value * 1_00_000)
+        elif unit in {"k", "thousand"}:
+            nums.append(value * 1_000)
+        else:
+            nums.append(value)
+    return nums
+
+
+def _extract_price_mentions(source_text: str | None) -> list[float]:
+    if not source_text:
+        return []
+    mentions: list[float] = []
+    for match in _PRICE_MENTION_RE.finditer(source_text):
+        mentions.extend(_numeric_mentions_from_match(match))
+    return mentions
+
+
+def _extract_area_mentions(source_text: str | None) -> list[float]:
+    if not source_text:
+        return []
+    mentions: list[float] = []
+    for match in _AREA_MENTION_RE.finditer(source_text):
+        for group in match.groups():
+            if not group:
+                continue
+            try:
+                mentions.append(float(group.replace(",", "")))
+            except ValueError:
+                continue
+            break
+    return mentions
+
+
+def _apply_source_grounding_guard(parsed: dict, source_text: str | None) -> tuple[list[str], float | None]:
+    """Flag values that do not literally appear near explicit source labels."""
+    flags: list[str] = []
+    confidence_override: float | None = None
+    text = source_text or ""
+
+    explicit_intent = _explicit_listing_intent(text)
+    intent = (parsed.get("intent") or "").upper()
+    if explicit_intent and intent and explicit_intent != intent:
+        flags.append(f"intent_not_source_grounded:{intent.lower()}->{explicit_intent.lower()}")
+
+    price = parsed.get("price")
+    price_unit = parsed.get("price_unit")
+    if price not in (None, ""):
+        try:
+            price_value = _deterministic_price_rupees({"price": price, "price_unit": price_unit})
+        except Exception:
+            price_value = None
+        mentions = _extract_price_mentions(text)
+        if mentions:
+            if price_value is None or all(abs(price_value - mention) > max(25_000.0, mention * 0.02) for mention in mentions):
+                flags.append("price_not_source_grounded")
+        else:
+            flags.append("price_not_source_grounded")
+
+    area = parsed.get("area_sqft") or parsed.get("carpet_area_sqft") or parsed.get("built_up_area_sqft")
+    if area not in (None, ""):
+        try:
+            area_value = float(area)
+        except (TypeError, ValueError):
+            area_value = None
+        mentions = _extract_area_mentions(text)
+        if mentions:
+            if area_value is None or all(abs(area_value - mention) > max(25.0, mention * 0.03) for mention in mentions):
+                flags.append("area_not_source_grounded")
+        else:
+            flags.append("area_not_source_grounded")
+
+    if flags:
+        confidence_override = 0.4
+    return flags, confidence_override
+
+
 def _ai_item_matches_boundary(ai_item: dict, boundary: dict, source_text: str) -> tuple[bool, list[str]]:
     """Reject explicit cross-unit conflicts between AI output and a split block.
 
@@ -1029,6 +1158,71 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
                 _logger.info("raw_id=%d extraction cache hit", raw_id)
             else:
                 ai_result = ai_extract(msg_text, ctx, storage=storage)
+            extraction_source = ai_result.get("extraction_source")
+            raw_ai_items = ai_result.get("extractions") or ([ai_result["extraction"]] if ai_result.get("extraction") else [])
+            ai_items = [item for item in raw_ai_items if isinstance(item, dict)]
+            document = ai_result.get("document") if isinstance(ai_result, dict) else None
+            block_texts = [
+                str(block.get("text") or "").strip()
+                for block in (document.get("blocks") if isinstance(document, dict) else [])
+                if isinstance(block, dict) and str(block.get("text") or "").strip()
+            ]
+            should_block_split = (
+                extraction_source == "ai"
+                and isinstance(document, dict)
+                and int(document.get("block_count") or len(block_texts) or 0) > 1
+                and len(ai_items) <= 1
+                and len(block_texts) > 1
+            )
+            if should_block_split:
+                block_items: list[dict] = []
+                block_slices: list[str] = []
+                for block_text in block_texts:
+                    try:
+                        block_result = ai_extract(block_text, ctx, storage=storage)
+                    except Exception as block_exc:
+                        _logger.warning("raw_id=%d block split ai_extract error: %s", raw_id, block_exc)
+                        continue
+                    block_raw_items = block_result.get("extractions") or ([block_result["extraction"]] if block_result.get("extraction") else [])
+                    for block_item in block_raw_items:
+                        if not isinstance(block_item, dict):
+                            continue
+                        block_items.append(block_item)
+                        block_slices.append(block_text)
+                if len(block_items) > 1:
+                    ai_items = block_items
+                    slice_texts = block_slices
+                    ai_result = {
+                        **ai_result,
+                        "extraction": block_items[0],
+                        "extractions": block_items,
+                        "document": {
+                            **document,
+                            "block_split_extraction": True,
+                            "source_block_count": len(block_texts),
+                        } if isinstance(document, dict) else {
+                            "block_split_extraction": True,
+                            "source_block_count": len(block_texts),
+                        },
+                    }
+                    extraction_source = "ai"
+                    _logger.info(
+                        "raw_id=%d AI block split fallback: %d structured item(s) across %d blocks",
+                        raw_id,
+                        len(ai_items),
+                        len(block_texts),
+                    )
+                else:
+                    slice_texts = _slice_blocks_for_ai_items(msg_text, ai_items)
+            else:
+                slice_texts = _slice_blocks_for_ai_items(msg_text, ai_items)
+            if extraction_source == "ai" and ai_items:
+                parsed_listings = [
+                    _ai_extraction_to_parsed(item, msg_text, sender_name, push_name, slice_text=sl)
+                    for item, sl in zip(ai_items, slice_texts)
+                ]
+                ai_extractions_raw = ai_items
+                _logger.info("raw_id=%d AI extraction: %d structured item(s) via %s", raw_id, len(ai_items), ai_result.get("provider_used"))
                 cache_store(
                     storage,
                     _tenant_for_cache,
@@ -1036,17 +1230,6 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
                     ai_result,
                     provider_used=ai_result.get("provider_used"),
                 )
-            extraction_source = ai_result.get("extraction_source")
-            raw_ai_items = ai_result.get("extractions") or ([ai_result["extraction"]] if ai_result.get("extraction") else [])
-            ai_items = [item for item in raw_ai_items if isinstance(item, dict)]
-            if extraction_source == "ai" and ai_items:
-                slice_texts = _slice_blocks_for_ai_items(msg_text, ai_items)
-                parsed_listings = [
-                    _ai_extraction_to_parsed(item, msg_text, sender_name, push_name, slice_text=sl)
-                    for item, sl in zip(ai_items, slice_texts)
-                ]
-                ai_extractions_raw = ai_items
-                _logger.info("raw_id=%d AI extraction: %d structured item(s) via %s", raw_id, len(ai_items), ai_result.get("provider_used"))
         except Exception as exc:
             _logger.warning("raw_id=%d ai_extract error: %s", raw_id, exc)
 
@@ -1124,6 +1307,39 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
             parsed_listings[idx] = apply_validation(pl, vr)
     except Exception as vexc:
         _logger.warning("raw_id=%d validation error: %s", raw_id, vexc)
+
+    # ── Source grounding guard ────────────────────────────────────
+    # If the structured values do not literally line up with the source text,
+    # keep the row but lower confidence and surface it for review.
+    try:
+        for idx, pl in enumerate(parsed_listings):
+            source_text = msg_text
+            rp = pl.get("raw_payload")
+            if isinstance(rp, dict):
+                source_text = rp.get("slice_text") or rp.get("full_text") or source_text
+            grounding_flags, confidence_override = _apply_source_grounding_guard(pl, source_text)
+            if grounding_flags:
+                existing_flags = list(pl.get("validation_flags") or [])
+                for flag in grounding_flags:
+                    if flag not in existing_flags:
+                        existing_flags.append(flag)
+                pl["validation_flags"] = existing_flags
+                pl["needs_review"] = True
+                if confidence_override is not None:
+                    current_conf = pl.get("confidence")
+                    try:
+                        current_conf = float(current_conf)
+                    except (TypeError, ValueError):
+                        current_conf = 1.0
+                    pl["confidence"] = min(current_conf, confidence_override)
+                _logger.info(
+                    "raw_id=%d grounding flags on item %d: %s",
+                    raw_id,
+                    idx,
+                    ", ".join(grounding_flags),
+                )
+    except Exception as gexc:
+        _logger.warning("raw_id=%d grounding guard error: %s", raw_id, gexc)
 
     # ── Broker attribution ──────────────────────────────────────
     # Only store broker_phone from validated Indian mobile numbers (10-12 digits,
