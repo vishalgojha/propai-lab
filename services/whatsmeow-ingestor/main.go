@@ -309,10 +309,11 @@ type sendMessageRequest struct {
 }
 
 type selfChatAgentRequest struct {
-	BrokerID  string `json:"broker_id"`
-	Text      string `json:"text"`
-	MessageID string `json:"message_id"`
-	SenderJID string `json:"sender_jid"`
+	BrokerID  string        `json:"broker_id"`
+	Text      string        `json:"text"`
+	MessageID string        `json:"message_id"`
+	SenderJID string        `json:"sender_jid"`
+	Media     *inboundMedia `json:"media,omitempty"`
 }
 
 type selfChatAgentResponse struct {
@@ -1078,6 +1079,13 @@ func (sm *SessionManager) handleMessage(s *BrokerSession, evt *events.Message) {
 		// or extraction backlog.
 		log.Printf("[broker %s] group message received chat=%s id=%s from_me=%t", s.brokerID, info.Chat.String(), info.ID, info.IsFromMe)
 	}
+	// Capture live media once. Self-chat receives the same private storage
+	// metadata as normal ingestion, so a photo can become part of a draft
+	// without downloading it twice.
+	var capturedMedia *inboundMedia
+	if evt.Message != nil {
+		capturedMedia = sm.captureMedia(s, evt.Message, info.Chat.String(), info.ID, true)
+	}
 	// Self-chat commands go to the AI agent, but we still forward the message.
 	// Check every message (not just IsFromMe) so phone-sent self-messages
 	// (from_me=false on the web) also trigger the agent.
@@ -1085,7 +1093,7 @@ func (sm *SessionManager) handleMessage(s *BrokerSession, evt *events.Message) {
 		// Never let a slow AI/database request block Whatsmeow's event loop.
 		// The raw self-message continues through normal ingestion below.
 		log.Printf("[broker %s] self-chat command received chat=%s id=%s from_me=%t", s.brokerID, target.String(), info.ID, info.IsFromMe)
-		go sm.handleSelfChatCommand(s, target, info.ID, text)
+		go sm.handleSelfChatCommand(s, target, info.ID, text, capturedMedia)
 	}
 
 	s.totalMessages++
@@ -1141,8 +1149,8 @@ func (sm *SessionManager) handleMessage(s *BrokerSession, evt *events.Message) {
 		s.lastSeenByType[msgType] = seenAt
 		s.mu.Unlock()
 	}
-	if media := sm.captureMedia(s, evt.Message, info.Chat.String(), info.ID, true); media != nil {
-		payloadData["media"] = media
+	if capturedMedia != nil {
+		payloadData["media"] = capturedMedia
 	}
 	// Attach rich structured data for non-text message types
 	if loc := extractLocation(evt.Message); loc != nil {
@@ -1489,7 +1497,7 @@ func extractPoll(msg *waE2E.Message) map[string]interface{} {
 	return nil
 }
 
-func (sm *SessionManager) handleSelfChatCommand(s *BrokerSession, target types.JID, messageID, text string) {
+func (sm *SessionManager) handleSelfChatCommand(s *BrokerSession, target types.JID, messageID, text string, media *inboundMedia) {
 	// Send the typing indicator. We'll refresh it periodically while the
 	// Python agent streams so the user keeps seeing "typing…" until the
 	// last chunk lands. (WhatsApp clients auto-clear after ~10s otherwise.)
@@ -1519,6 +1527,7 @@ func (sm *SessionManager) handleSelfChatCommand(s *BrokerSession, target types.J
 		Text:      text,
 		MessageID: string(messageID),
 		SenderJID: target.String(),
+		Media:     media,
 	})
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Second)
 	defer cancel()

@@ -1,6 +1,9 @@
 "use client";
 
-import { Building2, Layers3, MapPin, MessageSquare, Ruler, UserRound } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Building2, Camera, Layers3, MapPin, MessageSquare, Ruler, UserRound, X } from "lucide-react";
+import { fetchJSON } from "@/lib/api";
+import { getAccessToken } from "@/lib/auth";
 
 export interface ListingItem {
   listing_id?: number;
@@ -31,6 +34,8 @@ export interface ListingItem {
   match_reasons?: string[];
   sender_phone?: string;
   source?: string;
+  photo_count?: number;
+  has_images?: boolean;
 }
 
 function relativeTime(text: string): string {
@@ -129,6 +134,10 @@ export default function ListingCard({
   contacting?: boolean;
   compact?: boolean;
 }) {
+  const [galleryOpen, setGalleryOpen] = useState(false);
+  const [photos, setPhotos] = useState<Array<{ id: number; url: string; caption?: string }>>([]);
+  const [photoError, setPhotoError] = useState("");
+  const [loadingPhotos, setLoadingPhotos] = useState(false);
   const intent = (item.intent || "").toUpperCase();
   const isWanted = intent === "REQUIREMENT" || intent === "BUY" || intent === "BUYER" || intent === "RENTAL_SEEKER";
   const isSale = intent === "SELL" || intent === "SALE";
@@ -147,6 +156,39 @@ export default function ListingCard({
   const brokerPhone = (item.broker_phone || "").trim();
   const brokerLabel = item.broker_name || "Broker";
   const waLink = buildPrefilledWhatsAppLink(item);
+
+  useEffect(() => () => {
+    photos.forEach((photo) => {
+      if (photo.url.startsWith("blob:")) URL.revokeObjectURL(photo.url);
+    });
+  }, [photos]);
+
+  async function openGallery() {
+    if (!item.listing_id) return;
+    setGalleryOpen(true);
+    if (photos.length || loadingPhotos) return;
+    setLoadingPhotos(true);
+    setPhotoError("");
+    try {
+      const metadata = await fetchJSON<Array<{ id: number; url: string; caption?: string }>>(
+        `/listings/${item.listing_id}/photos`,
+      );
+      const token = await getAccessToken();
+      const resolved = await Promise.all((metadata || []).map(async (photo) => {
+        const response = await fetch(photo.url, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+          cache: "no-store",
+        });
+        if (!response.ok) throw new Error("photo request failed");
+        return { ...photo, url: URL.createObjectURL(await response.blob()) };
+      }));
+      setPhotos(resolved);
+    } catch {
+      setPhotoError("Photos are temporarily unavailable.");
+    } finally {
+      setLoadingPhotos(false);
+    }
+  }
 
   return (
     <div className={`${cardClass} h-full overflow-hidden ${compact ? "text-[12px]" : ""}`}>
@@ -182,6 +224,11 @@ export default function ListingCard({
         <div>
           {item.broker_name && (
             <div className="broker inline-flex items-center gap-1"><UserRound className="h-3 w-3 text-zinc-500" /><b>{item.broker_name}</b></div>
+          )}
+          {item.has_images && (
+            <button type="button" onClick={openGallery} className="mt-1 inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-300 hover:text-emerald-200">
+              <Camera className="h-3 w-3" /> Images available ({item.photo_count})
+            </button>
           )}
           <div className="meta">
             {sourceSummary}{item.last_seen_text && ` · Active ${relativeTime(item.last_seen_text)}`}
@@ -244,6 +291,20 @@ export default function ListingCard({
           )}
         </div>
       </div>
+      {galleryOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4" onClick={() => setGalleryOpen(false)}>
+          <div className="relative max-h-[90vh] w-full max-w-4xl rounded-xl border border-white/10 bg-zinc-950 p-4" onClick={(event) => event.stopPropagation()}>
+            <button type="button" onClick={() => setGalleryOpen(false)} className="absolute right-3 top-3 rounded-full bg-black/70 p-2 text-zinc-200 hover:text-white" aria-label="Close gallery"><X className="h-4 w-4" /></button>
+            <div className="mb-3 pr-10 text-sm font-semibold text-white">Property images</div>
+            {loadingPhotos && <div className="py-16 text-center text-sm text-zinc-400">Loading images…</div>}
+            {photoError && <div className="py-16 text-center text-sm text-amber-300">{photoError}</div>}
+            {!loadingPhotos && !photoError && photos.length === 0 && <div className="py-16 text-center text-sm text-zinc-400">No images are attached yet.</div>}
+            <div className="grid max-h-[78vh] grid-cols-1 gap-3 overflow-auto sm:grid-cols-2">
+              {photos.map((photo) => <figure key={photo.id} className="overflow-hidden rounded-lg border border-white/10 bg-black"><img src={photo.url} alt={photo.caption || "Property photo"} className="h-auto max-h-[60vh] w-full object-contain" />{photo.caption && <figcaption className="p-2 text-xs text-zinc-400">{photo.caption}</figcaption>}</figure>)}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

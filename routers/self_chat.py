@@ -38,6 +38,7 @@ class InternalSelfChatRequest(BaseModel):
     text: str
     message_id: str = ""
     sender_jid: str = ""
+    media: list[dict] = []
 
 
 # ── Self-chat constants ───────────────────────────────────────────
@@ -45,6 +46,7 @@ class InternalSelfChatRequest(BaseModel):
 _SELF_CHAT_BULLET = "\u2022 "
 _SELF_CHAT_MAX_BULLETS = 3
 _SELF_CHAT_MAX_CHARS = 420
+_SELF_CHAT_MAX_IMAGES = 12
 
 _CASUAL_CHAT_SIGNAL = re.compile(
     r"^\s*(hi|hello|hey|hiya|yo|hola|good\s*(morning|afternoon|evening)|"
@@ -396,6 +398,87 @@ def _self_chat_error_reply(error: str) -> str:
     return "PropAI- • I couldn't answer that just now. Please try again in a moment."
 
 
+async def _save_self_chat_media(tenant_id: str, broker_id: str, broker_phone: str,
+                                message_id: str, media: list[dict]) -> tuple[int, int]:
+    """Persist uploaded self-chat images as a tenant-scoped listing draft.
+
+    The WhatsApp transport has already uploaded the bytes to private storage;
+    this method stores only metadata and never exposes the bucket publicly.
+    """
+    images = [item for item in (media or [])
+              if isinstance(item, dict)
+              and str(item.get("kind") or "").lower() == "image"
+              and str(item.get("storage_path") or "").strip()]
+    if not images:
+        return 0, 0
+    draft = await asyncio.to_thread(
+        storage.get_or_create_listing_media_draft,
+        tenant_id, broker_phone, f"whatsmeow:{broker_id}",
+    )
+    if not draft:
+        raise RuntimeError("listing media draft could not be created")
+    if str(draft.get("status") or "") in {"discarded", "published"}:
+        await asyncio.to_thread(storage.reset_listing_media_draft, int(draft["id"]), tenant_id)
+        draft = await asyncio.to_thread(
+            storage.get_or_create_listing_media_draft,
+            tenant_id, broker_phone, f"whatsmeow:{broker_id}",
+        )
+    existing = await asyncio.to_thread(
+        storage.get_listing_media_draft_items, int(draft["id"]), tenant_id
+    )
+    remaining = max(0, _SELF_CHAT_MAX_IMAGES - len(existing))
+    added = 0
+    for item in images[:remaining]:
+        saved = await asyncio.to_thread(
+            storage.add_listing_media_draft_item,
+            int(draft["id"]), tenant_id, str(item["storage_path"]),
+            str(item.get("media_id") or ""), str(item.get("file_name") or ""),
+            str(item.get("mime_type") or "image/jpeg"), int(item.get("file_length") or 0) or None,
+            str(item.get("caption") or ""), message_id,
+        )
+        added += 1 if saved else 0
+    return len(existing) + added, added
+
+
+async def _self_chat_media_command(tenant_id: str, broker_id: str, broker_phone: str,
+                                   text: str) -> str | None:
+    lower = (text or "").strip().lower()
+    if not re.search(r"\b(review|preview|show|post|publish|list|discard|cancel)\b", lower):
+        return None
+    draft = await asyncio.to_thread(
+        storage.get_or_create_listing_media_draft,
+        tenant_id, broker_phone, f"whatsmeow:{broker_id}",
+    )
+    if not draft:
+        return None
+    items = await asyncio.to_thread(
+        storage.get_listing_media_draft_items, int(draft["id"]), tenant_id
+    )
+    if not items:
+        return None
+    if re.search(r"\b(discard|cancel)\b", lower):
+        await asyncio.to_thread(storage.update_listing_media_draft, int(draft["id"]), tenant_id, status="discarded")
+        return "PropAI- • Photo draft discarded."
+    if re.search(r"\b(post|publish|list)\b", lower) and re.search(r"\b(yes|confirm|post|publish|list)\b", lower):
+        attached = await asyncio.to_thread(
+            storage.attach_listing_media_draft, int(draft["id"]), tenant_id
+        )
+        refreshed = await asyncio.to_thread(
+            storage.get_or_create_listing_media_draft,
+            tenant_id, broker_phone, f"whatsmeow:{broker_id}",
+        )
+        if refreshed:
+            draft = refreshed
+        if not draft.get("listing_id"):
+            return (f"PropAI- • I have {len(items)} photo(s) ready, but the property details are not linked to a parsed listing yet. "
+                    "Send the property details first, then say ‘post it’ after I show the preview.")
+        await asyncio.to_thread(storage.update_listing_media_draft, int(draft["id"]), tenant_id, status="published")
+        return f"PropAI- • Confirmed. I attached {attached or len(items)} photo(s) to the listing."
+    await asyncio.to_thread(storage.update_listing_media_draft, int(draft["id"]), tenant_id, status="awaiting_confirmation")
+    return (f"PropAI- • Preview ready: {len(items)} photo(s) attached to this property draft. "
+            "Send ‘post it’ to confirm, or ‘discard’ to remove the draft.")
+
+
 async def _persist_quick_self_chat_turn(
     text: str,
     reply: str,
@@ -442,7 +525,7 @@ async def _self_chat_ndjson(
     text: str,
     broker_id: str,
     casual: bool,
-    search_like: bool,
+    search_like: bool = False,
     tenant_id: str | None = None,
     identity: dict | None = None,
 ):
@@ -533,6 +616,22 @@ async def internal_self_chat(req: InternalSelfChatRequest, request: Request):
         raise HTTPException(500, "WhatsApp connection has no organization_id")
     set_tenant_id(org_id)
     identity = await _load_self_chat_identity(connection, org_id)
+    broker_phone = re.sub(r"\D+", "", str(connection.get("phone_number") or ""))[-10:]
+    if req.media:
+        try:
+            count, added = await _save_self_chat_media(
+                org_id, req.broker_id, broker_phone, req.message_id, req.media
+            )
+            if added:
+                return {"reply": f"PropAI- • Photo received ({count}/{_SELF_CHAT_MAX_IMAGES}). Send more photos or say ‘review listing’."}
+        except Exception:
+            _logger.exception("self-chat media draft save failed")
+            return {"reply": _self_chat_error_reply("media_draft_error")}
+
+    media_command = await _self_chat_media_command(org_id, req.broker_id, broker_phone, text)
+    if media_command:
+        return {"reply": media_command}
+
     casual = _is_casual_self_chat(text)
     search_like = _is_explicit_self_chat_search(text)
     wants_stream = casual or (not search_like and _stream_self_chat_enabled())

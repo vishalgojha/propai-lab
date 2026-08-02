@@ -10,6 +10,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
 import { type ListingItem } from "@/components/ListingCard";
+import ListingGalleryButton from "@/components/ListingGalleryButton";
 import { useAuth } from "@/lib/AuthProvider";
 import { Check, Pencil, Plus, MessageSquare, Trash2, PanelLeft, PanelLeftClose, X } from "lucide-react";
 
@@ -1193,7 +1194,7 @@ export default function ChatPage() {
                                     <table className="min-w-full text-left text-xs">
                                       <thead className="bg-white/[0.05] text-zinc-300">
                                         <tr>
-                                          {['Building', 'Locality', 'Type', 'Rent/Sale', 'Carpet', 'Furnishing', 'Broker', 'Last seen', 'WhatsApp', 'Actions'].map((label) => (
+                                          {['Building', 'Locality', 'Type', 'Rent/Sale', 'Carpet', 'Furnishing', 'Broker', 'Last seen', 'Images', 'WhatsApp', 'Actions'].map((label) => (
                                             <th key={label} className="whitespace-nowrap px-3 py-2 font-semibold">{label}</th>
                                           ))}
                                         </tr>
@@ -1212,6 +1213,7 @@ export default function ChatPage() {
                                               <td className="px-3 py-2 whitespace-nowrap">{item.furnishing || '—'}</td>
                                               <td className="px-3 py-2 whitespace-nowrap">{item.broker_name || '—'}</td>
                                               <td className="px-3 py-2 whitespace-nowrap">{item.last_seen_text || item.last_seen || '—'}</td>
+                                              <td className="px-3 py-2 whitespace-nowrap"><ListingGalleryButton listingId={item.listing_id} count={item.photo_count} /></td>
                                               <td className="px-3 py-2 whitespace-nowrap">
                                                 {whatsapp ? <a href={whatsapp} target="_blank" rel="noreferrer" className="text-emerald-300 underline">Open Chat</a> : '—'}
                                               </td>
