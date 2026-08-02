@@ -1482,8 +1482,6 @@ async def webhook(request: Request):
         "msg": msg, "tenant_id": resolved_tenant_id}
     if not _schedule_raw_extraction(raw_id, extraction_ctx):
         _retry_schedule_raw_extraction(raw_id, extraction_ctx)
-    if sender_jid and "@s.whatsapp.net" in sender_jid:
-        asyncio.create_task(_maybe_fetch_profile_picture(sender_jid, webhook_broker_id, resolved_tenant_id))
     return {"status": "ok", "raw_id": raw_id, "message": "saved"}
 
 @router.post("/ingest")

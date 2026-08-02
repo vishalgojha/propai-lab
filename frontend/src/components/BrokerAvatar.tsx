@@ -1,10 +1,8 @@
 "use client";
 
-import { useProfilePicture } from "@/lib/useProfilePicture";
 import { User } from "lucide-react";
 
 export default function BrokerAvatar({
-  phone,
   size = "md",
   className = "",
 }: {
@@ -12,9 +10,6 @@ export default function BrokerAvatar({
   size?: "sm" | "md" | "lg";
   className?: string;
 }) {
-  const jid = phone ? `${phone}@s.whatsapp.net` : "";
-  const { url } = useProfilePicture(jid);
-
   const sizeClasses = {
     sm: "h-6 w-6",
     md: "h-9 w-9",
@@ -27,11 +22,7 @@ export default function BrokerAvatar({
     <div
       className={`${sizeClasses} rounded-full border border-white/10 bg-white/[0.035] text-zinc-300 flex items-center justify-center overflow-hidden shrink-0 ${className}`}
     >
-      {url ? (
-        <img src={url} alt="" className="h-full w-full object-cover" />
-      ) : (
-        <User className={iconSize} strokeWidth={1.5} />
-      )}
+      <User className={iconSize} strokeWidth={1.5} />
     </div>
   );
 }
