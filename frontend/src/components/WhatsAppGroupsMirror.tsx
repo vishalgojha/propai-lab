@@ -279,6 +279,12 @@ export default function WhatsAppGroupsMirror() {
     try {
       const directory = await api.getWhatsAppConversations("group");
       const liveGroups = directory
+        .map((group) => ({
+          ...group,
+          conversation_type: group?.conversation_type || group?.type,
+          conversation_jid: group?.conversation_jid || group?.jid || group?.id,
+          display_name: group?.display_name || group?.conversation_name || group?.name,
+        }))
         .filter((group) => group?.conversation_type === "group" && String(group?.conversation_jid || "").endsWith("@g.us"))
         .sort((a, b) => String(b.last_message_at || "").localeCompare(String(a.last_message_at || "")));
       setGroups(liveGroups);
