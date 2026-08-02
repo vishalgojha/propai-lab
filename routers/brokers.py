@@ -1,6 +1,7 @@
 """
 Broker routes — list, summary, feed, find, profile, share-card, hide/unhide, shared card view.
 """
+import asyncio
 import hashlib
 import json
 import re
@@ -26,79 +27,129 @@ async def list_brokers(user: dict = Depends(require_user)):
         FROM brokers
         ORDER BY observation_count DESC, last_seen_at DESC
     """).fetchall()
+    if not rows:
+        return []
+    ids = [row["id"] for row in rows]
+    placeholders = ",".join("?" for _ in ids)
+    top_n = {
+        "aliases": 8,
+        "phones": 5,
+        "markets": 5,
+        "buildings": 5,
+        "observations": 8,
+        "groups": 5,
+    }
+
+    def _batch(sql: str, params: list[int], n: int):
+        # Rows are globally ordered by the same sort key as the original
+        # per-broker query, so the first `n` rows per broker are its top-N.
+        return storage.db.execute(f"{sql} LIMIT {len(params) * n}", params).fetchall()
+
+    # Single batched query per table (6 total, run in parallel) instead of
+    # one query per broker per table (6N+1 sequential round-trips).
+    aliases_rows, phones_rows, markets_rows, buildings_rows, obs_rows, groups_rows = await asyncio.gather(
+        asyncio.to_thread(_batch, f"""
+            SELECT broker_id, alias, observation_count
+            FROM broker_aliases
+            WHERE broker_id IN ({placeholders})
+            ORDER BY observation_count DESC
+        """, ids, top_n["aliases"]),
+        asyncio.to_thread(_batch, f"""
+            SELECT broker_id, phone, observation_count
+            FROM broker_phones
+            WHERE broker_id IN ({placeholders})
+            ORDER BY observation_count DESC
+        """, ids, top_n["phones"]),
+        asyncio.to_thread(_batch, f"""
+            SELECT broker_id, micro_market, observation_count, listing_count, requirement_count
+            FROM broker_market_stats
+            WHERE broker_id IN ({placeholders})
+            ORDER BY observation_count DESC, last_seen_at DESC
+        """, ids, top_n["markets"]),
+        asyncio.to_thread(_batch, f"""
+            SELECT broker_id, building_name, observation_count, listing_count, requirement_count
+            FROM broker_building_stats
+            WHERE broker_id IN ({placeholders})
+            ORDER BY observation_count DESC, last_seen_at DESC
+        """, ids, top_n["buildings"]),
+        asyncio.to_thread(_batch, f"""
+            SELECT bo.broker_id, p.intent, p.message_type, p.bhk, p.furnishing,
+                   p.building_name, p.micro_market, p.location_raw,
+                   p.summary_title, substr(r.message, 1, 220) AS message
+            FROM broker_observations bo
+            JOIN parsed_output p ON p.id = bo.parsed_id
+            LEFT JOIN raw_messages r ON r.id = p.raw_message_id
+            WHERE bo.broker_id IN ({placeholders})
+            ORDER BY bo.seen_at DESC
+        """, ids, top_n["observations"]),
+        asyncio.to_thread(_batch, f"""
+            SELECT broker_id, group_name,
+                   COUNT(*) AS observation_count,
+                   SUM(CASE WHEN role = 'listing' THEN 1 ELSE 0 END) AS listing_count,
+                   SUM(CASE WHEN role = 'requirement' THEN 1 ELSE 0 END) AS requirement_count,
+                   MAX(seen_at) AS last_seen_at
+            FROM broker_observations
+            WHERE broker_id IN ({placeholders}) AND group_name IS NOT NULL AND group_name != ''
+            GROUP BY broker_id, group_name
+            ORDER BY observation_count DESC, last_seen_at DESC
+        """, ids, top_n["groups"]),
+    )
+
+    def _group_top_n(rows, n):
+        grouped: dict[int, list[dict]] = {}
+        counts: dict[int, int] = {}
+        for r in rows:
+            broker_id = r["broker_id"]
+            if counts.get(broker_id, 0) >= n:
+                continue
+            item = dict(r)
+            item.pop("broker_id", None)
+            grouped.setdefault(broker_id, []).append(item)
+            counts[broker_id] = counts.get(broker_id, 0) + 1
+        return grouped
+
+    aliases_by_broker = _group_top_n(aliases_rows, top_n["aliases"])
+    phones_by_broker = _group_top_n(phones_rows, top_n["phones"])
+    markets_by_broker = _group_top_n(markets_rows, top_n["markets"])
+    buildings_by_broker = _group_top_n(buildings_rows, top_n["buildings"])
+    obs_by_broker = _group_top_n(obs_rows, top_n["observations"])
+    groups_by_broker = _group_top_n(groups_rows, top_n["groups"])
+    # Resolve group JIDs to display names with a single batched lookup
+    # instead of one sync_jobs query per group.
+    group_jids = {item["group_name"] for items in groups_by_broker.values() for item in items}
+    jid_to_name: dict[str, str] = {}
+    if group_jids:
+        gid_placeholders = ",".join("?" for _ in group_jids)
+        try:
+            for row in storage.db.execute(
+                f"SELECT group_jid, group_name FROM sync_jobs WHERE group_jid IN ({gid_placeholders})",
+                list(group_jids),
+            ).fetchall():
+                jid_to_name[row["group_jid"]] = row["group_name"]
+        except Exception:
+            pass
+    groups_by_broker = {
+        bid: [
+            {
+                **item,
+                "group_name": jid_to_name.get(item["group_name"])
+                or (item["group_name"].split("@")[0] if "@" in item["group_name"] else item["group_name"]),
+            }
+            for item in items
+        ]
+        for bid, items in groups_by_broker.items()
+    }
+
     brokers = []
     for row in rows:
         broker = dict(row)
-        broker["aliases"] = [
-            dict(r) for r in storage.db.execute("""
-                SELECT alias, observation_count
-                FROM broker_aliases
-                WHERE broker_id = ?
-                ORDER BY observation_count DESC
-                LIMIT 8
-            """, (broker["id"],)).fetchall()
-        ]
-        broker["phones"] = [
-            dict(r) for r in storage.db.execute("""
-                SELECT phone, observation_count
-                FROM broker_phones
-                WHERE broker_id = ?
-                ORDER BY observation_count DESC
-                LIMIT 5
-            """, (broker["id"],)).fetchall()
-        ]
-        broker["markets"] = [
-            dict(r) for r in storage.db.execute("""
-                SELECT micro_market, observation_count, listing_count, requirement_count
-                FROM broker_market_stats
-                WHERE broker_id = ?
-                ORDER BY observation_count DESC, last_seen_at DESC
-                LIMIT 5
-            """, (broker["id"],)).fetchall()
-        ]
-        broker["buildings"] = [
-            dict(r) for r in storage.db.execute("""
-                SELECT building_name, observation_count, listing_count, requirement_count
-                FROM broker_building_stats
-                WHERE broker_id = ?
-                ORDER BY observation_count DESC, last_seen_at DESC
-                LIMIT 5
-            """, (broker["id"],)).fetchall()
-        ]
-        broker["recent_observations"] = [
-            dict(r) for r in storage.db.execute("""
-                SELECT p.intent, p.message_type, p.bhk, p.furnishing,
-                       p.building_name, p.micro_market, p.location_raw,
-                       p.summary_title, substr(r.message, 1, 220) AS message
-                FROM broker_observations bo
-                JOIN parsed_output p ON p.id = bo.parsed_id
-                LEFT JOIN raw_messages r ON r.id = p.raw_message_id
-                WHERE bo.broker_id = ?
-                ORDER BY bo.seen_at DESC
-                LIMIT 8
-            """, (broker["id"],)).fetchall()
-        ]
-        broker["groups"] = [
-            {
-                "group_name": _group_jid_to_name(r["group_name"]),
-                "observation_count": r["observation_count"],
-                "listing_count": r["listing_count"],
-                "requirement_count": r["requirement_count"],
-                "last_seen_at": r["last_seen_at"],
-            }
-            for r in storage.db.execute("""
-                SELECT group_name,
-                       COUNT(*) AS observation_count,
-                       SUM(CASE WHEN role = 'listing' THEN 1 ELSE 0 END) AS listing_count,
-                       SUM(CASE WHEN role = 'requirement' THEN 1 ELSE 0 END) AS requirement_count,
-                       MAX(seen_at) AS last_seen_at
-                FROM broker_observations
-                WHERE broker_id = ? AND group_name IS NOT NULL AND group_name != ''
-                GROUP BY group_name
-                ORDER BY observation_count DESC, last_seen_at DESC
-                LIMIT 5
-            """, (broker["id"],)).fetchall()
-        ]
+        broker_id = broker["id"]
+        broker["aliases"] = aliases_by_broker.get(broker_id, [])
+        broker["phones"] = phones_by_broker.get(broker_id, [])
+        broker["markets"] = markets_by_broker.get(broker_id, [])
+        broker["buildings"] = buildings_by_broker.get(broker_id, [])
+        broker["recent_observations"] = obs_by_broker.get(broker_id, [])
+        broker["groups"] = groups_by_broker.get(broker_id, [])
         search_parts = [
             broker.get("name"),
             broker.get("phone"),
