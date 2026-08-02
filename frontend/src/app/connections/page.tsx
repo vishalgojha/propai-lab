@@ -992,7 +992,10 @@ export default function ConnectionCenterPage() {
 
   const fetchPhones = useCallback(async () => {
     try {
-      const response = await getPhones(true, 15000);
+      // The live ingestor merge can stall under load and shouldn't block the
+      // management UI. Fetch the durable phone records first; live status is
+      // polled separately.
+      const response = await getPhones(false, 8000);
       const nextPhones = response.phones || [];
       setPhones(nextPhones);
       if (user?.id) {
