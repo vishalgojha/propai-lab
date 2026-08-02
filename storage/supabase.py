@@ -1534,6 +1534,28 @@ class SupabaseStorage(Storage):
             .order("id", desc=False).limit(limit).execute()
         return [dict_to_dataclass(RawMessage, d) for d in res.data]
 
+    def get_unprocessed_raw_messages_since(self, cutoff: str, limit: int = 100) -> list[RawMessage]:
+        """Return the unprocessed recent lane in message-time FIFO order."""
+        res = self.client.table("raw_messages").select("*") \
+            .eq("processed", False) \
+            .gte("timestamp", cutoff) \
+            .order("id", desc=False) \
+            .limit(limit).execute()
+        return [dict_to_dataclass(RawMessage, d) for d in res.data]
+
+    def get_unprocessed_raw_messages_before(self, cutoff: str, limit: int = 100) -> list[RawMessage]:
+        """Return the unprocessed historical lane in message-time FIFO order.
+
+        Legacy rows with a null timestamp are included in the backlog so they
+        cannot be stranded by the two-lane cutoff.
+        """
+        res = self.client.table("raw_messages").select("*") \
+            .eq("processed", False) \
+            .or_(f"timestamp.lt.{cutoff},timestamp.is.null") \
+            .order("id", desc=False) \
+            .limit(limit).execute()
+        return [dict_to_dataclass(RawMessage, d) for d in res.data]
+
     def mark_raw_processed(self, raw_id: int):
         now = datetime.now(timezone.utc).isoformat()
         self.client.table("raw_messages").update({
