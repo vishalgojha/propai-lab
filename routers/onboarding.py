@@ -628,11 +628,14 @@ async def group_cap(
     user: dict = Depends(require_user),
     tenant_id: str | None = Depends(get_tenant_context),
 ):
-    org_id = _resolve_active_organization_id(user, tenant_id)
-    await _require_org_permission(user, org_id, "manage_whatsapp")
+    org_id = "unknown"
     try:
+        org_id = _resolve_active_organization_id(user, tenant_id)
+        await _require_org_permission(user, org_id, "manage_whatsapp")
         _connection(org_id, whatsapp_connection_id)
         return _cap_state(org_id, whatsapp_connection_id)
+    except HTTPException:
+        raise
     except Exception:
         _logger.exception("group_cap failed for org=%s connection=%s", org_id, whatsapp_connection_id)
         return {
@@ -652,11 +655,14 @@ async def onboarding_groups(
     user: dict = Depends(require_user),
     tenant_id: str | None = Depends(get_tenant_context),
 ):
-    org_id = _resolve_active_organization_id(user, tenant_id)
-    await _require_org_permission(user, org_id, "manage_whatsapp")
+    org_id = "unknown"
     try:
+        org_id = _resolve_active_organization_id(user, tenant_id)
+        await _require_org_permission(user, org_id, "manage_whatsapp")
         connection = _connection(org_id, whatsapp_connection_id)
         return {"groups": _group_directory(org_id, str(connection.get("broker_id") or ""), whatsapp_connection_id), **_cap_state(org_id, whatsapp_connection_id)}
+    except HTTPException:
+        raise
     except Exception:
         _logger.exception("onboarding_groups failed for org=%s connection=%s", org_id, whatsapp_connection_id)
         return {
