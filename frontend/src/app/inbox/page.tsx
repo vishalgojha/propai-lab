@@ -2109,10 +2109,9 @@ return {
     const digits = normalizeRealPhone(phone);
     if (!digits) return "#";
     const normalized = `91${digits}`;
-    // The WhatsApp action is a prefilled copy of the original post. Do not
-    // truncate it or add a "Recall:" command: the raw post itself is what
-    // the broker needs to send back to the contact.
-    const recallMessage = extractedText.trim() || "Hi, I saw this post on PropAI Live.";
+    const cleanText = extractedText.trim();
+    if (!cleanText) return getWaLink(phone);
+    const recallMessage = `Hi, I found this on PropAI Live:\n\n${cleanText}\n\nIs this still available?`;
     const safe = recallMessage.replace(/[\uD800-\uDFFF]/g, "");
     try {
       return `https://wa.me/${normalized}?text=${encodeURIComponent(recallMessage)}`;

@@ -247,7 +247,9 @@ function messagePhone(message: api.RawMessage) {
 function whatsappRecallLink(message: api.RawMessage, text: string) {
   const phone = messagePhone(message);
   if (!phone) return "";
-  const prefilled = text.trim() || "Hi, I saw this post on PropAI Live.";
+  const cleanText = text.trim();
+  if (!cleanText) return "";
+  const prefilled = `Hi, I found this on PropAI Live:\n\n${cleanText}\n\nIs this still available?`;
   return `https://wa.me/${phone}?text=${encodeURIComponent(prefilled)}`;
 }
 
@@ -387,7 +389,7 @@ export default function WhatsAppGroupsMirror() {
     message,
     attachment: attachmentFromMessage(message),
     text: displayMessageText(message),
-  })), [messages]);
+  })).filter(({ text }) => Boolean(text)), [messages]);
 
   const send = async (event: FormEvent) => {
     event.preventDefault();
@@ -509,12 +511,12 @@ export default function WhatsAppGroupsMirror() {
                   {loadingOlder ? "Loading older messages…" : "Load older messages"}
                 </button>
               )}
-              {loadingMessages && messages.length === 0 ? <p className="text-sm text-zinc-500">Loading messages…</p> : messages.length === 0 ? <p className="text-sm text-zinc-500">No captured messages in this group yet.</p> : messageViews.map(({ message, attachment, text }) => {
+              {loadingMessages && messages.length === 0 ? <p className="text-sm text-zinc-500">Loading messages…</p> : messageViews.length === 0 ? <p className="text-sm text-zinc-500">No text posts captured in this group yet.</p> : messageViews.map(({ message, attachment, text }) => {
                 const fromMe = isFromCurrentPhone(message);
                 const sender = fromMe ? "You" : senderLabel(message, { ...memberNames, ...messageNames });
                 const senderClickable = !fromMe && Boolean(senderSearchValue(message, memberNames, messageNames));
                 const kind = attachment?.kind || message.message_type || "text";
-                const body = text || (attachment ? kindLabel(kind) : "No text captured");
+                const body = text;
                 const recallLink = whatsappRecallLink(message, text);
                 return <div key={message.message_uid || message.id} className={`flex ${fromMe ? "justify-end" : "justify-start"}`}>
                   <div className={`w-full max-w-[min(900px,86%)] rounded-2xl border px-4 py-3 text-sm shadow-sm ${fromMe ? "border-emerald-400/30 bg-emerald-400/[0.08] text-zinc-100" : "border-white/10 bg-white/[0.03] text-zinc-100"}`}>
