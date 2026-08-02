@@ -7,6 +7,7 @@
   "main": "dist/server.js",
   "scripts": {
     "build": "tsc",
+    "test": "node --loader ts-node/esm --test src/*.test.ts",
     "start": "node dist/server.js",
     "dev": "node --loader ts-node/esm src/server.ts",
     "stdio": "node dist/stdio.js",

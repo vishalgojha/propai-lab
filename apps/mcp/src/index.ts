@@ -24,6 +24,7 @@ import {
   findBrokers,
   searchPublicListings,
   summarizeThread,
+  toMarketSearchRow,
 } from "./data.ts";
 import { formatCurrencyCr, formatPerSqft, formatSqft, listingLine } from "./format.ts";
 import { registerMcpPrompts } from "./prompts.ts";
@@ -747,7 +748,10 @@ export function createMcpServer(context: ToolContext = {}) {
     const items = Array.isArray(result.results) ? result.results : [];
     const intent = String(result.intent || "");
     const searchResults = items.map((r: unknown, index: number) => {
-      const row = r as Record<string, unknown>;
+      const originalRow = r as Record<string, unknown>;
+      const row = originalRow.listing_type
+        ? { ...originalRow, ...toMarketSearchRow(originalRow as any) }
+        : originalRow;
       let resultId: string;
       let title: string;
 
@@ -783,7 +787,10 @@ export function createMcpServer(context: ToolContext = {}) {
       // Optional URL - only include if we have a real public URL
       // Currently no public listing pages exist, so omit url
 
-      return { id: resultId, title };
+      // Keep the OpenAI-compatible id/title, but do not discard the actual
+      // listing row. MCP clients that do not call fetch() still receive the
+      // canonical fields returned by market_search.
+      return { ...row, id: resultId, title };
     });
 
     // Return both structuredContent and content for client display

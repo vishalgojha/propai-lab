@@ -35,9 +35,10 @@ type MarketSearchResult = {
   suggestedFollowUps: string[];
 };
 
-const LOCALITY_PATTERN = /(?:in|at|near|around)\s+([A-Za-z\s]+?)(?:\s+(?:mumbai|pune|thane|navi\s*mumbai|delhi|bangalore|hyderabad|chennai|kolkata|ahmedabad|surat|jaipur|lucknow|noida|gurgaon|goa))?(?:\s*(?:,|\||$|for|under|above|below|within|\d|bhd|bhk))/i;
+const LOCALITY_PATTERN = /(?:in|at|near|around)\s+([A-Za-z][A-Za-z\s]*?)(?=\s+(?:between|from|under|below|upto|up\s+to|above|over|within|for\s+(?:sale|rent|lease)|(?:sale|rent|lease)\b)|\s*(?:,|\||$|\d|bhd|bhk))/i;
 const CITY_PATTERN = /\b(mumbai|pune|thane|navi\s*mumbai|delhi|bangalore|hyderabad|chennai|kolkata|ahmedabad|surat|jaipur|lucknow|noida|gurgaon|goa)\b/i;
 const BHK_PATTERN = /(\d+(?:\.\d+)?)\s*(bhd|bhk|rk|bed(?:room)?s?)\b/i;
+const BETWEEN_PRICE_PATTERN = /\bbetween\s*(?:₹?\s*)?(\d+(?:\.\d+)?)\s*(cr|crore|crores|lakh|lakhs|lac|lacs|k|thousand)?\s*(?:to|-|–)\s*(?:₹?\s*)?(\d+(?:\.\d+)?)\s*(cr|crore|crores|lakh|lakhs|lac|lacs|k|thousand)?/i;
 const PRICE_RANGE_PATTERN = /(?:under|below|upto|less\s*than|within|max)\s*(?:₹?\s*)?(\d+(?:\.\d+)?)\s*(cr|crore|crores|lakh|lakhs|k|thousand)?|(?:above|over|more\s*than|min|from)\s*(?:₹?\s*)?(\d+(?:\.\d+)?)\s*(cr|crore|crores|lakh|lakhs|k|thousand)?|(?:₹?\s*)?(\d+(?:\.\d+)?)\s*(cr|crore|crores|lakh|lakhs|k|thousand)?\s*(?:to|-|–)\s*(?:₹?\s*)?(\d+(?:\.\d+)?)\s*(cr|crore|crores|lakh|lakhs|k|thousand)?/gi;
 const DEAL_TYPE_PATTERN = /\b(for\s*)?(sale|rent|lease|rental|outright|purchase)\b/i;
 const REQUIREMENT_PATTERN = /\b(looking\s*for|want\s*to\s*buy|need|requirement|buyer\s*(looking|wants)|tenant\s*(looking|wants)|searching\s*for|in\s*need\s*of)\b/i;
@@ -56,7 +57,7 @@ function toCr(amount: number, unit?: string): number {
   return amount;
 }
 
-function classifyIntent(query: string): Intent {
+export function classifyMarketIntent(query: string): Intent {
   const lower = query.toLowerCase();
 
   if (BUILDING_PATTERN.test(query) || lower.includes("building")) {
@@ -91,7 +92,7 @@ function classifyIntent(query: string): Intent {
   return "general";
 }
 
-function extractParams(query: string): ExtractedParams {
+export function extractMarketParams(query: string): ExtractedParams {
   const params: ExtractedParams = {};
   const lower = query.toLowerCase();
 
@@ -114,6 +115,13 @@ function extractParams(query: string): ExtractedParams {
   }
 
   const priceMatches = [...query.matchAll(PRICE_RANGE_PATTERN)];
+  const betweenMatch = query.match(BETWEEN_PRICE_PATTERN);
+  if (betweenMatch) {
+    const firstUnit = betweenMatch[2] || betweenMatch[4] || "cr";
+    const secondUnit = betweenMatch[4] || betweenMatch[2] || "cr";
+    params.minPriceCr = toCr(Number(betweenMatch[1]), firstUnit);
+    params.maxPriceCr = toCr(Number(betweenMatch[3]), secondUnit);
+  }
   for (const m of priceMatches) {
     if (m[1] && m[2]) {
       const val = toCr(Number(m[1]), m[2]);
@@ -235,8 +243,8 @@ type MarketSearchInput = {
 
 export async function executeMarketSearch(input: MarketSearchInput): Promise<MarketSearchResult> {
   const query = input.query.trim();
-  const intent = classifyIntent(query);
-  const extracted = extractParams(query);
+  const intent = classifyMarketIntent(query);
+  const extracted = extractMarketParams(query);
 
   const locality = input.locality || extracted.locality;
   const city = input.city || extracted.city;
