@@ -4335,6 +4335,17 @@ class SupabaseStorage(Storage):
         phones_by_name: dict[str, set[str]] = defaultdict(set)
         for parsed in parsed_rows:
             raw = parsed.get("raw_messages") or {}
+            # PostgREST may return an embedded relation as a list. Select the
+            # row identified by raw_message_id so source text and timestamps
+            # are not silently dropped from the inbox feed.
+            if isinstance(raw, list):
+                raw_id = parsed.get("raw_message_id")
+                raw = next(
+                    (item for item in raw if str(item.get("id")) == str(raw_id)),
+                    raw[0] if raw else {},
+                )
+            if not isinstance(raw, dict):
+                raw = {}
             if not raw.get("is_group", False):
                 continue
             phone = (
@@ -4383,17 +4394,18 @@ class SupabaseStorage(Storage):
                     raw_payload = json.loads(raw_payload)
                 except (TypeError, ValueError, json.JSONDecodeError):
                     raw_payload = {}
+            raw_text = raw.get("message") or raw.get("text") or raw.get("body") or ""
             item_source = (
                 raw_payload.get("full_text", "")
                 if isinstance(raw_payload, dict)
                 else ""
             )
-            item_source = item_source or parsed.get("normalized_message") or raw.get("message") or ""
+            item_source = item_source or raw_text or parsed.get("normalized_message") or ""
             result.append({
                 "id": parsed.get("id"),
                 "fingerprint": f"parsed:{parsed.get('id')}",
                 "broker_key": identity,
-                "summary_title": parsed.get("summary_title") or parsed.get("normalized_message") or raw.get("message") or "",
+                "summary_title": parsed.get("summary_title") or parsed.get("normalized_message") or raw_text or "",
                 "observation_type": observation_type,
                 "intent": parsed.get("intent"),
                 "asset_type": parsed.get("asset_type"),
@@ -4436,10 +4448,10 @@ class SupabaseStorage(Storage):
                 }],
                 "latest_raw_message_id": parsed.get("raw_message_id"),
                 "latest_parsed_id": parsed.get("id"),
-                "raw_message": raw.get("message") or "",
+                "raw_message": raw_text,
                 "normalized_message": parsed.get("normalized_message") or "",
                 "source_message": item_source,
-                "raw_sender": raw.get("sender") or name,
+                "raw_sender": raw.get("sender") or raw.get("sender_name") or name,
                 "broker_name": name,
                 "broker_phone": resolved_phone,
             })
