@@ -492,6 +492,55 @@ export default function WhatsAppGroupsMirror() {
         </div>
       </aside>
       <main className={`${showConversation ? "flex" : "hidden md:flex"} min-w-0 flex-1 flex-col`}>
+        {selected ? (
+          <>
+            <header className="flex items-center gap-3 border-b border-white/10 px-5 py-3">
+              <button onClick={() => setShowConversation(false)} className="rounded-lg p-1 text-zinc-300 hover:bg-white/10 md:hidden" aria-label="Back to groups">
+                <ChevronLeft className="h-5 w-5" />
+              </button>
+              <div className="min-w-0">
+                <div className="truncate text-sm font-semibold text-white">{selected.display_name || selected.conversation_name || selected.name}</div>
+                <div className="mt-0.5 text-xs text-zinc-400">WhatsApp group · messages shown in IST</div>
+              </div>
+            </header>
+            <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-5 md:px-5">
+              {hasMoreHistory && messages.length > 0 && (
+                <button type="button" onClick={() => void loadMessages(messages.length, true)} disabled={loadingOlder} className="rounded-lg border border-white/10 px-3 py-2 text-xs font-semibold text-zinc-300 hover:bg-white/5 disabled:opacity-50">
+                  {loadingOlder ? "Loading older messages…" : "Load older messages"}
+                </button>
+              )}
+              {loadingMessages && messages.length === 0 ? <p className="text-sm text-zinc-500">Loading messages…</p> : messages.length === 0 ? <p className="text-sm text-zinc-500">No captured messages in this group yet.</p> : messageViews.map(({ message, attachment, text }) => {
+                const fromMe = isFromCurrentPhone(message);
+                const sender = fromMe ? "You" : senderLabel(message, { ...memberNames, ...messageNames });
+                const senderClickable = !fromMe && Boolean(senderSearchValue(message, memberNames, messageNames));
+                const kind = attachment?.kind || message.message_type || "text";
+                const body = text || (attachment ? kindLabel(kind) : "No text captured");
+                const recallLink = whatsappRecallLink(message, text);
+                return <div key={message.message_uid || message.id} className={`flex ${fromMe ? "justify-end" : "justify-start"}`}>
+                  <div className={`w-full max-w-[min(900px,86%)] rounded-2xl border px-4 py-3 text-sm shadow-sm ${fromMe ? "border-emerald-400/30 bg-emerald-400/[0.08] text-zinc-100" : "border-white/10 bg-white/[0.03] text-zinc-100"}`}>
+                    <div className="mb-2 flex items-center gap-2">
+                      <button type="button" onClick={() => senderClickable ? openSenderSearch(message) : undefined} disabled={!senderClickable} className={`min-w-0 truncate text-left text-xs font-semibold ${fromMe ? "text-emerald-300" : "text-zinc-200"} ${senderClickable ? "hover:text-emerald-200 hover:underline" : "cursor-default"}`}>{sender}</button>
+                      {attachment && <span className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-black/20 px-2 py-0.5 text-[10px] text-zinc-300">{kindIcon(kind)}{kindLabel(kind)}</span>}
+                      {recallLink && <a href={recallLink} target="_blank" rel="noreferrer" className="ml-auto inline-flex shrink-0 items-center gap-1 rounded-md border border-emerald-400/30 bg-emerald-400/10 px-2 py-1 text-[10px] font-semibold text-emerald-200 hover:bg-emerald-400/20" title="Open WhatsApp with this post prefilled"><MessageSquare className="h-3 w-3" />WhatsApp</a>}
+                    </div>
+                    <div className="whitespace-pre-wrap break-words leading-6 [overflow-wrap:anywhere]">{body}</div>
+                    <div className="mt-2 flex justify-end text-[10px] text-zinc-400">{timeLabel(message.timestamp || message.created_at)}</div>
+                  </div>
+                </div>;
+              })}
+            </div>
+            <form onSubmit={send} className="border-t border-white/10 p-3">
+              <div className="flex items-center gap-2">
+                <input ref={fileInput} type="file" className="hidden" onChange={(event) => setFile(event.target.files?.[0] || null)} />
+                <button type="button" onClick={() => fileInput.current?.click()} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-white/10 text-zinc-300 hover:bg-white/5" title="Attach media"><FileUp className="h-4 w-4" /></button>
+                <input value={draft} onChange={(event) => setDraft(event.target.value)} placeholder={file ? `Attach: ${file.name}` : "Message this group"} className="h-10 min-w-0 flex-1 rounded-lg border border-white/10 bg-transparent px-3 text-sm text-white outline-none placeholder:text-zinc-600 focus:border-emerald-400" />
+                <button disabled={sending || (!draft.trim() && !file)} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-white bg-white text-black disabled:opacity-40" aria-label="Send"><Send className="h-4 w-4" /></button>
+              </div>
+              {error && <p className="mt-2 text-xs text-red-300">{error}</p>}
+              {notice && <p className="mt-2 text-xs text-emerald-300">{notice}</p>}
+            </form>
+          </>
+        ) : <div className="flex flex-1 items-center justify-center text-sm text-zinc-500">Select a WhatsApp group.</div>}
       </main>
     </div>
   );
