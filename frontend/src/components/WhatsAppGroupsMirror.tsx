@@ -380,10 +380,18 @@ export default function WhatsAppGroupsMirror() {
   }, [loadGroups, loadMessages]);
 
   const selected = groups.find((group) => group.conversation_jid === selectedJid);
+  const normalizedGroupQuery = query.trim().toLocaleLowerCase();
   const visibleGroups = useMemo(() => groups.filter((group) => {
-    const name = String(group.display_name || group.conversation_name || group.name || "").toLowerCase();
-    return name.includes(query.trim().toLowerCase());
-  }), [groups, query]);
+    const normalizedQuery = normalizedGroupQuery;
+    if (!normalizedQuery) return true;
+    const searchable = [
+      group.display_name,
+      group.conversation_name,
+      group.name,
+      group.conversation_jid,
+    ].map((value) => String(value || "").toLocaleLowerCase());
+    return searchable.some((value) => value.includes(normalizedQuery));
+  }), [groups, normalizedGroupQuery]);
 
   const messageViews = useMemo(() => messages.map((message) => ({
     message,
