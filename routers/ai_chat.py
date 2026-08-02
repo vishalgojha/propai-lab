@@ -843,6 +843,85 @@ async def _owned_chat_session(session_id: str, user: dict, tenant_id: str | None
     return session
 
 
+def _chat_phone(value: object) -> str:
+    """Return the canonical Indian phone suffix used by broker identities."""
+    digits = re.sub(r"\D", "", str(value or ""))
+    return digits[-10:] if len(digits) >= 10 else ""
+
+
+def _load_chat_broker_context(
+    session: dict | None,
+    user: dict,
+    requested_phone: str,
+    tenant_id: str | None,
+) -> dict | None:
+    """Load identity and tenant-scoped broker stats for the chat system prompt.
+
+    Chat sessions may contain a legacy phone, an authenticated owner key
+    (``user:<uuid>``), or the request's phone. Resolve the profile by the
+    authenticated user first, then use the profile phone to find the broker
+    row. Every query is scoped to the active tenant.
+    """
+    try:
+        auth_user_id = str(user.get("id") or "").strip()
+        profile = storage.get_user_profile(
+            auth_user_id=auth_user_id,
+            tenant_id=tenant_id,
+        ) if auth_user_id else None
+
+        session_phone = _chat_phone((session or {}).get("broker_phone"))
+        requested = _chat_phone(requested_phone)
+        profile_phone = _chat_phone((profile or {}).get("phone"))
+        phone = profile_phone or session_phone or requested
+
+        # Older sessions can be phone-owned even when the auth profile lookup
+        # has not been populated yet.
+        if not profile and phone:
+            profile = storage.get_user_profile(phone=phone, tenant_id=tenant_id)
+            profile_phone = _chat_phone((profile or {}).get("phone"))
+            phone = profile_phone or phone
+
+        broker_row: dict = {}
+        client = getattr(storage, "client", None)
+        if client is not None and phone:
+            query = client.table("brokers").select(
+                "primary_phone,canonical_name,listing_count,requirement_count,"
+                "rental_count,commercial_count,avg_ticket,active_days_30,"
+                "market_count,building_count"
+            ).eq("primary_phone", phone)
+            if tenant_id:
+                query = query.eq("tenant_id", tenant_id)
+            rows = query.limit(1).execute().data or []
+            if rows:
+                broker_row = dict(rows[0])
+
+        first_name = str((profile or {}).get("first_name") or "").strip()
+        last_name = str((profile or {}).get("last_name") or "").strip()
+        name = " ".join(part for part in (first_name, last_name) if part).strip()
+        if not name:
+            name = str(broker_row.get("canonical_name") or "").strip()
+        if not name and not phone and not broker_row:
+            return None
+
+        return {
+            "name": name,
+            "phone": phone,
+            "city": str((profile or {}).get("city") or "").strip(),
+            "email": str((profile or {}).get("email") or "").strip(),
+            "listing_count": broker_row.get("listing_count"),
+            "requirement_count": broker_row.get("requirement_count"),
+            "rental_count": broker_row.get("rental_count"),
+            "commercial_count": broker_row.get("commercial_count"),
+            "avg_ticket": broker_row.get("avg_ticket"),
+            "active_days_30": broker_row.get("active_days_30"),
+            "market_count": broker_row.get("market_count"),
+            "building_count": broker_row.get("building_count"),
+        }
+    except Exception:
+        _logger.exception("Could not load tenant-scoped broker context for AI chat")
+        return None
+
+
 @router.get("/api/ai/chat/sessions")
 async def list_chat_sessions(broker_phone: str = "", limit: int = 50, user: dict = Depends(require_user), tenant_id: str | None = Depends(get_tenant_context)):
     tenant_id = tenant_id or await asyncio.to_thread(_resolve_active_organization_id, user, None)
@@ -944,8 +1023,9 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
     # from the authenticated organization membership for every chat request so
     # workspace-saved provider keys are actually visible to the router.
     tenant_id = await asyncio.to_thread(_resolve_active_organization_id, user, tenant_id)
+    chat_session = None
     if req.session_id:
-        await _owned_chat_session(req.session_id, user, tenant_id)
+        chat_session = await _owned_chat_session(req.session_id, user, tenant_id)
     session_id = req.session_id or "default"
     persisted_messages = (
         await asyncio.to_thread(storage.get_ai_chat_messages, req.session_id, 200, tenant_id)
@@ -1022,18 +1102,13 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
         except Exception:
             pass
 
-    broker = None
-    if req.broker_phone:
-        try:
-            _bp = storage.get_user_profile(req.broker_phone, tenant_id=tenant_id)
-            if _bp and (_bp.get("first_name") or _bp.get("last_name")):
-                broker = {
-                    "name": f"{_bp.get('first_name', '')} {_bp.get('last_name', '')}".strip(),
-                    "phone": req.broker_phone,
-                    "city": _bp.get("city", ""),
-                }
-        except Exception:
-            pass
+    broker = await asyncio.to_thread(
+        _load_chat_broker_context,
+        chat_session,
+        user,
+        req.broker_phone,
+        tenant_id,
+    )
 
     last_user = ""
     for msg in reversed(effective_messages):

@@ -781,6 +781,8 @@ class SupabaseStorage(Storage):
         if auth_user_id:
             try:
                 q = self.client.table("user_profiles").select("*").eq("auth_user_id", auth_user_id)
+                if tid:
+                    q = q.eq("tenant_id", tid)
                 q = q.limit(1)
                 res = q.execute()
                 if res.data:

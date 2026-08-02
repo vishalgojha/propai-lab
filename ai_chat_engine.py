@@ -441,12 +441,47 @@ def _read_prompt_file(name: str) -> str:
         return ""
 
 
+def _broker_context_block(broker=None) -> str:
+    """Return private, relevant identity context for the current chat owner."""
+    if not broker:
+        return ""
+
+    name = str(broker.get("name") or "").strip() or "the current broker"
+    city = str(broker.get("city") or "").strip()
+    location = f" based in {city}" if city else ""
+    lines = [
+        "\nCURRENT BROKER CONTEXT (private system context):",
+        f"You are assisting {name}{location}.",
+        "Use this context only when relevant, especially for identity questions or explicit 'my' queries. ",
+        "Do not volunteer it, repeat it, or introduce the broker in unrelated property answers.",
+    ]
+
+    labels = (
+        ("listing_count", "tracked listings"),
+        ("requirement_count", "tracked requirements"),
+        ("active_days_30", "active days in the last 30 days"),
+        ("avg_ticket", "recorded average ticket"),
+        ("market_count", "markets covered"),
+        ("building_count", "buildings covered"),
+    )
+    stats = []
+    for key, label in labels:
+        value = broker.get(key)
+        if value is not None and str(value).strip() != "":
+            stats.append(f"{value} {label}")
+    if stats:
+        lines.append("Broker activity: " + "; ".join(stats) + ".")
+    if broker.get("email"):
+        lines.append(f"Account email: {broker['email']}.")
+    return "\n".join(lines)
+
+
 def build_conversational_system_prompt(broker=None):
     """Minimal system prompt for pure conversation — no data, no tools, no JSON contract."""
     identity = _read_prompt_file("identity.md")
     now = datetime.datetime.now()
     time_str = now.strftime("%A, %d %B %Y at %I:%M %p IST")
-    broker_line = f"\nYou are currently talking to {broker['name']} ({broker['phone']}), a broker using PropAI." if broker and broker.get("name") else ""
+    broker_line = _broker_context_block(broker)
     return f"""{identity or "You are PropAI, a Mumbai real-estate broker assistant."}
 
 Current date and time: {time_str}
@@ -469,7 +504,7 @@ def _legacy_build_system_prompt(sources, broker=None):
     bootstrap = _read_prompt_file("bootstrap.md")
     now = datetime.datetime.now()
     time_str = now.strftime("%A, %d %B %Y at %I:%M %p IST")
-    broker_line = f"\nYou are currently talking to {broker['name']} ({broker['phone']}), a broker using PropAI." if broker and broker.get("name") else ""
+    broker_line = _broker_context_block(broker)
     return f"""{identity or "You are PropAI, a Mumbai real-estate broker assistant."}
 
 {bootstrap}
@@ -582,10 +617,7 @@ def build_system_prompt(sources, broker=None):
     identity = _read_prompt_file("identity.md")
     bootstrap = _read_prompt_file("bootstrap.md")
     now = datetime.datetime.now().strftime("%A, %d %B %Y at %I:%M %p IST")
-    broker_line = (
-        f"\nYou are currently talking to {broker['name']} ({broker['phone']}), a broker using PropAI."
-        if broker and broker.get("name") else ""
-    )
+    broker_line = _broker_context_block(broker)
     return f"""{identity or 'You are PropAI, a Mumbai real-estate broker assistant.'}
 
 {bootstrap}
