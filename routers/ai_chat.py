@@ -128,6 +128,30 @@ def _wrap_chat_response(response: dict, is_inbox: bool = False):
     return _wrap_sse(response)
 
 
+async def _market_search_with_summary(
+    query: dict,
+    sources: dict,
+    providers: list[dict],
+    user_text: str,
+    tenant_id: str | None,
+) -> dict:
+    """Run relaxed market queries through the verified listings index.
+
+    Relaxed parsing is still a market search, not a conversational fallback.
+    Keep it deterministic and use the same parsed-listings search and response
+    renderer as strict inventory queries.
+    """
+    search_result = await asyncio.to_thread(
+        chat_engine.execute_tool,
+        "market_search",
+        query,
+        sources,
+        getattr(storage, "db", None),
+        tenant_id,
+    )
+    return chat_engine.deterministic_market_response(query, search_result, sources)
+
+
 def _preferred_workspace_provider(tenant_id: str | None) -> dict:
     """Resolve an active provider saved by this workspace only."""
     try:
