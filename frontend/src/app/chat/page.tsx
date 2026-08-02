@@ -9,7 +9,7 @@ import { useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
-import ListingCard, { type ListingItem } from "@/components/ListingCard";
+import { type ListingItem } from "@/components/ListingCard";
 import { useAuth } from "@/lib/AuthProvider";
 import { Check, Pencil, Plus, MessageSquare, Trash2, PanelLeft, PanelLeftClose, X } from "lucide-react";
 
@@ -1180,16 +1180,44 @@ export default function ChatPage() {
                               return (
                                 <div key={`structured-${blockIndex}`} className="space-y-3">
                                   {block.title && <h3 className="mt-2 font-semibold text-white">{block.title}</h3>}
-                                  <div className="grid gap-3 xl:grid-cols-2">
-                                    {visibleItems.map((item, itemIndex) => (
-                                      <ListingCard
-                                        key={`${item.listing_id || item.raw_message_id || "item"}-${itemIndex}`}
-                                        item={item}
-                                        onHideBroker={hideBrokerLocally}
-                                        onHideListing={hideListingLocally}
-                                        onHideRequirement={hideRequirementLocally}
-                                      />
-                                    ))}
+                                  <div className="overflow-x-auto rounded-lg border border-white/10">
+                                    <table className="min-w-full text-left text-xs">
+                                      <thead className="bg-white/[0.05] text-zinc-300">
+                                        <tr>
+                                          {['Building', 'Locality', 'Type', 'Rent/Sale', 'Carpet', 'Furnishing', 'Broker', 'Last seen', 'WhatsApp', 'Actions'].map((label) => (
+                                            <th key={label} className="whitespace-nowrap px-3 py-2 font-semibold">{label}</th>
+                                          ))}
+                                        </tr>
+                                      </thead>
+                                      <tbody>
+                                        {visibleItems.map((item, itemIndex) => {
+                                          const isWanted = ['REQUIREMENT', 'BUY', 'BUYER', 'RENTAL_SEEKER'].includes(String(item.intent || '').toUpperCase());
+                                          const whatsapp = buildWhatsAppLink(item);
+                                          return (
+                                            <tr key={`${item.listing_id || item.raw_message_id || 'item'}-${itemIndex}`} className="border-t border-white/10 text-zinc-300">
+                                              <td className="px-3 py-2 font-medium text-white">{item.building_name || '—'}</td>
+                                              <td className="px-3 py-2 whitespace-nowrap">{item.micro_market || item.location_label || item.landmark_name || '—'}</td>
+                                              <td className="px-3 py-2 whitespace-nowrap">{item.bhk || item.property_type || '—'}</td>
+                                              <td className="px-3 py-2 whitespace-nowrap font-semibold text-white">{item.price_formatted || '—'}</td>
+                                              <td className="px-3 py-2 whitespace-nowrap">{item.area_sqft ? `${item.area_sqft} sqft` : '—'}</td>
+                                              <td className="px-3 py-2 whitespace-nowrap">{item.furnishing || '—'}</td>
+                                              <td className="px-3 py-2 whitespace-nowrap">{item.broker_name || '—'}</td>
+                                              <td className="px-3 py-2 whitespace-nowrap">{item.last_seen_text || item.last_seen || '—'}</td>
+                                              <td className="px-3 py-2 whitespace-nowrap">
+                                                {whatsapp ? <a href={whatsapp} target="_blank" rel="noreferrer" className="text-emerald-300 underline">Open Chat</a> : '—'}
+                                              </td>
+                                              <td className="px-3 py-2 whitespace-nowrap">
+                                                <div className="flex items-center gap-1">
+                                                  {item.listing_id && !isWanted && <button type="button" onClick={() => hideListingLocally(item)} className="rounded border border-white/15 px-2 py-1 text-[10px] uppercase tracking-wider text-zinc-300 hover:border-red-400/50 hover:text-red-200">Hide</button>}
+                                                  {isWanted && item.raw_message_id && <button type="button" onClick={() => hideRequirementLocally(item)} className="rounded border border-white/15 px-2 py-1 text-[10px] uppercase tracking-wider text-zinc-300 hover:border-red-400/50 hover:text-red-200">Hide</button>}
+                                                  {item.broker_phone && <button type="button" onClick={() => hideBrokerLocally(item.broker_phone!, item.broker_name || 'broker')} className="rounded border border-white/15 px-2 py-1 text-[10px] uppercase tracking-wider text-zinc-300 hover:border-red-400/50 hover:text-red-200">Broker</button>}
+                                                </div>
+                                              </td>
+                                            </tr>
+                                          );
+                                        })}
+                                      </tbody>
+                                    </table>
                                   </div>
                                 </div>
                               );

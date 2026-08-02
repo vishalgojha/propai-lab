@@ -16,6 +16,7 @@ export interface ListingItem {
   broker_name?: string;
   broker_phone?: string;
   last_seen_text?: string;
+  last_seen?: string;
   first_seen_text?: string;
   group_count?: number;
   confidence?: number;

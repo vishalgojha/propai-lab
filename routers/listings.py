@@ -12,7 +12,7 @@ from pydantic import BaseModel
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse
 
-from routers.common import storage, require_user
+from routers.common import storage, require_user, get_tenant_context
 
 router = APIRouter(tags=["listings"])
 
@@ -48,8 +48,16 @@ def _tenant_id() -> str | None:
 
 
 @router.get("/api/listings/hidden-items")
-async def list_hidden_market_items(user: dict = Depends(require_user)):
+async def list_hidden_market_items(user: dict = Depends(require_user), tenant_id: str | None = Depends(get_tenant_context)):
     try:
+        client = getattr(getattr(storage, "db", None), "_client", None)
+        if client is not None:
+            query = client.table("hidden_market_items").select(
+                "hidden_key,item_kind,listing_id,raw_message_id,broker_phone,broker_name,source_label,hidden_reason,hidden_at"
+            )
+            if tenant_id:
+                query = query.eq("tenant_id", tenant_id)
+            return {"items": query.order("hidden_at", desc=True).execute().data or []}
         tenant_id = _tenant_id()
         params: list[object] = []
         where = ""
@@ -72,12 +80,12 @@ async def list_hidden_market_items(user: dict = Depends(require_user)):
 
 
 @router.post("/api/listings/hide")
-async def hide_market_item(payload: HiddenMarketItemPayload, user: dict = Depends(require_user)):
+async def hide_market_item(payload: HiddenMarketItemPayload, user: dict = Depends(require_user), tenant_id: str | None = Depends(get_tenant_context)):
     try:
         hidden_key = _hidden_market_key(payload)
         row = {
             "hidden_key": hidden_key,
-            "tenant_id": _tenant_id(),
+            "tenant_id": tenant_id or _tenant_id(),
             "item_kind": payload.item_kind,
             "listing_id": payload.listing_id,
             "raw_message_id": payload.raw_message_id,
@@ -87,6 +95,10 @@ async def hide_market_item(payload: HiddenMarketItemPayload, user: dict = Depend
             "hidden_reason": payload.hidden_reason,
             "hidden_by": user.get("id"),
         }
+        client = getattr(getattr(storage, "db", None), "_client", None)
+        if client is not None:
+            client.table("hidden_market_items").upsert(row, on_conflict="hidden_key").execute()
+            return {"success": True, **row}
         storage.db.execute(
             """
             insert into hidden_market_items
@@ -123,14 +135,21 @@ async def hide_market_item(payload: HiddenMarketItemPayload, user: dict = Depend
         return {"success": True, **row}
     except HTTPException:
         raise
-    except Exception as exc:
-        raise HTTPException(500, f"Failed to hide item: {exc}")
+    except Exception:
+        raise HTTPException(500, "Failed to hide item")
 
 
 @router.post("/api/listings/unhide")
-async def unhide_market_item(payload: HiddenMarketItemPayload, user: dict = Depends(require_user)):
+async def unhide_market_item(payload: HiddenMarketItemPayload, user: dict = Depends(require_user), tenant_id: str | None = Depends(get_tenant_context)):
     try:
         hidden_key = _hidden_market_key(payload)
+        client = getattr(getattr(storage, "db", None), "_client", None)
+        if client is not None:
+            query = client.table("hidden_market_items").delete().eq("hidden_key", hidden_key)
+            if tenant_id:
+                query = query.eq("tenant_id", tenant_id)
+            query.execute()
+            return {"success": True, "hidden_key": hidden_key}
         storage.db.execute(
             "delete from hidden_market_items where hidden_key = ?",
             (hidden_key,),
@@ -140,8 +159,8 @@ async def unhide_market_item(payload: HiddenMarketItemPayload, user: dict = Depe
         return {"success": True, "hidden_key": hidden_key}
     except HTTPException:
         raise
-    except Exception as exc:
-        raise HTTPException(500, f"Failed to unhide item: {exc}")
+    except Exception:
+        raise HTTPException(500, "Failed to unhide item")
 
 
 @router.get("/api/listings")
