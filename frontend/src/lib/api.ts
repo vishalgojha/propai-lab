@@ -1818,6 +1818,7 @@ export interface Phone {
   connected: boolean | null;
   live_status_available?: boolean;
   live_status_error?: string;
+  status_stale?: boolean;
   connection_state: string;
   phone_number_live: string;
   display_name: string;

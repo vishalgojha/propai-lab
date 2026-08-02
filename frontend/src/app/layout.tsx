@@ -282,9 +282,11 @@ function AppShell({ children }: { children: React.ReactNode }) {
     return () => { cancelled = true; };
   }, [user, profile]);
 
-  const livePhone = phones.find((phone) => isLiveWhatsAppConnection(phone)) || null;
+  // Cached phone rows are useful for identity, but must never be treated as
+  // proof of a live WhatsApp session when the live probe was unavailable.
+  const livePhone = phones.find((phone) => phone.live_status_available === true && isLiveWhatsAppConnection(phone)) || null;
   const displayPhone = livePhone || phones[0] || (liveStatus?.phone ? ({ phone_number_live: liveStatus.phone } as Phone) : null);
-  const hasPerPhoneLiveStatus = phones.some((phone) => phone.live_status_available !== false);
+  const hasPerPhoneLiveStatus = phones.some((phone) => phone.live_status_available === true);
   const waConnected = livePhone
     ? true
     : hasPerPhoneLiveStatus
@@ -292,7 +294,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
       : liveStatus
         ? isLiveWhatsAppConnection(liveStatus)
         : null;
-  const waStale = false;
+  const waStale = Boolean(liveStatus?.status_stale || livePhone?.status_stale);
   const waPhone = displayPhone?.phone_number_live || displayPhone?.phone_number || "";
 
   useEffect(() => {
@@ -661,9 +663,11 @@ function AppShell({ children }: { children: React.ReactNode }) {
             )}
             <div className="flex-1 min-w-0">
               <div className={`truncate text-[12px] font-semibold ${waConnected && !waStale ? "text-[#3EE88A]" : "text-zinc-300"}`}>
-                {waConnected === null
+                  {waConnected === null
                   ? "Checking WhatsApp"
-                  : waConnected
+                  : waStale
+                    ? "WhatsApp status stale"
+                    : waConnected
                     ? "WhatsApp Connected"
                     : "WhatsApp Disconnected"}
               </div>
