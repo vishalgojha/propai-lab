@@ -18,7 +18,8 @@ def test_onboarding_groups_falls_back_on_internal_failure(monkeypatch):
 
     assert result["groups"] == []
     assert result["tier"] == "unknown"
-    assert result["cap"] == 0
+    assert result["cap"] is None
+    assert result["unlimited"] is True
     assert result["opted_out_count"] == 0
 
 
@@ -31,5 +32,6 @@ def test_group_cap_falls_back_on_internal_failure(monkeypatch):
     result = asyncio.run(onboarding.group_cap(whatsapp_connection_id=1, user={"id": "u1"}, tenant_id="org-1"))
 
     assert result["tier"] == "unknown"
-    assert result["cap"] == 0
-    assert result["remaining"] == 0
+    assert result["cap"] is None
+    assert result["unlimited"] is True
+    assert result["remaining"] is None

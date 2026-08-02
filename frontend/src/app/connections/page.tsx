@@ -776,21 +776,7 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
     setMessage(null);
     try {
       const check = precheck || await checkOnboardingGroup(phone.id, group.group_jid);
-      let confirmCap = false;
-      const overCap = check.cap.hard_block;
-      const atCap = check.cap.soft_warning_at_cap;
-      if (overCap) {
-        setError(`Opt-out cap reached on this connection (${check.cap.opted_out_count}/${check.cap.cap}).`);
-        return;
-      }
-      if (atCap) {
-        const accepted = window.confirm(
-          `This WhatsApp phone is at the default tier cap for opted-out groups (${check.cap.opted_out_count}/${check.cap.cap}). Opt this group out anyway?`,
-        );
-        if (!accepted) return;
-        confirmCap = true;
-      }
-      await optOutOnboardingGroup(phone.id, group.group_jid, confirmCap);
+      await optOutOnboardingGroup(phone.id, group.group_jid);
       setMessage(`Opted-out ${group.group_name}.`);
       await loadGroups();
       await onRefresh();
@@ -826,7 +812,7 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
           <div className="text-sm font-semibold text-white">Active groups</div>
         </div>
         <div className="mt-2 text-xs text-zinc-500">
-          Pair this phone first. After pairing, every WhatsApp group is extracted by default; you can opt out of up to {data?.cap ?? 5} groups per connection.
+          Pair this phone first. After pairing, every WhatsApp group is extracted by default; you can opt out of any number of personal, family, client, or internal groups.
         </div>
       </div>
     );
@@ -841,7 +827,7 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
             <div className="text-sm font-semibold text-white">Active groups</div>
           </div>
           <div className="mt-1 text-xs text-zinc-500">
-            {phone.instance_name || formatPhone(phone.phone_number_live || phone.phone_number)} · {data ? `${data.opted_out_count}/${data.cap} opted-out` : "loading cap"}
+            {phone.instance_name || formatPhone(phone.phone_number_live || phone.phone_number)} · {data ? `${data.opted_out_count} opted-out` : "loading group settings"}
           </div>
         </div>
         {data && (
@@ -863,18 +849,18 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
           </div>
           <div className="rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2">
             <div className="text-zinc-500">Remaining</div>
-            <div className="mt-1 font-semibold text-white">{data.remaining}</div>
+            <div className="mt-1 font-semibold text-white">Unlimited</div>
           </div>
           <div className="rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2">
-            <div className="text-zinc-500">Cap</div>
-            <div className="mt-1 font-semibold text-white">{data.cap}</div>
+            <div className="text-zinc-500">Limit</div>
+            <div className="mt-1 font-semibold text-white">None</div>
           </div>
         </div>
       )}
 
       {data && data.groups.length > 0 && (
         <div className="mt-3 rounded-lg border border-cyan-500/20 bg-cyan-500/[0.04] px-3 py-2 text-[11px] text-zinc-400">
-          All connected groups are extracted by default. Opt-out up to {data.cap} per connection — e.g. personal or family groups you don't want indexed. Duplicate risk is based on sampled sender numbers already seen across your broker network.
+          All connected groups are extracted by default. Opt out of any groups you don't want indexed — including personal, family, client, or internal team groups. Duplicate risk is based on sampled sender numbers already seen across your broker network.
         </div>
       )}
 
@@ -945,10 +931,10 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
                 <div className="flex shrink-0 items-center gap-2">
                   <button
                     onClick={() => void handleOptOut(group)}
-                    disabled={activeGroup === group.group_jid || (data ? data.cap - data.opted_out_count <= 0 : false)}
+                    disabled={activeGroup === group.group_jid}
                     className="rounded-lg border border-white/10 px-3 py-1.5 text-[11px] font-semibold text-zinc-300 hover:border-red-400/40 hover:text-red-300 disabled:opacity-50"
                   >
-                    {activeGroup === group.group_jid ? "Saving..." : (data && data.cap - data.opted_out_count <= 0 ? "Cap reached" : "Opt out")}
+                    {activeGroup === group.group_jid ? "Saving..." : "Opt out"}
                   </button>
                 </div>
               )}

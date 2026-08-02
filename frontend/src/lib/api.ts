@@ -41,10 +41,11 @@ export interface OnboardingGroup {
 
 export interface OnboardingGroupCap {
   tier: string;
-  cap: number;
+  cap: number | null;
   opted_out_count: number;
-  remaining: number;
+  remaining: number | null;
   overridden: boolean;
+  unlimited?: boolean;
   soft_warning_at_cap: boolean;
   hard_block: boolean;
 }
