@@ -1954,6 +1954,44 @@ return {
     ]);
   }, [brokerOffset, loadBrokerFeed, loadFeed, offset, refreshSelectedBrokerObservations]);
 
+  // The broker view is the primary Market Inbox surface. Keep it in sync with
+  // newly parsed WhatsApp observations; the generic thread poll above does not
+  // update this list because it is a separate parsed broker endpoint.
+  useEffect(() => {
+    if (typeof window === "undefined" || window.location.pathname !== "/inbox") return;
+    if (connectionPending) return;
+    const brokerViewActive = activeSlug?.view_type === "brokers" || (!activeSlug && currentSlug === "brokers");
+    if (!brokerViewActive) return;
+
+    const refreshBrokerView = () => {
+      if (document.hidden || loadingBrokerFeed) return;
+      void loadBrokerFeed(brokerOffset);
+      if (selectedBroker) void refreshSelectedBrokerObservations();
+    };
+
+    const interval = window.setInterval(refreshBrokerView, 30000);
+    const onVisibilityChange = () => {
+      if (!document.hidden) refreshBrokerView();
+    };
+    const onFocus = () => refreshBrokerView();
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    window.addEventListener("focus", onFocus);
+    return () => {
+      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      window.removeEventListener("focus", onFocus);
+    };
+  }, [
+    activeSlug,
+    brokerOffset,
+    connectionPending,
+    currentSlug,
+    loadBrokerFeed,
+    loadingBrokerFeed,
+    refreshSelectedBrokerObservations,
+    selectedBroker,
+  ]);
+
   // Load broker feed when switching to a slug whose view_type needs brokers feed
   const prevBrokerOffsetRef = useRef(0);
   const brokerInitialLoadDone = useRef(false);
