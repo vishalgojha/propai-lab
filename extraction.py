@@ -77,6 +77,11 @@ _EXPLICIT_REQUIREMENT_HEADING_RE = re.compile(
     re.IGNORECASE,
 )
 
+_EXPLICIT_RENT_LISTING_RE = re.compile(
+    r"\b(?:available|for\s+rent|on\s+rent|rent\s*[:\-])\b",
+    re.IGNORECASE,
+)
+
 
 def _has_explicit_requirement_heading(text: str) -> bool:
     """Recognize a requirement heading without treating listing copy as one."""
@@ -84,6 +89,39 @@ def _has_explicit_requirement_heading(text: str) -> bool:
         if _EXPLICIT_REQUIREMENT_HEADING_RE.search(line):
             return True
     return False
+
+
+def _has_explicit_rent_listing_language(text: str) -> bool:
+    """Detect broker listing language that must not become a BUY demand."""
+    value = text or ""
+    return bool(
+        _EXPLICIT_RENT_LISTING_RE.search(value)
+        and re.search(r"\b\d+(?:\.\d+)?\s*(?:bhk|rk|bedroom)s?\b", value, re.IGNORECASE)
+    )
+
+
+def _apply_listing_transaction_guard(ai_items: list[dict], full_text: str, slices: list[str]) -> list[dict]:
+    """Prefer explicit rent listing evidence over an ambiguous AI label.
+
+    Messages such as ``Available 2 BHK For Rent`` are inventory posts.  The
+    AI occasionally labels them as ``requirement`` because of words like
+    ``available`` or ``rent``.  A real requirement has an explicit heading;
+    absent that heading, source-local listing language is authoritative.
+    """
+    corrected: list[dict] = []
+    for index, item in enumerate(ai_items):
+        source = slices[index] if index < len(slices) else full_text
+        has_requirement_heading = _has_explicit_requirement_heading(source) or (
+            len(ai_items) == 1 and _has_explicit_requirement_heading(full_text)
+        )
+        if (
+            not has_requirement_heading
+            and _has_explicit_rent_listing_language(source)
+            and item.get("listing_type") in {"requirement", "sale"}
+        ):
+            item = {**item, "listing_type": "rent"}
+        corrected.append(item)
+    return corrected
 
 
 def _apply_requirement_source_guard(ai_items: list[dict], full_text: str, slices: list[str]) -> list[dict]:
@@ -1073,6 +1111,7 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
             if extraction_source == "ai" and ai_items:
                 slice_texts = _slice_blocks_for_ai_items(msg_text, ai_items)
                 guarded_items = _apply_requirement_source_guard(ai_items, msg_text, slice_texts)
+                guarded_items = _apply_listing_transaction_guard(guarded_items, msg_text, slice_texts)
                 if guarded_items != ai_items:
                     cache_needs_store = True
                     ai_items = guarded_items
