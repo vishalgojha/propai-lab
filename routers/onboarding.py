@@ -353,18 +353,20 @@ def _group_directory(org_id: str, broker_id: str, connection_id: int) -> list[di
             .data
             or []
         )
+        connection_rows = (
+            storage.client.table("organization_group_connections")
+            .select("group_jid,is_active,opted_out")
+            .eq("organization_id", org_id)
+            .eq("whatsapp_connection_id", connection_id)
+            .execute()
+            .data
+            or []
+        )
+        connection_state = {str(row.get("group_jid") or ""): row for row in connection_rows}
         connected = {
-            row["group_jid"]
-            for row in (
-                storage.client.table("organization_group_connections")
-                .select("group_jid")
-                .eq("organization_id", org_id)
-                .eq("whatsapp_connection_id", connection_id)
-                .eq("is_active", True)
-                .execute()
-                .data
-                or []
-            )
+            group_jid
+            for group_jid, state in connection_state.items()
+            if state.get("is_active") and not state.get("opted_out")
         }
 
         # Compute suggestion scores for all groups
@@ -376,6 +378,7 @@ def _group_directory(org_id: str, broker_id: str, connection_id: int) -> list[di
             participants = metadata.get("participants", 0)
             last_message_at = row.get("last_message_at")
             is_connected = group_jid in connected
+            opted_out = bool(connection_state.get(group_jid, {}).get("opted_out"))
 
             # Compute suggestion score for unconnected groups
             suggestion = None
@@ -390,6 +393,7 @@ def _group_directory(org_id: str, broker_id: str, connection_id: int) -> list[di
                 "participants": participants,
                 "last_message_at": last_message_at,
                 "connected": is_connected,
+                "opted_out": opted_out,
                 "suggestion": suggestion,
             })
 

@@ -415,6 +415,7 @@ function PhoneCard({
         ? "Reconnecting"
         : "Disconnected";
   const health: HealthStatus = isConnected ? "healthy" : (!statusAvailable || isUnpaired || isReconnecting) ? "warning" : "error";
+  const canPair = isUnpaired || (statusAvailable && !isConnected);
 
   // Close menu on outside click
   useEffect(() => {
@@ -551,7 +552,7 @@ function PhoneCard({
               <LogOut className="h-4 w-4 text-zinc-300" />
             )}
           </button>
-        ) : (
+        ) : canPair ? (
           <button
             onClick={() => handleAction("pair-code")}
             disabled={actionLoading !== null}
@@ -563,6 +564,16 @@ function PhoneCard({
               <Hash className="h-4 w-4" />
             )}
             Pair WhatsApp
+          </button>
+        ) : (
+          <button
+            onClick={() => void onRefresh()}
+            disabled={actionLoading !== null}
+            className="flex h-10 items-center gap-2 rounded-lg border border-amber-400/30 px-3 text-xs font-semibold text-amber-200 transition-colors hover:bg-amber-400/10 disabled:opacity-50"
+            title="Refresh the WhatsApp connection status"
+          >
+            <RefreshCw className="h-4 w-4" />
+            Check status
           </button>
         )}
       </div>
