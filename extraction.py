@@ -200,8 +200,10 @@ def _load_building_dict() -> dict:
             _BUILDING_DICT = {}
             return _BUILDING_DICT
 
-        from supabase import create_client
-        client = create_client(url, key)
+        # Use PropAI's REST client.  The worker image intentionally does not
+        # depend on supabase-py, and a top-level ``supabase`` import can also
+        # resolve to an unrelated namespace in slim deployments.
+        client = SupabaseStorage(url, key).client
 
         # Load canonical names
         resp = client.table("buildings").select("canonical_name").execute()
