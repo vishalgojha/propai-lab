@@ -39,6 +39,12 @@ def _storage():
 def test_route_separates_rent_supply_and_sale_demand():
     assert _typed_route({"asset_type": "residential", "transaction_type": "rent"})[0] == "residential_rent_listings"
     assert _typed_route({"asset_type": "commercial", "transaction_type": "sale", "message_type": "requirement"})[0] == "commercial_sale_requirements"
+    assert _typed_route({
+        "asset_type": "residential",
+        "transaction_type": "sale",
+        "message_type": "requirement",
+        "normalized_message": "Require 3 BHK on lease in Worli",
+    })[0] == "residential_rent_requirements"
 
 
 def test_save_parsed_writes_directly_to_typed_rent_table():
@@ -60,6 +66,8 @@ def test_save_parsed_writes_directly_to_typed_rent_table():
     assert len(storage.client.writes) == 1
     table, payload, options = storage.client.writes[0]
     assert table == "residential_rent_listings"
+    assert payload["id"] == 77001
+    assert payload["legacy_source_id"] == 77001
     assert payload["monthly_rent"] == 250000
     assert payload["bhk"] == 3.0
     assert options["on_conflict"] == "source_fingerprint"
