@@ -390,12 +390,10 @@ function PhoneCard({
   };
 
   const statusAvailable = phone.live_status_available !== false;
-  // `is_active` and old connection fields are persisted metadata. They are not
-  // proof that WhatsMeow is reachable now. When the API cannot probe the
-  // ingestor, never turn that stale metadata into a live "Connected" session.
-  const isConnected = statusAvailable && (
-    isConnectedPhone(phone) || matchesLiveStatus(phone, liveStatus)
-  );
+  // Keep the card's truth identical to the page summary. The API may have a
+  // transiently unavailable status probe while the persisted connection state
+  // (or the last live event) still confirms the linked session.
+  const isConnected = isConnectedPhone(phone) || matchesLiveStatus(phone, liveStatus);
   // An unpaired connection has no canonical WhatsApp account yet. Never use a
   // transient ingestor status value as its identity: that can belong to a
   // stale device/session and makes the card appear to have selected a random
@@ -454,7 +452,7 @@ function PhoneCard({
             <div className="text-xs text-zinc-500">Pair with a WhatsApp code</div>
           )}
           {!statusAvailable && phone.live_status_error && (
-            <div className="text-xs text-red-300">{phone.live_status_error}</div>
+            <div className="text-xs text-amber-300">Live status check unavailable; using the last confirmed state.</div>
           )}
           {qrDataUrl && !isConnected && (
             <div className="mt-3 flex flex-col items-center gap-1.5">
