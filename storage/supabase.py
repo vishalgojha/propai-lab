@@ -816,6 +816,10 @@ class SupabaseStorage(Storage):
         self._db = _SupabaseDatabaseAdapter(self._client)
         self.__tenant_id_fallback: str | None = None
         self._stats_cache: dict[str, tuple[float, dict[str, int]]] = {}
+        # A freshly saved observation already knows its typed destination.
+        # Keep that mapping so the ingestion hot path does not have to scan
+        # the compatibility UNION view to find the row it just wrote.
+        self._typed_table_by_source_id: dict[int, str] = {}
         # Role checks happen on nearly every authenticated request.  Retain
         # a successful super-admin result briefly so a transient Supabase
         # statement timeout does not hide platform navigation.  Server-side
@@ -2357,7 +2361,57 @@ class SupabaseStorage(Storage):
             except Exception:
                 print(f"[storage] save_parsed payload={data!r}", flush=True)
             raise
+        if res.data:
+            getattr(self, "_typed_table_by_source_id", {}).setdefault(source_id, table)
+            if not hasattr(self, "_typed_table_by_source_id"):
+                self._typed_table_by_source_id = {source_id: table}
         return source_id if res.data else 0
+
+    def _get_typed_observation(self, parsed_id: int) -> tuple[str, dict] | None:
+        """Read an observation from its typed table when its route is known.
+
+        ``typed_parsed_output`` is a compatibility UNION view intended for
+        reads by older APIs.  Calling it once per freshly extracted message
+        makes the worker repeatedly scan eight typed tables and can hit the
+        PostgREST statement timeout.  New observations have a route recorded
+        by ``save_parsed``; use that route directly and retain the view as a
+        compatibility fallback after process restarts.
+        """
+        table = getattr(self, "_typed_table_by_source_id", {}).get(int(parsed_id))
+        tables = [table] if table else []
+        if not tables:
+            tables = list(_TYPED_LISTING_TABLES.values()) + list(_TYPED_REQUIREMENT_TABLES.values())
+
+        for candidate in dict.fromkeys(tables):
+            try:
+                query = self.client.table(candidate).select("*").eq("legacy_source_id", parsed_id)
+                if self._tenant_id:
+                    query = query.eq("tenant_id", self._tenant_id)
+                query = query.limit(1)
+                rows = query.execute().data or []
+                if rows:
+                    return candidate, rows[0]
+                if table:
+                    query = self.client.table(candidate).select("*").eq("id", parsed_id)
+                    if self._tenant_id:
+                        query = query.eq("tenant_id", self._tenant_id)
+                    rows = (query.limit(1).execute().data or [])
+                    if rows:
+                        return candidate, rows[0]
+            except Exception:
+                continue
+
+        # Older observations may only be discoverable through the normalized
+        # compatibility view.  This is deliberately last, never the normal
+        # ingestion path.
+        try:
+            rows = (self.client.table("typed_parsed_output").select("*")
+                    .eq("id", parsed_id).limit(1).execute().data or [])
+            if rows:
+                return "typed_parsed_output", rows[0]
+        except Exception:
+            pass
+        return None
 
     def update_parsed_fields(self, row_id: int, updates: dict[str, Any]) -> bool:
         """Apply correction-layer updates to the typed source row.
@@ -2724,14 +2778,11 @@ class SupabaseStorage(Storage):
         copy of the same demand record.
         """
         try:
-            query = self.client.table("typed_parsed_output").select("*").eq("id", parsed_id).limit(1)
-            if self._tenant_id:
-                query = query.eq("tenant_id", self._tenant_id)
-            rows = query.execute().data or []
-            if not rows:
+            found = self._get_typed_observation(parsed_id)
+            if not found:
                 return 0
-            obs = rows[0]
-            if not _is_market_requirement(obs):
+            table, obs = found
+            if not table.endswith("_requirements") and not _is_market_requirement(obs):
                 return 0
             tenant_id = obs.get("tenant_id") or self._tenant_id
             return int(obs.get("id") or 0)
@@ -2952,18 +3003,11 @@ class SupabaseStorage(Storage):
         obs = None
         listing_id = 0
         try:
-            obs_res = (
-                self.client.table("typed_parsed_output")
-                .select("*")
-                .eq("id", parsed_id)
-                .limit(1)
-                .execute()
-            )
-            rows = obs_res.data or []
-            if not rows:
+            found = self._get_typed_observation(parsed_id)
+            if not found:
                 return 0
-            obs = rows[0]
-            if _is_market_requirement(obs):
+            table, obs = found
+            if table.endswith("_requirements") or _is_market_requirement(obs):
                 return 0
             resolver = None
             try:
@@ -3488,7 +3532,28 @@ class SupabaseStorage(Storage):
 
     # ── Resolver Decisions ───────────────────────────────────────
 
+    def _legacy_parsed_exists(self, parsed_id: int) -> bool:
+        """Whether an id belongs to the pre-typed parsed archive.
+
+        The typed pipeline exposes stable synthetic observation ids, while
+        resolver_decisions and enrichment_jobs still reference the historical
+        parsed_output_legacy table.  Do not send typed-only ids into those
+        legacy-FK tables: it creates noisy 409/500 errors and can obscure a
+        successful extraction.
+        """
+        if not parsed_id:
+            return False
+        try:
+            rows = (self.client.table("parsed_output_legacy")
+                    .select("id").eq("id", int(parsed_id)).limit(1)
+                    .execute().data or [])
+            return bool(rows)
+        except Exception:
+            return False
+
     def save_resolver_decision(self, dec: ResolverDecision) -> int:
+        if not self._legacy_parsed_exists(int(dec.parsed_id or 0)):
+            return 0
         data = {k: v for k, v in dec.__dict__.items() if v is not None}
         data.pop("id", None)
         if not data.get("created_at"):
@@ -4216,6 +4281,8 @@ class SupabaseStorage(Storage):
 
     def create_enrichment_job(self, parsed_id: int, raw_message_id: int,
                                scheduled_after: str) -> int:
+        if not self._legacy_parsed_exists(int(parsed_id or 0)):
+            return 0
         # Dedup: skip if a job already exists for this parsed_id (any status)
         existing = self.get_enrichment_job_by_parsed(parsed_id)
         if existing:
