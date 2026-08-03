@@ -277,6 +277,21 @@ export default function WhatsAppGroupsMirror() {
   const [showConversation, setShowConversation] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
   const hasLoadedGroups = useRef(false);
+  const requestedJid = useRef("");
+
+  useEffect(() => {
+    const readUrlState = () => {
+      const jid = new URLSearchParams(window.location.search).get("jid") || "";
+      requestedJid.current = jid;
+      if (jid) {
+        setSelectedJid(jid);
+        setShowConversation(true);
+      }
+    };
+    readUrlState();
+    window.addEventListener("popstate", readUrlState);
+    return () => window.removeEventListener("popstate", readUrlState);
+  }, []);
 
   const loadGroups = useCallback(async (manual = false, searchTerm = "") => {
     if (!hasLoadedGroups.current) setLoading(true);
@@ -293,9 +308,16 @@ export default function WhatsAppGroupsMirror() {
         .filter((group) => group?.conversation_type === "group" && String(group?.conversation_jid || "").endsWith("@g.us"))
         .sort((a, b) => String(b.last_message_at || "").localeCompare(String(a.last_message_at || "")));
       setGroups(liveGroups);
-      setSelectedJid((current) => current && liveGroups.some((group) => group.conversation_jid === current)
-        ? current
-        : String(liveGroups[0]?.conversation_jid || ""));
+      setSelectedJid((current) => {
+        const preferred = requestedJid.current;
+        const next = preferred && liveGroups.some((group) => group.conversation_jid === preferred)
+          ? preferred
+          : current && liveGroups.some((group) => group.conversation_jid === current)
+            ? current
+            : String(liveGroups[0]?.conversation_jid || "");
+        if (next && next !== preferred) requestedJid.current = next;
+        return next;
+      });
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Could not load your WhatsApp groups.");
     } finally {
@@ -374,6 +396,11 @@ export default function WhatsAppGroupsMirror() {
     const timer = window.setTimeout(() => void loadGroups(false, query), 300);
     return () => window.clearTimeout(timer);
   }, [loadGroups, query]);
+  useEffect(() => {
+    if (!selectedJid || requestedJid.current === selectedJid) return;
+    requestedJid.current = selectedJid;
+    window.history.replaceState(null, "", `/whatsapp-groups?jid=${encodeURIComponent(selectedJid)}`);
+  }, [selectedJid]);
   useEffect(() => {
     setMessages([]);
     setHasMoreHistory(true);
@@ -503,7 +530,12 @@ export default function WhatsAppGroupsMirror() {
           {loading ? <p className="p-4 text-sm text-zinc-500">Loading your joined groups…</p> : visibleGroups.length === 0 ? <p className="p-4 text-sm text-zinc-500">{query.trim() ? "No groups match your search." : "No joined WhatsApp groups yet."}</p> : visibleGroups.map((group) => {
             const jid = String(group.conversation_jid || "");
             const name = String(group.display_name || group.conversation_name || group.name || "WhatsApp Group");
-            return <button key={jid} onClick={() => { setSelectedJid(jid); setShowConversation(true); }} className={`w-full border-b border-white/[0.06] px-4 py-3 text-left transition-colors hover:bg-white/[0.03] ${selectedJid === jid ? "border-l-2 border-l-emerald-400 bg-white/[0.04] pl-[14px]" : ""}`}>
+            return <button key={jid} onClick={() => {
+              requestedJid.current = jid;
+              window.history.replaceState(null, "", `/whatsapp-groups?jid=${encodeURIComponent(jid)}`);
+              setSelectedJid(jid);
+              setShowConversation(true);
+            }} className={`w-full border-b border-white/[0.06] px-4 py-3 text-left transition-colors hover:bg-white/[0.03] ${selectedJid === jid ? "border-l-2 border-l-emerald-400 bg-white/[0.04] pl-[14px]" : ""}`}>
             <div className="flex items-center gap-3"><div className="min-w-0 flex-1"><div className="truncate text-sm font-semibold text-white">{name}</div><div className="mt-1 text-xs text-zinc-400">{Number(group.metadata?.participants || 0) ? `${group.metadata?.participants} participants` : `${group.message_count || 0} messages`}</div></div><span className="text-[10px] text-zinc-300">{dateTimeLabel(group.last_message_at)}</span></div>
             </button>;
           })}
