@@ -256,34 +256,6 @@ function whatsappRecallLink(message: api.RawMessage, text: string) {
   return `https://wa.me/${phone}?text=${encodeURIComponent(prefilled)}`;
 }
 
-function intentAccent(message: api.RawMessage) {
-  const intent = String(message.parsed_intent || message.message_type || "").toLowerCase();
-  const text = displayMessageText(message).toLowerCase();
-  // Operational instructions such as “need advance notice” are not demand
-  // signals. A demand must ask for property, not merely mention a needed
-  // viewing condition.
-  const demandSignal = /\b(?:urgent(?:ly)?\s+)?(?:requirement|wanted|want|need|needed|seeking|looking\s+for|client\s+(?:needs|wants|is\s+looking)|any\s+[^\n]{0,80}\bavailable\s*\??|koi\s+[^\n]{0,80}\bhai\s+kya|chahiye)\b/i.test(text)
-    && !/\bneed(?:s|ed)?\s+(?:advance\s+)?notice\b/i.test(text);
-  const supplySignal = /\b(?:direct\s+inventor(?:y|ies)|available\s+(?:for|on)\s+(?:rent|sale|lease)|for\s+(?:rent|sale|lease)|rent\s*[-:]|sale\s*[-:]|showroom|frontage|carpet\s*(?:area)?|sq\.?\s*ft|brokerage|inventory|₹|lakh|lac|crore|\bcr\b)\b/i.test(text);
-  const explicitDemand = /\b(?:requirement|buy)\b/i.test(intent);
-  const obviousSupplyPost = supplySignal && !demandSignal;
-  const haystack = `${intent} ${text}`;
-  // A structured requirement label is useful, but it must not override a
-  // message that visibly advertises inventory with area/price/showroom
-  // details. This prevents marketing copy such as “direct inventories” from
-  // being rendered as a demand post merely because it contains “required”.
-  if ((explicitDemand || demandSignal) && !obviousSupplyPost) {
-    return { label: "REQUIREMENT", border: "border-l-amber-400", sender: "text-amber-200", badge: "border-amber-400/30 bg-amber-400/10 text-amber-200" };
-  }
-  if (/\b(rent|rental|lease|leased)\b/.test(haystack)) {
-    return { label: "RENT", border: "border-l-emerald-400", sender: "text-emerald-200", badge: "border-emerald-400/30 bg-emerald-400/10 text-emerald-200" };
-  }
-  if (/\b(sale|sell|selling|sold|buying)\b/.test(haystack)) {
-    return { label: "SALE", border: "border-l-sky-400", sender: "text-sky-200", badge: "border-sky-400/30 bg-sky-400/10 text-sky-200" };
-  }
-  return { label: "", border: "border-l-white/10", sender: "text-zinc-200", badge: "border-white/10 bg-white/[0.03] text-zinc-400" };
-}
-
 export default function WhatsAppGroupsMirror() {
   const router = useRouter();
   const [groups, setGroups] = useState<Group[]>([]);
@@ -562,12 +534,10 @@ export default function WhatsAppGroupsMirror() {
                 const kind = attachment?.kind || message.message_type || "text";
                 const body = text;
                 const recallLink = whatsappRecallLink(message, text);
-                const accent = intentAccent(message);
                 return <div key={message.message_uid || message.id} className={`flex ${fromMe ? "justify-end" : "justify-start"}`}>
-                  <div className={`w-full max-w-[min(900px,86%)] rounded-2xl border border-l-4 px-4 py-3 text-sm shadow-sm ${fromMe ? "border-emerald-400/30 bg-emerald-400/[0.08] text-zinc-100" : "border-white/10 bg-white/[0.03] text-zinc-100"} ${accent.border}`}>
+                  <div className={`w-full max-w-[min(900px,86%)] rounded-2xl border border-l-4 px-4 py-3 text-sm shadow-sm ${fromMe ? "border-emerald-400/30 bg-emerald-400/[0.08] text-zinc-100" : "border-white/10 bg-white/[0.03] text-zinc-100"}`}>
                     <div className="mb-2 flex items-center gap-2">
-                      <button type="button" onClick={() => senderClickable ? openSenderSearch(message) : undefined} disabled={!senderClickable} className={`min-w-0 truncate text-left text-xs font-semibold ${fromMe ? "text-emerald-300" : accent.sender} ${senderClickable ? "hover:text-emerald-200 hover:underline" : "cursor-default"}`}>{sender}</button>
-                      {accent.label && <span className={`rounded-full border px-1.5 py-0.5 text-[9px] font-semibold tracking-wide ${accent.badge}`}>{accent.label}</span>}
+                      <button type="button" onClick={() => senderClickable ? openSenderSearch(message) : undefined} disabled={!senderClickable} className={`min-w-0 truncate text-left text-xs font-semibold ${fromMe ? "text-emerald-300" : "text-zinc-200"} ${senderClickable ? "hover:text-emerald-200 hover:underline" : "cursor-default"}`}>{sender}</button>
                       {attachment && <span className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-black/20 px-2 py-0.5 text-[10px] text-zinc-300">{kindIcon(kind)}{kindLabel(kind)}</span>}
                       {recallLink && <a href={recallLink} target="_blank" rel="noreferrer" className="ml-auto inline-flex shrink-0 items-center gap-1 rounded-md border border-emerald-400/30 bg-emerald-400/10 px-2 py-1 text-[10px] font-semibold text-emerald-200 hover:bg-emerald-400/20" title="Open WhatsApp with this post prefilled"><MessageSquare className="h-3 w-3" />WhatsApp</a>}
                     </div>
