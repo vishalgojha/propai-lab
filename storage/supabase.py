@@ -3788,6 +3788,8 @@ class SupabaseStorage(Storage):
         tenant_id: str,
         types: list[str] | None = None,
         limit: int = 500,
+        search: str = "",
+        relevant_only: bool = False,
     ) -> list[dict]:
         query = self.client.table("whatsapp_conversations").select("*").eq("tenant_id", tenant_id)
         if types:
@@ -3798,13 +3800,81 @@ class SupabaseStorage(Storage):
         result = query.order("last_message_at", desc=True).limit(limit).execute()
         directory = result.data or []
 
+        def filter_directory(rows: list[dict]) -> list[dict]:
+            filtered_rows = rows
+            # The Groups mirror searches both directory names and captured
+            # post text. Searching only the group title made queries such as
+            # "bandra 2 bhk" appear to do nothing because those words usually
+            # occur in a message, not in the group name.
+            search_terms = [term.lower() for term in re.findall(r"[\w]+", search or "") if len(term) > 1]
+            if search_terms and filtered_rows:
+                message_query = (
+                    self.client.table("raw_messages")
+                    .select("group_name")
+                    .eq("tenant_id", tenant_id)
+                    .limit(20000)
+                )
+                for term in search_terms:
+                    message_query = message_query.ilike("message", f"%{term}%")
+                evidence = message_query.execute().data or []
+                matching_names = {str(row.get("group_name") or "").strip().lower() for row in evidence}
+                phrase = " ".join(search_terms)
+                filtered_rows = []
+                for row in rows:
+                    name = str(row.get("display_name") or row.get("conversation_name") or "").strip()
+                    jid = str(row.get("conversation_jid") or "").strip()
+                    name_match = phrase in name.lower() or all(term in name.lower() for term in search_terms)
+                    content_match = name.lower() in matching_names or jid.lower() in matching_names
+                    if name_match or content_match:
+                        row["search_match"] = True
+                        filtered_rows.append(row)
+
+            if relevant_only and filtered_rows:
+                # Keep the mirror focused on property-market groups without
+                # hiding the complete directory from onboarding controls. A
+                # group qualifies by title or by a recent captured post;
+                # generic names such as "DIABETIC SOLUTION" therefore no
+                # longer appear in the market-facing mirror unless they
+                # actually carry property posts.
+                property_signal = re.compile(
+                    r"\b(?:real\s*estate|realty|property|properties|broker|rent|rental|sale|sell|lease|flat|apartment|house|villa|plot|land|bhk|rk|showroom|office|shop|warehouse|commercial|carpet|sq\.?\s*ft|lakh|lac|crore|cr|brokerage|inventory|requirement)\b",
+                    re.IGNORECASE,
+                )
+                title_matches = {
+                    str(row.get("display_name") or row.get("conversation_name") or "").strip().lower()
+                    for row in filtered_rows
+                    if property_signal.search(str(row.get("display_name") or row.get("conversation_name") or ""))
+                }
+                recent = (
+                    self.client.table("raw_messages")
+                    .select("group_name,message")
+                    .eq("tenant_id", tenant_id)
+                    .order("created_at", desc=True)
+                    .limit(5000)
+                    .execute()
+                    .data
+                    or []
+                )
+                content_matches = {
+                    str(row.get("group_name") or "").strip().lower()
+                    for row in recent
+                    if property_signal.search(str(row.get("message") or ""))
+                }
+                filtered_rows = [
+                    row for row in filtered_rows
+                    if str(row.get("display_name") or row.get("conversation_name") or "").strip().lower() in title_matches
+                    or str(row.get("conversation_jid") or "").strip().lower() in content_matches
+                    or str(row.get("display_name") or row.get("conversation_name") or "").strip().lower() in content_matches
+                ]
+            return filtered_rows
+
         # The durable directory is the authoritative source for joined groups.
         # Do not scan raw_messages on every page load: that table is large and
         # this endpoint is polled by the Groups mirror.  A raw-message fallback
         # is retained only for tenants whose directory has not been populated
         # yet (for example, immediately after an older deployment/backfill).
         if directory:
-            return directory[:limit]
+            return filter_directory(directory)[:limit]
 
         # The Go WhatsMeow ingestor writes raw_messages directly for low-latency
         # delivery. Bootstrap the directory from that evidence only when the
@@ -3831,7 +3901,7 @@ class SupabaseStorage(Storage):
                 }
             directory = list(by_id.values())
             directory.sort(key=lambda row: str(row.get("last_message_at") or ""), reverse=True)
-            return directory[:limit]
+            return filter_directory(directory)[:limit]
         except Exception:
             return directory
 

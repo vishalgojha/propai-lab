@@ -33,11 +33,12 @@ import {
 } from "lucide-react";
 import { AuthProvider, useAuth } from "@/lib/AuthProvider";
 import { LayoutProvider, useLayout } from "@/hooks/useLayout";
+import { useEventStream } from "@/lib/useEventStream";
 import { BottomNav } from "@/components/layout/BottomNav";
 import { MobileDrawer } from "@/components/layout/MobileDrawer";
 import { InstallPrompt } from "@/components/layout/InstallPrompt";
 import { ServiceWorkerRegister } from "@/components/layout/ServiceWorkerRegister";
-import { isMuted, toggleMute } from "@/lib/sounds";
+import { isMuted, toggleMute, playConnectionChange, playGroupConnected, playNewLead, playNewWhatsApp } from "@/lib/sounds";
 
 type NavItem = {
   href: string;
@@ -212,6 +213,10 @@ function AppShell({ children }: { children: React.ReactNode }) {
   const [wabaConfig, setWabaConfig] = useState<BusinessApiConfig | null>(null);
   const [liveStatus, setLiveStatus] = useState<WhatsAppStatus | null>(null);
   const [extractionHealth, setExtractionHealth] = useState<{ pending: number; recentlyProcessed1h: number } | null>(null);
+  const [disconnectNoticeOpen, setDisconnectNoticeOpen] = useState(false);
+  const previousWhatsAppState = useRef<boolean | null>(null);
+  const lastIncomingSoundAt = useRef(0);
+  const lastGroupSoundAt = useRef(0);
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const [soundsMuted, setSoundsMuted] = useState(true);
   const { signOut: authSignOut } = useAuth();
@@ -310,6 +315,35 @@ function AppShell({ children }: { children: React.ReactNode }) {
         : extractionStalled || waStale
           ? "warning"
           : "healthy";
+
+  const playGroupSound = useCallback(() => {
+    const now = Date.now();
+    if (now - lastGroupSoundAt.current < 5000) return;
+    lastGroupSoundAt.current = now;
+    playGroupConnected();
+  }, []);
+
+  useEventStream({
+    "message.received": () => {
+      const now = Date.now();
+      if (now - lastIncomingSoundAt.current < 3000) return;
+      lastIncomingSoundAt.current = now;
+      playNewWhatsApp();
+    },
+    "connection.changed": () => playConnectionChange(),
+    "whatsapp.conversations.updated": playGroupSound,
+    "group.updated": playGroupSound,
+    "lead.created": () => playNewLead(),
+    "requirement.matched": () => playNewLead(),
+  });
+
+  useEffect(() => {
+    if (waConnected === null) return;
+    const previous = previousWhatsAppState.current;
+    if (waConnected === false) setDisconnectNoticeOpen(true);
+    if (previous === false && waConnected === true) setDisconnectNoticeOpen(false);
+    previousWhatsAppState.current = waConnected;
+  }, [waConnected]);
 
   useEffect(() => {
     if (authLoading) return;
@@ -539,6 +573,22 @@ function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex h-[100svh] overflow-hidden bg-black lg:h-screen">
       <PaletteModal open={paletteOpen} onClose={() => setPaletteOpen(false)} />
+      {disconnectNoticeOpen && (
+        <div className="fixed right-4 top-4 z-[1100] w-[min(380px,calc(100vw-2rem))] rounded-xl border border-red-400/30 bg-zinc-950 px-4 py-3 shadow-2xl shadow-black/50" role="alert">
+          <div className="flex items-start gap-3">
+            <WifiOff className="mt-0.5 h-5 w-5 shrink-0 text-red-300" />
+            <div className="min-w-0 flex-1">
+              <div className="text-sm font-semibold text-white">WhatsApp disconnected</div>
+              <p className="mt-1 text-xs leading-5 text-zinc-400">New group messages are not being received. Reconnect the linked phone to resume ingestion.</p>
+              <div className="mt-3 flex items-center gap-2">
+                <a href="/connections" className="rounded-lg bg-red-400 px-3 py-1.5 text-xs font-semibold text-black hover:bg-red-300">Reconnect WhatsApp</a>
+                <button type="button" onClick={() => setDisconnectNoticeOpen(false)} className="rounded-lg border border-white/10 px-3 py-1.5 text-xs text-zinc-300 hover:bg-white/5">Dismiss</button>
+              </div>
+            </div>
+            <button type="button" onClick={() => setDisconnectNoticeOpen(false)} className="text-zinc-500 hover:text-white" aria-label="Dismiss WhatsApp disconnect notice"><X className="h-4 w-4" /></button>
+          </div>
+        </div>
+      )}
       <MobileDrawer
         open={drawerOpen}
         onClose={() => setDrawerOpen(false)}

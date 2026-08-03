@@ -15,6 +15,7 @@ type Group = {
   message_count?: number;
   last_message_at?: string;
   metadata?: { participants?: number };
+  search_match?: boolean;
 };
 
 type GroupMember = { name?: string; phone?: string; jid?: string };
@@ -256,8 +257,16 @@ function whatsappRecallLink(message: api.RawMessage, text: string) {
 function intentAccent(message: api.RawMessage) {
   const intent = String(message.parsed_intent || message.message_type || "").toLowerCase();
   const text = displayMessageText(message).toLowerCase();
+  const demandSignal = /\b(?:urgent(?:ly)?\s+)?(?:requirement|wanted|want|need|needed|seeking|looking\s+for|client\s+(?:needs|wants|is\s+looking)|any\s+[^\n]{0,80}\bavailable\s*\??|koi\s+[^\n]{0,80}\bhai\s+kya|chahiye)\b/i.test(text);
+  const supplySignal = /\b(?:direct\s+inventor(?:y|ies)|available\s+(?:for|on)|for\s+(?:rent|sale|lease)|rent\s*[-:]|sale\s*[-:]|showroom|frontage|carpet\s*(?:area)?|sq\.?\s*ft|brokerage|inventory|₹|lakh|lac|crore|\bcr\b)\b/i.test(text);
+  const explicitDemand = /\b(?:requirement|buy)\b/i.test(intent);
+  const obviousSupplyPost = supplySignal && !demandSignal;
   const haystack = `${intent} ${text}`;
-  if (/\b(requirement|buy|wanted|need|needed|require|required|looking for|seeking)\b/.test(haystack)) {
+  // A structured requirement label is useful, but it must not override a
+  // message that visibly advertises inventory with area/price/showroom
+  // details. This prevents marketing copy such as “direct inventories” from
+  // being rendered as a demand post merely because it contains “required”.
+  if ((explicitDemand || demandSignal) && !obviousSupplyPost) {
     return { label: "REQUIREMENT", border: "border-l-amber-400", sender: "text-amber-200", badge: "border-amber-400/30 bg-amber-400/10 text-amber-200" };
   }
   if (/\b(rent|rental|lease|leased)\b/.test(haystack)) {
@@ -291,11 +300,11 @@ export default function WhatsAppGroupsMirror() {
   const fileInput = useRef<HTMLInputElement>(null);
   const hasLoadedGroups = useRef(false);
 
-  const loadGroups = useCallback(async (manual = false) => {
+  const loadGroups = useCallback(async (manual = false, searchTerm = "") => {
     if (!hasLoadedGroups.current) setLoading(true);
     if (manual) setRefreshingGroups(true);
     try {
-      const directory = await api.getWhatsAppConversations("group");
+      const directory = await api.getWhatsAppConversations("group", searchTerm, true);
       const liveGroups = directory
         .map((group) => ({
           ...group,
@@ -384,6 +393,10 @@ export default function WhatsAppGroupsMirror() {
 
   useEffect(() => { void loadGroups(); }, [loadGroups]);
   useEffect(() => {
+    const timer = window.setTimeout(() => void loadGroups(false, query), 300);
+    return () => window.clearTimeout(timer);
+  }, [loadGroups, query]);
+  useEffect(() => {
     setMessages([]);
     setHasMoreHistory(true);
     setMessageNames({});
@@ -391,15 +404,16 @@ export default function WhatsAppGroupsMirror() {
     void loadMembers();
   }, [loadMessages, loadMembers]);
   useEffect(() => {
-    const id = window.setInterval(() => { void loadGroups(); void loadMessages(); }, 30_000);
+    const id = window.setInterval(() => { void loadGroups(false, query); void loadMessages(); }, 30_000);
     return () => window.clearInterval(id);
-  }, [loadGroups, loadMessages]);
+  }, [loadGroups, loadMessages, query]);
 
   const selected = groups.find((group) => group.conversation_jid === selectedJid);
   const normalizedGroupQuery = query.trim().toLocaleLowerCase();
   const visibleGroups = useMemo(() => groups.filter((group) => {
     const normalizedQuery = normalizedGroupQuery;
     if (!normalizedQuery) return true;
+    if (group.search_match) return true;
     const searchable = [
       group.display_name,
       group.conversation_name,
