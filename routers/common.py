@@ -628,7 +628,7 @@ def _extract_entity_mentions(text: str) -> list[str]:
     if storage is not None:
         try:
             known = storage.db.execute(
-                "SELECT DISTINCT building_name FROM listings WHERE building_name IS NOT NULL AND building_name != '' LIMIT 500"
+                "SELECT DISTINCT building_name FROM typed_listings_index WHERE building_name IS NOT NULL AND building_name != '' LIMIT 500"
             ).fetchall()
             for row in known:
                 bn = row["building_name"]
@@ -2280,7 +2280,7 @@ def _raw_listing_fallback(args: dict, limit: int = 10) -> tuple[int, list[dict]]
     where_clauses = []; params: list[object] = []
     intent = str(args.get("intent") or "").strip().upper()
     if intent:
-        where_clauses.append("EXISTS (SELECT 1 FROM parsed_output p WHERE p.raw_message_id = r.id AND p.intent = ?)"); params.append(intent)
+        where_clauses.append("EXISTS (SELECT 1 FROM typed_parsed_output p WHERE p.raw_message_id = r.id AND p.intent = ?)"); params.append(intent)
     bhk = str(args.get("bhk") or "").strip()
     if bhk:
         bhk_label = bhk if bhk.upper().endswith("BHK") or bhk.upper() == "STUDIO" else f"{bhk} BHK"
@@ -2294,15 +2294,15 @@ def _raw_listing_fallback(args: dict, limit: int = 10) -> tuple[int, list[dict]]
         like = f"%{building}%"; where_clauses.append("r.message LIKE ?"); params.append(like)
     price_max = args.get("price_max")
     if price_max:
-        where_clauses.append("EXISTS (SELECT 1 FROM parsed_output p WHERE p.raw_message_id = r.id AND p.price IS NOT NULL AND p.price <= ?)"); params.append(float(price_max))
+        where_clauses.append("EXISTS (SELECT 1 FROM typed_parsed_output p WHERE p.raw_message_id = r.id AND p.price IS NOT NULL AND p.price <= ?)"); params.append(float(price_max))
     where_sql = " AND ".join(where_clauses) if where_clauses else "1=1"
     try:
         broad_total = con.execute(f"SELECT COUNT(DISTINCT r.id) FROM raw_messages r WHERE {where_sql}", params).fetchone()[0]
         rows = con.execute(
             f"""SELECT r.id AS raw_message_id, r.group_name, r.sender_phone, r.sender, r.timestamp, r.message AS original_message,
-                (SELECT p.intent FROM parsed_output p WHERE p.raw_message_id = r.id AND p.intent IS NOT NULL AND p.intent != '' ORDER BY p.confidence DESC LIMIT 1) AS intent,
-                (SELECT p.broker_name FROM parsed_output p WHERE p.raw_message_id = r.id AND p.broker_name IS NOT NULL AND p.broker_name != '' ORDER BY p.confidence DESC LIMIT 1) AS broker_name,
-                (SELECT p.broker_phone FROM parsed_output p WHERE p.raw_message_id = r.id AND p.broker_phone IS NOT NULL AND p.broker_phone != '' ORDER BY p.confidence DESC LIMIT 1) AS broker_phone
+                (SELECT p.intent FROM typed_parsed_output p WHERE p.raw_message_id = r.id AND p.intent IS NOT NULL AND p.intent != '' ORDER BY p.confidence DESC LIMIT 1) AS intent,
+                (SELECT p.broker_name FROM typed_parsed_output p WHERE p.raw_message_id = r.id AND p.broker_name IS NOT NULL AND p.broker_name != '' ORDER BY p.confidence DESC LIMIT 1) AS broker_name,
+                (SELECT p.broker_phone FROM typed_parsed_output p WHERE p.raw_message_id = r.id AND p.broker_phone IS NOT NULL AND p.broker_phone != '' ORDER BY p.confidence DESC LIMIT 1) AS broker_phone
                 FROM raw_messages r WHERE {where_sql} ORDER BY r.timestamp DESC LIMIT ?""",
             (*params, max(limit * 100, 250))).fetchall()
         results: list[dict] = []
@@ -2634,7 +2634,7 @@ def _listing_search_response(args: dict) -> dict:
         return {"content": f"No exact matches found for {query_label}.", "blocks": [{"type": "empty_state", "title": "No exact matches", "body": f"PropAI searched saved WhatsApp property records for {query_label}.", "actions": [{"label": option, "value": option} for option in suggestions[:4]]}, {"type": "suggested_questions", "title": "Try next", "items": suggestions[:4]}], "sources": ["unique_listings"], "status_steps": ["Parsed property search","Searched saved properties","Rendered results"], "trace": {"route": "deterministic_listing_search", "args": args}}
     if not results and fallback_results:
         shown = len(fallback_results)
-        return {"content": f"Found {fallback_total} raw WhatsApp matches for {query_label}. Showing the latest {shown}.", "blocks": [{"type": "summary","title": "Raw WhatsApp Matches","body": "These matches came from parsed/raw WhatsApp messages because the normalized property record did not have the locality indexed exactly."}, {"type": "listing_cards","title": query_label.title(),"subtitle": f"{fallback_total} raw WhatsApp matches","items": fallback_results,"body": "Sorted by latest captured message"}, {"type": "suggested_questions","title": "Refine","items": [f"Show brokers for {query_label}",f"Show only sale {query_label}",f"Show only rental {query_label}",f"Search nearby Bandra listings"]}], "sources": ["market_feed","raw_messages","parsed_output"], "status_steps": ["Parsed property search","Searched saved properties","Searched raw WhatsApp messages","Rendered results"], "trace": {"route": "deterministic_listing_raw_fallback", "args": args, "total": fallback_total}}
+        return {"content": f"Found {fallback_total} raw WhatsApp matches for {query_label}. Showing the latest {shown}.", "blocks": [{"type": "summary","title": "Raw WhatsApp Matches","body": "These matches came from parsed/raw WhatsApp messages because the normalized property record did not have the locality indexed exactly."}, {"type": "listing_cards","title": query_label.title(),"subtitle": f"{fallback_total} raw WhatsApp matches","items": fallback_results,"body": "Sorted by latest captured message"}, {"type": "suggested_questions","title": "Refine","items": [f"Show brokers for {query_label}",f"Show only sale {query_label}",f"Show only rental {query_label}",f"Search nearby markets"]}], "sources": ["market_feed","raw_messages","parsed_output"], "status_steps": ["Parsed property search","Searched saved properties","Searched raw WhatsApp messages","Rendered results"], "trace": {"route": "deterministic_listing_raw_fallback", "args": args, "total": fallback_total}}
     shown = len(results); remaining = max(0, total - shown)
     return {"content": f"Found {total} {query_label}. Showing the latest {shown}." + (f" {remaining} more available." if remaining else ""), "blocks": [{"type": "summary","title": "Result","body": f"Found {total} {query_label}. Showing the latest {shown} saved from WhatsApp." + (f" {remaining} more available." if remaining else "")}, {"type": "listing_cards","title": query_label.title(),"subtitle": f"{total} matching property records","items": results,"body": "Sorted by latest seen"}, {"type": "suggested_questions","title": "Refine","items": [f"{query_label} under 3 L",f"Furnished {query_label}",f"Show brokers for {query_label}",f"Show original messages for {query_label}"]}], "sources": ["unique_listings"], "status_steps": ["Parsed property search","Searched saved properties","Rendered results"], "trace": {"route": "deterministic_listing_search", "args": args, "total": total}}
 
@@ -2662,11 +2662,11 @@ def _requirement_match_response(args: dict) -> dict:
             pass
     where_sql = " AND ".join(where)
     def run_query(sql_where: str, sql_params: list[object]):
-        count = storage.db.execute(f"SELECT COUNT(*) FROM parsed_output p JOIN raw_messages r ON r.id = p.raw_message_id WHERE {sql_where}", sql_params).fetchone()[0]
+        count = storage.db.execute(f"SELECT COUNT(*) FROM typed_parsed_output p JOIN raw_messages r ON r.id = p.raw_message_id WHERE {sql_where}", sql_params).fetchone()[0]
         result_rows = storage.db.execute(
             f"""SELECT p.id, p.intent, p.bhk, p.price, p.price_unit, p.area_sqft, p.furnishing, p.building_name,
                 p.micro_market, p.location_raw, p.broker_name, p.broker_phone, p.confidence, r.message, r.group_name,
-                r.sender, r.sender_phone, r.timestamp FROM parsed_output p JOIN raw_messages r ON r.id = p.raw_message_id
+                r.sender, r.sender_phone, r.timestamp FROM typed_parsed_output p JOIN raw_messages r ON r.id = p.raw_message_id
                 WHERE {sql_where} GROUP BY r.id ORDER BY COALESCE(r.timestamp, p.created_at, r.created_at) DESC, p.id DESC LIMIT ?""",
             (*sql_params, max(limit * 3, limit))).fetchall()
         return count, result_rows
@@ -2724,7 +2724,7 @@ def _broker_search_response(args: dict) -> dict:
         SUM(CASE WHEN intent IN ('SELL','RENT','COMMERCIAL','COMMERCIAL_SALE','COMMERCIAL_RENTAL') THEN 1 ELSE 0 END) AS listings,
         SUM(CASE WHEN intent IN ('BUY','BUYER','RENTAL_SEEKER') THEN 1 ELSE 0 END) AS requirements,
         COUNT(DISTINCT micro_market) AS markets, COUNT(DISTINCT r.group_name) AS groups, MAX(r.timestamp) AS last_seen
-        FROM parsed_output p JOIN raw_messages r ON r.id = p.raw_message_id {where}
+        FROM typed_parsed_output p JOIN raw_messages r ON r.id = p.raw_message_id {where}
         GROUP BY broker_name, broker_phone ORDER BY posts DESC LIMIT ?""", (*params, limit)).fetchall()
     hidden_brokers = _hidden_broker_phones_for_search()
     items = []

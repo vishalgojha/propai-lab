@@ -351,7 +351,7 @@ async function fetchParsedMarketRows(limit: number, since?: string, filters?: {
   listingKind?: "listing" | "requirement";
 }) {
   let query = supabase
-    .from("parsed_output")
+    .from("typed_parsed_output")
     .select(PARSED_MARKET_COLUMNS)
     .order("created_at", { ascending: false, nullsFirst: false })
     .limit(limit);
@@ -407,7 +407,7 @@ async function fetchListingTableRows(limit: number, since?: string, filters?: {
   budgetMinCr?: number;
 }) {
   let query = supabase
-    .from("listings")
+    .from("typed_listings_index")
     .select(LISTING_MARKET_COLUMNS)
     .order("last_seen", { ascending: false, nullsFirst: false })
     .limit(limit);
@@ -524,7 +524,7 @@ export async function getWorkspaceListings(input: {
   limit?: number;
 }) {
   const { data, error } = await supabase
-    .from("listings")
+    .from("typed_listings_index")
     .select("id, intent, bhk, price, price_unit, area_sqft, furnishing, location_label, micro_market, building_name, broker_name, broker_phone, created_at, last_seen")
     .eq("tenant_id", input.brokerId)
     .order("last_seen", { ascending: false, nullsFirst: false })
@@ -764,7 +764,7 @@ export async function saveListingRecord(input: {
   };
 
   const { data, error } = await supabase
-    .from("listings")
+    .from("typed_listings_index")
     .upsert({
       tenant_id: input.brokerId,
       fingerprint: mcpFingerprint("mcp-listing", input.brokerId, input.raw_text),
@@ -891,7 +891,7 @@ export async function getBrokerActivity(input: { brokerId: string; days?: number
 
   const [listingResult, requirementResult, messageResult, followUpResult] = await Promise.all([
     supabase
-      .from("listings")
+      .from("typed_listings_index")
       .select("micro_market, location_label, created_at")
       .eq("tenant_id", input.brokerId)
       .gte("created_at", since)
@@ -1938,7 +1938,7 @@ export async function getBuildingIntel(input: {
 export async function fetchListingById(listingId: string) {
   const parts = sourceIdParts(listingId);
   let query = supabase
-    .from("parsed_output")
+    .from("typed_parsed_output")
     .select(PARSED_MARKET_COLUMNS);
 
   if (parts.rawId != null) {

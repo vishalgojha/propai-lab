@@ -251,7 +251,7 @@ def test_apply_listings_only_fills_empty_micro_market(tmp_path):
 
     listings_rows, raw_messages, _ = _build_apply_inputs()
     client = _FakeClient({
-        "listings": listings_rows,
+        "typed_listings_index": listings_rows,
         "raw_messages": list(raw_messages.values()),
     })
     resolver = LocalityResolver(db=None, reference=REFERENCE)
@@ -278,7 +278,7 @@ def test_apply_listings_only_fills_empty_micro_market(tmp_path):
 
     # Confirm update calls landed only on the eligible IDs in the correct order.
     update_calls = [
-        (u["where"][1], u["payload"]) for u in client.updates if u["table"] == "listings"
+        (u["where"][1], u["payload"]) for u in client.updates
     ]
     assert {uid for uid, _ in update_calls} == {1, 2, 5}
     assert {(uid, payload["micro_market"]) for uid, payload in update_calls} == {
@@ -293,7 +293,7 @@ def test_apply_listings_with_overwrite_existing_touches_existing_rows(tmp_path):
     from backfill_localities import _apply_listings, _open_audit_csv
 
     listings_rows, raw_messages, _ = _build_apply_inputs()
-    client = _FakeClient({"listings": listings_rows, "raw_messages": list(raw_messages.values())})
+    client = _FakeClient({"typed_listings_index": listings_rows, "raw_messages": list(raw_messages.values())})
     resolver = LocalityResolver(db=None, reference=REFERENCE)
     audit_path = str(tmp_path / "audit.csv")
     audit, audit_fh = _open_audit_csv(audit_path)
@@ -318,7 +318,7 @@ def test_apply_listings_with_overwrite_existing_touches_existing_rows(tmp_path):
     assert counters["updated"] == 5
     update_payloads = {
         u["where"][1]: u["payload"]["micro_market"]
-        for u in client.updates if u["table"] == "listings"
+            for u in client.updates
     }
     assert update_payloads == {
         1: "Bandra West",
@@ -340,7 +340,7 @@ def test_apply_listings_low_confidence_filter_drops_resolved_suburb_x(tmp_path):
     raw_messages = [{
         "id": 900, "message": "come visit random suburb today", "tenant_id": "tenant-a"
     }]
-    client = _FakeClient({"listings": listings_rows, "raw_messages": raw_messages})
+    client = _FakeClient({"typed_listings_index": listings_rows, "raw_messages": raw_messages})
     resolver = LocalityResolver(db=None, reference=REFERENCE)
     audit_path = str(tmp_path / "audit.csv")
     audit, audit_fh = _open_audit_csv(audit_path)
@@ -366,7 +366,7 @@ def test_apply_listings_dry_run_logs_air_no_db_writes(tmp_path):
     from backfill_localities import _apply_listings, _open_audit_csv
 
     listings_rows, raw_messages, _ = _build_apply_inputs()
-    client = _FakeClient({"listings": listings_rows, "raw_messages": list(raw_messages.values())})
+    client = _FakeClient({"typed_listings_index": listings_rows, "raw_messages": list(raw_messages.values())})
     resolver = LocalityResolver(db=None, reference=REFERENCE)
     audit_path = str(tmp_path / "audit.csv")
     audit, audit_fh = _open_audit_csv(audit_path)
@@ -406,7 +406,7 @@ def test_apply_parsed_output_writes_micro_market_and_matched_span_to_location_ra
     from backfill_localities import _apply_parsed_output, _open_audit_csv
 
     _, raw_msgs_by_id, parsed_rows = _build_apply_inputs()
-    client = _FakeClient({"parsed_output": parsed_rows, "raw_messages": list(raw_msgs_by_id.values())})
+    client = _FakeClient({"typed_parsed_output": parsed_rows, "raw_messages": list(raw_msgs_by_id.values())})
     resolver = LocalityResolver(db=None, reference=REFERENCE)
     audit_path = str(tmp_path / "audit.csv")
     audit, audit_fh = _open_audit_csv(audit_path)
@@ -431,7 +431,7 @@ def test_apply_parsed_output_writes_micro_market_and_matched_span_to_location_ra
     assert counters["eligible"] == len(eligible_ids)
     assert counters["updated"] == len(eligible_ids)
     assert counters["skipped_existing"] == 2  # ID 12 (market exists) + ID 15 (no decision)
-    update_payloads = {u["where"][1]: u["payload"] for u in client.updates if u["table"] == "parsed_output"}
+    update_payloads = {u["where"][1]: u["payload"] for u in client.updates}
     assert set(update_payloads.keys()) == eligible_ids
 
     # ID 11: text-match path → location_raw filled with matched span "Pali Hill".
@@ -454,7 +454,7 @@ def test_apply_parsed_output_audit_csv_includes_before_after_values(tmp_path):
     from backfill_localities import _apply_parsed_output, _open_audit_csv
 
     _, raw_msgs_by_id, parsed_rows = _build_apply_inputs()
-    client = _FakeClient({"parsed_output": parsed_rows, "raw_messages": list(raw_msgs_by_id.values())})
+    client = _FakeClient({"typed_parsed_output": parsed_rows, "raw_messages": list(raw_msgs_by_id.values())})
     resolver = LocalityResolver(db=None, reference=REFERENCE)
     audit_path = str(tmp_path / "audit.csv")
     audit, audit_fh = _open_audit_csv(audit_path)
@@ -468,7 +468,7 @@ def test_apply_parsed_output_audit_csv_includes_before_after_values(tmp_path):
     with open(audit_path, newline="") as f:
         rows = list(csv.DictReader(f))
     by_id = {int(r["row_id"]): r for r in rows}
-    assert by_id[11]["target_table"] == "parsed_output"
+    assert by_id[11]["target_table"] == "typed_parsed_output"
     assert by_id[11]["old_micro_market"] == ""
     assert by_id[11]["new_micro_market"] == "Bandra West"
     assert by_id[11]["old_location_raw"] == ""
@@ -502,7 +502,7 @@ def test_run_apply_without_tenant_id_exits():
 
 
 def test_run_apply_rejects_unknown_target():
-    """``--target`` only accepts ``listings|parsed_output|both``."""
+    """``--target`` only accepts typed projection names or ``both``."""
     import backfill_localities
     with pytest.raises(SystemExit) as exc:
         backfill_localities.run_apply(

@@ -179,7 +179,7 @@ async def get_listing_detail(listing_id: int, user: dict = Depends(require_user)
             return query.eq("tenant_id", tenant_id) if tenant_id else query
 
         res, src_res, ph_res = await asyncio.gather(
-            asyncio.to_thread(lambda: scoped(storage.client.table("listings").select("*").eq("id", listing_id)).limit(1).execute()),
+            asyncio.to_thread(lambda: scoped(storage.client.table("typed_listings_index").select("*").eq("id", listing_id)).limit(1).execute()),
             asyncio.to_thread(lambda: storage.client.table("parsed").select(
                 "id, intent, role, message_type, bhk, price, price_unit, "
                 "area_sqft, furnishing, building_name, micro_market, confidence, "

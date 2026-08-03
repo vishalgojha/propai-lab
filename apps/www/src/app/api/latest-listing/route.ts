@@ -98,7 +98,7 @@ export async function GET() {
   }
   try {
     const { data, error } = (await db
-      .from("listings")
+      .from("typed_listings_index")
       .select(FIELDS)
       .order("last_seen", { ascending: false })
       .limit(1)

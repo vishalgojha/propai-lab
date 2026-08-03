@@ -117,7 +117,7 @@ class BuildingDiscovery:
         return None
 
     def discover_from_observations(self, min_observations: int = 2) -> list[dict]:
-        """Discover canonical building names from parsed_output.
+        """Discover canonical building names from the typed parsed projection.
 
         Args:
             min_observations: Minimum number of observations to consider a building canonical
@@ -125,29 +125,29 @@ class BuildingDiscovery:
         Returns:
             List of discovered buildings with metadata
         """
-        # Get all building names from parsed_output.
+        # Get all building names from the typed parsed projection.
         # primary_market = the MOST FREQUENT (not just first) distinct
         # micro_market for that building, so a specific sub-area (e.g.
         # "Thane West") wins over a coarse one ("Thane") when it dominates.
         rows = self.storage.db.execute("""
-            SELECT building_name, COUNT(*) as obs_count,
-                   COUNT(DISTINCT micro_market) as markets,
-                   COUNT(DISTINCT broker_name) as brokers,
-                   STRING_AGG(DISTINCT micro_market, ',') as market_list,
+            SELECT p.building_name, COUNT(*) as obs_count,
+                   COUNT(DISTINCT p.micro_market) as markets,
+                   COUNT(DISTINCT p.broker_name) as brokers,
+                   STRING_AGG(DISTINCT p.micro_market, ',') as market_list,
                    (
                      SELECT micro_market
-                     FROM parsed_output p2
-                     WHERE LOWER(p2.building_name) = LOWER(parsed_output.building_name)
-                       AND micro_market IS NOT NULL AND micro_market != ''
-                     GROUP BY micro_market
+                     FROM typed_parsed_output p2
+                     WHERE LOWER(p2.building_name) = LOWER(p.building_name)
+                       AND p2.micro_market IS NOT NULL AND p2.micro_market != ''
+                     GROUP BY p2.micro_market
                      ORDER BY COUNT(*) DESC
                      LIMIT 1
                    ) as primary_market,
                    MIN(created_at) as first_seen,
                    MAX(created_at) as last_seen
-            FROM parsed_output
-            WHERE building_name IS NOT NULL AND building_name != ''
-            GROUP BY LOWER(building_name)
+            FROM typed_parsed_output p
+            WHERE p.building_name IS NOT NULL AND p.building_name != ''
+            GROUP BY LOWER(p.building_name)
             HAVING obs_count >= ?
             ORDER BY obs_count DESC
         """, (min_observations,)).fetchall()

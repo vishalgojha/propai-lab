@@ -165,7 +165,7 @@ def _select_candidates(storage: SupabaseStorage, limit: int, threshold: float) -
     # Separate indexed reads avoid a broad OR plus embedded join across the full table.
     for clause in clauses:
         response = (
-            storage.client.table("parsed_output")
+            storage.client.table("typed_parsed_output")
             .select(columns)
             .or_(clause)
             .order("created_at")
@@ -202,7 +202,7 @@ def _existing_correction(
 ) -> dict[str, Any] | None:
     columns = ",".join((*CORRECTABLE_FIELDS, "corrected_fields", "correction_confidence"))
     response = (
-        storage.client.table("parsed_output")
+        storage.client.table("typed_parsed_output")
         .select(columns)
         .eq("correction_hash", correction_hash)
         .eq("listing_index", listing_index)
@@ -255,7 +255,7 @@ def _write_correction(
         "correction_confidence": payload["correction_confidence"],
         "corrected_at": datetime.now(timezone.utc).isoformat(),
     })
-    storage.client.table("parsed_output").update(update).eq("id", row_id).execute()
+    storage.update_parsed_fields(row_id, update)
 
 
 def _call_model(raw_text: str, draft: dict[str, Any]) -> tuple[dict[str, Any], int, int]:
@@ -365,7 +365,7 @@ def run_corrections(
 
             changes = {field: payload[field] for field in payload["corrected_fields"]}
             print(
-                f"[{index}/{len(candidates)}] parsed_output={row['id']} source={source} "
+                f"[{index}/{len(candidates)}] typed_source={row['id']} source={source} "
                 f"confidence={payload['correction_confidence']:.2f} changes="
                 f"{json.dumps(changes, ensure_ascii=False, default=str)}"
             )

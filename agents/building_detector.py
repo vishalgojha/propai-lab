@@ -218,7 +218,7 @@ def _check_group_context(storage: "Storage", parsed_id: int,
     one_hour_ago = (datetime.now(timezone.utc) - timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
     rows = storage.db.execute(
         """SELECT p.building_name, r.message, r.group_name, r.sender
-           FROM parsed_output p
+           FROM typed_parsed_output p
            JOIN raw_messages r ON r.id = p.raw_message_id
            WHERE p.building_name IS NOT NULL AND p.building_name != ''
              AND p.id != ?
@@ -490,7 +490,7 @@ def _make_suggestion(parsed_id: int, building_name: str,
 
 
 def _apply_building(storage: "Storage", d: dict) -> str | None:
-    """Extract building name via LLM + update parsed_output directly.
+    """Extract a building name and update its routed typed source row.
 
     Returns the extracted building name or None.
     """
@@ -504,9 +504,13 @@ def _apply_building(storage: "Storage", d: dict) -> str | None:
         return None
 
     building_name = result["building_name"]
+    from storage.supabase import _typed_route
+
+    typed_table = _typed_route(d)[0]
     storage.db.execute(
-        "UPDATE parsed_output SET building_name = ? WHERE id = ?",
-        (building_name, parsed_id),
+        f"UPDATE {typed_table} SET building_name = ?, updated_at = ? "
+        "WHERE legacy_source_id = ?",
+        (building_name, datetime.now(timezone.utc).isoformat(), parsed_id),
     )
 
     sug = _make_suggestion(parsed_id, building_name,
@@ -522,9 +526,10 @@ def backfill_bkc(storage: "Storage") -> tuple[int, int]:
     Returns (attempted, succeeded) counts.
     """
     rows = storage.db.execute(
-        """SELECT p.id, r.message, p.location_raw, p.micro_market,
+        """SELECT p.id, p.legacy_source_id, p.asset_type, p.transaction_type,
+                  p.message_type, r.message, p.location_raw, p.micro_market,
                   r.group_name, r.sender, p.building_name
-           FROM parsed_output p
+           FROM typed_parsed_output p
            JOIN raw_messages r ON r.id = p.raw_message_id
            WHERE p.micro_market ILIKE 'BKC'
              AND (p.building_name IS NULL OR p.building_name = '')

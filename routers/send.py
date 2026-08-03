@@ -305,7 +305,7 @@ async def public_create_lead(req: PublicLeadRequest):
         return JSONResponse(status_code=400, content={"error": "Invalid client phone number"})
 
     res = storage.db.execute(
-        "SELECT id, broker_name, broker_phone, building_name, micro_market FROM listings WHERE id = $1",
+        "SELECT id, broker_name, broker_phone, building_name, micro_market FROM typed_listings_index WHERE id = $1",
         [req.listing_id]
     )
     listing = res.fetchone()
@@ -417,7 +417,7 @@ async def public_listings(
                    l.developer, l.floor_description, l.view, l.orientation,
                    l.pic_token, l.listing_source, l.first_seen, l.last_seen,
                    l.observation_count, l.group_count
-            FROM listings l
+            FROM typed_listings_index l
             LEFT JOIN brokers b ON l.broker_name = b.canonical_name
             WHERE l.last_seen > now() - interval '30 days'
               AND l.observation_count >= 2

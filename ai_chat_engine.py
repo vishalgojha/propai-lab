@@ -326,13 +326,13 @@ def load_live_data(db_path):
     sources = {}
 
     raw_cnt = con.execute("SELECT COUNT(*) FROM raw_messages").fetchone()[0]
-    parsed_cnt = con.execute("SELECT COUNT(*) FROM parsed_output").fetchone()[0]
+    parsed_cnt = con.execute("SELECT COUNT(*) FROM typed_parsed_output").fetchone()[0]
     sources["overview"] = {
         "df": pd.DataFrame([{
             "total_messages": raw_cnt,
             "total_properties_posted": parsed_cnt,
             "total_brokers": con.execute("SELECT COUNT(*) FROM brokers").fetchone()[0],
-            "unique_properties": con.execute("SELECT COUNT(*) FROM listings").fetchone()[0],
+            "unique_properties": con.execute("SELECT COUNT(*) FROM typed_listings_index").fetchone()[0],
             "building_matches_found": con.execute("SELECT COUNT(*) FROM resolver_decisions WHERE method='resolved'").fetchone()[0],
         }]),
         "description": "Platform overview with total counts of messages, properties, brokers, and matched buildings",
@@ -358,7 +358,7 @@ def load_live_data(db_path):
         "location_label AS area, building_name, landmark_name, micro_market, "
         "broker_name, broker_phone, "
         "observation_count AS times_seen, group_count AS groups_seen_in, "
-        "first_seen, last_seen FROM listings ORDER BY last_seen DESC LIMIT 5000"
+        "first_seen, last_seen FROM typed_listings_index ORDER BY last_seen DESC LIMIT 5000"
     ).fetchall()
     if listings:
         sources["unique_listings"] = {"df": pd.DataFrame([dict(r) for r in listings]),
@@ -370,7 +370,7 @@ def load_live_data(db_path):
         "p.broker_name, p.broker_phone, "
         "p.forwarded, p.created_at AS posted_at, "
         "r.group_name AS group_name, r.sender AS posted_by, r.timestamp "
-        "FROM parsed_output p JOIN raw_messages r ON r.id = p.raw_message_id "
+        "FROM typed_parsed_output p JOIN raw_messages r ON r.id = p.raw_message_id "
         "ORDER BY p.id DESC LIMIT 10000"
     ).fetchall()
     if obs:
@@ -385,7 +385,7 @@ def load_live_data(db_path):
         "p.intent AS purpose, p.micro_market AS locality, "
         "rd.method AS match_status, rd.final_confidence AS match_confidence, "
         "rd.failure_category, rd.created_at "
-        "FROM resolver_decisions rd JOIN parsed_output p ON p.id = rd.parsed_id "
+        "FROM resolver_decisions rd JOIN typed_parsed_output p ON p.id = rd.parsed_id "
         "ORDER BY rd.id DESC LIMIT 10000"
     ).fetchall()
     if resolved:
@@ -398,7 +398,7 @@ def load_live_data(db_path):
                p.broker_name, p.confidence, p.created_at,
                r.message, r.group_name, r.timestamp,
                d.method, d.failure_category
-        FROM parsed_output p
+        FROM typed_parsed_output p
         JOIN raw_messages r ON r.id = p.raw_message_id
         LEFT JOIN resolver_decisions d ON d.parsed_id = p.id
         WHERE d.method = 'unresolved' OR p.confidence < 0.5
@@ -1395,6 +1395,85 @@ _MARKET_LOCALITIES = (
 )
 
 
+def _db_client(db_path):
+    client = getattr(db_path, "_client", None)
+    if client is not None:
+        return client
+    client = getattr(db_path, "client", None)
+    if client is not None:
+        return client
+    return db_path
+
+
+def _lookup_building_locality(db_path, building_name: str) -> str | None:
+    """Resolve a building name to its known micro-market, if available."""
+    name = re.sub(r"\s+", " ", (building_name or "").strip())
+    if not name or db_path is None:
+        return None
+    client = _db_client(db_path)
+    if client is None or not hasattr(client, "table"):
+        return None
+    try:
+        res = client.table("buildings").select("micro_market").eq(
+            "canonical_name", name
+        ).limit(1).execute()
+        if res.data and res.data[0].get("micro_market"):
+            return str(res.data[0]["micro_market"]).strip() or None
+
+        res = client.table("buildings").select("micro_market").ilike(
+            "canonical_name", name
+        ).limit(1).execute()
+        if res.data and res.data[0].get("micro_market"):
+            return str(res.data[0]["micro_market"]).strip() or None
+
+        res = client.table("building_name_aliases").select("canonical_name").ilike(
+            "alias", name
+        ).limit(1).execute()
+        if res.data:
+            canonical = str(res.data[0].get("canonical_name") or "").strip()
+            if canonical:
+                res2 = client.table("buildings").select("micro_market").eq(
+                    "canonical_name", canonical
+                ).limit(1).execute()
+                if res2.data and res2.data[0].get("micro_market"):
+                    return str(res2.data[0]["micro_market"]).strip() or None
+    except Exception:
+        _logger.warning("building locality lookup failed for %r", building_name, exc_info=True)
+    return None
+
+
+def _extract_building_candidate(text: str) -> str | None:
+    raw = re.sub(r"\s+", " ", (text or "").strip())
+    if not raw:
+        return None
+    candidates: list[str] = []
+    for pattern in (
+        r"\b(?:in|at|near|around)\s+([a-z0-9][a-z0-9&'().,\/\-\s]{2,80})",
+        r"\b(?:for|from)\s+([a-z0-9][a-z0-9&'().,\/\-\s]{2,80})",
+    ):
+        for match in re.finditer(pattern, raw, re.IGNORECASE):
+            candidate = re.sub(r"\s+", " ", match.group(1)).strip(" ?!.,;:")
+            if candidate:
+                candidates.append(candidate)
+    blocked_terms = re.compile(
+        r"\b(?:bhk|rent|rental|lease|sale|sell|buy|purchase|furnished|"
+        r"unfurnished|apartment|flat|property|inventory|budget|price|"
+        r"office|shop|showroom|warehouse|commercial)\b",
+        re.IGNORECASE,
+    )
+    cleaned = []
+    seen = set()
+    for candidate in sorted(candidates, key=len, reverse=True):
+        if blocked_terms.search(candidate):
+            continue
+        key = candidate.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        cleaned.append(candidate)
+    return cleaned[0] if cleaned else None
+
+
 def _market_price_to_rupees(value: str, unit: str) -> float:
     amount = float(value.replace(",", ""))
     unit = unit.lower()
@@ -1813,8 +1892,17 @@ def deterministic_market_response(query: dict, result: str, sources: dict | None
     is_requirement_search = payload.get("type") == "requirement_results" or query.get("search_scope") == "requirements"
     total = int(payload.get("total") or 0)
     if not results:
+        if query.get("micro_markets"):
+            locality_text = ", ".join(str(market) for market in query.get("micro_markets") or [] if str(market).strip())
+            fallback_body = (
+                f"No exact matches found for {locality_text}."
+                if locality_text
+                else "No exact matches found."
+            )
+        else:
+            fallback_body = "No exact matches found."
         return {
-            "content": "No active listings match those filters yet.",
+            "content": "No matching broker requirements were found yet." if is_requirement_search else "No active listings match those filters yet.",
             "blocks": [{
                 "type": "empty_state",
                 "title": "No exact market matches",
@@ -1914,6 +2002,12 @@ def relaxed_market_query(text: str) -> dict:
     ]
     if localities:
         args["micro_markets"] = sorted(set(localities), key=len, reverse=True)
+    else:
+        building_candidate = _extract_building_candidate(raw)
+        if building_candidate:
+            building_market = _lookup_building_locality(db_path, building_candidate)
+            if building_market:
+                args["micro_markets"] = [building_market]
 
     if re.search(r"\b(?:rent|rental|lease|leave\s*(?:&|and)\s*license|l&l)\b", lower):
         args["intent"] = "RENT"
@@ -2013,8 +2107,8 @@ def live_overview_counts(db_path=None) -> dict:
     try:
         return {
             "total_messages": con.execute("SELECT COUNT(*) FROM raw_messages").fetchone()[0],
-            "total_properties_posted": con.execute("SELECT COUNT(*) FROM parsed_output").fetchone()[0],
-            "unique_properties": con.execute("SELECT COUNT(*) FROM listings").fetchone()[0],
+            "total_properties_posted": con.execute("SELECT COUNT(*) FROM typed_parsed_output").fetchone()[0],
+            "unique_properties": con.execute("SELECT COUNT(*) FROM typed_listings_index").fetchone()[0],
             "total_brokers": con.execute("SELECT COUNT(*) FROM brokers").fetchone()[0],
         }
     except Exception:
@@ -2122,11 +2216,7 @@ def _hidden_market_item_ids(client, tenant_id: str | None = None) -> tuple[set[i
 
 
 def _rest_requirement_search(client, args: dict, tenant_id: str | None = None) -> str:
-    """Search parsed demand records, not the listings projection.
-
-    Requirements live in parsed_output because they describe what a broker or
-    client is looking for; they are deliberately not promoted into listings.
-    """
+    """Search the market-wide demand projection, never the supply table."""
     bhk = str(args.get("bhk") or "").strip()
     bhk_match = re.search(r"\d+(?:\.5)?", bhk)
     requested_bhk = float(bhk_match.group(0)) if bhk_match else None
@@ -2138,13 +2228,12 @@ def _rest_requirement_search(client, args: dict, tenant_id: str | None = None) -
     offset = max(0, int(args.get("offset") or 0))
     hidden_brokers = _hidden_broker_phones(client, tenant_id)
     _, hidden_raw_message_ids = _hidden_market_item_ids(client, tenant_id)
-    demand_intents = ["BUY", "BUYER", "REQUIREMENT", "RENTAL_SEEKER", "TENANT", "DEMAND"]
     columns = (
-        "id,raw_message_id,message_type,intent,bhk,price,price_unit,area_sqft,"
-        "furnishing,location_raw,building_name,landmark_name,micro_market,"
-        "broker_name,broker_phone,confidence,created_at"
+        "id,fingerprint,raw_message_id,intent,transaction_type,bhk,price_min,price_max,"
+        "area_sqft,location_label,building_name,landmark_name,micro_market,"
+        "broker_name,broker_phone,confidence,first_seen,last_seen,created_at"
     )
-    query = client.table("parsed_output").select(columns, count="exact").in_("intent", demand_intents)
+    query = client.table("typed_market_requirements").select(columns, count="exact")
     if tenant_id:
         query = query.eq("tenant_id", tenant_id)
     if broker:
@@ -2157,7 +2246,7 @@ def _rest_requirement_search(client, args: dict, tenant_id: str | None = None) -
         if requested_bhk is not None and (row_bhk is None or float(row_bhk.group(0)) != requested_bhk):
             continue
         if markets:
-            haystack = " ".join(str(row.get(key) or "") for key in ("micro_market", "location_raw", "landmark_name", "building_name")).lower()
+            haystack = " ".join(str(row.get(key) or "") for key in ("micro_market", "location_label", "landmark_name", "building_name")).lower()
             if not any(all(word.lower() in haystack for word in market.split()) for market in markets):
                 continue
         phone = _normalize_real_phone(row.get("broker_phone") or "")
@@ -2170,26 +2259,37 @@ def _rest_requirement_search(client, args: dict, tenant_id: str | None = None) -
     total = len(rows)
     results = []
     for row in rows[offset:offset + limit]:
+        price_min = row.get("price_min")
+        price_max = row.get("price_max")
+        price_intent = str(row.get("transaction_type") or "RENT").upper()
+        if price_min is not None and price_max is not None and float(price_min) != float(price_max):
+            price_formatted = f"{fmt_listing_price(price_min, 'INR', price_intent)} - {fmt_listing_price(price_max, 'INR', price_intent)}"
+        else:
+            price_formatted = fmt_listing_price(price_min, "INR", price_intent)
         results.append({
             "listing_id": None,
+            "requirement_id": row.get("id"),
             "raw_message_id": row.get("raw_message_id"),
-            "fingerprint": None,
+            "fingerprint": row.get("fingerprint"),
             "intent": row.get("intent") or "REQUIREMENT",
+            "transaction_type": row.get("transaction_type"),
             "bhk": row.get("bhk"),
-            "price": row.get("price"),
-            "price_unit": row.get("price_unit"),
-            "price_formatted": fmt_listing_price(row.get("price"), row.get("price_unit"), "RENT"),
+            "price": price_min,
+            "price_min": price_min,
+            "price_max": price_max,
+            "price_unit": "INR",
+            "price_formatted": price_formatted,
             "area_sqft": row.get("area_sqft"),
-            "furnishing": row.get("furnishing"),
-            "location_label": row.get("location_raw"),
+            "furnishing": None,
+            "location_label": row.get("location_label"),
             "building_name": row.get("building_name") or "Requirement",
             "landmark_name": row.get("landmark_name"),
             "micro_market": row.get("micro_market"),
             "broker_name": row.get("broker_name"),
             "broker_phone": row.get("broker_phone"),
-            "first_seen": row.get("created_at"),
-            "last_seen": row.get("created_at"),
-            "last_seen_text": row.get("created_at") or "",
+            "first_seen": row.get("first_seen") or row.get("created_at"),
+            "last_seen": row.get("last_seen") or row.get("created_at"),
+            "last_seen_text": row.get("last_seen") or row.get("created_at") or "",
             "observation_count": 1,
             "group_count": 1,
             "confidence": row.get("confidence") or 0,
@@ -2238,7 +2338,7 @@ def _rest_market_search(client, args: dict, tenant_id: str | None = None) -> str
     )
 
     def fetch_one_market(market: str | None):
-        query = client.table("listings").select(columns, count="exact")
+        query = client.table("typed_listings_index").select(columns, count="exact")
         if furnishing and furnishing.lower() != "any":
             query = query.ilike("furnishing", furnishing)
         if building:
@@ -2384,7 +2484,7 @@ def execute_tool(name, args, sources, db_path=None, tenant_id: str | None = None
                 rows = con.execute("""
                     SELECT p.id, p.intent, p.micro_market, p.broker_name, p.confidence,
                            p.location_raw, r.message, r.group_name
-                    FROM parsed_output p
+                    FROM typed_parsed_output p
                     JOIN raw_messages r ON r.id = p.raw_message_id
                     LEFT JOIN resolver_decisions d ON d.parsed_id = p.id
                     WHERE d.method = 'unresolved'
@@ -2394,7 +2494,7 @@ def execute_tool(name, args, sources, db_path=None, tenant_id: str | None = None
                 rows = con.execute("""
                     SELECT p.id, p.intent, p.micro_market, p.broker_name, p.confidence,
                            p.location_raw, r.message, r.group_name
-                    FROM parsed_output p
+                    FROM typed_parsed_output p
                     JOIN raw_messages r ON r.id = p.raw_message_id
                     WHERE p.confidence < 0.5 AND p.confidence > 0
                     ORDER BY p.confidence ASC LIMIT ?
@@ -2403,7 +2503,7 @@ def execute_tool(name, args, sources, db_path=None, tenant_id: str | None = None
                 rows = con.execute("""
                     SELECT p.id, p.intent, p.price, p.micro_market, p.broker_name,
                            r.message, r.group_name
-                    FROM parsed_output p
+                    FROM typed_parsed_output p
                     JOIN raw_messages r ON r.id = p.raw_message_id
                     WHERE (p.bhk IS NULL OR p.bhk = '') AND p.intent IN ('SELL','RENT')
                     ORDER BY p.id DESC LIMIT ?
@@ -2412,7 +2512,7 @@ def execute_tool(name, args, sources, db_path=None, tenant_id: str | None = None
                 rows = con.execute("""
                     SELECT p.id, p.intent, p.bhk, p.micro_market, p.broker_name,
                            r.message, r.group_name
-                    FROM parsed_output p
+                    FROM typed_parsed_output p
                     JOIN raw_messages r ON r.id = p.raw_message_id
                     WHERE (p.price IS NULL OR p.price = 0) AND p.intent IN ('SELL','RENT')
                     ORDER BY p.id DESC LIMIT ?
@@ -2422,7 +2522,7 @@ def execute_tool(name, args, sources, db_path=None, tenant_id: str | None = None
                     SELECT p.id, p.intent, p.confidence, p.micro_market, p.broker_name,
                            d.method, d.failure_category,
                            r.message, r.group_name
-                    FROM parsed_output p
+                    FROM typed_parsed_output p
                     JOIN raw_messages r ON r.id = p.raw_message_id
                     LEFT JOIN resolver_decisions d ON d.parsed_id = p.id
                     WHERE d.method = 'unresolved' OR p.confidence < 0.5
@@ -2701,7 +2801,7 @@ def execute_tool(name, args, sources, db_path=None, tenant_id: str | None = None
             }
             order_sql = sort_map.get(sort_by, "l.last_seen DESC")
 
-            total_query = f"SELECT COUNT(*) FROM listings l WHERE {where_sql}"
+            total_query = f"SELECT COUNT(*) FROM typed_listings_index l WHERE {where_sql}"
             total_count = con.execute(total_query, params).fetchone()[0]
 
             listing_query = f"""
@@ -2710,7 +2810,7 @@ def execute_tool(name, args, sources, db_path=None, tenant_id: str | None = None
                        l.micro_market, l.broker_name, l.broker_phone,
                        l.first_seen, l.last_seen, l.observation_count, l.group_count,
                        l.latest_raw_message_id
-                FROM listings l
+                FROM typed_listings_index l
                 WHERE {where_sql}
                 ORDER BY {order_sql}
                 LIMIT ? OFFSET ?

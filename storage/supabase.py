@@ -173,6 +173,87 @@ def _normalize_listing_price(price: object, price_unit: object) -> tuple[float |
     return value, price_unit if price_unit is None or isinstance(price_unit, str) else str(price_unit)
 
 
+_MARKET_REQUIREMENT_INTENTS = frozenset({
+    "BUY", "BUYER", "REQUIREMENT", "RENTAL_SEEKER", "TENANT", "DEMAND",
+})
+
+
+def _is_market_requirement(parsed: dict) -> bool:
+    message_type = str(parsed.get("message_type") or "").strip().upper()
+    intent = str(parsed.get("intent") or "").strip().upper()
+    return message_type in {"REQUIREMENT", "BUY"} or intent in _MARKET_REQUIREMENT_INTENTS
+
+
+_TYPED_LISTING_TABLES = {
+    ("residential", "sale"): "residential_sale_listings",
+    ("residential", "rent"): "residential_rent_listings",
+    ("commercial", "sale"): "commercial_sale_listings",
+    ("commercial", "rent"): "commercial_rent_listings",
+}
+_TYPED_REQUIREMENT_TABLES = {
+    ("residential", "sale"): "residential_sale_requirements",
+    ("residential", "rent"): "residential_rent_requirements",
+    ("commercial", "sale"): "commercial_sale_requirements",
+    ("commercial", "rent"): "commercial_rent_requirements",
+}
+
+
+def _typed_route(parsed: dict) -> tuple[str, str, str]:
+    """Return (destination table, asset type, transaction type).
+
+    This mirrors the classification functions used by the migration, but is
+    deliberately kept in application code so new ingestion never depends on
+    a compatibility trigger or an old flat table.
+    """
+    body = " ".join(str(parsed.get(key) or "") for key in (
+        "normalized_message", "location_raw", "property_type", "commercial_use_type"
+    )).lower()
+    asset = str(parsed.get("asset_type") or "").strip().lower()
+    if asset not in {"residential", "commercial"}:
+        asset = "commercial" if re.search(
+            r"office|shop|showroom|warehouse|godown|industrial|commercial|retail|bare.?shell|warm.?shell|chargeable area|ceiling height|mezzanine|cabin|workstation|conference room|\bpsf\b|\bcam\b|lease deed|power load|\bkw\b|food court",
+            body,
+        ) else "residential"
+    tx = str(parsed.get("transaction_type") or "").strip().lower()
+    if tx not in {"rent", "sale"}:
+        tx = "rent" if re.search(
+            r"rent|rental|lease|monthly|per month|deposit|tenancy|lock.?in|notice period|lease out",
+            " ".join(str(parsed.get(key) or "") for key in ("intent", "message_type", "normalized_message")),
+            re.I,
+        ) else "sale"
+    tables = _TYPED_REQUIREMENT_TABLES if _is_market_requirement(parsed) else _TYPED_LISTING_TABLES
+    return tables[(asset, tx)], asset, tx
+
+
+def _typed_source_id(parsed: dict) -> int:
+    """Stable cross-table observation id used by resolver_decisions."""
+    if int(parsed.get("id") or 0) > 0:
+        return int(parsed["id"])
+    raw_id = int(parsed.get("raw_message_id") or 0)
+    index = int(parsed.get("listing_index") or 0)
+    if raw_id > 0:
+        return raw_id * 1000 + index + 1
+    digest = hashlib.sha256(json.dumps(parsed, sort_keys=True, default=str).encode()).hexdigest()
+    return int(digest[:15], 16)
+
+
+def _price_to_rupees(value: object, unit: object) -> float | None:
+    if value in (None, ""):
+        return None
+    try:
+        amount = float(value)
+    except (TypeError, ValueError):
+        return None
+    normalized = str(unit or "").strip().lower()
+    if normalized in {"cr", "crore", "crores"}:
+        return amount * 1_00_00_000
+    if normalized in {"lac", "lacs", "lakh", "lakhs", "l"}:
+        return amount * 1_00_000
+    if normalized in {"k", "thousand"}:
+        return amount * 1_000
+    return amount
+
+
 def _is_market_group_name(group_name: str = "") -> bool:
     gn = (group_name or "").strip()
     if not gn or gn in ("seed", "seed-bot", "status@broadcast", "broadcast"):
@@ -1835,7 +1916,7 @@ class SupabaseStorage(Storage):
         # The inbox renders one page at a time. Pulling 50k parsed rows on
         # every refresh made this endpoint stall and prevented new raw
         # messages from appearing in the fallback feed.
-        query = self.client.table("parsed_output")\
+        query = self.client.table("typed_parsed_output")\
             .select("id,raw_message_id,message_type,intent,asset_type,property_type,transaction_type,bhk,configuration,price,price_unit,monthly_rent,total_asking_price,area_sqft,furnishing,location_raw,building_name,landmark_name,micro_market,floor_range,commercial_use_type,occupancy_type,broker_name,broker_phone,profile_name,listing_index,confidence,summary_title,normalized_message,created_at")\
             .order("created_at", desc=True)\
             .limit(max(1500, limit + offset))
@@ -2129,8 +2210,135 @@ class SupabaseStorage(Storage):
         data = _sanitize_parsed_payload(data)
         if not data.get("tenant_id") and self._tenant_id:
             data["tenant_id"] = self._tenant_id
+        source_id = _typed_source_id(data)
+        table, asset_type, transaction_type = _typed_route(data)
+        raw_id = int(data.get("raw_message_id") or 0)
+        listing_index = int(data.get("listing_index") or 0)
+        raw_payload = data.get("raw_payload") or {}
+        ai = data.get("ai_extraction") or {}
+        if isinstance(ai, str):
+            try:
+                ai = json.loads(ai)
+            except (TypeError, json.JSONDecodeError):
+                ai = {}
+        price_obj = ai.get("price") if isinstance(ai, dict) else {}
+        if not isinstance(price_obj, dict):
+            price_obj = {}
+        price_value = data.get("price")
+        price_unit = data.get("price_unit") or price_obj.get("unit")
+        price_rupees = _price_to_rupees(price_value, price_unit)
+        area_sqft = data.get("carpet_area_sqft") or data.get("area_sqft")
+        bhk_value = data.get("bhk")
+        if isinstance(bhk_value, str):
+            match = re.search(r"\d+(?:\.\d+)?", bhk_value)
+            bhk_value = float(match.group(0)) if match else None
+
+        # The typed tables deliberately retain the complete LLM payload while
+        # promoting only fields that belong to the selected schema.
+        common = {
+            "raw_message_id": raw_id,
+            "tenant_id": data.get("tenant_id") or self._tenant_id,
+            "listing_index": listing_index,
+            "source_fingerprint": hashlib.sha256(
+                f"typed-observation:{raw_id}:{listing_index}".encode()
+            ).hexdigest(),
+            "legacy_source_id": source_id,
+            "asset_type": asset_type,
+            "transaction_type": transaction_type,
+            "building_name": data.get("building_name"),
+            "locality_raw": data.get("location_raw") or data.get("area"),
+            "locality_resolved": data.get("location") if isinstance(data.get("location"), str) else None,
+            "micro_market": data.get("micro_market") or data.get("location_raw"),
+            "landmark_name": data.get("landmark_name"),
+            "street_name": data.get("street_name"),
+            "broker_id": data.get("broker_id"),
+            "broker_name": data.get("broker_name") or data.get("profile_name"),
+            "broker_phone": data.get("broker_phone"),
+            "group_name": data.get("group_name"),
+            "summary_title": data.get("summary_title"),
+            "normalized_message": data.get("normalized_message"),
+            "raw_payload": raw_payload,
+            "ai_extraction": ai or None,
+            "deal_tags": data.get("deal_tags") or [],
+            "additional_charges": data.get("additional_charges") or [],
+            "validation_flags": data.get("validation_flags") or [],
+            "needs_review": bool(data.get("needs_review")),
+            "extraction_confidence": "high" if float(data.get("confidence") or 0) >= .85 else ("medium" if float(data.get("confidence") or 0) >= .6 else "low"),
+            "corrected_fields": data.get("corrected_fields") or [],
+            "correction_confidence": data.get("correction_confidence"),
+            "corrected_at": data.get("corrected_at"),
+        }
+        typed = dict(common)
+        typed.update({
+            "bhk": bhk_value, "carpet_area_sqft": area_sqft,
+            "built_up_area_sqft": data.get("built_up_area_sqft"),
+            "area_raw_text": data.get("area") or data.get("location_raw"),
+            "bathroom_count": data.get("bathroom_count"),
+            "car_parking_count": data.get("car_parking_count"),
+            "parking_type": data.get("parking_type"),
+            "floor_range": data.get("floor_range"),
+            "configuration_type": data.get("configuration_type"),
+            "furnishing_status": data.get("furnishing_canonical") or data.get("furnishing"),
+            "fitout_status": data.get("fitout_status") or data.get("furnishing_canonical") or data.get("furnishing"),
+            "possession_status": data.get("possession_status"),
+            "possession_date": data.get("possession_date"),
+            "available_from": data.get("available_from"),
+            "oc_status": data.get("oc_status"),
+            "ceiling_height": data.get("ceiling_height"),
+            "commercial_use_type": data.get("commercial_use_type") or data.get("property_type"),
+            "developer_name": data.get("developer"),
+            "price_raw_text": price_obj.get("raw_price_text") or str(price_value) if price_value is not None else None,
+            "price_basis": data.get("price_basis"),
+            "price_qualifier": "plus_plus" if "++" in str(price_obj.get("raw_price_text") or "") else None,
+            "total_asking_price": data.get("total_asking_price") or price_rupees,
+            "monthly_rent": data.get("monthly_rent") or (price_rupees if transaction_type == "rent" and str(price_unit).lower() not in {"per_sqft", "psf"} else None),
+            "price_per_sqft": data.get("price_per_sqft") if transaction_type == "sale" else None,
+            "rent_per_sqft": data.get("rent_per_sqft") or (price_value if str(price_unit).lower() in {"per_sqft", "psf"} and transaction_type == "rent" else None),
+            "deposit_amount": data.get("deposit_amount"),
+            "deposit_applicable": data.get("deposit_amount") is not None,
+            "deposit_raw_text": price_obj.get("deposit_raw_text"),
+            "lease_term_type": data.get("lease_term_type"),
+            "brokerage_type": data.get("brokerage_type"),
+            "pet_policy": data.get("pet_policy"),
+            "tenant_type_preference": data.get("tenant_type_preference"),
+            "sharing_allowed": data.get("sharing_allowed"),
+            "company_lease_criteria": data.get("company_lease_criteria"),
+            "tenant_nationality_preference": data.get("tenant_nationality_preference"),
+            "building_amenities": data.get("building_amenities") or [],
+            "unit_amenities": data.get("amenities") or [],
+            "amenities_unverified_claim": data.get("amenities_unverified_claim"),
+            "deal_tags": data.get("deal_tags") or [],
+        })
+        if table.endswith("requirements"):
+            typed.update({
+                "intent": data.get("intent") or data.get("message_type") or "BUY",
+                "budget_min": data.get("price_min") or data.get("budget_min"),
+                "budget_max": data.get("price_max") or data.get("budget_max") or price_rupees,
+                "budget_currency": "INR",
+                "area_min_sqft": data.get("area_min_sqft") or area_sqft,
+                "area_max_sqft": data.get("area_max_sqft") or area_sqft,
+                "locality_options": [x for x in [data.get("micro_market"), data.get("location_raw")] if x],
+                "status": "active",
+                "is_flexible": False,
+                "urgency": "urgent" if "urgent" in str(data.get("normalized_message") or "").lower() else "normal",
+                "bhk_options": [bhk_value] if bhk_value is not None else [],
+                "configuration_preference": [data.get("configuration_type")] if data.get("configuration_type") else [],
+                "furnishing_preference": data.get("furnishing_canonical") or data.get("furnishing"),
+                "commercial_use_type": [data.get("commercial_use_type") or data.get("property_type")] if (data.get("commercial_use_type") or data.get("property_type")) else [],
+            })
+        allowed_by_table = {
+            "residential_sale_listings": {"bhk","configuration_type","bathroom_count","carpet_area_sqft","built_up_area_sqft","area_raw_text","total_asking_price","price_per_sqft","price_basis","price_raw_text","price_qualifier","furnishing_status","possession_status","possession_date","car_parking_count","parking_type","floor_range","building_amenities","unit_amenities","amenities_unverified_claim","oc_status","brokerage_type","developer_name"},
+            "residential_rent_listings": {"bhk","configuration_type","bathroom_count","carpet_area_sqft","built_up_area_sqft","area_raw_text","monthly_rent","rent_per_sqft","price_basis","price_raw_text","price_qualifier","deposit_amount","deposit_applicable","deposit_raw_text","furnishing_status","possession_status","available_from","car_parking_count","parking_type","floor_range","building_amenities","unit_amenities","amenities_unverified_claim","pet_policy","tenant_type_preference","sharing_allowed","company_lease_criteria","tenant_nationality_preference","lease_term_type","brokerage_type"},
+            "commercial_sale_listings": {"commercial_use_type","carpet_area_sqft","built_up_area_sqft","area_raw_text","total_asking_price","price_per_sqft","price_basis","price_raw_text","price_qualifier","fitout_status","ceiling_height","floor_range","car_parking_count","parking_type","oc_status","building_amenities","has_central_ac","has_power_backup","has_lift","brokerage_type","developer_name"},
+            "commercial_rent_listings": {"commercial_use_type","carpet_area_sqft","built_up_area_sqft","area_raw_text","monthly_rent","rent_per_sqft","price_basis","price_raw_text","price_qualifier","deposit_amount","deposit_applicable","deposit_raw_text","fitout_status","ceiling_height","floor_range","car_parking_count","parking_type","building_amenities","has_central_ac","has_power_backup","has_lift","lease_term_type","brokerage_type"},
+        }
+        if table.endswith("requirements"):
+            allowed = {"bhk_options","configuration_preference","carpet_area_min_sqft","carpet_area_max_sqft","built_up_area_min_sqft","built_up_area_max_sqft","budget_min","budget_max","budget_currency","area_min_sqft","area_max_sqft","locality_options","is_flexible","urgency","status","commercial_use_type","furnishing_preference","possession_preference","tenant_type","has_pets","sharing_acceptable","fitout_preference","car_parking_min","needs_mezzanine","needs_lift","needs_power_backup","needs_central_ac","min_power_load_kw","lease_term_preference","deposit_budget_max","buyer_type","brokerage_willingness"}
+        else:
+            allowed = allowed_by_table[table]
+        typed = {k: v for k, v in typed.items() if v is not None and k in (set(common) | allowed)}
         try:
-            res = self.client.table("parsed_output").insert(data).execute()
+            res = self.client.table(table).upsert(typed, on_conflict="source_fingerprint").execute()
         except Exception as exc:
             print(f"[storage] save_parsed insert failed: {exc}", flush=True)
             try:
@@ -2142,16 +2350,42 @@ class SupabaseStorage(Storage):
             except Exception:
                 print(f"[storage] save_parsed payload={data!r}", flush=True)
             raise
-        return res.data[0]["id"] if res.data else 0
+        return source_id if res.data else 0
+
+    def update_parsed_fields(self, row_id: int, updates: dict[str, Any]) -> bool:
+        """Apply correction-layer updates to the typed source row.
+
+        ``row_id`` is the stable observation id exposed by the normalized read
+        view, not the identity sequence of any one typed table.
+        """
+        row_res = self.client.table("typed_parsed_output").select(
+            "id,raw_message_id,listing_index,asset_type,transaction_type,message_type,intent,tenant_id"
+        ).eq("id", row_id).limit(1).execute()
+        row = (row_res.data or [None])[0]
+        if not row:
+            return False
+        table, _, tx = _typed_route(row)
+        mapping = {"price": "monthly_rent" if tx == "rent" else "total_asking_price", "area_sqft": "carpet_area_sqft", "furnishing": "furnishing_status", "furnishing_canonical": "furnishing_status", "price_per_sqft": "rent_per_sqft" if tx == "rent" else "price_per_sqft", "bhk": "bhk"}
+        typed = {}
+        for key, value in updates.items():
+            target = mapping.get(key, key)
+            if target in {"id", "raw_message_id", "tenant_id", "listing_index", "source_fingerprint", "legacy_source_id"}:
+                continue
+            typed[target] = value
+        if not typed:
+            return False
+        typed["updated_at"] = datetime.now(timezone.utc).isoformat()
+        self.client.table(table).update(typed).eq("legacy_source_id", row_id).execute()
+        return True
 
     def get_parsed_by_raw(self, raw_id: int) -> Optional[ParsedObservation]:
-        res = self.client.table("parsed_output").select("*").eq("raw_message_id", raw_id).limit(1).execute()
+        res = self.client.table("typed_parsed_output").select("*").eq("raw_message_id", raw_id).limit(1).execute()
         if res.data:
             return dict_to_dataclass(ParsedObservation, res.data[0])
         return None
 
     def get_parsed(self, limit: int = 50, offset: int = 0, intent: str = "", classified_only: bool = False) -> list[dict]:
-        query = self.client.table("parsed_output").select("*").order("created_at", desc=True).limit(limit).offset(offset)
+        query = self.client.table("typed_parsed_output").select("*").order("created_at", desc=True).limit(limit).offset(offset)
         if intent:
             query = query.eq("intent", intent)
         if classified_only:
@@ -2162,11 +2396,11 @@ class SupabaseStorage(Storage):
         return [dict_to_dataclass(ParsedObservation, d) for d in res.data]
 
     def get_parsed_by_message(self, raw_message_id: int) -> list[ParsedObservation]:
-        res = self.client.table("parsed_output").select("*").eq("raw_message_id", raw_message_id).execute()
+        res = self.client.table("typed_parsed_output").select("*").eq("raw_message_id", raw_message_id).execute()
         return [dict_to_dataclass(ParsedObservation, d) for d in res.data]
 
     def get_parsed_by_message(self, raw_message_id: int) -> list[ParsedObservation]:
-        res = self.client.table("parsed_output").select("*").eq("raw_message_id", raw_message_id).execute()
+        res = self.client.table("typed_parsed_output").select("*").eq("raw_message_id", raw_message_id).execute()
         return [dict_to_dataclass(ParsedObservation, d) for d in res.data]
 
     # ── Knowledge Records ────────────────────────────────────────────
@@ -2394,6 +2628,154 @@ class SupabaseStorage(Storage):
 
     # ── Listings ─────────────────────────────────────────────────
 
+    def _market_requirement_payload(
+        self,
+        obs: dict,
+        broker_id: int | None = None,
+    ) -> dict | None:
+        """Build the demand-side projection from one parsed observation.
+
+        Price bounds are stored in absolute INR so requirement matching can
+        compare them to listings without mixing lakh/crore units. A single
+        explicit budget is represented as equal min/max bounds.
+        """
+        if not _is_market_requirement(obs):
+            return None
+        tenant_id = obs.get("tenant_id") or self._tenant_id
+        raw_id = obs.get("raw_message_id")
+        parsed_id = obs.get("id")
+        if not tenant_id or raw_id is None or parsed_id is None:
+            return None
+
+        raw_payload = obs.get("raw_payload") or {}
+        if isinstance(raw_payload, str):
+            try:
+                raw_payload = json.loads(raw_payload)
+            except (TypeError, ValueError, json.JSONDecodeError):
+                raw_payload = {}
+        price_unit = obs.get("price_unit")
+        default_price = obs.get("price")
+        price_min = _price_to_rupees(
+            raw_payload.get("price_min", default_price) if isinstance(raw_payload, dict) else default_price,
+            raw_payload.get("price_unit", price_unit) if isinstance(raw_payload, dict) else price_unit,
+        )
+        price_max = _price_to_rupees(
+            raw_payload.get("price_max", default_price) if isinstance(raw_payload, dict) else default_price,
+            raw_payload.get("price_unit", price_unit) if isinstance(raw_payload, dict) else price_unit,
+        )
+        if price_min is not None and price_max is not None and price_min > price_max:
+            price_min, price_max = price_max, price_min
+
+        fingerprint = f"requirement:{tenant_id}:{parsed_id}"
+        return {
+            "fingerprint": fingerprint,
+            "intent": obs.get("intent") or "BUY",
+            "transaction_type": obs.get("transaction_type"),
+            "bhk": obs.get("bhk"),
+            "price_min": price_min,
+            "price_max": price_max,
+            "price_unit": "INR",
+            "area_sqft": obs.get("area_sqft"),
+            "location_label": obs.get("location_raw") or obs.get("micro_market"),
+            "building_name": obs.get("building_name"),
+            "landmark_name": obs.get("landmark_name"),
+            "micro_market": obs.get("micro_market"),
+            "broker_id": broker_id if broker_id is not None else obs.get("broker_id"),
+            "broker_name": obs.get("broker_name") or obs.get("profile_name"),
+            "broker_phone": obs.get("broker_phone"),
+            "raw_message_id": raw_id,
+            "confidence": obs.get("confidence") or 0,
+            "first_seen": obs.get("created_at") or None,
+            "last_seen": obs.get("created_at") or None,
+            "tenant_id": tenant_id,
+        }
+
+    def _market_requirement_broker_id(self, obs: dict, tenant_id: str | None = None) -> int | None:
+        if obs.get("broker_id") is not None:
+            try:
+                return int(obs["broker_id"])
+            except (TypeError, ValueError):
+                pass
+        phone = _normalize_india_phone(obs.get("broker_phone") or "")
+        if not phone:
+            return None
+        query = self.client.table("brokers").select("id").eq("primary_phone", phone).limit(1)
+        if tenant_id:
+            query = query.eq("tenant_id", tenant_id)
+        try:
+            rows = query.execute().data or []
+            return int(rows[0]["id"]) if rows else None
+        except Exception:
+            return None
+
+    def upsert_market_requirement_from_parsed(self, parsed_id: int) -> int:
+        """Return the already-promoted typed requirement observation.
+
+        Requirements are promoted by ``save_parsed`` itself.  This method is
+        retained as a compatibility hook for callers in the extraction loop,
+        but it must not write through the deprecated bridge or create a second
+        copy of the same demand record.
+        """
+        try:
+            query = self.client.table("typed_parsed_output").select("*").eq("id", parsed_id).limit(1)
+            if self._tenant_id:
+                query = query.eq("tenant_id", self._tenant_id)
+            rows = query.execute().data or []
+            if not rows:
+                return 0
+            obs = rows[0]
+            if not _is_market_requirement(obs):
+                return 0
+            tenant_id = obs.get("tenant_id") or self._tenant_id
+            return int(obs.get("id") or 0)
+        except Exception as exc:
+            print(f"[upsert_market_requirement_from_parsed] parsed {parsed_id}: {exc}", flush=True)
+            return 0
+
+    def rebuild_market_requirements(self, limit: int = 0, tenant_id: str | None = None) -> int:
+        """Report typed requirements; new rows are written by ``save_parsed``."""
+        tid = tenant_id or self._tenant_id
+        page_size = 500
+        processed = 0
+        offset = 0
+        broker_map: dict[str, int] = {}
+        broker_query = self.client.table("brokers").select("id,primary_phone")
+        if tid:
+            broker_query = broker_query.eq("tenant_id", tid)
+        try:
+            for broker in broker_query.limit(10000).execute().data or []:
+                phone = _normalize_india_phone(broker.get("primary_phone") or "")
+                if phone and broker.get("id") is not None:
+                    broker_map[phone] = int(broker["id"])
+        except Exception:
+            pass
+
+        while not limit or processed < limit:
+            query = self.client.table("typed_parsed_output").select("*")
+            if tid:
+                query = query.eq("tenant_id", tid)
+            query = query.or_(
+                "message_type.in.(requirement,buy,REQUIREMENT,BUY),"
+                "intent.in.(BUY,BUYER,REQUIREMENT,RENTAL_SEEKER,TENANT,DEMAND)"
+            ).order("id", desc=False).range(offset, offset + page_size - 1)
+            rows = query.execute().data or []
+            if not rows:
+                break
+            payloads = []
+            for obs in rows:
+                if limit and processed + len(payloads) >= limit:
+                    break
+                if not _is_market_requirement(obs):
+                    continue
+                phone = _normalize_india_phone(obs.get("broker_phone") or "")
+                if _is_market_requirement(obs):
+                    payloads.append(obs)
+            processed += len(payloads)
+            offset += len(rows)
+            if len(rows) < page_size:
+                break
+        return processed
+
     def _listing_from_parsed(
         self, obs: dict, resolver: Optional[dict]
     ) -> Listing:
@@ -2431,7 +2813,7 @@ class SupabaseStorage(Storage):
         if not broker_phone and raw_msg_id:
             try:
                 sibling = (
-                    self.client.table("parsed_output")
+                    self.client.table("typed_parsed_output")
                     .select("broker_phone,broker_name")
                     .eq("raw_message_id", raw_msg_id)
                     .not_.is_("broker_phone", "null")
@@ -2521,7 +2903,7 @@ class SupabaseStorage(Storage):
         processed = 0
         for offset in range(0, max(limit, 1) if limit else 10_000_000, PAGE):
             res = (
-                self.client.table("parsed_output")
+                self.client.table("typed_parsed_output")
                 .select("*")
                 .order("id", desc=False)
                 .limit(PAGE)
@@ -2533,6 +2915,8 @@ class SupabaseStorage(Storage):
                 break
             for obs in rows:
                 try:
+                    if _is_market_requirement(obs):
+                        continue
                     resolver = None
                     try:
                         r = self.get_resolver_by_parsed(obs["id"])
@@ -2562,7 +2946,7 @@ class SupabaseStorage(Storage):
         listing_id = 0
         try:
             obs_res = (
-                self.client.table("parsed_output")
+                self.client.table("typed_parsed_output")
                 .select("*")
                 .eq("id", parsed_id)
                 .limit(1)
@@ -2572,6 +2956,8 @@ class SupabaseStorage(Storage):
             if not rows:
                 return 0
             obs = rows[0]
+            if _is_market_requirement(obs):
+                return 0
             resolver = None
             try:
                 r = self.get_resolver_by_parsed(parsed_id)
@@ -2590,7 +2976,10 @@ class SupabaseStorage(Storage):
             except Exception as lve:
                 print(f"[upsert_listing_from_parsed] locality validation error: {lve}", flush=True)
 
-            listing_id = self.save_listing(listing)
+            # ``save_parsed`` already wrote this observation to the selected
+            # typed listing table. Do not project it a second time through a
+            # legacy-shaped Listing payload.
+            listing_id = int(obs.get("id") or 0)
         except Exception as exc:
             print(f"[upsert_listing_from_parsed] parsed {parsed_id}: {exc}", flush=True)
             return 0
@@ -2617,10 +3006,80 @@ class SupabaseStorage(Storage):
             data["location_label"] = listing_label(data)
         if not data.get("tenant_id") and self._tenant_id:
             data["tenant_id"] = self._tenant_id
-        # Prefer a constraint-backed upsert; fall back to check-then-write when
-        # the listings table lacks a unique index on fingerprint (avoids 400).
+        # Write directly to the typed listing table.  The old flat `listings`
+        # relation was only a compatibility bridge and is intentionally not a
+        # destination for new observations.
+        asset = str(data.get("asset_type") or "residential").lower()
+        transaction = str(data.get("transaction_type") or "").lower()
+        if transaction not in {"rent", "sale"}:
+            transaction = "rent" if str(data.get("intent") or "").upper() == "RENT" else "sale"
+        table = _TYPED_LISTING_TABLES.get((asset, transaction), "residential_sale_listings")
+        typed = {
+            "raw_message_id": data.get("latest_raw_message_id") or data.get("representative_raw_message_id") or 0,
+            "tenant_id": data.get("tenant_id") or self._tenant_id,
+            "listing_index": data.get("representative_listing_index") or 0,
+            "source_fingerprint": data["fingerprint"],
+            "legacy_source_id": data.get("latest_raw_message_id"),
+            "asset_type": asset,
+            "transaction_type": transaction,
+            "building_name": data.get("building_name"),
+            "locality_raw": data.get("location_label"),
+            "locality_resolved": data.get("micro_market"),
+            "micro_market": data.get("micro_market") or data.get("location_label"),
+            "landmark_name": data.get("landmark_name"),
+            "broker_id": data.get("broker_id"),
+            "broker_name": data.get("broker_name"),
+            "broker_phone": data.get("broker_phone"),
+            "summary_title": data.get("summary_title"),
+            "raw_payload": data.get("raw_payload") or {},
+            "deal_tags": data.get("deal_tags") or [],
+            "additional_charges": data.get("additional_charges") or [],
+            "validation_flags": data.get("validation_flags") or [],
+            "needs_review": bool(data.get("needs_review")),
+            "extraction_confidence": "high" if not data.get("needs_review") else "low",
+            "bhk": float(re.search(r"\d+(?:\.\d+)?", str(data.get("bhk"))).group(0)) if re.search(r"\d+(?:\.\d+)?", str(data.get("bhk"))) else None,
+            "carpet_area_sqft": data.get("carpet_area_sqft") or data.get("area_sqft"),
+            "built_up_area_sqft": data.get("built_up_area_sqft"),
+            "area_raw_text": data.get("area_sqft"),
+            "total_asking_price": _price_to_rupees(data.get("price"), data.get("price_unit")) if transaction == "sale" else None,
+            "monthly_rent": _price_to_rupees(data.get("price"), data.get("price_unit")) if transaction == "rent" else None,
+            "price_per_sqft": data.get("price_per_sqft") if transaction == "sale" else None,
+            "rent_per_sqft": data.get("price_per_sqft") if transaction == "rent" else None,
+            "price_raw_text": data.get("price"),
+            "price_basis": data.get("price_basis"),
+            "furnishing_status": data.get("furnishing"),
+            "fitout_status": data.get("fitout_status") or data.get("furnishing"),
+            "commercial_use_type": data.get("commercial_use_type") or data.get("property_type"),
+            "possession_status": data.get("possession_status"),
+            "possession_date": data.get("possession_date"),
+            "available_from": data.get("available_from"),
+            "floor_range": data.get("floor_range"),
+            "car_parking_count": data.get("car_parking_count"),
+            "parking_type": data.get("parking_type"),
+            "deposit_amount": data.get("deposit_amount"),
+            "deposit_applicable": data.get("deposit_amount") is not None,
+            "lease_term_type": data.get("lease_term_type"),
+            "oc_status": data.get("oc_status"),
+            "ceiling_height": data.get("ceiling_height"),
+            "brokerage_type": data.get("brokerage_type"),
+            "building_amenities": data.get("building_amenities") or [],
+            "unit_amenities": data.get("amenities") or [],
+            "amenities_unverified_claim": data.get("amenities_unverified_claim"),
+            "pet_policy": data.get("pet_policy"),
+            "tenant_type_preference": data.get("tenant_type_preference"),
+            "sharing_allowed": data.get("sharing_allowed"),
+            "company_lease_criteria": data.get("company_lease_criteria"),
+            "tenant_nationality_preference": data.get("tenant_nationality_preference"),
+        }
+        allowed = {
+            "residential_sale_listings": {"raw_message_id","tenant_id","listing_index","source_fingerprint","legacy_source_id","asset_type","transaction_type","building_name","locality_raw","locality_resolved","micro_market","landmark_name","broker_id","broker_name","broker_phone","summary_title","raw_payload","deal_tags","additional_charges","validation_flags","needs_review","extraction_confidence","bhk","carpet_area_sqft","built_up_area_sqft","area_raw_text","total_asking_price","price_per_sqft","price_raw_text","price_basis","furnishing_status","possession_status","possession_date","floor_range","car_parking_count","parking_type","oc_status","brokerage_type","building_amenities","unit_amenities","amenities_unverified_claim","configuration_type"},
+            "residential_rent_listings": {"raw_message_id","tenant_id","listing_index","source_fingerprint","legacy_source_id","asset_type","transaction_type","building_name","locality_raw","locality_resolved","micro_market","landmark_name","broker_id","broker_name","broker_phone","summary_title","raw_payload","deal_tags","additional_charges","validation_flags","needs_review","extraction_confidence","bhk","carpet_area_sqft","built_up_area_sqft","area_raw_text","monthly_rent","rent_per_sqft","price_raw_text","price_basis","furnishing_status","possession_status","available_from","floor_range","car_parking_count","parking_type","deposit_amount","deposit_applicable","lease_term_type","brokerage_type","building_amenities","unit_amenities","amenities_unverified_claim","pet_policy","tenant_type_preference","sharing_allowed","company_lease_criteria","tenant_nationality_preference"},
+            "commercial_sale_listings": {"raw_message_id","tenant_id","listing_index","source_fingerprint","legacy_source_id","asset_type","transaction_type","building_name","locality_raw","locality_resolved","micro_market","landmark_name","broker_id","broker_name","broker_phone","summary_title","raw_payload","deal_tags","additional_charges","validation_flags","needs_review","extraction_confidence","commercial_use_type","carpet_area_sqft","built_up_area_sqft","area_raw_text","total_asking_price","price_per_sqft","price_raw_text","price_basis","fitout_status","ceiling_height","floor_range","car_parking_count","parking_type","oc_status","brokerage_type","building_amenities"},
+            "commercial_rent_listings": {"raw_message_id","tenant_id","listing_index","source_fingerprint","legacy_source_id","asset_type","transaction_type","building_name","locality_raw","locality_resolved","micro_market","landmark_name","broker_id","broker_name","broker_phone","summary_title","raw_payload","deal_tags","additional_charges","validation_flags","needs_review","extraction_confidence","commercial_use_type","carpet_area_sqft","built_up_area_sqft","area_raw_text","monthly_rent","rent_per_sqft","price_raw_text","price_basis","fitout_status","ceiling_height","floor_range","car_parking_count","parking_type","deposit_amount","deposit_applicable","lease_term_type","brokerage_type","building_amenities"},
+        }[table]
+        typed = {k: v for k, v in typed.items() if v is not None and k in allowed}
         try:
-            res = self.client.table("listings").upsert(data, on_conflict="fingerprint").execute()
+            res = self.client.table(table).upsert(typed, on_conflict="source_fingerprint").execute()
             if res.data:
                 return res.data[0]["id"]
         except Exception:
@@ -2629,11 +3088,11 @@ class SupabaseStorage(Storage):
         if existing and existing.id:
             upd = {k: v for k, v in data.items() if k != "fingerprint"}
             try:
-                self.client.table("listings").update(upd).eq("id", existing.id).execute()
+                self.client.table(table).update({k: v for k, v in typed.items() if k != "source_fingerprint"}).eq("id", existing.id).execute()
             except Exception:
                 pass
             return existing.id
-        res = self.client.table("listings").insert(data).execute()
+        res = self.client.table(table).insert(typed).execute()
         return res.data[0]["id"] if res.data else 0
 
     def merge_building_amenities(self, building_name: str, new_amenities: list[str]) -> bool:
@@ -2707,7 +3166,7 @@ class SupabaseStorage(Storage):
                       intent: str = "", bhk: str = "",
                       building: str = "", micro_market: str = "",
                       broker: str = "", sort_by: str = "last_seen") -> list[Listing]:
-        query = self.client.table("listings").select("*").order(sort_by, desc=True).limit(limit).offset(offset)
+        query = self.client.table("typed_listings_index").select("*").order(sort_by, desc=True).limit(limit).offset(offset)
         if intent:
             query = query.eq("intent", intent)
         if bhk:
@@ -2839,11 +3298,11 @@ class SupabaseStorage(Storage):
                     raw_ids.add(int(raw[0]["id"]))
             if not raw_ids:
                 return 0
-            listings = self.client.table("listings").select("id").eq(
+            listings = self.client.table("typed_listings_index").select("id").eq(
                 "tenant_id", tenant_id
             ).in_("latest_raw_message_id", list(raw_ids)).limit(1).execute().data or []
             if not listings:
-                listings = self.client.table("listings").select("id").eq(
+                listings = self.client.table("typed_listings_index").select("id").eq(
                     "tenant_id", tenant_id
                 ).in_("representative_raw_message_id", list(raw_ids)).limit(1).execute().data or []
             if not listings:
@@ -2872,7 +3331,7 @@ class SupabaseStorage(Storage):
         return attached
 
     def get_listing_by_fingerprint(self, fingerprint: str) -> Listing | None:
-        query = self.client.table("listings").select("*").eq("fingerprint", fingerprint).limit(1)
+        query = self.client.table("typed_listings_index").select("*").eq("fingerprint", fingerprint).limit(1)
         if self._tenant_id:
             query = query.eq("tenant_id", self._tenant_id)
         res = query.execute()
@@ -3381,7 +3840,7 @@ class SupabaseStorage(Storage):
         from parsed_output joined to raw_messages by group_name.
         Returns {group_name: [market, ...]}."""
         try:
-            res = self.client.table("parsed_output").select(
+            res = self.client.table("typed_parsed_output").select(
                 "micro_market, raw_messages!inner(group_name)"
             ).not_.is_("micro_market", "null").neq("micro_market", "").limit(5000).execute()
             out: dict[str, set[str]] = {}
@@ -3446,10 +3905,10 @@ class SupabaseStorage(Storage):
         try:
             stats = {
                 "total_messages": count("raw_messages"),
-                "total_parsed": count("parsed_output"),
-                "total_listings": count("listings"),
+                "total_parsed": count("typed_parsed_output"),
+                "total_listings": count("typed_listings_index"),
                 "total_requirements": count(
-                    "parsed_output",
+                    "typed_market_requirements",
                     intents=["BUY", "BUYER", "REQUIREMENT", "RENTAL_SEEKER"],
                 ),
                 "total_brokers": count("brokers"),
@@ -3469,7 +3928,7 @@ class SupabaseStorage(Storage):
 
     def get_observation_detail(self, obs_id: int) -> dict:
         # Get all parsed outputs for this raw message (handles multi-listing messages)
-        parsed_query = self.client.table("parsed_output").select("*").eq("raw_message_id", obs_id).order("listing_index")
+        parsed_query = self.client.table("typed_parsed_output").select("*").eq("raw_message_id", obs_id).order("listing_index")
         if self._tenant_id:
             parsed_query = parsed_query.eq("tenant_id", self._tenant_id)
         parsed_res = parsed_query.execute()
@@ -3522,7 +3981,7 @@ class SupabaseStorage(Storage):
     # ── AI Layer ─────────────────────────────────────────────────
 
     def get_all_parsed_with_embeddings(self) -> list[dict]:
-        query = self.client.table("parsed_output").select("*").not_.is_("embedding", "null").limit(1000)
+        query = self.client.table("typed_parsed_output").select("*").not_.is_("embedding", "null").limit(1000)
         if self._tenant_id:
             query = query.eq("tenant_id", self._tenant_id)
         res = query.execute()
@@ -3532,14 +3991,14 @@ class SupabaseStorage(Storage):
         return []
 
     def get_observations_by_broker(self, broker_name: str) -> list[dict]:
-        query = self.client.table("parsed_output").select("*").eq("broker_name", broker_name).limit(100)
+        query = self.client.table("typed_parsed_output").select("*").eq("broker_name", broker_name).limit(100)
         if self._tenant_id:
             query = query.eq("tenant_id", self._tenant_id)
         res = query.execute()
         return res.data
 
     def get_observations_by_building(self, building_name: str) -> list[dict]:
-        query = self.client.table("parsed_output").select("*").eq("building_name", building_name).limit(100)
+        query = self.client.table("typed_parsed_output").select("*").eq("building_name", building_name).limit(100)
         if self._tenant_id:
             query = query.eq("tenant_id", self._tenant_id)
         res = query.execute()
@@ -3641,7 +4100,7 @@ class SupabaseStorage(Storage):
             return []
 
     def dashboard_feed(self, limit: int = 20) -> list[dict]:
-        query = self.client.table("parsed_output").select("*").order("created_at", desc=True).limit(limit)
+        query = self.client.table("typed_parsed_output").select("*").order("created_at", desc=True).limit(limit)
         if self._tenant_id:
             query = query.eq("tenant_id", self._tenant_id)
         res = query.execute()
@@ -3651,14 +4110,14 @@ class SupabaseStorage(Storage):
         return []
 
     def dashboard_listings(self, limit: int = 20) -> list[dict]:
-        query = self.client.table("listings").select("*").order("last_seen", desc=True).limit(limit)
+        query = self.client.table("typed_listings_index").select("*").order("created_at", desc=True).limit(limit)
         if self._tenant_id:
             query = query.eq("tenant_id", self._tenant_id)
         res = query.execute()
         return res.data
 
     def dashboard_requirements(self, limit: int = 20) -> list[dict]:
-        query = self.client.table("parsed_output").select("*").eq("intent", "REQUIREMENT").order("created_at", desc=True).limit(limit)
+        query = self.client.table("typed_market_requirements").select("*").order("created_at", desc=True).limit(limit)
         if self._tenant_id:
             query = query.eq("tenant_id", self._tenant_id)
         res = query.execute()
@@ -3774,7 +4233,7 @@ class SupabaseStorage(Storage):
 
     def get_price_stats(self, micro_market: str, bhk: str,
                          intent: str = "listing") -> Optional[dict]:
-        res = self.client.table("listings").select("*").eq("micro_market", micro_market).eq("bhk", bhk).eq("intent", intent).execute()
+        res = self.client.table("typed_listings_index").select("*").eq("micro_market", micro_market).eq("bhk", bhk).eq("intent", intent).execute()
         if not res.data:
             return None
         prices = [l.get("price", 0) for l in res.data if l.get("price")]
@@ -3809,7 +4268,7 @@ class SupabaseStorage(Storage):
         return res.count or 0
 
     def listing_count(self) -> int:
-        query = self.client.table("listings").select("id", count="exact")
+        query = self.client.table("typed_listings_index").select("id", count="exact")
         if self._tenant_id:
             query = query.eq("tenant_id", self._tenant_id)
         res = query.execute()
@@ -4297,7 +4756,7 @@ class SupabaseStorage(Storage):
         normalized_key = _normalize_india_phone(broker_key)
         name_key = broker_key.replace("name:", "", 1).strip().lower()
 
-        query = self.client.table("parsed_output")\
+        query = self.client.table("typed_parsed_output")\
             .select(
                 "id,raw_message_id,message_type,intent,asset_type,property_type,transaction_type,"
                 "bhk,configuration,price,price_unit,price_model,price_per_sqft,monthly_rent,total_asking_price,"
@@ -4756,15 +5215,15 @@ class SupabaseStorage(Storage):
             brokers_count = 0
             requirements_count = 0
             try:
-                listings_count = self.client.table("listings").select("id", count="exact").eq("building_name", canonical_name).execute().count or 0
+                listings_count = self.client.table("typed_listings_index").select("id", count="exact").eq("building_name", canonical_name).execute().count or 0
             except Exception:
                 pass
             try:
-                brokers_count = self.client.table("parsed_output").select("broker_name", count="exact").eq("building_name", canonical_name).not_.is_("broker_name", "null").neq("broker_name", "").execute().count or 0
+                brokers_count = self.client.table("typed_parsed_output").select("broker_name", count="exact").eq("building_name", canonical_name).not_.is_("broker_name", "null").neq("broker_name", "").execute().count or 0
             except Exception:
                 pass
             try:
-                requirements_count = self.client.table("parsed_output").select("id", count="exact").eq("building_name", canonical_name).in_("intent", ["BUY", "RENTAL_SEEKER", "BUYER", "REQUIREMENT"]).execute().count or 0
+                requirements_count = self.client.table("typed_market_requirements").select("id", count="exact").eq("building_name", canonical_name).execute().count or 0
             except Exception:
                 pass
 
@@ -4807,15 +5266,15 @@ class SupabaseStorage(Storage):
             history = history_res.data if history_res.data else []
             
             # Get observed listings count
-            listings_res = self.client.table("listings").select("id", count="exact").eq("building_name", building["canonical_name"]).execute()
+            listings_res = self.client.table("typed_listings_index").select("id", count="exact").eq("building_name", building["canonical_name"]).execute()
             listings_count = listings_res.count or 0
             
             # Get observed brokers count
-            brokers_res = self.client.table("parsed_output").select("broker_name", count="exact").eq("building_name", building["canonical_name"]).not_.is_("broker_name", "null").neq("broker_name", "").execute()
+            brokers_res = self.client.table("typed_parsed_output").select("broker_name", count="exact").eq("building_name", building["canonical_name"]).not_.is_("broker_name", "null").neq("broker_name", "").execute()
             brokers_count = brokers_res.count or 0
             
             # Get observed requirements count
-            req_res = self.client.table("parsed_output").select("id", count="exact").eq("building_name", building["canonical_name"]).in_("intent", ["BUY", "RENTAL_SEEKER", "BUYER", "REQUIREMENT"]).execute()
+            req_res = self.client.table("typed_market_requirements").select("id", count="exact").eq("building_name", building["canonical_name"]).execute()
             requirements_count = req_res.count or 0
             
             # Get price stats
@@ -4859,7 +5318,7 @@ class SupabaseStorage(Storage):
                 return empty
             
             # Query listings for this broker
-            query = self.client.table("listings").select("intent, bhk, price, price_unit, micro_market, observation_count")
+            query = self.client.table("typed_listings_index").select("intent, bhk, price, price_unit, micro_market, observation_count")
             if name:
                 query = query.ilike("broker_name", f"%{name}%")
             if phone:
