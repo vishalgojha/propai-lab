@@ -187,6 +187,7 @@ def _process_lane(storage, rows, lane: str, slots: int, retry_counts: dict):
     stats = {
         "lane": lane,
         "fetched": len(rows),
+        "attempted": 0,
         "processed": 0,
         "failed": 0,
         "dead_lettered": 0,
@@ -229,8 +230,12 @@ def _process_lane(storage, rows, lane: str, slots: int, retry_counts: dict):
             attempts = retry_counts.get(raw_id, 0)
             started = time.perf_counter()
             try:
+                with lock:
+                    stats["attempted"] += 1
                 ctx = context_from_raw(row)
-                process_raw_message(raw_id, ctx, storage=storage)
+                result = process_raw_message(raw_id, ctx, storage=storage)
+                if isinstance(result, dict) and result.get("storage_status") == "failed":
+                    raise RuntimeError("extraction completed without a successful parsed-row write")
                 elapsed = time.perf_counter() - started
                 with lock:
                     stats["processed"] += 1
@@ -256,11 +261,11 @@ def _process_lane(storage, rows, lane: str, slots: int, retry_counts: dict):
             for future in as_completed(pool.submit(_handle, row) for row in extractable):
                 future.result()
 
-    completed = stats["processed"] + stats["failed"]
+    completed = stats["attempted"]
     avg_ms = (stats["latency_seconds"] / completed * 1000) if completed else 0.0
     print(
         f"[worker] lane={lane} fetched={stats['fetched']} "
-        f"processed={stats['processed']} failed={stats['failed']} "
+        f"attempted={stats['attempted']} stored={stats['processed']} failed={stats['failed']} "
         f"skipped={stats['skipped']} dead_lettered={stats['dead_lettered']} "
         f"avg_latency_ms={avg_ms:.1f} max_latency_ms={stats['max_latency_seconds'] * 1000:.1f}",
         flush=True,
@@ -316,6 +321,7 @@ def run_cycle(storage, retry_counts: dict):
         ]
         lane_stats = [future.result() for future in futures]
 
+    attempted = sum(item["attempted"] for item in lane_stats)
     processed = sum(item["processed"] for item in lane_stats)
     failed = sum(item["failed"] for item in lane_stats)
     dead_lettered = sum(item["dead_lettered"] for item in lane_stats)
@@ -334,7 +340,7 @@ def run_cycle(storage, retry_counts: dict):
     if skipped:
         detail = " ".join(f"{k}={v}" for k, v in sorted(skip_reasons.items()))
         print(f"[worker] skipped {skipped} non-listing messages ({detail})", flush=True)
-    return processed, failed, dead_lettered, skipped
+    return attempted, processed, failed, dead_lettered, skipped
 
 
 def main():
@@ -364,11 +370,11 @@ def main():
                 break
             count = storage.count_unprocessed_raw()
             if count > 0:
-                processed, failed, dead_lettered, skipped = run_cycle(storage, retry_counts)
-                if processed or dead_lettered or skipped:
-                    cleared = processed + dead_lettered + skipped
+                attempted, stored, failed, dead_lettered, skipped = run_cycle(storage, retry_counts)
+                if attempted or dead_lettered or skipped:
+                    cleared = stored + dead_lettered + skipped
                     print(
-                        f"[worker] cycle done: processed={processed} failed={failed} "
+                        f"[worker] cycle done: attempted={attempted} stored={stored} failed={failed} "
                         f"skipped={skipped} dead_lettered={dead_lettered} "
                         f"remaining={max(0, count - cleared)}",
                         flush=True,

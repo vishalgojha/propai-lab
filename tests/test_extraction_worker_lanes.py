@@ -39,7 +39,7 @@ def test_run_cycle_fetches_and_processes_both_lanes(monkeypatch):
 
     result = extraction_worker.run_cycle(storage, {})
 
-    assert result == (2, 0, 0, 0)
+    assert result == (2, 2, 0, 0, 0)
     assert [call[0] for call in storage.calls] == ["fast", "backlog"]
     assert all(call[2] == 7 for call in storage.calls)
     assert set(seen) == {1, 2}
@@ -73,6 +73,25 @@ def test_failed_fast_lane_does_not_block_backlog(monkeypatch):
 
     result = extraction_worker.run_cycle(storage, {})
 
-    assert result == (1, 0, 0, 0)
+    assert result == (1, 1, 0, 0, 0)
     assert [call[0] for call in storage.calls] == ["fast", "backlog"]
     assert seen == [2]
+
+
+def test_storage_failure_is_counted_as_failed_and_not_cleared(monkeypatch):
+    storage = _Storage()
+    monkeypatch.setattr(extraction_worker, "FAST_LANE_SLOTS", 1)
+    monkeypatch.setattr(extraction_worker, "BACKLOG_LANE_SLOTS", 0)
+    monkeypatch.setattr(extraction_worker, "BATCH_SIZE", 7)
+    monkeypatch.setattr(extraction_worker, "should_skip", lambda _message: None)
+    monkeypatch.setattr(
+        extraction_worker,
+        "process_raw_message",
+        lambda _raw_id, _ctx, storage=None: {"storage_status": "failed"},
+    )
+
+    retry_counts = {}
+    result = extraction_worker.run_cycle(storage, retry_counts)
+
+    assert result == (1, 0, 1, 0, 0)
+    assert retry_counts == {1: 1}

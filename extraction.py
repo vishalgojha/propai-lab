@@ -983,7 +983,14 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
         excluded = load_excluded_groups()
         if group in excluded:
             storage.mark_raw_processed(raw_id)
-            return
+            return {
+                "raw_id": raw_id,
+                "parsed_ids": [],
+                "listing_ids": [],
+                "requirement_ids": [],
+                "storage_status": "skipped",
+                "extraction_source": "excluded_group",
+            }
     except Exception:
         pass
 
@@ -1098,6 +1105,7 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
                         "parsed_ids": parsed_ids,
                         "listing_ids": listing_ids,
                         "requirement_ids": requirement_ids,
+                        "storage_status": "stored",
                         "extraction_source": "hash_duplicate",
                     }
 
@@ -1221,7 +1229,14 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
             storage.mark_raw_processed(raw_id)
         except Exception:
             pass
-        return {"raw_id": raw_id, "parsed_ids": [], "listing_ids": [], "extraction_source": "excluded_group"}
+        return {
+            "raw_id": raw_id,
+            "parsed_ids": [],
+            "listing_ids": [],
+            "requirement_ids": [],
+            "storage_status": "skipped",
+            "extraction_source": "no_anchor",
+        }
 
     # ── Listing validation (price / locality / general) ────────────
     # Runs AFTER AI extraction + _ai_extraction_to_parsed() and BEFORE
@@ -1295,6 +1310,7 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
             "raw_id": raw_id,
             "parsed_listings": parsed_listings,
             "proposed_count": len(parsed_listings),
+            "storage_status": "preview",
             "message_class": "ai_structured" if parsed_listings else "unstructured",
             "extraction_source": extraction_source or "ai_unavailable",
         }
@@ -1553,10 +1569,10 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
     if parsed_listings and not parsed_ids:
         print(
             f"  [extract] leaving raw message {raw_id} unprocessed: "
-            "all parsed_output inserts failed",
+            "all typed parsed-row inserts failed",
             flush=True,
         )
-        return {"raw_id": raw_id, "parsed_ids": [], "listing_ids": [], "requirement_ids": [], "extraction_source": extraction_source or "no_anchor"}
+        return {"raw_id": raw_id, "parsed_ids": [], "listing_ids": [], "requirement_ids": [], "storage_status": "failed", "extraction_source": extraction_source or "no_anchor"}
     try:
         storage.mark_raw_processed(raw_id)
     except Exception as exc:
@@ -1566,5 +1582,6 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
         "parsed_ids": parsed_ids,
         "listing_ids": listing_ids,
         "requirement_ids": requirement_ids,
+        "storage_status": "stored",
         "extraction_source": extraction_source or "ai",
     }

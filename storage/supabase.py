@@ -2273,9 +2273,9 @@ class SupabaseStorage(Storage):
         # The typed tables deliberately retain the complete LLM payload while
         # promoting only fields that belong to the selected schema.
         common = {
-            # Typed tables currently require an explicit BIGINT primary key.
-            # The deterministic source id keeps retries idempotent.
-            "id": source_id,
+            # Let the typed table's identity column generate its primary key.
+            # ``source_fingerprint`` is the retry/idempotency key; the stable
+            # legacy observation id is retained separately for old callers.
             "raw_message_id": raw_id,
             "tenant_id": data.get("tenant_id") or self._tenant_id,
             "listing_index": listing_index,
@@ -2373,7 +2373,54 @@ class SupabaseStorage(Storage):
             "commercial_rent_listings": {"commercial_use_type","carpet_area_sqft","built_up_area_sqft","area_raw_text","monthly_rent","rent_per_sqft","price_basis","price_raw_text","price_qualifier","deposit_amount","deposit_applicable","deposit_raw_text","fitout_status","ceiling_height","floor_range","car_parking_count","parking_type","building_amenities","has_central_ac","has_power_backup","has_lift","lease_term_type","brokerage_type"},
         }
         if table.endswith("requirements"):
-            allowed = {"bhk_options","configuration_preference","carpet_area_min_sqft","carpet_area_max_sqft","built_up_area_min_sqft","built_up_area_max_sqft","budget_min","budget_max","budget_currency","area_min_sqft","area_max_sqft","locality_options","is_flexible","urgency","status","commercial_use_type","furnishing_preference","possession_preference","tenant_type","has_pets","sharing_acceptable","fitout_preference","car_parking_min","needs_mezzanine","needs_lift","needs_power_backup","needs_central_ac","min_power_load_kw","lease_term_preference","deposit_budget_max","buyer_type","brokerage_willingness"}
+            # Residential requirement tables intentionally do not have
+            # commercial_use_type.  Keeping this allow-list per table avoids
+            # PostgREST rejecting otherwise valid residential requirements.
+            allowed_by_table = {
+                "residential_sale_requirements": {
+                    "bhk_options", "configuration_preference",
+                    "carpet_area_min_sqft", "carpet_area_max_sqft",
+                    "built_up_area_min_sqft", "built_up_area_max_sqft",
+                    "budget_min", "budget_max", "budget_currency",
+                    "area_min_sqft", "area_max_sqft", "locality_options",
+                    "is_flexible", "urgency", "status",
+                    "furnishing_preference", "possession_preference",
+                    "car_parking_min", "buyer_type", "brokerage_willingness",
+                },
+                "residential_rent_requirements": {
+                    "bhk_options", "configuration_preference",
+                    "carpet_area_min_sqft", "carpet_area_max_sqft",
+                    "budget_min", "budget_max", "budget_currency",
+                    "area_min_sqft", "area_max_sqft", "locality_options",
+                    "is_flexible", "urgency", "status",
+                    "furnishing_preference", "possession_preference",
+                    "tenant_type", "has_pets", "sharing_acceptable",
+                    "lease_term_preference", "deposit_budget_max",
+                    "car_parking_min", "brokerage_willingness",
+                },
+                "commercial_sale_requirements": {
+                    "commercial_use_type", "carpet_area_min_sqft",
+                    "carpet_area_max_sqft", "chargeable_area_max_sqft",
+                    "budget_min", "budget_max", "budget_currency",
+                    "area_min_sqft", "area_max_sqft", "locality_options",
+                    "is_flexible", "urgency", "status", "fitout_preference",
+                    "car_parking_min", "needs_mezzanine", "needs_lift",
+                    "needs_power_backup", "needs_central_ac",
+                    "min_power_load_kw", "buyer_type", "brokerage_willingness",
+                },
+                "commercial_rent_requirements": {
+                    "commercial_use_type", "carpet_area_min_sqft",
+                    "carpet_area_max_sqft", "chargeable_area_max_sqft",
+                    "budget_min", "budget_max", "budget_currency",
+                    "area_min_sqft", "area_max_sqft", "locality_options",
+                    "is_flexible", "urgency", "status", "fitout_preference",
+                    "car_parking_min", "needs_mezzanine", "needs_lift",
+                    "needs_power_backup", "needs_central_ac",
+                    "min_power_load_kw", "lease_term_preference",
+                    "deposit_budget_max", "brokerage_willingness",
+                },
+            }
+            allowed = allowed_by_table[table]
         else:
             allowed = allowed_by_table[table]
         typed = {k: v for k, v in typed.items() if v is not None and k in (set(common) | allowed)}

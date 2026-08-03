@@ -66,8 +66,30 @@ def test_save_parsed_writes_directly_to_typed_rent_table():
     assert len(storage.client.writes) == 1
     table, payload, options = storage.client.writes[0]
     assert table == "residential_rent_listings"
-    assert payload["id"] == 77001
+    assert "id" not in payload
     assert payload["legacy_source_id"] == 77001
     assert payload["monthly_rent"] == 250000
     assert payload["bhk"] == 3.0
     assert options["on_conflict"] == "source_fingerprint"
+
+
+def test_save_parsed_residential_requirement_omits_commercial_fields():
+    storage = _storage()
+    storage.save_parsed(ParsedObservation(
+        raw_message_id=78,
+        listing_index=0,
+        asset_type="residential",
+        transaction_type="sale",
+        message_type="requirement",
+        intent="BUY",
+        bhk="4 BHK",
+        price=14,
+        price_unit="crore",
+        location_raw="Prabhadevi, Lower Parel, Worli",
+    ))
+
+    table, payload, _ = storage.client.writes[0]
+    assert table == "residential_sale_requirements"
+    assert "id" not in payload
+    assert "commercial_use_type" not in payload
+    assert payload["bhk_options"] == [4.0]
