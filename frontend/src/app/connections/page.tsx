@@ -739,11 +739,11 @@ function EmptyConnectionsHint() {
   );
 }
 
-function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; liveStatus: WhatsAppStatus | null; onRefresh: () => Promise<void> | void; }) {
-  const statusAvailable = phone.live_status_available !== false;
-  const isConnected = statusAvailable && (
-    isConnectedPhone(phone) || matchesLiveStatus(phone, liveStatus)
-  );
+function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: () => Promise<void> | void; }) {
+  // The group directory is persisted independently of the live socket. A
+  // paired phone may be temporarily disconnected or have an unavailable
+  // status probe; that must not hide the extraction controls.
+  const hasPairingIdentity = !isPlaceholderPhone(phone.phone_number) || !isPlaceholderPhone(phone.phone_number_live);
   const [data, setData] = useState<OnboardingGroupState | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -751,7 +751,7 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
   const [activeGroup, setActiveGroup] = useState<string | null>(null);
 
   const loadGroups = useCallback(async () => {
-    if (!isConnected) return;
+    if (!hasPairingIdentity) return;
     setLoading(true);
     try {
       const next = await getOnboardingGroups(phone.id);
@@ -762,7 +762,7 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
     } finally {
       setLoading(false);
     }
-  }, [isConnected, phone.id]);
+  }, [hasPairingIdentity, phone.id]);
 
   useEffect(() => {
     setMessage(null);
@@ -804,7 +804,7 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
     }
   };
 
-  if (!isConnected) {
+  if (!hasPairingIdentity) {
     return (
       <div className="rounded-xl border border-white/10 p-4">
         <div className="flex items-center gap-2">
@@ -812,7 +812,7 @@ function OnboardingGroupPanel({ phone, liveStatus, onRefresh }: { phone: Phone; 
           <div className="text-sm font-semibold text-white">Active groups</div>
         </div>
         <div className="mt-2 text-xs text-zinc-500">
-          Pair this phone first. After pairing, every WhatsApp group is extracted by default; you can opt out of any number of personal, family, client, or internal groups.
+          Pair this phone first. After pairing, this section will show every joined group with an extraction toggle. You can opt out of any number of personal, family, client, or internal groups.
         </div>
       </div>
     );
@@ -1170,17 +1170,16 @@ export default function ConnectionCenterPage() {
             </div>
           )}
 
-          {phones.some((phone) => isConnectedPhone(phone) || matchesLiveStatus(phone, liveStatus)) ? (
+          {phones.some((phone) => !isPlaceholderPhone(phone.phone_number) || !isPlaceholderPhone(phone.phone_number_live)) ? (
             <div className="mb-8">
               <Section title="Active groups">
                 <div className="space-y-4 p-2">
                   {phones
-                    .filter((phone) => isConnectedPhone(phone) || matchesLiveStatus(phone, liveStatus))
+                    .filter((phone) => !isPlaceholderPhone(phone.phone_number) || !isPlaceholderPhone(phone.phone_number_live))
                     .map((phone) => (
                       <OnboardingGroupPanel
                         key={`active-groups-${phone.id}`}
                         phone={phone}
-                        liveStatus={liveStatus}
                         onRefresh={refreshData}
                       />
                     ))}
