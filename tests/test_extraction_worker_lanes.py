@@ -50,3 +50,29 @@ def test_recent_cutoff_is_utc_and_configurable(monkeypatch):
     now = datetime(2026, 8, 2, 12, 0, tzinfo=timezone.utc)
 
     assert extraction_worker.recent_cutoff(now) == "2026-08-01T12:00:00+00:00"
+
+
+def test_failed_fast_lane_does_not_block_backlog(monkeypatch):
+    class _FastLaneUnavailable(_Storage):
+        def get_unprocessed_raw_messages_since(self, cutoff, limit=100):
+            self.calls.append(("fast", cutoff, limit))
+            raise RuntimeError("temporary fast-lane failure")
+
+    storage = _FastLaneUnavailable()
+    seen = []
+
+    monkeypatch.setattr(extraction_worker, "FAST_LANE_SLOTS", 1)
+    monkeypatch.setattr(extraction_worker, "BACKLOG_LANE_SLOTS", 1)
+    monkeypatch.setattr(extraction_worker, "BATCH_SIZE", 7)
+    monkeypatch.setattr(extraction_worker, "should_skip", lambda _message: None)
+    monkeypatch.setattr(
+        extraction_worker,
+        "process_raw_message",
+        lambda raw_id, _ctx, storage=None: seen.append(raw_id),
+    )
+
+    result = extraction_worker.run_cycle(storage, {})
+
+    assert result == (1, 0, 0, 0)
+    assert [call[0] for call in storage.calls] == ["fast", "backlog"]
+    assert seen == [2]

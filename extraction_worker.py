@@ -289,10 +289,22 @@ def run_cycle(storage, retry_counts: dict):
         ("fast", FAST_LANE_SLOTS),
         ("backlog", BACKLOG_LANE_SLOTS),
     )
-    lane_rows = [
-        (lane, slots, _fetch_lane(storage, lane, cutoff, BATCH_SIZE))
-        for lane, slots in lane_specs
-    ]
+    # Fetch lanes independently.  A Supabase/PostgREST error in one lane must
+    # not prevent the other lane from draining; the failed lane is retried on
+    # the next polling cycle.  This is especially important during an index
+    # rollout or a transient API failure because the backlog and fast lane use
+    # different query plans.
+    lane_rows = []
+    for lane, slots in lane_specs:
+        if slots <= 0:
+            continue
+        try:
+            rows = _fetch_lane(storage, lane, cutoff, BATCH_SIZE)
+        except Exception:
+            print(f"[worker] {lane} lane fetch failed", flush=True)
+            traceback.print_exc()
+            continue
+        lane_rows.append((lane, slots, rows))
     # The lane executors reserve disjoint slot pools, so both lanes can make
     # progress at once while their combined extraction calls remain bounded
     # by CONCURRENCY.

@@ -1618,10 +1618,17 @@ class SupabaseStorage(Storage):
         return [dict_to_dataclass(RawMessage, d) for d in res.data]
 
     def get_unprocessed_raw_messages_since(self, cutoff: str, limit: int = 100) -> list[RawMessage]:
-        """Return the unprocessed recent lane in message-time FIFO order."""
+        """Return the unprocessed recent lane in message-time FIFO order.
+
+        Keep the ordering aligned with the partial timestamp index.  Ordering
+        by id here made PostgREST scan the entire pending FIFO index while
+        filtering out old backlog rows, which could time out as a 500 response
+        once the queue became large.
+        """
         res = self.client.table("raw_messages").select("*") \
             .eq("processed", False) \
             .gte("timestamp", cutoff) \
+            .order("timestamp", desc=False) \
             .order("id", desc=False) \
             .limit(limit).execute()
         return [dict_to_dataclass(RawMessage, d) for d in res.data]
