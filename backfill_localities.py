@@ -8,25 +8,25 @@ source message and re-resolves the locality.
 
 Supported targets:
 
-- ``listings`` (uses ``representative_raw_message_id``)
-- ``parsed_output`` (uses ``raw_message_id``)
+- ``typed_listings_index`` (uses ``representative_raw_message_id``)
+- ``typed_parsed_output`` (uses ``raw_message_id``)
 
 Default behavior is *dry-run*: prints mismatches and writes a CSV
 report. **No data is modified** unless ``--apply`` is also passed.
 
 Usage:
 
-    # dry-run report for listings (unchanged behaviour)
+    # dry-run report for the typed listing projection (unchanged behaviour)
     python backfill_localities.py [--batch-size 2000] [--output report.csv]
 
-    # dry-run report for parsed_output
-    python backfill_localities.py --target parsed_output
+    # dry-run report for the parsed projection
+    python backfill_localities.py --target typed_parsed_output
 
     # preview what --apply would change, without writing
     python backfill_localities.py --apply --dry-run-apply --target both
 
     # apply: only fills rows whose micro_market is null/empty
-    python backfill_localities.py --apply --target listings \
+    python backfill_localities.py --apply --target typed_listings_index \
         --tenant-id <org-uuid>
 
     # apply + also overwrite populating-but-different rows (dangerous)
@@ -36,11 +36,11 @@ Usage:
 Safety rules (see ``docs/DATA_QUALITY.md``):
 
 - Without ``--overwrite-existing`` the apply path **never** rewrites a
-  non-null ``micro_market``. ``parsed_output.location_raw`` is also only
+  non-null ``micro_market``. ``typed_parsed_output.location_raw`` is also only
   filled when currently null, and uses the matched span or original
   message snippet — never a normalized/resolved value.
-- ``--apply`` requires ``--tenant-id`` because *both* ``listings`` and
-  ``parsed_output`` rows are tenant-scoped after migration
+- ``--apply`` requires ``--tenant-id`` because both typed projections are
+  tenant-scoped after migration
   ``20260719010000``. Multi-tenant writes without an explicit scope
   would cross organisations.
 - Every applied row is logged to a timestamped audit CSV
@@ -57,7 +57,7 @@ from typing import Any
 
 sys.path.insert(0, os.path.dirname(__file__))
 
-from storage.supabase import SupabaseStorage  # noqa: E402
+from storage.supabase import SupabaseStorage, _typed_route  # noqa: E402
 
 from registry.locality_resolver import (  # noqa: E402
     EXTERNAL_LINK_RE,
@@ -183,7 +183,7 @@ def run_backfill(batch_size: int = 2000, output_path: str = "locality_backfill_r
 
     while True:
         result = (
-            db.table("listings")
+            db.table("typed_listings_index")
             .select(
                 "id, building_name, micro_market, canonical_micro_market_slug, "
                 "representative_raw_message_id"
@@ -371,13 +371,14 @@ def _apply_listings(
     audit,
     tenant_id: str | None,
 ) -> dict:
-    """Apply resolved localities to ``listings.micro_market``.
+    """Apply resolved localities to the typed listing projection's
+    ``micro_market``.
 
     Returns a counters dict: ``scanned``, ``eligible``, ``updated``,
     ``skipped_existing``, ``skipped_low_confidence``, ``errors``.
 
     Pagination via ``offset`` is correct for backfill scripts because
-    the ``listings`` table only ever grows monotonically during a run.
+    the typed listing projection only ever grows monotonically during a run.
     For very large datasets the caller should split into batches.
     Repeated calls on already-processed rows are safe: rows whose
     ``micro_market`` now matches the resolver are filtered upstream.
@@ -386,12 +387,12 @@ def _apply_listings(
         "scanned": 0, "eligible": 0, "updated": 0,
         "skipped_existing": 0, "skipped_low_confidence": 0, "errors": 0,
     }
-    conn = db.table("listings")
+    conn = db.table("typed_listings_index")
     offset = 0
     while True:
         query = conn.select(
-            "id, building_name, micro_market, representative_raw_message_id, "
-            "tenant_id"
+            "id, legacy_source_id, asset_type, transaction_type, building_name, "
+            "micro_market, representative_raw_message_id, tenant_id"
         )
         if tenant_id:
             query = query.eq("tenant_id", tenant_id)
@@ -440,7 +441,7 @@ def _apply_listings(
             audit_row = {
                 "applied_at": datetime.utcnow().isoformat() + "Z",
                 "tenant_id": listing.get("tenant_id") or tenant_id or "",
-                "target_table": "listings",
+                "target_table": "typed_listings_index",
                 "row_id": row_id,
                 "old_micro_market": current,
                 "new_micro_market": new_value,
@@ -457,19 +458,22 @@ def _apply_listings(
                 counters["updated"] += 1
                 continue
             try:
-                conn.update({"micro_market": new_value}).eq("id", row_id).execute()
+                typed_table = _typed_route(listing)[0]
+                key = "legacy_source_id" if listing.get("legacy_source_id") else "id"
+                key_value = listing.get("legacy_source_id") or row_id
+                db.table(typed_table).update({"micro_market": new_value}).eq(key, key_value).execute()
                 audit.writerow(audit_row)
                 counters["updated"] += 1
             except Exception as exc:  # pragma: no cover - hot path log only
-                print(f"  ERR listings.id={row_id}: {exc}", file=sys.stderr)
+                print(f"  ERR typed_listings_index.id={row_id}: {exc}", file=sys.stderr)
                 counters["errors"] += 1
         if len(batch) < PAGE:
             break
         offset += PAGE
     return counters
-    """Paginated listings apply — replaces the placeholder loop above."""
+    """Paginated typed-listing apply — replaces the placeholder loop above."""
     counters = initial_counters
-    conn = db.table("listings")
+    conn = db.table("typed_listings_index")
     offset = 0
     while True:
         query = conn.select(
@@ -523,7 +527,7 @@ def _apply_listings(
             audit_row = {
                 "applied_at": datetime.utcnow().isoformat() + "Z",
                 "tenant_id": listing.get("tenant_id") or tenant_id or "",
-                "target_table": "listings",
+                "target_table": "typed_listings_index",
                 "row_id": row_id,
                 "old_micro_market": current,
                 "new_micro_market": new_value,
@@ -544,7 +548,7 @@ def _apply_listings(
                 audit.writerow(audit_row)
                 counters["updated"] += 1
             except Exception as exc:  # pragma: no cover - hot path log only
-                print(f"  ERR listings.id={row_id}: {exc}", file=sys.stderr)
+                print(f"  ERR typed_listings_index.id={row_id}: {exc}", file=sys.stderr)
                 counters["errors"] += 1
         if len(batch) < PAGE:
             break
@@ -562,15 +566,15 @@ def _apply_parsed_output(
     audit,
     tenant_id: str | None,
 ) -> dict:
-    """Apply resolved localities to ``parsed_output.min_market`` and
-    optionally ``parsed_output.location_raw``.
+    """Apply resolved localities to the typed parsed projection's
+    ``micro_market`` and optionally ``location_raw``.
 
     ``location_raw`` is filled only when currently null, and only when
     the resolver produced a matched span or the raw message text is
     usable. The script never writes a normalized/resolved value into
     ``location_raw`` — see ``docs/DATA_QUALITY.md``.
     """
-    conn = db.table("parsed_output")
+    conn = db.table("typed_parsed_output")
     counters = {
         "scanned": 0, "eligible": 0, "updated": 0,
         "skipped_existing": 0, "skipped_low_confidence": 0, "errors": 0,
@@ -578,8 +582,8 @@ def _apply_parsed_output(
     offset = 0
     while True:
         query = conn.select(
-            "id, raw_message_id, location_raw, building_name, micro_market, "
-            "tenant_id"
+            "id, legacy_source_id, asset_type, transaction_type, message_type, "
+            "raw_message_id, location_raw, building_name, micro_market, tenant_id"
         ).or_(
             "micro_market.is.null,micro_market.eq.,"
             "location_raw.is.null,location_raw.eq."
@@ -640,7 +644,7 @@ def _apply_parsed_output(
             audit_row = {
                 "applied_at": datetime.utcnow().isoformat() + "Z",
                 "tenant_id": parsed.get("tenant_id") or tenant_id or "",
-                "target_table": "parsed_output",
+                "target_table": "typed_parsed_output",
                 "row_id": row_id,
                 "old_micro_market": current_market,
                 "new_micro_market": new_market,
@@ -660,11 +664,14 @@ def _apply_parsed_output(
                 counters["updated"] += 1
                 continue
             try:
-                conn.update(payload).eq("id", row_id).execute()
+                typed_table = _typed_route(parsed)[0]
+                key = "legacy_source_id" if parsed.get("legacy_source_id") else "id"
+                key_value = parsed.get("legacy_source_id") or row_id
+                db.table(typed_table).update(payload).eq(key, key_value).execute()
                 audit.writerow(audit_row)
                 counters["updated"] += 1
             except Exception as exc:  # pragma: no cover - hot path log only
-                print(f"  ERR parsed_output.id={row_id}: {exc}", file=sys.stderr)
+                print(f"  ERR typed_parsed_output.id={row_id}: {exc}", file=sys.stderr)
                 counters["errors"] += 1
         if len(batch) < PAGE:
             break
@@ -683,14 +690,14 @@ def run_apply(
 ):
     """Orchestrator for the ``--apply`` / ``--dry-run-apply`` paths.
 
-    Targets: ``"listings"``, ``"parsed_output"``, ``"both"``.
+    Targets: ``"typed_listings_index"``, ``"typed_parsed_output"``, ``"both"``.
     """
-    if target not in {"listings", "parsed_output", "both"}:
-        sys.exit(f"--target must be listings|parsed_output|both (got {target!r})")
+    if target not in {"typed_listings_index", "typed_parsed_output", "both"}:
+        sys.exit(f"--target must be typed_listings_index|typed_parsed_output|both (got {target!r})")
     if not tenant_id:
         sys.exit(
             "ERROR: --apply (or --dry-run-apply) requires --tenant-id. "
-            "Both listings and parsed_output are tenant-scoped after "
+            "Both typed projections are tenant-scoped after "
             "migration 20260719010000; never apply cross-tenant."
         )
 
@@ -719,17 +726,17 @@ def run_apply(
     audit, audit_fh = _open_audit_csv(audit_csv)
     overall = {}
     try:
-        if target in {"listings", "both"}:
-            print("\n→ listings")
-            overall["listings"] = _apply_listings(
+        if target in {"typed_listings_index", "both"}:
+            print("\n→ typed_listings_index")
+            overall["typed_listings_index"] = _apply_listings(
                 db, resolver,
                 overwrite_existing=overwrite_existing,
                 min_confidence=min_confidence,
                 dry_run=dry_run_apply, audit=audit, tenant_id=tenant_id,
             )
-        if target in {"parsed_output", "both"}:
-            print("\n→ parsed_output")
-            overall["parsed_output"] = _apply_parsed_output(
+        if target in {"typed_parsed_output", "both"}:
+            print("\n→ typed_parsed_output")
+            overall["typed_parsed_output"] = _apply_parsed_output(
                 db, resolver,
                 overwrite_existing=overwrite_existing,
                 min_confidence=min_confidence,
@@ -766,7 +773,7 @@ def run_apply(
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Re-resolve or back-fill localities for listings / parsed_output."
+        description="Re-resolve or back-fill localities for typed listing/parsed projections."
     )
     parser.add_argument("--batch-size", type=int, default=2000)
     parser.add_argument("--output", type=str, default="locality_backfill_report.csv")
@@ -782,9 +789,8 @@ def main():
              "sanity check before the real apply."
     )
     parser.add_argument(
-        "--target", choices=["listings", "parsed_output", "both"], default="listings",
-        help="Which table to operate on. Dry-run default = listings (matches the "
-             "original backfill_localities.py behaviour)."
+        "--target", choices=["typed_listings_index", "typed_parsed_output", "both"], default="typed_listings_index",
+        help="Which typed projection to operate on. Dry-run default = typed_listings_index."
     )
     parser.add_argument(
         "--overwrite-existing", action="store_true",
@@ -799,8 +805,8 @@ def main():
     )
     parser.add_argument(
         "--tenant-id", type=str, default=None,
-        help="**Required** with --apply / --dry-run-apply. parsed_output and "
-             "listings are tenant-scoped; do not write across organizations."
+        help="**Required** with --apply / --dry-run-apply. Typed projections are "
+             "tenant-scoped; do not write across organizations."
     )
     parser.add_argument(
         "--audit-csv", type=str, default=None,
@@ -822,14 +828,14 @@ def main():
             audit_csv=args.audit_csv,
         )
     else:
-        # Dry-run historical behaviour: only listings, write the report CSV.
-        if args.target != "listings":
+        # Dry-run historical behaviour: only the typed listing projection, write the report CSV.
+        if args.target != "typed_listings_index":
             print(
                 f"NOTE: dry-run mode only scans {args.target!r} table "
-                "when --target != 'listings' and --apply is omitted; "
+                "when --target != 'typed_listings_index' and --apply is omitted; "
                 "this is exactly the historical behaviour of "
                 "backfill_localities.py. Use --dry-run-apply to exercise "
-                "the apply path on parsed_output without writes.",
+                "the apply path on typed_parsed_output without writes.",
                 file=sys.stderr,
             )
         run_backfill(batch_size=args.batch_size, output_path=args.output)

@@ -136,15 +136,15 @@ async def business_api_overview(
     token_status = "configured" if waba_access_token else "missing"
 
     knowledge_base_size = {
-        "my_inventory": _count_table("listings"),
-        "market_listings": _count_table("listings"),
+        "my_inventory": _count_table("typed_listings_index"),
+        "market_listings": _count_table("typed_listings_index"),
         "market_buyers": storage.db.execute(
-            "SELECT COUNT(*) AS c FROM parsed_output WHERE intent IN ('BUY','BUYER','REQUIREMENT','RENTAL_SEEKER')"
+            "SELECT COUNT(*) AS c FROM typed_market_requirements"
         ).fetchone()["c"],
         "brokers": _count_table("brokers"),
         "groups": _count_table("source_sync_jobs"),
         "markets": storage.db.execute(
-            "SELECT COUNT(DISTINCT micro_market) AS c FROM parsed_output WHERE micro_market IS NOT NULL AND micro_market != ''"
+            "SELECT COUNT(DISTINCT micro_market) AS c FROM typed_parsed_output WHERE micro_market IS NOT NULL AND micro_market != ''"
         ).fetchone()["c"],
     }
 

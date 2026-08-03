@@ -39,7 +39,7 @@ export async function getTitlesForRawMessageIds(
   for (let i = 0; i < ids.length; i += CHUNK) {
     const batch = ids.slice(i, i + CHUNK);
     const { data, error } = await db
-      .from("parsed_output")
+      .from("typed_parsed_output")
       .select("raw_message_id, summary_title, listing_index")
       .in("raw_message_id", batch)
       .not("summary_title", "is", null)

@@ -30,7 +30,7 @@ _logger = logging.getLogger(__name__)
 PROJECT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(PROJECT_DIR))
 
-from lab.storage.base import RawMessage, ParsedObservation, ResolverDecision
+from lab.storage.base import RawMessage, ParsedObservation, ResolverDecision, dict_to_dataclass
 from storage import SupabaseStorage
 from lab.embedding import create_engine, observation_text, pack_embedding
 from lab.events import get_bus
@@ -72,8 +72,17 @@ _EMOJI_ICON_RE = re.compile(
 
 
 _EXPLICIT_REQUIREMENT_HEADING_RE = re.compile(
-    r"^\s*[\W_]*(?:(?:very|urgent)\s+)*(?:(?:buyer|tenant|client)\s+)?"
-    r"(?:requirements?|wanted|looking\s+for|seeking|need(?:s)?)\b",
+    r"^\s*[\W_]*(?:(?:very|urgent|immediate)\s+)*"
+    r"(?:(?:buyer|tenant|client)\s+)?"
+    # Keep generic "looking for"/"seeking" out of this source guard: brokers
+    # commonly use them as marketing hooks ("Looking for the perfect office?").
+    # The extraction prompt handles those cues semantically; this guard is for
+    # unambiguous request headings only.
+    r"(?:requirements?|required|require|wanted|want|"
+    r"need(?:s|ed)?|"
+    r"any\s+(?:(?:one|1)\s+)?(?:\S+\s+){0,6}(?:available|has|have)\b|"
+    r"koi\s+.*\b(?:hai|chahiye|milega|mil\s+sakta)\b|"
+    r"(?:chahiye|chaahiye|dhoondh|dhundh|dhoondh\s+rahe)\b)",
     re.IGNORECASE,
 )
 
@@ -278,24 +287,25 @@ def _sender_template_key(sender_phone: str = "", sender_jid: str = "") -> str:
     return ""
 
 
-def _clone_parsed_rows(storage, source_raw_id: int, target_raw_id: int) -> tuple[list[int], list[int]]:
+def _clone_parsed_rows(storage, source_raw_id: int, target_raw_id: int) -> tuple[list[int], list[int], list[int]]:
     """Copy parsed_output rows for a duplicate raw message to the new raw_id."""
     try:
         res = (
-            storage.client.table("parsed_output")
+            storage.client.table("typed_parsed_output")
             .select("*")
             .eq("raw_message_id", source_raw_id)
             .order("listing_index")
             .execute()
         )
     except Exception:
-        return [], []
+        return [], [], []
     rows = res.data or []
     if not rows:
-        return [], []
+        return [], [], []
 
     parsed_ids: list[int] = []
     listing_ids: list[int] = []
+    requirement_ids: list[int] = []
     for row in rows:
         payload = dict(row)
         payload.pop("id", None)
@@ -303,19 +313,28 @@ def _clone_parsed_rows(storage, source_raw_id: int, target_raw_id: int) -> tuple
         payload.pop("updated_at", None)
         payload["raw_message_id"] = target_raw_id
         try:
-            res_insert = storage.client.table("parsed_output").insert(payload).execute()
-            new_id = res_insert.data[0]["id"] if res_insert.data else 0
+            payload.pop("id", None)
+            new_id = storage.save_parsed(dict_to_dataclass(ParsedObservation, payload))
             if new_id:
                 parsed_ids.append(new_id)
                 try:
-                    listing_id = storage.upsert_listing_from_parsed(new_id)
-                    if listing_id:
-                        listing_ids.append(listing_id)
+                    message_type = str(payload.get("message_type") or "").upper()
+                    intent = str(payload.get("intent") or "").upper()
+                    if message_type in {"REQUIREMENT", "BUY"} or intent in {
+                        "BUY", "BUYER", "REQUIREMENT", "RENTAL_SEEKER", "TENANT", "DEMAND"
+                    }:
+                        requirement_id = storage.upsert_market_requirement_from_parsed(new_id)
+                        if requirement_id:
+                            requirement_ids.append(requirement_id)
+                    else:
+                        listing_id = storage.upsert_listing_from_parsed(new_id)
+                        if listing_id:
+                            listing_ids.append(listing_id)
                 except Exception as exc:
-                    print(f"  [extract] duplicate listing upsert error for {target_raw_id}: {exc}", flush=True)
+                    print(f"  [extract] duplicate market destination upsert error for {target_raw_id}: {exc}", flush=True)
         except Exception as exc:
             print(f"  [extract] duplicate parsed_output clone error for {target_raw_id}: {exc}", flush=True)
-    return parsed_ids, listing_ids
+    return parsed_ids, listing_ids, requirement_ids
 
 
 def _run_template_splitter(
@@ -1058,19 +1077,27 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
                 )
             except Exception:
                 duplicate_source = None
-        if duplicate_source and duplicate_source.get("raw") and duplicate_source.get("parsed"):
-            parsed_ids, listing_ids = _clone_parsed_rows(storage, int(duplicate_source["raw"]["id"]), raw_id)
-            if parsed_ids:
-                try:
-                    storage.mark_raw_processed(raw_id)
-                except Exception:
-                    pass
-                return {
-                    "raw_id": raw_id,
-                    "parsed_ids": parsed_ids,
-                    "listing_ids": listing_ids,
-                    "extraction_source": "hash_duplicate",
-                }
+            if duplicate_source and duplicate_source.get("raw") and duplicate_source.get("parsed"):
+                cloned = _clone_parsed_rows(storage, int(duplicate_source["raw"]["id"]), raw_id)
+                # Keep test/plugin callers that still return the old two-item
+                # tuple compatible while the clone path now reports demand IDs.
+                if len(cloned) == 2:
+                    parsed_ids, listing_ids = cloned
+                    requirement_ids = []
+                else:
+                    parsed_ids, listing_ids, requirement_ids = cloned
+                if parsed_ids:
+                    try:
+                        storage.mark_raw_processed(raw_id)
+                    except Exception:
+                        pass
+                    return {
+                        "raw_id": raw_id,
+                        "parsed_ids": parsed_ids,
+                        "listing_ids": listing_ids,
+                        "requirement_ids": requirement_ids,
+                        "extraction_source": "hash_duplicate",
+                    }
 
         selected_pattern, parsed_chunks = _run_template_splitter(
             storage,
@@ -1273,6 +1300,7 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
     # ── Save parsed observations ────────────────────────────────
     parsed_ids: list[int] = []
     listing_ids: list[int] = []
+    requirement_ids: list[int] = []
     for idx, parsed in enumerate(parsed_listings):
         ai_item = ai_extractions_raw[idx] if idx < len(ai_extractions_raw) else None
         share_eligible, share_reason = check_share_eligibility(
@@ -1457,14 +1485,22 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
         except Exception as exc:
             print(f"  [extract] save_resolver_decision error: {exc}", flush=True)
 
-        # Bridge the fully enriched observation to listings only after the
-        # resolver pass. Fingerprint upsert keeps retries idempotent.
+        # Bridge the fully enriched observation to its correct market
+        # destination only after the resolver pass. Supply and demand are
+        # separate projections; a requirement must never become a listing.
         try:
-            listing_id = storage.upsert_listing_from_parsed(parsed_id)
-            if listing_id:
-                listing_ids.append(listing_id)
+            observation = dict(parsed)
+            observation["id"] = parsed_id
+            if str(observation.get("message_type") or "").upper() in {"REQUIREMENT", "BUY"} or str(observation.get("intent") or "").upper() in {"BUY", "BUYER", "REQUIREMENT", "RENTAL_SEEKER", "TENANT", "DEMAND"}:
+                requirement_id = storage.upsert_market_requirement_from_parsed(parsed_id)
+                if requirement_id:
+                    requirement_ids.append(requirement_id)
+            else:
+                listing_id = storage.upsert_listing_from_parsed(parsed_id)
+                if listing_id:
+                    listing_ids.append(listing_id)
         except Exception as lexc:
-            print(f"  [extract] upsert_listing error: {lexc}", flush=True)
+            print(f"  [extract] market destination upsert error: {lexc}", flush=True)
 
         # ── Merge building amenities into buildings table ───────────
         # building_amenities are building-shared (gym, pool, etc.) and go
@@ -1518,7 +1554,7 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
             "all parsed_output inserts failed",
             flush=True,
         )
-        return {"raw_id": raw_id, "parsed_ids": [], "listing_ids": [], "extraction_source": extraction_source or "no_anchor"}
+        return {"raw_id": raw_id, "parsed_ids": [], "listing_ids": [], "requirement_ids": [], "extraction_source": extraction_source or "no_anchor"}
     try:
         storage.mark_raw_processed(raw_id)
     except Exception as exc:
@@ -1527,5 +1563,6 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
         "raw_id": raw_id,
         "parsed_ids": parsed_ids,
         "listing_ids": listing_ids,
+        "requirement_ids": requirement_ids,
         "extraction_source": extraction_source or "ai",
     }

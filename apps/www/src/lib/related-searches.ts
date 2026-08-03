@@ -205,7 +205,7 @@ async function buildPropertyTypes(
 
   const thirtyDaysAgo = new Date(Date.now() - 30 * 86_400_000).toISOString();
   const { data } = await db
-    .from("listings")
+    .from("typed_listings_index")
     .select("property_type")
     .eq("canonical_micro_market_slug", canon.slug)
     .gte("last_seen", thirtyDaysAgo)
@@ -247,7 +247,7 @@ async function buildTopBuildings(
 
   const thirtyDaysAgo = new Date(Date.now() - 30 * 86_400_000).toISOString();
   const { data } = await db
-    .from("listings")
+    .from("typed_listings_index")
     .select("building_name")
     .eq("canonical_micro_market_slug", canon.slug)
     .gte("last_seen", thirtyDaysAgo)
@@ -350,7 +350,7 @@ async function buildTopBrokers(
 
   const thirtyDaysAgo = new Date(Date.now() - 30 * 86_400_000).toISOString();
   const { data } = await db
-    .from("listings")
+    .from("typed_listings_index")
     .select("broker_name")
     .eq("canonical_micro_market_slug", canon.slug)
     .gte("last_seen", thirtyDaysAgo)
@@ -394,7 +394,7 @@ async function buildBuildingDeepLinks(
 
   const thirtyDaysAgo = new Date(Date.now() - 30 * 86_400_000).toISOString();
   const { data } = await db
-    .from("listings")
+    .from("typed_listings_index")
     .select("bhk, intent")
     .eq("building_name", cleanName)
     .gte("last_seen", thirtyDaysAgo)

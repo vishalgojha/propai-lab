@@ -152,33 +152,33 @@ async def dashboard_time_window(window: str = "today", user: dict = Depends(requ
         total_msgs = storage.db.execute("SELECT COUNT(*) FROM raw_messages").fetchone()[0]
         listings_in_window = storage.db.execute(
             """SELECT COALESCE(p.intent, p.message_type, 'UNKNOWN') as intent, COUNT(DISTINCT l.id) as c
-               FROM listings l
+               FROM typed_listings_index l
                JOIN listing_observations lo ON lo.listing_id = l.id
-               LEFT JOIN parsed_output p ON p.id = lo.parsed_id
+               LEFT JOIN typed_parsed_output p ON p.id = lo.parsed_id
                WHERE date(lo.seen_at) >= ? AND date(lo.seen_at) <= ?
                GROUP BY 1""",
             (start_date, end_date),
         ).fetchall()
-        total_listings = storage.db.execute("SELECT COUNT(*) FROM listings").fetchone()[0]
+        total_listings = storage.db.execute("SELECT COUNT(*) FROM typed_listings_index").fetchone()[0]
         needs_review = storage.db.execute(
-            "SELECT COUNT(*) FROM parsed_output WHERE date(created_at) >= ? AND date(created_at) <= ? AND confidence < 0.5",
+            "SELECT COUNT(*) FROM typed_parsed_output WHERE date(created_at) >= ? AND date(created_at) <= ? AND confidence < 0.5",
             (start_date, end_date),
         ).fetchone()[0]
         total_needs_review = storage.db.execute(
-            "SELECT COUNT(*) FROM parsed_output WHERE confidence < 0.5"
+            "SELECT COUNT(*) FROM typed_parsed_output WHERE confidence < 0.5"
         ).fetchone()[0]
     else:
         msg_count = storage.db.execute("SELECT COUNT(*) FROM raw_messages").fetchone()[0]
         total_msgs = msg_count
         listings_in_window = storage.db.execute(
             """SELECT COALESCE(p.intent, p.message_type, 'UNKNOWN') as intent, COUNT(DISTINCT l.id) as c
-               FROM listings l
+               FROM typed_listings_index l
                JOIN listing_observations lo ON lo.listing_id = l.id
-               LEFT JOIN parsed_output p ON p.id = lo.parsed_id
+               LEFT JOIN typed_parsed_output p ON p.id = lo.parsed_id
                GROUP BY 1""",
         ).fetchall()
-        total_listings = storage.db.execute("SELECT COUNT(*) FROM listings").fetchone()[0]
-        needs_review = storage.db.execute("SELECT COUNT(*) FROM parsed_output WHERE confidence < 0.5").fetchone()[0]
+        total_listings = storage.db.execute("SELECT COUNT(*) FROM typed_listings_index").fetchone()[0]
+        needs_review = storage.db.execute("SELECT COUNT(*) FROM typed_parsed_output WHERE confidence < 0.5").fetchone()[0]
         total_needs_review = needs_review
 
     intents = {r["intent"]: r["c"] for r in listings_in_window}
@@ -189,11 +189,11 @@ async def dashboard_time_window(window: str = "today", user: dict = Depends(requ
         "messages": msg_count,
         "total_messages": total_msgs,
         "supply": intents.get("SELL", 0),
-        "total_supply": intents.get("SELL", 0) if window == "all" else storage.db.execute("SELECT COUNT(*) FROM listings WHERE intent='SELL'").fetchone()[0],
+        "total_supply": intents.get("SELL", 0) if window == "all" else storage.db.execute("SELECT COUNT(*) FROM typed_listings_index WHERE intent='SELL'").fetchone()[0],
         "demand": intents.get("BUY", 0),
-        "total_demand": intents.get("BUY", 0) if window == "all" else storage.db.execute("SELECT COUNT(*) FROM listings WHERE intent='BUY'").fetchone()[0],
+        "total_demand": intents.get("BUY", 0) if window == "all" else storage.db.execute("SELECT COUNT(*) FROM typed_market_requirements WHERE intent='BUY'").fetchone()[0],
         "rentals": intents.get("RENT", 0) + intents.get("COMMERCIAL", 0),
-        "total_rentals": (intents.get("RENT", 0) + intents.get("COMMERCIAL", 0)) if window == "all" else storage.db.execute("SELECT COUNT(*) FROM listings WHERE intent IN ('RENT','COMMERCIAL')").fetchone()[0],
+        "total_rentals": (intents.get("RENT", 0) + intents.get("COMMERCIAL", 0)) if window == "all" else storage.db.execute("SELECT COUNT(*) FROM typed_listings_index WHERE intent IN ('RENT','COMMERCIAL')").fetchone()[0],
         "needs_review": needs_review,
         "total_needs_review": total_needs_review,
         "start_date": start_date,
@@ -252,7 +252,7 @@ async def dashboard_coverage(
     group_ids = set(j.group_id for j in jobs)
     synced_jobs = [j for j in jobs if j.records_processed and j.records_processed > 0]
     messages_from_groups = sum(j.records_processed or 0 for j in jobs)
-    listings_known = storage.db.execute("SELECT COUNT(*) AS c FROM listings").fetchone()["c"]
+    listings_known = storage.db.execute("SELECT COUNT(*) AS c FROM typed_listings_index").fetchone()["c"]
     return {
         "groups_connected": len(group_ids),
         "messages_stored": stats["total_raw"],
@@ -279,7 +279,7 @@ async def action_dashboard(user: dict = Depends(require_user)):
         SELECT COUNT(*) AS c FROM (
             SELECT DISTINCT rd.building_name
             FROM resolver_decisions rd
-            JOIN parsed_output p ON p.id = rd.parsed_id
+            JOIN typed_parsed_output p ON p.id = rd.parsed_id
             WHERE DATE(p.created_at) = ? AND rd.building_name IS NOT NULL
         )
     """, (today,)).fetchone()["c"]
@@ -292,7 +292,7 @@ async def action_dashboard(user: dict = Depends(require_user)):
         WHERE suggestion_type = 'duplicate' AND status IN ('pending', 'approved')
     """).fetchone()["c"]
     low_confidence = storage.db.execute("""
-        SELECT COUNT(*) AS c FROM parsed_output
+        SELECT COUNT(*) AS c FROM typed_parsed_output
         WHERE confidence < 0.5
     """).fetchone()["c"]
     disconnected_groups = storage.db.execute("""

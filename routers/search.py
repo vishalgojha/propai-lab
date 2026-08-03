@@ -185,7 +185,7 @@ async def search_messages(q: str = "", use_llm: bool = False):
                 SELECT fingerprint, intent, bhk, price, price_unit, area_sqft, furnishing,
                        location_label, building_name, landmark_name, micro_market,
                        broker_name, broker_phone, observation_count, last_seen
-                FROM listings
+                FROM typed_listings_index
                 WHERE {where_clause}
                 ORDER BY observation_count DESC
                 LIMIT 8
@@ -196,7 +196,7 @@ async def search_messages(q: str = "", use_llm: bool = False):
             result["requirements"] = [dict(r) for r in storage.db.execute("""
                 SELECT p.id, p.intent, p.bhk, p.price, p.price_unit, p.broker_name, p.broker_phone,
                        p.micro_market, p.location_raw, p.created_at, r.message, r.group_name
-                FROM parsed_output p
+                FROM typed_parsed_output p
                 JOIN raw_messages r ON r.id = p.raw_message_id
                 WHERE p.intent IN ('BUY','RENTAL_SEEKER')
                   AND (
@@ -227,7 +227,7 @@ async def search_messages(q: str = "", use_llm: bool = False):
                        COUNT(*) AS occurrence_count,
                        COUNT(DISTINCT p.broker_name) AS broker_count
                 FROM resolver_decisions rd
-                LEFT JOIN parsed_output p ON p.id = rd.parsed_id
+                LEFT JOIN typed_parsed_output p ON p.id = rd.parsed_id
                 WHERE rd.building_name IS NOT NULL AND rd.building_name != ''
                   AND rd.building_name ILIKE ?
                 GROUP BY rd.building_name
@@ -241,7 +241,7 @@ async def search_messages(q: str = "", use_llm: bool = False):
                 SELECT micro_market, COUNT(*) AS observation_count,
                        COUNT(DISTINCT building_name) AS building_count,
                        COUNT(DISTINCT broker_name) AS broker_count
-                FROM parsed_output
+                FROM typed_parsed_output
                 WHERE micro_market IS NOT NULL AND micro_market != ''
                   AND micro_market ILIKE ?
                 GROUP BY micro_market
@@ -492,7 +492,7 @@ async def market_search(
     order_sql = sort_map.get(sort_by, "l.last_seen")
 
     total_count = storage.db.execute(
-        f"SELECT COUNT(*) FROM listings l WHERE {where_sql}", params
+        f"SELECT COUNT(*) FROM typed_listings_index l WHERE {where_sql}", params
     ).fetchone()[0]
 
     listing_params = params.copy()
@@ -503,7 +503,7 @@ async def market_search(
                l.micro_market, l.broker_name, l.broker_phone,
                l.first_seen, l.last_seen, l.observation_count, l.group_count,
                l.latest_raw_message_id
-        FROM listings l
+        FROM typed_listings_index l
         WHERE {where_sql}
         ORDER BY {order_sql} DESC
         LIMIT ? OFFSET ?

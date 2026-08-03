@@ -305,7 +305,7 @@ def validate_listing_locality(
             db = storage.client if hasattr(storage, "client") else None
             if db:
                 res = (
-                    db.table("listings")
+                    db.table("typed_listings_index")
                     .select("micro_market")
                     .ilike("building_name", building_name)
                     .neq("micro_market", "")

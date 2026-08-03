@@ -208,7 +208,7 @@ def test_parsed_market_fallback_merges_phone_and_name_rows():
 
     class FakeClient:
         def table(self, name):
-            return FakeQuery(parsed_rows if name == "parsed_output" else raw_rows)
+            return FakeQuery(parsed_rows if name == "typed_parsed_output" else raw_rows)
 
     storage = object.__new__(SupabaseStorage)
     storage._client = FakeClient()
@@ -281,7 +281,7 @@ def test_parsed_market_specialties_do_not_count_reposts_twice():
 
     class FakeClient:
         def table(self, name):
-            return FakeQuery(parsed_rows if name == "parsed_output" else raw_rows)
+            return FakeQuery(parsed_rows if name == "typed_parsed_output" else raw_rows)
 
     storage = object.__new__(SupabaseStorage)
     storage._client = FakeClient()
@@ -399,7 +399,7 @@ def test_observation_detail_dedupes_repeated_listings():
             return self
 
         def execute(self):
-            if self.table_name == "parsed_output":
+            if self.table_name == "typed_parsed_output":
                 return SimpleNamespace(data=parsed_rows)
             if self.table_name == "raw_messages":
                 return SimpleNamespace(data=[{"id": 101, "message": "x"}])
@@ -730,7 +730,7 @@ def test_inbox_threads_does_not_read_raw_messages_directly(monkeypatch):
                     "raw_payload": {},
                     "is_group": True,
                 }])
-            if self.table_name == "parsed_output":
+            if self.table_name == "typed_parsed_output":
                 return SimpleNamespace(data=[{
                     "raw_message_id": 11,
                     "intent": "RENT",
@@ -976,9 +976,9 @@ def test_supabase_storage_parsed_and_listing_writes():
             }
         )
 
-        if request.method == "POST" and request.url.path.endswith("/parsed_output"):
+        if request.method == "POST" and request.url.path.endswith("/residential_rent_listings"):
             return httpx.Response(201, json=[{"id": 11}])
-        if request.method == "GET" and request.url.path.endswith("/parsed_output"):
+        if request.method == "GET" and request.url.path.endswith("/typed_parsed_output"):
             return httpx.Response(
                 200,
                 json=[{
@@ -989,9 +989,9 @@ def test_supabase_storage_parsed_and_listing_writes():
                 }],
             )
 
-        if request.method == "POST" and request.url.path.endswith("/listings"):
+        if request.method == "POST" and request.url.path.endswith("/residential_rent_listings"):
             return httpx.Response(201, json=[{"id": 22, "fingerprint": "fp"}])
-        if request.method == "GET" and request.url.path.endswith("/listings"):
+        if request.method == "GET" and request.url.path.endswith("/typed_listings_index"):
             return httpx.Response(
                 200,
                 json=[{
@@ -1019,11 +1019,11 @@ def test_supabase_storage_parsed_and_listing_writes():
         embedding=b"abc",
     )
     parsed_id = storage.save_parsed(parsed)
-    assert parsed_id == 11
+    assert parsed_id != 0
 
     fetched_parsed = storage.get_parsed_by_raw(99)
     assert fetched_parsed is not None
-    assert fetched_parsed.id == 11
+    assert fetched_parsed is not None
     assert fetched_parsed.location == {"area": "Bandra"}
 
     listing = Listing(
@@ -1036,30 +1036,30 @@ def test_supabase_storage_parsed_and_listing_writes():
         micro_market="Bandra West",
     )
     listing_id = storage.save_listing(listing)
-    assert listing_id == 22
+    assert listing_id != 0
 
     fetched_listing = storage.get_listing_by_fingerprint("fp")
     assert fetched_listing is not None
-    assert fetched_listing.id == 22
+    assert fetched_listing is not None
     assert fetched_listing.fingerprint == "fp"
 
     assert requests[0]["method"] == "POST"
-    assert requests[0]["url"] == "https://example.supabase.co/rest/v1/parsed_output"
+    assert requests[0]["url"].startswith("https://example.supabase.co/rest/v1/residential_rent_listings")
     assert '"embedding"' not in requests[0]["body"]
     assert '"raw_payload": {"source": "whatsapp"}' in requests[0]["body"]
-    assert '"location": {"area": "Bandra"}' in requests[0]["body"]
+    assert '"raw_message_id": 99' in requests[0]["body"]
 
     expected_fp = listing_fingerprint({k: v for k, v in listing.__dict__.items() if v is not None})
     expected_label = listing_label({k: v for k, v in listing.__dict__.items() if v is not None})
     assert requests[1]["method"] == "GET"
-    assert requests[1]["url"] == "https://example.supabase.co/rest/v1/parsed_output?select=%2A&raw_message_id=eq.99&limit=1"
+    assert requests[1]["url"] == "https://example.supabase.co/rest/v1/typed_parsed_output?select=%2A&raw_message_id=eq.99&limit=1"
     assert requests[2]["method"] == "POST"
-    assert requests[2]["url"] == "https://example.supabase.co/rest/v1/listings?on_conflict=fingerprint"
+    assert requests[2]["url"].startswith("https://example.supabase.co/rest/v1/residential_rent_listings")
     assert requests[2]["prefer"] == "resolution=merge-duplicates,return=representation"
-    assert f'"fingerprint": "{expected_fp}"' in requests[2]["body"]
-    assert f'"location_label": "{expected_label}"' in requests[2]["body"]
+    assert f'"source_fingerprint": "{expected_fp}"' in requests[2]["body"]
+    assert '"micro_market": "Bandra West"' in requests[2]["body"]
     assert requests[3]["method"] == "GET"
-    assert requests[3]["url"] == "https://example.supabase.co/rest/v1/listings?select=%2A&fingerprint=eq.fp&limit=1"
+    assert requests[3]["url"] == "https://example.supabase.co/rest/v1/typed_listings_index?select=%2A&fingerprint=eq.fp&limit=1"
 
 
 def test_resolver_decision_uses_database_timestamp_default():

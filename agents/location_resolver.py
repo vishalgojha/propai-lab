@@ -141,7 +141,7 @@ def _check_group_location_context(storage: "Storage", parsed_id: int,
     one_hour_ago = (datetime.now(timezone.utc) - timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
     rows = storage.db.execute(
         """SELECT p.micro_market, r.message, r.group_name
-           FROM parsed_output p
+           FROM typed_parsed_output p
            JOIN raw_messages r ON r.id = p.raw_message_id
            WHERE p.micro_market IS NOT NULL AND p.micro_market != ''
              AND p.id != ?

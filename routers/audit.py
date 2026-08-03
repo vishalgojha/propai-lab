@@ -203,7 +203,7 @@ async def audit_dashboard(user: dict = Depends(require_user)):
 
     # Parser success rate
     total_parsed_today = storage.db.execute(
-        "SELECT COUNT(*) FROM parsed_output WHERE created_at >= ?", (today_start,)
+        "SELECT COUNT(*) FROM typed_parsed_output WHERE created_at >= ?", (today_start,)
     ).fetchone()[0]
     parser_success_rate = round((total_parsed_today / max(1, msgs_today)) * 100, 1) if msgs_today > 0 else 0
 
@@ -395,7 +395,7 @@ def audit_groups_v2(
     user: dict = Depends(require_user),
     tenant_id: str = Depends(require_tenant),
 ):
-    """Fresh group audit backed by raw_messages and parsed_output only.
+    """Fresh group audit backed by raw_messages and typed parsed observations.
 
     Uses SQL aggregation instead of fetching all rows into Python.
     Returns ~163 rows (one per group) instead of 400K+ rows.
@@ -415,7 +415,7 @@ def audit_groups_v2(
             "errors": [],
         }
 
-    has_parsed = _table_exists("parsed_output")
+    has_parsed = _table_exists("typed_parsed_output")
     has_group_members = _table_exists("group_members")
     has_sync_jobs = _table_exists("sync_jobs")
     errors: list[str] = []
@@ -450,7 +450,7 @@ def audit_groups_v2(
             "markets_count": 0, "unknown_locations": 0, "identities_count": 0,
         }
 
-    # ── Query 2: aggregate parsed_output by group_name ──
+    # ── Query 2: aggregate typed parsed observations by group_name ──
     if has_parsed and stats:
         try:
             po_rows = _audit_rows(
@@ -461,7 +461,7 @@ def audit_groups_v2(
                 "COUNT(DISTINCT CASE WHEN po.micro_market IS NOT NULL AND po.micro_market != '' THEN po.micro_market END) AS markets_count, "
                 "COUNT(DISTINCT CASE WHEN (po.location_raw IS NOT NULL AND po.location_raw != '') AND (po.micro_market IS NULL OR po.micro_market = '') THEN (po.raw_message_id::text || ':' || COALESCE(po.listing_index, 0)::text) END) AS unknown_locations, "
                 "COUNT(DISTINCT COALESCE(NULLIF(po.broker_name, ''), NULLIF(po.profile_name, ''), NULLIF(rm.sender, ''))) AS identities "
-                "FROM parsed_output po "
+                "FROM typed_parsed_output po "
                 "JOIN raw_messages rm ON po.raw_message_id = rm.id "
                 "WHERE rm.tenant_id = ? AND rm.group_name IS NOT NULL AND rm.group_name != '' "
                 "GROUP BY rm.group_name",
@@ -491,7 +491,7 @@ def audit_groups_v2(
                 "SELECT COUNT(DISTINCT COALESCE(NULLIF(po.broker_name, ''), "
                 "NULLIF(po.profile_name, ''), NULLIF(rm.sender, ''))) "
                 "AS total_unique_senders "
-                "FROM parsed_output po "
+                "FROM typed_parsed_output po "
                 "JOIN raw_messages rm ON po.raw_message_id = rm.id "
                 "WHERE rm.tenant_id = ? AND rm.group_name IS NOT NULL AND rm.group_name != ''",
                 (tenant_id,),
@@ -637,7 +637,7 @@ async def audit_group_detail(
     obs_rows = storage.db.execute("""
         SELECT p.id, p.intent, p.broker_name, p.building_name, p.micro_market,
                p.bhk, p.price, p.price_unit, p.confidence, r.message, r.timestamp
-        FROM parsed_output p
+        FROM typed_parsed_output p
         JOIN raw_messages r ON r.id = p.raw_message_id
         WHERE r.tenant_id = ? AND (r.group_name = ? OR r.group_name = ?)
         ORDER BY r.created_at DESC LIMIT 50
@@ -645,7 +645,7 @@ async def audit_group_detail(
 
     # Brokers seen
     broker_count = storage.db.execute("""
-        SELECT COUNT(DISTINCT p.broker_name) FROM parsed_output p
+        SELECT COUNT(DISTINCT p.broker_name) FROM typed_parsed_output p
         JOIN raw_messages r ON r.id = p.raw_message_id
         WHERE r.tenant_id = ? AND (r.group_name = ? OR r.group_name = ?)
           AND p.broker_name IS NOT NULL AND p.broker_name != ''
@@ -653,7 +653,7 @@ async def audit_group_detail(
 
     # Markets seen
     markets = storage.db.execute("""
-        SELECT DISTINCT p.micro_market FROM parsed_output p
+        SELECT DISTINCT p.micro_market FROM typed_parsed_output p
         JOIN raw_messages r ON r.id = p.raw_message_id
         WHERE r.tenant_id = ? AND (r.group_name = ? OR r.group_name = ?)
           AND p.micro_market IS NOT NULL AND p.micro_market != ''
@@ -674,7 +674,7 @@ async def audit_group_detail(
     # Resolver quality
     resolved = storage.db.execute("""
         SELECT COUNT(*) FROM resolver_decisions rd
-        JOIN parsed_output p ON p.id = rd.parsed_id
+        JOIN typed_parsed_output p ON p.id = rd.parsed_id
         JOIN raw_messages r ON r.id = p.raw_message_id
         WHERE r.tenant_id = ? AND (r.group_name = ? OR r.group_name = ?)
           AND rd.method != 'unresolved'
@@ -682,7 +682,7 @@ async def audit_group_detail(
 
     unresolved = storage.db.execute("""
         SELECT COUNT(*) FROM resolver_decisions rd
-        JOIN parsed_output p ON p.id = rd.parsed_id
+        JOIN typed_parsed_output p ON p.id = rd.parsed_id
         JOIN raw_messages r ON r.id = p.raw_message_id
         WHERE r.tenant_id = ? AND (r.group_name = ? OR r.group_name = ?)
           AND rd.method = 'unresolved'
@@ -743,7 +743,7 @@ async def audit_group_timeline(
         SELECT rd.created_at as ts, rd.method,
                COALESCE(rd.building_name, rd.landmark_name, rd.street_name, 'location') as resolved_to
         FROM resolver_decisions rd
-        JOIN parsed_output p ON p.id = rd.parsed_id
+        JOIN typed_parsed_output p ON p.id = rd.parsed_id
         JOIN raw_messages r ON r.id = p.raw_message_id
         WHERE r.tenant_id = ? AND (r.group_name = ? OR r.group_name = ?)
           AND rd.method != 'unresolved'
@@ -900,8 +900,8 @@ def audit_capture_health(
             "COUNT(*) AS total_raw, "
             "COUNT(*) FILTER (WHERE rm.created_at >= scope.today_start) AS raw_today, "
             "MAX(created_at) AS last_msg, "
-            "(SELECT COUNT(DISTINCT raw_message_id) FROM parsed_output WHERE tenant_id = scope.tenant_id) AS total_parsed, "
-            "(SELECT COUNT(DISTINCT raw_message_id) FROM parsed_output WHERE tenant_id = scope.tenant_id AND created_at >= scope.today_start) AS parsed_today, "
+            "(SELECT COUNT(DISTINCT raw_message_id) FROM typed_parsed_output WHERE tenant_id = scope.tenant_id) AS total_parsed, "
+            "(SELECT COUNT(DISTINCT raw_message_id) FROM typed_parsed_output WHERE tenant_id = scope.tenant_id AND created_at >= scope.today_start) AS parsed_today, "
             "(SELECT COUNT(*) FROM knowledge_records WHERE tenant_id = scope.tenant_id) AS total_kr, "
             "(SELECT COUNT(*) FROM observations WHERE tenant_id = scope.tenant_id) AS total_obs, "
             "(SELECT COUNT(*) FROM observation_evidence WHERE tenant_id = scope.tenant_id) AS total_oe, "
@@ -931,7 +931,7 @@ def audit_capture_health(
             fb = storage.db.execute(
                 "SELECT COUNT(DISTINCT COALESCE(NULLIF(po.broker_name, ''), "
                 "NULLIF(po.profile_name, ''), NULLIF(rm.sender, ''))) "
-                "FROM parsed_output po "
+                "FROM typed_parsed_output po "
                 "JOIN raw_messages rm ON po.raw_message_id = rm.id "
                 "WHERE rm.tenant_id = ?",
                 (tenant_id,),
@@ -988,11 +988,11 @@ async def audit_intelligence_v2(user: dict = Depends(require_user)):
     week_ago = (now_dt - timedelta(days=7)).strftime("%Y-%m-%dT%H:%M:%SZ")
 
     total_raw = _audit_scalar("SELECT COUNT(*) FROM raw_messages WHERE tenant_id = ?", (tenant_id,), 0) if _table_exists("raw_messages") else 0
-    total_parsed = _audit_scalar("SELECT COUNT(DISTINCT raw_message_id) FROM parsed_output WHERE tenant_id = ?", (tenant_id,), 0) if _table_exists("parsed_output") else 0
+    total_parsed = _audit_scalar("SELECT COUNT(DISTINCT raw_message_id) FROM typed_parsed_output WHERE tenant_id = ?", (tenant_id,), 0) if _table_exists("typed_parsed_output") else 0
     total_groups = _audit_scalar("SELECT COUNT(DISTINCT group_name) FROM raw_messages WHERE tenant_id = ? AND COALESCE(group_name, '') != ''", (tenant_id,), 0) if _table_exists("raw_messages") else 0
     active_groups_24h = _audit_scalar("SELECT COUNT(DISTINCT group_name) FROM raw_messages WHERE tenant_id = ? AND created_at >= ? AND COALESCE(group_name, '') != ''", (tenant_id, day_ago), 0) if _table_exists("raw_messages") else 0
     msgs_today = _audit_scalar("SELECT COUNT(*) FROM raw_messages WHERE tenant_id = ? AND created_at >= ?", (tenant_id, today_start), 0) if _table_exists("raw_messages") else 0
-    parsed_today = _audit_scalar("SELECT COUNT(DISTINCT raw_message_id) FROM parsed_output WHERE tenant_id = ? AND created_at >= ?", (tenant_id, today_start), 0) if _table_exists("parsed_output") else 0
+    parsed_today = _audit_scalar("SELECT COUNT(DISTINCT raw_message_id) FROM typed_parsed_output WHERE tenant_id = ? AND created_at >= ?", (tenant_id, today_start), 0) if _table_exists("typed_parsed_output") else 0
     last_msg = _audit_scalar("SELECT MAX(created_at) FROM raw_messages WHERE tenant_id = ?", (tenant_id,), None) if _table_exists("raw_messages") else None
     webhook_ok = bool(last_msg and str(last_msg) >= five_min_ago)
     parser_success = round(min(100.0, (total_parsed / max(1, total_raw)) * 100), 1)
@@ -1029,21 +1029,21 @@ async def audit_intelligence_v2(user: dict = Depends(require_user)):
     recently_active = _audit_scalar("SELECT COUNT(*) FROM brokers WHERE tenant_id = ? AND last_seen_at >= ?", (tenant_id, week_ago), 0) if _table_exists("brokers") else 0
     jids_no_phone = _audit_scalar("SELECT COUNT(*) FROM jid_profiles WHERE tenant_id = ? AND (phone IS NULL OR phone = '')", (tenant_id,), 0) if _table_exists("jid_profiles") else 0
 
-    total_listings = _audit_scalar("SELECT COUNT(*) FROM listings WHERE tenant_id = ?", (tenant_id,), 0) if _table_exists("listings") else 0
-    sell_count = _audit_scalar("SELECT COUNT(*) FROM listings WHERE tenant_id = ? AND upper(COALESCE(intent, '')) IN ('SELL','SELLER','SALE','COMMERCIAL_SALE','PRE-LAUNCH')", (tenant_id,), 0) if _table_exists("listings") else 0
-    rent_count = _audit_scalar("SELECT COUNT(*) FROM listings WHERE tenant_id = ? AND upper(COALESCE(intent, '')) IN ('RENT','RENTAL','LEASE','COMMERCIAL_RENTAL')", (tenant_id,), 0) if _table_exists("listings") else 0
-    commercial_count = _audit_scalar("SELECT COUNT(*) FROM listings WHERE tenant_id = ? AND upper(COALESCE(intent, '')) LIKE '%COMMERCIAL%'", (tenant_id,), 0) if _table_exists("listings") else 0
+    total_listings = _audit_scalar("SELECT COUNT(*) FROM typed_listings_index WHERE tenant_id = ?", (tenant_id,), 0) if _table_exists("typed_listings_index") else 0
+    sell_count = _audit_scalar("SELECT COUNT(*) FROM typed_listings_index WHERE tenant_id = ? AND upper(COALESCE(intent, '')) IN ('SELL','SELLER','SALE','COMMERCIAL_SALE','PRE-LAUNCH')", (tenant_id,), 0) if _table_exists("typed_listings_index") else 0
+    rent_count = _audit_scalar("SELECT COUNT(*) FROM typed_listings_index WHERE tenant_id = ? AND upper(COALESCE(intent, '')) IN ('RENT','RENTAL','LEASE','COMMERCIAL_RENTAL')", (tenant_id,), 0) if _table_exists("typed_listings_index") else 0
+    commercial_count = _audit_scalar("SELECT COUNT(*) FROM typed_listings_index WHERE tenant_id = ? AND upper(COALESCE(intent, '')) LIKE '%COMMERCIAL%'", (tenant_id,), 0) if _table_exists("typed_listings_index") else 0
     total_requirements = _audit_scalar("""
-        SELECT COUNT(DISTINCT raw_message_id) FROM parsed_output
+        SELECT COUNT(DISTINCT raw_message_id) FROM typed_parsed_output
         WHERE tenant_id = ? AND upper(COALESCE(intent, '')) IN ('BUY','BUYER','REQUIREMENT','RENTAL_SEEKER','TENANT')
-    """, (tenant_id,), 0) if _table_exists("parsed_output") else 0
+    """, (tenant_id,), 0) if _table_exists("typed_parsed_output") else 0
 
-    markets_observed = _audit_scalar("SELECT COUNT(DISTINCT micro_market) FROM parsed_output WHERE tenant_id = ? AND COALESCE(micro_market, '') != ''", (tenant_id,), 0) if _table_exists("parsed_output") else 0
+    markets_observed = _audit_scalar("SELECT COUNT(DISTINCT micro_market) FROM typed_parsed_output WHERE tenant_id = ? AND COALESCE(micro_market, '') != ''", (tenant_id,), 0) if _table_exists("typed_parsed_output") else 0
     buildings_observed = _audit_scalar("SELECT COUNT(*) FROM buildings WHERE tenant_id = ?", (tenant_id,), 0) if _table_exists("buildings") else 0
     buildings_with_data = _audit_scalar("SELECT COUNT(*) FROM buildings WHERE tenant_id = ? AND COALESCE(observed_listings, 0) > 0", (tenant_id,), 0) if _table_exists("buildings") else 0
-    developers_observed = _audit_scalar("SELECT COUNT(DISTINCT developer) FROM parsed_output WHERE tenant_id = ? AND COALESCE(developer, '') != ''", (tenant_id,), 0) if _table_exists("parsed_output") else 0
-    localities_observed = _audit_scalar("SELECT COUNT(DISTINCT area) FROM parsed_output WHERE tenant_id = ? AND COALESCE(area, '') != ''", (tenant_id,), 0) if _table_exists("parsed_output") else 0
-    landmarks_observed = _audit_scalar("SELECT COUNT(DISTINCT landmark_name) FROM parsed_output WHERE tenant_id = ? AND COALESCE(landmark_name, '') != ''", (tenant_id,), 0) if _table_exists("parsed_output") else 0
+    developers_observed = _audit_scalar("SELECT COUNT(DISTINCT developer) FROM typed_parsed_output WHERE tenant_id = ? AND COALESCE(developer, '') != ''", (tenant_id,), 0) if _table_exists("typed_parsed_output") else 0
+    localities_observed = _audit_scalar("SELECT COUNT(DISTINCT area) FROM typed_parsed_output WHERE tenant_id = ? AND COALESCE(area, '') != ''", (tenant_id,), 0) if _table_exists("typed_parsed_output") else 0
+    landmarks_observed = _audit_scalar("SELECT COUNT(DISTINCT landmark_name) FROM typed_parsed_output WHERE tenant_id = ? AND COALESCE(landmark_name, '') != ''", (tenant_id,), 0) if _table_exists("typed_parsed_output") else 0
 
     latest_records = _audit_rows("""
         SELECT id, created_at, group_name, sender, message
@@ -1054,7 +1054,7 @@ async def audit_intelligence_v2(user: dict = Depends(require_user)):
     """, (tenant_id,)) if _table_exists("raw_messages") else []
 
     group_rows = []
-    if _table_exists("raw_messages") and _table_exists("parsed_output"):
+    if _table_exists("raw_messages") and _table_exists("typed_parsed_output"):
         group_rows = _audit_rows("""
             SELECT rm.group_name,
                    COUNT(DISTINCT rm.id) AS messages,
@@ -1066,7 +1066,7 @@ async def audit_intelligence_v2(user: dict = Depends(require_user)):
                    COUNT(DISTINCT NULLIF(po.micro_market, '')) AS markets,
                    COUNT(DISTINCT NULLIF(po.building_name, '')) AS buildings
             FROM raw_messages rm
-            LEFT JOIN parsed_output po ON po.raw_message_id = rm.id
+            LEFT JOIN typed_parsed_output po ON po.raw_message_id = rm.id
             WHERE rm.tenant_id = ? AND COALESCE(rm.group_name, '') != ''
             GROUP BY rm.group_name
             ORDER BY messages DESC
@@ -1099,13 +1099,13 @@ async def audit_intelligence_v2(user: dict = Depends(require_user)):
                COUNT(DISTINCT rm.id) AS observations,
                MIN(rm.created_at) AS first_seen,
                MAX(rm.created_at) AS last_seen
-        FROM parsed_output po
+        FROM typed_parsed_output po
         JOIN raw_messages rm ON po.raw_message_id = rm.id
         WHERE rm.tenant_id = ? AND COALESCE(broker_name, '') != ''
         GROUP BY broker_name
         ORDER BY groups DESC, observations DESC
         LIMIT 10
-    """, (tenant_id,)) if _table_exists("parsed_output") and _table_exists("raw_messages") else []
+    """, (tenant_id,)) if _table_exists("typed_parsed_output") and _table_exists("raw_messages") else []
 
     market_stats = _audit_rows("""
         SELECT micro_market,
@@ -1113,23 +1113,23 @@ async def audit_intelligence_v2(user: dict = Depends(require_user)):
                SUM(CASE WHEN upper(COALESCE(intent, '')) NOT IN ('BUY','BUYER','REQUIREMENT','RENTAL_SEEKER','TENANT') THEN 1 ELSE 0 END) AS residential,
                SUM(CASE WHEN upper(COALESCE(intent, '')) LIKE '%COMMERCIAL%' THEN 1 ELSE 0 END) AS commercial,
                COUNT(DISTINCT broker_name) AS brokers
-        FROM parsed_output po
+        FROM typed_parsed_output po
         JOIN raw_messages rm ON po.raw_message_id = rm.id
         WHERE rm.tenant_id = ? AND COALESCE(micro_market, '') != ''
         GROUP BY micro_market
         ORDER BY total DESC
         LIMIT 20
-    """, (tenant_id,)) if _table_exists("parsed_output") and _table_exists("raw_messages") else []
+    """, (tenant_id,)) if _table_exists("typed_parsed_output") and _table_exists("raw_messages") else []
 
     top_markets = _audit_rows("""
         SELECT micro_market, COUNT(DISTINCT broker_name) AS brokers
-        FROM parsed_output po
+        FROM typed_parsed_output po
         JOIN raw_messages rm ON po.raw_message_id = rm.id
         WHERE rm.tenant_id = ? AND COALESCE(micro_market, '') != ''
         GROUP BY micro_market
         ORDER BY brokers DESC
         LIMIT 10
-    """, (tenant_id,)) if _table_exists("parsed_output") and _table_exists("raw_messages") else []
+    """, (tenant_id,)) if _table_exists("typed_parsed_output") and _table_exists("raw_messages") else []
 
     suggestions = []
     if total_raw == 0:
@@ -1277,11 +1277,11 @@ def audit_insights(
             "('BUY','BUYER','REQUIREMENT','RENTAL_SEEKER','TENANT') THEN (po.raw_message_id::text || ':' || COALESCE(po.listing_index, 0)::text) END) AS requirements, "
             "COUNT(DISTINCT CASE WHEN UPPER(COALESCE(po.intent, '')) NOT IN "
             "('BUY','BUYER','REQUIREMENT','RENTAL_SEEKER','TENANT') THEN (po.raw_message_id::text || ':' || COALESCE(po.listing_index, 0)::text) END) AS listings "
-            "FROM raw_messages rm JOIN parsed_output po ON po.raw_message_id = rm.id "
+            "FROM raw_messages rm JOIN typed_parsed_output po ON po.raw_message_id = rm.id "
             "WHERE rm.tenant_id = $1 AND rm.created_at >= $2 "
             "GROUP BY (rm.created_at)::date ORDER BY day",
             (tenant_id, week_ago),
-        ) if _table_exists("raw_messages") and _table_exists("parsed_output") else []
+        ) if _table_exists("raw_messages") and _table_exists("typed_parsed_output") else []
 
         market_rows = _audit_rows(
             "SELECT po.micro_market, COUNT(DISTINCT rm.id) AS posts, "
@@ -1290,11 +1290,11 @@ def audit_insights(
             "COUNT(DISTINCT CASE WHEN UPPER(COALESCE(po.intent, '')) NOT IN "
             "('BUY','BUYER','REQUIREMENT','RENTAL_SEEKER','TENANT') THEN (po.raw_message_id::text || ':' || COALESCE(po.listing_index, 0)::text) END) AS listings, "
             "COUNT(DISTINCT COALESCE(NULLIF(po.broker_phone, ''), NULLIF(po.broker_name, ''), rm.sender)) AS brokers "
-            "FROM parsed_output po JOIN raw_messages rm ON po.raw_message_id = rm.id "
+            "FROM typed_parsed_output po JOIN raw_messages rm ON po.raw_message_id = rm.id "
             "WHERE rm.tenant_id = $1 AND rm.created_at >= $2 AND COALESCE(po.micro_market, '') != '' "
             "GROUP BY po.micro_market ORDER BY posts DESC LIMIT 8",
             (tenant_id, week_ago),
-        ) if _table_exists("raw_messages") and _table_exists("parsed_output") else []
+        ) if _table_exists("raw_messages") and _table_exists("typed_parsed_output") else []
 
         broker_rows = _audit_rows(
             "SELECT canonical_name, observation_count, listing_count, requirement_count, "
@@ -1318,16 +1318,16 @@ def audit_insights(
 
         total_unique_brokers = _audit_scalar(
             "SELECT COUNT(DISTINCT COALESCE(NULLIF(broker_phone, ''), NULLIF(broker_name, ''), rm.sender)) "
-            "FROM parsed_output po JOIN raw_messages rm ON po.raw_message_id = rm.id "
+            "FROM typed_parsed_output po JOIN raw_messages rm ON po.raw_message_id = rm.id "
             "WHERE rm.tenant_id = $1",
             (tenant_id,),
-        ) if _table_exists("parsed_output") else 0
+        ) if _table_exists("typed_parsed_output") else 0
         total_broker_appearances = _audit_scalar(
             "SELECT COUNT(DISTINCT po.raw_message_id || ':' || COALESCE(po.listing_index, 0)) "
-            "FROM parsed_output po JOIN raw_messages rm ON po.raw_message_id = rm.id "
+            "FROM typed_parsed_output po JOIN raw_messages rm ON po.raw_message_id = rm.id "
             "WHERE rm.tenant_id = $1 AND COALESCE(NULLIF(po.broker_phone, ''), NULLIF(po.broker_name, ''), rm.sender) != ''",
             (tenant_id,),
-        ) if _table_exists("parsed_output") else 0
+        ) if _table_exists("typed_parsed_output") else 0
 
         return {
             "daily_flow": [

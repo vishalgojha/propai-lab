@@ -42,7 +42,7 @@ def _tokenize(text: str) -> list[str]:
 def check_for_aliases(storage: "Storage") -> None:
     rows = storage.db.execute(
         """SELECT location_raw, micro_market, building_name, landmark_name
-           FROM parsed_output
+            FROM typed_parsed_output
            WHERE location_raw IS NOT NULL"""
     ).fetchall()
 

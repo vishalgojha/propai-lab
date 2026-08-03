@@ -77,7 +77,7 @@ async def list_brokers(user: dict = Depends(require_user)):
                    p.building_name, p.micro_market, p.location_raw,
                    p.summary_title, substr(r.message, 1, 220) AS message
             FROM broker_observations bo
-            JOIN parsed_output p ON p.id = bo.parsed_id
+            JOIN typed_parsed_output p ON p.id = bo.parsed_id
             LEFT JOIN raw_messages r ON r.id = p.raw_message_id
             WHERE bo.broker_id IN ({placeholders})
             ORDER BY bo.seen_at DESC
@@ -181,7 +181,7 @@ async def broker_summary(name: str = "", phone: str = "", user: dict = Depends(r
     empty = {"total_listings": 0, "intents": {}, "top_bhk": [], "markets": [], "price_range_sale": "", "price_range_rent": ""}
     if not name and not phone:
         return empty
-    q = "SELECT intent, bhk, price, price_unit, micro_market, observation_count FROM listings WHERE "
+    q = "SELECT intent, bhk, price, price_unit, micro_market, observation_count FROM typed_listings_index WHERE "
     params: list[str] = []
     clauses: list[str] = []
     if name:
@@ -224,7 +224,7 @@ async def broker_summary(name: str = "", phone: str = "", user: dict = Depends(r
     top_markets = sorted(markets, key=markets.__getitem__, reverse=True)[:3]
     team_members: list[dict] = []
     seen_tm: set[str] = set()
-    tm_query = "SELECT raw_payload FROM parsed_output WHERE"
+    tm_query = "SELECT raw_payload FROM typed_parsed_output WHERE"
     tm_params: list[str] = []
     tm_clauses: list[str] = []
     if name:
@@ -408,7 +408,7 @@ async def get_broker_profile(broker_id: int, user: dict = Depends(require_user))
                p.furnishing, p.building_name, p.micro_market, p.broker_name,
                p.confidence, p.created_at, bo.role, bo.group_name, bo.seen_at
         FROM broker_observations bo
-        JOIN parsed_output p ON p.id = bo.parsed_id
+        JOIN typed_parsed_output p ON p.id = bo.parsed_id
         WHERE bo.broker_id = ?
         ORDER BY bo.seen_at DESC
         LIMIT 100

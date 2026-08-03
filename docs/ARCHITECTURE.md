@@ -107,3 +107,32 @@ WhatsApp media URLs expire after a few days. To show listing photos, we'd need t
 - Schema-per-tenant doesn't scale with PostgREST (one schema per request).
 - Migration management becomes N times harder.
 - Row-level filtering is sufficient for the current tenant count (< 10).
+
+## Typed extraction destinations (2026-08-03)
+
+The eight typed tables are the source of truth for extracted market data:
+
+- `residential_sale_listings`, `residential_rent_listings`,
+  `commercial_sale_listings`, and `commercial_rent_listings` hold supply.
+- `residential_sale_requirements`, `residential_rent_requirements`,
+  `commercial_sale_requirements`, and `commercial_rent_requirements` hold
+  demand.
+
+Routing is deterministic: demand (`requirement`/`buy`) versus supply, then
+`asset_type` (`residential`/`commercial`), then transaction (`sale`/`rent`).
+The application writes directly to the selected typed table and preserves the
+full LLM payload in `ai_extraction` as evidence. The named read models
+`typed_parsed_output`, `typed_listings_index`, and
+`typed_market_requirements` are normalized, read-only projections for legacy
+field consumers and reporting; they are not write destinations.
+
+The `parsed_output_legacy`, `listings_legacy`, and
+`market_requirements_legacy` tables are historical archives from before this
+migration. The old names `parsed_output`, `listings`, and
+`market_requirements` were temporary compatibility-bridge names and are
+deprecated. Migration `20260803050000_remove_legacy_compatibility_bridge`
+dropped those relations after the application cutover; they are not empty
+passthrough tables or supported bookmarks. New code must never write to or
+query those names, and must use a typed table or one of the explicitly named
+read models above. The three `*_legacy` tables remain queryable historical
+archives only.

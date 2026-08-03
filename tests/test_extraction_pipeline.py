@@ -64,6 +64,40 @@ BUDGET 100CR TO 200CR"""
     assert corrected[0]["listing_type"] == "requirement"
 
 
+@pytest.mark.parametrize(
+    "source",
+    [
+        "URGENT REQUIRED 2 BHK IN BANDRA. PLEASE SHARE DIRECT LISTINGS",
+        "Any 3 BHK available in Khar? Client ready to close",
+        "koi 1 BHK hai kya Bandra mein, budget 1.5L",
+        "Wanted 1 office on lease near BKC",
+    ],
+)
+def test_requirement_guard_covers_request_shorthand_without_marketing_keywords(source):
+    item = {
+        "listing_type": "sale",
+        "property_category": "residential",
+        "title": None,
+        "extraction_confidence": "high",
+    }
+
+    corrected = extraction._apply_requirement_source_guard([item], source, [source])
+
+    assert corrected[0]["listing_type"] == "requirement"
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "Looking for the perfect office? Premium office available at ₹2L/month",
+        "Join our channel for latest properties & requirements",
+        "Client profile required before confirming viewing",
+    ],
+)
+def test_requirement_guard_does_not_treat_listing_marketing_copy_as_demand(source):
+    assert not extraction._has_explicit_requirement_heading(source)
+
+
 def test_segment_document_reconstructs_blocks_and_classifies_multi_listing():
     message = """1. RUSTOMJEE PARAMOUNT
 3 BHK

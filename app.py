@@ -146,7 +146,7 @@ async def lifespan(app: FastAPI):
 
 
 async def _startup_replay_once() -> None:
-    """Replay raw messages into parsed_output/listings once after startup."""
+    """Replay raw messages into the typed extraction destinations once after startup."""
     lock_fd = None
     try:
         lock_fd = os.open(STARTUP_REPLAY_LOCK, os.O_CREAT | os.O_RDWR, 0o600)
@@ -158,7 +158,7 @@ async def _startup_replay_once() -> None:
 
         target_tenant = (os.getenv("PROPAI_REPLAY_TENANT_ID", "") or "").strip() or None
         print(
-            "  [startup-replay] replaying raw messages into parsed_output/listings "
+            "  [startup-replay] replaying raw messages into typed extraction tables "
             + (f"for tenant={target_tenant}" if target_tenant else "for all tenants"),
             flush=True,
         )
