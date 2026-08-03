@@ -215,6 +215,23 @@ def _typed_route(parsed: dict) -> tuple[str, str, str]:
             body,
         ) else "residential"
     tx = str(parsed.get("transaction_type") or "").strip().lower()
+    # The classifier has historically emitted `sale` for some demand text
+    # that explicitly says lease/rent.  For requirements, a strong rental
+    # phrase must win unless the same message contains an unambiguous sale
+    # phrase (for example, "outright requirement").
+    full_text = " ".join(str(parsed.get(key) or "") for key in (
+        "normalized_message", "intent", "message_type"
+    ))
+    rental_signal = re.search(
+        r"\b(?:rent|rental|lease|monthly|per\s+month|deposit|tenancy|lock.?in|notice\s+period)\b",
+        full_text, re.I,
+    )
+    sale_signal = re.search(
+        r"\b(?:sale|sell|outright|outrate|for\s+sale|asking\s+price)\b",
+        full_text, re.I,
+    )
+    if _is_market_requirement(parsed) and rental_signal and not sale_signal:
+        tx = "rent"
     if tx not in {"rent", "sale"}:
         tx = "rent" if re.search(
             r"rent|rental|lease|monthly|per month|deposit|tenancy|lock.?in|notice period|lease out",
@@ -782,6 +799,15 @@ class _RestClient:
         else:
             raise ValueError(f"Unsupported operation: {query._op}")
 
+        if res.is_error:
+            # PostgREST includes the actionable constraint/schema detail in
+            # the response body; retain it in server logs for diagnosis.
+            detail = res.text[:1000] if res.text else ""
+            import logging
+            logging.error(
+                "Supabase REST %s %s failed (HTTP %s): %s",
+                query._op, query._table, res.status_code, detail,
+            )
         res.raise_for_status()
         data = res.json() if res.text else []
         if isinstance(data, dict):
@@ -2247,6 +2273,9 @@ class SupabaseStorage(Storage):
         # The typed tables deliberately retain the complete LLM payload while
         # promoting only fields that belong to the selected schema.
         common = {
+            # Typed tables currently require an explicit BIGINT primary key.
+            # The deterministic source id keeps retries idempotent.
+            "id": source_id,
             "raw_message_id": raw_id,
             "tenant_id": data.get("tenant_id") or self._tenant_id,
             "listing_index": listing_index,
