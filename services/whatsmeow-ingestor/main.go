@@ -579,6 +579,26 @@ func (sm *SessionManager) deleteDeviceMapping(ctx context.Context, brokerID stri
 // ── Session lifecycle ──────────────────────────────────────────────────────
 
 func (sm *SessionManager) runSession(s *BrokerSession) {
+	// Keep a panic in one broker's session from taking down the ingestor
+	// process. The recovery defer is registered before the normal cleanup
+	// defers so it runs after the client has been disconnected and the session
+	// lock/WaitGroup slot have been released, allowing this broker to restart
+	// through the existing session lifecycle.
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			log.Printf("[broker %s] recovered panic in session goroutine (restarting): event/session panic=%v", s.brokerID, recovered)
+			s.setStatus(Status{
+				Connected:        false,
+				ConnectionState:  "reconnecting",
+				SocketState:      "disconnected",
+				LastDisconnectAt: time.Now().UTC().Format(time.RFC3339),
+			})
+			if s.ctx.Err() == nil {
+				sm.sessionWg.Add(1)
+				go sm.runSession(s)
+			}
+		}
+	}()
 	log.Printf("[broker %s] starting session goroutine", s.brokerID)
 	defer s.releaseLock()
 	defer sm.sessionWg.Done()
@@ -637,8 +657,31 @@ sessionLoop:
 		s.disconnectOnce = sync.OnceValue(func() struct{} { close(disconnected); return struct{}{} })
 
 		s.client = whatsmeow.NewClient(s.device, waLog.Noop)
+		// The pinned WhatsMeow release enables this by default, but set it
+		// explicitly: transient socket failures should be retried by the
+		// library while our outer loop continues to handle session lifecycle
+		// events and credential-preserving wipe policy.
+		s.client.EnableAutoReconnect = true
 		s.client.QRClientType = whatsmeow.PairClientChrome
 		s.client.AddEventHandler(func(evt interface{}) {
+			client := s.client
+			defer func() {
+				if recovered := recover(); recovered != nil {
+					log.Printf("[broker %s] recovered panic in WhatsMeow event handler (event=%T): %v; restarting session", s.brokerID, evt, recovered)
+					s.setStatus(Status{
+						Connected:        false,
+						ConnectionState:  "reconnecting",
+						SocketState:      "disconnected",
+						LastDisconnectAt: time.Now().UTC().Format(time.RFC3339),
+					})
+					if s.disconnectOnce != nil {
+						s.disconnectOnce()
+					}
+					if client != nil {
+						go client.Disconnect()
+					}
+				}
+			}()
 			sm.handleEvent(s, evt)
 		})
 

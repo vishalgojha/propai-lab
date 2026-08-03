@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { motion, useReducedMotion } from "framer-motion";
 import "./globals.css";
-import { getPhones, searchMessages, getAuthMe, getBusinessApiConfig, BusinessApiConfig, getProfile, getWhatsAppStatus, isLiveWhatsAppConnection, type Phone, type WhatsAppStatus } from "@/lib/api";
+import { getPhones, searchMessages, getAuthMe, getBusinessApiConfig, BusinessApiConfig, getProfile, getWhatsAppStatus, fetchJSON, isLiveWhatsAppConnection, type Phone, type WhatsAppStatus } from "@/lib/api";
 import {
   MessageSquare,
   BarChart3,
@@ -211,6 +211,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
   const [profile, setProfile] = useState<{ auth_user_id?: string; phone: string; first_name: string; last_name?: string; email?: string; city?: string } | null>(null);
   const [wabaConfig, setWabaConfig] = useState<BusinessApiConfig | null>(null);
   const [liveStatus, setLiveStatus] = useState<WhatsAppStatus | null>(null);
+  const [extractionHealth, setExtractionHealth] = useState<{ pending: number; recentlyProcessed1h: number } | null>(null);
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const [soundsMuted, setSoundsMuted] = useState(true);
   const { signOut: authSignOut } = useAuth();
@@ -296,6 +297,19 @@ function AppShell({ children }: { children: React.ReactNode }) {
         : null;
   const waStale = Boolean(liveStatus?.status_stale || livePhone?.status_stale);
   const waPhone = displayPhone?.phone_number_live || displayPhone?.phone_number || "";
+  const extractionStalled = Boolean(
+    extractionHealth &&
+    extractionHealth.pending > 0 &&
+    extractionHealth.recentlyProcessed1h === 0,
+  );
+  const overallHealth: "checking" | "healthy" | "warning" | "error" =
+    waConnected === null || extractionHealth === null
+      ? "checking"
+      : !waConnected
+        ? "error"
+        : extractionStalled || waStale
+          ? "warning"
+          : "healthy";
 
   useEffect(() => {
     if (authLoading) return;
@@ -396,17 +410,24 @@ function AppShell({ children }: { children: React.ReactNode }) {
       setLiveStatus(null);
     }, 0);
     const load = async () => {
-      const [phonesRes, status] = await Promise.all([
+      const [phonesRes, status, extraction] = await Promise.all([
         getPhones(true, 15000).catch(() => null),
         // Focused workspaces do not use the dashboard status probe. Avoid
         // making inbox/group pages wait on a slow WhatsMeow status request.
         isFocusedWorkspace ? Promise.resolve(null) : getWhatsAppStatus().catch(() => null),
+        fetchJSON<{ pending?: number; recently_processed_1h?: number }>("/extraction/progress", undefined, 8000).catch(() => null),
       ]);
       if (phonesRes) {
         setPhones(phonesRes.phones || []);
         if (phonesRes.phones?.length) localStorage.setItem(phoneCacheKey, JSON.stringify(phonesRes.phones));
       }
       if (status) setLiveStatus(status);
+      if (extraction) {
+        setExtractionHealth({
+          pending: Number(extraction.pending || 0),
+          recentlyProcessed1h: Number(extraction.recently_processed_1h || 0),
+        });
+      }
     };
     void getBusinessApiConfig(15000).then((config) => {
       setWabaConfig(config);
@@ -703,10 +724,18 @@ function AppShell({ children }: { children: React.ReactNode }) {
                   Offline
                 </span>
               )}
-              <a href="/connections" className={`flex shrink-0 items-center gap-1 text-[10px] font-semibold transition-colors sm:text-[11px] lg:text-[12px] ${waConnected === null ? "text-zinc-400 hover:text-zinc-300" : waConnected ? (waStale ? "text-zinc-400 hover:text-zinc-300" : "text-[#3EE88A] hover:text-[#74f0a5]") : "text-zinc-300 hover:text-white"}`}>
-                <span className={`h-1.5 w-1.5 rounded-full lg:h-2 lg:w-2 ${waConnected === null ? "bg-zinc-500" : waConnected ? (waStale ? "bg-zinc-500" : "bg-[#3EE88A]") : "bg-red-400"}`} />
+              <a href="/connections" className={`flex shrink-0 items-center gap-1 text-[10px] font-semibold transition-colors sm:text-[11px] lg:text-[12px] ${overallHealth === "healthy" ? "text-[#3EE88A] hover:text-[#74f0a5]" : overallHealth === "error" ? "text-red-300 hover:text-red-200" : "text-amber-300 hover:text-amber-200"}`} title={extractionStalled ? "WhatsApp is connected, but extraction has pending messages and processed none in the last hour" : undefined}>
+                <span className={`h-1.5 w-1.5 rounded-full lg:h-2 lg:w-2 ${overallHealth === "healthy" ? "bg-[#3EE88A]" : overallHealth === "error" ? "bg-red-400" : overallHealth === "warning" ? "bg-amber-300" : "bg-zinc-500"}`} />
                 <span>
-                  {waConnected === null ? "Checking" : waConnected ? "Connected" : "Connect WhatsApp"}
+                  {overallHealth === "checking"
+                    ? "Checking"
+                    : overallHealth === "error"
+                      ? "WhatsApp disconnected"
+                      : extractionStalled
+                        ? "Extraction stalled"
+                        : waStale
+                          ? "WhatsApp status stale"
+                          : "Connected"}
                 </span>
               </a>
               {waConnected && waPhone && (

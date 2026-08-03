@@ -170,7 +170,40 @@ Rules:
 - A heading such as "Available for Rent" or "Requirements" applies to its
   clearly grouped child entries. Do not replace that explicit intent with a
   guess based on price magnitude.
+- Classify the transaction side before extracting fields. A supply/listing
+  message advertises a concrete property or inventory: it describes a unit,
+  building, area, rent/price, availability, quote, inspection, or broker
+  contact. Use listing_type = "rent" or "sale" for that item.
+- A demand/requirement message asks the recipient to find or send a property
+  for a buyer/tenant/client. Use listing_type = "requirement" even when the
+  requested transaction is rent, lease, or purchase. Strong demand cues
+  include (case-insensitive): "wanted", "want", "need", "needed", "require",
+  "required", "urgent requirement", "any 3 BHK available?", "anyone has",
+  "please share/send direct listings", "client looking for", and equivalent
+  Hinglish such as "chahiye", "koi ... hai kya?", "mil sakta hai?", or
+  "dhoondh/ढूँढ रहे हैं". A budget, preferred locality, configuration, or
+  "direct inventory only" request strengthens demand evidence.
+- Do not classify marketing questions as demand by keyword alone. For
+  example, "Looking for the perfect office? We offer offices in BKC" is
+  supply when the message proceeds to advertise units/prices; "client profile
+  required before confirming a viewing" is a listing policy, not a demand.
+  Likewise, a footer mentioning "properties & requirements" is not a demand
+  item. "Any" is demand only when it is an actual request to source a unit
+  (usually an interrogative or followed by a request to share/call).
+- If a document contains both advertised units and a separate request, emit
+  separate items for the independently actionable blocks. Do not let a
+  requested property's words such as "for rent" or "on sale" override the
+  demand action, and do not merge supply and demand blocks.
 - For requirements (broker seeking), listing_type = "requirement".
+
+Required classification examples:
+- "URGENT REQUIRED 2 BHK IN BANDRA. PLEASE SHARE DIRECT LISTINGS" ->
+  requirement.
+- "Wanted 3 BHK on lease in Khar, budget 2L" -> requirement.
+- "Any 1 BHK available near Pali Hill? Client is ready" -> requirement.
+- "*Available 3 BHK for Rent*, carpet 1200, rent 2.5L, call …" -> rent.
+- "Looking for the perfect office? Premium 800 sqft office available at
+  ₹2L/month" -> rent (advertisement, not a sourcing request).
 - Building name = the proper noun that identifies the building/society (e.g. "Golden Peak", "Lodha Park", "Sapphire Tower"). Set to null if the message only contains descriptions like "brand new building", "available for lease", locality names like "Khar West", or broker phrases like "sole mandate". A building name is a specific name, not a description.
 - Only extract fields that are EXPLICITLY stated in the message. Never infer or invent a value.
 - Preserve raw_price_text character-for-character from the source. Never add,
