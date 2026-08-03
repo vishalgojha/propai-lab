@@ -210,11 +210,13 @@ function senderSearchValue(message: api.RawMessage, memberNames: Record<string, 
   return digits.length >= 10 ? `+${digits.slice(-10)}` : "";
 }
 
-function timeLabel(value?: string) {
+function messageDateTimeLabel(value?: string) {
   if (!value) return "";
   const date = new Date(value);
   if (Number.isNaN(date.valueOf())) return "";
   return new Intl.DateTimeFormat("en-IN", {
+    day: "2-digit",
+    month: "short",
     hour: "2-digit",
     minute: "2-digit",
     hour12: true,
@@ -257,8 +259,12 @@ function whatsappRecallLink(message: api.RawMessage, text: string) {
 function intentAccent(message: api.RawMessage) {
   const intent = String(message.parsed_intent || message.message_type || "").toLowerCase();
   const text = displayMessageText(message).toLowerCase();
-  const demandSignal = /\b(?:urgent(?:ly)?\s+)?(?:requirement|wanted|want|need|needed|seeking|looking\s+for|client\s+(?:needs|wants|is\s+looking)|any\s+[^\n]{0,80}\bavailable\s*\??|koi\s+[^\n]{0,80}\bhai\s+kya|chahiye)\b/i.test(text);
-  const supplySignal = /\b(?:direct\s+inventor(?:y|ies)|available\s+(?:for|on)|for\s+(?:rent|sale|lease)|rent\s*[-:]|sale\s*[-:]|showroom|frontage|carpet\s*(?:area)?|sq\.?\s*ft|brokerage|inventory|₹|lakh|lac|crore|\bcr\b)\b/i.test(text);
+  // Operational instructions such as “need advance notice” are not demand
+  // signals. A demand must ask for property, not merely mention a needed
+  // viewing condition.
+  const demandSignal = /\b(?:urgent(?:ly)?\s+)?(?:requirement|wanted|want|need|needed|seeking|looking\s+for|client\s+(?:needs|wants|is\s+looking)|any\s+[^\n]{0,80}\bavailable\s*\??|koi\s+[^\n]{0,80}\bhai\s+kya|chahiye)\b/i.test(text)
+    && !/\bneed(?:s|ed)?\s+(?:advance\s+)?notice\b/i.test(text);
+  const supplySignal = /\b(?:direct\s+inventor(?:y|ies)|available\s+(?:for|on)\s+(?:rent|sale|lease)|for\s+(?:rent|sale|lease)|rent\s*[-:]|sale\s*[-:]|showroom|frontage|carpet\s*(?:area)?|sq\.?\s*ft|brokerage|inventory|₹|lakh|lac|crore|\bcr\b)\b/i.test(text);
   const explicitDemand = /\b(?:requirement|buy)\b/i.test(intent);
   const obviousSupplyPost = supplySignal && !demandSignal;
   const haystack = `${intent} ${text}`;
@@ -566,7 +572,7 @@ export default function WhatsAppGroupsMirror() {
                       {recallLink && <a href={recallLink} target="_blank" rel="noreferrer" className="ml-auto inline-flex shrink-0 items-center gap-1 rounded-md border border-emerald-400/30 bg-emerald-400/10 px-2 py-1 text-[10px] font-semibold text-emerald-200 hover:bg-emerald-400/20" title="Open WhatsApp with this post prefilled"><MessageSquare className="h-3 w-3" />WhatsApp</a>}
                     </div>
                     <div className="whitespace-pre-wrap break-words leading-6 [overflow-wrap:anywhere]">{body}</div>
-                    <div className="mt-2 flex justify-end text-[10px] text-zinc-400">{timeLabel(message.timestamp || message.created_at)}</div>
+                    <div className="mt-2 flex justify-end text-[10px] text-zinc-400">{messageDateTimeLabel(message.timestamp || message.created_at)}</div>
                   </div>
                 </div>;
               })}
