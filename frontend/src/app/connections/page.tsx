@@ -6,7 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Clock, Database, List, LogOut, MessageSquare, RefreshCw, Shield, Smartphone, AlertTriangle, Users, Zap, X, ChevronLeft, MoreVertical, User, Check, Hash } from "lucide-react";
 import { useAuth } from "@/lib/AuthProvider";
-import { getPhones, deletePhone, resetPhone, disconnectPhone, pairCodePhone, getPairCodePhoneStatus, updatePhone, fetchJSON, isLiveWhatsAppConnection, getOnboardingGroups, checkOnboardingGroup, optOutOnboardingGroup, optInOnboardingGroup, type Phone, type WhatsAppStatus, type OnboardingGroup, type OnboardingGroupCheck, type OnboardingGroupState } from "@/lib/api";
+import { getPhones, deletePhone, resetPhone, disconnectPhone, connectPhone, pairCodePhone, getPairCodePhoneStatus, updatePhone, fetchJSON, isLiveWhatsAppConnection, getOnboardingGroups, checkOnboardingGroup, optOutOnboardingGroup, optInOnboardingGroup, type Phone, type WhatsAppStatus, type OnboardingGroup, type OnboardingGroupCheck, type OnboardingGroupState } from "@/lib/api";
 import QRCode from "qrcode";
 
 type HealthStatus = "healthy" | "warning" | "error";
@@ -245,6 +245,7 @@ function PhoneCard({
     setActionError(null);
     try {
       if (action === "disconnect") await disconnectPhone(phone.id);
+      else if (action === "connect") await connectPhone(phone.id);
       else if (action === "reset") await resetPhone(phone.id);
       else if (action === "delete") {
         const result = await deletePhone(phone.id);
@@ -274,7 +275,9 @@ function PhoneCard({
             ? "Phone removed"
             : action === "reset"
               ? "Session cleared. Pair this phone again with a new WhatsApp pairing code."
-              : "Phone disconnected"
+              : action === "connect"
+                ? "Reconnect requested. Checking WhatsApp status…"
+                : "Phone disconnected"
         );
       }
       await onRefresh();
@@ -551,6 +554,20 @@ function PhoneCard({
             ) : (
               <LogOut className="h-4 w-4 text-zinc-300" />
             )}
+          </button>
+        ) : !isUnpaired && statusAvailable ? (
+          <button
+            onClick={() => handleAction("connect")}
+            disabled={actionLoading !== null}
+            className="flex h-10 items-center gap-2 rounded-lg bg-emerald-400 px-3 text-xs font-semibold text-black transition-colors hover:bg-emerald-300 disabled:opacity-50"
+            title="Reconnect this saved WhatsApp session"
+          >
+            {actionLoading === "connect" ? (
+              <div className="h-4 w-4 animate-spin rounded-full border-2 border-emerald-700 border-t-black" />
+            ) : (
+              <RefreshCw className="h-4 w-4" />
+            )}
+            Reconnect WhatsApp
           </button>
         ) : canPair ? (
           <button
@@ -1236,7 +1253,11 @@ export default function ConnectionCenterPage() {
               <div>
                 <HealthRow label="WhatsApp" status={connectedCount > 0 ? "healthy" : "error"} detail={`${connectedCount} connected`} />
                 <HealthRow label="Database" status="healthy" detail={`${totalParsed.toLocaleString()} messages processed`} />
-                <HealthRow label="Extraction" status={recentlyProcessed1h > 0 ? "healthy" : "warning"} detail={`${recentlyProcessed1h} in last hour`} />
+                <HealthRow
+                  label="Extraction"
+                  status={connectedCount === 0 ? "error" : recentlyProcessed1h > 0 ? "healthy" : "warning"}
+                  detail={connectedCount === 0 ? "Paused — WhatsApp disconnected" : `${recentlyProcessed1h} in last hour`}
+                />
               </div>
             </Section>
           </div>
