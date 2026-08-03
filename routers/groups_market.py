@@ -332,6 +332,8 @@ async def list_group_members(jid: str, user: dict = Depends(require_user)):
 @router.get("/api/whatsapp/conversations")
 async def list_whatsapp_conversations(
     types: str = "group,broadcast",
+    q: str = "",
+    relevant_only: bool = False,
     user: dict = Depends(require_user),
     tenant_id: str | None = Depends(get_tenant_context),
 ):
@@ -345,6 +347,8 @@ async def list_whatsapp_conversations(
         active_org_id,
         requested or ["group", "broadcast"],
         1000,
+        q,
+        relevant_only,
     )
 
 

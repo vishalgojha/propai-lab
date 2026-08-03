@@ -622,8 +622,11 @@ export function getGroupMembers(jid: string) {
   return fetchJSON<any[]>(`/groups/${encodeURIComponent(jid)}/members`);
 }
 
-export function getWhatsAppConversations(types = "group,broadcast") {
-  return fetchJSON<any[]>(`/whatsapp/conversations?types=${encodeURIComponent(types)}`);
+export function getWhatsAppConversations(types = "group,broadcast", query = "", relevantOnly = false) {
+  const params = new URLSearchParams({ types });
+  if (query.trim()) params.set("q", query.trim());
+  if (relevantOnly) params.set("relevant_only", "true");
+  return fetchJSON<any[]>(`/whatsapp/conversations?${params.toString()}`);
 }
 
 export function refreshWhatsAppGroupDirectory() {
