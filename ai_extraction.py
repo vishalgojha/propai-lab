@@ -66,7 +66,7 @@ def _append_extraction_provider(
             "api_key": api_key,
             "base_url": base_url,
             "model": model,
-            "thinking_disabled": True,
+            "reasoning_effort": "none",
         })
     elif api_key or model:
         _logger.warning(
@@ -1004,11 +1004,11 @@ def _call_provider(
         )
         # Enable JSON mode for providers that support it (Haiku 4.5, etc.)
         request["response_format"] = {"type": "json_object"}
-        # Keep backlog extraction fast and predictable.  This is sent only to
-        # the explicitly scoped extraction providers; other providers retain
-        # their existing request shape for compatibility.
-        if provider.get("thinking_disabled"):
-            request["extra_body"] = {"thinking": {"type": "disabled"}}
+        # Keep backlog extraction fast and predictable.  Doubleword accepts
+        # the OpenAI-compatible reasoning_effort field, not provider-specific
+        # `thinking` payloads.
+        if provider.get("reasoning_effort"):
+            request["reasoning_effort"] = provider["reasoning_effort"]
         resp = client.chat.completions.create(**request)
         usage = getattr(resp, "usage", None)
         tokens_in = getattr(usage, "prompt_tokens", 0) or 0
