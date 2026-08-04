@@ -1479,7 +1479,9 @@ async def webhook(request: Request):
     extraction_ctx = {"sender_name": sender_name, "push_name": push_name, "sender_jid": sender_jid,
         "sender_phone": sender_phone, "group": group, "group_name": group_name, "msg_text": msg_text,
         "instance": instance, "is_dm": is_dm, "message_uid": message_uid, "message_id": message_id,
-        "msg": msg, "tenant_id": resolved_tenant_id}
+        "msg": msg, "tenant_id": resolved_tenant_id, "raw_payload": data,
+        "source": "WHATSAPP", "is_group": not is_dm, "timestamp": message_timestamp,
+        "synced_at": now, "event_id": message_id}
     if not _schedule_raw_extraction(raw_id, extraction_ctx):
         _retry_schedule_raw_extraction(raw_id, extraction_ctx)
     return {"status": "ok", "raw_id": raw_id, "message": "saved"}

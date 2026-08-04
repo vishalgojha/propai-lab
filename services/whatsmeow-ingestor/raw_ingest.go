@@ -23,6 +23,7 @@ type tenantCache struct {
 }
 
 var tenants = &tenantCache{cache: make(map[string]string)}
+var lidPhoneCache sync.Map
 
 func (tc *tenantCache) get(brokerID string) (string, bool) {
 	tc.mu.RLock()
@@ -52,6 +53,38 @@ func resolveTenantID(db *sql.DB, brokerID string) (string, error) {
 	}
 	tenants.set(brokerID, orgID)
 	return orgID, nil
+}
+
+// resolveLIDPhone bridges WhatsApp's hidden-user JID to the phone number
+// captured by WhatsMeow. The webhook payload keeps the original @lid JID, but
+// whatsmeow_lid_map stores the lid without its suffix.
+func resolveLIDPhone(db *sql.DB, senderJID string) string {
+	lid := strings.TrimSpace(senderJID)
+	if !strings.HasSuffix(lid, "@lid") {
+		return ""
+	}
+	lid = strings.TrimSuffix(lid, "@lid")
+	if lid == "" {
+		return ""
+	}
+	if cached, ok := lidPhoneCache.Load(lid); ok {
+		return cached.(string)
+	}
+	var pn string
+	if err := db.QueryRowContext(context.Background(),
+		`SELECT pn FROM whatsmeow_lid_map WHERE lid = $1 LIMIT 1`, lid,
+	).Scan(&pn); err != nil {
+		return ""
+	}
+	pn = strings.TrimSpace(pn)
+	if pn == "" {
+		return ""
+	}
+	if !strings.Contains(pn, "@") {
+		pn += "@s.whatsapp.net"
+	}
+	lidPhoneCache.Store(lid, pn)
+	return pn
 }
 
 // insertRawMessage writes a WhatsApp message directly into raw_messages.
@@ -104,6 +137,9 @@ func (sm *SessionManager) insertRawMessage(brokerID string, payload map[string]i
 	senderPhone := ""
 	if v, ok := senderData["phone"].(string); ok {
 		senderPhone = v
+	}
+	if senderPhone == "" {
+		senderPhone = resolveLIDPhone(sm.db, senderJID)
 	}
 
 	msgText := extractMessageText(msg)

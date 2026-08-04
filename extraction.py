@@ -359,6 +359,19 @@ def _run_template_splitter(
         if not should_revalidate:
             selected_pattern, parsed = parse_template_message(msg_text, preferred_pattern=str(cache_row.get("pattern_id") or ""))
             if selected_pattern == cache_row.get("pattern_id") and parsed:
+                if len(parsed) > 1:
+                    try:
+                        storage.upsert_sender_splitter_cache(
+                            sender_key=sender_key,
+                            pattern_id=selected_pattern,
+                            tenant_id=tenant_id,
+                            sender_phone=sender_phone,
+                            sender_jid=sender_jid,
+                            message_hash=_message_hash(msg_text),
+                            revalidated=True,
+                        )
+                    except Exception:
+                        pass
                 return selected_pattern, parsed
 
     selected_pattern, parsed = parse_template_message(msg_text)
@@ -371,11 +384,90 @@ def _run_template_splitter(
                 sender_phone=sender_phone,
                 sender_jid=sender_jid,
                 message_hash=_message_hash(msg_text),
-                revalidated=bool(cache_row and cache_row.get("pattern_id") == selected_pattern),
+                revalidated=len(parsed) > 1,
             )
         except Exception:
             pass
     return selected_pattern, parsed
+
+
+def _materialize_split_raw_messages(storage, parent_raw_id: int, ctx: dict, chunks: list[dict]) -> list[int]:
+    """Persist deterministic broadcast chunks as child raw evidence rows.
+
+    The parent stays as the immutable WhatsApp event. Children are the units
+    sent through extraction, so each parsed item has one raw source slice and
+    broker identity never needs to be rediscovered by the LLM.
+    """
+    if not parent_raw_id or len(chunks) < 2 or ctx.get("parent_message_id"):
+        return []
+    parent_uid = str(ctx.get("message_uid") or parent_raw_id)
+    parent_payload = ctx.get("raw_payload")
+    if not isinstance(parent_payload, dict):
+        parent_payload = {
+            "data": {
+                "key": {
+                    "id": ctx.get("message_id") or "",
+                    "remoteJid": ctx.get("group") or "",
+                    "participant": ctx.get("sender_jid") or "",
+                },
+                "pushName": ctx.get("push_name") or "",
+                "sender": {
+                    "id": ctx.get("sender_jid") or "",
+                    "name": ctx.get("sender_name") or "",
+                },
+            }
+        }
+    child_ids: list[int] = []
+    for index, parsed in enumerate(chunks, start=1):
+        payload = json.loads(json.dumps(parent_payload))
+        slice_text = ""
+        raw_payload = parsed.get("raw_payload") if isinstance(parsed, dict) else None
+        if isinstance(raw_payload, dict):
+            slice_text = str(raw_payload.get("full_text") or raw_payload.get("slice_text") or "").strip()
+        if not slice_text:
+            slice_text = str(parsed.get("normalized_message") or "").strip()
+        if not slice_text:
+            continue
+        payload["split"] = {
+            "parent_message_id": parent_raw_id,
+            "split_index": index,
+            "pattern_id": ctx.get("split_pattern") or "",
+            "slice_text": slice_text,
+        }
+        child_uid = f"{parent_uid}:split:{index}"
+        try:
+            existing = storage.get_raw_by_uid(child_uid)
+            if existing:
+                child_ids.append(int(existing.id))
+                continue
+            child = RawMessage(
+                group_name=ctx.get("group_name") or "",
+                sender=ctx.get("sender_name") or "",
+                sender_jid=ctx.get("sender_jid") or "",
+                sender_phone=ctx.get("sender_phone") or "",
+                message=slice_text,
+                message_type="text",
+                attachments="[]",
+                reply_context="{}",
+                timestamp=ctx.get("timestamp") or "",
+                source=ctx.get("source") or "WHATSAPP",
+                raw_payload=json.dumps(payload),
+                message_uid=child_uid,
+                pipeline_version=ctx.get("pipeline_version"),
+                synced_at=ctx.get("synced_at"),
+                event_id=ctx.get("event_id") or ctx.get("message_id") or "",
+                is_group=bool(ctx.get("is_group", not ctx.get("is_dm"))),
+                processed=False,
+                tenant_id=ctx.get("tenant_id") or None,
+                parent_message_id=parent_raw_id,
+                split_index=index,
+            )
+            child_id = storage.save_raw_message(child)
+            if child_id:
+                child_ids.append(int(child_id))
+        except Exception as exc:
+            _logger.warning("raw_id=%s split child %s failed: %s", parent_raw_id, index, exc)
+    return child_ids
 
 
 def _sanitize_parsed_listing(parsed: dict) -> dict:
@@ -1334,6 +1426,23 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
             sender_jid=sender_jid or "",
         )
         if selected_pattern and parsed_chunks:
+            if len(parsed_chunks) > 1 and not ctx.get("parent_message_id"):
+                split_ctx = {
+                    **ctx,
+                    "split_pattern": selected_pattern,
+                }
+                split_ids = _materialize_split_raw_messages(storage, raw_id, split_ctx, parsed_chunks)
+                if len(split_ids) == len(parsed_chunks):
+                    storage.mark_raw_processed(raw_id)
+                    return {
+                        "raw_id": raw_id,
+                        "split_raw_ids": split_ids,
+                        "parsed_ids": [],
+                        "listing_ids": [],
+                        "requirement_ids": [],
+                        "storage_status": "split",
+                        "extraction_source": f"deterministic:{selected_pattern}",
+                    }
             parsed_listings = [
                 _sanitize_parsed_listing(dict(item))
                 for item in parsed_chunks

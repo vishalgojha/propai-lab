@@ -1590,6 +1590,7 @@ class SupabaseStorage(Storage):
         "message", "message_hash", "message_type", "attachments", "reply_context",
         "timestamp", "source", "raw_payload", "message_uid",
         "is_group", "processed", "processed_at", "tenant_id",
+        "parent_message_id", "split_index",
         "created_at",
     }
 
@@ -1631,7 +1632,7 @@ class SupabaseStorage(Storage):
         cols = (
             "id, group_name, sender, sender_jid, sender_phone, message, message_hash, message_type, "
             "attachments, reply_context, timestamp, source, raw_payload, message_uid, "
-            "is_group, pipeline_version, synced_at, event_id, processed, processed_at, tenant_id, created_at"
+            "is_group, pipeline_version, synced_at, event_id, processed, processed_at, tenant_id, parent_message_id, split_index, created_at"
         )
         query = self.client.table("raw_messages").select(cols).order("timestamp", desc=True).limit(limit).offset(offset)
         if group_name:
