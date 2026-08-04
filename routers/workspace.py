@@ -85,6 +85,24 @@ async def observations_feed(
     )
 
 
+@router.get("/api/observations/{observation_id}")
+async def observation_detail(
+    observation_id: int,
+    user: dict = Depends(require_user),
+    tenant_id: str | None = Depends(get_tenant_context),
+):
+    """Return the raw WhatsApp evidence and all typed items for one message.
+
+    The inbox uses the raw message id as its observation URL key.  Keep this
+    endpoint tenant-scoped through the request context so old evidence links
+    continue to work after the typed-table cutover.
+    """
+    detail = await asyncio.to_thread(storage.get_observation_detail, observation_id)
+    if not detail:
+        raise HTTPException(404, "Observation not found")
+    return detail
+
+
 @router.get("/api/inbox/slugs")
 async def inbox_slugs(user: dict = Depends(require_user)):
     return [
