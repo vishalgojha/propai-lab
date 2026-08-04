@@ -853,6 +853,11 @@ function cleanMarketField(value?: string) {
     : cleaned;
 }
 
+function displayPropertyType(value?: string) {
+  const cleaned = cleanMarketField(value);
+  return /^(residential|commercial|property|real estate)$/i.test(cleaned) ? "" : cleaned;
+}
+
 function buildMarketItemTitle(obs: BrokerObservationRow) {
   const source = obs.source_message || obs.normalized_message || obs.raw_message || "";
   const kind = inferOpportunityKind({
@@ -867,7 +872,9 @@ function buildMarketItemTitle(obs: BrokerObservationRow) {
   });
   const rawConfiguration = cleanMarketField(obs.bhk || obs.configuration);
   const bhk = /^\d+(?:\.\d+)?$/.test(rawConfiguration) ? `${rawConfiguration} BHK` : rawConfiguration;
-  const propertyType = cleanMarketField(obs.property_type);
+  // `property_type` is sometimes the broad asset bucket. Do not expose
+  // titles such as “3 BHK residential”; use an actual subtype only.
+  const propertyType = displayPropertyType(obs.property_type);
   const furnishing = cleanMarketField(obs.furnishing).replace(/\bsemi furnished\b/i, "semi-furnished");
   let subject = bhk || propertyType || "property";
   if (bhk && propertyType && !bhk.toLowerCase().includes(propertyType.toLowerCase())) {
@@ -1417,36 +1424,42 @@ return {
   const connectionPending = GATING_ENABLED && (loadingMarketAccess || accessProbeFailed || whatsappDisconnected);
 
   const groupedBrokerObservations = useMemo(() => {
-    const groups = new Map<string, BrokerObservationGroup>();
-    for (const obs of selectedBrokerObservations as BrokerObservationRow[]) {
-      const rawMessageId = obs.latest_raw_message_id || obs.raw_message_id || obs.id;
-      const opportunitySignature = normalizeMessageForDedupe(
-        [
-          obs.observation_type,
-          obs.intent,
-          obs.transaction_type,
-          obs.property_type,
-          obs.bhk,
-          obs.configuration,
-          obs.building_name,
-          obs.micro_market,
-          obs.location_raw,
-          obs.price,
-          obs.price_unit,
-          obs.area_sqft,
-          obs.furnishing,
-          obs.floor_range,
-          obs.floor,
-          obs.wing,
-          obs.flat_number,
-          obs.car_parking_count,
-        ].filter(Boolean).join(" ")
-      );
+  const groups = new Map<string, BrokerObservationGroup>();
+  for (const obs of selectedBrokerObservations as BrokerObservationRow[]) {
+    const rawMessageId = obs.latest_raw_message_id || obs.raw_message_id || obs.id;
+      const sourceText = normalizeMessageForDedupe(obs.source_message || obs.normalized_message || obs.raw_message || "");
+      const identityParts = [
+        obs.observation_type,
+        obs.intent,
+        obs.transaction_type,
+        obs.property_type,
+        obs.bhk,
+        obs.configuration,
+        obs.building_name,
+        obs.micro_market,
+        obs.location_raw,
+        obs.price,
+        obs.price_unit,
+        obs.area_sqft,
+        obs.furnishing,
+        obs.floor_range,
+        obs.floor,
+        obs.wing,
+        obs.flat_number,
+        obs.car_parking_count,
+      ].filter(Boolean);
+      const structuredSignature = normalizeMessageForDedupe(identityParts.join(" "));
       // Typed-feed rows currently carry an implementation fingerprint such as
       // typed:<id>. That is row identity, not opportunity identity, so it must
       // not prevent reposts from collapsing into one market item.
-      const normalizedText = opportunitySignature || normalizeMessageForDedupe(
-        obs.source_message || obs.normalized_message || obs.raw_message || ""
+      // Prefer the exact item slice: two units in one bulk message may share
+      // a building and price but are still distinct listings. Fall back to a
+      // structured key only when no source text exists and enough identity is
+      // present to make a safe comparison.
+      const normalizedText = sourceText || (
+        identityParts.length >= 5 && (obs.building_name || obs.micro_market || obs.location_raw)
+          ? structuredSignature
+          : ""
       );
       const brokerKey = normalizeMessageForDedupe(
         [obs.broker_phone, obs.broker_name, selectedBroker?.phone, selectedBroker?.canonical_name].filter(Boolean).join(" ")
