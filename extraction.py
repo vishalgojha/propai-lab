@@ -1124,7 +1124,10 @@ def _extract_broker_contact_from_text(text: str) -> tuple[str | None, str | None
     """
     if not text:
         return None, None
-    cleaned = re.sub(r'(?<=\d)[-\s.]+(?=\d)', '', text)
+    # Do not remove newlines between separate phone numbers. Bulk broker
+    # footers commonly put one contact per line; collapsing those lines turns
+    # two valid 10-digit numbers into one invalid 20-digit number.
+    cleaned = re.sub(r'(?<=\d)[-. ]+(?=\d)', '', text)
     phone = None
     name = None
     for m in _INDIAN_MOBILE_IN_TEXT.finditer(cleaned):
@@ -1475,8 +1478,30 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
     # When sender_phone is empty (e.g. @lid senders), fall back to scanning the
     # message body text for explicitly stated contact numbers — brokers routinely
     # self-publish their number in posts.
+    sender_label = (sender_name or push_name or "").strip()
+    sender_label_is_name = bool(sender_label and not re.fullmatch(r"[+\d\s().:@_-]+", sender_label))
+    sender_digits = re.sub(r"\D+", "", sender_phone or "")
+    if sender_digits.startswith("91") and len(sender_digits) >= 12:
+        sender_digits = sender_digits[-10:]
+    sender_phone_from_label = None
+    if sender_label_is_name:
+        # Bulk posters often append several inspection contacts. Prefer the
+        # number explicitly printed beside the WhatsApp sender's name rather
+        # than assigning every listing to the first unrelated contact.
+        lower_body = (msg_text or "").lower()
+        label_pos = lower_body.find(sender_label.lower())
+        if label_pos >= 0:
+            label_window = (msg_text or "")[label_pos:label_pos + 140]
+            sender_phone_from_label, _ = _extract_broker_contact_from_text(label_window)
+
     for pl in parsed_listings:
         is_valid_mobile = bool(re.fullmatch(r'^(\+?91)?[6-9]\d{9}$', sender_phone or ''))
+        if sender_label_is_name:
+            pl["broker_name"] = sender_label
+            if sender_phone_from_label:
+                pl["broker_phone"] = sender_phone_from_label
+            elif len(sender_digits) == 10 and sender_digits[0] in "6789":
+                pl["broker_phone"] = sender_digits
         if not pl.get("broker_name") or not pl.get("broker_phone"):
             if not pl.get("broker_name"):
                 if is_valid_mobile:
