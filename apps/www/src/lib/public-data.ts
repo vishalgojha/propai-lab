@@ -128,7 +128,7 @@ export async function getPublicDataOverview(options?: {
     const cutoffIso = cutoff.toISOString();
     const [recentRes, brokerRes] = await Promise.all([
       db
-        .from("typed_listings_index")
+        .from("listings_unified")
         .select(
           "id, bhk, price, price_unit, furnishing, location_label, building_name, landmark_name, micro_market, broker_name, observation_count, last_seen",
         )
@@ -144,8 +144,8 @@ export async function getPublicDataOverview(options?: {
 
     const [rawRowsRes, parsedRowsRes, listingRowsRes] = await Promise.all([
       db.from("raw_messages").select("created_at").gte("created_at", cutoffIso),
-      db.from("typed_parsed_output").select("created_at").gte("created_at", cutoffIso),
-      db.from("typed_listings_index").select("created_at").gte("created_at", cutoffIso),
+      db.from("parsed_output_unified").select("created_at").gte("created_at", cutoffIso),
+      db.from("listings_unified").select("created_at").gte("created_at", cutoffIso),
     ]);
 
     if (!recentRes.error) {

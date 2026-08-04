@@ -36,6 +36,7 @@ from lab.embedding import create_engine, observation_text, pack_embedding
 from lab.events import get_bus
 from agents.building_alias_engine import fuzzy_score, normalize_building_name
 from deterministic_splitters import parse_message as parse_template_message
+from ai_extraction import _classify_message_flags
 
 
 def get_storage():
@@ -290,18 +291,13 @@ def _sender_template_key(sender_phone: str = "", sender_jid: str = "") -> str:
 
 
 def _clone_parsed_rows(storage, source_raw_id: int, target_raw_id: int) -> tuple[list[int], list[int], list[int]]:
-    """Copy parsed_output rows for a duplicate raw message to the new raw_id."""
+    """Copy typed extraction rows for a duplicate raw message."""
     try:
-        res = (
-            storage.client.table("typed_parsed_output")
-            .select("*")
-            .eq("raw_message_id", source_raw_id)
-            .order("listing_index")
-            .execute()
+        rows = storage._fetch_typed_rows(
+            raw_message_id=source_raw_id, requirements=None, limit_per_table=1000
         )
     except Exception:
         return [], [], []
-    rows = res.data or []
     if not rows:
         return [], [], []
 
@@ -310,32 +306,29 @@ def _clone_parsed_rows(storage, source_raw_id: int, target_raw_id: int) -> tuple
     requirement_ids: list[int] = []
     for row in rows:
         payload = dict(row)
+        table_name = payload.pop("_typed_table", "")
+        if not table_name:
+            continue
         payload.pop("id", None)
         payload.pop("created_at", None)
         payload.pop("updated_at", None)
         payload["raw_message_id"] = target_raw_id
+        source_fp = hashlib.sha256(
+            f"typed-observation:{target_raw_id}:{payload.get('listing_index') or 0}".encode()
+        ).hexdigest()[:32]
+        payload["source_fingerprint"] = source_fp
         try:
-            payload.pop("id", None)
-            new_id = storage.save_parsed(dict_to_dataclass(ParsedObservation, payload))
+            new_id = storage.save_typed_listing(
+                table_name, payload, _already_filtered=True, _source_id=target_raw_id
+            )
             if new_id:
                 parsed_ids.append(new_id)
-                try:
-                    message_type = str(payload.get("message_type") or "").upper()
-                    intent = str(payload.get("intent") or "").upper()
-                    if message_type in {"REQUIREMENT", "BUY"} or intent in {
-                        "BUY", "BUYER", "REQUIREMENT", "RENTAL_SEEKER", "TENANT", "DEMAND"
-                    }:
-                        requirement_id = storage.upsert_market_requirement_from_parsed(new_id)
-                        if requirement_id:
-                            requirement_ids.append(requirement_id)
-                    else:
-                        listing_id = storage.upsert_listing_from_parsed(new_id)
-                        if listing_id:
-                            listing_ids.append(listing_id)
-                except Exception as exc:
-                    print(f"  [extract] duplicate market destination upsert error for {target_raw_id}: {exc}", flush=True)
+                if table_name.endswith("_requirements"):
+                    requirement_ids.append(new_id)
+                else:
+                    listing_ids.append(new_id)
         except Exception as exc:
-            print(f"  [extract] duplicate parsed_output clone error for {target_raw_id}: {exc}", flush=True)
+            print(f"  [extract] duplicate typed extraction clone error for {target_raw_id}: {exc}", flush=True)
     return parsed_ids, listing_ids, requirement_ids
 
 
@@ -493,14 +486,14 @@ def _parse_raw_price_to_abs(raw_price_text: str) -> float | None:
     # punctuation and therefore could validate the AI value against `1.15`
     # rupees instead of 1.15 crore.
     m = _re.search(
-        r'([\d,]+(?:\.\d+)?)\s*[.:/\-]*\s*'
+        r'([\d,]+(?:(?:\.\d+)|(?::\d+))?)\s*[.\-/]*\s*'
         r'(cr|crores?|crore|lac?s?|lakhs?|l|k|thousands?|thousand)\b',
         raw_price_text.lower(),
     )
     if not m:
         return None
     try:
-        amount = float(m.group(1).replace(",", ""))
+        amount = float(m.group(1).replace(",", "").replace(":", "."))
     except ValueError:
         return None
     unit = (m.group(2) or "").rstrip("s")
@@ -537,6 +530,87 @@ def _parse_raw_price_native(raw_price_text: str) -> tuple[float, str] | None:
     return amount, "K"
 
 
+def _price_from_ai_and_raw(price_info: dict) -> tuple[float | None, str | None]:
+    """Return an absolute rupee amount, using the source phrase as a guardrail.
+
+    Models occasionally return ``8.5`` for ``8.5 Cr`` or shift a decimal.
+    When the source contains an explicit money unit, that literal source value
+    wins.  PSF remains a rate and is deliberately not converted here.
+    """
+    if not isinstance(price_info, dict):
+        return None, None
+    raw = str(price_info.get("raw_price_text") or "").strip()
+    unit = str(price_info.get("unit") or "").strip().lower()
+    if unit in {"per_sqft", "psf"} or re.search(r"\b(?:psf|per\s+sq\.?\s*ft)\b", raw.lower()):
+        try:
+            return float(price_info.get("amount")), "per_sqft"
+        except (TypeError, ValueError):
+            return None, "per_sqft"
+    source_amount = _parse_raw_price_to_abs(raw)
+    if source_amount is not None:
+        return source_amount, "abs"
+    try:
+        return float(price_info.get("amount")), "abs"
+    except (TypeError, ValueError):
+        return None, None
+
+
+def _parse_deposit(raw_text: str, monthly_rent: float | None = None) -> dict:
+    """Parse the compact deposit conventions used in broker messages."""
+    text = str(raw_text or "")
+    lower = text.lower()
+    if not re.search(r"\bdeposit\b|\d+(?:\.\d+)?\s*[kkl]?(?:\s*[+/&/]\s*\d+)?", lower):
+        return {}
+    amount = None
+    months = None
+    needs_review = False
+    explicit = re.search(
+        r"\bdeposit\b\s*[:\-]?\s*(?:rs\.?|₹)?\s*"
+        r"([\d,.]+)(?:\s*(lac|lakh|lacs|k|cr|crore|thousand|months?|mo))?",
+        lower,
+    )
+    if explicit:
+        value = float(explicit.group(1).replace(",", ""))
+        unit = (explicit.group(2) or "").rstrip("s")
+        if unit in {"month", "mo"} or (not unit and value <= 12):
+            months = value
+        else:
+            amount = _price_from_ai_and_raw({
+                "amount": value,
+                "unit": unit,
+                "raw_price_text": f"{value} {unit}".strip(),
+            })[0]
+    combined = re.search(
+        r"([\d,.]+)\s*(lac|lakh|lacs|k|cr|crore|thousand)?\s*[+/&/]\s*"
+        r"([\d,.]+)\s*(lac|lakh|lacs|k|cr|crore|thousand|months?|mo)?",
+        lower,
+    )
+    if combined:
+        value = float(combined.group(3).replace(",", ""))
+        unit = (combined.group(4) or "").rstrip("s")
+        if unit in {"month", "mo"} or (not unit and value <= 12):
+            months = value
+        elif unit or value > 12:
+            amount = _price_from_ai_and_raw({
+                "amount": value, "unit": unit, "raw_price_text": f"{value} {unit}".strip(),
+            })[0]
+    range_match = re.search(r"(\d+(?:\.\d+)?)\s*[-–]\s*(\d+(?:\.\d+)?)\s*months?", lower)
+    if range_match:
+        months = (float(range_match.group(1)) + float(range_match.group(2))) / 2
+        needs_review = True
+    if months is not None and monthly_rent is not None and amount is None:
+        amount = monthly_rent * months
+    result = {
+        "deposit_amount": amount,
+        "deposit_months": months,
+        "deposit_applicable": True,
+        "deposit_raw_text": text.strip(),
+    }
+    if needs_review:
+        result["needs_review"] = True
+    return result
+
+
 def _ai_extraction_to_parsed(ai_extraction: dict, raw_text: str, sender_name: str, push_name: str, slice_text: str | None = None) -> dict:
     """Convert AI extraction schema to the existing parsed dict format.
 
@@ -555,8 +629,11 @@ def _ai_extraction_to_parsed(ai_extraction: dict, raw_text: str, sender_name: st
     else:
         intent = None
 
-    category = ai_extraction.get("property_category")
+    category = ai_extraction.get("classified_asset_type") or ai_extraction.get("property_category")
     asset_type = category.upper() if category else None
+    classified_transaction = ai_extraction.get("classified_transaction_type")
+    if classified_transaction not in {"sale", "rent"}:
+        classified_transaction = "rent" if re.search(r"\b(?:rent|rental|lease|monthly|deposit)\b", raw_text or "", re.I) else "sale"
 
     bhk_val = ai_extraction.get("bhk")
     bhk_str = None
@@ -569,37 +646,9 @@ def _ai_extraction_to_parsed(ai_extraction: dict, raw_text: str, sender_name: st
             bhk_str = f"{bhk_val} BHK"
 
     price_info = ai_extraction.get("price", {})
-    price_amount = price_info.get("amount") if isinstance(price_info, dict) else None
     price_unit_price = price_info.get("unit") if isinstance(price_info, dict) else None
     price_period = price_info.get("period") if isinstance(price_info, dict) else None
-
-    price = float(price_amount) if price_amount is not None else None
-    # Use AI's raw_price_text to infer unit.  The AI prompt instructs the
-    # model to return amount in absolute rupees (1 Cr = 10000000, 1 Lakh =
-    # 100000).  When a unit keyword is detected in raw_price_text, we set
-    # price_unit AND normalize the price to that unit (frontend expects
-    # price in the stated unit, e.g. 4.4 lac = ₹4,40,000).
-    raw_price_text = (price_info.get("raw_price_text") or "").lower() if isinstance(price_info, dict) else ""
-    if price is not None:
-        # When the broker explicitly supplied a unit, the raw phrase is the
-        # authority for the persisted native value.  This prevents values
-        # such as AI amount=2,800 being stored as 2,800 Cr for source text
-        # that says "2.80 Cr".
-        _native_price = _parse_raw_price_native(raw_price_text)
-        if _native_price is not None:
-            price, price_unit = _native_price
-        else:
-            # Cross-check: parse raw_price_text to validate the AI's absolute amount.
-            # AI sometimes returns 10x/100x the correct value (e.g. 4500000 for "4.50 Lacs").
-            _parsed_abs = _parse_raw_price_to_abs(raw_price_text)
-            if _parsed_abs is not None and price > 0 and _parsed_abs > 0:
-                ratio = price / _parsed_abs
-                if ratio > 5 or ratio < 0.2:
-                    price = _parsed_abs
-            # No explicit unit — store as absolute rupees.
-            price_unit = "abs"
-    else:
-        price_unit = None
+    price, price_unit = _price_from_ai_and_raw(price_info)
     price_model = "psf" if price_unit_price == "per_sqft" else None
 
     locality = ai_extraction.get("locality", {})
@@ -645,6 +694,16 @@ def _ai_extraction_to_parsed(ai_extraction: dict, raw_text: str, sender_name: st
     tenant_nationality_preference = ai_extraction.get("tenant_nationality_preference") or None
     brokerage_type = ai_extraction.get("brokerage_type") or None
 
+    deposit_fields = _parse_deposit(
+        str(ai_extraction.get("deposit_raw_text") or raw_text),
+        price if listing_type == "rent" and price_unit != "per_sqft" else None,
+    )
+    if deposit_amount is not None:
+        deposit_fields["deposit_amount"] = float(deposit_amount)
+        deposit_fields["deposit_applicable"] = True
+    if ai_extraction.get("deposit_months") is not None:
+        deposit_fields["deposit_months"] = ai_extraction.get("deposit_months")
+
     return {
         "intent": intent,
         "principal": None,
@@ -653,9 +712,9 @@ def _ai_extraction_to_parsed(ai_extraction: dict, raw_text: str, sender_name: st
         "price": price,
         "price_unit": price_unit,
         "price_model": price_model,
-        "price_per_sqft": None,
-        "monthly_rent": price if listing_type == "rent" else None,
-        "total_asking_price": price if listing_type in ("sale",) else None,
+        "price_per_sqft": price if listing_type == "sale" and price_unit == "per_sqft" else None,
+        "monthly_rent": price if listing_type == "rent" and price_unit != "per_sqft" else None,
+        "total_asking_price": price if listing_type in ("sale",) and price_unit != "per_sqft" else None,
         "area_sqft": ai_extraction.get("carpet_area_sqft"),
 
         "furnishing": ai_extraction.get("furnishing_status") or None,
@@ -671,12 +730,12 @@ def _ai_extraction_to_parsed(ai_extraction: dict, raw_text: str, sender_name: st
 
         "asset_type": asset_type,
         "property_type": None,
-        "transaction_type": listing_type if listing_type in ("sale", "rent") else "sale",
-        "commercial_use_type": None,
-        "fitout_status": None,
+        "transaction_type": listing_type if listing_type in ("sale", "rent") else classified_transaction,
+        "commercial_use_type": ai_extraction.get("commercial_use_type"),
+        "fitout_status": ai_extraction.get("fitout_status"),
         "occupancy_type": None,
         "floor_range": None,
-        "rent_per_sqft": None,
+        "rent_per_sqft": price if listing_type == "rent" and price_unit == "per_sqft" else None,
 
         "availability_status": None,
         "possession_status": ai_extraction.get("possession_status") or None,
@@ -705,7 +764,10 @@ def _ai_extraction_to_parsed(ai_extraction: dict, raw_text: str, sender_name: st
         "bathroom_count": int(bathroom_count) if bathroom_count is not None else None,
         "car_parking_count": int(car_parking_count) if car_parking_count is not None else None,
         "parking_type": parking_type,
-        "deposit_amount": float(deposit_amount) if deposit_amount is not None else None,
+        **deposit_fields,
+        "deposit_amount": float(deposit_amount) if deposit_amount is not None else deposit_fields.get("deposit_amount"),
+        "deposit_months": ai_extraction.get("deposit_months") or deposit_fields.get("deposit_months"),
+        "deposit_raw_text": ai_extraction.get("deposit_raw_text") or deposit_fields.get("deposit_raw_text"),
         "oc_status": oc_status,
         "interior_value": float(interior_value) if interior_value is not None else None,
         "ceiling_height": ceiling_height,
@@ -726,6 +788,157 @@ def _ai_extraction_to_parsed(ai_extraction: dict, raw_text: str, sender_name: st
         "company_lease_criteria": company_lease_criteria,
         "tenant_nationality_preference": tenant_nationality_preference,
     }
+
+
+def _ai_extraction_to_typed(
+    ai_extraction: dict,
+    raw_text: str,
+    sender_name: str = "",
+    push_name: str = "",
+    slice_text: str | None = None,
+    *,
+    raw_message_id: int | None = None,
+    tenant_id: str | None = None,
+    broker_id: int | None = None,
+    broker_phone: str | None = None,
+    listing_index: int = 0,
+) -> tuple[str, dict]:
+    """Convert one normalized LLM item into a row for a typed table.
+
+    This is deliberately pure: it does not perform I/O and therefore can be
+    tested before a worker is allowed to write to Supabase.  ``save_parsed``
+    remains a compatibility wrapper for the existing resolver flow, while new
+    callers can use this explicit table/row contract directly.
+    """
+    ai = dict(ai_extraction or {})
+    asset, classified_tx, classified_requirement = _classify_message_flags(raw_text)
+    asset = str(ai.get("classified_asset_type") or ai.get("property_category") or asset).lower()
+    if asset not in {"residential", "commercial"}:
+        asset = "residential"
+    tx = str(ai.get("classified_transaction_type") or classified_tx).lower()
+    if tx not in {"sale", "rent"}:
+        tx = "rent" if re.search(r"\b(?:rent|rental|lease|monthly|deposit)\b", raw_text or "", re.I) else "sale"
+    is_requirement = bool(
+        ai.get("classified_is_requirement")
+        or ai.get("listing_type") == "requirement"
+        or classified_requirement
+    )
+    table_map = {
+        ("residential", "sale", False): "residential_sale_listings",
+        ("residential", "rent", False): "residential_rent_listings",
+        ("commercial", "sale", False): "commercial_sale_listings",
+        ("commercial", "rent", False): "commercial_rent_listings",
+        ("residential", "sale", True): "residential_sale_requirements",
+        ("residential", "rent", True): "residential_rent_requirements",
+        ("commercial", "sale", True): "commercial_sale_requirements",
+        ("commercial", "rent", True): "commercial_rent_requirements",
+    }
+    table = table_map[(asset, tx, is_requirement)]
+    flat = _ai_extraction_to_parsed(ai, raw_text, sender_name, push_name, slice_text)
+    locality = ai.get("locality") if isinstance(ai.get("locality"), dict) else {}
+    raw_locality = locality.get("raw_mention") or flat.get("location_raw")
+    resolved_locality = locality.get("resolved_locality") or flat.get("micro_market")
+    source_text = (slice_text or raw_text or "").strip()
+    fingerprint = hashlib.sha256(source_text.lower().encode("utf-8")).hexdigest()
+    row = {
+        "raw_message_id": raw_message_id,
+        "tenant_id": tenant_id,
+        "listing_index": listing_index,
+        "asset_type": asset,
+        "transaction_type": tx,
+        "source_fingerprint": fingerprint,
+        "building_name": ai.get("building_name"),
+        "locality_raw": raw_locality,
+        "locality_resolved": resolved_locality,
+        "micro_market": resolved_locality,
+        "landmark_name": ai.get("landmark_name"),
+        "street_name": ai.get("street_name"),
+        "broker_id": broker_id,
+        "broker_name": ai.get("broker_name") or sender_name or push_name,
+        "broker_phone": broker_phone,
+        "group_name": ai.get("group_name"),
+        "summary_title": ai.get("title"),
+        "normalized_message": _redact_indian_mobiles(source_text),
+        "raw_payload": {"full_text": raw_text, "slice_text": slice_text or raw_text},
+        "ai_extraction": ai,
+        "deal_tags": ai.get("deal_tags") or [],
+        "additional_charges": ai.get("additional_charges") or [],
+        "validation_flags": ai.get("validation_flags") or [],
+        "needs_review": bool(ai.get("needs_review")),
+        "extraction_confidence": ai.get("extraction_confidence") or "medium",
+    }
+    price_info = ai.get("price") if isinstance(ai.get("price"), dict) else {}
+    price_value, price_unit = _price_from_ai_and_raw(price_info)
+    area = ai.get("carpet_area_sqft")
+    bhk = _normalized_bhk(ai.get("bhk") or ai.get("bhk_options"))
+    if not is_requirement:
+        row.update({
+            "bhk": bhk,
+            "carpet_area_sqft": area,
+            "built_up_area_sqft": ai.get("built_up_area_sqft"),
+            "area_raw_text": ai.get("area_raw_text"),
+            "price_raw_text": price_info.get("raw_price_text"),
+            "price_basis": ai.get("price_basis"),
+            "furnishing_status": ai.get("furnishing_status"),
+            "possession_status": ai.get("possession_status"),
+            "possession_date": ai.get("possession_date"),
+            "bathroom_count": ai.get("bathroom_count"),
+            "car_parking_count": ai.get("car_parking_count"),
+            "parking_type": ai.get("parking_type"),
+            "floor_range": ai.get("floor_range"),
+            "building_amenities": ai.get("building_amenities") or [],
+            "unit_amenities": ai.get("amenities") or [],
+            "amenities_unverified_claim": ai.get("amenities_unverified_claim"),
+            "brokerage_type": ai.get("brokerage_type"),
+        })
+        if tx == "sale":
+            row["total_asking_price"] = price_value if price_unit != "per_sqft" else None
+            row["price_per_sqft"] = price_value if price_unit == "per_sqft" else None
+            if price_unit == "per_sqft" and area:
+                row["total_asking_price"] = price_value * area
+        else:
+            row["monthly_rent"] = price_value if price_unit != "per_sqft" else None
+            row["rent_per_sqft"] = price_value if price_unit == "per_sqft" else None
+            if price_unit == "per_sqft" and area:
+                row["monthly_rent"] = price_value * area
+        if asset == "commercial":
+            row["commercial_use_type"] = ai.get("commercial_use_type") or "mixed_use"
+            row["fitout_status"] = ai.get("fitout_status")
+            row["ceiling_height"] = ai.get("ceiling_height")
+            row["power_load_kw"] = ai.get("power_load_kw")
+            row["cam_amount"] = ai.get("cam_amount")
+            row["cam_applicable"] = ai.get("cam_applicable")
+            row["cam_unit"] = ai.get("cam_unit")
+        if tx == "rent":
+            rent = row.get("monthly_rent")
+            row.update(_parse_deposit(str(ai.get("deposit_raw_text") or raw_text), rent))
+    else:
+        row.update({
+            "intent": "BUY",
+            "bhk_options": [bhk] if bhk is not None else [],
+            "budget_min": ai.get("budget_min"),
+            "budget_max": ai.get("budget_max") or price_value,
+            "budget_currency": "INR",
+            "area_min_sqft": ai.get("area_min_sqft") or area,
+            "area_max_sqft": ai.get("area_max_sqft") or area,
+            "locality_options": ai.get("locality_options") or ([resolved_locality] if resolved_locality else []),
+            "is_flexible": bool(ai.get("is_flexible")),
+            "urgency": ai.get("urgency") or "normal",
+            "status": "active",
+            "furnishing_preference": ai.get("furnishing_preference"),
+            "possession_preference": ai.get("possession_preference"),
+        })
+        if asset == "commercial":
+            row["commercial_use_type"] = ai.get("commercial_use_type") or []
+        elif tx == "rent":
+            row.update({
+                "tenant_type": ai.get("tenant_type"),
+                "has_pets": ai.get("has_pets"),
+                "sharing_acceptable": ai.get("sharing_acceptable"),
+                "lease_term_preference": ai.get("lease_term_preference"),
+                "deposit_budget_max": ai.get("deposit_budget_max"),
+            })
+    return table, {k: v for k, v in row.items() if v is not None}
 
 
 def _normalized_bhk(value) -> float | None:
@@ -1222,7 +1435,7 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
                 broker_id=broker_id,
                 group_name=group_name,
             )
-            storage.save_parsed(stub)
+            storage.save_typed_observation(stub)
         except Exception as exc:
             print(f"  [extract] save_parsed stub error for {raw_id}: {exc}", flush=True)
         try:
@@ -1240,8 +1453,8 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
 
     # ── Listing validation (price / locality / general) ────────────
     # Runs AFTER AI extraction + _ai_extraction_to_parsed() and BEFORE
-    # broker attribution + save_parsed().  Flags are stored on each
-    # parsed dict so they flow through to parsed_output.validation_flags.
+    # broker attribution + typed observation persistence. Flags are stored on
+    # each parsed dict so they flow through to the typed table's validation_flags.
     try:
         from listing_validation import validate_listing, apply_validation
         for idx, pl in enumerate(parsed_listings):
@@ -1342,7 +1555,7 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
         source_text = block_text or msg_text
 
         # Resolver evidence can supply a canonical building market that the
-        # text parser cannot. Persist it on parsed_output before listings are
+        # text parser cannot. Persist it on the typed observation before listings are
         # materialized so every downstream surface sees the same locality.
         try:
             resolver_result = resolve_parsed(parsed, source_text)
@@ -1439,7 +1652,7 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
             validation_flags=parsed.get("validation_flags", []),
         )
         try:
-            parsed_id = storage.save_parsed(obs)
+            parsed_id = storage.save_typed_observation(obs)
             parsed_ids.append(parsed_id)
         except Exception as exc:
             print(f"  [extract] save_parsed error: {exc}", flush=True)

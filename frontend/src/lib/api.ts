@@ -63,6 +63,7 @@ export interface OnboardingGroupCheck {
 
 export interface OnboardingGroupState extends OnboardingGroupCap {
   groups: OnboardingGroup[];
+  extraction_status: "stopped" | "running" | "paused";
 }
 
 export interface OnboardingGroupToggleResult {
@@ -74,6 +75,27 @@ export interface OnboardingGroupToggleResult {
 
 export function getOnboardingGroups(whatsappConnectionId: number) {
   return fetchJSON<OnboardingGroupState>(`/onboarding/groups?whatsapp_connection_id=${whatsappConnectionId}`);
+}
+
+export type ExtractionStatus = "stopped" | "running" | "paused";
+
+function setExtractionStatus(whatsappConnectionId: number, action: "start" | "pause" | "stop") {
+  return fetchJSON<{ ok: boolean; whatsapp_connection_id: number; extraction_status: ExtractionStatus; message: string }>(`/onboarding/extraction/${action}`, {
+    method: "POST",
+    body: JSON.stringify({ whatsapp_connection_id: whatsappConnectionId }),
+  });
+}
+
+export function startExtraction(whatsappConnectionId: number) {
+  return setExtractionStatus(whatsappConnectionId, "start");
+}
+
+export function pauseExtraction(whatsappConnectionId: number) {
+  return setExtractionStatus(whatsappConnectionId, "pause");
+}
+
+export function stopExtraction(whatsappConnectionId: number) {
+  return setExtractionStatus(whatsappConnectionId, "stop");
 }
 
 export function checkOnboardingGroup(
@@ -94,6 +116,7 @@ export function checkOnboardingGroup(
 export function optOutOnboardingGroup(
   whatsappConnectionId: number,
   groupJid: string,
+  groupName?: string,
   confirmCap = false,
 ) {
   return fetchJSON<OnboardingGroupToggleResult>("/onboarding/groups/opt-out", {
@@ -101,6 +124,7 @@ export function optOutOnboardingGroup(
     body: JSON.stringify({
       whatsapp_connection_id: whatsappConnectionId,
       group_jid: groupJid,
+      group_name: groupName,
       confirm_cap: confirmCap,
     }),
   });

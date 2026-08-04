@@ -86,6 +86,7 @@ from routers.infra import (
 from routers.send import replay_raw_messages as replay_market_inbox
 from storage import SupabaseStorage, ProviderOutageEvent
 from lab.config import HOST, PORT, SUPABASE_URL, SUPABASE_SERVICE_KEY, FRONTEND_URL
+from routers.protection import SlidingWindowLimiter, request_identity
 
 _logger = logging.getLogger(__name__)
 
@@ -191,6 +192,46 @@ app = FastAPI(
     redoc_url=None,
 )
 
+_request_limiter = SlidingWindowLimiter()
+_GENERAL_RATE = max(1, int(os.getenv("PROPAI_RATE_LIMIT_PER_MINUTE", "240")))
+_SEARCH_RATE = max(1, int(os.getenv("PROPAI_SEARCH_RATE_LIMIT_PER_MINUTE", "60")))
+_CHAT_RATE = max(1, int(os.getenv("PROPAI_CHAT_RATE_LIMIT_PER_MINUTE", "30")))
+_EXPORT_RATE = max(1, int(os.getenv("PROPAI_EXPORT_RATE_LIMIT_PER_MINUTE", "10")))
+
+
+@app.middleware("http")
+async def request_protection(request: Request, call_next):
+    """Bound request bursts before they become DB/provider bursts.
+
+    This is deliberately conservative and process-local.  A shared edge or
+    Redis limiter should enforce the same policy across multiple API
+    instances; this still protects each instance during a burst or outage.
+    """
+    path = request.url.path
+    if path.startswith("/api/") and request.method not in {"OPTIONS", "HEAD"}:
+        if "/chat" in path or "/self-chat" in path:
+            bucket, limit = "chat", _CHAT_RATE
+        elif "export" in path or path.endswith("/csv"):
+            bucket, limit = "export", _EXPORT_RATE
+        elif "/search" in path or "/market" in path:
+            bucket, limit = "search", _SEARCH_RATE
+        else:
+            bucket, limit = "general", _GENERAL_RATE
+        allowed, remaining, retry_after = _request_limiter.allow(
+            request_identity(request), bucket, limit
+        )
+        if not allowed:
+            return JSONResponse(
+                {"error": "rate_limit_exceeded", "message": "Too many requests. Please retry shortly."},
+                status_code=429,
+                headers={"Retry-After": str(retry_after), "X-RateLimit-Limit": str(limit), "X-RateLimit-Remaining": "0"},
+            )
+        response = await call_next(request)
+        response.headers["X-RateLimit-Limit"] = str(limit)
+        response.headers["X-RateLimit-Remaining"] = str(remaining)
+        return response
+    return await call_next(request)
+
 # The dashboard normally proxies API calls through its own Next.js server.
 # A session reset deliberately calls the API origin directly: a linked-device
 # wipe must not be made unreliable by an intermediate app-server connection.
@@ -232,7 +273,7 @@ app.include_router(audit_router)
 
 from routers.groups_market import router as groups_market_router
 app.include_router(groups_market_router)
-from routers.onboarding import router as onboarding_router
+from routers.whatsapp_group_controls import router as onboarding_router
 app.include_router(onboarding_router)
 
 from routers.admin import router as admin_router

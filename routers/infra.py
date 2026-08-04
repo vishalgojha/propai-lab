@@ -44,7 +44,7 @@ from storage import (
     ResolverDecision,
     Evaluation,
 )
-from routers.onboarding import extraction_allowed_for_group
+from routers.whatsapp_group_controls import extraction_allowed_for_group
 from lab.events import get_bus
 from lab.config import FRONTEND_URL
 
@@ -1518,7 +1518,7 @@ async def ingest(req: IngestRequest, user: dict = Depends(require_user)):
         confidence=parsed.get("confidence", 0.0), raw_payload=json.dumps(parsed.get("raw_payload", {})),
         embedding=embedding_blob, summary_title=generate_summary_title(parsed, req.message),
         deal_tags=list(parsed.get("deal_tags") or []), additional_charges=list(parsed.get("additional_charges") or []))
-    parsed_id = storage.save_parsed(obs)
+    parsed_id = storage.save_typed_observation(obs)
     resolver_result = resolve_parsed(parsed, req.message)
     dec = ResolverDecision(parsed_id=parsed_id, building_id=resolver_result.get("building_id"),
         building_name=resolver_result.get("building_name"), landmark_id=resolver_result.get("landmark_id"),

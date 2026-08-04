@@ -59,7 +59,18 @@ REDIRECTS = {
     "bkc": "Bandra Kurla Complex",
 }
 
-TABLES = ["listings", "parsed_output", "buildings", "broker_market_stats", "broker_observations"]
+# Listing locality data now lives in the four typed source tables.  Keep the
+# aggregate/support tables here as separate backfill targets; the unified
+# listing views are intentionally read-only projections.
+TABLES = [
+    "residential_sale_listings",
+    "residential_rent_listings",
+    "commercial_sale_listings",
+    "commercial_rent_listings",
+    "buildings",
+    "broker_market_stats",
+    "broker_observations",
+]
 
 
 def canon(raw):

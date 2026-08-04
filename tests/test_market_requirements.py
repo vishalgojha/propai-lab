@@ -43,7 +43,7 @@ class _Client:
             "brokers": [],
             "hidden_brokers": [],
             "hidden_market_items": [],
-            "typed_market_requirements": [{
+            "requirements_unified": [{
                 "id": 7,
                 "fingerprint": "requirement:tenant-a:99",
                 "raw_message_id": 99,
@@ -98,5 +98,5 @@ def test_requirement_search_reads_market_requirements_and_returns_rows():
     assert payload["results"][0]["broker_name"] == "Broker A"
     assert payload["results"][0]["price_min"] == 200000
     assert payload["results"][0]["price_max"] == 300000
-    assert ("typed_market_requirements", "table") in client.calls
-    assert ("parsed_output", "table") not in client.calls
+    assert ("requirements_unified", "table") in client.calls
+    assert ("parsed_output_unified", "table") not in client.calls

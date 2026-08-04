@@ -152,33 +152,33 @@ async def dashboard_time_window(window: str = "today", user: dict = Depends(requ
         total_msgs = storage.db.execute("SELECT COUNT(*) FROM raw_messages").fetchone()[0]
         listings_in_window = storage.db.execute(
             """SELECT COALESCE(p.intent, p.message_type, 'UNKNOWN') as intent, COUNT(DISTINCT l.id) as c
-               FROM typed_listings_index l
+               FROM listings_unified l
                JOIN listing_observations lo ON lo.listing_id = l.id
-               LEFT JOIN typed_parsed_output p ON p.id = lo.parsed_id
+               LEFT JOIN parsed_output_unified p ON p.id = lo.parsed_id
                WHERE date(lo.seen_at) >= ? AND date(lo.seen_at) <= ?
                GROUP BY 1""",
             (start_date, end_date),
         ).fetchall()
-        total_listings = storage.db.execute("SELECT COUNT(*) FROM typed_listings_index").fetchone()[0]
+        total_listings = storage.db.execute("SELECT COUNT(*) FROM listings_unified").fetchone()[0]
         needs_review = storage.db.execute(
-            "SELECT COUNT(*) FROM typed_parsed_output WHERE date(created_at) >= ? AND date(created_at) <= ? AND confidence < 0.5",
+            "SELECT COUNT(*) FROM parsed_output_unified WHERE date(created_at) >= ? AND date(created_at) <= ? AND confidence < 0.5",
             (start_date, end_date),
         ).fetchone()[0]
         total_needs_review = storage.db.execute(
-            "SELECT COUNT(*) FROM typed_parsed_output WHERE confidence < 0.5"
+            "SELECT COUNT(*) FROM parsed_output_unified WHERE confidence < 0.5"
         ).fetchone()[0]
     else:
         msg_count = storage.db.execute("SELECT COUNT(*) FROM raw_messages").fetchone()[0]
         total_msgs = msg_count
         listings_in_window = storage.db.execute(
             """SELECT COALESCE(p.intent, p.message_type, 'UNKNOWN') as intent, COUNT(DISTINCT l.id) as c
-               FROM typed_listings_index l
+               FROM listings_unified l
                JOIN listing_observations lo ON lo.listing_id = l.id
-               LEFT JOIN typed_parsed_output p ON p.id = lo.parsed_id
+               LEFT JOIN parsed_output_unified p ON p.id = lo.parsed_id
                GROUP BY 1""",
         ).fetchall()
-        total_listings = storage.db.execute("SELECT COUNT(*) FROM typed_listings_index").fetchone()[0]
-        needs_review = storage.db.execute("SELECT COUNT(*) FROM typed_parsed_output WHERE confidence < 0.5").fetchone()[0]
+        total_listings = storage.db.execute("SELECT COUNT(*) FROM listings_unified").fetchone()[0]
+        needs_review = storage.db.execute("SELECT COUNT(*) FROM parsed_output_unified WHERE confidence < 0.5").fetchone()[0]
         total_needs_review = needs_review
 
     intents = {r["intent"]: r["c"] for r in listings_in_window}
@@ -189,11 +189,11 @@ async def dashboard_time_window(window: str = "today", user: dict = Depends(requ
         "messages": msg_count,
         "total_messages": total_msgs,
         "supply": intents.get("SELL", 0),
-        "total_supply": intents.get("SELL", 0) if window == "all" else storage.db.execute("SELECT COUNT(*) FROM typed_listings_index WHERE intent='SELL'").fetchone()[0],
+        "total_supply": intents.get("SELL", 0) if window == "all" else storage.db.execute("SELECT COUNT(*) FROM listings_unified WHERE intent='SELL'").fetchone()[0],
         "demand": intents.get("BUY", 0),
-        "total_demand": intents.get("BUY", 0) if window == "all" else storage.db.execute("SELECT COUNT(*) FROM typed_market_requirements WHERE intent='BUY'").fetchone()[0],
+        "total_demand": intents.get("BUY", 0) if window == "all" else storage.db.execute("SELECT COUNT(*) FROM requirements_unified WHERE intent='BUY'").fetchone()[0],
         "rentals": intents.get("RENT", 0) + intents.get("COMMERCIAL", 0),
-        "total_rentals": (intents.get("RENT", 0) + intents.get("COMMERCIAL", 0)) if window == "all" else storage.db.execute("SELECT COUNT(*) FROM typed_listings_index WHERE intent IN ('RENT','COMMERCIAL')").fetchone()[0],
+        "total_rentals": (intents.get("RENT", 0) + intents.get("COMMERCIAL", 0)) if window == "all" else storage.db.execute("SELECT COUNT(*) FROM listings_unified WHERE intent IN ('RENT','COMMERCIAL')").fetchone()[0],
         "needs_review": needs_review,
         "total_needs_review": total_needs_review,
         "start_date": start_date,
@@ -252,7 +252,7 @@ async def dashboard_coverage(
     group_ids = set(j.group_id for j in jobs)
     synced_jobs = [j for j in jobs if j.records_processed and j.records_processed > 0]
     messages_from_groups = sum(j.records_processed or 0 for j in jobs)
-    listings_known = storage.db.execute("SELECT COUNT(*) AS c FROM typed_listings_index").fetchone()["c"]
+    listings_known = storage.db.execute("SELECT COUNT(*) AS c FROM listings_unified").fetchone()["c"]
     return {
         "groups_connected": len(group_ids),
         "messages_stored": stats["total_raw"],
@@ -279,7 +279,7 @@ async def action_dashboard(user: dict = Depends(require_user)):
         SELECT COUNT(*) AS c FROM (
             SELECT DISTINCT rd.building_name
             FROM resolver_decisions rd
-            JOIN typed_parsed_output p ON p.id = rd.parsed_id
+            JOIN parsed_output_unified p ON p.id = rd.parsed_id
             WHERE DATE(p.created_at) = ? AND rd.building_name IS NOT NULL
         )
     """, (today,)).fetchone()["c"]
@@ -292,7 +292,7 @@ async def action_dashboard(user: dict = Depends(require_user)):
         WHERE suggestion_type = 'duplicate' AND status IN ('pending', 'approved')
     """).fetchone()["c"]
     low_confidence = storage.db.execute("""
-        SELECT COUNT(*) AS c FROM typed_parsed_output
+        SELECT COUNT(*) AS c FROM parsed_output_unified
         WHERE confidence < 0.5
     """).fetchone()["c"]
     disconnected_groups = storage.db.execute("""
@@ -456,11 +456,28 @@ _today_count = lambda table, column="created_at", where="1=1": 0
 @router.get("/api/events")
 async def event_stream(request: Request, user: dict = Depends(require_user)):
     """Server-Sent Events endpoint. Subscribe to pipeline events."""
-    bus = get_bus()
-    queue = bus.sse_queue()
+    # Event delivery is an enhancement to the dashboard, not a prerequisite
+    # for loading it.  A stale/reloaded event-bus singleton must never turn the
+    # whole endpoint into a 500 (which also makes the browser report a CORS
+    # error).  Keep the stream alive and let the normal polling paths continue
+    # if the bus cannot be initialized.
+    bus = None
+    queue = None
+    try:
+        bus = get_bus()
+        queue = bus.sse_queue()
+    except Exception:
+        import logging
+        logging.getLogger(__name__).exception("Could not initialize dashboard event stream")
 
     async def generate():
         try:
+            if queue is None:
+                yield 'event: system\ndata: {"type":"events_unavailable","data":{}}\n\n'
+                while not await request.is_disconnected():
+                    await asyncio.sleep(15)
+                    yield ": keepalive\n\n"
+                return
             while True:
                 if await request.is_disconnected():
                     break
@@ -470,9 +487,18 @@ async def event_stream(request: Request, user: dict = Depends(require_user)):
                 except asyncio.TimeoutError:
                     yield ": keepalive\n\n"
         finally:
-            bus.remove_queue(queue)
+            if bus is not None and queue is not None:
+                bus.remove_queue(queue)
 
-    return StreamingResponse(generate(), media_type="text/event-stream")
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @router.get("/api/usage")

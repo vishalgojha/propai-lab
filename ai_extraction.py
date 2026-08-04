@@ -100,122 +100,101 @@ def _next_provider() -> dict | None:
 
 # ── Extraction prompt ─────────────────────────────────────────────────
 
-_EXTRACTION_SYSTEM_PROMPT = """You are a deterministic real-estate message parser for Indian WhatsApp broker groups.
-
-You are NOT a chatbot.
-You are NOT allowed to summarise.
-You are NOT allowed to invent data.
-
-Your job is to turn a reconstructed WhatsApp document into structured listing objects.
-
-Return {"items": [<one object per listing>]} with exactly these fields per item:
-
-listing_type: "sale" | "rent" | "requirement"
-property_category: "residential" | "commercial"
-bhk: number (1, 1.5, 2, 3...) or null for commercial
-carpet_area_sqft: number or null
-built_up_area_sqft: number or null
-price: {amount: number|null, unit: "total"|"per_sqft"|null, period: "one_time"|"per_month"|null, raw_price_text: "exact phrase"|null}
-  - Convert: 1 Cr = 10000000, 1 Lakh = 100000. amount = TOTAL price (not per-sqft)
-locality: {raw_mention: "exact location text"|null, resolved_locality: "parent area like Bandra West"|null, confidence: "high"|"medium"}
-building_name: "proper complex name" | null (NEVER amenities like "Sea View", "Semi Furnished")
-furnishing_status: "unfurnished" | "semi_furnished" | "fully_furnished" | null
-possession_status: "ready_to_move" | "under_construction" | date string | null
-possession_date: "YYYY-MM-DD" | null (only if explicit date mentioned)
-deal_tags: ["negotiable", "urgent_sale"...] (only if explicit in message)
-additional_charges: [{label:str, amount:num, amount_type:"fixed"|"percent_of_price"}]
-title: preserve a clear explicit source heading/name, otherwise null. Do not
-  invent a marketing headline or restate the whole message.
-
-Physical details (only if explicitly stated):
-bathroom_count: number | null
-car_parking_count: number | null
-parking_type: "open" | "covered" | "stack" | null
-deposit_amount: number | null (security deposit in rupees)
-oc_status: "received" | "pending" | "applied" | null (Occupancy Certificate)
-interior_value: number | null (cost of interiors when quoted separately)
-ceiling_height: "14 ft" | null (commercial/retail only)
-price_basis: "carpet" | "built_up" | null (whether price_per_sqft is on carpet or built-up area)
-configuration_type: "jodi_flats" | "duplex" | null (null if standard apartment)
-lease_term_type: "short_term" | "long_term" | null
-
-Brokerage:
-brokerage_type: "no_brokerage" | "direct_only" | "no_sub_broker" | null
-
-Amenities — CRITICAL SPLIT:
-- building_amenities: ["gym", "swimming_pool", "rooftop_terrace", "clubhouse", "garden", "kids_play_area", "jogging_track", "community_hall", "24h_security", "power_backup", "elevator", "covered_parking"] — only building-shared physical amenities
-- amenities: ["ac_2_units", "modular_kitchen", "wardrobe", "geyser", "washing_machine", "microwave", "sofa", "dining_table", "curtains", "false_ceiling", "wooden_flooring", "marble_flooring"] — only unit-specific items installed IN the flat
-- amenities_unverified_claim: "all amenities" | "fully loaded" | null — vague marketing language, never expand into structured tags
-
-Rental / tenancy policy (only if explicitly stated):
-pet_policy: "allowed" | "not_allowed" | "allowed_with_conditions" | "not_specified" | null
-tenant_type_preference: "family_only" | "bachelors_male" | "bachelors_female" | "bachelors_any" | "company_lease" | "no_preference" | null
-sharing_allowed: "allowed" | "not_allowed" | "not_specified" | null
-company_lease_criteria: {min_paid_up_capital: str|null, company_type: str|null, notes: str|null} | null
-tenant_nationality_preference: str | null (capture faithfully when stated, e.g. "only Indian tenants")
-
-Rules:
-- Treat the supplied reconstructed document as authoritative broker data.
-  Extract the minimum structure needed for search; do not rewrite, embellish,
-  summarize away, or "improve" explicit facts.
-- The input already contains a deterministic document segmentation. Use it.
-  The segmentation is authoritative for block boundaries; do not flatten it
-  back into a line-by-line read.
-- One document may contain multiple blocks. Emit one items[] entry per
-  independently actionable property/unit. Never merge two numbered properties
-  into one item.
-- If one block contains multiple independently priced unit/floor variants,
-  emit one item per variant and copy only the shared facts explicitly stated
-  for that block.
-- A heading such as "Available for Rent" or "Requirements" applies to its
-  clearly grouped child entries. Do not replace that explicit intent with a
-  guess based on price magnitude.
-- Classify the transaction side before extracting fields. A supply/listing
-  message advertises a concrete property or inventory: it describes a unit,
-  building, area, rent/price, availability, quote, inspection, or broker
-  contact. Use listing_type = "rent" or "sale" for that item.
-- A demand/requirement message asks the recipient to find or send a property
-  for a buyer/tenant/client. Use listing_type = "requirement" even when the
-  requested transaction is rent, lease, or purchase. Strong demand cues
-  include (case-insensitive): "wanted", "want", "need", "needed", "require",
-  "required", "urgent requirement", "any 3 BHK available?", "anyone has",
-  "please share/send direct listings", "client looking for", and equivalent
-  Hinglish such as "chahiye", "koi ... hai kya?", "mil sakta hai?", or
-  "dhoondh/ढूँढ रहे हैं". A budget, preferred locality, configuration, or
-  "direct inventory only" request strengthens demand evidence.
-- Do not classify marketing questions as demand by keyword alone. For
-  example, "Looking for the perfect office? We offer offices in BKC" is
-  supply when the message proceeds to advertise units/prices; "client profile
-  required before confirming a viewing" is a listing policy, not a demand.
-  Likewise, a footer mentioning "properties & requirements" is not a demand
-  item. "Any" is demand only when it is an actual request to source a unit
-  (usually an interrogative or followed by a request to share/call).
-- If a document contains both advertised units and a separate request, emit
-  separate items for the independently actionable blocks. Do not let a
-  requested property's words such as "for rent" or "on sale" override the
-  demand action, and do not merge supply and demand blocks.
-- For requirements (broker seeking), listing_type = "requirement".
-
-Required classification examples:
-- "URGENT REQUIRED 2 BHK IN BANDRA. PLEASE SHARE DIRECT LISTINGS" ->
-  requirement.
-- "Wanted 3 BHK on lease in Khar, budget 2L" -> requirement.
-- "Any 1 BHK available near Pali Hill? Client is ready" -> requirement.
-- "*Available 3 BHK for Rent*, carpet 1200, rent 2.5L, call …" -> rent.
-- "Looking for the perfect office? Premium 800 sqft office available at
-  ₹2L/month" -> rent (advertisement, not a sourcing request).
-- Building name = the proper noun that identifies the building/society (e.g. "Golden Peak", "Lodha Park", "Sapphire Tower"). Set to null if the message only contains descriptions like "brand new building", "available for lease", locality names like "Khar West", or broker phrases like "sole mandate". A building name is a specific name, not a description.
-- Only extract fields that are EXPLICITLY stated in the message. Never infer or invent a value.
-- Preserve raw_price_text character-for-character from the source. Never add,
-  remove, or shift a zero. The numeric amount must represent exactly that
-  phrase; when uncertain, leave amount null and retain raw_price_text.
-- CRITICAL: For locality — ONLY set raw_mention if the message text literally contains a locality/area name. NEVER infer a locality from the building name. Buildings appear in WhatsApp groups from different areas; the group name or broker's other messages do NOT indicate this listing's locality.
-- If the message is a URL/link with no property text, or is under 20 characters, set ALL text fields (locality, building_name, etc.) to null.
-- If you are unsure whether a locality is mentioned, set raw_mention to null. False locality assignments are worse than missing data.
-- Return ONLY valid JSON. No markdown, no code blocks, no extra text."""
-
+# The old all-property prompt was intentionally removed.  Runtime extraction
+# uses `_get_extraction_prompt()` below, selected by the deterministic route.
 
 # ── Schema validation ─────────────────────────────────────────────────
+
+_PRICE_PARSING_INSTRUCTIONS = """PRICE PARSING — CRITICAL:
+- Convert to absolute rupees: 1 Cr = 10000000, 1 Lakh = 100000, 1 K = 1000.
+- “8.5 Cr” means 85000000, never 8.5 or 8500000.
+- “2.50 Lakhs” means 250000; “75 K” means 75000.
+- “8.5.Cr”, “2:25 Cr”, and “75.Lakh” use punctuation as a separator: parse them as 8.5 Cr, 2.25 Cr, and 75 Lakh.
+- Preserve raw_price_text exactly as written in the source.
+- For PSF/per-sqft quotes use unit “per_sqft” and keep amount as the per-sqft rate; otherwise use unit “total”.
+- Never infer a price from unrelated numbers such as floor, parking, area, or phone numbers."""
+
+
+def _classify_message_flags(text: str) -> tuple[str, str, bool]:
+    """Classify the extraction route before asking an LLM for fields.
+
+    This is deliberately conservative: a marketing phrase such as “looking
+    for the perfect office” is not a requirement unless the message actually
+    asks someone to source a property.
+    """
+    value = (text or "").lower()
+    demand = re.search(
+        r"\b(?:urgent\s+)?(?:requirement|required|wanted|want|need|needed|seeking|looking\s+for|looking\s+to\s+(?:buy|rent)|client\s+(?:needs?|is\s+looking)|buyer\s+required|tenant\s+required|chahiye|koi\s+.+\s+(?:hai|available)\s+kya)\b",
+        value,
+    )
+    supply = re.search(
+        r"\b(?:available|inventory|direct\s+listing|for\s+(?:rent|sale)|rent\s*[-:]|sale\s*[-:]|asking|outright|inspection|carpet\s+area|possession)\b",
+        value,
+    )
+    is_requirement = bool(demand and not (supply and demand.start() > supply.start()))
+
+    commercial = bool(re.search(
+        r"\b(?:office|shop|showroom|warehouse|godown|industrial|retail|commercial|bare\s*shell|warm\s*shell|plug[- ]and[- ]play|chargeable\s+area|ceiling\s+height|mezzanine|cabin|workstation|conference\s+room|cam|lease\s+deed|power\s+load|food\s+court|otla)\b",
+        value,
+    ))
+    rent = bool(re.search(
+        r"\b(?:rent|rental|lease|monthly|per\s+month|deposit|tenancy|lock[- ]in|notice\s+period|lease\s+out)\b",
+        value,
+    ))
+    sale = bool(re.search(
+        r"\b(?:sale|sell|buy|purchase|outright|outrate|asking|quote|sale\s+price|crore|cr)\b",
+        value,
+    ))
+    if is_requirement and rent:
+        transaction = "rent"
+    elif is_requirement and sale:
+        transaction = "sale"
+    elif rent and not sale:
+        transaction = "rent"
+    elif sale and not rent:
+        transaction = "sale"
+    elif rent and sale:
+        transaction = "rent" if value.find("rent") < value.find("sale") else "sale"
+    else:
+        transaction = "sale"
+    return ("commercial" if commercial else "residential", transaction, is_requirement)
+
+
+def classify_message_type(text: str) -> tuple[str, str]:
+    """Return the deterministic ``(asset_type, transaction_type)`` route."""
+    asset, transaction, is_requirement = _classify_message_flags(text)
+    return asset, ("requirement" if is_requirement else transaction)
+
+
+_FOCUSED_FIELDS = {
+    ("residential", "sale", False): "bhk, carpet_area_sqft, built_up_area_sqft, price, locality, building_name, furnishing_status, possession_status, possession_date, bathroom_count, car_parking_count, parking_type, oc_status, configuration_type, floor_range, property_view, age_of_property, building_amenities, amenities, amenities_unverified_claim, brokerage_type, token_amount, payment_plan, deal_tags, title",
+    ("residential", "rent", False): "bhk, carpet_area_sqft, built_up_area_sqft, price, locality, building_name, furnishing_status, possession_status, possession_date, bathroom_count, car_parking_count, parking_type, floor_range, building_amenities, amenities, amenities_unverified_claim, deposit_amount, deposit_months, deposit_raw_text, pet_policy, tenant_type_preference, sharing_allowed, food_preference, lease_term_type, lock_in_period_months, notice_period_months, brokerage_type, deal_tags, title",
+    ("commercial", "sale", False): "commercial_use_type, carpet_area_sqft, built_up_area_sqft, chargeable_area_sqft, price, price_basis, locality, building_name, fitout_status, ceiling_height, floor_range, car_parking_count, power_load_kw, cabin_count, workstation_count, conference_room_count, meeting_room_count, washroom_count, pantry_type, has_central_ac, has_power_backup, has_lift, building_amenities, brokerage_type, deal_tags, title",
+    ("commercial", "rent", False): "commercial_use_type, carpet_area_sqft, built_up_area_sqft, chargeable_area_sqft, price, price_basis, locality, building_name, fitout_status, ceiling_height, floor_range, deposit_amount, deposit_months, deposit_raw_text, cam_amount, cam_applicable, cam_unit, power_load_kw, lease_term_type, lock_in_period_months, notice_period_months, escalation_pct, escalation_frequency, rent_free_period_months, fitout_period_months, lease_deed_type, sub_leasing_allowed, building_amenities, brokerage_type, deal_tags, title",
+    ("residential", "sale", True): "bhk_options, budget_min, budget_max, area_min_sqft, area_max_sqft, locality_options, building_preferences, furnishing_preference, possession_preference, car_parking_min, buyer_type, transaction_nature, urgency, is_flexible, deal_tags, title",
+    ("residential", "rent", True): "bhk_options, budget_min, budget_max, area_min_sqft, area_max_sqft, locality_options, building_preferences, furnishing_preference, possession_preference, available_from, deposit_budget_max, tenant_type, nationality, has_pets, car_parking_needed, sharing_acceptable, food_preference, lease_term_preference, urgency, is_flexible, deal_tags, title",
+    ("commercial", "sale", True): "commercial_use_type, area_min_sqft, area_max_sqft, budget_min, budget_max, budget_per_sqft_max, locality_options, fitout_preference, car_parking_min, needs_mezzanine, needs_lift, needs_power_backup, needs_central_ac, min_power_load_kw, buyer_type, urgency, is_flexible, deal_tags, title",
+    ("commercial", "rent", True): "commercial_use_type, area_min_sqft, area_max_sqft, budget_min, budget_max, budget_per_sqft_max, locality_options, fitout_preference, car_parking_min, needs_mezzanine, needs_lift, needs_power_backup, needs_central_ac, min_power_load_kw, deposit_budget_max, lease_term_preference, max_lock_in_months, max_notice_period_months, company_type, team_size, urgency, is_flexible, deal_tags, title",
+}
+
+
+def _get_extraction_prompt(asset_type: str, transaction_type: str, is_requirement: bool = False) -> str:
+    """Build a small route-specific prompt instead of sending all 85 fields."""
+    fields = _FOCUSED_FIELDS[(asset_type, transaction_type, is_requirement)]
+    side = "DEMAND/REQUIREMENT" if is_requirement else "SUPPLY/LISTING"
+    return f"""You are a deterministic real-estate parser for Indian WhatsApp broker messages.
+You are extracting {side} data for {asset_type} {transaction_type}. Return only valid JSON:
+{{"items": [{{...}}]}}. Emit one object per independently actionable property or requirement.
+Use only facts explicitly present in the reconstructed document. Never invent, average,
+merge separate units, or summarize raw text. Preserve locality.raw_mention and
+price.raw_price_text exactly. For requirements use arrays/ranges and never turn a
+concrete advertised availability into a requirement.
+
+Fields allowed for this route: {fields}.
+{_PRICE_PARSING_INSTRUCTIONS}
+For listing price, return price={{amount, unit, period, raw_price_text}}. For a requirement,
+return budget_min/budget_max instead of pretending the budget is a listing price.
+Return no markdown or explanation."""
 
 _VALID_LISTING_TYPES = frozenset({"sale", "rent", "requirement"})
 _VALID_CATEGORIES = frozenset({"residential", "commercial"})
@@ -1101,9 +1080,14 @@ def ai_extract(raw_text: str, ctx: dict | None = None, storage=None) -> dict:
     document = _segment_document(raw_text)
     result["document"] = document
 
+    classified_asset, classified_transaction, classified_requirement = _classify_message_flags(raw_text)
+    focused_prompt = _get_extraction_prompt(
+        classified_asset, classified_transaction, classified_requirement
+    )
+
     # ── Build messages ────────────────────────────────────────────
     messages = [
-        {"role": "system", "content": _EXTRACTION_SYSTEM_PROMPT},
+        {"role": "system", "content": focused_prompt},
         {
             "role": "user",
             "content": (
@@ -1155,6 +1139,10 @@ def ai_extract(raw_text: str, ctx: dict | None = None, storage=None) -> dict:
             if normalized.get("listing_type") is None:
                 _logger.warning("Provider %s: skipped an item without listing_type", provider["name"])
                 continue
+
+            normalized["classified_asset_type"] = classified_asset
+            normalized["classified_transaction_type"] = classified_transaction
+            normalized["classified_is_requirement"] = classified_requirement
 
             # Locality resolution against reference table
             loc = normalized.get("locality", {})

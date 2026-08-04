@@ -23,6 +23,7 @@ from routers.common import (
     _resolve_active_organization_id,
     _require_org_permission,
 )
+from routers.protection import bounded_page
 from storage import LLMProvider
 
 router = APIRouter(tags=["workspace"])
@@ -625,6 +626,7 @@ async def get_raw_messages(user: dict = Depends(require_user), limit: int = 50, 
                            group_name: str = "", sender: str = "",
                            sender_phone: str = "", sender_jid: str = "", raw_id: int = 0,
                            tenant_id: str | None = Depends(get_tenant_context)):
+    limit, offset = bounded_page(limit, offset)
     if raw_id:
         row = storage.get_raw_message(raw_id)
         if row is None or (tenant_id and str(row.tenant_id or "") != str(tenant_id)):
@@ -637,7 +639,7 @@ async def get_raw_messages(user: dict = Depends(require_user), limit: int = 50, 
     raw_ids = [row["id"] for row in payload]
     if raw_ids:
         try:
-            parsed_res = storage.client.table("typed_parsed_output").select(
+            parsed_res = storage.client.table("parsed_output_unified").select(
                 "raw_message_id,id,intent,broker_name,broker_phone,"
                 "building_name,micro_market,landmark_name,location_raw,confidence"
             ).in_("raw_message_id", raw_ids).order("confidence", desc=True).order("id", desc=True).execute()
@@ -717,7 +719,7 @@ async def get_market_detail(market_name: str, user: dict = Depends(require_user)
     buildings = [dict(r) for r in storage.db.execute("""
         SELECT building_name, COUNT(*) AS observation_count,
                COUNT(DISTINCT broker_name) AS broker_count
-        FROM typed_parsed_output
+        FROM parsed_output_unified
         WHERE micro_market LIKE ? AND building_name IS NOT NULL AND building_name != ''
         GROUP BY building_name
         ORDER BY observation_count DESC
@@ -736,7 +738,7 @@ async def get_market_detail(market_name: str, user: dict = Depends(require_user)
 
     intents = [dict(r) for r in storage.db.execute("""
         SELECT intent, COUNT(*) AS c
-        FROM typed_parsed_output
+        FROM parsed_output_unified
         WHERE micro_market LIKE ? AND intent IS NOT NULL
         GROUP BY intent
         ORDER BY c DESC
@@ -744,7 +746,7 @@ async def get_market_detail(market_name: str, user: dict = Depends(require_user)
 
     groups = [dict(r) for r in storage.db.execute("""
         SELECT r.group_name, COUNT(*) AS observation_count, MAX(r.timestamp) AS last_seen
-        FROM typed_parsed_output p
+        FROM parsed_output_unified p
         JOIN raw_messages r ON r.id = p.raw_message_id
         WHERE p.micro_market LIKE ? AND r.group_name IS NOT NULL
         GROUP BY r.group_name
@@ -756,7 +758,7 @@ async def get_market_detail(market_name: str, user: dict = Depends(require_user)
         SELECT bhk, COUNT(*) AS sample_count,
                ROUND(AVG(price), 0) AS avg_price,
                MIN(price) AS min_price, MAX(price) AS max_price
-        FROM typed_parsed_output
+        FROM parsed_output_unified
         WHERE micro_market LIKE ? AND price IS NOT NULL AND price > 0 AND bhk IS NOT NULL
         GROUP BY bhk
         ORDER BY sample_count DESC
@@ -889,7 +891,7 @@ async def chat_suggestions(user: dict = Depends(require_user)):
     week_ago = (datetime.utcnow() - timedelta(days=7)).strftime("%Y-%m-%dT%H:%M:%SZ")
 
     top_building = storage.db.execute("""
-        SELECT p.building_name, COUNT(*) AS cnt FROM typed_parsed_output p
+        SELECT p.building_name, COUNT(*) AS cnt FROM parsed_output_unified p
         JOIN raw_messages r ON r.id = p.raw_message_id
         WHERE p.building_name IS NOT NULL AND p.building_name != ''
           AND r.timestamp >= ?
@@ -897,7 +899,7 @@ async def chat_suggestions(user: dict = Depends(require_user)):
     """, (week_ago,)).fetchone()
 
     top_supply_market = storage.db.execute("""
-        SELECT p.micro_market, COUNT(*) AS cnt FROM typed_parsed_output p
+        SELECT p.micro_market, COUNT(*) AS cnt FROM parsed_output_unified p
         JOIN raw_messages r ON r.id = p.raw_message_id
         WHERE p.intent IN ('SELL','RENT','COMMERCIAL')
           AND p.micro_market IS NOT NULL AND p.micro_market != ''
@@ -906,7 +908,7 @@ async def chat_suggestions(user: dict = Depends(require_user)):
     """, (week_ago,)).fetchone()
 
     top_demand_market = storage.db.execute("""
-        SELECT p.micro_market, COUNT(*) AS cnt FROM typed_parsed_output p
+        SELECT p.micro_market, COUNT(*) AS cnt FROM parsed_output_unified p
         JOIN raw_messages r ON r.id = p.raw_message_id
         WHERE p.intent IN ('BUY','RENTAL_SEEKER')
           AND p.micro_market IS NOT NULL AND p.micro_market != ''
@@ -915,7 +917,7 @@ async def chat_suggestions(user: dict = Depends(require_user)):
     """, (week_ago,)).fetchone()
 
     top_commercial_market = storage.db.execute("""
-        SELECT p.micro_market, COUNT(*) AS cnt FROM typed_parsed_output p
+        SELECT p.micro_market, COUNT(*) AS cnt FROM parsed_output_unified p
         JOIN raw_messages r ON r.id = p.raw_message_id
         WHERE p.intent = 'COMMERCIAL'
           AND p.micro_market IS NOT NULL AND p.micro_market != ''
@@ -924,7 +926,7 @@ async def chat_suggestions(user: dict = Depends(require_user)):
     """, (week_ago,)).fetchone()
 
     top_rental_market = storage.db.execute("""
-        SELECT p.micro_market, COUNT(*) AS cnt FROM typed_parsed_output p
+        SELECT p.micro_market, COUNT(*) AS cnt FROM parsed_output_unified p
         JOIN raw_messages r ON r.id = p.raw_message_id
         WHERE p.intent = 'RENT'
           AND p.micro_market IS NOT NULL AND p.micro_market != ''
@@ -945,14 +947,14 @@ async def chat_suggestions(user: dict = Depends(require_user)):
     result = {
         "top_building": _with_fallback(
             top_building,
-            "SELECT p.building_name, COUNT(*) AS cnt FROM typed_parsed_output p "
+            "SELECT p.building_name, COUNT(*) AS cnt FROM parsed_output_unified p "
             "JOIN raw_messages r ON r.id = p.raw_message_id "
             "WHERE p.building_name IS NOT NULL AND p.building_name != '' "
             "GROUP BY p.building_name ORDER BY cnt DESC LIMIT 1"
         ),
         "top_supply_market": _with_fallback(
             top_supply_market,
-            "SELECT p.micro_market, COUNT(*) AS cnt FROM typed_parsed_output p "
+            "SELECT p.micro_market, COUNT(*) AS cnt FROM parsed_output_unified p "
             "JOIN raw_messages r ON r.id = p.raw_message_id "
             "WHERE p.intent IN ('SELL','RENT','COMMERCIAL') "
             "AND p.micro_market IS NOT NULL AND p.micro_market != '' "
@@ -960,7 +962,7 @@ async def chat_suggestions(user: dict = Depends(require_user)):
         ),
         "top_demand_market": _with_fallback(
             top_demand_market,
-            "SELECT p.micro_market, COUNT(*) AS cnt FROM typed_parsed_output p "
+            "SELECT p.micro_market, COUNT(*) AS cnt FROM parsed_output_unified p "
             "JOIN raw_messages r ON r.id = p.raw_message_id "
             "WHERE p.intent IN ('BUY','RENTAL_SEEKER') "
             "AND p.micro_market IS NOT NULL AND p.micro_market != '' "
@@ -968,7 +970,7 @@ async def chat_suggestions(user: dict = Depends(require_user)):
         ),
         "top_commercial_market": _with_fallback(
             top_commercial_market,
-            "SELECT p.micro_market, COUNT(*) AS cnt FROM typed_parsed_output p "
+            "SELECT p.micro_market, COUNT(*) AS cnt FROM parsed_output_unified p "
             "JOIN raw_messages r ON r.id = p.raw_message_id "
             "WHERE p.intent = 'COMMERCIAL' "
             "AND p.micro_market IS NOT NULL AND p.micro_market != '' "
@@ -976,7 +978,7 @@ async def chat_suggestions(user: dict = Depends(require_user)):
         ),
         "top_rental_market": _with_fallback(
             top_rental_market,
-            "SELECT p.micro_market, COUNT(*) AS cnt FROM typed_parsed_output p "
+            "SELECT p.micro_market, COUNT(*) AS cnt FROM parsed_output_unified p "
             "JOIN raw_messages r ON r.id = p.raw_message_id "
             "WHERE p.intent = 'RENT' "
             "AND p.micro_market IS NOT NULL AND p.micro_market != '' "

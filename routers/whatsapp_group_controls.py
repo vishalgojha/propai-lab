@@ -1,4 +1,4 @@
-"""Broker onboarding controls for WhatsApp groups.
+"""WhatsApp group and extraction controls.
 
 This router deliberately keeps group selection separate from the ingestor's
 directory discovery. WhatsMeow may know about every group on the phone; all
@@ -8,6 +8,7 @@ groups are eligible by default and users can suppress any number of them.
 import asyncio
 import json
 import logging
+import os
 import re
 from datetime import datetime, timezone
 from threading import Lock
@@ -57,8 +58,13 @@ _LOCALITY_KEYWORDS = [
 class GroupRequest(BaseModel):
     whatsapp_connection_id: int
     group_jid: str
+    group_name: str | None = None
     confirm_overlap: bool = False
     confirm_cap: bool = False
+
+
+class ExtractionControlRequest(BaseModel):
+    whatsapp_connection_id: int
 
 
 _ACTIVE_GROUP_BACKFILLS: set[tuple[str, int, str]] = set()
@@ -339,7 +345,13 @@ def _connection(org_id: str, connection_id: int) -> dict:
     return rows[0]
 
 
-def _group_directory(org_id: str, broker_id: str, connection_id: int) -> list[dict]:
+def _group_directory(
+    org_id: str,
+    broker_id: str,
+    connection_id: int,
+    *,
+    include_overlap: bool = True,
+) -> list[dict]:
     try:
         rows = (
             storage.client.table("whatsapp_conversations")
@@ -348,11 +360,22 @@ def _group_directory(org_id: str, broker_id: str, connection_id: int) -> list[di
             .eq("broker_id", broker_id)
             .eq("conversation_type", "group")
             .order("display_name")
-            .limit(1000)
+            .limit(max(1, int(os.getenv("PROPAI_GROUP_DIRECTORY_MAX", "1000"))))
             .execute()
             .data
             or []
         )
+        # Some connections were created before the durable conversation
+        # directory was populated.  Reuse the same tenant-scoped directory
+        # used by the Groups mirror instead of showing an empty opt-out panel.
+        if not rows:
+            rows = storage.get_whatsapp_conversations(
+                org_id,
+                ["group"],
+                max(1, int(os.getenv("PROPAI_GROUP_DIRECTORY_MAX", "1000"))),
+                "",
+                False,
+            )
         connection_rows = (
             storage.client.table("organization_group_connections")
             .select("group_jid,is_active,opted_out")
@@ -403,7 +426,11 @@ def _group_directory(org_id: str, broker_id: str, connection_id: int) -> list[di
         unconnected_groups = [g for g in scored_groups if not g["connected"]]
         unconnected_groups.sort(key=lambda g: g.get("suggestion", {}).get("score", 0), reverse=True)
         ranked = unconnected_groups + connected_groups
-        _attach_directory_overlap(org_id, ranked)
+        # Overlap analysis performs sender sampling and registry lookups for
+        # many groups. It is useful for recommendations, but must not block the
+        # initial opt-out directory request.
+        if include_overlap:
+            _attach_directory_overlap(org_id, ranked)
         unconnected_groups = [g for g in ranked if not g["connected"]]
         connected_groups = [g for g in ranked if g["connected"]]
         unconnected_groups.sort(key=lambda g: g.get("suggestion", {}).get("score", 0), reverse=True)
@@ -637,8 +664,23 @@ async def onboarding_groups(
     try:
         org_id = _resolve_active_organization_id(user, tenant_id)
         await _require_org_permission(user, org_id, "manage_whatsapp")
-        connection = _connection(org_id, whatsapp_connection_id)
-        return {"groups": _group_directory(org_id, str(connection.get("broker_id") or ""), whatsapp_connection_id), **_cap_state(org_id, whatsapp_connection_id)}
+        connection = await asyncio.to_thread(_connection, org_id, whatsapp_connection_id)
+        # Keep this endpoint bounded: it is called while the connections page
+        # is rendering and should only load the directory + opt-out state.
+        groups_task = asyncio.create_task(asyncio.to_thread(
+            _group_directory,
+            org_id,
+            str(connection.get("broker_id") or ""),
+            whatsapp_connection_id,
+            include_overlap=False,
+        ))
+        cap_task = asyncio.create_task(asyncio.to_thread(_cap_state, org_id, whatsapp_connection_id))
+        groups, cap = await asyncio.wait_for(asyncio.gather(groups_task, cap_task), timeout=20)
+        return {
+            "groups": groups,
+            "extraction_status": connection.get("extraction_status") or "stopped",
+            **cap,
+        }
     except HTTPException:
         raise
     except Exception:
@@ -653,7 +695,69 @@ async def onboarding_groups(
             "unlimited": True,
             "soft_warning_at_cap": False,
             "hard_block": False,
+            "extraction_status": "stopped",
         }
+
+
+def _set_extraction_status(org_id: str, connection_id: int, status: str) -> dict:
+    connection = _connection(org_id, connection_id)
+    updated = storage.update_org_whatsapp_connection(connection_id, {
+        "extraction_status": status,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    })
+    if not updated:
+        raise HTTPException(404, "WhatsApp connection not found")
+    return {
+        "ok": True,
+        "whatsapp_connection_id": connection_id,
+        "extraction_status": updated.get("extraction_status", status),
+        "message": {
+            "running": "Extraction started. New and queued messages will be processed.",
+            "paused": "Extraction paused. Queued messages are preserved.",
+            "stopped": "Extraction stopped. Queued messages are preserved.",
+        }[status],
+    }
+
+
+def _set_group_extraction_suppressed(org_id: str, group_jid: str, suppressed: bool) -> None:
+    """Suppress/resume queued rows without deleting raw WhatsApp history."""
+    try:
+        storage.set_raw_group_extraction_suppressed(org_id, group_jid, suppressed)
+    except Exception:
+        _logger.exception("queued group extraction update failed for org=%s group=%s", org_id, group_jid)
+
+
+@router.post("/extraction/start")
+async def start_extraction(
+    body: ExtractionControlRequest,
+    user: dict = Depends(require_user),
+    tenant_id: str | None = Depends(get_tenant_context),
+):
+    org_id = _resolve_active_organization_id(user, tenant_id)
+    await _require_org_permission(user, org_id, "manage_whatsapp")
+    return await asyncio.to_thread(_set_extraction_status, org_id, body.whatsapp_connection_id, "running")
+
+
+@router.post("/extraction/pause")
+async def pause_extraction(
+    body: ExtractionControlRequest,
+    user: dict = Depends(require_user),
+    tenant_id: str | None = Depends(get_tenant_context),
+):
+    org_id = _resolve_active_organization_id(user, tenant_id)
+    await _require_org_permission(user, org_id, "manage_whatsapp")
+    return await asyncio.to_thread(_set_extraction_status, org_id, body.whatsapp_connection_id, "paused")
+
+
+@router.post("/extraction/stop")
+async def stop_extraction(
+    body: ExtractionControlRequest,
+    user: dict = Depends(require_user),
+    tenant_id: str | None = Depends(get_tenant_context),
+):
+    org_id = _resolve_active_organization_id(user, tenant_id)
+    await _require_org_permission(user, org_id, "manage_whatsapp")
+    return await asyncio.to_thread(_set_extraction_status, org_id, body.whatsapp_connection_id, "stopped")
 
 
 @router.post("/groups/check")
@@ -679,12 +783,10 @@ async def connect_group(
     user: dict = Depends(require_user),
     tenant_id: str | None = Depends(get_tenant_context),
 ):
-    """Deprecated: opt-in model has been replaced by opt-out. Kept as a 410-style
-    no-op for one release so any stale cache/client surface returns a clear
-    explanation instead of a 404."""
+    """Deprecated: extraction is explicitly started after group review."""
     raise HTTPException(
         status_code=410,
-        detail="Group connection is no longer supported. Every connected WhatsApp group is now extracted by default; use POST /api/onboarding/groups/opt-out to suppress a group.",
+        detail="Group connection is no longer supported. Pair the phone, review group opt-outs, then start extraction.",
     )
 
 
@@ -700,12 +802,37 @@ async def opt_out_group(
         org_id = _resolve_active_organization_id(user, tenant_id)
         await _require_org_permission(user, org_id, "manage_whatsapp")
         connection = _connection(org_id, body.whatsapp_connection_id)
-        groups = _group_directory(org_id, str(connection.get("broker_id") or ""), body.whatsapp_connection_id)
-        group = next((item for item in groups if item["group_jid"] == body.group_jid), None)
-        if not group:
-            raise HTTPException(404, "Group is not available on this WhatsApp connection")
+        # Persistence must not depend on the live/durable conversation
+        # directory being available. A directory refresh can be temporarily
+        # unavailable while the phone is reconnecting, but the user must still
+        # be able to suppress a known group by JID.
+        group = {
+            "group_jid": body.group_jid,
+            "group_name": body.group_name or body.group_jid,
+        }
+        try:
+            groups = _group_directory(
+                org_id,
+                str(connection.get("broker_id") or ""),
+                body.whatsapp_connection_id,
+                include_overlap=False,
+            )
+            directory_group = next(
+                (item for item in groups if item["group_jid"] == body.group_jid),
+                None,
+            )
+            if directory_group:
+                group = directory_group
+        except Exception:
+            _logger.exception("group directory unavailable during opt-out; persisting by jid")
 
-        overlap = _overlap(org_id, group["group_name"], group["group_jid"])
+        # Overlap is advisory only; it must never turn a successful opt-out
+        # into a failed request.
+        try:
+            overlap = _overlap(org_id, group["group_name"], group["group_jid"])
+        except Exception:
+            _logger.exception("overlap lookup failed during opt-out")
+            overlap = {}
 
         now = datetime.now(timezone.utc).isoformat()
         row = storage.client.table("organization_group_connections").upsert({
@@ -718,6 +845,7 @@ async def opt_out_group(
             "updated_at": now,
             "connected_at": now,
         }, on_conflict="organization_id,whatsapp_connection_id,group_jid").execute()
+        _set_group_extraction_suppressed(org_id, body.group_jid, True)
         return {
             "ok": True,
             "group": group,
@@ -754,4 +882,5 @@ async def opt_in_group(
     )
     if not result.data:
         raise HTTPException(404, "Opted-out group not found")
+    _set_group_extraction_suppressed(org_id, body.group_jid, False)
     return {"ok": True, "message": "Group re-enabled for extraction", "cap": _cap_state(org_id, body.whatsapp_connection_id)}

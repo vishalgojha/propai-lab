@@ -2,6 +2,7 @@
 Search routes — text search, raw FTS, sender/group filtered search, market search.
 """
 import logging
+import os
 import re
 from datetime import datetime, timezone
 from typing import Any, Optional
@@ -10,10 +11,15 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from routers.common import storage, require_user
+from routers.protection import TTLCache, bounded_page
 
 router = APIRouter(tags=["search"])
 
 _logger = logging.getLogger(__name__)
+_query_parse_cache = TTLCache(
+    max_entries=int(os.getenv("PROPAI_SEARCH_PARSE_CACHE_ENTRIES", "512")),
+    ttl_seconds=float(os.getenv("PROPAI_SEARCH_PARSE_CACHE_SECONDS", "60")),
+)
 
 
 class ParsedQuery(BaseModel):
@@ -151,10 +157,16 @@ async def parse_query(q: str = ""):
     if not q:
         return ParsedQuery(query="").model_dump()
     q = q.strip()
+    cache_key = q.casefold()
+    cached = _query_parse_cache.get(cache_key)
+    if cached is not None:
+        return cached
     parsed = await _parse_query_llm(q)
     if not parsed:
         parsed = _parse_query_simple(q)
-    return parsed.model_dump()
+    payload = parsed.model_dump()
+    _query_parse_cache.set(cache_key, payload)
+    return payload
 
 
 @router.get("/api/search")
@@ -185,7 +197,7 @@ async def search_messages(q: str = "", use_llm: bool = False):
                 SELECT fingerprint, intent, bhk, price, price_unit, area_sqft, furnishing,
                        location_label, building_name, landmark_name, micro_market,
                        broker_name, broker_phone, observation_count, last_seen
-                FROM typed_listings_index
+                FROM listings_unified
                 WHERE {where_clause}
                 ORDER BY observation_count DESC
                 LIMIT 8
@@ -196,7 +208,7 @@ async def search_messages(q: str = "", use_llm: bool = False):
             result["requirements"] = [dict(r) for r in storage.db.execute("""
                 SELECT p.id, p.intent, p.bhk, p.price, p.price_unit, p.broker_name, p.broker_phone,
                        p.micro_market, p.location_raw, p.created_at, r.message, r.group_name
-                FROM typed_parsed_output p
+                FROM parsed_output_unified p
                 JOIN raw_messages r ON r.id = p.raw_message_id
                 WHERE p.intent IN ('BUY','RENTAL_SEEKER')
                   AND (
@@ -227,7 +239,7 @@ async def search_messages(q: str = "", use_llm: bool = False):
                        COUNT(*) AS occurrence_count,
                        COUNT(DISTINCT p.broker_name) AS broker_count
                 FROM resolver_decisions rd
-                LEFT JOIN typed_parsed_output p ON p.id = rd.parsed_id
+                LEFT JOIN parsed_output_unified p ON p.id = rd.parsed_id
                 WHERE rd.building_name IS NOT NULL AND rd.building_name != ''
                   AND rd.building_name ILIKE ?
                 GROUP BY rd.building_name
@@ -241,7 +253,7 @@ async def search_messages(q: str = "", use_llm: bool = False):
                 SELECT micro_market, COUNT(*) AS observation_count,
                        COUNT(DISTINCT building_name) AS building_count,
                        COUNT(DISTINCT broker_name) AS broker_count
-                FROM typed_parsed_output
+                FROM parsed_output_unified
                 WHERE micro_market IS NOT NULL AND micro_market != ''
                   AND micro_market ILIKE ?
                 GROUP BY micro_market
@@ -271,6 +283,7 @@ async def search_raw_messages(q: str = "", limit: int = 20, offset: int = 0):
     if not q:
         return {"results": [], "count": 0}
     q = q.strip()
+    limit, offset = bounded_page(limit, offset)
 
     def _resolve_group_name(group_name: str) -> str:
         if group_name and "@g.us" in group_name:
@@ -329,33 +342,12 @@ async def search_raw_messages(q: str = "", limit: int = 20, offset: int = 0):
         except Exception as like_error:
             logging.warning("[api/search/raw] FTS and LIKE search failed: %s / %s", e, like_error)
         try:
-            rows = storage.get_raw_messages(limit=max(limit + offset, 1000), offset=0)
-            needle = q.casefold()
-            filtered = []
-            for row in rows:
-                haystack = " ".join(
-                    str(part)
-                    for part in (
-                        getattr(row, "message", "") or "",
-                        getattr(row, "group_name", "") or "",
-                        getattr(row, "sender", "") or "",
-                        getattr(row, "sender_phone", "") or "",
-                        getattr(row, "source", "") or "",
-                    )
-                ).casefold()
-                if needle in haystack:
-                    filtered.append({
-                        "id": getattr(row, "id", None),
-                        "group_name": _resolve_group_name(getattr(row, "group_name", "") or ""),
-                        "sender": getattr(row, "sender", "") or "",
-                        "sender_phone": getattr(row, "sender_phone", "") or "",
-                        "message": getattr(row, "message", "") or "",
-                        "timestamp": getattr(row, "timestamp", "") or "",
-                        "source": getattr(row, "source", "") or "",
-                        "snippet": (getattr(row, "message", "") or "")[:200],
-                    })
-            total = len(filtered)
-            return {"results": filtered[offset:offset + limit], "count": total, "query": q, "fallback": "python_scan"}
+            # Never recover from a failed indexed query by scanning an
+            # arbitrary raw-message page in Python. That made one search
+            # request read 1,000 rows and still return incomplete results.
+            # Surface an explicit degraded response so the client can retry
+            # after the FTS/index problem is fixed.
+            return {"results": [], "count": 0, "query": q, "fallback": "indexed_search_unavailable"}
         except Exception as scan_error:
             logging.warning("[api/search/raw] python fallback failed: %s", scan_error)
             return {"results": [], "count": 0, "query": q, "fallback": "empty"}
@@ -365,6 +357,7 @@ async def search_raw_messages(q: str = "", limit: int = 20, offset: int = 0):
 async def search_raw_by_sender(sender: str = "", limit: int = 50, user: dict = Depends(require_user)):
     if not sender:
         return {"results": [], "count": 0}
+    limit, _ = bounded_page(limit, 0)
     like_q = f"%{sender}%"
     rows = storage.db.execute("""
         SELECT id, group_name, sender, sender_phone, message, timestamp, source
@@ -399,6 +392,7 @@ async def search_raw_by_sender(sender: str = "", limit: int = 50, user: dict = D
 async def search_raw_by_group(group_jid: str = "", limit: int = 50, user: dict = Depends(require_user)):
     if not group_jid:
         return {"results": [], "count": 0}
+    limit, _ = bounded_page(limit, 0)
     rows = storage.db.execute("""
         SELECT id, group_name, sender, sender_phone, message, timestamp, source
         FROM raw_messages
@@ -437,6 +431,7 @@ async def market_search(
     group_by_building: bool = True,
 ):
     import math
+    limit, offset = bounded_page(limit, offset)
     from datetime import datetime, timezone, timedelta
 
     where_clauses = []
@@ -492,7 +487,7 @@ async def market_search(
     order_sql = sort_map.get(sort_by, "l.last_seen")
 
     total_count = storage.db.execute(
-        f"SELECT COUNT(*) FROM typed_listings_index l WHERE {where_sql}", params
+        f"SELECT COUNT(*) FROM listings_unified l WHERE {where_sql}", params
     ).fetchone()[0]
 
     listing_params = params.copy()
@@ -503,7 +498,7 @@ async def market_search(
                l.micro_market, l.broker_name, l.broker_phone,
                l.first_seen, l.last_seen, l.observation_count, l.group_count,
                l.latest_raw_message_id
-        FROM typed_listings_index l
+        FROM listings_unified l
         WHERE {where_sql}
         ORDER BY {order_sql} DESC
         LIMIT ? OFFSET ?

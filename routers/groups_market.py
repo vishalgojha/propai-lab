@@ -1,6 +1,7 @@
 """Groups, market data, and WhatsApp conversations routes."""
 import asyncio
 import json
+import os
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -126,9 +127,9 @@ async def groups_health(user: dict = Depends(require_user), tenant_id: str = Dep
     # ── 2. Per-group extraction value ──
     # Use denormalized group_name on parsed_output when available (fast, no JOIN).
     # Falls back to raw_messages JOIN if column is empty (slow but correct).
-    if groups and _table_exists("typed_parsed_output"):
+    if groups and _table_exists("parsed_output_unified"):
         has_denorm = _audit_scalar(
-            "SELECT EXISTS(SELECT 1 FROM typed_parsed_output WHERE group_name IS NOT NULL LIMIT 1)"
+            "SELECT EXISTS(SELECT 1 FROM parsed_output_unified WHERE group_name IS NOT NULL LIMIT 1)"
         )
         if has_denorm:
             value_rows = _audit_rows(
@@ -136,7 +137,7 @@ async def groups_health(user: dict = Depends(require_user), tenant_id: str = Dep
                 "COUNT(*) AS extracted, "
                 "COUNT(CASE WHEN UPPER(intent) IN ('BUY','REQUIREMENT','RENTAL_SEEKER','TENANT') THEN 1 END) AS requirements, "
                 "COUNT(CASE WHEN intent IS NOT NULL AND UPPER(intent) NOT IN ('BUY','REQUIREMENT','RENTAL_SEEKER','TENANT') THEN 1 END) AS listings "
-                "FROM typed_parsed_output "
+                "FROM parsed_output_unified "
                 "WHERE group_name IS NOT NULL AND group_name != '' AND group_name NOT LIKE '%@g.us' "
                 "GROUP BY group_name",
             )
@@ -146,7 +147,7 @@ async def groups_health(user: dict = Depends(require_user), tenant_id: str = Dep
                 "COUNT(DISTINCT po.id) AS extracted, "
                 "COUNT(DISTINCT CASE WHEN UPPER(po.intent) IN ('BUY','REQUIREMENT','RENTAL_SEEKER','TENANT') THEN po.id END) AS requirements, "
                 "COUNT(DISTINCT CASE WHEN po.id IS NOT NULL AND UPPER(po.intent) NOT IN ('BUY','REQUIREMENT','RENTAL_SEEKER','TENANT') THEN po.id END) AS listings "
-                "FROM typed_parsed_output po "
+                "FROM parsed_output_unified po "
                 "JOIN raw_messages rm ON po.raw_message_id = rm.id "
                 "WHERE rm.is_group = true AND rm.group_name IS NOT NULL AND rm.group_name != '' "
                 "AND rm.group_name NOT LIKE '%@g.us' "
@@ -300,7 +301,7 @@ async def list_group_members(jid: str, user: dict = Depends(require_user)):
             .eq("tenant_id", tenant_id)
             .eq("group_id", jid)
             .order("display_name", desc=False)
-            .limit(500)
+            .limit(int(os.getenv("PROPAI_MAX_PAGE_SIZE", "100")))
             .execute()
             .data
         )

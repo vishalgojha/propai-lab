@@ -83,7 +83,7 @@ app.get("/debug", async (_req, res) => {
 
   try {
     const { data, error } = await supabase
-      .from("typed_parsed_output")
+      .from("parsed_output_unified")
       .select("count")
       .limit(1);
 

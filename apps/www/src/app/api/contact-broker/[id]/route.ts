@@ -74,7 +74,7 @@ export async function GET(
   }
 
   const { data, error } = await db
-    .from("typed_listings_index")
+    .from("listings_unified")
     .select("id, bhk, micro_market, building_name, property_type, broker_phone, representative_raw_message_id, latest_raw_message_id")
     .eq("id", listingId)
     .maybeSingle();

@@ -326,13 +326,13 @@ def load_live_data(db_path):
     sources = {}
 
     raw_cnt = con.execute("SELECT COUNT(*) FROM raw_messages").fetchone()[0]
-    parsed_cnt = con.execute("SELECT COUNT(*) FROM typed_parsed_output").fetchone()[0]
+    parsed_cnt = con.execute("SELECT COUNT(*) FROM parsed_output_unified").fetchone()[0]
     sources["overview"] = {
         "df": pd.DataFrame([{
             "total_messages": raw_cnt,
             "total_properties_posted": parsed_cnt,
             "total_brokers": con.execute("SELECT COUNT(*) FROM brokers").fetchone()[0],
-            "unique_properties": con.execute("SELECT COUNT(*) FROM typed_listings_index").fetchone()[0],
+            "unique_properties": con.execute("SELECT COUNT(*) FROM listings_unified").fetchone()[0],
             "building_matches_found": con.execute("SELECT COUNT(*) FROM resolver_decisions WHERE method='resolved'").fetchone()[0],
         }]),
         "description": "Platform overview with total counts of messages, properties, brokers, and matched buildings",
@@ -358,7 +358,7 @@ def load_live_data(db_path):
         "location_label AS area, building_name, landmark_name, micro_market, "
         "broker_name, broker_phone, "
         "observation_count AS times_seen, group_count AS groups_seen_in, "
-        "first_seen, last_seen FROM typed_listings_index ORDER BY last_seen DESC LIMIT 5000"
+        "first_seen, last_seen FROM listings_unified ORDER BY last_seen DESC LIMIT 5000"
     ).fetchall()
     if listings:
         sources["unique_listings"] = {"df": pd.DataFrame([dict(r) for r in listings]),
@@ -370,7 +370,7 @@ def load_live_data(db_path):
         "p.broker_name, p.broker_phone, "
         "p.forwarded, p.created_at AS posted_at, "
         "r.group_name AS group_name, r.sender AS posted_by, r.timestamp "
-        "FROM typed_parsed_output p JOIN raw_messages r ON r.id = p.raw_message_id "
+        "FROM parsed_output_unified p JOIN raw_messages r ON r.id = p.raw_message_id "
         "ORDER BY p.id DESC LIMIT 10000"
     ).fetchall()
     if obs:
@@ -385,7 +385,7 @@ def load_live_data(db_path):
         "p.intent AS purpose, p.micro_market AS locality, "
         "rd.method AS match_status, rd.final_confidence AS match_confidence, "
         "rd.failure_category, rd.created_at "
-        "FROM resolver_decisions rd JOIN typed_parsed_output p ON p.id = rd.parsed_id "
+        "FROM resolver_decisions rd JOIN parsed_output_unified p ON p.id = rd.parsed_id "
         "ORDER BY rd.id DESC LIMIT 10000"
     ).fetchall()
     if resolved:
@@ -398,7 +398,7 @@ def load_live_data(db_path):
                p.broker_name, p.confidence, p.created_at,
                r.message, r.group_name, r.timestamp,
                d.method, d.failure_category
-        FROM typed_parsed_output p
+        FROM parsed_output_unified p
         JOIN raw_messages r ON r.id = p.raw_message_id
         LEFT JOIN resolver_decisions d ON d.parsed_id = p.id
         WHERE d.method = 'unresolved' OR p.confidence < 0.5
@@ -2107,8 +2107,8 @@ def live_overview_counts(db_path=None) -> dict:
     try:
         return {
             "total_messages": con.execute("SELECT COUNT(*) FROM raw_messages").fetchone()[0],
-            "total_properties_posted": con.execute("SELECT COUNT(*) FROM typed_parsed_output").fetchone()[0],
-            "unique_properties": con.execute("SELECT COUNT(*) FROM typed_listings_index").fetchone()[0],
+            "total_properties_posted": con.execute("SELECT COUNT(*) FROM parsed_output_unified").fetchone()[0],
+            "unique_properties": con.execute("SELECT COUNT(*) FROM listings_unified").fetchone()[0],
             "total_brokers": con.execute("SELECT COUNT(*) FROM brokers").fetchone()[0],
         }
     except Exception:
@@ -2233,7 +2233,7 @@ def _rest_requirement_search(client, args: dict, tenant_id: str | None = None) -
         "area_sqft,location_label,building_name,landmark_name,micro_market,"
         "broker_name,broker_phone,confidence,first_seen,last_seen,created_at"
     )
-    query = client.table("typed_market_requirements").select(columns, count="exact")
+    query = client.table("requirements_unified").select(columns, count="exact")
     if tenant_id:
         query = query.eq("tenant_id", tenant_id)
     if broker:
@@ -2338,7 +2338,7 @@ def _rest_market_search(client, args: dict, tenant_id: str | None = None) -> str
     )
 
     def fetch_one_market(market: str | None):
-        query = client.table("typed_listings_index").select(columns, count="exact")
+        query = client.table("listings_unified").select(columns, count="exact")
         if furnishing and furnishing.lower() != "any":
             query = query.ilike("furnishing", furnishing)
         if building:
@@ -2484,7 +2484,7 @@ def execute_tool(name, args, sources, db_path=None, tenant_id: str | None = None
                 rows = con.execute("""
                     SELECT p.id, p.intent, p.micro_market, p.broker_name, p.confidence,
                            p.location_raw, r.message, r.group_name
-                    FROM typed_parsed_output p
+                    FROM parsed_output_unified p
                     JOIN raw_messages r ON r.id = p.raw_message_id
                     LEFT JOIN resolver_decisions d ON d.parsed_id = p.id
                     WHERE d.method = 'unresolved'
@@ -2494,7 +2494,7 @@ def execute_tool(name, args, sources, db_path=None, tenant_id: str | None = None
                 rows = con.execute("""
                     SELECT p.id, p.intent, p.micro_market, p.broker_name, p.confidence,
                            p.location_raw, r.message, r.group_name
-                    FROM typed_parsed_output p
+                    FROM parsed_output_unified p
                     JOIN raw_messages r ON r.id = p.raw_message_id
                     WHERE p.confidence < 0.5 AND p.confidence > 0
                     ORDER BY p.confidence ASC LIMIT ?
@@ -2503,7 +2503,7 @@ def execute_tool(name, args, sources, db_path=None, tenant_id: str | None = None
                 rows = con.execute("""
                     SELECT p.id, p.intent, p.price, p.micro_market, p.broker_name,
                            r.message, r.group_name
-                    FROM typed_parsed_output p
+                    FROM parsed_output_unified p
                     JOIN raw_messages r ON r.id = p.raw_message_id
                     WHERE (p.bhk IS NULL OR p.bhk = '') AND p.intent IN ('SELL','RENT')
                     ORDER BY p.id DESC LIMIT ?
@@ -2512,7 +2512,7 @@ def execute_tool(name, args, sources, db_path=None, tenant_id: str | None = None
                 rows = con.execute("""
                     SELECT p.id, p.intent, p.bhk, p.micro_market, p.broker_name,
                            r.message, r.group_name
-                    FROM typed_parsed_output p
+                    FROM parsed_output_unified p
                     JOIN raw_messages r ON r.id = p.raw_message_id
                     WHERE (p.price IS NULL OR p.price = 0) AND p.intent IN ('SELL','RENT')
                     ORDER BY p.id DESC LIMIT ?
@@ -2522,7 +2522,7 @@ def execute_tool(name, args, sources, db_path=None, tenant_id: str | None = None
                     SELECT p.id, p.intent, p.confidence, p.micro_market, p.broker_name,
                            d.method, d.failure_category,
                            r.message, r.group_name
-                    FROM typed_parsed_output p
+                    FROM parsed_output_unified p
                     JOIN raw_messages r ON r.id = p.raw_message_id
                     LEFT JOIN resolver_decisions d ON d.parsed_id = p.id
                     WHERE d.method = 'unresolved' OR p.confidence < 0.5
@@ -2801,7 +2801,7 @@ def execute_tool(name, args, sources, db_path=None, tenant_id: str | None = None
             }
             order_sql = sort_map.get(sort_by, "l.last_seen DESC")
 
-            total_query = f"SELECT COUNT(*) FROM typed_listings_index l WHERE {where_sql}"
+            total_query = f"SELECT COUNT(*) FROM listings_unified l WHERE {where_sql}"
             total_count = con.execute(total_query, params).fetchone()[0]
 
             listing_query = f"""
@@ -2810,7 +2810,7 @@ def execute_tool(name, args, sources, db_path=None, tenant_id: str | None = None
                        l.micro_market, l.broker_name, l.broker_phone,
                        l.first_seen, l.last_seen, l.observation_count, l.group_count,
                        l.latest_raw_message_id
-                FROM typed_listings_index l
+                FROM listings_unified l
                 WHERE {where_sql}
                 ORDER BY {order_sql}
                 LIMIT ? OFFSET ?

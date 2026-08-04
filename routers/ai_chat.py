@@ -989,7 +989,7 @@ async def resolve_broker_contact(
     """Resolve a broker's WhatsApp link only after an authenticated click."""
     tenant_id = tenant_id or await asyncio.to_thread(_resolve_active_organization_id, user, None)
     try:
-        query = storage.client.table("typed_listings_index").select(
+        query = storage.client.table("listings_unified").select(
             "id,broker_phone,bhk,building_name,micro_market,intent"
         ).eq("id", listing_id)
         if tenant_id:

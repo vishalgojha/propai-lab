@@ -67,7 +67,7 @@ def unique_raw_ids(rows: Iterable[dict], limit: int) -> list[int]:
 
 def existing_parsed_ids(storage, raw_id: int) -> list[int]:
     rows = (
-        storage.client.table("parsed_output")
+        storage.client.table("parsed_output_unified")
         .select("id")
         .eq("raw_message_id", raw_id)
         .execute()

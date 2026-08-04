@@ -214,7 +214,7 @@ def process_record(record: SourceRecord, pipeline_version: str = PIPELINE_VERSIO
         confidence=parsed.get("confidence", 0.0),
         raw_payload=json.dumps(parsed.get("raw_payload", {})),
     )
-    parsed_id = storage.save_parsed(obs)
+    parsed_id = storage.save_typed_observation(obs)
 
     # Stage 3: Resolve
     resolver_result = resolve_parsed(parsed, record.text)
