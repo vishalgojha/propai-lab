@@ -30,6 +30,7 @@ import {
   Sparkles,
   Volume2,
   VolumeX,
+  SlidersHorizontal,
 } from "lucide-react";
 import { AuthProvider, useAuth } from "@/lib/AuthProvider";
 import { LayoutProvider, useLayout } from "@/hooks/useLayout";
@@ -38,7 +39,7 @@ import { BottomNav } from "@/components/layout/BottomNav";
 import { MobileDrawer } from "@/components/layout/MobileDrawer";
 import { InstallPrompt } from "@/components/layout/InstallPrompt";
 import { ServiceWorkerRegister } from "@/components/layout/ServiceWorkerRegister";
-import { isMuted, toggleMute, playConnectionChange, playGroupConnected, playNewLead, playNewWhatsApp } from "@/lib/sounds";
+import { isMuted, toggleMute, playConnectionChange, playGroupConnected, playNewLead, playNewWhatsApp, getVolume, setVolume, isSoundEnabled, setSoundEnabled, type SoundEvent } from "@/lib/sounds";
 
 type NavItem = {
   href: string;
@@ -219,6 +220,9 @@ function AppShell({ children }: { children: React.ReactNode }) {
   const lastGroupSoundAt = useRef(0);
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const [soundsMuted, setSoundsMuted] = useState(true);
+  const [soundSettingsOpen, setSoundSettingsOpen] = useState(false);
+  const [soundVolume, setSoundVolume] = useState(0.25);
+  const [soundEvents, setSoundEvents] = useState<Record<SoundEvent, boolean>>({ whatsapp: true, groups: false, connection: true, leads: true });
   const { signOut: authSignOut } = useAuth();
   const fallbackFullName = String(user?.user_metadata?.full_name || user?.email?.split("@")[0] || "Account").trim();
   const [fallbackFirstName = "Account", ...fallbackLastName] = fallbackFullName.split(/\s+/);
@@ -255,6 +259,15 @@ function AppShell({ children }: { children: React.ReactNode }) {
   // Read initial sound mute state
   useEffect(() => {
     import("@/lib/sounds").then((s) => setSoundsMuted(s.isMuted()));
+    import("@/lib/sounds").then((s) => {
+      setSoundVolume(s.getVolume());
+      setSoundEvents({
+        whatsapp: s.isSoundEnabled("whatsapp"),
+        groups: s.isSoundEnabled("groups"),
+        connection: s.isSoundEnabled("connection"),
+        leads: s.isSoundEnabled("leads"),
+      });
+    });
   }, []);
 
   const handleToggleSounds = useCallback(() => {
@@ -263,6 +276,11 @@ function AppShell({ children }: { children: React.ReactNode }) {
       setSoundsMuted(s.isMuted());
     });
   }, []);
+
+  const handleSoundEvent = useCallback((event: SoundEvent) => {
+    const enabled = setSoundEnabled(event, !soundEvents[event]);
+    setSoundEvents((current) => ({ ...current, [event]: enabled }));
+  }, [soundEvents]);
 
   // Hydrate localStorage profile from server when missing
   useEffect(() => {
@@ -707,14 +725,43 @@ function AppShell({ children }: { children: React.ReactNode }) {
             <span>Search</span>
             <kbd className="ml-auto text-[9px] bg-white/5 px-1.5 py-0.5 rounded text-zinc-500">⌘K</kbd>
           </button>
-          <button
-            onClick={handleToggleSounds}
-            className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[11px] text-zinc-500 hover:text-zinc-300 hover:bg-white/5 transition-colors"
-            title={soundsMuted ? "Unmute sounds" : "Mute sounds"}
-          >
-            {soundsMuted ? <VolumeX className="w-3.5 h-3.5 shrink-0" strokeWidth={1.5} /> : <Volume2 className="w-3.5 h-3.5 shrink-0" strokeWidth={1.5} />}
-            <span>{soundsMuted ? "Sounds off" : "Sounds on"}</span>
-          </button>
+          <div className="relative">
+            {soundSettingsOpen && (
+              <div className="absolute bottom-full left-0 z-50 mb-2 w-64 rounded-xl border border-white/10 bg-zinc-950 p-3 shadow-2xl">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-white">Sound controls</span>
+                  <button type="button" onClick={() => setSoundSettingsOpen(false)} className="text-zinc-500 hover:text-white" aria-label="Close sound controls"><X className="h-3.5 w-3.5" /></button>
+                </div>
+                <div className="mt-3 flex items-center gap-2">
+                  <VolumeX className="h-3.5 w-3.5 text-zinc-500" />
+                  <input aria-label="Sound volume" type="range" min="0" max="1" step="0.01" value={soundVolume} onChange={(event) => setSoundVolume(setVolume(Number(event.target.value)))} className="min-w-0 flex-1 accent-emerald-400" />
+                  <span className="w-8 text-right text-[10px] text-zinc-500">{Math.round(soundVolume * 100)}%</span>
+                </div>
+                <div className="mt-3 space-y-2 border-t border-white/[0.06] pt-3">
+                  {([
+                    ["whatsapp", "New WhatsApp messages"],
+                    ["groups", "Group directory updates"],
+                    ["connection", "Connection changes"],
+                    ["leads", "Leads and requirements"],
+                  ] as [SoundEvent, string][]).map(([event, label]) => (
+                    <label key={event} className="flex cursor-pointer items-center justify-between gap-3 text-[11px] text-zinc-400">
+                      <span>{label}</span>
+                      <input type="checkbox" checked={soundEvents[event]} onChange={() => handleSoundEvent(event)} className="accent-emerald-400" />
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
+            <div className="flex items-center gap-1">
+              <button onClick={handleToggleSounds} className="min-w-0 flex-1 flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[11px] text-zinc-500 hover:text-zinc-300 hover:bg-white/5 transition-colors" title={soundsMuted ? "Unmute sounds" : "Mute sounds"}>
+                {soundsMuted ? <VolumeX className="w-3.5 h-3.5 shrink-0" strokeWidth={1.5} /> : <Volume2 className="w-3.5 h-3.5 shrink-0" strokeWidth={1.5} />}
+                <span>{soundsMuted ? "Sounds off" : `Sounds ${Math.round(soundVolume * 100)}%`}</span>
+              </button>
+              <button onClick={() => setSoundSettingsOpen((open) => !open)} className="flex h-7 w-7 items-center justify-center rounded-lg text-zinc-500 hover:bg-white/5 hover:text-zinc-300" title="Sound controls" aria-label="Sound controls">
+                <SlidersHorizontal className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          </div>
           <a
             href="/connections"
             className="flex items-center gap-2.5 px-2.5 py-2.5 rounded-lg hover:bg-white/5 transition-colors group"
