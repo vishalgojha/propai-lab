@@ -4234,13 +4234,78 @@ class SupabaseStorage(Storage):
                 ]
             return filtered_rows
 
-        # The durable directory is the authoritative source for joined groups.
-        # Do not scan raw_messages on every page load: that table is large and
-        # this endpoint is polled by the Groups mirror.  A raw-message fallback
-        # is retained only for tenants whose directory has not been populated
-        # yet (for example, immediately after an older deployment/backfill).
+        # The durable directory is authoritative for membership, but it is not
+        # authoritative for activity: GROUPS_REFRESHED events intentionally
+        # carry no message timestamp, and old broker connection ids can leave
+        # duplicate directory rows behind. Merge by WhatsApp JID and overlay
+        # the newest captured raw message so the mirror is live without asking
+        # the LLM or scanning parsed tables.
         if directory:
-            return filter_directory(directory)[:limit]
+            merged: dict[str, dict] = {}
+            for row in directory:
+                jid = str(row.get("conversation_jid") or row.get("jid") or "").strip()
+                if not jid:
+                    continue
+                current = merged.get(jid)
+                if current is None:
+                    merged[jid] = dict(row)
+                    continue
+                current["message_count"] = max(
+                    int(current.get("message_count") or 0),
+                    int(row.get("message_count") or 0),
+                )
+                current["last_message_at"] = max(
+                    str(current.get("last_message_at") or ""),
+                    str(row.get("last_message_at") or ""),
+                ) or None
+                current["last_seen_at"] = max(
+                    str(current.get("last_seen_at") or ""),
+                    str(row.get("last_seen_at") or ""),
+                ) or None
+                if str(current.get("display_name") or "").strip() in {"", jid}:
+                    current["display_name"] = row.get("display_name") or current.get("display_name")
+                metadata = current.get("metadata") or {}
+                incoming_metadata = row.get("metadata") or {}
+                if isinstance(metadata, dict) and isinstance(incoming_metadata, dict):
+                    current["metadata"] = {**metadata, **incoming_metadata}
+
+            jids = list(merged)
+            raw_activity: dict[str, dict[str, object]] = {}
+            # Keep requests bounded for large workspaces while still covering
+            # every joined group in the normal directory size range.
+            for start in range(0, len(jids), 200):
+                try:
+                    raw_rows = self.client.table("raw_messages").select(
+                        "group_name,timestamp,created_at"
+                    ).eq("tenant_id", tenant_id).in_(
+                        "group_name", jids[start:start + 200]
+                    ).order("timestamp", desc=True).limit(20000).execute().data or []
+                except Exception:
+                    raw_rows = []
+                for raw in raw_rows:
+                    jid = str(raw.get("group_name") or "").strip()
+                    if not jid:
+                        continue
+                    seen_at = str(raw.get("timestamp") or raw.get("created_at") or "")
+                    if not seen_at:
+                        continue
+                    activity = raw_activity.setdefault(jid, {"latest": "", "count": 0})
+                    activity["count"] = int(activity["count"]) + 1
+                    if seen_at > str(activity["latest"]):
+                        activity["latest"] = seen_at
+
+            for jid, row in merged.items():
+                activity = raw_activity.get(jid)
+                if not activity:
+                    continue
+                row["last_message_at"] = max(
+                    str(row.get("last_message_at") or ""),
+                    str(activity["latest"] or ""),
+                ) or None
+                row["message_count"] = max(
+                    int(row.get("message_count") or 0), int(activity["count"] or 0),
+                )
+            return filter_directory(list(merged.values()))[:limit]
 
         # The Go WhatsMeow ingestor writes raw_messages directly for low-latency
         # delivery. Bootstrap the directory from that evidence only when the
