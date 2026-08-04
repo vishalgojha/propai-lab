@@ -416,15 +416,19 @@ def main():
                     flush=True,
                 )
                 break
-            count = storage.count_unprocessed_raw()
-            if count > 0:
+            if hasattr(storage, "has_unprocessed_raw"):
+                has_pending = storage.has_unprocessed_raw()
+            else:
+                # Compatibility fallback for older storage doubles.
+                has_pending = storage.count_unprocessed_raw() > 0
+            if has_pending:
                 attempted, stored, failed, dead_lettered, skipped = run_cycle(storage, retry_counts)
                 if attempted or dead_lettered or skipped:
                     cleared = stored + dead_lettered + skipped
                     print(
                         f"[worker] cycle done: attempted={attempted} stored={stored} failed={failed} "
                         f"skipped={skipped} dead_lettered={dead_lettered} "
-                        f"remaining={max(0, count - cleared)}",
+                        f"remaining=not_counted cleared={cleared}",
                         flush=True,
                     )
         except Exception:
