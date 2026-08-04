@@ -836,6 +836,11 @@ type BrokerObservationRow = {
   furnishing?: string;
   location_raw?: string;
   micro_market?: string;
+  floor_range?: string;
+  floor?: string | number;
+  wing?: string;
+  flat_number?: string;
+  car_parking_count?: number;
   alternate_intent?: string;
   times_seen?: number;
   building_name?: string;
@@ -3685,8 +3690,8 @@ return {
                           <span className="text-[10px] font-bold text-white tabular-nums">{item.count}</span>
                         </div>
                         {item.latest.market_scope === "shared" && (
-                          <div title="Captured from eligible shared WhatsApp groups in your connected network; not another broker account's private inbox." className="mb-1 inline-flex rounded border border-white/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-zinc-400">
-                            Shared WhatsApp groups
+                          <div title="Shared market inventory contributed by another workspace or network source; it is not from this WhatsApp connection." className="mb-1 inline-flex rounded border border-white/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-zinc-400">
+                            Shared market
                           </div>
                         )}
                         <div className="text-[10px] text-zinc-500 leading-relaxed truncate mb-1">
@@ -3995,14 +4000,18 @@ return {
                     // observations. Prefer each item's source slice over the
                     // complete raw message so the listings render separately.
                     const itemSource = obs.source_message || obs.normalized_message || obs.raw_message || "";
-                    const selectedRawText = isSelected
-                      ? String(
-                          selectedMsgDetails?.raw?.message ||
-                          selectedMsgDetails?.raw?.raw_message ||
-                          ""
-                        ).trim()
-                      : "";
-                    const fullSourceText = selectedRawText || String(itemSource || "").trim();
+                    // Keep the extracted item slice visible for bulk posts.
+                    // The raw-message drawer/details view can still show the
+                    // complete WhatsApp message without replacing this item.
+                    const fullSourceText = String(itemSource || "").trim() || (
+                      isSelected
+                        ? String(
+                            selectedMsgDetails?.raw?.message ||
+                            selectedMsgDetails?.raw?.raw_message ||
+                            ""
+                          ).trim()
+                        : ""
+                    );
                     const marketTitle = buildMarketItemTitle(obs);
                     const opportunityLabel = marketOpportunityLabel({
                       intent: obs.intent,
@@ -4073,7 +4082,7 @@ return {
                             <div className="mt-1 flex flex-wrap gap-1 items-center text-[8px]">
                               {groupChannels.length > 0 && (
                                 <span title="Captured from an eligible WhatsApp group in your connected network." className="rounded-full border border-sky-400/30 bg-sky-400/10 px-1.5 py-0.5 font-semibold uppercase tracking-wider text-sky-300">
-                                  Shared WhatsApp groups
+                                  Connected group
                                 </span>
                               )}
                               {groupChannels.slice(0, 3).map((src: string, i: number) => (
