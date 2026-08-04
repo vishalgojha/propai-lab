@@ -3389,7 +3389,7 @@ return {
     const selectedHasMarketContext = hasMarketContext(selectedMsgDetails);
 
   return (
-    <div className="theme-inbox mobile-inbox safe-area-top safe-area-bottom flex flex-col h-[100dvh] min-h-0 max-h-[100dvh] overflow-hidden bg-black lg:h-full lg:max-h-full lg:rounded-2xl lg:border lg:border-white/10">
+    <div className="mobile-inbox safe-area-top safe-area-bottom flex flex-col h-[100dvh] min-h-0 max-h-[100dvh] overflow-hidden bg-black lg:h-full lg:max-h-full lg:rounded-2xl lg:border lg:border-white/10">
 
 
 
