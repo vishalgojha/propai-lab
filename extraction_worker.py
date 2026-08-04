@@ -131,6 +131,15 @@ def context_from_raw(row) -> dict:
         "msg_text": row_value(row, "message") or "",
         "msg": msg,
         "tenant_id": row_value(row, "tenant_id") or "",
+        "parent_message_id": row_value(row, "parent_message_id"),
+        "split_index": row_value(row, "split_index"),
+        "raw_payload": raw_payload,
+        "timestamp": row_value(row, "timestamp") or "",
+        "synced_at": row_value(row, "synced_at") or "",
+        "event_id": row_value(row, "event_id") or "",
+        "source": row_value(row, "source") or "WHATSAPP",
+        "is_group": bool(row_value(row, "is_group", False)),
+        "pipeline_version": row_value(row, "pipeline_version") or "",
     }
 
 

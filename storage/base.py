@@ -31,6 +31,8 @@ class RawMessage:
     processed: bool = False
     processed_at: Optional[str] = None
     tenant_id: Optional[str] = None
+    parent_message_id: Optional[int] = None
+    split_index: Optional[int] = None
     created_at: str = ""
 
 
