@@ -5159,24 +5159,10 @@ class SupabaseStorage(Storage):
                               broker_key: str = "", intent: str = "",
                               tenant_id: str | None = None) -> list[dict]:
         tid = tenant_id or self._tenant_id
-        # A selected broker already gives us a stable identity. Resolve that
-        # narrow timeline first instead of invoking the global aggregate RPC.
-        # The RPC can legitimately be expensive while a large WhatsApp history
-        # is being backfilled; making it the first step made broker cards say
-        # "No matching items" even when their parsed listings existed.
-        if broker_key:
-            try:
-                parsed_rows = self._get_parsed_observations_for_broker(
-                    limit, offset, broker_key=broker_key, intent=intent, tenant_id=tid
-                )
-                if parsed_rows:
-                    return _merge_observation_rows(parsed_rows)
-            except Exception:
-                pass
-
         # Preferred path: filter the canonical phone/name identity inside
-        # Postgres before LIMIT.  This avoids downloading thousands of parsed
-        # rows and retrying equivalent name keys in application code.
+        # Postgres before LIMIT. This avoids the old application-side typed
+        # table scan, which downloaded thousands of rows before the RPC and
+        # could make the frontend's 15-second request timeout fire.
         try:
             rows = self.client.rpc("get_market_observations_feed", {
                 "p_limit": limit,
