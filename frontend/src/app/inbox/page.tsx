@@ -153,6 +153,10 @@ function brokerCoverageLabel(broker: any): string {
   ]
     .map(cleanSpecialtyValue)
     .filter(Boolean)
+    // Amenities and facility lists sometimes land in the model's locality
+    // field. Keep the compact area names, while leaving the raw post itself
+    // available in the item timeline as evidence.
+    .filter((value) => value.length <= 40 && !/,/.test(value))
     .filter((value, index, values) => values.findIndex((item) => item.toLowerCase() === value.toLowerCase()) === index)
     .slice(0, 3);
   return localities.length ? localities.join(", ") : "No parsed locality yet";
@@ -3593,7 +3597,7 @@ return {
                       <div key={b.primary_phone} className="relative">
                         <button
                           onClick={() => selectBroker(b)}
-                          className={`w-full select-none p-2 transition-colors lg:p-3 ${
+                          className={`w-full select-none p-2 text-left transition-colors lg:p-3 ${
                             isSelected ? "bg-white/[0.055] border-l border-white/40" : "hover:bg-white/[0.035]"
                           }`}
                         >
@@ -3617,7 +3621,7 @@ return {
                               </div>
                             </div>
                           </div>
-                          <div className="mb-1.5 truncate text-[10px] leading-relaxed" title={`Areas covered: ${coverage}`}>
+                          <div className="mb-1.5 truncate text-left text-[10px] leading-relaxed" title={`Areas covered: ${coverage}`}>
                             <span className="text-zinc-500">Areas: </span>
                             <span className="font-medium text-zinc-300">{coverage}</span>
                           </div>
