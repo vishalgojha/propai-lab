@@ -421,6 +421,46 @@ async def extraction_progress(
     }
 
 
+@router.get("/api/extraction/recent-parsed")
+async def recent_parsed_messages(
+    limit: int = 10,
+    user: dict = Depends(require_user),
+    tenant_id: str | None = Depends(get_tenant_context),
+):
+    """Return the newest typed extraction rows with their raw evidence."""
+    limit = min(max(limit, 1), 20)
+    try:
+        query = storage.client.table("parsed_output_unified").select(
+            "id,raw_message_id,created_at,broker_name,broker_phone,"
+            "building_name,micro_market,transaction_type,bhk,price,area_sqft"
+        ).order("created_at", desc=True).limit(limit)
+        if tenant_id:
+            query = query.eq("tenant_id", tenant_id)
+        parsed_rows = query.execute().data or []
+        raw_ids = [row.get("raw_message_id") for row in parsed_rows if row.get("raw_message_id")]
+        raw_by_id: dict[int, dict] = {}
+        if raw_ids:
+            raw_query = storage.client.table("raw_messages").select(
+                "id,message,group_name,timestamp"
+            ).in_("id", raw_ids)
+            raw_by_id = {
+                int(row["id"]): row
+                for row in (raw_query.execute().data or [])
+                if row.get("id") is not None
+            }
+        return [
+            {
+                **row,
+                "raw_message": (raw_by_id.get(int(row["raw_message_id"] or 0)) or {}).get("message") or "",
+                "group_name": (raw_by_id.get(int(row["raw_message_id"] or 0)) or {}).get("group_name") or "",
+                "raw_timestamp": (raw_by_id.get(int(row["raw_message_id"] or 0)) or {}).get("timestamp") or "",
+            }
+            for row in parsed_rows
+        ]
+    except Exception:
+        return []
+
+
 @router.get("/api/dashboard/graph-growth")
 async def dashboard_graph_growth(user: dict = Depends(require_user)):
     today = _today_prefix()

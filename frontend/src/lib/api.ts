@@ -376,6 +376,10 @@ export function getTimeWindowMetrics(window = "today") {
   return fetchJSON<TimeWindowMetrics>(`/dashboard/time-window?window=${window}`);
 }
 
+export function getRecentParsedMessages(limit = 10) {
+  return fetchJSON<any[]>(`/extraction/recent-parsed?limit=${limit}`, undefined, 8000);
+}
+
 export interface DashboardCoverage {
   groups_connected: number;
   messages_stored: number;

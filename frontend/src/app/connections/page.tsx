@@ -4,9 +4,9 @@ export const dynamic = 'force-dynamic';
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Clock, Database, List, LogOut, MessageSquare, RefreshCw, Shield, Smartphone, AlertTriangle, Users, Zap, X, ChevronLeft, MoreVertical, User, Check, Hash, Play, Pause, Square } from "lucide-react";
+import { Clock, Database, List, LogOut, MessageSquare, RefreshCw, Shield, Smartphone, AlertTriangle, Users, Zap, X, ChevronLeft, MoreVertical, User, Check, Hash, Play, Pause, Square, Search } from "lucide-react";
 import { useAuth } from "@/lib/AuthProvider";
-import { getPhones, deletePhone, resetPhone, disconnectPhone, connectPhone, pairCodePhone, getPairCodePhoneStatus, updatePhone, fetchJSON, isLiveWhatsAppConnection, getOnboardingGroups, optOutOnboardingGroup, optInOnboardingGroup, startExtraction, pauseExtraction, stopExtraction, type Phone, type WhatsAppStatus, type OnboardingGroup, type OnboardingGroupState } from "@/lib/api";
+import { getPhones, deletePhone, resetPhone, disconnectPhone, connectPhone, pairCodePhone, getPairCodePhoneStatus, updatePhone, fetchJSON, getRecentParsedMessages, isLiveWhatsAppConnection, getOnboardingGroups, optOutOnboardingGroup, optInOnboardingGroup, startExtraction, pauseExtraction, stopExtraction, type Phone, type WhatsAppStatus, type OnboardingGroup, type OnboardingGroupState } from "@/lib/api";
 import QRCode from "qrcode";
 
 type HealthStatus = "healthy" | "warning" | "error";
@@ -776,6 +776,7 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
   const [message, setMessage] = useState<string | null>(null);
   const [activeGroup, setActiveGroup] = useState<string | null>(null);
   const [activeControl, setActiveControl] = useState<"start" | "pause" | "stop" | null>(null);
+  const [groupQuery, setGroupQuery] = useState("");
 
   const loadGroups = useCallback(async () => {
     if (!hasPairingIdentity) return;
@@ -859,6 +860,12 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
       setActiveGroup(null);
     }
   };
+
+  const filteredGroups = (data?.groups || []).filter((group) => {
+    const query = groupQuery.trim().toLocaleLowerCase();
+    if (!query) return true;
+    return `${group.group_name} ${group.group_jid}`.toLocaleLowerCase().includes(query);
+  });
 
   if (!hasPairingIdentity) {
     return (
@@ -957,8 +964,21 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
         </div>
       )}
 
-      <div className="mt-4 space-y-3">
-        {data?.groups?.length ? data.groups.map((group) => (
+      <div className="mt-4">
+        {data?.groups?.length ? (
+          <>
+            <div className="mb-3 flex items-center gap-2 rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2">
+              <Search className="h-3.5 w-3.5 shrink-0 text-zinc-500" />
+              <input
+                value={groupQuery}
+                onChange={(event) => setGroupQuery(event.target.value)}
+                placeholder="Search groups to opt out..."
+                className="min-w-0 flex-1 bg-transparent text-xs text-white outline-none placeholder:text-zinc-600"
+              />
+              <span className="shrink-0 text-[10px] text-zinc-600">{filteredGroups.length}/{data.groups.length}</span>
+            </div>
+            <div className="space-y-3">
+            {filteredGroups.map((group) => (
           <div key={group.group_jid} className={`rounded-lg border p-3 ${group.opted_out ? "border-red-500/30 bg-red-500/[0.04]" : "border-emerald-500/20 bg-emerald-500/[0.03]"}`}>
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0 flex-1">
@@ -1035,7 +1055,11 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
               )}
             </div>
           </div>
-        )) : !loading && (
+            ))}
+            {!filteredGroups.length && <div className="rounded-lg border border-dashed border-white/10 px-3 py-4 text-xs text-zinc-500">No groups match “{groupQuery}”.</div>}
+            </div>
+          </>
+        ) : !loading && (
           <div className="rounded-lg border border-dashed border-white/10 px-3 py-4 text-xs text-zinc-500">
             No group directory is available on this connection yet.
           </div>
@@ -1070,6 +1094,7 @@ export default function ConnectionCenterPage() {
   const [extractionPct, setExtractionPct] = useState(0);
   const [recentlyProcessed1h, setRecentlyProcessed1h] = useState(0);
   const [extractionLag, setExtractionLag] = useState<any>(null);
+  const [recentParsedMessages, setRecentParsedMessages] = useState<any[]>([]);
 
   const fetchPhones = useCallback(async () => {
     try {
@@ -1202,7 +1227,9 @@ export default function ConnectionCenterPage() {
   if (authLoading || !user) return null;
 
   const connectedCount = phones.filter((p) => isConnectedPhone(p) || matchesLiveStatus(p, liveStatus)).length;
-  const totalMessages = phones.reduce((sum, p) => sum + (p.total_messages_received || 0), 0);
+  // Connection status counters are not populated by the current WhatsMeow
+  // path. The extraction progress endpoint is the live database-backed count.
+  const totalMessages = rawTotal || phones.reduce((sum, p) => sum + (p.total_messages_received || 0), 0);
 
   return (
     <div className="max-w-6xl mx-auto px-4 lg:px-6 pt-8 pb-12">
@@ -1351,6 +1378,27 @@ export default function ConnectionCenterPage() {
                   </div>
                 </div>
               )}
+            </div>
+          </Section>
+
+          <Section title="Last 10 parsed messages">
+            <div className="divide-y divide-white/[0.06]">
+              {recentParsedMessages.length ? recentParsedMessages.map((item) => (
+                <div key={item.id} className="px-4 py-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="truncate text-xs font-semibold text-white">
+                        {item.broker_name || item.building_name || item.group_name || "Parsed WhatsApp message"}
+                      </div>
+                      <div className="mt-1 truncate text-[11px] text-zinc-500">
+                        {[item.micro_market, item.transaction_type, item.group_name].filter(Boolean).join(" · ") || "Structured extraction saved"}
+                      </div>
+                    </div>
+                    <span className="shrink-0 text-[10px] text-zinc-600">{formatTime(item.raw_timestamp || item.created_at)}</span>
+                  </div>
+                  <div className="mt-2 line-clamp-2 text-[11px] leading-relaxed text-zinc-400">{item.raw_message || "No raw text available"}</div>
+                </div>
+              )) : <div className="px-4 py-4 text-xs text-zinc-500">No parsed messages returned yet.</div>}
             </div>
           </Section>
         </>
