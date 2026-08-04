@@ -15,20 +15,27 @@ const nextConfig: NextConfig = {
     "d3-scale",
   ],
   async rewrites() {
-    return [
-      {
-        source: "/api/chat",
-        destination: "/api/chat",
-      },
-      {
-        source: "/api/:path*",
-        destination: `${apiBaseUrl}/api/:path*`,
-      },
-      {
-        source: "/manifest",
-        destination: "/manifest.json",
-      },
-    ];
+    // Proxy API calls only after Next has checked its own route handlers.
+    // Otherwise the broad /api rewrite sends /api/admin/analytics to FastAPI
+    // and bypasses the local authenticated analytics handler.
+    return {
+      beforeFiles: [],
+      afterFiles: [
+        {
+          source: "/api/chat",
+          destination: "/api/chat",
+        },
+        {
+          source: "/api/:path*",
+          destination: `${apiBaseUrl}/api/:path*`,
+        },
+        {
+          source: "/manifest",
+          destination: "/manifest.json",
+        },
+      ],
+      fallback: [],
+    };
   },
   async headers() {
     return [
