@@ -1430,9 +1430,17 @@ return {
           obs.price_unit,
           obs.area_sqft,
           obs.furnishing,
+          obs.floor_range,
+          obs.floor,
+          obs.wing,
+          obs.flat_number,
+          obs.car_parking_count,
         ].filter(Boolean).join(" ")
       );
-      const normalizedText = obs.fingerprint || opportunitySignature || normalizeMessageForDedupe(
+      // Typed-feed rows currently carry an implementation fingerprint such as
+      // typed:<id>. That is row identity, not opportunity identity, so it must
+      // not prevent reposts from collapsing into one market item.
+      const normalizedText = opportunitySignature || normalizeMessageForDedupe(
         obs.source_message || obs.normalized_message || obs.raw_message || ""
       );
       const brokerKey = normalizeMessageForDedupe(
@@ -3983,10 +3991,10 @@ return {
                     const timeLabel = obsTime
                       ? obsTime.toLocaleDateString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })
                       : "";
-                    // Prefer the actual raw WhatsApp post for display. The
-                    // normalized/summary text is useful for search, but must
-                    // never replace the source message in the inbox UI.
-                    const itemSource = obs.raw_message || obs.source_message || obs.normalized_message || "";
+                    // A bulk WhatsApp post can produce several typed
+                    // observations. Prefer each item's source slice over the
+                    // complete raw message so the listings render separately.
+                    const itemSource = obs.source_message || obs.normalized_message || obs.raw_message || "";
                     const selectedRawText = isSelected
                       ? String(
                           selectedMsgDetails?.raw?.message ||
