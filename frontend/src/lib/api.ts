@@ -161,7 +161,7 @@ export async function fetchFormData<T>(url: string, formData: FormData, timeoutM
       let message = body.trim();
       try {
         const parsed = JSON.parse(body);
-        message = parsed.message || parsed.detail || body;
+        message = parsed.message || parsed.detail || parsed.error || body;
       } catch {
         if (!message) message = "Backend API did not return a response.";
       }
@@ -233,7 +233,7 @@ async function fetchJSONWithRetry<T>(
       let message = body.trim();
       try {
         const parsed = JSON.parse(body);
-        message = parsed.message || parsed.detail || body;
+        message = parsed.message || parsed.detail || parsed.error || body;
       } catch {
         if (!message) {
           message = "Backend API did not return a response. Check that the API server is running.";
