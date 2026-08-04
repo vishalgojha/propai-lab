@@ -1,7 +1,6 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import "mapbox-gl/dist/mapbox-gl.css";
 import type { NaturalSearchResult } from "@/lib/natural-search";
 
 const SearchMap = dynamic(() => import("./SearchMap"), {
@@ -13,10 +12,10 @@ const SearchMap = dynamic(() => import("./SearchMap"), {
 
 export default function SearchMapLoader({
   results,
-  token,
+  apiKey,
 }: {
   results: NaturalSearchResult[];
-  token: string | null;
+  apiKey: string | null;
 }) {
-  return <SearchMap results={results} token={token} />;
+  return <SearchMap results={results} apiKey={apiKey} />;
 }
