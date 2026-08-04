@@ -75,3 +75,32 @@ def test_get_model_pricing_has_groq():
 
 def test_get_model_pricing_unknown_provider_uses_default():
     assert get_model_pricing(provider_name="some-unknown")["input"] == 0.20
+
+
+def test_scoped_backlog_providers_require_both_credentials_and_disable_thinking(monkeypatch):
+    providers = []
+    monkeypatch.setenv("EXTRACTION_MERGE_API_KEY", "merge-key")
+    monkeypatch.setenv("EXTRACTION_MERGE_MODEL", "deepseek-chat")
+    monkeypatch.setenv("EXTRACTION_DOUBLEWORD_API_KEY", "doubleword-key")
+    monkeypatch.setenv("EXTRACTION_DOUBLEWORD_MODEL", "deepseek-ai/DeepSeek-V3")
+
+    ai_extraction._append_extraction_provider(
+        providers,
+        env_prefix="EXTRACTION_MERGE",
+        name="extraction-merge",
+        default_base_url="https://api-gateway.merge.dev/v1/openai",
+    )
+    ai_extraction._append_extraction_provider(
+        providers,
+        env_prefix="EXTRACTION_DOUBLEWORD",
+        name="extraction-doubleword",
+        default_base_url="https://api.doubleword.ai/v1",
+    )
+
+    assert [provider["name"] for provider in providers] == [
+        "extraction-merge",
+        "extraction-doubleword",
+    ]
+    assert all(provider["thinking_disabled"] for provider in providers)
+    assert providers[0]["base_url"] == "https://api-gateway.merge.dev/v1/openai"
+    assert providers[1]["base_url"] == "https://api.doubleword.ai/v1"

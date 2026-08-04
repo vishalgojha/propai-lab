@@ -32,6 +32,12 @@ Set these on each service in Coolify:
 | `DOUBLEWORD_MODEL` | Exact model ID enabled for this key (required when Doubleword is enabled) |
 | `NVIDIA_MODEL`, `GROQ_MODEL`, `GEMINI_MODEL`, `CEREBRAS_MODEL`, `GRID_MODEL` | Exact model ID for each enabled provider; do not set a key without its matching model variable |
 | `EXTRACTION_MODEL` | Optional. Pin the model used first for extraction (e.g. `llama-3.1-8b-instant`). Extraction prefers small/fast models over premium ones and keeps them only as a costlier fallback. |
+| `EXTRACTION_MERGE_API_KEY` | Optional extraction-only Merge Gateway key for controlled backlog draining; do not reuse the interactive chat key. |
+| `EXTRACTION_MERGE_MODEL` | Exact model ID enabled for the extraction-only Merge key. Required with `EXTRACTION_MERGE_API_KEY`. |
+| `EXTRACTION_MERGE_BASE_URL` | Optional; defaults to `https://api-gateway.merge.dev/v1/openai`. |
+| `EXTRACTION_DOUBLEWORD_API_KEY` | Optional extraction-only Doubleword inference key for controlled backlog draining. |
+| `EXTRACTION_DOUBLEWORD_MODEL` | Exact model ID enabled for the extraction-only Doubleword key. Required with `EXTRACTION_DOUBLEWORD_API_KEY`. |
+| `EXTRACTION_DOUBLEWORD_BASE_URL` | Optional; defaults to `https://api.doubleword.ai/v1`. Thinking is disabled for this scoped provider. |
 | `DOUBLEWORD_EMBEDDING_MODEL` | Exact embedding model ID, if the MCP embedding service is enabled |
 | `FRONTEND_URL` | `https://app.propai.live` |
 | `STATUS_FILE` | `/data/status.json` |
