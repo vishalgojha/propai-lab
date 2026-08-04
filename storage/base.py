@@ -482,6 +482,15 @@ class Storage(ABC):
     @abstractmethod
     def save_parsed(self, obs: ParsedObservation) -> int: ...
 
+    def save_typed_observation(self, obs: ParsedObservation) -> int:
+        """Persist an observation through the typed-table adapter.
+
+        Concrete storage implementations may override this method.  The
+        fallback keeps older test doubles/source adapters compatible while
+        callers migrate away from the legacy method name.
+        """
+        return self.save_parsed(obs)
+
     @abstractmethod
     def get_parsed_by_raw(self, raw_id: int) -> Optional[ParsedObservation]: ...
 

@@ -351,7 +351,7 @@ async function fetchParsedMarketRows(limit: number, since?: string, filters?: {
   listingKind?: "listing" | "requirement";
 }) {
   let query = supabase
-    .from("typed_parsed_output")
+    .from("parsed_output_unified")
     .select(PARSED_MARKET_COLUMNS)
     .order("created_at", { ascending: false, nullsFirst: false })
     .limit(limit);
@@ -407,7 +407,7 @@ async function fetchListingTableRows(limit: number, since?: string, filters?: {
   budgetMinCr?: number;
 }) {
   let query = supabase
-    .from("typed_listings_index")
+    .from("listings_unified")
     .select(LISTING_MARKET_COLUMNS)
     .order("last_seen", { ascending: false, nullsFirst: false })
     .limit(limit);
@@ -524,7 +524,7 @@ export async function getWorkspaceListings(input: {
   limit?: number;
 }) {
   const { data, error } = await supabase
-    .from("typed_listings_index")
+    .from("listings_unified")
     .select("id, intent, bhk, price, price_unit, area_sqft, furnishing, location_label, micro_market, building_name, broker_name, broker_phone, created_at, last_seen")
     .eq("tenant_id", input.brokerId)
     .order("last_seen", { ascending: false, nullsFirst: false })
@@ -763,24 +763,47 @@ export async function saveListingRecord(input: {
     source: "mcp",
   };
 
+  const fingerprint = mcpFingerprint("mcp-listing", input.brokerId, input.raw_text);
+  const rawMessagePayload = {
+    tenant_id: input.brokerId,
+    group_name: "MCP saved listing",
+    sender: input.name || "MCP",
+    sender_phone: structured.contact_number,
+    message: input.raw_text,
+    message_type: "text",
+    timestamp: new Date().toISOString(),
+    source: "mcp",
+    raw_payload: structured,
+    message_uid: fingerprint,
+    synced_at: new Date().toISOString(),
+  };
+
+  // Typed listing tables require provenance. Reuse the source message on an
+  // idempotent retry, otherwise create one before writing the typed row.
+  const { data: existingMessage, error: existingMessageError } = await supabase
+    .from("raw_messages")
+    .select("id")
+    .eq("tenant_id", input.brokerId)
+    .eq("message_uid", fingerprint)
+    .limit(1)
+    .maybeSingle();
+  if (existingMessageError) throw new Error(existingMessageError.message);
+
+  let rawMessageId = existingMessage?.id as number | undefined;
+  if (!rawMessageId) {
+    const { data: insertedMessage, error: messageError } = await supabase
+      .from("raw_messages")
+      .insert(rawMessagePayload)
+      .select("id")
+      .single();
+    if (messageError) throw new Error(messageError.message);
+    rawMessageId = insertedMessage.id as number;
+  }
+
+  const typed = buildMcpTypedListing(input, structured, fingerprint, rawMessageId);
   const { data, error } = await supabase
-    .from("typed_listings_index")
-    .upsert({
-      tenant_id: input.brokerId,
-      fingerprint: mcpFingerprint("mcp-listing", input.brokerId, input.raw_text),
-      intent: "listing",
-      bhk: input.bhk || null,
-      price: parseBudgetToCr(input.price),
-      price_unit: input.price ? "cr" : null,
-      area_sqft: toNumber(input.carpet_area),
-      furnishing: input.furnishing || null,
-      location_label: input.location || null,
-      micro_market: input.location || null,
-      broker_name: input.name || null,
-      broker_phone: normalizePhone(input.contact_number || input.phone) || null,
-      listing_source: "mcp",
-      last_seen: new Date().toISOString(),
-    }, { onConflict: "fingerprint" })
+    .from(typed.table)
+    .upsert(typed.row, { onConflict: "source_fingerprint" })
     .select("id, created_at")
     .single();
 
@@ -805,6 +828,122 @@ export async function saveListingRecord(input: {
     lead,
     listing: structured,
   };
+}
+
+function buildMcpTypedListing(
+  input: {
+    brokerId: string;
+    name?: string;
+    phone?: string;
+    raw_text: string;
+    bhk?: string;
+    location?: string;
+    price?: string;
+    carpet_area?: string;
+    furnishing?: string;
+    possession_date?: string;
+    contact_number?: string;
+  },
+  structured: Record<string, unknown>,
+  sourceFingerprint: string,
+  rawMessageId: number,
+) {
+  const text = input.raw_text.toLowerCase();
+  const commercial = /\b(office|shop|showroom|warehouse|godown|industrial|retail|commercial|cam|chargeable|mezzanine|cabin|workstation|psf|per\s+sq\.?\s*ft)\b/i.test(text);
+  const rent = /\b(rent|rental|lease|monthly|deposit|lock[- ]?in|notice\s+period|per\s+month)\b/i.test(text);
+  const assetType = commercial ? "commercial" : "residential";
+  const transactionType = rent ? "rent" : "sale";
+  const table = `${assetType}_${transactionType}_listings`;
+  const area = toNumber(input.carpet_area);
+  const price = parseMcpTypedPrice(input.price, transactionType, area);
+  const locality = input.location || null;
+  const common = {
+    raw_message_id: rawMessageId,
+    tenant_id: input.brokerId,
+    listing_index: 0,
+    asset_type: assetType,
+    transaction_type: transactionType,
+    source_fingerprint: sourceFingerprint,
+    locality_raw: locality,
+    locality_resolved: locality,
+    micro_market: locality,
+    broker_name: input.name || null,
+    broker_phone: normalizePhone(input.contact_number || input.phone) || null,
+    summary_title: input.raw_text.split(/\r?\n/).find(Boolean)?.trim() || null,
+    normalized_message: input.raw_text,
+    raw_payload: { full_text: input.raw_text, structured },
+    ai_extraction: { source: "mcp", ...structured },
+    needs_review: true,
+    validation_flags: ["mcp_manual_save"],
+    extraction_confidence: "low",
+    deal_tags: [],
+    carpet_area_sqft: area,
+    price_raw_text: input.price || null,
+    price_qualifier: null,
+  } as Record<string, unknown>;
+
+  if (assetType === "commercial") {
+    common.commercial_use_type = "office";
+    common.fitout_status = normalizeMcpFitout(input.furnishing);
+  } else {
+    common.bhk = parseBhk(input.bhk);
+    common.furnishing_status = normalizeMcpFurnishing(input.furnishing);
+    if (input.possession_date) common.possession_date = input.possession_date;
+  }
+
+  if (transactionType === "rent") {
+    if (price.perSqft != null) {
+      common.rent_per_sqft = price.perSqft;
+    }
+    common.monthly_rent = price.total;
+    if (assetType === "commercial") {
+      common.price_basis = "carpet";
+    } else if (input.possession_date) {
+      common.available_from = input.possession_date;
+    }
+  } else {
+    if (price.perSqft != null) common.price_per_sqft = price.perSqft;
+    common.total_asking_price = price.total;
+    if (assetType === "commercial") common.price_basis = "carpet";
+  }
+
+  return { table, row: Object.fromEntries(Object.entries(common).filter(([, value]) => value !== null && value !== undefined)) };
+}
+
+function parseMcpTypedPrice(value: string | undefined, transactionType: "sale" | "rent", area: number | null) {
+  if (!value) return { total: null, perSqft: null };
+  const text = value.toLowerCase().replace(/,/g, "");
+  const numberMatch = text.match(/\d+(?:\.\d+)?/);
+  if (!numberMatch) return { total: null, perSqft: null };
+  const amount = Number(numberMatch[0]);
+  if (/\b(psf|per\s*sq\.?\s*ft|per\s*sqft)\b/.test(text)) {
+    return { total: area ? amount * area : null, perSqft: amount };
+  }
+  const multiplier = /\b(cr|crore|crores)\b/.test(text)
+    ? 10_000_000
+    : /\b(lac|lakh|lakhs|lacs|l)\b/.test(text)
+      ? 100_000
+      : /\b(k|thousand)\b/.test(text)
+        ? 1_000
+        : 1;
+  const total = amount * multiplier;
+  return { total: transactionType === "rent" ? total : total, perSqft: null };
+}
+
+function normalizeMcpFurnishing(value?: string) {
+  const text = (value || "").toLowerCase();
+  if (text.includes("semi")) return "semi_furnished";
+  if (text.includes("furnish")) return "fully_furnished";
+  if (text.includes("bare") || text.includes("unfurnish")) return "unfurnished";
+  return undefined;
+}
+
+function normalizeMcpFitout(value?: string) {
+  const text = (value || "").toLowerCase();
+  if (text.includes("plug") || text.includes("fully fitted")) return "plug_and_play";
+  if (text.includes("warm")) return "warmshell";
+  if (text.includes("bare")) return "bareshell";
+  return undefined;
 }
 
 export async function createRequirementRecord(input: {
@@ -891,7 +1030,7 @@ export async function getBrokerActivity(input: { brokerId: string; days?: number
 
   const [listingResult, requirementResult, messageResult, followUpResult] = await Promise.all([
     supabase
-      .from("typed_listings_index")
+      .from("listings_unified")
       .select("micro_market, location_label, created_at")
       .eq("tenant_id", input.brokerId)
       .gte("created_at", since)
@@ -1938,7 +2077,7 @@ export async function getBuildingIntel(input: {
 export async function fetchListingById(listingId: string) {
   const parts = sourceIdParts(listingId);
   let query = supabase
-    .from("typed_parsed_output")
+    .from("parsed_output_unified")
     .select(PARSED_MARKET_COLUMNS);
 
   if (parts.rawId != null) {

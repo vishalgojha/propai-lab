@@ -136,7 +136,7 @@ class BuildingDiscovery:
                    STRING_AGG(DISTINCT p.micro_market, ',') as market_list,
                    (
                      SELECT micro_market
-                     FROM typed_parsed_output p2
+                     FROM parsed_output_unified p2
                      WHERE LOWER(p2.building_name) = LOWER(p.building_name)
                        AND p2.micro_market IS NOT NULL AND p2.micro_market != ''
                      GROUP BY p2.micro_market
@@ -145,7 +145,7 @@ class BuildingDiscovery:
                    ) as primary_market,
                    MIN(created_at) as first_seen,
                    MAX(created_at) as last_seen
-            FROM typed_parsed_output p
+            FROM parsed_output_unified p
             WHERE p.building_name IS NOT NULL AND p.building_name != ''
             GROUP BY LOWER(p.building_name)
             HAVING obs_count >= ?

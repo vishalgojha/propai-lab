@@ -62,7 +62,9 @@ def test_save_parsed_writes_directly_to_typed_rent_table():
         location_raw="Bandra West",
         broker_name="Broker A",
     ))
-    assert source_id == 77001
+    # The typed table owns the new identity; the legacy observation id is
+    # retained only as provenance in legacy_source_id.
+    assert source_id == 101
     assert len(storage.client.writes) == 1
     table, payload, options = storage.client.writes[0]
     assert table == "residential_rent_listings"

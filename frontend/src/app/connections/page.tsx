@@ -4,9 +4,9 @@ export const dynamic = 'force-dynamic';
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Clock, Database, List, LogOut, MessageSquare, RefreshCw, Shield, Smartphone, AlertTriangle, Users, Zap, X, ChevronLeft, MoreVertical, User, Check, Hash } from "lucide-react";
+import { Clock, Database, List, LogOut, MessageSquare, RefreshCw, Shield, Smartphone, AlertTriangle, Users, Zap, X, ChevronLeft, MoreVertical, User, Check, Hash, Play, Pause, Square } from "lucide-react";
 import { useAuth } from "@/lib/AuthProvider";
-import { getPhones, deletePhone, resetPhone, disconnectPhone, connectPhone, pairCodePhone, getPairCodePhoneStatus, updatePhone, fetchJSON, isLiveWhatsAppConnection, getOnboardingGroups, checkOnboardingGroup, optOutOnboardingGroup, optInOnboardingGroup, type Phone, type WhatsAppStatus, type OnboardingGroup, type OnboardingGroupCheck, type OnboardingGroupState } from "@/lib/api";
+import { getPhones, deletePhone, resetPhone, disconnectPhone, connectPhone, pairCodePhone, getPairCodePhoneStatus, updatePhone, fetchJSON, isLiveWhatsAppConnection, getOnboardingGroups, optOutOnboardingGroup, optInOnboardingGroup, startExtraction, pauseExtraction, stopExtraction, type Phone, type WhatsAppStatus, type OnboardingGroup, type OnboardingGroupState } from "@/lib/api";
 import QRCode from "qrcode";
 
 type HealthStatus = "healthy" | "warning" | "error";
@@ -775,6 +775,7 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [activeGroup, setActiveGroup] = useState<string | null>(null);
+  const [activeControl, setActiveControl] = useState<"start" | "pause" | "stop" | null>(null);
 
   const loadGroups = useCallback(async () => {
     if (!hasPairingIdentity) return;
@@ -796,16 +797,24 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
     void loadGroups();
   }, [loadGroups]);
 
-  const handleOptOut = async (group: OnboardingGroup, precheck?: OnboardingGroupCheck) => {
+  const handleOptOut = async (group: OnboardingGroup) => {
     setActiveGroup(group.group_jid);
     setError(null);
     setMessage(null);
     try {
-      const check = precheck || await checkOnboardingGroup(phone.id, group.group_jid);
-      await optOutOnboardingGroup(phone.id, group.group_jid);
+      await optOutOnboardingGroup(phone.id, group.group_jid, group.group_name);
+      // Make the persisted action visible immediately. A directory/status
+      // refresh is useful but must not make a successful save look failed.
+      setData((current) => current ? {
+        ...current,
+        groups: current.groups.map((item) => item.group_jid === group.group_jid
+          ? { ...item, opted_out: true, connected: false }
+          : item),
+        opted_out_count: current.opted_out_count + (group.opted_out ? 0 : 1),
+      } : current);
       setMessage(`Opted-out ${group.group_name}.`);
-      await loadGroups();
-      await onRefresh();
+      void loadGroups().catch(() => undefined);
+      void Promise.resolve(onRefresh()).catch(() => undefined);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not opt-out the group.");
     } finally {
@@ -813,8 +822,29 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
     }
   };
 
+  const handleExtractionControl = async (action: "start" | "pause" | "stop") => {
+    if (action === "stop" && !window.confirm("Stop extraction for this phone? Queued messages will be preserved and can be processed later.")) return;
+    setActiveControl(action);
+    setError(null);
+    setMessage(null);
+    try {
+      const result = action === "start"
+        ? await startExtraction(phone.id)
+        : action === "pause"
+          ? await pauseExtraction(phone.id)
+          : await stopExtraction(phone.id);
+      setMessage(result.message);
+      await loadGroups();
+      await onRefresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not update extraction state.");
+    } finally {
+      setActiveControl(null);
+    }
+  };
+
   const handleOptIn = async (group: OnboardingGroup) => {
-    if (!window.confirm(`Resume extraction for ${group.group_name}?`)) return;
+    if (!window.confirm(`Include ${group.group_name} in extraction again?`)) return;
     setActiveGroup(group.group_jid);
     setError(null);
     setMessage(null);
@@ -835,10 +865,10 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
       <div className="rounded-xl border border-white/10 p-4">
         <div className="flex items-center gap-2">
           <Shield className="h-4 w-4 text-zinc-500" />
-          <div className="text-sm font-semibold text-white">Active groups</div>
+          <div className="text-sm font-semibold text-white">WhatsApp group extraction</div>
         </div>
         <div className="mt-2 text-xs text-zinc-500">
-          Pair this phone first. After pairing, this section will show every joined group with an extraction toggle. You can opt out of any number of personal, family, client, or internal groups.
+          Pair this phone first. After pairing, review the joined groups and opt out of any personal, family, client, or internal groups before starting extraction. Pairing alone does not start extraction.
         </div>
       </div>
     );
@@ -850,7 +880,7 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
         <div>
           <div className="flex items-center gap-2">
             <Shield className="h-4 w-4 text-zinc-300" />
-            <div className="text-sm font-semibold text-white">Active groups</div>
+            <div className="text-sm font-semibold text-white">WhatsApp group extraction</div>
           </div>
           <div className="mt-1 text-xs text-zinc-500">
             {phone.instance_name || formatPhone(phone.phone_number_live || phone.phone_number)} · {data ? `${data.opted_out_count} opted-out` : "loading group settings"}
@@ -866,6 +896,43 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
       {loading && <div className="mt-3 text-xs text-zinc-500">Loading group directory...</div>}
       {error && <div className="mt-3 text-xs text-red-400">{error}</div>}
       {message && <div className="mt-3 text-xs text-emerald-300">{message}</div>}
+
+      {data && (
+        <div className="mt-4 rounded-lg border border-white/10 bg-white/[0.02] p-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div className="text-xs font-semibold uppercase tracking-wider text-zinc-300">Extraction control</div>
+              <div className="mt-1 text-[11px] text-zinc-500">
+                {data.extraction_status === "running"
+                  ? "Running: eligible groups are being processed."
+                  : data.extraction_status === "paused"
+                    ? "Paused: queued messages are preserved."
+                    : "Stopped: queued messages are preserved."}
+              </div>
+            </div>
+            <span className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${
+              data.extraction_status === "running"
+                ? "border-emerald-400/30 bg-emerald-500/10 text-emerald-300"
+                : data.extraction_status === "paused"
+                  ? "border-amber-400/30 bg-amber-500/10 text-amber-300"
+                  : "border-zinc-500/30 bg-zinc-500/10 text-zinc-300"
+            }`}>
+              {data.extraction_status === "running" ? "Running" : data.extraction_status === "paused" ? "Paused" : "Stopped"}
+            </span>
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button type="button" onClick={() => void handleExtractionControl("start")} disabled={activeControl !== null || data.extraction_status === "running"} className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-400 px-3 py-1.5 text-[11px] font-semibold text-black hover:bg-emerald-300 disabled:cursor-not-allowed disabled:opacity-40">
+              <Play className="h-3 w-3" /> {activeControl === "start" ? "Starting..." : "Start extraction"}
+            </button>
+            <button type="button" onClick={() => void handleExtractionControl("pause")} disabled={activeControl !== null || data.extraction_status !== "running"} className="inline-flex items-center gap-1.5 rounded-lg border border-amber-400/30 px-3 py-1.5 text-[11px] font-semibold text-amber-300 hover:bg-amber-500/10 disabled:cursor-not-allowed disabled:opacity-40">
+              <Pause className="h-3 w-3" /> {activeControl === "pause" ? "Pausing..." : "Pause"}
+            </button>
+            <button type="button" onClick={() => void handleExtractionControl("stop")} disabled={activeControl !== null || data.extraction_status === "stopped"} className="inline-flex items-center gap-1.5 rounded-lg border border-red-400/30 px-3 py-1.5 text-[11px] font-semibold text-red-300 hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-40">
+              <Square className="h-3 w-3" /> {activeControl === "stop" ? "Stopping..." : "Stop"}
+            </button>
+          </div>
+        </div>
+      )}
 
       {data && (
         <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
@@ -886,7 +953,7 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
 
       {data && data.groups.length > 0 && (
         <div className="mt-3 rounded-lg border border-cyan-500/20 bg-cyan-500/[0.04] px-3 py-2 text-[11px] text-zinc-400">
-          All connected groups are extracted by default. Opt out of any groups you don't want indexed — including personal, family, client, or internal team groups. Duplicate risk is based on sampled sender numbers already seen across your broker network.
+          Pairing only connects WhatsApp. Opt out of any groups you don't want indexed — including personal, family, client, or internal team groups — then press Start extraction. You can pause or stop later; queued messages are preserved. Duplicate risk is based on sampled sender numbers already seen across your broker network.
         </div>
       )}
 
@@ -900,7 +967,9 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
                   {group.opted_out ? (
                     <span className="rounded-full border border-red-500/30 bg-red-500/10 px-2 py-0.5 text-[10px] font-semibold text-red-300">Opted-out</span>
                   ) : (
-                    <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-300">Active · extracting</span>
+                    <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-300">
+                      {data?.extraction_status === "running" ? "Included · extracting" : "Included · ready"}
+                    </span>
                   )}
                   {!group.opted_out && group.suggestion && group.suggestion.score >= 0.3 && (
                     <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-300">
@@ -951,7 +1020,7 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
                   disabled={activeGroup === group.group_jid}
                   className="rounded-lg border border-emerald-400/30 px-3 py-1.5 text-[11px] font-semibold text-emerald-300 hover:bg-emerald-500/10 disabled:opacity-50"
                 >
-                  {activeGroup === group.group_jid ? "Re-enabling..." : "Resume extraction"}
+                  {activeGroup === group.group_jid ? "Including..." : "Include group"}
                 </button>
               ) : (
                 <div className="flex shrink-0 items-center gap-2">
@@ -1198,7 +1267,7 @@ export default function ConnectionCenterPage() {
 
           {phones.some((phone) => !isPlaceholderPhone(phone.phone_number) || !isPlaceholderPhone(phone.phone_number_live)) ? (
             <div className="mb-8">
-              <Section title="Active groups">
+              <Section title="Extraction controls">
                 <div className="space-y-4 p-2">
                   {phones
                     .filter((phone) => !isPlaceholderPhone(phone.phone_number) || !isPlaceholderPhone(phone.phone_number_live))

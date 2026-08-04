@@ -8,8 +8,8 @@ source message and re-resolves the locality.
 
 Supported targets:
 
-- ``typed_listings_index`` (uses ``representative_raw_message_id``)
-- ``typed_parsed_output`` (uses ``raw_message_id``)
+- ``listings_unified`` (uses ``representative_raw_message_id``)
+- ``parsed_output_unified`` (uses ``raw_message_id``)
 
 Default behavior is *dry-run*: prints mismatches and writes a CSV
 report. **No data is modified** unless ``--apply`` is also passed.
@@ -20,13 +20,13 @@ Usage:
     python backfill_localities.py [--batch-size 2000] [--output report.csv]
 
     # dry-run report for the parsed projection
-    python backfill_localities.py --target typed_parsed_output
+    python backfill_localities.py --target parsed_output_unified
 
     # preview what --apply would change, without writing
     python backfill_localities.py --apply --dry-run-apply --target both
 
     # apply: only fills rows whose micro_market is null/empty
-    python backfill_localities.py --apply --target typed_listings_index \
+    python backfill_localities.py --apply --target listings_unified \
         --tenant-id <org-uuid>
 
     # apply + also overwrite populating-but-different rows (dangerous)
@@ -36,7 +36,7 @@ Usage:
 Safety rules (see ``docs/DATA_QUALITY.md``):
 
 - Without ``--overwrite-existing`` the apply path **never** rewrites a
-  non-null ``micro_market``. ``typed_parsed_output.location_raw`` is also only
+  non-null ``micro_market``. ``parsed_output_unified.location_raw`` is also only
   filled when currently null, and uses the matched span or original
   message snippet — never a normalized/resolved value.
 - ``--apply`` requires ``--tenant-id`` because both typed projections are
@@ -183,7 +183,7 @@ def run_backfill(batch_size: int = 2000, output_path: str = "locality_backfill_r
 
     while True:
         result = (
-            db.table("typed_listings_index")
+            db.table("listings_unified")
             .select(
                 "id, building_name, micro_market, canonical_micro_market_slug, "
                 "representative_raw_message_id"
@@ -387,7 +387,7 @@ def _apply_listings(
         "scanned": 0, "eligible": 0, "updated": 0,
         "skipped_existing": 0, "skipped_low_confidence": 0, "errors": 0,
     }
-    conn = db.table("typed_listings_index")
+    conn = db.table("listings_unified")
     offset = 0
     while True:
         query = conn.select(
@@ -441,7 +441,7 @@ def _apply_listings(
             audit_row = {
                 "applied_at": datetime.utcnow().isoformat() + "Z",
                 "tenant_id": listing.get("tenant_id") or tenant_id or "",
-                "target_table": "typed_listings_index",
+                "target_table": "listings_unified",
                 "row_id": row_id,
                 "old_micro_market": current,
                 "new_micro_market": new_value,
@@ -465,7 +465,7 @@ def _apply_listings(
                 audit.writerow(audit_row)
                 counters["updated"] += 1
             except Exception as exc:  # pragma: no cover - hot path log only
-                print(f"  ERR typed_listings_index.id={row_id}: {exc}", file=sys.stderr)
+                print(f"  ERR listings_unified.id={row_id}: {exc}", file=sys.stderr)
                 counters["errors"] += 1
         if len(batch) < PAGE:
             break
@@ -473,7 +473,7 @@ def _apply_listings(
     return counters
     """Paginated typed-listing apply — replaces the placeholder loop above."""
     counters = initial_counters
-    conn = db.table("typed_listings_index")
+    conn = db.table("listings_unified")
     offset = 0
     while True:
         query = conn.select(
@@ -527,7 +527,7 @@ def _apply_listings(
             audit_row = {
                 "applied_at": datetime.utcnow().isoformat() + "Z",
                 "tenant_id": listing.get("tenant_id") or tenant_id or "",
-                "target_table": "typed_listings_index",
+                "target_table": "listings_unified",
                 "row_id": row_id,
                 "old_micro_market": current,
                 "new_micro_market": new_value,
@@ -548,7 +548,7 @@ def _apply_listings(
                 audit.writerow(audit_row)
                 counters["updated"] += 1
             except Exception as exc:  # pragma: no cover - hot path log only
-                print(f"  ERR typed_listings_index.id={row_id}: {exc}", file=sys.stderr)
+                print(f"  ERR listings_unified.id={row_id}: {exc}", file=sys.stderr)
                 counters["errors"] += 1
         if len(batch) < PAGE:
             break
@@ -574,7 +574,7 @@ def _apply_parsed_output(
     usable. The script never writes a normalized/resolved value into
     ``location_raw`` — see ``docs/DATA_QUALITY.md``.
     """
-    conn = db.table("typed_parsed_output")
+    conn = db.table("parsed_output_unified")
     counters = {
         "scanned": 0, "eligible": 0, "updated": 0,
         "skipped_existing": 0, "skipped_low_confidence": 0, "errors": 0,
@@ -644,7 +644,7 @@ def _apply_parsed_output(
             audit_row = {
                 "applied_at": datetime.utcnow().isoformat() + "Z",
                 "tenant_id": parsed.get("tenant_id") or tenant_id or "",
-                "target_table": "typed_parsed_output",
+                "target_table": "parsed_output_unified",
                 "row_id": row_id,
                 "old_micro_market": current_market,
                 "new_micro_market": new_market,
@@ -671,7 +671,7 @@ def _apply_parsed_output(
                 audit.writerow(audit_row)
                 counters["updated"] += 1
             except Exception as exc:  # pragma: no cover - hot path log only
-                print(f"  ERR typed_parsed_output.id={row_id}: {exc}", file=sys.stderr)
+                print(f"  ERR parsed_output_unified.id={row_id}: {exc}", file=sys.stderr)
                 counters["errors"] += 1
         if len(batch) < PAGE:
             break
@@ -690,10 +690,10 @@ def run_apply(
 ):
     """Orchestrator for the ``--apply`` / ``--dry-run-apply`` paths.
 
-    Targets: ``"typed_listings_index"``, ``"typed_parsed_output"``, ``"both"``.
+    Targets: ``"listings_unified"``, ``"parsed_output_unified"``, ``"both"``.
     """
-    if target not in {"typed_listings_index", "typed_parsed_output", "both"}:
-        sys.exit(f"--target must be typed_listings_index|typed_parsed_output|both (got {target!r})")
+    if target not in {"listings_unified", "parsed_output_unified", "both"}:
+        sys.exit(f"--target must be listings_unified|parsed_output_unified|both (got {target!r})")
     if not tenant_id:
         sys.exit(
             "ERROR: --apply (or --dry-run-apply) requires --tenant-id. "
@@ -726,17 +726,17 @@ def run_apply(
     audit, audit_fh = _open_audit_csv(audit_csv)
     overall = {}
     try:
-        if target in {"typed_listings_index", "both"}:
-            print("\n→ typed_listings_index")
-            overall["typed_listings_index"] = _apply_listings(
+        if target in {"listings_unified", "both"}:
+            print("\n→ listings_unified")
+            overall["listings_unified"] = _apply_listings(
                 db, resolver,
                 overwrite_existing=overwrite_existing,
                 min_confidence=min_confidence,
                 dry_run=dry_run_apply, audit=audit, tenant_id=tenant_id,
             )
-        if target in {"typed_parsed_output", "both"}:
-            print("\n→ typed_parsed_output")
-            overall["typed_parsed_output"] = _apply_parsed_output(
+        if target in {"parsed_output_unified", "both"}:
+            print("\n→ parsed_output_unified")
+            overall["parsed_output_unified"] = _apply_parsed_output(
                 db, resolver,
                 overwrite_existing=overwrite_existing,
                 min_confidence=min_confidence,
@@ -789,8 +789,8 @@ def main():
              "sanity check before the real apply."
     )
     parser.add_argument(
-        "--target", choices=["typed_listings_index", "typed_parsed_output", "both"], default="typed_listings_index",
-        help="Which typed projection to operate on. Dry-run default = typed_listings_index."
+        "--target", choices=["listings_unified", "parsed_output_unified", "both"], default="listings_unified",
+        help="Which typed projection to operate on. Dry-run default = listings_unified."
     )
     parser.add_argument(
         "--overwrite-existing", action="store_true",
@@ -829,13 +829,13 @@ def main():
         )
     else:
         # Dry-run historical behaviour: only the typed listing projection, write the report CSV.
-        if args.target != "typed_listings_index":
+        if args.target != "listings_unified":
             print(
                 f"NOTE: dry-run mode only scans {args.target!r} table "
-                "when --target != 'typed_listings_index' and --apply is omitted; "
+                "when --target != 'listings_unified' and --apply is omitted; "
                 "this is exactly the historical behaviour of "
                 "backfill_localities.py. Use --dry-run-apply to exercise "
-                "the apply path on typed_parsed_output without writes.",
+                "the apply path on parsed_output_unified without writes.",
                 file=sys.stderr,
             )
         run_backfill(batch_size=args.batch_size, output_path=args.output)

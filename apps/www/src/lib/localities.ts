@@ -214,7 +214,7 @@ export async function getLocalityData(rawSlug: string): Promise<LocalityData | n
       const collected: ListingRow[] = [];
       for (let offset = 0; ; offset += PAGE) {
         const { data: page, error: qErr } = await db
-          .from("typed_listings_index")
+          .from("listings_unified")
           .select("building_name, bhk, price, price_unit, intent")
           .eq("canonical_micro_market_slug", slug)
           .gte("last_seen", thirtyDaysAgo)
@@ -236,7 +236,7 @@ export async function getLocalityData(rawSlug: string): Promise<LocalityData | n
     if (!rows) {
       try {
         const { count } = await db
-          .from("typed_listings_index")
+          .from("listings_unified")
           .select("id", { count: "exact", head: true })
           .eq("canonical_micro_market_slug", slug);
         if (count && count > 0) {
@@ -457,7 +457,7 @@ export async function getLocalityListings(
   const collected: ListingCardFields[] = [];
   for (let offset = 0; ; offset += PAGE) {
     const { data, error } = await db
-      .from("typed_listings_index")
+      .from("listings_unified")
       .select(
         "id, bhk, price, price_unit, price_model, price_per_sqft, area_sqft, furnishing, intent, asset_type, property_type, micro_market, building_name, landmark_name, location_label, floor_description, view, representative_raw_message_id, latest_raw_message_id, broker_name, broker_phone, last_seen",
       )
@@ -553,7 +553,7 @@ async function fetchAllLocalities(): Promise<LocalitySummary[]> {
   let all: Array<{ canonical_micro_market_slug: string | null }> = [];
   for (let offset = 0; ; offset += PAGE) {
     const res = await db
-      .from("typed_listings_index")
+      .from("listings_unified")
       .select("canonical_micro_market_slug")
       .not("canonical_micro_market_slug", "is", null)
       .gte("last_seen", thirtyDaysAgo)
@@ -628,7 +628,7 @@ async function fetchAllBuildings(limit = 5000): Promise<BuildingSummary[]> {
 
   const thirtyDaysAgo = new Date(Date.now() - 30 * 86_400_000).toISOString();
   const { data: listings } = await db
-    .from("typed_listings_index")
+    .from("listings_unified")
     .select("building_name")
     .not("building_name", "is", null)
     .gte("last_seen", thirtyDaysAgo);
@@ -894,7 +894,7 @@ export async function getBuildingListings(name: string): Promise<BuildingListing
 
   for (let offset = 0; ; offset += PAGE) {
     const { data, error } = await db
-      .from("typed_listings_index")
+      .from("listings_unified")
       .select(
         "id, bhk, price, price_unit, price_model, price_per_sqft, furnishing, intent, asset_type, property_type, micro_market, view, floor_description, building_name, broker_name, broker_phone, last_seen, representative_raw_message_id, latest_raw_message_id",
       )
@@ -949,7 +949,7 @@ export async function getListingById(id: number): Promise<ListingDetail | null> 
   if (!db || !Number.isFinite(id)) return null;
 
   const { data, error } = await db
-    .from("typed_listings_index")
+    .from("listings_unified")
     .select(
       "id, bhk, price, price_unit, price_model, price_per_sqft, area_sqft, furnishing, intent, asset_type, property_type, location_label, landmark_name, micro_market, view, floor_description, broker_name, broker_phone, last_seen, building_name, representative_raw_message_id, representative_listing_index, latest_raw_message_id, deal_tags, additional_charges",
     )
@@ -984,7 +984,7 @@ export async function getListingById(id: number): Promise<ListingDetail | null> 
           .eq("id", rawMsgId)
           .maybeSingle(),
         db
-          .from("typed_parsed_output")
+          .from("parsed_output_unified")
           .select("normalized_message")
           .eq("raw_message_id", rawMsgId)
           .eq("listing_index", listingIndex)
@@ -1085,7 +1085,7 @@ export async function getRecentListingsForSitemap(
   const sinceMs = Date.now() - opts.sinceDays * 86_400_000;
   const sinceIso = new Date(sinceMs).toISOString();
   const { data, error } = await db
-    .from("typed_listings_index")
+    .from("listings_unified")
     .select("id, last_seen, micro_market, bhk, building_name, property_type")
     .gte("last_seen", sinceIso)
     .order("last_seen", { ascending: false })
@@ -1104,7 +1104,7 @@ export async function getBrokerAreas(
   const db = getServerSupabase();
   if (!db) return [];
   const { data, error } = await db
-    .from("typed_listings_index")
+    .from("listings_unified")
     .select("micro_market")
     .eq("broker_phone", brokerPhone)
     .not("micro_market", "is", null)
@@ -1133,7 +1133,7 @@ export async function getSimilarListingsForExpired(
   freshnessCutoff.setDate(freshnessCutoff.getDate() - 90);
   const freshnessCutoffIso = freshnessCutoff.toISOString();
 
-  let query = db.from("typed_listings_index").select("id, micro_market, bhk, building_name, price, price_unit, last_seen, property_type").gte("last_seen", freshnessCutoffIso);
+  let query = db.from("listings_unified").select("id, micro_market, bhk, building_name, price, price_unit, last_seen, property_type").gte("last_seen", freshnessCutoffIso);
 
   if (opts.micro_market) {
     query = query.eq("micro_market", opts.micro_market);

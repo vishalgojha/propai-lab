@@ -65,6 +65,9 @@ _sqlite3.Connection*
 
 # Supabase migrations (applied directly, not tracked in repo)
 supabase/migrations/
+!supabase/
+!supabase/migrations/
+!supabase/migrations/20260804010000_alias_cleanup_live_views.sql
 
 # MCP build artifacts (not real work)
 apps/mcp/dist/

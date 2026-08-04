@@ -165,7 +165,7 @@ def _select_candidates(storage: SupabaseStorage, limit: int, threshold: float) -
     # Separate indexed reads avoid a broad OR plus embedded join across the full table.
     for clause in clauses:
         response = (
-            storage.client.table("typed_parsed_output")
+            storage.client.table("parsed_output_unified")
             .select(columns)
             .or_(clause)
             .order("created_at")
@@ -202,7 +202,7 @@ def _existing_correction(
 ) -> dict[str, Any] | None:
     columns = ",".join((*CORRECTABLE_FIELDS, "corrected_fields", "correction_confidence"))
     response = (
-        storage.client.table("typed_parsed_output")
+        storage.client.table("parsed_output_unified")
         .select(columns)
         .eq("correction_hash", correction_hash)
         .eq("listing_index", listing_index)

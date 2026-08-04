@@ -39,7 +39,7 @@ def enrich_observation(storage: SupabaseStorage, job: dict):
     parsed_id = job["parsed_id"]
     row = storage.db.execute(
         """SELECT p.*, r.sender, r.group_name, r.message, r.timestamp
-           FROM typed_parsed_output p
+           FROM parsed_output_unified p
            JOIN raw_messages r ON r.id = p.raw_message_id
            WHERE p.id = ?""",
         (parsed_id,),

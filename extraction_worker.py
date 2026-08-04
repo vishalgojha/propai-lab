@@ -140,14 +140,20 @@ def recent_cutoff(now=None) -> str:
     return (current - timedelta(hours=RECENT_WINDOW_HOURS)).isoformat()
 
 
-def next_fast_batch(storage, cutoff: str, limit: int = BATCH_SIZE):
+def next_fast_batch(storage, cutoff: str, limit: int = BATCH_SIZE, tenant_ids=None):
     """Fetch one FIFO batch from the recent lane."""
-    return storage.get_unprocessed_raw_messages_since(cutoff, limit=limit)
+    try:
+        return storage.get_unprocessed_raw_messages_since(cutoff, limit=limit, tenant_ids=tenant_ids)
+    except TypeError:
+        return storage.get_unprocessed_raw_messages_since(cutoff, limit=limit)
 
 
-def next_backlog_batch(storage, cutoff: str, limit: int = BATCH_SIZE):
+def next_backlog_batch(storage, cutoff: str, limit: int = BATCH_SIZE, tenant_ids=None):
     """Fetch one FIFO batch from the historical lane."""
-    return storage.get_unprocessed_raw_messages_before(cutoff, limit=limit)
+    try:
+        return storage.get_unprocessed_raw_messages_before(cutoff, limit=limit, tenant_ids=tenant_ids)
+    except TypeError:
+        return storage.get_unprocessed_raw_messages_before(cutoff, limit=limit)
 
 
 def _legacy_lane_batch(storage, cutoff: str, lane: str, limit: int):
@@ -174,12 +180,42 @@ def _legacy_lane_batch(storage, cutoff: str, lane: str, limit: int):
     return selected
 
 
-def _fetch_lane(storage, lane: str, cutoff: str, limit: int):
+def _fetch_lane(storage, lane: str, cutoff: str, limit: int, tenant_ids=None):
     if lane == "fast" and hasattr(storage, "get_unprocessed_raw_messages_since"):
-        return next_fast_batch(storage, cutoff, limit)
+        return next_fast_batch(storage, cutoff, limit, tenant_ids)
     if lane == "backlog" and hasattr(storage, "get_unprocessed_raw_messages_before"):
-        return next_backlog_batch(storage, cutoff, limit)
+        return next_backlog_batch(storage, cutoff, limit, tenant_ids)
     return _legacy_lane_batch(storage, cutoff, lane, limit)
+
+
+def _remove_opted_out_rows(storage, lane_rows):
+    """Keep opted-out group messages queued without sending them to extraction."""
+    getter = getattr(storage, "get_opted_out_extraction_groups", None)
+    setter = getattr(storage, "set_raw_message_extraction_suppressed", None)
+    if not getter or not setter:
+        return lane_rows, 0
+    opted_out = getter()
+    if opted_out is None:
+        print("[worker] group opt-out lookup unavailable; failing open", flush=True)
+        return lane_rows, 0
+    filtered = []
+    suppressed = 0
+    for lane, slots, rows in lane_rows:
+        eligible = []
+        for row in rows:
+            tenant_id = str(row_value(row, "tenant_id") or "")
+            group_jid = str(row_value(row, "group_name") or "")
+            if tenant_id and group_jid and (tenant_id, group_jid) in opted_out:
+                try:
+                    setter(int(row_value(row, "id") or 0), True)
+                except Exception:
+                    print(f"[worker] could not suppress opted-out raw row id={row_value(row, 'id')}", flush=True)
+                    traceback.print_exc()
+                suppressed += 1
+            else:
+                eligible.append(row)
+        filtered.append((lane, slots, eligible))
+    return filtered, suppressed
 
 
 def _process_lane(storage, rows, lane: str, slots: int, retry_counts: dict):
@@ -289,6 +325,15 @@ def run_cycle(storage, retry_counts: dict):
     4. Extract each lane across its reserved bounded thread pool; the two
        pools' combined size is the provider's concurrent-request ceiling.
     """
+    running_tenant_ids = None
+    if hasattr(storage, "get_running_extraction_tenant_ids"):
+        running_tenant_ids = storage.get_running_extraction_tenant_ids()
+        if running_tenant_ids == []:
+            print("[worker] extraction paused/stopped for all active tenants; raw_messages remain queued", flush=True)
+            return 0, 0, 0, 0, 0
+        if running_tenant_ids is None:
+            print("[worker] extraction control lookup unavailable; failing open", flush=True)
+
     cutoff = recent_cutoff()
     lane_specs = (
         ("fast", FAST_LANE_SLOTS),
@@ -304,12 +349,15 @@ def run_cycle(storage, retry_counts: dict):
         if slots <= 0:
             continue
         try:
-            rows = _fetch_lane(storage, lane, cutoff, BATCH_SIZE)
+            rows = _fetch_lane(storage, lane, cutoff, BATCH_SIZE, running_tenant_ids)
         except Exception:
             print(f"[worker] {lane} lane fetch failed", flush=True)
             traceback.print_exc()
             continue
         lane_rows.append((lane, slots, rows))
+    lane_rows, suppressed = _remove_opted_out_rows(storage, lane_rows)
+    if suppressed:
+        print(f"[worker] suppressed {suppressed} opted-out group rows; raw messages remain queued", flush=True)
     # The lane executors reserve disjoint slot pools, so both lanes can make
     # progress at once while their combined extraction calls remain bounded
     # by CONCURRENCY.

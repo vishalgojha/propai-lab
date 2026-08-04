@@ -38,14 +38,16 @@ def test_price_normalization_uses_explicit_broker_unit_not_ai_scale():
     }
 
     for raw, ai_amount, expected, unit in [
-        ("Asking: 1.15.Cr", 11500000, 1.15, "cr"),
-        ("Price: 75.Lakh", 7500000, 75.0, "lac"),
-        ("Quote: 2.80 Crore", 2800, 2.80, "cr"),
+        ("Asking: 1.15.Cr", 11500000, 11500000, "cr"),
+        ("Price: 75.Lakh", 7500000, 7500000, "lac"),
+        ("Quote: 2.80 Crore", 2800, 28000000, "cr"),
     ]:
         item = {**base, "price": {"amount": ai_amount, "unit": "total", "raw_price_text": raw}}
         parsed = extraction._ai_extraction_to_parsed(item, raw, "Broker", "Broker")
         assert parsed["price"] == expected
-        assert parsed["price_unit"] == unit
+        # Typed storage keeps the price as absolute rupees; the native unit is
+        # retained only as evidence in the raw price text.
+        assert parsed["price_unit"] == "abs"
 
 
 def test_explicit_requirement_heading_overrides_sale_like_description():
@@ -765,10 +767,10 @@ def test_elite_auction_distress_with_charges(monkeypatch):
 
     assert len(storage.saved) == 1
     obs = storage.saved[0]
-    # Headline price is what the broker quoted, normalized to the stated unit
-    # (1.55Cr → price=1.55, price_unit=cr). NOT inflated by additional charges.
-    assert obs.price == 1.55, f"price should be 1.55 cr, got {obs.price}"
-    assert obs.price_unit == "cr"
+    # Headline price is what the broker quoted, normalized to absolute rupees
+    # (1.55Cr → 15,500,000). It is not inflated by additional charges.
+    assert obs.price == 15500000, f"price should be 15500000 rupees, got {obs.price}"
+    assert obs.price_unit == "abs"
     assert obs.micro_market == "Andheri West"
     assert obs.building_name == "Rajgriha CHS"
     # Tags captured.

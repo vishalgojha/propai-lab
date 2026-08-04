@@ -274,10 +274,12 @@ export default function WhatsAppGroupsMirror() {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [loadedSearchTerm, setLoadedSearchTerm] = useState("");
   const [showConversation, setShowConversation] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
   const hasLoadedGroups = useRef(false);
   const requestedJid = useRef("");
+  const groupsRequestId = useRef(0);
 
   useEffect(() => {
     const readUrlState = () => {
@@ -294,10 +296,12 @@ export default function WhatsAppGroupsMirror() {
   }, []);
 
   const loadGroups = useCallback(async (manual = false, searchTerm = "") => {
+    const requestId = ++groupsRequestId.current;
     if (!hasLoadedGroups.current) setLoading(true);
     if (manual) setRefreshingGroups(true);
     try {
       const directory = await api.getWhatsAppConversations("group", searchTerm, true);
+      if (requestId !== groupsRequestId.current) return;
       const liveGroups = directory
         .map((group) => ({
           ...group,
@@ -308,6 +312,7 @@ export default function WhatsAppGroupsMirror() {
         .filter((group) => group?.conversation_type === "group" && String(group?.conversation_jid || "").endsWith("@g.us"))
         .sort((a, b) => String(b.last_message_at || "").localeCompare(String(a.last_message_at || "")));
       setGroups(liveGroups);
+      setLoadedSearchTerm(searchTerm.trim().toLocaleLowerCase());
       setSelectedJid((current) => {
         const preferred = requestedJid.current;
         const next = preferred && liveGroups.some((group) => group.conversation_jid === preferred)
@@ -319,8 +324,16 @@ export default function WhatsAppGroupsMirror() {
         return next;
       });
     } catch (reason) {
+      if (requestId !== groupsRequestId.current) return;
+      // Never leave an unrelated, previously loaded directory visible while
+      // a non-empty search request is failing or still being retried.
+      if (searchTerm.trim()) {
+        setGroups([]);
+        setLoadedSearchTerm(searchTerm.trim().toLocaleLowerCase());
+      }
       setError(reason instanceof Error ? reason.message : "Could not load your WhatsApp groups.");
     } finally {
+      if (requestId !== groupsRequestId.current) return;
       hasLoadedGroups.current = true;
       setLoading(false);
       setRefreshingGroups(false);
@@ -418,15 +431,20 @@ export default function WhatsAppGroupsMirror() {
   const visibleGroups = useMemo(() => groups.filter((group) => {
     const normalizedQuery = normalizedGroupQuery;
     if (!normalizedQuery) return true;
-    if (group.search_match) return true;
     const searchable = [
       group.display_name,
       group.conversation_name,
       group.name,
       group.conversation_jid,
     ].map((value) => String(value || "").toLocaleLowerCase());
-    return searchable.some((value) => value.includes(normalizedQuery));
-  }), [groups, normalizedGroupQuery]);
+    // The API may match the query against captured message text rather than
+    // the group title. Preserve those server matches only for the exact query
+    // that produced this result set; never let a stale search_match flag make
+    // every group visible for a new query.
+    if (loadedSearchTerm === normalizedQuery && group.search_match) return true;
+    const terms = normalizedQuery.split(/\s+/).filter(Boolean);
+    return terms.every((term) => searchable.some((value) => value.includes(term)));
+  }), [groups, loadedSearchTerm, normalizedGroupQuery]);
 
   const messageViews = useMemo(() => messages.map((message) => ({
     message,

@@ -11,7 +11,7 @@ Design principles:
 
 Integration points:
   1. extraction.py  → validate_listing(parsed_dict) called after
-     _ai_extraction_to_parsed() and before save_parsed().
+     the typed extraction adapter and before typed persistence.
   2. storage/supabase.py → validate_listing_locality(parsed_dict, storage)
      called inside upsert_listing_from_parsed() for a second pass that has
      DB context for building-locality cross-checks.
@@ -152,7 +152,7 @@ def validate_listing(parsed: dict[str, Any]) -> ValidationResult:
     """Validate a parsed listing dict. Returns flags + optional price override.
 
     Called in extraction.py AFTER _ai_extraction_to_parsed() and BEFORE
-    save_parsed().
+    typed-table persistence.
     """
     result = ValidationResult()
 
@@ -305,7 +305,7 @@ def validate_listing_locality(
             db = storage.client if hasattr(storage, "client") else None
             if db:
                 res = (
-                    db.table("typed_listings_index")
+                    db.table("listings_unified")
                     .select("micro_market")
                     .ilike("building_name", building_name)
                     .neq("micro_market", "")

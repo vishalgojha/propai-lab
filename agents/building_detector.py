@@ -218,7 +218,7 @@ def _check_group_context(storage: "Storage", parsed_id: int,
     one_hour_ago = (datetime.now(timezone.utc) - timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
     rows = storage.db.execute(
         """SELECT p.building_name, r.message, r.group_name, r.sender
-           FROM typed_parsed_output p
+           FROM parsed_output_unified p
            JOIN raw_messages r ON r.id = p.raw_message_id
            WHERE p.building_name IS NOT NULL AND p.building_name != ''
              AND p.id != ?
@@ -529,7 +529,7 @@ def backfill_bkc(storage: "Storage") -> tuple[int, int]:
         """SELECT p.id, p.legacy_source_id, p.asset_type, p.transaction_type,
                   p.message_type, r.message, p.location_raw, p.micro_market,
                   r.group_name, r.sender, p.building_name
-           FROM typed_parsed_output p
+           FROM parsed_output_unified p
            JOIN raw_messages r ON r.id = p.raw_message_id
            WHERE p.micro_market ILIKE 'BKC'
              AND (p.building_name IS NULL OR p.building_name = '')
