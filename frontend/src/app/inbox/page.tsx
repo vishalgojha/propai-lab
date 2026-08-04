@@ -1746,13 +1746,13 @@ return {
     // The raw WhatsApp mirror must never depend on the Market Inbox feed.
     // Start this independently: a broker-feed timeout or parsing failure must
     // not make groups/broadcasts vanish from the user-facing WhatsApp view.
-    const directoryRequest = !append
-      ? api.getWhatsAppConversations()
-          .then((directory) => setGroups(directory))
-          .catch((reason) => {
-            console.error("Failed to load WhatsApp conversation directory:", reason);
-          })
-      : null;
+    if (!append) {
+      void api.getWhatsAppConversations()
+        .then((directory) => setGroups(directory))
+        .catch((reason) => {
+          console.error("Failed to load WhatsApp conversation directory:", reason);
+        });
+    }
     try {
       const threadMsgs = await api.getInboxThreads(PAGE_SIZE, requestedOffset);
       setMessages((prev) => (append ? [...prev, ...threadMsgs] : threadMsgs));
@@ -1774,7 +1774,6 @@ return {
         setAllSuggestions([]);
       }
     } finally {
-      await directoryRequest;
       setLoadingLeft(false);
     }
   }, [marketAccess, offset]);
