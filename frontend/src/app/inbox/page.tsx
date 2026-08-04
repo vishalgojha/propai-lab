@@ -1424,9 +1424,9 @@ return {
   const connectionPending = GATING_ENABLED && (loadingMarketAccess || accessProbeFailed || whatsappDisconnected);
 
   const groupedBrokerObservations = useMemo(() => {
-  const groups = new Map<string, BrokerObservationGroup>();
-  for (const obs of selectedBrokerObservations as BrokerObservationRow[]) {
-    const rawMessageId = obs.latest_raw_message_id || obs.raw_message_id || obs.id;
+    const groups = new Map<string, BrokerObservationGroup>();
+    for (const obs of selectedBrokerObservations as BrokerObservationRow[]) {
+      const rawMessageId = obs.latest_raw_message_id || obs.raw_message_id || obs.id;
       const sourceText = normalizeMessageForDedupe(obs.source_message || obs.normalized_message || obs.raw_message || "");
       const identityParts = [
         obs.observation_type,
