@@ -74,3 +74,14 @@ def test_plain_inventory_query_uses_grounded_market_search(monkeypatch):
     assert response["trace"]["route"] == "deterministic_market_search"
     assert response["content"].startswith("Found 1 active match")
     assert "WhatsApp group" not in response["content"]
+
+
+def test_conceptual_sale_rent_question_is_conversational():
+    import routers.ai_chat as ai_chat
+
+    assert ai_chat._is_conversational_explanation(
+        "Do you know the difference between sale and rent?"
+    ) is True
+    assert ai_chat._is_conversational_explanation(
+        "show me 3 bhk for rent in Bandra West"
+    ) is False
