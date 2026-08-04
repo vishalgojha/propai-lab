@@ -269,6 +269,8 @@ export default function AdminExtractionsPage() {
     setSearch("");
   };
 
+  const showBhk = assetFilter !== "commercial";
+
   return (
     <div className="theme-extractions w-full max-w-none px-6 py-6 space-y-6">
       {/* Header */}
@@ -303,7 +305,7 @@ export default function AdminExtractionsPage() {
                   : "bg-zinc-800 text-zinc-400 hover:text-white"
               }`}
             >
-              {f === "all" ? "All" : f === "listing" ? "Listings" : "Requirements"}
+              {f === "all" ? "All intents" : f === "listing" ? "Listings" : "Requirements"}
             </button>
           ))}
         </div>
@@ -374,7 +376,7 @@ export default function AdminExtractionsPage() {
                   <th className="px-4 py-3">Broker / Sender</th>
                   <th className="px-4 py-3">Schema</th>
                   <th className="px-4 py-3">Intent</th>
-                  <th className="px-4 py-3">BHK</th>
+                  {showBhk && <th className="px-4 py-3">BHK</th>}
                   <th className="px-4 py-3">Price</th>
                   <th className="px-4 py-3">Area</th>
                   <th className="px-4 py-3">Furnishing</th>
@@ -409,14 +411,14 @@ export default function AdminExtractionsPage() {
                         <span
                           className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
                             cat === "listing"
-                              ? "border border-emerald-400/20 bg-emerald-400/10 text-emerald-400"
-                              : "border border-blue-400/20 bg-blue-400/10 text-blue-400"
+                              ? "intent-listing border border-emerald-400/20 bg-emerald-400/10 text-emerald-400"
+                              : "intent-requirement border border-blue-400/20 bg-blue-400/10 text-blue-400"
                           }`}
                         >
                           {row.intent || "—"}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-zinc-400">{row.bhk || "—"}</td>
+                      {showBhk && <td className="px-4 py-3 text-zinc-400">{row.bhk || "—"}</td>}
                       <td className="px-4 py-3 text-zinc-300 font-medium whitespace-nowrap">
                         {fmtPrice(row.price, row.price_unit)}
                         {row.price_model === "psf" && (
@@ -457,14 +459,14 @@ export default function AdminExtractionsPage() {
                       </tr>
                       {editingRowId === row.id && (
                         <tr className="border-b border-emerald-400/20 bg-emerald-400/[0.04]">
-                          <td colSpan={14} className="px-4 py-4">
+                          <td colSpan={showBhk ? 14 : 13} className="px-4 py-4">
                             <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
                               {[
                                 ["summary_title", "Title"], ["building_name", "Building"], ["micro_market", "Micro market"],
                                 ["location_raw", "Location"], ["bhk", "BHK / configuration"], ["area_sqft", "Area sqft"],
                                 ["price", "Price"], ["furnishing", "Furnishing"], ["floor_range", "Floor"],
                                 ["parking_type", "Parking"], ["car_parking_count", "Parking count"], ["commercial_use_type", "Commercial use"],
-                              ].map(([key, label]) => (
+                              ].filter(([key]) => key !== "bhk" || row.asset_type !== "commercial").map(([key, label]) => (
                                 <label key={key} className="text-xs text-zinc-500">
                                   {label}
                                   <input
@@ -540,7 +542,7 @@ export default function AdminExtractionsPage() {
                     ["location_raw", "Location"], ["bhk", "BHK / configuration"], ["area_sqft", "Area sqft"],
                     ["price", "Price"], ["furnishing", "Furnishing"], ["floor_range", "Floor"],
                     ["parking_type", "Parking"], ["car_parking_count", "Parking count"], ["commercial_use_type", "Commercial use"],
-                  ].map(([key, label]) => (
+                  ].filter(([key]) => key !== "bhk" || selectedRow.asset_type !== "commercial").map(([key, label]) => (
                     <label key={key} className="text-xs text-zinc-500">
                       {label}
                       <input
@@ -560,7 +562,7 @@ export default function AdminExtractionsPage() {
             ) : <div className="grid grid-cols-2 gap-3 text-sm">
               {[
                 ["Intent", selectedRow.intent || "—"],
-                ["BHK", selectedRow.bhk || "—"],
+                ...(selectedRow.asset_type === "commercial" ? [] : [["BHK", selectedRow.bhk || "—"]]),
                 ["Price", fmtPrice(selectedRow.price, selectedRow.price_unit)],
                 ["Price Model", selectedRow.price_model || "—"],
                 ["Area", selectedRow.area_sqft ? `${selectedRow.area_sqft.toLocaleString("en-IN")} sqft` : "—"],

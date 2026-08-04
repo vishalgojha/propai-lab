@@ -183,6 +183,99 @@ body {
   color: var(--text-primary);
 }
 
+/* Connections still contains a few legacy dark utility classes because the
+   page also renders operational dialogs and status badges. Keep its light
+   theme readable without changing the dark appearance or leaking overrides
+   into the rest of the dashboard. */
+:root[data-theme="light"] .theme-connections {
+  color: var(--text-primary);
+}
+:root[data-theme="light"] .theme-connections :where([class*="border-white"]) {
+  border-color: var(--border) !important;
+}
+:root[data-theme="light"] .theme-connections :where([class*="bg-white/"]) {
+  background-color: var(--surface-elevated) !important;
+}
+:root[data-theme="light"] .theme-connections :where(.bg-zinc-900, .bg-zinc-800, .bg-zinc-700) {
+  background-color: var(--surface-elevated) !important;
+}
+:root[data-theme="light"] .theme-connections :where(.text-white, .text-zinc-200, .text-zinc-300) {
+  color: var(--text-primary) !important;
+}
+:root[data-theme="light"] .theme-connections :where(.text-zinc-400, .text-zinc-500, .text-zinc-600) {
+  color: var(--text-secondary) !important;
+}
+:root[data-theme="light"] .theme-connections :where(.text-emerald-200, .text-emerald-300) {
+  color: #047857 !important;
+}
+:root[data-theme="light"] .theme-connections :where(.text-amber-100, .text-amber-200, .text-amber-300) {
+  color: #92400e !important;
+}
+:root[data-theme="light"] .theme-connections :where(.text-red-200, .text-red-300) {
+  color: #b91c1c !important;
+}
+:root[data-theme="light"] .theme-connections :where(.text-yellow-300) {
+  color: #a16207 !important;
+}
+:root[data-theme="light"] .theme-connections :where(.text-cyan-300) {
+  color: #0e7490 !important;
+}
+:root[data-theme="light"] .theme-connections :where(input, textarea) {
+  color: var(--text-primary) !important;
+}
+:root[data-theme="light"] .theme-connections :where(.placeholder\:text-zinc-600)::placeholder {
+  color: var(--text-muted) !important;
+}
+
+:root[data-theme="light"] .theme-extractions {
+  color: var(--text-primary);
+}
+:root[data-theme="light"] .theme-extractions :where([class*="border-white"]) {
+  border-color: var(--border) !important;
+}
+:root[data-theme="light"] .theme-extractions :where([class*="bg-white/"], .bg-zinc-800, .bg-zinc-900) {
+  background-color: var(--surface-elevated) !important;
+}
+:root[data-theme="light"] .theme-extractions :where(.text-white, .text-zinc-200, .text-zinc-300) {
+  color: var(--text-primary) !important;
+}
+:root[data-theme="light"] .theme-extractions :where(.text-zinc-400, .text-zinc-500, .text-zinc-600) {
+  color: var(--text-secondary) !important;
+}
+:root[data-theme="light"] .theme-extractions :where(.text-emerald-400, .text-emerald-300) {
+  color: #047857 !important;
+}
+:root[data-theme="light"] .theme-extractions :where(.text-amber-400) {
+  color: #92400e !important;
+}
+:root[data-theme="light"] .theme-extractions :where(.text-red-400) {
+  color: #b91c1c !important;
+}
+:root[data-theme="light"] .theme-extractions :where(.text-blue-400) {
+  color: #1d4ed8 !important;
+}
+:root[data-theme="light"] .theme-extractions :where(.intent-listing) {
+  background-color: #dcfce7 !important;
+  border-color: #86efac !important;
+  color: #166534 !important;
+}
+:root[data-theme="light"] .theme-extractions :where(.intent-requirement) {
+  background-color: #dbeafe !important;
+  border-color: #93c5fd !important;
+  color: #1e40af !important;
+}
+:root[data-theme="light"] .theme-extractions :where(.bg-sky-400) {
+  background-color: #0284c7 !important;
+  color: #ffffff !important;
+}
+:root[data-theme="light"] .theme-extractions :where(.bg-emerald-400) {
+  background-color: #059669 !important;
+  color: #ffffff !important;
+}
+:root[data-theme="light"] .theme-extractions :where(input) {
+  color: var(--text-primary) !important;
+}
+
 /* ── Layout ── */
 .content-max { max-width: 1400px; margin-left: auto; margin-right: auto; }
 
