@@ -109,7 +109,15 @@ export default function BuildingProfilePage({ params }: { params: Promise<{ buil
     );
   }
 
-  const { building: b, aliases, observations, brokers, price_stats, recent_enrichments } = building;
+  // The building profile API returns the building fields at the top level.
+  // Keep accepting a nested `building` response for older deployments while
+  // rendering the current contract correctly.
+  const b = building.building ?? building;
+  const aliases = building.aliases ?? [];
+  const observations = building.observations ?? [];
+  const brokers = building.brokers ?? [];
+  const price_stats = building.price_stats ?? [];
+  const recent_enrichments = building.recent_enrichments ?? building.sources ?? [];
 
   return (
     <div className="space-y-6">
