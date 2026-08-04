@@ -3685,8 +3685,8 @@ return {
                           <span className="text-[10px] font-bold text-white tabular-nums">{item.count}</span>
                         </div>
                         {item.latest.market_scope === "shared" && (
-                          <div className="mb-1 inline-flex rounded border border-white/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-zinc-400">
-                            Shared market
+                          <div title="Captured from eligible shared WhatsApp groups in your connected network; not another broker account's private inbox." className="mb-1 inline-flex rounded border border-white/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-zinc-400">
+                            Shared WhatsApp groups
                           </div>
                         )}
                         <div className="text-[10px] text-zinc-500 leading-relaxed truncate mb-1">
@@ -3877,7 +3877,7 @@ return {
 
               {/* Observation Timeline */}
               <div className="flex-1 overflow-y-auto p-3 space-y-3 sm:p-4 sm:space-y-4">
-                {loadingBrokerObs ? (
+                {loadingBrokerObs && groupedBrokerObservations.length === 0 ? (
                   <div className="p-8 text-center text-xs text-zinc-500">Loading market items...</div>
                 ) : brokerObsError ? (
                   <div className="py-2 text-center">
@@ -4072,8 +4072,8 @@ return {
                           {(groupChannels.length > 0 || dmCount > 0) && (
                             <div className="mt-1 flex flex-wrap gap-1 items-center text-[8px]">
                               {groupChannels.length > 0 && (
-                                <span className="rounded-full border border-sky-400/30 bg-sky-400/10 px-1.5 py-0.5 font-semibold uppercase tracking-wider text-sky-300">
-                                  Shared market
+                                <span title="Captured from an eligible WhatsApp group in your connected network." className="rounded-full border border-sky-400/30 bg-sky-400/10 px-1.5 py-0.5 font-semibold uppercase tracking-wider text-sky-300">
+                                  Shared WhatsApp groups
                                 </span>
                               )}
                               {groupChannels.slice(0, 3).map((src: string, i: number) => (
