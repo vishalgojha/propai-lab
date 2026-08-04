@@ -134,28 +134,53 @@ body {
 .text-secondary { font-size: 13px; font-weight: 400; line-height: 1.4; color: var(--color-text-secondary); }
 .text-caption { font-size: 12px; font-weight: 400; line-height: 1.3; color: var(--color-text-muted); }
 
-/* Scoped compatibility for the inbox's older dark surface classes. */
-:root[data-theme="light"] .theme-inbox {
-  background-color: var(--background) !important;
-  color: var(--text-primary);
-}
-:root[data-theme="light"] .theme-inbox :where([class~="bg-black"], [class*="bg-black/"], [class~="bg-zinc-950"], [class~="bg-zinc-900"], [class~="bg-zinc-800"], [class~="bg-[#05070b]"], [class~="bg-[#070b0e]"], [class~="bg-[#161b22]"], [class~="bg-[#1e293b]"], [class~="bg-[#1f2c34]"]) {
+/* Legacy pages use fixed dark utility colors. Map the neutral palette to the
+   runtime theme while preserving green/blue/orange data and action colors. */
+:root[data-theme="light"] :where(
+  [class~="bg-black"], [class*="bg-black/"],
+  [class~="bg-zinc-700"], [class~="bg-zinc-800"], [class~="bg-zinc-900"], [class~="bg-zinc-950"],
+  [class*="bg-zinc-700/"], [class*="bg-zinc-800/"], [class*="bg-zinc-900/"], [class*="bg-zinc-950/"],
+  [class~="bg-[#05070b]"], [class~="bg-[#050816]"], [class~="bg-[#070b0e]"], [class~="bg-[#090909]"],
+  [class~="bg-[#0a0f14]"], [class~="bg-[#161b22]"], [class~="bg-[#1c2128]"], [class~="bg-[#1e293b]"],
+  [class~="bg-[#1f2c34]"], [class~="bg-[#243241]"], [class*="bg-[linear-gradient"], [class*="bg-[radial-gradient"],
+  [class*="bg-[rgba(255,255,255"]
+) {
   background-color: var(--surface) !important;
+  background-image: none !important;
 }
-:root[data-theme="light"] .theme-inbox :where(.text-white, .text-zinc-100, .text-zinc-200, .text-zinc-300) {
-  color: var(--text-primary) !important;
-}
-:root[data-theme="light"] .theme-inbox :where(.text-zinc-400, .text-zinc-500, .text-zinc-600, .text-zinc-700) {
-  color: var(--text-muted) !important;
-}
-:root[data-theme="light"] .theme-inbox [class*="border-white/"] {
-  border-color: var(--border) !important;
-}
-:root[data-theme="light"] .theme-inbox [class*="bg-white/"] {
+:root[data-theme="light"] :where(.bg-zinc-700, .bg-zinc-800, .bg-zinc-900, .bg-zinc-950) {
   background-color: var(--surface-elevated) !important;
 }
-:root[data-theme="light"] .theme-inbox :where(.placeholder\:text-zinc-500, .placeholder\:text-zinc-600)::placeholder {
+:root[data-theme="light"] :where(.text-white, .text-zinc-100, .text-zinc-200, .text-zinc-300, .text-gray-300) {
+  color: var(--text-primary) !important;
+}
+:root[data-theme="light"] :where(.text-zinc-400, .text-zinc-500, .text-zinc-600, .text-zinc-700, .text-gray-400, .text-gray-500, .text-gray-600, .text-gray-700) {
   color: var(--text-muted) !important;
+}
+/* Accent message bubbles remain dark-green in light mode, so their content
+   must retain a light foreground. */
+:root[data-theme="light"] :where([class~="bg-[#005c4b]"], [class~="bg-[#166534]"], [class*="bg-emerald-"]) {
+  color: #ffffff !important;
+}
+:root[data-theme="light"] :where([class~="bg-[#005c4b]"], [class~="bg-[#166534]"], [class*="bg-emerald-"]) :where(.text-white, .text-zinc-100, .text-zinc-200, .text-zinc-300, .text-zinc-400, .text-zinc-500) {
+  color: #ffffff !important;
+}
+:root[data-theme="light"] [class*="border-white"],
+:root[data-theme="light"] :where(.border-zinc-400, .border-zinc-500, .border-zinc-700, .border-zinc-800) {
+  border-color: var(--border) !important;
+}
+:root[data-theme="light"] [class*="bg-white/"] {
+  background-color: var(--surface-elevated) !important;
+}
+:root[data-theme="light"] :where(
+  .placeholder\:text-zinc-500, .placeholder\:text-zinc-600,
+  .placeholder\:text-gray-500, .placeholder\:text-gray-600
+)::placeholder {
+  color: var(--text-muted) !important;
+}
+:root[data-theme="light"] :where(.theme-inbox) {
+  background-color: var(--background) !important;
+  color: var(--text-primary);
 }
 
 /* ── Layout ── */
