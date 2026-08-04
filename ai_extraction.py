@@ -182,6 +182,7 @@ def _get_extraction_prompt(asset_type: str, transaction_type: str, is_requiremen
     """Build a small route-specific prompt instead of sending all 85 fields."""
     fields = _FOCUSED_FIELDS[(asset_type, transaction_type, is_requirement)]
     side = "DEMAND/REQUIREMENT" if is_requirement else "SUPPLY/LISTING"
+    expected_listing_type = "requirement" if is_requirement else transaction_type
     return f"""You are a deterministic real-estate parser for Indian WhatsApp broker messages.
 You are extracting {side} data for {asset_type} {transaction_type}. Return only valid JSON:
 {{"items": [{{...}}]}}. Emit one object per independently actionable property or requirement.
@@ -191,7 +192,7 @@ price.raw_price_text exactly. For requirements use arrays/ranges and never turn 
 concrete advertised availability into a requirement.
 
 Every item MUST include these discriminator fields:
-- listing_type: exactly "{transaction_type}".
+- listing_type: exactly "{expected_listing_type}".
 - property_category: exactly "{asset_type}".
 - extraction_confidence: one of "high", "medium", or "low".
 Fields allowed for the remaining route-specific data: {fields}.
