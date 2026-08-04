@@ -190,7 +190,11 @@ merge separate units, or summarize raw text. Preserve locality.raw_mention and
 price.raw_price_text exactly. For requirements use arrays/ranges and never turn a
 concrete advertised availability into a requirement.
 
-Fields allowed for this route: {fields}.
+Every item MUST include these discriminator fields:
+- listing_type: exactly "{transaction_type}".
+- property_category: exactly "{asset_type}".
+- extraction_confidence: one of "high", "medium", or "low".
+Fields allowed for the remaining route-specific data: {fields}.
 {_PRICE_PARSING_INSTRUCTIONS}
 For listing price, return price={{amount, unit, period, raw_price_text}}. For a requirement,
 return budget_min/budget_max instead of pretending the budget is a listing price.
