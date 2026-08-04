@@ -77,14 +77,8 @@ def _append_extraction_provider(
         )
 
 
-# Temporary, extraction-only budget lanes.  Do not add these to llm.py's
-# shared chat chain: they are intended for controlled backlog draining.
-_append_extraction_provider(
-    _PROVIDERS,
-    env_prefix="EXTRACTION_MERGE",
-    name="extraction-merge",
-    default_base_url="https://api-gateway.merge.dev/v1/openai",
-)
+# Doubleword is the dedicated extraction provider. Merge remains available
+# to the separate chat/provider chain and must not consume its extraction key.
 _append_extraction_provider(
     _PROVIDERS,
     env_prefix="EXTRACTION_DOUBLEWORD",
