@@ -2689,6 +2689,7 @@ class SupabaseStorage(Storage):
         furnishing = row.get("furnishing_status") or row.get("furnishing_preference")
         return {
             **row,
+            "source_schema": table,
             "message_type": "requirement" if requirement else "listing",
             "intent": "BUY" if requirement else ("RENT" if transaction == "rent" else "SELL"),
             "asset_type": asset,
@@ -2707,7 +2708,7 @@ class SupabaseStorage(Storage):
             "confidence": row.get("extraction_confidence"),
         }
 
-    def update_parsed_fields(self, row_id: int, updates: dict[str, Any]) -> bool:
+    def update_parsed_fields(self, row_id: int, updates: dict[str, Any], source_schema: str | None = None) -> bool:
         """Apply correction-layer updates to the typed source row.
 
         ``row_id`` is the stable observation id exposed by the normalized read
@@ -2715,7 +2716,8 @@ class SupabaseStorage(Storage):
         """
         row = None
         table = None
-        for candidate in list(_TYPED_LISTING_TABLES.values()) + list(_TYPED_REQUIREMENT_TABLES.values()):
+        candidates = [source_schema] if source_schema in _ALL_TYPED_TABLES else list(_ALL_TYPED_TABLES)
+        for candidate in candidates:
             try:
                 query = self.client.table(candidate).select(
                     "id,raw_message_id,listing_index,asset_type,transaction_type,tenant_id,legacy_source_id"
@@ -2777,9 +2779,57 @@ class SupabaseStorage(Storage):
         if not typed:
             return False
         typed["updated_at"] = datetime.now(timezone.utc).isoformat()
-        key = "legacy_source_id" if row.get("legacy_source_id") else "id"
-        self.client.table(table).update(typed).eq(key, row_id).execute()
-        return True
+        # The admin/UI id is the typed table primary key. Do not switch to
+        # legacy_source_id here: that id belongs to the deprecated source row
+        # and can update the wrong record after the typed-table cutover.
+        existing_corrections = row.get("corrected_fields") or {}
+        if isinstance(existing_corrections, str):
+            try:
+                existing_corrections = json.loads(existing_corrections)
+            except (TypeError, json.JSONDecodeError):
+                existing_corrections = {}
+        if not isinstance(existing_corrections, dict):
+            existing_corrections = {}
+        existing_corrections.update({key: value for key, value in updates.items() if key in shared_fields or key in table_fields})
+        typed["corrected_fields"] = existing_corrections
+        typed["corrected_at"] = datetime.now(timezone.utc).isoformat()
+        result = self.client.table(table).update(typed).eq("id", row_id).execute()
+        return bool(result.data)
+
+    def parsed_owned_by_connected_phone(self, row_id: int, tenant_id: str, source_schema: str | None = None) -> bool:
+        """Allow edits only when the source was sent by this workspace phone."""
+        source = None
+        candidates = [source_schema] if source_schema in _ALL_TYPED_TABLES else list(_ALL_TYPED_TABLES)
+        for candidate in candidates:
+            try:
+                result = self.client.table(candidate).select("raw_message_id,broker_phone").eq(
+                    "id", row_id
+                ).eq("tenant_id", tenant_id).limit(1).execute()
+                if result.data:
+                    source = result.data[0]
+                    break
+            except Exception:
+                continue
+        if not source:
+            return False
+        sender_phone = str(source.get("broker_phone") or "")
+        try:
+            raw = self.client.table("raw_messages").select("sender_phone,sender_jid").eq(
+                "id", source.get("raw_message_id")
+            ).eq("tenant_id", tenant_id).limit(1).execute().data or []
+            if raw:
+                sender_phone = str(raw[0].get("sender_phone") or raw[0].get("sender_jid") or sender_phone)
+        except Exception:
+            pass
+        sender_digits = re.sub(r"\D+", "", sender_phone)[-10:]
+        if len(sender_digits) != 10:
+            return False
+        try:
+            connections = self.list_org_whatsapp_connections(tenant_id)
+        except Exception:
+            return False
+        return any(sender_digits == re.sub(r"\D+", "", str(item.get("phone_number") or ""))[-10:]
+                   for item in connections)
 
     def get_parsed_by_raw(self, raw_id: int) -> Optional[ParsedObservation]:
         rows = self.get_parsed_by_message(raw_id)
@@ -2787,11 +2837,14 @@ class SupabaseStorage(Storage):
             return rows[0]
         return None
 
-    def get_parsed(self, limit: int = 50, offset: int = 0, intent: str = "", classified_only: bool = False) -> list[dict]:
+    def get_parsed(self, limit: int = 50, offset: int = 0, intent: str = "", classified_only: bool = False, asset_type: str = "") -> list[dict]:
+        # Merge all eight typed schemas globally. Per-table pagination causes
+        # unstable pages and allows the same source item to appear twice.
+        fetch_limit = max(limit + offset, limit)
         rows = []
         for table in list(_TYPED_LISTING_TABLES.values()) + list(_TYPED_REQUIREMENT_TABLES.values()):
             try:
-                query = self.client.table(table).select("*").order("created_at", desc=True).limit(limit).offset(offset)
+                query = self.client.table(table).select("*").order("created_at", desc=True).limit(fetch_limit)
                 if self._tenant_id:
                     query = query.eq("tenant_id", self._tenant_id)
                 result = query.execute()
@@ -2803,10 +2856,78 @@ class SupabaseStorage(Storage):
         rows = [self._typed_row_to_legacy(row) for row in rows]
         if intent:
             rows = [row for row in rows if str(row.get("intent") or "").upper() == str(intent).upper()]
+        if asset_type:
+            rows = [row for row in rows if str(row.get("asset_type") or "").lower() == asset_type.lower()]
         if classified_only:
             rows = [row for row in rows if row.get("extraction_confidence") and row.get("needs_review") is not True]
+
+        # Do not present an extraction without the WhatsApp evidence it is
+        # supposed to represent. This also removes old malformed rows where
+        # the typed record survived but the source text was empty/deleted.
+        raw_ids = sorted({int(row.get("raw_message_id") or 0) for row in rows if int(row.get("raw_message_id") or 0) > 0})
+        if raw_ids:
+            valid_raw_ids: set[int] = set()
+            for start in range(0, len(raw_ids), 100):
+                try:
+                    raw_query = self.client.table("raw_messages").select("id,message").in_("id", raw_ids[start:start + 100])
+                    if self._tenant_id:
+                        raw_query = raw_query.eq("tenant_id", self._tenant_id)
+                    for raw in raw_query.execute().data or []:
+                        if str(raw.get("message") or "").strip():
+                            valid_raw_ids.add(int(raw["id"]))
+                except Exception:
+                    # Keep rows if evidence lookup is temporarily unavailable;
+                    # a database timeout must not erase the audit page.
+                    valid_raw_ids = set(raw_ids)
+                    break
+            rows = [row for row in rows if int(row.get("raw_message_id") or 0) in valid_raw_ids]
         rows.sort(key=lambda row: str(row.get("created_at") or ""), reverse=True)
-        return [dict_to_dataclass(ParsedObservation, row) for row in rows[:limit]]
+
+        # Tables have independent unique indexes. Remove exact source-item
+        # duplicates first, then reposts from the same broker/property within
+        # the 24-hour deduplication window described in DATA_QUALITY.md.
+        deduped: list[dict] = []
+        seen_source_items: set[tuple[Any, ...]] = set()
+        seen_identity: dict[tuple[Any, ...], list[datetime]] = defaultdict(list)
+
+        def norm(value: Any) -> str:
+            return re.sub(r"\s+", " ", str(value or "").strip().lower())
+
+        def parse_created(value: Any) -> datetime | None:
+            text = str(value or "").strip()
+            if not text:
+                return None
+            try:
+                parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+                return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+            except ValueError:
+                return None
+
+        for row in rows:
+            raw_id = row.get("raw_message_id")
+            if raw_id is not None and int(raw_id or 0) > 0:
+                source_key = (str(row.get("tenant_id") or ""), int(raw_id), int(row.get("listing_index") or 0))
+                if source_key in seen_source_items:
+                    continue
+                seen_source_items.add(source_key)
+
+            broker = norm(row.get("broker_phone")) or norm(row.get("broker_name"))
+            location = norm(row.get("building_name")) or norm(row.get("landmark_name")) or norm(row.get("micro_market")) or norm(row.get("location_raw"))
+            transaction = norm(row.get("transaction_type") or row.get("intent"))
+            unit = norm(row.get("bhk")) or norm(row.get("configuration"))
+            area = row.get("area_sqft") or row.get("carpet_area_sqft")
+            floor = norm(row.get("floor_range"))
+            price = row.get("price")
+            created = parse_created(row.get("created_at"))
+            if broker and location and (unit or area or floor or price is not None):
+                identity = (broker, location, transaction, unit, str(area or ""), floor, str(price or ""))
+                if created and any(abs((created - prior).total_seconds()) <= 24 * 3600 for prior in seen_identity[identity]):
+                    continue
+                if created:
+                    seen_identity[identity].append(created)
+            deduped.append(row)
+
+        return [dict_to_dataclass(ParsedObservation, row) for row in deduped[offset:offset + limit]]
 
     def get_parsed_by_message(self, raw_message_id: int) -> list[ParsedObservation]:
         rows = []

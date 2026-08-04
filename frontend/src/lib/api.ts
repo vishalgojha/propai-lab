@@ -638,6 +638,14 @@ export function getObservation(id: number) {
   return fetchJSON<any>(`/observations/${id}`);
 }
 
+export function updateParsedObservation(id: number, schema: string | null, updates: Record<string, unknown>) {
+  const query = schema ? `?schema=${encodeURIComponent(schema)}` : "";
+  return fetchJSON<{ success: boolean; id: number; updated_fields: string[] }>(`/parsed/${id}${query}`, {
+    method: "PATCH",
+    body: JSON.stringify(updates),
+  });
+}
+
 export function getGroups() {
   return fetchJSON<any[]>("/groups");
 }

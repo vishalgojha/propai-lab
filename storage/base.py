@@ -94,6 +94,7 @@ class ParsedObservation:
     additional_charges: list[dict] = field(default_factory=list)
     broker_id: Optional[int] = None
     group_name: Optional[str] = None
+    source_schema: Optional[str] = None
 
     # v2 schema — physical / deal attributes (staging from AI extraction)
     carpet_area_sqft: Optional[float] = None
@@ -495,7 +496,7 @@ class Storage(ABC):
     def get_parsed_by_raw(self, raw_id: int) -> Optional[ParsedObservation]: ...
 
     @abstractmethod
-    def get_parsed(self, limit: int = 50, offset: int = 0, intent: str = "", classified_only: bool = False) -> list[dict]: ...
+    def get_parsed(self, limit: int = 50, offset: int = 0, intent: str = "", classified_only: bool = False, asset_type: str = "") -> list[dict]: ...
 
     @abstractmethod
     def get_listings(self, limit: int = 50, offset: int = 0) -> list[dict]: ...

@@ -629,7 +629,18 @@ async def get_raw_messages(user: dict = Depends(require_user), limit: int = 50, 
     limit, offset = bounded_page(limit, offset)
     if raw_id:
         row = storage.get_raw_message(raw_id)
-        if row is None or (tenant_id and str(row.tenant_id or "") != str(tenant_id)):
+        # The admin extraction view intentionally spans all tenants for a
+        # verified super-admin.  Regular users must still resolve evidence
+        # only inside their active organization.
+        is_super_admin = False
+        try:
+            is_super_admin = await asyncio.to_thread(storage.is_super_admin, user["id"])
+        except Exception:
+            is_super_admin = False
+        if row is None or (
+            not is_super_admin
+            and (not tenant_id or str(row.tenant_id or "") != str(tenant_id))
+        ):
             raise HTTPException(404, f"Raw message {raw_id} not found")
         return asdict(row)
     rows = storage.get_raw_messages(limit, offset, group_name=group_name,
