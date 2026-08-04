@@ -134,27 +134,27 @@ body {
 .text-secondary { font-size: 13px; font-weight: 400; line-height: 1.4; color: var(--color-text-secondary); }
 .text-caption { font-size: 12px; font-weight: 400; line-height: 1.3; color: var(--color-text-muted); }
 
-/* Legacy pages still use fixed dark utility colors. Keep them readable when
-   the runtime theme is light until those pages are fully tokenized. */
-:root[data-theme="light"] :where(.bg-black, .bg-zinc-950, .bg-zinc-900) {
+/* Scoped compatibility for the inbox's older dark surface classes. */
+:root[data-theme="light"] .theme-inbox {
+  background-color: var(--background) !important;
+  color: var(--text-primary);
+}
+:root[data-theme="light"] .theme-inbox :where([class~="bg-black"], [class*="bg-black/"], [class~="bg-zinc-950"], [class~="bg-zinc-900"], [class~="bg-zinc-800"], [class~="bg-[#05070b]"], [class~="bg-[#070b0e]"], [class~="bg-[#161b22]"], [class~="bg-[#1e293b]"], [class~="bg-[#1f2c34]"]) {
   background-color: var(--surface) !important;
 }
-:root[data-theme="light"] :where(.bg-zinc-800, .bg-zinc-700) {
-  background-color: var(--surface-elevated) !important;
-}
-:root[data-theme="light"] :where(.text-white, .text-zinc-100, .text-zinc-200, .text-zinc-300) {
+:root[data-theme="light"] .theme-inbox :where(.text-white, .text-zinc-100, .text-zinc-200, .text-zinc-300) {
   color: var(--text-primary) !important;
 }
-:root[data-theme="light"] :where(.text-zinc-400, .text-zinc-500, .text-zinc-600, .text-zinc-700) {
+:root[data-theme="light"] .theme-inbox :where(.text-zinc-400, .text-zinc-500, .text-zinc-600, .text-zinc-700) {
   color: var(--text-muted) !important;
 }
-:root[data-theme="light"] [class*="border-white/"] {
+:root[data-theme="light"] .theme-inbox [class*="border-white/"] {
   border-color: var(--border) !important;
 }
-:root[data-theme="light"] [class*="bg-white/"] {
-  background-color: color-mix(in srgb, var(--surface) 94%, var(--text-primary)) !important;
+:root[data-theme="light"] .theme-inbox [class*="bg-white/"] {
+  background-color: var(--surface-elevated) !important;
 }
-:root[data-theme="light"] :where(.placeholder\:text-zinc-600)::placeholder {
+:root[data-theme="light"] .theme-inbox :where(.placeholder\:text-zinc-500, .placeholder\:text-zinc-600)::placeholder {
   color: var(--text-muted) !important;
 }
 
