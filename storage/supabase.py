@@ -1760,6 +1760,19 @@ class SupabaseStorage(Storage):
             .eq("processed", False).execute()
         return res.count if hasattr(res, "count") else 0
 
+    def has_unprocessed_raw(self) -> bool:
+        """Return whether the extraction queue has at least one eligible row.
+
+        Exact counts scan the full raw_messages queue and can hit the
+        statement timeout once the backlog is large. The worker only needs an
+        existence check before fetching its bounded lanes.
+        """
+        res = self.client.table("raw_messages").select("id") \
+            .eq("processed", False) \
+            .eq("extraction_suppressed", False) \
+            .limit(1).execute()
+        return bool(res.data)
+
     # ── Sender splitter cache ─────────────────────────────────────
 
     def get_sender_splitter_cache(
