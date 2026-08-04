@@ -459,7 +459,6 @@ function AppShell({ children }: { children: React.ReactNode }) {
       } catch {
         // Ignore invalid snapshots and continue with live status checks.
       }
-      setLiveStatus(null);
     }, 0);
     const load = async () => {
       const [phonesRes, status, extraction] = await Promise.all([

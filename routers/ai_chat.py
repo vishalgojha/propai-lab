@@ -298,6 +298,12 @@ _ANALYTICS_ACTION_SIGNALS = re.compile(
     re.IGNORECASE,
 )
 
+_CONVERSATIONAL_EXPLANATION_SIGNALS = re.compile(
+    r"\b(?:what is|what are|what's|explain|difference between|different between|meaning of|"
+    r"how does|how do|can you explain|do you know the difference|tell me about)\b",
+    re.IGNORECASE,
+)
+
 
 def _is_analytics_or_ops_query(text: str) -> bool:
     try:
@@ -326,6 +332,16 @@ def _has_query_signals(text: str) -> bool:
         "compare", "versus", "vs",
     ]
     return any(kw in lowered for kw in query_keywords)
+
+
+def _is_conversational_explanation(text: str) -> bool:
+    """Keep conceptual questions out of the inventory/tool router.
+
+    A question such as “what is the difference between sale and rent?”
+    contains legitimate search keywords, but it asks for an explanation and
+    must not be turned into a zero-result market search.
+    """
+    return bool(_CONVERSATIONAL_EXPLANATION_SIGNALS.search(text or ""))
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -1156,7 +1172,7 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
         except Exception:
             pass
 
-    if last_user and not _has_query_signals(last_user):
+    if last_user and (_is_conversational_explanation(last_user) or not _has_query_signals(last_user)):
         try:
             reply = await _run_with_provider_failover(
                 lambda provider: chat_engine.get_conversational_reply(
