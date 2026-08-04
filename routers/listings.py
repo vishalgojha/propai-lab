@@ -7,9 +7,9 @@ import uuid
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Query
 from fastapi.responses import FileResponse, Response
 from urllib.parse import quote
 
@@ -29,6 +29,25 @@ class HiddenMarketItemPayload(BaseModel):
     broker_name: str | None = None
     source_label: str | None = None
     hidden_reason: str | None = None
+
+
+class ParsedCorrectionPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    summary_title: str | None = Field(default=None, max_length=240)
+    building_name: str | None = Field(default=None, max_length=160)
+    micro_market: str | None = Field(default=None, max_length=160)
+    location_raw: str | None = Field(default=None, max_length=240)
+    broker_name: str | None = Field(default=None, max_length=160)
+    broker_phone: str | None = Field(default=None, max_length=40)
+    bhk: str | None = Field(default=None, max_length=30)
+    area_sqft: float | None = Field(default=None, ge=0, le=10_000_000)
+    price: float | None = Field(default=None, ge=0, le=10_000_000_000)
+    furnishing: str | None = Field(default=None, max_length=80)
+    floor_range: str | None = Field(default=None, max_length=80)
+    parking_type: str | None = Field(default=None, max_length=80)
+    car_parking_count: int | None = Field(default=None, ge=0, le=100)
+    commercial_use_type: str | None = Field(default=None, max_length=120)
 
 
 def _hidden_market_key(payload: HiddenMarketItemPayload) -> str:
@@ -320,10 +339,57 @@ async def upload_listing_photo(listing_id: int, request: Request, user: dict = D
 
 
 @router.get("/api/parsed")
-async def get_parsed(limit: int = 50, offset: int = 0, intent: str = "", classified_only: bool = False, user: dict = Depends(require_user)):
-    return storage.get_parsed(limit, offset, intent=intent, classified_only=classified_only)
+async def get_parsed(
+    limit: int = 50,
+    offset: int = 0,
+    intent: str = "",
+    classified_only: bool = False,
+    asset_type: str = Query(default="", pattern="^(|residential|commercial)$"),
+    user: dict = Depends(require_user),
+    tenant_id: str | None = Depends(get_tenant_context),
+):
+    # Super-admins use this page as a platform-wide audit. Everyone else
+    # must have an active organization before typed rows are returned.
+    if not tenant_id:
+        try:
+            if not await asyncio.to_thread(storage.is_super_admin, user.get("id")):
+                raise HTTPException(403, "A workspace is required to view extractions")
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise HTTPException(403, "A workspace is required to view extractions") from exc
+    return storage.get_parsed(limit, offset, intent=intent, classified_only=classified_only, asset_type=asset_type)
 
 
 @router.get("/api/parsed/{parsed_id}/sources")
 async def get_parsed_sources(parsed_id: int, user: dict = Depends(require_user)):
     return storage.get_parsed_sources(parsed_id)
+
+
+@router.patch("/api/parsed/{parsed_id}")
+async def correct_parsed_observation(
+    parsed_id: int,
+    payload: ParsedCorrectionPayload,
+    schema: str = Query(default=""),
+    user: dict = Depends(require_user),
+    tenant_id: str | None = Depends(get_tenant_context),
+):
+    """Save a tenant-scoped correction without changing WhatsApp evidence."""
+    updates = payload.model_dump(exclude_unset=True)
+    if not updates:
+        raise HTTPException(400, "At least one correction is required")
+    if not tenant_id:
+        raise HTTPException(403, "A workspace is required to edit an extraction")
+    try:
+        is_admin = await asyncio.to_thread(storage.is_super_admin, user.get("id"))
+    except Exception:
+        is_admin = False
+    if not is_admin and not await asyncio.to_thread(storage.parsed_owned_by_connected_phone, parsed_id, tenant_id, schema):
+        raise HTTPException(403, "Only records sent by your connected WhatsApp number can be edited")
+    try:
+        updated = storage.update_parsed_fields(parsed_id, updates, schema)
+    except Exception as exc:
+        raise HTTPException(500, "Could not save extraction correction") from exc
+    if not updated:
+        raise HTTPException(404, "Extraction not found in this workspace")
+    return {"success": True, "id": parsed_id, "updated_fields": sorted(updates)}

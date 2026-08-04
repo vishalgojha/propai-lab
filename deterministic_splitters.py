@@ -63,7 +63,7 @@ _PRICE_RE = re.compile(
     r"(?i)(?:₹|rs\.?|inr)?\s*([\d,]+(?:\.\d+)?)\s*(cr|crore|crores|lac|lacs|lakh|lakhs|l|k)\b"
 )
 _INTENT_RENT_RE = re.compile(r"(?i)\b(?:rent|rental|lease|lease\s+out|for\s+rent)\b")
-_INTENT_SALE_RE = re.compile(r"(?i)\b(?:sale|sell|selling|for\s+sale)\b")
+_INTENT_SALE_RE = re.compile(r"(?i)\b(?:sale|sell|selling|sel|for\s+sale)\b")
 _INTENT_REQ_RE = re.compile(r"(?i)\b(?:requirement|required|wanted|looking\s+for|need)\b")
 _LOCATION_HINT_RE = re.compile(
     r"(?i)\b("
@@ -173,8 +173,13 @@ def _emoji_bullet_re(glyph: str) -> re.Pattern[str]:
 
 
 def _header_count(text: str) -> int:
-    normalized = "\n".join(_normalize_match_line(line) for line in _line_items(text))
-    return len(_BHK_HEADER_RE.findall(normalized))
+    # Count line-by-line. ``^\s*`` is intentionally permissive for WhatsApp
+    # indentation, but across a whole document it can consume newlines and
+    # make a 15-property broadcast look like one header.
+    return sum(
+        1 for line in _line_items(text)
+        if _BHK_HEADER_RE.match(_normalize_match_line(line))
+    )
 
 
 def _normalize_bhk(text: str) -> str | None:

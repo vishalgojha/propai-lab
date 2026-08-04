@@ -4,8 +4,8 @@ export const dynamic = "force-dynamic";
 
 import { useEffect, useState, useMemo } from "react";
 import Link from "next/link";
-import { ArrowLeft, Table, Search, ChevronLeft, ChevronRight, X } from "lucide-react";
-import { fetchJSON } from "@/lib/api";
+import { ArrowLeft, Table, Search, ChevronLeft, ChevronRight, X, Pencil, Save } from "lucide-react";
+import { fetchJSON, updateParsedObservation } from "@/lib/api";
 
 const PAGE_SIZE = 50;
 
@@ -25,9 +25,16 @@ interface ParsedRow {
   location_raw: string | null;
   broker_name: string | null;
   broker_phone: string | null;
-  confidence: number | null;
+  confidence: number | string | null;
   created_at: string;
   message_type: string | null;
+  asset_type?: string | null;
+  source_schema: string | null;
+  summary_title?: string | null;
+  floor_range?: string | null;
+  parking_type?: string | null;
+  car_parking_count?: number | null;
+  commercial_use_type?: string | null;
 }
 
 interface RawMessage {
@@ -65,15 +72,22 @@ function fmtDate(value: string): string {
   return d.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "2-digit" });
 }
 
-function fmtConfidence(c: number | null): { label: string; cls: string } {
-  if (c == null) return { label: "-", cls: "text-zinc-500" };
+function fmtConfidence(c: number | string | null): { label: string; cls: string } {
+  if (typeof c === "string") {
+    const label = c.trim().toLowerCase();
+    if (label === "high") return { label: "High", cls: "text-emerald-400" };
+    if (label === "medium") return { label: "Medium", cls: "text-amber-400" };
+    if (label === "low") return { label: "Low", cls: "text-red-400" };
+    return { label: "Unknown", cls: "text-zinc-500" };
+  }
+  if (c == null || !Number.isFinite(c)) return { label: "Unknown", cls: "text-zinc-500" };
   if (c >= 0.8) return { label: `${Math.round(c * 100)}%`, cls: "text-emerald-400" };
   if (c >= 0.5) return { label: `${Math.round(c * 100)}%`, cls: "text-amber-400" };
   return { label: `${Math.round(c * 100)}%`, cls: "text-red-400" };
 }
 
-function locationDisplay(row: ParsedRow): string {
-  return row.building_name || row.landmark_name || row.location_raw || "-";
+function schemaLabel(schema: string | null): string {
+  return (schema || "unknown").replace(/_(listings|requirements)$/, "").replace(/_/g, " ");
 }
 
 export default function AdminExtractionsPage() {
@@ -81,10 +95,15 @@ export default function AdminExtractionsPage() {
   const [loading, setLoading] = useState(true);
   const [offset, setOffset] = useState(0);
   const [intentFilter, setIntentFilter] = useState<"all" | "listing" | "requirement">("all");
+  const [assetFilter, setAssetFilter] = useState<"all" | "residential" | "commercial">("all");
   const [search, setSearch] = useState("");
   const [selectedRow, setSelectedRow] = useState<ParsedRow | null>(null);
   const [rawMessage, setRawMessage] = useState<RawMessage | null>(null);
   const [rawLoading, setRawLoading] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState<Record<string, string>>({});
 
   useEffect(() => {
     let active = true;
@@ -95,7 +114,8 @@ export default function AdminExtractionsPage() {
       intentFilter === "requirement" ? "BUY" : "";
 
     const classifiedParam = intentFilter === "all" ? "&classified_only=true" : "";
-    fetchJSON<ParsedRow[]>(`/parsed?limit=${PAGE_SIZE}&offset=${offset}&intent=${intentParam}${classifiedParam}`)
+    const assetParam = assetFilter === "all" ? "" : `&asset_type=${assetFilter}`;
+    fetchJSON<ParsedRow[]>(`/parsed?limit=${PAGE_SIZE}&offset=${offset}&intent=${intentParam}${classifiedParam}${assetParam}`)
       .then((data) => {
         if (active) {
           setRows(data);
@@ -110,7 +130,7 @@ export default function AdminExtractionsPage() {
       });
 
     return () => { active = false; };
-  }, [offset, intentFilter]);
+  }, [offset, intentFilter, assetFilter]);
 
   const filteredRows = useMemo(() => {
     if (!search.trim()) return rows;
@@ -141,14 +161,65 @@ export default function AdminExtractionsPage() {
     return () => { active = false; };
   }, [selectedRow]);
 
+  const beginEditing = () => {
+    if (!selectedRow) return;
+    setEditError(null);
+    setEditForm({
+      summary_title: selectedRow.summary_title || "",
+      building_name: selectedRow.building_name || "",
+      micro_market: selectedRow.micro_market || "",
+      location_raw: selectedRow.location_raw || "",
+      bhk: selectedRow.bhk || "",
+      area_sqft: selectedRow.area_sqft == null ? "" : String(selectedRow.area_sqft),
+      price: selectedRow.price == null ? "" : String(selectedRow.price),
+      furnishing: selectedRow.furnishing || "",
+      floor_range: selectedRow.floor_range || "",
+      parking_type: selectedRow.parking_type || "",
+      car_parking_count: selectedRow.car_parking_count == null ? "" : String(selectedRow.car_parking_count),
+      commercial_use_type: selectedRow.commercial_use_type || "",
+    });
+    setEditing(true);
+  };
+
+  const saveEditing = async () => {
+    if (!selectedRow) return;
+    setSaving(true);
+    setEditError(null);
+    const updates: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(editForm)) {
+      if (["area_sqft", "price", "car_parking_count"].includes(key)) {
+        if (value.trim() !== "") updates[key] = Number(value);
+      } else if (value.trim() !== "") {
+        updates[key] = value.trim();
+      }
+    }
+    try {
+      await updateParsedObservation(selectedRow.id, selectedRow.source_schema, updates);
+      const next = { ...selectedRow, ...updates } as ParsedRow;
+      setRows((current) => current.map((row) => row.id === next.id ? next : row));
+      setSelectedRow(next);
+      setEditing(false);
+    } catch (error) {
+      setEditError(error instanceof Error ? error.message : "Could not save correction");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handleFilterChange = (f: "all" | "listing" | "requirement") => {
     setIntentFilter(f);
     setOffset(0);
     setSearch("");
   };
 
+  const handleAssetChange = (f: "all" | "residential" | "commercial") => {
+    setAssetFilter(f);
+    setOffset(0);
+    setSearch("");
+  };
+
   return (
-    <div className="max-w-7xl mx-auto p-6 space-y-6">
+    <div className="theme-extractions max-w-7xl mx-auto p-6 space-y-6">
       {/* Header */}
       <div className="flex items-center gap-4">
         <Link href="/admin" className="text-zinc-400 hover:text-white">
@@ -182,6 +253,22 @@ export default function AdminExtractionsPage() {
               }`}
             >
               {f === "all" ? "All" : f === "listing" ? "Listings" : "Requirements"}
+            </button>
+          ))}
+        </div>
+
+        <div className="flex rounded-lg border border-white/10 overflow-hidden">
+          {(["all", "residential", "commercial"] as const).map((f) => (
+            <button
+              key={f}
+              onClick={() => handleAssetChange(f)}
+              className={`px-4 py-2 text-xs font-semibold transition-colors ${
+                assetFilter === f
+                  ? "bg-sky-400 text-black"
+                  : "bg-zinc-800 text-zinc-400 hover:text-white"
+              }`}
+            >
+              {f === "all" ? "All property types" : f[0].toUpperCase() + f.slice(1)}
             </button>
           ))}
         </div>
@@ -222,12 +309,14 @@ export default function AdminExtractionsPage() {
                 <tr className="border-b border-white/10 text-left text-[11px] uppercase tracking-wider text-zinc-500">
                   <th className="px-4 py-3 w-16">ID</th>
                   <th className="px-4 py-3">Broker / Sender</th>
+                  <th className="px-4 py-3">Schema</th>
                   <th className="px-4 py-3">Intent</th>
                   <th className="px-4 py-3">BHK</th>
                   <th className="px-4 py-3">Price</th>
                   <th className="px-4 py-3">Area</th>
                   <th className="px-4 py-3">Furnishing</th>
-                  <th className="px-4 py-3">Building / Location</th>
+                  <th className="px-4 py-3">Building</th>
+                  <th className="px-4 py-3">Raw Location</th>
                   <th className="px-4 py-3">Micro Market</th>
                   <th className="px-4 py-3">Conf.</th>
                   <th className="px-4 py-3">Created</th>
@@ -248,6 +337,9 @@ export default function AdminExtractionsPage() {
                         <div className="text-zinc-300 truncate max-w-[180px]">
                           {row.broker_name || row.broker_phone || "—"}
                         </div>
+                      </td>
+                      <td className="px-4 py-3 text-xs text-zinc-400 whitespace-nowrap">
+                        {schemaLabel(row.source_schema)}
                       </td>
                       <td className="px-4 py-3">
                         <span
@@ -275,8 +367,11 @@ export default function AdminExtractionsPage() {
                       </td>
                       <td className="px-4 py-3">
                         <div className="text-zinc-300 truncate max-w-[200px]">
-                          {locationDisplay(row)}
+                          {row.building_name || "—"}
                         </div>
+                      </td>
+                      <td className="px-4 py-3 text-zinc-400 text-xs truncate max-w-[180px]">
+                        {row.location_raw || row.landmark_name || "—"}
                       </td>
                       <td className="px-4 py-3 text-zinc-400 text-xs truncate max-w-[140px]">
                         {row.micro_market || "—"}
@@ -328,18 +423,40 @@ export default function AdminExtractionsPage() {
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between">
-              <h2 className="text-lg font-bold text-white">
-                Extraction #{selectedRow.id}
-              </h2>
-              <button
-                onClick={() => setSelectedRow(null)}
-                className="text-zinc-500 hover:text-white"
-              >
-                <X className="w-5 h-5" />
-              </button>
+              <div className="flex items-center gap-2">
+                <h2 className="text-lg font-bold text-white">Extraction #{selectedRow.id}</h2>
+                {!editing && <button onClick={beginEditing} className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 px-2.5 py-1.5 text-xs font-semibold text-zinc-300 hover:text-white"><Pencil className="h-3.5 w-3.5" /> Edit</button>}
+              </div>
+              <button onClick={() => { setEditing(false); setSelectedRow(null); }} className="text-zinc-500 hover:text-white" aria-label="Close"><X className="w-5 h-5" /></button>
             </div>
 
-            <div className="grid grid-cols-2 gap-3 text-sm">
+            {editing ? (
+              <div className="space-y-3">
+                <p className="text-xs leading-5 text-zinc-400">Correct the structured extraction. The original WhatsApp message remains unchanged.</p>
+                <div className="grid grid-cols-2 gap-3">
+                  {[
+                    ["summary_title", "Title"], ["building_name", "Building"], ["micro_market", "Micro market"],
+                    ["location_raw", "Location"], ["bhk", "BHK / configuration"], ["area_sqft", "Area sqft"],
+                    ["price", "Price"], ["furnishing", "Furnishing"], ["floor_range", "Floor"],
+                    ["parking_type", "Parking"], ["car_parking_count", "Parking count"], ["commercial_use_type", "Commercial use"],
+                  ].map(([key, label]) => (
+                    <label key={key} className="text-xs text-zinc-500">
+                      {label}
+                      <input
+                        value={editForm[key] || ""}
+                        onChange={(event) => setEditForm((current) => ({ ...current, [key]: event.target.value }))}
+                        className="mt-1 w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-white outline-none focus:border-emerald-400"
+                      />
+                    </label>
+                  ))}
+                </div>
+                {editError && <p className="text-xs text-red-400">{editError}</p>}
+                <div className="flex justify-end gap-2 border-t border-white/10 pt-3">
+                  <button onClick={() => setEditing(false)} disabled={saving} className="rounded-lg px-3 py-2 text-xs text-zinc-400 hover:text-white">Cancel</button>
+                  <button onClick={() => void saveEditing()} disabled={saving} className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-400 px-3 py-2 text-xs font-semibold text-black hover:bg-emerald-300 disabled:opacity-50"><Save className="h-3.5 w-3.5" /> {saving ? "Saving..." : "Save correction"}</button>
+                </div>
+              </div>
+            ) : <div className="grid grid-cols-2 gap-3 text-sm">
               {[
                 ["Intent", selectedRow.intent || "—"],
                 ["BHK", selectedRow.bhk || "—"],
@@ -354,7 +471,7 @@ export default function AdminExtractionsPage() {
                 ["Broker", selectedRow.broker_name || "—"],
                 ["Broker Phone", selectedRow.broker_phone || "—"],
                 ["Message Type", selectedRow.message_type || "—"],
-                ["Confidence", selectedRow.confidence != null ? `${Math.round(selectedRow.confidence * 100)}%` : "—"],
+                ["Confidence", fmtConfidence(selectedRow.confidence).label],
                 ["Created", fmtDate(selectedRow.created_at)],
               ].map(([label, value]) => (
                 <div key={label}>
@@ -362,9 +479,9 @@ export default function AdminExtractionsPage() {
                   <div className="mt-0.5 text-zinc-300">{value}</div>
                 </div>
               ))}
-            </div>
+            </div>}
 
-            {selectedRow.raw_message_id ? (
+            {!editing && selectedRow.raw_message_id ? (
               <div className="border-t border-white/10 pt-4">
                 <div className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">
                   Raw WhatsApp Message #{selectedRow.raw_message_id}
