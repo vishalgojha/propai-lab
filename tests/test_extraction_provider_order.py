@@ -101,6 +101,6 @@ def test_scoped_backlog_providers_require_both_credentials_and_disable_thinking(
         "extraction-merge",
         "extraction-doubleword",
     ]
-    assert all(provider["thinking_disabled"] for provider in providers)
+    assert all(provider["reasoning_effort"] == "none" for provider in providers)
     assert providers[0]["base_url"] == "https://api-gateway.merge.dev/v1/openai"
     assert providers[1]["base_url"] == "https://api.doubleword.ai/v1"
