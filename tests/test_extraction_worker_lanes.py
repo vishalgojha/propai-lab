@@ -95,3 +95,19 @@ def test_storage_failure_is_counted_as_failed_and_not_cleared(monkeypatch):
 
     assert result == (1, 0, 1, 0, 0)
     assert retry_counts == {1: 1}
+
+
+def test_run_cycle_does_not_process_when_all_tenants_are_stopped(monkeypatch):
+    class _StoppedStorage(_Storage):
+        def get_running_extraction_tenant_ids(self):
+            return []
+
+    storage = _StoppedStorage()
+
+    def fail_if_called(*_args, **_kwargs):
+        raise AssertionError("stopped tenants must not be processed")
+
+    monkeypatch.setattr(extraction_worker, "process_raw_message", fail_if_called)
+
+    assert extraction_worker.run_cycle(storage, {}) == (0, 0, 0, 0, 0)
+    assert storage.calls == []
