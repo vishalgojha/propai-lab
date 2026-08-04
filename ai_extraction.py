@@ -44,6 +44,54 @@ _logger = logging.getLogger(__name__)
 # present in the chain is preferred.
 _PROVIDERS: list[dict] = list(get_configured_providers())
 
+
+def _append_extraction_provider(
+    providers: list[dict],
+    *,
+    env_prefix: str,
+    name: str,
+    default_base_url: str,
+) -> None:
+    """Append an extraction-only OpenAI-compatible provider, when configured.
+
+    These credentials are intentionally separate from the chat provider chain:
+    a temporary backlog-drain budget must not be consumed by interactive chat.
+    """
+    api_key = os.getenv(f"{env_prefix}_API_KEY", "").strip()
+    model = os.getenv(f"{env_prefix}_MODEL", "").strip()
+    base_url = os.getenv(f"{env_prefix}_BASE_URL", default_base_url).strip()
+    if api_key and model:
+        providers.append({
+            "name": name,
+            "api_key": api_key,
+            "base_url": base_url,
+            "model": model,
+            "thinking_disabled": True,
+        })
+    elif api_key or model:
+        _logger.warning(
+            "Skipping extraction provider %s: set both %s_API_KEY and %s_MODEL",
+            name,
+            env_prefix,
+            env_prefix,
+        )
+
+
+# Temporary, extraction-only budget lanes.  Do not add these to llm.py's
+# shared chat chain: they are intended for controlled backlog draining.
+_append_extraction_provider(
+    _PROVIDERS,
+    env_prefix="EXTRACTION_MERGE",
+    name="extraction-merge",
+    default_base_url="https://api-gateway.merge.dev/v1/openai",
+)
+_append_extraction_provider(
+    _PROVIDERS,
+    env_prefix="EXTRACTION_DOUBLEWORD",
+    name="extraction-doubleword",
+    default_base_url="https://api.doubleword.ai/v1",
+)
+
 # Append Gemini as a fallback provider (used when MERGE key is exhausted).
 # Checks ENRICHMENT_GEMINI_KEY first (scoped for enrichment/extraction),
 # then falls back to GEMINI_API_KEY (production key).
@@ -956,6 +1004,11 @@ def _call_provider(
         )
         # Enable JSON mode for providers that support it (Haiku 4.5, etc.)
         request["response_format"] = {"type": "json_object"}
+        # Keep backlog extraction fast and predictable.  This is sent only to
+        # the explicitly scoped extraction providers; other providers retain
+        # their existing request shape for compatibility.
+        if provider.get("thinking_disabled"):
+            request["extra_body"] = {"thinking": {"type": "disabled"}}
         resp = client.chat.completions.create(**request)
         usage = getattr(resp, "usage", None)
         tokens_in = getattr(usage, "prompt_tokens", 0) or 0
