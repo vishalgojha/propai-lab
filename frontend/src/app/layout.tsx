@@ -18,6 +18,7 @@ import {
   Users,
   BookOpen,
   MapPin,
+  MapPinned,
   GraduationCap,
   Radar,
   TrendingUp,
@@ -40,6 +41,8 @@ import { MobileDrawer } from "@/components/layout/MobileDrawer";
 import { InstallPrompt } from "@/components/layout/InstallPrompt";
 import { ServiceWorkerRegister } from "@/components/layout/ServiceWorkerRegister";
 import { isMuted, toggleMute, playConnectionChange, playGroupConnected, playNewLead, playNewWhatsApp, getVolume, setVolume, isSoundEnabled, setSoundEnabled, type SoundEvent } from "@/lib/sounds";
+import { ThemeProvider } from "@/components/ThemeProvider";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 type NavItem = {
   href: string;
@@ -53,6 +56,7 @@ const baseNavSections = [
     title: "Market",
     items: [
       { href: "/chat", label: "Search & Chat", icon: Search },
+      { href: "/map", label: "Market Map", icon: MapPinned },
       { href: "/inbox", label: "Market Inbox", icon: MessageSquare },
       { href: "/whatsapp-groups", label: "WhatsApp Groups", icon: Users },
       { href: "/brokers", label: "Broker Profiles", icon: Users },
@@ -542,7 +546,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
 
   if (authError) {
     return (
-      <div className="flex min-h-[100svh] items-center justify-center bg-black px-4 text-white lg:min-h-screen">
+      <div className="flex min-h-[100svh] items-center justify-center bg-background px-4 text-text-primary lg:min-h-screen">
         <div className="max-w-md rounded-xl border border-red-500/30 bg-transparent p-6 text-center">
           <div className="mx-auto mb-3 h-10 w-10 rounded-full border-2 border-red-400/30 border-t-red-400" />
           <div className="text-sm font-semibold">Session check stalled</div>
@@ -568,7 +572,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
 
   if (authLoading || !user) {
     return (
-      <div className="flex min-h-[100svh] items-center justify-center bg-black text-white lg:min-h-screen">
+      <div className="flex min-h-[100svh] items-center justify-center bg-background text-text-primary lg:min-h-screen">
         <div className="text-center">
           <div className="mx-auto mb-3 h-10 w-10 animate-spin rounded-full border-2 border-white/10 border-t-white" />
           <div className="text-sm font-semibold">
@@ -588,7 +592,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
   const hideGlobalChromeOnMobile = isFocusedWorkspace;
 
   return (
-    <div className="flex h-[100svh] overflow-hidden bg-black lg:h-screen">
+    <div className="flex h-[100svh] overflow-hidden bg-background lg:h-screen">
       <PaletteModal open={paletteOpen} onClose={() => setPaletteOpen(false)} />
       {disconnectNoticeOpen && (
         <div className="fixed right-4 top-4 z-[1100] w-[min(380px,calc(100vw-2rem))] rounded-xl border border-red-400/30 bg-zinc-950 px-4 py-3 shadow-2xl shadow-black/50" role="alert">
@@ -616,13 +620,13 @@ function AppShell({ children }: { children: React.ReactNode }) {
       />
 
       {/* ═══════ Sidebar (desktop) ═══════ */}
-      <aside className="hidden lg:flex w-56 flex-col bg-black border-r border-white/5 shrink-0">
+      <aside className="hidden lg:flex w-56 flex-col bg-background border-r border-border shrink-0">
         {/* Logo */}
         <Link href="/" className="px-5 pt-6 pb-5 block">
           <div className="flex items-center gap-2.5">
             <img src="/propai-logo.svg" alt="PropAI" className="w-10 h-10" />
             <div>
-              <div className="text-[15px] font-bold text-white tracking-tight leading-none">PropAI</div>
+              <div className="text-[15px] font-bold text-text-primary tracking-tight leading-none">PropAI</div>
               <div className="text-[9px] text-zinc-400 uppercase tracking-[0.15em] font-medium mt-0.5">Broker OS</div>
             </div>
           </div>
@@ -632,7 +636,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
         <nav className="flex-1 overflow-y-auto px-3 pb-4" aria-label="Sidebar navigation">
           {navSections.map((section) => (
             <div key={section.title} className="mb-4">
-              <div className="px-2 mb-1.5 text-[9px] font-bold text-zinc-500 uppercase tracking-[0.15em]">
+              <div className="px-2 mb-1.5 text-[9px] font-bold text-text-muted uppercase tracking-[0.15em]">
                 {section.title}
               </div>
               {section.items.map((item: NavItem) => {
@@ -645,16 +649,16 @@ function AppShell({ children }: { children: React.ReactNode }) {
                       prefetch={true}
                       className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-[12px] font-medium transition-all duration-100 ${
                         active
-                          ? "bg-white/5 text-white"
-                          : "text-zinc-400 hover:text-white hover:bg-white/5"
+                          ? "bg-surface-hover text-text-primary"
+                          : "text-text-muted hover:text-text-primary hover:bg-surface-hover"
                       }`}
                     >
-                      {Icon ? <Icon className={`w-3.5 h-3.5 shrink-0 ${active ? "text-white" : ""}`} strokeWidth={1.5} /> : <span className="w-3.5 h-3.5 shrink-0" />}
+                      {Icon ? <Icon className={`w-3.5 h-3.5 shrink-0 ${active ? "text-text-primary" : ""}`} strokeWidth={1.5} /> : <span className="w-3.5 h-3.5 shrink-0" />}
                       <span className="truncate">{item.label}</span>
                       {active && (
                         <motion.div
                           layoutId="sidebar-active-dot"
-                          className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-[#3EE88A]"
+                          className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-accent"
                           transition={reduceMotion ? { duration: 0 } : { type: "spring", stiffness: 500, damping: 35 }}
                         />
                       )}
@@ -669,10 +673,10 @@ function AppShell({ children }: { children: React.ReactNode }) {
                               href={child.href}
                               prefetch={true}
                               className={`flex items-center gap-2 rounded-md px-2 py-1 text-[11px] transition-colors ${
-                                childActive ? "text-white" : "text-zinc-500 hover:text-zinc-300"
+                                childActive ? "text-text-primary" : "text-text-muted hover:text-text-secondary"
                               }`}
                             >
-                              <span className={`h-1.5 w-1.5 rounded-full ${childActive ? "bg-[#3EE88A]" : "bg-zinc-700"}`} />
+                              <span className={`h-1.5 w-1.5 rounded-full ${childActive ? "bg-accent" : "bg-border"}`} />
                               <span>{child.label}</span>
                             </Link>
                           );
@@ -688,23 +692,23 @@ function AppShell({ children }: { children: React.ReactNode }) {
 
         {/* Profile Section */}
         {user && (
-          <div className="px-4 py-3 border-t border-white/5">
+          <div className="px-4 py-3 border-t border-border">
             <div className="flex items-center gap-2">
               <button onClick={() => router.push("/profile")}
-                className="flex min-w-0 flex-1 items-center gap-3 px-2.5 py-2 rounded-lg hover:bg-white/5 transition-colors text-left">
-                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-white/10 bg-white/[0.03] text-xs font-semibold text-zinc-300">
+                className="flex min-w-0 flex-1 items-center gap-3 px-2.5 py-2 rounded-lg hover:bg-surface-hover transition-colors text-left">
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border bg-surface text-xs font-semibold text-text-secondary">
                   {profileIdentity.first_name?.charAt(0)?.toUpperCase() || "?"}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className="text-[12px] font-semibold text-white truncate">
+                  <div className="text-[12px] font-semibold text-text-primary truncate">
                     {profileIdentity.first_name}{profileIdentity.last_name ? ` ${profileIdentity.last_name}` : ""}
                   </div>
-                  {profileIdentity.city && <div className="text-[10px] text-zinc-500 truncate">{profileIdentity.city}</div>}
+                  {profileIdentity.city && <div className="text-[10px] text-text-muted truncate">{profileIdentity.city}</div>}
                 </div>
               </button>
               <button
                 onClick={handleSignOut}
-                className="flex h-9 w-9 items-center justify-center rounded-lg text-zinc-500 transition-colors hover:bg-white/5 hover:text-white"
+                className="flex h-9 w-9 items-center justify-center rounded-lg text-text-muted transition-colors hover:bg-surface-hover hover:text-text-primary"
                 aria-label="Log out"
                 title="Log out"
               >
@@ -715,10 +719,10 @@ function AppShell({ children }: { children: React.ReactNode }) {
         )}
 
         {/* Bottom Status */}
-        <div className="px-4 py-3 border-t border-white/5 space-y-2">
+        <div className="px-4 py-3 border-t border-border space-y-2">
           <button
             onClick={() => setPaletteOpen(true)}
-            className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[11px] text-zinc-500 hover:text-zinc-300 hover:bg-white/5 transition-colors"
+            className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[11px] text-text-muted hover:text-text-secondary hover:bg-surface-hover transition-colors"
           >
             <Search className="w-3.5 h-3.5 shrink-0" strokeWidth={1.5} />
             <span>Search</span>
@@ -800,9 +804,9 @@ function AppShell({ children }: { children: React.ReactNode }) {
       </aside>
 
       {/* ═══════ Main Content ═══════ */}
-      <main className="flex-1 flex flex-col overflow-hidden bg-black min-w-0">
+        <main className="flex-1 flex flex-col overflow-hidden bg-background min-w-0">
         {/* ═══ Top Bar ═══ */}
-        <div className={`${hideGlobalChromeOnMobile ? "max-lg:hidden " : ""}flex min-h-9 items-center gap-2 border-b border-white/5 bg-black/80 px-2 py-1 lg:min-h-[44px] lg:px-5 lg:py-2`}>
+        <div className={`${hideGlobalChromeOnMobile ? "max-lg:hidden " : ""}flex min-h-9 items-center gap-2 border-b border-border bg-background/80 px-2 py-1 lg:min-h-[44px] lg:px-5 lg:py-2`}>
             {/* Hamburger (mobile) */}
             <button
               onClick={toggleDrawer}
@@ -820,8 +824,8 @@ function AppShell({ children }: { children: React.ReactNode }) {
                   Offline
                 </span>
               )}
-              <a href="/connections" className={`flex shrink-0 items-center gap-1 text-[10px] font-semibold transition-colors sm:text-[11px] lg:text-[12px] ${overallHealth === "healthy" ? "text-[#3EE88A] hover:text-[#74f0a5]" : overallHealth === "error" ? "text-red-300 hover:text-red-200" : "text-amber-300 hover:text-amber-200"}`} title={extractionStalled ? "WhatsApp is connected, but extraction has pending messages and processed none in the last hour" : undefined}>
-                <span className={`h-1.5 w-1.5 rounded-full lg:h-2 lg:w-2 ${overallHealth === "healthy" ? "bg-[#3EE88A]" : overallHealth === "error" ? "bg-red-400" : overallHealth === "warning" ? "bg-amber-300" : "bg-zinc-500"}`} />
+              <a href="/connections" className={`flex shrink-0 items-center gap-1 text-[10px] font-semibold transition-colors sm:text-[11px] lg:text-[12px] ${overallHealth === "healthy" ? "text-accent hover:text-accent-hover" : overallHealth === "error" ? "text-red-300 hover:text-red-200" : "text-amber-300 hover:text-amber-200"}`} title={extractionStalled ? "WhatsApp is connected, but extraction has pending messages and processed none in the last hour" : undefined}>
+                <span className={`h-1.5 w-1.5 rounded-full lg:h-2 lg:w-2 ${overallHealth === "healthy" ? "bg-accent" : overallHealth === "error" ? "bg-red-400" : overallHealth === "warning" ? "bg-amber-300" : "bg-zinc-500"}`} />
                 <span>
                   {overallHealth === "checking"
                     ? "Checking"
@@ -837,23 +841,24 @@ function AppShell({ children }: { children: React.ReactNode }) {
               {waConnected && waPhone && (
                 <a
                   href="/connections"
-                  className="shrink-0 font-mono text-[9px] text-zinc-400 transition-colors hover:text-white sm:text-[10px] lg:text-[11px]"
+                  className="shrink-0 font-mono text-[9px] text-text-muted transition-colors hover:text-text-primary sm:text-[10px] lg:text-[11px]"
                   title="Manage connected WhatsApp number"
                 >
                   {waPhone}
                 </a>
               )}
               {(wabaConfig?.outbound_allowed || wabaConfig?.shared_waba_number) && (
-                <a href="/waba" className="flex shrink-0 items-center gap-1 text-[10px] font-semibold text-[#3EE88A] transition-colors hover:text-[#74f0a5] lg:text-[11px]" title={wabaConfig?.outbound_allowed ? "Workspace WABA connected" : "Message the PropAI assistant on WhatsApp"}>
-                  <span className="h-1.5 w-1.5 rounded-full bg-[#3EE88A] lg:h-2 lg:w-2" />
+                <a href="/waba" className="flex shrink-0 items-center gap-1 text-[10px] font-semibold text-accent transition-colors hover:text-accent-hover lg:text-[11px]" title={wabaConfig?.outbound_allowed ? "Workspace WABA connected" : "Message the PropAI assistant on WhatsApp"}>
+                  <span className="h-1.5 w-1.5 rounded-full bg-accent lg:h-2 lg:w-2" />
                   <span>{wabaConfig?.outbound_allowed ? "WABA Connected" : "PropAI WABA"}</span>
                 </a>
               )}
             </div>
             <div className="flex-1" />
+            <ThemeToggle />
             <button
               onClick={handleSignOut}
-              className={`${isFocusedWorkspace ? "max-lg:hidden " : ""}flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-zinc-500 transition-colors hover:bg-white/5 hover:text-white`}
+              className={`${isFocusedWorkspace ? "max-lg:hidden " : ""}flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-text-muted transition-colors hover:bg-surface-hover hover:text-text-primary`}
               aria-label="Log out"
               title="Log out"
             >
@@ -862,7 +867,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
           </div>
 
         {/* Page content */}
-        <div className="flex-1 min-h-0 overflow-y-auto text-white relative">
+        <div className="flex-1 min-h-0 overflow-y-auto text-text-primary relative">
           {children}
         </div>
       </main>
@@ -880,7 +885,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
 
 function LandingLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="bg-black text-white min-h-screen">
+    <div className="bg-background text-text-primary min-h-screen">
       {children}
     </div>
   );
@@ -895,7 +900,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   const isStandalone = isLanding || isAuth || isMcpAuthorize || isPublicShare;
 
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <head>
         <meta charSet="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
@@ -910,16 +915,18 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <meta name="mobile-web-app-capable" content="yes" />
       </head>
       <body className={isStandalone ? "" : "lg:overflow-hidden"}>
-        <ServiceWorkerRegister />
-        {isStandalone ? (
-          <LandingLayout>{children}</LandingLayout>
-        ) : (
-          <LayoutProvider>
-            <AuthProvider>
-              <AppShell>{children}</AppShell>
-            </AuthProvider>
-          </LayoutProvider>
-        )}
+        <ThemeProvider>
+          <ServiceWorkerRegister />
+          {isStandalone ? (
+            <LandingLayout>{children}</LandingLayout>
+          ) : (
+            <LayoutProvider>
+              <AuthProvider>
+                <AppShell>{children}</AppShell>
+              </AuthProvider>
+            </LayoutProvider>
+          )}
+        </ThemeProvider>
       </body>
     </html>
   );

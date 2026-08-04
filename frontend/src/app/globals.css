@@ -1,5 +1,38 @@
 @import "tailwindcss";
 
+/* Runtime theme tokens. The internal app defaults to dark but can switch
+   without changing component markup or Tailwind utility names. */
+:root,
+:root[data-theme="dark"] {
+  --background: #0F1115;
+  --surface: #1A1D23;
+  --border: #2A2E37;
+  --text-primary: #E8E9EC;
+  --text-muted: #9BA1AC;
+  --accent: #22C55E;
+  --accent-hover: #4ADE80;
+  --success: #14B8A6;
+  --danger: #EF4444;
+  --text-secondary: #CBD5E1;
+  --surface-elevated: #20242C;
+  --surface-hover: #292E38;
+}
+
+:root[data-theme="light"] {
+  --background: #FAF9F6;
+  --surface: #FFFFFF;
+  --border: #E5E3DD;
+  --text-primary: #1A1D23;
+  --text-muted: #6B7280;
+  --accent: #16A34A;
+  --accent-hover: #22C55E;
+  --success: #0D9488;
+  --danger: #DC2626;
+  --text-secondary: #4B5563;
+  --surface-elevated: #F3F4F6;
+  --surface-hover: #EEF0EC;
+}
+
 /* ═══════════════════════════════════════════════════════════════
    PropAI OS — Design System
    ═══════════════════════════════════════════════════════════════
@@ -10,33 +43,41 @@
    Radius:     12px cards, 8px inputs, 6px badges
    ═══════════════════════════════════════════════════════════════ */
 
-@theme {
+@theme inline {
   /* ── Brand ── */
-  --color-propai-green: #3EE88A;
-  --color-propai-green-dark: #2DC96E;
+  --color-propai-green: var(--accent);
+  --color-propai-green-dark: var(--accent-hover);
 
   /* ── Surfaces ── */
-  --color-bg-base: #000000;
-  --color-bg-surface: #0a0a0a;
-  --color-bg-elevated: #111111;
-  --color-bg-hover: #1a1a1a;
+  --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-border: var(--border);
+  --color-bg-base: var(--background);
+  --color-bg-surface: var(--surface);
+  --color-bg-elevated: var(--surface-elevated);
+  --color-bg-hover: var(--surface-hover);
+  --color-surface-elevated: var(--surface-elevated);
+  --color-surface-hover: var(--surface-hover);
 
   /* ── Interactive ── */
   --color-blue: #3b82f6;
-  --color-red: #ef4444;
+  --color-red: var(--danger);
   --color-orange: #f59e0b;
-  --color-green: #3EE88A;
+  --color-green: var(--accent);
 
   /* ── Borders ── */
-  --color-border: rgba(255, 255, 255, 0.06);
   --color-border-strong: rgba(255, 255, 255, 0.12);
 
   /* ── Text ── */
-  --color-text-primary: #ffffff;
+  --color-text-primary: var(--text-primary);
   /* On a pure-black UI, the default zinc grays are too faint for metadata,
      timestamps, and counters. Keep secondary text readable by default. */
-  --color-text-secondary: #cbd5e1;
-  --color-text-muted: #94a3b8;
+  --color-text-secondary: var(--text-secondary);
+  --color-text-muted: var(--text-muted);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-success: var(--success);
+  --color-danger: var(--danger);
 
   /* ── Shadows ── */
   --shadow-card: 0 0 0 1px rgba(255, 255, 255, 0.06);
@@ -65,8 +106,8 @@ html { overflow-x: hidden; }
 
 body {
   overflow-x: hidden;
-  background: var(--color-bg-base);
-  color: var(--color-text-primary);
+  background: var(--background);
+  color: var(--text-primary);
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
