@@ -1,7 +1,6 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import "mapbox-gl/dist/mapbox-gl.css";
 import type { BuildingOnMap } from "@/lib/localities";
 
 const LocalityMap = dynamic(() => import("./LocalityMap"), {
@@ -14,11 +13,11 @@ const LocalityMap = dynamic(() => import("./LocalityMap"), {
 export default function LocalityMapLoader({
   locality,
   buildings,
-  token,
+  apiKey,
 }: {
   locality: string;
   buildings: BuildingOnMap[];
-  token: string | null;
+  apiKey: string | null;
 }) {
-  return <LocalityMap locality={locality} buildings={buildings} token={token} />;
+  return <LocalityMap locality={locality} buildings={buildings} apiKey={apiKey} />;
 }

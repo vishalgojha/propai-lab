@@ -9,10 +9,10 @@ import SearchMapLoader from "@/components/SearchMapLoader";
 
 export default function SearchResultsView({
   results,
-  mapToken,
+  googleMapsApiKey,
 }: {
   results: NaturalSearchResult[];
-  mapToken: string | null;
+  googleMapsApiKey: string | null;
 }) {
   const [view, setView] = useState<"list" | "map">("list");
   const geocodedCount = results.filter(
@@ -73,7 +73,7 @@ export default function SearchResultsView({
           })}
         </div>
       ) : (
-        <SearchMapLoader results={results} token={mapToken} />
+        <SearchMapLoader results={results} apiKey={googleMapsApiKey} />
       )}
     </div>
   );

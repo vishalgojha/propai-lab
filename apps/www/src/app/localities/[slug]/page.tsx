@@ -14,8 +14,10 @@ import { localityTitle, localityDescription } from "@/lib/seo-copy";
 // Read at server runtime (Coolify injects env into the running container).
 // Passed to the client map so we don't depend on NEXT_PUBLIC_* build-time
 // inlining, which the Docker build stage doesn't receive.
-const MAPBOX_TOKEN =
-  process.env.NEXT_PUBLIC_MAPBOX_TOKEN || process.env.MAPBOX_TOKEN || null;
+const GOOGLE_MAPS_API_KEY =
+  process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ||
+  process.env.GOOGLE_MAPS_API_KEY ||
+  null;
 
 type Params = { params: Promise<{ slug: string }> };
 
@@ -181,7 +183,7 @@ export default async function LocalityPage({ params }: Params) {
           <h2 className="text-[18px] lg:text-[20px] font-semibold text-white mb-4">
             Map
           </h2>
-          <LocalityMapLoader locality={data.locality} buildings={data.buildings} token={MAPBOX_TOKEN} />
+          <LocalityMapLoader locality={data.locality} buildings={data.buildings} apiKey={GOOGLE_MAPS_API_KEY} />
           {data.unmappedCount > 0 && (
             <p className="mt-3 text-xs text-zinc-500 text-center">
               Showing {mapped.length} of {data.buildings.length} buildings on the map.

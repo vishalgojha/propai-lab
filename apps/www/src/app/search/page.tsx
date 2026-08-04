@@ -14,8 +14,10 @@ import RelatedSearches from "@/components/RelatedSearches";
 import { generateSearchRelated } from "@/lib/related-searches";
 import { NOINDEX } from "@/lib/seo";
 
-const MAPBOX_TOKEN =
-  process.env.NEXT_PUBLIC_MAPBOX_TOKEN || process.env.MAPBOX_TOKEN || null;
+const GOOGLE_MAPS_API_KEY =
+  process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ||
+  process.env.GOOGLE_MAPS_API_KEY ||
+  null;
 
 export const revalidate = 300;
 
@@ -240,7 +242,7 @@ export default async function SearchPage({ searchParams }: { searchParams: Searc
               <>
                 <SearchResultsView
                   results={state.results}
-                  mapToken={MAPBOX_TOKEN}
+                  googleMapsApiKey={GOOGLE_MAPS_API_KEY}
                 />
                 {relatedSections.length > 0 && (
                   <RelatedSearches sections={relatedSections} />
