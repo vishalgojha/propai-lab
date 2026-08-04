@@ -1146,7 +1146,8 @@ def _extract_broker_contact_from_text(text: str) -> tuple[str | None, str | None
                     if candidate and not re.search(r'\d', candidate) and 1 < len(candidate) <= 60:
                         preceding = candidate
             if preceding and not re.search(r'\d', preceding) and len(preceding) > 1:
-                name = preceding
+                name = re.sub(r"[^\w.' &-]", " ", _strip_icons(preceding))
+                name = re.sub(r"\s+", " ", name).strip() or None
         elif num_clean != phone:
             break
     return phone, name
@@ -1479,7 +1480,11 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
     # message body text for explicitly stated contact numbers — brokers routinely
     # self-publish their number in posts.
     sender_label = (sender_name or push_name or "").strip()
-    sender_label_is_name = bool(sender_label and not re.fullmatch(r"[+\d\s().:@_-]+", sender_label))
+    sender_label_is_name = bool(
+        sender_label
+        and sender_label.lower() not in {"unknown", "unknown sender", "whatsapp"}
+        and not re.fullmatch(r"[+\d\s().:@_-]+", sender_label)
+    )
     sender_digits = re.sub(r"\D+", "", sender_phone or "")
     if sender_digits.startswith("91") and len(sender_digits) >= 12:
         sender_digits = sender_digits[-10:]
@@ -1494,7 +1499,34 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
             label_window = (msg_text or "")[label_pos:label_pos + 140]
             sender_phone_from_label, _ = _extract_broker_contact_from_text(label_window)
 
+    # A broker broadcast often ends with a signature containing the contact
+    # name and phone. This is source evidence already present in WhatsMeow's
+    # captured message; attach it to every split item without another LLM call.
+    signature_phone, signature_name = _extract_broker_contact_from_text(msg_text or "")
+
+    def apply_source_price_guard(parsed: dict, source_text: str) -> None:
+        # For a single listing, or a correctly isolated split block, an
+        # explicit native price in the source outranks an LLM conversion.
+        if not source_text or (len(parsed_listings) > 1 and source_text.strip() == (msg_text or "").strip()):
+            return
+        native = _parse_raw_price_native(source_text)
+        if not native:
+            return
+        amount, unit = native
+        absolute = _deterministic_price_rupees({"price": amount, "price_unit": unit})
+        if absolute is None:
+            return
+        parsed["price"] = absolute
+        parsed["price_unit"] = "abs"
+        parsed["price_model"] = None
+        if parsed.get("intent") == "RENT":
+            parsed["monthly_rent"] = absolute
+        elif parsed.get("intent") == "SELL":
+            parsed["total_asking_price"] = absolute
+
     for pl in parsed_listings:
+        block_text = (pl.get("raw_payload") or {}).get("full_text") if isinstance(pl.get("raw_payload"), dict) else ""
+        apply_source_price_guard(pl, block_text or msg_text or "")
         is_valid_mobile = bool(re.fullmatch(r'^(\+?91)?[6-9]\d{9}$', sender_phone or ''))
         if sender_label_is_name:
             pl["broker_name"] = sender_label
@@ -1529,6 +1561,10 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
                 existing_flags = list(pl.get("validation_flags") or [])
                 existing_flags.append("broker_phone_text_extracted")
                 pl["validation_flags"] = existing_flags
+        if signature_phone and not pl.get("broker_phone"):
+            pl["broker_phone"] = signature_phone
+        if signature_name and not pl.get("broker_name"):
+            pl["broker_name"] = signature_name
 
     if parsed_listings:
         for pl in parsed_listings:

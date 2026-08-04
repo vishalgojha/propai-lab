@@ -2,7 +2,7 @@
 
 export const dynamic = "force-dynamic";
 
-import { useEffect, useState, useMemo } from "react";
+import { Fragment, useEffect, useState, useMemo } from "react";
 import Link from "next/link";
 import { ArrowLeft, Table, Search, ChevronLeft, ChevronRight, X, Pencil, Save } from "lucide-react";
 import { fetchJSON, updateParsedObservation } from "@/lib/api";
@@ -104,6 +104,39 @@ export default function AdminExtractionsPage() {
   const [saving, setSaving] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<Record<string, string>>({});
+  const [editingRowId, setEditingRowId] = useState<number | null>(null);
+  const [rowEditForm, setRowEditForm] = useState<Record<string, string>>({});
+  const [rowSaving, setRowSaving] = useState(false);
+  const [rowEditError, setRowEditError] = useState<string | null>(null);
+  const [sortBy, setSortBy] = useState<"created" | "price" | "area" | "building">("created");
+  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
+
+  const formFromRow = (row: ParsedRow): Record<string, string> => ({
+    summary_title: row.summary_title || "",
+    building_name: row.building_name || "",
+    micro_market: row.micro_market || "",
+    location_raw: row.location_raw || "",
+    bhk: row.bhk || "",
+    area_sqft: row.area_sqft == null ? "" : String(row.area_sqft),
+    price: row.price == null ? "" : String(row.price),
+    furnishing: row.furnishing || "",
+    floor_range: row.floor_range || "",
+    parking_type: row.parking_type || "",
+    car_parking_count: row.car_parking_count == null ? "" : String(row.car_parking_count),
+    commercial_use_type: row.commercial_use_type || "",
+  });
+
+  const formUpdates = (form: Record<string, string>): Record<string, unknown> => {
+    const updates: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(form)) {
+      if (["area_sqft", "price", "car_parking_count"].includes(key)) {
+        if (value.trim() !== "") updates[key] = Number(value);
+      } else if (value.trim() !== "") {
+        updates[key] = value.trim();
+      }
+    }
+    return updates;
+  };
 
   useEffect(() => {
     let active = true;
@@ -144,6 +177,21 @@ export default function AdminExtractionsPage() {
     });
   }, [rows, search]);
 
+  const displayRows = useMemo(() => {
+    const sorted = [...filteredRows].sort((a, b) => {
+      let left: string | number = "";
+      let right: string | number = "";
+      if (sortBy === "price") { left = a.price ?? -1; right = b.price ?? -1; }
+      else if (sortBy === "area") { left = a.area_sqft ?? -1; right = b.area_sqft ?? -1; }
+      else if (sortBy === "building") { left = (a.building_name || "").toLowerCase(); right = (b.building_name || "").toLowerCase(); }
+      else { left = a.created_at || ""; right = b.created_at || ""; }
+      if (left < right) return sortDirection === "asc" ? -1 : 1;
+      if (left > right) return sortDirection === "asc" ? 1 : -1;
+      return 0;
+    });
+    return sorted;
+  }, [filteredRows, sortBy, sortDirection]);
+
   useEffect(() => {
     if (!selectedRow?.raw_message_id) {
       setRawMessage(null);
@@ -164,20 +212,7 @@ export default function AdminExtractionsPage() {
   const beginEditing = () => {
     if (!selectedRow) return;
     setEditError(null);
-    setEditForm({
-      summary_title: selectedRow.summary_title || "",
-      building_name: selectedRow.building_name || "",
-      micro_market: selectedRow.micro_market || "",
-      location_raw: selectedRow.location_raw || "",
-      bhk: selectedRow.bhk || "",
-      area_sqft: selectedRow.area_sqft == null ? "" : String(selectedRow.area_sqft),
-      price: selectedRow.price == null ? "" : String(selectedRow.price),
-      furnishing: selectedRow.furnishing || "",
-      floor_range: selectedRow.floor_range || "",
-      parking_type: selectedRow.parking_type || "",
-      car_parking_count: selectedRow.car_parking_count == null ? "" : String(selectedRow.car_parking_count),
-      commercial_use_type: selectedRow.commercial_use_type || "",
-    });
+    setEditForm(formFromRow(selectedRow));
     setEditing(true);
   };
 
@@ -185,14 +220,7 @@ export default function AdminExtractionsPage() {
     if (!selectedRow) return;
     setSaving(true);
     setEditError(null);
-    const updates: Record<string, unknown> = {};
-    for (const [key, value] of Object.entries(editForm)) {
-      if (["area_sqft", "price", "car_parking_count"].includes(key)) {
-        if (value.trim() !== "") updates[key] = Number(value);
-      } else if (value.trim() !== "") {
-        updates[key] = value.trim();
-      }
-    }
+    const updates = formUpdates(editForm);
     try {
       await updateParsedObservation(selectedRow.id, selectedRow.source_schema, updates);
       const next = { ...selectedRow, ...updates } as ParsedRow;
@@ -203,6 +231,29 @@ export default function AdminExtractionsPage() {
       setEditError(error instanceof Error ? error.message : "Could not save correction");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const beginRowEditing = (row: ParsedRow) => {
+    setEditingRowId(row.id);
+    setRowEditForm(formFromRow(row));
+    setRowEditError(null);
+  };
+
+  const saveRowEditing = async (row: ParsedRow) => {
+    setRowSaving(true);
+    setRowEditError(null);
+    const updates = formUpdates(rowEditForm);
+    try {
+      await updateParsedObservation(row.id, row.source_schema, updates);
+      const next = { ...row, ...updates } as ParsedRow;
+      setRows((current) => current.map((item) => item.id === next.id ? next : item));
+      if (selectedRow?.id === next.id) setSelectedRow(next);
+      setEditingRowId(null);
+    } catch (error) {
+      setRowEditError(error instanceof Error ? error.message : "Could not save correction");
+    } finally {
+      setRowSaving(false);
     }
   };
 
@@ -219,7 +270,7 @@ export default function AdminExtractionsPage() {
   };
 
   return (
-    <div className="theme-extractions max-w-7xl mx-auto p-6 space-y-6">
+    <div className="theme-extractions w-full max-w-none px-6 py-6 space-y-6">
       {/* Header */}
       <div className="flex items-center gap-4">
         <Link href="/admin" className="text-zinc-400 hover:text-white">
@@ -292,15 +343,27 @@ export default function AdminExtractionsPage() {
         </div>
 
         <div className="text-xs text-zinc-500 ml-auto">
-          {filteredRows.length} records
+          {displayRows.length} records
         </div>
+        <label className="flex items-center gap-2 text-xs text-zinc-500">
+          Sort
+          <select value={sortBy} onChange={(event) => setSortBy(event.target.value as typeof sortBy)} className="rounded-lg border border-white/10 bg-zinc-800 px-2 py-2 text-xs text-zinc-300 outline-none">
+            <option value="created">Newest</option>
+            <option value="price">Price</option>
+            <option value="area">Area</option>
+            <option value="building">Building</option>
+          </select>
+          <button onClick={() => setSortDirection((value) => value === "asc" ? "desc" : "asc")} className="rounded-lg border border-white/10 bg-zinc-800 px-2 py-2 text-xs text-zinc-300 hover:text-white" aria-label="Toggle sort direction">
+            {sortDirection === "asc" ? "↑" : "↓"}
+          </button>
+        </label>
       </div>
 
       {/* Table */}
       <div className="rounded-2xl border border-white/10 overflow-hidden">
         {loading ? (
           <div className="p-12 text-center text-sm text-zinc-500">Loading extractions...</div>
-        ) : filteredRows.length === 0 ? (
+        ) : displayRows.length === 0 ? (
           <div className="p-12 text-center text-sm text-zinc-500">No records found.</div>
         ) : (
           <div className="overflow-x-auto">
@@ -320,18 +383,19 @@ export default function AdminExtractionsPage() {
                   <th className="px-4 py-3">Micro Market</th>
                   <th className="px-4 py-3">Conf.</th>
                   <th className="px-4 py-3">Created</th>
+                  <th className="px-4 py-3">Action</th>
                 </tr>
               </thead>
               <tbody>
-                {filteredRows.map((row) => {
+                {displayRows.map((row) => {
                   const cat = intentCategory(row);
                   const conf = fmtConfidence(row.confidence);
                   return (
-                    <tr
-                      key={row.id}
-                      onClick={() => setSelectedRow(row)}
-                      className="border-b border-white/5 hover:bg-white/[0.02] cursor-pointer transition-colors"
-                    >
+                    <Fragment key={row.id}>
+                      <tr
+                        onClick={() => setSelectedRow(row)}
+                        className="border-b border-white/5 hover:bg-white/[0.02] cursor-pointer transition-colors"
+                      >
                       <td className="px-4 py-3 font-mono text-xs text-zinc-500">{row.id}</td>
                       <td className="px-4 py-3">
                         <div className="text-zinc-300 truncate max-w-[180px]">
@@ -382,7 +446,44 @@ export default function AdminExtractionsPage() {
                       <td className="px-4 py-3 text-zinc-500 text-xs whitespace-nowrap">
                         {fmtDate(row.created_at)}
                       </td>
-                    </tr>
+                      <td className="px-4 py-3">
+                        <button
+                          onClick={(event) => { event.stopPropagation(); beginRowEditing(row); }}
+                          className="inline-flex items-center gap-1 rounded-md border border-white/10 px-2 py-1 text-xs text-zinc-400 hover:border-emerald-400/50 hover:text-emerald-300"
+                        >
+                          <Pencil className="h-3 w-3" /> Edit
+                        </button>
+                      </td>
+                      </tr>
+                      {editingRowId === row.id && (
+                        <tr className="border-b border-emerald-400/20 bg-emerald-400/[0.04]">
+                          <td colSpan={14} className="px-4 py-4">
+                            <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+                              {[
+                                ["summary_title", "Title"], ["building_name", "Building"], ["micro_market", "Micro market"],
+                                ["location_raw", "Location"], ["bhk", "BHK / configuration"], ["area_sqft", "Area sqft"],
+                                ["price", "Price"], ["furnishing", "Furnishing"], ["floor_range", "Floor"],
+                                ["parking_type", "Parking"], ["car_parking_count", "Parking count"], ["commercial_use_type", "Commercial use"],
+                              ].map(([key, label]) => (
+                                <label key={key} className="text-xs text-zinc-500">
+                                  {label}
+                                  <input
+                                    value={rowEditForm[key] || ""}
+                                    onChange={(event) => setRowEditForm((current) => ({ ...current, [key]: event.target.value }))}
+                                    className="mt-1 w-full rounded-md border border-white/10 bg-black/20 px-2 py-1.5 text-xs text-white outline-none focus:border-emerald-400"
+                                  />
+                                </label>
+                              ))}
+                            </div>
+                            {rowEditError && <p className="mt-2 text-xs text-red-400">{rowEditError}</p>}
+                            <div className="mt-3 flex justify-end gap-2">
+                              <button onClick={() => setEditingRowId(null)} disabled={rowSaving} className="rounded-md px-3 py-1.5 text-xs text-zinc-400 hover:text-white">Cancel</button>
+                              <button onClick={() => void saveRowEditing(row)} disabled={rowSaving} className="inline-flex items-center gap-1 rounded-md bg-emerald-400 px-3 py-1.5 text-xs font-semibold text-black hover:bg-emerald-300 disabled:opacity-50"><Save className="h-3 w-3" /> {rowSaving ? "Saving..." : "Save"}</button>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
                   );
                 })}
               </tbody>
