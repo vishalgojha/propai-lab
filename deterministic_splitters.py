@@ -21,12 +21,14 @@ PATTERN_DASH_SEPARATOR = "dash_separator"
 PATTERN_NUMBERED = "numbered"
 PATTERN_EMOJI_BULLET = "emoji_bullet"
 PATTERN_BARE_BHK = "bare_bhk_header"
+PATTERN_INLINE_BOLD = "inline_bold_header"
 
 PATTERN_ORDER = [
     PATTERN_DASH_SEPARATOR,
     PATTERN_NUMBERED,
     PATTERN_EMOJI_BULLET,
     PATTERN_BARE_BHK,
+    PATTERN_INLINE_BOLD,
 ]
 
 _BHK_HEADER_PATTERN = (
@@ -61,6 +63,11 @@ _AREA_RE = re.compile(
 )
 _PRICE_RE = re.compile(
     r"(?i)(?:₹|rs\.?|inr)?\s*([\d,]+(?:\.\d+)?)\s*(cr|crore|crores|lac|lacs|lakh|lakhs|l|k)\b"
+)
+_INLINE_BOLD_RE = re.compile(r"\*([^*\n]{2,40})\*")
+_DECORATIVE_BOLD_RE = re.compile(
+    r"(?i)^\s*(?:available|new\s+brand\s+building|brand\s+new\s+building|"
+    r"for\s+sale|for\s+rent|kindly\s+call|urgent|hot\s+deal)\b"
 )
 _INTENT_RENT_RE = re.compile(r"(?i)\b(?:rent|rental|lease|lease\s+out|for\s+rent)\b")
 _INTENT_SALE_RE = re.compile(r"(?i)\b(?:sale|sell|selling|sel|for\s+sale)\b")
@@ -423,6 +430,59 @@ def _split_bare_bhk(text: str) -> list[str] | None:
     return chunks or None
 
 
+def _split_inline_bold(text: str) -> list[str] | None:
+    """Split compact broadcasts whose listing names are inline *bold* spans.
+
+    This deliberately requires multiple explicit prices. A single bold
+    building name is not enough evidence to split a message. A bold building
+    name immediately following a bold BHK header belongs to that same listing
+    (for example ``*Available for sale 2Bhk* Building Name: *Pioneer*``).
+    """
+    value = text or ""
+    prices = list(_PRICE_RE.finditer(value))
+    if len(prices) < 2:
+        return None
+
+    spans = []
+    for match in _INLINE_BOLD_RE.finditer(value):
+        label = match.group(1).strip()
+        has_config = bool(re.search(r"(?i)\b\d+(?:\.\d+)?\s*(?:bhk|rk)\b", label))
+        if _DECORATIVE_BOLD_RE.match(label) and not has_config:
+            continue
+        if len(label.split()) <= 6:
+            spans.append(match)
+    if len(spans) < 2:
+        return None
+
+    # A building name after an inline BHK header is part of that listing, not
+    # a new boundary. Only suppress it when no price occurs between the pair.
+    boundaries = []
+    for match in spans:
+        if boundaries:
+            previous = boundaries[-1]
+            previous_label = previous.group(1)
+            between = value[previous.end():match.start()]
+            previous_has_config = bool(re.search(
+                r"(?i)\b\d+(?:\.\d+)?\s*(?:bhk|rk)\b", previous_label
+            ))
+            if previous_has_config and not _PRICE_RE.search(between):
+                continue
+        boundaries.append(match)
+
+    if len(boundaries) < 2:
+        return None
+    chunks = []
+    for index, start_match in enumerate(boundaries):
+        end = boundaries[index + 1].start() if index + 1 < len(boundaries) else len(value)
+        chunk = value[start_match.start():end].strip()
+        if chunk:
+            chunks.append(chunk)
+    chunks = [chunk for chunk in chunks if _extract_bhk(chunk) or _PRICE_RE.search(chunk) or _AREA_RE.search(chunk)]
+    if len(chunks) < 2 or len(chunks) != len(prices):
+        return None
+    return chunks
+
+
 def split_message_into_chunks(text: str, preferred_pattern: str | None = None) -> tuple[str | None, list[str]]:
     """Return the best splitter pattern and the resulting chunks.
 
@@ -438,6 +498,7 @@ def split_message_into_chunks(text: str, preferred_pattern: str | None = None) -
         PATTERN_NUMBERED: _split_numbered,
         PATTERN_EMOJI_BULLET: _split_emoji_bullet,
         PATTERN_BARE_BHK: _split_bare_bhk,
+        PATTERN_INLINE_BOLD: _split_inline_bold,
     }
     headers = _header_count(text)
     pattern_ids = [preferred_pattern] if preferred_pattern in PATTERN_ORDER else []
@@ -446,6 +507,10 @@ def split_message_into_chunks(text: str, preferred_pattern: str | None = None) -
     for pattern_id in pattern_ids:
         splitter = pattern_to_splitter[pattern_id]
         chunks = splitter(text) or []
+        if pattern_id == PATTERN_INLINE_BOLD:
+            if len(chunks) >= 2 and len(chunks) == len(list(_PRICE_RE.finditer(text))):
+                return pattern_id, chunks
+            continue
         if len(chunks) >= 2 and (
             headers == 0
             or len(chunks) == headers
@@ -477,11 +542,26 @@ def parse_chunk(chunk: str) -> dict:
 
     building_name = None
     location_raw = None
+    labelled_inline_building = re.search(
+        r"(?im)\bbuilding\s*(?:name)?\s*[:\-]\s*\*?([^()\n*]+?)\s*\*?(?:\s*\([^\n)]*\))?(?:\n|$)",
+        body,
+    )
+    if labelled_inline_building:
+        building_name = labelled_inline_building.group(1).strip()
+    else:
+        first_bold = _INLINE_BOLD_RE.search(lines[0] if lines else "")
+        if first_bold:
+            label = first_bold.group(1).strip()
+            has_config = bool(re.search(r"(?i)\b\d+(?:\.\d+)?\s*(?:bhk|rk)\b", label))
+            if not _DECORATIVE_BOLD_RE.match(label) and not has_config:
+                building_name = label
     if first_text_line:
         labelled_building = re.search(r"(?i)^\s*(?:building\s*name|building)\s*[:\-]\s*(.+)$", first_text_line)
         labelled_location = re.search(r"(?i)^\s*(?:location|loc\.?)\s*[:\-]\s*(.+)$", first_text_line)
         if labelled_building:
             building_name = labelled_building.group(1).strip()
+        elif building_name:
+            pass
         elif labelled_location:
             location_raw = first_text_line
         elif re.search(r"(?i)\b(?:near|at|location|loc\.?)\b", first_text_line):
@@ -540,4 +620,16 @@ def parse_message(text: str, preferred_pattern: str | None = None) -> tuple[str 
     pattern_id, chunks = split_message_into_chunks(text, preferred_pattern=preferred_pattern)
     if not pattern_id:
         return None, []
-    return pattern_id, [parse_chunk(chunk) for chunk in chunks]
+    parsed = [parse_chunk(chunk) for chunk in chunks]
+    # Inline bold broadcasts often put the only transaction cue in a
+    # different chunk (for example a later ``for sale`` header). Propagate a
+    # document-level sale cue only when rent language is absent; dual-mode
+    # messages remain for AI/contextual handling.
+    document_intent = _extract_intent(text)
+    if document_intent == "SELL" and not _INTENT_RENT_RE.search(text or ""):
+        for item in parsed:
+            if not item.get("intent"):
+                item["intent"] = "SELL"
+                item["message_type"] = "sell"
+                item["total_asking_price"] = item.get("price")
+    return pattern_id, parsed

@@ -6,6 +6,34 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from deterministic_splitters import parse_message
 
 
+INLINE_BOLD_REPRO = """*Available Bandra West Brand new building*
+*Crescent* 3bhk 1342 sqft pali hill price 12.12cr
+*Parishram* 4bhk - 2046 sqft carpet hiegher floor sea view pali hill price 31.32cr
+bandra west *New brand building* *Penthouse*
+5188sqft carpet with sea facing pali hill price 76.8cr bandra west
+*Available for sale 2Bhk* Building Name: *Pioneer Heights* (khar West)
+Flat is of 950 carpet approx With 1 Car Parking Floor:2nd
+Total floors in Building:14
+Amenities in building: Gym,Play Room
+Price 3.70cr Kindly Call
+Sunil - contact
+Mahi - contact"""
+
+
+def test_inline_bold_broadcast_splits_four_sale_listings():
+    pattern_id, chunks = parse_message(INLINE_BOLD_REPRO)
+
+    assert pattern_id == "inline_bold_header"
+    assert len(chunks) == 4
+    assert [chunk["building_name"] for chunk in chunks] == [
+        "Crescent", "Parishram", "Penthouse", "Pioneer Heights"
+    ]
+    assert [chunk["bhk"] for chunk in chunks] == ["3 BHK", "4 BHK", None, "2 BHK"]
+    assert [chunk["price"] for chunk in chunks] == [12.12, 31.32, 76.8, 3.7]
+    assert [chunk["price_unit"] for chunk in chunks] == ["cr"] * 4
+    assert [chunk["intent"] for chunk in chunks] == ["SELL"] * 4
+
+
 def test_numbered_template_splits_into_three_chunks():
     text = """1. A Wing
 3 BHK
