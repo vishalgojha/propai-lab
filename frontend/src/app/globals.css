@@ -227,6 +227,37 @@ body {
   color: var(--text-muted) !important;
 }
 
+/* Group directory cards use explicit semantic colors. This avoids the legacy
+   white-text utility classes becoming unreadable when the light theme is
+   active or when the page is rendered before the theme attribute hydrates. */
+.theme-connections .connection-group-name {
+  color: var(--color-text-primary) !important;
+}
+.theme-connections .connection-group-meta {
+  color: var(--color-text-secondary) !important;
+}
+.theme-connections .connection-group-status-success,
+.theme-connections .connection-group-action-success {
+  border-color: var(--color-success) !important;
+  color: var(--color-success) !important;
+}
+.theme-connections .connection-group-status-success {
+  background-color: color-mix(in srgb, var(--color-success) 12%, transparent) !important;
+}
+.theme-connections .connection-group-status-danger {
+  border-color: var(--color-danger) !important;
+  color: var(--color-danger) !important;
+  background-color: color-mix(in srgb, var(--color-danger) 10%, transparent) !important;
+}
+.theme-connections .connection-group-action {
+  border-color: var(--color-border) !important;
+  color: var(--color-text-primary) !important;
+  background-color: transparent;
+}
+.theme-connections .connection-group-action:hover {
+  background-color: var(--surface-hover) !important;
+}
+
 :root[data-theme="light"] .theme-extractions {
   color: var(--text-primary);
 }
