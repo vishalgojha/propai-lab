@@ -2679,7 +2679,10 @@ class SupabaseStorage(Storage):
         requirement = table.endswith("_requirements")
         transaction = row.get("transaction_type") or ("rent" if "_rent_" in table else "sale")
         asset = row.get("asset_type") or ("commercial" if table.startswith("commercial_") else "residential")
-        price = row.get("monthly_rent") if transaction == "rent" else row.get("total_asking_price")
+        price = (
+            row.get("budget_max") if requirement
+            else (row.get("monthly_rent") if transaction == "rent" else row.get("total_asking_price"))
+        )
         price_model = None
         if price is None:
             price = row.get("rent_per_sqft") if transaction == "rent" else row.get("price_per_sqft")
@@ -2698,12 +2701,16 @@ class SupabaseStorage(Storage):
             "intent": "BUY" if requirement else ("RENT" if transaction == "rent" else "SELL"),
             "asset_type": asset,
             "transaction_type": transaction,
-            "property_type": row.get("commercial_use_type") or row.get("property_type"),
+            "property_type": (
+                ", ".join(str(item) for item in row.get("commercial_use_type") if item)
+                if isinstance(row.get("commercial_use_type"), list)
+                else row.get("commercial_use_type") or row.get("property_type")
+            ),
             "configuration": row.get("configuration_type"),
             "bhk": bhk,
             "price": price,
             "price_unit": "per_sqft" if price_model == "psf" else "abs",
-            "price_model": price_model,
+            "price_model": "budget" if requirement and price is not None else price_model,
             "price_per_sqft": price_per_sqft,
             "area_sqft": row.get("carpet_area_sqft") or row.get("area_min_sqft"),
             "area_min_sqft": area_min,
@@ -2713,6 +2720,7 @@ class SupabaseStorage(Storage):
             "location_raw": row.get("locality_raw"),
             "profile_name": row.get("broker_name"),
             "confidence": row.get("extraction_confidence"),
+            "budget_max": row.get("budget_max"),
         }
 
     def update_parsed_fields(self, row_id: int, updates: dict[str, Any], source_schema: str | None = None) -> bool:

@@ -50,6 +50,7 @@ class ParsedObservation:
     price_model: Optional[str] = None
     price_per_sqft: Optional[float] = None
     rent_per_sqft: Optional[float] = None
+    budget_max: Optional[float] = None
     monthly_rent: Optional[float] = None
     total_asking_price: Optional[float] = None
     area_sqft: Optional[float] = None

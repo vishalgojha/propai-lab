@@ -356,6 +356,13 @@ _PASSTHROUGH_FIELDS = frozenset({
     "deposit_raw_text", "cam_amount", "cam_applicable", "cam_unit",
     "lease_term_type", "lock_in_period_months", "notice_period_months",
     "deal_tags", "title",
+    # Requirement-only fields. These must survive normalization so the
+    # typed requirement tables receive ranges, budgets, and preferences.
+    "area_min_sqft", "area_max_sqft", "budget_min", "budget_max",
+    "budget_per_sqft_max", "locality_options", "fitout_preference",
+    "car_parking_min", "needs_mezzanine", "needs_lift", "needs_power_backup",
+    "needs_central_ac", "min_power_load_kw", "buyer_type", "urgency",
+    "is_flexible", "transaction_nature", "building_preferences",
 })
 
 
@@ -803,6 +810,49 @@ def _apply_deterministic_field_fallbacks(extraction: dict, raw_text: str) -> dic
     """Recover unambiguous schema facts when a provider omits them."""
     text = raw_text or ""
     lowered = text.lower()
+
+    # Requirement messages often contain unambiguous ranges/budgets but the
+    # provider may omit the route-specific fields. Recover only explicit
+    # values; never infer a budget or area from a listing-like phrase.
+    if re.search(r"\b(?:required|requirement|looking\s+for|need|wanted)\b", lowered):
+        if extraction.get("area_min_sqft") is None:
+            range_match = re.search(
+                r"\b([\d,]+)\s*[-–]\s*([\d,]+)\s*(?:sq\.?\s*ft\.?|sqft|sft)\b",
+                text, re.I,
+            )
+            if range_match:
+                extraction["area_min_sqft"] = float(range_match.group(1).replace(",", ""))
+                extraction["area_max_sqft"] = float(range_match.group(2).replace(",", ""))
+
+        if extraction.get("budget_max") is None:
+            budget_match = re.search(
+                r"\bbudget\s*[:\-]?\s*(?:₹|rs\.?\s*)?([\d,.]+)\s*(cr|crore|crores|lac|lakh|lakhs|l|k)?\b",
+                text, re.I,
+            )
+            if budget_match:
+                amount = float(budget_match.group(1).replace(",", ""))
+                unit = (budget_match.group(2) or "").lower()
+                multiplier = 1
+                if unit in {"cr", "crore", "crores"}:
+                    multiplier = 1_00_00_000
+                elif unit in {"l", "lac", "lakh", "lakhs"}:
+                    multiplier = 1_00_000
+                elif unit == "k":
+                    multiplier = 1_000
+                extraction["budget_max"] = amount * multiplier
+
+        if not extraction.get("locality_options"):
+            locality_match = re.search(r"\b(?:anywhere\s+in|location\s*[:\-])\s*([^\n]+)", text, re.I)
+            if locality_match:
+                locality_text = re.sub(r"[,.]", " ", locality_match.group(1))
+                known = [name for name in ("Santacruz", "Khar", "Bandra") if re.search(rf"\b{name}\b", locality_text, re.I)]
+                if known:
+                    extraction["locality_options"] = known
+
+        if not extraction.get("commercial_use_type"):
+            use_match = re.search(r"\bfor\s+a\s+([a-z][a-z ]{2,40}?)\s+(?:on|basis|in)\b", text, re.I)
+            if use_match:
+                extraction["commercial_use_type"] = use_match.group(1).strip().lower()
 
     if extraction.get("carpet_area_sqft") is None:
         area_match = re.search(

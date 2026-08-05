@@ -21,6 +21,7 @@ interface ParsedRow {
   area_min_sqft?: number | null;
   area_max_sqft?: number | null;
   price_per_sqft?: number | null;
+  budget_max?: number | null;
   furnishing: string | null;
   building_name: string | null;
   landmark_name: string | null;
@@ -79,6 +80,9 @@ function fmtArea(row: ParsedRow): string {
 }
 
 function fmtRowPrice(row: ParsedRow): string {
+  if (row.message_type === "requirement" && row.budget_max != null) {
+    return fmtPrice(row.budget_max, "abs");
+  }
   if (row.price_model === "psf" || row.price_unit === "per_sqft") {
     const value = row.price_per_sqft ?? row.price;
     return value == null ? "-" : `₹${value.toLocaleString("en-IN")}/sqft`;
