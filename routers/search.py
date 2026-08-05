@@ -10,7 +10,7 @@ from typing import Any, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from routers.common import storage, require_user
+from routers.common import storage, require_user, get_tenant_context
 from routers.protection import TTLCache, bounded_page
 
 router = APIRouter(tags=["search"])
@@ -440,6 +440,7 @@ async def search_raw_by_group(group_jid: str = "", limit: int = 50, user: dict =
 @router.get("/api/search/market")
 async def market_search(
     user: dict = Depends(require_user),
+    tenant_id: str | None = Depends(get_tenant_context),
     intent: str = "", bhk: str = "", building: str = "", micro_market: str = "",
     price_max: float = 0, price_min: float = 0, furnishing: str = "", broker: str = "",
     sort_by: str = "last_seen", limit: int = 10, offset: int = 0,
@@ -451,6 +452,9 @@ async def market_search(
 
     where_clauses = []
     params = []
+    if tenant_id:
+        where_clauses.append("l.tenant_id = ?")
+        params.append(tenant_id)
 
     if intent and intent != "any":
         where_clauses.append("l.intent = ?")
