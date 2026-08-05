@@ -987,6 +987,7 @@ export function chatAIChat(
 }
 
 export function marketSearchListings(params: {
+  q?: string;
   intent?: string;
   bhk?: string;
   building?: string;
