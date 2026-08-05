@@ -43,6 +43,12 @@ Same building ≠ same flat. A listing is identified by the combination of: buil
 - A crore-denominated price is not a monthly rent by itself. Mixed sale-and-rent messages require item-level splitting; do not apply a whole-message override.
 - Requirements preserve their transaction mode: `1 BHK on rent` is a rental requirement, not a generic purchase request. Extract explicit BHK, budget, preferred locations, tenant type, parking, and amenity requirements from the requirement body.
 
+### Bulk WhatsApp broadcasts
+- `DIRECT INVENTORIES`, `SIGNATURE SPACES`, and similar portfolio headers followed by repeated separator lines represent multiple independent supply listings.
+- Each separator-delimited block is a separate extraction unit. Never send the complete broadcast to the model as one listing, and never let one block's rent/sale marker determine another block's transaction type.
+- A trailing instruction such as `CLIENT PROFILE REQUIRED PRIOR TO CONFIRMING VIEWINGS` is broker workflow/footer text. It does not convert the preceding inventory broadcast into a requirement and is excluded from the extraction slice while the original raw message remains evidence.
+- Broker signatures and contact details are source metadata. They may be propagated to each split item without another LLM call, but must not become building names, prices, or requirements.
+
 ### Deal tags
 - Whitelist: `distress_sale`, `urgent_sale`, `negotiable`, `bank_auction`, `resale`, `exclusive_mandate`, `price_drop`.
 - Only set when the message explicitly contains evidence for the tag.

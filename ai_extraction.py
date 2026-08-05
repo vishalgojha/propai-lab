@@ -29,9 +29,33 @@ from typing import Optional
 
 from openai import OpenAI
 from llm import get_configured_providers
-from deterministic_splitters import PATTERN_INLINE_BOLD, split_message_into_chunks
+from deterministic_splitters import split_message_into_chunks
 
 _logger = logging.getLogger(__name__)
+
+_BULK_INVENTORY_RE = re.compile(
+    r"(?i)\b(?:direct\s+inventor(?:y|ies)|signature\s+spaces|property\s+portfolio|"
+    r"multiple\s+(?:properties|options)|all\s+properties)\b"
+)
+_BULK_FOOTER_RE = re.compile(
+    r"(?im)^\s*(?:[*_~\W]*)(?:client\s+profile\s+required|"
+    r"for\s+more\s+details\s+and\s+inspections|"
+    r"gurukirpa\s+realtors|harkirat\s+singh)\b"
+)
+
+
+def _trim_bulk_footer(text: str) -> str:
+    """Keep broker signatures/CTA text out of the final listing block.
+
+    The complete WhatsApp message remains in ``raw_text`` evidence. This only
+    trims the extraction slice so phrases such as ``client profile required``
+    cannot turn an inventory broadcast into a requirement.
+    """
+    value = (text or "").strip()
+    match = _BULK_FOOTER_RE.search(value)
+    if match and match.start() > 0:
+        return value[:match.start()].rstrip(" \t\n-_*~")
+    return value
 
 # ── Provider configuration ────────────────────────────────────────────
 
@@ -200,7 +224,18 @@ def _classify_message_flags(text: str) -> tuple[str, str, bool]:
         r"\b(?:available|inventory|direct\s+listing|for\s+(?:rent|sale)|rent\s*[-:]|sale\s*[-:]|asking|outright|inspection|carpet\s+area|possession)\b",
         value,
     )
+    separator_count = len(re.findall(r"(?m)^\s*[━─]{3,}\s*$", text or ""))
+    repeated_inventory_markers = len(re.findall(
+        r"(?i)\b(?:rent|sale|carpet|area)\s*[-:–]", value
+    ))
+    bulk_inventory = bool(_BULK_INVENTORY_RE.search(value)) and (
+        separator_count >= 2 or repeated_inventory_markers >= 3
+    )
+    # A footer may say that a client profile is required before a viewing. It
+    # is an instruction attached to a supply broadcast, not buyer demand.
     is_requirement = bool(demand and not (supply and demand.start() > supply.start()))
+    if bulk_inventory:
+        is_requirement = False
 
     commercial = bool(re.search(
         r"\b(?:office|shop|showroom|warehouse|godown|industrial|retail|commercial|bare\s*shell|warm\s*shell|plug[- ]and[- ]play|chargeable\s+area|ceiling\s+height|mezzanine|cabin|workstation|conference\s+room|cam|lease\s+deed|power\s+load|food\s+court|otla)\b",
@@ -247,11 +282,21 @@ _FOCUSED_FIELDS = {
 }
 
 
-def _get_extraction_prompt(asset_type: str, transaction_type: str, is_requirement: bool = False) -> str:
+def _get_extraction_prompt(
+    asset_type: str,
+    transaction_type: str,
+    is_requirement: bool = False,
+    mixed_transaction: bool = False,
+) -> str:
     """Build a small route-specific prompt instead of sending all 85 fields."""
     fields = _FOCUSED_FIELDS[(asset_type, transaction_type, is_requirement)]
     side = "DEMAND/REQUIREMENT" if is_requirement else "SUPPLY/LISTING"
     expected_listing_type = "requirement" if is_requirement else transaction_type
+    listing_type_rule = (
+        f'- listing_type: exactly "{expected_listing_type}".'
+        if not mixed_transaction or is_requirement
+        else '- listing_type: exactly "sale" or "rent" based on the individual block; never use the transaction type from another block.'
+    )
     return f"""You are a deterministic real-estate parser for Indian WhatsApp broker messages.
 You are extracting {side} data for {asset_type} {transaction_type}. Return only valid JSON:
 {{"items": [{{...}}]}}. Emit one object per independently actionable property or requirement.
@@ -261,7 +306,7 @@ price.raw_price_text exactly. For requirements use arrays/ranges and never turn 
 concrete advertised availability into a requirement.
 
 Every item MUST include these discriminator fields:
-- listing_type: exactly "{expected_listing_type}".
+{listing_type_rule}
 - property_category: exactly "{asset_type}".
 - extraction_confidence: one of "high", "medium", or "low".
 Fields allowed for the remaining route-specific data: {fields}.
@@ -541,7 +586,12 @@ def _extract_json_object(raw: str | None) -> object | None:
 def _segment_document(raw_text: str) -> dict:
     """Reconstruct a WhatsApp message into logical blocks."""
     inline_pattern, inline_chunks = split_message_into_chunks(raw_text)
-    if inline_pattern == PATTERN_INLINE_BOLD and len(inline_chunks) >= 2:
+    # Do not discard deterministic boundaries just because they came from a
+    # non-inline pattern. Previously dash-separated broadcasts were correctly
+    # detected here, then thrown away and sent to the model as one flat blob.
+    if inline_pattern and len(inline_chunks) >= 2:
+        cleaned_chunks = [_trim_bulk_footer(chunk) for chunk in inline_chunks]
+        cleaned_chunks = [chunk for chunk in cleaned_chunks if chunk]
         blocks = [
             {
                 "index": index,
@@ -550,7 +600,7 @@ def _segment_document(raw_text: str) -> dict:
                 "text": chunk.strip(),
                 "lines": chunk.splitlines() or [chunk.strip()],
             }
-            for index, chunk in enumerate(inline_chunks)
+            for index, chunk in enumerate(cleaned_chunks)
         ]
         return {
             "document_type": "Multi Listing",
@@ -573,7 +623,7 @@ def _segment_document(raw_text: str) -> dict:
                 "index": len(blocks),
                 "start_line": current_start_index,
                 "line_count": len(current),
-                "text": "\n".join(current).strip(),
+                "text": _trim_bulk_footer("\n".join(current)),
                 "lines": current[:],
             })
             current = []
@@ -1367,8 +1417,16 @@ def ai_extract(raw_text: str, ctx: dict | None = None, storage=None) -> dict:
     result["document"] = document
 
     classified_asset, classified_transaction, classified_requirement = _classify_message_flags(raw_text)
+    mixed_transaction = (
+        not classified_requirement
+        and bool(re.search(r"(?i)\b(?:rent|lease)\b", raw_text))
+        and bool(re.search(r"(?i)\b(?:sale|sell|outright|outrate)\b", raw_text))
+    )
     focused_prompt = _get_extraction_prompt(
-        classified_asset, classified_transaction, classified_requirement
+        classified_asset,
+        classified_transaction,
+        classified_requirement,
+        mixed_transaction=mixed_transaction,
     )
 
     # ── Build messages ────────────────────────────────────────────
