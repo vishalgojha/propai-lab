@@ -32,6 +32,7 @@ interface ParsedRow {
   amenity_requirements?: string[] | null;
   urgency?: string | null;
   transaction_type?: string | null;
+  ai_extraction?: Record<string, unknown> | null;
   furnishing: string | null;
   building_name: string | null;
   landmark_name: string | null;
@@ -105,6 +106,21 @@ function displayIntent(row: ParsedRow): string {
     return `REQUIREMENT · ${(row.transaction_type || "unknown").toUpperCase()}`;
   }
   return row.intent || "—";
+}
+
+const STRUCTURED_EXTRACTION_KEYS = new Set([
+  "listing_type", "message_type", "asset_type", "transaction_type", "bhk", "bhk_options",
+  "price", "price_unit", "price_model", "budget_min", "budget_max", "area_sqft",
+  "area_min_sqft", "area_max_sqft", "furnishing", "building_name", "landmark_name",
+  "micro_market", "location_raw", "locality_options", "broker_name", "broker_phone",
+  "tenant_type", "sharing_acceptable", "food_preference", "car_parking_min",
+  "amenity_requirements", "urgency", "confidence", "extraction_confidence", "title",
+]);
+
+function extraExtractionFields(row: ParsedRow): Array<[string, string]> {
+  return Object.entries(row.ai_extraction || {})
+    .filter(([key, value]) => !STRUCTURED_EXTRACTION_KEYS.has(key) && value != null && value !== "" && !(Array.isArray(value) && value.length === 0))
+    .map(([key, value]) => [key.replace(/_/g, " "), typeof value === "string" ? value : JSON.stringify(value)]);
 }
 
 function fmtDate(value: string): string {
@@ -630,6 +646,19 @@ export default function AdminExtractionsPage() {
                     <div className="mt-0.5 break-words text-zinc-300">{value}</div>
                   </div>
                 ))}
+                {extraExtractionFields(selectedRow).length > 0 && (
+                  <div className="col-span-2 mt-2 border-t border-white/10 pt-3">
+                    <div className="mb-2 text-[10px] font-bold uppercase tracking-wider text-zinc-500">Other extracted fields</div>
+                    <div className="grid grid-cols-2 gap-3">
+                      {extraExtractionFields(selectedRow).map(([label, value]) => (
+                        <div key={label}>
+                          <div className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">{label}</div>
+                          <div className="mt-0.5 break-words text-zinc-300">{value}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
 
             {!editing && selectedRow.raw_message_id ? (
