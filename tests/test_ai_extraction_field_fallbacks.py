@@ -38,3 +38,18 @@ Budget: 3.15 Cr"""
     assert out["budget_max"] == 31_500_000.0
     assert out["locality_options"] == ["Santacruz", "Khar", "Bandra"]
     assert out["commercial_use_type"] == "tailoring unit"
+
+
+def test_explicit_available_sale_overrides_wrong_llm_rent():
+    text = """*Available Sale*
+2 BHK Galaxy Height furnished
+Goregaon Metro station
+Price,1.90 Cr Negotiable
+Rakesh Mishra"""
+
+    out = _apply_deterministic_field_fallbacks(
+        {"listing_type": "rent"},
+        text,
+    )
+
+    assert out["listing_type"] == "sale"
