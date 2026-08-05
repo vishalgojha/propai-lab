@@ -338,6 +338,26 @@ _VALID_DEAL_TAGS = frozenset({
 })
 _VALID_CHARGE_TYPES = frozenset({"fixed", "percent_of_price"})
 
+# Fields are intentionally copied after the discriminator-specific
+# normalisation below.  Keeping this allow-list explicit prevents arbitrary
+# provider output from reaching storage while ensuring the eight route schemas
+# do not silently lose valid commercial/residential attributes.
+_PASSTHROUGH_FIELDS = frozenset({
+    "built_up_area_sqft", "chargeable_area_sqft", "area_raw_text",
+    "price_basis", "commercial_use_type", "fitout_status", "ceiling_height",
+    "floor_range", "car_parking_count", "parking_type", "power_load_kw",
+    "cabin_count", "workstation_count", "conference_room_count",
+    "meeting_room_count", "washroom_count", "pantry_type",
+    "has_central_ac", "has_power_backup", "has_lift", "building_amenities",
+    "amenities_unverified_claim", "bathroom_count", "parking_count",
+    "property_view", "age_of_property", "configuration_type",
+    "possession_date", "oc_status", "brokerage_type", "token_amount",
+    "payment_plan", "transaction_nature", "deposit_amount", "deposit_months",
+    "deposit_raw_text", "cam_amount", "cam_applicable", "cam_unit",
+    "lease_term_type", "lock_in_period_months", "notice_period_months",
+    "deal_tags", "title",
+})
+
 
 _BLOCK_START_KEYWORDS = (
     "available", "requirement", "requirements", "wanted", "looking for",
@@ -765,7 +785,55 @@ def _normalize_extraction(raw: dict) -> dict:
                 continue
     result["additional_charges"] = normalized_charges
 
+    # Preserve valid route-specific schema fields that are not represented by
+    # the small common normalisation block above. Previously these fields were
+    # silently discarded, which made messages such as "Area 2000 Carpet /
+    # Condition Bareshell / Car Park 2" appear empty in the admin UI.
+    for field in _PASSTHROUGH_FIELDS:
+        if field in result or field not in raw:
+            continue
+        value = raw.get(field)
+        if value is not None and value != "":
+            result[field] = value
+
     return result
+
+
+def _apply_deterministic_field_fallbacks(extraction: dict, raw_text: str) -> dict:
+    """Recover unambiguous schema facts when a provider omits them."""
+    text = raw_text or ""
+    lowered = text.lower()
+
+    if extraction.get("carpet_area_sqft") is None:
+        area_match = re.search(
+            r"(?i)\b(?:carpet\s*)?area\s*[:\-]?\s*([\d,]+(?:\.\d+)?)\s*(?:sq\.?\s*ft\.?|sqft|sft|carpet)?",
+            text,
+        )
+        if area_match:
+            extraction["carpet_area_sqft"] = float(area_match.group(1).replace(",", ""))
+            extraction["area_raw_text"] = area_match.group(0).strip()
+
+    if not extraction.get("fitout_status"):
+        if re.search(r"\bbare\s*shell\b|\bbareshell\b", lowered):
+            extraction["fitout_status"] = "bare_shell"
+        elif re.search(r"\bwarm\s*shell\b", lowered):
+            extraction["fitout_status"] = "warm_shell"
+        elif re.search(r"\bbuilder(?:'s)?\s*finish\b", lowered):
+            extraction["fitout_status"] = "builder_finish"
+
+    if extraction.get("car_parking_count") is None:
+        parking_match = re.search(
+            r"(?i)\b(?:car\s*)?park(?:ing)?\s*[:\-]?\s*(\d+)\b|\b(\d+)\s*car\s*parks?\b",
+            text,
+        )
+        if parking_match:
+            extraction["car_parking_count"] = int(next(g for g in parking_match.groups() if g))
+
+    tags = list(extraction.get("deal_tags") or [])
+    if re.search(r"\b(?:brand\s*new|new)\s+building\b", lowered) and "brand_new_building" not in tags:
+        tags.append("brand_new_building")
+    extraction["deal_tags"] = tags
+    return extraction
 
 
 # ── Locality resolution ───────────────────────────────────────────────
@@ -1244,6 +1312,7 @@ def ai_extract(raw_text: str, ctx: dict | None = None, storage=None) -> dict:
             if not isinstance(candidate, dict):
                 continue
             normalized = _normalize_extraction(candidate)
+            normalized = _apply_deterministic_field_fallbacks(normalized, raw_text)
             if normalized.get("listing_type") is None:
                 _logger.warning("Provider %s: skipped an item without listing_type", provider["name"])
                 continue
