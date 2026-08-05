@@ -15,6 +15,7 @@ import SiteFooter from "@/components/SiteFooter";
 import { ShortlistProvider } from "@/components/ShortlistProvider";
 import ShortlistBar from "@/components/ShortlistBar";
 import { getAllLocalities } from "@/lib/localities";
+import { formatBhkNumber } from "@/lib/listing-card";
 import { formatPublicPrice, getPublicDataOverview } from "@/lib/public-data";
 import { slugify } from "@/lib/supabase";
 import CountUp from "@/components/CountUp";
@@ -229,7 +230,7 @@ export default async function WWWPage() {
                       "Listing";
                     const slug = slugify(row.building_name || row.micro_market || row.location_label || title);
                     const price = formatPublicPrice(row.price, row.price_unit);
-                    const spec = [row.bhk, row.furnishing].filter(Boolean).join(" · ");
+                    const spec = [row.bhk ? formatBhkNumber(row.bhk) : "", row.furnishing].filter(Boolean).join(" · ");
                     return (
                       <Link
                         key={row.id}

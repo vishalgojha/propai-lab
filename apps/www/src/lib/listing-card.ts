@@ -28,6 +28,22 @@ export type ListingCardFields = {
   additional_charges?: AdditionalCharge[] | null;
 };
 
+export function formatBhkNumber(value: string | number | null | undefined): string {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "";
+  const match = raw.match(/^(\d+(?:\.\d+)?)(?:\s*BHK)?$/i);
+  if (!match) return raw;
+  const numeric = Number(match[1]);
+  return Number.isInteger(numeric)
+    ? String(numeric)
+    : match[1].replace(/0+$/, "").replace(/\.$/, "");
+}
+
+export function formatBhkLabel(value: string | number | null | undefined): string {
+  const number = formatBhkNumber(value);
+  return number ? `${number} BHK` : "";
+}
+
 export type AdditionalCharge = {
   label: string;
   amount: number | null;
@@ -220,7 +236,7 @@ function buildTitle(row: ListingCardFields): string {
   // read as "Ten BKC", "3 BHK — BKC", and "Available Ten bkc 3bhk".  Build
   // one deterministic title from the structured fields for every card.
   const furnishing = /^(none|null|unknown)$/i.test((row.furnishing || "").trim()) ? "" : (row.furnishing || "").trim();
-  const bhk = (row.bhk || "").trim();
+  const bhk = formatBhkNumber(row.bhk);
   const propertyType = normalizePropertyType(row.property_type);
   // Extract first segment before comma — real building names are short and
   // appear at the start (e.g. "Wallfort Tower" from "Wallfort Tower, 2bhk...").
@@ -251,7 +267,7 @@ function buildSpecItems(row: ListingCardFields): ListingSpecItem[] {
     items.push({ kind: "type", label: ptype });
   }
   if (row.bhk && row.bhk.trim()) {
-    items.push({ kind: "bhk", label: row.bhk.trim() });
+    items.push({ kind: "bhk", label: formatBhkLabel(row.bhk) });
   }
   if (typeof row.area_sqft === "number" && row.area_sqft > 0) {
     items.push({ kind: "area", label: `${row.area_sqft.toLocaleString("en-IN")} sqft` });
