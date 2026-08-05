@@ -563,13 +563,25 @@ async def market_search(
                l.latest_raw_message_id,
                (SELECT b.latitude FROM buildings b
                 WHERE lower(trim(b.canonical_name)) = lower(trim(l.building_name))
+                  AND (NULLIF(trim(l.micro_market), '') IS NULL
+                       OR lower(trim(b.address)) = lower(trim(l.micro_market))
+                       OR lower(trim(b.address)) LIKE '%' || lower(trim(l.micro_market)) || '%'
+                       OR lower(trim(l.micro_market)) LIKE '%' || lower(trim(b.address)) || '%')
                 LIMIT 1) AS latitude,
                (SELECT b.longitude FROM buildings b
                 WHERE lower(trim(b.canonical_name)) = lower(trim(l.building_name))
+                  AND (NULLIF(trim(l.micro_market), '') IS NULL
+                       OR lower(trim(b.address)) = lower(trim(l.micro_market))
+                       OR lower(trim(b.address)) LIKE '%' || lower(trim(l.micro_market)) || '%'
+                       OR lower(trim(l.micro_market)) LIKE '%' || lower(trim(b.address)) || '%')
                 LIMIT 1) AS longitude,
                (SELECT b.address FROM buildings b
                 WHERE lower(trim(b.canonical_name)) = lower(trim(l.building_name))
                   AND b.address IS NOT NULL
+                  AND (NULLIF(trim(l.micro_market), '') IS NULL
+                       OR lower(trim(b.address)) = lower(trim(l.micro_market))
+                       OR lower(trim(b.address)) LIKE '%' || lower(trim(l.micro_market)) || '%'
+                       OR lower(trim(l.micro_market)) LIKE '%' || lower(trim(b.address)) || '%')
                 LIMIT 1) AS building_address
         FROM listings_unified l
         WHERE {where_sql}
