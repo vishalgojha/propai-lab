@@ -53,7 +53,7 @@ export default function LocalityProfilePage() {
       backLabel="Back to Markets"
       actionSlot={
         <button
-          onClick={() => router.push(`/search?q=${encodeURIComponent(locality)}`)}
+          onClick={() => router.push("/chat")}
           className="rounded-lg border border-white/10 px-3 py-2 text-xs text-zinc-300 hover:bg-zinc-900"
         >
           Open search

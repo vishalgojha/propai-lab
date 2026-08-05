@@ -93,7 +93,7 @@ export default function BuildingProfilePage({ params }: { params: Promise<{ buil
               <div className="text-xs text-zinc-500">Search hits that reference this building name.</div>
             </div>
             <button
-              onClick={() => router.push(`/search?q=${encodeURIComponent(building_id)}`)}
+              onClick={() => router.push("/chat")}
               className="text-xs font-semibold text-[#3EE88A] hover:underline"
             >
               Open search

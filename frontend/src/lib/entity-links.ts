@@ -63,7 +63,7 @@ export function entityProfileHref(entity: EntityLinkLike) {
   const encodedText = encodeURIComponent(text);
   const slug = slugifyEntitySegment(text);
 
-  if (!text) return "/search";
+  if (!text) return "/chat";
   if (entity.type === "broker" && entity.id) return `/brokers/${encodeURIComponent(String(entity.id))}`;
   if ((entity.type === "broker" || entity.type === "phone") && entity.phone) {
     return `/broker/${encodeURIComponent(entity.phone)}`;
@@ -77,9 +77,9 @@ export function entityProfileHref(entity: EntityLinkLike) {
   if (entity.type === "landmark") return `/landmarks/${slug || encodedText}`;
   if (entity.type === "developer") return `/developers/${slug || encodedText}`;
   if (entity.type === "listing" && entity.id) return `/market/listings?listing=${encodeURIComponent(String(entity.id))}`;
-  if (entity.type === "requirement") return `/search?q=${encodedText}`;
+  if (entity.type === "requirement") return "/chat";
   if (entity.type === "client" && entity.id) return `/clients/${encodeURIComponent(String(entity.id))}`;
-  return `/search?q=${encodedText}`;
+  return "/chat";
 }
 
 export function entityCreateHref(entity: EntityLinkLike) {

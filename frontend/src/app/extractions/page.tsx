@@ -70,7 +70,7 @@ export default function ExtractionsPage() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Link href="/search" className="rounded-lg bg-[#3EE88A] px-3 py-2 text-xs font-semibold text-black">
+          <Link href="/chat" className="rounded-lg bg-[#3EE88A] px-3 py-2 text-xs font-semibold text-black">
             Open Search
           </Link>
           <Link href="/connections" className="rounded-lg border border-white/10 bg-zinc-800 px-3 py-2 text-xs font-semibold text-zinc-400 hover:text-white">
@@ -143,7 +143,7 @@ export default function ExtractionsPage() {
                       <td className="px-4 py-3">
                         <div className="text-zinc-400">{row.observation_count} posts · {row.group_count} groups</div>
                         {searchTerm ? (
-                          <Link href={`/search?q=${encodeURIComponent(searchTerm)}`} className="mt-1 inline-flex text-xs font-semibold text-[#58a6ff] hover:text-[#8abfff]">
+                          <Link href="/chat" className="mt-1 inline-flex text-xs font-semibold text-[#58a6ff] hover:text-[#8abfff]">
                             Check raw knowledge
                           </Link>
                         ) : null}
