@@ -145,6 +145,42 @@ def test_price_formatter_does_not_render_crore_sale_as_monthly_rent():
     assert formatted == "₹12.1 Cr"
 
 
+def test_dash_separated_inventory_broadcast_stays_supply_and_drops_footer():
+    message = """💢 GURUKIRPA REALTORS MUMBAI
+DIRECT INVENTORIES
+━━━━━━━━━━━━━━━━━━
+COMMERCIAL SPACE
+Area – 1200 Sq. Ft.
+Rent – ₹5 Lakhs
+Linking Road, Bandra West
+━━━━━━━━━━━━━━━━━━
+COMMERCIAL SPACE
+Area – 2000 Sq. Ft.
+Rent – ₹7 Lakhs
+Santacruz West
+━━━━━━━━━━━━━━━━━━
+COMMERCIAL SPACE
+Area – 3000 Sq. Ft.
+Rent – ₹10 Lakhs
+Worli
+━━━━━━━━━━━━━━━━━━
+CLIENT PROFILE REQUIRED PRIOR TO CONFIRMING VIEWINGS
+GURUKIRPA REALTORS MUMBAI"""
+
+    document = ai_extraction._segment_document(message)
+    assert document["document_type"] == "Multi Listing"
+    assert document["block_count"] == 3
+    assert all("client profile required" not in block["text"].lower() for block in document["blocks"])
+    assert ai_extraction.classify_message_type(message) == ("commercial", "rent")
+
+
+def test_mixed_inventory_prompt_allows_item_level_transaction_types():
+    prompt = ai_extraction._get_extraction_prompt(
+        "commercial", "rent", mixed_transaction=True
+    )
+    assert 'exactly "sale" or "rent" based on the individual block' in prompt
+
+
 def test_ai_extract_sends_reconstructed_document_to_provider(monkeypatch):
     message = """1. RUSTOMJEE PARAMOUNT
 3 BHK
