@@ -67,8 +67,8 @@ function normalizeBhk(value: unknown) {
   if (!text) return "";
   const raw = text.replace(/\s*bhk\b/i, "").trim();
   const numeric = Number(raw);
-  if (Number.isFinite(numeric)) return `${numeric} BHK`;
-  return /bhk/i.test(text) ? text : `${text} BHK`;
+  if (Number.isFinite(numeric)) return String(numeric);
+  return raw || text;
 }
 
 function normalizeIntent(value: unknown) {
