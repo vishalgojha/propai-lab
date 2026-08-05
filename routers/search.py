@@ -493,7 +493,7 @@ async def market_search(
     listing_params = params.copy()
     listing_params.extend([limit + 50, offset])
     rows = storage.db.execute(f"""
-        SELECT l.id AS listing_id, l.fingerprint, l.intent, l.bhk, l.price, l.price_unit, l.area_sqft,
+        SELECT l.id AS listing_id, l.source_fingerprint AS fingerprint, l.intent, l.bhk, l.price, l.price_unit, l.area_sqft,
                l.furnishing, l.location_label, l.building_name, l.landmark_name,
                l.micro_market, l.broker_name, l.broker_phone,
                l.first_seen, l.last_seen, l.observation_count, l.group_count,
