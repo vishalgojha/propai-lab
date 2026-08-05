@@ -53,3 +53,24 @@ Rakesh Mishra"""
     )
 
     assert out["listing_type"] == "sale"
+
+
+def test_rental_requirement_recovers_bhk_locations_tenant_and_amenities():
+    text = """URGENT REQUIREMENT – 1 BHK ON RENT
+Preferred Locations: Ram Maruti Road, Naupada, Teen Petrol Pump & Panch Pakhadi, Thane West
+Budget: Up to ₹32,000/-
+Tenant: Small Family (2 Members Only)
+Open Car Parking Required
+Modular Kitchen/Kitchen Trolley Required
+Gas Pipeline Preferred"""
+
+    out = _apply_deterministic_field_fallbacks({"listing_type": "requirement"}, text)
+
+    assert out["bhk"] == 1.0
+    assert out["budget_max"] == 32000.0
+    assert out["locality_options"] == [
+        "Ram Maruti Road", "Naupada", "Teen Petrol Pump", "Panch Pakhadi", "Thane West"
+    ]
+    assert out["tenant_type"] == "Small Family (2 Members Only)"
+    assert out["car_parking_min"] == 1
+    assert out["amenity_requirements"] == ["modular_kitchen", "gas_pipeline"]

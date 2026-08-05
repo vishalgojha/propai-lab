@@ -2500,6 +2500,7 @@ class SupabaseStorage(Storage):
                     "is_flexible", "urgency", "status",
                     "furnishing_preference", "possession_preference",
                     "car_parking_min", "buyer_type", "brokerage_willingness",
+                    "amenity_requirements",
                 },
                 "residential_rent_requirements": {
                     "bhk_options", "configuration_preference",
@@ -2511,6 +2512,7 @@ class SupabaseStorage(Storage):
                     "tenant_type", "has_pets", "sharing_acceptable",
                     "lease_term_preference", "deposit_budget_max",
                     "car_parking_min", "brokerage_willingness",
+                    "amenity_requirements",
                 },
                 "commercial_sale_requirements": {
                     "commercial_use_type", "carpet_area_min_sqft",

@@ -363,6 +363,8 @@ _PASSTHROUGH_FIELDS = frozenset({
     "car_parking_min", "needs_mezzanine", "needs_lift", "needs_power_backup",
     "needs_central_ac", "min_power_load_kw", "buyer_type", "urgency",
     "is_flexible", "transaction_nature", "building_preferences",
+    "bhk_options", "furnishing_preference", "tenant_type",
+    "sharing_acceptable", "food_preference", "amenity_requirements",
 })
 
 
@@ -837,6 +839,11 @@ def _apply_deterministic_field_fallbacks(extraction: dict, raw_text: str) -> dic
     # provider may omit the route-specific fields. Recover only explicit
     # values; never infer a budget or area from a listing-like phrase.
     if re.search(r"\b(?:required|requirement|looking\s+for|need|wanted)\b", lowered):
+        if extraction.get("bhk") is None and not extraction.get("bhk_options"):
+            bhk_match = re.search(r"\b(\d+(?:\.\d+)?)\s*bhk\b", text, re.I)
+            if bhk_match:
+                extraction["bhk"] = float(bhk_match.group(1))
+
         if extraction.get("area_min_sqft") is None:
             range_match = re.search(
                 r"\b([\d,]+)\s*[-–]\s*([\d,]+)\s*(?:sq\.?\s*ft\.?|sqft|sft)\b",
@@ -848,7 +855,7 @@ def _apply_deterministic_field_fallbacks(extraction: dict, raw_text: str) -> dic
 
         if extraction.get("budget_max") is None:
             budget_match = re.search(
-                r"\bbudget\s*[:\-]?\s*(?:₹|rs\.?\s*)?([\d,.]+)\s*(cr|crore|crores|lac|lakh|lakhs|l|k)?\b",
+                r"\bbudget\s*[:\-]?\s*(?:up\s+to\s*)?(?:₹|rs\.?\s*)?([\d,.]+)\s*(cr|crore|crores|lac|lakh|lakhs|l|k)?\b",
                 text, re.I,
             )
             if budget_match:
@@ -864,12 +871,43 @@ def _apply_deterministic_field_fallbacks(extraction: dict, raw_text: str) -> dic
                 extraction["budget_max"] = amount * multiplier
 
         if not extraction.get("locality_options"):
-            locality_match = re.search(r"\b(?:anywhere\s+in|location\s*[:\-])\s*([^\n]+)", text, re.I)
+            locality_match = re.search(
+                r"\b(?:anywhere\s+in|location|preferred\s+locations?)\s*[:\-]?\s*([^\n]+)",
+                text, re.I,
+            )
             if locality_match:
-                locality_text = re.sub(r"[,.]", " ", locality_match.group(1))
-                known = [name for name in ("Santacruz", "Khar", "Bandra") if re.search(rf"\b{name}\b", locality_text, re.I)]
-                if known:
-                    extraction["locality_options"] = known
+                locality_text = locality_match.group(1).strip(" *")
+                parts = re.split(r"\s*(?:,|&|\band\b)\s*", locality_text, flags=re.I)
+                if len(parts) == 1 and re.search(r"\b(?:anywhere|preferred|location)\b", locality_match.group(0), re.I):
+                    known = re.findall(
+                        r"\b(?:Santacruz|Khar|Bandra|Thane(?:\s+West)?|Naupada|Teen\s+Petrol\s+Pump|Panch\s+Pakhadi|Ram\s+Maruti\s+Road)\b",
+                        locality_text,
+                        re.I,
+                    )
+                    if known:
+                        parts = known
+                extraction["locality_options"] = [p.strip() for p in parts if p.strip()]
+
+        if extraction.get("tenant_type") is None:
+            tenant_match = re.search(r"\btenant\s*[:\-]?\s*([^\n]+)", text, re.I)
+            if tenant_match:
+                extraction["tenant_type"] = tenant_match.group(1).strip(" *")
+
+        if extraction.get("car_parking_min") is None and re.search(
+            r"\b(?:open|covered)?\s*car\s*parking\s+required\b|\bparking\s+required\b",
+            lowered,
+        ):
+            extraction["car_parking_min"] = 1
+
+        amenity_requirements = list(extraction.get("amenity_requirements") or [])
+        if re.search(r"\bmodular\s+kitchen|kitchen\s+trolley\b", lowered):
+            if "modular_kitchen" not in amenity_requirements:
+                amenity_requirements.append("modular_kitchen")
+        if re.search(r"\bgas\s+pipeline\b", lowered):
+            if "gas_pipeline" not in amenity_requirements:
+                amenity_requirements.append("gas_pipeline")
+        if amenity_requirements:
+            extraction["amenity_requirements"] = amenity_requirements
 
         if not extraction.get("commercial_use_type"):
             use_match = re.search(r"\bfor\s+a\s+([a-z][a-z ]{2,40}?)\s+(?:on|basis|in)\b", text, re.I)

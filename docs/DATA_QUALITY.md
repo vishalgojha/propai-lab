@@ -41,6 +41,7 @@ Same building ≠ same flat. A listing is identified by the combination of: buil
 - Explicit `available sale`, `for sale`, `sale price`, `outright`, and `outrate` markers override an LLM's conflicting `RENT` result when no rent marker is present.
 - Explicit `available rent`, `for rent`, `monthly rent`, and `rent -` markers similarly override a conflicting `SALE` result when no sale marker is present.
 - A crore-denominated price is not a monthly rent by itself. Mixed sale-and-rent messages require item-level splitting; do not apply a whole-message override.
+- Requirements preserve their transaction mode: `1 BHK on rent` is a rental requirement, not a generic purchase request. Extract explicit BHK, budget, preferred locations, tenant type, parking, and amenity requirements from the requirement body.
 
 ### Deal tags
 - Whitelist: `distress_sale`, `urgent_sale`, `negotiable`, `bank_auction`, `resale`, `exclusive_mandate`, `price_drop`.
