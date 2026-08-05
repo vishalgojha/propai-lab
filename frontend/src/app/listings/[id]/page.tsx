@@ -18,12 +18,28 @@ import {
   Check,
 } from "lucide-react";
 
-function formatPrice(value?: number, unit?: string) {
+function formatBhk(value?: string | number | null) {
+  const text = String(value ?? "").trim().replace(/\s*bhk\b/i, "").trim();
+  if (!text) return "";
+  const numeric = Number(text);
+  if (!Number.isFinite(numeric)) return text;
+  return Number.isInteger(numeric) ? String(numeric) : String(numeric);
+}
+
+function formatBroker(value?: string | null) {
+  const text = String(value ?? "").trim();
+  if (!text || /@s\.whatsapp\.net$/i.test(text) || /^\+?[\d\s()\-]+$/.test(text)) return "Broker";
+  return text;
+}
+
+function formatPrice(value?: number, unit?: string, intent?: string) {
   if (!value) return "—";
   if (value >= 10000000) return `${(value / 10000000).toLocaleString("en-IN", { maximumFractionDigits: 2 })} Cr`;
   if (value >= 100000) return `${(value / 100000).toLocaleString("en-IN", { maximumFractionDigits: 2 })} Lac`;
-  if (unit) return `${value.toLocaleString("en-IN")} ${unit}`;
-  return value.toLocaleString("en-IN");
+  const suffix = String(unit || "").toLowerCase();
+  const rentSuffix = String(intent || "").toUpperCase() === "RENT" ? "/month" : "";
+  if (suffix && !["abs", "absolute"].includes(suffix)) return `${value.toLocaleString("en-IN")} ${unit}`;
+  return `${value.toLocaleString("en-IN")}${rentSuffix}`;
 }
 
 function dateLabel(ts?: string) {
@@ -220,7 +236,7 @@ export default function ListingDetailPage() {
               {dealTagBadges(listing.deal_tags)}
               {listing.bhk && (
                 <span className="text-[10px] px-2 py-0.5 rounded-full bg-zinc-700 text-zinc-200 font-medium">
-                  {listing.bhk}
+                  {formatBhk(listing.bhk)} BHK
                 </span>
               )}
               {listing.property_type && (
@@ -242,7 +258,7 @@ export default function ListingDetailPage() {
           </div>
 
           <div className="text-right shrink-0">
-            <div className="text-2xl font-bold text-white">{formatPrice(listing.price, listing.price_unit)}</div>
+            <div className="text-2xl font-bold text-white">{formatPrice(listing.price, listing.price_unit, listing.intent)}</div>
             {pricePerSqft && (
               <div className="text-xs text-zinc-500 mt-0.5">₹{pricePerSqft.toLocaleString("en-IN")}/sqft</div>
             )}
@@ -254,9 +270,9 @@ export default function ListingDetailPage() {
       {/* Property Details Grid */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {[
-          { label: "Price", value: formatPrice(listing.price, listing.price_unit) },
+          { label: "Price", value: formatPrice(listing.price, listing.price_unit, listing.intent) },
           { label: "Area", value: listing.area_sqft ? `${listing.area_sqft.toLocaleString("en-IN")} sqft` : null },
-          { label: "BHK", value: listing.bhk || null },
+          { label: "BHK", value: listing.bhk ? `${formatBhk(listing.bhk)} BHK` : null },
           { label: "Furnishing", value: listing.furnishing || null },
           { label: "Floor", value: listing.floor_description || null },
           { label: "Orientation", value: listing.orientation || null },
@@ -282,8 +298,8 @@ export default function ListingDetailPage() {
             <InfoRow label="Intent" value={listing.intent || "—"} />
             <InfoRow label="Type" value={listing.property_type || listing.asset_type || "—"} />
             <InfoRow label="Transaction" value={listing.transaction_type || "—"} />
-            <InfoRow label="BHK" value={listing.bhk || "—"} />
-            <InfoRow label="Price" value={formatPrice(listing.price, listing.price_unit)} />
+            <InfoRow label="BHK" value={listing.bhk ? `${formatBhk(listing.bhk)} BHK` : "—"} />
+            <InfoRow label="Price" value={formatPrice(listing.price, listing.price_unit, listing.intent)} />
             {pricePerSqft && <InfoRow label="Per sqft" value={`₹${pricePerSqft.toLocaleString("en-IN")}`} />}
             <InfoRow label="Area" value={listing.area_sqft ? `${listing.area_sqft.toLocaleString("en-IN")} sqft` : "—"} />
             <InfoRow label="Furnishing" value={listing.furnishing || "—"} />
@@ -340,7 +356,7 @@ export default function ListingDetailPage() {
           <div className="rounded-lg border border-white/10 bg-white/[0.025] p-4">
             <h3 className="text-sm font-semibold text-white mb-2">Broker</h3>
             <div>
-              <InfoRow label="Name" value={listing.broker_name || "—"} link={brokerLink || undefined} />
+              <InfoRow label="Name" value={formatBroker(listing.broker_name)} link={brokerLink || undefined} />
               <InfoRow label="Phone" value={listing.broker_phone || "—"} />
             </div>
             {waLink && (
@@ -440,8 +456,8 @@ export default function ListingDetailPage() {
                   }`}>
                     {src.role || src.intent || "unknown"}
                   </span>
-                  <span>{src.bhk || ""} {src.building_name || ""} {src.micro_market || ""}</span>
-                  {src.price ? <span className="text-zinc-400 text-xs">{formatPrice(src.price, src.price_unit)}</span> : null}
+                  <span>{src.bhk ? `${formatBhk(src.bhk)} BHK ` : ""}{src.building_name || ""} {src.micro_market || ""}</span>
+                  {src.price ? <span className="text-zinc-400 text-xs">{formatPrice(src.price, src.price_unit, src.intent)}</span> : null}
                 </div>
                 <div className="text-[10px] text-zinc-500 mt-1 flex flex-wrap gap-3">
                   {src.furnishing && <span>{src.furnishing}</span>}
