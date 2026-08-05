@@ -49,9 +49,17 @@ const mumbaiCenter = { lat: 19.076, lng: 72.8777 };
 const containerStyle = { width: "100%", height: "100%" };
 
 function coordinates(item: { latitude?: number | string | null; longitude?: number | string | null }) {
+  if (item.latitude === null || item.latitude === undefined || item.latitude === ""
+    || item.longitude === null || item.longitude === undefined || item.longitude === "") {
+    return null;
+  }
   const lat = Number(item.latitude);
   const lng = Number(item.longitude);
-  return Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : null;
+  return Number.isFinite(lat) && Number.isFinite(lng)
+    && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180
+    && (lat !== 0 || lng !== 0)
+    ? { lat, lng }
+    : null;
 }
 
 function normalizeBhk(value: unknown) {
