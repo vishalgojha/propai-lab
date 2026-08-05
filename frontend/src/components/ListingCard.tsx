@@ -19,6 +19,7 @@ export interface ListingItem {
   area_sqft?: number;
   furnishing?: string;
   broker_name?: string;
+  broker_display_name?: string;
   broker_phone?: string;
   last_seen_text?: string;
   last_seen?: string;
@@ -68,11 +69,27 @@ function normalizeWhatsappPhone(phone?: string | null) {
   return digits;
 }
 
+function displayBhk(value?: string | number | null) {
+  const text = String(value ?? "").trim().replace(/\s*bhk\b/i, "").trim();
+  if (!text) return "";
+  const numeric = Number(text);
+  if (!Number.isFinite(numeric)) return text;
+  return Number.isInteger(numeric) ? String(numeric) : String(numeric);
+}
+
+function displayBroker(item: ListingItem) {
+  const resolved = String(item.broker_display_name || "").trim();
+  if (resolved) return resolved;
+  const raw = String(item.broker_name || "").trim();
+  if (!raw || /@s\.whatsapp\.net$/i.test(raw) || /^\+?[\d\s()\-]+$/.test(raw)) return "Broker";
+  return raw;
+}
+
 function buildPrefilledWhatsAppLink(item: ListingItem): string {
   const phone = normalizeWhatsappPhone(item.broker_phone);
   if (!phone) return "";
 
-  const broker = item.broker_name || "there";
+  const broker = displayBroker(item);
   const building = item.building_name || "the property";
   const locality = item.micro_market || item.location_label || item.landmark_name || "";
   const bhk = item.bhk || item.property_type || "";
@@ -156,7 +173,7 @@ export default function ListingCard({
     : "WhatsApp broker network";
   const hideLabel = isWanted ? "Hide requirement" : "Hide listing";
   const brokerPhone = (item.broker_phone || "").trim();
-  const brokerLabel = item.broker_name || "Broker";
+  const brokerLabel = displayBroker(item);
   const waLink = buildPrefilledWhatsAppLink(item);
 
   useEffect(() => () => {
@@ -208,7 +225,7 @@ export default function ListingCard({
         )}
       </div>
       <div className="specs flex-wrap">
-        {item.bhk && <span><b>{item.bhk}</b>{!item.bhk.toUpperCase().includes("BHK") ? " BHK" : ""}</span>}
+        {item.bhk && <span><b>{displayBhk(item.bhk)}</b> BHK</span>}
         {item.area_sqft && <span className="inline-flex items-center gap-1"><Ruler className="h-3 w-3" /><b>{item.area_sqft}</b> sqft</span>}
         {item.furnishing && item.furnishing !== "None" && (
           <span><b>{item.furnishing}</b></span>
@@ -224,8 +241,8 @@ export default function ListingCard({
       )}
       <div className="card-bottom">
         <div>
-          {item.broker_name && (
-            <div className="broker inline-flex items-center gap-1"><UserRound className="h-3 w-3 text-zinc-500" /><b>{item.broker_name}</b></div>
+          {(item.broker_display_name || item.broker_name || item.broker_phone) && (
+            <div className="broker inline-flex items-center gap-1"><UserRound className="h-3 w-3 text-zinc-500" /><b>{brokerLabel}</b></div>
           )}
           {item.has_images && (
             <button type="button" onClick={openGallery} className="mt-1 inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-300 hover:text-emerald-200">

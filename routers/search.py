@@ -536,6 +536,29 @@ async def market_search(
         SELECT l.id AS listing_id, l.source_fingerprint AS fingerprint, l.intent, l.bhk, l.price, l.price_unit, l.area_sqft,
                l.furnishing, l.location_label, l.street_name, l.building_name, l.landmark_name,
                l.micro_market, l.broker_name, l.broker_phone,
+               (SELECT CASE
+                    WHEN NULLIF(b.canonical_name, '') IS NOT NULL
+                     AND b.canonical_name !~ '@s\\.whatsapp\\.net$'
+                     AND b.canonical_name !~ '^[0-9 +()\\-]+$'
+                    THEN b.canonical_name
+                    ELSE ba.alias
+                END
+                FROM brokers b
+                LEFT JOIN broker_aliases ba ON ba.broker_id = b.id
+                WHERE regexp_replace(COALESCE(b.primary_phone, ''), '\\D', '', 'g') =
+                      regexp_replace(COALESCE(l.broker_phone, ''), '\\D', '', 'g')
+                  AND NULLIF(regexp_replace(COALESCE(l.broker_phone, ''), '\\D', '', 'g'), '') IS NOT NULL
+                  AND (
+                    (NULLIF(b.canonical_name, '') IS NOT NULL
+                     AND b.canonical_name !~ '@s\\.whatsapp\\.net$'
+                     AND b.canonical_name !~ '^[0-9 +()\\-]+$')
+                    OR (NULLIF(ba.alias, '') IS NOT NULL
+                        AND ba.alias !~ '@s\\.whatsapp\\.net$'
+                        AND ba.alias !~ '^[0-9 +()\\-]+$')
+                  )
+                ORDER BY (NULLIF(b.canonical_name, '') IS NOT NULL) DESC,
+                         COALESCE(ba.observation_count, 0) DESC
+                LIMIT 1) AS broker_display_name,
                l.first_seen, l.last_seen, l.observation_count, l.group_count,
                l.latest_raw_message_id,
                (SELECT b.latitude FROM buildings b
@@ -649,6 +672,7 @@ async def market_search(
             "landmark_name": d.get("landmark_name"),
             "micro_market": d.get("micro_market"),
             "broker_name": d.get("broker_name"),
+            "broker_display_name": d.get("broker_display_name"),
             "broker_phone": d.get("broker_phone"),
             "first_seen": d.get("first_seen"),
             "first_seen_text": first_age,
