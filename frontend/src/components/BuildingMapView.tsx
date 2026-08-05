@@ -303,7 +303,7 @@ export function BuildingMapView() {
       {!googleMapsKey && <div className="rounded-xl border border-border bg-surface px-4 py-3 text-sm text-text-muted">Add <code className="text-text-primary">NEXT_PUBLIC_GOOGLE_MAPS_API_KEY</code> to the frontend service to enable the map.</div>}
       {loadError && <div className="rounded-xl border border-danger/40 bg-danger/10 px-4 py-3 text-sm text-danger">Google Maps could not be loaded.</div>}
 
-      <div className="flex min-h-[560px] min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-elevated lg:min-h-0 lg:flex-row">
+      <div className="flex min-h-[560px] min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-elevated lg:min-h-0 lg:flex-row-reverse">
         <ResizablePanel
           defaultWidth={440}
           minWidth={300}
