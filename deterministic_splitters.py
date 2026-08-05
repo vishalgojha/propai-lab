@@ -69,6 +69,9 @@ _DECORATIVE_BOLD_RE = re.compile(
     r"(?i)^\s*(?:available|new\s+brand\s+building|brand\s+new\s+building|"
     r"for\s+sale|for\s+rent|kindly\s+call|urgent|hot\s+deal)\b"
 )
+_GLOBAL_HEADER_RE = re.compile(
+    r"(?is)^\s*(\*[^*\n]{2,120}\*)\s*(?=\*[^*\n]{2,40}\*|[^\n]*\b\d+(?:\.\d+)?\s*(?:bhk|rk)\b)"
+)
 _INTENT_RENT_RE = re.compile(r"(?i)\b(?:rent|rental|lease|lease\s+out|for\s+rent)\b")
 _INTENT_SALE_RE = re.compile(r"(?i)\b(?:sale|sell|selling|sel|for\s+sale)\b")
 _INTENT_REQ_RE = re.compile(r"(?i)\b(?:requirement|required|wanted|looking\s+for|need)\b")
@@ -480,6 +483,15 @@ def _split_inline_bold(text: str) -> list[str] | None:
     chunks = [chunk for chunk in chunks if _extract_bhk(chunk) or _PRICE_RE.search(chunk) or _AREA_RE.search(chunk)]
     if len(chunks) < 2 or len(chunks) != len(prices):
         return None
+
+    # A leading bold broadcast header is shared context, not a listing. Keep
+    # it in every block so the extractor can retain facts such as
+    # "brand new building" instead of losing them when the decorative span is
+    # excluded from the boundary list above.
+    header = _GLOBAL_HEADER_RE.match(value)
+    if header:
+        context = header.group(1).strip()
+        chunks = [f"{chunk}\n{context}" for chunk in chunks]
     return chunks
 
 

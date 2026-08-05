@@ -515,7 +515,7 @@ def _sanitize_parsed_listing(parsed: dict) -> dict:
 # LLM output without normalization), the row should still be safe to save.
 _VALID_DEAL_TAGS_STORAGE = frozenset({
     "distress_sale", "urgent_sale", "negotiable", "bank_auction",
-    "resale", "exclusive_mandate", "price_drop",
+    "resale", "exclusive_mandate", "price_drop", "brand_new_building",
 })
 _VALID_CHARGE_TYPES_STORAGE = frozenset({"fixed", "percent_of_price"})
 

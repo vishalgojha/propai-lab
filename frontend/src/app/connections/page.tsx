@@ -1141,6 +1141,7 @@ export default function ConnectionCenterPage() {
         fetchJSON<any>("/stats", undefined, 8000).catch(() => ({})),
         fetchJSON<any>("/dashboard/sync-activity", undefined, 8000).catch(() => ({})),
       ]);
+      getRecentParsedMessages(10).then(setRecentParsedMessages).catch(() => undefined);
       const snapshotPatch: ConnectionSnapshot = {};
       if (stats?.total_parsed != null) setTotalParsed(stats.total_parsed);
       if (stats?.total_parsed != null) snapshotPatch.totalParsed = stats.total_parsed;
@@ -1163,6 +1164,25 @@ export default function ConnectionCenterPage() {
       }
       try {
         const extProgress = await fetchJSON<any>("/extraction/progress", undefined, 8000);
+        // The progress endpoint is the source of truth for the live backlog.
+        // sync-activity is useful context, but may be cached while a worker is
+        // running and must not make these counters appear stuck.
+        if (extProgress?.total_raw_messages != null) {
+          setRawTotal(extProgress.total_raw_messages);
+          snapshotPatch.rawTotal = extProgress.total_raw_messages;
+        }
+        if (extProgress?.processed != null) {
+          setRawProcessed(extProgress.processed);
+          snapshotPatch.rawProcessed = extProgress.processed;
+        }
+        if (extProgress?.pending != null) {
+          setRawPending(extProgress.pending);
+          snapshotPatch.rawPending = extProgress.pending;
+        }
+        if (extProgress?.progress_pct != null) {
+          setExtractionPct(extProgress.progress_pct);
+          snapshotPatch.extractionPct = extProgress.progress_pct;
+        }
         if (extProgress?.recently_processed_1h != null) setRecentlyProcessed1h(extProgress.recently_processed_1h);
         if (extProgress?.recently_processed_1h != null) snapshotPatch.recentlyProcessed1h = extProgress.recently_processed_1h;
         if (extProgress?.lag != null) setExtractionLag(extProgress.lag);
@@ -1220,7 +1240,10 @@ export default function ConnectionCenterPage() {
   useEffect(() => {
     if (authLoading || !user) return;
     void fetchStats();
-    const interval = setInterval(() => void fetchStats(), 60000);
+    // Keep the backlog panel responsive while extraction is running. The
+    // worker polls every few seconds, so a 10-second UI refresh gives useful
+    // feedback without creating a request storm.
+    const interval = setInterval(() => void fetchStats(), 10000);
     return () => clearInterval(interval);
   }, [authLoading, user, fetchStats]);
 
@@ -1232,7 +1255,7 @@ export default function ConnectionCenterPage() {
   const totalMessages = rawTotal || phones.reduce((sum, p) => sum + (p.total_messages_received || 0), 0);
 
   return (
-    <div className="max-w-6xl mx-auto px-4 lg:px-6 pt-8 pb-12">
+    <div className="theme-connections max-w-6xl mx-auto px-4 lg:px-6 pt-8 pb-12">
       {/* Compact Header */}
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">
