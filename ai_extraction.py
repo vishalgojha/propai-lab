@@ -148,13 +148,38 @@ def _next_provider() -> dict | None:
 # ── Schema validation ─────────────────────────────────────────────────
 
 _PRICE_PARSING_INSTRUCTIONS = """PRICE PARSING — CRITICAL:
-- Convert to absolute rupees: 1 Cr = 10000000, 1 Lakh = 100000, 1 K = 1000.
+- Convert explicit units to absolute rupees: 1 Cr = 10000000, 1 Lakh = 100000, and K = 1000.
 - “8.5 Cr” means 85000000, never 8.5 or 8500000.
 - “2.50 Lakhs” means 250000; “75 K” means 75000.
 - “8.5.Cr”, “2:25 Cr”, and “75.Lakh” use punctuation as a separator: parse them as 8.5 Cr, 2.25 Cr, and 75 Lakh.
 - Preserve raw_price_text exactly as written in the source.
+- “60k” or “95k” means thousand. A small “1.20k”/“3.5k” in a Mumbai residential rental commonly means lakh, but do not silently guess: preserve the raw text and set needs_review=true when context does not make the unit clear.
 - For PSF/per-sqft quotes use unit “per_sqft” and keep amount as the per-sqft rate; otherwise use unit “total”.
 - Never infer a price from unrelated numbers such as floor, parking, area, or phone numbers."""
+
+# This is a compact, production-facing subset of the Mumbai broker glossary.
+# Keep high-confidence dialect rules here; the full research document belongs
+# in docs, not in every provider request. Deterministic guards remain the
+# authority for values that can be normalized without an LLM.
+_MUMBAI_BROKER_GLOSSARY = """MUMBAI BROKER DIALECT — FOLLOW STRICTLY:
+- “lease” / “on lease” in a property context means monthly RENT, not a long-term contract.
+- “outright” and the broker typo “outrate” mean SALE.
+- “preleased” / “pre-rented” is SALE with an existing tenant; any rent stated is current tenant yield, not asking monthly rent.
+- “sale & rent” or “sale or lease” can describe both availability modes; preserve both in deal_tags and never silently convert one price into the other.
+- “budget”, “urgent requirement”, “required”, “looking for”, or “client needs” indicate a REQUIREMENT; budget is not listing price.
+- “nego” means negotiable; “nnego” is not a recognized term. “final” means fixed/non-negotiable.
+- “cpt” means carpet area; “bup” means built-up area. In NUMBER @ NUMBER, first is area sqft and second is price only when the line is clearly a property price line.
+- “1 RK” is not “1 BHK”. Keep BHK/configuration as text, including 2.5 BHK, converted layouts, and jodi flats.
+- “converted” means a changed layout: keep current and original configuration. “jodi” is one combined listing, not two listings; keep the original combination too.
+- “+N” directly after a rent amount may be a deposit in lakh rupees only when it is plausible (at most six months of rent). Standalone “+1” / “My +1” means co-brokered.
+- “builder finish”, “bare shell”, “warm shell”, and “untouched” are furnishing/fitout facts, not transaction types.
+- “AI” after a price means all-inclusive; ignore “AI” inside an amenity or project name.
+- “company lease” means company-paid residential tenancy in residential context, and company as tenant in commercial context.
+- Extract tenant preferences such as family, bachelors, vegetarian, working, student, company lease, and expat as facts; do not filter or omit them.
+- “G+N” is context-dependent: building height or a multi-floor unit. Do not guess.
+- Indian floors: ground/GF/G is street level; 1st floor is one level above ground.
+- Never fabricate or estimate a price. If a unit is genuinely ambiguous, preserve raw_price_text and set needs_review=true.
+- If multiple independent listings remain, return one item per listing; never collapse them into one item."""
 
 
 def _classify_message_flags(text: str) -> tuple[str, str, bool]:
@@ -239,6 +264,7 @@ Every item MUST include these discriminator fields:
 - extraction_confidence: one of "high", "medium", or "low".
 Fields allowed for the remaining route-specific data: {fields}.
 {_PRICE_PARSING_INSTRUCTIONS}
+{_MUMBAI_BROKER_GLOSSARY}
 For listing price, return price={{amount, unit, period, raw_price_text}}. For a requirement,
 return budget_min/budget_max instead of pretending the budget is a listing price.
 Return no markdown or explanation."""
