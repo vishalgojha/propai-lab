@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { GoogleMap, InfoWindow, Marker, useJsApiLoader } from "@react-google-maps/api";
 import { MapPin, Search, X } from "lucide-react";
@@ -57,6 +58,7 @@ function coordinates(item: { latitude?: number | string | null; longitude?: numb
   const lng = Number(item.longitude);
   return Number.isFinite(lat) && Number.isFinite(lng)
     && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180
+    && lat >= 18.5 && lat <= 19.6 && lng >= 72.5 && lng <= 73.5
     && (lat !== 0 || lng !== 0)
     ? { lat, lng }
     : null;
@@ -95,6 +97,7 @@ export function BuildingMapView() {
   const [loading, setLoading] = useState(true);
   const [isMobile, setIsMobile] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const router = useRouter();
   const mapRef = useRef<MapController | null>(null);
   const listingRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const googleMapsKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? "";
@@ -318,7 +321,18 @@ export function BuildingMapView() {
             </div>
 
             {!searchActive && browseListings.map((item, index) => (
-              <div key={`${item.listing_id ?? item.fingerprint ?? index}`} className="mb-3">
+              <div
+                key={`${item.listing_id ?? item.fingerprint ?? index}`}
+                className="mb-3 cursor-pointer transition-transform hover:-translate-y-0.5"
+                role={item.listing_id ? "link" : undefined}
+                tabIndex={item.listing_id ? 0 : undefined}
+                onClick={(event) => {
+                  if (item.listing_id && !(event.target as HTMLElement).closest("button,a")) router.push(`/listings/${item.listing_id}`);
+                }}
+                onKeyDown={(event) => {
+                  if (item.listing_id && (event.key === "Enter" || event.key === " ")) router.push(`/listings/${item.listing_id}`);
+                }}
+              >
                 <ListingCard item={item} compact />
               </div>
             ))}
@@ -329,7 +343,10 @@ export function BuildingMapView() {
                 key={group.key}
                 ref={(element) => { listingRefs.current[group.key] = element; }}
                 onMouseEnter={() => setSelectedKey(group.key)}
-                onClick={() => focusGroup(group)}
+                onClick={(event) => {
+                  if ((event.target as HTMLElement).closest("button,a")) return;
+                  focusGroup(group);
+                }}
                 className={`mb-3 cursor-pointer rounded-xl border p-2 transition ${selectedKey === group.key ? "border-accent/70 bg-accent/5" : "border-border bg-surface"}`}
               >
                 <div className="mb-2 flex items-center justify-between px-1">
@@ -337,7 +354,17 @@ export function BuildingMapView() {
                   <span className="shrink-0 text-xs text-text-muted">{group.items.length} listing{group.items.length === 1 ? "" : "s"}</span>
                 </div>
                 <div className="space-y-2">
-                  {group.items.map((item, index) => <ListingCard key={`${item.listing_id ?? item.fingerprint ?? index}`} item={item} compact />)}
+                  {group.items.map((item, index) => (
+                    <div
+                      key={`${item.listing_id ?? item.fingerprint ?? index}`}
+                      className="cursor-pointer transition-transform hover:-translate-y-0.5"
+                      onClick={(event) => {
+                        if (item.listing_id && !(event.target as HTMLElement).closest("button,a")) router.push(`/listings/${item.listing_id}`);
+                      }}
+                    >
+                      <ListingCard item={item} compact />
+                    </div>
+                  ))}
                 </div>
               </div>
             ))}
