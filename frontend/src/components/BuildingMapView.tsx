@@ -265,16 +265,16 @@ export function BuildingMapView() {
     : undefined;
 
   return (
-    <section className="space-y-4 p-4 sm:p-6 lg:p-8">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+    <section className="flex min-h-[calc(100dvh-44px)] flex-col gap-3 p-3 sm:p-4 lg:p-5">
+      <div className="flex shrink-0 flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-accent">Market intelligence</p>
-          <h1 className="mt-2 flex items-center gap-2 text-2xl font-semibold text-text-primary">
-            <MapPin className="h-5 w-5 text-accent" /> Market Map
+          <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-accent">Market intelligence</p>
+          <h1 className="mt-1 flex items-center gap-2 text-xl font-semibold text-text-primary sm:text-2xl">
+            <MapPin className="h-5 w-5 text-accent" strokeWidth={2} /> Market Map
           </h1>
-          <p className="mt-1 text-sm text-text-muted">Search live listings and see only their mapped buildings.</p>
+          <p className="mt-1 text-xs text-text-muted sm:text-sm">Explore live inventory by location, price and configuration.</p>
         </div>
-        <form onSubmit={handleSearch} className="flex w-full max-w-xl items-center gap-2 rounded-xl border border-border bg-surface px-3 py-2">
+        <form onSubmit={handleSearch} className="flex w-full max-w-2xl items-center gap-2 rounded-xl border border-border bg-surface px-3 py-2 shadow-sm">
           <Search className="h-4 w-4 shrink-0 text-text-muted" />
           <input
             value={query}
@@ -289,16 +289,17 @@ export function BuildingMapView() {
         </form>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2 text-xs text-text-muted">
-        <span className="rounded-full border border-border bg-surface px-3 py-1">{searchActive ? `${listings.length} listings` : `${mappedCount} mapped buildings`}</span>
-        <span>{searchActive ? `${mappedCount} matching buildings with coordinates` : "Browse all database buildings with latitude and longitude."}</span>
+      <div className="flex shrink-0 flex-wrap items-center gap-2 text-xs text-text-muted">
+        <span className="rounded-full border border-border bg-surface px-3 py-1.5 font-medium text-text-primary">{searchActive ? `${listings.length} listings` : `${browseListings.length} latest listings`}</span>
+        <span className="rounded-full border border-border/70 px-3 py-1.5">{searchActive ? `${mappedCount} mapped buildings` : `${mappedCount} mapped buildings`}</span>
+        <span className="hidden sm:inline">Click a marker or listing to inspect the building.</span>
       </div>
 
       {error && <div className="rounded-xl border border-danger/40 bg-danger/10 px-4 py-3 text-sm text-danger">{error}</div>}
       {!googleMapsKey && <div className="rounded-xl border border-border bg-surface px-4 py-3 text-sm text-text-muted">Add <code className="text-text-primary">NEXT_PUBLIC_GOOGLE_MAPS_API_KEY</code> to the frontend service to enable the map.</div>}
       {loadError && <div className="rounded-xl border border-danger/40 bg-danger/10 px-4 py-3 text-sm text-danger">Google Maps could not be loaded.</div>}
 
-      <div className="flex min-h-[min(66vh,620px)] flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-elevated lg:flex-row">
+      <div className="flex min-h-[560px] min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-elevated lg:min-h-0 lg:flex-row">
         <ResizablePanel
           defaultWidth={440}
           minWidth={300}
@@ -307,8 +308,8 @@ export function BuildingMapView() {
           mobile={isMobile}
           className="max-w-full shrink-0 border-b border-border bg-background lg:border-b-0 lg:border-r"
         >
-          <div className="h-[min(66vh,620px)] overflow-y-auto p-3">
-            <div className="mb-3 flex items-center justify-between px-1">
+          <div className="h-full min-h-0 overflow-y-auto p-3">
+            <div className="sticky top-0 z-10 -mx-1 mb-3 flex items-center justify-between rounded-lg bg-background/95 px-2 py-2 backdrop-blur">
               <div>
                 <p className="text-sm font-semibold text-text-primary">{searchActive ? "Matching listings" : "Latest listings"}</p>
                 <p className="text-xs text-text-muted">{searchActive ? "Click a card to focus its building." : "Listings without verified coordinates remain visible here."}</p>
@@ -349,10 +350,10 @@ export function BuildingMapView() {
           </div>
         </ResizablePanel>
 
-        <div className="min-h-[min(66vh,620px)] min-w-0 flex-1">
-          {loading ? <div className="flex h-[min(66vh,620px)] items-center justify-center text-sm text-text-muted">Loading building data…</div>
-            : !googleMapsKey ? <div className="flex h-[min(66vh,620px)] items-center justify-center px-6 text-center text-sm text-text-muted">Google Maps is not configured for this frontend yet.</div>
-              : !isLoaded ? <div className="flex h-[min(66vh,620px)] items-center justify-center text-sm text-text-muted">Loading Google Maps…</div>
+        <div className="min-h-0 min-w-0 flex-1 bg-[#dbeef2]">
+          {loading ? <div className="flex h-full min-h-[520px] items-center justify-center text-sm text-text-muted">Loading market data…</div>
+            : !googleMapsKey ? <div className="flex h-full min-h-[520px] items-center justify-center px-6 text-center text-sm text-text-muted">Google Maps is not configured for this frontend yet.</div>
+              : !isLoaded ? <div className="flex h-full min-h-[520px] items-center justify-center text-sm text-text-muted">Loading Google Maps…</div>
                 : <GoogleMap
                   mapContainerStyle={containerStyle}
                   center={mumbaiCenter}
