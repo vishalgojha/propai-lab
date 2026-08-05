@@ -1019,6 +1019,7 @@ def _ai_extraction_to_typed(
             "status": "active",
             "furnishing_preference": ai.get("furnishing_preference"),
             "possession_preference": ai.get("possession_preference"),
+            "amenity_requirements": ai.get("amenity_requirements") or [],
         })
         if asset == "commercial":
             row["commercial_use_type"] = ai.get("commercial_use_type") or []
