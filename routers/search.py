@@ -503,7 +503,11 @@ async def market_search(
                 LIMIT 1) AS latitude,
                (SELECT b.longitude FROM buildings b
                 WHERE lower(trim(b.canonical_name)) = lower(trim(l.building_name))
-                LIMIT 1) AS longitude
+                LIMIT 1) AS longitude,
+               (SELECT b.address FROM buildings b
+                WHERE lower(trim(b.canonical_name)) = lower(trim(l.building_name))
+                  AND b.address IS NOT NULL
+                LIMIT 1) AS building_address
         FROM listings_unified l
         WHERE {where_sql}
         ORDER BY {order_sql} DESC
@@ -600,6 +604,7 @@ async def market_search(
             "furnishing": d.get("furnishing"),
             "location_label": d.get("location_label"),
             "building_name": d.get("building_name") or "Unknown Building",
+            "building_address": d.get("building_address"),
             "landmark_name": d.get("landmark_name"),
             "micro_market": d.get("micro_market"),
             "broker_name": d.get("broker_name"),

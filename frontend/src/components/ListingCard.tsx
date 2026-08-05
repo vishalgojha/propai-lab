@@ -10,6 +10,7 @@ export interface ListingItem {
   raw_message_id?: number;
   intent?: string;
   building_name?: string;
+  building_address?: string;
   micro_market?: string;
   location_label?: string;
   bhk?: string;
@@ -147,7 +148,7 @@ export default function ListingCard({
   const cardClass = isWanted ? "card wanted" : "card sale";
   const badgeClass = isWanted ? "badge wanted" : "badge sale";
 
-  const location = item.micro_market || item.location_label || item.landmark_name || "";
+  const location = item.building_address || item.micro_market || item.location_label || item.landmark_name || "";
   const unit = [item.wing && `Wing ${item.wing}`, item.floor !== undefined && item.floor !== null && `Floor ${item.floor}`, item.flat_number && `Flat ${item.flat_number}`].filter(Boolean);
   const sourceSummary = item.group_count && item.group_count > 0
     ? `${item.group_count} WhatsApp ${item.group_count === 1 ? "group" : "groups"}`

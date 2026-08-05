@@ -150,6 +150,7 @@ export function BuildingMapView() {
         building: {
           canonical_name: name,
           micro_market: locality,
+          address: item.building_address,
           latitude: position?.lat,
           longitude: position?.lng,
           building_id: item.building_id,
@@ -369,7 +370,7 @@ export function BuildingMapView() {
                     <InfoWindow position={selectedGroup.position} onCloseClick={() => setSelectedKey("")}>
                       <div className="min-w-[210px] space-y-1 text-slate-900">
                         <div className="font-semibold">{selectedGroup.name}</div>
-                        <div className="text-xs">{selectedGroup.building.micro_market || selectedGroup.building.address || "Location not specified"}</div>
+                        <div className="text-xs">{selectedGroup.building.address || selectedGroup.building.micro_market || "Location not specified"}</div>
                         <div className="text-xs">{searchActive ? `${selectedGroup.items.length} matching listings` : `${selectedGroup.building.observed_listings ?? 0} listings · ${selectedGroup.building.observed_brokers ?? 0} brokers`}</div>
                         {selectedGroup.building.building_id && <Link className="text-xs font-medium text-emerald-700 underline" href={`/buildings/${encodeURIComponent(selectedGroup.building.building_id)}`}>Open building</Link>}
                       </div>
