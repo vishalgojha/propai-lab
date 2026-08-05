@@ -633,7 +633,15 @@ def _price_from_ai_and_raw(price_info: dict) -> tuple[float | None, str | None]:
         return None, None
     raw = str(price_info.get("raw_price_text") or "").strip()
     unit = str(price_info.get("unit") or "").strip().lower()
-    if unit in {"per_sqft", "psf"} or re.search(r"\b(?:psf|per\s+sq\.?\s*ft)\b", raw.lower()):
+    # A model can mislabel a normal rent quote such as ``₹2.00 Lakhs`` as
+    # per-square-foot.  An explicit lakh/crore/thousand quote is authoritative
+    # unless the source itself contains a PSF marker.
+    has_explicit_native_unit = bool(re.search(
+        r"\d+(?:[.,]\d+)?\s*(?:cr|crores?|lac?s?|lakhs?|l|k|thousands?)\b",
+        raw.lower(),
+    ))
+    has_psf_marker = bool(re.search(r"\b(?:psf|per\s+sq\.?\s*ft)\b", raw.lower()))
+    if has_psf_marker or (unit in {"per_sqft", "psf"} and not has_explicit_native_unit):
         try:
             return float(price_info.get("amount")), "per_sqft"
         except (TypeError, ValueError):
@@ -741,7 +749,8 @@ def _ai_extraction_to_parsed(ai_extraction: dict, raw_text: str, sender_name: st
     price_unit_price = price_info.get("unit") if isinstance(price_info, dict) else None
     price_period = price_info.get("period") if isinstance(price_info, dict) else None
     price, price_unit = _price_from_ai_and_raw(price_info)
-    price_model = "psf" if price_unit_price == "per_sqft" else None
+    # Use the source-grounded unit returned above, not the provider's raw unit.
+    price_model = "psf" if price_unit == "per_sqft" else None
 
     locality = ai_extraction.get("locality", {})
     if isinstance(locality, dict):
@@ -825,7 +834,7 @@ def _ai_extraction_to_parsed(ai_extraction: dict, raw_text: str, sender_name: st
         "transaction_type": listing_type if listing_type in ("sale", "rent") else classified_transaction,
         "commercial_use_type": ai_extraction.get("commercial_use_type"),
         "fitout_status": ai_extraction.get("fitout_status"),
-        "occupancy_type": None,
+        "occupancy_type": ai_extraction.get("occupancy_status") or None,
         "floor_range": None,
         "rent_per_sqft": price if listing_type == "rent" and price_unit == "per_sqft" else None,
 

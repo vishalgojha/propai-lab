@@ -49,6 +49,19 @@ export default function BuildingProfilePage({ params }: { params: Promise<{ buil
     }
   };
 
+  const handleGeocode = async () => {
+    setRefreshing(true);
+    try {
+      await api.geocodeBuilding(building_id);
+      alert("Building address and coordinates cached");
+      await loadBuilding();
+    } catch (e) {
+      alert("Geocoding failed. Check the Google Places key and provider response.");
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
   if (loading) {
     return <div className="text-zinc-500">Loading building profile...</div>;
   }
@@ -142,11 +155,11 @@ export default function BuildingProfilePage({ params }: { params: Promise<{ buil
             {refreshing ? "Refreshing..." : "Refresh All"}
           </button>
           <button
-            onClick={() => handleRefresh("google_places")}
+            onClick={handleGeocode}
             disabled={refreshing}
             className="border border-white/10 text-zinc-500 px-3 py-1.5 text-xs rounded hover:bg-zinc-900 disabled:opacity-50"
           >
-            Google Places
+            {b.geocoded_at ? "Refresh Geocode" : "Geocode Address"}
           </button>
           <button
             onClick={() => handleRefresh("osm")}
@@ -166,6 +179,8 @@ export default function BuildingProfilePage({ params }: { params: Promise<{ buil
         <InfoCard label="Pincode" value={b.pincode} />
         <InfoCard label="Latitude" value={b.latitude?.toFixed(6)} />
         <InfoCard label="Longitude" value={b.longitude?.toFixed(6)} />
+        <InfoCard label="Plus Code" value={b.plus_code} />
+        <InfoCard label="Geocode source" value={b.geocode_source} />
         <InfoCard label="Status" value={b.status} />
         <InfoCard
           label="Enrichment"

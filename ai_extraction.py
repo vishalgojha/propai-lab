@@ -30,6 +30,7 @@ from typing import Optional
 from openai import OpenAI
 from llm import get_configured_providers
 from deterministic_splitters import split_message_into_chunks
+from extraction_models import validate_source_semantics
 
 _logger = logging.getLogger(__name__)
 
@@ -125,6 +126,15 @@ if _gemini_key:
     })
 
 _EXTRACTION_MODEL = os.getenv("EXTRACTION_MODEL", "").strip().lower()
+try:
+    _EXTRACTION_PROVIDER_TIMEOUT = max(
+        30, int(os.getenv("EXTRACTION_PROVIDER_TIMEOUT_SECONDS", "180"))
+    )
+except ValueError:
+    _logger.warning(
+        "Invalid EXTRACTION_PROVIDER_TIMEOUT_SECONDS; using 180 seconds"
+    )
+    _EXTRACTION_PROVIDER_TIMEOUT = 180
 _PREMIUM_MODEL_HINTS = (
     "claude", "opus", "sonnet", "haiku",
     "code-max", "code_max", "text-max", "text_max",
@@ -273,10 +283,10 @@ def classify_message_type(text: str) -> tuple[str, str]:
 _FOCUSED_FIELDS = {
     ("residential", "sale", False): "bhk, carpet_area_sqft, built_up_area_sqft, price, locality, building_name, furnishing_status, possession_status, possession_date, bathroom_count, car_parking_count, parking_type, oc_status, configuration_type, floor_range, property_view, age_of_property, building_amenities, amenities, amenities_unverified_claim, brokerage_type, token_amount, payment_plan, deal_tags, title",
     ("residential", "rent", False): "bhk, carpet_area_sqft, built_up_area_sqft, price, locality, building_name, furnishing_status, possession_status, possession_date, bathroom_count, car_parking_count, parking_type, floor_range, building_amenities, amenities, amenities_unverified_claim, deposit_amount, deposit_months, deposit_raw_text, pet_policy, tenant_type_preference, sharing_allowed, food_preference, lease_term_type, lock_in_period_months, notice_period_months, brokerage_type, deal_tags, title",
-    ("commercial", "sale", False): "commercial_use_type, carpet_area_sqft, built_up_area_sqft, chargeable_area_sqft, price, price_basis, locality, building_name, fitout_status, ceiling_height, floor_range, car_parking_count, power_load_kw, cabin_count, workstation_count, conference_room_count, meeting_room_count, washroom_count, pantry_type, has_central_ac, has_power_backup, has_lift, building_amenities, brokerage_type, deal_tags, title",
+    ("commercial", "sale", False): "commercial_use_type, carpet_area_sqft, built_up_area_sqft, chargeable_area_sqft, price, price_basis, locality, building_name, fitout_status, occupancy_status, ceiling_height, floor_range, car_parking_count, power_load_kw, cabin_count, workstation_count, conference_room_count, meeting_room_count, washroom_count, pantry_type, has_central_ac, has_power_backup, has_lift, building_amenities, brokerage_type, deal_tags, title",
     ("commercial", "rent", False): "commercial_use_type, carpet_area_sqft, built_up_area_sqft, chargeable_area_sqft, price, price_basis, locality, building_name, fitout_status, ceiling_height, floor_range, deposit_amount, deposit_months, deposit_raw_text, cam_amount, cam_applicable, cam_unit, power_load_kw, lease_term_type, lock_in_period_months, notice_period_months, escalation_pct, escalation_frequency, rent_free_period_months, fitout_period_months, lease_deed_type, sub_leasing_allowed, building_amenities, brokerage_type, deal_tags, title",
     ("residential", "sale", True): "bhk_options, budget_min, budget_max, area_min_sqft, area_max_sqft, locality_options, building_preferences, furnishing_preference, possession_preference, car_parking_min, buyer_type, transaction_nature, urgency, is_flexible, deal_tags, title",
-    ("residential", "rent", True): "bhk_options, budget_min, budget_max, area_min_sqft, area_max_sqft, locality_options, building_preferences, furnishing_preference, possession_preference, available_from, deposit_budget_max, tenant_type, nationality, has_pets, car_parking_needed, sharing_acceptable, food_preference, lease_term_preference, urgency, is_flexible, deal_tags, title",
+    ("residential", "rent", True): "bhk_options, budget_min, budget_max, area_min_sqft, area_max_sqft, locality_options, building_preferences, furnishing_preference, possession_preference, available_from, deposit_budget_max, tenant_type, nationality, has_pets, car_parking_needed, sharing_acceptable, food_preference, lease_term_preference, company_lease_criteria, urgency, is_flexible, deal_tags, title",
     ("commercial", "sale", True): "commercial_use_type, area_min_sqft, area_max_sqft, budget_min, budget_max, budget_per_sqft_max, locality_options, fitout_preference, car_parking_min, needs_mezzanine, needs_lift, needs_power_backup, needs_central_ac, min_power_load_kw, buyer_type, urgency, is_flexible, deal_tags, title",
     ("commercial", "rent", True): "commercial_use_type, area_min_sqft, area_max_sqft, budget_min, budget_max, budget_per_sqft_max, locality_options, fitout_preference, car_parking_min, needs_mezzanine, needs_lift, needs_power_backup, needs_central_ac, min_power_load_kw, deposit_budget_max, lease_term_preference, max_lock_in_months, max_notice_period_months, company_type, team_size, urgency, is_flexible, deal_tags, title",
 }
@@ -304,6 +314,10 @@ Use only facts explicitly present in the reconstructed document. Never invent, a
 merge separate units, or summarize raw text. Preserve locality.raw_mention and
 price.raw_price_text exactly. For requirements use arrays/ranges and never turn a
 concrete advertised availability into a requirement.
+Every explicit fact in the source must be returned when it belongs to the allowed
+schema. For requirements, an explicitly stated BHK, budget, locality preference,
+furnishing preference, tenant type, or lease/company-lease condition is mandatory;
+do not omit it merely because it is not needed to identify the opportunity.
 
 Every item MUST include these discriminator fields:
 {listing_type_rule}
@@ -368,6 +382,8 @@ _FURNISHING_ALIASES = {
     "semi": "semi_furnished",
     "fully_furnished": "fully_furnished",
     "fully-furnished": "fully_furnished",
+    "fully_loaded": "fully_furnished",
+    "fully-loaded": "fully_furnished",
     "full_furnished": "fully_furnished",
     "furnished": "fully_furnished",
 }
@@ -399,7 +415,7 @@ _PASSTHROUGH_FIELDS = frozenset({
     "possession_date", "oc_status", "brokerage_type", "token_amount",
     "payment_plan", "transaction_nature", "deposit_amount", "deposit_months",
     "deposit_raw_text", "cam_amount", "cam_applicable", "cam_unit",
-    "lease_term_type", "lock_in_period_months", "notice_period_months",
+    "lease_term_type", "lock_in_period_months", "notice_period_months", "occupancy_status",
     "deal_tags", "title",
     # Requirement-only fields. These must survive normalization so the
     # typed requirement tables receive ranges, budgets, and preferences.
@@ -410,6 +426,7 @@ _PASSTHROUGH_FIELDS = frozenset({
     "is_flexible", "transaction_nature", "building_preferences",
     "bhk_options", "furnishing_preference", "tenant_type",
     "sharing_acceptable", "food_preference", "amenity_requirements",
+    "company_lease_criteria", "lease_term_preference", "nationality",
 })
 
 
@@ -858,6 +875,42 @@ def _normalize_extraction(raw: dict) -> dict:
     return result
 
 
+def _source_grounded_price(extraction: dict, raw_text: str) -> dict:
+    """Drop provider prices that have no matching money quote in the source.
+
+    A provider can return a syntactically valid price even when the broker
+    never stated one. The raw WhatsApp message is authoritative, so a price
+    is retained only when its quoted number/unit is present in the source.
+    """
+    price = extraction.get("price")
+    if not isinstance(price, dict) or price.get("amount") is None:
+        return extraction
+    source = str(raw_text or "")
+    source_numbers = {
+        value.replace(",", "")
+        for value in re.findall(r"\d+(?:[.,]\d+)?", source)
+    }
+    raw_quote = str(price.get("raw_price_text") or "")
+    quote_numbers = {
+        value.replace(",", "")
+        for value in re.findall(r"\d+(?:[.,]\d+)?", raw_quote)
+    }
+    quote_units = re.findall(r"\b(?:cr|crore|crores|lac|lakh|lakhs|l|k)\b", raw_quote.lower())
+    source_lower = source.lower()
+    quote_is_present = bool(quote_numbers) and quote_numbers.issubset(source_numbers)
+    units_are_present = all(re.search(rf"\b{re.escape(unit)}\b", source_lower) for unit in quote_units)
+    has_explicit_money = bool(re.search(
+        r"(?:₹|rs\.?|inr)\s*\d|\d+(?:[.,]\d+)?\s*"
+        r"(?:cr|crore|crores|lac|lakh|lakhs|l|k)\b",
+        source,
+        re.I,
+    ))
+    if not (has_explicit_money and quote_is_present and units_are_present):
+        extraction["price"] = {"amount": None, "unit": None, "period": None, "raw_price_text": None}
+        extraction["needs_review"] = True
+    return extraction
+
+
 def _apply_deterministic_field_fallbacks(extraction: dict, raw_text: str) -> dict:
     """Recover unambiguous schema facts when a provider omits them.
 
@@ -869,6 +922,82 @@ def _apply_deterministic_field_fallbacks(extraction: dict, raw_text: str) -> dic
     """
     text = raw_text or ""
     lowered = text.lower()
+
+    # Mumbai rental broadcasts commonly write a lakh amount after ``Rent``
+    # without spelling out the unit (for example ``Rent Rs.1.50 neqt``).
+    # Treating the model's absolute-rupee guess as authoritative can turn this
+    # into 15 L instead of 1.5 L.  This is limited to an explicit rent marker
+    # and a decimal rupee quote, so unrelated numbers are never reinterpreted.
+    if extraction.get("listing_type") == "rent":
+        rent_shorthand = re.search(
+            r"\b(?:rent|monthly\s+rent)\s*[:\-]?\s*(?:₹|rs\.?|inr)\s*"
+            r"(\d+(?:\.\d{1,2})?)\b",
+            text,
+            re.I,
+        )
+        if rent_shorthand and "." in rent_shorthand.group(1):
+            amount_lakh = float(rent_shorthand.group(1))
+            if 0 < amount_lakh <= 20:
+                raw_quote = rent_shorthand.group(0).strip()
+                extraction["price"] = {
+                    "amount": amount_lakh * 100_000,
+                    "unit": "total",
+                    "period": "per_month",
+                    "raw_price_text": raw_quote,
+                }
+                extraction["needs_review"] = False
+
+    # Recover high-signal facts that are often omitted by providers despite
+    # being plainly present in the source message.
+    if extraction.get("possession_date") is None:
+        possession_match = re.search(
+            r"\bpossession\s*[:\-]?\s*(\d{1,2})(?:st|nd|rd|th)?\s+"
+            r"(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|"
+            r"jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|"
+            r"dec(?:ember)?)\s+(20\d{2})",
+            text,
+            re.I,
+        )
+        if possession_match:
+            months = {
+                "jan": 1, "january": 1, "feb": 2, "february": 2,
+                "mar": 3, "march": 3, "apr": 4, "april": 4, "may": 5,
+                "jun": 6, "june": 6, "jul": 7, "july": 7, "aug": 8,
+                "august": 8, "sep": 9, "september": 9, "oct": 10,
+                "october": 10, "nov": 11, "november": 11, "dec": 12,
+                "december": 12,
+            }
+            month = months[possession_match.group(2).lower()]
+            extraction["possession_date"] = (
+                f"{possession_match.group(3)}-{month:02d}-{int(possession_match.group(1)):02d}"
+            )
+            extraction["possession_status"] = extraction.get("possession_status") or "available"
+
+    if extraction.get("car_parking_count") is None and re.search(
+        r"\bno\s+(?:car\s+)?parking\b", lowered
+    ):
+        extraction["car_parking_count"] = 0
+        extraction["parking_type"] = extraction.get("parking_type") or "none"
+
+    locality = extraction.get("locality")
+    if not isinstance(locality, dict):
+        locality = {"raw_mention": None, "resolved_locality": None, "confidence": "low"}
+        extraction["locality"] = locality
+    if not locality.get("raw_mention"):
+        # A common compact format is ``Building, Ahimsa marg Khar``. Keep the
+        # source wording; locality resolution later can canonicalize it.
+        comma_match = re.search(r"(?im)^.*?,\s*([^\n,]+)$", text)
+        if comma_match:
+            candidate = comma_match.group(1).strip(" *.,")
+            if re.search(
+                r"\b(?:andheri|bandra|khar|juhu|santacruz|bkc|powai|worli|"
+                r"goregaon|malad|thane|mulund|mahim|pali\s+hill|marg|road|"
+                r"nagar|station|metro)\b",
+                candidate,
+                re.I,
+            ):
+                locality["raw_mention"] = candidate
+                locality["confidence"] = "high"
 
     explicit_sale = re.search(
         r"\b(?:available\s+(?:for\s+)?sale|for\s+sale|sale\s+price|outright|outrate)\b",
@@ -888,7 +1017,9 @@ def _apply_deterministic_field_fallbacks(extraction: dict, raw_text: str) -> dic
     # Requirement messages often contain unambiguous ranges/budgets but the
     # provider may omit the route-specific fields. Recover only explicit
     # values; never infer a budget or area from a listing-like phrase.
-    if re.search(r"\b(?:required|requirement|looking\s+for|need|wanted)\b", lowered):
+    if extraction.get("listing_type") == "requirement" or re.search(
+        r"\b(?:require|required|requirement|looking\s+for|need|wanted)\b", lowered
+    ):
         if extraction.get("bhk") is None and not extraction.get("bhk_options"):
             bhk_match = re.search(r"\b(\d+(?:\.\d+)?)\s*bhk\b", text, re.I)
             if bhk_match:
@@ -938,10 +1069,40 @@ def _apply_deterministic_field_fallbacks(extraction: dict, raw_text: str) -> dic
                         parts = known
                 extraction["locality_options"] = [p.strip() for p in parts if p.strip()]
 
+        # Preserve ordered locality alternatives from compact broker phrasing
+        # such as ``Bandra or max Khar``. In this market, bare Bandra and Khar
+        # have deterministic west-side defaults.
+        if not extraction.get("locality_options"):
+            locality_line = next(
+                (line for line in text.splitlines() if re.search(r"\b(?:bandra|khar)\b", line, re.I)),
+                "",
+            )
+            locality_names = re.findall(r"\b(?:Bandra\s+(?:East|West)|Khar\s+(?:East|West)|Bandra|Khar)\b", locality_line, re.I)
+            locality_options = []
+            for name in locality_names:
+                key = name.lower()
+                canonical = {"bandra": "Bandra West", "khar": "Khar West"}.get(key, name.title())
+                if canonical not in locality_options:
+                    locality_options.append(canonical)
+            if locality_options:
+                extraction["locality_options"] = locality_options
+
+        furnishing_preference = str(extraction.get("furnishing_preference") or "").strip().lower().replace(" ", "_").replace("-", "_")
+        if furnishing_preference in _FURNISHING_ALIASES:
+            extraction["furnishing_preference"] = _FURNISHING_ALIASES[furnishing_preference]
+        elif re.search(r"\bfully\s+loaded\b", lowered):
+            extraction["furnishing_preference"] = "fully_furnished"
+
         if extraction.get("tenant_type") is None:
             tenant_match = re.search(r"\btenant\s*[:\-]?\s*([^\n]+)", text, re.I)
             if tenant_match:
                 extraction["tenant_type"] = tenant_match.group(1).strip(" *")
+
+        if re.search(r"\bexpat\b", lowered) and not extraction.get("tenant_type"):
+            extraction["tenant_type"] = "expat"
+        if re.search(r"\bcompany\s+lease\b", lowered):
+            extraction["company_lease_criteria"] = True
+            extraction["lease_term_preference"] = extraction.get("lease_term_preference") or "company_lease"
 
         if extraction.get("car_parking_min") is None and re.search(
             r"\b(?:open|covered)?\s*car\s*parking\s+required\b|\bparking\s+required\b",
@@ -980,6 +1141,11 @@ def _apply_deterministic_field_fallbacks(extraction: dict, raw_text: str) -> dic
             extraction["fitout_status"] = "warm_shell"
         elif re.search(r"\bbuilder(?:'s)?\s*finish\b", lowered):
             extraction["fitout_status"] = "builder_finish"
+
+    if extraction.get("occupancy_status") is None and re.search(
+        r"\bpre[-\s]?leased\b|\bpre[-\s]?rented\b", lowered
+    ):
+        extraction["occupancy_status"] = "pre_leased"
 
     if extraction.get("car_parking_count") is None:
         parking_match = re.search(
@@ -1068,6 +1234,28 @@ def resolve_locality(raw_mention: str | None, storage=None) -> dict:
         _logger.warning("locality_reference query failed for %r", mention, exc_info=True)
 
     return {"resolved_locality": None, "confidence": "low", "raw_mention": mention}
+
+
+def _canonical_locality_from_mention(raw_mention: str | None) -> str | None:
+    """Resolve embedded locality mentions through the shared Mumbai rules.
+
+    ``locality_reference`` is intentionally conservative and may not contain
+    street + locality phrases such as ``Ahimsa Marg Khar``. The deterministic
+    location module can still identify the unique locality, then apply the
+    existing implied-direction rule (Khar -> Khar West).
+    """
+    if not raw_mention or not str(raw_mention).strip():
+        return None
+    try:
+        from location import canonical_micro_market_slug, infer_unique_micro_market
+
+        inferred = infer_unique_micro_market(str(raw_mention))
+        slug = canonical_micro_market_slug(inferred or str(raw_mention))
+        if slug:
+            return slug.replace("-", " ").title()
+    except Exception:
+        _logger.debug("deterministic locality inference failed for %r", raw_mention, exc_info=True)
+    return None
 
 
 def locality_from_building_name(building_name: str | None, storage=None) -> dict:
@@ -1259,7 +1447,7 @@ def _has_flyer_image(ctx: dict) -> bool:
 def _call_provider(
     provider: dict,
     messages: list[dict],
-    timeout: int = 60,
+    timeout: int = _EXTRACTION_PROVIDER_TIMEOUT,
     *,
     source_id: int | None = None,
     tenant_id: str | None = None,
@@ -1271,6 +1459,7 @@ def _call_provider(
     """
     from usage_logger import log_ai_usage
 
+    started = time.monotonic()
     try:
         client = OpenAI(api_key=provider["api_key"], base_url=provider["base_url"])
         request = dict(
@@ -1355,10 +1544,18 @@ def _call_provider(
         return "MALFORMED"
     except Exception as exc:
         status = getattr(exc, "status_code", None) or getattr(exc, "code", None)
+        elapsed = time.monotonic() - started
         if status == 429:
             _logger.info("Provider %s rate-limited (429), will retry next key", provider["name"])
         else:
-            _logger.warning("Provider %s failed: %s", provider["name"], exc)
+            _logger.warning(
+                "Provider %s failed after %.1fs (status=%s, type=%s): %s",
+                provider["name"],
+                elapsed,
+                status or "unknown",
+                type(exc).__name__,
+                exc,
+            )
         return None
 
 
@@ -1458,7 +1655,13 @@ def ai_extract(raw_text: str, ctx: dict | None = None, storage=None) -> dict:
             break
 
         attempts += 1
-        raw_extraction = _call_provider(provider, messages, source_id=_src_id, tenant_id=_tid)
+        raw_extraction = _call_provider(
+            provider,
+            messages,
+            timeout=_EXTRACTION_PROVIDER_TIMEOUT,
+            source_id=_src_id,
+            tenant_id=_tid,
+        )
 
         if raw_extraction == "MALFORMED":
             # Provider returned content but it can't be parsed as JSON.
@@ -1481,6 +1684,8 @@ def ai_extract(raw_text: str, ctx: dict | None = None, storage=None) -> dict:
                 continue
             normalized = _normalize_extraction(candidate)
             normalized = _apply_deterministic_field_fallbacks(normalized, raw_text)
+            normalized = validate_source_semantics(normalized, raw_text)
+            normalized = _source_grounded_price(normalized, raw_text)
             if normalized.get("listing_type") is None:
                 _logger.warning("Provider %s: skipped an item without listing_type", provider["name"])
                 continue
@@ -1496,6 +1701,11 @@ def ai_extract(raw_text: str, ctx: dict | None = None, storage=None) -> dict:
                 if resolved["resolved_locality"]:
                     loc["resolved_locality"] = resolved["resolved_locality"]
                     loc["confidence"] = resolved["confidence"]
+                else:
+                    canonical = _canonical_locality_from_mention(loc["raw_mention"])
+                    if canonical:
+                        loc["resolved_locality"] = canonical
+                        loc["confidence"] = "high"
 
             # ── Link-only / ultra-short message guard ────────────────
             # When the source message is just a URL or under 30 chars,

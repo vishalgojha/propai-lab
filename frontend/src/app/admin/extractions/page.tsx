@@ -50,6 +50,9 @@ interface ParsedRow {
   parking_type?: string | null;
   car_parking_count?: number | null;
   commercial_use_type?: string | null;
+  possession_status?: string | null;
+  possession_date?: string | null;
+  amenities?: string[] | null;
 }
 
 interface RawMessage {
@@ -624,6 +627,9 @@ export default function AdminExtractionsPage() {
                   ["Price Model", selectedRow.price_model || "—"],
                   ["Area", fmtArea(selectedRow)],
                   ["Furnishing", selectedRow.furnishing || "—"],
+                  ["Possession", [selectedRow.possession_status, selectedRow.possession_date].filter(Boolean).join(" · ") || "—"],
+                  ["Parking", selectedRow.car_parking_count === 0 ? "None" : selectedRow.car_parking_count != null ? String(selectedRow.car_parking_count) : "—"],
+                  ["Amenities", (Array.isArray(selectedRow.ai_extraction?.amenities) ? selectedRow.ai_extraction?.amenities as string[] : []).join(", ") || "—"],
                   ["Building", selectedRow.building_name || "—"],
                   ["Landmark", selectedRow.landmark_name || "—"],
                   ["Micro Market", selectedRow.micro_market || "—"],

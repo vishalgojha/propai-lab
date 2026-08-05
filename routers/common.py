@@ -877,7 +877,10 @@ BUSINESS_END_HOUR = 19
 PROBE_OK_LATENCY_THRESHOLD_MS = 5000
 PROVIDER_PROBE_INTERVAL_S = 60
 HISTORY_BACKFILL_INTERVAL_S = 6 * 3600
-PROPAI_SHARED_WABA_NUMBER = "+917021045254"
+# The platform WABA identity is deployment data, not source data. It is read
+# from business_api_config (with WABA_PHONE_NUMBER as an environment fallback)
+# so phone numbers never need to be committed to the repository.
+PROPAI_SHARED_WABA_NUMBER = ""
 INGESTOR_INTERNAL_URL = os.getenv("INGESTOR_INTERNAL_URL", "http://ingestor:3001")
 INGESTOR_PUBLIC_URL = os.getenv("INGESTOR_PUBLIC_URL", "http://egn4dqsw3xxmhb9noorm85do.62.238.18.85.sslip.io")
 
@@ -1341,7 +1344,8 @@ def _mobile_digits(value: str = "") -> str:
     return digits
 
 def _is_propai_shared_waba(value: str = "") -> bool:
-    return _mobile_digits(value) == _mobile_digits(PROPAI_SHARED_WABA_NUMBER)
+    configured = _business_api_get_config_value("whatsapp_business_number", "WABA_PHONE_NUMBER")
+    return bool(configured) and _mobile_digits(value) == _mobile_digits(configured)
 
 def _json_list(value: str | None) -> list[str]:
     if not value:
@@ -1491,7 +1495,7 @@ async def _business_api_config_for(user: dict, tenant_id: str | None) -> dict:
         number = values["whatsapp_business_number"]
         configured = bool(number and values["phone_number_id"] and values["access_token"])
         return {"is_super_admin": True, "can_manage_platform": True, "whatsapp_business_number": number,
-            "shared_waba_number": PROPAI_SHARED_WABA_NUMBER, "waba_owner": "propai" if number else "none",
+            "shared_waba_number": number, "waba_owner": "propai" if number else "none",
             "outbound_allowed": configured, "phone_number_id": values["phone_number_id"],
             "has_access_token": bool(values["access_token"]), "access_token_preview": _mask_secret(values["access_token"]),
             "has_verify_token": bool(values["verify_token"]), "verify_token_preview": _mask_secret(values["verify_token"]),
@@ -1501,7 +1505,7 @@ async def _business_api_config_for(user: dict, tenant_id: str | None) -> dict:
     number = str(values.get("whatsapp_business_number") or "")
     configured = bool(values.get("is_active", True) and number and values.get("phone_number_id") and values.get("access_token"))
     return {"is_super_admin": False, "can_manage_platform": False, "whatsapp_business_number": number,
-        "shared_waba_number": PROPAI_SHARED_WABA_NUMBER, "waba_owner": "broker" if number else "none",
+        "shared_waba_number": "", "waba_owner": "broker" if number else "none",
         "outbound_allowed": configured, "phone_number_id": str(values.get("phone_number_id") or ""),
         "has_access_token": bool(values.get("access_token")), "access_token_preview": "",
         "has_verify_token": bool(values.get("verify_token")), "verify_token_preview": "",

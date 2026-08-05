@@ -493,11 +493,17 @@ async def market_search(
     listing_params = params.copy()
     listing_params.extend([limit + 50, offset])
     rows = storage.db.execute(f"""
-        SELECT l.fingerprint, l.intent, l.bhk, l.price, l.price_unit, l.area_sqft,
+        SELECT l.id AS listing_id, l.fingerprint, l.intent, l.bhk, l.price, l.price_unit, l.area_sqft,
                l.furnishing, l.location_label, l.building_name, l.landmark_name,
                l.micro_market, l.broker_name, l.broker_phone,
                l.first_seen, l.last_seen, l.observation_count, l.group_count,
-               l.latest_raw_message_id
+               l.latest_raw_message_id,
+               (SELECT b.latitude FROM buildings b
+                WHERE lower(trim(b.canonical_name)) = lower(trim(l.building_name))
+                LIMIT 1) AS latitude,
+               (SELECT b.longitude FROM buildings b
+                WHERE lower(trim(b.canonical_name)) = lower(trim(l.building_name))
+                LIMIT 1) AS longitude
         FROM listings_unified l
         WHERE {where_sql}
         ORDER BY {order_sql} DESC
@@ -584,6 +590,7 @@ async def market_search(
         latest_msg = ""
 
         results.append({
+            "listing_id": d.get("listing_id"),
             "fingerprint": d.get("fingerprint"),
             "intent": d.get("intent"),
             "bhk": d.get("bhk"),
@@ -609,6 +616,8 @@ async def market_search(
             "latest_timestamp": "",
             "latest_sender": "",
             "raw_message_id": d.get("latest_raw_message_id"),
+            "latitude": d.get("latitude"),
+            "longitude": d.get("longitude"),
             "match_reasons": match_reasons,
         })
 

@@ -17,6 +17,7 @@ async def list_buildings(limit: int = 100, offset: int = 0, status: str = "", us
     rows = storage.db.execute(f"""
         SELECT b.id, b.building_id, b.canonical_name, b.micro_market, b.developer,
                b.address, b.pincode, b.latitude, b.longitude,
+               b.google_place_id, b.plus_code, b.geocode_source, b.geocode_confidence, b.geocoded_at,
                b.observed_listings, b.observed_brokers, b.observed_requirements,
                b.last_enriched, b.enrichment_confidence, b.status,
                b.created_at, b.updated_at,
@@ -29,6 +30,31 @@ async def list_buildings(limit: int = 100, offset: int = 0, status: str = "", us
 
     total = storage.db.execute(f"SELECT COUNT(*) FROM buildings b {where}", params).fetchone()[0]
     return {"buildings": [dict(r) for r in rows], "total": total, "limit": limit, "offset": offset}
+
+
+@router.post("/api/buildings/{building_id:path}/geocode")
+async def geocode_building(building_id: str, user: dict = Depends(require_user)):
+    """Resolve and cache a building's address/coordinates once."""
+    if building_id.startswith("BLD-"):
+        building = storage.get_building(building_id=building_id)
+    else:
+        building = storage.get_building(canonical_name=building_id)
+    if not building:
+        raise HTTPException(404, f"Building '{building_id}' not found")
+
+    from agents.building_enrichment.providers import GooglePlacesProvider
+    provider = GooglePlacesProvider()
+    result = provider.enrich(
+        building_name=building["canonical_name"],
+        canonical_name=building["canonical_name"],
+        micro_market=building.get("micro_market"),
+    )
+    if result.error or not result.fields:
+        raise HTTPException(502, result.error or "No geocoding result")
+    updated = storage.update_building_from_enrichment(
+        building["id"], result.fields, result.provider, result.confidence
+    )
+    return {"building": updated, "provider": result.provider, "cached": result.cached}
 
 
 @router.get("/api/buildings/{building_id:path}")

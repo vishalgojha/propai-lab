@@ -204,6 +204,7 @@ export async function getLocalityData(rawSlug: string): Promise<LocalityData | n
   // Fallback: if the RPC failed, do a direct query.
   if (!rpc) {
     let rows: ListingRow[] | null = null;
+    let fallbackQuerySucceeded = false;
     try {
       // Use range to avoid pulling 18K+ rows in one shot — Supabase caps
       // an unpaginated select at 1000 rows, but for the summary we only
@@ -226,14 +227,18 @@ export async function getLocalityData(rawSlug: string): Promise<LocalityData | n
         if (page) collected.push(...(page as ListingRow[]));
         if (!page || page.length < PAGE) break;
       }
-      rows = collected.length > 0 ? collected : null;
+      // An empty result is a valid answer for a known locality. Keep it
+      // distinct from a query failure so the page can use the buildings table
+      // to decide whether this is a known-but-empty locality.
+      fallbackQuerySucceeded = true;
+      rows = collected;
     } catch (e) {
       console.error("getLocalityData fallback query exception:", e);
     }
 
     // If we couldn't even fetch a single page, try a COUNT as last resort.
     // This tells us the place IS populated — we just can't fetch details.
-    if (!rows) {
+    if (!fallbackQuerySucceeded || !rows) {
       try {
         const { count } = await db
           .from("listings_unified")

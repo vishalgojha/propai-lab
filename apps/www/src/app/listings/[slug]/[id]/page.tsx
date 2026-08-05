@@ -164,7 +164,10 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
   } catch {
     return { title: "Listing not found — PropAI" };
   }
-  const isRent = /month/i.test(card.priceLabel);
+  // Transaction type is authoritative. Do not infer Rent/Sale from the
+  // formatted price: a legitimate rent-per-sqft quote may be converted to a
+  // monthly total for display, and that label must not turn it into a sale.
+  const isRent = /^(rent|rental|lease)$/i.test(String(listing.intent || ""));
   const dealType = isRent ? "For rent" : "For sale";
   return {
     title: listingTitle(card),
@@ -315,7 +318,9 @@ export default async function ListingPage({ params }: Params) {
     .slice(0, 2)
     .map((w) => w[0]?.toUpperCase() ?? "")
     .join("");
-  const isRent = /month/i.test(card.priceLabel);
+  // The stored transaction type is authoritative even when a rent-per-sqft
+  // quote has been converted into a monthly total for display.
+  const isRent = /^(rent|rental|lease)$/i.test(String(listing.intent || ""));
   const dealType = isRent ? "For rent" : "For sale";
 
   const siteUrl = getSiteUrl();

@@ -1190,6 +1190,39 @@ export async function searchNaturalLanguageListings(
   };
 }
 
+// Dedicated map browse: recent live inventory with building coordinates. This
+// intentionally does not invoke the AI parser; the /map page is a browse
+// surface, while /search remains the natural-language discovery surface.
+export async function getPublicMapListings(limit = 60): Promise<NaturalSearchResult[]> {
+  const db = getServerSupabase();
+  if (!db) return [];
+
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 86_400_000).toISOString();
+  const { data, error } = await db
+    .from("listings_unified")
+    .select(LISTING_FIELDS.join(", "))
+    .not("building_name", "is", null)
+    .gte("last_seen", thirtyDaysAgo)
+    .order("last_seen", { ascending: false })
+    .limit(limit);
+
+  if (error) {
+    console.error("getPublicMapListings error:", error.message);
+    return [];
+  }
+
+  const rows = (data ?? []) as unknown as NaturalSearchRow[];
+  const results: NaturalSearchResult[] = rows.map((row) => ({
+    ...row,
+    score: 0,
+    matchedOn: ["live inventory"],
+    priceLabel: formatPrice(row.price),
+    resultType: "locality",
+  }));
+
+  return enrichWithBuildingCoords(results);
+}
+
 const _buildingCoordsCache = new Map<string, { latitude: number; longitude: number }>();
 
 async function enrichWithBuildingCoords(

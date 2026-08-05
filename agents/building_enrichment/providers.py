@@ -5,6 +5,8 @@ import time
 import json
 import hashlib
 import logging
+import urllib.parse
+import urllib.request
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field, asdict
 from typing import Optional
@@ -221,7 +223,12 @@ class GooglePlacesProvider(BaseProvider):
 
     def __init__(self, config: dict = None):
         super().__init__(config)
-        self.api_key = self.config.get("api_key") or os.environ.get("GOOGLE_places_API_KEY", "")
+        self.api_key = (
+            self.config.get("api_key")
+            or os.environ.get("GOOGLE_PLACES_API_KEY", "")
+            or os.environ.get("GOOGLE_MAPS_API_KEY", "")
+            or os.environ.get("GOOGLE_places_API_KEY", "")
+        )
 
     def is_available(self) -> bool:
         return bool(self.api_key)
@@ -248,13 +255,45 @@ class GooglePlacesProvider(BaseProvider):
                 cached=True,
             )
 
-        # Google Places enrichment logic would go here
-        result = EnrichmentResult(
-            provider=self.name,
-            confidence=0.0,
-            fields={},
-            error="Google Places provider not yet implemented",
+        self._rate_limit()
+        query = ", ".join(
+            part for part in [canonical_name or building_name, micro_market, "Mumbai, Maharashtra, India"]
+            if part and str(part).strip()
         )
+        params = urllib.parse.urlencode({"address": query, "key": self.api_key})
+        url = f"https://maps.googleapis.com/maps/api/geocode/json?{params}"
+        try:
+            with urllib.request.urlopen(url, timeout=15) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+            results = payload.get("results") or []
+            if payload.get("status") != "OK" or not results:
+                error = payload.get("error_message") or payload.get("status") or "No geocoding result"
+                result = EnrichmentResult(provider=self.name, confidence=0.0, error=error, raw_data=payload)
+            else:
+                match = results[0]
+                location = ((match.get("geometry") or {}).get("location") or {})
+                plus = match.get("plus_code") or {}
+                fields = {
+                    "address": match.get("formatted_address"),
+                    "latitude": location.get("lat"),
+                    "longitude": location.get("lng"),
+                    "google_place_id": match.get("place_id"),
+                    "plus_code": plus.get("compound_code") or plus.get("global_code"),
+                    "geocode_query": query,
+                    "geocode_source": "google_geocoding",
+                    "geocode_confidence": 0.95,
+                    "geocoded_at": datetime.now(timezone.utc).isoformat(),
+                }
+                result = EnrichmentResult(
+                    provider=self.name,
+                    confidence=0.95,
+                    fields={key: value for key, value in fields.items() if value is not None},
+                    source_url=url.split("&key=", 1)[0],
+                    source_record_id=match.get("place_id", ""),
+                    raw_data={"status": payload.get("status"), "result": match},
+                )
+        except Exception as exc:
+            result = EnrichmentResult(provider=self.name, confidence=0.0, error=str(exc))
 
         self._save_cache(building_name, result.to_dict())
         return result

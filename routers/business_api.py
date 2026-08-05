@@ -54,7 +54,7 @@ COMPANION_TOOLS = [
     "Search",
 ]
 
-PROPAI_SHARED_WABA_NUMBER = "+917021045254"
+PROPAI_SHARED_WABA_NUMBER = ""
 
 MEDIA_DIR = Path(__file__).resolve().parent.parent / "media" / "listing_photos"
 
@@ -151,7 +151,7 @@ async def business_api_overview(
     return {
         "connection_status": "connected" if outbound_allowed else "not_connected",
         "whatsapp_business_number": waba_number,
-        "shared_waba_number": PROPAI_SHARED_WABA_NUMBER,
+        "shared_waba_number": waba_number if waba_is_shared else "",
         "waba_owner": "propai" if waba_is_shared else ("broker" if waba_number else "none"),
         "outbound_allowed": outbound_allowed,
         "connected_team_members": active_team,
