@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { formatBhkLabel } from "../lib/listing-card";
 
 type LatestListing = {
   id: number;
@@ -84,7 +85,7 @@ export default function LiveListingTicker() {
   if (!listing) return null;
 
   const price = priceLabel(listing.price, listing.priceUnit);
-  const bhk = listing.bhk ? `${listing.bhk.replace(/\s*BHK\s*$/i, "").trim()} BHK` : null;
+  const bhk = formatBhkLabel(listing.bhk);
   const type = listing.transactionType
     ? listing.transactionType.charAt(0).toUpperCase() + listing.transactionType.slice(1).toLowerCase()
     : listing.assetType
