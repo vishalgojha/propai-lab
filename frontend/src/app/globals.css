@@ -747,6 +747,27 @@ body.no-scroll { overflow: hidden; }
   background: var(--color-propai-green-dark);
 }
 
+/* WhatsApp actions sit on both dark and light message cards. Keep the light
+   theme's mint action readable instead of inheriting a low-contrast pastel
+   border/background pair. */
+.whatsapp-action {
+  border-color: rgba(110, 231, 183, 0.3);
+  background-color: rgba(52, 211, 153, 0.1);
+  color: #a7f3d0;
+}
+.whatsapp-action:hover {
+  background-color: rgba(52, 211, 153, 0.2);
+}
+:root[data-theme="light"] .whatsapp-action {
+  border-color: #059669 !important;
+  background-color: #d1fae5 !important;
+  color: #065f46 !important;
+}
+:root[data-theme="light"] .whatsapp-action:hover {
+  background-color: #a7f3d0 !important;
+  color: #064e3b !important;
+}
+
 .more-hint {
   font-size: 12px;
   color: var(--color-text-secondary);
