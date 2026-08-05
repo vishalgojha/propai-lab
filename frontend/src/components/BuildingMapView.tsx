@@ -209,6 +209,15 @@ export function BuildingMapView() {
     setPendingPan(null);
   }, [pendingPan]);
 
+  useEffect(() => {
+    const trimmed = query.trim();
+    if (!trimmed) return;
+    const timer = window.setTimeout(() => {
+      void performSearch(trimmed);
+    }, 450);
+    return () => window.clearTimeout(timer);
+  }, [query]);
+
   function focusGroup(group: ListingGroup) {
     setSelectedKey(group.key);
     setPendingPan(group.position);
@@ -222,23 +231,24 @@ export function BuildingMapView() {
     setError(null);
   }
 
-  async function handleSearch(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const trimmed = query.trim();
+  async function performSearch(trimmed: string) {
     setError(null);
-    if (!trimmed) {
-      clearSearch();
-      return;
-    }
-
+    setSearchActive(true);
+    setListings([]);
+    setSelectedKey("");
     setSearchLoading(true);
     try {
-      const parsed = await parseSearchQuery(trimmed);
+      let parsed: Awaited<ReturnType<typeof parseSearchQuery>> = {};
+      try {
+        parsed = await parseSearchQuery(trimmed);
+      } catch {
+        // Plain building searches should still work if query interpretation is unavailable.
+      }
       const localities = Array.isArray(parsed?.localities) ? parsed.localities : [];
       const payload = await marketSearchListings({
         intent: normalizeIntent(parsed?.intent),
         bhk: normalizeBhk(parsed?.bhk),
-        building: parsed?.building || "",
+        building: parsed?.building || (!parsed?.bhk && !parsed?.intent && !parsed?.locality ? trimmed : ""),
         micro_market: parsed?.locality || localities[0] || "",
         price_min: finitePositive(parsed?.minPrice),
         price_max: finitePositive(parsed?.maxPrice),
@@ -248,13 +258,21 @@ export function BuildingMapView() {
         group_by_building: false,
       });
       setListings(Array.isArray(payload?.results) ? payload.results : []);
-      setSearchActive(true);
-      setSelectedKey("");
     } catch {
       setError("Could not search listings right now.");
     } finally {
       setSearchLoading(false);
     }
+  }
+
+  function handleSearch(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const trimmed = query.trim();
+    if (!trimmed) {
+      clearSearch();
+      return;
+    }
+    void performSearch(trimmed);
   }
 
   const markerIcon = isLoaded && typeof window !== "undefined"
