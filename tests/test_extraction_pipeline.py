@@ -119,6 +119,32 @@ def test_segment_document_reconstructs_blocks_and_classifies_multi_listing():
     assert document["blocks"][1]["text"].startswith("2. RUSTOMJEE PARAMOUNT")
 
 
+def test_segment_document_recognizes_inline_bold_listing_boundaries():
+    message = """*Available Bandra West Brand new building*
+*Crescent* 3bhk 1342 sqft pali hill price 12.12cr
+*Parishram* 4bhk - 2046 sqft carpet hiegher floor sea view pali hill price 31.32cr
+bandra west *New brand building* *Penthouse* 5188sqft carpet price 76.8cr bandra west
+*Available for sale 2Bhk* Building Name: *Pioneer Heights* (khar West) Price 3.70cr"""
+
+    document = ai_extraction._segment_document(message)
+
+    assert document["document_type"] == "Multi Listing"
+    assert document["block_count"] == 4
+    assert [block["text"].splitlines()[0] for block in document["blocks"]] == [
+        "*Crescent* 3bhk 1342 sqft pali hill price 12.12cr",
+        "*Parishram* 4bhk - 2046 sqft carpet hiegher floor sea view pali hill price 31.32cr",
+        "*Penthouse* 5188sqft carpet price 76.8cr bandra west",
+        "*Available for sale 2Bhk* Building Name: *Pioneer Heights* (khar West) Price 3.70cr",
+    ]
+
+
+def test_price_formatter_does_not_render_crore_sale_as_monthly_rent():
+    formatted = ai_extraction._format_price_amount(12_12_00_000, is_rent=True)
+
+    assert "/month" not in formatted
+    assert formatted == "₹12.1 Cr"
+
+
 def test_ai_extract_sends_reconstructed_document_to_provider(monkeypatch):
     message = """1. RUSTOMJEE PARAMOUNT
 3 BHK

@@ -29,6 +29,7 @@ from typing import Optional
 
 from openai import OpenAI
 from llm import get_configured_providers
+from deterministic_splitters import PATTERN_INLINE_BOLD, split_message_into_chunks
 
 _logger = logging.getLogger(__name__)
 
@@ -508,6 +509,26 @@ def _extract_json_object(raw: str | None) -> object | None:
 
 def _segment_document(raw_text: str) -> dict:
     """Reconstruct a WhatsApp message into logical blocks."""
+    inline_pattern, inline_chunks = split_message_into_chunks(raw_text)
+    if inline_pattern == PATTERN_INLINE_BOLD and len(inline_chunks) >= 2:
+        blocks = [
+            {
+                "index": index,
+                "start_line": None,
+                "line_count": len(chunk.splitlines()) or 1,
+                "text": chunk.strip(),
+                "lines": chunk.splitlines() or [chunk.strip()],
+            }
+            for index, chunk in enumerate(inline_chunks)
+        ]
+        return {
+            "document_type": "Multi Listing",
+            "header": None,
+            "block_count": len(blocks),
+            "blocks": blocks,
+            "raw_text": raw_text,
+        }
+
     lines = _document_lines(raw_text)
     header_lines: list[str] = []
     blocks: list[dict] = []
@@ -965,11 +986,18 @@ _PRICE_SCALES = [
     (1_00_000, "Lakh", 1_00_000),
     (1_000, "K", 1_000),
 ]
+_MAX_PLAUSIBLE_MONTHLY_RENT = 15_00_000
 
 
 def _format_price_amount(amount: float, is_rent: bool = False) -> str:
     if amount <= 0:
         return "Price on request"
+    if is_rent and amount > _MAX_PLAUSIBLE_MONTHLY_RENT:
+        _logger.warning(
+            "Rent price exceeds plausibility ceiling; formatting as non-monthly amount: %s",
+            amount,
+        )
+        is_rent = False
     for threshold, label, divisor in _PRICE_SCALES:
         if amount >= threshold:
             value = amount / divisor
