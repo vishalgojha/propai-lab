@@ -807,9 +807,31 @@ def _normalize_extraction(raw: dict) -> dict:
 
 
 def _apply_deterministic_field_fallbacks(extraction: dict, raw_text: str) -> dict:
-    """Recover unambiguous schema facts when a provider omits them."""
+    """Recover unambiguous schema facts when a provider omits them.
+
+    Intent is corrected here when the raw WhatsApp text contains an
+    unambiguous transaction marker.  This protects the database from an LLM
+    guessing ``rent`` for messages such as ``Available Sale ... Price 1.90
+    Cr``.  The correction is deliberately limited to exclusive markers; a
+    message advertising both sale and rent still needs item-level parsing.
+    """
     text = raw_text or ""
     lowered = text.lower()
+
+    explicit_sale = re.search(
+        r"\b(?:available\s+(?:for\s+)?sale|for\s+sale|sale\s+price|outright|outrate)\b",
+        lowered,
+    )
+    explicit_rent = re.search(
+        r"\b(?:available\s+(?:for\s+)?rent|for\s+rent|monthly\s+rent|rent\s*[-:])\b",
+        lowered,
+    )
+    if explicit_sale and not explicit_rent and extraction.get("listing_type") in {"rent", "sale"}:
+        extraction["listing_type"] = "sale"
+        extraction["needs_review"] = False
+    elif explicit_rent and not explicit_sale and extraction.get("listing_type") in {"rent", "sale"}:
+        extraction["listing_type"] = "rent"
+        extraction["needs_review"] = False
 
     # Requirement messages often contain unambiguous ranges/budgets but the
     # provider may omit the route-specific fields. Recover only explicit
