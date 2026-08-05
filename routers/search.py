@@ -89,7 +89,7 @@ def _parse_price(text: str) -> tuple[Optional[int], Optional[int]]:
 def _parse_query_simple(query: str) -> ParsedQuery:
     parsed = ParsedQuery(query=query)
     lower = query.lower()
-    bhk_match = re.search(r'(\d+(?:\.\d+)?)\s*bhk', lower)
+    bhk_match = re.search(r'(\d+(?:\.\d+)?)\s*(?:bhk|bedrooms?|beds?)', lower)
     if bhk_match:
         parsed.bhk = int(float(bhk_match.group(1)))
     if re.search(r'\b(rent|rental|lease)\b', lower):
@@ -494,7 +494,7 @@ async def market_search(
     listing_params.extend([limit + 50, offset])
     rows = storage.db.execute(f"""
         SELECT l.id AS listing_id, l.source_fingerprint AS fingerprint, l.intent, l.bhk, l.price, l.price_unit, l.area_sqft,
-               l.furnishing, l.location_label, l.building_name, l.landmark_name,
+               l.furnishing, l.location_label, l.street_name, l.building_name, l.landmark_name,
                l.micro_market, l.broker_name, l.broker_phone,
                l.first_seen, l.last_seen, l.observation_count, l.group_count,
                l.latest_raw_message_id,
@@ -603,6 +603,7 @@ async def market_search(
             "area_sqft": d.get("area_sqft"),
             "furnishing": d.get("furnishing"),
             "location_label": d.get("location_label"),
+            "street_name": d.get("street_name"),
             "building_name": d.get("building_name") or "Unknown Building",
             "building_address": d.get("building_address"),
             "landmark_name": d.get("landmark_name"),
