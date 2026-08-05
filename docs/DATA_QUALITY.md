@@ -72,3 +72,11 @@ Same building ≠ same flat. A listing is identified by the combination of: buil
 - Never merge listings from different brokers.
 - Never auto-correct broker typos in stored data (we normalize for search, not for storage).
 - Never show data we're not confident about without marking it as uncertain.
+## Extraction audit evidence
+
+The admin extraction view must show the original WhatsApp evidence beside the
+structured row. A requirement has two dimensions: its role is BUY/requirement,
+while `transaction_type` says whether the requested property is for rent or
+sale. Do not collapse these into a misleading BUY-only label. Budget,
+preferred localities, tenant preference, parking, and amenity requirements are
+evidence-bearing fields and must remain visible for review.
