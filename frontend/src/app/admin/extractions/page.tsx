@@ -18,6 +18,9 @@ interface ParsedRow {
   price_unit: string | null;
   price_model: string | null;
   area_sqft: number | null;
+  area_min_sqft?: number | null;
+  area_max_sqft?: number | null;
+  price_per_sqft?: number | null;
   furnishing: string | null;
   building_name: string | null;
   landmark_name: string | null;
@@ -63,6 +66,41 @@ function fmtPrice(value: number | null, unit: string | null): string {
   if (value >= 10000000) return `${(value / 10000000).toLocaleString("en-IN", { maximumFractionDigits: 2 })} Cr`;
   if (value >= 100000) return `${(value / 100000).toLocaleString("en-IN", { maximumFractionDigits: 2 })} L`;
   return value.toLocaleString("en-IN");
+}
+
+function fmtArea(row: ParsedRow): string {
+  const min = row.area_min_sqft ?? row.area_sqft;
+  const max = row.area_max_sqft;
+  if (min == null && max == null) return "-";
+  if (min != null && max != null && min !== max) {
+    return `${min.toLocaleString("en-IN")}–${max.toLocaleString("en-IN")} sqft`;
+  }
+  return `${(min ?? max)!.toLocaleString("en-IN")} sqft`;
+}
+
+function fmtRowPrice(row: ParsedRow): string {
+  if (row.price_model === "psf" || row.price_unit === "per_sqft") {
+    const value = row.price_per_sqft ?? row.price;
+    return value == null ? "-" : `₹${value.toLocaleString("en-IN")}/sqft`;
+  }
+  return fmtPrice(row.price, row.price_unit);
+}
+
+function detailRows(row: ParsedRow): Array<[string, string]> {
+  const rows: Array<[string, string]> = [["Intent", row.intent || "—"]];
+  if (row.asset_type !== "commercial") rows.push(["BHK", row.bhk || "—"]);
+  rows.push(["Price", fmtRowPrice(row)], ["Price Model", row.price_model || "—"], ["Area", fmtArea(row)]);
+  if (row.price_per_sqft != null && row.price_model !== "psf") {
+    rows.push(["Price / sqft", `₹${row.price_per_sqft.toLocaleString("en-IN")}/sqft`]);
+  }
+  rows.push(
+    ["Furnishing", row.furnishing || "—"], ["Building", row.building_name || "—"],
+    ["Landmark", row.landmark_name || "—"], ["Micro Market", row.micro_market || "—"],
+    ["Location Raw", row.location_raw || "—"], ["Broker", row.broker_name || "—"],
+    ["Broker Phone", row.broker_phone || "—"], ["Message Type", row.message_type || "—"],
+    ["Confidence", fmtConfidence(row.confidence).label], ["Created", fmtDate(row.created_at)],
+  );
+  return rows;
 }
 
 function fmtDate(value: string): string {
@@ -420,13 +458,10 @@ export default function AdminExtractionsPage() {
                       </td>
                       {showBhk && <td className="px-4 py-3 text-zinc-400">{row.bhk || "—"}</td>}
                       <td className="px-4 py-3 text-zinc-300 font-medium whitespace-nowrap">
-                        {fmtPrice(row.price, row.price_unit)}
-                        {row.price_model === "psf" && (
-                          <span className="ml-1 text-[10px] text-zinc-500">/sqft</span>
-                        )}
+                        {fmtRowPrice(row)}
                       </td>
                       <td className="px-4 py-3 text-zinc-400">
-                        {row.area_sqft ? `${row.area_sqft.toLocaleString("en-IN")}` : "—"}
+                        {fmtArea(row)}
                       </td>
                       <td className="px-4 py-3 text-zinc-400 text-xs">
                         {row.furnishing || "—"}
@@ -563,9 +598,9 @@ export default function AdminExtractionsPage() {
               {[
                 ["Intent", selectedRow.intent || "—"],
                 ...(selectedRow.asset_type === "commercial" ? [] : [["BHK", selectedRow.bhk || "—"]]),
-                ["Price", fmtPrice(selectedRow.price, selectedRow.price_unit)],
+                ["Price", fmtRowPrice(selectedRow)],
                 ["Price Model", selectedRow.price_model || "—"],
-                ["Area", selectedRow.area_sqft ? `${selectedRow.area_sqft.toLocaleString("en-IN")} sqft` : "—"],
+                ["Area", fmtArea(selectedRow)],
                 ["Furnishing", selectedRow.furnishing || "—"],
                 ["Building", selectedRow.building_name || "—"],
                 ["Landmark", selectedRow.landmark_name || "—"],
@@ -595,8 +630,8 @@ export default function AdminExtractionsPage() {
                   <div className="mt-2 space-y-2">
                     <div className="text-xs text-zinc-500">
                       {rawMessage.sender || "Unknown sender"}
-                      {rawMessage.sender_phone ? ` · ${rawMessage.sender_phone.replace(/@.*$/, "")}` : ""}
-                      {rawMessage.group_name ? ` · ${rawMessage.group_name}` : ""}
+                      {rawMessage.sender_phone ? " - " + rawMessage.sender_phone.split("@")[0] : ""}
+                      {rawMessage.group_name ? " - " + rawMessage.group_name : ""}
                     </div>
                     <div className="max-h-48 overflow-auto whitespace-pre-wrap rounded-lg border border-white/10 bg-black/20 p-3 text-sm text-zinc-200">
                       {rawMessage.message || "(No text content; see message metadata above.)"}

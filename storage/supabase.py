@@ -2688,6 +2688,9 @@ class SupabaseStorage(Storage):
         if bhk is None and row.get("bhk_options"):
             bhk = row["bhk_options"][0]
         furnishing = row.get("furnishing_status") or row.get("furnishing_preference")
+        area_min = row.get("area_min_sqft") or row.get("carpet_area_min_sqft")
+        area_max = row.get("area_max_sqft") or row.get("carpet_area_max_sqft")
+        price_per_sqft = row.get("rent_per_sqft") if transaction == "rent" else row.get("price_per_sqft")
         return {
             **row,
             "source_schema": table,
@@ -2701,7 +2704,10 @@ class SupabaseStorage(Storage):
             "price": price,
             "price_unit": "per_sqft" if price_model == "psf" else "abs",
             "price_model": price_model,
+            "price_per_sqft": price_per_sqft,
             "area_sqft": row.get("carpet_area_sqft") or row.get("area_min_sqft"),
+            "area_min_sqft": area_min,
+            "area_max_sqft": area_max,
             "furnishing": furnishing,
             "furnishing_canonical": furnishing,
             "location_raw": row.get("locality_raw"),
@@ -2889,6 +2895,7 @@ class SupabaseStorage(Storage):
         # the 24-hour deduplication window described in DATA_QUALITY.md.
         deduped: list[dict] = []
         seen_source_items: set[tuple[Any, ...]] = set()
+        seen_raw_slices: dict[tuple[Any, ...], int] = {}
         seen_identity: dict[tuple[Any, ...], list[datetime]] = defaultdict(list)
 
         def norm(value: Any) -> str:
@@ -2904,6 +2911,27 @@ class SupabaseStorage(Storage):
             except ValueError:
                 return None
 
+        def source_slice(row: dict) -> str:
+            payload = row.get("raw_payload")
+            if isinstance(payload, str):
+                try:
+                    payload = json.loads(payload)
+                except (TypeError, json.JSONDecodeError):
+                    payload = {}
+            if isinstance(payload, dict):
+                value = payload.get("slice_text") or payload.get("full_text")
+                if value:
+                    return norm(str(value))
+            return norm(row.get("normalized_message"))
+
+        def row_quality(row: dict) -> int:
+            fields = (
+                "building_name", "micro_market", "broker_name", "broker_phone",
+                "price", "price_per_sqft", "area_sqft", "area_min_sqft",
+                "area_max_sqft", "furnishing", "floor_range", "car_parking_count",
+            )
+            return sum(1 for field in fields if row.get(field) not in (None, "", []))
+
         for row in rows:
             raw_id = row.get("raw_message_id")
             if raw_id is not None and int(raw_id or 0) > 0:
@@ -2911,6 +2939,21 @@ class SupabaseStorage(Storage):
                 if source_key in seen_source_items:
                     continue
                 seen_source_items.add(source_key)
+
+                # Retries from the old flat/typed bridge could write the same
+                # raw slice under different listing indexes. Keep legitimate
+                # multi-listing slices separate, but collapse an identical
+                # source slice and retain the more complete extraction.
+                slice_text = source_slice(row)
+                if slice_text:
+                    raw_slice_key = (source_key[0], int(raw_id), slice_text)
+                    prior_index = seen_raw_slices.get(raw_slice_key)
+                    if prior_index is not None:
+                        prior = deduped[prior_index]
+                        if row_quality(row) > row_quality(prior):
+                            deduped[prior_index] = row
+                        continue
+                    seen_raw_slices[raw_slice_key] = len(deduped)
 
             broker = norm(row.get("broker_phone")) or norm(row.get("broker_name"))
             location = norm(row.get("building_name")) or norm(row.get("landmark_name")) or norm(row.get("micro_market")) or norm(row.get("location_raw"))
