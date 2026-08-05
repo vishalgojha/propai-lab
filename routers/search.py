@@ -464,9 +464,9 @@ async def market_search(
         where_clauses.append("""(
             l.building_name ILIKE ?
             OR l.building_name IN (
-                SELECT canonical FROM building_aliases WHERE alias ILIKE ?
+                SELECT canonical_name FROM building_name_aliases WHERE alias ILIKE ?
                 UNION
-                SELECT alias FROM building_aliases WHERE canonical ILIKE ?
+                SELECT alias FROM building_name_aliases WHERE canonical_name ILIKE ?
             )
         )""")
         bpattern = f"%{building}%"
