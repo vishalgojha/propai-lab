@@ -142,6 +142,21 @@ JSON:"""
         import json
         parsed = json.loads(content.strip().lstrip('{').rstrip('}'))
         result = ParsedQuery(query=query, **parsed)
+        # Keep deterministic extraction as a safety net when the provider
+        # omits an explicit bedroom/BHK mention from otherwise valid JSON.
+        simple = _parse_query_simple(query)
+        if result.bhk is None:
+            result.bhk = simple.bhk
+        if result.intent is None:
+            result.intent = simple.intent
+        if result.minPrice is None:
+            result.minPrice = simple.minPrice
+        if result.maxPrice is None:
+            result.maxPrice = simple.maxPrice
+        if result.locality is None:
+            result.locality = simple.locality
+        if not result.localities:
+            result.localities = simple.localities
         if not result.localities and result.locality:
             result.localities = [result.locality] if result.locality else []
         if result.localities:

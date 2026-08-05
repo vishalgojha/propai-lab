@@ -269,7 +269,7 @@ export function BuildingMapView() {
     : undefined;
 
   return (
-    <section className="flex min-h-[calc(100dvh-44px)] flex-col gap-3 p-3 sm:p-4 lg:p-5">
+    <section className="flex h-[calc(100dvh-44px)] min-h-0 flex-col gap-3 overflow-hidden p-3 sm:p-4 lg:p-5">
       <div className="flex shrink-0 flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-accent">Market intelligence</p>
@@ -310,7 +310,7 @@ export function BuildingMapView() {
           maxWidth={650}
           storageKey="market-map-panel-width"
           mobile={isMobile}
-          className="max-w-full shrink-0 border-b border-border bg-background lg:border-b-0 lg:border-r"
+          className="h-full max-w-full shrink-0 border-b border-border bg-background lg:border-b-0 lg:border-r"
         >
           <div className="h-full min-h-0 overflow-y-auto p-3">
             <div className="sticky top-0 z-10 -mx-1 mb-3 flex items-center justify-between rounded-lg bg-background/95 px-2 py-2 backdrop-blur">
