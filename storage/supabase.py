@@ -3999,6 +3999,24 @@ class SupabaseStorage(Storage):
         res = query.execute()
         return res.data[0] if res.data else None
 
+    def update_building_from_enrichment(
+        self, building_db_id: int | str, fields: dict, provider: str, confidence: float
+    ) -> dict | None:
+        """Apply approved building enrichment fields, including geocoding metadata."""
+        allowed = {
+            "address", "pincode", "latitude", "longitude", "google_place_id",
+            "plus_code", "geocode_query", "geocode_source", "geocode_confidence",
+            "geocoded_at",
+        }
+        values = {key: value for key, value in (fields or {}).items() if key in allowed and value is not None}
+        if not values:
+            return self.get_building(building_db_id=building_db_id)
+        values["last_enriched"] = datetime.now(timezone.utc).isoformat()
+        values["enrichment_confidence"] = max(float(confidence or 0), float(values.get("geocode_confidence") or 0))
+        values["updated_at"] = datetime.now(timezone.utc).isoformat()
+        result = self.client.table("buildings").update(values).eq("id", int(building_db_id)).execute()
+        return result.data[0] if result.data else self.get_building(building_db_id=building_db_id)
+
     # ── Resolver Decisions ───────────────────────────────────────
 
     def _legacy_parsed_exists(self, parsed_id: int) -> bool:

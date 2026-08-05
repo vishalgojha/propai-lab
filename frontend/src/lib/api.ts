@@ -777,6 +777,12 @@ export function refreshBuilding(buildingId: string, provider?: string) {
   });
 }
 
+export function geocodeBuilding(buildingId: string) {
+  return fetchJSON<any>(`/buildings/${encodeURIComponent(buildingId)}/geocode`, {
+    method: "POST",
+  });
+}
+
 export function discoverBuildings() {
   return fetchJSON<any>("/buildings/discover", { method: "POST" });
 }
@@ -1001,6 +1007,21 @@ export function marketSearchListings(params: {
     }
   }
   return fetchJSON<any>(`/search/market?${searchParams}`);
+}
+
+export interface ParsedSearchQuery {
+  bhk?: number | string | null;
+  intent?: string | null;
+  locality?: string | null;
+  localities?: string[] | null;
+  minPrice?: number | null;
+  maxPrice?: number | null;
+  furnishing?: string | null;
+  building?: string | null;
+}
+
+export function parseSearchQuery(q: string): Promise<ParsedSearchQuery> {
+  return fetchJSON<ParsedSearchQuery>(`/search/parse?q=${encodeURIComponent(q)}`);
 }
 
 export function getListingSources(listingId: number) {

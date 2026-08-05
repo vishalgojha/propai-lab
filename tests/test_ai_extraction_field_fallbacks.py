@@ -3,7 +3,9 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from ai_extraction import _apply_deterministic_field_fallbacks
+from ai_extraction import _apply_deterministic_field_fallbacks, _canonical_locality_from_mention, _source_grounded_price
+from extraction import _price_from_ai_and_raw
+from extraction_models import validate_source_semantics
 
 
 def test_commercial_message_recovers_obvious_schema_facts():
@@ -74,3 +76,135 @@ Gas Pipeline Preferred"""
     assert out["tenant_type"] == "Small Family (2 Members Only)"
     assert out["car_parking_min"] == 1
     assert out["amenity_requirements"] == ["modular_kitchen", "gas_pipeline"]
+
+
+def test_rent_rs_decimal_is_treated_as_lakh_shorthand():
+    out = _apply_deterministic_field_fallbacks(
+        {"listing_type": "rent", "price": {"amount": 1500000, "unit": "total"}},
+        "Mandate 3 bhk flat furnished with White good Grace Classic, Ahimsa marg Khar.\n"
+        "Rent Rs.1.50 neqt",
+    )
+
+    assert out["price"] == {
+        "amount": 150000.0,
+        "unit": "total",
+        "period": "per_month",
+        "raw_price_text": "Rent Rs.1.50",
+    }
+    assert out["locality"]["raw_mention"] == "Ahimsa marg Khar"
+
+
+def test_explicit_rent_amount_overrides_wrong_provider_psf_unit():
+    assert _price_from_ai_and_raw({
+        "amount": 200000,
+        "unit": "per_sqft",
+        "period": "one_time",
+        "raw_price_text": "₹ 2.00 Lakhs.",
+    }) == (200000.0, "abs")
+
+
+def test_explicit_psf_quote_keeps_psf_unit():
+    assert _price_from_ai_and_raw({
+        "amount": 200,
+        "unit": "per_sqft",
+        "period": "per_month",
+        "raw_price_text": "₹200 per sq.ft.",
+    }) == (200.0, "per_sqft")
+
+
+def test_source_semantics_rejects_psf_without_source_psf_marker():
+    out = validate_source_semantics({
+        "listing_type": "rent",
+        "property_category": "residential",
+        "price": {
+            "amount": 200000,
+            "unit": "per_sqft",
+            "period": "one_time",
+            "raw_price_text": "₹ 2.00 Lakhs",
+        },
+        "extraction_confidence": "high",
+    }, "3 BHK available on lease. Rent: ₹ 2.00 Lakhs per month.")
+
+    assert out["listing_type"] == "rent"
+    assert out["price"]["unit"] == "total"
+    assert out["price"]["period"] == "per_month"
+    assert out["needs_review"] is True
+
+
+def test_source_semantics_preserves_explicit_rent_psf_rate():
+    out = validate_source_semantics({
+        "listing_type": "rent",
+        "property_category": "residential",
+        "price": {
+            "amount": 143,
+            "unit": "per_sqft",
+            "period": "one_time",
+            "raw_price_text": "₹143 per sq.ft.",
+        },
+        "extraction_confidence": "high",
+    }, "3 BHK available on lease. Rent rate ₹143 per sq.ft. per month.")
+
+    assert out["price"]["unit"] == "per_sqft"
+    assert out["price"]["period"] == "per_month"
+
+
+def test_listing_recovers_possession_and_no_parking():
+    out = _apply_deterministic_field_fallbacks(
+        {"listing_type": "rent", "possession_date": None, "car_parking_count": None},
+        "Possession 1st September 2026.\nNo car parking",
+    )
+
+    assert out["possession_date"] == "2026-09-01"
+    assert out["possession_status"] == "available"
+    assert out["car_parking_count"] == 0
+    assert out["parking_type"] == "none"
+
+
+def test_embedded_khar_mention_uses_implied_khar_west_rule():
+    assert _canonical_locality_from_mention("Ahimsa Marg Khar") == "Khar West"
+    assert _canonical_locality_from_mention("Khar") == "Khar West"
+
+
+def test_provider_price_without_source_quote_is_discarded():
+    out = _source_grounded_price(
+        {"price": {"amount": 85000000, "unit": "total", "raw_price_text": "8.5 Cr"}},
+        "Ready Fully Furnished Office for Sale in Kapurbawdi, Thane West. Very reasonably priced.",
+    )
+    assert out["price"]["amount"] is None
+    assert out["needs_review"] is True
+
+
+def test_provider_price_with_source_quote_is_kept():
+    out = _source_grounded_price(
+        {"price": {"amount": 85000000, "unit": "total", "raw_price_text": "8.5 Cr"}},
+        "Ready office for sale. Price 8.5 Cr in Thane West.",
+    )
+    assert out["price"]["amount"] == 85000000
+
+
+def test_preleased_is_preserved_as_occupancy_status():
+    out = _apply_deterministic_field_fallbacks(
+        {"listing_type": "sale", "occupancy_status": None},
+        "Pre-Leased Investment Opportunity in Thane West",
+    )
+    assert out["occupancy_status"] == "pre_leased"
+
+
+def test_requirement_preserves_ordered_bandra_khar_preferences_and_dialect():
+    out = _apply_deterministic_field_fallbacks(
+        {"listing_type": "requirement", "locality_options": [], "furnishing_preference": "fully_loaded"},
+        "Require\n1 Bhk Fully Loaded for Expat - Company Lease\nBandra or max Khar\nBudget 1 Lac",
+    )
+    assert out["locality_options"] == ["Bandra West", "Khar West"]
+    assert out["furnishing_preference"] == "fully_furnished"
+    assert out["tenant_type"] == "expat"
+    assert out["lease_term_preference"] == "company_lease"
+    assert out["company_lease_criteria"] is True
+
+
+def test_requirement_recovers_bhk_from_source_when_provider_omits_it():
+    out = _apply_deterministic_field_fallbacks(
+        {"listing_type": "requirement", "bhk": None, "bhk_options": []},
+        "Require\n1 Bhk Fully Loaded for Expat - Company Lease\nBudget 1 Lac",
+    )
+    assert out["bhk"] == 1.0

@@ -35,8 +35,10 @@ Set these on each service in Coolify:
 | `EXTRACTION_DOUBLEWORD_API_KEY` | Optional extraction-only Doubleword inference key for controlled backlog draining. |
 | `EXTRACTION_DOUBLEWORD_MODEL` | Exact model ID enabled for the extraction-only Doubleword key. Required with `EXTRACTION_DOUBLEWORD_API_KEY`. |
 | `EXTRACTION_DOUBLEWORD_BASE_URL` | Optional; defaults to `https://api.doubleword.ai/v1`. Thinking is disabled for this scoped provider. |
+| `EXTRACTION_PROVIDER_TIMEOUT_SECONDS` | Optional extraction provider request timeout; defaults to `180` seconds and is clamped to a minimum of `30`. |
 | `DOUBLEWORD_EMBEDDING_MODEL` | Exact embedding model ID, if the MCP embedding service is enabled |
 | `FRONTEND_URL` | `https://app.propai.live` |
+| `GOOGLE_MAPS_API_KEY` / `GOOGLE_PLACES_API_KEY` | Server-side Google key used to cache building coordinates, formatted addresses, and Plus Codes. The backend accepts either name; `GOOGLE_MAPS_API_KEY` matches the existing frontend configuration. |
 | `STATUS_FILE` | `/data/status.json` |
 | `LAB_HOST` | `0.0.0.0` |
 | `LAB_PORT` | `8000` |

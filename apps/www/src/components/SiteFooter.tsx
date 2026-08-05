@@ -3,6 +3,7 @@ import Link from "next/link";
 const FOOTER_LINKS = {
   browse: [
     { label: "Search listings", href: "/search" },
+    { label: "Property map", href: "/map" },
     { label: "All localities", href: "/localities" },
   ],
   support: [

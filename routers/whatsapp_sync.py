@@ -69,7 +69,7 @@ COMPANION_ROLES = {
     },
 }
 
-PROPAI_SHARED_WABA_NUMBER = "+917021045254"
+PROPAI_SHARED_WABA_NUMBER = ""
 PIC_TOKEN_RE = re.compile(r'\bPIC-(\d+)-([A-F0-9]+)\b')
 _BUSINESS_API_PERSISTABLE_TYPES: frozenset[str] = frozenset({
     "text", "image", "video", "audio", "document", "sticker",

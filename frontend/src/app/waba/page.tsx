@@ -11,7 +11,6 @@ import {
   type BusinessApiConfig,
 } from "@/lib/api";
 
-const PROPAI_WABA_NUMBER = "+917021045254";
 const WEBHOOK_CALLBACK_URL = "https://api.propai.live/api/whatsapp/cloud/webhook";
 
 function CopyButton({ value }: { value: string }) {
@@ -113,7 +112,7 @@ export default function WabaPage() {
     const nextAccessToken = String(form.get("access_token") || "").trim();
     const nextVerifyToken = String(form.get("verify_token") || "").trim();
 
-    if (!waba?.is_super_admin && `+91${cleaned}` === PROPAI_WABA_NUMBER) {
+    if (!waba?.is_super_admin && `+91${cleaned}` === waba?.shared_waba_number) {
       setStatus("PropAI shared WABA is reserved for platform messages.");
       setSaving(false);
       return;
@@ -156,6 +155,7 @@ export default function WabaPage() {
   const displayPhoneNumberId = waba?.phone_number_id || phoneNumberId;
   const callbackUrl = waba?.webhook_callback_url || WEBHOOK_CALLBACK_URL;
   const isSuperAdmin = Boolean(waba?.is_super_admin);
+  const assistantNumber = waba?.shared_waba_number || "";
 
   return (
     <div className="max-w-3xl mx-auto px-4 lg:px-0 py-8">
@@ -168,14 +168,14 @@ export default function WabaPage() {
         </p>
       </div>
 
-      {!loading && !isSuperAdmin && (
+      {!loading && !isSuperAdmin && assistantNumber && (
         <div className="rounded-2xl border border-[#3EE88A]/20 bg-[#3EE88A]/5 p-5 mb-6">
           <div className="text-sm font-bold text-white">Use PropAI on WhatsApp</div>
           <p className="mt-2 text-sm text-zinc-400">
-            Save <strong className="text-white">+91 70210 45254</strong> and message your requirement or listing. PropAI uses your signed-in workspace data; platform credentials stay private.
+            Save <strong className="text-white">{assistantNumber}</strong> and message your requirement or listing. PropAI uses your signed-in workspace data; platform credentials stay private.
           </p>
           <a
-            href="https://wa.me/917021045254"
+            href={`https://wa.me/${assistantNumber.replace(/\D/g, "")}`}
             target="_blank"
             rel="noreferrer"
             className="mt-4 inline-flex min-h-[44px] items-center rounded-lg bg-[#3EE88A] px-4 py-2 text-sm font-bold text-black"
@@ -350,7 +350,7 @@ export default function WabaPage() {
                     name="whatsapp_business_number"
                     value={businessNumber}
                     onChange={(e) => setBusinessNumber(e.target.value.replace(/\D/g, "").slice(0, 10))}
-                    placeholder="7021045254"
+                    placeholder="10-digit number"
                     maxLength={10}
                     className="w-full rounded-r-lg border border-white/10 bg-zinc-800 px-3 py-2 text-sm text-white outline-none focus:border-[#3EE88A]"
                   />
