@@ -983,21 +983,21 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
-                  <div className="truncate text-sm font-semibold text-white">{group.group_name}</div>
+                  <div className="connection-group-name truncate text-sm font-semibold">{group.group_name}</div>
                   {group.opted_out ? (
-                    <span className="rounded-full border border-red-500/30 bg-red-500/10 px-2 py-0.5 text-[10px] font-semibold text-red-300">Opted-out</span>
+                    <span className="connection-group-status connection-group-status-danger rounded-full border px-2 py-0.5 text-[10px] font-semibold">Opted-out</span>
                   ) : (
-                    <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-300">
+                    <span className="connection-group-status connection-group-status-success rounded-full border px-2 py-0.5 text-[10px] font-semibold">
                       {data?.extraction_status === "running" ? "Included · extracting" : "Included · ready"}
                     </span>
                   )}
                   {!group.opted_out && group.suggestion && group.suggestion.score >= 0.3 && (
-                    <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-300">
+                    <span className="connection-group-status connection-group-status-success rounded-full border px-2 py-0.5 text-[10px] font-semibold">
                       Recommended
                     </span>
                   )}
                 </div>
-                <div className="mt-1 text-[11px] text-zinc-500">
+                <div className="connection-group-meta mt-1 text-[11px]">
                   {group.group_jid} · {group.participants.toLocaleString()} participants · last active {formatTime(group.last_message_at)}
                 </div>
                 {group.overlap_status && (
@@ -1038,7 +1038,7 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
                 <button
                   onClick={() => void handleOptIn(group)}
                   disabled={activeGroup === group.group_jid}
-                  className="rounded-lg border border-emerald-400/30 px-3 py-1.5 text-[11px] font-semibold text-emerald-300 hover:bg-emerald-500/10 disabled:opacity-50"
+                  className="connection-group-action connection-group-action-success rounded-lg border px-3 py-1.5 text-[11px] font-semibold hover:bg-emerald-500/10 disabled:opacity-50"
                 >
                   {activeGroup === group.group_jid ? "Including..." : "Include group"}
                 </button>
@@ -1047,7 +1047,7 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
                   <button
                     onClick={() => void handleOptOut(group)}
                     disabled={activeGroup === group.group_jid}
-                    className="rounded-lg border border-white/10 px-3 py-1.5 text-[11px] font-semibold text-zinc-300 hover:border-red-400/40 hover:text-red-300 disabled:opacity-50"
+                    className="connection-group-action rounded-lg border px-3 py-1.5 text-[11px] font-semibold hover:border-red-400/40 hover:text-red-300 disabled:opacity-50"
                   >
                     {activeGroup === group.group_jid ? "Saving..." : "Opt out"}
                   </button>
