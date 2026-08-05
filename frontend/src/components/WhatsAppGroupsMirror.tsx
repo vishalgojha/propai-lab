@@ -589,7 +589,7 @@ export default function WhatsAppGroupsMirror() {
                     <div className="mb-2 flex items-center gap-2">
                       <button type="button" onClick={() => senderClickable ? openSenderSearch(message) : undefined} disabled={!senderClickable} className={`min-w-0 truncate text-left text-xs font-semibold ${fromMe ? "text-emerald-300" : "text-zinc-200"} ${senderClickable ? "hover:text-emerald-200 hover:underline" : "cursor-default"}`}>{sender}</button>
                       {attachment && <span className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-black/20 px-2 py-0.5 text-[10px] text-zinc-300">{kindIcon(kind)}{kindLabel(kind)}</span>}
-                      {recallLink && <a href={recallLink} target="_blank" rel="noreferrer" className="ml-auto inline-flex shrink-0 items-center gap-1 rounded-md border border-emerald-400/30 bg-emerald-400/10 px-2 py-1 text-[10px] font-semibold text-emerald-200 hover:bg-emerald-400/20" title="Open WhatsApp with this post prefilled"><MessageSquare className="h-3 w-3" />WhatsApp</a>}
+                      {recallLink && <a href={recallLink} target="_blank" rel="noreferrer" className="whatsapp-action ml-auto inline-flex shrink-0 items-center gap-1 rounded-md border px-2 py-1 text-[10px] font-semibold" title="Open WhatsApp with this post prefilled"><MessageSquare className="h-3 w-3" />WhatsApp</a>}
                     </div>
                     <div className="whitespace-pre-wrap break-words leading-6 [overflow-wrap:anywhere]">{body}</div>
                     <div className="mt-2 flex justify-end text-[10px] text-zinc-400">{messageDateTimeLabel(message.timestamp || message.created_at)}</div>
