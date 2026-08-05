@@ -53,6 +53,8 @@ class ParsedObservation:
     monthly_rent: Optional[float] = None
     total_asking_price: Optional[float] = None
     area_sqft: Optional[float] = None
+    area_min_sqft: Optional[float] = None
+    area_max_sqft: Optional[float] = None
     furnishing: Optional[str] = None
     furnishing_canonical: Optional[str] = None
     location_raw: Optional[str] = None

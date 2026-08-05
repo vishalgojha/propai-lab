@@ -426,6 +426,52 @@ def test_observation_detail_dedupes_repeated_listings():
     assert result["listings"][0]["times_seen"] == 2
 
 
+def test_get_parsed_collapses_same_raw_slice_even_when_listing_index_differs():
+    from types import SimpleNamespace
+    from storage.supabase import SupabaseStorage
+
+    duplicate_rows = [
+        {
+            "id": 36533, "raw_message_id": 32160, "listing_index": 0,
+            "asset_type": "commercial", "transaction_type": "sale",
+            "broker_phone": "9820724988", "carpet_area_sqft": 2000,
+            "fitout_status": "bare_shell", "raw_payload": {"slice_text": "Available Commercial Office On Sale At Dadar West Area 2000 Carpet"},
+            "created_at": "2026-08-05T01:00:00Z", "extraction_confidence": "high",
+        },
+        {
+            "id": 36534, "raw_message_id": 32160, "listing_index": 1,
+            "asset_type": "commercial", "transaction_type": "sale",
+            "broker_phone": "9820724988", "carpet_area_sqft": None,
+            "raw_payload": {"slice_text": "Available Commercial Office On Sale At Dadar West Area 2000 Carpet"},
+            "created_at": "2026-08-05T01:01:00Z", "extraction_confidence": "high",
+        },
+    ]
+
+    class FakeQuery:
+        def __init__(self, table_name): self.table_name = table_name
+        def select(self, *args, **kwargs): return self
+        def eq(self, *args, **kwargs): return self
+        def order(self, *args, **kwargs): return self
+        def limit(self, *args, **kwargs): return self
+        def execute(self):
+            if self.table_name == "commercial_sale_listings":
+                return SimpleNamespace(data=duplicate_rows)
+            if self.table_name == "raw_messages":
+                return SimpleNamespace(data=[{"id": 32160, "message": "source"}])
+            return SimpleNamespace(data=[])
+
+    class FakeClient:
+        def table(self, name): return FakeQuery(name)
+
+    storage = object.__new__(SupabaseStorage)
+    storage._client = FakeClient()
+    storage._SupabaseStorage__tenant_id_fallback = None
+
+    result = storage.get_parsed(limit=50)
+
+    assert [row.id for row in result] == [36533]
+
+
 def test_name_identity_observation_lookup_is_one_database_request():
     from storage.supabase import SupabaseStorage, set_tenant_id
 
