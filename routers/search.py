@@ -442,6 +442,7 @@ async def market_search(
     user: dict = Depends(require_user),
     tenant_id: str | None = Depends(get_tenant_context),
     intent: str = "", bhk: str = "", building: str = "", micro_market: str = "",
+    q: str = "",
     price_max: float = 0, price_min: float = 0, furnishing: str = "", broker: str = "",
     sort_by: str = "last_seen", limit: int = 10, offset: int = 0,
     group_by_building: bool = True,
@@ -466,18 +467,20 @@ async def market_search(
 
     if building:
         where_clauses.append("""(
-            l.building_name ILIKE ?
+            LOWER(COALESCE(l.building_name, '')) LIKE LOWER(?)
             OR l.building_name IN (
-                SELECT canonical_name FROM building_name_aliases WHERE alias ILIKE ?
+                SELECT canonical_name FROM building_name_aliases
+                WHERE LOWER(COALESCE(alias, '')) LIKE LOWER(?)
                 UNION
-                SELECT alias FROM building_name_aliases WHERE canonical_name ILIKE ?
+                SELECT alias FROM building_name_aliases
+                WHERE LOWER(COALESCE(canonical_name, '')) LIKE LOWER(?)
             )
         )""")
         bpattern = f"%{building}%"
         params.extend([bpattern, bpattern, bpattern])
 
     if micro_market:
-        where_clauses.append("l.micro_market ILIKE ?")
+        where_clauses.append("LOWER(COALESCE(l.micro_market, '')) LIKE LOWER(?)")
         params.append(f"%{micro_market}%")
 
     if price_max:
@@ -493,8 +496,26 @@ async def market_search(
         params.append(furnishing)
 
     if broker:
-        where_clauses.append("l.broker_name ILIKE ?")
+        where_clauses.append("LOWER(COALESCE(l.broker_name, '')) LIKE LOWER(?)")
         params.append(f"%{broker}%")
+
+    # A single free-text term is used by the map's typeahead.  Keep it
+    # deterministic and search the fields that brokers actually use for
+    # discovery; structured filters above remain ANDed with this clause.
+    if q.strip():
+        qpattern = f"%{q.strip()}%"
+        where_clauses.append("""(
+            LOWER(COALESCE(l.building_name, '')) LIKE LOWER(?)
+            OR LOWER(COALESCE(l.micro_market, '')) LIKE LOWER(?)
+            OR LOWER(COALESCE(l.location_label, '')) LIKE LOWER(?)
+            OR LOWER(COALESCE(l.street_name, '')) LIKE LOWER(?)
+            OR LOWER(COALESCE(l.broker_name, '')) LIKE LOWER(?)
+            OR l.building_name IN (
+                SELECT canonical_name FROM building_name_aliases
+                WHERE LOWER(COALESCE(alias, '')) LIKE LOWER(?)
+            )
+        )""")
+        params.extend([qpattern] * 6)
 
     where_sql = " AND ".join(where_clauses) if where_clauses else "1=1"
 

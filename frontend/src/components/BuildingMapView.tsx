@@ -238,6 +238,18 @@ export function BuildingMapView() {
     setSelectedKey("");
     setSearchLoading(true);
     try {
+      // Typeahead terms should be searchable immediately without spending a
+      // parser/LLM request on every partial word ("b", "ba", "ban...").
+      if (!/\s/.test(trimmed)) {
+        const payload = await marketSearchListings({
+          q: trimmed,
+          limit: 100,
+          offset: 0,
+          group_by_building: false,
+        });
+        setListings(Array.isArray(payload?.results) ? payload.results : []);
+        return;
+      }
       let parsed: Awaited<ReturnType<typeof parseSearchQuery>> = {};
       try {
         parsed = await parseSearchQuery(trimmed);
