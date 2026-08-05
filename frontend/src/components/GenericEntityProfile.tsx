@@ -54,7 +54,7 @@ export default function GenericEntityProfile({
     <EntityProfileShell
       title={title}
       subtitle={subtitle || `${entityType} profile generated from captured messages.`}
-      backHref={backHref || "/search"}
+      backHref={backHref || "/chat"}
       backLabel="Back"
       metrics={[
         { label: "Mentions", value: count.toLocaleString(), tone: "accent" },
@@ -70,7 +70,7 @@ export default function GenericEntityProfile({
             <div className="text-xs text-zinc-500">Messages that reference this entity.</div>
           </div>
           <Link
-            href={`/search?q=${encodeURIComponent(query)}`}
+            href="/chat"
             className="text-xs font-semibold text-[#3EE88A] hover:underline"
           >
             Open search

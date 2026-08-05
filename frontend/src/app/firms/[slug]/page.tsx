@@ -15,7 +15,7 @@ export default function FirmProfilePage() {
       title={title}
       query={title}
       subtitle="Firm profile created from captured broker and listing mentions."
-      backHref="/search?q=firm"
+      backHref="/chat"
       emptyHint="No canonical firm profile exists yet. This route still gives firms a stable landing page."
     />
   );

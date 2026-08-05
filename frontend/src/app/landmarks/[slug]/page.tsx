@@ -15,7 +15,7 @@ export default function LandmarkProfilePage() {
       title={title}
       query={title}
       subtitle="Landmark profile created from nearby messages and location references."
-      backHref="/search?q=landmark"
+      backHref="/chat"
       emptyHint="No canonical landmark profile exists yet. The chip still resolves to a useful page."
     />
   );

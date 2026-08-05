@@ -142,10 +142,10 @@ function PaletteModal({ open, onClose }: { open: boolean; onClose: () => void })
     else if (e.key === "Enter") {
       const r = flatItems[selectedIdx];
       if (!r) return;
-      if (r.name && r.occurrence_count !== undefined) navigate(`/search?q=${encodeURIComponent(r.name)}`);
+      if (r.name && r.occurrence_count !== undefined) navigate("/chat");
       else if (r.name && r.observation_count !== undefined) navigate(`/brokers?q=${encodeURIComponent(r.name)}`);
       else if (r.micro_market && !r.broker_name) navigate(`/market?q=${encodeURIComponent(r.micro_market)}`);
-      else if (r.building_name) navigate(`/search?q=${encodeURIComponent(r.building_name)}`);
+      else if (r.building_name) navigate("/chat");
       else if (r.broker_name) navigate(`/brokers?q=${encodeURIComponent(r.broker_name)}`);
     }
     else if (e.key === "Escape") onClose();
@@ -180,9 +180,9 @@ function PaletteModal({ open, onClose }: { open: boolean; onClose: () => void })
                     <button
                       key={i}
                       onClick={() => {
-                        if (item.name && item.occurrence_count !== undefined) navigate(`/search?q=${encodeURIComponent(item.name)}`);
+                        if (item.name && item.occurrence_count !== undefined) navigate("/chat");
                         else if (item.micro_market) navigate(`/market?q=${encodeURIComponent(item.micro_market)}`);
-                        else if (item.building_name) navigate(`/search?q=${encodeURIComponent(item.building_name)}`);
+                        else if (item.building_name) navigate("/chat");
                         else if (item.broker_name) navigate(`/brokers?q=${encodeURIComponent(item.broker_name)}`);
                       }}
                       className={`flex w-full items-center gap-3 px-4 py-2 text-left text-sm ${isSelected ? "bg-white/5 text-white" : "text-zinc-400 hover:bg-white/5"}`}

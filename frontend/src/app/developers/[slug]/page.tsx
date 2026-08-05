@@ -15,7 +15,7 @@ export default function DeveloperProfilePage() {
       title={title}
       query={title}
       subtitle="Developer profile created from mentions, listings, and raw messages."
-      backHref="/search?q=developer"
+      backHref="/chat"
       emptyHint="No canonical developer page exists yet. This on-demand profile still opens from the chip."
     />
   );

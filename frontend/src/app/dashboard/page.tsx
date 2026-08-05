@@ -130,7 +130,7 @@ export default function DashboardPage() {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
           {[
             { label: "Open Market Inbox", count: "→", icon: "💬", href: "/inbox", detail: "WhatsApp-style broker workspace" },
-            { label: "Search Listings", count: "→", icon: "🔎", href: "/search", detail: "Find any property, broker, group" },
+            { label: "Search Listings", count: "→", icon: "🔎", href: "/chat", detail: "Find any property, broker, group" },
             { label: "Review Items", count: suggestionPending || "→", icon: "✅", href: "/chat?tab=review", detail: "Records needing confirmation" },
             { label: "Manage Groups", count: suggestionPending || "→", icon: "📡", href: "/connections", detail: "Choose groups to connect for parsing" },
           ].map(card => (
