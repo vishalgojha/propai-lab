@@ -89,6 +89,7 @@ export function BuildingMapView() {
   const [searchActive, setSearchActive] = useState(false);
   const [searchLoading, setSearchLoading] = useState(false);
   const [listings, setListings] = useState<MarketListing[]>([]);
+  const [browseListings, setBrowseListings] = useState<MarketListing[]>([]);
   const [selectedKey, setSelectedKey] = useState("");
   const [pendingPan, setPendingPan] = useState<LatLng | null>(null);
   const [loading, setLoading] = useState(true);
@@ -104,11 +105,16 @@ export function BuildingMapView() {
 
   useEffect(() => {
     let active = true;
-    getBuildings(500, 0)
-      .then((payload) => {
-        if (active) setBuildings(Array.isArray(payload?.buildings) ? payload.buildings : []);
+    Promise.all([
+      getBuildings(500, 0),
+      marketSearchListings({ limit: 100, offset: 0, group_by_building: false }),
+    ])
+      .then(([buildingPayload, listingPayload]) => {
+        if (!active) return;
+        setBuildings(Array.isArray(buildingPayload?.buildings) ? buildingPayload.buildings : []);
+        setBrowseListings(Array.isArray(listingPayload?.results) ? listingPayload.results : []);
       })
-      .catch(() => active && setError("Building data could not be loaded right now."))
+      .catch(() => active && setError("Market data could not be loaded right now."))
       .finally(() => active && setLoading(false));
     return () => {
       active = false;
@@ -304,11 +310,16 @@ export function BuildingMapView() {
           <div className="h-[min(66vh,620px)] overflow-y-auto p-3">
             <div className="mb-3 flex items-center justify-between px-1">
               <div>
-                <p className="text-sm font-semibold text-text-primary">{searchActive ? "Matching listings" : "Mapped buildings"}</p>
-                <p className="text-xs text-text-muted">{searchActive ? "Click a card to focus its building." : "Search to switch to listing results."}</p>
+                <p className="text-sm font-semibold text-text-primary">{searchActive ? "Matching listings" : "Latest listings"}</p>
+                <p className="text-xs text-text-muted">{searchActive ? "Click a card to focus its building." : "Listings without verified coordinates remain visible here."}</p>
               </div>
             </div>
 
+            {!searchActive && browseListings.map((item, index) => (
+              <div key={`${item.listing_id ?? item.fingerprint ?? index}`} className="mb-3">
+                <ListingCard item={item} compact />
+              </div>
+            ))}
             {searchActive && listings.length === 0 && <div className="rounded-xl border border-border bg-surface px-4 py-6 text-sm text-text-muted">No listings match this search.</div>}
             {searchActive && listings.length > 0 && mappedCount === 0 && <div className="rounded-xl border border-border bg-surface px-4 py-6 text-sm text-text-muted">Listings found, but none have mapped building coordinates yet.</div>}
             {searchActive && searchGroups.map((group) => (
