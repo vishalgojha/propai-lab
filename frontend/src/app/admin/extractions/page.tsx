@@ -22,6 +22,16 @@ interface ParsedRow {
   area_max_sqft?: number | null;
   price_per_sqft?: number | null;
   budget_max?: number | null;
+  budget_min?: number | null;
+  locality_options?: string[] | null;
+  bhk_options?: string[] | null;
+  tenant_type?: string | null;
+  sharing_acceptable?: boolean | null;
+  food_preference?: string | null;
+  car_parking_min?: number | null;
+  amenity_requirements?: string[] | null;
+  urgency?: string | null;
+  transaction_type?: string | null;
   furnishing: string | null;
   building_name: string | null;
   landmark_name: string | null;
@@ -90,21 +100,11 @@ function fmtRowPrice(row: ParsedRow): string {
   return fmtPrice(row.price, row.price_unit);
 }
 
-function detailRows(row: ParsedRow): Array<[string, string]> {
-  const rows: Array<[string, string]> = [["Intent", row.intent || "—"]];
-  if (row.asset_type !== "commercial") rows.push(["BHK", row.bhk || "—"]);
-  rows.push(["Price", fmtRowPrice(row)], ["Price Model", row.price_model || "—"], ["Area", fmtArea(row)]);
-  if (row.price_per_sqft != null && row.price_model !== "psf") {
-    rows.push(["Price / sqft", `₹${row.price_per_sqft.toLocaleString("en-IN")}/sqft`]);
+function displayIntent(row: ParsedRow): string {
+  if (row.message_type === "requirement") {
+    return `REQUIREMENT · ${(row.transaction_type || "unknown").toUpperCase()}`;
   }
-  rows.push(
-    ["Furnishing", row.furnishing || "—"], ["Building", row.building_name || "—"],
-    ["Landmark", row.landmark_name || "—"], ["Micro Market", row.micro_market || "—"],
-    ["Location Raw", row.location_raw || "—"], ["Broker", row.broker_name || "—"],
-    ["Broker Phone", row.broker_phone || "—"], ["Message Type", row.message_type || "—"],
-    ["Confidence", fmtConfidence(row.confidence).label], ["Created", fmtDate(row.created_at)],
-  );
-  return rows;
+  return row.intent || "—";
 }
 
 function fmtDate(value: string): string {
@@ -329,7 +329,7 @@ export default function AdminExtractionsPage() {
             Listings &amp; Requirements
           </h1>
           <p className="mt-1 text-sm text-zinc-500">
-            Combined view of all parsed extraction records. Filter by intent, search by location.
+            Audit structured fields against the original WhatsApp evidence. Requirements retain their rent/sale mode.
           </p>
         </div>
       </div>
@@ -417,7 +417,7 @@ export default function AdminExtractionsPage() {
                   <th className="px-4 py-3 w-16">ID</th>
                   <th className="px-4 py-3">Broker / Sender</th>
                   <th className="px-4 py-3">Schema</th>
-                  <th className="px-4 py-3">Intent</th>
+                  <th className="px-4 py-3">Role / transaction</th>
                   {showBhk && <th className="px-4 py-3">BHK</th>}
                   <th className="px-4 py-3">Price</th>
                   <th className="px-4 py-3">Area</th>
@@ -457,7 +457,7 @@ export default function AdminExtractionsPage() {
                               : "intent-requirement border border-blue-400/20 bg-blue-400/10 text-blue-400"
                           }`}
                         >
-                          {row.intent || "—"}
+                          {displayIntent(row)}
                         </span>
                       </td>
                       {showBhk && <td className="px-4 py-3 text-zinc-400">{row.bhk || "—"}</td>}
@@ -561,7 +561,7 @@ export default function AdminExtractionsPage() {
           onClick={() => setSelectedRow(null)}
         >
           <div
-            className="w-full max-w-lg rounded-2xl border border-white/10 bg-zinc-900 p-6 space-y-4"
+            className="w-full max-w-6xl rounded-2xl border border-white/10 bg-zinc-900 p-6 space-y-4"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between">
@@ -598,33 +598,42 @@ export default function AdminExtractionsPage() {
                   <button onClick={() => void saveEditing()} disabled={saving} className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-400 px-3 py-2 text-xs font-semibold text-black hover:bg-emerald-300 disabled:opacity-50"><Save className="h-3.5 w-3.5" /> {saving ? "Saving..." : "Save correction"}</button>
                 </div>
               </div>
-            ) : <div className="grid grid-cols-2 gap-3 text-sm">
-              {[
-                ["Intent", selectedRow.intent || "—"],
-                ...(selectedRow.asset_type === "commercial" ? [] : [["BHK", selectedRow.bhk || "—"]]),
-                ["Price", fmtRowPrice(selectedRow)],
-                ["Price Model", selectedRow.price_model || "—"],
-                ["Area", fmtArea(selectedRow)],
-                ["Furnishing", selectedRow.furnishing || "—"],
-                ["Building", selectedRow.building_name || "—"],
-                ["Landmark", selectedRow.landmark_name || "—"],
-                ["Micro Market", selectedRow.micro_market || "—"],
-                ["Location Raw", selectedRow.location_raw || "—"],
-                ["Broker", selectedRow.broker_name || "—"],
-                ["Broker Phone", selectedRow.broker_phone || "—"],
-                ["Message Type", selectedRow.message_type || "—"],
-                ["Confidence", fmtConfidence(selectedRow.confidence).label],
-                ["Created", fmtDate(selectedRow.created_at)],
-              ].map(([label, value]) => (
-                <div key={label}>
-                  <div className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">{label}</div>
-                  <div className="mt-0.5 text-zinc-300">{value}</div>
-                </div>
-              ))}
-            </div>}
+            ) : <div className="grid gap-5 lg:grid-cols-[1fr_1.15fr]">
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                {[
+                  ["Role / transaction", displayIntent(selectedRow)],
+                  ...(selectedRow.asset_type === "commercial" ? [] : [["BHK", selectedRow.bhk || (selectedRow.bhk_options || []).join(", ") || "—"]]),
+                  ["Price / budget", fmtRowPrice(selectedRow)],
+                  ...(selectedRow.message_type === "requirement" ? [["Budget range", `${selectedRow.budget_min != null ? fmtPrice(selectedRow.budget_min, "abs") : "—"} to ${selectedRow.budget_max != null ? fmtPrice(selectedRow.budget_max, "abs") : "—"}`]] : []),
+                  ["Price Model", selectedRow.price_model || "—"],
+                  ["Area", fmtArea(selectedRow)],
+                  ["Furnishing", selectedRow.furnishing || "—"],
+                  ["Building", selectedRow.building_name || "—"],
+                  ["Landmark", selectedRow.landmark_name || "—"],
+                  ["Micro Market", selectedRow.micro_market || "—"],
+                  ["Raw location", selectedRow.location_raw || "—"],
+                  ...(selectedRow.message_type === "requirement" ? [
+                    ["Preferred locations", (selectedRow.locality_options || []).join(", ") || "—"],
+                    ["Tenant", selectedRow.tenant_type || "—"],
+                    ["Parking required", selectedRow.car_parking_min != null ? String(selectedRow.car_parking_min) : "—"],
+                    ["Amenities required", (selectedRow.amenity_requirements || []).join(", ") || "—"],
+                    ["Urgency", selectedRow.urgency || "—"],
+                  ] : []),
+                  ["Broker", selectedRow.broker_name || "—"],
+                  ["Broker phone", selectedRow.broker_phone || "—"],
+                  ["Message type", selectedRow.message_type || "—"],
+                  ["Confidence", fmtConfidence(selectedRow.confidence).label],
+                  ["Created", fmtDate(selectedRow.created_at)],
+                ].map(([label, value]) => (
+                  <div key={label}>
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">{label}</div>
+                    <div className="mt-0.5 break-words text-zinc-300">{value}</div>
+                  </div>
+                ))}
+              </div>
 
             {!editing && selectedRow.raw_message_id ? (
-              <div className="border-t border-white/10 pt-4">
+              <div className="border-l border-white/10 pl-5">
                 <div className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">
                   Raw WhatsApp Message #{selectedRow.raw_message_id}
                 </div>
@@ -637,7 +646,7 @@ export default function AdminExtractionsPage() {
                       {rawMessage.sender_phone ? " - " + rawMessage.sender_phone.split("@")[0] : ""}
                       {rawMessage.group_name ? " - " + rawMessage.group_name : ""}
                     </div>
-                    <div className="max-h-48 overflow-auto whitespace-pre-wrap rounded-lg border border-white/10 bg-black/20 p-3 text-sm text-zinc-200">
+                    <div className="max-h-[28rem] overflow-auto whitespace-pre-wrap rounded-lg border border-white/10 bg-black/20 p-3 text-sm leading-6 text-zinc-200">
                       {rawMessage.message || "(No text content; see message metadata above.)"}
                     </div>
                   </div>
@@ -645,7 +654,8 @@ export default function AdminExtractionsPage() {
                   <div className="mt-2 text-sm text-zinc-500">Raw message unavailable.</div>
                 )}
               </div>
-            ) : null}
+            ) : <div className="border-l border-white/10 pl-5 text-sm text-zinc-500">Raw evidence was deleted or is unavailable for this extraction.</div>}
+            </div>}
           </div>
         </div>
       )}

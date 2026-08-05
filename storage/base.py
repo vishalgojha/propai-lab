@@ -101,6 +101,18 @@ class ParsedObservation:
     group_name: Optional[str] = None
     source_schema: Optional[str] = None
 
+    # Requirement-specific fields retained for the admin extraction audit.
+    budget_min: Optional[float] = None
+    locality_options: list[str] = field(default_factory=list)
+    bhk_options: list[str] = field(default_factory=list)
+    tenant_type: Optional[str] = None
+    sharing_acceptable: Optional[bool] = None
+    food_preference: Optional[str] = None
+    car_parking_min: Optional[int] = None
+    amenity_requirements: list[str] = field(default_factory=list)
+    urgency: Optional[str] = None
+    needs_review: bool = False
+
     # v2 schema — physical / deal attributes (staging from AI extraction)
     carpet_area_sqft: Optional[float] = None
     built_up_area_sqft: Optional[float] = None
