@@ -406,7 +406,10 @@ async def extraction_progress(
     cutoff = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
     recent_processed = 0
     try:
-        res = storage.client.table("raw_messages").select("id", count="exact").eq("processed", True).gte("processed_at", cutoff).execute()
+        query = storage.client.table("raw_messages").select("id", count="exact").eq("processed", True).gte("processed_at", cutoff)
+        if tenant_id:
+            query = query.eq("tenant_id", tenant_id)
+        res = query.execute()
         recent_processed = res.count if hasattr(res, "count") else 0
     except Exception:
         pass

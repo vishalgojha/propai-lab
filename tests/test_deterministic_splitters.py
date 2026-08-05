@@ -32,6 +32,7 @@ def test_inline_bold_broadcast_splits_four_sale_listings():
     assert [chunk["price"] for chunk in chunks] == [12.12, 31.32, 76.8, 3.7]
     assert [chunk["price_unit"] for chunk in chunks] == ["cr"] * 4
     assert [chunk["intent"] for chunk in chunks] == ["SELL"] * 4
+    assert all("Brand new building" in chunk["raw_payload"]["full_text"] for chunk in chunks)
 
 
 def test_numbered_template_splits_into_three_chunks():

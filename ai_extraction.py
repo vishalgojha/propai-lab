@@ -174,6 +174,7 @@ _MUMBAI_BROKER_GLOSSARY = """MUMBAI BROKER DIALECT — FOLLOW STRICTLY:
 - “converted” means a changed layout: keep current and original configuration. “jodi” is one combined listing, not two listings; keep the original combination too.
 - “+N” directly after a rent amount may be a deposit in lakh rupees only when it is plausible (at most six months of rent). Standalone “+1” / “My +1” means co-brokered.
 - “builder finish”, “bare shell”, “warm shell”, and “untouched” are furnishing/fitout facts, not transaction types.
+- “brand new building” / “new building” is a property-condition fact. Preserve it as the `brand_new_building` deal tag (and use the appropriate age/fitout field when the route exposes one). Do not treat it as a listing boundary or discard it as boilerplate.
 - “AI” after a price means all-inclusive; ignore “AI” inside an amenity or project name.
 - “company lease” means company-paid residential tenancy in residential context, and company as tenant in commercial context.
 - Extract tenant preferences such as family, bachelors, vegetarian, working, student, company lease, and expat as facts; do not filter or omit them.
@@ -333,6 +334,7 @@ _VALID_DEAL_TAGS = frozenset({
     "resale",
     "exclusive_mandate",
     "price_drop",
+    "brand_new_building",
 })
 _VALID_CHARGE_TYPES = frozenset({"fixed", "percent_of_price"})
 
