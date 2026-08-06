@@ -1410,10 +1410,11 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
             asyncio.to_thread(
                 chat_engine.parse_market_search_request,
                 search_request_text,
-                providers[0]["api_key"],
-                providers[0]["model"],
-                providers[0]["base_url"],
-                getattr(storage, "db", None),
+                "",
+                "",
+                "",
+                None,
+                False,
             ),
             timeout=25,
         )
