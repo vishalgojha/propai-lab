@@ -77,3 +77,9 @@ EXTRACTION_WORKER_BACKLOG_LANE_SLOTS=2
 The two lane values must fit within the total concurrency. Monitor the lane
 logs and increase only after provider 429s and database latency remain clean;
 do not scale worker replicas without coordinating claim/lease behavior.
+
+The worker default is 50 concurrent extraction tasks and is hard-capped at 100
+per process. Provider responses are observed for `Retry-After` and standard
+rate-limit headers; a 429 places that provider on cooldown before another
+attempt. Start at 50, then raise to 100 only when the provider headers and
+worker logs show sufficient headroom.

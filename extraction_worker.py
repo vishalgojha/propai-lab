@@ -25,10 +25,12 @@ POLL_INTERVAL = int(os.getenv("EXTRACTION_WORKER_POLL_SECONDS", "5"))
 BATCH_SIZE = int(os.getenv("EXTRACTION_WORKER_BATCH_SIZE", "50"))
 MAX_RETRIES = int(os.getenv("EXTRACTION_WORKER_MAX_RETRIES", "5"))
 
-# Provider-side concurrency ceiling. The Grid account rejects the 6th
-# in-flight request with `429 concurrency_limit_exceeded`, so the default
-# stays at 5 and is overridable for deployments with different headroom.
-CONCURRENCY = int(os.getenv("EXTRACTION_WORKER_CONCURRENCY", "5"))
+# Provider-side concurrency ceiling. Keep the deployment default high enough
+# to drain the historical queue, but cap accidental configuration at 100.
+# The provider client applies Retry-After cooldowns when the account limit is
+# lower than this ceiling.
+_configured_concurrency = int(os.getenv("EXTRACTION_WORKER_CONCURRENCY", "50"))
+CONCURRENCY = max(1, min(100, _configured_concurrency))
 
 # Keep fresh WhatsApp messages moving while the historical queue drains. The
 # total remains CONCURRENCY; these knobs only divide the existing pool.

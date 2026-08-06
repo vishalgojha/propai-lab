@@ -25,7 +25,6 @@ function buildRecallMessage(
   },
   listingId: number,
   canonicalPath: string,
-  rawMessage?: string | null,
 ): string {
   const parts: string[] = [];
   const ptype = (row.property_type || row.asset_type || "").trim();
@@ -44,13 +43,10 @@ function buildRecallMessage(
 
   const listingUrl = `https://www.propai.live${canonicalPath}`;
   parts.push(`Hi, I came across ${subject} on PropAI — ${listingUrl} — and I'm interested.`);
-  const context = String(rawMessage || "")
-    .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, 700);
-  if (context) {
-    parts.push(`Here is the original post for reference: ${context}`);
-  }
+  // Do not put the full WhatsApp broadcast in a wa.me query string. Bulk
+  // posts can contain thousands of encoded characters and WhatsApp's second
+  // redirect may silently drop an oversized/emoji-heavy `text` parameter.
+  // The listing URL is the reliable source of context; keep the enquiry short.
   parts.push("Could you please share availability, price details and photos?");
   return parts.join(" ");
 }
@@ -103,17 +99,7 @@ export async function GET(
   });
   const canonicalPath = `/listings/${slug ?? "listing"}/${data.id}`;
 
-  let rawMessage = "";
-  const rawMessageId = data.latest_raw_message_id ?? data.representative_raw_message_id;
-  if (rawMessageId != null) {
-    const raw = await db
-      .from("raw_messages")
-      .select("message")
-      .eq("id", rawMessageId)
-      .maybeSingle();
-    rawMessage = raw.data?.message || "";
-  }
-
-  const text = encodeURIComponent(buildRecallMessage(data, listingId, canonicalPath, rawMessage));
-  return NextResponse.redirect(new URL(`https://wa.me/91${local}?text=${text}`), { status: 302 });
+  const target = new URL(`https://wa.me/91${local}`);
+  target.searchParams.set("text", buildRecallMessage(data, listingId, canonicalPath));
+  return NextResponse.redirect(target, { status: 302 });
 }
