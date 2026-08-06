@@ -476,6 +476,19 @@ def _compact_whatsapp_line(value: object, limit: int = 200) -> str:
     return text
 
 
+def _compact_whatsapp_text(value: object, limit: int = 500, max_lines: int = 8) -> str:
+    """Normalize model text while preserving intentional WhatsApp line breaks."""
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    normalized: list[str] = []
+    for raw_line in text.splitlines():
+        line = _compact_whatsapp_line(raw_line, limit)
+        if line:
+            normalized.append(line)
+    return "\n".join(normalized[:max_lines])
+
+
 def _workspace_response_to_whatsapp(response: dict) -> str:
     if not isinstance(response, dict):
         return _compact_whatsapp_line(response, 1800) or "I could not process that."
@@ -487,7 +500,7 @@ def _workspace_response_to_whatsapp(response: dict) -> str:
     has_listing_cards = any(isinstance(block, dict) and block.get("type") == "listing_cards" for block in blocks)
 
     lines: list[str] = []
-    content = _compact_whatsapp_line(response.get("content"), 220 if has_listing_cards else 500)
+    content = _compact_whatsapp_line(response.get("content"), 220) if has_listing_cards else _compact_whatsapp_text(response.get("content"), 500)
     if content and not has_listing_cards:
         lines.append(content)
     seen_snippets = {re.sub(r"\W+", "", content.lower())[:160]} if content else set()
@@ -688,12 +701,14 @@ async def _run_workspace_agent(
     session_id: str = "whatsapp",
     tenant_id: str | None = None,
     system_suffix: str = "",
+    sender_name: str = "",
 ) -> dict:
     from ai_chat_engine import get_memory, load_data as _load_data, load_live_data as _load_live_data
     from ai_chat_engine import build_system_prompt, get_model_reply, normalize_workspace_response
     import llm as _llm
 
     memory = get_memory(session_id)
+    first_turn = not memory.working
     for msg in messages:
         role = msg.get("role", "")
         content = str(msg.get("content", "")).strip()
@@ -745,10 +760,16 @@ async def _run_workspace_agent(
 WHATSAPP SELF-CHAT MODE:
 - The sender is authenticated through their QR-linked WhatsApp connection. Never ask them to log in to the portal.
 - You have access to their live PropAI database through tools. For a search or inventory question, call the tool; never claim database access is unavailable before trying it.
-- Reply in at most 3 short lines (or up to 5 compact result bullets). No tables, greetings, repeated summaries, or filler.
+- Keep replies concise and structured for WhatsApp: use short numbered items for intake questions and up to 5 compact bullets for results. Preserve line breaks. For an intake form, use up to 8 short lines.
+- On the first turn only, introduce yourself in one short line as "PropAI" and address the sender by name when a sender name is provided. Do not repeat the introduction on later turns.
 - Never claim a listing/requirement was saved, searched, or found unless the tool result says so.
 - Never return JSON, markdown tables, or UI blocks — plain text only.
 """
+        if first_turn:
+            if sender_name.strip():
+                system_prompt += f'\nFIRST TURN: Begin with exactly one brief identity line such as "Hi {sender_name.strip()} — I\'m PropAI, your property assistant."\n'
+            else:
+                system_prompt += '\nFIRST TURN: Begin with exactly one brief identity line such as "Hi — I\'m PropAI, your property assistant."\n'
         if relevant_obs:
             obs_lines = ["\nKNOWLEDGE OBSERVATIONS (accumulated from previous conversations):"]
             for obs in relevant_obs:
@@ -1643,7 +1664,7 @@ async def _process_business_api_webhook(body: dict, org_id: str | None = None, r
                 except Exception as exc:
                     print(f"[waba-webhook] failed to store inbound message: {exc}", flush=True)
                 if stored_inbound and msg_type == "text" and caption.strip():
-                    asyncio.create_task(_handle_waba_agent_reply(to=msg_from, text=caption.strip(), inbound_message_id=msg_id, sender_name=sender_name or msg_from, waba_config=waba_config, tenant_id=resolved_tenant_id))
+                    asyncio.create_task(_handle_waba_agent_reply(to=msg_from, text=caption.strip(), inbound_message_id=msg_id, sender_name=sender_name, waba_config=waba_config, tenant_id=resolved_tenant_id))
         for status in value.get("statuses", []):
             status_id = status.get("id",""); status_status = status.get("status",""); status_timestamp = status.get("timestamp","")
             if status_id and status_status:
@@ -1734,7 +1755,12 @@ async def _handle_waba_agent_reply(to: str, text: str, inbound_message_id: str, 
     try:
         previous_tenant = get_tenant_id()
         set_tenant_id(tenant_id)
-        response = await _run_workspace_agent([{"role": "user", "content": text[:1800]}], session_id=f"waba:{tenant_id}:{to}", tenant_id=tenant_id)
+        response = await _run_workspace_agent(
+            [{"role": "user", "content": text[:1800]}],
+            session_id=f"waba:{tenant_id}:{to}",
+            tenant_id=tenant_id,
+            sender_name=sender_name,
+        )
         if isinstance(response, dict) and response.get("error"):
             raise RuntimeError(response.get("message") or response["error"])
         reply = _workspace_response_to_whatsapp(response).strip()
