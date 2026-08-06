@@ -7,7 +7,7 @@ which must be correct before a worker is allowed to persist a row.
 
 from ai_extraction import _get_extraction_prompt, classify_message_type
 from extraction import _ai_extraction_to_typed, _parse_deposit
-from price_normalization import canonical_price_rupees, canonical_rental_price_rupees, source_transaction_type
+from price_normalization import canonical_commercial_rental_price_rupees, canonical_price_rupees, canonical_rental_price_rupees, source_transaction_type
 
 
 def _item(text, **fields):
@@ -46,6 +46,15 @@ def test_focused_prompt_contains_route_specific_fields_and_price_guardrails():
     assert "fee_sharing_required" in residential_rent_prompt
     assert "PG" in residential_rent_prompt
     assert "1.30k" in residential_rent_prompt
+
+
+def test_commercial_rent_prompt_covers_package_and_operational_schema():
+    prompt = _get_extraction_prompt("commercial", "rent", False)
+    assert "broker_rera_number" in prompt
+    assert "chargeable_area_sqft" in prompt
+    assert "PKG" in prompt
+    assert "automatic shutters" in prompt
+    assert "room_count" in prompt
 
 
 def test_sale_price_is_absolute_rupees_even_when_model_returns_native_unit():
@@ -199,6 +208,46 @@ def test_price_and_psf_routing_for_rent():
     assert table == "commercial_rent_listings"
     assert row["rent_per_sqft"] == 350
     assert row["monthly_rent"] == 238_350
+
+
+def test_commercial_rent_uses_chargeable_area_for_psf_math_and_keeps_sale_fields_out():
+    table, row = _item(
+        "Fully furnished office, carpet 11350, chargeable 18900, rent 175 PSF chargeable",
+        property_category="commercial",
+        listing_type="rent",
+        carpet_area_sqft=11_350,
+        chargeable_area_sqft=18_900,
+        price_basis="chargeable_per_sqft",
+        broker_rera_number="A51900002370",
+        price={"amount": 175, "unit": "per_sqft", "raw_price_text": "Rs 175 per sqft of chargeable area"},
+        workstation_count=180,
+        director_cabin_count=14,
+    )
+    assert table == "commercial_rent_listings"
+    assert row["rent_per_sqft"] == 175
+    assert row["monthly_rent"] == 3_307_500
+    assert row["price_math"]["basis"] == "chargeable_area_sqft"
+    assert row["broker_rera_number"] == "A51900002370"
+    assert "total_asking_price" not in row
+    assert "price_per_sqft" not in row
+
+
+def test_commercial_package_is_monthly_rent_not_deposit_or_cam():
+    assert canonical_commercial_rental_price_rupees(1, "lakh", "1 lac pkg") == 100_000
+    table, row = _item(
+        "Commercial office, 460 carpet, Asking 1 lac pkg neg, no parking",
+        property_category="commercial",
+        listing_type="rent",
+        carpet_area_sqft=460,
+        price={"amount": 1, "unit": "lakh", "raw_price_text": "1 lac pkg"},
+        price_basis="monthly",
+        deposit_amount=None,
+        cam_amount=None,
+    )
+    assert table == "commercial_rent_listings"
+    assert row["monthly_rent"] == 100_000
+    assert "deposit_amount" not in row
+    assert "cam_amount" not in row
 
 
 def test_colon_price_and_deposit_shorthand_are_source_grounded():
