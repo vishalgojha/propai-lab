@@ -57,6 +57,15 @@ Rakesh Mishra"""
     assert out["listing_type"] == "sale"
 
 
+def test_unqualified_crore_price_overrides_wrong_llm_rent():
+    out = _apply_deterministic_field_fallbacks(
+        {"listing_type": "rent"},
+        "3 BHK Bandra West, 6 cr",
+    )
+
+    assert out["listing_type"] == "sale"
+
+
 def test_rental_requirement_recovers_bhk_locations_tenant_and_amenities():
     text = """URGENT REQUIREMENT – 1 BHK ON RENT
 Preferred Locations: Ram Maruti Road, Naupada, Teen Petrol Pump & Panch Pakhadi, Thane West

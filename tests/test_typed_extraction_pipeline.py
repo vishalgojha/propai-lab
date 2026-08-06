@@ -7,6 +7,7 @@ which must be correct before a worker is allowed to persist a row.
 
 from ai_extraction import _get_extraction_prompt, classify_message_type
 from extraction import _ai_extraction_to_typed, _parse_deposit
+from price_normalization import canonical_price_rupees, source_transaction_type
 
 
 def _item(text, **fields):
@@ -51,6 +52,41 @@ def test_sale_price_is_absolute_rupees_even_when_model_returns_native_unit():
     assert table == "residential_sale_listings"
     assert row["total_asking_price"] == 85_000_000
     assert row["price_raw_text"] == "8.5 Cr"
+
+
+def test_unqualified_crore_listing_cannot_be_routed_to_rent_by_ai():
+    table, row = _item(
+        "3 BHK in Bandra West, 6 cr",
+        listing_type="rent",
+        price={"amount": 6, "unit": "cr", "raw_price_text": "6 cr"},
+    )
+    assert table == "residential_sale_listings"
+    assert row["transaction_type"] == "sale"
+    assert row["total_asking_price"] == 60_000_000
+    assert "monthly_rent" not in row
+
+
+def test_price_conversion_is_source_grounded_for_crore_and_lac_variants():
+    assert canonical_price_rupees(6, "cr", "6 cr") == 60_000_000
+    assert canonical_price_rupees(6, None, "6 cr") == 60_000_000
+    assert canonical_price_rupees(58, None, "₹58 LAC NEG.") == 5_800_000
+    assert canonical_price_rupees(58, "lakh", "₹58 LAC NEG.") == 5_800_000
+    assert source_transaction_type("3 BHK, ₹5.50 Crore", "rent") == "sale"
+    assert source_transaction_type("3 BHK for rent, ₹2.5 lakh", "sale") == "rent"
+    assert source_transaction_type("3 BHK for sale, ₹5.50 Crore", "rent") == "sale"
+
+
+def test_implausible_rent_is_marked_for_review_and_not_high_confidence():
+    table, row = _item(
+        "3 BHK monthly rental quote",
+        listing_type="rent",
+        extraction_confidence="high",
+        price={"amount": 2_500_000_000, "unit": "total", "raw_price_text": None},
+    )
+    assert table == "residential_rent_listings"
+    assert row["monthly_rent"] == 2_500_000_000
+    assert row["needs_review"] is True
+    assert row["extraction_confidence"] == "low"
 
 
 def test_price_and_psf_routing_for_rent():

@@ -29,6 +29,7 @@ from lab.storage.base import (
 )
 from lab.inventory import listing_fingerprint, listing_label
 from location import canonical_micro_market_slug
+from price_normalization import canonical_price_rupees, rent_price_needs_review
 
 
 _EMOJI_ICON_RE = re.compile(
@@ -286,20 +287,7 @@ def _typed_source_id(parsed: dict) -> int:
 
 
 def _price_to_rupees(value: object, unit: object) -> float | None:
-    if value in (None, ""):
-        return None
-    try:
-        amount = float(value)
-    except (TypeError, ValueError):
-        return None
-    normalized = str(unit or "").strip().lower()
-    if normalized in {"cr", "crore", "crores"}:
-        return amount * 1_00_00_000
-    if normalized in {"lac", "lacs", "lakh", "lakhs", "l"}:
-        return amount * 1_00_000
-    if normalized in {"k", "thousand"}:
-        return amount * 1_000
-    return amount
+    return canonical_price_rupees(value, unit)
 
 
 def _is_market_group_name(group_name: str = "") -> bool:
@@ -2413,12 +2401,27 @@ class SupabaseStorage(Storage):
             price_obj = {}
         price_value = data.get("price")
         price_unit = data.get("price_unit") or price_obj.get("unit")
-        price_rupees = _price_to_rupees(price_value, price_unit)
+        raw_price_text = price_obj.get("raw_price_text") or data.get("price_raw_text")
+        price_rupees = canonical_price_rupees(price_value, price_unit, raw_price_text)
         area_sqft = data.get("carpet_area_sqft") or data.get("area_sqft")
         bhk_value = data.get("bhk")
         if isinstance(bhk_value, str):
             match = re.search(r"\d+(?:\.\d+)?", bhk_value)
             bhk_value = float(match.group(0)) if match else None
+        price_unit_key = str(price_unit or "").lower()
+        is_per_sqft_price = price_unit_key in {"per_sqft", "psf"}
+        source_total_price = price_rupees if transaction_type == "sale" and not is_per_sqft_price else None
+        source_rent_price = price_rupees if transaction_type == "rent" and not is_per_sqft_price else None
+        total_asking_price = (
+            source_total_price
+            if source_total_price is not None
+            else (data.get("total_asking_price") if transaction_type == "sale" else None)
+        )
+        monthly_rent = (
+            source_rent_price
+            if source_rent_price is not None
+            else (data.get("monthly_rent") if transaction_type == "rent" else None)
+        )
 
         # The typed tables deliberately retain the complete LLM payload while
         # promoting only fields that belong to the selected schema.
@@ -2478,32 +2481,24 @@ class SupabaseStorage(Storage):
             "commercial_use_type": data.get("commercial_use_type") or data.get("property_type"),
             "occupancy_status": data.get("occupancy_type"),
             "developer_name": data.get("developer"),
-            "price_raw_text": price_obj.get("raw_price_text") or str(price_value) if price_value is not None else None,
+            "price_raw_text": raw_price_text or (str(price_value) if price_value is not None else None),
             "price_basis": data.get("price_basis"),
             "price_qualifier": "plus_plus" if "++" in str(price_obj.get("raw_price_text") or "") else None,
-            "total_asking_price": (
-                data.get("total_asking_price")
-                if data.get("total_asking_price") is not None
-                else (price_rupees if transaction_type == "sale" and str(price_unit).lower() not in {"per_sqft", "psf"} else None)
-            ),
-            "monthly_rent": (
-                data.get("monthly_rent")
-                if data.get("monthly_rent") is not None
-                else (price_rupees if transaction_type == "rent" and str(price_unit).lower() not in {"per_sqft", "psf"} else None)
-            ),
+            "total_asking_price": total_asking_price,
+            "monthly_rent": monthly_rent,
             "price_per_sqft": (
                 data.get("price_per_sqft")
                 if data.get("price_per_sqft") is not None
                 and transaction_type == "sale"
-                and str(price_unit).lower() in {"per_sqft", "psf"}
-                else (price_value if transaction_type == "sale" and str(price_unit).lower() in {"per_sqft", "psf"} else None)
+                and is_per_sqft_price
+                else (price_value if transaction_type == "sale" and is_per_sqft_price else None)
             ),
             "rent_per_sqft": (
                 data.get("rent_per_sqft")
                 if data.get("rent_per_sqft") is not None
                 and transaction_type == "rent"
-                and str(price_unit).lower() in {"per_sqft", "psf"}
-                else (price_value if transaction_type == "rent" and str(price_unit).lower() in {"per_sqft", "psf"} else None)
+                and is_per_sqft_price
+                else (price_value if transaction_type == "rent" and is_per_sqft_price else None)
             ),
             "deposit_amount": data.get("deposit_amount"),
             "deposit_months": data.get("deposit_months"),
@@ -2521,6 +2516,9 @@ class SupabaseStorage(Storage):
             "amenities_unverified_claim": data.get("amenities_unverified_claim"),
             "deal_tags": data.get("deal_tags") or [],
         })
+        if transaction_type == "rent" and rent_price_needs_review(typed.get("monthly_rent"), raw_price_text):
+            typed["needs_review"] = True
+            typed["extraction_confidence"] = "low"
         if table.endswith("requirements"):
             typed.update({
                 "intent": data.get("intent") or data.get("message_type") or "BUY",

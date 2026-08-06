@@ -37,6 +37,7 @@ from lab.events import get_bus
 from agents.building_alias_engine import fuzzy_score, normalize_building_name
 from deterministic_splitters import parse_message as parse_template_message
 from ai_extraction import _classify_message_flags
+from price_normalization import canonical_price_rupees, parse_explicit_price, rent_price_needs_review, source_transaction_type
 
 
 def get_storage():
@@ -571,6 +572,10 @@ def _parse_raw_price_to_abs(raw_price_text: str) -> float | None:
     Returns None if the text is unparseable.  Used to cross-check the AI
     extraction amount which sometimes returns 10x/100x the correct value.
     """
+    explicit = parse_explicit_price(raw_price_text)
+    if explicit:
+        amount, unit = explicit
+        return canonical_price_rupees(amount, unit)
     if not raw_price_text:
         return None
     # Brokers commonly write prices as `1.15.Cr`, `75.Lakh`, or
@@ -720,6 +725,8 @@ def _ai_extraction_to_parsed(ai_extraction: dict, raw_text: str, sender_name: st
     `ai_extraction` JSONB column.
     """
     listing_type = ai_extraction.get("listing_type")
+    if listing_type in {"sale", "rent"}:
+        listing_type = source_transaction_type(raw_text, listing_type)
     if listing_type == "sale":
         intent = "SELL"
     elif listing_type == "rent":
@@ -805,7 +812,7 @@ def _ai_extraction_to_parsed(ai_extraction: dict, raw_text: str, sender_name: st
     if ai_extraction.get("deposit_months") is not None:
         deposit_fields["deposit_months"] = ai_extraction.get("deposit_months")
 
-    return {
+    parsed = {
         "intent": intent,
         "principal": None,
         "bhk": bhk_str,
@@ -889,6 +896,10 @@ def _ai_extraction_to_parsed(ai_extraction: dict, raw_text: str, sender_name: st
         "company_lease_criteria": company_lease_criteria,
         "tenant_nationality_preference": tenant_nationality_preference,
     }
+    if listing_type == "rent" and rent_price_needs_review(parsed.get("monthly_rent"), raw_text):
+        parsed["needs_review"] = True
+        parsed["confidence"] = 0.3
+    return parsed
 
 
 def _ai_extraction_to_typed(
@@ -923,7 +934,7 @@ def _ai_extraction_to_typed(
     # the latter sends the row into the wrong typed table.
     listing_type = str(ai.get("listing_type") or "").strip().lower()
     if listing_type in {"sale", "rent"}:
-        tx = listing_type
+        tx = source_transaction_type(raw_text, listing_type)
     else:
         tx = str(ai.get("classified_transaction_type") or classified_tx).lower()
     if tx not in {"sale", "rent"}:
@@ -1022,6 +1033,9 @@ def _ai_extraction_to_typed(
         if tx == "rent":
             rent = row.get("monthly_rent")
             row.update(_parse_deposit(str(ai.get("deposit_raw_text") or raw_text), rent))
+            if rent_price_needs_review(rent, raw_text):
+                row["needs_review"] = True
+                row["extraction_confidence"] = "low"
     else:
         row.update({
             "intent": "BUY",
@@ -1070,22 +1084,7 @@ def _normalized_bhk(value) -> float | None:
 
 def _deterministic_price_rupees(item: dict) -> float | None:
     """Convert a deterministic boundary price to absolute rupees."""
-    raw_price = item.get("price")
-    if raw_price in (None, ""):
-        return None
-    try:
-        value = float(raw_price)
-    except (TypeError, ValueError):
-        return None
-
-    unit = str(item.get("price_unit") or "").strip().lower()
-    if unit in {"cr", "crore", "crores"}:
-        return value * 1_00_00_000 if value < 1_00_000 else value
-    if unit in {"lac", "lacs", "lakh", "lakhs", "l"}:
-        return value * 1_00_000 if value < 10_000 else value
-    if unit in {"k", "thousand"}:
-        return value * 1_000 if value < 10_000 else value
-    return value
+    return canonical_price_rupees(item.get("price"), item.get("price_unit"), item.get("price_raw_text"))
 
 
 def _meaningful_name_tokens(value) -> set[str]:
