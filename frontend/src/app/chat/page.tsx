@@ -468,6 +468,7 @@ export default function ChatPage() {
   const [sessionId, setSessionId] = useState<string>("");
   const [sessions, setSessions] = useState<api.ChatSession[]>([]);
   const [sessionsLoaded, setSessionsLoaded] = useState(false);
+  const sessionsRef = useRef<api.ChatSession[]>([]);
   const [showSessions, setShowSessions] = useState(false);
   const [sessionError, setSessionError] = useState("");
   const [sessionLoading, setSessionLoading] = useState(false);
@@ -653,10 +654,10 @@ export default function ChatPage() {
 
   const updateUrlSession = useCallback((id: string, title?: string) => {
     const url = new URL(window.location.href);
-    const session = sessions.find((item) => item.id === id);
+    const session = sessionsRef.current.find((item) => item.id === id);
     url.searchParams.set("session", title ? chatSessionSlug(title, id) : (session?.slug || chatSessionSlug("chat", id)));
     window.history.replaceState({}, "", url.toString());
-  }, [sessions]);
+  }, []);
 
   const clearUrlSession = useCallback(() => {
     const url = new URL(window.location.href);
@@ -667,6 +668,7 @@ export default function ChatPage() {
   const loadSessions = useCallback(async () => {
     try {
       const data = await api.listChatSessions();
+      sessionsRef.current = data;
       setSessions(data);
       return data;
     } catch {
@@ -1301,28 +1303,9 @@ export default function ChatPage() {
               className="flex gap-3"
             >
               <span className="text-lg mt-1">🤖</span>
-              <div className="flex-1 max-w-[95%] rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-                <div className="flex items-center gap-2 mb-3">
-                  <span className="table-skeleton-line w-28" />
-                  <span className="text-[10px] uppercase tracking-[0.18em] text-zinc-500">Searching the market…</span>
-                </div>
-                <div className="flex gap-3">
-                  {["Building", "Locality", "Type", "Rent/Sale", "Broker", "Last seen"].map((h) => (
-                    <div key={h} className="flex-1 table-skeleton-line" />
-                  ))}
-                  <div className="w-16 table-skeleton-line" />
-                </div>
-                {[0, 1, 2, 3].map((row) => (
-                  <div key={row} className="flex gap-3 mt-3">
-                    <div className="flex-1 table-skeleton-bar" />
-                    <div className="flex-1 table-skeleton-bar" />
-                    <div className="flex-1 table-skeleton-bar" />
-                    <div className="flex-1 table-skeleton-bar" />
-                    <div className="flex-1 table-skeleton-bar" />
-                    <div className="flex-1 table-skeleton-bar" />
-                    <div className="w-16 table-skeleton-bar" />
-                  </div>
-                ))}
+              <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm text-zinc-400">
+                <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-emerald-400" aria-hidden="true" />
+                <span>Searching live listings…</span>
               </div>
             </motion.div>
           )}
