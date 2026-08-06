@@ -3,7 +3,13 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from ai_extraction import _apply_deterministic_field_fallbacks, _canonical_locality_from_mention, _source_grounded_price
+from ai_extraction import (
+    _apply_deterministic_field_fallbacks,
+    _canonical_locality_from_mention,
+    _normalize_extraction,
+    _source_grounded_price,
+    generate_title,
+)
 from extraction import _price_from_ai_and_raw
 from extraction_models import validate_source_semantics
 
@@ -217,3 +223,32 @@ def test_requirement_recovers_bhk_from_source_when_provider_omits_it():
         "Require\n1 Bhk Fully Loaded for Expat - Company Lease\nBudget 1 Lac",
     )
     assert out["bhk"] == 1.0
+
+
+def test_normalizer_tolerates_object_and_punctuation_numeric_fields():
+    out = _normalize_extraction({
+        "listing_type": "rent",
+        "property_category": "residential",
+        "bhk": {"value": 3},
+        "carpet_area_sqft": {"amount": "1,250"},
+        "price": {"amount": {"value": "."}, "unit": "total", "raw_price_text": "Rent on request"},
+        "car_parking_count": "Steel parking",
+    })
+
+    assert out["bhk"] == 3.0
+    assert out["carpet_area_sqft"] == 1250.0
+    assert out["price"]["amount"] is None
+    assert "car_parking_count" not in out
+
+
+def test_title_generation_ignores_non_numeric_provider_amount():
+    title = generate_title({
+        "listing_type": "rent",
+        "property_category": "residential",
+        "bhk": {"value": 2},
+        "price": {"amount": {"value": "."}, "raw_price_text": "Rent on request"},
+        "locality": {"resolved_locality": "Bandra West"},
+    })
+
+    assert "2 BHK" in title
+    assert "Rent on request" in title

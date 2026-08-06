@@ -60,6 +60,40 @@ def _trim_bulk_footer(text: str) -> str:
         return value[:match.start()].rstrip(" \t\n-_*~")
     return value
 
+
+def _coerce_float(value) -> float | None:
+    if value in (None, ""):
+        return None
+    if isinstance(value, dict):
+        for key in ("amount", "value", "number", "count", "min", "max"):
+            if key in value:
+                coerced = _coerce_float(value.get(key))
+                if coerced is not None:
+                    return coerced
+        return None
+    if isinstance(value, (list, tuple)):
+        for item in value:
+            coerced = _coerce_float(item)
+            if coerced is not None:
+                return coerced
+        return None
+    text = str(value).strip().replace(",", "")
+    if not text or text.lower() in {".", "-", "+", "null", "none"}:
+        return None
+    match = re.search(r"-?\d+(?:\.\d+)?", text)
+    if not match:
+        return None
+    try:
+        return float(match.group(0))
+    except (TypeError, ValueError):
+        return None
+
+
+def _coerce_int(value) -> int | None:
+    coerced = _coerce_float(value)
+    return int(coerced) if coerced is not None else None
+
+
 # ── Provider configuration ────────────────────────────────────────────
 
 # Chat and WhatsApp share one provider chain; extraction intentionally
@@ -476,6 +510,24 @@ _PASSTHROUGH_FIELDS = frozenset({
     "company_lease_criteria", "lease_term_preference", "nationality",
 })
 
+_NUMERIC_PASSTHROUGH_FIELDS = frozenset({
+    "built_up_area_sqft", "chargeable_area_sqft", "car_parking_count",
+    "power_load_kw", "cabin_count", "workstation_count",
+    "conference_room_count", "meeting_room_count", "washroom_count",
+    "bathroom_count", "parking_count", "token_amount", "deposit_amount",
+    "deposit_months", "cam_amount", "lock_in_period_months",
+    "notice_period_months", "area_min_sqft", "area_max_sqft",
+    "budget_min", "budget_max", "budget_per_sqft_max", "car_parking_min",
+    "min_power_load_kw",
+})
+
+_INTEGER_PASSTHROUGH_FIELDS = frozenset({
+    "car_parking_count", "cabin_count", "workstation_count",
+    "conference_room_count", "meeting_room_count", "washroom_count",
+    "bathroom_count", "parking_count", "deposit_months",
+    "lock_in_period_months", "notice_period_months", "car_parking_min",
+})
+
 
 _BLOCK_START_KEYWORDS = (
     "available", "requirement", "requirements", "wanted", "looking for",
@@ -747,38 +799,21 @@ def _normalize_extraction(raw: dict) -> dict:
     result["property_category"] = _CATEGORY_ALIASES.get(pc_raw)
 
     # bhk
-    bhk = raw.get("bhk")
-    if bhk is not None:
-        try:
-            result["bhk"] = float(bhk)
-        except (ValueError, TypeError):
-            result["bhk"] = None
-    else:
-        result["bhk"] = None
+    result["bhk"] = _coerce_float(raw.get("bhk"))
 
     # carpet_area_sqft
-    area = raw.get("carpet_area_sqft")
-    if area is not None:
-        try:
-            result["carpet_area_sqft"] = float(area)
-        except (ValueError, TypeError):
-            result["carpet_area_sqft"] = None
-    else:
-        result["carpet_area_sqft"] = None
+    result["carpet_area_sqft"] = _coerce_float(raw.get("carpet_area_sqft"))
 
     # price
     price = raw.get("price", {})
     if isinstance(price, dict):
         amount = price.get("amount")
-        try:
-            result["price"] = {
-                "amount": float(amount) if amount is not None else None,
-                "unit": str(price.get("unit", "")).strip().lower() if price.get("unit") else None,
-                "period": str(price.get("period", "")).strip().lower() if price.get("period") else None,
-                "raw_price_text": str(price.get("raw_price_text", "")).strip() or None,
-            }
-        except (ValueError, TypeError):
-            result["price"] = {"amount": None, "unit": None, "period": None, "raw_price_text": None}
+        result["price"] = {
+            "amount": _coerce_float(amount),
+            "unit": str(price.get("unit", "")).strip().lower() if price.get("unit") else None,
+            "period": str(price.get("period", "")).strip().lower() if price.get("period") else None,
+            "raw_price_text": str(price.get("raw_price_text", "")).strip() or None,
+        }
         if result["price"]["unit"] not in _VALID_PRICE_UNITS:
             result["price"]["unit"] = "total"
         if result["price"]["period"] not in _VALID_PRICE_PERIODS:
@@ -917,7 +952,12 @@ def _normalize_extraction(raw: dict) -> dict:
             continue
         value = raw.get(field)
         if value is not None and value != "":
-            result[field] = value
+            if field in _INTEGER_PASSTHROUGH_FIELDS:
+                value = _coerce_int(value)
+            elif field in _NUMERIC_PASSTHROUGH_FIELDS:
+                value = _coerce_float(value)
+            if value is not None and value != "":
+                result[field] = value
 
     return result
 
@@ -1395,13 +1435,14 @@ def generate_title(extraction: dict) -> str:
         pieces.append("Requirement:")
 
     # BHK / property type prefix
-    if bhk:
-        if bhk == 0.5:
+    bhk_value = _coerce_float(bhk)
+    if bhk_value:
+        if bhk_value == 0.5:
             pieces.append("1 RK")
-        elif bhk == int(bhk):
-            pieces.append(f"{int(bhk)} BHK")
+        elif bhk_value == int(bhk_value):
+            pieces.append(f"{int(bhk_value)} BHK")
         else:
-            pieces.append(f"{bhk} BHK")
+            pieces.append(f"{bhk_value:g} BHK")
     elif property_category == "commercial":
         pieces.append("Commercial")
 
@@ -1430,7 +1471,7 @@ def generate_title(extraction: dict) -> str:
     price_amount = None
     price_raw = None
     if isinstance(price, dict):
-        price_amount = price.get("amount")
+        price_amount = _coerce_float(price.get("amount"))
         price_raw = price.get("raw_price_text")
 
     if price_amount is not None and price_amount > 0:
