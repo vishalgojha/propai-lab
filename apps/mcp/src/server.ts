@@ -13,7 +13,7 @@ import {
   setMcpUnauthorizedHeaders,
 } from "./oauth.js";
 import { closeSessionRecord, createSessionRecord, touchSessionRecord } from "./sessionStore.js";
-import { resolveBrokerIdForUser, verifyPropAIToken } from "./supabase.js";
+import { resolveBrokerIdForUser, resolveTenantIdForUser, verifyPropAIToken } from "./supabase.js";
 import type { AuthenticatedUser } from "./types.js";
 
 declare global {
@@ -140,9 +140,11 @@ async function authMiddleware(req: Request, res: Response, next: NextFunction) {
   try {
     const user = await verifyPropAIToken(token);
     const brokerId = await resolveBrokerIdForUser(user);
+    const tenantId = await resolveTenantIdForUser(user);
     req.user = {
       ...user,
       broker_id: brokerId || user.broker_id || user.id,
+      tenant_id: tenantId || undefined,
     };
     return next();
   } catch {
