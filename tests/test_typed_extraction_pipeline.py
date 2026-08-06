@@ -66,6 +66,45 @@ def test_unqualified_crore_listing_cannot_be_routed_to_rent_by_ai():
     assert "monthly_rent" not in row
 
 
+def test_residential_sale_preserves_rich_broker_fields():
+    table, row = _item(
+        "Available in+1 2Bhk 20th Road, Khar West Area:815carpet+66carpet balcony "
+        "furnished house with 1 stilt car parking @3.80cr very slightly negotiable. "
+        "For inspection Ctct Shobhna Enterprises 9821053128 9820094585",
+        bhk=2,
+        building_name=None,
+        price={"amount": 3.8, "unit": "cr", "raw_price_text": "3.80cr"},
+        carpet_area_sqft=815,
+        balcony_area_sqft=66,
+        balcony_area_raw_text="66carpet balcony",
+        area_raw_text="815carpet+66carpet balcony",
+        locality={"raw_mention": "20th Road, Khar West", "resolved_locality": "Khar West"},
+        availability_status="available",
+        co_brokered=True,
+        brokerage_context="+1",
+        parking_type="stilt",
+        car_parking_count=1,
+        showing_instructions="For inspection contact",
+        broker_company="Shobhna Enterprises",
+        contacts=[
+            {"phone": "9821053128", "role": "primary"},
+            {"phone": "9820094585", "role": "team"},
+        ],
+    )
+
+    assert table == "residential_sale_listings"
+    assert row["total_asking_price"] == 38_000_000
+    assert row["carpet_area_sqft"] == 815
+    assert row["balcony_area_sqft"] == 66
+    assert row["availability_status"] == "available"
+    assert row["co_brokered"] is True
+    assert row["brokerage_context"] == "+1"
+    assert row["parking_type"] == "stilt"
+    assert row["showing_instructions"] == "For inspection contact"
+    assert row["broker_company"] == "Shobhna Enterprises"
+    assert len(row["contacts"]) == 2
+
+
 def test_price_conversion_is_source_grounded_for_crore_and_lac_variants():
     assert canonical_price_rupees(6, "cr", "6 cr") == 60_000_000
     assert canonical_price_rupees(6, None, "6 cr") == 60_000_000

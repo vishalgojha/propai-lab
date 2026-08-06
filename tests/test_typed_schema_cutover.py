@@ -1,4 +1,4 @@
-from storage.supabase import SupabaseStorage, _typed_route
+from storage.supabase import SupabaseStorage, _TYPED_READ_COLUMNS_BY_TABLE, _typed_route
 from storage.base import ParsedObservation
 from extraction import _ai_extraction_to_typed
 
@@ -163,3 +163,26 @@ def test_save_parsed_residential_requirement_omits_commercial_fields():
     assert "id" not in payload
     assert "commercial_use_type" not in payload
     assert payload["bhk_options"] == [4.0]
+
+
+def test_requirement_read_columns_match_table_shapes():
+    requirement_tables = {
+        "residential_sale_requirements",
+        "residential_rent_requirements",
+        "commercial_sale_requirements",
+        "commercial_rent_requirements",
+    }
+    for table in requirement_tables:
+        cols = set(_TYPED_READ_COLUMNS_BY_TABLE[table].split(","))
+        assert "available_from" not in cols
+
+    commercial_only_bad = {
+        "bhk",
+        "configuration_type",
+        "bathroom_count",
+        "bhk_options",
+        "configuration_preference",
+    }
+    for table in {"commercial_sale_requirements", "commercial_rent_requirements"}:
+        cols = set(_TYPED_READ_COLUMNS_BY_TABLE[table].split(","))
+        assert not (cols & commercial_only_bad)
