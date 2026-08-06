@@ -145,6 +145,13 @@ def test_price_formatter_does_not_render_crore_sale_as_monthly_rent():
     assert formatted == "₹12.1 Cr"
 
 
+def test_search_price_formatter_does_not_emit_bare_month_suffix():
+    from routers.common import _format_listing_price
+
+    assert _format_listing_price({"price": 0, "price_unit": "abs", "intent": "RENT"}) == ""
+    assert _format_listing_price({"price": 350, "price_unit": "per_sqft", "intent": "RENT"}) == "₹350/sqft"
+
+
 def test_dash_separated_inventory_broadcast_stays_supply_and_drops_footer():
     message = """💢 GURUKIRPA REALTORS MUMBAI
 DIRECT INVENTORIES

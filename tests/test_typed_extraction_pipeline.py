@@ -150,6 +150,19 @@ def test_mumbai_residential_rental_decimal_k_means_lakh():
     assert row["monthly_rent"] == 130_000
 
 
+def test_mumbai_residential_rental_bare_lakh_quote_means_lakh_not_rupees():
+    assert canonical_rental_price_rupees(140, "total", "Monthly Rent :- 140") == 140_000
+    assert canonical_rental_price_rupees(120, "total", "rent 120 nego") == 120_000
+
+    table, row = _item(
+        "2 BHK on lease, monthly rent 140",
+        listing_type="rent",
+        price={"amount": 140, "unit": "total", "raw_price_text": "Monthly Rent :- 140"},
+    )
+    assert table == "residential_rent_listings"
+    assert row["monthly_rent"] == 140_000
+
+
 def test_residential_rent_preserves_rental_broker_facts():
     table, row = _item(
         "Available luxury 3 BHK on lease, Chitra, 2000 sqft + 500 sqft terrace, "
