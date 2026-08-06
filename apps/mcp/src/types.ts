@@ -2,6 +2,7 @@ import type { User } from "@supabase/supabase-js";
 
 export type AuthenticatedUser = User & {
   broker_id?: string;
+  tenant_id?: string;
 };
 
 export type ToolContext = {

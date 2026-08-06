@@ -430,8 +430,8 @@ async function fetchListingTableRows(limit: number, since?: string, filters?: {
     query = query.ilike("building_name", `%${cleanFilter(filters.buildingName)}%`);
   }
   if (filters?.bhk != null) {
-    const bhk = String(filters.bhk);
-    query = query.or(`bhk.ilike.${bhk} BHK,bhk.ilike.${bhk}BHK,bhk.eq.${bhk}`);
+    // listings_unified exposes the typed residential bhk column as numeric.
+    query = query.eq("bhk", filters.bhk);
   }
   if (filters?.propertyType && filters.propertyType !== "all") {
     const type = filters.propertyType === "lease" ? "rent" : filters.propertyType;
@@ -443,12 +443,17 @@ async function fetchListingTableRows(limit: number, since?: string, filters?: {
   return ((data || []) as Record<string, unknown>[]).map(mapListingRowToPublicListing);
 }
 
-export async function logToolCall(brokerId: string | undefined, toolName: string, input: unknown) {
+export async function logToolCall(
+  brokerId: string | undefined,
+  toolName: string,
+  input: unknown,
+  tenantId?: string,
+) {
   console.log(JSON.stringify({ event: "mcp_tool_call", broker_id: brokerId || null, tool: toolName }));
 
   try {
     await supabase.from("agent_events").insert({
-      tenant_id: brokerId,
+      tenant_id: tenantId || brokerId,
       event_type: "mcp_tool_call",
       description: `MCP tool called: ${toolName}`,
       metadata: { input },
@@ -498,7 +503,9 @@ export function toMarketSearchRow(row: PublicListing): Record<string, unknown> {
     locality: row.sub_area || row.location || row.area,
     transaction_type: dealType,
     listing_type: row.listing_type,
-    bhk: row.bhk == null ? null : `${row.bhk} BHK`,
+    // Keep the structured field numeric. Display-only callers can format it
+    // as "3 BHK", but filters and downstream consumers must receive 3.
+    bhk: row.bhk,
     price: row.price,
     price_unit: row.price_type,
     price_formatted: row.price == null ? null : formatCurrencyCr(row.price),
@@ -741,21 +748,30 @@ async function upsertLeadRecord(input: LeadRecordInput) {
 
 export async function saveListingRecord(input: {
   brokerId: string;
+  tenantId: string;
+  asset_type: "residential" | "commercial";
+  transaction_type: "sale" | "rent";
+  title?: string;
   name?: string;
   phone?: string;
   raw_text: string;
-  bhk?: string;
+  bhk?: string | number;
   location?: string;
-  price?: string;
-  carpet_area?: string;
+  price?: string | number;
+  deposit_amount?: string | number;
+  carpet_area?: string | number;
   furnishing?: string;
   possession_date?: string;
   contact_number?: string;
 }) {
   const structured = {
+    title: input.title || null,
+    asset_type: input.asset_type,
+    transaction_type: input.transaction_type,
     bhk: input.bhk || null,
     location: input.location || null,
     price: input.price || null,
+    deposit_amount: input.deposit_amount || null,
     carpet_area: input.carpet_area || null,
     furnishing: input.furnishing || null,
     possession_date: input.possession_date || null,
@@ -763,9 +779,13 @@ export async function saveListingRecord(input: {
     source: "mcp",
   };
 
-  const fingerprint = mcpFingerprint("mcp-listing", input.brokerId, input.raw_text);
+  const fingerprint = mcpFingerprint(
+    `mcp-listing:${input.asset_type}:${input.transaction_type}`,
+    input.tenantId,
+    input.raw_text,
+  );
   const rawMessagePayload = {
-    tenant_id: input.brokerId,
+    tenant_id: input.tenantId,
     group_name: "MCP saved listing",
     sender: input.name || "MCP",
     sender_phone: structured.contact_number,
@@ -776,6 +796,8 @@ export async function saveListingRecord(input: {
     raw_payload: structured,
     message_uid: fingerprint,
     synced_at: new Date().toISOString(),
+    processed: true,
+    extraction_suppressed: true,
   };
 
   // Typed listing tables require provenance. Reuse the source message on an
@@ -783,7 +805,7 @@ export async function saveListingRecord(input: {
   const { data: existingMessage, error: existingMessageError } = await supabase
     .from("raw_messages")
     .select("id")
-    .eq("tenant_id", input.brokerId)
+    .eq("tenant_id", input.tenantId)
     .eq("message_uid", fingerprint)
     .limit(1)
     .maybeSingle();
@@ -810,7 +832,7 @@ export async function saveListingRecord(input: {
   if (error) throw new Error(error.message);
 
   const lead = await upsertLeadRecord({
-    brokerId: input.brokerId,
+    brokerId: input.tenantId,
     name: input.name || "MCP Listing",
     phone: input.phone || input.contact_number,
     recordType: "inventory_listing",
@@ -830,16 +852,21 @@ export async function saveListingRecord(input: {
   };
 }
 
-function buildMcpTypedListing(
+export function buildMcpTypedListing(
   input: {
     brokerId: string;
+    tenantId: string;
+    asset_type: "residential" | "commercial";
+    transaction_type: "sale" | "rent";
+    title?: string;
     name?: string;
     phone?: string;
     raw_text: string;
-    bhk?: string;
+    bhk?: string | number;
     location?: string;
-    price?: string;
-    carpet_area?: string;
+    price?: string | number;
+    deposit_amount?: string | number;
+    carpet_area?: string | number;
     furnishing?: string;
     possession_date?: string;
     contact_number?: string;
@@ -848,18 +875,16 @@ function buildMcpTypedListing(
   sourceFingerprint: string,
   rawMessageId: number,
 ) {
-  const text = input.raw_text.toLowerCase();
-  const commercial = /\b(office|shop|showroom|warehouse|godown|industrial|retail|commercial|cam|chargeable|mezzanine|cabin|workstation|psf|per\s+sq\.?\s*ft)\b/i.test(text);
-  const rent = /\b(rent|rental|lease|monthly|deposit|lock[- ]?in|notice\s+period|per\s+month)\b/i.test(text);
-  const assetType = commercial ? "commercial" : "residential";
-  const transactionType = rent ? "rent" : "sale";
+  const assetType = input.asset_type;
+  const transactionType = input.transaction_type;
   const table = `${assetType}_${transactionType}_listings`;
   const area = toNumber(input.carpet_area);
   const price = parseMcpTypedPrice(input.price, transactionType, area);
+  const depositAmount = parseMcpFlatAmount(input.deposit_amount);
   const locality = input.location || null;
   const common = {
     raw_message_id: rawMessageId,
-    tenant_id: input.brokerId,
+    tenant_id: input.tenantId,
     listing_index: 0,
     asset_type: assetType,
     transaction_type: transactionType,
@@ -869,7 +894,7 @@ function buildMcpTypedListing(
     micro_market: locality,
     broker_name: input.name || null,
     broker_phone: normalizePhone(input.contact_number || input.phone) || null,
-    summary_title: input.raw_text.split(/\r?\n/).find(Boolean)?.trim() || null,
+    summary_title: input.title?.trim() || null,
     normalized_message: input.raw_text,
     raw_payload: { full_text: input.raw_text, structured },
     ai_extraction: { source: "mcp", ...structured },
@@ -883,12 +908,14 @@ function buildMcpTypedListing(
   } as Record<string, unknown>;
 
   if (assetType === "commercial") {
-    common.commercial_use_type = "office";
+    common.commercial_use_type = "mixed_use";
     common.fitout_status = normalizeMcpFitout(input.furnishing);
   } else {
     common.bhk = parseBhk(input.bhk);
     common.furnishing_status = normalizeMcpFurnishing(input.furnishing);
-    if (input.possession_date) common.possession_date = input.possession_date;
+    if (transactionType === "sale" && input.possession_date) {
+      common.possession_date = input.possession_date;
+    }
   }
 
   if (transactionType === "rent") {
@@ -896,6 +923,7 @@ function buildMcpTypedListing(
       common.rent_per_sqft = price.perSqft;
     }
     common.monthly_rent = price.total;
+    if (depositAmount != null) common.deposit_amount = depositAmount;
     if (assetType === "commercial") {
       common.price_basis = "carpet";
     } else if (input.possession_date) {
@@ -910,9 +938,9 @@ function buildMcpTypedListing(
   return { table, row: Object.fromEntries(Object.entries(common).filter(([, value]) => value !== null && value !== undefined)) };
 }
 
-function parseMcpTypedPrice(value: string | undefined, transactionType: "sale" | "rent", area: number | null) {
+function parseMcpTypedPrice(value: string | number | undefined, transactionType: "sale" | "rent", area: number | null) {
   if (!value) return { total: null, perSqft: null };
-  const text = value.toLowerCase().replace(/,/g, "");
+  const text = String(value).toLowerCase().replace(/,/g, "");
   const numberMatch = text.match(/\d+(?:\.\d+)?/);
   if (!numberMatch) return { total: null, perSqft: null };
   const amount = Number(numberMatch[0]);
@@ -928,6 +956,13 @@ function parseMcpTypedPrice(value: string | undefined, transactionType: "sale" |
         : 1;
   const total = amount * multiplier;
   return { total: transactionType === "rent" ? total : total, perSqft: null };
+}
+
+function parseMcpFlatAmount(value: string | number | undefined) {
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+  if (typeof value !== "string") return null;
+  const normalized = value.replace(/,/g, "").trim();
+  return /^\d+(?:\.\d+)?$/.test(normalized) ? Number(normalized) : null;
 }
 
 function normalizeMcpFurnishing(value?: string) {
@@ -1306,7 +1341,7 @@ export async function matchBuyerToInventory(input: {
   const workspaceMatches = workspaceRows.map((row) => {
     const structured = row.structured_data || {};
     const location = String(structured.location || structured.locality || "").trim() || null;
-    const bhkText = String(structured.bhk || "").trim();
+    const bhkValue = parseBhk(structured.bhk);
     const priceText = String(structured.price || "").trim();
     const priceCr = parseBudgetToCr(priceText);
     let score = 0;
@@ -1316,7 +1351,7 @@ export async function matchBuyerToInventory(input: {
       score += 28;
       why.push("locality fit");
     }
-    if (input.bhk != null && bhkText && bhkText.toLowerCase().includes(String(input.bhk))) {
+    if (input.bhk != null && bhkValue === input.bhk) {
       score += 20;
       why.push("BHK fit");
     }
@@ -1353,7 +1388,7 @@ export async function matchBuyerToInventory(input: {
       title: String(structured.title || structured.location || "Saved listing"),
       location,
       price: priceCr,
-      bhk: bhkText ? Number.parseInt(bhkText, 10) || null : null,
+      bhk: bhkValue,
       size_sqft: toNumber(structured.carpet_area || structured.size_sqft),
       contact: String(structured.contact_number || "").trim() || null,
       created_at: row.created_at,

@@ -132,6 +132,35 @@ export async function resolveBrokerIdForUser(user?: AuthenticatedUser | null) {
   return currentUserId;
 }
 
+/** Resolve the organization that owns writes for this authenticated MCP user.
+ * The auth user id/broker id is not an organizations.id and must never be
+ * passed as tenant_id. Membership is the authoritative scope relationship.
+ */
+export async function resolveTenantIdForUser(user?: AuthenticatedUser | null) {
+  const currentUserId = String(user?.id || "").trim();
+  if (!currentUserId) return null;
+
+  try {
+    const { data, error } = await supabase
+      .from("organization_members")
+      .select("organization_id, created_at")
+      .eq("user_id", currentUserId)
+      .eq("is_active", true)
+      .order("created_at", { ascending: true })
+      .limit(2);
+    if (error) throw new Error(error.message);
+    if (!data?.length) return null;
+    if (data.length > 1) {
+      console.warn("MCP user belongs to multiple organizations; refusing to guess a write tenant");
+      return null;
+    }
+    return data[0]?.organization_id ? String(data[0].organization_id) : null;
+  } catch (error) {
+    console.warn("Failed to resolve MCP tenant id:", error instanceof Error ? error.message : error);
+    return null;
+  }
+}
+
 function hashMcpConnectorToken(token: string) {
   return `sha256:${crypto.createHash("sha256").update(token).digest("hex")}`;
 }

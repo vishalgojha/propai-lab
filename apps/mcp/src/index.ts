@@ -119,6 +119,14 @@ function requireBrokerId(context?: ToolContext) {
   return id;
 }
 
+function requireTenantId(context?: ToolContext) {
+  const id = context?.user?.tenant_id;
+  if (!id) {
+    throw new Error("Authenticated organization scope is required for this write");
+  }
+  return id;
+}
+
 function noResults(label: string) {
   return textResponse(`No ${label} found for this query. Try widening the locality, budget, BHK, or time window.`, {
     results: [],
@@ -340,12 +348,16 @@ export function createMcpServer(context: ToolContext = {}) {
         "Persist one extracted thread listing candidate into the broker CRM.",
       inputSchema: {
         raw_text: z.string().describe("Listing text to save"),
+        asset_type: z.enum(["residential", "commercial"]).describe("Target typed listing family"),
+        transaction_type: z.enum(["sale", "rent"]).describe("Target transaction table"),
+        title: z.string().optional().describe("Listing headline stored as summary_title"),
         name: z.string().optional().describe("Contact or owner name"),
         phone: z.string().optional().describe("Contact phone number"),
-        bhk: z.string().optional(),
+        bhk: z.union([z.string(), z.number()]).optional(),
         location: z.string().optional(),
-        price: z.string().optional(),
-        carpet_area: z.string().optional(),
+        price: z.union([z.string(), z.number()]).optional(),
+        deposit_amount: z.union([z.string(), z.number()]).optional().describe("Rental deposit as a flat numeric amount"),
+        carpet_area: z.union([z.string(), z.number()]).optional(),
         furnishing: z.string().optional(),
         possession_date: z.string().optional(),
         contact_number: z.string().optional(),
@@ -353,8 +365,9 @@ export function createMcpServer(context: ToolContext = {}) {
     },
     async (input) => {
       const id = requireBrokerId(context);
-      await logToolCall(id, "save_thread_listing", input);
-      const result = await saveListingRecord({ brokerId: id, ...input });
+      const tenantId = requireTenantId(context);
+      await logToolCall(id, "save_thread_listing", input, tenantId);
+      const result = await saveListingRecord({ brokerId: id, tenantId, ...input });
       return textResponse(
         `Thread listing saved${result.listing_id ? ` with id ${result.listing_id}` : ""} for ${result.listing.location || "the requested location"}.`,
         result,
@@ -568,12 +581,16 @@ export function createMcpServer(context: ToolContext = {}) {
         "Create and store a listing in the broker's workspace CRM.",
       inputSchema: {
         raw_text: z.string().describe("Original listing note or message"),
+        asset_type: z.enum(["residential", "commercial"]).describe("Target typed listing family"),
+        transaction_type: z.enum(["sale", "rent"]).describe("Target transaction table"),
+        title: z.string().optional().describe("Listing headline stored as summary_title"),
         name: z.string().optional(),
         phone: z.string().optional(),
-        bhk: z.string().optional(),
+        bhk: z.union([z.string(), z.number()]).optional(),
         location: z.string().optional(),
-        price: z.string().optional(),
-        carpet_area: z.string().optional(),
+        price: z.union([z.string(), z.number()]).optional(),
+        deposit_amount: z.union([z.string(), z.number()]).optional().describe("Rental deposit as a flat numeric amount"),
+        carpet_area: z.union([z.string(), z.number()]).optional(),
         furnishing: z.string().optional(),
         possession_date: z.string().optional(),
         contact_number: z.string().optional(),
@@ -581,8 +598,9 @@ export function createMcpServer(context: ToolContext = {}) {
     },
     async (input) => {
       const id = requireBrokerId(context);
-      await logToolCall(id, "save_listing", input);
-      const result = await saveListingRecord({ brokerId: id, ...input });
+      const tenantId = requireTenantId(context);
+      await logToolCall(id, "save_listing", input, tenantId);
+      const result = await saveListingRecord({ brokerId: id, tenantId, ...input });
       return textResponse(
         `Listing saved${result.listing_id ? ` with id ${result.listing_id}` : ""} for ${result.listing.location || "the requested location"}.`,
         result,
