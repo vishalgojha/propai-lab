@@ -129,7 +129,8 @@ class BuildingDiscovery:
         # primary_market = the MOST FREQUENT (not just first) distinct
         # micro_market for that building, so a specific sub-area (e.g.
         # "Thane West") wins over a coarse one ("Thane") when it dominates.
-        rows = self.storage.db.execute("""
+        if hasattr(self.storage, "db"):
+            rows = self.storage.db.execute("""
             SELECT p.building_name, COUNT(*) as obs_count,
                    COUNT(DISTINCT p.micro_market) as markets,
                    COUNT(DISTINCT p.broker_name) as brokers,
@@ -150,7 +151,49 @@ class BuildingDiscovery:
             GROUP BY LOWER(p.building_name)
             HAVING obs_count >= ?
             ORDER BY obs_count DESC
-        """, (min_observations,)).fetchall()
+            """, (min_observations,)).fetchall()
+        else:
+            # Supabase is the production adapter; it has no SQLite-style
+            # .db cursor.  Aggregate the typed source rows in Python so the
+            # admin discovery action works after the typed-schema cutover.
+            grouped = {}
+            for table in (
+                "residential_sale_listings", "residential_rent_listings",
+                "commercial_sale_listings", "commercial_rent_listings",
+                "residential_sale_requirements", "residential_rent_requirements",
+                "commercial_sale_requirements", "commercial_rent_requirements",
+            ):
+                result = self.storage.client.table(table).select(
+                    "building_name,micro_market,broker_name,created_at"
+                ).not_.is_("building_name", "null").execute()
+                for item in result.data or []:
+                    raw = (item.get("building_name") or "").strip()
+                    if not raw:
+                        continue
+                    key = raw.casefold()
+                    bucket = grouped.setdefault(key, {
+                        "building_name": raw, "markets": Counter(),
+                        "brokers": set(), "count": 0, "first_seen": item.get("created_at"),
+                        "last_seen": item.get("created_at"),
+                    })
+                    bucket["count"] += 1
+                    bucket["markets"][item.get("micro_market")] += 1 if item.get("micro_market") else 0
+                    if item.get("broker_name"):
+                        bucket["brokers"].add(item["broker_name"])
+                    bucket["first_seen"] = min(bucket["first_seen"] or item.get("created_at"), item.get("created_at") or bucket["first_seen"])
+                    bucket["last_seen"] = max(bucket["last_seen"] or item.get("created_at"), item.get("created_at") or bucket["last_seen"])
+            rows = []
+            for bucket in grouped.values():
+                rows.append({
+                    "building_name": bucket["building_name"],
+                    "obs_count": bucket["count"],
+                    "markets": len(bucket["markets"]),
+                    "brokers": len(bucket["brokers"]),
+                    "market_list": ",".join(bucket["markets"].keys()),
+                    "primary_market": bucket["markets"].most_common(1)[0][0] if bucket["markets"] else None,
+                    "first_seen": bucket["first_seen"], "last_seen": bucket["last_seen"],
+                })
+            rows = [row for row in rows if row["obs_count"] >= min_observations]
 
         discovered = []
         for r in rows:
@@ -162,10 +205,7 @@ class BuildingDiscovery:
                 continue
 
             # Check if already exists
-            existing = self.storage.db.execute(
-                "SELECT id, building_id FROM buildings WHERE canonical_name = ?",
-                (canonical,)
-            ).fetchone()
+            existing = self.storage.get_building(canonical_name=canonical)
 
             if existing:
                 discovered.append({
@@ -196,13 +236,13 @@ class BuildingDiscovery:
 
             if result:
                 # Create the primary alias
-                self.storage.create_building_alias(
+                self.storage.create_building_alias_for_building(
                     result["id"], canonical, canonical, confidence=1.0, source="whatsapp"
                 )
 
                 # Also create aliases for the raw name if different
                 if raw_name != canonical:
-                    self.storage.create_building_alias(
+                    self.storage.create_building_alias_for_building(
                         result["id"], raw_name, canonical, confidence=0.9, source="whatsapp"
                     )
 
@@ -223,21 +263,18 @@ class BuildingDiscovery:
 
         return discovered
 
-    def create_enrichment_jobs(self, provider: str = "igr", priority: int = 0) -> int:
+    def create_enrichment_jobs(self, provider: str = "google_places", priority: int = 0) -> int:
         """Create enrichment jobs for all discovered buildings that haven't been enriched yet.
 
         Returns:
             Number of jobs created
         """
-        buildings = self.storage.db.execute("""
-            SELECT id FROM buildings
-            WHERE status = 'discovered'
-            AND id NOT IN (
-                SELECT building_id FROM building_enrichment_jobs
-                WHERE provider = ? AND status IN ('pending', 'running')
-            )
-            ORDER BY observed_listings DESC
-        """, (provider,)).fetchall()
+        buildings = self.storage.get_buildings(limit=10000)
+        active = self.storage.client.table("building_enrichment_jobs").select(
+            "building_id"
+        ).eq("provider", provider).in_("status", ["pending", "running"]).execute()
+        active_ids = {row["building_id"] for row in (active.data or [])}
+        buildings = [b for b in buildings if b.get("status") == "discovered" and b.get("id") not in active_ids]
 
         count = 0
         for b in buildings:
