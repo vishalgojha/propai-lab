@@ -4102,6 +4102,215 @@ class SupabaseStorage(Storage):
         result = self.client.table("buildings").update(values).eq("id", int(building_db_id)).execute()
         return result.data[0] if result.data else self.get_building(building_db_id=building_db_id)
 
+    def create_building(self, canonical_name: str, micro_market: str | None = None,
+                        tenant_id: str | None = None) -> dict | None:
+        """Create or return a canonical building for an observed name.
+
+        Typed extraction can discover a building before any external geocoder
+        has data for it.  Keep that discovery deterministic and idempotent;
+        enrichment is a separate, queued step.
+        """
+        name = " ".join(str(canonical_name or "").split()).strip(" .,;:")
+        if len(name) < 3:
+            return None
+        existing = self.client.table("buildings").select("*").ilike(
+            "canonical_name", name
+        ).limit(1).execute()
+        if existing.data:
+            building = existing.data[0]
+            if micro_market and not building.get("micro_market"):
+                updated = self.client.table("buildings").update({
+                    "micro_market": micro_market,
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                }).eq("id", building["id"]).execute()
+                if updated.data:
+                    building = updated.data[0]
+            return building
+
+        # The historical IDs are human-readable, but the table has no
+        # sequence for building_id.  A stable hash keeps retries idempotent
+        # and avoids a max(id)+1 race between workers.
+        digest = hashlib.sha1(name.casefold().encode("utf-8")).hexdigest()[:12].upper()
+        payload = {
+            "building_id": f"BLD-{digest}",
+            "canonical_name": name,
+            "micro_market": micro_market,
+            "status": "discovered",
+        }
+        if tenant_id or self._tenant_id:
+            payload["tenant_id"] = tenant_id or self._tenant_id
+        try:
+            result = self.client.table("buildings").insert(payload).execute()
+            return result.data[0] if result.data else None
+        except Exception:
+            # A concurrent insert is a normal race; return the winner.
+            retry = self.client.table("buildings").select("*").ilike(
+                "canonical_name", name
+            ).limit(1).execute()
+            return retry.data[0] if retry.data else None
+
+    def ensure_building_from_observation(self, canonical_name: str,
+                                         micro_market: str | None = None,
+                                         tenant_id: str | None = None) -> dict | None:
+        """Persist a discovered building and queue its first enrichment job."""
+        building = self.create_building(canonical_name, micro_market, tenant_id)
+        if not building:
+            return None
+        self.create_building_alias_for_building(
+            int(building["id"]), canonical_name,
+            building.get("canonical_name") or canonical_name,
+            confidence=1.0,
+            source="whatsapp",
+        )
+        existing_job = self.client.table("building_enrichment_jobs").select("id").eq(
+            "building_id", building["id"]
+        ).in_("status", ["pending", "running"]).limit(1).execute()
+        if not existing_job.data:
+            job = {"building_id": building["id"], "status": "pending", "provider": "unassigned", "priority": 0}
+            if tenant_id or self._tenant_id:
+                job["tenant_id"] = tenant_id or self._tenant_id
+            self.client.table("building_enrichment_jobs").insert(job).execute()
+        return building
+
+    def create_building_alias_for_building(self, building_db_id: int, alias: str,
+                                           canonical: str, confidence: float = 0.0,
+                                           source: str = "whatsapp") -> bool:
+        payload = {
+            "building_id": int(building_db_id),
+            "alias": " ".join(str(alias or "").split()).strip(),
+            "canonical_name": canonical,
+            "confidence": confidence,
+            "source": source,
+        }
+        if not payload["alias"]:
+            return False
+        result = self.client.table("building_name_aliases").upsert(
+            payload, on_conflict="alias"
+        ).execute()
+        return bool(result.data)
+
+    # ── Building enrichment queue ───────────────────────────────
+
+    def get_pending_building_jobs(self, limit: int = 10) -> list[dict]:
+        now = datetime.now(timezone.utc).isoformat()
+        result = (self.client.table("building_enrichment_jobs").select("*")
+                  .eq("status", "pending")
+                  .lte("scheduled_after", now)
+                  .order("priority", desc=True).order("id")
+                  .limit(limit).execute())
+        return result.data or []
+
+    def create_building_enrichment_job(self, building_db_id: int, provider: str,
+                                       priority: int = 0) -> bool:
+        existing = (self.client.table("building_enrichment_jobs").select("id")
+                    .eq("building_id", int(building_db_id)).eq("provider", provider)
+                    .in_("status", ["pending", "running"]).limit(1).execute())
+        if existing.data:
+            return False
+        result = self.client.table("building_enrichment_jobs").insert({
+            "building_id": int(building_db_id),
+            "provider": provider,
+            "priority": priority,
+            "status": "pending",
+        }).execute()
+        return bool(result.data)
+
+    def claim_building_job(self, job_id: int, provider: str | None = None) -> bool:
+        current = self.client.table("building_enrichment_jobs").select(
+            "attempts,provider"
+        ).eq("id", int(job_id)).eq("status", "pending").limit(1).execute()
+        if not current.data:
+            return False
+        row = current.data[0]
+        updates = {
+            "status": "running",
+            "started_at": datetime.now(timezone.utc).isoformat(),
+            "attempts": int(row.get("attempts") or 0) + 1,
+        }
+        if provider:
+            updates["provider"] = provider
+        self.client.table("building_enrichment_jobs").update(updates).eq(
+            "id", int(job_id)
+        ).eq("status", "pending").execute()
+        check = self.client.table("building_enrichment_jobs").select("status").eq(
+            "id", int(job_id)
+        ).limit(1).execute()
+        return bool(check.data and check.data[0].get("status") == "running")
+
+    def complete_building_job(self, job_id: int, success: bool, error: str = "") -> bool:
+        updates = {
+            "status": "completed" if success else "failed",
+            "completed_at": datetime.now(timezone.utc).isoformat(),
+            "last_error": None if success else error,
+        }
+        result = self.client.table("building_enrichment_jobs").update(updates).eq(
+            "id", int(job_id)
+        ).execute()
+        return bool(result.data)
+
+    def add_enrichment_history(self, building_db_id: int, provider: str, action: str,
+                               fields_updated: list[str] | None = None,
+                               confidence: float = 0.0, details: dict | None = None,
+                               job_id: int | None = None) -> bool:
+        payload = {
+            "building_id": int(building_db_id),
+            "provider": provider,
+            "action": action,
+            "fields_updated": fields_updated or [],
+            "confidence": confidence or 0.0,
+            "details": details or {},
+        }
+        if job_id is not None:
+            payload["job_id"] = int(job_id)
+        result = self.client.table("building_enrichment_history").insert(payload).execute()
+        return bool(result.data)
+
+    def record_enrichment_sources(self, building_db_id: int, provider: str,
+                                  fields: dict, confidence: float,
+                                  source_url: str = "", source_record_id: str = "") -> None:
+        for field_name, value in (fields or {}).items():
+            self.client.table("building_enrichment_sources").upsert({
+                "building_id": int(building_db_id),
+                "provider": provider,
+                "field_name": field_name,
+                "field_value": str(value),
+                "confidence": confidence or 0.0,
+                "source_url": source_url or None,
+                "source_record_id": source_record_id or None,
+                "enriched_at": datetime.now(timezone.utc).isoformat(),
+            }, on_conflict="building_id,provider,field_name").execute()
+
+    def mark_building_enriched(self, building_db_id: int, provider: str,
+                               confidence: float) -> bool:
+        result = self.client.table("buildings").update({
+            "status": "enriched",
+            "last_enriched": datetime.now(timezone.utc).isoformat(),
+            "enrichment_confidence": confidence or 0.0,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }).eq("id", int(building_db_id)).execute()
+        return bool(result.data)
+
+    def create_enrichment_review_suggestion(self, building: dict, result: Any,
+                                            job_id: int) -> int:
+        fields_summary = "\n".join(
+            f"- {key}: {value}" for key, value in (result.fields or {}).items()
+        )
+        payload = {
+            "agent": "building",
+            "suggestion_type": "enrichment_review",
+            "title": f"Review enrichment for {building.get('canonical_name', '')}",
+            "description": (
+                f"Provider: {result.provider}\nConfidence: {result.confidence:.0%}\n\n"
+                f"Suggested fields:\n{fields_summary}\n\nSource: {result.source_url}"
+            ),
+            "source_data": {"building_db_id": building.get("id"), "job_id": job_id},
+            "proposal_data": {"building_db_id": building.get("id"), "fields": result.fields or {}},
+            "confidence": result.confidence or 0.0,
+            "status": "pending",
+        }
+        inserted = self.client.table("ai_suggestions").insert(payload).execute()
+        return int(inserted.data[0]["id"]) if inserted.data else 0
+
     # ── Resolver Decisions ───────────────────────────────────────
 
     def _legacy_parsed_exists(self, parsed_id: int) -> bool:
@@ -4940,6 +5149,8 @@ class SupabaseStorage(Storage):
     def create_building_alias(self, alias: str, canonical: str,
                                confidence: float = 0.0, source: str = "ai") -> bool:
         data = {"alias": alias, "canonical": canonical, "confidence": confidence, "source": source}
+        # Kept for the legacy knowledge-graph contract.  Building discovery
+        # uses create_building_alias_for_building(), which carries the FK.
         res = self.client.table("building_aliases").upsert(data, on_conflict="alias").execute()
         return len(res.data) > 0
 
@@ -4950,9 +5161,9 @@ class SupabaseStorage(Storage):
         return None
 
     def resolve_building(self, text: str) -> Optional[str]:
-        res = self.client.table("building_aliases").select("canonical").eq("alias", text).limit(1).execute()
+        res = self.client.table("building_name_aliases").select("canonical_name").eq("alias", text).limit(1).execute()
         if res.data:
-            return res.data[0]["canonical"]
+            return res.data[0]["canonical_name"]
         return None
 
     # ── Price Stats ──────────────────────────────────────────────

@@ -1846,6 +1846,29 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
             print(f"  [extract] save_parsed error: {exc}", flush=True)
             continue
 
+        # Typed rows no longer write legacy resolver_decisions (their foreign
+        # key points at the retired parsed_output table).  Preserve the
+        # building-resolution side effect explicitly: a newly observed
+        # building must still get a canonical buildings row, alias, and one
+        # queued enrichment job instead of remaining as text on the listing.
+        if parsed.get("building_name"):
+            try:
+                discovered_building = storage.ensure_building_from_observation(
+                    parsed["building_name"],
+                    parsed.get("micro_market"),
+                    tenant_id=resolved_tenant_id,
+                )
+                if discovered_building:
+                    resolver_result["building_id"] = discovered_building.get("id")
+                    resolver_result["building_name"] = discovered_building.get(
+                        "canonical_name", parsed["building_name"]
+                    )
+            except Exception as exc:
+                # Building discovery is additive and must never make a valid
+                # typed listing disappear; keep the listing while surfacing
+                # the resolver failure in worker logs.
+                print(f"  [extract] ensure building error: {exc}", flush=True)
+
         # ── Tags on knowledge record ──────────────────────────────
         if knowledge_record_id:
             tags = {}

@@ -34,6 +34,7 @@ class BuildingEnrichmentWorker:
         self.poll_interval = self.config.get("poll_interval", 30)  # seconds
         self.confidence_threshold = self.config.get("confidence_threshold", 0.7)
         self.max_retries = self.config.get("max_retries", 3)
+        self.preferred_provider = self.config.get("provider") or "google_places"
 
         # Initialize providers
         self.providers = get_all_providers(config)
@@ -104,10 +105,24 @@ class BuildingEnrichmentWorker:
         """
         job_id = job["id"]
         building_db_id = job["building_id"]
-        provider_name = job["provider"]
+        provider_name = job.get("provider") or ""
+
+        # Older discovery rows were created with provider='unassigned'. Pick
+        # a configured provider at claim time so those rows become runnable;
+        # do not require a destructive queue migration.
+        provider_names = {p.name for p in self.providers}
+        if provider_name not in provider_names:
+            if self.preferred_provider in provider_names:
+                provider_name = self.preferred_provider
+            elif self.providers:
+                provider_name = self.providers[0].name
+            else:
+                logger.error("No building enrichment provider is configured")
+                self.storage.complete_building_job(job_id, False, "No provider configured")
+                return False
 
         # Claim the job
-        if not self.storage.claim_building_job(job_id):
+        if not self.storage.claim_building_job(job_id, provider=provider_name):
             logger.warning(f"Failed to claim job {job_id}")
             return False
 
@@ -178,16 +193,19 @@ class BuildingEnrichmentWorker:
                         job_id=job_id
                     )
 
-            # Update building enrichment metadata
-            self.storage.db.execute("""
-                UPDATE buildings
-                SET last_enriched = datetime('now'),
-                    enrichment_confidence = GREATEST(COALESCE(enrichment_confidence, 0), ?),
-                    enrichment_sources = COALESCE(enrichment_sources, '[]'::jsonb) || to_jsonb(?::text),
-                    updated_at = datetime('now')
-                WHERE id = ?
-            """, (result.confidence, provider_name, building_db_id))
-            self.storage._commit()
+                    self.storage.complete_building_job(job_id, True)
+                    return True
+
+                # Keep the database adapter-specific writes in storage.  The
+                # old implementation used SQLite cursor/commit calls here, so
+                # the first Supabase job crashed after the provider returned.
+                self.storage.record_enrichment_sources(
+                    building_db_id, provider_name, result.fields,
+                    result.confidence, result.source_url, result.source_record_id,
+                )
+                self.storage.mark_building_enriched(
+                    building_db_id, provider_name, result.confidence
+                )
 
             # Mark job as completed
             self.storage.complete_building_job(job_id, True)
@@ -204,25 +222,7 @@ class BuildingEnrichmentWorker:
 
     def _create_review_suggestion(self, building: dict, result: EnrichmentResult, job_id: int):
         """Create an AI suggestion for low-confidence enrichment data."""
-        fields_summary = "\n".join(f"- {k}: {v}" for k, v in result.fields.items())
-
-        self.storage.db.execute("""
-            INSERT INTO ai_suggestions
-                (agent, suggestion_type, title, description, source_data, proposal_data,
-                 confidence, status, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', datetime('now'), datetime('now'))
-        """, (
-            "building",
-            "enrichment_review",
-            f"Review enrichment for {building['canonical_name']}",
-            f"Provider: {result.provider}\nConfidence: {result.confidence:.0%}\n\n"
-            f"Suggested fields:\n{fields_summary}\n\n"
-            f"Source: {result.source_url}",
-            f'{{"building_id": "{building["building_id"]}", "provider": "{result.provider}"}}',
-            f'{{"building_db_id": {building["id"]}, "fields": {result.fields}}}',
-            result.confidence,
-        ))
-        self.storage._commit()
+        self.storage.create_enrichment_review_suggestion(building, result, job_id)
 
     def enrich_building(self, building_db_id: int, provider: str = None) -> bool:
         """Manually trigger enrichment for a specific building.
@@ -249,4 +249,5 @@ class BuildingEnrichmentWorker:
             "batch_size": self.batch_size,
             "poll_interval": self.poll_interval,
             "confidence_threshold": self.confidence_threshold,
+            "preferred_provider": self.preferred_provider,
         }

@@ -153,8 +153,8 @@ class IGRProvider(BaseProvider):
         return result
 
     def is_available(self) -> bool:
-        """IGR is always available (public website)."""
-        return True
+        """IGR search is not a supported enrichment source."""
+        return False
 
 
 class RERAProvider(BaseProvider):
