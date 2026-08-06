@@ -154,7 +154,14 @@ def _listing_query(client: Any, args: dict, tenant_id: str | None) -> list[dict]
     query = _tenant_query(client, table, tenant_id, columns).ilike("micro_market", f"%{locality}%")
     bhk = _number(args.get("bhk"))
     if bhk is not None:
-        query = query.ilike("bhk", f"%{bhk:g}%")
+        # BHK is a discrete configuration, not a text search. Searching for
+        # `3` must not also return 3.5 BHK rows, while stored `3.0` values
+        # remain equivalent to the user's `3 BHK` request.
+        bhk_text = f"{bhk:g}"
+        if bhk.is_integer():
+            query = query.or_(f"bhk.eq.{bhk_text},bhk.eq.{bhk_text}.0")
+        else:
+            query = query.eq("bhk", bhk_text)
     minimum = _number(args.get("price_min"))
     maximum = _number(args.get("price_max"))
     if minimum is not None:

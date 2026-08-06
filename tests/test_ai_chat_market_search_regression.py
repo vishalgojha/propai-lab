@@ -11,9 +11,10 @@ sys.path.insert(0, str(ROOT))
 
 def test_plain_inventory_query_uses_grounded_market_search(monkeypatch):
     import routers.ai_chat as ai_chat
+    import agent_tools
 
     calls = []
-    monkeypatch.setattr(ai_chat, "storage", SimpleNamespace(db=None))
+    monkeypatch.setattr(ai_chat, "storage", SimpleNamespace(db=None, client=object()))
     
     async def _to_thread(func, /, *args, **kwargs):
         return func(*args, **kwargs)
@@ -31,25 +32,22 @@ def test_plain_inventory_query_uses_grounded_market_search(monkeypatch):
     )
     monkeypatch.setattr(ai_chat, "_run_with_provider_failover", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("LLM fallback should not run")))
     monkeypatch.setattr(
-        ai_chat.chat_engine,
+        agent_tools,
         "execute_tool",
-        lambda tool_name, tool_args, active_sources, db_path=None, tenant_id=None: calls.append(
-            (tool_name, tool_args, sorted(active_sources.keys()), tenant_id)
-        ) or json.dumps(
-            {
-                "results": [
-                    {
-                        "listing_id": 1,
-                        "building_name": "Orbit Heights",
-                        "micro_market": "Borivali West",
-                        "bhk": "3 BHK",
-                        "price_formatted": "₹95,000",
-                        "broker_name": "Ravi",
-                    }
-                ],
-                "total": 1,
-            }
-        ),
+        lambda tool_name, tool_args, client, tenant_id, **kwargs: calls.append(
+            (tool_name, tool_args, tenant_id)
+        ) or {
+            "status": "ok",
+            "results": [{
+                "listing_id": 1,
+                "building_name": "Orbit Heights",
+                "micro_market": "Borivali West",
+                "bhk": "3",
+                "price": 95000,
+                "carpet_area_sqft": 1200,
+                "broker_name": "Ravi",
+            }],
+        },
     )
 
     req = SimpleNamespace(
@@ -63,11 +61,12 @@ def test_plain_inventory_query_uses_grounded_market_search(monkeypatch):
 
     response = asyncio.run(ai_chat.ai_chat(req, user={"id": "u1"}, tenant_id="org-1"))
 
-    assert calls, "market_search was not called"
-    assert calls[0][0] == "market_search"
+    assert calls, "search_listings was not called"
+    assert calls[0][0] == "search_listings"
     assert calls[0][1]["bhk"] == 3
-    assert calls[0][1]["intent"] == "RENT"
-    assert calls[0][1]["micro_markets"] == ["Borivali West"]
+    assert calls[0][1]["listing_type"] == "rent"
+    assert calls[0][1]["locality"] == "Borivali West"
+    assert calls[0][2] == "org-1"
     assert response["source_mode"] == "parsed"
     assert ai_chat._is_analytics_or_ops_query("how many listings in Bandra West") is True
     assert ai_chat._is_analytics_or_ops_query("any 3 bhk for rent in Borivali West") is False
