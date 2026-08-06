@@ -81,7 +81,26 @@ def canonical_rental_price_rupees(
     shorthand = re.search(r"(?<![\d.])(\d+\.\d+)\s*k\b", text, re.IGNORECASE)
     if shorthand:
         return float(shorthand.group(1)) * 100_000
-    return canonical_price_rupees(value, unit, raw_text)
+    normalized = canonical_price_rupees(value, unit, raw_text)
+    if normalized is None:
+        return None
+
+    # In Mumbai rental broadcasts, a bare monthly quote such as
+    # ``Monthly Rent :- 140`` means ₹1.40 lakh (140 thousand), not ₹140/month. Only apply
+    # this residential-rent convention when the source explicitly identifies
+    # the number as rent/monthly rent and no money unit was supplied. Explicit
+    # k/lakh/crore/PSF values remain governed by the canonical parser above.
+    has_explicit_money_unit = parse_explicit_price(text) is not None
+    rent_context = re.search(r"\b(?:rent|rental|monthly|lease|on\s+lease)\b", text, re.IGNORECASE)
+    unit_key = str(unit or "").strip().lower()
+    if (
+        not has_explicit_money_unit
+        and rent_context
+        and unit_key in {"", "total", "abs", "absolute", "inr", "rupees"}
+        and 0 < normalized < 1_000
+    ):
+        return normalized * 1_000
+    return normalized
 
 
 def canonical_commercial_rental_price_rupees(

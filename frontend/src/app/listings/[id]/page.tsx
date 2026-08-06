@@ -37,6 +37,12 @@ function formatPrice(value?: number, unit?: string, intent?: string) {
   if (value >= 10000000) return `${(value / 10000000).toLocaleString("en-IN", { maximumFractionDigits: 2 })} Cr`;
   if (value >= 100000) return `${(value / 100000).toLocaleString("en-IN", { maximumFractionDigits: 2 })} Lac`;
   const suffix = String(unit || "").toLowerCase();
+  if (String(intent || "").toUpperCase() === "RENT" && ["per_sqft", "psf", "sqft"].includes(suffix)) {
+    return `₹${value.toLocaleString("en-IN")}/sqft`;
+  }
+  if (String(intent || "").toUpperCase() === "RENT" && ["", "abs", "absolute"].includes(suffix) && value < 1000) {
+    return "Price needs verification";
+  }
   const rentSuffix = String(intent || "").toUpperCase() === "RENT" ? "/month" : "";
   if (suffix && !["abs", "absolute"].includes(suffix)) return `${value.toLocaleString("en-IN")} ${unit}`;
   return `${value.toLocaleString("en-IN")}${rentSuffix}`;

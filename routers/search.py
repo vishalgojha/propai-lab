@@ -662,7 +662,7 @@ async def market_search(
             price_formatted = f"₹{price_val / 1_00_000:.1f} L"
         elif price_val > 0:
             price_formatted = f"₹{price_val:,.0f}"
-        if d.get("price_unit") and d.get("price_unit") != "/sale" and d.get("intent") == "RENT":
+        if price_formatted and d.get("price_unit") and d.get("price_unit") != "/sale" and d.get("intent") == "RENT":
             price_formatted += "/month"
 
         confidence_pct = 0

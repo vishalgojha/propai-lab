@@ -2510,6 +2510,8 @@ def _format_listing_price(item: dict) -> str:
     unit = str(item.get("price_unit") or "").lower()
     is_rent = item.get("intent") == "RENT"
     suffix = "/month" if is_rent else ""
+    if is_rent and unit in {"per_sqft", "psf", "sqft"}:
+        return f"₹{value:,.0f}/sqft"
     if is_rent and unit in {"","none","null","abs"}:
         if 0 < value < 100:
             return f"₹{value:g} L/month"
@@ -2527,7 +2529,7 @@ def _format_listing_price(item: dict) -> str:
         return f"₹{value / 1_00_00_000:.2f} Cr"
     if value >= 1_00_000:
         return f"₹{value / 1_00_000:.1f} L{suffix}"
-    return f"₹{value:,.0f}{suffix}"
+    return f"₹{value:,.0f}{suffix}" if value > 0 else ""
 
 def _is_plausible_listing_result(item: dict, args: dict) -> bool:
     requested_intent = str(args.get("intent") or "").upper()
