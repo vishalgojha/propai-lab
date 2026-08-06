@@ -1852,6 +1852,75 @@ def _waba_registration_prompt_sent(to: str, tenant_id: str) -> bool:
         return False
 
 
+def _waba_publish_confirmation(text: str) -> bool:
+    return bool(re.fullmatch(
+        r"\s*(?:confirm|confirmed|yes\s*(?:publish|post|list)?|post\s*(?:it|this)|publish\s*(?:it|this)|go\s*ahead)\s*[.!]?\s*",
+        text or "",
+        re.IGNORECASE,
+    ))
+
+
+async def _publish_waba_direct_listing(
+    to: str,
+    inbound_message_id: str,
+    sender_name: str,
+    waba_config: dict,
+    tenant_id: str,
+) -> str:
+    """Publish the current WABA intake through the canonical extraction path."""
+    digits = _normalize_real_phone(to)
+    rows = storage.db.execute(
+        "SELECT id, message FROM raw_messages WHERE tenant_id = ? AND sender_phone = ? "
+        "AND source = 'WABA_INBOUND' ORDER BY id DESC LIMIT 12",
+        (tenant_id, digits),
+    ).fetchall()
+    control_words = {"hi", "hello", "hey", "list a property", "confirm", "confirmed", "yes", "ok", "okay"}
+    intake = [str(row[1] or "").strip() for row in reversed(rows) if str(row[1] or "").strip().lower() not in control_words]
+    if not intake:
+        return "I need the property details before I can publish it."
+
+    combined = "\n".join(intake)
+    now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    direct_uid = f"waba-direct-{uuid.uuid4()}"
+    inserted = storage.db.execute(
+        """INSERT INTO raw_messages (tenant_id, group_name, sender, sender_jid, sender_phone, message, message_type, source, timestamp, raw_payload, message_uid, synced_at, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (tenant_id, f"Direct WABA · {sender_name or digits}", sender_name or digits, f"{digits}@s.whatsapp.net", digits,
+         combined, "text", "WABA_DIRECT", now_iso,
+         _json.dumps({"waba_message_id": inbound_message_id, "source": "direct_waba", "source_messages": [int(row[0]) for row in rows]}),
+         direct_uid, now_iso, now_iso),
+    )
+    raw_id = getattr(inserted, "lastrowid", None)
+    if not raw_id:
+        row = storage.db.execute("SELECT id FROM raw_messages WHERE message_uid = ? LIMIT 1", (direct_uid,)).fetchone()
+        raw_id = row[0] if row else None
+    if not raw_id:
+        return "I couldn't create the direct listing record. Please try CONFIRM again."
+
+    from extraction import process_raw_message
+    context = {
+        "tenant_id": tenant_id,
+        "sender_name": sender_name or digits,
+        "push_name": sender_name or digits,
+        "sender_jid": f"{digits}@s.whatsapp.net",
+        "sender_phone": digits,
+        "group": f"direct:{digits}",
+        "group_name": f"Direct WABA · {sender_name or digits}",
+        "instance": "waba",
+        "is_dm": True,
+        "message_uid": direct_uid,
+        "message_id": inbound_message_id,
+        "msg_text": combined,
+        "msg": {"source": "WABA_DIRECT"},
+    }
+    result = await asyncio.to_thread(process_raw_message, int(raw_id), context, storage)
+    listing_ids = result.get("listing_ids") or [] if isinstance(result, dict) else []
+    if not listing_ids:
+        return "I couldn't publish this yet. Please send the missing property details and then reply CONFIRM."
+    count = len(listing_ids)
+    return f"Published {count} {'listing' if count == 1 else 'listings'} to the PropAI marketplace from your direct WhatsApp details."
+
+
 async def _handle_waba_agent_reply(to: str, text: str, inbound_message_id: str, sender_name: str = "", waba_config: dict | None = None, tenant_id: str | None = None) -> None:
     if not tenant_id:
         raise RuntimeError("WABA agent reply requires a tenant_id")
@@ -1873,6 +1942,14 @@ async def _handle_waba_agent_reply(to: str, text: str, inbound_message_id: str, 
                          _json.dumps({"waba_message_id": result.get("message_id", ""), "reply_to": inbound_message_id, "access_gate": "registration_required"}),
                          f"waba-{result.get('message_id') or uuid.uuid4()}", "sent", now_iso, now_iso),
                     )
+            return
+        if _waba_publish_confirmation(text):
+            publish_reply = await _publish_waba_direct_listing(
+                to, inbound_message_id, sender_name, waba_config or {}, tenant_id,
+            )
+            result = await _waba_send_message(to, publish_reply, waba_config=waba_config)
+            if not result.get("success"):
+                raise RuntimeError(result.get("error") or "WABA publish response failed")
             return
         if not sender_name.strip():
             try:
