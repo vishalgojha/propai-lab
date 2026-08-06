@@ -723,6 +723,7 @@ async def _run_workspace_agent(
     system_suffix: str = "",
     sender_name: str = "",
     workspace_owner_name: str = "",
+    sender_broker_name: str = "",
 ) -> dict:
     from ai_chat_engine import get_memory, load_data as _load_data, load_live_data as _load_live_data
     from ai_chat_engine import build_system_prompt, get_model_reply, normalize_workspace_response
@@ -798,6 +799,8 @@ WHATSAPP SELF-CHAT MODE:
             system_prompt += f"\nVERIFIED SENDER PROFILE NAME: {sender_name.strip()}\n"
         if workspace_owner_name.strip():
             system_prompt += f"\nVERIFIED WORKSPACE OWNER NAME: {workspace_owner_name.strip()}. If asked who owns or runs PropAI, answer directly with this name.\n"
+        if sender_broker_name.strip():
+            system_prompt += f"\nVERIFIED BROKER ACCOUNT: This sender is registered as broker {sender_broker_name.strip()}. If asked who they are, identify them as {sender_broker_name.strip()}, a PropAI broker.\n"
         if relevant_obs:
             obs_lines = ["\nKNOWLEDGE OBSERVATIONS (accumulated from previous conversations):"]
             for obs in relevant_obs:
@@ -1805,12 +1808,31 @@ async def _handle_waba_agent_reply(to: str, text: str, inbound_message_id: str, 
                 workspace_owner_name = owner_candidate
         except Exception:
             pass
+        sender_broker_name = ""
+        try:
+            sender_digits = _normalize_real_phone(to)
+            client = getattr(storage, "client", None)
+            if sender_digits and client is not None:
+                broker_rows = (
+                    client.table("brokers")
+                    .select("canonical_name,primary_phone")
+                    .eq("primary_phone", sender_digits)
+                    .limit(1)
+                    .execute()
+                    .data
+                    or []
+                )
+                if broker_rows:
+                    sender_broker_name = str(broker_rows[0].get("canonical_name") or "").strip()
+        except Exception:
+            pass
         response = await _run_workspace_agent(
             [{"role": "user", "content": text[:1800]}],
             session_id=f"waba:{tenant_id}:{to}",
             tenant_id=tenant_id,
             sender_name=sender_name,
             workspace_owner_name=workspace_owner_name,
+            sender_broker_name=sender_broker_name,
         )
         if isinstance(response, dict) and response.get("error"):
             raise RuntimeError(response.get("message") or response["error"])
