@@ -32,6 +32,7 @@ from openai import OpenAI
 from llm import get_configured_providers
 from deterministic_splitters import split_message_into_chunks
 from extraction_models import validate_source_semantics
+from price_normalization import source_transaction_type
 
 _logger = logging.getLogger(__name__)
 
@@ -1059,6 +1060,8 @@ def _apply_deterministic_field_fallbacks(extraction: dict, raw_text: str) -> dic
     elif explicit_rent and not explicit_sale and extraction.get("listing_type") in {"rent", "sale"}:
         extraction["listing_type"] = "rent"
         extraction["needs_review"] = False
+    if extraction.get("listing_type") in {"rent", "sale"}:
+        extraction["listing_type"] = source_transaction_type(text, extraction.get("listing_type"))
 
     # Requirement messages often contain unambiguous ranges/budgets but the
     # provider may omit the route-specific fields. Recover only explicit

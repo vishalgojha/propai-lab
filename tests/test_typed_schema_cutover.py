@@ -95,6 +95,54 @@ def test_save_parsed_writes_directly_to_typed_rent_table():
     assert options["on_conflict"] == "source_fingerprint"
 
 
+def test_save_parsed_raw_price_text_overrides_prefilled_bad_rent_value():
+    storage = _storage()
+    storage.save_parsed(ParsedObservation(
+        raw_message_id=79,
+        listing_index=0,
+        asset_type="residential",
+        transaction_type="rent",
+        intent="RENT",
+        bhk="3 BHK",
+        price=6,
+        price_unit=None,
+        monthly_rent=6,
+        price_per_sqft=None,
+        confidence=0.95,
+        ai_extraction={"price": {"amount": 6, "unit": None, "raw_price_text": "6 cr"}},
+    ))
+
+    table, payload, _ = storage.client.writes[0]
+    assert table == "residential_rent_listings"
+    assert payload["monthly_rent"] == 60_000_000
+    assert payload["price_raw_text"] == "6 cr"
+    assert payload["needs_review"] is True
+    assert payload["extraction_confidence"] == "low"
+
+
+def test_save_parsed_implausible_prefilled_rent_needs_review_without_raw_price_text():
+    storage = _storage()
+    storage.save_parsed(ParsedObservation(
+        raw_message_id=80,
+        listing_index=0,
+        asset_type="residential",
+        transaction_type="rent",
+        intent="RENT",
+        bhk="3 BHK",
+        monthly_rent=2_500_000_000,
+        price=None,
+        price_unit=None,
+        confidence=0.95,
+    ))
+
+    table, payload, _ = storage.client.writes[0]
+    assert table == "residential_rent_listings"
+    assert payload["monthly_rent"] == 2_500_000_000
+    assert "price_raw_text" not in payload
+    assert payload["needs_review"] is True
+    assert payload["extraction_confidence"] == "low"
+
+
 def test_save_parsed_residential_requirement_omits_commercial_fields():
     storage = _storage()
     storage.save_parsed(ParsedObservation(
