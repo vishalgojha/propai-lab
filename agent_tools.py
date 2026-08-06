@@ -23,6 +23,17 @@ READ_TOOL_NAMES = frozenset({
     "match_client_to_listings",
     "get_broker_profile",
 })
+BROWSER_TOOL_NAMES = frozenset({
+    "browser_open",
+    "browser_state",
+    "browser_click",
+    "browser_fill",
+    "browser_type",
+    "browser_select",
+    "browser_scroll",
+    "browser_screenshot",
+    "browser_close",
+})
 WRITE_TOOL_NAMES = frozenset({
     "create_client_property_candidate",
     "create_lead",
@@ -109,6 +120,91 @@ TOOL_DEFINITIONS = [
             "author_id": {"type": "string"},
         },
         ["entity_type", "entity_id", "note", "author_id"],
+    ),
+]
+
+BROWSER_TOOL_DEFINITIONS = [
+    _function(
+        "browser_open",
+        "Open a browser session on a permitted route or URL and return the current page state. Use this for navigating PropAI pages or other workspace-approved destinations.",
+        {
+            "browser_session_id": {"type": "string", "description": "Existing browser session id; omit to create a new session"},
+            "url": {"type": "string", "description": "URL to open"},
+            "session_label": {"type": "string", "description": "Optional label for tracing"},
+        },
+        ["url"],
+    ),
+    _function(
+        "browser_state",
+        "Inspect the current browser session state, including URL, title, visible text, and interactable elements.",
+        {
+            "browser_session_id": {"type": "string", "description": "Browser session id"},
+        },
+        ["browser_session_id"],
+    ),
+    _function(
+        "browser_click",
+        "Click an interactable element by index in the current browser state.",
+        {
+            "browser_session_id": {"type": "string"},
+            "index": {"type": "integer", "description": "Element index from browser_state"},
+        },
+        ["browser_session_id", "index"],
+    ),
+    _function(
+        "browser_fill",
+        "Fill an input or textarea element by index in the current browser state.",
+        {
+            "browser_session_id": {"type": "string"},
+            "index": {"type": "integer", "description": "Element index from browser_state"},
+            "text": {"type": "string"},
+        },
+        ["browser_session_id", "index", "text"],
+    ),
+    _function(
+        "browser_type",
+        "Type text into the active browser page.",
+        {
+            "browser_session_id": {"type": "string"},
+            "text": {"type": "string"},
+        },
+        ["browser_session_id", "text"],
+    ),
+    _function(
+        "browser_select",
+        "Select an option in a select element by index in the current browser state.",
+        {
+            "browser_session_id": {"type": "string"},
+            "index": {"type": "integer", "description": "Element index from browser_state"},
+            "value": {"type": "string", "description": "Option label or value"},
+        },
+        ["browser_session_id", "index", "value"],
+    ),
+    _function(
+        "browser_scroll",
+        "Scroll the page by a number of pixels. Positive values scroll down; negative values scroll up.",
+        {
+            "browser_session_id": {"type": "string"},
+            "amount": {"type": "integer", "description": "Pixels to scroll"},
+        },
+        ["browser_session_id", "amount"],
+    ),
+    _function(
+        "browser_screenshot",
+        "Capture a screenshot of the current page for traceability.",
+        {
+            "browser_session_id": {"type": "string"},
+            "output_path": {"type": "string", "description": "Optional local file path"},
+        },
+        ["browser_session_id"],
+    ),
+    _function(
+        "browser_close",
+        "Close the browser session and release any associated runtime resources.",
+        {
+            "browser_session_id": {"type": "string"},
+        },
+        ["browser_session_id"],
     ),
 ]
 

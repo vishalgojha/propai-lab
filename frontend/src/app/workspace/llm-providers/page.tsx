@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { Plus, Check, X, Play, AlertCircle, Globe, Zap } from "lucide-react";
+import { Plus, Check, X, Play, AlertCircle, Globe, Zap, Bot, RefreshCw, Gauge, ShieldCheck } from "lucide-react";
 import { fetchJSON } from "@/lib/api";
 import { useAuth } from "@/lib/AuthProvider";
 
@@ -20,6 +20,23 @@ interface ActiveProvider extends Provider {
   source_label?: string;
 }
 
+interface WorkspaceAISettings {
+  id?: number;
+  tenant_id?: string | null;
+  monthly_budget_usd?: number | null;
+  max_rpm: number;
+  max_concurrent_calls: number;
+  max_browser_sessions: number;
+  max_tool_rounds: number;
+  browser_enabled: boolean;
+  browser_provider: string;
+  allowed_routes: string[];
+  allowed_actions: string[];
+  notes: string;
+  current_month_spend_usd?: number;
+  current_month_calls?: number;
+}
+
 const DEFAULT_PROVIDERS = [
   { type: "openai", label: "OpenAI", baseUrl: "https://api.openai.com/v1" },
   { type: "anthropic", label: "Anthropic", baseUrl: "https://api.anthropic.com/v1" },
@@ -30,6 +47,12 @@ const DEFAULT_PROVIDERS = [
 export default function LLMProvidersPage() {
   const [providers, setProviders] = useState<Provider[]>([]);
   const [activeProvider, setActiveProvider] = useState<ActiveProvider | null>(null);
+  const [aiSettings, setAiSettings] = useState<WorkspaceAISettings | null>(null);
+  const [settingsLoading, setSettingsLoading] = useState(false);
+  const [settingsSaving, setSettingsSaving] = useState(false);
+  const [settingsError, setSettingsError] = useState<string | null>(null);
+  const [browserSessions, setBrowserSessions] = useState<any[]>([]);
+  const [browserSessionsLoading, setBrowserSessionsLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [isAdding, setIsAdding] = useState(false);
@@ -50,7 +73,10 @@ export default function LLMProvidersPage() {
   const { user, loading: authLoading } = useAuth();
 
   useEffect(() => {
-    if (!authLoading && user) void loadProviders();
+    if (!authLoading && user) {
+      void loadProviders();
+      void loadWorkspaceControls();
+    }
   }, [authLoading, user?.id]);
 
   async function loadProviders() {
@@ -71,6 +97,52 @@ export default function LLMProvidersPage() {
     }
   }
 
+  async function loadAiSettings() {
+    setSettingsLoading(true);
+    setSettingsError(null);
+    try {
+      const data = await fetchJSON<any>("/workspace/ai-settings");
+      setAiSettings({
+        id: data?.id,
+        tenant_id: data?.tenant_id,
+        monthly_budget_usd: data?.monthly_budget_usd ?? null,
+        max_rpm: Number(data?.max_rpm ?? 60),
+        max_concurrent_calls: Number(data?.max_concurrent_calls ?? 8),
+        max_browser_sessions: Number(data?.max_browser_sessions ?? 1),
+        max_tool_rounds: Number(data?.max_tool_rounds ?? 8),
+        browser_enabled: Boolean(data?.browser_enabled),
+        browser_provider: String(data?.browser_provider || "browser-use"),
+        allowed_routes: Array.isArray(data?.allowed_routes) ? data.allowed_routes : [],
+        allowed_actions: Array.isArray(data?.allowed_actions) ? data.allowed_actions : [],
+        notes: String(data?.notes || ""),
+        current_month_spend_usd: Number(data?.current_month_spend_usd ?? 0),
+        current_month_calls: Number(data?.current_month_calls ?? 0),
+      });
+    } catch (e) {
+      setSettingsError(e instanceof Error ? e.message : "Failed to load workspace AI settings");
+      setAiSettings(null);
+    } finally {
+      setSettingsLoading(false);
+    }
+  }
+
+  async function loadBrowserSessions() {
+    setBrowserSessionsLoading(true);
+    try {
+      const data = await fetchJSON<any>("/agent/browser-sessions?limit=12");
+      setBrowserSessions(Array.isArray(data?.sessions) ? data.sessions : []);
+    } catch (e) {
+      console.error(e);
+      setBrowserSessions([]);
+    } finally {
+      setBrowserSessionsLoading(false);
+    }
+  }
+
+  async function loadWorkspaceControls() {
+    await Promise.all([loadAiSettings(), loadBrowserSessions()]);
+  }
+
   async function handleSave() {
     try {
       await fetchJSON("/workspace/llm-providers", {
@@ -82,6 +154,41 @@ export default function LLMProvidersPage() {
       loadProviders();
     } catch (e) {
       alert(e instanceof Error ? e.message : "Error saving provider");
+    }
+  }
+
+  async function handleSaveAiSettings() {
+    if (!aiSettings) return;
+    setSettingsSaving(true);
+    setSettingsError(null);
+    try {
+      const payload = {
+        monthly_budget_usd: aiSettings.monthly_budget_usd,
+        max_rpm: Number(aiSettings.max_rpm || 0),
+        max_concurrent_calls: Number(aiSettings.max_concurrent_calls || 0),
+        max_browser_sessions: Number(aiSettings.max_browser_sessions || 0),
+        max_tool_rounds: Number(aiSettings.max_tool_rounds || 0),
+        browser_enabled: Boolean(aiSettings.browser_enabled),
+        browser_provider: aiSettings.browser_provider || "browser-use",
+        allowed_routes: aiSettings.allowed_routes,
+        allowed_actions: aiSettings.allowed_actions,
+        notes: aiSettings.notes,
+      };
+      const saved = await fetchJSON<any>("/workspace/ai-settings", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+      const next = saved?.settings || saved;
+      setAiSettings((prev) => prev ? {
+        ...prev,
+        ...next,
+        current_month_calls: prev.current_month_calls,
+        current_month_spend_usd: prev.current_month_spend_usd,
+      } : prev);
+    } catch (e) {
+      setSettingsError(e instanceof Error ? e.message : "Failed to save workspace AI settings");
+    } finally {
+      setSettingsSaving(false);
     }
   }
 
@@ -182,6 +289,8 @@ export default function LLMProvidersPage() {
           ? "Unconfigured"
           : ""
   );
+  const routesText = (aiSettings?.allowed_routes || []).join("\n");
+  const actionsText = (aiSettings?.allowed_actions || []).join("\n");
 
   if (authLoading || loading) return <div className="p-8 text-gray-400">Loading providers...</div>;
 
@@ -305,6 +414,238 @@ export default function LLMProvidersPage() {
             )}
           </tbody>
         </table>
+      </div>
+
+      <div className="mt-8 grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
+        <div className="bg-zinc-900 border border-white/10 rounded-xl p-6">
+          <div className="flex items-start justify-between gap-4 mb-6">
+            <div>
+              <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                <Bot size={18} /> Workspace AI controls
+              </h2>
+              <p className="text-sm text-gray-400 mt-1">
+                Tenant-scoped limits for agent calls, browser use, and monthly spend.
+              </p>
+            </div>
+            <button
+              onClick={() => void loadWorkspaceControls()}
+              className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white/5 text-gray-300 hover:bg-white/10 text-sm"
+            >
+              <RefreshCw size={14} /> Refresh
+            </button>
+          </div>
+
+          {settingsError && (
+            <div className="mb-4 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-300">
+              {settingsError}
+            </div>
+          )}
+
+          {settingsLoading && !aiSettings ? (
+            <div className="text-sm text-gray-400">Loading workspace controls...</div>
+          ) : aiSettings ? (
+            <div className="space-y-5">
+              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                <label className="space-y-1">
+                  <span className="text-xs font-medium text-gray-400">Monthly budget USD</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    className="w-full bg-[#161b22] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500"
+                    value={aiSettings.monthly_budget_usd ?? ""}
+                    onChange={(e) => setAiSettings({ ...aiSettings, monthly_budget_usd: e.target.value === "" ? null : Number(e.target.value) })}
+                  />
+                </label>
+                <label className="space-y-1">
+                  <span className="text-xs font-medium text-gray-400">Max RPM</span>
+                  <input
+                    type="number"
+                    min="1"
+                    className="w-full bg-[#161b22] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500"
+                    value={aiSettings.max_rpm}
+                    onChange={(e) => setAiSettings({ ...aiSettings, max_rpm: Number(e.target.value) })}
+                  />
+                </label>
+                <label className="space-y-1">
+                  <span className="text-xs font-medium text-gray-400">Max concurrent calls</span>
+                  <input
+                    type="number"
+                    min="1"
+                    className="w-full bg-[#161b22] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500"
+                    value={aiSettings.max_concurrent_calls}
+                    onChange={(e) => setAiSettings({ ...aiSettings, max_concurrent_calls: Number(e.target.value) })}
+                  />
+                </label>
+                <label className="space-y-1">
+                  <span className="text-xs font-medium text-gray-400">Max browser sessions</span>
+                  <input
+                    type="number"
+                    min="0"
+                    className="w-full bg-[#161b22] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500"
+                    value={aiSettings.max_browser_sessions}
+                    onChange={(e) => setAiSettings({ ...aiSettings, max_browser_sessions: Number(e.target.value) })}
+                  />
+                </label>
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <label className="space-y-1">
+                  <span className="text-xs font-medium text-gray-400">Browser provider</span>
+                  <input
+                    type="text"
+                    className="w-full bg-[#161b22] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500 font-mono"
+                    value={aiSettings.browser_provider}
+                    onChange={(e) => setAiSettings({ ...aiSettings, browser_provider: e.target.value })}
+                    placeholder="browser-use"
+                  />
+                </label>
+                <label className="space-y-1">
+                  <span className="text-xs font-medium text-gray-400">Max tool rounds</span>
+                  <input
+                    type="number"
+                    min="1"
+                    className="w-full bg-[#161b22] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500"
+                    value={aiSettings.max_tool_rounds}
+                    onChange={(e) => setAiSettings({ ...aiSettings, max_tool_rounds: Number(e.target.value) })}
+                  />
+                </label>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <input
+                  id="browser_enabled"
+                  type="checkbox"
+                  className="rounded border-gray-700 bg-gray-900 text-blue-600 focus:ring-0"
+                  checked={aiSettings.browser_enabled}
+                  onChange={(e) => setAiSettings({ ...aiSettings, browser_enabled: e.target.checked })}
+                />
+                <label htmlFor="browser_enabled" className="text-sm text-gray-300">
+                  Enable browser actions for this workspace
+                </label>
+              </div>
+
+              <div className="grid gap-4 lg:grid-cols-2">
+                <label className="space-y-1">
+                  <span className="text-xs font-medium text-gray-400">Allowed routes</span>
+                  <textarea
+                    className="w-full min-h-32 bg-[#161b22] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500 font-mono"
+                    value={routesText}
+                    onChange={(e) => setAiSettings({
+                      ...aiSettings,
+                      allowed_routes: e.target.value.split(/\r?\n/).map((item) => item.trim()).filter(Boolean),
+                    })}
+                    placeholder={"/chat\n/map\n/listings/*"}
+                  />
+                </label>
+                <label className="space-y-1">
+                  <span className="text-xs font-medium text-gray-400">Allowed actions</span>
+                  <textarea
+                    className="w-full min-h-32 bg-[#161b22] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500 font-mono"
+                    value={actionsText}
+                    onChange={(e) => setAiSettings({
+                      ...aiSettings,
+                      allowed_actions: e.target.value.split(/\r?\n/).map((item) => item.trim()).filter(Boolean),
+                    })}
+                    placeholder={"open\nclick\nfill\nselect\nscroll"}
+                  />
+                </label>
+              </div>
+
+              <label className="space-y-1 block">
+                <span className="text-xs font-medium text-gray-400">Notes</span>
+                <textarea
+                  className="w-full min-h-24 bg-[#161b22] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500"
+                  value={aiSettings.notes}
+                  onChange={(e) => setAiSettings({ ...aiSettings, notes: e.target.value })}
+                  placeholder="Why this workspace needs browser access, safety constraints, or internal routing notes."
+                />
+              </label>
+
+              <div className="flex flex-wrap items-center gap-3">
+                <button
+                  onClick={() => void handleSaveAiSettings()}
+                  disabled={settingsSaving}
+                  className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+                >
+                  <ShieldCheck size={14} /> {settingsSaving ? "Saving..." : "Save workspace controls"}
+                </button>
+                <div className="text-xs text-gray-400">
+                  Browser use is gated by this workspace only. LLM calls still use the workspace key pool.
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="text-sm text-gray-400">No workspace controls loaded.</div>
+          )}
+        </div>
+
+        <div className="bg-zinc-900 border border-white/10 rounded-xl p-6">
+          <div className="flex items-start justify-between gap-4 mb-4">
+            <div>
+              <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                <Gauge size={18} /> Live usage
+              </h2>
+              <p className="text-sm text-gray-400 mt-1">Last 31 days from tenant-scoped AI usage log.</p>
+            </div>
+          </div>
+          {aiSettings ? (
+            <div className="grid grid-cols-2 gap-3">
+              <div className="rounded-xl border border-white/10 bg-[#161b22] p-4">
+                <div className="text-[11px] uppercase tracking-wide text-gray-500">Calls</div>
+                <div className="mt-2 text-2xl font-bold text-white">{aiSettings.current_month_calls ?? 0}</div>
+              </div>
+              <div className="rounded-xl border border-white/10 bg-[#161b22] p-4">
+                <div className="text-[11px] uppercase tracking-wide text-gray-500">Spend</div>
+                <div className="mt-2 text-2xl font-bold text-white">${Number(aiSettings.current_month_spend_usd ?? 0).toFixed(2)}</div>
+              </div>
+              <div className="col-span-2 rounded-xl border border-white/10 bg-[#161b22] p-4">
+                <div className="text-[11px] uppercase tracking-wide text-gray-500">Budget</div>
+                <div className="mt-2 text-sm text-gray-300">
+                  {aiSettings.monthly_budget_usd == null
+                    ? "Unbounded"
+                    : `$${Number(aiSettings.monthly_budget_usd).toFixed(2)} / month`}
+                </div>
+              </div>
+            </div>
+          ) : null}
+
+          <div className="mt-6">
+            <div className="flex items-center justify-between mb-3">
+              <div className="text-sm font-semibold text-white">Browser sessions</div>
+              <button
+                onClick={() => void loadBrowserSessions()}
+                className="text-xs text-cyan-400 hover:text-cyan-300"
+              >
+                Refresh sessions
+              </button>
+            </div>
+            {browserSessionsLoading ? (
+              <div className="text-sm text-gray-400">Loading sessions...</div>
+            ) : browserSessions.length === 0 ? (
+              <div className="rounded-lg border border-white/10 bg-[#161b22] p-4 text-sm text-gray-500">
+                No browser sessions recorded yet.
+              </div>
+            ) : (
+              <div className="space-y-3 max-h-[24rem] overflow-auto pr-1">
+                {browserSessions.map((session) => (
+                  <div key={String(session.id)} className="rounded-lg border border-white/10 bg-[#161b22] p-3 text-xs text-gray-300">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="font-semibold text-white">{session.task_label || "Untitled task"}</div>
+                        <div className="text-gray-400 mt-1">{session.browser_provider || "browser-use"} · {session.status || "open"}</div>
+                      </div>
+                      <div className="text-right text-gray-500">
+                        <div>{session.current_url || session.start_url || "—"}</div>
+                        <div className="mt-1">Updated {session.updated_at || session.started_at || "—"}</div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* Add/Edit Modal */}

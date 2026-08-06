@@ -24,7 +24,8 @@ def set_tenant_id(tid: Optional[str]):
 from lab.storage.base import (
     Storage, RawMessage, ParsedObservation, Listing,
     ResolverDecision, Evaluation, SyncJob, SyncCheckpoint,
-    AISuggestion, LLMProvider,
+    AISuggestion, LLMProvider, WorkspaceAISettings,
+    AgentBrowserSession, AgentBrowserStep, AgentAuditLog,
     dict_to_dataclass,
 )
 from lab.inventory import listing_fingerprint, listing_label
@@ -5699,6 +5700,110 @@ class SupabaseStorage(Storage):
         res = q.execute()
         return len(res.data) > 0
 
+    # ── Workspace AI Settings ───────────────────────────────────────────
+
+    def get_workspace_ai_settings(self, tenant_id: str | None = None) -> Optional[WorkspaceAISettings]:
+        tid = tenant_id or self._tenant_id
+        if not tid:
+            return None
+        res = (
+            self.client.table("workspace_ai_settings")
+            .select("*")
+            .eq("tenant_id", tid)
+            .limit(1)
+            .execute()
+        )
+        return dict_to_dataclass(WorkspaceAISettings, res.data[0]) if res.data else None
+
+    def save_workspace_ai_settings(self, settings: WorkspaceAISettings, tenant_id: str | None = None) -> int:
+        tid = tenant_id or self._tenant_id
+        if not tid:
+            raise ValueError("tenant_id is required to save workspace AI settings")
+        data = {k: v for k, v in settings.__dict__.items() if v is not None}
+        data.pop("created_at", None)
+        data.pop("updated_at", None)
+        data["tenant_id"] = tid
+        existing = self.client.table("workspace_ai_settings").select("id").eq("tenant_id", tid).limit(1).execute()
+        if existing.data:
+            row_id = int(existing.data[0]["id"])
+            self.client.table("workspace_ai_settings").update(data).eq("id", row_id).execute()
+            return row_id
+        res = self.client.table("workspace_ai_settings").insert(data).execute()
+        return int(res.data[0]["id"]) if res.data else 0
+
+    # ── Agent Browser / Audit traces ─────────────────────────────────────
+
+    def create_agent_browser_session(self, session: AgentBrowserSession, tenant_id: str | None = None) -> dict | None:
+        tid = tenant_id or self._tenant_id
+        if not tid:
+            raise ValueError("tenant_id is required to create a browser session")
+        data = {k: v for k, v in session.__dict__.items() if v is not None}
+        data.pop("id", None)
+        data.pop("started_at", None)
+        data.pop("updated_at", None)
+        data.pop("closed_at", None)
+        data["tenant_id"] = tid
+        if not data.get("context"):
+            data["context"] = {}
+        res = self.client.table("agent_browser_sessions").insert(data).execute()
+        return dict(res.data[0]) if res.data else None
+
+    def list_agent_browser_sessions(
+        self,
+        tenant_id: str | None = None,
+        session_id: str | None = None,
+        user_id: str | None = None,
+        limit: int = 50,
+    ) -> list[dict]:
+        tid = tenant_id or self._tenant_id
+        q = self.client.table("agent_browser_sessions").select("*")
+        if tid:
+            q = q.eq("tenant_id", tid)
+        if session_id:
+            q = q.eq("session_id", session_id)
+        if user_id:
+            q = q.eq("user_id", user_id)
+        res = q.order("updated_at", desc=True).limit(max(1, min(limit, 200))).execute()
+        return list(res.data or [])
+
+    def update_agent_browser_session(self, browser_session_id: str, values: dict, tenant_id: str | None = None) -> dict | None:
+        tid = tenant_id or self._tenant_id
+        if not browser_session_id:
+            return None
+        data = {k: v for k, v in (values or {}).items() if v is not None}
+        data["updated_at"] = datetime.now(timezone.utc).isoformat()
+        q = self.client.table("agent_browser_sessions").update(data).eq("id", browser_session_id)
+        if tid:
+            q = q.eq("tenant_id", tid)
+        res = q.execute()
+        return dict(res.data[0]) if res.data else None
+
+    def add_agent_browser_step(self, step: AgentBrowserStep, tenant_id: str | None = None) -> int:
+        tid = tenant_id or self._tenant_id
+        if not tid:
+            raise ValueError("tenant_id is required to add a browser step")
+        data = {k: v for k, v in step.__dict__.items() if v is not None}
+        data.pop("id", None)
+        data.pop("created_at", None)
+        data["tenant_id"] = tid
+        if not data.get("metadata"):
+            data["metadata"] = {}
+        res = self.client.table("agent_browser_steps").insert(data).execute()
+        return int(res.data[0]["id"]) if res.data else 0
+
+    def log_agent_audit_event(self, event: AgentAuditLog, tenant_id: str | None = None) -> int:
+        tid = tenant_id or self._tenant_id
+        if not tid:
+            raise ValueError("tenant_id is required to log an agent audit event")
+        data = {k: v for k, v in event.__dict__.items() if v is not None}
+        data.pop("id", None)
+        data.pop("created_at", None)
+        data["tenant_id"] = tid
+        if not data.get("metadata"):
+            data["metadata"] = {}
+        res = self.client.table("agent_audit_log").insert(data).execute()
+        return int(res.data[0]["id"]) if res.data else 0
+
     # ── Provider Outage Log ────────────────────────────────────────────
 
     def insert_provider_outage_event(self, event) -> int:
@@ -6378,7 +6483,7 @@ class SupabaseStorage(Storage):
 
     # ── AI Usage Log (super-admin) ────────────────────────────────
 
-    def get_ai_usage_stats(self, days: int = 7) -> dict:
+    def get_ai_usage_stats(self, days: int = 7, tenant_id: str | None = None) -> dict:
         """Query ai_usage_log for the admin cost dashboard.
 
         Returns grouped totals by model×agent, a daily time series, and
@@ -6389,12 +6494,12 @@ class SupabaseStorage(Storage):
         cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
 
         try:
-            res = self.client.table("ai_usage_log") \
-                .select("agent,model,tokens_input,tokens_output,cost_usd,created_at") \
-                .gte("created_at", cutoff) \
-                .order("created_at", desc=True) \
-                .limit(50000) \
-                .execute()
+            q = self.client.table("ai_usage_log") \
+                .select("agent,model,tokens_input,tokens_output,cost_usd,created_at,tenant_id") \
+                .gte("created_at", cutoff)
+            if tenant_id:
+                q = q.eq("tenant_id", tenant_id)
+            res = q.order("created_at", desc=True).limit(50000).execute()
             rows = res.data or []
         except Exception:
             rows = []

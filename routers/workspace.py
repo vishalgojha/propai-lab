@@ -10,7 +10,7 @@ from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from routers.common import (
     storage,
@@ -24,12 +24,25 @@ from routers.common import (
     _require_org_permission,
 )
 from routers.protection import bounded_page
-from storage import LLMProvider
+from storage import (
+    LLMProvider,
+    WorkspaceAISettings,
+    AgentBrowserSession,
+    AgentBrowserStep,
+    AgentAuditLog,
+)
 
 router = APIRouter(tags=["workspace"])
 
 # Placeholder — wired from app.py after _probe_provider definition
 _probe_provider = None
+
+
+def _normalize_browser_provider_name(provider_name: str | None) -> str:
+    normalized = str(provider_name or "").strip().lower()
+    if normalized in {"", "playwright", "browser-use-cli", "browser_use"}:
+        return "browser-use"
+    return normalized
 
 
 _PERMISSION_DEFS = [
@@ -453,6 +466,183 @@ async def delete_llm_provider(provider_id: int, user: dict = Depends(require_use
     tenant_id = await asyncio.to_thread(_resolve_active_organization_id, user, tenant_id)
     ok = storage.delete_llm_provider(provider_id, tenant_id=tenant_id)
     return {"deleted": ok}
+
+
+class WorkspaceAISettingsBody(BaseModel):
+    monthly_budget_usd: float | None = None
+    max_rpm: int = 60
+    max_concurrent_calls: int = 8
+    max_browser_sessions: int = 1
+    max_tool_rounds: int = 8
+    browser_enabled: bool = False
+    browser_provider: str = "browser-use"
+    allowed_routes: list[str] = Field(default_factory=list)
+    allowed_actions: list[str] = Field(default_factory=list)
+    notes: str = ""
+
+
+@router.get("/api/workspace/ai-settings")
+async def get_workspace_ai_settings(user: dict = Depends(require_user), tenant_id: str | None = Depends(get_tenant_context)):
+    tenant_id = await asyncio.to_thread(_resolve_active_organization_id, user, tenant_id)
+    settings = await asyncio.to_thread(storage.get_workspace_ai_settings, tenant_id)
+    if not settings:
+        settings = WorkspaceAISettings(
+            tenant_id=tenant_id,
+            browser_provider="browser-use",
+            allowed_routes=["/chat", "/map", "/listings/*", "/brokers/*", "/admin/*"],
+            allowed_actions=["open", "click", "fill", "select", "scroll"],
+        )
+    payload = asdict(settings)
+    payload["browser_provider"] = _normalize_browser_provider_name(payload.get("browser_provider"))
+    usage = await asyncio.to_thread(storage.get_ai_usage_stats, 31, tenant_id)
+    payload["current_month_spend_usd"] = usage.get("total_cost_usd", 0)
+    payload["current_month_calls"] = usage.get("total_calls", 0)
+    return payload
+
+
+@router.post("/api/workspace/ai-settings")
+async def save_workspace_ai_settings(
+    body: WorkspaceAISettingsBody,
+    user: dict = Depends(require_user),
+    tenant_id: str | None = Depends(get_tenant_context),
+):
+    tenant_id = await asyncio.to_thread(_resolve_active_organization_id, user, tenant_id)
+    settings = WorkspaceAISettings(
+        tenant_id=tenant_id,
+        monthly_budget_usd=body.monthly_budget_usd,
+        max_rpm=body.max_rpm,
+        max_concurrent_calls=body.max_concurrent_calls,
+        max_browser_sessions=body.max_browser_sessions,
+        max_tool_rounds=body.max_tool_rounds,
+        browser_enabled=body.browser_enabled,
+        browser_provider=_normalize_browser_provider_name(body.browser_provider or "browser-use"),
+        allowed_routes=body.allowed_routes,
+        allowed_actions=body.allowed_actions,
+        notes=body.notes,
+    )
+    settings_id = await asyncio.to_thread(storage.save_workspace_ai_settings, settings, tenant_id)
+    saved = await asyncio.to_thread(storage.get_workspace_ai_settings, tenant_id)
+    return {"id": settings_id, "settings": asdict(saved) if saved else asdict(settings)}
+
+
+class BrowserSessionBody(BaseModel):
+    session_id: str | None = None
+    task_label: str = ""
+    start_url: str = ""
+    browser_provider: str = "browser-use"
+    context: dict = Field(default_factory=dict)
+
+
+@router.get("/api/agent/browser-sessions")
+async def list_agent_browser_sessions(
+    user: dict = Depends(require_user),
+    tenant_id: str | None = Depends(get_tenant_context),
+    session_id: str | None = None,
+    limit: int = 50,
+):
+    tenant_id = await asyncio.to_thread(_resolve_active_organization_id, user, tenant_id)
+    user_id = str(user.get("id") or "").strip() or None
+    sessions = await asyncio.to_thread(
+        storage.list_agent_browser_sessions,
+        tenant_id,
+        session_id,
+        user_id,
+        limit,
+    )
+    return {"sessions": sessions}
+
+
+@router.post("/api/agent/browser-sessions")
+async def create_agent_browser_session(
+    body: BrowserSessionBody,
+    user: dict = Depends(require_user),
+    tenant_id: str | None = Depends(get_tenant_context),
+):
+    tenant_id = await asyncio.to_thread(_resolve_active_organization_id, user, tenant_id)
+    user_id = str(user.get("id") or "").strip() or None
+    settings = await asyncio.to_thread(storage.get_workspace_ai_settings, tenant_id)
+    max_sessions = int((settings.max_browser_sessions if settings else 1) or 1)
+    open_sessions = await asyncio.to_thread(storage.list_agent_browser_sessions, tenant_id, None, None, 200)
+    active_count = sum(1 for row in open_sessions if str(row.get("status") or "").lower() in {"open", "running"})
+    if active_count >= max_sessions:
+        raise HTTPException(429, "Workspace browser session limit reached")
+    session = AgentBrowserSession(
+        tenant_id=tenant_id,
+        session_id=body.session_id,
+        user_id=user_id,
+        browser_provider=_normalize_browser_provider_name(
+            body.browser_provider or (settings.browser_provider if settings else "browser-use")
+        ),
+        task_label=body.task_label,
+        start_url=body.start_url,
+        current_url=body.start_url,
+        context=body.context or {},
+    )
+    created = await asyncio.to_thread(storage.create_agent_browser_session, session, tenant_id)
+    if not created:
+        raise HTTPException(500, "Could not create browser session")
+    await asyncio.to_thread(
+        storage.log_agent_audit_event,
+        AgentAuditLog(
+            tenant_id=tenant_id,
+            user_id=user_id,
+            session_id=body.session_id,
+            browser_session_id=str(created.get("id") or ""),
+            event_type="browser_session_created",
+            entity_type="browser_session",
+            entity_id=str(created.get("id") or ""),
+            metadata={"task_label": body.task_label, "start_url": body.start_url},
+        ),
+        tenant_id,
+    )
+    return created
+
+
+@router.patch("/api/agent/browser-sessions/{browser_session_id}")
+async def update_agent_browser_session(
+    browser_session_id: str,
+    body: dict,
+    user: dict = Depends(require_user),
+    tenant_id: str | None = Depends(get_tenant_context),
+):
+    tenant_id = await asyncio.to_thread(_resolve_active_organization_id, user, tenant_id)
+    updated = await asyncio.to_thread(storage.update_agent_browser_session, browser_session_id, body, tenant_id)
+    if not updated:
+        raise HTTPException(404, "Browser session not found")
+    return updated
+
+
+class BrowserStepBody(BaseModel):
+    step_index: int = 0
+    action: str = ""
+    target: str = ""
+    url: str = ""
+    status: str = "ok"
+    metadata: dict = Field(default_factory=dict)
+    screenshot_url: str = ""
+
+
+@router.post("/api/agent/browser-sessions/{browser_session_id}/steps")
+async def add_agent_browser_step(
+    browser_session_id: str,
+    body: BrowserStepBody,
+    user: dict = Depends(require_user),
+    tenant_id: str | None = Depends(get_tenant_context),
+):
+    tenant_id = await asyncio.to_thread(_resolve_active_organization_id, user, tenant_id)
+    step = AgentBrowserStep(
+        tenant_id=tenant_id,
+        browser_session_id=browser_session_id,
+        step_index=body.step_index,
+        action=body.action,
+        target=body.target,
+        url=body.url,
+        status=body.status,
+        metadata=body.metadata or {},
+        screenshot_url=body.screenshot_url,
+    )
+    step_id = await asyncio.to_thread(storage.add_agent_browser_step, step, tenant_id)
+    return {"id": step_id}
 
 
 # ── Placeholders (wired by app.py at startup) ──────────────────
