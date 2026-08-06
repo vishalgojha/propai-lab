@@ -489,6 +489,17 @@ def _compact_whatsapp_text(value: object, limit: int = 500, max_lines: int = 8) 
     return "\n".join(normalized[:max_lines])
 
 
+def _whatsapp_posted_date(value: object) -> str:
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+    try:
+        parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        return parsed.strftime("%d %b %Y")
+    except (TypeError, ValueError):
+        return raw[:20]
+
+
 def _workspace_response_to_whatsapp(response: dict) -> str:
     if not isinstance(response, dict):
         return _compact_whatsapp_line(response, 1800) or "I could not process that."
@@ -515,9 +526,11 @@ def _workspace_response_to_whatsapp(response: dict) -> str:
         if block_type == "listing_cards":
             items = block.get("items") or block.get("results") or []
             if isinstance(items, list) and items:
-                if content:
-                    lines.append(content)
-                for item in items[:5]:
+                shown = len(items)
+                trace = response.get("trace") if isinstance(response.get("trace"), dict) else {}
+                total = int(block.get("total") or trace.get("total") or shown)
+                lines.append(f"Showing {shown} of {total} matching properties:")
+                for index, item in enumerate(items[:10], 1):
                     if not isinstance(item, dict):
                         continue
                     heading = (
@@ -543,8 +556,15 @@ def _workspace_response_to_whatsapp(response: dict) -> str:
                     broker_name = str(item.get("broker_name") or "").strip()
                     broker_phone = _normalize_real_phone(item.get("broker_phone"))
                     broker = " / ".join(part for part in [broker_name, broker_phone] if part)
-                    tail = " · ".join(str(part).strip() for part in [price, details, broker] if str(part or "").strip())
-                    lines.append(_compact_whatsapp_line(f"{len(lines) if content else len(lines) + 1}. {heading}: {tail}", 190))
+                    posted = _whatsapp_posted_date(item.get("last_seen") or item.get("posted_at") or item.get("created_at"))
+                    lines.append(_compact_whatsapp_line(f"{index}. {heading} — {price}", 180))
+                    info = " · ".join(str(part).strip() for part in [details, item.get("micro_market"), posted] if str(part or "").strip())
+                    if info:
+                        lines.append(_compact_whatsapp_line(info, 190))
+                    if broker:
+                        lines.append(_compact_whatsapp_line(f"Broker: {broker}", 190))
+                if total > shown:
+                    lines.append("Reply MORE for more options.")
             continue
 
         if block_type == "table":
@@ -760,6 +780,7 @@ async def _run_workspace_agent(
 WHATSAPP SELF-CHAT MODE:
 - The sender is authenticated through their QR-linked WhatsApp connection. Never ask them to log in to the portal.
 - You have access to their live PropAI database through tools. For a search or inventory question, call the tool; never claim database access is unavailable before trying it.
+- LISTING SUBMISSION MODE: If the user says "list a property", "post a property", "add a listing", or provides details after you asked for listing details, this is a submission flow, not a marketplace search. Do not call market_search. Collect or confirm the listing details in a short numbered list. Never say it was posted or saved unless a save tool explicitly confirms it.
 - Keep replies concise and structured for WhatsApp: use short numbered items for intake questions and up to 5 compact bullets for results. Preserve line breaks. For an intake form, use up to 8 short lines.
 - On the first turn only, introduce yourself in one short line as "PropAI" and address the sender by name when a sender name is provided. Do not repeat the introduction on later turns.
 - Never claim a listing/requirement was saved, searched, or found unless the tool result says so.
