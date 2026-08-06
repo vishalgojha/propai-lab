@@ -523,7 +523,7 @@ async def save_workspace_ai_settings(
     try:
         settings_id = await asyncio.to_thread(storage.save_workspace_ai_settings, settings, tenant_id)
         saved = await asyncio.to_thread(storage.get_workspace_ai_settings, tenant_id)
-        return {"id": settings_id, "settings": asdict(saved) if saved else asdict(settings)}
+        return {"id": settings_id, "settings": asdict(saved) if saved else asdict(settings), "saved": True}
     except Exception as exc:
         logging.warning(
             "workspace_ai_settings save failed for tenant %s; returning in-memory defaults: %s",

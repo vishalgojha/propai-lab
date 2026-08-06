@@ -51,6 +51,7 @@ export default function LLMProvidersPage() {
   const [settingsLoading, setSettingsLoading] = useState(false);
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [settingsError, setSettingsError] = useState<string | null>(null);
+  const [settingsSavedNotice, setSettingsSavedNotice] = useState<string | null>(null);
   const [browserSessions, setBrowserSessions] = useState<any[]>([]);
   const [browserSessionsLoading, setBrowserSessionsLoading] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -161,6 +162,7 @@ export default function LLMProvidersPage() {
     if (!aiSettings) return;
     setSettingsSaving(true);
     setSettingsError(null);
+    setSettingsSavedNotice(null);
     try {
       const payload = {
         monthly_budget_usd: aiSettings.monthly_budget_usd,
@@ -185,6 +187,11 @@ export default function LLMProvidersPage() {
         current_month_calls: prev.current_month_calls,
         current_month_spend_usd: prev.current_month_spend_usd,
       } : prev);
+      setSettingsSavedNotice(
+        saved?.saved === false
+          ? "Saved locally, but persistence could not be verified yet."
+          : "Workspace controls saved."
+      );
     } catch (e) {
       setSettingsError(e instanceof Error ? e.message : "Failed to save workspace AI settings");
     } finally {
@@ -438,6 +445,11 @@ export default function LLMProvidersPage() {
           {settingsError && (
             <div className="mb-4 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-300">
               {settingsError}
+            </div>
+          )}
+          {settingsSavedNotice && (
+            <div className="mb-4 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-200">
+              {settingsSavedNotice}
             </div>
           )}
 
