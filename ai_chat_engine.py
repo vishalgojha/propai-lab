@@ -368,7 +368,9 @@ def load_live_data(db_path):
         "SELECT p.intent AS purpose, p.bhk, p.price, p.price_unit, p.area_sqft, "
         "p.furnishing, p.building_name, p.micro_market AS locality, "
         "p.broker_name, p.broker_phone, "
-        "p.forwarded, p.created_at AS posted_at, "
+        # parsed_output_unified is a live projection over the typed tables;
+        # it intentionally does not expose the legacy forwarded column.
+        "p.created_at AS posted_at, "
         "r.group_name AS group_name, r.sender AS posted_by, r.timestamp "
         "FROM parsed_output_unified p JOIN raw_messages r ON r.id = p.raw_message_id "
         "ORDER BY p.id DESC LIMIT 10000"
