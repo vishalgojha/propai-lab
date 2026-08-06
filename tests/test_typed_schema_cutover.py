@@ -221,3 +221,12 @@ def test_broker_rera_is_available_on_every_listing_route():
         "commercial_sale_listings", "commercial_rent_listings",
     }:
         assert "broker_rera_number" in set(_TYPED_READ_COLUMNS_BY_TABLE[table].split(","))
+
+
+def test_commercial_sale_read_columns_cover_sale_schema():
+    cols = set(_TYPED_READ_COLUMNS_BY_TABLE["commercial_sale_listings"].split(","))
+    assert {
+        "super_built_up_area_sqft", "saleable_area_sqft", "price_math",
+        "project_inventory", "area_min_sqft", "area_max_sqft",
+        "floor_plate_sqft", "project_status", "inspection_notice_minutes",
+    } <= cols

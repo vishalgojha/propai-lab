@@ -1067,6 +1067,7 @@ def _ai_extraction_to_typed(
         "micro_market": resolved_locality,
         "landmark_name": ai.get("landmark_name"),
         "street_name": ai.get("street_name"),
+        "developer_name": ai.get("developer_name") or ai.get("developer"),
         "broker_id": broker_id,
         "broker_name": ai.get("broker_name") or sender_name or push_name,
         "broker_phone": broker_phone,
@@ -1211,7 +1212,7 @@ def _ai_extraction_to_typed(
             row["cam_applicable"] = ai.get("cam_applicable")
             row["cam_unit"] = ai.get("cam_unit")
             for field in (
-                "broker_rera_number", "floor_level", "floor_count", "possession_status",
+            "broker_rera_number", "floor_level", "floor_count", "possession_status",
                 "possession_date", "availability_status", "rent_inclusions", "license_type",
                 "short_term_allowed", "inspection_notice_minutes", "frontage_ft",
                 "entrance_count", "otla_area_sqft", "otla_area_raw_text", "terrace_area_sqft",
@@ -1221,6 +1222,9 @@ def _ai_extraction_to_typed(
                 "operational_status", "director_cabin_count", "ceo_cabin_present",
                 "cubicle_count", "conference_room_capacity", "meeting_room_capacity",
                 "training_room_capacity", "cafeteria_seat_count", "accounts_area", "lounge_area",
+                "developer_name", "super_built_up_area_sqft", "saleable_area_sqft",
+                "project_inventory", "area_min_sqft", "area_max_sqft", "floor_plate_sqft",
+                "project_status",
             ):
                 if ai.get(field) is not None:
                     row[field] = ai.get(field)

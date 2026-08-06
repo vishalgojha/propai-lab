@@ -366,7 +366,7 @@ def classify_message_type(text: str) -> tuple[str, str]:
 _FOCUSED_FIELDS = {
     ("residential", "sale", False): "bhk, original_bhk, current_bhk, configuration_type, configuration_details, is_converted_unit, is_combination_unit, can_sell_separately, carpet_area_sqft, built_up_area_sqft, super_built_up_area_sqft, balcony_area_sqft, balcony_area_raw_text, terrace_area_sqft, covered_terrace_area_sqft, terrace_area_raw_text, sellable_area_sqft, price, price_basis, price_math, locality, building_name, wing, furnishing_status, unit_condition, availability_status, possession_status, possession_date, bathroom_count, car_parking_count, parking_type, parking_details, floor_range, floor_min, floor_max, floor_label, property_view, view_description, vastu_compliant, age_of_property, building_amenities, amenities, amenities_unverified_claim, brokerage_type, brokerage_context, co_brokered, token_amount, payment_plan, society_restrictions, society_restrictions_raw, showing_instructions, contact_instructions, broker_company, contacts, unstructured_facts, deal_tags, title",
     ("residential", "rent", False): "bhk, original_bhk, current_bhk, configuration_type, configuration_details, is_converted_unit, is_combination_unit, carpet_area_sqft, built_up_area_sqft, balcony_present, balcony_area_sqft, balcony_area_raw_text, terrace_area_sqft, covered_terrace_area_sqft, terrace_area_raw_text, sit_out_present, price, locality, building_name, furnishing_status, unit_condition, availability_status, availability_date_raw, available_from, possession_status, bathroom_count, car_parking_count, parking_type, parking_details, floor_range, floor_min, floor_max, floor_label, wing, has_lift, building_amenities, amenities, amenities_unverified_claim, property_view, view_description, deposit_amount, deposit_months, deposit_raw_text, pet_policy, tenant_type_preference, sharing_allowed, food_preference, lease_term_type, lease_term_min_months, lease_term_max_months, lease_term_raw_text, lock_in_period_months, notice_period_months, brokerage_type, brokerage_context, brokerage_terms_raw, plus_one_deal, fee_sharing_required, client_profile_required, society_restrictions, society_restrictions_raw, broker_company, contacts, company_lease_criteria, showing_instructions, contact_instructions, unstructured_facts, deal_tags, title",
-    ("commercial", "sale", False): "commercial_use_type, carpet_area_sqft, built_up_area_sqft, chargeable_area_sqft, price, price_basis, locality, building_name, fitout_status, occupancy_status, ceiling_height, floor_range, car_parking_count, power_load_kw, cabin_count, director_cabin_count, ceo_cabin_present, cubicle_count, workstation_count, conference_room_count, meeting_room_count, washroom_count, pantry_type, has_central_ac, has_power_backup, has_lift, building_amenities, broker_rera_number, brokerage_type, deal_tags, title",
+    ("commercial", "sale", False): "commercial_use_type, carpet_area_sqft, built_up_area_sqft, chargeable_area_sqft, super_built_up_area_sqft, saleable_area_sqft, price, price_basis, price_math, locality, building_name, fitout_status, occupancy_status, ceiling_height, floor_level, floor_range, car_parking_count, power_load_kw, cabin_count, director_cabin_count, ceo_cabin_present, cubicle_count, workstation_count, conference_room_count, meeting_room_count, washroom_count, pantry_type, reception_area, server_room, storage_area, has_central_ac, has_power_backup, has_lift, terrace_area_sqft, covered_terrace_area_sqft, terrace_area_raw_text, frontage_ft, entrance_count, permitted_use_types, ideal_for, project_inventory, area_min_sqft, area_max_sqft, floor_plate_sqft, project_status, building_amenities, broker_rera_number, brokerage_type, deal_tags, title",
     ("commercial", "rent", False): "commercial_use_type, carpet_area_sqft, built_up_area_sqft, chargeable_area_sqft, price, price_basis, price_math, locality, building_name, fitout_status, ceiling_height, floor_level, floor_range, deposit_amount, deposit_months, deposit_raw_text, cam_amount, cam_applicable, cam_unit, power_load_kw, cabin_count, director_cabin_count, ceo_cabin_present, cubicle_count, workstation_count, conference_room_count, conference_room_capacity, meeting_room_count, meeting_room_capacity, training_room_capacity, cafeteria_seat_count, washroom_count, pantry_type, reception_area, server_room, storage_area, accounts_area, lounge_area, terrace_area_sqft, covered_terrace_area_sqft, terrace_area_raw_text, frontage_ft, entrance_count, otla_area_sqft, otla_area_raw_text, heritage_space, permitted_use_types, ideal_for, automatic_shutter_count, room_count, suite_count, banquet_hall_count, restaurant_count, bar_facility, operational_status, rent_inclusions, possession_status, possession_date, availability_status, inspection_notice_minutes, license_type, short_term_allowed, lease_term_type, lock_in_period_months, notice_period_months, escalation_pct, escalation_frequency, rent_free_period_months, fitout_period_months, lease_deed_type, sub_leasing_allowed, building_amenities, broker_rera_number, brokerage_type, deal_tags, title",
     ("residential", "sale", True): "bhk_options, budget_min, budget_max, area_min_sqft, area_max_sqft, locality_options, building_preferences, furnishing_preference, possession_preference, car_parking_min, buyer_type, transaction_nature, urgency, is_flexible, deal_tags, title",
     ("residential", "rent", True): "bhk_options, budget_min, budget_max, area_min_sqft, area_max_sqft, locality_options, building_preferences, furnishing_preference, possession_preference, deposit_budget_max, tenant_type, nationality, has_pets, car_parking_needed, sharing_acceptable, food_preference, lease_term_preference, company_lease_criteria, urgency, is_flexible, deal_tags, title",
@@ -517,6 +517,38 @@ Commercial rent listing rules:
 """
 
 
+_COMMERCIAL_SALE_EXTRACTION_RULES = """
+Commercial sale listing rules:
+- Commercial sale supply includes offices, shops, showrooms, retail, restaurants,
+  warehouses, and developer/project inventory. Preserve commercial_use_type.
+- A message with multiple options under one building is multiple linked listing
+  items. Keep each option's own area, floor, parking, furnishing, and asking price;
+  never combine the options into one averaged row.
+- A project/developer broadcast with an area range and no specific unit or price
+  is one project_inventory item with area_min_sqft/area_max_sqft, developer name,
+  project_status, floor_plate_sqft, and amenities. Never fabricate one listing per
+  size in the range.
+- Keep carpet, built-up, chargeable, saleable, terrace, and covered-terrace areas
+  separate. Never fold terrace or frontage into carpet. A per-sqft sale quote may
+  be multiplied only when the source explicitly states the pricing area; preserve
+  price_math with rate, basis, area, and formula. Otherwise keep price_per_sqft
+  without inventing total_asking_price.
+- Total quotes such as “₹7.20 Cr” populate total_asking_price. “Negotiable” is a
+  price qualifier/deal tag, not a changed amount. Preserve raw price text.
+- Capture office facilities and capacities: workstations, cabins, director/CEO
+  cabins, cubicles, conference/meeting rooms, pantry, reception, server/storage,
+  parking, lift, power backup, and central AC.
+- Capture frontage, entrances, ceiling height, permitted uses, inspection/access
+  instructions, and project amenities when explicitly stated. Preserve uncertain
+  marketing claims as unverified facts rather than inventing structured values.
+- Broker RERA formats belong in broker_rera_number; property/project RERA remains
+  separate. Extract all explicit contacts, up to 8, with the primary broker phone
+  kept distinct from the contacts list.
+- Preserve the original source evidence and broker wording. Never merge inventory
+  from different brokers; same building does not mean the same office/unit.
+"""
+
+
 def _get_extraction_prompt(
     asset_type: str,
     transaction_type: str,
@@ -533,6 +565,8 @@ def _get_extraction_prompt(
         route_rules = _RESIDENTIAL_RENT_EXTRACTION_RULES
     elif (asset_type, transaction_type, is_requirement) == ("commercial", "rent", False):
         route_rules = _COMMERCIAL_RENT_EXTRACTION_RULES
+    elif (asset_type, transaction_type, is_requirement) == ("commercial", "sale", False):
+        route_rules = _COMMERCIAL_SALE_EXTRACTION_RULES
     expected_listing_type = "requirement" if is_requirement else transaction_type
     listing_type_rule = (
         f'- listing_type: exactly "{expected_listing_type}".'
@@ -639,6 +673,8 @@ _VALID_CHARGE_TYPES = frozenset({"fixed", "percent_of_price"})
 _PASSTHROUGH_FIELDS = frozenset({
     "built_up_area_sqft", "chargeable_area_sqft", "area_raw_text",
     "broker_rera_number", "floor_level", "floor_count", "possession_status",
+    "super_built_up_area_sqft", "saleable_area_sqft", "project_inventory",
+    "area_min_sqft", "area_max_sqft", "floor_plate_sqft", "project_status",
     "possession_date", "availability_status", "price_math", "rent_inclusions",
     "license_type", "short_term_allowed", "inspection_notice_minutes",
     "frontage_ft", "entrance_count", "otla_area_sqft", "otla_area_raw_text",
@@ -694,7 +730,8 @@ _NUMERIC_PASSTHROUGH_FIELDS = frozenset({
     "min_power_load_kw", "original_bhk", "current_bhk", "floor_min",
     "floor_max", "balcony_area_sqft", "terrace_area_sqft",
     "covered_terrace_area_sqft", "sellable_area_sqft",
-    "computed_total_asking_price",
+    "computed_total_asking_price", "super_built_up_area_sqft", "saleable_area_sqft",
+    "floor_plate_sqft",
     "frontage_ft", "otla_area_sqft", "entrance_count", "automatic_shutter_count",
     "room_count", "suite_count", "banquet_hall_count", "restaurant_count",
     "director_cabin_count", "cubicle_count", "conference_room_capacity",

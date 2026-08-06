@@ -250,6 +250,46 @@ def test_commercial_package_is_monthly_rent_not_deposit_or_cam():
     assert "cam_amount" not in row
 
 
+def test_commercial_sale_keeps_options_and_uses_total_price():
+    table, row = _item(
+        "Ackruti Star office on sale, 1800 sqft, middle floor, 2 parking, furnished, ₹7.20 Cr nego",
+        property_category="commercial",
+        listing_type="sale",
+        building_name="Ackruti Star",
+        carpet_area_sqft=1800,
+        floor_level="middle",
+        car_parking_count=2,
+        fitout_status="fully_furnished",
+        price={"amount": 7.20, "unit": "cr", "raw_price_text": "₹7.20 Cr"},
+        price_qualifier="negotiable",
+        inspection_notice_minutes=120,
+        broker_rera_number="A51900002370",
+    )
+    assert table == "commercial_sale_listings"
+    assert row["total_asking_price"] == 72_000_000
+    assert row["carpet_area_sqft"] == 1800
+    assert row["floor_level"] == "middle"
+    assert row["car_parking_count"] == 2
+    assert row["broker_rera_number"] == "A51900002370"
+    assert "monthly_rent" not in row
+    assert "rent_per_sqft" not in row
+
+
+def test_commercial_sale_psf_math_requires_explicit_pricing_basis():
+    table, row = _item(
+        "Commercial office for sale, 4800 sqft, ₹80,000 PSF",
+        property_category="commercial",
+        listing_type="sale",
+        carpet_area_sqft=4800,
+        price_basis="carpet_per_sqft",
+        price={"amount": 80_000, "unit": "per_sqft", "raw_price_text": "₹80,000 PSF"},
+    )
+    assert table == "commercial_sale_listings"
+    assert row["price_per_sqft"] == 80_000
+    assert row["total_asking_price"] == 384_000_000
+    assert row["price_math"]["basis"] == "carpet_area_sqft"
+
+
 def test_colon_price_and_deposit_shorthand_are_source_grounded():
     table, row = _item(
         "1 BHK sale, 2:25 Cr",
