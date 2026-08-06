@@ -166,6 +166,81 @@ async def _market_search_with_summary(
     return chat_engine.deterministic_market_response(query, search_result, sources)
 
 
+async def _current_listing_search(query: dict, tenant_id: str | None, user_id: str | None) -> dict:
+    """Run a parsed inventory query through the current Supabase agent tool.
+
+    The old ``market_search`` implementation depends on the legacy CSV/SQLite
+    source bundle. The workspace agent's inventory contract is instead
+    ``agent_tools.search_listings`` against the tenant-scoped typed tables.
+    """
+    from agent_tools import execute_tool as execute_agent_tool
+
+    markets = [str(value).strip() for value in (query.get("micro_markets") or []) if str(value).strip()]
+    locality = markets[0] if markets else ""
+    intent = str(query.get("intent") or "RENT").upper()
+    listing_type = "sale" if intent in {"SELL", "SALE", "BUY", "PURCHASE"} else "rent"
+    property_type = "commercial" if intent == "COMMERCIAL" else "residential"
+    tool_args = {
+        "locality": locality,
+        "listing_type": listing_type,
+        "property_type": property_type,
+    }
+    if query.get("bhk") not in (None, ""):
+        tool_args["bhk"] = query["bhk"]
+    if query.get("price_min") is not None:
+        tool_args["price_min"] = query["price_min"]
+    if query.get("price_max") is not None:
+        tool_args["price_max"] = query["price_max"]
+
+    result = await asyncio.to_thread(
+        execute_agent_tool,
+        "search_listings",
+        tool_args,
+        storage.client,
+        tenant_id,
+        user_id=user_id,
+    )
+    if result.get("status") != "ok":
+        raise RuntimeError(result.get("error") or "Supabase listing search failed")
+
+    normalized = []
+    for row in result.get("results") or []:
+        price = row.get("price")
+        listing_intent = "SELL" if listing_type == "sale" else "RENT"
+        normalized.append({
+            "listing_id": row.get("listing_id") or row.get("id"),
+            "fingerprint": row.get("fingerprint"),
+            "intent": listing_intent,
+            "bhk": row.get("bhk"),
+            "price": price,
+            "price_unit": "INR",
+            "price_formatted": chat_engine.fmt_listing_price(price, "INR", listing_intent),
+            "area_sqft": row.get("carpet_area_sqft"),
+            "furnishing": row.get("furnishing"),
+            "location_label": row.get("micro_market"),
+            "building_name": row.get("building_name") or "Unknown Building",
+            "landmark_name": row.get("landmark_name"),
+            "micro_market": row.get("micro_market"),
+            "broker_name": row.get("broker_name"),
+            "broker_phone": row.get("broker_phone"),
+            "first_seen": row.get("created_at"),
+            "last_seen": row.get("created_at"),
+            "raw_message_id": row.get("raw_message_id"),
+            "source": "residential_sale_listings" if listing_type == "sale" else "residential_rent_listings",
+        })
+
+    payload = _json.dumps({
+        "type": "listing_results",
+        "total": len(normalized),
+        "results": normalized,
+        "showing": len(normalized),
+        "offset": 0,
+        "has_more": False,
+        "remaining": 0,
+    }, default=str)
+    return chat_engine.deterministic_market_response(query, payload, {"supabase_agent": True})
+
+
 def _preferred_workspace_provider(tenant_id: str | None) -> dict:
     """Resolve an active provider saved by this workspace only."""
     try:
@@ -1288,8 +1363,9 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
         sources.update(live)
     except Exception:
         pass
-    if not sources:
-        return _wrap_chat_response({"error": "no_data", "content": "No data found. Check CSV files and database."}, _is_inbox)
+    # The legacy CSV/SQLite bundle is optional context for the conversational
+    # agent. Inventory search must not fail just because that bundle is empty;
+    # strict searches below use the tenant-scoped Supabase agent tools.
     memory.persist()
 
     active_sources = sources
@@ -1356,16 +1432,10 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
 
     if deterministic_query and use_grounded_market_search:
         try:
-            search_result = await asyncio.to_thread(
-                chat_engine.execute_tool,
-                "market_search",
+            response = await _current_listing_search(
                 deterministic_query,
-                active_sources,
-                getattr(storage, "db", None),
                 tenant_id,
-            )
-            response = chat_engine.deterministic_market_response(
-                deterministic_query, search_result, active_sources
+                str(user.get("id") or ""),
             )
             response = _annotate_chat_response(response, source_mode)
             _persist("user", last_user)
