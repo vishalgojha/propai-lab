@@ -5719,13 +5719,23 @@ class SupabaseStorage(Storage):
         tid = tenant_id or self._tenant_id
         if not tid:
             return None
-        res = (
-            self.client.table("workspace_ai_settings")
-            .select("*")
-            .eq("tenant_id", tid)
-            .limit(1)
-            .execute()
-        )
+        try:
+            res = (
+                self.client.table("workspace_ai_settings")
+                .select("*")
+                .eq("tenant_id", tid)
+                .limit(1)
+                .execute()
+            )
+        except Exception as exc:
+            import logging
+
+            logging.warning(
+                "workspace_ai_settings read failed for tenant %s; falling back to defaults: %s",
+                tid,
+                exc,
+            )
+            return None
         return dict_to_dataclass(WorkspaceAISettings, res.data[0]) if res.data else None
 
     def save_workspace_ai_settings(self, settings: WorkspaceAISettings, tenant_id: str | None = None) -> int:
