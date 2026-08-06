@@ -268,7 +268,10 @@ def _listing_query(client: Any, args: dict, tenant_id: str | None) -> list[dict]
         "broker_id,broker_name,broker_phone,bhk,transaction_type,carpet_area_sqft,"
         f"{price_column},{unit_price_column},created_at,needs_review"
     )
-    query = _tenant_query(client, table, tenant_id, columns).ilike("micro_market", f"%{locality}%")
+    # Listings are marketplace supply and intentionally cross-tenant: a broker
+    # may search inventory posted by any broker. Private objects (clients,
+    # requirements, leads, and notes) remain tenant-scoped below.
+    query = client.table(table).select(columns).ilike("micro_market", f"%{locality}%")
     bhk = _number(args.get("bhk"))
     if bhk is not None:
         # BHK is a discrete configuration, not a text search. Searching for
