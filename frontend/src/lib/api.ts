@@ -882,8 +882,24 @@ export interface AgentActionResult {
   note?: Record<string, unknown> | null;
 }
 
+export interface BrowserActionResult extends ChatResponse {}
+
 export function confirmAgentAction(confirmationToken: string): Promise<AgentActionResult> {
   return fetchJSON<AgentActionResult>("/ai/chat/confirm", {
+    method: "POST",
+    body: JSON.stringify({ confirmation_token: confirmationToken }),
+  });
+}
+
+export function confirmBrowserAction(confirmationToken: string): Promise<BrowserActionResult> {
+  return fetchJSON<BrowserActionResult>("/ai/chat/browser/confirm", {
+    method: "POST",
+    body: JSON.stringify({ confirmation_token: confirmationToken }),
+  });
+}
+
+export function declineBrowserAction(confirmationToken: string): Promise<BrowserActionResult> {
+  return fetchJSON<BrowserActionResult>("/ai/chat/browser/decline", {
     method: "POST",
     body: JSON.stringify({ confirmation_token: confirmationToken }),
   });

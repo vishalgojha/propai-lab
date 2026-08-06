@@ -1,4 +1,5 @@
 """AI chat, query, and promotion routes."""
+import base64
 import asyncio
 import logging
 import os
@@ -332,9 +333,15 @@ class ChatRequest(BaseModel):
     session_id: str = ""
     broker_phone: str = ""
     source: str = ""
+    browser_approval_token: str = ""
+    persist_user_turn: bool = True
 
 
 class ConfirmAgentActionRequest(BaseModel):
+    confirmation_token: str
+
+
+class ConfirmBrowserActionRequest(BaseModel):
     confirmation_token: str
 
 
@@ -403,6 +410,49 @@ _AGENT_ACTION_SIGNALS = re.compile(
     r"create\s+(?:a\s+)?(?:lead|candidate)|log\s+(?:an\s+)?internal\s+note)\b",
     re.IGNORECASE,
 )
+
+_BROWSER_ACTION_SIGNALS = re.compile(
+    r"\b(?:browser|browser-use|browse|browsing|click|clicked|tap|open(?:\s+(?:the|a))?\s+(?:page|site|website|listing|result)|"
+    r"navigate|navigate(?:s|d)?|scroll|type into|fill(?:\s+in)?|select(?:\s+an)?|"
+    r"use\s+browser(?:\s+actions?)?|go to|open propai|propai page|website)\b",
+    re.IGNORECASE,
+)
+
+
+def _browser_approval_secret() -> bytes:
+    secret = os.getenv("PROPAI_AGENT_CONFIRMATION_SECRET") or os.getenv("SUPABASE_JWT_SECRET")
+    if not secret:
+        raise RuntimeError("PROPAI_AGENT_CONFIRMATION_SECRET is required for browser approvals")
+    return secret.encode()
+
+
+def make_browser_approval_token(session_id: str, tenant_id: str | None, user_id: str | None) -> str:
+    payload = {
+        "session_id": session_id,
+        "tenant_id": tenant_id,
+        "user_id": user_id,
+        "exp": int(time.time()) + 900,
+    }
+    body = base64.urlsafe_b64encode(_json.dumps(payload, separators=(",", ":")).encode()).decode().rstrip("=")
+    signature = hmac.new(_browser_approval_secret(), body.encode(), hashlib.sha256).hexdigest()
+    return f"{body}.{signature}"
+
+
+def _read_browser_approval_token(token: str, tenant_id: str | None, user_id: str | None) -> dict:
+    try:
+        body, signature = token.split(".", 1)
+        expected = hmac.new(_browser_approval_secret(), body.encode(), hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(signature, expected):
+            raise ValueError("invalid browser approval signature")
+        decoded = base64.urlsafe_b64decode(body + "=" * (-len(body) % 4))
+        payload = _json.loads(decoded)
+    except (ValueError, json.JSONDecodeError, UnicodeDecodeError) as exc:
+        raise ValueError("invalid browser approval token") from exc
+    if int(payload.get("exp") or 0) < int(time.time()):
+        raise ValueError("browser approval expired")
+    if str(payload.get("tenant_id") or "") != str(tenant_id or "") or str(payload.get("user_id") or "") != str(user_id or ""):
+        raise ValueError("browser approval does not belong to this user/workspace")
+    return dict(payload)
 
 
 def _is_analytics_or_ops_query(text: str) -> bool:
@@ -1114,6 +1164,84 @@ async def confirm_agent_action(
     return result
 
 
+@router.post("/api/ai/chat/browser/confirm")
+async def confirm_browser_action(
+    req: ConfirmBrowserActionRequest,
+    user: dict = Depends(require_user),
+    tenant_id: str | None = Depends(get_tenant_context),
+):
+    tenant_id = await asyncio.to_thread(_resolve_active_organization_id, user, tenant_id)
+    payload = _read_browser_approval_token(req.confirmation_token, tenant_id, str(user.get("id") or ""))
+    session_id = str(payload.get("session_id") or "").strip()
+    if not session_id:
+        raise HTTPException(400, "Browser approval token is missing a session id")
+    session = await _owned_chat_session(session_id, user, tenant_id)
+    messages = await asyncio.to_thread(storage.get_ai_chat_messages, session_id, tenant_id=tenant_id)
+    forwarded = ChatRequest(
+        messages=messages,
+        api_key="",
+        model="",
+        session_id=session_id,
+        broker_phone=str(session.get("broker_phone") or ""),
+        source="inbox",
+        browser_approval_token=req.confirmation_token,
+        persist_user_turn=False,
+    )
+    return await ai_chat(forwarded, user=user, tenant_id=tenant_id)
+
+
+@router.post("/api/ai/chat/browser/decline")
+async def decline_browser_action(
+    req: ConfirmBrowserActionRequest,
+    user: dict = Depends(require_user),
+    tenant_id: str | None = Depends(get_tenant_context),
+):
+    tenant_id = await asyncio.to_thread(_resolve_active_organization_id, user, tenant_id)
+    payload = _read_browser_approval_token(req.confirmation_token, tenant_id, str(user.get("id") or ""))
+    session_id = str(payload.get("session_id") or "").strip()
+    if not session_id:
+        raise HTTPException(400, "Browser approval token is missing a session id")
+    session = await _owned_chat_session(session_id, user, tenant_id)
+    broker = await asyncio.to_thread(
+        _load_chat_broker_context,
+        session,
+        user,
+        str(session.get("broker_phone") or ""),
+        tenant_id,
+    )
+    messages = await asyncio.to_thread(storage.get_ai_chat_messages, session_id, tenant_id=tenant_id)
+    effective_messages = [
+        {"role": row.get("role"), "content": str(row.get("content") or "")}
+        for row in messages
+        if row.get("role") in {"user", "assistant", "system"} and str(row.get("content") or "").strip()
+    ]
+    providers = _workspace_provider_candidates(tenant_id, "")
+    try:
+        reply = await _run_with_provider_failover(
+            lambda provider: chat_engine.get_conversational_reply(
+                effective_messages,
+                api_key=provider["api_key"],
+                model=provider["model"] or None,
+                base_url=provider["base_url"] or None,
+                broker=broker,
+            ),
+            providers,
+            timeout=60,
+        )
+        text = (reply.content or "").strip() or "I can help with that."
+        await asyncio.to_thread(storage.add_chat_message, session_id, "assistant", text, tenant_id=tenant_id, blocks=[{"type": "greeting", "body": text}])
+        return {
+            "content": text,
+            "blocks": [{"type": "greeting", "body": text}],
+            "sources": [],
+            "status_steps": [],
+            "trace": {"route": "browser_decline_conversational"},
+        }
+    except Exception:
+        _logger.exception("Browser decline conversational reply failed for session=%s", session_id)
+        raise HTTPException(500, "Could not generate the conversational fallback")
+
+
 @router.delete("/api/ai/chat/sessions/{session_id}")
 async def delete_chat_session(session_id: str, user: dict = Depends(require_user), tenant_id: str | None = Depends(get_tenant_context)):
     tenant_id = tenant_id or await asyncio.to_thread(_resolve_active_organization_id, user, None)
@@ -1260,7 +1388,7 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
             break
     # Save the user turn before any provider/search work. A failed provider
     # must not make the conversation disappear on refresh.
-    if last_user:
+    if last_user and req.persist_user_turn:
         _persist("user", last_user)
         _maybe_title(last_user)
 
@@ -1305,6 +1433,7 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
     if last_user and (
         (_is_conversational_explanation(last_user) or not _has_query_signals(last_user))
         and not _AGENT_ACTION_SIGNALS.search(last_user)
+        and not (_BROWSER_ACTION_SIGNALS.search(last_user) and bool(workspace_ai_settings and getattr(workspace_ai_settings, "browser_enabled", False)))
     ):
         try:
             reply = await _run_with_provider_failover(
@@ -1356,6 +1485,32 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
                 "sources": [],
                 "trace": {"route": "conversational_error"},
             }, _is_inbox)
+
+    if last_user and _BROWSER_ACTION_SIGNALS.search(last_user) and bool(workspace_ai_settings and getattr(workspace_ai_settings, "browser_enabled", False)) and not str(req.browser_approval_token or "").strip():
+        prompt_text = "This looks like a browser task. Choose whether to use browser actions on PropAI or keep it conversational."
+        browser_token = make_browser_approval_token(session_id, tenant_id, str(user.get("id") or ""))
+        _persist("assistant", prompt_text, blocks=[{
+            "type": "confirmation",
+            "title": "Use browser actions?",
+            "body": "I can open PropAI pages, click through listings, or stay conversational and answer in text only.",
+            "tool": "browser",
+            "mode": "browser",
+            "confirmation_token": browser_token,
+        }])
+        return _wrap_chat_response({
+            "content": prompt_text,
+            "blocks": [{
+                "type": "confirmation",
+                "title": "Use browser actions?",
+                "body": "I can open PropAI pages, click through listings, or stay conversational and answer in text only.",
+                "tool": "browser",
+                "mode": "browser",
+                "confirmation_token": browser_token,
+            }],
+            "sources": [],
+            "status_steps": ["Browser approval required"],
+            "trace": {"route": "browser_permission_prompt"},
+        }, _is_inbox)
 
     if last_user and memory.detect_topic_change(last_user) and len(memory.working) > 2:
         memory.compact_topic()
