@@ -289,7 +289,12 @@ export interface RawMessage {
   building_name?: string;
   micro_market?: string;
   landmark_name?: string;
+  summary_title?: string;
   parsed_intent?: string;
+  intent?: string;
+  observation_type?: string;
+  listing_count?: number;
+  requirement_count?: number;
   message_count?: number;
   latest_message_at?: string;
   duplicate_count?: number;
