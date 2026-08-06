@@ -1259,11 +1259,11 @@ def _market_search_tool():
                         "description": "Alternative micro markets to search together, e.g. ['Bandra East', 'BKC']",
                     },
                     "price_max": {
-                        "type": "number",
+                        "type": "string",
                         "description": "Maximum price filter (in rupees, e.g. 20000000 for ₹2 Cr)",
                     },
                     "price_min": {
-                        "type": "number",
+                        "type": "string",
                         "description": "Minimum price filter (in rupees)",
                     },
                     "furnishing": {
