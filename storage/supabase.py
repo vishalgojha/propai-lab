@@ -2420,6 +2420,7 @@ class SupabaseStorage(Storage):
             "oc_status": data.get("oc_status"),
             "ceiling_height": data.get("ceiling_height"),
             "commercial_use_type": data.get("commercial_use_type") or data.get("property_type"),
+            "occupancy_status": data.get("occupancy_type"),
             "developer_name": data.get("developer"),
             "price_raw_text": price_obj.get("raw_price_text") or str(price_value) if price_value is not None else None,
             "price_basis": data.get("price_basis"),
@@ -2437,11 +2438,15 @@ class SupabaseStorage(Storage):
             "price_per_sqft": (
                 data.get("price_per_sqft")
                 if data.get("price_per_sqft") is not None
+                and transaction_type == "sale"
+                and str(price_unit).lower() in {"per_sqft", "psf"}
                 else (price_value if transaction_type == "sale" and str(price_unit).lower() in {"per_sqft", "psf"} else None)
             ),
             "rent_per_sqft": (
                 data.get("rent_per_sqft")
                 if data.get("rent_per_sqft") is not None
+                and transaction_type == "rent"
+                and str(price_unit).lower() in {"per_sqft", "psf"}
                 else (price_value if transaction_type == "rent" and str(price_unit).lower() in {"per_sqft", "psf"} else None)
             ),
             "deposit_amount": data.get("deposit_amount"),
@@ -2595,6 +2600,28 @@ class SupabaseStorage(Storage):
             row = {k: v for k, v in row.items() if v is not None}
         else:
             row = {k: v for k, v in row.items() if v is not None}
+
+        # A corrected extraction can change route (rent <-> sale, or
+        # residential <-> commercial).  Because each route has its own typed
+        # table, an upsert in the new table alone leaves the old projection
+        # alive and the public UNION view shows the stale extraction again.
+        # Remove only the same raw message/listing index in the other typed
+        # listing tables; requirements are intentionally excluded.
+        raw_message_id = row.get("raw_message_id")
+        listing_index = row.get("listing_index", 0)
+        if raw_message_id and not table_name.endswith("_requirements"):
+            for stale_table in _TYPED_LISTING_TABLE_NAMES:
+                if stale_table == table_name:
+                    continue
+                try:
+                    stale = self.client.table(stale_table).delete().eq(
+                        "raw_message_id", raw_message_id
+                    ).eq("listing_index", listing_index)
+                    if row.get("tenant_id"):
+                        stale = stale.eq("tenant_id", row["tenant_id"])
+                    stale.execute()
+                except Exception as exc:
+                    print(f"[storage] stale typed route cleanup failed for {stale_table}: {exc}", flush=True)
         result = self.client.table(table_name).upsert(row, on_conflict="source_fingerprint").execute()
         if not result.data:
             return 0
@@ -3596,7 +3623,7 @@ class SupabaseStorage(Storage):
         allowed = {
             "residential_sale_listings": {"raw_message_id","tenant_id","listing_index","source_fingerprint","legacy_source_id","asset_type","transaction_type","building_name","locality_raw","locality_resolved","micro_market","landmark_name","broker_id","broker_name","broker_phone","summary_title","raw_payload","deal_tags","additional_charges","validation_flags","needs_review","extraction_confidence","bhk","carpet_area_sqft","built_up_area_sqft","area_raw_text","total_asking_price","price_per_sqft","price_raw_text","price_basis","furnishing_status","possession_status","possession_date","floor_range","car_parking_count","parking_type","oc_status","brokerage_type","building_amenities","unit_amenities","amenities_unverified_claim","configuration_type"},
             "residential_rent_listings": {"raw_message_id","tenant_id","listing_index","source_fingerprint","legacy_source_id","asset_type","transaction_type","building_name","locality_raw","locality_resolved","micro_market","landmark_name","broker_id","broker_name","broker_phone","summary_title","raw_payload","deal_tags","additional_charges","validation_flags","needs_review","extraction_confidence","bhk","carpet_area_sqft","built_up_area_sqft","area_raw_text","monthly_rent","rent_per_sqft","price_raw_text","price_basis","furnishing_status","possession_status","available_from","floor_range","car_parking_count","parking_type","deposit_amount","deposit_applicable","lease_term_type","brokerage_type","building_amenities","unit_amenities","amenities_unverified_claim","pet_policy","tenant_type_preference","sharing_allowed","company_lease_criteria","tenant_nationality_preference"},
-            "commercial_sale_listings": {"raw_message_id","tenant_id","listing_index","source_fingerprint","legacy_source_id","asset_type","transaction_type","building_name","locality_raw","locality_resolved","micro_market","landmark_name","broker_id","broker_name","broker_phone","summary_title","raw_payload","deal_tags","additional_charges","validation_flags","needs_review","extraction_confidence","commercial_use_type","carpet_area_sqft","built_up_area_sqft","area_raw_text","total_asking_price","price_per_sqft","price_raw_text","price_basis","fitout_status","ceiling_height","floor_range","car_parking_count","parking_type","oc_status","brokerage_type","building_amenities"},
+            "commercial_sale_listings": {"raw_message_id","tenant_id","listing_index","source_fingerprint","legacy_source_id","asset_type","transaction_type","building_name","locality_raw","locality_resolved","micro_market","landmark_name","broker_id","broker_name","broker_phone","summary_title","raw_payload","deal_tags","additional_charges","validation_flags","needs_review","extraction_confidence","commercial_use_type","occupancy_status","carpet_area_sqft","built_up_area_sqft","area_raw_text","total_asking_price","price_per_sqft","price_raw_text","price_basis","fitout_status","ceiling_height","floor_range","car_parking_count","parking_type","oc_status","brokerage_type","building_amenities"},
             "commercial_rent_listings": {"raw_message_id","tenant_id","listing_index","source_fingerprint","legacy_source_id","asset_type","transaction_type","building_name","locality_raw","locality_resolved","micro_market","landmark_name","broker_id","broker_name","broker_phone","summary_title","raw_payload","deal_tags","additional_charges","validation_flags","needs_review","extraction_confidence","commercial_use_type","carpet_area_sqft","built_up_area_sqft","area_raw_text","monthly_rent","rent_per_sqft","price_raw_text","price_basis","fitout_status","ceiling_height","floor_range","car_parking_count","parking_type","deposit_amount","deposit_applicable","lease_term_type","brokerage_type","building_amenities"},
         }[table]
         typed = {k: v for k, v in typed.items() if v is not None and k in allowed}

@@ -916,7 +916,16 @@ def _ai_extraction_to_typed(
     asset = str(ai.get("classified_asset_type") or ai.get("property_category") or asset).lower()
     if asset not in {"residential", "commercial"}:
         asset = "residential"
-    tx = str(ai.get("classified_transaction_type") or classified_tx).lower()
+    # `listing_type` is the contract used by the extraction schema and is
+    # source-grounded for this item.  Some providers have historically
+    # emitted a conflicting classified_transaction_type (for example,
+    # listing_type=sale with classified_transaction_type=rent); routing on
+    # the latter sends the row into the wrong typed table.
+    listing_type = str(ai.get("listing_type") or "").strip().lower()
+    if listing_type in {"sale", "rent"}:
+        tx = listing_type
+    else:
+        tx = str(ai.get("classified_transaction_type") or classified_tx).lower()
     if tx not in {"sale", "rent"}:
         tx = "rent" if re.search(r"\b(?:rent|rental|lease|monthly|deposit)\b", raw_text or "", re.I) else "sale"
     is_requirement = bool(
