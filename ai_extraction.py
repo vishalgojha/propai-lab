@@ -25,6 +25,7 @@ import os
 import re
 import time
 from datetime import datetime, timezone
+from threading import Lock
 from typing import Optional
 
 from openai import OpenAI
@@ -163,6 +164,51 @@ _PROVIDERS.sort(key=_extraction_provider_priority)
 # Round-robin pointer
 _rr_index = 0
 _rr_lock = __import__("threading").Lock()
+_provider_cooldowns: dict[str, float] = {}
+_provider_cooldown_lock = Lock()
+
+
+def _response_headers(value) -> dict[str, str]:
+    """Return the small set of rate-limit headers exposed by an SDK object."""
+    headers = getattr(value, "headers", None)
+    if headers is None:
+        response = getattr(value, "response", None)
+        headers = getattr(response, "headers", None)
+    if not headers:
+        return {}
+    wanted = (
+        "retry-after", "x-ratelimit-limit", "x-ratelimit-remaining",
+        "x-ratelimit-reset", "ratelimit-limit", "ratelimit-remaining",
+        "ratelimit-reset",
+    )
+    return {
+        key: str(headers[key])
+        for key in wanted
+        if key in headers
+    }
+
+
+def _retry_after_seconds(headers: dict[str, str]) -> float:
+    raw = headers.get("retry-after", "")
+    try:
+        return max(1.0, min(120.0, float(raw)))
+    except (TypeError, ValueError):
+        return 5.0
+
+
+def _wait_for_provider_cooldown(provider_name: str) -> None:
+    with _provider_cooldown_lock:
+        remaining = _provider_cooldowns.get(provider_name, 0.0) - time.monotonic()
+    if remaining > 0:
+        time.sleep(remaining)
+
+
+def _cooldown_provider(provider_name: str, seconds: float) -> None:
+    with _provider_cooldown_lock:
+        _provider_cooldowns[provider_name] = max(
+            _provider_cooldowns.get(provider_name, 0.0),
+            time.monotonic() + seconds,
+        )
 
 
 def _next_provider() -> dict | None:
@@ -1461,6 +1507,7 @@ def _call_provider(
 
     started = time.monotonic()
     try:
+        _wait_for_provider_cooldown(provider["name"])
         client = OpenAI(api_key=provider["api_key"], base_url=provider["base_url"])
         request = dict(
             model=provider["model"],
@@ -1477,6 +1524,9 @@ def _call_provider(
         if provider.get("reasoning_effort"):
             request["reasoning_effort"] = provider["reasoning_effort"]
         resp = client.chat.completions.create(**request)
+        rate_headers = _response_headers(resp)
+        if rate_headers:
+            _logger.info("Provider %s rate-limit headers: %s", provider["name"], rate_headers)
         usage = getattr(resp, "usage", None)
         tokens_in = getattr(usage, "prompt_tokens", 0) or 0
         tokens_out = getattr(usage, "completion_tokens", 0) or 0
@@ -1546,7 +1596,14 @@ def _call_provider(
         status = getattr(exc, "status_code", None) or getattr(exc, "code", None)
         elapsed = time.monotonic() - started
         if status == 429:
-            _logger.info("Provider %s rate-limited (429), will retry next key", provider["name"])
+            rate_headers = _response_headers(exc)
+            cooldown = _retry_after_seconds(rate_headers)
+            _cooldown_provider(provider["name"], cooldown)
+            _logger.warning(
+                "Provider %s rate-limited (429); cooling down %.1fs headers=%s",
+                provider["name"], cooldown, rate_headers or "unavailable",
+            )
+            return "RATE_LIMITED"
         else:
             _logger.warning(
                 "Provider %s failed after %.1fs (status=%s, type=%s): %s",
@@ -1668,6 +1725,14 @@ def ai_extract(raw_text: str, ctx: dict | None = None, storage=None) -> dict:
             # No point sleeping — try the next provider immediately; they
             # produce structurally different outputs so ask Gemini next
             # instead of looping the same lane.
+            continue
+
+        if raw_extraction == "RATE_LIMITED":
+            last_error = f"Provider {provider['name']} rate limited"
+            # The provider-specific cooldown is set from Retry-After above.
+            # Keep this worker task from immediately cycling through the same
+            # account while another lane is also backing off.
+            time.sleep(1.0)
             continue
 
         if raw_extraction is None:
