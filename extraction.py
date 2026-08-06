@@ -574,6 +574,8 @@ def _safe_float(value) -> float | None:
                 return coerced
         return None
     text = str(value).strip().replace(",", "")
+    if re.search(r"\.{2,}", text):
+        return None
     match = re.search(r"-?\d+(?:\.\d+)?", text)
     if not match:
         return None
@@ -705,30 +707,32 @@ def _parse_deposit(raw_text: str, monthly_rent: float | None = None) -> dict:
         lower,
     )
     if explicit:
-        value = float(explicit.group(1).replace(",", ""))
-        unit = (explicit.group(2) or "").rstrip("s")
-        if unit in {"month", "mo"} or (not unit and value <= 12):
-            months = value
-        else:
-            amount = _price_from_ai_and_raw({
-                "amount": value,
-                "unit": unit,
-                "raw_price_text": f"{value} {unit}".strip(),
-            })[0]
+        value = _safe_float(explicit.group(1))
+        if value is not None:
+            unit = (explicit.group(2) or "").rstrip("s")
+            if unit in {"month", "mo"} or (not unit and value <= 12):
+                months = value
+            else:
+                amount = _price_from_ai_and_raw({
+                    "amount": value,
+                    "unit": unit,
+                    "raw_price_text": f"{value} {unit}".strip(),
+                })[0]
     combined = re.search(
         r"([\d,.]+)\s*(lac|lakh|lacs|k|cr|crore|thousand)?\s*[+/&/]\s*"
         r"([\d,.]+)\s*(lac|lakh|lacs|k|cr|crore|thousand|months?|mo)?",
         lower,
     )
     if combined:
-        value = float(combined.group(3).replace(",", ""))
-        unit = (combined.group(4) or "").rstrip("s")
-        if unit in {"month", "mo"} or (not unit and value <= 12):
-            months = value
-        elif unit or value > 12:
-            amount = _price_from_ai_and_raw({
-                "amount": value, "unit": unit, "raw_price_text": f"{value} {unit}".strip(),
-            })[0]
+        value = _safe_float(combined.group(3))
+        if value is not None:
+            unit = (combined.group(4) or "").rstrip("s")
+            if unit in {"month", "mo"} or (not unit and value <= 12):
+                months = value
+            elif unit or value > 12:
+                amount = _price_from_ai_and_raw({
+                    "amount": value, "unit": unit, "raw_price_text": f"{value} {unit}".strip(),
+                })[0]
     range_match = re.search(r"(\d+(?:\.\d+)?)\s*[-–]\s*(\d+(?:\.\d+)?)\s*months?", lower)
     if range_match:
         months = (float(range_match.group(1)) + float(range_match.group(2))) / 2

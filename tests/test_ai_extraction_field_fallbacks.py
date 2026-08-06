@@ -271,3 +271,17 @@ def test_parsed_conversion_tolerates_dirty_numeric_fields():
     assert parsed["bathroom_count"] is None
     assert parsed["car_parking_count"] is None
     assert parsed["interior_value"] is None
+
+
+def test_deposit_parser_tolerates_punctuation_only_amounts():
+    parsed = _ai_extraction_to_parsed({
+        "listing_type": "rent",
+        "property_category": "residential",
+        "price": {"amount": 125000, "unit": "total", "raw_price_text": "Rent 1.25 Lac"},
+        "bhk": 2,
+        "deposit_raw_text": "deposit ..2",
+    }, "Rent 1.25 Lac deposit ..2", "Broker", "Broker")
+
+    assert parsed["monthly_rent"] == 125000
+    assert parsed["deposit_amount"] is None
+    assert parsed["deposit_months"] is None

@@ -80,6 +80,8 @@ def _coerce_float(value) -> float | None:
     text = str(value).strip().replace(",", "")
     if not text or text.lower() in {".", "-", "+", "null", "none"}:
         return None
+    if re.search(r"\.{2,}", text):
+        return None
     match = re.search(r"-?\d+(?:\.\d+)?", text)
     if not match:
         return None
