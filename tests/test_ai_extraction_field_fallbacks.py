@@ -10,7 +10,7 @@ from ai_extraction import (
     _source_grounded_price,
     generate_title,
 )
-from extraction import _price_from_ai_and_raw
+from extraction import _ai_extraction_to_parsed, _price_from_ai_and_raw
 from extraction_models import validate_source_semantics
 
 
@@ -252,3 +252,22 @@ def test_title_generation_ignores_non_numeric_provider_amount():
 
     assert "2 BHK" in title
     assert "Rent on request" in title
+
+
+def test_parsed_conversion_tolerates_dirty_numeric_fields():
+    parsed = _ai_extraction_to_parsed({
+        "listing_type": "rent",
+        "property_category": "residential",
+        "price": {"amount": 125000, "unit": "total", "raw_price_text": "Rent 1.25 Lac"},
+        "bhk": 2,
+        "deposit_amount": {"value": "."},
+        "bathroom_count": "Steel parking",
+        "car_parking_count": "Steel parking",
+        "interior_value": {"value": "."},
+    }, "Rent 1.25 Lac", "Broker", "Broker")
+
+    assert parsed["monthly_rent"] == 125000
+    assert parsed["deposit_amount"] is None
+    assert parsed["bathroom_count"] is None
+    assert parsed["car_parking_count"] is None
+    assert parsed["interior_value"] is None
