@@ -222,7 +222,7 @@ _TYPED_READ_COLUMNS_BY_TABLE = {
     "residential_sale_requirements": "bhk,configuration_type,bathroom_count,carpet_area_sqft,built_up_area_sqft,super_built_up_area_sqft,area_raw_text,furnishing_status,possession_status,possession_date,car_parking_count,parking_type,floor_range,building_amenities,unit_amenities,amenities_unverified_claim,property_view,orientation,developer_name,budget_min,budget_max,budget_currency,area_min_sqft,area_max_sqft,locality_options,is_flexible,urgency,status,bhk_options,configuration_preference,carpet_area_min_sqft,carpet_area_max_sqft,built_up_area_min_sqft,built_up_area_max_sqft,budget_per_sqft_max,furnishing_preference,possession_preference,age_preference,micro_market_options,building_preferences,car_parking_min,floor_preference,view_preference,amenity_requirements,buyer_type,nationality,loan_preapproved,brokerage_willingness",
     "residential_rent_requirements": "bhk,configuration_type,bathroom_count,carpet_area_sqft,built_up_area_sqft,super_built_up_area_sqft,area_raw_text,furnishing_status,possession_status,possession_date,car_parking_count,parking_type,floor_range,building_amenities,unit_amenities,amenities_unverified_claim,property_view,orientation,developer_name,budget_min,budget_max,budget_currency,area_min_sqft,area_max_sqft,locality_options,is_flexible,urgency,status,bhk_options,configuration_preference,carpet_area_min_sqft,carpet_area_max_sqft,built_up_area_min_sqft,built_up_area_max_sqft,budget_per_sqft_max,furnishing_preference,possession_preference,age_preference,micro_market_options,building_preferences,car_parking_min,floor_preference,view_preference,amenity_requirements,buyer_type,nationality,loan_preapproved,brokerage_willingness,deposit_budget_max,tenant_type,has_pets,sharing_acceptable,food_preference,lease_term_preference",
     "commercial_sale_requirements": "carpet_area_sqft,built_up_area_sqft,super_built_up_area_sqft,area_raw_text,furnishing_status,possession_status,possession_date,car_parking_count,parking_type,floor_range,building_amenities,unit_amenities,amenities_unverified_claim,property_view,orientation,developer_name,budget_min,budget_max,budget_currency,area_min_sqft,area_max_sqft,locality_options,is_flexible,urgency,status,carpet_area_min_sqft,carpet_area_max_sqft,built_up_area_min_sqft,built_up_area_max_sqft,budget_per_sqft_max,furnishing_preference,possession_preference,micro_market_options,building_preferences,car_parking_min,floor_preference,view_preference,amenity_requirements,buyer_type,loan_preapproved,brokerage_willingness,commercial_use_type,chargeable_area_max_sqft,fitout_preference,min_ceiling_height,needs_mezzanine,needs_lift,needs_power_backup,needs_central_ac,min_power_load_kw,oc_required",
-    "commercial_rent_requirements": "carpet_area_sqft,built_up_area_sqft,super_built_up_area_sqft,area_raw_text,furnishing_status,possession_status,possession_date,car_parking_count,parking_type,floor_range,building_amenities,unit_amenities,amenities_unverified_claim,property_view,orientation,developer_name,budget_min,budget_max,budget_currency,area_min_sqft,area_max_sqft,locality_options,is_flexible,urgency,status,carpet_area_min_sqft,carpet_area_max_sqft,built_up_area_min_sqft,built_up_area_max_sqft,budget_per_sqft_max,furnishing_preference,possession_preference,micro_market_options,building_preferences,car_parking_min,floor_preference,view_preference,amenity_requirements,buyer_type,loan_preapproved,brokerage_willingness,commercial_use_type,chargeable_area_max_sqft,fitout_preference,min_ceiling_height,needs_mezzanine,needs_lift,needs_power_backup,needs_central_ac,min_power_load_kw,oc_required,deposit_budget_max,tenant_type,has_pets,sharing_acceptable,lease_term_preference",
+    "commercial_rent_requirements": "carpet_area_sqft,built_up_area_sqft,super_built_up_area_sqft,area_raw_text,furnishing_status,possession_status,possession_date,car_parking_count,parking_type,floor_range,building_amenities,unit_amenities,amenities_unverified_claim,property_view,orientation,developer_name,budget_min,budget_max,budget_currency,area_min_sqft,area_max_sqft,locality_options,is_flexible,urgency,status,carpet_area_min_sqft,carpet_area_max_sqft,built_up_area_min_sqft,built_up_area_max_sqft,budget_per_sqft_max,furnishing_preference,possession_preference,micro_market_options,building_preferences,car_parking_min,floor_preference,view_preference,amenity_requirements,buyer_type,loan_preapproved,brokerage_willingness,commercial_use_type,chargeable_area_max_sqft,fitout_preference,min_ceiling_height,needs_mezzanine,needs_lift,needs_power_backup,needs_central_ac,min_power_load_kw,oc_required,deposit_budget_max,tenant_type,has_pets,sharing_acceptable,lease_term_preference,intended_use_details,area_basis_preference,location_flexibility,floor_min,floor_max,parking_required,needs_attached_washroom,needs_washroom,needs_pantry,premium_building_required,glass_facade_required,residential_cum_commercial_ok,by_lanes_accepted,media_requested,min_cabin_count,min_workstation_count,needs_conference_room,brokerage_context,brokerage_terms_raw,contacts,min_washroom_count",
 }
 
 
@@ -2367,6 +2367,12 @@ class SupabaseStorage(Storage):
         # v2 schema — rental / tenancy policy
         "pet_policy", "tenant_type_preference", "sharing_allowed",
         "company_lease_criteria", "tenant_nationality_preference",
+        "intended_use_details", "area_basis_preference", "location_flexibility",
+        "floor_preference", "parking_required", "needs_attached_washroom",
+        "needs_washroom", "needs_pantry", "premium_building_required",
+        "glass_facade_required", "residential_cum_commercial_ok", "by_lanes_accepted",
+        "media_requested", "min_cabin_count", "min_workstation_count",
+        "needs_conference_room", "min_washroom_count",
         "chargeable_area_sqft", "floor_level", "floor_count", "price_math",
         "frontage_ft", "entrance_count", "otla_area_sqft", "otla_area_raw_text",
         "heritage_space", "permitted_use_types", "ideal_for", "automatic_shutter_count",
@@ -2732,6 +2738,13 @@ class SupabaseStorage(Storage):
                     "needs_power_backup", "needs_central_ac",
                     "min_power_load_kw", "lease_term_preference",
                     "deposit_budget_max", "brokerage_willingness",
+                    "intended_use_details", "area_basis_preference", "location_flexibility",
+                    "floor_min", "floor_max", "floor_preference", "parking_required",
+                    "needs_attached_washroom", "needs_washroom", "needs_pantry",
+                    "premium_building_required", "glass_facade_required",
+                    "residential_cum_commercial_ok", "by_lanes_accepted", "media_requested",
+                    "min_cabin_count", "min_workstation_count", "needs_conference_room",
+                    "brokerage_context", "brokerage_terms_raw", "contacts", "min_washroom_count",
                 },
             }
             allowed = allowed_by_table[table]

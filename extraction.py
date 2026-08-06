@@ -1254,6 +1254,19 @@ def _ai_extraction_to_typed(
         })
         if asset == "commercial":
             row["commercial_use_type"] = ai.get("commercial_use_type") or []
+            for field in (
+                "intended_use_details", "area_basis_preference", "location_flexibility",
+                "floor_min", "floor_max", "floor_preference", "parking_required",
+                "needs_attached_washroom", "needs_washroom", "needs_pantry",
+                "needs_mezzanine", "needs_lift", "needs_power_backup", "needs_central_ac",
+                "premium_building_required", "glass_facade_required",
+                "residential_cum_commercial_ok", "by_lanes_accepted", "media_requested",
+                "min_cabin_count", "min_workstation_count", "needs_conference_room",
+                "brokerage_context", "brokerage_terms_raw", "contacts",
+            ):
+                if ai.get(field) is not None:
+                    row[field] = ai.get(field)
+            row["urgency"] = ai.get("urgency") or row.get("urgency")
         elif tx == "rent":
             row.update({
                 "tenant_type": ai.get("tenant_type"),

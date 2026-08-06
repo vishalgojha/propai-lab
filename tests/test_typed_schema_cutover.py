@@ -230,3 +230,13 @@ def test_commercial_sale_read_columns_cover_sale_schema():
         "project_inventory", "area_min_sqft", "area_max_sqft",
         "floor_plate_sqft", "project_status", "inspection_notice_minutes",
     } <= cols
+
+
+def test_commercial_rent_requirement_read_columns_cover_demand_constraints():
+    cols = set(_TYPED_READ_COLUMNS_BY_TABLE["commercial_rent_requirements"].split(","))
+    assert {
+        "intended_use_details", "area_basis_preference", "floor_min", "floor_max",
+        "needs_attached_washroom", "needs_washroom", "needs_pantry",
+        "min_cabin_count", "min_workstation_count", "needs_conference_room",
+        "brokerage_context", "contacts",
+    } <= cols
