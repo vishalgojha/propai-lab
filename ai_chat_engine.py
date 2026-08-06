@@ -2586,7 +2586,7 @@ def execute_tool(
                 like = f"%{query}%"
                 where.append("""(
                     jp.display_name LIKE ? OR jp.phone LIKE ? OR jp.jid LIKE ?
-                    OR jp.top_localities LIKE ? OR jp.top_buildings LIKE ?
+                    OR jp.top_localities::text LIKE ? OR jp.top_buildings::text LIKE ?
                     OR EXISTS (
                         SELECT 1 FROM jid_aliases ja
                         WHERE ja.jid_key = jp.jid_key AND ja.alias LIKE ?
@@ -2599,10 +2599,10 @@ def execute_tool(
                 )""")
                 params.extend([like, like, like, like, like, like, like])
             if locality:
-                where.append("jp.top_localities LIKE ?")
+                where.append("jp.top_localities::text LIKE ?")
                 params.append(f"%{locality}%")
             if building:
-                where.append("jp.top_buildings LIKE ?")
+                where.append("jp.top_buildings::text LIKE ?")
                 params.append(f"%{building}%")
             where_sql = " AND ".join(where) if where else "1=1"
 
