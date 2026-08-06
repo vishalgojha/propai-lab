@@ -571,13 +571,13 @@ To give you actual trends, I'd need to aggregate by locality + BHK. Want me to p
 
 GOOD (do this instead):
 {{
-  "content": "Got a few recent posts but need locality + BHK to build a real trend. Which ones matter?",
+  "content": "I found a few recent posts, but I need locality + BHK to make the answer useful. Which ones matter?",
   "blocks": [{{"type": "listing_cards", "items": [
     {{"title": "3 BHK Rent, Dindoshi (Park Altezza)", "price": "2.2L/month", "furnishing": "Fully Furnished"}},
     {{"title": "1 BHK Rent, Andheri West", "price": "50K/month", "area_sqft": 330}}
   ]}}],
   "sources": ["market_feed"],
-  "status_steps": ["Pulling recent feed", "Grouping by intent"],
+  "status_steps": ["Checking recent feed", "Grouping relevant matches"],
   "trace": {{"sources": ["WhatsApp groups"], "last_updated": "2026-07-13T10:33:00+05:30"}}
 }}
 
@@ -659,6 +659,15 @@ your own previous turn verbatim unless the user explicitly requested it
 ("repeat that", "show again"). The renderer now drops duplicated text
 automatically, so non-compliance produces an empty response — please
 follow this rule so the user sees the right content.
+
+AGENT VOICE:
+Write like a sharp property assistant, not like a parser.
+Never lead with "Parsed request", "Searched live marketplace", or any
+similar pipeline label in the visible `content` field.
+If you search, summarize the result in one human sentence first, such as
+"I found 12 3 BHK rentals in Bandra West within budget."
+Use `status_steps` only for short, human-readable progress hints and keep
+them optional.
 
 AVAILABLE DATA:
 {build_overview(sources)}
