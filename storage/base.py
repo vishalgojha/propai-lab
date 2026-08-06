@@ -395,6 +395,7 @@ class SyncCheckpoint:
 @dataclass
 class LLMProvider:
     id: int = 0
+    tenant_id: Optional[str] = None
     provider_name: str = ""
     provider_type: str = "openai"
     api_key: str = ""
@@ -403,6 +404,72 @@ class LLMProvider:
     is_active: int = 0
     created_at: str = ""
     updated_at: str = ""
+
+
+@dataclass
+class WorkspaceAISettings:
+    id: int = 0
+    tenant_id: Optional[str] = None
+    monthly_budget_usd: Optional[float] = None
+    max_rpm: int = 60
+    max_concurrent_calls: int = 8
+    max_browser_sessions: int = 1
+    max_tool_rounds: int = 8
+    browser_enabled: bool = False
+    browser_provider: str = "browser-use"
+    allowed_routes: list[str] = field(default_factory=list)
+    allowed_actions: list[str] = field(default_factory=list)
+    notes: str = ""
+    created_at: str = ""
+    updated_at: str = ""
+
+
+@dataclass
+class AgentBrowserSession:
+    id: str = ""
+    tenant_id: Optional[str] = None
+    session_id: Optional[str] = None
+    user_id: Optional[str] = None
+    browser_provider: str = "browser-use"
+    task_label: str = ""
+    start_url: str = ""
+    current_url: str = ""
+    status: str = "open"
+    context: dict = field(default_factory=dict)
+    last_error: str = ""
+    started_at: str = ""
+    updated_at: str = ""
+    closed_at: Optional[str] = None
+
+
+@dataclass
+class AgentBrowserStep:
+    id: int = 0
+    tenant_id: Optional[str] = None
+    browser_session_id: str = ""
+    step_index: int = 0
+    action: str = ""
+    target: str = ""
+    url: str = ""
+    status: str = "ok"
+    metadata: dict = field(default_factory=dict)
+    screenshot_url: str = ""
+    created_at: str = ""
+
+
+@dataclass
+class AgentAuditLog:
+    id: int = 0
+    tenant_id: Optional[str] = None
+    user_id: Optional[str] = None
+    session_id: Optional[str] = None
+    browser_session_id: Optional[str] = None
+    event_type: str = ""
+    entity_type: str = ""
+    entity_id: str = ""
+    status: str = "logged"
+    metadata: dict = field(default_factory=dict)
+    created_at: str = ""
 
 
 @dataclass
@@ -714,7 +781,7 @@ class Storage(ABC):
     def get_ai_memory_stats(self) -> dict: ...
 
     @abstractmethod
-    def get_ai_usage_stats(self, days: int = 1) -> dict: ...
+    def get_ai_usage_stats(self, days: int = 1, tenant_id: str | None = None) -> dict: ...
 
     # ── LLM Providers ──────────────────────────────────────────
 
@@ -729,3 +796,24 @@ class Storage(ABC):
 
     @abstractmethod
     def delete_llm_provider(self, provider_id: int) -> bool: ...
+
+    @abstractmethod
+    def get_workspace_ai_settings(self, tenant_id: str | None = None) -> Optional[WorkspaceAISettings]: ...
+
+    @abstractmethod
+    def save_workspace_ai_settings(self, settings: WorkspaceAISettings, tenant_id: str | None = None) -> int: ...
+
+    @abstractmethod
+    def create_agent_browser_session(self, session: AgentBrowserSession, tenant_id: str | None = None) -> dict | None: ...
+
+    @abstractmethod
+    def list_agent_browser_sessions(self, tenant_id: str | None = None, session_id: str | None = None, user_id: str | None = None, limit: int = 50) -> list[dict]: ...
+
+    @abstractmethod
+    def update_agent_browser_session(self, browser_session_id: str, values: dict, tenant_id: str | None = None) -> dict | None: ...
+
+    @abstractmethod
+    def add_agent_browser_step(self, step: AgentBrowserStep, tenant_id: str | None = None) -> int: ...
+
+    @abstractmethod
+    def log_agent_audit_event(self, event: AgentAuditLog, tenant_id: str | None = None) -> int: ...

@@ -610,7 +610,7 @@ Common patterns:
 - "15000 monthly" = ₹15,000/month (absolute rupees)"""
 
 
-def build_system_prompt(sources, broker=None):
+def build_system_prompt(sources, broker=None, workspace_settings=None):
     """Build the shared workspace policy used by the live assistant.
 
     Search routing happens in code, so the model receives a small, current
@@ -628,17 +628,19 @@ Current date and time: {now}{broker_line}
 
 You are in the PropAI workspace. Available sources are summarized below; use
 only retrieved values as facts. Concrete property and requirement requests are
-searched against the live global marketplace before you answer. Never claim
-that the database is unavailable when verified search results are present.
+searched against the live tenant-scoped marketplace before you answer. Never
+claim that the database is unavailable when verified search results are present.
 
 PLANNER RULE — READ FIRST:
 If the user's latest message contains any concrete filter (BHK, locality,
 building name, price range, transaction type, furnishing, parking, pets),
-you MUST call `market_search` before producing any listing card, count
-claim, or list. Never emit a count like "Found 119 listings" without a
-matching tool result in this turn. Never invent listings, broker names,
-addresses, or phone numbers — every listing card you render must carry
-listing_id / message_id / cluster_id so readers can verify the source.
+you MUST call a live tool before producing any listing card, count claim, or
+list. Prefer `search_listings` for listings and `match_client_to_listings`
+for client matching. Never use the legacy CSV/SQLite search path. Never emit
+a count like "Found 119 listings" without a matching tool result in this
+turn. Never invent listings, broker names, addresses, or phone numbers —
+every listing card you render must carry listing_id / message_id / cluster_id
+so readers can verify the source.
 If a search returns zero rows, say zero. If you want to ask a clarifying
 question, do it AFTER the search, not before.
 
@@ -673,6 +675,13 @@ them optional.
 
 AVAILABLE DATA:
 {build_overview(sources)}
+
+WORKSPACE AGENT POLICY:
+Use the workspace's own configured API keys and limits when deciding how many
+tool rounds to take or whether browser work is allowed. If browser use is
+enabled for this workspace, treat browser actions as allowed only within the
+configured routes/actions and keep the browser session traceable. If browser
+use is disabled, do not invent browser actions.
 
 For workspace data, return valid JSON with a short `content` field and UI
 `blocks`. Keep the `content` field as concise GitHub Flavored Markdown.
@@ -975,11 +984,14 @@ def _suggestion_tool():
     }
 
 
-def _build_tools(sources):
+def _build_tools(sources, prefer_supabase_agent: bool = False, browser_enabled: bool = False):
     source_keys = sorted(sources.keys())
     tools = [
         _suggestion_tool(),
-        _market_search_tool(),
+    ]
+    if not prefer_supabase_agent:
+        tools.append(_market_search_tool())
+    tools.extend([
         _search_jid_memory_tool(),
         {
             "type": "function",
@@ -1198,9 +1210,11 @@ def _build_tools(sources):
                 }
             }
         },
-    ]
-    from agent_tools import TOOL_DEFINITIONS
+    ])
+    from agent_tools import TOOL_DEFINITIONS, BROWSER_TOOL_DEFINITIONS
     tools.extend(TOOL_DEFINITIONS)
+    if browser_enabled:
+        tools.extend(BROWSER_TOOL_DEFINITIONS)
     return tools
 
 
@@ -1225,6 +1239,75 @@ def _prepare_listings(df):
 
 
 _PRICE_COLS = {"price", "price_numeric"}
+
+
+def _normalize_browser_provider_name(provider_name: str | None) -> str:
+    normalized = str(provider_name or "").strip().lower()
+    if normalized in {"", "playwright", "browser-use-cli", "browser_use"}:
+        return "browser-use"
+    return normalized
+
+
+def _browser_settings_row(storage_client, tenant_id: str | None) -> dict:
+    if storage_client is None or not tenant_id:
+        return {}
+    try:
+        rows = (
+            storage_client.table("workspace_ai_settings")
+            .select("tenant_id,browser_enabled,browser_provider,allowed_routes,allowed_actions,max_browser_sessions,max_tool_rounds,notes")
+            .eq("tenant_id", tenant_id)
+            .limit(1)
+            .execute()
+            .data
+            or []
+        )
+        return rows[0] if rows else {}
+    except Exception:
+        return {}
+
+
+def _upsert_browser_session(storage_client, tenant_id: str | None, session_id: str, values: dict) -> dict | None:
+    if storage_client is None or not tenant_id or not session_id:
+        return None
+    data = {"id": session_id, "tenant_id": tenant_id, **values}
+    res = storage_client.table("agent_browser_sessions").upsert(data).execute().data or []
+    return res[0] if res else None
+
+
+def _log_browser_step(storage_client, tenant_id: str | None, session_id: str, step_index: int, action: str, target: str, url: str, status: str, metadata: dict | None = None, screenshot_url: str = "") -> None:
+    if storage_client is None or not tenant_id or not session_id:
+        return
+    payload = {
+        "tenant_id": tenant_id,
+        "browser_session_id": session_id,
+        "step_index": step_index,
+        "action": action,
+        "target": target,
+        "url": url,
+        "status": status,
+        "metadata": metadata or {},
+        "screenshot_url": screenshot_url or None,
+    }
+    try:
+        storage_client.table("agent_browser_steps").insert(payload).execute()
+    except Exception:
+        _logger.exception("Failed to persist browser step for session %s", session_id)
+
+
+def _browser_runtime_response(result, *, session_id: str, command: str) -> dict:
+    return {
+        "status": result.status,
+        "tool": command,
+        "browser_session_id": session_id,
+        "provider": result.provider,
+        "url": result.url,
+        "title": result.title,
+        "summary": result.summary,
+        "elements": result.elements,
+        "screenshot_path": result.screenshot_path,
+        "raw_output": result.raw_output,
+        "error": result.error,
+    }
 
 
 def _market_search_tool():
@@ -1954,6 +2037,7 @@ def deterministic_market_response(query: dict, result: str, sources: dict | None
                 "title": "Matching broker requirements" if is_requirement_search else "Active listings",
                 "subtitle": "Parsed demand records from WhatsApp broker posts" if is_requirement_search else "Global PropAI marketplace",
                 "items": results,
+                "total": total,
                 "sources": ["WhatsApp broker posts"],
             },
         ],
@@ -2464,13 +2548,166 @@ def execute_tool(
     tenant_id: str | None = None,
     storage_client=None,
     user_id: str | None = None,
+    browser_enabled: bool = False,
+    browser_provider: str | None = None,
 ):
-    from agent_tools import READ_TOOL_NAMES, WRITE_TOOL_NAMES, execute_tool as execute_supabase_tool
+    from agent_tools import READ_TOOL_NAMES, WRITE_TOOL_NAMES, BROWSER_TOOL_NAMES, execute_tool as execute_supabase_tool
+    from browser_runtime import run_browser_command
 
     if name in READ_TOOL_NAMES or name in WRITE_TOOL_NAMES:
         if storage_client is None:
             return {"status": "error", "error": "Supabase agent client is not available"}
         return execute_supabase_tool(name, args, storage_client, tenant_id, user_id=user_id)
+
+    if name in BROWSER_TOOL_NAMES:
+        if not browser_enabled:
+            return {"status": "error", "tool": name, "error": "Browser actions are disabled for this workspace"}
+        if storage_client is None or not tenant_id:
+            return {"status": "error", "tool": name, "error": "Browser actions require a tenant-scoped database client"}
+
+        session_id = str(args.get("browser_session_id") or "").strip()
+        if not session_id and name == "browser_open":
+            import uuid
+            session_id = str(uuid.uuid4())
+        if not session_id:
+            return {"status": "error", "tool": name, "error": "browser_session_id is required"}
+
+        browser_settings = _browser_settings_row(storage_client, tenant_id)
+        effective_provider = _normalize_browser_provider_name(
+            browser_provider or browser_settings.get("browser_provider") or "browser-use"
+        )
+        # Allow workspace overrides to disable browser use even if the LLM tries.
+        if not browser_settings.get("browser_enabled", browser_enabled):
+            return {"status": "error", "tool": name, "error": "Browser actions are disabled for this workspace"}
+
+        if name == "browser_open":
+            _upsert_browser_session(
+                storage_client,
+                tenant_id,
+                session_id,
+                {
+                    "user_id": user_id,
+                    "browser_provider": effective_provider,
+                    "status": "open",
+                    "task_label": str(args.get("session_label") or "").strip(),
+                    "start_url": str(args.get("url") or "").strip(),
+                    "current_url": str(args.get("url") or "").strip(),
+                    "context": {"source": "agent_tool"},
+                },
+            )
+
+        command_map = {
+            "browser_open": "open",
+            "browser_state": "state",
+            "browser_click": "click",
+            "browser_fill": "fill",
+            "browser_type": "type",
+            "browser_select": "select",
+            "browser_scroll": "scroll",
+            "browser_screenshot": "screenshot",
+            "browser_close": "close",
+        }
+        command = command_map[name]
+        runtime_kwargs = {
+            "url": args.get("url"),
+            "index": args.get("index"),
+            "text": args.get("text"),
+            "value": args.get("value"),
+            "amount": args.get("amount"),
+            "output_path": args.get("output_path"),
+        }
+        try:
+            result = run_browser_command(effective_provider, command, session_id, **runtime_kwargs)
+        except Exception as exc:
+            _logger.exception("Browser runtime failed for session %s", session_id)
+            _log_browser_step(
+                storage_client,
+                tenant_id,
+                session_id,
+                int(args.get("step_index") or 0),
+                command,
+                str(args.get("url") or args.get("index") or args.get("text") or ""),
+                "",
+                "error",
+                {"error": str(exc)},
+            )
+            _upsert_browser_session(
+                storage_client,
+                tenant_id,
+                session_id,
+                {
+                    "user_id": user_id,
+                    "browser_provider": effective_provider,
+                    "status": "failed",
+                    "current_url": str(args.get("url") or ""),
+                    "last_error": str(exc),
+                    "context": {
+                        "last_command": command,
+                        "last_error": str(exc),
+                    },
+                },
+            )
+            return {"status": "error", "tool": name, "browser_session_id": session_id, "error": str(exc)}
+
+        step_index = int(args.get("step_index") or 0)
+        target = str(args.get("url") or args.get("index") or args.get("text") or args.get("value") or "")
+        metadata = {
+            "provider": result.provider,
+            "command": result.command,
+            "summary": result.summary,
+            "elements": result.elements,
+            "raw_output": result.raw_output,
+            "error": result.error,
+            "screenshot_path": result.screenshot_path,
+        }
+        _log_browser_step(
+            storage_client,
+            tenant_id,
+            session_id,
+            step_index,
+            command,
+            target,
+            result.url,
+            result.status,
+            metadata,
+            result.screenshot_path,
+        )
+        if result.status == "ok":
+            _upsert_browser_session(
+                storage_client,
+                tenant_id,
+                session_id,
+                {
+                    "user_id": user_id,
+                    "browser_provider": result.provider,
+                    "status": "closed" if name == "browser_close" else "running",
+                    "current_url": result.url or str(args.get("url") or ""),
+                    "context": {
+                        "last_command": command,
+                        "last_summary": result.summary,
+                        "last_error": result.error,
+                    },
+                },
+            )
+        else:
+            _upsert_browser_session(
+                storage_client,
+                tenant_id,
+                session_id,
+                {
+                    "user_id": user_id,
+                    "browser_provider": result.provider,
+                    "status": "failed",
+                    "current_url": result.url or str(args.get("url") or ""),
+                    "last_error": result.error or result.raw_output or "browser action failed",
+                    "context": {
+                        "last_command": command,
+                        "last_summary": result.summary,
+                        "last_error": result.error or result.raw_output or "browser action failed",
+                    },
+                },
+            )
+        return _browser_runtime_response(result, session_id=session_id, command=name)
 
     if name == "get_overview":
         return build_overview(sources)
@@ -2520,12 +2757,12 @@ def execute_tool(
                 """, (limit,)).fetchall()
             elif category == "low_confidence":
                 rows = con.execute("""
-                    SELECT p.id, p.intent, p.micro_market, p.broker_name, p.confidence,
+                    SELECT p.id, p.intent, p.micro_market, p.broker_name,
                            p.location_raw, r.message, r.group_name
                     FROM parsed_output_unified p
                     JOIN raw_messages r ON r.id = p.raw_message_id
-                    WHERE p.confidence < 0.5 AND p.confidence > 0
-                    ORDER BY p.confidence ASC LIMIT ?
+                    WHERE 1 = 0
+                    LIMIT ?
                 """, (limit,)).fetchall()
             elif category == "missing_bhk":
                 rows = con.execute("""
@@ -2547,13 +2784,13 @@ def execute_tool(
                 """, (limit,)).fetchall()
             else:
                 rows = con.execute("""
-                    SELECT p.id, p.intent, p.confidence, p.micro_market, p.broker_name,
+                    SELECT p.id, p.intent, p.micro_market, p.broker_name,
                            d.method, d.failure_category,
                            r.message, r.group_name
                     FROM parsed_output_unified p
                     JOIN raw_messages r ON r.id = p.raw_message_id
                     LEFT JOIN resolver_decisions d ON d.parsed_id = p.id
-                    WHERE d.method = 'unresolved' OR p.confidence < 0.5
+                    WHERE d.method = 'unresolved'
                     ORDER BY p.id DESC LIMIT ?
                 """, (limit,)).fetchall()
             if not rows:
@@ -3424,12 +3661,19 @@ def get_model_reply(
     base_url=None,
     max_tool_rounds=5,
     _depth=0,
+    prefer_supabase_agent: bool = False,
+    browser_enabled: bool = False,
+    browser_provider: str | None = None,
     tenant_id: str | None = None,
     storage_client=None,
     user_id: str | None = None,
 ):
     client = get_client(api_key=api_key, base_url=base_url)
-    tools = _build_tools(sources)
+    tools = _build_tools(
+        sources,
+        prefer_supabase_agent=prefer_supabase_agent,
+        browser_enabled=browser_enabled,
+    )
     db_path = db_path or _default_db_path()
 
     # Apply prompt caching: cache tool definitions + static system prompt
@@ -3507,6 +3751,8 @@ def get_model_reply(
                 tenant_id=tenant_id,
                 storage_client=storage_client,
                 user_id=user_id,
+                browser_enabled=browser_enabled,
+                browser_provider=browser_provider,
             )
             _logger.info("AI agent tool result name=%s status=%s", fn_name, result.get("status") if isinstance(result, dict) else "ok")
             if isinstance(result, dict) and result.get("status") == "pending_confirmation":
@@ -3537,6 +3783,9 @@ def get_model_reply(
             base_url=base_url,
             max_tool_rounds=max_tool_rounds,
             _depth=_depth + 1,
+            prefer_supabase_agent=prefer_supabase_agent,
+            browser_enabled=browser_enabled,
+            browser_provider=browser_provider,
             tenant_id=tenant_id,
             storage_client=storage_client,
             user_id=user_id,

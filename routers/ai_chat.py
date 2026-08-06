@@ -1204,6 +1204,7 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
     memory = get_memory(f"{session_id}:{memory_revision}:{len(effective_messages)}")
     effective_model = (req.model or "").strip()
     providers = _workspace_provider_candidates(tenant_id, effective_model)
+    workspace_ai_settings = await asyncio.to_thread(storage.get_workspace_ai_settings, tenant_id)
     if (req.api_key or "").strip():
         # Explicit API keys remain supported for internal callers, but saved
         # workspace providers are still tried after that override fails.
@@ -1273,16 +1274,19 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
             cap_sources.update(cap_live)
             if cap_sources:
                 cap_msgs = [
-                    {"role": "system", "content": chat_engine.build_system_prompt(cap_sources, broker=broker)},
+                    {"role": "system", "content": chat_engine.build_system_prompt(cap_sources, broker=broker, workspace_settings=workspace_ai_settings)},
                     {"role": "user", "content": last_user},
                 ]
                 cap_reply = await _run_with_provider_failover(
-                    lambda provider: chat_engine.get_model_reply(
-                        cap_msgs, cap_sources, api_key=provider["api_key"],
-                        model=provider["model"] or None, base_url=provider["base_url"] or None, max_tool_rounds=0,
-                    ),
-                    providers,
-                    timeout=60,
+                lambda provider: chat_engine.get_model_reply(
+                    cap_msgs, cap_sources, api_key=provider["api_key"],
+                    model=provider["model"] or None, base_url=provider["base_url"] or None, max_tool_rounds=0,
+                    prefer_supabase_agent=True,
+                    browser_enabled=bool(getattr(workspace_ai_settings, "browser_enabled", False)),
+                    browser_provider=getattr(workspace_ai_settings, "browser_provider", "playwright"),
+                ),
+                providers,
+                timeout=60,
                 )
                 text = (cap_reply.content or "").strip() or "I can help with that."
                 _persist("user", last_user)
@@ -1376,121 +1380,36 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
             if key in {"overview", "unique_listings", "buildings", "brokers", "building_matches"}
         } or sources
 
-    search_request_text = last_user
-    is_pagination = bool(last_user and re.match(r"^(?:more|next|show\s+more|load\s+more|more\s+results|next\s+page)$", last_user, re.IGNORECASE))
-    pagination_count = 0
-    if is_pagination:
-        previous_market_queries = [
-            str(msg.get("content", "")).strip()
-            for msg in effective_messages[:-1]
-            if msg.get("role") == "user" and not re.match(r"^(?:more|next|show\s+more|load\s+more|more\s+results|next\s+page)$", str(msg.get("content", "")).strip())
-        ]
-        if previous_market_queries:
-            search_request_text = previous_market_queries[-1]
-        for msg in reversed(effective_messages[:-1]):
-            content_str = str(msg.get("content", "")).strip()
-            if msg.get("role") == "user":
-                if re.match(r"^(?:more|next|show\s+more|load\s+more|more\s+results|next\s+page)$", content_str, re.IGNORECASE):
-                    pagination_count += 1
-                else:
-                    break
-    elif last_user and not re.search(r"\b\d+(?:\.5)?\s*(?:bhk|bed(?:room)?s?)\b|\b(?:rent|rental|lease|sale|sell|buy|purchase)\b", last_user, re.IGNORECASE):
-        previous_users = [
-            str(msg.get("content", "")).strip()
-            for msg in effective_messages[:-1]
-            if msg.get("role") == "user" and str(msg.get("content", "")).strip()
-        ]
-        if previous_users:
-            # A follow-up such as “Powai has plenty of inventory” should
-            # inherit the active 3 BHK + RENT constraints from the prior turn.
-            search_request_text = f"{previous_users[-1]}\nFollow-up correction: {last_user}"
-
-    try:
-        deterministic_query = await asyncio.wait_for(
-            asyncio.to_thread(
-                chat_engine.parse_market_search_request,
-                search_request_text,
-                "",
-                "",
-                "",
-                None,
-                False,
-            ),
-            timeout=25,
-        )
-    except asyncio.TimeoutError:
-        _logger.warning("Market-search request parse timed out; using regex fallback")
-        deterministic_query = chat_engine.parse_market_search_request(
-            search_request_text,
-            api_key="",
-            model="",
-            base_url="",
-            allow_llm=False,
-        )
-    use_grounded_market_search = bool(deterministic_query)
-    if use_grounded_market_search:
-        use_grounded_market_search = not _is_analytics_or_ops_query(last_user)
-
-    if deterministic_query and use_grounded_market_search:
-        try:
-            response = await _current_listing_search(
-                deterministic_query,
-                tenant_id,
-                str(user.get("id") or ""),
-            )
-            response = _annotate_chat_response(response, source_mode)
-            _persist("user", last_user)
-            _persist("assistant", response.get("content", ""), blocks=response.get("blocks"))
-            _maybe_title(last_user)
-            return _wrap_chat_response(response, _is_inbox)
-        except Exception:
-            _logger.exception("Deterministic market search failed for filters=%s", deterministic_query)
-            response = chat_engine.deterministic_market_response(
-                deterministic_query,
-                _json.dumps({
-                    "type": "market_search_error",
-                    "error": "market_search_failed",
-                }),
-                active_sources,
-            )
-        response = _annotate_chat_response(response, source_mode)
-        _persist("user", last_user)
-        _persist("assistant", response.get("content", ""), blocks=response.get("blocks"))
-        _maybe_title(last_user)
-        return _wrap_chat_response(response, _is_inbox)
-
-    # DB-first fallback: no strict inventory filters, but not an analytics or
-    # ops question. Search the live marketplace with whatever hints the message
-    # carries (locality, intent, price, BHK) or the most recent listings, and
-    # let the LLM summarize only those verified rows.
-    if last_user and not _ANALYTICS_ACTION_SIGNALS.search(last_user) and not _AGENT_ACTION_SIGNALS.search(last_user):
-        try:
-            relaxed_query = chat_engine.relaxed_market_query(last_user)
-            response = await _market_search_with_summary(
-                relaxed_query, active_sources, providers, last_user, tenant_id
-            )
-            response = _annotate_chat_response(response, source_mode)
-            _persist("user", last_user)
-            _persist("assistant", response.get("content", ""), blocks=response.get("blocks"))
-            _maybe_title(last_user)
-            return _wrap_chat_response(response, _is_inbox)
-        except Exception as exc:
-            _logger.exception("Relaxed market search failed: %s", exc)
-
     def _call(provider):
-        system_prompt = chat_engine.build_system_prompt(active_sources, broker=broker)
+        system_prompt = chat_engine.build_system_prompt(active_sources, broker=broker, workspace_settings=workspace_ai_settings)
         context = memory.build_context()
+        workspace_policy_lines = []
+        if workspace_ai_settings:
+            workspace_policy_lines.extend([
+                f"Workspace browser enabled: {bool(getattr(workspace_ai_settings, 'browser_enabled', False))}",
+                f"Workspace browser provider: {getattr(workspace_ai_settings, 'browser_provider', 'playwright')}",
+                f"Max tool rounds: {int(getattr(workspace_ai_settings, 'max_tool_rounds', 8) or 8)}",
+                f"Max concurrent calls: {int(getattr(workspace_ai_settings, 'max_concurrent_calls', 8) or 8)}",
+                f"Allowed routes: {', '.join(getattr(workspace_ai_settings, 'allowed_routes', []) or [])}",
+                f"Allowed actions: {', '.join(getattr(workspace_ai_settings, 'allowed_actions', []) or [])}",
+            ])
+        if workspace_policy_lines:
+            system_prompt = f"{system_prompt}\n\nWORKSPACE LIMITS:\n" + "\n".join(f"- {line}" for line in workspace_policy_lines)
         msgs = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": context},
         ]
+        max_tool_rounds = int(getattr(workspace_ai_settings, "max_tool_rounds", 8) or 8) if workspace_ai_settings else 8
         reply = chat_engine.get_model_reply(
             msgs,
             active_sources,
             api_key=provider["api_key"],
             model=provider["model"] or None,
             base_url=provider["base_url"] or None,
-            max_tool_rounds=8,
+            max_tool_rounds=max(1, min(max_tool_rounds, 16)),
+            prefer_supabase_agent=True,
+            browser_enabled=bool(getattr(workspace_ai_settings, "browser_enabled", False)),
+            browser_provider=getattr(workspace_ai_settings, "browser_provider", "playwright"),
             storage_client=storage.client,
             user_id=str(user.get("id") or ""),
         )
@@ -1500,27 +1419,33 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
             raise RuntimeError("provider returned an empty response")
         return chat_engine.normalize_workspace_response(reply.content or "", active_sources)
 
-    try:
-        response = await _run_with_provider_failover(lambda provider: _call(provider), providers, timeout=90)
-        response = _annotate_chat_response(response, source_mode)
-        _persist("user", last_user)
-        _persist("assistant", response.get("content", ""), blocks=response.get("blocks"))
-        _maybe_title(last_user)
-        return _wrap_sse(response)
-    except asyncio.TimeoutError:
-        return JSONResponse(
-            status_code=504,
-            content={"error": "timeout", "message": "Request timed out. Try a simpler query."},
-        )
-    except Exception as exc:
-        err_str = str(exc)
-        if "budget_exhausted" in err_str or "402" in err_str:
+    if last_user and not _ANALYTICS_ACTION_SIGNALS.search(last_user):
+        try:
+            response = await _run_with_provider_failover(lambda provider: _call(provider), providers, timeout=90)
+            response = _annotate_chat_response(response, source_mode)
+            _persist("user", last_user)
+            _persist("assistant", response.get("content", ""), blocks=response.get("blocks"))
+            _maybe_title(last_user)
+            return _wrap_chat_response(response, _is_inbox)
+        except asyncio.TimeoutError:
             return JSONResponse(
-                status_code=503,
-                content={"error": "ai_unavailable", "message": "AI service credits exhausted. Extraction and chat will resume once credits are added."},
+                status_code=504,
+                content={"error": "timeout", "message": "Request timed out. Try a simpler query."},
             )
-        _logger.exception("AI chat failed during provider failover")
-        return _doubleword_error_response(exc)
+        except Exception as exc:
+            err_str = str(exc)
+            if "budget_exhausted" in err_str or "402" in err_str:
+                return JSONResponse(
+                    status_code=503,
+                    content={"error": "ai_unavailable", "message": "AI service credits exhausted. Extraction and chat will resume once credits are added."},
+                )
+            _logger.exception("AI chat failed during provider failover")
+            return _doubleword_error_response(exc)
+
+    return JSONResponse(
+        status_code=400,
+        content={"error": "empty", "message": "No user message provided."},
+    )
 
 
 @router.get("/api/ai/chat/overview")
