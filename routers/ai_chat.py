@@ -218,7 +218,7 @@ async def _current_listing_search(query: dict, tenant_id: str | None, user_id: s
             "area_sqft": row.get("carpet_area_sqft"),
             "furnishing": row.get("furnishing"),
             "location_label": row.get("micro_market"),
-            "building_name": row.get("building_name") or "Unknown Building",
+            "building_name": row.get("building_name") or "On Request",
             "landmark_name": row.get("landmark_name"),
             "micro_market": row.get("micro_market"),
             "broker_name": row.get("broker_name"),

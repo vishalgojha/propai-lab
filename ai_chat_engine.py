@@ -2068,7 +2068,7 @@ def llm_summarize_search(text: str, query: dict, result_json: str, api_key: str 
     total = int(payload.get("total") or 0)
     digest_lines = []
     for row in results[:10]:
-        name = str(row.get("building_name") or "Unknown building").strip()
+        name = str(row.get("building_name") or "On Request").strip()
         locality = str(row.get("micro_market") or row.get("location_label") or "").strip()
         price = str(row.get("price_formatted") or "").strip()
         bhk = str(row.get("bhk") or "").strip()
@@ -2416,7 +2416,7 @@ def _rest_market_search(client, args: dict, tenant_id: str | None = None) -> str
             "area_sqft": row.get("area_sqft"),
             "furnishing": row.get("furnishing"),
             "location_label": row.get("location_label"),
-            "building_name": row.get("building_name") or "Unknown Building",
+            "building_name": row.get("building_name") or "On Request",
             "landmark_name": row.get("landmark_name"),
             "micro_market": row.get("micro_market"),
             "broker_name": row.get("broker_name"),
@@ -2913,7 +2913,7 @@ def execute_tool(
                     "area_sqft": d.get("area_sqft"),
                     "furnishing": d.get("furnishing"),
                     "location_label": d.get("location_label"),
-                    "building_name": d.get("building_name") or "Unknown Building",
+                    "building_name": d.get("building_name") or "On Request",
                     "landmark_name": d.get("landmark_name"),
                     "micro_market": d.get("micro_market"),
                     "broker_name": d.get("broker_name"),
@@ -2932,7 +2932,7 @@ def execute_tool(
             grouped = {}
             if group_by_building:
                 for r in results:
-                    bname = r["building_name"] or "Unknown Building"
+                    bname = r["building_name"] or "On Request"
                     if bname not in grouped:
                         grouped[bname] = {"rentals": 0, "sales": 0, "listings": []}
                     if r["intent"] == "RENT":
