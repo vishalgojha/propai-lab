@@ -2518,6 +2518,7 @@ class SupabaseStorage(Storage):
             "ceiling_height": data.get("ceiling_height"),
             "commercial_use_type": data.get("commercial_use_type") or data.get("property_type"),
             "chargeable_area_sqft": data.get("chargeable_area_sqft"),
+            "mezzanine_area_sqft": data.get("mezzanine_area_sqft"),
             "floor_level": data.get("floor_level"),
             "floor_count": data.get("floor_count"),
             "frontage_ft": data.get("frontage_ft"),
@@ -2690,6 +2691,8 @@ class SupabaseStorage(Storage):
             "commercial_sale_listings": {"commercial_use_type","carpet_area_sqft","built_up_area_sqft","chargeable_area_sqft","super_built_up_area_sqft","saleable_area_sqft","area_raw_text","total_asking_price","price_per_sqft","price_basis","price_raw_text","price_qualifier","fitout_status","ceiling_height","floor_level","floor_count","floor_range","car_parking_count","parking_type","oc_status","building_amenities","has_central_ac","has_power_backup","has_lift","brokerage_type","developer_name","broker_rera_number","terrace_area_sqft","covered_terrace_area_sqft","terrace_area_raw_text","frontage_ft","entrance_count","permitted_use_types","ideal_for","project_inventory","area_min_sqft","area_max_sqft","floor_plate_sqft","project_status","director_cabin_count","ceo_cabin_present","cubicle_count","conference_room_capacity","meeting_room_capacity","reception_area","server_room","storage_area","inspection_notice_minutes","price_math"},
             "commercial_rent_listings": {"commercial_use_type","carpet_area_sqft","built_up_area_sqft","chargeable_area_sqft","area_raw_text","monthly_rent","rent_per_sqft","price_basis","price_raw_text","price_qualifier","deposit_amount","deposit_months","deposit_applicable","deposit_raw_text","fitout_status","ceiling_height","floor_level","floor_count","floor_range","car_parking_count","parking_type","building_amenities","has_central_ac","has_power_backup","has_lift","lease_term_type","brokerage_type","broker_rera_number","terrace_area_sqft","covered_terrace_area_sqft","terrace_area_raw_text","frontage_ft","entrance_count","otla_area_sqft","otla_area_raw_text","heritage_space","permitted_use_types","ideal_for","automatic_shutter_count","room_count","suite_count","banquet_hall_count","restaurant_count","bar_facility","operational_status","rent_inclusions","license_type","short_term_allowed","inspection_notice_minutes","director_cabin_count","ceo_cabin_present","cubicle_count","conference_room_capacity","meeting_room_capacity","training_room_capacity","cafeteria_seat_count","accounts_area","lounge_area","price_math"},
         }
+        # ``loft`` is stored in the existing commercial mezzanine column.
+        allowed_by_table["commercial_rent_listings"].add("mezzanine_area_sqft")
         if table.endswith("requirements"):
             # Residential requirement tables intentionally do not have
             # commercial_use_type.  Keeping this allow-list per table avoids
@@ -3799,6 +3802,7 @@ class SupabaseStorage(Storage):
             "bhk": float(re.search(r"\d+(?:\.\d+)?", str(data.get("bhk"))).group(0)) if re.search(r"\d+(?:\.\d+)?", str(data.get("bhk"))) else None,
             "carpet_area_sqft": data.get("carpet_area_sqft") or data.get("area_sqft"),
             "built_up_area_sqft": data.get("built_up_area_sqft"),
+            "mezzanine_area_sqft": data.get("mezzanine_area_sqft"),
             "area_raw_text": data.get("area_sqft"),
             "total_asking_price": _price_to_rupees(data.get("price"), data.get("price_unit")) if transaction == "sale" else None,
             "monthly_rent": _price_to_rupees(data.get("price"), data.get("price_unit")) if transaction == "rent" else None,
@@ -3869,6 +3873,8 @@ class SupabaseStorage(Storage):
             "commercial_sale_listings": {"raw_message_id","tenant_id","listing_index","source_fingerprint","legacy_source_id","asset_type","transaction_type","building_name","locality_raw","locality_resolved","micro_market","landmark_name","broker_id","broker_name","broker_phone","broker_rera_number","summary_title","raw_payload","deal_tags","additional_charges","validation_flags","needs_review","extraction_confidence","commercial_use_type","occupancy_status","carpet_area_sqft","built_up_area_sqft","chargeable_area_sqft","super_built_up_area_sqft","saleable_area_sqft","area_raw_text","total_asking_price","price_per_sqft","price_raw_text","price_basis","fitout_status","ceiling_height","floor_level","floor_count","floor_range","car_parking_count","parking_type","oc_status","brokerage_type","building_amenities","terrace_area_sqft","covered_terrace_area_sqft","terrace_area_raw_text","frontage_ft","entrance_count","permitted_use_types","ideal_for","project_inventory","area_min_sqft","area_max_sqft","floor_plate_sqft","project_status","director_cabin_count","ceo_cabin_present","cubicle_count","conference_room_capacity","meeting_room_capacity","reception_area","server_room","storage_area","inspection_notice_minutes","price_math"},
             "commercial_rent_listings": {"raw_message_id","tenant_id","listing_index","source_fingerprint","legacy_source_id","asset_type","transaction_type","building_name","locality_raw","locality_resolved","micro_market","landmark_name","broker_id","broker_name","broker_phone","broker_rera_number","summary_title","raw_payload","deal_tags","additional_charges","validation_flags","needs_review","extraction_confidence","commercial_use_type","carpet_area_sqft","built_up_area_sqft","chargeable_area_sqft","area_raw_text","monthly_rent","rent_per_sqft","price_raw_text","price_basis","fitout_status","ceiling_height","floor_level","floor_count","floor_range","car_parking_count","parking_type","deposit_amount","deposit_applicable","lease_term_type","brokerage_type","building_amenities","terrace_area_sqft","covered_terrace_area_sqft","terrace_area_raw_text","frontage_ft","entrance_count","otla_area_sqft","otla_area_raw_text","heritage_space","permitted_use_types","ideal_for","automatic_shutter_count","room_count","suite_count","banquet_hall_count","restaurant_count","bar_facility","operational_status","rent_inclusions","license_type","short_term_allowed","inspection_notice_minutes","director_cabin_count","ceo_cabin_present","cubicle_count","conference_room_capacity","meeting_room_capacity","training_room_capacity","cafeteria_seat_count","accounts_area","lounge_area","price_math"},
         }[table]
+        if table == "commercial_rent_listings":
+            allowed.add("mezzanine_area_sqft")
         for listing_table in (
             "residential_sale_listings", "residential_rent_listings",
             "commercial_sale_listings", "commercial_rent_listings",

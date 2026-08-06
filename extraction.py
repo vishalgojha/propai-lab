@@ -1212,7 +1212,7 @@ def _ai_extraction_to_typed(
             row["cam_applicable"] = ai.get("cam_applicable")
             row["cam_unit"] = ai.get("cam_unit")
             for field in (
-            "broker_rera_number", "floor_level", "floor_count", "possession_status",
+                "broker_rera_number", "floor_level", "floor_count", "mezzanine_area_sqft", "possession_status",
                 "possession_date", "availability_status", "rent_inclusions", "license_type",
                 "short_term_allowed", "inspection_notice_minutes", "frontage_ft",
                 "entrance_count", "otla_area_sqft", "otla_area_raw_text", "terrace_area_sqft",

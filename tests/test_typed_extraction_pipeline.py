@@ -5,7 +5,7 @@ classification, source-grounded price conversion, and typed-table routing
 which must be correct before a worker is allowed to persist a row.
 """
 
-from ai_extraction import _get_extraction_prompt, classify_message_type
+from ai_extraction import _get_extraction_prompt, _normalize_extraction, classify_message_type
 from extraction import _ai_extraction_to_typed, _parse_deposit
 from price_normalization import canonical_commercial_rental_price_rupees, canonical_price_rupees, canonical_rental_price_rupees, source_transaction_type
 
@@ -46,6 +46,26 @@ def test_focused_prompt_contains_route_specific_fields_and_price_guardrails():
     assert "fee_sharing_required" in residential_rent_prompt
     assert "PG" in residential_rent_prompt
     assert "1.30k" in residential_rent_prompt
+
+    assert "mezzanine_area_sqft" in rent_prompt
+    assert "needs_review" in rent_prompt
+
+
+def test_commercial_rent_normalization_maps_provider_aliases_to_typed_fields():
+    normalized = _normalize_extraction({
+        "listing_type": "rent",
+        "property_category": "commercial",
+        "locality": {"raw_mention": "Prabhadevi Stations", "normalized": "Prabhadevi"},
+        "loft_area_sqft": 110,
+        "fitout_status": "furnished",
+        "deal_tags": ["furnished", "negotiable"],
+        "needs_review": True,
+    })
+    assert normalized["locality"]["resolved_locality"] == "Prabhadevi"
+    assert normalized["mezzanine_area_sqft"] == 110
+    assert normalized["fitout_status"] == "furnished"
+    assert normalized["deal_tags"] == ["negotiable"]
+    assert normalized["needs_review"] is True
 
     requirement_prompt = _get_extraction_prompt("commercial", "rent", True)
     assert "intended_use_details" in requirement_prompt
