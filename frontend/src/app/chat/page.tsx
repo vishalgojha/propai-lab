@@ -504,6 +504,32 @@ export default function ChatPage() {
     }
   }, []);
 
+  const appendAssistantResponse = useCallback((response: api.ChatResponse) => {
+    const id = globalThis.crypto?.randomUUID?.() || `browser-${Date.now()}`;
+    setMessages((current) => [
+      ...current,
+      toUIMessage({
+        id,
+        role: "assistant",
+        content: response.content || "",
+        blocks: response.blocks || [],
+      }),
+    ] as any);
+  }, [setMessages]);
+
+  const handleBrowserAction = useCallback(async (token: string, accept: boolean) => {
+    setConfirmationState((current) => ({ ...current, [token]: "pending" }));
+    try {
+      const response = accept
+        ? await api.confirmBrowserAction(token)
+        : await api.declineBrowserAction(token);
+      appendAssistantResponse(response);
+      setConfirmationState((current) => ({ ...current, [token]: "confirmed" }));
+    } catch {
+      setConfirmationState((current) => ({ ...current, [token]: "error" }));
+    }
+  }, [appendAssistantResponse]);
+
   const hideBrokerLocally = useCallback(async (phone: string, label: string) => {
     const key = normalizePhoneKey(phone);
     if (!key) return;
@@ -1202,14 +1228,36 @@ export default function ChatPage() {
                               const block = part.data || {};
                               const token = String(block.confirmation_token || "");
                               const state = confirmationState[token];
+                              const isBrowser = String(block.tool || "") === "browser" || String(block.mode || "") === "browser";
                               return (
                                 <div key={`confirmation-${confirmationIndex}`} className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-3 text-sm text-amber-100">
                                   <div className="font-semibold">{block.title || "Confirmation required"}</div>
                                   <div className="mt-1 text-xs text-amber-100/80">{block.body || "This action will change workspace data."}</div>
                                   {state === "confirmed" ? (
-                                    <div className="mt-2 text-xs text-emerald-300">Action confirmed and completed.</div>
+                                    <div className="mt-2 text-xs text-emerald-300">
+                                      {isBrowser ? "Browser choice handled." : "Action confirmed and completed."}
+                                    </div>
                                   ) : state === "error" ? (
                                     <div className="mt-2 text-xs text-red-300">Could not complete that action. Please try again.</div>
+                                  ) : isBrowser ? (
+                                    <div className="mt-2 flex flex-wrap gap-2">
+                                      <button
+                                        type="button"
+                                        disabled={!token || state === "pending"}
+                                        onClick={() => void handleBrowserAction(token, true)}
+                                        className="rounded-md border border-emerald-400/40 bg-emerald-400/15 px-3 py-1.5 text-xs font-semibold text-emerald-100 hover:bg-emerald-400/25 disabled:cursor-wait disabled:opacity-60"
+                                      >
+                                        {state === "pending" ? "Starting browser…" : "Use browser"}
+                                      </button>
+                                      <button
+                                        type="button"
+                                        disabled={!token || state === "pending"}
+                                        onClick={() => void handleBrowserAction(token, false)}
+                                        className="rounded-md border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-semibold text-zinc-200 hover:bg-white/10 disabled:cursor-wait disabled:opacity-60"
+                                      >
+                                        Continue conversational
+                                      </button>
+                                    </div>
                                   ) : (
                                     <button
                                       type="button"
