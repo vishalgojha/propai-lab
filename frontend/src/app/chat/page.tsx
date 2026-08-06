@@ -469,6 +469,7 @@ export default function ChatPage() {
   const [sessions, setSessions] = useState<api.ChatSession[]>([]);
   const [sessionsLoaded, setSessionsLoaded] = useState(false);
   const sessionsRef = useRef<api.ChatSession[]>([]);
+  const sessionsBootstrapUserRef = useRef<string>("");
   const [showSessions, setShowSessions] = useState(false);
   const [sessionError, setSessionError] = useState("");
   const [sessionLoading, setSessionLoading] = useState(false);
@@ -707,6 +708,11 @@ export default function ChatPage() {
 
   useEffect(() => {
     if (authLoading || !user?.id) return;
+    // Bootstrap the sidebar once per authenticated user. Without this guard,
+    // URL/session state changes can retrigger the effect and hammer the API
+    // session endpoint until the server-side chat limiter returns 429.
+    if (sessionsBootstrapUserRef.current === user.id) return;
+    sessionsBootstrapUserRef.current = user.id;
     let cancelled = false;
     void (async () => {
       const data = await loadSessions();
