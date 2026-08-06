@@ -11,8 +11,16 @@ export function useInstallPrompt() {
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [installed, setInstalled] = useState(false);
   const [dismissed, setDismissed] = useState(false);
+  const [mobile, setMobile] = useState(false);
 
   useEffect(() => {
+    // The install banner is intended for phones/tablets. Desktop browsers may
+    // also emit beforeinstallprompt, but the dashboard should not interrupt
+    // desktop workflows with a home-screen prompt.
+    const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+    setMobile(isMobile);
+    if (!isMobile) return;
+
     const handler = (e: Event) => {
       e.preventDefault();
       setDeferredPrompt(e as BeforeInstallPromptEvent);
@@ -46,7 +54,7 @@ export function useInstallPrompt() {
   const dismiss = useCallback(() => setDismissed(true), []);
 
   return {
-    show: !!deferredPrompt && !installed && !dismissed,
+    show: mobile && !!deferredPrompt && !installed && !dismissed,
     installed,
     promptInstall,
     dismiss,

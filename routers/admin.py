@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from routers.common import storage, require_user
+from routers.common import get_tenant_context, storage, require_user
 from storage import ProviderOutageEvent
 
 router = APIRouter(tags=["admin"])
@@ -124,11 +124,18 @@ async def admin_ai_usage(days: int = 7, user: dict = Depends(require_user)):
 
 @router.get("/api/admin/extraction-progress")
 async def admin_extraction_progress(
-    hours: int = 24, user: dict = Depends(require_user)
+    hours: int = 24,
+    user: dict = Depends(require_user),
+    tenant_id: str | None = Depends(get_tenant_context),
 ):
     if not await asyncio.to_thread(storage.is_super_admin, user["id"]):
         raise HTTPException(403, "Super admin only")
-    return storage.get_extraction_progress(rate_window_hours=min(max(hours, 1), 168))
+    if not isinstance(tenant_id, str) or not tenant_id.strip():
+        tenant_id = None
+    return storage.get_extraction_progress(
+        rate_window_hours=min(max(hours, 1), 168),
+        tenant_id=tenant_id,
+    )
 
 
 @router.get("/api/admin/providers/health")
