@@ -6032,7 +6032,11 @@ class SupabaseStorage(Storage):
 
     # ── Extraction backlog progress (super-admin) ──────────────────
 
-    def get_extraction_progress(self, rate_window_hours: int = 24) -> dict:
+    def get_extraction_progress(
+        self,
+        rate_window_hours: int = 24,
+        tenant_id: str | None = None,
+    ) -> dict:
         """Super-admin view of the extraction backlog drain.
 
         Pure live counts — never fabricated. ``processed`` is derived from
@@ -6041,9 +6045,12 @@ class SupabaseStorage(Storage):
         """
         from datetime import datetime, timedelta, timezone
 
+        def _scoped(q):
+            return q.eq("tenant_id", tenant_id) if tenant_id else q
+
         def _count(q) -> int:
             try:
-                res = q.execute()
+                res = _scoped(q).execute()
                 return res.count or 0
             except Exception:
                 return 0
@@ -6072,11 +6079,10 @@ class SupabaseStorage(Storage):
         calls = 0
         cost_usd = 0.0
         try:
-            usage_res = self.client.table("ai_usage_log") \
+            usage_query = self.client.table("ai_usage_log") \
                 .select("cost_usd") \
-                .eq("agent", "extraction") \
-                .limit(100000) \
-                .execute()
+                .eq("agent", "extraction")
+            usage_res = (_scoped(usage_query).limit(100000).execute())
             usage_rows = usage_res.data or []
             calls = len(usage_rows)
             cost_usd = round(sum(float(r.get("cost_usd") or 0) for r in usage_rows), 6)
@@ -6094,4 +6100,5 @@ class SupabaseStorage(Storage):
             "ai_calls": calls,
             "est_cost_usd": cost_usd,
             "percent_drained": round((total - unprocessed) * 100 / total, 2) if total else 0.0,
+            "tenant_id": tenant_id,
         }
