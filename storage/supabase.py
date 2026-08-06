@@ -214,14 +214,14 @@ _TYPED_COMMON_READ_COLUMNS = (
     "correction_confidence,corrected_at,created_at,updated_at,legacy_source_id"
 )
 _TYPED_READ_COLUMNS_BY_TABLE = {
-    "residential_sale_listings": "bhk,configuration_type,bathroom_count,carpet_area_sqft,built_up_area_sqft,super_built_up_area_sqft,area_raw_text,total_asking_price,price_per_sqft,price_basis,price_raw_text,price_qualifier,furnishing_status,possession_status,possession_date,car_parking_count,parking_type,floor_range,building_amenities,unit_amenities,amenities_unverified_claim,property_view,orientation,developer_name",
+    "residential_sale_listings": "bhk,configuration_type,bathroom_count,carpet_area_sqft,built_up_area_sqft,super_built_up_area_sqft,area_raw_text,total_asking_price,price_per_sqft,price_basis,price_raw_text,price_qualifier,furnishing_status,possession_status,possession_date,car_parking_count,parking_type,floor_range,building_amenities,unit_amenities,amenities_unverified_claim,property_view,orientation,developer_name,broker_company,contacts,showing_instructions,contact_instructions,availability_status,brokerage_context,co_brokered,wing,floor_min,floor_max,floor_label,original_bhk,current_bhk,is_converted_unit,is_combination_unit,configuration_details,can_sell_separately,balcony_area_sqft,balcony_area_raw_text,terrace_area_sqft,covered_terrace_area_sqft,terrace_area_raw_text,sellable_area_sqft,computed_total_asking_price,computed_price_confidence,price_math,unit_condition,vastu_compliant,view_description,parking_details,society_restrictions,society_restrictions_raw,unstructured_facts",
     "residential_rent_listings": "bhk,configuration_type,bathroom_count,carpet_area_sqft,built_up_area_sqft,area_raw_text,monthly_rent,rent_per_sqft,price_basis,price_raw_text,price_qualifier,deposit_amount,deposit_months,deposit_applicable,deposit_raw_text,furnishing_status,possession_status,available_from,car_parking_count,parking_type,floor_range,building_amenities,unit_amenities,amenities_unverified_claim,pet_policy,tenant_type_preference,sharing_allowed,tenant_nationality_preference,company_lease_criteria,food_preference,lease_term_type,property_view,brokerage_type",
     "commercial_sale_listings": "commercial_use_type,carpet_area_sqft,built_up_area_sqft,chargeable_area_sqft,super_built_up_area_sqft,mezzanine_area_sqft,saleable_area_sqft,area_raw_text,total_asking_price,price_per_sqft,price_basis,price_raw_text,price_qualifier,fitout_status,ceiling_height,floor_level,floor_range,floor_count,has_mezzanine,has_staircase,car_parking_count,parking_type,building_amenities,has_central_ac,has_power_backup,has_lift,brokerage_type,developer_name",
     "commercial_rent_listings": "commercial_use_type,carpet_area_sqft,built_up_area_sqft,chargeable_area_sqft,mezzanine_area_sqft,area_raw_text,monthly_rent,rent_per_sqft,price_basis,price_raw_text,price_qualifier,deposit_amount,deposit_months,deposit_applicable,deposit_raw_text,fitout_status,ceiling_height,floor_level,floor_range,floor_count,has_mezzanine,car_parking_count,parking_type,building_amenities,has_central_ac,has_power_backup,has_lift,lease_term_type,brokerage_type",
     "residential_sale_requirements": "bhk,configuration_type,bathroom_count,carpet_area_sqft,built_up_area_sqft,super_built_up_area_sqft,area_raw_text,furnishing_status,possession_status,possession_date,car_parking_count,parking_type,floor_range,building_amenities,unit_amenities,amenities_unverified_claim,property_view,orientation,developer_name,budget_min,budget_max,budget_currency,area_min_sqft,area_max_sqft,locality_options,is_flexible,urgency,status,bhk_options,configuration_preference,carpet_area_min_sqft,carpet_area_max_sqft,built_up_area_min_sqft,built_up_area_max_sqft,budget_per_sqft_max,furnishing_preference,possession_preference,age_preference,micro_market_options,building_preferences,car_parking_min,floor_preference,view_preference,amenity_requirements,buyer_type,nationality,loan_preapproved,brokerage_willingness",
-    "residential_rent_requirements": "bhk,configuration_type,bathroom_count,carpet_area_sqft,built_up_area_sqft,super_built_up_area_sqft,area_raw_text,furnishing_status,possession_status,possession_date,car_parking_count,parking_type,floor_range,building_amenities,unit_amenities,amenities_unverified_claim,property_view,orientation,developer_name,budget_min,budget_max,budget_currency,area_min_sqft,area_max_sqft,locality_options,is_flexible,urgency,status,bhk_options,configuration_preference,carpet_area_min_sqft,carpet_area_max_sqft,built_up_area_min_sqft,built_up_area_max_sqft,budget_per_sqft_max,furnishing_preference,possession_preference,age_preference,micro_market_options,building_preferences,car_parking_min,floor_preference,view_preference,amenity_requirements,buyer_type,nationality,loan_preapproved,brokerage_willingness,deposit_budget_max,available_from,tenant_type,has_pets,sharing_acceptable,food_preference,lease_term_preference",
-    "commercial_sale_requirements": "bhk,configuration_type,bathroom_count,carpet_area_sqft,built_up_area_sqft,super_built_up_area_sqft,area_raw_text,furnishing_status,possession_status,possession_date,car_parking_count,parking_type,floor_range,building_amenities,unit_amenities,amenities_unverified_claim,property_view,orientation,developer_name,budget_min,budget_max,budget_currency,area_min_sqft,area_max_sqft,locality_options,is_flexible,urgency,status,bhk_options,configuration_preference,carpet_area_min_sqft,carpet_area_max_sqft,built_up_area_min_sqft,built_up_area_max_sqft,budget_per_sqft_max,furnishing_preference,possession_preference,age_preference,micro_market_options,building_preferences,car_parking_min,floor_preference,view_preference,amenity_requirements,buyer_type,nationality,loan_preapproved,brokerage_willingness,commercial_use_type,chargeable_area_max_sqft,fitout_preference,min_ceiling_height,needs_mezzanine,needs_lift,needs_power_backup,needs_central_ac,min_power_load_kw,oc_required",
-    "commercial_rent_requirements": "bhk,configuration_type,bathroom_count,carpet_area_sqft,built_up_area_sqft,super_built_up_area_sqft,area_raw_text,furnishing_status,possession_status,possession_date,car_parking_count,parking_type,floor_range,building_amenities,unit_amenities,amenities_unverified_claim,property_view,orientation,developer_name,budget_min,budget_max,budget_currency,area_min_sqft,area_max_sqft,locality_options,is_flexible,urgency,status,bhk_options,configuration_preference,carpet_area_min_sqft,carpet_area_max_sqft,built_up_area_min_sqft,built_up_area_max_sqft,budget_per_sqft_max,furnishing_preference,possession_preference,age_preference,micro_market_options,building_preferences,car_parking_min,floor_preference,view_preference,amenity_requirements,buyer_type,nationality,loan_preapproved,brokerage_willingness,commercial_use_type,chargeable_area_max_sqft,fitout_preference,min_ceiling_height,needs_mezzanine,needs_lift,needs_power_backup,needs_central_ac,min_power_load_kw,oc_required,deposit_budget_max,available_from,tenant_type,has_pets,sharing_acceptable,lease_term_preference",
+    "residential_rent_requirements": "bhk,configuration_type,bathroom_count,carpet_area_sqft,built_up_area_sqft,super_built_up_area_sqft,area_raw_text,furnishing_status,possession_status,possession_date,car_parking_count,parking_type,floor_range,building_amenities,unit_amenities,amenities_unverified_claim,property_view,orientation,developer_name,budget_min,budget_max,budget_currency,area_min_sqft,area_max_sqft,locality_options,is_flexible,urgency,status,bhk_options,configuration_preference,carpet_area_min_sqft,carpet_area_max_sqft,built_up_area_min_sqft,built_up_area_max_sqft,budget_per_sqft_max,furnishing_preference,possession_preference,age_preference,micro_market_options,building_preferences,car_parking_min,floor_preference,view_preference,amenity_requirements,buyer_type,nationality,loan_preapproved,brokerage_willingness,deposit_budget_max,tenant_type,has_pets,sharing_acceptable,food_preference,lease_term_preference",
+    "commercial_sale_requirements": "carpet_area_sqft,built_up_area_sqft,super_built_up_area_sqft,area_raw_text,furnishing_status,possession_status,possession_date,car_parking_count,parking_type,floor_range,building_amenities,unit_amenities,amenities_unverified_claim,property_view,orientation,developer_name,budget_min,budget_max,budget_currency,area_min_sqft,area_max_sqft,locality_options,is_flexible,urgency,status,carpet_area_min_sqft,carpet_area_max_sqft,built_up_area_min_sqft,built_up_area_max_sqft,budget_per_sqft_max,furnishing_preference,possession_preference,micro_market_options,building_preferences,car_parking_min,floor_preference,view_preference,amenity_requirements,buyer_type,loan_preapproved,brokerage_willingness,commercial_use_type,chargeable_area_max_sqft,fitout_preference,min_ceiling_height,needs_mezzanine,needs_lift,needs_power_backup,needs_central_ac,min_power_load_kw,oc_required",
+    "commercial_rent_requirements": "carpet_area_sqft,built_up_area_sqft,super_built_up_area_sqft,area_raw_text,furnishing_status,possession_status,possession_date,car_parking_count,parking_type,floor_range,building_amenities,unit_amenities,amenities_unverified_claim,property_view,orientation,developer_name,budget_min,budget_max,budget_currency,area_min_sqft,area_max_sqft,locality_options,is_flexible,urgency,status,carpet_area_min_sqft,carpet_area_max_sqft,built_up_area_min_sqft,built_up_area_max_sqft,budget_per_sqft_max,furnishing_preference,possession_preference,micro_market_options,building_preferences,car_parking_min,floor_preference,view_preference,amenity_requirements,buyer_type,loan_preapproved,brokerage_willingness,commercial_use_type,chargeable_area_max_sqft,fitout_preference,min_ceiling_height,needs_mezzanine,needs_lift,needs_power_backup,needs_central_ac,min_power_load_kw,oc_required,deposit_budget_max,tenant_type,has_pets,sharing_acceptable,lease_term_preference",
 }
 
 
@@ -2465,6 +2465,7 @@ class SupabaseStorage(Storage):
         typed.update({
             "bhk": bhk_value, "carpet_area_sqft": area_sqft,
             "built_up_area_sqft": data.get("built_up_area_sqft"),
+            "super_built_up_area_sqft": data.get("super_built_up_area_sqft"),
             "area_raw_text": data.get("area") or data.get("location_raw"),
             "bathroom_count": data.get("bathroom_count"),
             "car_parking_count": data.get("car_parking_count"),
@@ -2515,6 +2516,39 @@ class SupabaseStorage(Storage):
             "unit_amenities": data.get("amenities") or [],
             "amenities_unverified_claim": data.get("amenities_unverified_claim"),
             "deal_tags": data.get("deal_tags") or [],
+            "broker_company": data.get("broker_company"),
+            "contacts": data.get("contacts") or [],
+            "showing_instructions": data.get("showing_instructions"),
+            "contact_instructions": data.get("contact_instructions"),
+            "availability_status": data.get("availability_status"),
+            "brokerage_context": data.get("brokerage_context"),
+            "co_brokered": data.get("co_brokered"),
+            "wing": data.get("wing"),
+            "floor_min": data.get("floor_min"),
+            "floor_max": data.get("floor_max"),
+            "floor_label": data.get("floor_label"),
+            "original_bhk": data.get("original_bhk"),
+            "current_bhk": data.get("current_bhk"),
+            "is_converted_unit": data.get("is_converted_unit"),
+            "is_combination_unit": data.get("is_combination_unit"),
+            "configuration_details": data.get("configuration_details"),
+            "can_sell_separately": data.get("can_sell_separately"),
+            "balcony_area_sqft": data.get("balcony_area_sqft"),
+            "balcony_area_raw_text": data.get("balcony_area_raw_text"),
+            "terrace_area_sqft": data.get("terrace_area_sqft"),
+            "covered_terrace_area_sqft": data.get("covered_terrace_area_sqft"),
+            "terrace_area_raw_text": data.get("terrace_area_raw_text"),
+            "sellable_area_sqft": data.get("sellable_area_sqft"),
+            "computed_total_asking_price": data.get("computed_total_asking_price"),
+            "computed_price_confidence": data.get("computed_price_confidence"),
+            "price_math": data.get("price_math") or {},
+            "unit_condition": data.get("unit_condition"),
+            "vastu_compliant": data.get("vastu_compliant"),
+            "view_description": data.get("view_description"),
+            "parking_details": data.get("parking_details") or {},
+            "society_restrictions": data.get("society_restrictions") or [],
+            "society_restrictions_raw": data.get("society_restrictions_raw"),
+            "unstructured_facts": data.get("unstructured_facts") or {},
         })
         if transaction_type == "rent" and rent_price_needs_review(typed.get("monthly_rent"), raw_price_text):
             typed["needs_review"] = True
@@ -2540,7 +2574,7 @@ class SupabaseStorage(Storage):
                     data.get("commercial_use_type") or data.get("property_type")
                 ] if (data.get("commercial_use_type") or data.get("property_type")) else []
         allowed_by_table = {
-            "residential_sale_listings": {"bhk","configuration_type","bathroom_count","carpet_area_sqft","built_up_area_sqft","area_raw_text","total_asking_price","price_per_sqft","price_basis","price_raw_text","price_qualifier","furnishing_status","possession_status","possession_date","car_parking_count","parking_type","floor_range","building_amenities","unit_amenities","amenities_unverified_claim","oc_status","brokerage_type","developer_name"},
+            "residential_sale_listings": {"bhk","configuration_type","bathroom_count","carpet_area_sqft","built_up_area_sqft","super_built_up_area_sqft","area_raw_text","total_asking_price","price_per_sqft","price_basis","price_raw_text","price_qualifier","furnishing_status","possession_status","possession_date","car_parking_count","parking_type","floor_range","building_amenities","unit_amenities","amenities_unverified_claim","oc_status","brokerage_type","developer_name","broker_company","contacts","showing_instructions","contact_instructions","availability_status","brokerage_context","co_brokered","wing","floor_min","floor_max","floor_label","original_bhk","current_bhk","is_converted_unit","is_combination_unit","configuration_details","can_sell_separately","balcony_area_sqft","balcony_area_raw_text","terrace_area_sqft","covered_terrace_area_sqft","terrace_area_raw_text","sellable_area_sqft","computed_total_asking_price","computed_price_confidence","price_math","unit_condition","vastu_compliant","view_description","parking_details","society_restrictions","society_restrictions_raw","unstructured_facts"},
             "residential_rent_listings": {"bhk","configuration_type","bathroom_count","carpet_area_sqft","built_up_area_sqft","area_raw_text","monthly_rent","rent_per_sqft","price_basis","price_raw_text","price_qualifier","deposit_amount","deposit_months","deposit_applicable","deposit_raw_text","furnishing_status","possession_status","available_from","car_parking_count","parking_type","floor_range","building_amenities","unit_amenities","amenities_unverified_claim","pet_policy","tenant_type_preference","sharing_allowed","company_lease_criteria","tenant_nationality_preference","lease_term_type","brokerage_type"},
             "commercial_sale_listings": {"commercial_use_type","carpet_area_sqft","built_up_area_sqft","area_raw_text","total_asking_price","price_per_sqft","price_basis","price_raw_text","price_qualifier","fitout_status","ceiling_height","floor_range","car_parking_count","parking_type","oc_status","building_amenities","has_central_ac","has_power_backup","has_lift","brokerage_type","developer_name"},
             "commercial_rent_listings": {"commercial_use_type","carpet_area_sqft","built_up_area_sqft","area_raw_text","monthly_rent","rent_per_sqft","price_basis","price_raw_text","price_qualifier","deposit_amount","deposit_months","deposit_applicable","deposit_raw_text","fitout_status","ceiling_height","floor_range","car_parking_count","parking_type","building_amenities","has_central_ac","has_power_backup","has_lift","lease_term_type","brokerage_type"},
@@ -3677,9 +3711,42 @@ class SupabaseStorage(Storage):
             "sharing_allowed": data.get("sharing_allowed"),
             "company_lease_criteria": data.get("company_lease_criteria"),
             "tenant_nationality_preference": data.get("tenant_nationality_preference"),
+            "broker_company": data.get("broker_company"),
+            "contacts": data.get("contacts") or [],
+            "showing_instructions": data.get("showing_instructions"),
+            "contact_instructions": data.get("contact_instructions"),
+            "availability_status": data.get("availability_status"),
+            "brokerage_context": data.get("brokerage_context"),
+            "co_brokered": data.get("co_brokered"),
+            "wing": data.get("wing"),
+            "floor_min": data.get("floor_min"),
+            "floor_max": data.get("floor_max"),
+            "floor_label": data.get("floor_label"),
+            "original_bhk": data.get("original_bhk"),
+            "current_bhk": data.get("current_bhk"),
+            "is_converted_unit": data.get("is_converted_unit"),
+            "is_combination_unit": data.get("is_combination_unit"),
+            "configuration_details": data.get("configuration_details"),
+            "can_sell_separately": data.get("can_sell_separately"),
+            "balcony_area_sqft": data.get("balcony_area_sqft"),
+            "balcony_area_raw_text": data.get("balcony_area_raw_text"),
+            "terrace_area_sqft": data.get("terrace_area_sqft"),
+            "covered_terrace_area_sqft": data.get("covered_terrace_area_sqft"),
+            "terrace_area_raw_text": data.get("terrace_area_raw_text"),
+            "sellable_area_sqft": data.get("sellable_area_sqft"),
+            "computed_total_asking_price": data.get("computed_total_asking_price"),
+            "computed_price_confidence": data.get("computed_price_confidence"),
+            "price_math": data.get("price_math") or {},
+            "unit_condition": data.get("unit_condition"),
+            "vastu_compliant": data.get("vastu_compliant"),
+            "view_description": data.get("view_description"),
+            "parking_details": data.get("parking_details") or {},
+            "society_restrictions": data.get("society_restrictions") or [],
+            "society_restrictions_raw": data.get("society_restrictions_raw"),
+            "unstructured_facts": data.get("unstructured_facts") or {},
         }
         allowed = {
-            "residential_sale_listings": {"raw_message_id","tenant_id","listing_index","source_fingerprint","legacy_source_id","asset_type","transaction_type","building_name","locality_raw","locality_resolved","micro_market","landmark_name","broker_id","broker_name","broker_phone","summary_title","raw_payload","deal_tags","additional_charges","validation_flags","needs_review","extraction_confidence","bhk","carpet_area_sqft","built_up_area_sqft","area_raw_text","total_asking_price","price_per_sqft","price_raw_text","price_basis","furnishing_status","possession_status","possession_date","floor_range","car_parking_count","parking_type","oc_status","brokerage_type","building_amenities","unit_amenities","amenities_unverified_claim","configuration_type"},
+            "residential_sale_listings": {"raw_message_id","tenant_id","listing_index","source_fingerprint","legacy_source_id","asset_type","transaction_type","building_name","locality_raw","locality_resolved","micro_market","landmark_name","broker_id","broker_name","broker_phone","summary_title","raw_payload","deal_tags","additional_charges","validation_flags","needs_review","extraction_confidence","bhk","carpet_area_sqft","built_up_area_sqft","super_built_up_area_sqft","area_raw_text","total_asking_price","price_per_sqft","price_raw_text","price_basis","furnishing_status","possession_status","possession_date","floor_range","car_parking_count","parking_type","oc_status","brokerage_type","building_amenities","unit_amenities","amenities_unverified_claim","configuration_type","broker_company","contacts","showing_instructions","contact_instructions","availability_status","brokerage_context","co_brokered","wing","floor_min","floor_max","floor_label","original_bhk","current_bhk","is_converted_unit","is_combination_unit","configuration_details","can_sell_separately","balcony_area_sqft","balcony_area_raw_text","terrace_area_sqft","covered_terrace_area_sqft","terrace_area_raw_text","sellable_area_sqft","computed_total_asking_price","computed_price_confidence","price_math","unit_condition","vastu_compliant","view_description","parking_details","society_restrictions","society_restrictions_raw","unstructured_facts"},
             "residential_rent_listings": {"raw_message_id","tenant_id","listing_index","source_fingerprint","legacy_source_id","asset_type","transaction_type","building_name","locality_raw","locality_resolved","micro_market","landmark_name","broker_id","broker_name","broker_phone","summary_title","raw_payload","deal_tags","additional_charges","validation_flags","needs_review","extraction_confidence","bhk","carpet_area_sqft","built_up_area_sqft","area_raw_text","monthly_rent","rent_per_sqft","price_raw_text","price_basis","furnishing_status","possession_status","available_from","floor_range","car_parking_count","parking_type","deposit_amount","deposit_applicable","lease_term_type","brokerage_type","building_amenities","unit_amenities","amenities_unverified_claim","pet_policy","tenant_type_preference","sharing_allowed","company_lease_criteria","tenant_nationality_preference"},
             "commercial_sale_listings": {"raw_message_id","tenant_id","listing_index","source_fingerprint","legacy_source_id","asset_type","transaction_type","building_name","locality_raw","locality_resolved","micro_market","landmark_name","broker_id","broker_name","broker_phone","summary_title","raw_payload","deal_tags","additional_charges","validation_flags","needs_review","extraction_confidence","commercial_use_type","occupancy_status","carpet_area_sqft","built_up_area_sqft","area_raw_text","total_asking_price","price_per_sqft","price_raw_text","price_basis","fitout_status","ceiling_height","floor_range","car_parking_count","parking_type","oc_status","brokerage_type","building_amenities"},
             "commercial_rent_listings": {"raw_message_id","tenant_id","listing_index","source_fingerprint","legacy_source_id","asset_type","transaction_type","building_name","locality_raw","locality_resolved","micro_market","landmark_name","broker_id","broker_name","broker_phone","summary_title","raw_payload","deal_tags","additional_charges","validation_flags","needs_review","extraction_confidence","commercial_use_type","carpet_area_sqft","built_up_area_sqft","area_raw_text","monthly_rent","rent_per_sqft","price_raw_text","price_basis","fitout_status","ceiling_height","floor_range","car_parking_count","parking_type","deposit_amount","deposit_applicable","lease_term_type","brokerage_type","building_amenities"},
@@ -4131,8 +4198,22 @@ class SupabaseStorage(Storage):
         # sequence for building_id.  A stable hash keeps retries idempotent
         # and avoids a max(id)+1 race between workers.
         digest = hashlib.sha1(name.casefold().encode("utf-8")).hexdigest()[:12].upper()
+        stable_building_id = f"BLD-{digest}"
+        existing = self.client.table("buildings").select("*").eq(
+            "building_id", stable_building_id
+        ).limit(1).execute()
+        if existing.data:
+            building = existing.data[0]
+            if micro_market and not building.get("micro_market"):
+                updated = self.client.table("buildings").update({
+                    "micro_market": micro_market,
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                }).eq("id", building["id"]).execute()
+                if updated.data:
+                    building = updated.data[0]
+            return building
         payload = {
-            "building_id": f"BLD-{digest}",
+            "building_id": stable_building_id,
             "canonical_name": name,
             "micro_market": micro_market,
             "status": "discovered",
@@ -4144,9 +4225,13 @@ class SupabaseStorage(Storage):
             return result.data[0] if result.data else None
         except Exception:
             # A concurrent insert is a normal race; return the winner.
-            retry = self.client.table("buildings").select("*").ilike(
-                "canonical_name", name
+            retry = self.client.table("buildings").select("*").eq(
+                "building_id", stable_building_id
             ).limit(1).execute()
+            if not retry.data:
+                retry = self.client.table("buildings").select("*").ilike(
+                    "canonical_name", name
+                ).limit(1).execute()
             return retry.data[0] if retry.data else None
 
     def ensure_building_from_observation(self, canonical_name: str,

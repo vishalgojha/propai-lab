@@ -364,15 +364,57 @@ def classify_message_type(text: str) -> tuple[str, str]:
 
 
 _FOCUSED_FIELDS = {
-    ("residential", "sale", False): "bhk, carpet_area_sqft, built_up_area_sqft, price, locality, building_name, furnishing_status, possession_status, possession_date, bathroom_count, car_parking_count, parking_type, oc_status, configuration_type, floor_range, property_view, age_of_property, building_amenities, amenities, amenities_unverified_claim, brokerage_type, token_amount, payment_plan, deal_tags, title",
+    ("residential", "sale", False): "bhk, original_bhk, current_bhk, configuration_type, configuration_details, is_converted_unit, is_combination_unit, can_sell_separately, carpet_area_sqft, built_up_area_sqft, super_built_up_area_sqft, balcony_area_sqft, balcony_area_raw_text, terrace_area_sqft, covered_terrace_area_sqft, terrace_area_raw_text, sellable_area_sqft, price, price_basis, price_math, locality, building_name, wing, furnishing_status, unit_condition, availability_status, possession_status, possession_date, bathroom_count, car_parking_count, parking_type, parking_details, floor_range, floor_min, floor_max, floor_label, property_view, view_description, vastu_compliant, age_of_property, building_amenities, amenities, amenities_unverified_claim, brokerage_type, brokerage_context, co_brokered, token_amount, payment_plan, society_restrictions, society_restrictions_raw, showing_instructions, contact_instructions, broker_company, contacts, unstructured_facts, deal_tags, title",
     ("residential", "rent", False): "bhk, carpet_area_sqft, built_up_area_sqft, price, locality, building_name, furnishing_status, possession_status, possession_date, bathroom_count, car_parking_count, parking_type, floor_range, building_amenities, amenities, amenities_unverified_claim, deposit_amount, deposit_months, deposit_raw_text, pet_policy, tenant_type_preference, sharing_allowed, food_preference, lease_term_type, lock_in_period_months, notice_period_months, brokerage_type, deal_tags, title",
     ("commercial", "sale", False): "commercial_use_type, carpet_area_sqft, built_up_area_sqft, chargeable_area_sqft, price, price_basis, locality, building_name, fitout_status, occupancy_status, ceiling_height, floor_range, car_parking_count, power_load_kw, cabin_count, workstation_count, conference_room_count, meeting_room_count, washroom_count, pantry_type, has_central_ac, has_power_backup, has_lift, building_amenities, brokerage_type, deal_tags, title",
     ("commercial", "rent", False): "commercial_use_type, carpet_area_sqft, built_up_area_sqft, chargeable_area_sqft, price, price_basis, locality, building_name, fitout_status, ceiling_height, floor_range, deposit_amount, deposit_months, deposit_raw_text, cam_amount, cam_applicable, cam_unit, power_load_kw, lease_term_type, lock_in_period_months, notice_period_months, escalation_pct, escalation_frequency, rent_free_period_months, fitout_period_months, lease_deed_type, sub_leasing_allowed, building_amenities, brokerage_type, deal_tags, title",
     ("residential", "sale", True): "bhk_options, budget_min, budget_max, area_min_sqft, area_max_sqft, locality_options, building_preferences, furnishing_preference, possession_preference, car_parking_min, buyer_type, transaction_nature, urgency, is_flexible, deal_tags, title",
-    ("residential", "rent", True): "bhk_options, budget_min, budget_max, area_min_sqft, area_max_sqft, locality_options, building_preferences, furnishing_preference, possession_preference, available_from, deposit_budget_max, tenant_type, nationality, has_pets, car_parking_needed, sharing_acceptable, food_preference, lease_term_preference, company_lease_criteria, urgency, is_flexible, deal_tags, title",
+    ("residential", "rent", True): "bhk_options, budget_min, budget_max, area_min_sqft, area_max_sqft, locality_options, building_preferences, furnishing_preference, possession_preference, deposit_budget_max, tenant_type, nationality, has_pets, car_parking_needed, sharing_acceptable, food_preference, lease_term_preference, company_lease_criteria, urgency, is_flexible, deal_tags, title",
     ("commercial", "sale", True): "commercial_use_type, area_min_sqft, area_max_sqft, budget_min, budget_max, budget_per_sqft_max, locality_options, fitout_preference, car_parking_min, needs_mezzanine, needs_lift, needs_power_backup, needs_central_ac, min_power_load_kw, buyer_type, urgency, is_flexible, deal_tags, title",
     ("commercial", "rent", True): "commercial_use_type, area_min_sqft, area_max_sqft, budget_min, budget_max, budget_per_sqft_max, locality_options, fitout_preference, car_parking_min, needs_mezzanine, needs_lift, needs_power_backup, needs_central_ac, min_power_load_kw, deposit_budget_max, lease_term_preference, max_lock_in_months, max_notice_period_months, company_type, team_size, urgency, is_flexible, deal_tags, title",
 }
+
+
+_RESIDENTIAL_SALE_EXTRACTION_RULES = """
+Residential sale listing rules:
+- Bulk broadcasts: emit one item per property row/block. If a heading such as
+  "3 BHK FOR SALE" or "ANDHERI WEST" applies to following blocks, carry that
+  context into each item that uses it. Do not let one block's facts leak into
+  another unrelated block.
+- Source evidence: each item should be faithful to its listing slice. Shared
+  footer contact/company details may be copied to every item, but broker footer
+  text must not become building, locality, price, or requirement data.
+- "+1": "Available in+1", "available in +1", "my +1", or standalone "+1"
+  means co-brokered. Set co_brokered=true and brokerage_context="+1". Never
+  treat this as floor, area, deposit, price, or BHK.
+- Terrace/balcony: never add balcony or terrace area into carpet_area_sqft.
+  Use balcony_area_sqft/balcony_area_raw_text and
+  terrace_area_sqft/covered_terrace_area_sqft/terrace_area_raw_text. Preserve
+  the full wording in area_raw_text.
+- Price math: if a PSF quote and explicit sellable/chargeable area are stated,
+  set sellable_area_sqft, computed_total_asking_price, computed_price_confidence,
+  and price_math with formula/inputs/source. If only carpet plus terrace is
+  stated and no sellable area is stated, do not assume terrace weighting; record
+  the areas and leave computed_total_asking_price null or low-confidence.
+- Contacts: extract every explicit contact number, up to 8, into contacts.
+  Preserve associated person/company names when present. broker_phone is only
+  the primary contact; contacts should keep the additional team numbers.
+- Society restrictions: extract explicit diet/community/religion/society
+  conditions exactly as written into society_restrictions_raw and canonical
+  tags in society_restrictions. Never infer these restrictions.
+- Showing/access: "1 day notice", "key with me", "for inspection contact",
+  "call for details" and similar operational instructions belong in
+  showing_instructions or contact_instructions.
+- Unit configuration: "3+2 BHK combination" means is_combination_unit=true and
+  configuration_details. "3BHK converted into 2BHK" means
+  is_converted_unit=true, original_bhk=3, current_bhk=2, bhk/current_bhk=2.
+- Wing/floor: "G wing" means wing="G". "below 10th floor" means
+  floor_label="below 10th floor" and floor_max=9. "higher floor" means
+  floor_label="higher floor"; do not invent a floor number.
+- Views/vastu: keep canonical searchable view in property_view when obvious,
+  but preserve rich wording in view_description. "vastu compliant" means
+  vastu_compliant=true; do not put it in orientation.
+"""
 
 
 def _get_extraction_prompt(
@@ -384,6 +426,11 @@ def _get_extraction_prompt(
     """Build a small route-specific prompt instead of sending all 85 fields."""
     fields = _FOCUSED_FIELDS[(asset_type, transaction_type, is_requirement)]
     side = "DEMAND/REQUIREMENT" if is_requirement else "SUPPLY/LISTING"
+    route_rules = (
+        _RESIDENTIAL_SALE_EXTRACTION_RULES
+        if (asset_type, transaction_type, is_requirement) == ("residential", "sale", False)
+        else ""
+    )
     expected_listing_type = "requirement" if is_requirement else transaction_type
     listing_type_rule = (
         f'- listing_type: exactly "{expected_listing_type}".'
@@ -409,6 +456,7 @@ Every item MUST include these discriminator fields:
 Fields allowed for the remaining route-specific data: {fields}.
 {_PRICE_PARSING_INSTRUCTIONS}
 {_MUMBAI_BROKER_GLOSSARY}
+{route_rules}
 For listing price, return price={{amount, unit, period, raw_price_text}}. For a requirement,
 return budget_min/budget_max instead of pretending the budget is a listing price.
 Return no markdown or explanation."""
@@ -494,7 +542,17 @@ _PASSTHROUGH_FIELDS = frozenset({
     "meeting_room_count", "washroom_count", "pantry_type",
     "has_central_ac", "has_power_backup", "has_lift", "building_amenities",
     "amenities_unverified_claim", "bathroom_count", "parking_count",
-    "property_view", "age_of_property", "configuration_type",
+    "property_view", "view_description", "age_of_property", "configuration_type",
+    "configuration_details", "original_bhk", "current_bhk", "is_converted_unit",
+    "is_combination_unit", "can_sell_separately", "availability_status",
+    "brokerage_context", "co_brokered", "wing", "floor_min", "floor_max",
+    "floor_label", "balcony_area_sqft", "balcony_area_raw_text",
+    "terrace_area_sqft", "covered_terrace_area_sqft", "terrace_area_raw_text",
+    "sellable_area_sqft", "computed_total_asking_price",
+    "computed_price_confidence", "price_math", "unit_condition",
+    "vastu_compliant", "parking_details", "society_restrictions",
+    "society_restrictions_raw", "broker_company", "contacts",
+    "showing_instructions", "contact_instructions", "unstructured_facts",
     "possession_date", "oc_status", "brokerage_type", "token_amount",
     "payment_plan", "transaction_nature", "deposit_amount", "deposit_months",
     "deposit_raw_text", "cam_amount", "cam_applicable", "cam_unit",
@@ -520,7 +578,10 @@ _NUMERIC_PASSTHROUGH_FIELDS = frozenset({
     "deposit_months", "cam_amount", "lock_in_period_months",
     "notice_period_months", "area_min_sqft", "area_max_sqft",
     "budget_min", "budget_max", "budget_per_sqft_max", "car_parking_min",
-    "min_power_load_kw",
+    "min_power_load_kw", "original_bhk", "current_bhk", "floor_min",
+    "floor_max", "balcony_area_sqft", "terrace_area_sqft",
+    "covered_terrace_area_sqft", "sellable_area_sqft",
+    "computed_total_asking_price",
 })
 
 _INTEGER_PASSTHROUGH_FIELDS = frozenset({
@@ -528,6 +589,7 @@ _INTEGER_PASSTHROUGH_FIELDS = frozenset({
     "conference_room_count", "meeting_room_count", "washroom_count",
     "bathroom_count", "parking_count", "deposit_months",
     "lock_in_period_months", "notice_period_months", "car_parking_min",
+    "floor_min", "floor_max",
 })
 
 
