@@ -722,6 +722,7 @@ async def _run_workspace_agent(
     tenant_id: str | None = None,
     system_suffix: str = "",
     sender_name: str = "",
+    workspace_owner_name: str = "",
 ) -> dict:
     from ai_chat_engine import get_memory, load_data as _load_data, load_live_data as _load_live_data
     from ai_chat_engine import build_system_prompt, get_model_reply, normalize_workspace_response
@@ -795,6 +796,8 @@ WHATSAPP SELF-CHAT MODE:
                 system_prompt += '\nFIRST TURN: Begin with exactly one brief identity line such as "Hi — I\'m PropAI, your property assistant."\n'
         if sender_name.strip():
             system_prompt += f"\nVERIFIED SENDER PROFILE NAME: {sender_name.strip()}\n"
+        if workspace_owner_name.strip():
+            system_prompt += f"\nVERIFIED WORKSPACE OWNER NAME: {workspace_owner_name.strip()}. If asked who owns or runs PropAI, answer directly with this name.\n"
         if relevant_obs:
             obs_lines = ["\nKNOWLEDGE OBSERVATIONS (accumulated from previous conversations):"]
             for obs in relevant_obs:
@@ -1789,11 +1792,25 @@ async def _handle_waba_agent_reply(to: str, text: str, inbound_message_id: str, 
                     ).strip()
             except Exception:
                 pass
+        workspace_owner_name = ""
+        try:
+            owner = next(
+                (member for member in storage.list_team_members(org_id=tenant_id) if str(member.get("role") or "").lower() == "owner"),
+                None,
+            )
+            owner_candidate = str((owner or {}).get("name") or "").strip()
+            owner_phone = _normalize_real_phone((owner or {}).get("phone") or (owner or {}).get("mobile_number"))
+            sender_phone = _normalize_real_phone(to)
+            if owner_candidate and (owner_phone == sender_phone or owner_candidate.casefold() == sender_name.strip().casefold()):
+                workspace_owner_name = owner_candidate
+        except Exception:
+            pass
         response = await _run_workspace_agent(
             [{"role": "user", "content": text[:1800]}],
             session_id=f"waba:{tenant_id}:{to}",
             tenant_id=tenant_id,
             sender_name=sender_name,
+            workspace_owner_name=workspace_owner_name,
         )
         if isinstance(response, dict) and response.get("error"):
             raise RuntimeError(response.get("message") or response["error"])
