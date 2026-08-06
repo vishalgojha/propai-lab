@@ -8,6 +8,7 @@ import { MapPin, Search, X } from "lucide-react";
 import ListingCard, { type ListingItem } from "@/components/ListingCard";
 import ResizablePanel from "@/components/ResizablePanel";
 import { getBuildings, marketSearchListings, parseSearchQuery } from "@/lib/api";
+import { formatBuildingName } from "@/lib/listing-display";
 
 type Building = {
   id?: number | string;
@@ -135,7 +136,7 @@ export function BuildingMapView() {
   const searchGroups = useMemo<ListingGroup[]>(() => {
     const groups = new Map<string, ListingGroup>();
     listings.forEach((item) => {
-      const name = item.building_name?.trim() || "Unknown building";
+      const name = formatBuildingName(item.building_name);
       const locality = item.micro_market?.trim() || item.location_label?.trim() || "";
       const key = `listing-${name.toLowerCase()}|${locality.toLowerCase()}`;
       const existing = groups.get(key);

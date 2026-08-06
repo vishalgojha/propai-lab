@@ -679,7 +679,7 @@ async def market_search(
             "furnishing": d.get("furnishing"),
             "location_label": d.get("location_label"),
             "street_name": d.get("street_name"),
-            "building_name": d.get("building_name") or "Unknown Building",
+            "building_name": d.get("building_name") or "On Request",
             "building_address": d.get("building_address"),
             "landmark_name": d.get("landmark_name"),
             "micro_market": d.get("micro_market"),
@@ -706,7 +706,7 @@ async def market_search(
     grouped = {}
     if group_by_building:
         for r in results:
-            bname = r["building_name"] or "Unknown Building"
+            bname = r["building_name"] or "On Request"
             if bname not in grouped:
                 grouped[bname] = {"rentals": 0, "sales": 0, "listings": []}
             if r["intent"] == "RENT":

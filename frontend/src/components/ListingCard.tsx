@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Building2, Camera, Layers3, MapPin, MessageSquare, Ruler, UserRound, X } from "lucide-react";
 import { fetchJSON } from "@/lib/api";
 import { getAccessToken } from "@/lib/auth";
+import { formatBuildingName } from "@/lib/listing-display";
 
 export interface ListingItem {
   listing_id?: number;
@@ -90,7 +91,7 @@ function buildPrefilledWhatsAppLink(item: ListingItem): string {
   if (!phone) return "";
 
   const broker = displayBroker(item);
-  const building = item.building_name || "the property";
+  const building = formatBuildingName(item.building_name);
   const locality = item.micro_market || item.location_label || item.landmark_name || "";
   const bhk = item.bhk || item.property_type || "";
   const price = item.price_formatted || "";
@@ -214,7 +215,7 @@ export default function ListingCard({
       <div className="card-top">
         <div>
           <span className={badgeClass}>{badgeLabel}</span>
-          <div className="building flex items-center gap-1.5"><Building2 className="h-3.5 w-3.5 text-zinc-500" />{item.building_name || "Property from broker network"}</div>
+          <div className="building flex items-center gap-1.5"><Building2 className="h-3.5 w-3.5 text-zinc-500" />{formatBuildingName(item.building_name)}</div>
           {location && <div className="locality flex items-center gap-1"><MapPin className="h-3 w-3" />{location}</div>}
         </div>
         {item.price_formatted && (
