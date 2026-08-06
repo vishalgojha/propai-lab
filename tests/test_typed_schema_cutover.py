@@ -186,3 +186,21 @@ def test_requirement_read_columns_match_table_shapes():
     for table in {"commercial_sale_requirements", "commercial_rent_requirements"}:
         cols = set(_TYPED_READ_COLUMNS_BY_TABLE[table].split(","))
         assert not (cols & commercial_only_bad)
+
+
+def test_residential_rent_read_columns_cover_rental_broker_facts():
+    cols = set(_TYPED_READ_COLUMNS_BY_TABLE["residential_rent_listings"].split(","))
+    assert {
+        "availability_status",
+        "availability_date_raw",
+        "balcony_area_sqft",
+        "terrace_area_sqft",
+        "has_lift",
+        "contacts",
+        "company_lease_criteria",
+        "plus_one_deal",
+        "fee_sharing_required",
+        "client_profile_required",
+        "lease_term_min_months",
+        "lease_term_max_months",
+    } <= cols

@@ -65,6 +65,24 @@ def canonical_price_rupees(value: object, unit: object = None, raw_text: str | N
     return price_to_rupees(value, unit)
 
 
+def canonical_rental_price_rupees(
+    value: object,
+    unit: object = None,
+    raw_text: str | None = None,
+) -> float | None:
+    """Normalize Mumbai residential-rent decimal ``k`` shorthand.
+
+    Local brokers sometimes write ``1.30k`` for 1.30 lakh, not 1,300.  This
+    rule is intentionally opt-in for rental paths; ordinary ``130k`` remains
+    130,000 and sale/commercial paths keep the normal ``k`` meaning.
+    """
+    text = str(raw_text or "")
+    shorthand = re.search(r"(?<![\d.])(\d+\.\d+)\s*k\b", text, re.IGNORECASE)
+    if shorthand:
+        return float(shorthand.group(1)) * 100_000
+    return canonical_price_rupees(value, unit, raw_text)
+
+
 def source_transaction_type(raw_text: str | None, proposed: str | None) -> str:
     """Source-ground a provider transaction label without whole-message guessing."""
     text = str(raw_text or "")

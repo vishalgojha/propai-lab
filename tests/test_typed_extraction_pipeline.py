@@ -7,7 +7,7 @@ which must be correct before a worker is allowed to persist a row.
 
 from ai_extraction import _get_extraction_prompt, classify_message_type
 from extraction import _ai_extraction_to_typed, _parse_deposit
-from price_normalization import canonical_price_rupees, source_transaction_type
+from price_normalization import canonical_price_rupees, canonical_rental_price_rupees, source_transaction_type
 
 
 def _item(text, **fields):
@@ -40,6 +40,12 @@ def test_focused_prompt_contains_route_specific_fields_and_price_guardrails():
     assert "commercial_use_type" in rent_prompt
     assert "cam_amount" in rent_prompt
     assert "escalation_pct" in rent_prompt
+
+    residential_rent_prompt = _get_extraction_prompt("residential", "rent", False)
+    assert "balcony_area_sqft" in residential_rent_prompt
+    assert "fee_sharing_required" in residential_rent_prompt
+    assert "PG" in residential_rent_prompt
+    assert "1.30k" in residential_rent_prompt
 
 
 def test_sale_price_is_absolute_rupees_even_when_model_returns_native_unit():
@@ -113,6 +119,52 @@ def test_price_conversion_is_source_grounded_for_crore_and_lac_variants():
     assert source_transaction_type("3 BHK, ₹5.50 Crore", "rent") == "sale"
     assert source_transaction_type("3 BHK for rent, ₹2.5 lakh", "sale") == "rent"
     assert source_transaction_type("3 BHK for sale, ₹5.50 Crore", "rent") == "sale"
+
+
+def test_mumbai_residential_rental_decimal_k_means_lakh():
+    assert canonical_rental_price_rupees(1.30, "k", "1.30k") == 130_000
+    assert canonical_rental_price_rupees(2.50, "k", "Rent 2.50k") == 250_000
+    assert canonical_rental_price_rupees(130, "k", "130k") == 130_000
+
+    table, row = _item(
+        "2 BHK rent 1.30k",
+        listing_type="rent",
+        price={"amount": 1.30, "unit": "k", "raw_price_text": "1.30k"},
+    )
+    assert table == "residential_rent_listings"
+    assert row["monthly_rent"] == 130_000
+
+
+def test_residential_rent_preserves_rental_broker_facts():
+    table, row = _item(
+        "Available luxury 3 BHK on lease, Chitra, 2000 sqft + 500 sqft terrace, "
+        "6 lakh negotiable, MNCs/consulates, client profile mandatory, mandate plus one",
+        listing_type="rent",
+        bhk=3,
+        price={"amount": 6, "unit": "lakh", "raw_price_text": "6 lakh"},
+        carpet_area_sqft=2000,
+        terrace_area_sqft=500,
+        terrace_area_raw_text="2000 sqft + 500 sqft terrace",
+        furnishing_status="semi_furnished",
+        lease_term_min_months=36,
+        lease_term_max_months=60,
+        company_lease_criteria={"tenant_types": ["MNC", "consulate"]},
+        client_profile_required=True,
+        plus_one_deal=True,
+        fee_sharing_required=True,
+        brokerage_terms_raw="mandate plus one",
+        contacts=[{"name": "Yogesh Bajaj", "phone": "9870008644"}],
+    )
+    assert table == "residential_rent_listings"
+    assert row["monthly_rent"] == 600_000
+    assert row["terrace_area_sqft"] == 500
+    assert row["lease_term_min_months"] == 36
+    assert row["lease_term_max_months"] == 60
+    assert row["client_profile_required"] is True
+    assert row["plus_one_deal"] is True
+    assert row["fee_sharing_required"] is True
+    assert row["brokerage_terms_raw"] == "mandate plus one"
+    assert len(row["contacts"]) == 1
 
 
 def test_implausible_rent_is_marked_for_review_and_not_high_confidence():

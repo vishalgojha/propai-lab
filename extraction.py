@@ -37,7 +37,7 @@ from lab.events import get_bus
 from agents.building_alias_engine import fuzzy_score, normalize_building_name
 from deterministic_splitters import parse_message as parse_template_message
 from ai_extraction import _classify_message_flags
-from price_normalization import canonical_price_rupees, parse_explicit_price, rent_price_needs_review, source_transaction_type
+from price_normalization import canonical_price_rupees, canonical_rental_price_rupees, parse_explicit_price, rent_price_needs_review, source_transaction_type
 
 
 def get_storage():
@@ -790,6 +790,12 @@ def _ai_extraction_to_parsed(ai_extraction: dict, raw_text: str, sender_name: st
     price_unit_price = price_info.get("unit") if isinstance(price_info, dict) else None
     price_period = price_info.get("period") if isinstance(price_info, dict) else None
     price, price_unit = _price_from_ai_and_raw(price_info)
+    if listing_type == "rent" and price_unit != "per_sqft":
+        price = canonical_rental_price_rupees(
+            price_info.get("amount"),
+            price_info.get("unit"),
+            price_info.get("raw_price_text"),
+        )
     # Use the source-grounded unit returned above, not the provider's raw unit.
     price_model = "psf" if price_unit == "per_sqft" else None
 
@@ -888,7 +894,8 @@ def _ai_extraction_to_parsed(ai_extraction: dict, raw_text: str, sender_name: st
         "availability_status": None,
         "possession_status": ai_extraction.get("possession_status") or None,
         "possession_date": ai_extraction.get("possession_date") or None,
-        "available_from": None,
+        "available_from": ai_extraction.get("available_from") or None,
+        "availability_date_raw": ai_extraction.get("availability_date_raw") or None,
         "ready_by": None,
         "construction_stage": None,
         "launch_timeline": None,
@@ -922,7 +929,11 @@ def _ai_extraction_to_parsed(ai_extraction: dict, raw_text: str, sender_name: st
         "price_basis": price_basis,
         "brokerage_type": brokerage_type,
         "brokerage_context": ai_extraction.get("brokerage_context"),
+        "brokerage_terms_raw": ai_extraction.get("brokerage_terms_raw"),
         "co_brokered": ai_extraction.get("co_brokered"),
+        "plus_one_deal": ai_extraction.get("plus_one_deal"),
+        "fee_sharing_required": ai_extraction.get("fee_sharing_required"),
+        "client_profile_required": ai_extraction.get("client_profile_required"),
         "configuration_type": configuration_type,
         "configuration_details": ai_extraction.get("configuration_details"),
         "original_bhk": _safe_float(ai_extraction.get("original_bhk")),
@@ -938,9 +949,11 @@ def _ai_extraction_to_parsed(ai_extraction: dict, raw_text: str, sender_name: st
         "floor_label": ai_extraction.get("floor_label"),
         "balcony_area_sqft": _safe_float(ai_extraction.get("balcony_area_sqft")),
         "balcony_area_raw_text": ai_extraction.get("balcony_area_raw_text"),
+        "balcony_present": ai_extraction.get("balcony_present"),
         "terrace_area_sqft": _safe_float(ai_extraction.get("terrace_area_sqft")),
         "covered_terrace_area_sqft": _safe_float(ai_extraction.get("covered_terrace_area_sqft")),
         "terrace_area_raw_text": ai_extraction.get("terrace_area_raw_text"),
+        "sit_out_present": ai_extraction.get("sit_out_present"),
         "sellable_area_sqft": _safe_float(ai_extraction.get("sellable_area_sqft")),
         "computed_total_asking_price": _safe_float(ai_extraction.get("computed_total_asking_price")),
         "computed_price_confidence": ai_extraction.get("computed_price_confidence"),
@@ -948,6 +961,7 @@ def _ai_extraction_to_parsed(ai_extraction: dict, raw_text: str, sender_name: st
         "unit_condition": ai_extraction.get("unit_condition"),
         "vastu_compliant": ai_extraction.get("vastu_compliant"),
         "view_description": ai_extraction.get("view_description"),
+        "has_lift": ai_extraction.get("has_lift"),
         "parking_details": ai_extraction.get("parking_details") if isinstance(ai_extraction.get("parking_details"), dict) else {},
         "society_restrictions": society_restrictions,
         "society_restrictions_raw": ai_extraction.get("society_restrictions_raw"),
@@ -956,6 +970,12 @@ def _ai_extraction_to_parsed(ai_extraction: dict, raw_text: str, sender_name: st
         "showing_instructions": ai_extraction.get("showing_instructions"),
         "contact_instructions": ai_extraction.get("contact_instructions"),
         "unstructured_facts": ai_extraction.get("unstructured_facts") if isinstance(ai_extraction.get("unstructured_facts"), dict) else {},
+        "availability_status": ai_extraction.get("availability_status"),
+        "availability_date_raw": ai_extraction.get("availability_date_raw"),
+        "unit_condition": ai_extraction.get("unit_condition"),
+        "lease_term_min_months": _safe_int(ai_extraction.get("lease_term_min_months")),
+        "lease_term_max_months": _safe_int(ai_extraction.get("lease_term_max_months")),
+        "lease_term_raw_text": ai_extraction.get("lease_term_raw_text"),
 
         # v2 schema — amenities
         "amenities": unit_amenities if isinstance(unit_amenities, list) else [],
@@ -1063,6 +1083,12 @@ def _ai_extraction_to_typed(
     }
     price_info = ai.get("price") if isinstance(ai.get("price"), dict) else {}
     price_value, price_unit = _price_from_ai_and_raw(price_info)
+    if tx == "rent" and price_unit != "per_sqft":
+        price_value = canonical_rental_price_rupees(
+            price_info.get("amount"),
+            price_info.get("unit"),
+            price_info.get("raw_price_text"),
+        )
     area = ai.get("carpet_area_sqft")
     bhk = _normalized_bhk(ai.get("bhk") or ai.get("bhk_options"))
     if not is_requirement:
@@ -1105,6 +1131,27 @@ def _ai_extraction_to_typed(
             "brokerage_type": ai.get("brokerage_type"),
             "brokerage_context": ai.get("brokerage_context"),
             "co_brokered": ai.get("co_brokered"),
+            "plus_one_deal": ai.get("plus_one_deal"),
+            "fee_sharing_required": ai.get("fee_sharing_required"),
+            "brokerage_terms_raw": ai.get("brokerage_terms_raw"),
+            "client_profile_required": ai.get("client_profile_required"),
+            "availability_status": ai.get("availability_status"),
+            "availability_date_raw": ai.get("availability_date_raw"),
+            "has_lift": ai.get("has_lift"),
+            "balcony_present": ai.get("balcony_present"),
+            "sit_out_present": ai.get("sit_out_present"),
+            "lease_term_min_months": _safe_int(ai.get("lease_term_min_months")),
+            "lease_term_max_months": _safe_int(ai.get("lease_term_max_months")),
+            "lease_term_raw_text": ai.get("lease_term_raw_text"),
+            "broker_company": ai.get("broker_company"),
+            "contacts": ai.get("contacts")[:8] if isinstance(ai.get("contacts"), list) else [],
+            "showing_instructions": ai.get("showing_instructions"),
+            "contact_instructions": ai.get("contact_instructions"),
+            "unit_condition": ai.get("unit_condition"),
+            "view_description": ai.get("view_description"),
+            "parking_details": ai.get("parking_details") if isinstance(ai.get("parking_details"), dict) else {},
+            "society_restrictions_raw": ai.get("society_restrictions_raw"),
+            "unstructured_facts": ai.get("unstructured_facts") if isinstance(ai.get("unstructured_facts"), dict) else {},
             "configuration_details": ai.get("configuration_details"),
             "is_converted_unit": ai.get("is_converted_unit"),
             "is_combination_unit": ai.get("is_combination_unit"),
