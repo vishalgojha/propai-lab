@@ -101,7 +101,12 @@ export default function SearchMap({ results, apiKey }: Props) {
                       {result.intent || result.asset_type || "listing"}
                     </div>
                     {result.building_name && <div className="mb-1 text-[13px] font-semibold">{result.building_name}</div>}
-                    <div className="text-lg font-bold">{formatPrice(result.price, result.price_unit)}</div>
+                    {(result.landmark_name || result.location_label) && (
+                      <div className="text-[11px] text-zinc-500">
+                        {[result.landmark_name, result.location_label].filter(Boolean).join(", ")}
+                      </div>
+                    )}
+                    <div className="mt-1 text-lg font-bold">{formatPrice(result.price, result.price_unit)}</div>
                     {parts && <div className="mt-1 text-[11px] text-zinc-500">{parts}</div>}
                     {href && <Link className="mt-2 inline-block text-[11px] font-semibold text-emerald-600" href={href}>View details →</Link>}
                   </div>
