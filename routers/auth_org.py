@@ -35,6 +35,16 @@ class ProfileUpdate(BaseModel):
     city: str = ""
 
 
+class SoundPreferencesUpdate(BaseModel):
+    whatsapp: str = "chime"
+    groups: str = "pop"
+    connection: str = "bell"
+    leads: str = "soft-ding"
+
+
+_SOUND_IDS = {"default", "chime", "pop", "ding", "bell", "soft-ding", "soft-alert"}
+
+
 # ── Profile ──────────────────────────────────────────────────────────
 
 
@@ -61,6 +71,24 @@ async def save_profile(body: ProfileUpdate, user: dict = Depends(require_user), 
     if not profile:
         raise HTTPException(500, "Profile could not be saved")
     return profile
+
+
+@router.get("/api/profile/sounds")
+async def get_sound_preferences(user: dict = Depends(require_user), tenant_id: str | None = Depends(get_tenant_context)):
+    preferences = storage.get_sound_preferences(user.get("id", ""), tenant_id=tenant_id)
+    return {"whatsapp": preferences.get("whatsapp", "chime"), "groups": preferences.get("groups", "pop"), "connection": preferences.get("connection", "bell"), "leads": preferences.get("leads", "soft-ding")}
+
+
+@router.put("/api/profile/sounds")
+async def save_sound_preferences(body: SoundPreferencesUpdate, user: dict = Depends(require_user), tenant_id: str | None = Depends(get_tenant_context)):
+    preferences = body.model_dump()
+    invalid = {value for value in preferences.values() if value not in _SOUND_IDS}
+    if invalid:
+        raise HTTPException(422, f"Unsupported sound: {sorted(invalid)[0]}")
+    saved = storage.save_sound_preferences(
+        user.get("id", ""), user.get("phone", ""), preferences, tenant_id=tenant_id
+    )
+    return {"whatsapp": saved.get("whatsapp", "chime"), "groups": saved.get("groups", "pop"), "connection": saved.get("connection", "bell"), "leads": saved.get("leads", "soft-ding")}
 
 
 @router.get("/api/profile-picture/{jid:path}")
