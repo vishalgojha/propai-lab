@@ -558,6 +558,36 @@ def _safe_additional_charges(raw) -> list[dict]:
     return out
 
 
+def _safe_float(value) -> float | None:
+    if value is None:
+        return None
+    if isinstance(value, dict):
+        for key in ("amount", "value", "price"):
+            coerced = _safe_float(value.get(key))
+            if coerced is not None:
+                return coerced
+        return None
+    if isinstance(value, (list, tuple)):
+        for item in value:
+            coerced = _safe_float(item)
+            if coerced is not None:
+                return coerced
+        return None
+    text = str(value).strip().replace(",", "")
+    match = re.search(r"-?\d+(?:\.\d+)?", text)
+    if not match:
+        return None
+    try:
+        return float(match.group(0))
+    except ValueError:
+        return None
+
+
+def _safe_int(value) -> int | None:
+    coerced = _safe_float(value)
+    return int(coerced) if coerced is not None else None
+
+
 import re as _re
 
 _UNIT_TO_ABS = {
@@ -807,8 +837,10 @@ def _ai_extraction_to_parsed(ai_extraction: dict, raw_text: str, sender_name: st
         price if listing_type == "rent" and price_unit != "per_sqft" else None,
     )
     if deposit_amount is not None:
-        deposit_fields["deposit_amount"] = float(deposit_amount)
-        deposit_fields["deposit_applicable"] = True
+        parsed_deposit_amount = _safe_float(deposit_amount)
+        if parsed_deposit_amount is not None:
+            deposit_fields["deposit_amount"] = parsed_deposit_amount
+            deposit_fields["deposit_applicable"] = True
     if ai_extraction.get("deposit_months") is not None:
         deposit_fields["deposit_months"] = ai_extraction.get("deposit_months")
 
@@ -869,15 +901,15 @@ def _ai_extraction_to_parsed(ai_extraction: dict, raw_text: str, sender_name: st
         # v2 schema — physical / deal attributes
         "carpet_area_sqft": ai_extraction.get("carpet_area_sqft"),
         "built_up_area_sqft": ai_extraction.get("built_up_area_sqft"),
-        "bathroom_count": int(bathroom_count) if bathroom_count is not None else None,
-        "car_parking_count": int(car_parking_count) if car_parking_count is not None else None,
+        "bathroom_count": _safe_int(bathroom_count),
+        "car_parking_count": _safe_int(car_parking_count),
         "parking_type": parking_type,
         **deposit_fields,
-        "deposit_amount": float(deposit_amount) if deposit_amount is not None else deposit_fields.get("deposit_amount"),
+        "deposit_amount": _safe_float(deposit_amount) if deposit_amount is not None else deposit_fields.get("deposit_amount"),
         "deposit_months": ai_extraction.get("deposit_months") or deposit_fields.get("deposit_months"),
         "deposit_raw_text": ai_extraction.get("deposit_raw_text") or deposit_fields.get("deposit_raw_text"),
         "oc_status": oc_status,
-        "interior_value": float(interior_value) if interior_value is not None else None,
+        "interior_value": _safe_float(interior_value),
         "ceiling_height": ceiling_height,
         "price_basis": price_basis,
         "brokerage_type": brokerage_type,
@@ -1856,7 +1888,7 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
                 discovered_building = storage.ensure_building_from_observation(
                     parsed["building_name"],
                     parsed.get("micro_market"),
-                    tenant_id=resolved_tenant_id,
+                    tenant_id=org_id,
                 )
                 if discovered_building:
                     resolver_result["building_id"] = discovered_building.get("id")

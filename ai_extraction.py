@@ -1023,8 +1023,8 @@ def _apply_deterministic_field_fallbacks(extraction: dict, raw_text: str) -> dic
             re.I,
         )
         if rent_shorthand and "." in rent_shorthand.group(1):
-            amount_lakh = float(rent_shorthand.group(1))
-            if 0 < amount_lakh <= 20:
+            amount_lakh = _coerce_float(rent_shorthand.group(1))
+            if amount_lakh is not None and 0 < amount_lakh <= 20:
                 raw_quote = rent_shorthand.group(0).strip()
                 extraction["price"] = {
                     "amount": amount_lakh * 100_000,
@@ -1112,7 +1112,7 @@ def _apply_deterministic_field_fallbacks(extraction: dict, raw_text: str) -> dic
         if extraction.get("bhk") is None and not extraction.get("bhk_options"):
             bhk_match = re.search(r"\b(\d+(?:\.\d+)?)\s*bhk\b", text, re.I)
             if bhk_match:
-                extraction["bhk"] = float(bhk_match.group(1))
+                extraction["bhk"] = _coerce_float(bhk_match.group(1))
 
         if extraction.get("area_min_sqft") is None:
             range_match = re.search(
@@ -1120,8 +1120,8 @@ def _apply_deterministic_field_fallbacks(extraction: dict, raw_text: str) -> dic
                 text, re.I,
             )
             if range_match:
-                extraction["area_min_sqft"] = float(range_match.group(1).replace(",", ""))
-                extraction["area_max_sqft"] = float(range_match.group(2).replace(",", ""))
+                extraction["area_min_sqft"] = _coerce_float(range_match.group(1))
+                extraction["area_max_sqft"] = _coerce_float(range_match.group(2))
 
         if extraction.get("budget_max") is None:
             budget_match = re.search(
@@ -1129,16 +1129,17 @@ def _apply_deterministic_field_fallbacks(extraction: dict, raw_text: str) -> dic
                 text, re.I,
             )
             if budget_match:
-                amount = float(budget_match.group(1).replace(",", ""))
-                unit = (budget_match.group(2) or "").lower()
-                multiplier = 1
-                if unit in {"cr", "crore", "crores"}:
-                    multiplier = 1_00_00_000
-                elif unit in {"l", "lac", "lakh", "lakhs"}:
-                    multiplier = 1_00_000
-                elif unit == "k":
-                    multiplier = 1_000
-                extraction["budget_max"] = amount * multiplier
+                amount = _coerce_float(budget_match.group(1))
+                if amount is not None:
+                    unit = (budget_match.group(2) or "").lower()
+                    multiplier = 1
+                    if unit in {"cr", "crore", "crores"}:
+                        multiplier = 1_00_00_000
+                    elif unit in {"l", "lac", "lakh", "lakhs"}:
+                        multiplier = 1_00_000
+                    elif unit == "k":
+                        multiplier = 1_000
+                    extraction["budget_max"] = amount * multiplier
 
         if not extraction.get("locality_options"):
             locality_match = re.search(
@@ -1220,7 +1221,7 @@ def _apply_deterministic_field_fallbacks(extraction: dict, raw_text: str) -> dic
             text,
         )
         if area_match:
-            extraction["carpet_area_sqft"] = float(area_match.group(1).replace(",", ""))
+            extraction["carpet_area_sqft"] = _coerce_float(area_match.group(1))
             extraction["area_raw_text"] = area_match.group(0).strip()
 
     if not extraction.get("fitout_status"):
@@ -1242,7 +1243,7 @@ def _apply_deterministic_field_fallbacks(extraction: dict, raw_text: str) -> dic
             text,
         )
         if parking_match:
-            extraction["car_parking_count"] = int(next(g for g in parking_match.groups() if g))
+            extraction["car_parking_count"] = _coerce_int(next(g for g in parking_match.groups() if g))
 
     tags = list(extraction.get("deal_tags") or [])
     if re.search(r"\b(?:brand\s*new|new)\s+building\b", lowered) and "brand_new_building" not in tags:
