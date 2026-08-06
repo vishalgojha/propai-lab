@@ -2,8 +2,9 @@
 
 import { useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { LogOut, X, Search } from "lucide-react";
+import { LogOut, X, Search, RefreshCw } from "lucide-react";
 import { useAuth } from "@/lib/AuthProvider";
+import { getBuildHint } from "@/lib/buildInfo";
 
 type NavItem = {
   href: string;
@@ -55,6 +56,7 @@ export function MobileDrawer({
   isSuperAdmin,
   whatsappConnected,
   whatsappPhone,
+  buildLabel,
 }: {
   open: boolean;
   onClose: () => void;
@@ -62,12 +64,14 @@ export function MobileDrawer({
   isSuperAdmin: boolean;
   whatsappConnected: boolean | null;
   whatsappPhone?: string | null;
+  buildLabel: string;
 }) {
   const pathname = usePathname();
   const router = useRouter();
   const { signOut, user } = useAuth();
   const overlayRef = useRef<HTMLDivElement>(null);
   const [profile, setProfile] = useState<{ auth_user_id?: string; phone: string; first_name: string; last_name?: string; city?: string } | null>(null);
+  const buildHint = getBuildHint();
   const navSections = isSuperAdmin
     ? [
         ...baseNavSections,
@@ -215,6 +219,25 @@ export function MobileDrawer({
             </div>
           </div>
         </a>
+
+        <div
+          className="mx-3 mt-2 flex items-center justify-between rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-[10px] text-zinc-500"
+          title={buildHint}
+        >
+          <span className="shrink-0">Build</span>
+          <div className="flex items-center gap-1.5">
+            <span className="font-mono text-zinc-300">{buildLabel}</span>
+            <button
+              type="button"
+              onClick={() => window.location.reload()}
+              className="inline-flex h-5 w-5 items-center justify-center rounded-md text-zinc-500 hover:bg-white/10 hover:text-white"
+              aria-label="Reload the page"
+              title="Reload the page"
+            >
+              <RefreshCw className="h-3 w-3" />
+            </button>
+          </div>
+        </div>
 
         {/* Navigation */}
         <nav className="flex-1 overflow-y-auto px-3 py-4">

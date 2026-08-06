@@ -33,6 +33,7 @@ import {
   VolumeX,
   SlidersHorizontal,
   Bell,
+  RefreshCw,
 } from "lucide-react";
 import { AuthProvider, useAuth } from "@/lib/AuthProvider";
 import { LayoutProvider, useLayout } from "@/hooks/useLayout";
@@ -44,6 +45,7 @@ import { ServiceWorkerRegister } from "@/components/layout/ServiceWorkerRegister
 import { isMuted, toggleMute, playConnectionChange, playGroupConnected, playNewLead, playNewWhatsApp, getVolume, setVolume, isSoundEnabled, setSoundEnabled, getSoundPreferences, loadSoundPreferences, setSoundPreference, previewSound, SOUND_LIBRARY, type SoundEvent, type SoundId, type SoundPreferences } from "@/lib/sounds";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { getBuildHint, getBuildLabel } from "@/lib/buildInfo";
 
 type NavItem = {
   href: string;
@@ -639,6 +641,8 @@ function AppShell({ children }: { children: React.ReactNode }) {
     ? [...baseNavSections, adminNavSection]
     : baseNavSections;
   const hideGlobalChromeOnMobile = isFocusedWorkspace;
+  const buildLabel = getBuildLabel();
+  const buildHint = getBuildHint();
 
   return (
     <div className="flex h-[100svh] overflow-hidden bg-background lg:h-screen">
@@ -678,6 +682,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
         isSuperAdmin={isSuperAdmin}
         whatsappConnected={waConnected}
         whatsappPhone={waPhone}
+        buildLabel={buildLabel}
       />
 
       {/* ═══════ Sidebar (desktop) ═══════ */}
@@ -845,6 +850,24 @@ function AppShell({ children }: { children: React.ReactNode }) {
               <button onClick={() => setSoundSettingsOpen((open) => !open)} className="flex h-7 w-7 items-center justify-center rounded-lg text-zinc-500 hover:bg-white/5 hover:text-zinc-300" title="Sound controls" aria-label="Sound controls">
                 <SlidersHorizontal className="h-3.5 w-3.5" />
               </button>
+            </div>
+            <div
+              className="flex items-center justify-between rounded-lg border border-white/5 bg-white/[0.03] px-2.5 py-1.5 text-[10px] text-zinc-500"
+              title={buildHint}
+            >
+              <span className="shrink-0">Build</span>
+              <div className="flex items-center gap-1.5">
+                <span className="font-mono text-zinc-300">{buildLabel}</span>
+                <button
+                  type="button"
+                  onClick={() => window.location.reload()}
+                  className="inline-flex h-5 w-5 items-center justify-center rounded-md text-zinc-500 hover:bg-white/10 hover:text-white"
+                  aria-label="Reload the page"
+                  title="Reload the page"
+                >
+                  <RefreshCw className="h-3 w-3" />
+                </button>
+              </div>
             </div>
           </div>
           <a
