@@ -12,6 +12,7 @@ import hashlib
 import hmac
 import json
 import os
+import re
 import time
 from typing import Any
 
@@ -125,6 +126,26 @@ def _number(value: Any) -> float | None:
         return None
 
 
+def _clean_phone(value: Any) -> str:
+    """Return a clean Indian phone number, never a WhatsApp JID."""
+    digits = re.sub(r"\D+", "", str(value or ""))
+    if len(digits) >= 12 and digits.startswith("91"):
+        digits = digits[-10:]
+    return digits if len(digits) == 10 else ""
+
+
+def _clean_broker_name(value: Any, fallback: Any = None) -> str:
+    """Hide raw WhatsApp JIDs and phone numbers from listing cards."""
+    for candidate in (value, fallback):
+        text = str(candidate or "").strip()
+        if not text or "@s.whatsapp.net" in text.lower():
+            continue
+        if len(re.sub(r"\D+", "", text)) >= 10:
+            continue
+        return text
+    return "Broker"
+
+
 def _tenant_query(client: Any, table: str, tenant_id: str | None, columns: str):
     query = client.table(table).select(columns)
     if tenant_id:
@@ -169,12 +190,30 @@ def _listing_query(client: Any, args: dict, tenant_id: str | None) -> list[dict]
     if maximum is not None:
         query = query.lte(price_column, maximum)
     rows = query.eq("needs_review", False).order("created_at", desc=True).limit(50).execute().data or []
+    broker_ids = {row.get("broker_id") for row in rows if row.get("broker_id") is not None}
+    broker_profiles = {}
+    if broker_ids:
+        try:
+            profiles = (
+                client.table("brokers")
+                .select("id,canonical_name,primary_phone")
+                .in_("id", list(broker_ids))
+                .execute()
+                .data
+                or []
+            )
+            broker_profiles = {row.get("id"): row for row in profiles}
+        except Exception:
+            broker_profiles = {}
     for row in rows:
         row["listing_id"] = str(row.get("id"))
         row["legacy_listing_id"] = str(row.get("legacy_source_id")) if row.get("legacy_source_id") else None
         row["price"] = row.get(price_alias)
         row["property_type"] = property_type
         row["listing_type"] = listing_type
+        profile = broker_profiles.get(row.get("broker_id"), {})
+        row["broker_phone"] = _clean_phone(row.get("broker_phone")) or _clean_phone(profile.get("primary_phone"))
+        row["broker_name"] = _clean_broker_name(row.get("broker_name"), profile.get("canonical_name"))
     return rows
 
 
