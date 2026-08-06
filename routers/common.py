@@ -1695,6 +1695,7 @@ async def _process_business_api_webhook(body: dict, org_id: str | None = None, r
                 except Exception as exc:
                     print(f"[waba-webhook] failed to store inbound message: {exc}", flush=True)
                 if stored_inbound and msg_type == "text" and caption.strip():
+                    await _waba_mark_read_and_type(msg_id, waba_config=waba_config)
                     asyncio.create_task(_handle_waba_agent_reply(to=msg_from, text=caption.strip(), inbound_message_id=msg_id, sender_name=sender_name, waba_config=waba_config, tenant_id=resolved_tenant_id))
         for status in value.get("statuses", []):
             status_id = status.get("id",""); status_status = status.get("status",""); status_timestamp = status.get("timestamp","")
@@ -1779,6 +1780,38 @@ async def _waba_send_message(to: str, text: str, msg_type: str = "text", waba_co
         return {"success": False, "error": error_msg, "status_code": resp.status_code, "response": data}
     except Exception as exc:
         return {"success": False, "error": str(exc)}
+
+
+async def _waba_mark_read_and_type(message_id: str, waba_config: dict | None = None) -> bool:
+    """Acknowledge an inbound message and show typing while preparing a reply."""
+    values = waba_config or _platform_waba_values()
+    phone_number_id = str(values.get("phone_number_id") or "")
+    access_token = str(values.get("access_token") or "")
+    if not phone_number_id or not access_token or not message_id:
+        return False
+    url = f"https://graph.facebook.com/v21.0/{phone_number_id}/messages"
+    headers = {"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"}
+    body = {
+        "messaging_product": "whatsapp",
+        "status": "read",
+        "message_id": message_id,
+        "typing_indicator": {"type": "text"},
+    }
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            response = await client.post(url, json=body, headers=headers)
+        if response.status_code == 200:
+            return True
+        async with httpx.AsyncClient(timeout=10) as client:
+            fallback = await client.put(
+                url,
+                json={"messaging_product": "whatsapp", "status": "read", "message_id": message_id},
+                headers=headers,
+            )
+        return fallback.status_code == 200
+    except Exception as exc:
+        logger.warning("WABA read/typing indicator failed: %s", exc)
+        return False
 
 
 def _waba_sender_is_registered(to: str, tenant_id: str, sender_name: str = "") -> bool:
