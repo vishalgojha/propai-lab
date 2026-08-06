@@ -22,17 +22,19 @@ function messageText(message: { parts?: Array<{ type?: string; text?: string }>;
 }
 
 const CHAT_CARD_BLOCK_TYPES = new Set(["listing_cards", "buyer_cards", "broker_cards", "matching_buyers"]);
+const AGENT_CONFIRMATION_TYPE = "data-confirmation";
+const AGENT_STATUS_TYPE = "data-agent_status";
 
 function toUIMessage(m: { id: string; role: "user" | "assistant"; content: string; blocks?: Array<{ type: string; title?: string; items?: unknown[] }> }) {
   const parts: Array<{ type: string; text?: string; data?: unknown }> = [{ type: "text" as const, text: m.content }];
   if (m.blocks) {
     for (const block of m.blocks) {
-      if (block && CHAT_CARD_BLOCK_TYPES.has(block.type)) {
+      if (block && (CHAT_CARD_BLOCK_TYPES.has(block.type) || block.type === "confirmation")) {
         parts.push({ type: `data-${block.type}` as const, data: block });
       }
     }
   }
-  return { id: m.id, role: m.role, parts };
+  return { id: m.id, role: m.role, parts } as any;
 }
 
 function inlineMarkdown(text: string, keyPrefix: string) {
@@ -473,6 +475,7 @@ export default function ChatPage() {
   const [renameValue, setRenameValue] = useState("");
   const [contactingListingId, setContactingListingId] = useState<number | null>(null);
   const [showFreshChatNotice, setShowFreshChatNotice] = useState(false);
+  const [confirmationState, setConfirmationState] = useState<Record<string, "pending" | "confirmed" | "error">>({});
 
   const activeSessionStorageKey = user?.id ? `propai_active_chat_session:${user.id}` : "";
   const { messages, sendMessage, status, setMessages, error } = useChat({
@@ -488,6 +491,16 @@ export default function ChatPage() {
     }),
   });
   const previousStatus = useRef(status);
+
+  const confirmAgentAction = useCallback(async (token: string) => {
+    setConfirmationState((current) => ({ ...current, [token]: "pending" }));
+    try {
+      await api.confirmAgentAction(token);
+      setConfirmationState((current) => ({ ...current, [token]: "confirmed" }));
+    } catch {
+      setConfirmationState((current) => ({ ...current, [token]: "error" }));
+    }
+  }, []);
 
   const hideBrokerLocally = useCallback(async (phone: string, label: string) => {
     const key = normalizePhoneKey(phone);
@@ -1129,6 +1142,8 @@ export default function ChatPage() {
                           const type = p.type || "";
                           return type.startsWith("data-") && CHAT_CARD_BLOCK_TYPES.has(type.slice(5));
                         });
+                        const confirmationParts = parts.filter((p) => p.type === AGENT_CONFIRMATION_TYPE);
+                        const statusParts = parts.filter((p) => p.type === AGENT_STATUS_TYPE);
                         const structuredItems = dataParts.flatMap((part) => {
                           const block = part.data || {};
                           return Array.isArray(block.items) ? block.items : [];
@@ -1175,6 +1190,40 @@ export default function ChatPage() {
                             {textParts.map((p: any, i: number) => (
                               <MarkdownMessage key={i} text={hasStructuredItems ? removeMarkdownTables(p.text) : p.text} />
                             ))}
+                            {statusParts.map((part: any, statusIndex: number) => {
+                              const steps = Array.isArray(part.data?.steps) ? part.data.steps : [];
+                              if (!steps.length) return null;
+                              return (
+                                <div key={`agent-status-${statusIndex}`} className="rounded-lg border border-blue-500/20 bg-blue-500/5 px-3 py-2 text-xs text-blue-200">
+                                  {steps.map((step: string, stepIndex: number) => <div key={stepIndex}>{step}</div>)}
+                                </div>
+                              );
+                            })}
+                            {confirmationParts.map((part: any, confirmationIndex: number) => {
+                              const block = part.data || {};
+                              const token = String(block.confirmation_token || "");
+                              const state = confirmationState[token];
+                              return (
+                                <div key={`confirmation-${confirmationIndex}`} className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-3 text-sm text-amber-100">
+                                  <div className="font-semibold">{block.title || "Confirmation required"}</div>
+                                  <div className="mt-1 text-xs text-amber-100/80">{block.body || "This action will change workspace data."}</div>
+                                  {state === "confirmed" ? (
+                                    <div className="mt-2 text-xs text-emerald-300">Action confirmed and completed.</div>
+                                  ) : state === "error" ? (
+                                    <div className="mt-2 text-xs text-red-300">Could not complete that action. Please try again.</div>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      disabled={!token || state === "pending"}
+                                      onClick={() => void confirmAgentAction(token)}
+                                      className="mt-2 rounded-md border border-amber-400/40 bg-amber-400/15 px-3 py-1.5 text-xs font-semibold text-amber-100 hover:bg-amber-400/25 disabled:cursor-wait disabled:opacity-60"
+                                    >
+                                      {state === "pending" ? "Confirming…" : "Confirm action"}
+                                    </button>
+                                  )}
+                                </div>
+                              );
+                            })}
                             {dataParts.map((part: any, blockIndex: number) => {
                               const block = part.data || {};
                               const items = Array.isArray(block.items) ? block.items as ListingItem[] : [];

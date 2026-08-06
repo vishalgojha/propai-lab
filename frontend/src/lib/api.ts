@@ -874,6 +874,21 @@ export function renameChatSession(sessionId: string, title: string): Promise<Cha
   });
 }
 
+export interface AgentActionResult {
+  status: string;
+  tool?: string;
+  reason?: string;
+  candidate?: Record<string, unknown> | null;
+  note?: Record<string, unknown> | null;
+}
+
+export function confirmAgentAction(confirmationToken: string): Promise<AgentActionResult> {
+  return fetchJSON<AgentActionResult>("/ai/chat/confirm", {
+    method: "POST",
+    body: JSON.stringify({ confirmation_token: confirmationToken }),
+  });
+}
+
 export function resolveBrokerContact(listingId: number): Promise<{ contact_url: string }> {
   return fetchJSON<{ contact_url: string }>(`/contact-broker/${listingId}`, { method: "POST" });
 }
@@ -931,6 +946,7 @@ export interface WorkspaceBlock {
     | "error_state"
     | "empty_state"
     | "loading"
+    | "confirmation"
     | string;
   title?: string;
   subtitle?: string;
