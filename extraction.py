@@ -37,7 +37,7 @@ from lab.events import get_bus
 from agents.building_alias_engine import fuzzy_score, normalize_building_name
 from deterministic_splitters import parse_message as parse_template_message
 from ai_extraction import _classify_message_flags
-from price_normalization import canonical_price_rupees, canonical_rental_price_rupees, parse_explicit_price, rent_price_needs_review, source_transaction_type
+from price_normalization import canonical_commercial_rental_price_rupees, canonical_price_rupees, canonical_rental_price_rupees, parse_explicit_price, rent_price_needs_review, source_transaction_type
 
 
 def get_storage():
@@ -1070,6 +1070,7 @@ def _ai_extraction_to_typed(
         "broker_id": broker_id,
         "broker_name": ai.get("broker_name") or sender_name or push_name,
         "broker_phone": broker_phone,
+        "broker_rera_number": ai.get("broker_rera_number"),
         "group_name": ai.get("group_name"),
         "summary_title": ai.get("title"),
         "normalized_message": _redact_indian_mobiles(source_text),
@@ -1084,7 +1085,8 @@ def _ai_extraction_to_typed(
     price_info = ai.get("price") if isinstance(ai.get("price"), dict) else {}
     price_value, price_unit = _price_from_ai_and_raw(price_info)
     if tx == "rent" and price_unit != "per_sqft":
-        price_value = canonical_rental_price_rupees(
+        normalizer = canonical_commercial_rental_price_rupees if asset == "commercial" else canonical_rental_price_rupees
+        price_value = normalizer(
             price_info.get("amount"),
             price_info.get("unit"),
             price_info.get("raw_price_text"),
@@ -1169,13 +1171,37 @@ def _ai_extraction_to_typed(
         if tx == "sale":
             row["total_asking_price"] = price_value if price_unit != "per_sqft" else None
             row["price_per_sqft"] = price_value if price_unit == "per_sqft" else None
-            if price_unit == "per_sqft" and area:
-                row["total_asking_price"] = price_value * area
+            if price_unit == "per_sqft":
+                price_basis = str(ai.get("price_basis") or "").lower()
+                pricing_area = ai.get("chargeable_area_sqft") if asset == "commercial" and "chargeable" in price_basis else area
+                if pricing_area:
+                    row["total_asking_price"] = price_value * pricing_area
+                    row["price_math"] = {
+                        "rate": price_value,
+                        "basis": "chargeable_area_sqft" if asset == "commercial" and "chargeable" in price_basis else "carpet_area_sqft",
+                        "area_sqft": pricing_area,
+                        "formula": f"{price_value} * {pricing_area}",
+                        "computed_total_asking_price": row["total_asking_price"],
+                    }
         else:
             row["monthly_rent"] = price_value if price_unit != "per_sqft" else None
             row["rent_per_sqft"] = price_value if price_unit == "per_sqft" else None
-            if price_unit == "per_sqft" and area:
-                row["monthly_rent"] = price_value * area
+            if price_unit == "per_sqft":
+                price_basis = str(ai.get("price_basis") or "").lower()
+                pricing_area = (
+                    ai.get("chargeable_area_sqft")
+                    if asset == "commercial" and "chargeable" in price_basis
+                    else area
+                )
+                if pricing_area:
+                    row["monthly_rent"] = price_value * pricing_area
+                    row["price_math"] = {
+                        "rate": price_value,
+                        "basis": "chargeable_area_sqft" if asset == "commercial" and "chargeable" in price_basis else "carpet_area_sqft",
+                        "area_sqft": pricing_area,
+                        "formula": f"{price_value} * {pricing_area}",
+                        "computed_monthly_rent": row["monthly_rent"],
+                    }
         if asset == "commercial":
             row["commercial_use_type"] = ai.get("commercial_use_type") or "mixed_use"
             row["fitout_status"] = ai.get("fitout_status")
@@ -1184,6 +1210,21 @@ def _ai_extraction_to_typed(
             row["cam_amount"] = ai.get("cam_amount")
             row["cam_applicable"] = ai.get("cam_applicable")
             row["cam_unit"] = ai.get("cam_unit")
+            for field in (
+                "broker_rera_number", "floor_level", "floor_count", "possession_status",
+                "possession_date", "availability_status", "rent_inclusions", "license_type",
+                "short_term_allowed", "inspection_notice_minutes", "frontage_ft",
+                "entrance_count", "otla_area_sqft", "otla_area_raw_text", "terrace_area_sqft",
+                "covered_terrace_area_sqft", "terrace_area_raw_text", "heritage_space",
+                "permitted_use_types", "ideal_for", "automatic_shutter_count", "room_count",
+                "suite_count", "banquet_hall_count", "restaurant_count", "bar_facility",
+                "operational_status", "director_cabin_count", "ceo_cabin_present",
+                "cubicle_count", "conference_room_capacity", "meeting_room_capacity",
+                "training_room_capacity", "cafeteria_seat_count", "accounts_area", "lounge_area",
+            ):
+                if ai.get(field) is not None:
+                    row[field] = ai.get(field)
+            row["rent_inclusions"] = ai.get("rent_inclusions")
         if tx == "rent":
             rent = row.get("monthly_rent")
             row.update(_parse_deposit(str(ai.get("deposit_raw_text") or raw_text), rent))

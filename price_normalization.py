@@ -24,7 +24,8 @@ _EXPLICIT_PRICE_RE = re.compile(
 )
 _RENTAL_LANGUAGE_RE = re.compile(
     r"\b(?:rent|rental|lease|monthly|per\s+month|deposit|tenancy|"
-    r"lock[- ]?in|notice\s+period|lease\s+out|for\s+rent|on\s+rent)\b",
+    r"lock[- ]?in|notice\s+period|lease\s+out|for\s+rent|on\s+rent|"
+    r"pkg|pckg|packg|package)\b",
     re.IGNORECASE,
 )
 _SALE_LANGUAGE_RE = re.compile(
@@ -80,6 +81,36 @@ def canonical_rental_price_rupees(
     shorthand = re.search(r"(?<![\d.])(\d+\.\d+)\s*k\b", text, re.IGNORECASE)
     if shorthand:
         return float(shorthand.group(1)) * 100_000
+    return canonical_price_rupees(value, unit, raw_text)
+
+
+def canonical_commercial_rental_price_rupees(
+    value: object,
+    unit: object = None,
+    raw_text: str | None = None,
+) -> float | None:
+    """Normalize commercial ``package/pkg`` quotes as ordinary monthly rent.
+
+    ``PKG`` is a broker abbreviation for a monthly rental package in the
+    commercial market.  It is not a deposit or a CAM calculation.  When a
+    package quote has no explicit lakh unit, small decimal values such as
+    ``1.30k`` follow the same Indian broker shorthand as residential rent.
+    """
+    text = str(raw_text or "")
+    if re.search(r"\b(?:pkg|pckg|packg|package)\b", text, re.IGNORECASE):
+        shorthand = re.search(r"(?<![\d.])(\d+\.\d+)\s*k\b", text, re.IGNORECASE)
+        if shorthand:
+            return float(shorthand.group(1)) * 100_000
+        explicit = parse_explicit_price(text)
+        if explicit:
+            amount, explicit_unit = explicit
+            return price_to_rupees(amount, explicit_unit)
+        try:
+            amount = float(value)
+        except (TypeError, ValueError):
+            return None
+        # Package-only quotes are conventionally lakh-scale in this market.
+        return amount * 100_000 if abs(amount) < 10_000 else amount
     return canonical_price_rupees(value, unit, raw_text)
 
 

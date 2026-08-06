@@ -204,3 +204,20 @@ def test_residential_rent_read_columns_cover_rental_broker_facts():
         "lease_term_min_months",
         "lease_term_max_months",
     } <= cols
+
+
+def test_commercial_rent_read_columns_cover_commercial_schema():
+    cols = set(_TYPED_READ_COLUMNS_BY_TABLE["commercial_rent_listings"].split(","))
+    assert {
+        "chargeable_area_sqft", "rent_per_sqft", "broker_rera_number",
+        "terrace_area_sqft", "frontage_ft", "permitted_use_types",
+        "automatic_shutter_count", "room_count", "price_math",
+    } <= cols
+
+
+def test_broker_rera_is_available_on_every_listing_route():
+    for table in {
+        "residential_sale_listings", "residential_rent_listings",
+        "commercial_sale_listings", "commercial_rent_listings",
+    }:
+        assert "broker_rera_number" in set(_TYPED_READ_COLUMNS_BY_TABLE[table].split(","))
