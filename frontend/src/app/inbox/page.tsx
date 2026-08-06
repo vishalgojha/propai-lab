@@ -929,6 +929,20 @@ type BrokerObservationGroup = {
 
 type OpportunityFilter = "all" | "listings" | "requirements";
 
+function mainThreadOpportunityKinds(thread: api.InboxThread): Array<"Listing" | "Requirement"> {
+  const kinds = new Set<"Listing" | "Requirement">();
+  if (Number(thread.listing_count || 0) > 0) kinds.add("Listing");
+  if (Number(thread.requirement_count || 0) > 0) kinds.add("Requirement");
+  if (kinds.size > 0) return [...kinds];
+
+  const inferred = inferOpportunityKind({
+    intent: thread.intent || thread.parsed_intent,
+    observation_type: thread.observation_type,
+    text: `${thread.summary_title || ""} ${thread.message || ""}`,
+  });
+  return inferred === "Requirement" || inferred === "Listing" ? [inferred] : [];
+}
+
 function addEntity(entities: MessageEntity[], entity: MessageEntity) {
   const text = entity.text?.trim();
   if (!text || text.length < 2) return;
@@ -2375,7 +2389,12 @@ return {
     ]
       .join(" ")
       .toLowerCase();
-    return !query || haystack.includes(query);
+    if (query && !haystack.includes(query)) return false;
+    if (opportunityFilter === "all") return true;
+    const kinds = mainThreadOpportunityKinds(m);
+    return opportunityFilter === "requirements"
+      ? kinds.includes("Requirement")
+      : kinds.includes("Listing");
   });
 
   const uniqueThreads = Array.from(
@@ -3511,6 +3530,31 @@ return {
                 )}
               </div>
             )}
+            {!isGroupsView && !isBrokerView && (
+              <div className="flex items-center justify-between gap-2 pt-1">
+                <span className="text-[10px] text-zinc-500">Opportunity type</span>
+                <div className="flex rounded-lg border border-white/10 bg-zinc-950 p-0.5">
+                  {([
+                    ["all", "All"],
+                    ["listings", "Listings"],
+                    ["requirements", "Requirements"],
+                  ] as [OpportunityFilter, string][]).map(([value, label]) => (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => setOpportunityFilter(value)}
+                      className={`h-7 rounded-md px-2 text-[9px] font-bold transition-colors ${
+                        opportunityFilter === value
+                          ? "bg-white text-black"
+                          : "text-zinc-500 hover:text-white"
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* List Content */}
@@ -3685,6 +3729,7 @@ return {
                   {showThreadFallback && threadFallbackItems.map((item) => {
                     const selectedKey = threadKeyFor(selectedMsg);
                     const isSelected = Boolean(selectedKey && selectedKey === item.key);
+                    const opportunityKinds = mainThreadOpportunityKinds(item.latest);
                     return (
                       <button
                         key={`${item.type}-${item.key}`}
@@ -3699,6 +3744,11 @@ return {
                           <span className="text-[12px] font-bold text-white truncate max-w-[190px]">
                               {stripDecorativeEmoji(item.title) || "WhatsApp conversation"}
                           </span>
+                          {opportunityKinds.map((kind) => (
+                            <span key={kind} className="badge badge-neutral shrink-0 px-1.5 py-0.5 text-[8px]">
+                              {kind}
+                            </span>
+                          ))}
                         </div>
                           <span className="text-[10px] font-bold text-white tabular-nums">{item.count}</span>
                         </div>

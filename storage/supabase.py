@@ -2130,7 +2130,7 @@ class SupabaseStorage(Storage):
                 "observation_type": observation_type,
                 "broker_phone": resolved_phone,
                 "broker_name": name,
-                "source_message": parsed.get("normalized_message") or raw.get("message") or "",
+                "source_message": raw.get("message") or parsed.get("normalized_message") or "",
             })
             is_new_opportunity = opportunity_key not in bucket["opportunity_keys"]
             bucket["opportunity_keys"].add(opportunity_key)
