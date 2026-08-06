@@ -157,6 +157,21 @@ function formatTime(iso: string | null): string {
   return d.toLocaleDateString();
 }
 
+function formatParsedTimestamp(iso: string | null): string {
+  if (!iso) return "Time unavailable";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "Time unavailable";
+  return d.toLocaleString("en-IN", {
+    timeZone: "Asia/Kolkata",
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
+}
+
 function formatPhone(p: string) {
   if (!p) return "—";
   if (p.startsWith("+")) return p;
@@ -1417,7 +1432,12 @@ export default function ConnectionCenterPage() {
                         {[item.micro_market, item.transaction_type, item.group_name].filter(Boolean).join(" · ") || "Structured extraction saved"}
                       </div>
                     </div>
-                    <span className="shrink-0 text-[10px] text-zinc-600">{formatTime(item.raw_timestamp || item.created_at)}</span>
+                    <span className="shrink-0 text-right text-[10px] text-zinc-500">
+                      <span className="block">Parsed {formatParsedTimestamp(item.created_at)}</span>
+                      {item.raw_timestamp && item.raw_timestamp !== item.created_at && (
+                        <span className="mt-0.5 block text-zinc-600">Source {formatParsedTimestamp(item.raw_timestamp)}</span>
+                      )}
+                    </span>
                   </div>
                   <div className="mt-2 line-clamp-2 text-[11px] leading-relaxed text-zinc-400">{item.raw_message || "No raw text available"}</div>
                 </div>
