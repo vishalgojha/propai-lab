@@ -1780,12 +1780,67 @@ async def _waba_send_message(to: str, text: str, msg_type: str = "text", waba_co
     except Exception as exc:
         return {"success": False, "error": str(exc)}
 
+
+def _waba_sender_is_registered(to: str, tenant_id: str, sender_name: str = "") -> bool:
+    """Allow WABA AI only for an active team member or known broker."""
+    digits = _normalize_real_phone(to)
+    if not digits:
+        return False
+    try:
+        members = storage.list_team_members(org_id=tenant_id)
+        for member in members:
+            member_phone = _normalize_real_phone(member.get("phone") or member.get("mobile_number"))
+            if member.get("is_active") and (member_phone == digits or (
+                sender_name.strip() and str(member.get("name") or "").strip().casefold() == sender_name.strip().casefold()
+            )):
+                return True
+    except Exception:
+        pass
+    try:
+        client = getattr(storage, "client", None)
+        if client is not None:
+            rows = client.table("brokers").select("primary_phone").eq("primary_phone", digits).limit(1).execute().data or []
+            return bool(rows)
+    except Exception:
+        pass
+    return False
+
+
+def _waba_registration_prompt_sent(to: str, tenant_id: str) -> bool:
+    try:
+        digits = _normalize_real_phone(to)
+        row = storage.db.execute(
+            "SELECT id FROM raw_messages WHERE tenant_id = ? AND sender_phone = ? "
+            "AND source = 'WABA_OUTBOUND' AND message LIKE ? LIMIT 1",
+            (tenant_id, digits, "To use PropAI on WhatsApp%"),
+        ).fetchone()
+        return bool(row)
+    except Exception:
+        return False
+
+
 async def _handle_waba_agent_reply(to: str, text: str, inbound_message_id: str, sender_name: str = "", waba_config: dict | None = None, tenant_id: str | None = None) -> None:
     if not tenant_id:
         raise RuntimeError("WABA agent reply requires a tenant_id")
     try:
         previous_tenant = get_tenant_id()
         set_tenant_id(tenant_id)
+        if not _waba_sender_is_registered(to, tenant_id, sender_name):
+            if not _waba_registration_prompt_sent(to, tenant_id):
+                registration_reply = "To use PropAI on WhatsApp, please register as a broker and become a paid member."
+                result = await _waba_send_message(to, registration_reply, waba_config=waba_config)
+                if result.get("success"):
+                    now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+                    digits = re.sub(r"\D+", "", to)
+                    sender_jid = f"{digits}@s.whatsapp.net"
+                    storage.db.execute(
+                        """INSERT INTO raw_messages (tenant_id, group_name, sender, sender_jid, sender_phone, message, message_type, source, timestamp, raw_payload, message_uid, delivery_status, synced_at, created_at)
+                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                        (tenant_id, sender_jid, "PropAI Agent", sender_jid, digits, registration_reply, "text", "WABA_OUTBOUND", now_iso,
+                         _json.dumps({"waba_message_id": result.get("message_id", ""), "reply_to": inbound_message_id, "access_gate": "registration_required"}),
+                         f"waba-{result.get('message_id') or uuid.uuid4()}", "sent", now_iso, now_iso),
+                    )
+            return
         if not sender_name.strip():
             try:
                 profile = await asyncio.to_thread(storage.get_user_profile, to, "", tenant_id)
