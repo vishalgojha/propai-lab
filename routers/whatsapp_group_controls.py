@@ -490,38 +490,84 @@ def _overlap(org_id: str, group_name: str, group_jid: str = "") -> dict:
 
 
 def _attach_directory_overlap(org_id: str, groups: list[dict], limit: int = 20) -> None:
-    """Add duplicate/new-reach signals without scanning every directory row."""
+    """Add duplicate/new-reach signals with bounded batched lookups.
+
+    The old implementation called _overlap once per candidate, and each call
+    sampled raw_messages then queried network_broker_registry. On a directory
+    of 20 candidates that became 40+ sequential Supabase requests.
+    """
     candidates = [group for group in groups if group["connected"]]
     candidates += [group for group in groups if not group["connected"]][:limit]
+    if not candidates:
+        return
+
+    identities = sorted({
+        identity
+        for group in candidates
+        for identity in (group.get("group_name", ""), group.get("group_jid", ""))
+        if identity
+    })
+    samples_by_identity: dict[str, list[str]] = {identity: [] for identity in identities}
+    try:
+        raw_rows = (
+            storage.client.table("raw_messages")
+            .select("group_name,sender_phone,sender_jid")
+            .eq("tenant_id", org_id)
+            .in_("group_name", identities)
+            .order("created_at", desc=True)
+            .limit(min(1000, max(SAMPLE_LIMIT * len(identities), SAMPLE_LIMIT)))
+            .execute()
+            .data
+            or []
+        )
+        for row in raw_rows:
+            identity = str(row.get("group_name") or "")
+            if identity not in samples_by_identity or len(samples_by_identity[identity]) >= SAMPLE_LIMIT:
+                continue
+            phone = _normalize_real_phone(row.get("sender_phone")) or _normalize_real_phone(row.get("sender_jid"))
+            if phone and phone not in samples_by_identity[identity]:
+                samples_by_identity[identity].append(phone)
+    except Exception:
+        pass
+
+    all_sample_phones = sorted({phone for phones in samples_by_identity.values() for phone in phones})
+    try:
+        known = {
+            row.get("broker_phone")
+            for row in (
+                storage.client.table("network_broker_registry")
+                .select("broker_phone")
+                .in_("broker_phone", all_sample_phones)
+                .execute()
+                .data
+                or []
+            )
+        } if all_sample_phones else set()
+    except Exception:
+        known = set()
+
     for group in candidates:
-        try:
-            overlap = _overlap(org_id, group["group_name"], group.get("group_jid", ""))
-        except Exception:
-            continue
-        score = overlap["overlap_score"]
-        if not overlap["sample_count"]:
+        sample = sorted({
+            phone
+            for identity in (group.get("group_name", ""), group.get("group_jid", ""))
+            for phone in samples_by_identity.get(identity, [])
+        })
+        overlap_score = len(set(sample) & known) / len(sample) if sample else 0.0
+        if not sample:
             status = "unknown"
-        elif score >= OVERLAP_WARNING_THRESHOLD:
+        elif overlap_score >= OVERLAP_WARNING_THRESHOLD:
             status = "high_overlap"
-        elif score >= 0.30:
+        elif overlap_score >= 0.30:
             status = "moderate_overlap"
         else:
             status = "new_reach"
         group.update({
-            "overlap_score": score,
-            "overlap_sample_count": overlap["sample_count"],
-            "overlap_shared_count": overlap["shared_count"],
+            "overlap_score": round(overlap_score, 5),
+            "overlap_sample_count": len(sample),
+            "overlap_shared_count": len(set(sample) & known),
             "overlap_status": status,
         })
         if not group["connected"] and group.get("suggestion"):
-            group["suggestion"] = _suggestion_score(
-                org_id,
-                group["group_name"],
-                group.get("participants", 0),
-                group.get("last_message_at"),
-                group_jid=group.get("group_jid", ""),
-                include_content=True,
-            )
             suggestion = group["suggestion"]
             if status == "high_overlap":
                 suggestion["score"] = round(max(0.0, suggestion["score"] - 0.20), 3)
