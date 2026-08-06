@@ -92,33 +92,33 @@ drop policy if exists "tenant_select_workspace_ai_settings" on public.workspace_
 create policy "tenant_select_workspace_ai_settings" on public.workspace_ai_settings
   for select
   using (
-    auth.is_super_admin() or
-    tenant_id = any(select auth.user_tenant_ids())
+    public.is_super_admin() or
+    tenant_id = any(select public.user_tenant_ids())
   );
 drop policy if exists "tenant_insert_workspace_ai_settings" on public.workspace_ai_settings;
 create policy "tenant_insert_workspace_ai_settings" on public.workspace_ai_settings
   for insert
   with check (
-    auth.is_super_admin() or
-    tenant_id = any(select auth.user_tenant_ids())
+    public.is_super_admin() or
+    tenant_id = any(select public.user_tenant_ids())
   );
 drop policy if exists "tenant_update_workspace_ai_settings" on public.workspace_ai_settings;
 create policy "tenant_update_workspace_ai_settings" on public.workspace_ai_settings
   for update
   using (
-    auth.is_super_admin() or
-    tenant_id = any(select auth.user_tenant_ids())
+    public.is_super_admin() or
+    tenant_id = any(select public.user_tenant_ids())
   )
   with check (
-    auth.is_super_admin() or
-    tenant_id = any(select auth.user_tenant_ids())
+    public.is_super_admin() or
+    tenant_id = any(select public.user_tenant_ids())
   );
 drop policy if exists "tenant_delete_workspace_ai_settings" on public.workspace_ai_settings;
 create policy "tenant_delete_workspace_ai_settings" on public.workspace_ai_settings
   for delete
   using (
-    auth.is_super_admin() or
-    tenant_id = any(select auth.user_tenant_ids())
+    public.is_super_admin() or
+    tenant_id = any(select public.user_tenant_ids())
   );
 
 alter table public.agent_browser_sessions enable row level security;
@@ -126,33 +126,33 @@ drop policy if exists "tenant_select_agent_browser_sessions" on public.agent_bro
 create policy "tenant_select_agent_browser_sessions" on public.agent_browser_sessions
   for select
   using (
-    auth.is_super_admin() or
-    tenant_id = any(select auth.user_tenant_ids())
+    public.is_super_admin() or
+    tenant_id = any(select public.user_tenant_ids())
   );
 drop policy if exists "tenant_insert_agent_browser_sessions" on public.agent_browser_sessions;
 create policy "tenant_insert_agent_browser_sessions" on public.agent_browser_sessions
   for insert
   with check (
-    auth.is_super_admin() or
-    tenant_id = any(select auth.user_tenant_ids())
+    public.is_super_admin() or
+    tenant_id = any(select public.user_tenant_ids())
   );
 drop policy if exists "tenant_update_agent_browser_sessions" on public.agent_browser_sessions;
 create policy "tenant_update_agent_browser_sessions" on public.agent_browser_sessions
   for update
   using (
-    auth.is_super_admin() or
-    tenant_id = any(select auth.user_tenant_ids())
+    public.is_super_admin() or
+    tenant_id = any(select public.user_tenant_ids())
   )
   with check (
-    auth.is_super_admin() or
-    tenant_id = any(select auth.user_tenant_ids())
+    public.is_super_admin() or
+    tenant_id = any(select public.user_tenant_ids())
   );
 drop policy if exists "tenant_delete_agent_browser_sessions" on public.agent_browser_sessions;
 create policy "tenant_delete_agent_browser_sessions" on public.agent_browser_sessions
   for delete
   using (
-    auth.is_super_admin() or
-    tenant_id = any(select auth.user_tenant_ids())
+    public.is_super_admin() or
+    tenant_id = any(select public.user_tenant_ids())
   );
 
 alter table public.agent_browser_steps enable row level security;
@@ -160,33 +160,33 @@ drop policy if exists "tenant_select_agent_browser_steps" on public.agent_browse
 create policy "tenant_select_agent_browser_steps" on public.agent_browser_steps
   for select
   using (
-    auth.is_super_admin() or
-    tenant_id = any(select auth.user_tenant_ids())
+    public.is_super_admin() or
+    tenant_id = any(select public.user_tenant_ids())
   );
 drop policy if exists "tenant_insert_agent_browser_steps" on public.agent_browser_steps;
 create policy "tenant_insert_agent_browser_steps" on public.agent_browser_steps
   for insert
   with check (
-    auth.is_super_admin() or
-    tenant_id = any(select auth.user_tenant_ids())
+    public.is_super_admin() or
+    tenant_id = any(select public.user_tenant_ids())
   );
 drop policy if exists "tenant_update_agent_browser_steps" on public.agent_browser_steps;
 create policy "tenant_update_agent_browser_steps" on public.agent_browser_steps
   for update
   using (
-    auth.is_super_admin() or
-    tenant_id = any(select auth.user_tenant_ids())
+    public.is_super_admin() or
+    tenant_id = any(select public.user_tenant_ids())
   )
   with check (
-    auth.is_super_admin() or
-    tenant_id = any(select auth.user_tenant_ids())
+    public.is_super_admin() or
+    tenant_id = any(select public.user_tenant_ids())
   );
 drop policy if exists "tenant_delete_agent_browser_steps" on public.agent_browser_steps;
 create policy "tenant_delete_agent_browser_steps" on public.agent_browser_steps
   for delete
   using (
-    auth.is_super_admin() or
-    tenant_id = any(select auth.user_tenant_ids())
+    public.is_super_admin() or
+    tenant_id = any(select public.user_tenant_ids())
   );
 
 alter table public.agent_audit_log enable row level security;
@@ -194,31 +194,31 @@ drop policy if exists "tenant_select_agent_audit_log" on public.agent_audit_log;
 create policy "tenant_select_agent_audit_log" on public.agent_audit_log
   for select
   using (
-    auth.is_super_admin() or
-    tenant_id = any(select auth.user_tenant_ids())
+    public.is_super_admin() or
+    tenant_id = any(select public.user_tenant_ids())
   );
 drop policy if exists "tenant_insert_agent_audit_log" on public.agent_audit_log;
 create policy "tenant_insert_agent_audit_log" on public.agent_audit_log
   for insert
   with check (
-    auth.is_super_admin() or
-    tenant_id = any(select auth.user_tenant_ids())
+    public.is_super_admin() or
+    tenant_id = any(select public.user_tenant_ids())
   );
 drop policy if exists "tenant_update_agent_audit_log" on public.agent_audit_log;
 create policy "tenant_update_agent_audit_log" on public.agent_audit_log
   for update
   using (
-    auth.is_super_admin() or
-    tenant_id = any(select auth.user_tenant_ids())
+    public.is_super_admin() or
+    tenant_id = any(select public.user_tenant_ids())
   )
   with check (
-    auth.is_super_admin() or
-    tenant_id = any(select auth.user_tenant_ids())
+    public.is_super_admin() or
+    tenant_id = any(select public.user_tenant_ids())
   );
 drop policy if exists "tenant_delete_agent_audit_log" on public.agent_audit_log;
 create policy "tenant_delete_agent_audit_log" on public.agent_audit_log
   for delete
   using (
-    auth.is_super_admin() or
-    tenant_id = any(select auth.user_tenant_ids())
+    public.is_super_admin() or
+    tenant_id = any(select public.user_tenant_ids())
   );
