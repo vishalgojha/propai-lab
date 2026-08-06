@@ -397,13 +397,13 @@ def load_live_data(db_path):
     # Unresolved messages (parser gaps)
     unresolved = con.execute("""
         SELECT p.id, p.intent, p.bhk, p.price, p.micro_market,
-               p.broker_name, p.confidence, p.created_at,
+               p.broker_name, p.created_at,
                r.message, r.group_name, r.timestamp,
                d.method, d.failure_category
         FROM parsed_output_unified p
         JOIN raw_messages r ON r.id = p.raw_message_id
         LEFT JOIN resolver_decisions d ON d.parsed_id = p.id
-        WHERE d.method = 'unresolved' OR p.confidence < 0.5
+        WHERE d.method = 'unresolved'
         ORDER BY p.id DESC
         LIMIT 500
     """).fetchall()
