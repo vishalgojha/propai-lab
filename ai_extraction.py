@@ -365,7 +365,7 @@ def classify_message_type(text: str) -> tuple[str, str]:
 
 _FOCUSED_FIELDS = {
     ("residential", "sale", False): "bhk, original_bhk, current_bhk, configuration_type, configuration_details, is_converted_unit, is_combination_unit, can_sell_separately, carpet_area_sqft, built_up_area_sqft, super_built_up_area_sqft, balcony_area_sqft, balcony_area_raw_text, terrace_area_sqft, covered_terrace_area_sqft, terrace_area_raw_text, sellable_area_sqft, price, price_basis, price_math, locality, building_name, wing, furnishing_status, unit_condition, availability_status, possession_status, possession_date, bathroom_count, car_parking_count, parking_type, parking_details, floor_range, floor_min, floor_max, floor_label, property_view, view_description, vastu_compliant, age_of_property, building_amenities, amenities, amenities_unverified_claim, brokerage_type, brokerage_context, co_brokered, token_amount, payment_plan, society_restrictions, society_restrictions_raw, showing_instructions, contact_instructions, broker_company, contacts, unstructured_facts, deal_tags, title",
-    ("residential", "rent", False): "bhk, carpet_area_sqft, built_up_area_sqft, price, locality, building_name, furnishing_status, possession_status, possession_date, bathroom_count, car_parking_count, parking_type, floor_range, building_amenities, amenities, amenities_unverified_claim, deposit_amount, deposit_months, deposit_raw_text, pet_policy, tenant_type_preference, sharing_allowed, food_preference, lease_term_type, lock_in_period_months, notice_period_months, brokerage_type, deal_tags, title",
+    ("residential", "rent", False): "bhk, original_bhk, current_bhk, configuration_type, configuration_details, is_converted_unit, is_combination_unit, carpet_area_sqft, built_up_area_sqft, balcony_present, balcony_area_sqft, balcony_area_raw_text, terrace_area_sqft, covered_terrace_area_sqft, terrace_area_raw_text, sit_out_present, price, locality, building_name, furnishing_status, unit_condition, availability_status, availability_date_raw, available_from, possession_status, bathroom_count, car_parking_count, parking_type, parking_details, floor_range, floor_min, floor_max, floor_label, wing, has_lift, building_amenities, amenities, amenities_unverified_claim, property_view, view_description, deposit_amount, deposit_months, deposit_raw_text, pet_policy, tenant_type_preference, sharing_allowed, food_preference, lease_term_type, lease_term_min_months, lease_term_max_months, lease_term_raw_text, lock_in_period_months, notice_period_months, brokerage_type, brokerage_context, brokerage_terms_raw, plus_one_deal, fee_sharing_required, client_profile_required, society_restrictions, society_restrictions_raw, broker_company, contacts, company_lease_criteria, showing_instructions, contact_instructions, unstructured_facts, deal_tags, title",
     ("commercial", "sale", False): "commercial_use_type, carpet_area_sqft, built_up_area_sqft, chargeable_area_sqft, price, price_basis, locality, building_name, fitout_status, occupancy_status, ceiling_height, floor_range, car_parking_count, power_load_kw, cabin_count, workstation_count, conference_room_count, meeting_room_count, washroom_count, pantry_type, has_central_ac, has_power_backup, has_lift, building_amenities, brokerage_type, deal_tags, title",
     ("commercial", "rent", False): "commercial_use_type, carpet_area_sqft, built_up_area_sqft, chargeable_area_sqft, price, price_basis, locality, building_name, fitout_status, ceiling_height, floor_range, deposit_amount, deposit_months, deposit_raw_text, cam_amount, cam_applicable, cam_unit, power_load_kw, lease_term_type, lock_in_period_months, notice_period_months, escalation_pct, escalation_frequency, rent_free_period_months, fitout_period_months, lease_deed_type, sub_leasing_allowed, building_amenities, brokerage_type, deal_tags, title",
     ("residential", "sale", True): "bhk_options, budget_min, budget_max, area_min_sqft, area_max_sqft, locality_options, building_preferences, furnishing_preference, possession_preference, car_parking_min, buyer_type, transaction_nature, urgency, is_flexible, deal_tags, title",
@@ -417,6 +417,63 @@ Residential sale listing rules:
 """
 
 
+_RESIDENTIAL_RENT_EXTRACTION_RULES = """
+Residential rent listing rules:
+- Bulk broadcasts: emit one item per independently actionable apartment. Carry
+  a shared BHK, locality, or contact footer into each item only when the source
+  structure clearly applies it. Do not let one item's price, area, or tenant
+  rule leak into another item.
+- A normal apartment rental is supported. PG, hostel, paying-guest, dormitory,
+  co-living, room-sharing, and bed-by-bed offers are not supported inventory;
+  do not emit typed listing items for them.
+- Mumbai rent shorthand: in a clear residential-rental context, decimal
+  lakh-style quotes such as 1.30k, 2.50k, or 3.5k mean 1.30 lakh, 2.50 lakh,
+  or 3.5 lakh respectively. Preserve the exact raw text and normalize to
+  absolute rupees. Plain 130k remains 130000. Never normalize 1.30k to 1300.
+- Lease language means RENT. Extract lease duration separately from lock-in:
+  “3/5 years lease” is lease_term_min_months=36 and lease_term_max_months=60,
+  while lock_in_period_months is only for an explicit lock-in period.
+- Deposits: “3 months deposit” populates deposit_months; a flat amount such as
+  “2 lakh deposit” populates deposit_amount. Preserve deposit_raw_text. Do not
+  invent a deposit amount when only months are given.
+- Residential rent is normally maintenance/CAM inclusive. Do not invent or
+  split residential maintenance or CAM fields.
+- Tenant rules are facts: preserve family, bachelor, expat, company lease,
+  pets, vegetarian, or similar wording. Do not turn them into requirements or
+  silently omit them.
+- Balcony, terrace, and sit-out are separate from carpet area. Never add them
+  to carpet_area_sqft. Preserve raw wording and use the dedicated area fields.
+- “No lift” and “No car park” are explicit negatives: set has_lift=false or
+  car_parking_count=0. Missing information remains null.
+- Views and vague claims: store a canonical property_view only when clear and
+  preserve rich wording in view_description or unstructured_facts. “All
+  amenities” remains an unverified claim; do not invent an amenity list.
+- Contacts: extract every explicit phone number, up to 8, with associated
+  person/company names. broker_phone is only the primary contact; contacts
+  retains the team numbers.
+- Indian brokerage language: “+1”, “plus one”, “sharing”, “joint deal”, or
+  “mandate plus one” means a fee-sharing arrangement. Set plus_one_deal=true
+  and fee_sharing_required=true, preserve brokerage_terms_raw, and never infer
+  the fee percentage. “Mandate” alone is not exclusive; only explicit
+  “exclusive mandate” means exclusive.
+- Company lease criteria such as MNCs, consulates, paid-up capital, client
+  profile required, or corporate tenant preference belong in
+  company_lease_criteria, client_profile_required, tenant_type_preference, or
+  unstructured_facts. Preserve the exact source wording.
+- Typos: preserve the broker's original text. Resolve a known locality alias
+  for search only when the match is strong and context supports it; never
+  fabricate a building name. “Building name: please call” remains null.
+- Availability dates without an unambiguous year should be preserved in
+  availability_date_raw; do not invent a year. “Immediate” belongs in
+  availability_status.
+- A message saying sale and lease for the same property preserves both modes;
+  do not silently choose one. A sale-priced crore quote without rent language
+  is not monthly rent, even if a heading contains a typo such as “RANTAL”.
+- Same-inventory matching across brokers is not extraction. Preserve each
+  broker's observation and source-specific facts; never merge or suppress it.
+"""
+
+
 def _get_extraction_prompt(
     asset_type: str,
     transaction_type: str,
@@ -426,11 +483,11 @@ def _get_extraction_prompt(
     """Build a small route-specific prompt instead of sending all 85 fields."""
     fields = _FOCUSED_FIELDS[(asset_type, transaction_type, is_requirement)]
     side = "DEMAND/REQUIREMENT" if is_requirement else "SUPPLY/LISTING"
-    route_rules = (
-        _RESIDENTIAL_SALE_EXTRACTION_RULES
-        if (asset_type, transaction_type, is_requirement) == ("residential", "sale", False)
-        else ""
-    )
+    route_rules = ""
+    if (asset_type, transaction_type, is_requirement) == ("residential", "sale", False):
+        route_rules = _RESIDENTIAL_SALE_EXTRACTION_RULES
+    elif (asset_type, transaction_type, is_requirement) == ("residential", "rent", False):
+        route_rules = _RESIDENTIAL_RENT_EXTRACTION_RULES
     expected_listing_type = "requirement" if is_requirement else transaction_type
     listing_type_rule = (
         f'- listing_type: exactly "{expected_listing_type}".'
