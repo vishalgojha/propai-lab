@@ -1,5 +1,6 @@
 from storage.supabase import SupabaseStorage, _typed_route
 from storage.base import ParsedObservation
+from extraction import _ai_extraction_to_typed
 
 
 class _Result:
@@ -21,6 +22,7 @@ class _Query:
     def insert(self, payload, **kwargs):
         self.client.writes.append((self.table, payload, kwargs))
         return self
+    def delete(self): return self
     def execute(self): return _Result([{"id": 101}])
 
 
@@ -45,6 +47,24 @@ def test_route_separates_rent_supply_and_sale_demand():
         "message_type": "requirement",
         "normalized_message": "Require 3 BHK on lease in Worli",
     })[0] == "residential_rent_requirements"
+
+
+def test_listing_type_wins_over_conflicting_provider_transaction_label():
+    table, row = _ai_extraction_to_typed(
+        {
+            "listing_type": "sale",
+            "classified_transaction_type": "rent",
+            "classified_asset_type": "residential",
+            "building_name": "Tower On Call",
+            "bhk": 3,
+            "price": {"amount": 57000000, "unit": "total", "raw_price_text": "₹5.70 Cr"},
+        },
+        "3 BHK flat FOR SALE in Bandra West. Price ₹5.70 Cr",
+        raw_message_id=25025,
+    )
+    assert table == "residential_sale_listings"
+    assert row["transaction_type"] == "sale"
+    assert row["total_asking_price"] == 57000000
 
 
 def test_save_parsed_writes_directly_to_typed_rent_table():
