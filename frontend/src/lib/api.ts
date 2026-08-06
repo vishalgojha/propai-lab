@@ -1822,6 +1822,24 @@ export function saveProfile(data: { first_name: string; last_name: string; email
   });
 }
 
+export type SoundPreferences = {
+  whatsapp: string;
+  groups: string;
+  connection: string;
+  leads: string;
+};
+
+export function getSoundPreferences() {
+  return fetchJSON<SoundPreferences>("/profile/sounds");
+}
+
+export function saveSoundPreferences(data: SoundPreferences) {
+  return fetchJSON<SoundPreferences>("/profile/sounds", {
+    method: "PUT",
+    body: JSON.stringify(data),
+  });
+}
+
 export function getCurrentOrg() {
   return fetchJSON<{ id: string; name?: string; slug?: string }>(`/orgs/current`);
 }

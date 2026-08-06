@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { motion, useReducedMotion } from "framer-motion";
 import "./globals.css";
-import { getPhones, searchMessages, getAuthMe, getBusinessApiConfig, BusinessApiConfig, getProfile, getWhatsAppStatus, fetchJSON, isLiveWhatsAppConnection, type Phone, type WhatsAppStatus } from "@/lib/api";
+import { getPhones, searchMessages, getAuthMe, getBusinessApiConfig, BusinessApiConfig, getProfile, getWhatsAppStatus, fetchJSON, isLiveWhatsAppConnection, getSoundPreferences as getSavedSoundPreferences, saveSoundPreferences, type Phone, type WhatsAppStatus } from "@/lib/api";
 import {
   MessageSquare,
   BarChart3,
@@ -40,7 +40,7 @@ import { BottomNav } from "@/components/layout/BottomNav";
 import { MobileDrawer } from "@/components/layout/MobileDrawer";
 import { InstallPrompt } from "@/components/layout/InstallPrompt";
 import { ServiceWorkerRegister } from "@/components/layout/ServiceWorkerRegister";
-import { isMuted, toggleMute, playConnectionChange, playGroupConnected, playNewLead, playNewWhatsApp, getVolume, setVolume, isSoundEnabled, setSoundEnabled, type SoundEvent } from "@/lib/sounds";
+import { isMuted, toggleMute, playConnectionChange, playGroupConnected, playNewLead, playNewWhatsApp, getVolume, setVolume, isSoundEnabled, setSoundEnabled, getSoundPreferences, loadSoundPreferences, setSoundPreference, previewSound, SOUND_LIBRARY, type SoundEvent, type SoundId, type SoundPreferences } from "@/lib/sounds";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import { ThemeToggle } from "@/components/ThemeToggle";
 
@@ -227,6 +227,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
   const [soundSettingsOpen, setSoundSettingsOpen] = useState(false);
   const [soundVolume, setSoundVolume] = useState(0.25);
   const [soundEvents, setSoundEvents] = useState<Record<SoundEvent, boolean>>({ whatsapp: true, groups: false, connection: true, leads: true });
+  const [soundPreferences, setSoundPreferences] = useState<SoundPreferences>({ whatsapp: "chime", groups: "pop", connection: "bell", leads: "soft-ding" });
   const { signOut: authSignOut } = useAuth();
   const fallbackFullName = String(user?.user_metadata?.full_name || user?.email?.split("@")[0] || "Account").trim();
   const [fallbackFirstName = "Account", ...fallbackLastName] = fallbackFullName.split(/\s+/);
@@ -260,7 +261,8 @@ function AppShell({ children }: { children: React.ReactNode }) {
     };
   }, [user?.id]);
 
-  // Read initial sound mute state
+  // Read local sound state immediately, then hydrate the selected sounds from
+  // the authenticated profile so choices survive a new browser/session.
   useEffect(() => {
     import("@/lib/sounds").then((s) => setSoundsMuted(s.isMuted()));
     import("@/lib/sounds").then((s) => {
@@ -271,8 +273,17 @@ function AppShell({ children }: { children: React.ReactNode }) {
         connection: s.isSoundEnabled("connection"),
         leads: s.isSoundEnabled("leads"),
       });
+      setSoundPreferences(s.getSoundPreferences());
     });
-  }, []);
+    if (user?.id) {
+      void getSavedSoundPreferences()
+        .then((saved) => {
+          const next = loadSoundPreferences(saved as Partial<SoundPreferences>);
+          setSoundPreferences(next);
+        })
+        .catch(() => undefined);
+    }
+  }, [user?.id]);
 
   const handleToggleSounds = useCallback(() => {
     import("@/lib/sounds").then((s) => {
@@ -285,6 +296,13 @@ function AppShell({ children }: { children: React.ReactNode }) {
     const enabled = setSoundEnabled(event, !soundEvents[event]);
     setSoundEvents((current) => ({ ...current, [event]: enabled }));
   }, [soundEvents]);
+
+  const handleSoundSelection = useCallback((event: SoundEvent, sound: SoundId) => {
+    const next = setSoundPreference(event, sound);
+    setSoundPreferences(next);
+    previewSound(sound);
+    void saveSoundPreferences(next).catch(() => undefined);
+  }, []);
 
   // Hydrate localStorage profile from server when missing
   useEffect(() => {
@@ -730,7 +748,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
           </button>
           <div className="relative">
             {soundSettingsOpen && (
-              <div className="absolute bottom-full left-0 z-50 mb-2 w-64 rounded-xl border border-white/10 bg-zinc-950 p-3 shadow-2xl">
+              <div className="absolute bottom-full left-0 z-50 mb-2 w-80 rounded-xl border border-white/10 bg-zinc-950 p-3 shadow-2xl">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-semibold text-white">Sound controls</span>
                   <button type="button" onClick={() => setSoundSettingsOpen(false)} className="text-zinc-500 hover:text-white" aria-label="Close sound controls"><X className="h-3.5 w-3.5" /></button>
@@ -747,10 +765,31 @@ function AppShell({ children }: { children: React.ReactNode }) {
                     ["connection", "Connection changes"],
                     ["leads", "Leads and requirements"],
                   ] as [SoundEvent, string][]).map(([event, label]) => (
-                    <label key={event} className="flex cursor-pointer items-center justify-between gap-3 text-[11px] text-zinc-400">
-                      <span>{label}</span>
-                      <input type="checkbox" checked={soundEvents[event]} onChange={() => handleSoundEvent(event)} className="accent-emerald-400" />
-                    </label>
+                    <div key={event} className="space-y-1.5 text-[11px] text-zinc-400">
+                      <div className="flex items-center justify-between gap-3">
+                        <span>{label}</span>
+                        <input aria-label={`Enable ${label}`} type="checkbox" checked={soundEvents[event]} onChange={() => handleSoundEvent(event)} className="accent-emerald-400" />
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <select
+                          aria-label={`${label} sound`}
+                          value={soundPreferences[event]}
+                          onChange={(change) => handleSoundSelection(event, change.target.value as SoundId)}
+                          className="min-w-0 flex-1 rounded-md border border-white/10 bg-white/5 px-2 py-1.5 text-[11px] text-zinc-300 outline-none focus:border-emerald-400"
+                        >
+                          {SOUND_LIBRARY.map((sound) => <option key={sound.id} value={sound.id}>{sound.label}</option>)}
+                        </select>
+                        <button
+                          type="button"
+                          aria-label={`Preview ${label} sound`}
+                          title="Preview selected sound"
+                          onClick={() => previewSound(soundPreferences[event])}
+                          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-zinc-500 hover:bg-white/10 hover:text-emerald-300"
+                        >
+                          <Volume2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    </div>
                   ))}
                 </div>
               </div>

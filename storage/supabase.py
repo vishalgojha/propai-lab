@@ -974,6 +974,32 @@ class SupabaseStorage(Storage):
             res = self.client.table("user_profiles").insert(payload).execute()
         return res.data[0] if res and res.data else None
 
+    def get_sound_preferences(self, auth_user_id: str, tenant_id: str | None = None) -> dict:
+        profile = self.get_user_profile(auth_user_id=auth_user_id, tenant_id=tenant_id)
+        value = profile.get("sound_preferences") if profile else None
+        return value if isinstance(value, dict) else {}
+
+    def save_sound_preferences(self, auth_user_id: str, phone: str, preferences: dict, tenant_id: str | None = None) -> dict:
+        tid = tenant_id or self._tenant_id
+        profile = self.get_user_profile(auth_user_id=auth_user_id, tenant_id=tid)
+        if not profile:
+            profile = self.save_user_profile(
+                phone,
+                {"first_name": "", "last_name": "", "email": "", "city": ""},
+                auth_user_id=auth_user_id,
+                tenant_id=tid,
+            )
+        if not profile:
+            raise RuntimeError("User profile could not be created")
+        query = self.client.table("user_profiles").update({
+            "sound_preferences": preferences,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }).eq("id", profile["id"])
+        if tid:
+            query = query.eq("tenant_id", tid)
+        result = query.execute()
+        return (result.data[0] if result.data else {"sound_preferences": preferences}).get("sound_preferences") or preferences
+
     def get_profile_photo(self, jid: str, tenant_id: str | None = None) -> dict | None:
         """Get cached profile photo for a WhatsApp JID (phone@s.whatsapp.net)."""
         tid = tenant_id or self._tenant_id
