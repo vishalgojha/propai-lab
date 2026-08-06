@@ -371,7 +371,7 @@ _FOCUSED_FIELDS = {
     ("residential", "sale", True): "bhk_options, budget_min, budget_max, area_min_sqft, area_max_sqft, locality_options, building_preferences, furnishing_preference, possession_preference, car_parking_min, buyer_type, transaction_nature, urgency, is_flexible, deal_tags, title",
     ("residential", "rent", True): "bhk_options, budget_min, budget_max, area_min_sqft, area_max_sqft, locality_options, building_preferences, furnishing_preference, possession_preference, deposit_budget_max, tenant_type, nationality, has_pets, car_parking_needed, sharing_acceptable, food_preference, lease_term_preference, company_lease_criteria, urgency, is_flexible, deal_tags, title",
     ("commercial", "sale", True): "commercial_use_type, area_min_sqft, area_max_sqft, budget_min, budget_max, budget_per_sqft_max, locality_options, fitout_preference, car_parking_min, needs_mezzanine, needs_lift, needs_power_backup, needs_central_ac, min_power_load_kw, buyer_type, urgency, is_flexible, deal_tags, title",
-    ("commercial", "rent", True): "commercial_use_type, area_min_sqft, area_max_sqft, budget_min, budget_max, budget_per_sqft_max, locality_options, fitout_preference, car_parking_min, needs_mezzanine, needs_lift, needs_power_backup, needs_central_ac, min_power_load_kw, deposit_budget_max, lease_term_preference, max_lock_in_months, max_notice_period_months, company_type, team_size, urgency, is_flexible, deal_tags, title",
+    ("commercial", "rent", True): "commercial_use_type, intended_use_details, area_min_sqft, area_max_sqft, area_basis_preference, budget_min, budget_max, budget_per_sqft_max, locality_options, location_flexibility, fitout_preference, floor_min, floor_max, floor_preference, car_parking_min, parking_required, needs_attached_washroom, needs_washroom, needs_pantry, needs_mezzanine, needs_lift, needs_power_backup, needs_central_ac, premium_building_required, glass_facade_required, residential_cum_commercial_ok, by_lanes_accepted, min_cabin_count, min_workstation_count, needs_conference_room, deposit_budget_max, lease_term_preference, max_lock_in_months, max_notice_period_months, company_type, team_size, media_requested, urgency, brokerage_context, brokerage_terms_raw, contacts, is_flexible, deal_tags, title",
 }
 
 
@@ -549,6 +549,35 @@ Commercial sale listing rules:
 """
 
 
+_COMMERCIAL_RENT_REQUIREMENT_RULES = """
+Commercial rent requirement rules:
+- This is demand, not supply. Keep listing_type="requirement" and never invent
+  a building, rent, or available unit from the request.
+- Extract the intended use precisely: office, gaming office, cafe, retail, etc.
+  Preserve qualifiers such as “for gaming purpose” or “cafe (induction)” in
+  intended_use_details/unstructured_facts.
+- Area ranges populate area_min_sqft/area_max_sqft and area_basis_preference
+  (usually carpet). “800+” means area_min_sqft=800 with no fabricated maximum.
+- Preserve location corridors and flexibility: “Bandra to Santacruz West”,
+  “Malad East to Goregaon East on highway”, “okay with by lanes”, and similar
+  wording belong in locality_options/location_flexibility. Do not collapse a
+  corridor into one locality.
+- Budget is a monthly rental budget. “90K to 1 lakh” becomes budget_min=90000
+  and budget_max=100000. A single “up to 150K” sets budget_max=150000.
+- Furnishing is a preference. Capture minimum cabins, workstations, conference
+  rooms, washrooms, attached washroom, pantry, lift, parking, floor range, and
+  building standards as explicit constraints. “Commercial building not
+  necessary” means residential_cum_commercial_ok=true; “only commercial premium
+  building” means premium_building_required=true and the commercial preference.
+- Extract “glass facade”, “photos/pics requested”, and similar non-price needs as
+  structured searchable requirements when present. Never treat photos as proof
+  that a listing has been verified.
+- “Brokerage side by side” belongs in brokerage_context/brokerage_terms_raw.
+  Extract every stated contact, up to 8, while keeping the primary broker phone
+  separate. Preserve urgent wording in urgency.
+"""
+
+
 def _get_extraction_prompt(
     asset_type: str,
     transaction_type: str,
@@ -567,6 +596,8 @@ def _get_extraction_prompt(
         route_rules = _COMMERCIAL_RENT_EXTRACTION_RULES
     elif (asset_type, transaction_type, is_requirement) == ("commercial", "sale", False):
         route_rules = _COMMERCIAL_SALE_EXTRACTION_RULES
+    elif (asset_type, transaction_type, is_requirement) == ("commercial", "rent", True):
+        route_rules = _COMMERCIAL_RENT_REQUIREMENT_RULES
     expected_listing_type = "requirement" if is_requirement else transaction_type
     listing_type_rule = (
         f'- listing_type: exactly "{expected_listing_type}".'
@@ -711,6 +742,13 @@ _PASSTHROUGH_FIELDS = frozenset({
     # typed requirement tables receive ranges, budgets, and preferences.
     "area_min_sqft", "area_max_sqft", "budget_min", "budget_max",
     "budget_per_sqft_max", "locality_options", "fitout_preference",
+    "intended_use_details", "area_basis_preference", "location_flexibility",
+    "floor_min", "floor_max", "floor_preference", "parking_required",
+    "needs_attached_washroom", "needs_washroom", "needs_pantry",
+    "premium_building_required", "glass_facade_required",
+    "residential_cum_commercial_ok", "by_lanes_accepted", "media_requested",
+    "min_cabin_count", "min_workstation_count", "needs_conference_room",
+    "brokerage_terms_raw",
     "car_parking_min", "needs_mezzanine", "needs_lift", "needs_power_backup",
     "needs_central_ac", "min_power_load_kw", "buyer_type", "urgency",
     "is_flexible", "transaction_nature", "building_preferences",
@@ -737,6 +775,7 @@ _NUMERIC_PASSTHROUGH_FIELDS = frozenset({
     "director_cabin_count", "cubicle_count", "conference_room_capacity",
     "meeting_room_capacity", "training_room_capacity", "cafeteria_seat_count",
     "inspection_notice_minutes",
+    "min_cabin_count", "min_workstation_count", "floor_min", "floor_max",
 })
 
 _INTEGER_PASSTHROUGH_FIELDS = frozenset({
@@ -749,6 +788,7 @@ _INTEGER_PASSTHROUGH_FIELDS = frozenset({
     "suite_count", "banquet_hall_count", "restaurant_count", "director_cabin_count",
     "cubicle_count", "conference_room_capacity", "meeting_room_capacity",
     "training_room_capacity", "cafeteria_seat_count", "inspection_notice_minutes",
+    "min_cabin_count", "min_workstation_count", "floor_min", "floor_max",
 })
 
 

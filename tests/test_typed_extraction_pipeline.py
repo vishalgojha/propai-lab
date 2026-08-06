@@ -47,6 +47,12 @@ def test_focused_prompt_contains_route_specific_fields_and_price_guardrails():
     assert "PG" in residential_rent_prompt
     assert "1.30k" in residential_rent_prompt
 
+    requirement_prompt = _get_extraction_prompt("commercial", "rent", True)
+    assert "intended_use_details" in requirement_prompt
+    assert "needs_attached_washroom" in requirement_prompt
+    assert "floor_min" in requirement_prompt
+    assert "brokerage side by side" in requirement_prompt.lower()
+
 
 def test_commercial_rent_prompt_covers_package_and_operational_schema():
     prompt = _get_extraction_prompt("commercial", "rent", False)
@@ -288,6 +294,40 @@ def test_commercial_sale_psf_math_requires_explicit_pricing_basis():
     assert row["price_per_sqft"] == 80_000
     assert row["total_asking_price"] == 384_000_000
     assert row["price_math"]["basis"] == "carpet_area_sqft"
+
+
+def test_commercial_rent_requirement_preserves_constraints_and_contacts():
+    table, row = _item(
+        "Urgent requirement on rent, office, 600 to 1000 carpet, fully furnished, "
+        "2 cabins, 1 conference, 10 workstations, washroom and pantry, Malad East to Goregaon East, 90K to 1 lakh",
+        property_category="commercial",
+        listing_type="requirement",
+        classified_is_requirement=True,
+        classified_transaction_type="rent",
+        commercial_use_type=["office"],
+        area_min_sqft=600,
+        area_max_sqft=1000,
+        budget_min=90_000,
+        budget_max=100_000,
+        furnishing_preference="fully_furnished",
+        min_cabin_count=2,
+        min_workstation_count=10,
+        needs_conference_room=True,
+        needs_washroom=True,
+        needs_pantry=True,
+        locality_options=["Malad East", "Goregaon East"],
+        urgency="urgent",
+        contacts=[{"name": "Mangesh Singh", "phone": "9004517819"}],
+    )
+    assert table == "commercial_rent_requirements"
+    assert row["commercial_use_type"] == ["office"]
+    assert row["min_cabin_count"] == 2
+    assert row["min_workstation_count"] == 10
+    assert row["needs_conference_room"] is True
+    assert row["needs_washroom"] is True
+    assert row["budget_max"] == 100_000
+    assert row["urgency"] == "urgent"
+    assert "monthly_rent" not in row
 
 
 def test_colon_price_and_deposit_shorthand_are_source_grounded():
