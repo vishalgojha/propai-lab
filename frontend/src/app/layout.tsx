@@ -32,6 +32,7 @@ import {
   Volume2,
   VolumeX,
   SlidersHorizontal,
+  Bell,
 } from "lucide-react";
 import { AuthProvider, useAuth } from "@/lib/AuthProvider";
 import { LayoutProvider, useLayout } from "@/hooks/useLayout";
@@ -49,6 +50,11 @@ type NavItem = {
   label: string;
   icon?: any;
   children?: { href: string; label: string }[];
+};
+
+type NotificationNotice = {
+  title: string;
+  detail: string;
 };
 
 const baseNavSections = [
@@ -228,6 +234,8 @@ function AppShell({ children }: { children: React.ReactNode }) {
   const [soundVolume, setSoundVolume] = useState(0.25);
   const [soundEvents, setSoundEvents] = useState<Record<SoundEvent, boolean>>({ whatsapp: true, groups: false, connection: true, leads: true });
   const [soundPreferences, setSoundPreferences] = useState<SoundPreferences>({ whatsapp: "chime", groups: "pop", connection: "bell", leads: "soft-ding" });
+  const [notificationNotice, setNotificationNotice] = useState<NotificationNotice | null>(null);
+  const notificationTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { signOut: authSignOut } = useAuth();
   const fallbackFullName = String(user?.user_metadata?.full_name || user?.email?.split("@")[0] || "Account").trim();
   const [fallbackFirstName = "Account", ...fallbackLastName] = fallbackFullName.split(/\s+/);
@@ -363,18 +371,41 @@ function AppShell({ children }: { children: React.ReactNode }) {
     playGroupConnected();
   }, []);
 
+  const showNotificationNotice = useCallback((title: string, detail: string) => {
+    setNotificationNotice({ title, detail });
+    if (notificationTimer.current) clearTimeout(notificationTimer.current);
+    notificationTimer.current = setTimeout(() => setNotificationNotice(null), 5000);
+  }, []);
+
   useEventStream({
-    "message.received": () => {
+    "message.received": (event) => {
+      const sender = event.data?.sender_name || event.data?.sender || "WhatsApp";
+      showNotificationNotice("New WhatsApp message", `Received from ${String(sender)}`);
       const now = Date.now();
       if (now - lastIncomingSoundAt.current < 3000) return;
       lastIncomingSoundAt.current = now;
       playNewWhatsApp();
     },
-    "connection.changed": () => playConnectionChange(),
-    "whatsapp.conversations.updated": playGroupSound,
-    "group.updated": playGroupSound,
-    "lead.created": () => playNewLead(),
-    "requirement.matched": () => playNewLead(),
+    "connection.changed": () => {
+      showNotificationNotice("Connection changed", "WhatsApp connection status was updated");
+      playConnectionChange();
+    },
+    "whatsapp.conversations.updated": () => {
+      showNotificationNotice("Group directory updated", "A WhatsApp group or conversation changed");
+      playGroupSound();
+    },
+    "group.updated": () => {
+      showNotificationNotice("Group directory updated", "A WhatsApp group was updated");
+      playGroupSound();
+    },
+    "lead.created": () => {
+      showNotificationNotice("New lead", "A new lead was added to your workspace");
+      playNewLead();
+    },
+    "requirement.matched": () => {
+      showNotificationNotice("Requirement matched", "A requirement match is available");
+      playNewLead();
+    },
   });
 
   useEffect(() => {
@@ -625,6 +656,18 @@ function AppShell({ children }: { children: React.ReactNode }) {
               </div>
             </div>
             <button type="button" onClick={() => setDisconnectNoticeOpen(false)} className="text-zinc-500 hover:text-white" aria-label="Dismiss WhatsApp disconnect notice"><X className="h-4 w-4" /></button>
+          </div>
+        </div>
+      )}
+      {notificationNotice && (
+        <div className="fixed right-4 top-4 z-[1050] w-[min(360px,calc(100vw-2rem))] rounded-xl border border-emerald-400/25 bg-zinc-950 px-4 py-3 shadow-2xl shadow-black/50" role="status" aria-live="polite">
+          <div className="flex items-start gap-3">
+            <Bell className="mt-0.5 h-5 w-5 shrink-0 text-emerald-300" />
+            <div className="min-w-0 flex-1">
+              <div className="text-sm font-semibold text-white">{notificationNotice.title}</div>
+              <p className="mt-1 text-xs leading-5 text-zinc-400">{notificationNotice.detail}</p>
+            </div>
+            <button type="button" onClick={() => setNotificationNotice(null)} className="text-zinc-500 hover:text-white" aria-label="Dismiss notification"><X className="h-4 w-4" /></button>
           </div>
         </div>
       )}
