@@ -201,6 +201,33 @@ _ALL_TYPED_TABLES = tuple(_TYPED_LISTING_TABLES.values()) + tuple(_TYPED_REQUIRE
 _TYPED_LISTING_TABLE_NAMES = tuple(_TYPED_LISTING_TABLES.values())
 _TYPED_REQUIREMENT_TABLE_NAMES = tuple(_TYPED_REQUIREMENT_TABLES.values())
 
+# Feed/audit reads do not need the extraction evidence blobs.  Keeping these
+# columns explicit prevents a normal inbox refresh from transferring
+# raw_payload and ai_extraction for hundreds of rows from each typed table.
+_TYPED_COMMON_READ_COLUMNS = (
+    "id,raw_message_id,tenant_id,listing_index,source_fingerprint,asset_type,"
+    "transaction_type,building_name,locality_raw,locality_resolved,micro_market,"
+    "locality_confidence,landmark_name,street_name,broker_id,broker_name,"
+    "broker_phone,group_name,summary_title,deal_tags,"
+    "validation_flags,needs_review,extraction_confidence,corrected_fields,"
+    "correction_confidence,corrected_at,created_at,updated_at,legacy_source_id"
+)
+_TYPED_READ_COLUMNS_BY_TABLE = {
+    "residential_sale_listings": "bhk,configuration_type,bathroom_count,carpet_area_sqft,built_up_area_sqft,super_built_up_area_sqft,area_raw_text,total_asking_price,price_per_sqft,price_basis,price_raw_text,price_qualifier,furnishing_status,possession_status,possession_date,car_parking_count,parking_type,floor_range,building_amenities,unit_amenities,amenities_unverified_claim,property_view,orientation,developer_name",
+    "residential_rent_listings": "bhk,configuration_type,bathroom_count,carpet_area_sqft,built_up_area_sqft,area_raw_text,monthly_rent,rent_per_sqft,price_basis,price_raw_text,price_qualifier,deposit_amount,deposit_months,deposit_applicable,deposit_raw_text,furnishing_status,possession_status,available_from,car_parking_count,parking_type,floor_range,building_amenities,unit_amenities,amenities_unverified_claim,pet_policy,tenant_type_preference,sharing_allowed,tenant_nationality_preference,company_lease_criteria,food_preference,lease_term_type,property_view,brokerage_type",
+    "commercial_sale_listings": "commercial_use_type,carpet_area_sqft,built_up_area_sqft,chargeable_area_sqft,super_built_up_area_sqft,mezzanine_area_sqft,saleable_area_sqft,area_raw_text,total_asking_price,price_per_sqft,price_basis,price_raw_text,price_qualifier,fitout_status,ceiling_height,floor_level,floor_range,floor_count,has_mezzanine,has_staircase,car_parking_count,parking_type,building_amenities,has_central_ac,has_power_backup,has_lift,brokerage_type,developer_name",
+    "commercial_rent_listings": "commercial_use_type,carpet_area_sqft,built_up_area_sqft,chargeable_area_sqft,mezzanine_area_sqft,area_raw_text,monthly_rent,rent_per_sqft,price_basis,price_raw_text,price_qualifier,deposit_amount,deposit_months,deposit_applicable,deposit_raw_text,fitout_status,ceiling_height,floor_level,floor_range,floor_count,has_mezzanine,car_parking_count,parking_type,building_amenities,has_central_ac,has_power_backup,has_lift,lease_term_type,brokerage_type",
+    "residential_sale_requirements": "bhk,configuration_type,bathroom_count,carpet_area_sqft,built_up_area_sqft,super_built_up_area_sqft,area_raw_text,furnishing_status,possession_status,possession_date,car_parking_count,parking_type,floor_range,building_amenities,unit_amenities,amenities_unverified_claim,property_view,orientation,developer_name,budget_min,budget_max,budget_currency,area_min_sqft,area_max_sqft,locality_options,is_flexible,urgency,status,bhk_options,configuration_preference,carpet_area_min_sqft,carpet_area_max_sqft,built_up_area_min_sqft,built_up_area_max_sqft,budget_per_sqft_max,furnishing_preference,possession_preference,age_preference,micro_market_options,building_preferences,car_parking_min,floor_preference,view_preference,amenity_requirements,buyer_type,nationality,loan_preapproved,brokerage_willingness",
+    "residential_rent_requirements": "bhk,configuration_type,bathroom_count,carpet_area_sqft,built_up_area_sqft,super_built_up_area_sqft,area_raw_text,furnishing_status,possession_status,possession_date,car_parking_count,parking_type,floor_range,building_amenities,unit_amenities,amenities_unverified_claim,property_view,orientation,developer_name,budget_min,budget_max,budget_currency,area_min_sqft,area_max_sqft,locality_options,is_flexible,urgency,status,bhk_options,configuration_preference,carpet_area_min_sqft,carpet_area_max_sqft,built_up_area_min_sqft,built_up_area_max_sqft,budget_per_sqft_max,furnishing_preference,possession_preference,age_preference,micro_market_options,building_preferences,car_parking_min,floor_preference,view_preference,amenity_requirements,buyer_type,nationality,loan_preapproved,brokerage_willingness,deposit_budget_max,available_from,tenant_type,has_pets,sharing_acceptable,food_preference,lease_term_preference",
+    "commercial_sale_requirements": "bhk,configuration_type,bathroom_count,carpet_area_sqft,built_up_area_sqft,super_built_up_area_sqft,area_raw_text,furnishing_status,possession_status,possession_date,car_parking_count,parking_type,floor_range,building_amenities,unit_amenities,amenities_unverified_claim,property_view,orientation,developer_name,budget_min,budget_max,budget_currency,area_min_sqft,area_max_sqft,locality_options,is_flexible,urgency,status,bhk_options,configuration_preference,carpet_area_min_sqft,carpet_area_max_sqft,built_up_area_min_sqft,built_up_area_max_sqft,budget_per_sqft_max,furnishing_preference,possession_preference,age_preference,micro_market_options,building_preferences,car_parking_min,floor_preference,view_preference,amenity_requirements,buyer_type,nationality,loan_preapproved,brokerage_willingness,commercial_use_type,chargeable_area_max_sqft,fitout_preference,min_ceiling_height,needs_mezzanine,needs_lift,needs_power_backup,needs_central_ac,min_power_load_kw,oc_required",
+    "commercial_rent_requirements": "bhk,configuration_type,bathroom_count,carpet_area_sqft,built_up_area_sqft,super_built_up_area_sqft,area_raw_text,furnishing_status,possession_status,possession_date,car_parking_count,parking_type,floor_range,building_amenities,unit_amenities,amenities_unverified_claim,property_view,orientation,developer_name,budget_min,budget_max,budget_currency,area_min_sqft,area_max_sqft,locality_options,is_flexible,urgency,status,bhk_options,configuration_preference,carpet_area_min_sqft,carpet_area_max_sqft,built_up_area_min_sqft,built_up_area_max_sqft,budget_per_sqft_max,furnishing_preference,possession_preference,age_preference,micro_market_options,building_preferences,car_parking_min,floor_preference,view_preference,amenity_requirements,buyer_type,nationality,loan_preapproved,brokerage_willingness,commercial_use_type,chargeable_area_max_sqft,fitout_preference,min_ceiling_height,needs_mezzanine,needs_lift,needs_power_backup,needs_central_ac,min_power_load_kw,oc_required,deposit_budget_max,available_from,tenant_type,has_pets,sharing_acceptable,lease_term_preference",
+}
+
+
+def _typed_read_columns(table: str, *, include_evidence: bool = False) -> str:
+    evidence = ",normalized_message,ai_extraction" if include_evidence else ""
+    return f"{_TYPED_COMMON_READ_COLUMNS}{evidence},{_TYPED_READ_COLUMNS_BY_TABLE.get(table, '')}"
+
 
 def _typed_route(parsed: dict) -> tuple[str, str, str]:
     """Return (destination table, asset type, transaction type).
@@ -1901,7 +1928,11 @@ class SupabaseStorage(Storage):
         )
         message_uid = (row.get("message_uid") or "").strip()
         if not chat_id and ":" in message_uid:
-            chat_id = message_uid.split(":", 1)[0]
+            uid_parts = message_uid.split(":")
+            # Current ingestor UIDs are broker_id:remoteJid:message_id.
+            # Prefer the remote JID now that get_chats intentionally omits the
+            # large raw_payload column.
+            chat_id = uid_parts[1] if len(uid_parts) >= 3 else uid_parts[0]
 
         group_name = (row.get("group_name") or "").strip()
         sender_jid = (row.get("sender_jid") or "").strip()
@@ -1940,14 +1971,11 @@ class SupabaseStorage(Storage):
 
     def get_chats(self, limit: int = 500, offset: int = 0, tenant_id: str | None = None) -> list[dict]:
         query = self.client.table("raw_messages").select(
-            "id,group_name,sender,sender_jid,sender_phone,message,message_type,"
-            # The WhatsApp conversation ID lives in the event key.  Keeping
-            # raw_payload here is essential: a display name such as "All
-            # Bombay" is not a durable chat identity, while remoteJid is.
-            "timestamp,source,message_uid,raw_payload,created_at,tenant_id,attachments,reply_context"
+            "id,group_name,sender,sender_jid,sender_phone,message_type,"
+            "timestamp,source,message_uid,created_at,tenant_id"
         )\
             .order("timestamp", desc=True)\
-            .limit(max(2000, limit + offset))
+            .limit(min(2000, max(500, limit + offset)))
         tid = tenant_id or self._tenant_id
         if tid:
             query = query.eq("tenant_id", tid)
@@ -1995,7 +2023,9 @@ class SupabaseStorage(Storage):
             if not value:
                 return
             try:
-                q = self.client.table("raw_messages").select("*").order("timestamp", desc=True).limit(limit + offset)
+                q = self.client.table("raw_messages").select(
+                    "id,group_name,sender,sender_phone,sender_jid,timestamp,created_at,message_uid,message"
+                ).order("timestamp", desc=True).limit(limit + offset)
                 if tid:
                     q = q.eq("tenant_id", tid)
                 if op == "like":
@@ -2041,11 +2071,11 @@ class SupabaseStorage(Storage):
         # messages from appearing in the fallback feed.
         parsed_rows = self._fetch_typed_rows(
             tenant_id=tid,
-            limit_per_table=max(500, limit + offset),
+            limit_per_table=min(250, max(100, limit + offset)),
         )
         parsed_rows = [self._typed_row_to_legacy(row) for row in parsed_rows]
         parsed_rows.sort(key=lambda row: str(row.get("created_at") or ""), reverse=True)
-        parsed_rows = parsed_rows[:max(1500, limit + offset)]
+        parsed_rows = parsed_rows[:min(2000, max(500, limit + offset))]
         if not parsed_rows:
             return []
 
@@ -2056,7 +2086,7 @@ class SupabaseStorage(Storage):
             for i in range(0, len(raw_ids), BATCH_SIZE):
                 batch = raw_ids[i:i + BATCH_SIZE]
                 raw_query = self.client.table("raw_messages").select(
-                    "id,group_name,sender,sender_phone,sender_jid,timestamp,created_at,message_uid,message,raw_payload,is_group"
+                    "id,group_name,sender,sender_phone,sender_jid,timestamp,created_at,message_uid,message,is_group"
                 ).in_("id", batch)
                 if tid:
                     raw_query = raw_query.eq("tenant_id", tid)
@@ -2689,7 +2719,7 @@ class SupabaseStorage(Storage):
         rows: list[dict] = []
         for table in tables:
             try:
-                query = self.client.table(table).select("*").order("created_at", desc=True).limit(limit_per_table)
+                query = self.client.table(table).select(_typed_read_columns(table)).order("created_at", desc=True).limit(limit_per_table)
                 if tid:
                     query = query.eq("tenant_id", tid)
                 if raw_message_id is not None:
@@ -2884,11 +2914,15 @@ class SupabaseStorage(Storage):
     def get_parsed(self, limit: int = 50, offset: int = 0, intent: str = "", classified_only: bool = False, asset_type: str = "") -> list[dict]:
         # Merge all eight typed schemas globally. Per-table pagination causes
         # unstable pages and allows the same source item to appear twice.
-        fetch_limit = max(limit + offset, limit)
+        limit = max(1, min(int(limit or 1), 100))
+        offset = max(0, min(int(offset or 0), 10000))
+        fetch_limit = min(250, max(limit + offset, limit))
         rows = []
         for table in list(_TYPED_LISTING_TABLES.values()) + list(_TYPED_REQUIREMENT_TABLES.values()):
             try:
-                query = self.client.table(table).select("*").order("created_at", desc=True).limit(fetch_limit)
+                query = self.client.table(table).select(
+                    _typed_read_columns(table, include_evidence=True)
+                ).order("created_at", desc=True).limit(fetch_limit)
                 if self._tenant_id:
                     query = query.eq("tenant_id", self._tenant_id)
                 result = query.execute()
@@ -4377,7 +4411,11 @@ class SupabaseStorage(Storage):
         search: str = "",
         relevant_only: bool = False,
     ) -> list[dict]:
-        query = self.client.table("whatsapp_conversations").select("*").eq("tenant_id", tenant_id)
+        query = self.client.table("whatsapp_conversations").select(
+            "id,tenant_id,broker_id,instance,conversation_jid,conversation_type,"
+            "display_name,unread_count,message_count,last_message_at,last_seen_at,"
+            "source,metadata,created_at,updated_at"
+        ).eq("tenant_id", tenant_id)
         if types:
             query = query.in_("conversation_type", types)
         # The internal REST query builder only supports column + direction;
@@ -4398,7 +4436,7 @@ class SupabaseStorage(Storage):
                     self.client.table("raw_messages")
                     .select("group_name")
                     .eq("tenant_id", tenant_id)
-                    .limit(20000)
+                    .limit(1000)
                 )
                 for term in search_terms:
                     message_query = message_query.ilike("message", f"%{term}%")
@@ -4436,7 +4474,7 @@ class SupabaseStorage(Storage):
                     .select("group_name,message")
                     .eq("tenant_id", tenant_id)
                     .order("created_at", desc=True)
-                    .limit(5000)
+                    .limit(1000)
                     .execute()
                     .data
                     or []
@@ -4489,42 +4527,9 @@ class SupabaseStorage(Storage):
                 if isinstance(metadata, dict) and isinstance(incoming_metadata, dict):
                     current["metadata"] = {**metadata, **incoming_metadata}
 
-            jids = list(merged)
-            raw_activity: dict[str, dict[str, object]] = {}
-            # Keep requests bounded for large workspaces while still covering
-            # every joined group in the normal directory size range.
-            for start in range(0, len(jids), 200):
-                try:
-                    raw_rows = self.client.table("raw_messages").select(
-                        "group_name,timestamp,created_at"
-                    ).eq("tenant_id", tenant_id).in_(
-                        "group_name", jids[start:start + 200]
-                    ).order("timestamp", desc=True).limit(20000).execute().data or []
-                except Exception:
-                    raw_rows = []
-                for raw in raw_rows:
-                    jid = str(raw.get("group_name") or "").strip()
-                    if not jid:
-                        continue
-                    seen_at = str(raw.get("timestamp") or raw.get("created_at") or "")
-                    if not seen_at:
-                        continue
-                    activity = raw_activity.setdefault(jid, {"latest": "", "count": 0})
-                    activity["count"] = int(activity["count"]) + 1
-                    if seen_at > str(activity["latest"]):
-                        activity["latest"] = seen_at
-
-            for jid, row in merged.items():
-                activity = raw_activity.get(jid)
-                if not activity:
-                    continue
-                row["last_message_at"] = max(
-                    str(row.get("last_message_at") or ""),
-                    str(activity["latest"] or ""),
-                ) or None
-                row["message_count"] = max(
-                    int(row.get("message_count") or 0), int(activity["count"] or 0),
-                )
+            # whatsapp_conversations is the durable directory and already
+            # stores last_message_at/message_count. Do not rescan raw_messages
+            # for every joined group on each Connections page load.
             return filter_directory(list(merged.values()))[:limit]
 
         # The Go WhatsMeow ingestor writes raw_messages directly for low-latency
