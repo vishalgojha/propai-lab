@@ -1486,7 +1486,27 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
                 "trace": {"route": "conversational_error"},
             }, _is_inbox)
 
-    if last_user and _BROWSER_ACTION_SIGNALS.search(last_user) and bool(workspace_ai_settings and getattr(workspace_ai_settings, "browser_enabled", False)) and not str(req.browser_approval_token or "").strip():
+    browser_enabled = bool(workspace_ai_settings and getattr(workspace_ai_settings, "browser_enabled", False))
+    if last_user and _BROWSER_ACTION_SIGNALS.search(last_user) and not browser_enabled:
+        prompt_text = "Browser actions are not enabled for this workspace yet. I can still search and summarize listings in chat, but I can't open PropAI pages or click around the site."
+        _persist("assistant", prompt_text, blocks=[{
+            "type": "error_state",
+            "title": "Browser actions unavailable",
+            "body": "Enable browser actions in Workspace AI controls to let the agent open PropAI pages and click through the site. Until then I can only answer in text.",
+        }])
+        return _wrap_chat_response({
+            "content": prompt_text,
+            "blocks": [{
+                "type": "error_state",
+                "title": "Browser actions unavailable",
+                "body": "Enable browser actions in Workspace AI controls to let the agent open PropAI pages and click through the site. Until then I can only answer in text.",
+            }],
+            "sources": [],
+            "status_steps": ["Browser actions are disabled"],
+            "trace": {"route": "browser_disabled_text_only"},
+        }, _is_inbox)
+
+    if last_user and _BROWSER_ACTION_SIGNALS.search(last_user) and browser_enabled and not str(req.browser_approval_token or "").strip():
         prompt_text = "This looks like a browser task. Choose whether to use browser actions on PropAI or keep it conversational."
         browser_token = make_browser_approval_token(session_id, tenant_id, str(user.get("id") or ""))
         _persist("assistant", prompt_text, blocks=[{
