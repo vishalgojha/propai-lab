@@ -83,6 +83,14 @@ def _to_sse_chunks(response: dict) -> str:
             "data": {"source_mode": source_mode},
         })
 
+    status_steps = response.get("status_steps") or []
+    if status_steps:
+        yield _sse_event({
+            "type": "data-agent_status",
+            "id": f"status-{msg_id}",
+            "data": {"steps": status_steps},
+        })
+
     # text-delta from content string
     if content:
         yield _sse_event({"type": "text-delta", "delta": content, "id": msg_id})
@@ -94,6 +102,12 @@ def _to_sse_chunks(response: dict) -> str:
             yield _sse_event({
                 "type": f"data-{block_type}",
                 "id": f"cards-{msg_id}",
+                "data": block,
+            })
+        elif block_type == "confirmation":
+            yield _sse_event({
+                "type": "data-confirmation",
+                "id": f"confirmation-{msg_id}",
                 "data": block,
             })
         elif block_type in ("summary", "empty_state", "error_state", "greeting"):
@@ -245,6 +259,10 @@ class ChatRequest(BaseModel):
     source: str = ""
 
 
+class ConfirmAgentActionRequest(BaseModel):
+    confirmation_token: str
+
+
 def _normalize_chat_source(source: str) -> str:
     source = (source or "").strip().lower()
     if source in {"parsed", "inbox"}:
@@ -301,6 +319,13 @@ _ANALYTICS_ACTION_SIGNALS = re.compile(
 _CONVERSATIONAL_EXPLANATION_SIGNALS = re.compile(
     r"\b(?:what is|what are|what's|explain|difference between|different between|meaning of|"
     r"how does|how do|can you explain|do you know the difference|tell me about)\b",
+    re.IGNORECASE,
+)
+
+_AGENT_ACTION_SIGNALS = re.compile(
+    r"\b(?:client|requirement|candidate|lead|internal\s+note|broker\s+profile|"
+    r"match\s+(?:this|the|client)|save\s+(?:this|that)|add\s+(?:a\s+)?note|"
+    r"create\s+(?:a\s+)?(?:lead|candidate)|log\s+(?:an\s+)?internal\s+note)\b",
     re.IGNORECASE,
 )
 
@@ -988,6 +1013,32 @@ async def get_chat_session_messages(session_id: str, user: dict = Depends(requir
     return await asyncio.to_thread(storage.get_ai_chat_messages, session_id, tenant_id=tenant_id)
 
 
+@router.post("/api/ai/chat/confirm")
+async def confirm_agent_action(
+    req: ConfirmAgentActionRequest,
+    user: dict = Depends(require_user),
+    tenant_id: str | None = Depends(get_tenant_context),
+):
+    """Execute one write tool after the authenticated user confirms it."""
+    tenant_id = await asyncio.to_thread(_resolve_active_organization_id, user, tenant_id)
+    from agent_tools import confirm_tool
+
+    try:
+        result = await asyncio.to_thread(
+            confirm_tool,
+            req.confirmation_token,
+            storage.client,
+            tenant_id,
+            str(user.get("id") or ""),
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except Exception:
+        _logger.exception("AI agent confirmation failed for user=%s", user.get("id"))
+        raise HTTPException(500, "Could not execute the confirmed action")
+    return result
+
+
 @router.delete("/api/ai/chat/sessions/{session_id}")
 async def delete_chat_session(session_id: str, user: dict = Depends(require_user), tenant_id: str | None = Depends(get_tenant_context)):
     tenant_id = tenant_id or await asyncio.to_thread(_resolve_active_organization_id, user, None)
@@ -1172,7 +1223,10 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
         except Exception:
             pass
 
-    if last_user and (_is_conversational_explanation(last_user) or not _has_query_signals(last_user)):
+    if last_user and (
+        (_is_conversational_explanation(last_user) or not _has_query_signals(last_user))
+        and not _AGENT_ACTION_SIGNALS.search(last_user)
+    ):
         try:
             reply = await _run_with_provider_failover(
                 lambda provider: chat_engine.get_conversational_reply(
@@ -1338,7 +1392,7 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
     # ops question. Search the live marketplace with whatever hints the message
     # carries (locality, intent, price, BHK) or the most recent listings, and
     # let the LLM summarize only those verified rows.
-    if last_user and not _ANALYTICS_ACTION_SIGNALS.search(last_user):
+    if last_user and not _ANALYTICS_ACTION_SIGNALS.search(last_user) and not _AGENT_ACTION_SIGNALS.search(last_user):
         try:
             relaxed_query = chat_engine.relaxed_market_query(last_user)
             response = await _market_search_with_summary(
@@ -1365,8 +1419,12 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
             api_key=provider["api_key"],
             model=provider["model"] or None,
             base_url=provider["base_url"] or None,
-            max_tool_rounds=2,
+            max_tool_rounds=8,
+            storage_client=storage.client,
+            user_id=str(user.get("id") or ""),
         )
+        if isinstance(reply, dict):
+            return reply
         if not (reply.content or "").strip():
             raise RuntimeError("provider returned an empty response")
         return chat_engine.normalize_workspace_response(reply.content or "", active_sources)

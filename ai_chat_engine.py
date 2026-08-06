@@ -1188,6 +1188,8 @@ def _build_tools(sources):
             }
         },
     ]
+    from agent_tools import TOOL_DEFINITIONS
+    tools.extend(TOOL_DEFINITIONS)
     return tools
 
 
@@ -2443,7 +2445,22 @@ def _rest_market_search(client, args: dict, tenant_id: str | None = None) -> str
     }, default=str)
 
 
-def execute_tool(name, args, sources, db_path=None, tenant_id: str | None = None):
+def execute_tool(
+    name,
+    args,
+    sources,
+    db_path=None,
+    tenant_id: str | None = None,
+    storage_client=None,
+    user_id: str | None = None,
+):
+    from agent_tools import READ_TOOL_NAMES, WRITE_TOOL_NAMES, execute_tool as execute_supabase_tool
+
+    if name in READ_TOOL_NAMES or name in WRITE_TOOL_NAMES:
+        if storage_client is None:
+            return {"status": "error", "error": "Supabase agent client is not available"}
+        return execute_supabase_tool(name, args, storage_client, tenant_id, user_id=user_id)
+
     if name == "get_overview":
         return build_overview(sources)
 
@@ -3387,7 +3404,19 @@ def _get_fallback_model() -> str:
     return _fb_model()
 
 
-def get_model_reply(messages, sources, api_key=None, db_path=None, model=None, base_url=None, max_tool_rounds=5, _depth=0, tenant_id: str | None = None):
+def get_model_reply(
+    messages,
+    sources,
+    api_key=None,
+    db_path=None,
+    model=None,
+    base_url=None,
+    max_tool_rounds=5,
+    _depth=0,
+    tenant_id: str | None = None,
+    storage_client=None,
+    user_id: str | None = None,
+):
     client = get_client(api_key=api_key, base_url=base_url)
     tools = _build_tools(sources)
     db_path = db_path or _default_db_path()
@@ -3458,8 +3487,31 @@ def get_model_reply(messages, sources, api_key=None, db_path=None, model=None, b
                     fn_args, _ = decoder.raw_decode(tc.function.arguments)
                 except (json.JSONDecodeError, ValueError):
                     fn_args = {}
-            result = execute_tool(fn_name, fn_args, sources, db_path=db_path, tenant_id=tenant_id)
-            result_str = str(result) if not isinstance(result, str) else result
+            _logger.info("AI agent tool call name=%s args=%s tenant_id=%s", fn_name, fn_args, tenant_id)
+            result = execute_tool(
+                fn_name,
+                fn_args,
+                sources,
+                db_path=db_path,
+                tenant_id=tenant_id,
+                storage_client=storage_client,
+                user_id=user_id,
+            )
+            _logger.info("AI agent tool result name=%s status=%s", fn_name, result.get("status") if isinstance(result, dict) else "ok")
+            if isinstance(result, dict) and result.get("status") == "pending_confirmation":
+                return {
+                    "content": result.get("message") or "Confirmation is required before changing workspace data.",
+                    "blocks": [{
+                        "type": "confirmation",
+                        "title": "Confirmation required",
+                        "body": result.get("message"),
+                        "tool": result.get("tool"),
+                        "confirmation_token": result.get("confirmation_token"),
+                    }],
+                    "status_steps": [f"Prepared {fn_name.replace('_', ' ')}"],
+                    "trace": {"route": "supabase_agent", "pending_tool": fn_name},
+                }
+            result_str = str(result) if isinstance(result, str) else json.dumps(result, default=str)
             messages.append({
                 "role": "tool",
                 "tool_call_id": tc.id,
@@ -3475,6 +3527,8 @@ def get_model_reply(messages, sources, api_key=None, db_path=None, model=None, b
             max_tool_rounds=max_tool_rounds,
             _depth=_depth + 1,
             tenant_id=tenant_id,
+            storage_client=storage_client,
+            user_id=user_id,
         )
 
     return msg
