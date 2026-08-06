@@ -1429,7 +1429,12 @@ export default function ConnectionCenterPage() {
                         {item.broker_name || item.building_name || item.group_name || "Parsed WhatsApp message"}
                       </div>
                       <div className="mt-1 truncate text-[11px] text-zinc-500">
-                        {[item.micro_market, item.transaction_type, item.group_name].filter(Boolean).join(" · ") || "Structured extraction saved"}
+                        {[
+                          item.micro_market,
+                          item.transaction_type,
+                          item.group_name,
+                          item.opportunity_count > 1 ? `${item.opportunity_count} opportunities` : "",
+                        ].filter(Boolean).join(" · ") || "Structured extraction saved"}
                       </div>
                     </div>
                     <span className="shrink-0 text-right text-[10px] text-zinc-500">

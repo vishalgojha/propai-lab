@@ -433,13 +433,30 @@ async def recent_parsed_messages(
     """Return the newest typed extraction rows with their raw evidence."""
     limit = min(max(limit, 1), 20)
     try:
+        # A bulk WhatsApp message can legitimately produce several typed
+        # opportunities. The connection panel is a message activity view,
+        # though, so do not render the same raw source once per opportunity.
+        # Read a bounded window and keep the newest parsed row for each raw
+        # message, while exposing how many opportunities came from it.
         query = storage.client.table("parsed_output_unified").select(
             "id,raw_message_id,created_at,broker_name,broker_phone,"
             "building_name,micro_market,transaction_type,bhk,price,area_sqft"
-        ).order("created_at", desc=True).limit(limit)
+        ).order("created_at", desc=True).limit(min(limit * 10, 100))
         if tenant_id:
             query = query.eq("tenant_id", tenant_id)
-        parsed_rows = query.execute().data or []
+        candidate_rows = query.execute().data or []
+        parsed_rows = []
+        seen_raw_ids: set[int] = set()
+        opportunity_counts: dict[int, int] = {}
+        for row in candidate_rows:
+            raw_id = row.get("raw_message_id")
+            if raw_id is None:
+                continue
+            raw_id = int(raw_id)
+            opportunity_counts[raw_id] = opportunity_counts.get(raw_id, 0) + 1
+            if len(parsed_rows) < limit and raw_id not in seen_raw_ids:
+                parsed_rows.append(row)
+                seen_raw_ids.add(raw_id)
         raw_ids = [row.get("raw_message_id") for row in parsed_rows if row.get("raw_message_id")]
         raw_by_id: dict[int, dict] = {}
         if raw_ids:
@@ -454,6 +471,7 @@ async def recent_parsed_messages(
         return [
             {
                 **row,
+                "opportunity_count": opportunity_counts.get(int(row["raw_message_id"] or 0), 1),
                 "raw_message": (raw_by_id.get(int(row["raw_message_id"] or 0)) or {}).get("message") or "",
                 "group_name": (raw_by_id.get(int(row["raw_message_id"] or 0)) or {}).get("group_name") or "",
                 "raw_timestamp": (raw_by_id.get(int(row["raw_message_id"] or 0)) or {}).get("timestamp") or "",
