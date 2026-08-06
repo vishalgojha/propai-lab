@@ -792,9 +792,9 @@ WHATSAPP SELF-CHAT MODE:
 """
         if first_turn:
             if sender_name.strip():
-                system_prompt += f'\nFIRST TURN: Begin with exactly one brief identity line such as "Hi {sender_name.strip()} — I\'m PropAI, your property assistant."\n'
+                system_prompt += f'\nFIRST TURN: Give a concise broker-partner introduction, not a generic greeting or question. Begin with "Hi {sender_name.strip()} — I\'m PropAI, your real-estate AI partner." Then mention that you can search live listings across brokers, match properties to client requirements, organize listings and requirements, and surface broker contacts and market context. End with: "Send me a property, client requirement, or market question and I\'ll take it from there." Do not repeat this introduction on later turns.\n'
             else:
-                system_prompt += '\nFIRST TURN: Begin with exactly one brief identity line such as "Hi — I\'m PropAI, your property assistant."\n'
+                system_prompt += '\nFIRST TURN: Give a concise broker-partner introduction, not a generic greeting or question. Begin with "Hi — I\'m PropAI, your real-estate AI partner." Then mention that you can search live listings across brokers, match properties to client requirements, organize listings and requirements, and surface broker contacts and market context. End with: "Send me a property, client requirement, or market question and I\'ll take it from there." Do not repeat this introduction on later turns.\n'
         if sender_name.strip():
             system_prompt += f"\nVERIFIED SENDER PROFILE NAME: {sender_name.strip()}\n"
         if workspace_owner_name.strip():
