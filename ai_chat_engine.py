@@ -8,6 +8,7 @@ from urllib.parse import quote
 import pandas as pd
 from openai import OpenAI
 import time
+from typing import Any
 
 MODEL = os.getenv("DOUBLEWORD_MODEL", "").strip()
 BASE_URL = os.getenv("DOUBLEWORD_API_URL", "https://api.doubleword.ai/v1")
