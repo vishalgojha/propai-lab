@@ -922,7 +922,24 @@ export interface ChatResponse {
     sources?: string[];
     last_updated?: string;
     notes?: string[];
+    route?: string;
+    browser_session_id?: string;
+    browser_provider?: string;
+    browser_url?: string;
+    browser_title?: string;
+    actions?: ChatActivityTraceAction[];
   };
+}
+
+export interface ChatActivityTraceAction {
+  tool?: string;
+  status?: string;
+  summary?: string;
+  provider?: string;
+  url?: string;
+  title?: string;
+  detail?: string;
+  browser_session_id?: string;
 }
 
 export interface WorkspaceBlockAction {
@@ -958,12 +975,13 @@ export interface WorkspaceBlock {
     | "property_gallery"
     | "related_listings"
     | "matching_buyers"
-    | "suggested_questions"
-    | "error_state"
-    | "empty_state"
-    | "loading"
-    | "confirmation"
-    | string;
+  | "suggested_questions"
+  | "error_state"
+  | "empty_state"
+  | "loading"
+  | "activity"
+  | "confirmation"
+  | string;
   title?: string;
   subtitle?: string;
   body?: string;
@@ -991,6 +1009,7 @@ export interface WorkspaceBlock {
   hashtags?: string[] | string;
   cta?: string;
   headline?: string;
+  trace?: ChatResponse["trace"];
 }
 
 export interface AIConfig {

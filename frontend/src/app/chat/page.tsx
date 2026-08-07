@@ -24,12 +24,13 @@ function messageText(message: { parts?: Array<{ type?: string; text?: string }>;
 const CHAT_CARD_BLOCK_TYPES = new Set(["listing_cards", "buyer_cards", "broker_cards", "matching_buyers"]);
 const AGENT_CONFIRMATION_TYPE = "data-confirmation";
 const AGENT_STATUS_TYPE = "data-agent_status";
+const AGENT_ACTIVITY_TYPE = "data-activity";
 
 function toUIMessage(m: { id: string; role: "user" | "assistant"; content: string; blocks?: Array<{ type: string; title?: string; items?: unknown[] }> }) {
   const parts: Array<{ type: string; text?: string; data?: unknown }> = [{ type: "text" as const, text: m.content }];
   if (m.blocks) {
     for (const block of m.blocks) {
-      if (block && (CHAT_CARD_BLOCK_TYPES.has(block.type) || block.type === "confirmation")) {
+      if (block && (CHAT_CARD_BLOCK_TYPES.has(block.type) || block.type === "confirmation" || block.type === "activity")) {
         parts.push({ type: `data-${block.type}` as const, data: block });
       }
     }
@@ -1170,6 +1171,7 @@ export default function ChatPage() {
                           const type = p.type || "";
                           return type.startsWith("data-") && CHAT_CARD_BLOCK_TYPES.has(type.slice(5));
                         });
+                        const activityParts = parts.filter((p) => p.type === AGENT_ACTIVITY_TYPE);
                         const confirmationParts = parts.filter((p) => p.type === AGENT_CONFIRMATION_TYPE);
                         const statusParts = parts.filter((p) => p.type === AGENT_STATUS_TYPE);
                         const structuredItems = dataParts.flatMap((part) => {
@@ -1178,6 +1180,59 @@ export default function ChatPage() {
                         }) as ListingItem[];
                         const hasStructuredItems = structuredItems.length > 0;
                         const hasTable = textParts.some((p) => textHasTable(p.text));
+                        const renderActivityTrace = (block: any, activityIndex: number) => {
+                          const steps = Array.isArray(block?.steps) ? block.steps : Array.isArray(block?.status_steps) ? block.status_steps : [];
+                          const events = Array.isArray(block?.events) ? block.events : [];
+                          const trace = block?.trace || {};
+                          return (
+                            <div key={`activity-${activityIndex}`} className="rounded-xl border border-emerald-500/25 bg-emerald-500/8 px-4 py-3 text-sm text-emerald-50">
+                              <div className="flex items-start gap-3">
+                                <div className="mt-0.5 rounded-full border border-emerald-400/30 bg-emerald-400/10 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-emerald-200">
+                                  Live agent trace
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                  <div className="font-semibold text-white">{block?.title || "What I’m doing"}</div>
+                                  {block?.body && <div className="mt-1 text-xs text-emerald-100/80">{block.body}</div>}
+                                  {steps.length > 0 && (
+                                    <div className="mt-3 space-y-1.5">
+                                      {steps.map((step: string, stepIndex: number) => (
+                                        <div key={stepIndex} className="flex items-start gap-2 text-xs text-emerald-100/90">
+                                          <span className="mt-1 h-1.5 w-1.5 rounded-full bg-emerald-300" />
+                                          <span>{step}</span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                  {events.length > 0 && (
+                                    <div className="mt-3 rounded-lg border border-white/10 bg-black/10 p-2 text-[11px] text-zinc-200">
+                                      <div className="mb-1 font-semibold uppercase tracking-[0.14em] text-emerald-200/80">Tool trail</div>
+                                      <div className="space-y-1">
+                                        {events.slice(-5).map((event: any, eventIndex: number) => {
+                                          const summary = event?.summary || event?.detail || event?.title || event?.tool || "Action";
+                                          const label = event?.tool ? String(event.tool).replace(/_/g, " ") : "";
+                                          return (
+                                            <div key={eventIndex} className="flex flex-wrap items-center gap-2">
+                                              {label ? <span className="rounded bg-white/10 px-2 py-0.5 text-[10px] uppercase tracking-[0.14em] text-zinc-200">{label}</span> : null}
+                                              <span className="text-zinc-300">{summary}</span>
+                                            </div>
+                                          );
+                                        })}
+                                      </div>
+                                    </div>
+                                  )}
+                                  {(trace?.route || trace?.last_updated || trace?.browser_provider || trace?.browser_session_id) && (
+                                    <div className="mt-3 flex flex-wrap gap-2 text-[10px] uppercase tracking-[0.14em] text-emerald-100/70">
+                                      {trace?.route && <span className="rounded-full border border-emerald-400/25 bg-emerald-400/10 px-2 py-1">{trace.route}</span>}
+                                      {trace?.browser_provider && <span className="rounded-full border border-emerald-400/25 bg-emerald-400/10 px-2 py-1">{trace.browser_provider}</span>}
+                                      {trace?.browser_session_id && <span className="rounded-full border border-emerald-400/25 bg-emerald-400/10 px-2 py-1">session {String(trace.browser_session_id).slice(0, 8)}</span>}
+                                      {trace?.last_updated && <span className="rounded-full border border-emerald-400/25 bg-emerald-400/10 px-2 py-1">{String(trace.last_updated)}</span>}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        };
                         return (
                           <>
                             {(hasTable || hasStructuredItems) && (
@@ -1212,10 +1267,15 @@ export default function ChatPage() {
                                 </div>
                               </div>
                             )}
+                            {activityParts.length > 0 && (
+                              <div className="space-y-2">
+                                {activityParts.map((part: any, activityIndex: number) => renderActivityTrace(part.data || {}, activityIndex))}
+                              </div>
+                            )}
                             {textParts.map((p: any, i: number) => (
                               <MarkdownMessage key={i} text={hasStructuredItems ? removeMarkdownTables(p.text) : p.text} />
                             ))}
-                            {statusParts.map((part: any, statusIndex: number) => {
+                            {!activityParts.length && statusParts.map((part: any, statusIndex: number) => {
                               const steps = Array.isArray(part.data?.steps) ? part.data.steps : [];
                               if (!steps.length) return null;
                               return (
