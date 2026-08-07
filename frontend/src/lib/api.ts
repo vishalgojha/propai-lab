@@ -1694,38 +1694,6 @@ export function unhideBroker(phone: string) {
   });
 }
 
-export type HiddenMarketItemKind = "listing" | "requirement";
-
-export function listHiddenMarketItems() {
-  return fetchJSON<{ items: any[] }>("/listings/hidden-items");
-}
-
-export function hideMarketItem(payload: {
-  item_kind: HiddenMarketItemKind;
-  listing_id?: number | null;
-  raw_message_id?: number | null;
-  broker_phone?: string | null;
-  broker_name?: string | null;
-  source_label?: string | null;
-  hidden_reason?: string | null;
-}) {
-  return fetchJSON<any>("/listings/hide", {
-    method: "POST",
-    body: JSON.stringify(payload),
-  });
-}
-
-export function unhideMarketItem(payload: {
-  item_kind: HiddenMarketItemKind;
-  listing_id?: number | null;
-  raw_message_id?: number | null;
-}) {
-  return fetchJSON<any>("/listings/unhide", {
-    method: "POST",
-    body: JSON.stringify(payload),
-  });
-}
-
 export function teachObservation(obsId: number, payload: any) {
   return fetchJSON<any>(`/observations/${obsId}/teach`, {
     method: "POST",

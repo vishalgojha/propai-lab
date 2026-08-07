@@ -309,7 +309,7 @@ function genericCardTableMarkdown(items: Array<Record<string, unknown>>, titleMa
   return lines.join("\n");
 }
 
-function workspaceBlockToMarkdown(part: { type?: string; data?: any }, hiddenBrokerPhones: Set<string>, hiddenMarketKeys: Set<string>) {
+function workspaceBlockToMarkdown(part: { type?: string; data?: any }, hiddenBrokerPhones: Set<string>) {
   const blockType = part.type?.replace(/^data-/, "") || "";
   const block = part.data || {};
   const items = Array.isArray(block.items) ? block.items : [];
@@ -333,10 +333,6 @@ function workspaceBlockToMarkdown(part: { type?: string; data?: any }, hiddenBro
   const visibleItems = (items as GroupMirrorItem[]).filter((item) => {
     const key = normalizePhoneKey(item.broker_phone || item.sender_phone || "");
     if (key && hiddenBrokerPhones.has(key)) return false;
-    const listingKey = hiddenListingKey(item);
-    const requirementKey = hiddenRequirementKey(item);
-    if (listingKey && hiddenMarketKeys.has(listingKey)) return false;
-    if (requirementKey && hiddenMarketKeys.has(requirementKey)) return false;
     return true;
   });
   if (visibleItems.length === 0) return "";
@@ -434,14 +430,6 @@ type BrokerCardItem = {
   last_seen?: string;
 };
 
-function hiddenListingKey(item: { listing_id?: number | null }) {
-  return item.listing_id ? `listing:${item.listing_id}` : "";
-}
-
-function hiddenRequirementKey(item: { raw_message_id?: number | null }) {
-  return item.raw_message_id ? `requirement:${item.raw_message_id}` : "";
-}
-
 function getAssistantSourceMode(message: { parts?: Array<{ type?: string; data?: any }> }) {
   const contextPart = (message.parts || []).find((part) => part?.type === "data-chat_context");
   const sourceMode = contextPart?.data?.source_mode;
@@ -455,7 +443,6 @@ export default function ChatPage() {
   const [brokerPhone, setBrokerPhone] = useState("");
   const searchSource: "parsed" = "parsed";
   const [hiddenBrokerPhones, setHiddenBrokerPhones] = useState<Set<string>>(() => new Set());
-  const [hiddenMarketKeys, setHiddenMarketKeys] = useState<Set<string>>(() => new Set());
   const [brokerActionMessage, setBrokerActionMessage] = useState("");
   const [copiedTable, setCopiedTable] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
@@ -561,69 +548,6 @@ export default function ChatPage() {
     }
   }, []);
 
-  const hideListingLocally = useCallback(async (item: ListingItem) => {
-    const key = hiddenListingKey(item);
-    if (!key || !item.listing_id) return;
-    setHiddenMarketKeys((prev) => {
-      const next = new Set(prev);
-      next.add(key);
-      return next;
-    });
-    try {
-      await api.hideMarketItem({
-        item_kind: "listing",
-        listing_id: item.listing_id,
-        raw_message_id: item.raw_message_id || null,
-        broker_phone: item.broker_phone || null,
-        broker_name: item.broker_name || null,
-        source_label: item.building_name || item.micro_market || item.location_label || null,
-        hidden_reason: "hidden_from_chat",
-      });
-      setBrokerActionMessage(`Hidden listing: ${item.building_name || "listing"}`);
-    } catch {
-      setHiddenMarketKeys((prev) => {
-        const next = new Set(prev);
-        next.delete(key);
-        return next;
-      });
-      setBrokerActionMessage("Failed to hide listing");
-    } finally {
-      if (brokerActionTimer.current) window.clearTimeout(brokerActionTimer.current);
-      brokerActionTimer.current = window.setTimeout(() => setBrokerActionMessage(""), 3000);
-    }
-  }, []);
-
-  const hideRequirementLocally = useCallback(async (item: ListingItem) => {
-    const key = hiddenRequirementKey(item);
-    if (!key || !item.raw_message_id) return;
-    setHiddenMarketKeys((prev) => {
-      const next = new Set(prev);
-      next.add(key);
-      return next;
-    });
-    try {
-      await api.hideMarketItem({
-        item_kind: "requirement",
-        raw_message_id: item.raw_message_id,
-        broker_phone: item.broker_phone || null,
-        broker_name: item.broker_name || null,
-        source_label: item.building_name || item.micro_market || item.location_label || null,
-        hidden_reason: "hidden_from_chat",
-      });
-      setBrokerActionMessage(`Hidden requirement: ${item.building_name || "item"}`);
-    } catch {
-      setHiddenMarketKeys((prev) => {
-        const next = new Set(prev);
-        next.delete(key);
-        return next;
-      });
-      setBrokerActionMessage("Failed to hide requirement");
-    } finally {
-      if (brokerActionTimer.current) window.clearTimeout(brokerActionTimer.current);
-      brokerActionTimer.current = window.setTimeout(() => setBrokerActionMessage(""), 3000);
-    }
-  }, []);
-
   const loadHiddenBrokerState = useCallback(async () => {
     try {
       const data = await api.fetchJSON<{ brokers?: Array<{ primary_phone?: string; phone?: string }> }>("/brokers/hidden");
@@ -638,24 +562,6 @@ export default function ChatPage() {
     }
   }, []);
 
-  const loadHiddenMarketState = useCallback(async () => {
-    try {
-      const data = await api.listHiddenMarketItems();
-      const keys = new Set<string>();
-      for (const item of data.items || []) {
-        if (typeof item?.hidden_key === "string" && item.hidden_key) {
-          keys.add(item.hidden_key);
-          continue;
-        }
-        if (item?.item_kind === "listing" && item?.listing_id) keys.add(`listing:${item.listing_id}`);
-        if (item?.item_kind === "requirement" && item?.raw_message_id) keys.add(`requirement:${item.raw_message_id}`);
-      }
-      setHiddenMarketKeys(keys);
-    } catch {
-      // Best effort only.
-    }
-  }, []);
-
   useEffect(() => {
     return () => {
       if (brokerActionTimer.current) window.clearTimeout(brokerActionTimer.current);
@@ -664,8 +570,7 @@ export default function ChatPage() {
 
   useEffect(() => {
     void loadHiddenBrokerState();
-    void loadHiddenMarketState();
-  }, [loadHiddenBrokerState, loadHiddenMarketState, user?.id]);
+  }, [loadHiddenBrokerState, user?.id]);
 
   // The phone is only conversational broker context. Session ownership is
   // derived server-side from the authenticated user and must never switch
@@ -1361,10 +1266,7 @@ export default function ChatPage() {
                               const visibleItems = items.filter((item) => {
                                 const phone = normalizePhoneKey(item.broker_phone || item.sender_phone || "");
                                 if (phone && hiddenBrokerPhones.has(phone)) return false;
-                                const listingKey = hiddenListingKey(item);
-                                const requirementKey = hiddenRequirementKey(item);
-                                return (!listingKey || !hiddenMarketKeys.has(listingKey))
-                                  && (!requirementKey || !hiddenMarketKeys.has(requirementKey));
+                                return true;
                               });
                               if (!visibleItems.length) return null;
                               return (
@@ -1381,7 +1283,6 @@ export default function ChatPage() {
                                       </thead>
                                       <tbody>
                                         {visibleItems.map((item, itemIndex) => {
-                                          const isWanted = ['REQUIREMENT', 'BUY', 'BUYER', 'RENTAL_SEEKER'].includes(String(item.intent || '').toUpperCase());
                                           const whatsapp = buildWhatsAppLink(item);
                                           return (
                                             <tr key={`${item.listing_id || item.raw_message_id || 'item'}-${itemIndex}`} className="border-t border-white/10 text-zinc-300">
@@ -1399,8 +1300,6 @@ export default function ChatPage() {
                                               </td>
                                               <td className="px-3 py-2 whitespace-nowrap">
                                                 <div className="flex items-center gap-1">
-                                                  {item.listing_id && !isWanted && <button type="button" onClick={() => hideListingLocally(item)} className="rounded border border-white/15 px-2 py-1 text-[10px] uppercase tracking-wider text-zinc-300 hover:border-red-400/50 hover:text-red-200">Hide</button>}
-                                                  {isWanted && item.raw_message_id && <button type="button" onClick={() => hideRequirementLocally(item)} className="rounded border border-white/15 px-2 py-1 text-[10px] uppercase tracking-wider text-zinc-300 hover:border-red-400/50 hover:text-red-200">Hide</button>}
                                                   {item.broker_phone && <button type="button" onClick={() => hideBrokerLocally(item.broker_phone!, item.broker_name || 'broker')} className="rounded border border-white/15 px-2 py-1 text-[10px] uppercase tracking-wider text-zinc-300 hover:border-red-400/50 hover:text-red-200">Broker</button>}
                                                 </div>
                                               </td>
