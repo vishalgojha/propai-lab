@@ -970,43 +970,24 @@ export async function getListingById(id: number): Promise<ListingDetail | null> 
     return null;
   }
 
-  const titleMap = await getTitlesForRawMessageIds([
-    data.representative_raw_message_id,
-    data.latest_raw_message_id,
-  ]);
-
-  const title =
-    (data.representative_raw_message_id != null ? titleMap.get(data.representative_raw_message_id) : null) ??
-    (data.latest_raw_message_id != null ? titleMap.get(data.latest_raw_message_id) : null) ??
-    null;
-
   const rawMsgId = data.representative_raw_message_id ?? data.latest_raw_message_id;
   const listingIndex = data.representative_listing_index ?? 0;
 
   let rawMessage: RawMessageInfo | null = null;
   if (rawMsgId) {
     try {
-      const [ctxRes, sliceRes] = await Promise.all([
-        db
-          .from("raw_messages")
-          .select("sender, group_name, timestamp")
-          .eq("id", rawMsgId)
-          .maybeSingle(),
-        db
-          .from("parsed_output_unified")
-          .select("normalized_message")
-          .eq("raw_message_id", rawMsgId)
-          .eq("listing_index", listingIndex)
-          .maybeSingle(),
-      ]);
-      const ctx = ctxRes.data ?? null;
-      const slice = sliceRes.data ?? null;
-      if (ctx || slice) {
+      const { data: slice } = await db
+        .from("parsed_output_unified")
+        .select("normalized_message")
+        .eq("raw_message_id", rawMsgId)
+        .eq("listing_index", listingIndex)
+        .maybeSingle();
+      if (slice) {
         rawMessage = {
           message: slice?.normalized_message ?? null,
-          sender: ctx?.sender ?? null,
-          groupName: ctx?.group_name ?? null,
-          timestamp: ctx?.timestamp ?? null,
+          sender: null,
+          groupName: null,
+          timestamp: null,
         };
       }
     } catch {
@@ -1037,7 +1018,9 @@ export async function getListingById(id: number): Promise<ListingDetail | null> 
     broker_name: data.broker_name,
     broker_phone: data.broker_phone,
     last_seen: data.last_seen,
-    title,
+    // The card title is deterministic from typed fields; avoid an extra
+    // parsed_output title lookup on every public detail request.
+    title: null,
     representative_raw_message_id: data.representative_raw_message_id,
     latest_raw_message_id: data.latest_raw_message_id,
     deal_tags: Array.isArray(data.deal_tags) ? data.deal_tags : [],
