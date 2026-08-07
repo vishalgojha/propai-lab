@@ -857,6 +857,18 @@ export default function ChatPage() {
     import("@/lib/sounds").then((s) => s.playMessageSent());
   }
 
+  // Approval prompts are one-time controls. Saved chat history can contain
+  // older prompts, but showing all of them makes it look like every old task
+  // is still waiting for permission. Keep only the newest browser prompt
+  // actionable; completed prompts are retired by their activity trace.
+  const latestBrowserConfirmationToken = [...messages].reverse().flatMap((message: any) =>
+    (message.parts || [])
+      .filter((part: any) => part?.type === AGENT_CONFIRMATION_TYPE)
+      .map((part: any) => part?.data || {})
+      .filter((block: any) => String(block?.tool || "") === "browser" || String(block?.mode || "") === "browser")
+      .map((block: any) => String(block?.confirmation_token || "")),
+  ).find(Boolean) || "";
+
   return (
     <div className="relative flex h-[calc(100svh-96px)] lg:h-[calc(100vh-96px)] max-w-[1800px] mx-auto px-4 lg:px-6">
       <style>{`
@@ -1228,6 +1240,7 @@ export default function ChatPage() {
                               const token = String(block.confirmation_token || "");
                               const state = completedConfirmationTokens.has(token) ? "confirmed" : confirmationState[token];
                               const isBrowser = String(block.tool || "") === "browser" || String(block.mode || "") === "browser";
+                              if (isBrowser && token !== latestBrowserConfirmationToken) return null;
                               // Approval is a one-time prompt. Once the
                               // choice has completed, remove it from the
                               // active conversation instead of leaving a
