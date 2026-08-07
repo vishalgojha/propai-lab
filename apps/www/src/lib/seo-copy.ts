@@ -201,7 +201,7 @@ export function extractListingSourceFacts(
   const parking = text.match(/\b(\d+)\s+car\s+parking\s+(?:available|provided|included)\b/i)?.[1]
     ? `${text.match(/\b(\d+)\s+car\s+parking\s+(?:available|provided|included)\b/i)?.[1]} car parking`
     : (/\bcar\s+parking\s+(?:available|provided|included)\b/i.test(text) ? "car parking" : null);
-  const possession = text.match(/\b(possession|available)\s+([\w\s]+?)(?=[.!\n]|$)/i)?.[0]?.trim() ?? null;
+  const possession = text.match(/\bpossession\s+([\w\s]+?)(?=[.!\n]|$)/i)?.[0]?.trim() ?? null;
 
   let landmark: string | null = text.match(/\b(?:near|opposite|opp\.?|next\s+to|behind)\s+([A-Za-z][A-Za-z .&'-]{2,45})/i)?.[1]?.trim() ?? null;
   if (!landmark && building && locality) {
@@ -244,8 +244,10 @@ export function listingDescription(opts: {
   const factBhk = facts.bhk ? `${facts.bhk} BHK ` : "";
   const landmark = opts.landmark || facts.landmark;
   const place = landmark ? `${where}, near ${landmark}` : where;
-  parts.push(`${dealType} — ${factBhk}${title}${place}.`);
-  if (specRow) parts.push(`${specRow}.`);
+  const furnishing = specRow.match(/\b(fully furnished|semi[- ]furnished|unfurnished)\b/i)?.[1]?.toLowerCase() ?? "";
+  const buildingLabel = (building || title).replace(/\s+for\s+(?:rent|sale)\s+at\s+.*$/i, "").trim();
+  const subject = `${factBhk}${furnishing ? `${furnishing} ` : ""}home`.trim();
+  parts.push(`${dealType} — ${subject} at ${buildingLabel}${place}.`);
   const extras = [facts.view, facts.parking, facts.pets ? "pets allowed" : null, facts.possession]
     .filter(Boolean)
     .join("; ");

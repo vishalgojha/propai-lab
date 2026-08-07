@@ -411,10 +411,11 @@ export function isBrokerContactable(raw: string | null | undefined): boolean {
 }
 
 // SEO-friendly slug for the public /listings/[slug]/[id] route. Format:
-//   `{bhk-or-property-type}-{locality-or-empty}-{id}`
+//   `{bhk}-{building}-{locality}-{id}`
 // The id is always appended so the URL is unique even when the prefix is empty
 // or repeats. Examples:
-//   bhk="3 BHK", micro_market="Andheri West", id=319236 → "3-bhk-andheri-west-319236"
+//   bhk="3 BHK", building="Lodha Bellissimo", micro_market="Andheri West"
+//     → "3-bhk-lodha-bellissimo-andheri-west-319236"
 //   bhk=null, micro_market=null, id=319236              → "319236"
 //   bhk="2.5 BHK", micro_market="Powai", id=999         → "2-5-bhk-powai-999"
 // Use this from listing-card.ts, sitemap.ts, and contact-broker route so all
@@ -433,19 +434,15 @@ export function buildListingSlug(input: SlugInput): string | null {
   const parts: string[] = [];
   const bhk = (input.bhk ?? "").trim();
   if (bhk) parts.push(slugify(bhk));
-  // Prefer the locality when present, then fall back to the building name —
-  // either alone gives Google a usable keyword on the URL.
+  // Include the building before locality so a listing URL identifies the
+  // actual property, not just its neighbourhood.
+  const raw = (input.building_name ?? "").trim();
+  const bldg = raw.includes(",") ? raw.split(",")[0].trim() : raw;
+  if (bldg && bldg.length <= 50 && !/^(sq\.?\s*ft|multiple options|carpet|na\b|\d+\s*bhk|for sale|for rent|available|new listing|video|pics|car park|residential listing)/i.test(bldg)) {
+    parts.push(slugify(bldg));
+  }
   const micro = (input.micro_market ?? "").trim();
   if (micro) parts.push(slugify(micro));
-  else {
-    // Extract first segment before comma — real building names are short and
-    // appear at the start (e.g. "Wallfort Tower" from "Wallfort Tower, 2bhk...").
-    const raw = (input.building_name ?? "").trim();
-    const bldg = raw.includes(",") ? raw.split(",")[0].trim() : raw;
-    if (bldg && bldg.length <= 50 && !/^(sq\.?\s*ft|multiple options|carpet|na\b|\d+\s*bhk|for sale|for rent|available|new listing|video|pics|car park|residential listing)/i.test(bldg)) {
-      parts.push(slugify(bldg));
-    }
-  }
   // If both bhk and locality/building are missing, the slug is just the id.
   // Otherwise join with hyphens, then suffix the id for uniqueness.
   if (parts.length === 0) return id;

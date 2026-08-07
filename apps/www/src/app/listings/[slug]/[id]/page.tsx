@@ -14,8 +14,6 @@ import {
   Sofa,
   Building2,
   Eye,
-  Home,
-  Building,
   Flag,
   Target,
   ChevronRight,
@@ -105,13 +103,6 @@ const SPEC_ICONS: Record<ListingSpecItem["kind"], typeof BedDouble> = {
   view: Eye,
   type: Tag,
 };
-
-const KindIcon = ({ kind, className }: { kind: string | null; className?: string }) =>
-  kind === "Commercial" ? (
-    <Building className={className} strokeWidth={1.75} aria-hidden="true" />
-  ) : (
-    <Home className={className} strokeWidth={1.75} aria-hidden="true" />
-  );
 
 function toCardFields(row: NonNullable<Awaited<ReturnType<typeof getListingById>>>): ListingCardFields {
   return {
@@ -413,40 +404,8 @@ export default async function ListingPage({ params }: Params) {
               </div>
               <div className="text-right">
                 <div className="text-3xl font-semibold text-white lg:text-4xl">{card.priceLabel}</div>
-                {/* Badges row: asset_type + status + deal-type, replacing the
-                    badges that used to float in the (now removed) image hero. */}
-                <div className="mt-1 flex flex-wrap justify-end gap-1.5">
-                  {card.assetTypeLabel && (
-                    <span className="inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-black/55 px-2 py-0.5 text-[11px] font-medium text-zinc-100">
-                      <KindIcon kind={card.assetTypeLabel} className="h-3 w-3" />
-                      {card.assetTypeLabel}
-                    </span>
-                  )}
-                  <span
-                    className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${
-                      card.statusTone === "available"
-                        ? "border-green-400/20 bg-green-400/10 text-green-300"
-                        : "border-orange-400/20 bg-orange-400/10 text-orange-300"
-                    }`}
-                  >
-                    {card.statusLabel}
-                  </span>
-                  <span className="inline-flex items-center rounded-md bg-green-400/10 px-2 py-0.5 text-xs font-semibold text-green-300">
-                    {dealType}
-                  </span>
-                </div>
-                {card.dealTags.length > 0 && (
-                  <div className="mt-2 flex flex-wrap justify-end gap-1.5">
-                    {card.dealTags.map((t) => (
-                      <span
-                        key={t.tag}
-                        className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${t.tone}`}
-                      >
-                        {t.label}
-                      </span>
-                    ))}
-                  </div>
-                )}
+                {/* Transaction and availability are already communicated by
+                    the price/specs and freshness; avoid redundant badges. */}
                 {card.additionalCharges.length > 0 && (
                   <ul className="mt-2 space-y-0.5 text-xs text-zinc-400">
                     {card.additionalCharges.map((c, i) => (
