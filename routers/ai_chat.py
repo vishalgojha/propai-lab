@@ -1478,7 +1478,12 @@ async def confirm_browser_action(
         raise
     except Exception as exc:
         _logger.exception("Browser approval failed before execution for user=%s", user.get("id"))
-        raise HTTPException(500, f"Browser approval could not start: {type(exc).__name__}") from exc
+        # Keep the UI actionable when a deployment has a provider/schema
+        # mismatch. The full traceback remains in server logs, while this
+        # short detail prevents a useless generic 500 for the operator.
+        detail = str(exc).strip().replace("\n", " ")[:240]
+        suffix = f": {detail}" if detail else ""
+        raise HTTPException(500, f"Browser approval could not start: {type(exc).__name__}{suffix}") from exc
 
 
 @router.post("/api/ai/chat/browser/decline")

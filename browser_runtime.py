@@ -77,19 +77,33 @@ class _AgentBrowserProvider(_BaseBrowserProvider):
 
     def __init__(self) -> None:
         self._binary = os.getenv("AGENT_BROWSER_BIN") or shutil.which("agent-browser") or ""
+        self._health_cache: dict[str, str | bool] | None = None
+        self._health_checked_at = 0.0
 
     def health_check(self) -> dict[str, str | bool]:
+        # The CLI is long-lived per named session, so repeatedly spawning
+        # `agent-browser --version` for every step only adds latency.
+        if self._health_cache is not None and time.monotonic() - self._health_checked_at < 30:
+            return self._health_cache
         if not self._binary or not shutil.which(self._binary) and not Path(self._binary).exists():
-            return {"ok": False, "error": AGENT_BROWSER_INSTALL_MESSAGE}
+            self._health_cache = {"ok": False, "error": AGENT_BROWSER_INSTALL_MESSAGE}
+            self._health_checked_at = time.monotonic()
+            return self._health_cache
         try:
             result = subprocess.run(
                 [self._binary, "--version"], capture_output=True, text=True, timeout=10, check=False
             )
         except (OSError, subprocess.TimeoutExpired) as exc:
-            return {"ok": False, "error": f"agent-browser CLI could not start: {exc}"}
+            self._health_cache = {"ok": False, "error": f"agent-browser CLI could not start: {exc}"}
+            self._health_checked_at = time.monotonic()
+            return self._health_cache
         if result.returncode != 0:
-            return {"ok": False, "error": (result.stderr or result.stdout or "agent-browser --version failed").strip()}
-        return {"ok": True, "binary": self._binary, "version": (result.stdout or result.stderr).strip()}
+            self._health_cache = {"ok": False, "error": (result.stderr or result.stdout or "agent-browser --version failed").strip()}
+            self._health_checked_at = time.monotonic()
+            return self._health_cache
+        self._health_cache = {"ok": True, "binary": self._binary, "version": (result.stdout or result.stderr).strip()}
+        self._health_checked_at = time.monotonic()
+        return self._health_cache
 
     def _run(self, session_name: str, *args: str) -> BrowserActionResult:
         health = self.health_check()
