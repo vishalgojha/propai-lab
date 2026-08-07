@@ -514,6 +514,11 @@ _BROWSER_ACTION_SIGNALS = re.compile(
     re.IGNORECASE,
 )
 
+_BROWSER_SITE_ALIASES = {
+    "maharera": "https://www.maharera.maharashtra.gov.in/",
+    "maha rera": "https://www.maharera.maharashtra.gov.in/",
+}
+
 
 def _browser_approval_secret() -> bytes:
     secret = os.getenv("PROPAI_AGENT_CONFIRMATION_SECRET") or os.getenv("SUPABASE_JWT_SECRET")
@@ -1308,10 +1313,29 @@ async def confirm_browser_action(
             last_user,
             re.IGNORECASE,
         )
+        had_explicit_url = bool(url_match)
+        if not url_match:
+            lowered_user = last_user.lower()
+            for alias, alias_url in _BROWSER_SITE_ALIASES.items():
+                if alias in lowered_user:
+                    url_match = re.search(re.escape(alias), last_user, re.IGNORECASE)
+                    break
+            else:
+                message = "Please include the website link, for example: https://example.com"
+                return _wrap_chat_response({
+                    "content": message,
+                    "blocks": [{"type": "error_state", "title": "Website link needed", "body": message}],
+                    "sources": [],
+                    "trace": {"route": "browser_url_needed"},
+                }, True)
+        alias_url = "" if had_explicit_url else next(
+            (value for alias, value in _BROWSER_SITE_ALIASES.items() if alias in last_user.lower()),
+            "",
+        )
         if url_match:
             from ai_chat_engine import execute_tool
 
-            url = url_match.group(0).rstrip(".,!?;:)").strip()
+            url = alias_url or url_match.group(0).rstrip(".,!?;:)").strip()
             if not url.lower().startswith(("http://", "https://")):
                 url = f"https://{url}"
             # agent_browser_sessions.id is a UUID and agent_browser_steps
