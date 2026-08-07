@@ -3169,42 +3169,10 @@ def _hidden_broker_phones_for_search() -> set[str]:
 
 
 def _hidden_market_item_ids_for_search() -> tuple[set[int], set[int]]:
-    con = getattr(storage, "db", None)
-    if con is None:
-        return set(), set()
-    tenant_id = get_tenant_id()
-    params: list[object] = []
-    where = ""
-    if tenant_id:
-        where = "WHERE tenant_id IS NULL OR tenant_id = ?"
-        params.append(tenant_id)
-    try:
-        rows = con.execute(
-            f"""
-            SELECT listing_id, raw_message_id
-            FROM hidden_market_items
-            {where}
-            """,
-            tuple(params),
-        ).fetchall()
-    except Exception:
-        return set(), set()
-    listing_ids: set[int] = set()
-    raw_message_ids: set[int] = set()
-    for row in rows:
-        listing_id = row[0]
-        raw_message_id = row[1]
-        if listing_id is not None:
-            try:
-                listing_ids.add(int(listing_id))
-            except Exception:
-                pass
-        if raw_message_id is not None:
-            try:
-                raw_message_ids.add(int(raw_message_id))
-            except Exception:
-                pass
-    return listing_ids, raw_message_ids
+    # The old hidden-market-items feature was removed from the broker chat.
+    # Search results are now governed by live tenant-scoped inventory and
+    # broker visibility, so do not query the retired table.
+    return set(), set()
 
 # ── Audit helpers ──────────────────────────────────────────────────
 def _audit_row_value(row, key_or_idx, default=None):
