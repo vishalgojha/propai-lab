@@ -468,7 +468,6 @@ export async function generateListingRelated(
     buildTopBuildings(locality),
     buildNearbyLandmarks(locality),
     buildPropertyTypes(locality, null),
-    buildTopBrokers(locality),
   ]);
 
   const configs = buildConfigSuggestions(
