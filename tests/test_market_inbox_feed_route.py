@@ -3,18 +3,18 @@ import asyncio
 from routers import workspace
 
 
-def test_market_inbox_feed_route_delegates_to_parsed_observations(monkeypatch):
+def test_market_inbox_feed_route_delegates_to_market_items(monkeypatch):
     calls = []
 
     class StorageStub:
-        def get_observations_feed(self, **kwargs):
+        def get_market_items_feed(self, **kwargs):
             calls.append(kwargs)
             return [{"id": 1, "message_type": "listing"}]
 
     monkeypatch.setattr(workspace, "storage", StorageStub())
 
     result = asyncio.run(
-        workspace.observations_feed(
+        workspace.inbox_market_items(
             limit=700,
             offset=-3,
             broker_key="919999999999",
@@ -35,4 +35,4 @@ def test_market_inbox_feed_route_delegates_to_parsed_observations(monkeypatch):
 
 
 def test_market_inbox_feed_route_is_registered():
-    assert any(route.path == "/api/observations/feed" for route in workspace.router.routes)
+    assert any(route.path == "/api/inbox/items" for route in workspace.router.routes)

@@ -82,7 +82,7 @@ export default function ObservationPage() {
     if (!id) return;
     const numId = parseInt(id.replace(/^P/, ""));
     if (!numId) { setError("Invalid ID"); return; }
-    api.getObservation(numId)
+    api.getInboxEvidence(numId)
       .then(setObs)
       .catch(e => setError(e.message));
   }, [id]);

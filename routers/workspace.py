@@ -79,8 +79,8 @@ async def inbox_threads(
     return storage.get_inbox_threads(limit, offset, tenant_id=tenant_id)
 
 
-@router.get("/api/observations/feed")
-async def observations_feed(
+@router.get("/api/inbox/items")
+async def inbox_market_items(
     limit: int = 50,
     offset: int = 0,
     broker_key: str = "",
@@ -88,8 +88,8 @@ async def observations_feed(
     user: dict = Depends(require_user),
     tenant_id: str | None = Depends(get_tenant_context),
 ):
-    """Return parsed market observations for the Market Inbox timeline."""
-    return storage.get_observations_feed(
+    """Return parsed market items for the Market Inbox timeline."""
+    return storage.get_market_items_feed(
         limit=min(max(limit, 1), 500),
         offset=max(offset, 0),
         broker_key=broker_key,
@@ -98,21 +98,16 @@ async def observations_feed(
     )
 
 
-@router.get("/api/observations/{observation_id}")
-async def observation_detail(
-    observation_id: int,
+@router.get("/api/inbox/evidence/{raw_message_id}")
+async def inbox_evidence_detail(
+    raw_message_id: int,
     user: dict = Depends(require_user),
     tenant_id: str | None = Depends(get_tenant_context),
 ):
-    """Return the raw WhatsApp evidence and all typed items for one message.
-
-    The inbox uses the raw message id as its observation URL key.  Keep this
-    endpoint tenant-scoped through the request context so old evidence links
-    continue to work after the typed-table cutover.
-    """
-    detail = await asyncio.to_thread(storage.get_observation_detail, observation_id)
+    """Return the raw WhatsApp evidence and all typed items for one message."""
+    detail = await asyncio.to_thread(storage.get_inbox_evidence_detail, raw_message_id)
     if not detail:
-        raise HTTPException(404, "Observation not found")
+        raise HTTPException(404, "Evidence not found")
     return detail
 
 

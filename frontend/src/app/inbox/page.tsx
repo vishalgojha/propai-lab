@@ -1570,7 +1570,7 @@ return {
     setPriceStats(null);
     let rawMessage: api.RawMessage | null = null;
     try {
-      // The observation endpoint also enriches the message, but a parsed row
+      // The inbox evidence endpoint also enriches the message, but a parsed row
       // can disappear or be unavailable while the raw WhatsApp message is
       // still valid. Always load the source text independently so the inbox
       // never falls back to a truncated parsed summary.
@@ -1581,7 +1581,7 @@ return {
       console.warn("Failed to load raw WhatsApp message:", e);
     }
     try {
-      const details = await api.getObservation(msgId);
+      const details = await api.getInboxEvidence(msgId);
       setSelectedMsgDetails({ ...details, raw: details.raw || rawMessage });
       if (options.setSelectedRaw && details.raw?.id) {
         setSelectedMsg(details.raw);
@@ -1625,7 +1625,7 @@ return {
   const pathname = usePathname();
   const msgParam = searchParams.get("message");
   const brokerParam = searchParams.get("broker");
-  const observationParam = searchParams.get("observation");
+  const itemParam = searchParams.get("item");
   const isGroupsView = defaultView === "groups" || searchParams.get("view") === "groups" || currentSlug === "groups";
 
   useEffect(() => {
@@ -1638,7 +1638,7 @@ return {
   const updateUrlMessage = useCallback((conversationKey: string, msgId: number) => {
     const url = new URL(window.location.href);
     url.searchParams.delete("broker");
-    url.searchParams.delete("observation");
+    url.searchParams.delete("item");
     url.searchParams.set("conversation", conversationKey);
     url.searchParams.set("message", String(msgId));
     window.history.replaceState({}, "", url.toString());
@@ -1648,17 +1648,17 @@ return {
     const url = new URL(window.location.href);
     url.searchParams.delete("message");
     url.searchParams.delete("conversation");
-    url.searchParams.delete("observation");
+    url.searchParams.delete("item");
     url.searchParams.set("broker", phone);
     window.history.replaceState({}, "", url.toString());
   }, []);
 
-  const updateUrlObservation = useCallback((id: number) => {
+  const updateUrlItem = useCallback((id: number) => {
     const url = new URL(window.location.href);
     url.searchParams.delete("message");
     url.searchParams.delete("conversation");
     url.searchParams.delete("broker");
-    url.searchParams.set("observation", String(id));
+    url.searchParams.set("item", String(id));
     window.history.replaceState({}, "", url.toString());
   }, []);
 
@@ -1668,7 +1668,7 @@ return {
     url.searchParams.delete("message");
     url.searchParams.delete("conversation");
     url.searchParams.delete("broker");
-    url.searchParams.delete("observation");
+    url.searchParams.delete("item");
     setSelectedBroker(null);
     setSelectedBrokerObservations([]);
     setSelectedMsg(null);
@@ -1693,7 +1693,7 @@ return {
     }
   }, [msgParam, conversationMessages]);
 
-  // Auto-navigate to broker or observation from URL params
+  // Auto-navigate to broker or market item from URL params
   const initialNavDone = useRef(false);
   useEffect(() => {
     if (initialNavDone.current) return;
@@ -1721,19 +1721,19 @@ return {
         initialNavDone.current = true;
         const url = new URL(window.location.href);
         url.searchParams.delete("broker");
-        url.searchParams.delete("observation");
+        url.searchParams.delete("item");
         url.searchParams.delete("message");
         url.searchParams.delete("conversation");
         window.history.replaceState({}, "", url.toString());
       }
-    } else if (observationParam && Number(observationParam) > 0) {
+    } else if (itemParam && Number(itemParam) > 0) {
       initialNavDone.current = true;
-      const obsId = Number(observationParam);
-      if (!isNaN(obsId)) {
+      const itemId = Number(itemParam);
+      if (!isNaN(itemId)) {
         (async () => {
           // Load the raw message details to discover broker
-          const details = await api.getObservation(obsId);
-          // Resolve broker from parsed data and load their observations timeline
+          const details = await api.getInboxEvidence(itemId);
+          // Resolve broker from parsed data and load their market item timeline
           const brokerPhone = details.parsed?.broker_phone;
           const brokerName = details.parsed?.broker_name || details.parsed?.profile_name || details.raw?.sender;
           if (brokerPhone || brokerName) {
@@ -1745,7 +1745,7 @@ return {
             );
             if (brokerInFeed) {
               setCurrentSlug("brokers");
-              await selectBroker(brokerInFeed, obsId);
+              await selectBroker(brokerInFeed, itemId);
               return;
             }
           }
@@ -1762,12 +1762,12 @@ return {
       // broker URL cannot resolve. Keep the workspace on a clean Inbox URL.
       const url = new URL(window.location.href);
       url.searchParams.delete("broker");
-      url.searchParams.delete("observation");
+      url.searchParams.delete("item");
       url.searchParams.delete("message");
       url.searchParams.delete("conversation");
       window.history.replaceState({}, "", url.toString());
     }
-  }, [brokerParam, observationParam, brokerFeed, slugs, loadingBrokerFeed]);
+  }, [brokerParam, itemParam, brokerFeed, slugs, loadingBrokerFeed]);
 
   // 1. Initial Load of Feed & Suggestions
   const loadFeed = useCallback(async (append = false, requestedOffset = offset) => {
@@ -1952,19 +1952,19 @@ return {
     setLoadingBrokerObs(true);
 
     try {
-      const observationKey = brokerPhone
+      const itemKey = brokerPhone
         || (/^name:/i.test(brokerIdentityKey) ? brokerIdentityKey : "")
         || (brokerName ? `name:${brokerName}` : brokerIdentityKey);
-      const obs = await api.getObservationsFeed(200, 0, observationKey, request.signal);
+      const items = await api.getMarketItemsFeed(200, 0, itemKey, request.signal);
       if (request.signal.aborted || brokerObservationRequestRef.current !== request) return;
-      setSelectedBrokerObservations(obs);
-      const rawId = obs?.[0]?.latest_raw_message_id || obs?.[0]?.raw_message_id;
+      setSelectedBrokerObservations(items);
+      const rawId = items?.[0]?.latest_raw_message_id || items?.[0]?.raw_message_id;
       if (rawId) {
         loadMessageDetails(rawId, { setSelectedRaw: true, preserveProfiles: true });
       }
     } catch (e) {
       if (request.signal.aborted || brokerObservationRequestRef.current !== request) return;
-      console.error("Failed to refresh broker observations:", e);
+      console.error("Failed to refresh broker market items:", e);
       setBrokerObsError("Market items could not be refreshed. Please retry.");
     } finally {
       if (brokerObservationRequestRef.current === request) {
@@ -3017,7 +3017,7 @@ return {
             : {}),
         } as api.RawMessage | api.InboxThread);
         // The WhatsApp Groups page is a raw mirror. Its message ids are raw-message
-        // ids, not observation ids, so asking the observation endpoint here produces
+        // ids, not inbox evidence ids, so asking the evidence endpoint here produces
         // noisy 404s and can trigger unrelated broker/building lookups.
         const isRawMirrorRoute = typeof window !== "undefined" && window.location.pathname === "/whatsapp-groups";
         if (isRawMirrorRoute) {
@@ -3058,7 +3058,7 @@ return {
     }
   }, [isMobile, updateUrlMessage]);
 
-  // 3c. Select a broker card -> show observations in the center workspace
+  // 3c. Select a broker card -> show market items in the center workspace
   const selectBroker = useCallback(async (broker: any, focusObsRawId?: number) => {
     if (isMobile) setMobileView("conversation");
     setOpportunityFilter("all");
@@ -3100,7 +3100,7 @@ return {
         // The directory remains available as a fallback for identities without enough parsed evidence.
       });
     if (!focusObsRawId) setSelectedMsgDetails(null);
-    // Load observations for center timeline. One broker selection maps to one
+    // Load market items for the center timeline. One broker selection maps to one
     // canonical request; equivalent phone/name retries previously multiplied
     // slow scans and left the UI spinning for minutes.
     brokerObservationRequestRef.current?.abort();
@@ -3110,20 +3110,20 @@ return {
     setSelectedBrokerObservations([]);
     setLoadingBrokerObs(true);
     try {
-      const observationKey = brokerPhone
+      const itemKey = brokerPhone
         || (/^name:/i.test(brokerIdentityKey) ? brokerIdentityKey : "")
         || (brokerName ? `name:${brokerName}` : brokerIdentityKey);
-      const obs = await api.getObservationsFeed(200, 0, observationKey, request.signal);
+      const items = await api.getMarketItemsFeed(200, 0, itemKey, request.signal);
       if (request.signal.aborted || brokerObservationRequestRef.current !== request) return;
-      setSelectedBrokerObservations(obs);
-      const rawId = focusObsRawId || obs?.[0]?.latest_raw_message_id || obs?.[0]?.raw_message_id;
+      setSelectedBrokerObservations(items);
+      const rawId = focusObsRawId || items?.[0]?.latest_raw_message_id || items?.[0]?.raw_message_id;
       if (rawId) {
-        updateUrlObservation(rawId);
+        updateUrlItem(rawId);
         loadMessageDetails(rawId, { setSelectedRaw: true, preserveProfiles: true });
       }
     } catch (e) {
       if (request.signal.aborted || brokerObservationRequestRef.current !== request) return;
-      console.error("Failed to load broker observations:", e);
+      console.error("Failed to load broker market items:", e);
       setSelectedBrokerObservations([]);
       setBrokerObsError("Market items could not be loaded. Please retry.");
     } finally {
@@ -3132,7 +3132,7 @@ return {
         brokerObservationRequestRef.current = null;
       }
     }
-  }, [updateUrlBroker, updateUrlObservation]);
+  }, [updateUrlBroker, updateUrlItem]);
 
   useEffect(() => {
     autoSelectedThreadRef.current = "";
@@ -3166,11 +3166,11 @@ return {
     return () => window.removeEventListener("keydown", handler);
   }, [flatBlocks, selectedMsg, selectMessage]);
 
-  const selectBrokerObservation = (obs: any) => {
-    const rawId = obs.latest_raw_message_id || obs.raw_message_id;
+  const selectBrokerItem = (item: any) => {
+    const rawId = item.latest_raw_message_id || item.raw_message_id;
     if (!rawId) return;
     if (isMobile) setMobileView("conversation");
-    updateUrlObservation(rawId);
+    updateUrlItem(rawId);
     loadMessageDetails(rawId, { setSelectedRaw: true, preserveProfiles: true });
   };
 
@@ -3811,7 +3811,7 @@ return {
             </div>
           ) : activeSlug?.view_type === "brokers" && selectedBroker ? (
             <>
-              {/* Observation Timeline Header */}
+              {/* Market Items Header */}
               <div className="px-3 py-2.5 border-b border-white/10 flex items-center justify-between bg-black/80 sm:px-5 sm:py-4">
                 <div className="flex items-center gap-3">
                   {isMobile && (
@@ -3893,7 +3893,7 @@ return {
                 </div>
               </div>
 
-              {/* Observation Timeline */}
+              {/* Market Items Timeline */}
               <div className="flex-1 overflow-y-auto p-3 space-y-3 sm:p-4 sm:space-y-4">
                 {loadingBrokerObs && groupedBrokerObservations.length === 0 ? (
                   <div className="p-8 text-center text-xs text-zinc-500">Loading market items...</div>
@@ -4010,7 +4010,7 @@ return {
                       ? obsTime.toLocaleDateString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })
                       : "";
                     // A bulk WhatsApp post can produce several typed
-                    // observations. Prefer each item's source slice over the
+                    // item rows. Prefer each item's source slice over the
                     // complete raw message so the listings render separately.
                     const itemSource = obs.source_message || obs.normalized_message || obs.raw_message || "";
                     // Keep the extracted item slice visible for bulk posts.
@@ -4047,7 +4047,7 @@ return {
                             if (target.closest("a, button, input, textarea")) return;
                             const selection = window.getSelection();
                             if (selection && !selection.isCollapsed) return;
-                            selectBrokerObservation(obs);
+                            selectBrokerItem(obs);
                           }}
                           className={`w-full cursor-pointer text-left transition-all rounded-xl rounded-tl-none px-3 py-2 max-w-[85%] ${
                             isSelected
