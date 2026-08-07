@@ -4821,10 +4821,16 @@ class SupabaseStorage(Storage):
                 "group_id": group_id,
                 "member_jid": member_jid,
                 "member_phone": self._normalize_phone(str(participant.get("member_phone") or "")) or None,
-                "display_name": str(participant.get("display_name") or "").strip() or None,
                 "is_admin": bool(participant.get("is_admin")),
                 "last_seen_at": now,
             }
+            # An empty participant display name is common in WhatsMeow group
+            # snapshots. Omit it from the upsert so Postgres preserves an
+            # existing name; the group_members contact-enrichment trigger
+            # fills it for new rows from whatsmeow_contacts.
+            display_name = str(participant.get("display_name") or "").strip()
+            if display_name:
+                row["display_name"] = display_name
             rows.append(row)
         if not rows:
             return 0
