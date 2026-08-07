@@ -821,6 +821,17 @@ def _ai_extraction_to_parsed(ai_extraction: dict, raw_text: str, sender_name: st
     ceiling_height = ai_extraction.get("ceiling_height")
     price_basis = ai_extraction.get("price_basis")
     configuration_type = ai_extraction.get("configuration_type")
+    if configuration_type is not None:
+        configuration_type_text = str(configuration_type).strip()
+        if re.fullmatch(r"\d+(?:\.\d+)?", configuration_type_text):
+            configuration_number = _safe_float(configuration_type_text)
+            configuration_type = "1 RK" if configuration_number == 0.5 else f"{configuration_number:g} BHK"
+        elif re.fullmatch(r"(\d+(?:\.\d+)?)\s*(BHK|RK)", configuration_type_text, re.IGNORECASE):
+            configuration_type = re.sub(r"\s+", " ", configuration_type_text).upper()
+        else:
+            configuration_type = configuration_type_text
+    elif bhk_val is not None:
+        configuration_type = "1 RK" if bhk_val == 0.5 else f"{bhk_val:g} BHK"
     lease_term_type = ai_extraction.get("lease_term_type")
     contacts = ai_extraction.get("contacts") if isinstance(ai_extraction.get("contacts"), list) else []
     society_restrictions = ai_extraction.get("society_restrictions")
