@@ -819,7 +819,7 @@ async def ai_query(req: QueryRequest, user: dict = Depends(require_user)):
 
 @router.get("/api/ai/similar/{observation_id}")
 async def ai_similar(observation_id: int, k: int = 10, user: dict = Depends(require_user)):
-    detail = storage.get_observation_detail(observation_id)
+    detail = storage.get_inbox_evidence_detail(observation_id)
     parsed = detail.get("parsed", {})
     emb = parsed.get("embedding")
     if not emb:
@@ -831,7 +831,7 @@ async def ai_similar(observation_id: int, k: int = 10, user: dict = Depends(requ
 
 @router.get("/api/ai/explain/{observation_id}")
 async def ai_explain(observation_id: int, user: dict = Depends(require_user)):
-    detail = storage.get_observation_detail(observation_id)
+    detail = storage.get_inbox_evidence_detail(observation_id)
     parsed = detail.get("parsed", {})
     raw = detail.get("raw", {})
     if not parsed:
@@ -1020,7 +1020,7 @@ async def promote_config(user: dict = Depends(require_user)):
 
 @router.post("/api/promote/generate")
 async def promote_generate(req: PromoteRequest, user: dict = Depends(require_user)):
-    detail = storage.get_observation_detail(req.observation_id)
+    detail = storage.get_inbox_evidence_detail(req.observation_id)
     if not detail.get("parsed"):
         raise HTTPException(404, "Observation not found")
     parsed = dict(detail["parsed"])

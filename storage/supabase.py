@@ -31,6 +31,7 @@ from lab.storage.base import (
 from lab.inventory import listing_fingerprint, listing_label
 from location import canonical_micro_market_slug
 from price_normalization import canonical_commercial_rental_price_rupees, canonical_price_rupees, canonical_rental_price_rupees, rent_price_needs_review
+from building_quality import is_valid_building_candidate, normalize_building_name
 
 
 _EMOJI_ICON_RE = re.compile(
@@ -84,10 +85,31 @@ def _sanitize_parsed_payload(value: Any) -> Any:
 
 def _clean_person_name(name: str = "") -> str:
     clean = (name or "").strip()
+    if re.search(r"@(s\.whatsapp\.net|lid|g\.us)$", clean, re.I):
+        return ""
     clean = re.sub(r"\s*\([^)]*(?:\+?\d|X{2,})[^)]*\)\s*", " ", clean, flags=re.I)
     clean = re.sub(r"\s*\+?\d[\d\s().-]{7,}\s*", " ", clean)
     clean = re.sub(r"\s{2,}", " ", clean).strip(" -")
     return clean
+
+
+def _jid_phone(value: str = "") -> str:
+    """Extract a displayable phone from a user JID; never return a LID."""
+    raw = str(value or "").strip()
+    match = re.match(r"\+?(\d+)@s\.whatsapp\.net$", raw, re.I)
+    return match.group(1) if match else ""
+
+
+def _locality_fields(data: dict) -> tuple[str | None, str | None]:
+    location = data.get("location")
+    raw = data.get("location_raw") or data.get("area")
+    resolved = data.get("locality_resolved")
+    if isinstance(location, dict):
+        raw = raw or location.get("raw_mention") or location.get("raw") or location.get("label")
+        resolved = resolved or location.get("resolved_locality") or location.get("canonical") or location.get("name")
+    elif isinstance(location, str):
+        resolved = resolved or location
+    return (str(raw).strip() if raw else None, str(resolved).strip() if resolved else None)
 
 
 def _market_name_key(name: str = "") -> str:
@@ -2080,44 +2102,26 @@ class SupabaseStorage(Storage):
 
     def _get_parsed_market_threads(self, limit: int, offset: int, tenant_id: str | None = None) -> list[dict]:
         tid = tenant_id or self._tenant_id
-
-        # The inbox renders one page at a time. Pulling 50k parsed rows on
-        # every refresh made this endpoint stall and prevented new raw
-        # messages from appearing in the fallback feed.
-        parsed_rows = self._fetch_typed_rows(
+        parsed_rows, raw_map = self._fetch_recent_market_typed_rows(
             tenant_id=tid,
-            limit_per_table=min(250, max(100, limit + offset)),
+            limit=limit,
+            offset=offset,
         )
         parsed_rows = [self._typed_row_to_legacy(row) for row in parsed_rows]
-        parsed_rows.sort(key=lambda row: str(row.get("created_at") or ""), reverse=True)
-        parsed_rows = parsed_rows[:min(2000, max(500, limit + offset))]
+        parsed_rows.sort(
+            key=lambda row: str((raw_map.get(int(row.get("raw_message_id") or 0)) or {}).get("timestamp") or row.get("created_at") or ""),
+            reverse=True,
+        )
+        parsed_rows = parsed_rows[:min(4000, max(500, limit + offset))]
         if not parsed_rows:
             return []
-
         raw_ids = list({p["raw_message_id"] for p in parsed_rows if p.get("raw_message_id")})
-        raw_map: dict[int, dict] = {}
-        if raw_ids:
-            BATCH_SIZE = 500
-            for i in range(0, len(raw_ids), BATCH_SIZE):
-                batch = raw_ids[i:i + BATCH_SIZE]
-                raw_query = self.client.table("raw_messages").select(
-                    "id,group_name,sender,sender_phone,sender_jid,timestamp,created_at,message_uid,message,is_group"
-                ).in_("id", batch)
-                if tid:
-                    raw_query = raw_query.eq("tenant_id", tid)
-                try:
-                    raw_res = raw_query.execute()
-                    for r in raw_res.data or []:
-                        if r.get("id"):
-                            raw_map[r["id"]] = r
-                except Exception:
-                    _logger.exception("_get_parsed_market_threads: batch query failed for %d ids", len(batch))
-            dropped = len(raw_ids) - len(raw_map)
-            if dropped > 0:
-                _logger.warning(
-                    "_get_parsed_market_threads: %d raw_message_ids had no matching raw_messages row",
-                    dropped,
-                )
+        dropped = len(raw_ids) - len(raw_map)
+        if dropped > 0:
+            _logger.warning(
+                "_get_parsed_market_threads: %d raw_message_ids had no matching raw_messages row",
+                dropped,
+            )
 
         market_rows: list[tuple[dict, dict, str, str]] = []
         phones_by_name: dict[str, set[str]] = defaultdict(set)
@@ -2260,6 +2264,23 @@ class SupabaseStorage(Storage):
 
     # ── Broker Identity Resolution ──────────────────────────────
 
+    def _resolve_whatsapp_display_name(self, jid: str = "", phone: str = "") -> str:
+        """Best-effort contact lookup; missing contact tables never break ingest."""
+        candidates = [value for value in (jid, phone, _jid_phone(jid)) if value]
+        for lookup in candidates:
+            for column in ("jid", "phone", "wa_jid"):
+                try:
+                    result = self.client.table("whatsmeow_contacts").select("*").eq(column, lookup).limit(1).execute()
+                    if result.data:
+                        row = result.data[0]
+                        for key in ("push_name", "display_name", "name", "short_name"):
+                            name = _clean_person_name(row.get(key) or "")
+                            if name:
+                                return name
+                except Exception:
+                    continue
+        return ""
+
     def resolve_broker(self, broker_phone: str = "", sender_phone: str = "",
                        sender_jid: str = "", broker_name: str = "",
                        profile_name: str = "", sender: str = "") -> Optional[int]:
@@ -2279,10 +2300,13 @@ class SupabaseStorage(Storage):
         )
 
         effective_name = (
+            self._resolve_whatsapp_display_name(sender_jid, effective_phone)
+            or
             _clean_person_name(broker_name)
             or _clean_person_name(profile_name)
             or _clean_person_name(sender)
         )
+        effective_phone = effective_phone or _jid_phone(broker_phone) or _jid_phone(sender_jid)
 
         if not effective_phone and not effective_name:
             return None
@@ -2292,7 +2316,9 @@ class SupabaseStorage(Storage):
         else:
             identity_key = f"name:{_market_name_key(effective_name)}"
 
-        canonical = effective_name or effective_phone or "Unknown broker"
+        canonical = effective_name or effective_phone or None
+        if not canonical:
+            return None
         tenant_id = self._tenant_id
 
         row = {
@@ -2460,6 +2486,18 @@ class SupabaseStorage(Storage):
 
         # The typed tables deliberately retain the complete LLM payload while
         # promoting only fields that belong to the selected schema.
+        locality_raw, locality_resolved = _locality_fields(data)
+        broker_name = (
+            self._resolve_whatsapp_display_name(
+                data.get("sender_jid") or "", data.get("broker_phone") or ""
+            )
+            or
+            _clean_person_name(data.get("broker_name") or "")
+            or _clean_person_name(data.get("profile_name") or "")
+            or _clean_person_name(data.get("sender") or "")
+            or _normalize_india_phone(data.get("broker_phone") or "")
+            or _jid_phone(data.get("broker_name") or "")
+        ) or None
         common = {
             # Let the typed table's identity column generate its primary key.
             # ``source_fingerprint`` is the retry/idempotency key; the stable
@@ -2474,13 +2512,13 @@ class SupabaseStorage(Storage):
             "asset_type": asset_type,
             "transaction_type": transaction_type,
             "building_name": data.get("building_name"),
-            "locality_raw": data.get("location_raw") or data.get("area"),
-            "locality_resolved": data.get("location") if isinstance(data.get("location"), str) else None,
-            "micro_market": data.get("micro_market") or data.get("location_raw"),
+            "locality_raw": locality_raw,
+            "locality_resolved": locality_resolved,
+            "micro_market": data.get("micro_market") or locality_resolved or locality_raw,
             "landmark_name": data.get("landmark_name"),
             "street_name": data.get("street_name"),
             "broker_id": data.get("broker_id"),
-            "broker_name": data.get("broker_name") or data.get("profile_name"),
+            "broker_name": broker_name,
             "broker_phone": data.get("broker_phone"),
             "broker_rera_number": data.get("broker_rera_number"),
             "group_name": data.get("group_name"),
@@ -2930,6 +2968,63 @@ class SupabaseStorage(Storage):
             except Exception:
                 _logger.debug("typed row fetch failed for %s", table, exc_info=True)
         return rows
+
+    def _fetch_recent_market_typed_rows(
+        self,
+        *,
+        tenant_id: str | None = None,
+        limit: int = 500,
+        offset: int = 0,
+    ) -> tuple[list[dict], dict[int, dict]]:
+        """Return typed rows keyed to recent market raw messages.
+
+        Backlog replays can make typed-table ``created_at`` look newer than the
+        underlying WhatsApp evidence. For inbox freshness, anchor recency to
+        raw message timestamps and only then fetch the corresponding typed rows.
+        """
+        tid = tenant_id or self._tenant_id
+        target = max(100, limit + offset)
+        raw_window = min(max(target * 8, 500), 4000)
+        raw_query = self.client.table("raw_messages").select(
+            "id,group_name,sender,sender_phone,sender_jid,timestamp,created_at,message_uid,message,is_group"
+        ).order("timestamp", desc=True).limit(raw_window)
+        if tid:
+            raw_query = raw_query.eq("tenant_id", tid)
+        raw_rows = raw_query.execute().data or []
+        raw_map = {
+            int(row["id"]): row
+            for row in raw_rows
+            if int(row.get("id") or 0) > 0 and _is_market_group_row(row)
+        }
+        if not raw_map:
+            return [], {}
+
+        typed_rows: list[dict] = []
+        raw_ids = list(raw_map.keys())
+        batch_size = 500
+        for table in _ALL_TYPED_TABLES:
+            try:
+                for start in range(0, len(raw_ids), batch_size):
+                    batch = raw_ids[start:start + batch_size]
+                    query = self.client.table(table).select(_typed_read_columns(table)).in_("raw_message_id", batch)
+                    if tid:
+                        query = query.eq("tenant_id", tid)
+                    for row in query.execute().data or []:
+                        row["_typed_table"] = table
+                        typed_rows.append(row)
+            except Exception:
+                _logger.debug("recent typed row fetch failed for %s", table, exc_info=True)
+
+        typed_rows.sort(
+            key=lambda row: (
+                str((raw_map.get(int(row.get("raw_message_id") or 0)) or {}).get("timestamp") or ""),
+                str((raw_map.get(int(row.get("raw_message_id") or 0)) or {}).get("created_at") or ""),
+                int(row.get("raw_message_id") or 0),
+                int(row.get("listing_index") or 0),
+            ),
+            reverse=True,
+        )
+        return typed_rows, raw_map
 
     @staticmethod
     def _typed_row_to_legacy(row: dict) -> dict:
@@ -3797,6 +3892,8 @@ class SupabaseStorage(Storage):
         if transaction not in {"rent", "sale"}:
             transaction = "rent" if str(data.get("intent") or "").upper() == "RENT" else "sale"
         table = _TYPED_LISTING_TABLES.get((asset, transaction), "residential_sale_listings")
+        locality_raw = data.get("location_raw") or data.get("location_label")
+        locality_resolved = data.get("locality_resolved") or data.get("micro_market")
         typed = {
             "raw_message_id": data.get("latest_raw_message_id") or data.get("representative_raw_message_id") or 0,
             "tenant_id": data.get("tenant_id") or self._tenant_id,
@@ -3806,12 +3903,12 @@ class SupabaseStorage(Storage):
             "asset_type": asset,
             "transaction_type": transaction,
             "building_name": data.get("building_name"),
-            "locality_raw": data.get("location_label"),
-            "locality_resolved": data.get("micro_market"),
-            "micro_market": data.get("micro_market") or data.get("location_label"),
+            "locality_raw": locality_raw,
+            "locality_resolved": locality_resolved,
+            "micro_market": data.get("micro_market") or locality_resolved or locality_raw,
             "landmark_name": data.get("landmark_name"),
             "broker_id": data.get("broker_id"),
-            "broker_name": data.get("broker_name"),
+            "broker_name": _clean_person_name(data.get("broker_name") or "") or _normalize_india_phone(data.get("broker_phone") or "") or None,
             "broker_phone": data.get("broker_phone"),
             "summary_title": data.get("summary_title"),
             "raw_payload": data.get("raw_payload") or {},
@@ -4327,14 +4424,21 @@ class SupabaseStorage(Storage):
         has data for it.  Keep that discovery deterministic and idempotent;
         enrichment is a separate, queued step.
         """
-        name = " ".join(str(canonical_name or "").split()).strip(" .,;:")
-        if len(name) < 3:
+        name = normalize_building_name(canonical_name)
+        if not is_valid_building_candidate(name):
             return None
         existing = self.client.table("buildings").select("*").ilike(
             "canonical_name", name
         ).limit(1).execute()
         if existing.data:
             building = existing.data[0]
+            if building.get("canonical_name") != name:
+                updated = self.client.table("buildings").update({
+                    "canonical_name": name,
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                }).eq("id", building["id"]).execute()
+                if updated.data:
+                    building = updated.data[0]
             if micro_market and not building.get("micro_market"):
                 updated = self.client.table("buildings").update({
                     "micro_market": micro_market,
@@ -5113,21 +5217,21 @@ class SupabaseStorage(Storage):
         self._stats_cache[cache_key] = (now, stats)
         return dict(stats)
 
-    # ── Observation Detail ───────────────────────────────────────
+    # ── Inbox Evidence Detail ───────────────────────────────────
 
-    def get_observation_detail(self, obs_id: int) -> dict:
-        # Get all parsed outputs for this raw message (handles multi-listing messages)
-        typed_rows = self._fetch_typed_rows(raw_message_id=obs_id, limit_per_table=1000)
+    def get_inbox_evidence_detail(self, raw_message_id: int) -> dict:
+        resolved_raw_id = int(raw_message_id or 0)
+        typed_rows = self._fetch_typed_rows(raw_message_id=resolved_raw_id, limit_per_table=1000)
         if not typed_rows:
             return {}
-        
+
         parsed_rows = _merge_observation_rows([self._typed_row_to_legacy(row) for row in typed_rows])
         first_parsed = parsed_rows[0] if parsed_rows else None
-        
+
         # Get raw message
-        raw_res = self.client.table("raw_messages").select("*").eq("id", obs_id).limit(1).execute()
+        raw_res = self.client.table("raw_messages").select("*").eq("id", resolved_raw_id).limit(1).execute()
         raw_dict = raw_res.data[0] if raw_res.data else {}
-        
+
         # Get resolver decision for first parsed
         resolver_dict = {}
         if first_parsed:
@@ -5962,70 +6066,59 @@ class SupabaseStorage(Storage):
         except Exception:
             return {"brokers": 0, "observations": 0}
 
-    # ── Observations / Brokers Feed ──────────────────────────────────────
+    # ── Market Items / Brokers Feed ──────────────────────────────────────
 
-    def get_observations_feed(self, limit: int = 50, offset: int = 0,
+    def get_market_items_feed(self, limit: int = 50, offset: int = 0,
                               broker_key: str = "", intent: str = "",
                               tenant_id: str | None = None) -> list[dict]:
         tid = tenant_id or self._tenant_id
-        # Preferred path: filter the canonical phone/name identity inside
-        # Postgres before LIMIT. This avoids the old application-side typed
-        # table scan, which downloaded thousands of rows before the RPC and
-        # could make the frontend's 15-second request timeout fire.
-        try:
-            rows = self.client.rpc("get_market_observations_feed", {
-                "p_limit": limit,
-                "p_offset": offset,
-                "p_broker_key": broker_key,
-                "p_intent": intent,
-                "p_tenant_id": tid or None,
-            })
-            if isinstance(rows, list) and rows:
-                # Market Inbox is a contactable broker market, not an
-                # anonymous-name directory.  Keep unresolved identities in
-                # raw Groups evidence until WhatsApp has resolved a real phone.
-                return [
-                    row for row in rows
-                    if _normalize_india_phone(str(
-                        row.get("broker_phone") or row.get("primary_phone") or ""
-                    ))
-                ]
-        except Exception:
-            pass
-
-        try:
-            data = self.db.execute(
-                """SELECT public.get_observations_feed(
-                    $1, $2, $3, $4, $5::uuid
-                )""",
-                (limit, offset, broker_key, intent, tid or None),
-            ).fetchone()
-            if data:
-                val = data[0]
-                if isinstance(val, str):
-                    rows = json.loads(val)
-                else:
-                    rows = list(val) if val else []
-                for r in rows:
-                    if isinstance(r.get("evidence_list"), str):
-                        r["evidence_list"] = json.loads(r["evidence_list"])
-                    elif r.get("evidence_list") is None:
-                        r["evidence_list"] = []
-                    r.setdefault("raw_message", "")
-                    r.setdefault("raw_sender", "")
-                if rows:
-                    return _merge_observation_rows(rows)
-        except Exception:
-            pass
-
         if broker_key:
-            try:
-                return self._get_parsed_observations_for_broker(
-                    limit, offset, broker_key=broker_key, intent=intent, tenant_id=tid
-                )
-            except Exception:
-                return []
-        return []
+            return self._get_parsed_observations_for_broker(
+                limit, offset, broker_key=broker_key, intent=intent, tenant_id=tid
+            )
+        return self._get_recent_market_observations(
+            limit=limit,
+            offset=offset,
+            intent=intent,
+            tenant_id=tid,
+        )
+
+    def _get_recent_market_observations(
+        self,
+        *,
+        limit: int = 50,
+        offset: int = 0,
+        intent: str = "",
+        tenant_id: str | None = None,
+    ) -> list[dict]:
+        tid = tenant_id or self._tenant_id
+        typed_rows, raw_map = self._fetch_recent_market_typed_rows(
+            tenant_id=tid,
+            limit=limit,
+            offset=offset,
+        )
+        candidates: list[dict] = []
+        for typed in typed_rows:
+            raw_id = int(typed.get("raw_message_id") or 0)
+            raw = raw_map.get(raw_id)
+            if not raw:
+                continue
+            legacy = self._typed_row_to_legacy(typed)
+            if intent and str(legacy.get("intent") or "").upper() != intent.upper():
+                continue
+            legacy["_typed_table"] = typed.get("_typed_table")
+            legacy["raw_message"] = str(raw.get("message") or "")
+            legacy["source_message"] = legacy["raw_message"] or legacy.get("normalized_message") or ""
+            legacy["observation_type"] = "REQUIREMENT" if "requirement" in str(typed.get("_typed_table") or "") else "LISTING"
+            legacy["latest_raw_message_id"] = typed.get("raw_message_id")
+            legacy["latest_parsed_id"] = typed.get("id")
+            legacy["first_seen"] = str(raw.get("timestamp") or typed.get("created_at") or "")
+            legacy["last_seen"] = str(raw.get("timestamp") or typed.get("created_at") or "")
+            legacy["times_seen"] = 1
+            candidates.append(legacy)
+        merged = _merge_observation_rows(candidates)
+        merged.sort(key=lambda row: str(row.get("last_seen") or row.get("created_at") or ""), reverse=True)
+        return merged[offset:offset + limit]
 
     def _get_parsed_observations_for_broker(self, limit: int = 50, offset: int = 0,
                                             broker_key: str = "", intent: str = "",
@@ -6038,6 +6131,19 @@ class SupabaseStorage(Storage):
         name_key = broker_key.replace("name:", "", 1).strip().lower() if is_name_key else ""
         tid = tenant_id or self._tenant_id
         rows = self._fetch_typed_rows(limit_per_table=5000, tenant_id=tid)
+        raw_ids = sorted({int(row.get("raw_message_id") or 0) for row in rows if int(row.get("raw_message_id") or 0) > 0})
+        raw_map: dict[int, dict] = {}
+        for start in range(0, len(raw_ids), 500):
+            batch = raw_ids[start:start + 500]
+            try:
+                query = self.client.table("raw_messages").select("id,timestamp,created_at,message").in_("id", batch)
+                if tid:
+                    query = query.eq("tenant_id", tid)
+                for raw in query.execute().data or []:
+                    raw_map[int(raw["id"])] = raw
+            except Exception:
+                _logger.debug("typed broker observation raw lookup failed", exc_info=True)
+                break
         linked_names: set[str] = set()
         if normalized_key:
             for typed in rows:
@@ -6048,8 +6154,10 @@ class SupabaseStorage(Storage):
                         linked_names.add(name.lower())
         candidates: list[dict] = []
         for typed in rows:
-            created_at = str(typed.get("created_at") or "")
-            if created_at and created_at < cutoff:
+            raw_id = int(typed.get("raw_message_id") or 0)
+            raw = raw_map.get(raw_id) or {}
+            seen_at = str(raw.get("timestamp") or typed.get("created_at") or "")
+            if seen_at and seen_at < cutoff:
                 continue
             phone = _normalize_india_phone(typed.get("broker_phone") or "")
             name = _clean_person_name(typed.get("broker_name") or "")
@@ -6070,47 +6178,33 @@ class SupabaseStorage(Storage):
                 normalized_key if normalized_key and name.lower() in linked_names else ""
             )
             legacy["broker_phone"] = effective_phone
-            legacy["raw_message"] = (typed.get("raw_payload") or {}).get("full_text", "") if isinstance(typed.get("raw_payload"), dict) else ""
+            legacy["raw_message"] = str(raw.get("message") or "")
             legacy["source_message"] = legacy["raw_message"] or legacy.get("normalized_message") or ""
             legacy["observation_type"] = "REQUIREMENT" if "requirement" in str(typed.get("_typed_table") or "") else "LISTING"
             legacy["broker_key"] = normalized_key or effective_phone or name
             legacy["latest_raw_message_id"] = typed.get("raw_message_id")
             legacy["latest_parsed_id"] = typed.get("id")
-            legacy["first_seen"] = typed.get("created_at")
-            legacy["last_seen"] = typed.get("created_at")
+            legacy["first_seen"] = str(raw.get("timestamp") or typed.get("created_at") or "")
+            legacy["last_seen"] = str(raw.get("timestamp") or typed.get("created_at") or "")
             legacy["times_seen"] = 1
             candidates.append(legacy)
-        candidates.sort(key=lambda row: str(row.get("created_at") or row.get("last_seen") or ""), reverse=True)
+        candidates.sort(key=lambda row: str(row.get("last_seen") or row.get("created_at") or ""), reverse=True)
         return candidates[offset:offset + limit]
 
     def get_brokers_feed(self, limit: int = 50, offset: int = 0,
                          min_observations: int = 1,
                          tenant_id: str | None = None) -> list[dict]:
         tid = tenant_id or self._tenant_id
-        # Aggregate before pagination in Postgres.  Ordering is deterministic
-        # (last_active DESC, identity_key ASC), so active ingestion can add new
-        # activity without randomly reshuffling tied broker cards.
         try:
-            rows = self.client.rpc("get_market_brokers_feed", {
-                "p_limit": limit,
-                "p_offset": offset,
-                "p_min_observations": min_observations,
-                "p_tenant_id": tid or None,
-            })
-            if isinstance(rows, list) and rows:
-                return rows
-        except Exception:
-            pass
-
-        try:
-            parsed_threads = self._get_parsed_market_threads(
-                max(50000, limit + offset), 0, tenant_id=tid
-            )
+            parsed_threads = self._get_parsed_market_threads(limit, offset, tenant_id=tid)
             result = []
             for thread in parsed_threads:
                 identity = thread.get("conversation_key") or thread.get("chat_id") or ""
                 phone = _normalize_india_phone(thread.get("broker_phone") or "")
                 if not phone:
+                    continue
+                observation_count = thread.get("opportunity_count") or thread.get("message_count") or 0
+                if observation_count < max(1, min_observations):
                     continue
                 result.append({
                     "id": identity,
@@ -6178,73 +6272,11 @@ class SupabaseStorage(Storage):
                     key=lambda item: item.get("last_active") or "",
                     reverse=True,
                 )
-                return rows[offset:offset + limit]
+                if rows:
+                    return rows
         except Exception:
             pass
-
-        try:
-            tid = tenant_id or self._tenant_id
-            tenant_filter = "AND b.tenant_id = $4::uuid" if tid else ""
-            params = [min_observations, limit, offset]
-            if tid:
-                params.append(tid)
-            rows = self.db.execute(
-                f"""SELECT
-                       b.id, b.identity_key, b.primary_phone, b.canonical_name,
-                       b.building_count, b.active_days_30, b.observation_count,
-                       b.listing_count, b.requirement_count,
-                       COUNT(DISTINCT o.id) AS obs_count,
-                       MAX(o.last_seen) AS last_active,
-                       MIN(o.first_seen) AS first_seen,
-                       SUM(CASE WHEN oe.evidence_type = 'group' THEN 1 ELSE 0 END) AS group_evidence_count,
-                       SUM(CASE WHEN oe.evidence_type = 'dm' THEN 1 ELSE 0 END) AS dm_evidence_count,
-                       COUNT(DISTINCT oe.source_conversation) AS unique_channel_count,
-                       (SELECT o2.summary_title FROM observations o2
-                         WHERE right(o2.broker_key, 10) = b.primary_phone
-                         ORDER BY o2.last_seen DESC LIMIT 1) AS latest_title,
-                        (SELECT o2.intent FROM observations o2
-                         WHERE right(o2.broker_key, 10) = b.primary_phone
-                         ORDER BY o2.last_seen DESC LIMIT 1) AS latest_intent,
-                        COALESCE(
-                            (SELECT json_agg(DISTINCT json_build_object(
-                                'source', oe2.source_conversation,
-                                'type', oe2.evidence_type
-                            ))
-                             FROM observation_evidence oe2
-                             JOIN observations o2 ON o2.id = oe2.observation_id
-                             WHERE right(o2.broker_key, 10) = b.primary_phone),
-                            '[]'::json
-                        ) AS channels
-                    FROM brokers b
-                    JOIN observations o ON right(o.broker_key, 10) = b.primary_phone
-                    JOIN observation_evidence oe ON oe.observation_id = o.id
-                    WHERE (b.listing_count > 0 OR b.requirement_count > 0)
-                      AND b.is_hidden = false
-                      {tenant_filter}
-                   GROUP BY b.id, b.identity_key, b.primary_phone, b.canonical_name,
-                            b.building_count, b.active_days_30, b.observation_count,
-                            b.listing_count, b.requirement_count
-                   ORDER BY last_active DESC
-                   LIMIT $2 OFFSET $3""",
-                tuple(params),
-            ).fetchall()
-
-            result = []
-            for r in rows:
-                d = dict(r)
-                d["group_evidence_count"] = d.get("group_evidence_count") or 0
-                d["dm_evidence_count"] = d.get("dm_evidence_count") or 0
-                d["unique_channel_count"] = d.get("unique_channel_count") or 0
-                d["building_count"] = d.get("building_count") or 0
-                d["active_days_30"] = d.get("active_days_30") or 0
-                ch = d.get("channels")
-                d["channels"] = json.loads(ch) if isinstance(ch, str) else (ch or [])
-                d["specialty_localities"] = []
-                d["specialty_property_types"] = []
-                result.append(d)
-            return result
-        except Exception:
-            return []
+        return []
 
     def get_brokers_feed_total(self, min_observations: int = 1,
                                tenant_id: str | None = None) -> int:

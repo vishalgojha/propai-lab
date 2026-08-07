@@ -664,10 +664,10 @@ class Storage(ABC):
     @abstractmethod
     def get_stats(self) -> dict: ...
 
-    # ── Observation detail (Evidence Inspector) ────────────────
+    # ── Inbox Evidence Detail ──────────────────────────────────
 
     @abstractmethod
-    def get_observation_detail(self, obs_id: int) -> dict: ...
+    def get_inbox_evidence_detail(self, raw_message_id: int) -> dict: ...
 
     # ── Source summary ─────────────────────────────────────────
 

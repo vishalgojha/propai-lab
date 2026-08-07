@@ -634,8 +634,8 @@ export function stopSync() {
   return fetchJSON<any>("/sources/stop", { method: "POST" });
 }
 
-export function getObservation(id: number) {
-  return fetchJSON<any>(`/observations/${id}`);
+export function getInboxEvidence(id: number) {
+  return fetchJSON<any>(`/inbox/evidence/${id}`);
 }
 
 export function updateParsedObservation(id: number, schema: string | null, updates: Record<string, unknown>) {
@@ -1674,10 +1674,10 @@ export function getClientMessages(clientId: number) {
   return fetchJSON<ClientMessagesResponse>(`/clients/${clientId}/messages`);
 }
 
-export function getObservationsFeed(limit = 50, offset = 0, brokerKey?: string, signal?: AbortSignal) {
+export function getMarketItemsFeed(limit = 50, offset = 0, brokerKey?: string, signal?: AbortSignal) {
   const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
   if (brokerKey) params.set("broker_key", brokerKey);
-  return fetchJSON<any[]>(`/observations/feed?${params.toString()}`, { signal }, 15000);
+  return fetchJSON<any[]>(`/inbox/items?${params.toString()}`, { signal }, 15000);
 }
 
 export function hideBroker(phone: string) {

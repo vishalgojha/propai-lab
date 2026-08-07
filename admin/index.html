@@ -344,7 +344,7 @@ button.green:hover { background: #2ea043; }
 <!-- EVIDENCE PANEL (unchanged) -->
 <div class="panel" id="panel-evidence">
   <div class="inspector" id="evidenceInspector">
-    <p style="color:#8b949e;">Click an observation ID in any table to inspect evidence here.</p>
+    <p style="color:#8b949e;">Click an evidence item ID in any table to inspect evidence here.</p>
   </div>
 </div>
 
@@ -747,8 +747,8 @@ async function inspectObservation(id) {
   const el = document.getElementById('evidenceInspector');
   el.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
   try {
-    const res = await fetch(`/api/observations/${id}`);
-    if (!res.ok) { el.innerHTML = `<p style="color:#f85149;">Observation #${id} not found</p>`; return; }
+    const res = await fetch(`/api/inbox/evidence/${id}`);
+    if (!res.ok) { el.innerHTML = `<p style="color:#f85149;">Evidence item #${id} not found</p>`; return; }
     const obs = await res.json();
     renderEvidence(obs);
   } catch(e) {

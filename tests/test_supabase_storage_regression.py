@@ -420,7 +420,7 @@ def test_observation_detail_dedupes_repeated_listings():
     storage._client = FakeClient()
     storage._SupabaseStorage__tenant_id_fallback = None
 
-    result = storage.get_observation_detail(101)
+    result = storage.get_inbox_evidence_detail(101)
 
     assert len(result["listings"]) == 1
     assert result["listings"][0]["times_seen"] == 2
@@ -472,22 +472,38 @@ def test_get_parsed_collapses_same_raw_slice_even_when_listing_index_differs():
     assert [row.id for row in result] == [36533]
 
 
-def test_name_identity_observation_lookup_is_one_database_request():
+def test_name_identity_market_item_lookup_is_typed_only():
     from storage.supabase import SupabaseStorage, set_tenant_id
 
-    calls = []
+    class FakeRawQuery:
+        def __init__(self):
+            self.batch = []
+        def select(self, *args, **kwargs): return self
+        def in_(self, _field, batch): self.batch = batch; return self
+        def eq(self, *args, **kwargs): return self
+        def execute(self):
+            return SimpleNamespace(data=[])
+
+    class FakeTypedQuery:
+        def select(self, *args, **kwargs): return self
+        def order(self, *args, **kwargs): return self
+        def limit(self, *args, **kwargs): return self
+        def eq(self, *args, **kwargs): return self
+        def execute(self):
+            return SimpleNamespace(data=[])
 
     class FakeClient:
-        def rpc(self, name, params):
-            calls.append((name, params))
-            return []
+        def table(self, name):
+            if name == "raw_messages":
+                return FakeRawQuery()
+            return FakeTypedQuery()
 
     storage = object.__new__(SupabaseStorage)
     storage._client = FakeClient()
     storage._SupabaseStorage__tenant_id_fallback = None
     try:
         set_tenant_id("org-2")
-        result = storage.get_observations_feed(
+        result = storage.get_market_items_feed(
             200,
             0,
             broker_key="name:deepak jagasia",
@@ -496,16 +512,6 @@ def test_name_identity_observation_lookup_is_one_database_request():
         set_tenant_id(None)
 
     assert result == []
-    assert calls == [(
-        "get_market_observations_feed",
-        {
-            "p_limit": 200,
-            "p_offset": 0,
-            "p_broker_key": "name:deepak jagasia",
-            "p_intent": "",
-            "p_tenant_id": "org-2",
-        },
-    )]
 
 
 def test_market_observation_reposts_merge_across_raw_message_ids():

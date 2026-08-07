@@ -522,10 +522,10 @@ export default function ListingDetailPage() {
         )}
         {listing.latest_raw_message_id && (
           <Link
-            href={`/observations/${listing.latest_raw_message_id}`}
+            href={`/inbox?item=${listing.latest_raw_message_id}`}
             className="text-xs px-3 py-2 rounded-lg bg-zinc-800 text-zinc-400 hover:text-white flex items-center gap-1"
           >
-            <Tag className="h-3 w-3" /> Latest Observation
+            <Tag className="h-3 w-3" /> Source Evidence
           </Link>
         )}
       </div>
