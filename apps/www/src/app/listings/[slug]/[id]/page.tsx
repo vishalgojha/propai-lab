@@ -122,6 +122,8 @@ function toCardFields(row: NonNullable<Awaited<ReturnType<typeof getListingById>
     asset_type: row.asset_type,
     property_type: row.property_type,
     micro_market: row.micro_market,
+    locality_raw: row.locality_raw,
+    locality_resolved: row.locality_resolved,
     building_name: row.building_name,
     landmark_name: row.landmark_name,
     location_label: row.location_label,

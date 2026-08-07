@@ -511,7 +511,7 @@ export default function LLMProvidersPage() {
                   >
                     <option value="agent-browser">Agent Browser</option>
                   </select>
-                  <span className="text-xs text-gray-500">Native CDP browser runtime for fast page checks and actions.</span>
+                    <span className="text-xs text-gray-500">Native CDP browser runtime for internal or external page checks and actions.</span>
                 </label>
                 <label className="space-y-1">
                   <span className="text-xs font-medium text-gray-400">Max tool rounds</span>

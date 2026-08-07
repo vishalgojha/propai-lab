@@ -126,7 +126,7 @@ TOOL_DEFINITIONS = [
 BROWSER_TOOL_DEFINITIONS = [
     _function(
         "browser_open",
-        "Open a browser session on a permitted route or URL and return the current page state. Use this for navigating PropAI pages or other workspace-approved destinations.",
+        "Open a browser session on a permitted route or URL and return the current page state. Use this for navigating PropAI pages or external websites when the workspace route policy permits it.",
         {
             "browser_session_id": {"type": "string", "description": "Existing browser session id; omit to create a new session"},
             "url": {"type": "string", "description": "URL to open"},

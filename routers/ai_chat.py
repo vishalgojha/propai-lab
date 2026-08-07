@@ -1606,18 +1606,18 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
     browser_enabled = bool(workspace_ai_settings and getattr(workspace_ai_settings, "browser_enabled", False))
     recent_text = " ".join(str(msg.get("content") or "") for msg in effective_messages[-8:])
     if last_user and _BROWSER_ACTION_SIGNALS.search(last_user) and not browser_enabled:
-        prompt_text = "Browser actions are not enabled for this workspace yet. I can still search and summarize listings in chat, but I can't open PropAI pages or click around the site."
+        prompt_text = "Browser actions are not enabled for this workspace yet. I can still search and summarize listings in chat, but I can't open web pages or click around sites."
         _persist("assistant", prompt_text, blocks=[{
             "type": "error_state",
             "title": "Browser actions unavailable",
-            "body": "Enable browser actions in Workspace AI controls to let the agent open PropAI pages and click through the site. Until then I can only answer in text.",
+            "body": "Enable browser actions in Workspace AI controls to let the agent open internal or external web pages. Until then I can only answer in text.",
         }])
         return _wrap_chat_response({
             "content": prompt_text,
             "blocks": [{
                 "type": "error_state",
                 "title": "Browser actions unavailable",
-                "body": "Enable browser actions in Workspace AI controls to let the agent open PropAI pages and click through the site. Until then I can only answer in text.",
+                "body": "Enable browser actions in Workspace AI controls to let the agent open internal or external web pages. Until then I can only answer in text.",
             }],
             "sources": [],
             "status_steps": ["Browser actions are disabled"],
@@ -1625,7 +1625,7 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
         }, _is_inbox)
 
     if last_user and not browser_enabled and _looks_like_browser_followup(last_user) and _BROWSER_ACTION_SIGNALS.search(recent_text):
-        prompt_text = "I can’t open PropAI pages in this chat. I can still search listings here if you give me the filters, or I can keep it text-only."
+        prompt_text = "I can’t open web pages in this chat. I can still search listings here if you give me the filters, or I can keep it text-only."
         _persist("assistant", prompt_text, blocks=[{
             "type": "error_state",
             "title": "Browser actions unavailable",
@@ -1644,12 +1644,12 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
         }, _is_inbox)
 
     if last_user and _BROWSER_ACTION_SIGNALS.search(last_user) and browser_enabled and not str(req.browser_approval_token or "").strip():
-        prompt_text = "This looks like a browser task. Choose whether to use browser actions on PropAI or keep it conversational."
+        prompt_text = "This looks like a browser task. Choose whether to use browser actions on this web page or keep it conversational."
         browser_token = make_browser_approval_token(session_id, tenant_id, str(user.get("id") or ""))
         _persist("assistant", prompt_text, blocks=[{
             "type": "confirmation",
             "title": "Use browser actions?",
-            "body": "I can open PropAI pages, click through listings, or stay conversational and answer in text only.",
+            "body": "I can open internal or external web pages, click through them, or stay conversational and answer in text only.",
             "tool": "browser",
             "mode": "browser",
             "confirmation_token": browser_token,
@@ -1659,7 +1659,7 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
             "blocks": [{
                 "type": "confirmation",
                 "title": "Use browser actions?",
-                "body": "I can open PropAI pages, click through listings, or stay conversational and answer in text only.",
+                "body": "I can open internal or external web pages, click through them, or stay conversational and answer in text only.",
                 "tool": "browser",
                 "mode": "browser",
                 "confirmation_token": browser_token,
