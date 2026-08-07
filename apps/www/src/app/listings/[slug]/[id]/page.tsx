@@ -178,7 +178,10 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
       title: card.title,
       locality: card.locality,
       specRow: card.specRow,
-    }),
+      building: listing.building_name,
+      landmark: listing.landmark_name,
+      sourceMessage: listing.rawMessage?.message,
+    }, 155),
   };
 }
 
@@ -509,6 +512,9 @@ export default async function ListingPage({ params }: Params) {
                   title: card.title,
                   locality: card.locality,
                   specRow: card.specRow,
+                  building: listing.building_name,
+                  landmark: listing.landmark_name,
+                  sourceMessage: listing.rawMessage?.message,
                 })}
               </p>
             </div>
