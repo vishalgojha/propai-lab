@@ -46,6 +46,43 @@ type MapController = {
   fitBounds: (bounds: google.maps.LatLngBounds, padding?: number) => void;
 };
 
+type MarketSnapshot = {
+  buildings: Building[];
+  listings: MarketListing[];
+  fetchedAt: number;
+};
+
+const MARKET_CACHE_TTL_MS = 45_000;
+let marketSnapshotCache: MarketSnapshot | null = null;
+let marketSnapshotRequest: Promise<MarketSnapshot> | null = null;
+
+function loadMarketSnapshot(): Promise<MarketSnapshot> {
+  const now = Date.now();
+  if (marketSnapshotCache && now - marketSnapshotCache.fetchedAt < MARKET_CACHE_TTL_MS) {
+    return Promise.resolve(marketSnapshotCache);
+  }
+  if (marketSnapshotRequest) return marketSnapshotRequest;
+
+  marketSnapshotRequest = Promise.all([
+    getBuildings(500, 0),
+    marketSearchListings({ limit: 100, offset: 0, group_by_building: false }),
+  ])
+    .then(([buildingPayload, listingPayload]) => {
+      const snapshot: MarketSnapshot = {
+        buildings: Array.isArray(buildingPayload?.buildings) ? buildingPayload.buildings : [],
+        listings: Array.isArray(listingPayload?.results) ? listingPayload.results : [],
+        fetchedAt: Date.now(),
+      };
+      marketSnapshotCache = snapshot;
+      return snapshot;
+    })
+    .finally(() => {
+      marketSnapshotRequest = null;
+    });
+
+  return marketSnapshotRequest;
+}
+
 const mumbaiCenter = { lat: 19.076, lng: 72.8777 };
 const containerStyle = { width: "100%", height: "100%" };
 
@@ -86,15 +123,15 @@ function finitePositive(value: unknown) {
 }
 
 export function BuildingMapView() {
-  const [buildings, setBuildings] = useState<Building[]>([]);
+  const [buildings, setBuildings] = useState<Building[]>(() => marketSnapshotCache?.buildings ?? []);
   const [query, setQuery] = useState("");
   const [searchActive, setSearchActive] = useState(false);
   const [searchLoading, setSearchLoading] = useState(false);
   const [listings, setListings] = useState<MarketListing[]>([]);
-  const [browseListings, setBrowseListings] = useState<MarketListing[]>([]);
+  const [browseListings, setBrowseListings] = useState<MarketListing[]>(() => marketSnapshotCache?.listings ?? []);
   const [selectedKey, setSelectedKey] = useState("");
   const [pendingPan, setPendingPan] = useState<LatLng | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => !marketSnapshotCache);
   const [isMobile, setIsMobile] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedListing, setSelectedListing] = useState<MarketListing | null>(null);
@@ -111,14 +148,11 @@ export function BuildingMapView() {
 
   useEffect(() => {
     let active = true;
-    Promise.all([
-      getBuildings(500, 0),
-      marketSearchListings({ limit: 100, offset: 0, group_by_building: false }),
-    ])
-      .then(([buildingPayload, listingPayload]) => {
+    loadMarketSnapshot()
+      .then((snapshot) => {
         if (!active) return;
-        setBuildings(Array.isArray(buildingPayload?.buildings) ? buildingPayload.buildings : []);
-        setBrowseListings(Array.isArray(listingPayload?.results) ? listingPayload.results : []);
+        setBuildings(snapshot.buildings);
+        setBrowseListings(snapshot.listings);
       })
       .catch(() => active && setError("Market data could not be loaded right now."))
       .finally(() => active && setLoading(false));
@@ -360,8 +394,10 @@ export function BuildingMapView() {
       </div>
 
       <div className="flex shrink-0 flex-wrap items-center gap-2 text-xs text-text-muted">
-        <span className="rounded-full border border-border bg-surface px-3 py-1.5 font-medium text-text-primary">{searchActive ? `${listings.length} listings` : `${browseListings.length} latest listings`}</span>
-        <span className="rounded-full border border-border/70 px-3 py-1.5">{searchActive ? `${mappedCount} mapped buildings` : `${mappedCount} mapped buildings`}</span>
+        {!loading && <>
+          <span className="rounded-full border border-border bg-surface px-3 py-1.5 font-medium text-text-primary">{searchActive ? `${listings.length} listings` : `${browseListings.length} latest listings`}</span>
+          <span className="rounded-full border border-border/70 px-3 py-1.5">{mappedCount} mapped buildings</span>
+        </>}
         <span className="hidden sm:inline">Click a marker to inspect a building, or a listing for its full extracted details.</span>
       </div>
 
