@@ -1316,6 +1316,7 @@ async def confirm_browser_action(
             re.IGNORECASE,
         )
         had_explicit_url = bool(url_match)
+        from ai_chat_engine import execute_tool
 
         # Portal tasks use deterministic workflows. The model-driven browser
         # loop is intentionally not used for regulated Maharashtra portals: a
@@ -1413,8 +1414,6 @@ async def confirm_browser_action(
             "",
         )
         if url_match:
-            from ai_chat_engine import execute_tool
-
             url = alias_url or url_match.group(0).rstrip(".,!?;:)").strip()
             if not url.lower().startswith(("http://", "https://")):
                 url = f"https://{url}"
