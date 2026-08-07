@@ -1270,10 +1270,19 @@ def _ai_extraction_to_typed(
         elif tx == "rent":
             row.update({
                 "tenant_type": ai.get("tenant_type"),
+                "nationality": ai.get("nationality"),
                 "has_pets": ai.get("has_pets"),
                 "sharing_acceptable": ai.get("sharing_acceptable"),
+                "food_preference": ai.get("food_preference"),
+                "floor_preference": ai.get("floor_preference"),
+                "view_preference": ai.get("view_preference"),
+                "building_preferences": ai.get("building_preferences") or [],
+                "age_preference": ai.get("age_preference"),
+                "car_parking_min": ai.get("car_parking_min"),
+                "amenity_requirements": ai.get("amenity_requirements") or [],
                 "lease_term_preference": ai.get("lease_term_preference"),
                 "deposit_budget_max": ai.get("deposit_budget_max"),
+                "brokerage_willingness": ai.get("brokerage_willingness"),
             })
     return table, {k: v for k, v in row.items() if v is not None}
 
