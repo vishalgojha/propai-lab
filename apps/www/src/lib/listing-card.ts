@@ -177,6 +177,7 @@ export function formatCardPrice(
     if (unit === "cr") abs = price * 1_00_00_000;
     else if (unit === "lac") abs = price * 1_00_000;
     else if (unit === "k") abs = price * 1_000;
+    else if (unit === "abs" && abs > 0 && abs < 1_000) abs *= 1_00_000;
     // Guard against implausible monthly rents (e.g. mis-stored "abs" values
     // like 12 or 185 rupees). Anything under ₹1,000/month is not a real Mumbai
     // rent — fall back rather than show a clearly-wrong number.

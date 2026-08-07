@@ -719,6 +719,26 @@ export type RawMessageInfo = {
   timestamp: string | null;
 };
 
+function inferBuildingFromSource(message: string | null, locality: string | null): string | null {
+  const lines = String(message || "").split(/\r?\n/).map((line) =>
+    line.replace(/[\*_`~]/g, "").trim()).map((line) => {
+      let value = line;
+      while (value.startsWith("-") || value.startsWith(":") || value.startsWith("•")) value = value.slice(1).trim();
+      while (value.endsWith("-") || value.endsWith(":") || value.endsWith(",") || value.endsWith(".")) value = value.slice(0, -1).trim();
+      return value;
+    }).filter(Boolean);
+  for (let i = 0; i < lines.length; i += 1) {
+    if (!/\b\d+(?:\.\d+)?\s*(?:bhk|rk)\b/i.test(lines[i])) continue;
+    for (const candidate of lines.slice(i + 1, i + 5)) {
+      if (!candidate || candidate.length > 70 || candidate.toLowerCase() === (locality || "").toLowerCase()) continue;
+      if (/\b(?:prime location|location|rent|sale|lease|available|carpet|area|status|floor|parking|possession|inspection|photos?|contact|details|site visit|brokerage)\b/i.test(candidate)) continue;
+      if (/[₹]|\b\d{5,}\b|\b(?:sq\.?\s*ft|lakh|lakhs?|crore|cr|per\s+month)\b/i.test(candidate)) continue;
+      if (/[A-Za-z]/.test(candidate)) return candidate;
+    }
+  }
+  return null;
+}
+
 export type ListingDetail = BuildingListing & {
   area_sqft: number | null;
   landmark_name: string | null;
@@ -1012,7 +1032,7 @@ export async function getListingById(id: number): Promise<ListingDetail | null> 
     locality_resolved: data.locality_resolved ?? null,
     view: data.view,
     floor_description: data.floor_description,
-    building_name: data.building_name,
+    building_name: data.building_name || inferBuildingFromSource(rawMessage?.message ?? null, data.micro_market),
     landmark_name: data.landmark_name,
     location_label: data.location_label,
     broker_name: data.broker_name,
