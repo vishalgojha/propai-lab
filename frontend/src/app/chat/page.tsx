@@ -1097,6 +1097,11 @@ export default function ChatPage() {
                         });
                         const activityParts = parts.filter((p) => p.type === AGENT_ACTIVITY_TYPE);
                         const confirmationParts = parts.filter((p) => p.type === AGENT_CONFIRMATION_TYPE);
+                        const completedConfirmationTokens = new Set(
+                          activityParts
+                            .map((part: any) => String(part.data?.trace?.confirmation_token || ""))
+                            .filter(Boolean),
+                        );
                         const statusParts = parts.filter((p) => p.type === AGENT_STATUS_TYPE);
                         const structuredItems = dataParts.flatMap((part) => {
                           const block = part.data || {};
@@ -1117,6 +1122,16 @@ export default function ChatPage() {
                                 <div className="min-w-0 flex-1">
                                   <div className="font-semibold text-white">{block?.title || "What I’m doing"}</div>
                                   {block?.body && <div className="mt-1 text-xs text-zinc-400">{block.body}</div>}
+                                  {trace?.source_url && (
+                                    <a
+                                      href={String(trace.source_url)}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="mt-2 inline-flex text-xs text-zinc-200 underline decoration-zinc-600 underline-offset-2 hover:text-white"
+                                    >
+                                      Open page in your browser ↗
+                                    </a>
+                                  )}
                                   {steps.length > 0 && (
                                     <div className="mt-3 space-y-1.5">
                                       {steps.map((step: string, stepIndex: number) => (
@@ -1211,7 +1226,7 @@ export default function ChatPage() {
                             {confirmationParts.map((part: any, confirmationIndex: number) => {
                               const block = part.data || {};
                               const token = String(block.confirmation_token || "");
-                              const state = confirmationState[token];
+                              const state = completedConfirmationTokens.has(token) ? "confirmed" : confirmationState[token];
                               const isBrowser = String(block.tool || "") === "browser" || String(block.mode || "") === "browser";
                               // Approval is a one-time prompt. Once the
                               // choice has completed, remove it from the
