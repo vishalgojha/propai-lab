@@ -484,7 +484,7 @@ async def get_workspace_ai_settings(user: dict = Depends(require_user), tenant_i
         settings = WorkspaceAISettings(
             tenant_id=tenant_id,
             browser_provider="agent-browser",
-            allowed_routes=["/chat", "/map", "/listings/*", "/brokers/*", "/admin/*"],
+            allowed_routes=["*"],
             allowed_actions=["open", "click", "fill", "select", "scroll"],
         )
     payload = asdict(settings)
