@@ -478,6 +478,7 @@ export default function ChatPage() {
   const [renameValue, setRenameValue] = useState("");
   const [contactingListingId, setContactingListingId] = useState<number | null>(null);
   const [showFreshChatNotice, setShowFreshChatNotice] = useState(false);
+  const [pendingTaskLabel, setPendingTaskLabel] = useState("Searching live listings…");
   const [confirmationState, setConfirmationState] = useState<Record<string, "pending" | "confirmed" | "error">>({});
 
   const activeSessionStorageKey = user?.id ? `propai_active_chat_session:${user.id}` : "";
@@ -783,6 +784,7 @@ export default function ChatPage() {
       void loadSessions();
       import("@/lib/sounds").then(({ playChatResponse }) => playChatResponse());
     }
+    if (status === "ready" || status === "error") setPendingTaskLabel("Searching live listings…");
     previousStatus.current = status;
   }, [loadSessions, status, user?.id]);
 
@@ -900,6 +902,9 @@ export default function ChatPage() {
     e.preventDefault();
     if (!input.trim() || status === "submitted") return;
     setSessionError("");
+    const submittedText = input.trim();
+    const browserTask = /\b(?:browser|browse|click|navigate|scroll|go to|website|open\s+(?:https?:\/\/|www\.|[a-z0-9][a-z0-9.-]*\.[a-z]{2,})|check\s+(?:the\s+)?(?:ai\s+provider|provider|settings?)\s+page)\b/i.test(submittedText);
+    setPendingTaskLabel(browserTask ? "Using Agent Browser…" : "Searching live listings…");
     if (!sessionIdRef.current) {
       // Guard: only one createChatSession() call per burst.
       if (sessionCreationInFlightRef.current) {
@@ -909,7 +914,7 @@ export default function ChatPage() {
         return;
       }
       sessionCreationInFlightRef.current = true;
-      const text = input.trim();
+      const text = submittedText;
       api.createChatSession(text.slice(0, 80), "parsed").then((session) => {
         if (!session?.id) throw new Error("Could not create a chat session.");
         sessionIdRef.current = session.id;
@@ -932,7 +937,7 @@ export default function ChatPage() {
       });
       return;
     }
-    sendMessage({ text: input.trim() });
+    sendMessage({ text: submittedText });
     setInput("");
     setShowFreshChatNotice(false);
     import("@/lib/sounds").then((s) => s.playMessageSent());
@@ -1410,7 +1415,7 @@ export default function ChatPage() {
               <span className="text-lg mt-1">🤖</span>
               <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm text-zinc-400">
                 <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-emerald-400" aria-hidden="true" />
-                <span>Searching live listings…</span>
+                <span>{pendingTaskLabel}</span>
               </div>
             </motion.div>
           )}
