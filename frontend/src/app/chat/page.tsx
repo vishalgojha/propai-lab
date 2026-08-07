@@ -729,7 +729,11 @@ export default function ChatPage() {
         })));
     } catch (e) {
       if (request !== hydrationRequest.current) return;
-      setMessages([]);
+      // Keep the currently rendered transcript when hydration has a
+      // transient failure. Clearing it here also removes a live browser
+      // approval card, even though its signed token is still actionable.
+      // The error banner tells the user that refresh failed; a successful
+      // retry will replace the transcript with the database copy.
       setSessionError(e instanceof Error ? e.message : "Could not load this saved chat");
     } finally {
       if (request === hydrationRequest.current) setSessionLoading(false);
