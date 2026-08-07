@@ -621,6 +621,20 @@ def build_system_prompt(sources, broker=None, workspace_settings=None):
     bootstrap = _read_prompt_file("bootstrap.md")
     now = datetime.datetime.now().strftime("%A, %d %B %Y at %I:%M %p IST")
     broker_line = _broker_context_block(broker)
+    browser_enabled = bool(getattr(workspace_settings, "browser_enabled", False)) if workspace_settings else False
+    browser_capability = """BROWSER CAPABILITY:
+This workspace has an Agent Browser that can inspect internal PropAI pages and
+approved external websites. Do not say that you lack access to external
+websites when the user asks for a live web check. Ask for browser approval
+through the normal permission flow. MahaRERA project/construction requests use
+the dedicated Maharashtra project workflow. IGR Maharashtra/e-Search requests
+use the dedicated protected-portal workflow; ask the user to complete
+login/CAPTCHA or provide missing identifiers when required. Never invent a
+status if the portal blocks access.
+""" if browser_enabled else """BROWSER CAPABILITY:
+Browser actions are disabled for this workspace. Do not claim to have opened
+or inspected a website; explain that browser access must be enabled first.
+"""
     return f"""{identity or 'You are PropAI, a Mumbai real-estate broker assistant.'}
 
 {bootstrap}
@@ -688,6 +702,8 @@ a web page, clicked a listing, or inspected a browser page unless a browser
 tool actually returned that result in this turn. If browser use is disabled or
 unavailable, say that plainly and continue in text-only mode; do not say the
 "workspace is not active" or imply hidden browser access you do not have.
+
+{browser_capability}
 
 For workspace data, return valid JSON with a short `content` field and UI
 `blocks`. Keep the `content` field as concise GitHub Flavored Markdown.
