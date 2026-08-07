@@ -1287,24 +1287,30 @@ async def confirm_browser_action(
     user: dict = Depends(require_user),
     tenant_id: str | None = Depends(get_tenant_context),
 ):
-    tenant_id = await asyncio.to_thread(_resolve_active_organization_id, user, tenant_id)
-    payload = _read_browser_approval_token(req.confirmation_token, tenant_id, str(user.get("id") or ""))
-    session_id = str(payload.get("session_id") or "").strip()
-    if not session_id:
-        raise HTTPException(400, "Browser approval token is missing a session id")
-    session = await _owned_chat_session(session_id, user, tenant_id)
-    messages = await asyncio.to_thread(storage.get_ai_chat_messages, session_id, tenant_id=tenant_id)
-    forwarded = ChatRequest(
-        messages=messages,
-        api_key="",
-        model="",
-        session_id=session_id,
-        broker_phone=str(session.get("broker_phone") or ""),
-        source="inbox",
-        browser_approval_token=req.confirmation_token,
-        persist_user_turn=False,
-    )
-    return await ai_chat(forwarded, user=user, tenant_id=tenant_id)
+    try:
+        tenant_id = await asyncio.to_thread(_resolve_active_organization_id, user, tenant_id)
+        payload = _read_browser_approval_token(req.confirmation_token, tenant_id, str(user.get("id") or ""))
+        session_id = str(payload.get("session_id") or "").strip()
+        if not session_id:
+            raise HTTPException(400, "Browser approval token is missing a session id")
+        session = await _owned_chat_session(session_id, user, tenant_id)
+        messages = await asyncio.to_thread(storage.get_ai_chat_messages, session_id, tenant_id=tenant_id)
+        forwarded = ChatRequest(
+            messages=messages,
+            api_key="",
+            model="",
+            session_id=session_id,
+            broker_phone=str(session.get("broker_phone") or ""),
+            source="inbox",
+            browser_approval_token=req.confirmation_token,
+            persist_user_turn=False,
+        )
+        return await ai_chat(forwarded, user=user, tenant_id=tenant_id)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        _logger.exception("Browser approval failed before execution for user=%s", user.get("id"))
+        raise HTTPException(500, f"Browser approval could not start: {type(exc).__name__}") from exc
 
 
 @router.post("/api/ai/chat/browser/decline")
