@@ -416,7 +416,7 @@ class WorkspaceAISettings:
     max_browser_sessions: int = 1
     max_tool_rounds: int = 8
     browser_enabled: bool = False
-    browser_provider: str = "browser-use"
+    browser_provider: str = "agent-browser"
     allowed_routes: list[str] = field(default_factory=list)
     allowed_actions: list[str] = field(default_factory=list)
     notes: str = ""
@@ -430,7 +430,7 @@ class AgentBrowserSession:
     tenant_id: Optional[str] = None
     session_id: Optional[str] = None
     user_id: Optional[str] = None
-    browser_provider: str = "browser-use"
+    browser_provider: str = "agent-browser"
     task_label: str = ""
     start_url: str = ""
     current_url: str = ""

@@ -5881,16 +5881,22 @@ class SupabaseStorage(Storage):
         if not tid:
             raise ValueError("tenant_id is required to save workspace AI settings")
         data = {k: v for k, v in settings.__dict__.items() if v is not None}
+        data.pop("id", None)
         data.pop("created_at", None)
         data.pop("updated_at", None)
         data["tenant_id"] = tid
-        existing = self.client.table("workspace_ai_settings").select("id").eq("tenant_id", tid).limit(1).execute()
-        if existing.data:
-            row_id = int(existing.data[0]["id"])
-            self.client.table("workspace_ai_settings").update(data).eq("id", row_id).execute()
-            return row_id
-        res = self.client.table("workspace_ai_settings").insert(data).execute()
-        return int(res.data[0]["id"]) if res.data else 0
+        data["browser_provider"] = "agent-browser" if str(data.get("browser_provider") or "").lower() in {
+            "", "browser-use", "browser-use-cli", "browser_use", "playwright"
+        } else data.get("browser_provider")
+        try:
+            res = self.client.table("workspace_ai_settings").upsert(data, on_conflict="tenant_id").execute()
+        except Exception:
+            import logging
+            logging.exception("workspace_ai_settings upsert failed for tenant %s", tid)
+            raise
+        if not res.data:
+            raise RuntimeError(f"workspace_ai_settings upsert returned no row for tenant {tid}")
+        return int(res.data[0]["id"])
 
     # ── Agent Browser / Audit traces ─────────────────────────────────────
 

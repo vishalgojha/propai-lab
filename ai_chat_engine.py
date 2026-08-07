@@ -1249,8 +1249,8 @@ _PRICE_COLS = {"price", "price_numeric"}
 
 def _normalize_browser_provider_name(provider_name: str | None) -> str:
     normalized = str(provider_name or "").strip().lower()
-    if normalized in {"", "playwright", "browser-use-cli", "browser_use"}:
-        return "browser-use"
+    if normalized in {"", "browser-use", "playwright", "browser-use-cli", "browser_use", "agent-browser"}:
+        return "agent-browser"
     return normalized
 
 
@@ -2580,7 +2580,7 @@ def execute_tool(
 
         browser_settings = _browser_settings_row(storage_client, tenant_id)
         effective_provider = _normalize_browser_provider_name(
-            browser_provider or browser_settings.get("browser_provider") or "browser-use"
+            browser_provider or browser_settings.get("browser_provider") or "agent-browser"
         )
         # Allow workspace overrides to disable browser use even if the LLM tries.
         if not browser_settings.get("browser_enabled", browser_enabled):
