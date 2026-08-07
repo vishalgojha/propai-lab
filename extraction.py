@@ -2070,19 +2070,35 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
             print(f"  [extract] save_parsed error: {exc}", flush=True)
             continue
 
-        # Typed rows no longer write legacy resolver_decisions (their foreign
-        # key points at the retired parsed_output table).  Preserve the
-        # building-resolution side effect explicitly: a newly observed
-        # building must still get a canonical buildings row, alias, and one
-        # queued enrichment job instead of remaining as text on the listing.
+        # Persist AI-selected buildings when the ID belongs to this tenant;
+        # otherwise discover the named building and attach a new alias.
         if parsed.get("building_name"):
             try:
-                discovered_building = storage.ensure_building_from_observation(
-                    parsed["building_name"],
-                    parsed.get("micro_market"),
-                    tenant_id=org_id,
+                discovered_building = None
+                ai_building_id = (
+                    ai_item.get("building_id")
+                    if ai_item and ai_item.get("building_context_allowed")
+                    else None
                 )
+                if ai_building_id:
+                    try:
+                        candidate = storage.get_building(building_db_id=int(ai_building_id))
+                        if candidate and (not org_id or not candidate.get("tenant_id") or candidate.get("tenant_id") == org_id):
+                            discovered_building = candidate
+                    except Exception:
+                        discovered_building = None
+                if not discovered_building:
+                    discovered_building = storage.ensure_building_from_observation(
+                        parsed["building_name"], parsed.get("micro_market"), tenant_id=org_id
+                    )
                 if discovered_building:
+                    if ai_building_id:
+                        storage.create_building_alias_for_building(
+                            int(discovered_building["id"]), parsed["building_name"],
+                            discovered_building.get("canonical_name") or parsed["building_name"],
+                            confidence=float(resolver_result.get("resolver_confidence") or 0.0),
+                            source="ai",
+                        )
                     resolver_result["building_id"] = discovered_building.get("id")
                     resolver_result["building_name"] = discovered_building.get(
                         "canonical_name", parsed["building_name"]

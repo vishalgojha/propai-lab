@@ -1019,6 +1019,31 @@ def _extract_json_object(raw: str | None) -> object | None:
     return None
 
 
+def _normalize_configuration_type(value, bhk=None) -> str | None:
+    """Return the canonical display/storage label for a unit configuration."""
+    text = str(value).strip() if value is not None else ""
+    fallback = _coerce_float(bhk)
+    if not text and fallback is None:
+        return None
+    if re.fullmatch(r"\d+(?:\.\d+)?", text):
+        number = _coerce_float(text)
+        if number == 0.5:
+            return "1 RK"
+        return f"{number:g} BHK" if number is not None else None
+    match = re.fullmatch(r"(\d+(?:\.\d+)?)\s*(BHK|RK)", text, re.IGNORECASE)
+    if match:
+        number = _coerce_float(match.group(1))
+        kind = match.group(2).upper()
+        if number == 0.5 and kind == "BHK":
+            return "1 RK"
+        return f"{number:g} {kind}" if number is not None else None
+    if text:
+        return text
+    if fallback == 0.5:
+        return "1 RK"
+    return f"{fallback:g} BHK" if fallback is not None else None
+
+
 def _segment_document(raw_text: str) -> dict:
     """Reconstruct a WhatsApp message into logical blocks."""
     inline_pattern, inline_chunks = split_message_into_chunks(raw_text)
@@ -1120,6 +1145,7 @@ def _normalize_extraction(raw: dict) -> dict:
 
     # bhk
     result["bhk"] = _coerce_float(raw.get("bhk"))
+    result["configuration_type"] = _normalize_configuration_type(raw.get("configuration_type"), result["bhk"])
 
     # carpet_area_sqft
     result["carpet_area_sqft"] = _coerce_float(raw.get("carpet_area_sqft"))

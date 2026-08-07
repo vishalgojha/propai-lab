@@ -1,0 +1,60 @@
+"""Deterministic building-name normalization and candidate validation."""
+
+from __future__ import annotations
+
+import re
+
+
+# Mumbai real-estate abbreviations which must survive title-casing.
+BUILDING_ACRONYMS = frozenset({
+    "AP", "AR", "CHS", "DGS", "DLH", "HDIL", "INS", "LIC", "NG",
+    "RNA", "VIP",
+})
+
+_DISPLAY_OVERRIDES = {"HANDM": "HandM"}
+_JUNK_PHRASES = frozenset({
+    "thanks and regards", "thanks regards", "plz call", "pls call",
+    "please call", "call", "plzz call", "plz", "pls", "ownership",
+    "untouch flat", "old bldg", "old building", "regards", "thank you",
+})
+_JUNK_RE = re.compile(r"\b(?:pl+z|pl+ease|pls?)\b.*\bcall\b", re.I)
+
+
+def normalize_building_name(value: str | None) -> str:
+    """Canonical display casing without changing the observed words."""
+    text = " ".join(str(value or "").split()).strip(" .,;:")
+    if not text:
+        return ""
+
+    def normalize_piece(piece: str) -> str:
+        if not piece:
+            return piece
+        key = re.sub(r"[^A-Za-z0-9]", "", piece).upper()
+        if key in _DISPLAY_OVERRIDES:
+            return _DISPLAY_OVERRIDES[key]
+        if key in BUILDING_ACRONYMS:
+            return key
+        return piece[:1].upper() + piece[1:].lower()
+
+    # Keep separators such as 81-Aureate while normalizing each side.
+    return " ".join(
+        "-".join(normalize_piece(part) for part in token.split("-"))
+        for token in text.split()
+    )
+
+
+def is_valid_building_candidate(value: str | None) -> bool:
+    """Reject obvious broker chatter before it becomes canonical inventory."""
+    text = " ".join(str(value or "").split()).strip(" .,;:-")
+    if len(text) < 3 or not re.search(r"[A-Za-z]", text):
+        return False
+    folded = text.casefold()
+    if folded in _JUNK_PHRASES or _JUNK_RE.search(text):
+        return False
+    if len(text.split()) == 1 and folded in {"thanks", "regards", "ownership", "call"}:
+        return False
+    # A candidate made entirely from generic chatter is not a building name.
+    if re.fullmatch(r"(?:thanks?|regards?|call|contact|available|ownership|flat|bldg|building)(?:\s+\w+)?", folded):
+        return False
+    return True
+
