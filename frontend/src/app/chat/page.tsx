@@ -501,8 +501,9 @@ export default function ChatPage() {
     try {
       await api.confirmAgentAction(token);
       setConfirmationState((current) => ({ ...current, [token]: "confirmed" }));
-    } catch {
+    } catch (error) {
       setConfirmationState((current) => ({ ...current, [token]: "error" }));
+      setSessionError(error instanceof Error ? error.message : "Browser action failed.");
     }
   }, []);
 
@@ -1190,19 +1191,19 @@ export default function ChatPage() {
                           const events = Array.isArray(block?.events) ? block.events : [];
                           const trace = block?.trace || {};
                           return (
-                            <div key={`activity-${activityIndex}`} className="rounded-xl border border-emerald-500/25 bg-emerald-500/8 px-4 py-3 text-sm text-emerald-50">
+                            <div key={`activity-${activityIndex}`} className="rounded-xl border border-white/15 bg-zinc-950 px-4 py-3 text-sm text-zinc-100 shadow-lg shadow-black/20">
                               <div className="flex items-start gap-3">
-                                <div className="mt-0.5 rounded-full border border-emerald-400/30 bg-emerald-400/10 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-emerald-200">
+                                <div className="mt-0.5 rounded-full border border-white/20 bg-white/5 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-300">
                                   Live agent trace
                                 </div>
                                 <div className="min-w-0 flex-1">
                                   <div className="font-semibold text-white">{block?.title || "What I’m doing"}</div>
-                                  {block?.body && <div className="mt-1 text-xs text-emerald-100/80">{block.body}</div>}
+                                  {block?.body && <div className="mt-1 text-xs text-zinc-400">{block.body}</div>}
                                   {steps.length > 0 && (
                                     <div className="mt-3 space-y-1.5">
                                       {steps.map((step: string, stepIndex: number) => (
-                                        <div key={stepIndex} className="flex items-start gap-2 text-xs text-emerald-100/90">
-                                          <span className="mt-1 h-1.5 w-1.5 rounded-full bg-emerald-300" />
+                                        <div key={stepIndex} className="flex items-start gap-2 text-xs text-zinc-300">
+                                          <span className="mt-1 h-1.5 w-1.5 rounded-full bg-zinc-300" />
                                           <span>{step}</span>
                                         </div>
                                       ))}
@@ -1210,7 +1211,7 @@ export default function ChatPage() {
                                   )}
                                   {events.length > 0 && (
                                     <div className="mt-3 rounded-lg border border-white/10 bg-black/10 p-2 text-[11px] text-zinc-200">
-                                      <div className="mb-1 font-semibold uppercase tracking-[0.14em] text-emerald-200/80">Tool trail</div>
+                                      <div className="mb-1 font-semibold uppercase tracking-[0.14em] text-zinc-400">Tool trail</div>
                                       <div className="space-y-1">
                                         {events.slice(-5).map((event: any, eventIndex: number) => {
                                           const summary = event?.summary || event?.detail || event?.title || event?.tool || "Action";
@@ -1226,11 +1227,11 @@ export default function ChatPage() {
                                     </div>
                                   )}
                                   {(trace?.route || trace?.last_updated || trace?.browser_provider || trace?.browser_session_id) && (
-                                    <div className="mt-3 flex flex-wrap gap-2 text-[10px] uppercase tracking-[0.14em] text-emerald-100/70">
-                                      {trace?.route && <span className="rounded-full border border-emerald-400/25 bg-emerald-400/10 px-2 py-1">{trace.route}</span>}
-                                      {trace?.browser_provider && <span className="rounded-full border border-emerald-400/25 bg-emerald-400/10 px-2 py-1">{trace.browser_provider}</span>}
-                                      {trace?.browser_session_id && <span className="rounded-full border border-emerald-400/25 bg-emerald-400/10 px-2 py-1">session {String(trace.browser_session_id).slice(0, 8)}</span>}
-                                      {trace?.last_updated && <span className="rounded-full border border-emerald-400/25 bg-emerald-400/10 px-2 py-1">{String(trace.last_updated)}</span>}
+                                    <div className="mt-3 flex flex-wrap gap-2 text-[10px] uppercase tracking-[0.14em] text-zinc-500">
+                                      {trace?.route && <span className="rounded-full border border-white/15 bg-white/5 px-2 py-1">{trace.route}</span>}
+                                      {trace?.browser_provider && <span className="rounded-full border border-white/15 bg-white/5 px-2 py-1">{trace.browser_provider}</span>}
+                                      {trace?.browser_session_id && <span className="rounded-full border border-white/15 bg-white/5 px-2 py-1">session {String(trace.browser_session_id).slice(0, 8)}</span>}
+                                      {trace?.last_updated && <span className="rounded-full border border-white/15 bg-white/5 px-2 py-1">{String(trace.last_updated)}</span>}
                                     </div>
                                   )}
                                 </div>
@@ -1295,22 +1296,22 @@ export default function ChatPage() {
                               const state = confirmationState[token];
                               const isBrowser = String(block.tool || "") === "browser" || String(block.mode || "") === "browser";
                               return (
-                                <div key={`confirmation-${confirmationIndex}`} className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-3 text-sm text-amber-100">
+                                <div key={`confirmation-${confirmationIndex}`} className="rounded-lg border border-white/20 bg-zinc-950 px-3 py-3 text-sm text-zinc-100 shadow-lg shadow-black/20">
                                   <div className="font-semibold">{block.title || "Confirmation required"}</div>
-                                  <div className="mt-1 text-xs text-amber-100/80">{block.body || "This action will change workspace data."}</div>
+                                  <div className="mt-1 text-xs text-zinc-400">{block.body || "This action will change workspace data."}</div>
                                   {state === "confirmed" ? (
-                                    <div className="mt-2 text-xs text-emerald-300">
+                                    <div className="mt-2 text-xs text-zinc-300">
                                       {isBrowser ? "Browser choice handled." : "Action confirmed and completed."}
                                     </div>
                                   ) : state === "error" ? (
-                                    <div className="mt-2 text-xs text-red-300">Could not complete that action. Please try again.</div>
+                                    <div className="mt-2 text-xs text-zinc-400">Could not complete that action. The error is shown above.</div>
                                   ) : isBrowser ? (
                                     <div className="mt-2 flex flex-wrap gap-2">
                                       <button
                                         type="button"
                                         disabled={!token || state === "pending"}
                                         onClick={() => void handleBrowserAction(token, true)}
-                                        className="rounded-md border border-emerald-400/40 bg-emerald-400/15 px-3 py-1.5 text-xs font-semibold text-emerald-100 hover:bg-emerald-400/25 disabled:cursor-wait disabled:opacity-60"
+                                        className="rounded-md border border-white/25 bg-white/10 px-3 py-1.5 text-xs font-semibold text-white hover:bg-white/15 disabled:cursor-wait disabled:opacity-60"
                                       >
                                         {state === "pending" ? "Starting browser…" : "Use browser"}
                                       </button>
@@ -1318,7 +1319,7 @@ export default function ChatPage() {
                                         type="button"
                                         disabled={!token || state === "pending"}
                                         onClick={() => void handleBrowserAction(token, false)}
-                                        className="rounded-md border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-semibold text-zinc-200 hover:bg-white/10 disabled:cursor-wait disabled:opacity-60"
+                                        className="rounded-md border border-white/15 bg-black px-3 py-1.5 text-xs font-semibold text-zinc-300 hover:bg-white/5 disabled:cursor-wait disabled:opacity-60"
                                       >
                                         Continue conversational
                                       </button>
