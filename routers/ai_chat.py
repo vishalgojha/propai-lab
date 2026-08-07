@@ -494,6 +494,27 @@ def _is_conversational_explanation(text: str) -> bool:
     return bool(_CONVERSATIONAL_EXPLANATION_SIGNALS.search(text or ""))
 
 
+def _looks_like_browser_followup(text: str) -> bool:
+    cleaned = re.sub(r"[^a-z0-9\s]+", " ", (text or "").lower()).strip()
+    if not cleaned:
+        return False
+    tokens = cleaned.split()
+    if len(tokens) > 3:
+        return False
+    return cleaned in {
+        "show",
+        "open",
+        "go",
+        "click",
+        "there",
+        "that",
+        "do it",
+        "continue",
+        "next",
+        "proceed",
+    }
+
+
 # ═══════════════════════════════════════════════════════════════════
 # Promote helpers
 # ═══════════════════════════════════════════════════════════════════
@@ -1487,6 +1508,7 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
             }, _is_inbox)
 
     browser_enabled = bool(workspace_ai_settings and getattr(workspace_ai_settings, "browser_enabled", False))
+    recent_text = " ".join(str(msg.get("content") or "") for msg in effective_messages[-8:])
     if last_user and _BROWSER_ACTION_SIGNALS.search(last_user) and not browser_enabled:
         prompt_text = "Browser actions are not enabled for this workspace yet. I can still search and summarize listings in chat, but I can't open PropAI pages or click around the site."
         _persist("assistant", prompt_text, blocks=[{
@@ -1504,6 +1526,25 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
             "sources": [],
             "status_steps": ["Browser actions are disabled"],
             "trace": {"route": "browser_disabled_text_only"},
+        }, _is_inbox)
+
+    if last_user and not browser_enabled and _looks_like_browser_followup(last_user) and _BROWSER_ACTION_SIGNALS.search(recent_text):
+        prompt_text = "I can’t open PropAI pages in this chat. I can still search listings here if you give me the filters, or I can keep it text-only."
+        _persist("assistant", prompt_text, blocks=[{
+            "type": "error_state",
+            "title": "Browser actions unavailable",
+            "body": "This follow-up is asking for page interaction, but browser actions are not enabled in this workspace.",
+        }])
+        return _wrap_chat_response({
+            "content": prompt_text,
+            "blocks": [{
+                "type": "error_state",
+                "title": "Browser actions unavailable",
+                "body": "This follow-up is asking for page interaction, but browser actions are not enabled in this workspace.",
+            }],
+            "sources": [],
+            "status_steps": ["Browser actions are disabled"],
+            "trace": {"route": "browser_followup_text_only"},
         }, _is_inbox)
 
     if last_user and _BROWSER_ACTION_SIGNALS.search(last_user) and browser_enabled and not str(req.browser_approval_token or "").strip():
