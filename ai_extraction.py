@@ -371,7 +371,7 @@ _FOCUSED_FIELDS = {
     ("residential", "sale", True): "bhk_options, budget_min, budget_max, area_min_sqft, area_max_sqft, locality_options, building_preferences, furnishing_preference, possession_preference, car_parking_min, buyer_type, transaction_nature, urgency, is_flexible, deal_tags, title",
     ("residential", "rent", True): "bhk_options, configuration_preference, budget_min, budget_max, area_min_sqft, area_max_sqft, carpet_area_min_sqft, carpet_area_max_sqft, built_up_area_min_sqft, built_up_area_max_sqft, locality_options, building_preferences, furnishing_preference, possession_preference, age_preference, floor_preference, view_preference, deposit_budget_max, tenant_type, nationality, has_pets, sharing_acceptable, food_preference, car_parking_min, amenity_requirements, lease_term_preference, company_lease_criteria, brokerage_willingness, urgency, is_flexible, deal_tags, needs_review, title",
     ("commercial", "sale", True): "commercial_use_type, area_min_sqft, area_max_sqft, budget_min, budget_max, budget_per_sqft_max, locality_options, fitout_preference, car_parking_min, needs_mezzanine, needs_lift, needs_power_backup, needs_central_ac, min_power_load_kw, buyer_type, urgency, is_flexible, deal_tags, title",
-    ("commercial", "rent", True): "commercial_use_type, intended_use_details, area_min_sqft, area_max_sqft, area_basis_preference, budget_min, budget_max, budget_per_sqft_max, locality_options, location_flexibility, fitout_preference, floor_min, floor_max, floor_preference, car_parking_min, parking_required, needs_attached_washroom, needs_washroom, needs_pantry, needs_mezzanine, needs_lift, needs_power_backup, needs_central_ac, premium_building_required, glass_facade_required, residential_cum_commercial_ok, by_lanes_accepted, min_cabin_count, min_workstation_count, needs_conference_room, deposit_budget_max, lease_term_preference, max_lock_in_months, max_notice_period_months, company_type, team_size, media_requested, urgency, brokerage_context, brokerage_terms_raw, contacts, is_flexible, deal_tags, title",
+    ("commercial", "rent", True): "commercial_use_type, intended_use_details, area_min_sqft, area_max_sqft, area_basis_preference, budget_min, budget_max, budget_per_sqft_max, budget_includes_maintenance, locality_options, location_flexibility, fitout_preference, floor_min, floor_max, floor_count_max, floor_preference, consecutive_floors_required, car_parking_min, parking_required, needs_attached_washroom, needs_washroom, needs_pantry, needs_mezzanine, needs_lift, needs_power_backup, needs_central_ac, power_requirements, premium_building_required, glass_facade_required, residential_cum_commercial_ok, by_lanes_accepted, entrance_requirement, signage_required, loading_access_required, min_cabin_count, min_workstation_count, needs_conference_room, deposit_budget_max, lease_term_preference, max_lock_in_months, max_notice_period_months, company_type, team_size, media_requested, urgency, brokerage_context, brokerage_terms_raw, contacts, is_flexible, deal_tags, title",
 }
 
 
@@ -604,11 +604,22 @@ Commercial rent requirement rules:
   corridor into one locality.
 - Budget is a monthly rental budget. “90K to 1 lakh” becomes budget_min=90000
   and budget_max=100000. A single “up to 150K” sets budget_max=150000.
+- Normalize common broker spellings such as “lack”, “lacs”, “lac”, and “L” to
+  lakh when the surrounding text clearly describes a budget. Preserve the raw
+  wording and set needs_review=true if the unit remains ambiguous.
 - Furnishing is a preference. Capture minimum cabins, workstations, conference
   rooms, washrooms, attached washroom, pantry, lift, parking, floor range, and
   building standards as explicit constraints. “Commercial building not
   necessary” means residential_cum_commercial_ok=true; “only commercial premium
   building” means premium_building_required=true and the commercial preference.
+- Capture operational requirements such as a street-facing or visible entrance,
+  signage/branding visibility, loading or vehicle access, power/load needs,
+  ground-floor or floor-count limits, and consecutive-floor requirements. Keep
+  “near [road]”, “road touch”, and preferred roads in location_flexibility rather
+  than inventing a normalized locality.
+- If the budget explicitly includes maintenance/CAM, set
+  budget_includes_maintenance=true; otherwise leave it null. Do not invent CAM
+  for a requirement merely because it is common in commercial leases.
 - Extract “glass facade”, “photos/pics requested”, and similar non-price needs as
   structured searchable requirements when present. Never treat photos as proof
   that a listing has been verified.
@@ -785,8 +796,11 @@ _PASSTHROUGH_FIELDS = frozenset({
     "area_min_sqft", "area_max_sqft", "budget_min", "budget_max",
     "budget_per_sqft_max", "locality_options", "fitout_preference",
     "intended_use_details", "area_basis_preference", "location_flexibility",
-    "floor_min", "floor_max", "floor_preference", "parking_required",
+    "floor_min", "floor_max", "floor_count_max", "floor_preference",
+    "consecutive_floors_required", "parking_required",
     "needs_attached_washroom", "needs_washroom", "needs_pantry",
+    "power_requirements", "entrance_requirement", "signage_required",
+    "loading_access_required", "budget_includes_maintenance",
     "premium_building_required", "glass_facade_required",
     "residential_cum_commercial_ok", "by_lanes_accepted", "media_requested",
     "min_cabin_count", "min_workstation_count", "needs_conference_room",
@@ -809,7 +823,7 @@ _NUMERIC_PASSTHROUGH_FIELDS = frozenset({
     "notice_period_months", "area_min_sqft", "area_max_sqft",
     "budget_min", "budget_max", "budget_per_sqft_max", "car_parking_min",
     "min_power_load_kw", "original_bhk", "current_bhk", "floor_min",
-    "floor_max", "balcony_area_sqft", "terrace_area_sqft",
+    "floor_max", "floor_count_max", "balcony_area_sqft", "terrace_area_sqft",
     "covered_terrace_area_sqft", "sellable_area_sqft",
     "computed_total_asking_price", "super_built_up_area_sqft", "saleable_area_sqft",
     "floor_plate_sqft",

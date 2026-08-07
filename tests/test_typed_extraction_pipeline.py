@@ -73,6 +73,10 @@ def test_commercial_rent_normalization_maps_provider_aliases_to_typed_fields():
     assert normalized["needs_review"] is True
 
     requirement_prompt = _get_extraction_prompt("commercial", "rent", True)
+    assert "lack" in requirement_prompt
+    assert "street-facing" in requirement_prompt
+    assert "loading" in requirement_prompt
+    assert "maintenance/CAM" in requirement_prompt
     assert "intended_use_details" in requirement_prompt
     assert "needs_attached_washroom" in requirement_prompt
     assert "floor_min" in requirement_prompt
@@ -353,6 +357,13 @@ def test_commercial_rent_requirement_preserves_constraints_and_contacts():
         needs_conference_room=True,
         needs_washroom=True,
         needs_pantry=True,
+        entrance_requirement="street-facing entrance",
+        signage_required=True,
+        loading_access_required=True,
+        power_requirements="3-phase power",
+        floor_count_max=2,
+        consecutive_floors_required=True,
+        budget_includes_maintenance=True,
         locality_options=["Malad East", "Goregaon East"],
         urgency="urgent",
         contacts=[{"name": "Mangesh Singh", "phone": "9004517819"}],
@@ -365,6 +376,13 @@ def test_commercial_rent_requirement_preserves_constraints_and_contacts():
     assert row["needs_washroom"] is True
     assert row["budget_max"] == 100_000
     assert row["urgency"] == "urgent"
+    assert row["entrance_requirement"] == "street-facing entrance"
+    assert row["signage_required"] is True
+    assert row["loading_access_required"] is True
+    assert row["power_requirements"] == "3-phase power"
+    assert row["floor_count_max"] == 2
+    assert row["consecutive_floors_required"] is True
+    assert row["budget_includes_maintenance"] is True
     assert "monthly_rent" not in row
 
 

@@ -236,6 +236,9 @@ def test_commercial_rent_requirement_read_columns_cover_demand_constraints():
     cols = set(_TYPED_READ_COLUMNS_BY_TABLE["commercial_rent_requirements"].split(","))
     assert {
         "intended_use_details", "area_basis_preference", "floor_min", "floor_max",
+        "floor_count_max", "consecutive_floors_required", "entrance_requirement",
+        "signage_required", "loading_access_required", "power_requirements",
+        "budget_includes_maintenance",
         "needs_attached_washroom", "needs_washroom", "needs_pantry",
         "min_cabin_count", "min_workstation_count", "needs_conference_room",
         "brokerage_context", "contacts",
