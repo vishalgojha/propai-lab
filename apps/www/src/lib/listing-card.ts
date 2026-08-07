@@ -6,6 +6,7 @@ export type ListingCardFields = {
   bhk: string | null;
   price: number | null;
   price_unit: string | null;
+  price_raw_text?: string | null;
   price_model?: string | null;
   price_per_sqft?: number | null;
   area_sqft: number | null;
@@ -193,6 +194,7 @@ export function formatCardPrice(
   priceModel: string | null = null,
   pricePerSqft: number | null = null,
   areaSqft: number | null = null,
+  priceRawText: string | null = null,
 ): string {
   const unit = normalizeUnit(priceUnit);
   const intentKind = intentValue(intent);
@@ -231,11 +233,27 @@ export function formatCardPrice(
     // Rentals are quoted per month. Stored numbers use the natural unit:
     // "cr" = crores/month, "lac" = lakhs/month, "k" = thousands/month,
     // "abs" = absolute rupees/month. Multiply up to rupees.
+    const rawRent = priceRawText?.match(
+      /(?:rent|lease|monthly|price)\s*[:=-]?[^\d₹]{0,20}(?:₹|rs\.?|inr\s*)?\s*([\d,]+(?:\.\d+)?)\s*(crore|cr|lakh|lac|l|k|thousand)?/i,
+    ) ?? priceRawText?.match(
+      /(?:₹|rs\.?|inr\s*)\s*([\d,]+(?:\.\d+)?)\s*(crore|cr|lakh|lac|l|k|thousand)?/i,
+    );
+    if (rawRent) {
+      const rawAmount = Number(rawRent[1].replace(/,/g, ""));
+      const rawUnit = (rawRent[2] || "").toLowerCase();
+      const rawMultiplier = rawUnit === "crore" || rawUnit === "cr"
+        ? 1_00_00_000
+        : rawUnit === "lakh" || rawUnit === "lac" || rawUnit === "l"
+          ? 1_00_000
+          : rawUnit === "k" || rawUnit === "thousand" ? 1_000 : 1;
+      if (Number.isFinite(rawAmount) && rawAmount > 0) return formatScaled(rawAmount * rawMultiplier, "/month");
+    }
+
     let abs = price;
     if (unit === "cr") abs = price * 1_00_00_000;
     else if (unit === "lac") abs = price * 1_00_000;
     else if (unit === "k") abs = price * 1_000;
-    else if (unit === "abs" && abs > 0 && abs < 1_000) abs *= 1_00_000;
+    else if (unit === "abs" && abs > 0 && abs < 1_000) return "Price on request";
     // Guard against implausible monthly rents (e.g. mis-stored "abs" values
     // like 12 or 185 rupees). Anything under ₹1,000/month is not a real Mumbai
     // rent — fall back rather than show a clearly-wrong number.
@@ -638,7 +656,7 @@ export function toListingCardViewModel(
     locality,
     localitySlug: locality ? slugify(locality) : null,
     isBuilding,
-    priceLabel: formatCardPrice(row.price, row.price_unit, row.intent, row.price_model, row.price_per_sqft, row.area_sqft),
+    priceLabel: formatCardPrice(row.price, row.price_unit, row.intent, row.price_model, row.price_per_sqft, row.area_sqft, row.price_raw_text),
     specRow: buildSpecRow(specItems),
     specItems,
     statusLabel: hasLocality ? "Listed" : "Locality unconfirmed",
