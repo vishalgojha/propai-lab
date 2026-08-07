@@ -1295,6 +1295,67 @@ async def confirm_browser_action(
             raise HTTPException(400, "Browser approval token is missing a session id")
         session = await _owned_chat_session(session_id, user, tenant_id)
         messages = await asyncio.to_thread(storage.get_ai_chat_messages, session_id, tenant_id=tenant_id)
+
+        # Opening a URL after explicit approval is deterministic. Do it
+        # directly so a provider that cannot complete a second tool-call
+        # round cannot block the browser itself.
+        last_user = next(
+            (str(row.get("content") or "").strip() for row in reversed(messages) if row.get("role") == "user"),
+            "",
+        )
+        url_match = re.search(
+            r"(?:https?://|www\.)[^\s<>]+|\b[a-z0-9][a-z0-9.-]*\.[a-z]{2,}(?:/[^\s<>]*)?",
+            last_user,
+            re.IGNORECASE,
+        )
+        if url_match:
+            from ai_chat_engine import execute_tool
+
+            url = url_match.group(0).rstrip(".,!?;:)").strip()
+            if not url.lower().startswith(("http://", "https://")):
+                url = f"https://{url}"
+            browser_session_id = f"chat-{session_id}"
+            browser_args = {"url": url, "browser_session_id": browser_session_id, "session_label": "Approved browser task"}
+            opened = await asyncio.to_thread(
+                execute_tool,
+                "browser_open",
+                browser_args,
+                {},
+                tenant_id=tenant_id,
+                storage_client=storage.client,
+                user_id=str(user.get("id") or ""),
+                browser_enabled=True,
+                browser_provider="agent-browser",
+            )
+            if opened.get("status") != "ok":
+                message = str(opened.get("error") or opened.get("raw_output") or "Agent Browser could not open the page")
+                raise HTTPException(502, f"Browser runtime failed: {message}")
+            state = await asyncio.to_thread(
+                execute_tool,
+                "browser_state",
+                {"browser_session_id": browser_session_id},
+                {},
+                tenant_id=tenant_id,
+                storage_client=storage.client,
+                user_id=str(user.get("id") or ""),
+                browser_enabled=True,
+                browser_provider="agent-browser",
+            )
+            title = str(state.get("title") or "").strip()
+            current_url = str(state.get("url") or url).strip()
+            content = f"I opened {current_url}."
+            if title:
+                content += f"\nPage title: {title}"
+            blocks = [{
+                "type": "activity",
+                "title": "Browser task complete",
+                "body": content,
+                "steps": [f"Opened {current_url}"] + ([f"Read page title: {title}"] if title else []),
+                "trace": {"route": "direct_browser_open", "browser_provider": "agent-browser", "browser_session_id": browser_session_id},
+            }]
+            await asyncio.to_thread(storage.add_chat_message, session_id, "assistant", content, tenant_id, blocks)
+            return _wrap_chat_response({"content": content, "blocks": blocks, "sources": [], "trace": blocks[0]["trace"]}, True)
+
         forwarded = ChatRequest(
             messages=messages,
             api_key="",
