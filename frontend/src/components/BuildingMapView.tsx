@@ -1,13 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { GoogleMap, InfoWindow, Marker, useJsApiLoader } from "@react-google-maps/api";
-import { MapPin, Search, X } from "lucide-react";
+import { ArrowUpRight, MapPin, MessageSquare, Search, X } from "lucide-react";
 import ListingCard, { type ListingItem } from "@/components/ListingCard";
 import ResizablePanel from "@/components/ResizablePanel";
-import { getBuildings, marketSearchListings, parseSearchQuery } from "@/lib/api";
+import { getBuildings, getListing, marketSearchListings, parseSearchQuery, resolveBrokerContact } from "@/lib/api";
 import { formatBuildingName } from "@/lib/listing-display";
 
 type Building = {
@@ -98,7 +97,10 @@ export function BuildingMapView() {
   const [loading, setLoading] = useState(true);
   const [isMobile, setIsMobile] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const router = useRouter();
+  const [selectedListing, setSelectedListing] = useState<MarketListing | null>(null);
+  const [listingDetail, setListingDetail] = useState<Record<string, any> | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [contacting, setContacting] = useState(false);
   const mapRef = useRef<MapController | null>(null);
   const listingRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const googleMapsKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? "";
@@ -232,6 +234,39 @@ export function BuildingMapView() {
     setError(null);
   }
 
+  async function inspectListing(item: MarketListing) {
+    if (!item.listing_id) return;
+    setSelectedListing(item);
+    setListingDetail(null);
+    setDetailLoading(true);
+    try {
+      setListingDetail(await getListing(item.listing_id));
+    } catch {
+      setError("This listing could not be opened. It may have been removed.");
+    } finally {
+      setDetailLoading(false);
+    }
+  }
+
+  async function contactBroker(listingId: number) {
+    setContacting(true);
+    const contactWindow = window.open("", "_blank");
+    try {
+      const { contact_url } = await resolveBrokerContact(listingId);
+      if (contactWindow) {
+        contactWindow.opener = null;
+        contactWindow.location.assign(contact_url);
+      } else {
+        window.location.assign(contact_url);
+      }
+    } catch {
+      contactWindow?.close();
+      setError("The broker contact could not be opened right now.");
+    } finally {
+      setContacting(false);
+    }
+  }
+
   async function performSearch(trimmed: string) {
     setError(null);
     setSearchActive(true);
@@ -327,7 +362,7 @@ export function BuildingMapView() {
       <div className="flex shrink-0 flex-wrap items-center gap-2 text-xs text-text-muted">
         <span className="rounded-full border border-border bg-surface px-3 py-1.5 font-medium text-text-primary">{searchActive ? `${listings.length} listings` : `${browseListings.length} latest listings`}</span>
         <span className="rounded-full border border-border/70 px-3 py-1.5">{searchActive ? `${mappedCount} mapped buildings` : `${mappedCount} mapped buildings`}</span>
-        <span className="hidden sm:inline">Click a marker or listing to inspect the building.</span>
+        <span className="hidden sm:inline">Click a marker to inspect a building, or a listing for its full extracted details.</span>
       </div>
 
       {error && <div className="rounded-xl border border-danger/40 bg-danger/10 px-4 py-3 text-sm text-danger">{error}</div>}
@@ -358,13 +393,13 @@ export function BuildingMapView() {
                 role={item.listing_id ? "link" : undefined}
                 tabIndex={item.listing_id ? 0 : undefined}
                 onClick={(event) => {
-                  if (item.listing_id && !(event.target as HTMLElement).closest("button,a")) router.push(`/listings/${item.listing_id}`);
+                  if (item.listing_id && !(event.target as HTMLElement).closest("button,a")) void inspectListing(item);
                 }}
                 onKeyDown={(event) => {
-                  if (item.listing_id && (event.key === "Enter" || event.key === " ")) router.push(`/listings/${item.listing_id}`);
+                  if (item.listing_id && (event.key === "Enter" || event.key === " ")) void inspectListing(item);
                 }}
               >
-                <ListingCard item={item} compact />
+                <ListingCard item={item} compact onContactBroker={contactBroker} contacting={contacting} />
               </div>
             ))}
             {searchActive && listings.length === 0 && <div className="rounded-xl border border-border bg-surface px-4 py-6 text-sm text-text-muted">No listings match this search.</div>}
@@ -390,10 +425,10 @@ export function BuildingMapView() {
                       key={`${item.listing_id ?? item.fingerprint ?? index}`}
                       className="cursor-pointer transition-transform hover:-translate-y-0.5"
                       onClick={(event) => {
-                        if (item.listing_id && !(event.target as HTMLElement).closest("button,a")) router.push(`/listings/${item.listing_id}`);
+                        if (item.listing_id && !(event.target as HTMLElement).closest("button,a")) void inspectListing(item);
                       }}
                     >
-                      <ListingCard item={item} compact />
+                      <ListingCard item={item} compact onContactBroker={contactBroker} contacting={contacting} />
                     </div>
                   ))}
                 </div>
@@ -438,8 +473,99 @@ export function BuildingMapView() {
         </div>
       </div>
 
+      {selectedListing && (
+        <ListingDetailDrawer
+          item={selectedListing}
+          detail={listingDetail}
+          loading={detailLoading}
+          contacting={contacting}
+          onContact={() => selectedListing.listing_id && void contactBroker(selectedListing.listing_id)}
+          onClose={() => { setSelectedListing(null); setListingDetail(null); }}
+        />
+      )}
+
       {!loading && searchActive && listings.length === 0 && <p className="text-sm text-text-muted">No listings match this search.</p>}
       {!loading && !searchActive && browseGroups.length === 0 && <p className="text-sm text-text-muted">No mapped buildings are available.</p>}
     </section>
+  );
+}
+
+function DetailValue({ label, value }: { label: string; value: unknown }) {
+  if (value === null || value === undefined || value === "" || (Array.isArray(value) && value.length === 0)) return null;
+  const display = Array.isArray(value) ? value.join(", ") : typeof value === "object" ? JSON.stringify(value) : String(value);
+  return <div className="rounded-lg border border-border/70 bg-surface px-3 py-2"><dt className="text-[10px] font-semibold uppercase tracking-[0.14em] text-text-muted">{label}</dt><dd className="mt-1 text-sm text-text-primary">{display}</dd></div>;
+}
+
+function ListingDetailDrawer({
+  item,
+  detail,
+  loading,
+  contacting,
+  onContact,
+  onClose,
+}: {
+  item: MarketListing;
+  detail: Record<string, any> | null;
+  loading: boolean;
+  contacting: boolean;
+  onContact: () => void;
+  onClose: () => void;
+}) {
+  const data = { ...item, ...(detail || {}) };
+  const fields: Array<[string, unknown]> = [
+    ["Configuration", data.configuration_type || data.bhk],
+    ["Bathrooms", data.bathroom_count],
+    ["Carpet area", data.carpet_area_sqft ? `${data.carpet_area_sqft} sqft` : null],
+    ["Built-up area", data.built_up_area_sqft ? `${data.built_up_area_sqft} sqft` : null],
+    ["Price as posted", data.price_raw_text || data.price_formatted],
+    ["Price basis", data.price_basis],
+    ["Floor", data.floor_label || data.floor_range || data.floor],
+    ["Parking", data.parking_details || data.parking_type || (data.car_parking_count ? `${data.car_parking_count} car` : null)],
+    ["Furnishing", data.furnishing_status || data.furnishing],
+    ["Deposit", data.deposit_raw_text || data.deposit_amount],
+    ["Availability", data.availability_status || data.available_from],
+    ["Lease term", data.lease_term_raw_text || data.lease_term_type],
+    ["Building amenities", data.building_amenities],
+    ["Unit amenities", data.unit_amenities],
+    ["Tenant preference", data.tenant_type_preference],
+    ["View", data.view_description || data.property_view],
+    ["Developer", data.developer_name],
+    ["Deal tags", data.deal_tags],
+  ];
+
+  return (
+    <div className="fixed inset-0 z-40 flex justify-end bg-black/45" onClick={onClose}>
+      <aside className="h-full w-full max-w-xl overflow-y-auto border-l border-border bg-background p-4 shadow-2xl sm:p-6" onClick={(event) => event.stopPropagation()}>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-accent">Quick listing view</p>
+            <h2 className="mt-1 text-xl font-semibold text-text-primary">{formatBuildingName(data.building_name)}</h2>
+            <p className="mt-1 text-sm text-text-muted">{data.micro_market || data.location_label || data.building_address || "Location not specified"}</p>
+          </div>
+          <button type="button" onClick={onClose} aria-label="Close listing details" className="rounded-lg border border-border p-2 text-text-muted hover:text-text-primary"><X className="h-4 w-4" /></button>
+        </div>
+
+        <div className="mt-5 flex flex-wrap items-center gap-2">
+          {data.price_formatted && <span className="rounded-full bg-accent/15 px-3 py-1.5 text-sm font-semibold text-accent">{data.price_formatted}</span>}
+          {data.intent && <span className="rounded-full border border-border px-3 py-1.5 text-xs font-semibold text-text-primary">{String(data.intent).toLowerCase()}</span>}
+          {data.last_seen_text && <span className="text-xs text-text-muted">{data.last_seen_text}</span>}
+        </div>
+
+        <button type="button" onClick={onContact} disabled={contacting} className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl bg-accent px-4 py-3 text-sm font-semibold text-background disabled:opacity-60">
+          <MessageSquare className="h-4 w-4" /> {contacting ? "Opening WhatsApp…" : "Contact broker on WhatsApp"}
+        </button>
+
+        {loading && <p className="mt-6 text-sm text-text-muted">Loading extracted details…</p>}
+        {!loading && <>
+          <dl className="mt-6 grid grid-cols-2 gap-2">
+            {fields.map(([label, value]) => <DetailValue key={label} label={label} value={value} />)}
+          </dl>
+          {(data.broker_display_name || data.broker_company || data.broker_name) && <div className="mt-6 rounded-xl border border-border bg-surface p-4"><p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-text-muted">Source broker</p><p className="mt-1 font-semibold text-text-primary">{data.broker_display_name || data.broker_company || data.broker_name}</p><p className="mt-1 text-xs text-text-muted">Sourced from the WhatsApp broker network</p></div>}
+          {data.summary_title && <div className="mt-4 rounded-xl border border-border bg-surface p-4"><p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-text-muted">Broker’s description</p><p className="mt-1 text-sm text-text-primary">{data.summary_title}</p></div>}
+        </>}
+
+        {data.listing_id && <Link href={`/listings/${data.listing_id}`} className="mt-5 inline-flex items-center gap-1 text-xs font-medium text-accent hover:underline">Open full record <ArrowUpRight className="h-3.5 w-3.5" /></Link>}
+      </aside>
+    </div>
   );
 }
