@@ -3918,6 +3918,7 @@ class SupabaseStorage(Storage):
             "needs_review": bool(data.get("needs_review")),
             "extraction_confidence": "high" if not data.get("needs_review") else "low",
             "bhk": float(re.search(r"\d+(?:\.\d+)?", str(data.get("bhk"))).group(0)) if re.search(r"\d+(?:\.\d+)?", str(data.get("bhk"))) else None,
+            "configuration_type": data.get("configuration_type") or data.get("configuration") or data.get("bhk"),
             "carpet_area_sqft": data.get("carpet_area_sqft") or data.get("area_sqft"),
             "built_up_area_sqft": data.get("built_up_area_sqft"),
             "mezzanine_area_sqft": data.get("mezzanine_area_sqft"),
