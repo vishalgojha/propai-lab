@@ -693,6 +693,8 @@ export type BuildingListing = {
   asset_type: string | null;
   property_type: string | null;
   micro_market: string | null;
+  locality_raw?: string | null;
+  locality_resolved?: string | null;
   view: string | null;
   floor_description: string | null;
   building_name: string | null;
