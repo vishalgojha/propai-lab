@@ -509,6 +509,8 @@ _BROWSER_ACTION_SIGNALS = re.compile(
     r"\b(?:browser|browser-use|browse|browsing|click|clicked|tap|open(?:\s+(?:the|a))?\s+(?:page|site|website|listing|result)|"
     r"open\s+(?:https?://)?(?:www\.)?[a-z0-9][a-z0-9.-]*\.[a-z]{2,}(?:/[^\s]*)?|"
     r"check\s+(?:the\s+)?(?:ai\s+provider|provider|settings?)\s+page|"
+    r"maha\s*rera|igr\s+maharashtra|igrs|esearchigr|"
+    r"(?:construction|project)\s+(?:status|progress)|"
     r"navigate|navigate(?:s|d)?|scroll|type into|fill(?:\s+in)?|select(?:\s+an)?|"
     r"use\s+browser(?:\s+actions?)?|go to|open propai|propai page|website)\b",
     re.IGNORECASE,
