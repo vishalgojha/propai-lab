@@ -464,7 +464,7 @@ export async function getLocalityListings(
     const { data, error } = await db
       .from("listings_unified")
       .select(
-        "id, bhk, price, price_unit, price_model, price_per_sqft, area_sqft, furnishing, intent, asset_type, property_type, micro_market, building_name, landmark_name, location_label, floor_description, view, representative_raw_message_id, latest_raw_message_id, broker_name, broker_phone, last_seen",
+        "id, bhk, price, price_unit, price_model, price_per_sqft, area_sqft, furnishing, intent, asset_type, property_type, micro_market, locality_raw, locality_resolved, building_name, landmark_name, location_label, floor_description, view, representative_raw_message_id, latest_raw_message_id, broker_name, broker_phone, last_seen",
       )
       .eq("canonical_micro_market_slug", slug)
       .gte("last_seen", thirtyDaysAgo)

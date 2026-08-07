@@ -38,6 +38,8 @@ export type NaturalSearchRow = {
   building_name: string | null;
   landmark_name: string | null;
   micro_market: string | null;
+  locality_raw: string | null;
+  locality_resolved: string | null;
   broker_name: string | null;
   broker_phone: string | null;
   first_seen: string | null;
@@ -97,6 +99,8 @@ const LISTING_FIELDS = [
   "building_name",
   "landmark_name",
   "micro_market",
+  "locality_raw",
+  "locality_resolved",
   "broker_name",
   "broker_phone",
   "first_seen",
@@ -598,6 +602,8 @@ function rowSearchText(row: NaturalSearchRow): string {
       row.location_label,
       row.landmark_name,
       row.micro_market,
+      row.locality_raw,
+      row.locality_resolved,
       row.broker_name,
       row.broker_phone,
       row.intent,
@@ -614,7 +620,8 @@ function scoreRow(row: NaturalSearchRow, parsed: ParsedNaturalSearch): { score: 
   let score = 0;
   const text = rowSearchText(row);
 
-  if (parsed.locality && row.micro_market && canonicalLocality(row.micro_market).slug === canonicalLocality(parsed.locality).slug) {
+  const rowLocality = row.micro_market || row.locality_resolved || row.locality_raw;
+  if (parsed.locality && rowLocality && canonicalLocality(rowLocality).slug === canonicalLocality(parsed.locality).slug) {
     score += 80;
     matchedOn.push(parsed.locality);
   }
@@ -690,8 +697,9 @@ function scoreRow(row: NaturalSearchRow, parsed: ParsedNaturalSearch): { score: 
 }
 
 export function matchesHardFilters(row: NaturalSearchRow, parsed: ParsedNaturalSearch): boolean {
-  if (parsed.locality && row.micro_market) {
-    const rowSlug = canonicalLocality(row.micro_market).slug;
+  if (parsed.locality) {
+    const rowLocality = row.micro_market || row.locality_resolved || row.locality_raw;
+    const rowSlug = rowLocality ? canonicalLocality(rowLocality).slug : "";
     if (rowSlug) {
       const anyMatch = parsed.matchedLocalities.some((loc) => {
         const locSlug = canonicalLocality(loc.locality).slug;
@@ -1096,12 +1104,27 @@ export async function searchNaturalLanguageListings(
       let qb = db.from("listings_unified").select(fields).gte("last_seen", thirtyDaysAgo).order("last_seen", { ascending: false });
       qb = qb.in("canonical_micro_market_slug", localitySlugs);
       if (parsed.asset) qb = qb.eq("asset_type", parsed.asset);
-      const { data, error } = await qb.limit(SEARCH_CANDIDATE_LIMIT * localitySlugs.length);
+      const [canonicalResult, textResults] = await Promise.all([
+        qb.limit(SEARCH_CANDIDATE_LIMIT * localitySlugs.length),
+        Promise.all(parsed.matchedLocalities.map(async (locality) => {
+          const like = `%${locality.locality.replace(/[%,()]/g, "")}%`;
+          let textQuery = db.from("listings_unified").select(fields)
+            .or(`micro_market.ilike.${like},locality_raw.ilike.${like},locality_resolved.ilike.${like},building_name.ilike.${like},landmark_name.ilike.${like}`)
+            .gte("last_seen", thirtyDaysAgo).order("last_seen", { ascending: false });
+          if (parsed.asset) textQuery = textQuery.eq("asset_type", parsed.asset);
+          return textQuery.limit(SEARCH_CANDIDATE_LIMIT);
+        })),
+      ]);
+      const { data, error } = canonicalResult;
       if (error) {
         console.error("searchNaturalLanguageListings locality candidate error:", error.message);
-        return [];
       }
-      return (data ?? []) as unknown as NaturalSearchRow[];
+      const deduped = new Map<number, NaturalSearchRow>();
+      for (const row of (data ?? []) as unknown as NaturalSearchRow[]) deduped.set(row.id, row);
+      for (const result of textResults) {
+        for (const row of (result.data ?? []) as unknown as NaturalSearchRow[]) deduped.set(row.id, row);
+      }
+      return Array.from(deduped.values());
     }
 
     const tokens = candidateTokens(query);
@@ -1110,7 +1133,7 @@ export async function searchNaturalLanguageListings(
       const like = postgrestLikeToken(token);
       let qb = db.from("listings_unified")
         .select(fields)
-        .or(`building_name.ilike.${like},micro_market.ilike.${like},location_label.ilike.${like},landmark_name.ilike.${like}`)
+        .or(`building_name.ilike.${like},micro_market.ilike.${like},locality_raw.ilike.${like},locality_resolved.ilike.${like},location_label.ilike.${like},landmark_name.ilike.${like}`)
         .gte("last_seen", thirtyDaysAgo)
         .order("last_seen", { ascending: false });
       if (parsed.asset) qb = qb.eq("asset_type", parsed.asset);

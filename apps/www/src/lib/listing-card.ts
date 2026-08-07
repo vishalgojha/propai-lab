@@ -1,4 +1,5 @@
 import { slugify } from "./supabase";
+import { extractLocalityFromText } from "./locality-canon";
 
 export type ListingCardFields = {
   id: number;
@@ -13,6 +14,8 @@ export type ListingCardFields = {
   asset_type: string | null;
   property_type: string | null;
   micro_market: string | null;
+  locality_raw?: string | null;
+  locality_resolved?: string | null;
   building_name: string | null;
   landmark_name?: string | null;
   location_label?: string | null;
@@ -244,7 +247,7 @@ function buildTitle(row: ListingCardFields): string {
   const building = rawBuilding
     ? (rawBuilding.includes(",") ? rawBuilding.split(",")[0].trim() : rawBuilding)
     : null;
-  const locality = row.micro_market?.trim() || row.location_label?.trim() || null;
+  const locality = listingLocality(row);
   const intent = intentValue(row.intent);
   const transaction = intent === "rent" ? "for Rent" : intent === "sale" ? "for Sale" : "";
 
@@ -258,6 +261,15 @@ function buildTitle(row: ListingCardFields): string {
   if (place) return `${descriptor} at ${place}`;
   if (transaction) return `${descriptor} ${transaction}`;
   return descriptor;
+}
+
+function listingLocality(row: ListingCardFields): string | null {
+  return row.micro_market?.trim()
+    || row.location_label?.trim()
+    || row.locality_raw?.trim()
+    || row.locality_resolved?.trim()
+    || extractLocalityFromText(row.building_name)
+    || null;
 }
 
 function buildSpecItems(row: ListingCardFields): ListingSpecItem[] {
@@ -532,7 +544,7 @@ export function toListingCardViewModel(
 ): ListingCardViewModel {
   // On a building page, inherit the building's confirmed locality when the
   // individual listing failed to resolve its own micro_market.
-  const ownLocality = row.micro_market && row.micro_market.trim() ? row.micro_market.trim() : null;
+  const ownLocality = listingLocality(row);
   const locality = ownLocality ?? (fallbackLocality && fallbackLocality.trim() ? fallbackLocality.trim() : null);
   const hasLocality = Boolean(locality);
   const specItems = buildSpecItems(row);
