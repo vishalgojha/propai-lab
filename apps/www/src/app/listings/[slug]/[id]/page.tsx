@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { cache } from "react";
 import { notFound, redirect } from "next/navigation";
 import { JsonLd, buildRealEstateListing, buildBreadcrumb, getSiteUrl } from "@/lib/seo";
 import { listingTitle, listingDescription } from "@/lib/seo-copy";
@@ -36,6 +37,10 @@ import ListingSpecs from "@/components/ListingSpecs";
 import BackButton from "@/components/BackButton";
 import RelatedSearches from "@/components/RelatedSearches";
 import { generateListingRelated } from "@/lib/related-searches";
+
+// Metadata and the page body both need the same listing. React request
+// memoization prevents two identical Supabase round trips on one request.
+const getListingByIdCached = cache(getListingById);
 
 function RawSourceMessage({
   message,
@@ -155,7 +160,7 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const { id } = await params;
   let listing;
   try {
-    listing = await getListingById(Number(id));
+    listing = await getListingByIdCached(Number(id));
   } catch {
     return { title: "Listing not found — PropAI" };
   }
@@ -192,7 +197,7 @@ export default async function ListingPage({ params }: Params) {
 
   let listing;
   try {
-    listing = await getListingById(numericId);
+    listing = await getListingByIdCached(numericId);
   } catch (err) {
     console.error("getListingById failed:", err);
     notFound();
@@ -287,15 +292,15 @@ export default async function ListingPage({ params }: Params) {
   }
 
   // Fetch broker's operating areas from their listing history
-  const brokerAreas = await getBrokerAreas(listing.broker_phone);
-
-  // Generate related search suggestions
-  let relatedSections: Awaited<ReturnType<typeof generateListingRelated>> = [];
-  try {
-    relatedSections = await generateListingRelated(listing);
-  } catch (err) {
-    console.error("generateListingRelated failed:", err);
-  }
+  // These are independent secondary panels. Fetch them together so the
+  // sidebar does not wait for the related-search section (or vice versa).
+  const [brokerAreas, relatedSections] = await Promise.all([
+    getBrokerAreas(listing.broker_phone),
+    generateListingRelated(listing).catch((err) => {
+      console.error("generateListingRelated failed:", err);
+      return [];
+    }),
+  ]);
 
   // If the request slug doesn't match the canonical slug (e.g. external site
   // linked to an older slug after the listing was edited), 301 to the canonical
