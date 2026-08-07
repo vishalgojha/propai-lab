@@ -1,6 +1,7 @@
 """AI chat, query, and promotion routes."""
 import base64
 import asyncio
+import hashlib
 import hmac
 import logging
 import os
