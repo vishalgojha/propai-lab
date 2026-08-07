@@ -225,6 +225,16 @@ _ALL_TYPED_TABLES = tuple(_TYPED_LISTING_TABLES.values()) + tuple(_TYPED_REQUIRE
 _TYPED_LISTING_TABLE_NAMES = tuple(_TYPED_LISTING_TABLES.values())
 _TYPED_REQUIREMENT_TABLE_NAMES = tuple(_TYPED_REQUIREMENT_TABLES.values())
 
+# PostgREST expects PostgreSQL text[] columns as JSON arrays. LLM output and
+# older extraction paths sometimes send a single string instead.
+_TYPED_ARRAY_FIELDS = frozenset({
+    "deal_tags", "building_amenities", "unit_amenities", "society_restrictions",
+    "contacts", "locality_options", "micro_market_options", "bhk_options",
+    "configuration_preference", "building_preferences", "view_preference",
+    "amenity_requirements", "permitted_use_types", "ideal_for",
+    "commercial_use_type",
+})
+
 # Feed/audit reads do not need the extraction evidence blobs.  Keeping these
 # columns explicit prevents a normal inbox refresh from transferring
 # raw_payload and ai_extraction for hundreds of rows from each typed table.
@@ -2592,7 +2602,13 @@ class SupabaseStorage(Storage):
             "validation_flags": data.get("validation_flags") or [],
             "needs_review": bool(data.get("needs_review")),
             "extraction_confidence": "high" if float(data.get("confidence") or 0) >= .85 else ("medium" if float(data.get("confidence") or 0) >= .6 else "low"),
-            "extraction_confidence_score": max(0.0, min(1.0, float(data.get("extraction_confidence_score") or data.get("confidence") or 0.0))),
+            "extraction_confidence_score": max(0.0, min(1.0, float(
+                data.get("extraction_confidence_score")
+                if data.get("extraction_confidence_score") is not None
+                else (data.get("confidence") if data.get("confidence") is not None else {
+                    "high": 0.9, "medium": 0.7, "low": 0.4
+                }.get(str(ai.get("extraction_confidence") or "").lower(), 0.0))
+            ))),
             "corrected_fields": data.get("corrected_fields") or [],
             "correction_confidence": data.get("correction_confidence"),
             "corrected_at": data.get("corrected_at"),
@@ -2926,6 +2942,16 @@ class SupabaseStorage(Storage):
                     row[field] = json.loads(row[field])
                 except (TypeError, json.JSONDecodeError):
                     row[field] = {} if field in {"raw_payload", "ai_extraction", "company_lease_criteria"} else []
+        for field in _TYPED_ARRAY_FIELDS:
+            if field == "commercial_use_type" and not table_name.endswith("_requirements"):
+                continue
+            value = row.get(field)
+            if isinstance(value, str):
+                row[field] = [value]
+            elif value is not None and not isinstance(value, (list, tuple)):
+                row[field] = [value]
+            elif isinstance(value, tuple):
+                row[field] = list(value)
         # The bridge already filters columns.  Keep a second filter here for
         # callers that use this storage method directly.
         if not _already_filtered:
@@ -2946,15 +2972,36 @@ class SupabaseStorage(Storage):
                 if stale_table == table_name:
                     continue
                 try:
-                    stale = self.client.table(stale_table).delete().eq(
+                    stale_query = self.client.table(stale_table).select("id").eq(
                         "raw_message_id", raw_message_id
                     ).eq("listing_index", listing_index)
                     if row.get("tenant_id"):
-                        stale = stale.eq("tenant_id", row["tenant_id"])
-                    stale.execute()
+                        stale_query = stale_query.eq("tenant_id", row["tenant_id"])
+                    stale_rows = stale_query.execute().data or []
+                    for stale_row in stale_rows:
+                        self.client.table(stale_table).delete().eq(
+                            "id", stale_row["id"]
+                        ).execute()
                 except Exception as exc:
                     print(f"[storage] stale typed route cleanup failed for {stale_table}: {exc}", flush=True)
-        result = self.client.table(table_name).upsert(row, on_conflict="source_fingerprint").execute()
+        # Avoid PostgREST's conflict-update path: the live database safety
+        # guard rejects its internally generated UPDATE without a WHERE.
+        # Insert first, then update the existing row by its primary key.
+        try:
+            result = self.client.table(table_name).insert(row).execute()
+        except Exception:
+            existing = self.client.table(table_name).select("id").eq(
+                "source_fingerprint", row["source_fingerprint"]
+            ).limit(1).execute().data or []
+            if not existing:
+                raise
+            typed_id = int(existing[0]["id"])
+            update_row = {k: v for k, v in row.items() if k != "source_fingerprint"}
+            result = self.client.table(table_name).update(update_row).eq(
+                "id", typed_id
+            ).execute()
+            if not result.data:
+                result.data = [{"id": typed_id}]
         if not result.data:
             return 0
         typed_id = int(result.data[0].get("id") or 0)
@@ -4067,7 +4114,7 @@ class SupabaseStorage(Storage):
             allowed[typed_table].add("extraction_confidence_score")
         typed = {k: v for k, v in typed.items() if v is not None and k in allowed}
         try:
-            res = self.client.table(table).upsert(typed, on_conflict="source_fingerprint").execute()
+            res = self.client.table(table).insert(typed).execute()
             if res.data:
                 return res.data[0]["id"]
         except Exception:
