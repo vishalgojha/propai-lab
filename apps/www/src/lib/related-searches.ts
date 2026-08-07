@@ -382,6 +382,13 @@ async function buildTopBrokers(
 
 // ── Building Deep Links ───────────────────────────────────────────
 
+function canonicalBhk(value: string): string {
+  const raw = value.trim().replace(/\s*bhk\s*$/i, "");
+  const number = Number(raw);
+  if (!Number.isFinite(number)) return value.trim();
+  return Number.isInteger(number) ? String(number) : String(number);
+}
+
 async function buildBuildingDeepLinks(
   buildingName: string,
   microMarket: string,
@@ -404,7 +411,7 @@ async function buildBuildingDeepLinks(
 
   const bhkSet = new Set<string>();
   for (const row of data) {
-    if (row.bhk) bhkSet.add(row.bhk);
+    if (row.bhk) bhkSet.add(canonicalBhk(String(row.bhk)));
   }
 
   const links: RelatedLink[] = [];
@@ -412,7 +419,7 @@ async function buildBuildingDeepLinks(
 
   for (const b of Array.from(bhkSet).sort()) {
     links.push({
-      label: `${b} in ${cleanName}`,
+      label: `${b} BHK in ${cleanName}`,
       href: `/buildings/${slug}?bhk=${encodeURIComponent(b)}`,
     });
     if (links.length >= 5) break;
