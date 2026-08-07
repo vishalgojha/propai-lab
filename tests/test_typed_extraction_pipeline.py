@@ -50,6 +50,11 @@ def test_focused_prompt_contains_route_specific_fields_and_price_guardrails():
     assert "mezzanine_area_sqft" in rent_prompt
     assert "needs_review" in rent_prompt
 
+    residential_requirement_prompt = _get_extraction_prompt("residential", "rent", True)
+    assert "family" in residential_requirement_prompt
+    assert "higher/lower/middle-floor" in residential_requirement_prompt
+    assert "PG/hostel" in residential_requirement_prompt
+
 
 def test_commercial_rent_normalization_maps_provider_aliases_to_typed_fields():
     normalized = _normalize_extraction({
@@ -390,4 +395,37 @@ def test_requirement_routes_to_requirement_table_not_listing_table():
     assert table == "residential_rent_requirements"
     assert row["bhk_options"] == [2.0]
     assert row["budget_max"] == 150_000
+    assert "monthly_rent" not in row
+
+
+def test_residential_rent_requirement_preserves_tenant_floor_and_lease_preferences():
+    table, row = _item(
+        "Required 2 BHK on rent, Bandra to Santacruz West, 800-1000 carpet, "
+        "fully furnished, higher floor, family/company lease, pets, up to 150K, "
+        "3 year lease, 2 lakh deposit",
+        listing_type="requirement",
+        classified_is_requirement=True,
+        classified_transaction_type="rent",
+        bhk_options=[2],
+        configuration_preference=["2 BHK"],
+        budget_min=None,
+        budget_max=150_000,
+        area_min_sqft=800,
+        area_max_sqft=1000,
+        locality_options=["Bandra", "Santacruz West"],
+        furnishing_preference="fully_furnished",
+        floor_preference="higher_floor",
+        tenant_type="family/company_lease",
+        has_pets=True,
+        lease_term_preference="3 years",
+        deposit_budget_max=200_000,
+        amenity_requirements=["parking"],
+    )
+    assert table == "residential_rent_requirements"
+    assert row["locality_options"] == ["Bandra", "Santacruz West"]
+    assert row["floor_preference"] == "higher_floor"
+    assert row["tenant_type"] == "family/company_lease"
+    assert row["has_pets"] is True
+    assert row["lease_term_preference"] == "3 years"
+    assert row["deposit_budget_max"] == 200_000
     assert "monthly_rent" not in row

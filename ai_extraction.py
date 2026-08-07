@@ -369,7 +369,7 @@ _FOCUSED_FIELDS = {
     ("commercial", "sale", False): "commercial_use_type, carpet_area_sqft, built_up_area_sqft, chargeable_area_sqft, super_built_up_area_sqft, saleable_area_sqft, price, price_basis, price_math, locality, building_name, fitout_status, occupancy_status, ceiling_height, floor_level, floor_range, car_parking_count, power_load_kw, cabin_count, director_cabin_count, ceo_cabin_present, cubicle_count, workstation_count, conference_room_count, meeting_room_count, washroom_count, pantry_type, reception_area, server_room, storage_area, has_central_ac, has_power_backup, has_lift, terrace_area_sqft, covered_terrace_area_sqft, terrace_area_raw_text, frontage_ft, entrance_count, permitted_use_types, ideal_for, project_inventory, area_min_sqft, area_max_sqft, floor_plate_sqft, project_status, building_amenities, broker_rera_number, brokerage_type, deal_tags, title",
     ("commercial", "rent", False): "commercial_use_type, carpet_area_sqft, built_up_area_sqft, chargeable_area_sqft, mezzanine_area_sqft, area_raw_text, price, price_basis, price_math, locality, building_name, fitout_status, ceiling_height, floor_level, floor_range, deposit_amount, deposit_months, deposit_raw_text, cam_amount, cam_applicable, cam_unit, power_load_kw, cabin_count, director_cabin_count, ceo_cabin_present, cubicle_count, workstation_count, conference_room_count, conference_room_capacity, meeting_room_count, meeting_room_capacity, training_room_capacity, cafeteria_seat_count, washroom_count, pantry_type, reception_area, server_room, storage_area, accounts_area, lounge_area, terrace_area_sqft, covered_terrace_area_sqft, terrace_area_raw_text, frontage_ft, entrance_count, otla_area_sqft, otla_area_raw_text, heritage_space, permitted_use_types, ideal_for, automatic_shutter_count, room_count, suite_count, banquet_hall_count, restaurant_count, bar_facility, operational_status, rent_inclusions, possession_status, possession_date, availability_status, inspection_notice_minutes, license_type, short_term_allowed, lease_term_type, lock_in_period_months, notice_period_months, escalation_pct, escalation_frequency, rent_free_period_months, fitout_period_months, lease_deed_type, sub_leasing_allowed, building_amenities, broker_rera_number, brokerage_type, deal_tags, needs_review, title",
     ("residential", "sale", True): "bhk_options, budget_min, budget_max, area_min_sqft, area_max_sqft, locality_options, building_preferences, furnishing_preference, possession_preference, car_parking_min, buyer_type, transaction_nature, urgency, is_flexible, deal_tags, title",
-    ("residential", "rent", True): "bhk_options, budget_min, budget_max, area_min_sqft, area_max_sqft, locality_options, building_preferences, furnishing_preference, possession_preference, deposit_budget_max, tenant_type, nationality, has_pets, car_parking_needed, sharing_acceptable, food_preference, lease_term_preference, company_lease_criteria, urgency, is_flexible, deal_tags, title",
+    ("residential", "rent", True): "bhk_options, configuration_preference, budget_min, budget_max, area_min_sqft, area_max_sqft, carpet_area_min_sqft, carpet_area_max_sqft, built_up_area_min_sqft, built_up_area_max_sqft, locality_options, building_preferences, furnishing_preference, possession_preference, age_preference, floor_preference, view_preference, deposit_budget_max, tenant_type, nationality, has_pets, sharing_acceptable, food_preference, car_parking_min, amenity_requirements, lease_term_preference, company_lease_criteria, brokerage_willingness, urgency, is_flexible, deal_tags, needs_review, title",
     ("commercial", "sale", True): "commercial_use_type, area_min_sqft, area_max_sqft, budget_min, budget_max, budget_per_sqft_max, locality_options, fitout_preference, car_parking_min, needs_mezzanine, needs_lift, needs_power_backup, needs_central_ac, min_power_load_kw, buyer_type, urgency, is_flexible, deal_tags, title",
     ("commercial", "rent", True): "commercial_use_type, intended_use_details, area_min_sqft, area_max_sqft, area_basis_preference, budget_min, budget_max, budget_per_sqft_max, locality_options, location_flexibility, fitout_preference, floor_min, floor_max, floor_preference, car_parking_min, parking_required, needs_attached_washroom, needs_washroom, needs_pantry, needs_mezzanine, needs_lift, needs_power_backup, needs_central_ac, premium_building_required, glass_facade_required, residential_cum_commercial_ok, by_lanes_accepted, min_cabin_count, min_workstation_count, needs_conference_room, deposit_budget_max, lease_term_preference, max_lock_in_months, max_notice_period_months, company_type, team_size, media_requested, urgency, brokerage_context, brokerage_terms_raw, contacts, is_flexible, deal_tags, title",
 }
@@ -558,6 +558,37 @@ Commercial sale listing rules:
 """
 
 
+_RESIDENTIAL_RENT_REQUIREMENT_RULES = """
+Residential rent requirement rules:
+- This is demand, not supply. Keep listing_type="requirement" and never create
+  a listing from a requirement phrase such as "looking for" or "required".
+- Extract BHK/configuration exactly, including 1 RK, 2.5 BHK, jodi, and converted
+  layouts. Use bhk_options/configuration_preference; do not force a whole number.
+- Extract monthly budget in absolute rupees. "70k" is 70000, "1.30 lakh" is
+  130000, and "up to 1.5L" sets budget_max=150000. Never treat a deposit as rent.
+- Preserve locality corridors and alternatives in locality_options, including
+  "Bandra to Santacruz West" or "Andheri East to Goregaon East". Keep the raw
+  wording in the source evidence and do not collapse a corridor into one place.
+- Extract area ranges, area basis, furnishing preference, floor preference,
+  higher/lower/middle-floor wording, view preference, parking minimum, amenities,
+  possession timing, and building preferences when explicitly stated.
+- Tenant facts are important searchable requirements: family, bachelor, couple,
+  student, expat, company lease, pets, sharing, vegetarian/food preference, and
+  other explicit occupancy conditions. Preserve them without judging or filtering.
+- Deposit requirements may be a flat amount or months of rent. Store a flat
+  amount in deposit_budget_max only when explicitly stated; preserve month-based
+  wording in the raw evidence and do not convert it without a rent basis.
+- Lease terms such as 3/5 years, short-term, immediate possession, and company
+  lease belong in lease_term_preference/possession_preference.
+- Reject PG/hostel/bed-sharing-only demand as out of scope: return no item for it.
+- Residential rent normally does not have separate CAM or maintenance fields;
+  do not invent them. Brokerage wording and "side by side" belong in
+  brokerage_willingness or the raw evidence.
+- Set needs_review=true when budget units, BHK, locality, or another material
+  requirement is ambiguous. Keep deal_tags restricted to the whitelist.
+"""
+
+
 _COMMERCIAL_RENT_REQUIREMENT_RULES = """
 Commercial rent requirement rules:
 - This is demand, not supply. Keep listing_type="requirement" and never invent
@@ -607,6 +638,8 @@ def _get_extraction_prompt(
         route_rules = _COMMERCIAL_SALE_EXTRACTION_RULES
     elif (asset_type, transaction_type, is_requirement) == ("commercial", "rent", True):
         route_rules = _COMMERCIAL_RENT_REQUIREMENT_RULES
+    elif (asset_type, transaction_type, is_requirement) == ("residential", "rent", True):
+        route_rules = _RESIDENTIAL_RENT_REQUIREMENT_RULES
     expected_listing_type = "requirement" if is_requirement else transaction_type
     listing_type_rule = (
         f'- listing_type: exactly "{expected_listing_type}".'
@@ -760,7 +793,8 @@ _PASSTHROUGH_FIELDS = frozenset({
     "brokerage_terms_raw",
     "car_parking_min", "needs_mezzanine", "needs_lift", "needs_power_backup",
     "needs_central_ac", "min_power_load_kw", "buyer_type", "urgency",
-    "is_flexible", "transaction_nature", "building_preferences",
+    "is_flexible", "transaction_nature", "building_preferences", "age_preference",
+    "view_preference", "brokerage_willingness",
     "bhk_options", "furnishing_preference", "tenant_type",
     "sharing_acceptable", "food_preference", "amenity_requirements",
     "company_lease_criteria", "lease_term_preference", "nationality",
