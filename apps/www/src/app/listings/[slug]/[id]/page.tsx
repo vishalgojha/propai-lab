@@ -22,7 +22,7 @@ import {
   ChevronDown,
   Tag,
 } from "lucide-react";
-import { getListingById, getBrokerAreas, getSimilarListingsForExpired } from "@/lib/localities";
+import { getListingById, getBrokerAreas, getBuildingBrokers, getSimilarListingsForExpired } from "@/lib/localities";
 import { slugify } from "@/lib/supabase";
 import {
   toListingCardViewModel,
@@ -294,8 +294,9 @@ export default async function ListingPage({ params }: Params) {
   // Fetch broker's operating areas from their listing history
   // These are independent secondary panels. Fetch them together so the
   // sidebar does not wait for the related-search section (or vice versa).
-  const [brokerAreas, relatedSections] = await Promise.all([
+  const [brokerAreas, buildingBrokers, relatedSections] = await Promise.all([
     getBrokerAreas(listing.broker_phone),
+    getBuildingBrokers(listing.building_name, listing.micro_market),
     generateListingRelated(listing).catch((err) => {
       console.error("generateListingRelated failed:", err);
       return [];
@@ -590,6 +591,22 @@ export default async function ListingPage({ params }: Params) {
                       >
                         {area}
                       </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {buildingBrokers.length > 1 && (
+                <div className="mt-5">
+                  <h3 className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500 mb-2">
+                    Other brokers for this building
+                  </h3>
+                  <div className="space-y-1.5">
+                    {buildingBrokers.slice(0, 5).map((broker) => (
+                      <div key={broker.name} className="flex items-center justify-between gap-3 text-xs text-zinc-400">
+                        <span className="truncate">{broker.name}</span>
+                        <span className="shrink-0 text-zinc-600">{broker.listingCount} listings</span>
+                      </div>
                     ))}
                   </div>
                 </div>

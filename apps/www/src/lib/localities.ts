@@ -1116,6 +1116,54 @@ export async function getBrokerAreas(
     .map(([name]) => name);
 }
 
+export type BuildingBroker = {
+  name: string;
+  listingCount: number;
+};
+
+function displayableBrokerName(value: string | null): string | null {
+  const name = (value || "").replace(/[\*_`~]/g, "").replace(/\s+/g, " ").trim();
+  if (!name || /@s\.whatsapp\.net$|@lid$|@g\.us$/i.test(name) || /^\+?\d{7,}$/.test(name)) return null;
+  if (/^(call|contact|kindly|please|whatsapp|brokerage|available)$/i.test(name)) return null;
+  return name;
+}
+
+/** Return distinct brokers currently posting the same building. The prefix
+ * deliberately groups small spelling variants such as Silverline/Silverine;
+ * locality keeps similarly named buildings apart.
+ */
+export async function getBuildingBrokers(
+  buildingName: string | null,
+  locality: string | null,
+): Promise<BuildingBroker[]> {
+  const raw = (buildingName || "").trim();
+  if (!raw) return [];
+  const db = getServerSupabase();
+  if (!db) return [];
+  const words = raw.split(/\s+/).filter(Boolean);
+  const last = words[words.length - 1] || raw;
+  const stem = last.length > 5 ? last.slice(0, last.length - 3) : last;
+  const prefix = `${words.slice(0, -1).join(" ")}${words.length > 1 ? " " : ""}${stem}`;
+  let query = db
+    .from("listings_unified")
+    .select("broker_name, building_name, micro_market")
+    .ilike("building_name", `${prefix}%`)
+    .not("broker_name", "is", null)
+    .limit(500);
+  if (locality) query = query.eq("micro_market", locality);
+  const { data, error } = await query;
+  if (error || !data) return [];
+  const counts = new Map<string, number>();
+  for (const row of data) {
+    const name = displayableBrokerName(row.broker_name);
+    if (!name) continue;
+    counts.set(name, (counts.get(name) || 0) + 1);
+  }
+  return [...counts.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .map(([name, listingCount]) => ({ name, listingCount }));
+}
+
 export async function getSimilarListingsForExpired(
   opts: { micro_market: string | null; bhk: string | null; intent: string | null; limit?: number },
 ): Promise<Array<{ id: number; micro_market: string | null; bhk: string | null; building_name: string | null; price: number | null; price_unit: string | null; last_seen: string | null; property_type: string | null }>> {
