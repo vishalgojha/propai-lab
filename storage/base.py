@@ -87,6 +87,7 @@ class ParsedObservation:
     listing_index: int = 0
     forwarded: int = 0
     confidence: float = 0.0
+    extraction_confidence_score: float = 0.0
     raw_payload: str = "{}"
     event_id: Optional[str] = None
     created_at: str = ""

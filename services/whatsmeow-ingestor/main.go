@@ -539,7 +539,7 @@ func (sm *SessionManager) newSession(brokerID string, device *store.Device) *Bro
 
 func (sm *SessionManager) lookupDeviceJID(ctx context.Context, brokerID string) (string, error) {
 	var jid string
-	err := sm.db.QueryRowContext(ctx, "SELECT device_jid FROM broker_whatsapp_devices WHERE broker_id=$1", brokerID).Scan(&jid)
+	err := sm.db.QueryRowContext(ctx, "SELECT device_jid FROM broker_whatsapp_devices WHERE whatsapp_connection_key=$1", brokerID).Scan(&jid)
 	if err == sql.ErrNoRows {
 		return "", nil
 	}
@@ -548,9 +548,9 @@ func (sm *SessionManager) lookupDeviceJID(ctx context.Context, brokerID string) 
 
 func (sm *SessionManager) saveDeviceJID(ctx context.Context, brokerID, deviceJID string) error {
 	_, err := sm.db.ExecContext(ctx,
-		`INSERT INTO broker_whatsapp_devices (broker_id, device_jid, created_at)
+		`INSERT INTO broker_whatsapp_devices (whatsapp_connection_key, device_jid, created_at)
 		 VALUES ($1, $2, NOW())
-		 ON CONFLICT (broker_id) DO UPDATE SET device_jid=$2, updated_at=NOW()`,
+		 ON CONFLICT (whatsapp_connection_key) DO UPDATE SET device_jid=$2, updated_at=NOW()`,
 		brokerID, deviceJID)
 	return err
 }
@@ -558,21 +558,21 @@ func (sm *SessionManager) saveDeviceJID(ctx context.Context, brokerID, deviceJID
 func (sm *SessionManager) deleteDeviceMapping(ctx context.Context, brokerID string, reason string) error {
 	// Look up the existing device_jid to log it in history
 	var deviceJID string
-	err := sm.db.QueryRowContext(ctx, "SELECT device_jid FROM broker_whatsapp_devices WHERE broker_id=$1", brokerID).Scan(&deviceJID)
+	err := sm.db.QueryRowContext(ctx, "SELECT device_jid FROM broker_whatsapp_devices WHERE whatsapp_connection_key=$1", brokerID).Scan(&deviceJID)
 	if err != nil && err != sql.ErrNoRows {
 		log.Printf("[broker %s] error looking up device JID for history: %v", brokerID, err)
 	}
 
 	if deviceJID != "" {
 		_, err := sm.db.ExecContext(ctx,
-			"INSERT INTO broker_whatsapp_device_history (broker_id, device_jid, wiped_at, reason) VALUES ($1, $2, NOW(), $3)",
+			"INSERT INTO broker_whatsapp_device_history (whatsapp_connection_key, device_jid, wiped_at, reason) VALUES ($1, $2, NOW(), $3)",
 			brokerID, deviceJID, reason)
 		if err != nil {
 			log.Printf("[broker %s] error writing to history table: %v", brokerID, err)
 		}
 	}
 
-	_, err = sm.db.ExecContext(ctx, "DELETE FROM broker_whatsapp_devices WHERE broker_id=$1", brokerID)
+	_, err = sm.db.ExecContext(ctx, "DELETE FROM broker_whatsapp_devices WHERE whatsapp_connection_key=$1", brokerID)
 	return err
 }
 
@@ -3138,7 +3138,7 @@ func main() {
 	db.SetMaxIdleConns(2)
 
 	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS broker_whatsapp_devices (
-		broker_id TEXT PRIMARY KEY,
+		whatsapp_connection_key TEXT PRIMARY KEY,
 		device_jid TEXT NOT NULL,
 		created_at TIMESTAMPTZ DEFAULT NOW(),
 		updated_at TIMESTAMPTZ DEFAULT NOW()
@@ -3148,7 +3148,7 @@ func main() {
 
 	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS broker_whatsapp_device_history (
 		id SERIAL PRIMARY KEY,
-		broker_id TEXT NOT NULL,
+		whatsapp_connection_key TEXT NOT NULL,
 		device_jid TEXT NOT NULL,
 		wiped_at TIMESTAMPTZ DEFAULT NOW(),
 		reason TEXT NOT NULL
@@ -3183,7 +3183,7 @@ func main() {
 	sm := NewSessionManager(container, db)
 
 	// Load existing broker sessions from stored device mappings
-	rows, err := db.Query("SELECT broker_id, device_jid FROM broker_whatsapp_devices")
+	rows, err := db.Query("SELECT whatsapp_connection_key, device_jid FROM broker_whatsapp_devices")
 	if err != nil {
 		log.Printf("error loading existing sessions: %v", err)
 	} else {
@@ -3205,7 +3205,7 @@ func main() {
 			}
 			if device == nil {
 				log.Printf("[broker %s] device %q not found in store, removing mapping", brokerID, deviceJID)
-				db.Exec("DELETE FROM broker_whatsapp_devices WHERE broker_id=$1", brokerID)
+				db.Exec("DELETE FROM broker_whatsapp_devices WHERE whatsapp_connection_key=$1", brokerID)
 				continue
 			}
 			lockConn, locked, lockErr := sm.acquireBrokerLock(ctx, brokerID)

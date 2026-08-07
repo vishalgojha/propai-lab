@@ -36,8 +36,7 @@ from lab.embedding import create_engine, observation_text, pack_embedding
 from lab.events import get_bus
 from agents.building_alias_engine import fuzzy_score, normalize_building_name
 from deterministic_splitters import parse_message as parse_template_message
-from ai_extraction import _classify_message_flags
-from price_normalization import canonical_commercial_rental_price_rupees, canonical_price_rupees, canonical_rental_price_rupees, parse_explicit_price, rent_price_needs_review, source_transaction_type
+from price_normalization import canonical_commercial_rental_price_rupees, canonical_price_rupees, canonical_rental_price_rupees, parse_explicit_price, rent_price_needs_review
 
 
 def get_storage():
@@ -275,7 +274,8 @@ def _normalize_building_to_canonical(name: str) -> str | None:
 
 
 def _message_hash(text: str) -> str:
-    return hashlib.md5((text or "").encode("utf-8")).hexdigest()
+    # Content-addressed cache key: the raw message body is the input identity.
+    return hashlib.sha256((text or "").encode("utf-8")).hexdigest()
 
 
 def _sender_template_key(sender_phone: str = "", sender_jid: str = "") -> str:
@@ -488,12 +488,6 @@ def _sanitize_parsed_listing(parsed: dict) -> dict:
     # locality or allowed to replace an explicit sibling building.
     if not cleaned.get("building_name") and cleaned.get("project_name"):
         cleaned["building_name"] = cleaned["project_name"]
-
-    # Normalize building_name against known buildings in the DB.
-    # The LLM often extracts ad text, locality names, or broker phrases;
-    # fuzzy-matching against the 4,000+ canonical names catches most of these.
-    if cleaned.get("building_name"):
-        cleaned["building_name"] = _normalize_building_to_canonical(cleaned["building_name"])
 
     payload = cleaned.get("raw_payload")
     if isinstance(payload, dict):
@@ -758,9 +752,7 @@ def _ai_extraction_to_parsed(ai_extraction: dict, raw_text: str, sender_name: st
     remains unchanged. The full AI result is stored separately in the
     `ai_extraction` JSONB column.
     """
-    listing_type = ai_extraction.get("listing_type")
-    if listing_type in {"sale", "rent"}:
-        listing_type = source_transaction_type(raw_text, listing_type)
+    listing_type = ai_extraction.get("routing_listing_type") or ai_extraction.get("listing_type")
     if listing_type == "sale":
         intent = "SELL"
     elif listing_type == "rent":
@@ -770,11 +762,11 @@ def _ai_extraction_to_parsed(ai_extraction: dict, raw_text: str, sender_name: st
     else:
         intent = None
 
-    category = ai_extraction.get("classified_asset_type") or ai_extraction.get("property_category")
-    asset_type = category.upper() if category else None
-    classified_transaction = ai_extraction.get("classified_transaction_type")
-    if classified_transaction not in {"sale", "rent"}:
-        classified_transaction = "rent" if re.search(r"\b(?:rent|rental|lease|monthly|deposit)\b", raw_text or "", re.I) else "sale"
+    category = ai_extraction.get("property_category")
+    asset_type = category.lower() if category else None
+    classified_transaction = ai_extraction.get("transaction_type") or listing_type
+    if classified_transaction not in {"sale", "rent", "lease", "pg", "joint_venture"}:
+        classified_transaction = "sale"
 
     bhk_val = ai_extraction.get("bhk")
     bhk_str = None
@@ -895,7 +887,7 @@ def _ai_extraction_to_parsed(ai_extraction: dict, raw_text: str, sender_name: st
 
         "asset_type": asset_type,
         "property_type": None,
-        "transaction_type": listing_type if listing_type in ("sale", "rent") else classified_transaction,
+        "transaction_type": ai_extraction.get("transaction_type") or classified_transaction,
         "commercial_use_type": ai_extraction.get("commercial_use_type"),
         "fitout_status": ai_extraction.get("fitout_status"),
         "occupancy_type": ai_extraction.get("occupancy_status") or None,
@@ -918,7 +910,11 @@ def _ai_extraction_to_parsed(ai_extraction: dict, raw_text: str, sender_name: st
         "broker_name": None,
         "broker_phone": None,
         "forwarded": 0,
-        "confidence": 1.0,
+        "confidence": max(0.0, min(1.0, float(
+            ai_extraction.get("extraction_confidence_score")
+            if ai_extraction.get("extraction_confidence_score") is not None
+            else ai_extraction.get("confidence", 0.0)
+        ))),
         "raw_payload": {"full_text": raw_text, "slice_text": slice_text or raw_text},
         "normalized_message": _redact_indian_mobiles(slice_text or raw_text),
         "location": None,
@@ -1027,8 +1023,7 @@ def _ai_extraction_to_typed(
     callers can use this explicit table/row contract directly.
     """
     ai = dict(ai_extraction or {})
-    asset, classified_tx, classified_requirement = _classify_message_flags(raw_text)
-    asset = str(ai.get("classified_asset_type") or ai.get("property_category") or asset).lower()
+    asset = str(ai.get("property_category") or "residential").lower()
     if asset not in {"residential", "commercial"}:
         asset = "residential"
     # `listing_type` is the contract used by the extraction schema and is
@@ -1036,17 +1031,13 @@ def _ai_extraction_to_typed(
     # emitted a conflicting classified_transaction_type (for example,
     # listing_type=sale with classified_transaction_type=rent); routing on
     # the latter sends the row into the wrong typed table.
-    listing_type = str(ai.get("listing_type") or "").strip().lower()
-    if listing_type in {"sale", "rent"}:
-        tx = source_transaction_type(raw_text, listing_type)
-    else:
-        tx = str(ai.get("classified_transaction_type") or classified_tx).lower()
+    listing_type = str(ai.get("routing_listing_type") or ai.get("listing_type") or "").strip().lower()
+    tx = str(ai.get("transaction_type") or listing_type or "sale").lower()
     if tx not in {"sale", "rent"}:
-        tx = "rent" if re.search(r"\b(?:rent|rental|lease|monthly|deposit)\b", raw_text or "", re.I) else "sale"
+        tx = "rent"
     is_requirement = bool(
-        ai.get("classified_is_requirement")
+        ai.get("message_class") in {"requirement", "mixed"}
         or ai.get("listing_type") == "requirement"
-        or classified_requirement
     )
     table_map = {
         ("residential", "sale", False): "residential_sale_listings",
@@ -1093,6 +1084,7 @@ def _ai_extraction_to_typed(
         "validation_flags": ai.get("validation_flags") or [],
         "needs_review": bool(ai.get("needs_review")),
         "extraction_confidence": ai.get("extraction_confidence") or "medium",
+        "extraction_confidence_score": max(0.0, min(1.0, float(ai.get("extraction_confidence_score") or ai.get("confidence") or 0.0))),
     }
     price_info = ai.get("price") if isinstance(ai.get("price"), dict) else {}
     price_value, price_unit = _price_from_ai_and_raw(price_info)
@@ -1534,7 +1526,7 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
 
     # Re-import app-level helpers (they depend on app.py globals)
     from app import (
-        generate_summary_title, compute_embedding, resolve_parsed,
+        generate_summary_title, compute_embedding,
     )
     # Share eligibility is deterministic and evaluated before persistence. It
     # keeps private tenant output out of shared-market consumers while leaving
@@ -1611,7 +1603,7 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
         except Exception as exc:
             print(f"  [extract] create_knowledge_record error for {raw_id}: {exc}", flush=True)
 
-    # ── Parse (dedup first, deterministic splitter second, AI last) ───
+    # ── Parse (content-hash dedup first, then one raw-message AI call) ───
     preparsed_input = ctx.get("preparsed_listings")
     parsed_listings: list[dict] = (
         [
@@ -1671,39 +1663,9 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
                         "extraction_source": "hash_duplicate",
                     }
 
-        selected_pattern, parsed_chunks = _run_template_splitter(
-            storage,
-            msg_text,
-            tenant_id=org_id,
-            sender_phone=sender_phone or "",
-            sender_jid=sender_jid or "",
-        )
-        if selected_pattern and parsed_chunks:
-            if len(parsed_chunks) > 1 and not ctx.get("parent_message_id"):
-                split_ctx = {
-                    **ctx,
-                    "split_pattern": selected_pattern,
-                }
-                split_ids = _materialize_split_raw_messages(storage, raw_id, split_ctx, parsed_chunks)
-                if len(split_ids) == len(parsed_chunks):
-                    storage.mark_raw_processed(raw_id)
-                    return {
-                        "raw_id": raw_id,
-                        "split_raw_ids": split_ids,
-                        "parsed_ids": [],
-                        "listing_ids": [],
-                        "requirement_ids": [],
-                        "storage_status": "split",
-                        "extraction_source": f"deterministic:{selected_pattern}",
-                    }
-            parsed_listings = [
-                _sanitize_parsed_listing(dict(item))
-                for item in parsed_chunks
-                if isinstance(item, dict)
-            ]
-            ai_extractions_raw = [None] * len(parsed_listings)
-            extraction_source = f"deterministic:{selected_pattern}"
-            ai_result = {"extraction_source": extraction_source, "extractions": []}
+        # Do not split or classify before the model. The complete raw message,
+        # reply context, attachments, and tenant-scoped building shortlist are
+        # passed to ai_extract() below.
 
     if not parsed_listings:
         # AI receives the original message exactly once. Do not classify, split,
@@ -1725,16 +1687,9 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
             raw_ai_items = ai_result.get("extractions") or ([ai_result["extraction"]] if ai_result.get("extraction") else [])
             ai_items = [item for item in raw_ai_items if isinstance(item, dict)]
             if extraction_source == "ai" and ai_items:
-                slice_texts = _slice_blocks_for_ai_items(msg_text, ai_items)
-                guarded_items = _apply_requirement_source_guard(ai_items, msg_text, slice_texts)
-                guarded_items = _apply_listing_transaction_guard(guarded_items, msg_text, slice_texts)
-                if guarded_items != ai_items:
-                    cache_needs_store = True
-                    ai_items = guarded_items
-                    if ai_result.get("extractions") is not None:
-                        ai_result = {**ai_result, "extractions": ai_items}
-                    else:
-                        ai_result = {**ai_result, "extraction": ai_items[0]}
+                # AI owns item boundaries; every item retains the untouched
+                # complete WhatsApp message as its evidence source.
+                slice_texts = [msg_text] * len(ai_items)
                 parsed_listings = [
                     _ai_extraction_to_parsed(item, msg_text, sender_name, push_name, slice_text=sl)
                     for item, sl in zip(ai_items, slice_texts)
@@ -1866,29 +1821,7 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
     # captured message; attach it to every split item without another LLM call.
     signature_phone, signature_name = _extract_broker_contact_from_text(msg_text or "")
 
-    def apply_source_price_guard(parsed: dict, source_text: str) -> None:
-        # For a single listing, or a correctly isolated split block, an
-        # explicit native price in the source outranks an LLM conversion.
-        if not source_text or (len(parsed_listings) > 1 and source_text.strip() == (msg_text or "").strip()):
-            return
-        native = _parse_raw_price_native(source_text)
-        if not native:
-            return
-        amount, unit = native
-        absolute = _deterministic_price_rupees({"price": amount, "price_unit": unit})
-        if absolute is None:
-            return
-        parsed["price"] = absolute
-        parsed["price_unit"] = "abs"
-        parsed["price_model"] = None
-        if parsed.get("intent") == "RENT":
-            parsed["monthly_rent"] = absolute
-        elif parsed.get("intent") == "SELL":
-            parsed["total_asking_price"] = absolute
-
     for pl in parsed_listings:
-        block_text = (pl.get("raw_payload") or {}).get("full_text") if isinstance(pl.get("raw_payload"), dict) else ""
-        apply_source_price_guard(pl, block_text or msg_text or "")
         is_valid_mobile = bool(re.fullmatch(r'^(\+?91)?[6-9]\d{9}$', sender_phone or ''))
         if sender_label_is_name:
             pl["broker_name"] = sender_label
@@ -1977,21 +1910,15 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
             block_text = parsed["raw_payload"].get("full_text")
         source_text = block_text or msg_text
 
-        # Resolver evidence can supply a canonical building market that the
-        # text parser cannot. Persist it on the typed observation before listings are
-        # materialized so every downstream surface sees the same locality.
-        try:
-            resolver_result = resolve_parsed(parsed, source_text)
-            for field in (
-                "building_name", "landmark_name", "street_name",
-                "project_name", "developer_name", "micro_market",
-            ):
-                parsed_field = "developer" if field == "developer_name" else field
-                if not parsed.get(parsed_field) and resolver_result.get(field):
-                    parsed[parsed_field] = resolver_result[field]
-        except Exception as exc:
-            print(f"  [extract] resolve_parsed error: {exc}", flush=True)
-            resolver_result = {}
+        # Building identity is an AI extraction field. Deterministic code only
+        # validates tenant ownership and persists/discovers the entity.
+        resolver_result = {
+            "building_id": ai_item.get("building_id") if ai_item else None,
+            "building_name": parsed.get("building_name"),
+            "resolver_confidence": ai_item.get("building_resolution_confidence", 0.0) if ai_item else 0.0,
+            "final_confidence": float(parsed.get("confidence") or 0.0),
+            "method": "ai_context" if ai_item and ai_item.get("building_id") else "unresolved",
+        }
 
         # Resolve broker identity for this observation
         try:
@@ -2053,6 +1980,7 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
             profile_name=sender_name or push_name,
             forwarded=parsed.get("forwarded", 0),
             confidence=parsed.get("confidence", 0.0),
+            extraction_confidence_score=parsed.get("confidence", 0.0),
             raw_payload=json.dumps(parsed.get("raw_payload", {})),
             embedding=embedding_blob,
             summary_title=ai_item.get("title") if ai_item else generate_summary_title(parsed, source_text),
@@ -2150,33 +2078,8 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
             except Exception:
                 pass
 
-        # ── Resolve ──────────────────────────────────────────────
-        resolver_result["parsed_id"] = parsed_id
-
-        dec = ResolverDecision(
-            parsed_id=parsed_id,
-            building_id=resolver_result.get("building_id"),
-            building_name=resolver_result.get("building_name"),
-            landmark_id=resolver_result.get("landmark_id"),
-            landmark_name=resolver_result.get("landmark_name"),
-            street_id=resolver_result.get("street_id"),
-            street_name=resolver_result.get("street_name"),
-            project_id=resolver_result.get("project_id"),
-            project_name=resolver_result.get("project_name"),
-            developer_name=resolver_result.get("developer_name"),
-            parser_confidence=1.0,
-            resolver_confidence=1.0,
-            final_confidence=1.0,
-            method=resolver_result.get("method", "unresolved"),
-            method_detail=resolver_result.get("method_detail"),
-            candidates=json.dumps(resolver_result.get("candidates", [])),
-            failure_category=resolver_result.get("failure_category"),
-            error=resolver_result.get("error"),
-        )
-        try:
-            storage.save_resolver_decision(dec)
-        except Exception as exc:
-            print(f"  [extract] save_resolver_decision error: {exc}", flush=True)
+        # New typed observations retain AI building resolution in ai_extraction;
+        # the legacy resolver_decisions table is not written from this path.
 
         # Bridge the fully enriched observation to its correct market
         # destination only after the resolver pass. Supply and demand are

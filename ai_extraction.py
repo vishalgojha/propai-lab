@@ -33,6 +33,7 @@ from llm import get_configured_providers
 from deterministic_splitters import split_message_into_chunks
 from extraction_models import validate_source_semantics
 from price_normalization import source_transaction_type
+from agents.building_alias_engine import fuzzy_score
 
 _logger = logging.getLogger(__name__)
 
@@ -681,10 +682,21 @@ For listing price, return price={{amount, unit, period, raw_price_text}}. For a 
 return budget_min/budget_max instead of pretending the budget is a listing price.
 Return no markdown or explanation."""
 
-_VALID_LISTING_TYPES = frozenset({"sale", "rent", "requirement"})
+_VALID_LISTING_TYPES = frozenset({"sale", "rent", "lease", "pg", "joint_venture", "requirement"})
 _VALID_CATEGORIES = frozenset({"residential", "commercial"})
 _VALID_FURNISHING = frozenset({"unfurnished", "semi_furnished", "fully_furnished"})
 _VALID_CONFIDENCE = frozenset({"high", "medium", "low"})
+_VALID_POSSESSION = frozenset({
+    "ready_to_move", "under_construction", "ready_possession",
+    "oc_received", "preleased", "not_specified",
+})
+_VALID_AVAILABILITY = frozenset({
+    "available", "sold", "let_out", "withdrawn", "closed", "not_specified",
+})
+_VALID_FURNISHING_CANONICAL = frozenset({
+    "fully_furnished", "semi_furnished", "unfurnished", "bare_shell",
+    "builder_finish", "not_specified",
+})
 _VALID_PRICE_UNITS = frozenset({"total", "per_sqft"})
 _VALID_PRICE_PERIODS = frozenset({"one_time", "per_month"})
 
@@ -1126,6 +1138,132 @@ def _segment_document(raw_text: str) -> dict:
     }
 
 
+def _building_alias_context(raw_text: str, ctx: dict | None, storage=None) -> list[dict]:
+    """Return a small tenant-scoped alias shortlist for the model.
+
+    This is context retrieval, not resolution: the model still decides whether
+    a name refers to one of these buildings.  The shortlist prevents thousands
+    of aliases from being sent on every request.
+    """
+    if storage is None:
+        return []
+    tenant_id = (ctx or {}).get("tenant_id") or getattr(storage, "_tenant_id", None)
+    try:
+        query = storage.client.table("building_name_aliases").select(
+            "building_id,alias,canonical_name"
+        )
+        if tenant_id:
+            query = query.or_(f"tenant_id.eq.{tenant_id},tenant_id.is.null")
+        rows = query.limit(2500).execute().data or []
+        scored = []
+        for row in rows:
+            alias = str(row.get("alias") or "").strip()
+            if not alias or not row.get("building_id"):
+                continue
+            score = fuzzy_score(raw_text, alias)
+            # Token containment is a useful retrieval signal for long WhatsApp
+            # messages where whole-document similarity is naturally low.
+            text_tokens = set(re.findall(r"[a-z0-9]+", raw_text.casefold()))
+            alias_tokens = set(re.findall(r"[a-z0-9]+", alias.casefold()))
+            overlap = len(text_tokens & alias_tokens) / max(len(alias_tokens), 1)
+            scored.append((max(score, overlap), row))
+        scored.sort(key=lambda item: item[0], reverse=True)
+        result = []
+        seen = set()
+        for score, row in scored:
+            key = row.get("building_id")
+            if key in seen:
+                continue
+            seen.add(key)
+            result.append({
+                "building_id": key,
+                "alias": row.get("alias"),
+                "canonical_name": row.get("canonical_name"),
+            })
+            if len(result) >= 20:
+                break
+        return result
+    except Exception as exc:
+        _logger.debug("building alias context unavailable: %s", exc)
+        return []
+
+
+_LOCALITY_CONTEXT_CACHE: tuple[float, list[dict]] = (0.0, [])
+
+
+def _locality_reference_context(storage=None) -> list[dict]:
+    """Return a small cached locality gazetteer for extraction grounding."""
+    global _LOCALITY_CONTEXT_CACHE
+    if storage is None:
+        return []
+    cached_at, cached = _LOCALITY_CONTEXT_CACHE
+    if cached and time.time() - cached_at < 3600:
+        return cached
+    try:
+        rows = storage.client.table("locality_reference").select(
+            "sub_locality,parent_locality,alternate_names"
+        ).limit(300).execute().data or []
+        context = [
+            {
+                "locality": row.get("sub_locality"),
+                "parent": row.get("parent_locality"),
+                "aliases": row.get("alternate_names") or [],
+            }
+            for row in rows
+            if row.get("sub_locality")
+        ]
+        _LOCALITY_CONTEXT_CACHE = (time.time(), context)
+        return context
+    except Exception as exc:
+        _logger.debug("locality reference context unavailable: %s", exc)
+        return []
+
+
+_UNIFIED_EXTRACTION_PROMPT = """You extract structured real-estate opportunities from one raw WhatsApp message.
+The message below is authoritative evidence. Do not rewrite, split, normalize, or
+strip it before interpreting it. Return JSON only with this shape:
+{
+  "message_class": "listing" | "requirement" | "market_chatter" | "irrelevant" | "mixed",
+  "listing_count": number,
+  "items": [
+    {
+      "listing_type": "sale" | "rent" | "lease" | "pg" | "joint_venture" | "requirement",
+      "property_category": "residential" | "commercial",
+      "building_name": string | null,
+      "building_id": number | null,
+      "building_resolution_confidence": number,
+      "locality": {"raw_mention": string | null, "resolved_locality": string | null, "confidence": number},
+      "bhk": number | null,
+      "carpet_area_sqft": number | null,
+      "built_up_area_sqft": number | null,
+      "super_built_up_area_sqft": number | null,
+      "price": {"amount": number | null, "unit": "total" | "per_sqft", "period": "one_time" | "per_month" | null, "raw_price_text": string | null},
+      "transaction_type": "sale" | "rent" | "lease" | "pg" | "joint_venture" | null,
+      "possession_status": "ready_to_move" | "under_construction" | "ready_possession" | "oc_received" | "preleased" | "not_specified",
+      "furnishing_status": "fully_furnished" | "semi_furnished" | "unfurnished" | "bare_shell" | "builder_finish" | "not_specified",
+      "availability_status": "available" | "sold" | "let_out" | "withdrawn" | "closed" | "not_specified",
+      "price_basis": "carpet" | "built_up" | "super_built_up" | "saleable" | "not_specified",
+      "extraction_confidence_score": number,
+      "field_confidence": {"field_name": number},
+      "provenance": {"field_name": "exact quote from the raw message"}
+    }
+  ]
+}
+For each item, preserve exact source wording in provenance. A requirement is demand,
+not inventory. Never invent a building_id: use only the supplied alias context, and
+return null when no context entry is an actual match. Confidence values are 0.0-1.0.
+
+Location separation is strict: a locality/area/neighborhood such as Bandra West,
+Andheri East, Powai, or Khar West belongs in locality.raw_mention and locality.resolved_locality,
+not building_name. building_name is only the specific named society, tower, project,
+or building (for example Lodha Belmondo or Rustomjee Seasons). If a message says
+"3 BHK in Bandra West" with no named society, building_name must be null and the
+locality must be Bandra West. Use the supplied locality_reference context to
+distinguish locality names from building names; do not promote a locality into a
+building merely because it appears in a heading.
+"""
+
+
 def _normalize_extraction(raw: dict) -> dict:
     """Normalize and validate LLM extraction response."""
     result = {}
@@ -1136,12 +1274,17 @@ def _normalize_extraction(raw: dict) -> dict:
     # candidate as "no valid listings".
     lt_raw = str(raw.get("listing_type", "")).strip().lower()
     lt_raw = lt_raw.replace(" ", "_").replace("-", "_")
-    result["listing_type"] = _LISTING_TYPE_ALIASES.get(lt_raw)
+    result["listing_type"] = lt_raw if lt_raw in _VALID_LISTING_TYPES else None
+    # Typed routing currently has sale/rent destinations. Preserve the AI's
+    # richer transaction_type separately while routing lease/PG/JV to rent.
+    if result["listing_type"] in {"lease", "pg", "joint_venture"}:
+        result["routing_listing_type"] = "rent"
+    result["transaction_type"] = str(raw.get("transaction_type") or lt_raw or "").strip().lower() or None
 
     # property_category — same alias pattern
     pc_raw = str(raw.get("property_category", "")).strip().lower()
     pc_raw = pc_raw.replace(" ", "_").replace("-", "_")
-    result["property_category"] = _CATEGORY_ALIASES.get(pc_raw)
+    result["property_category"] = pc_raw if pc_raw in _VALID_CATEGORIES else None
 
     # bhk
     result["bhk"] = _coerce_float(raw.get("bhk"))
@@ -1161,7 +1304,7 @@ def _normalize_extraction(raw: dict) -> dict:
             "raw_price_text": str(price.get("raw_price_text", "")).strip() or None,
         }
         if result["price"]["unit"] not in _VALID_PRICE_UNITS:
-            result["price"]["unit"] = "total"
+            result["price"]["unit"] = None
         if result["price"]["period"] not in _VALID_PRICE_PERIODS:
             result["price"]["period"] = None
     else:
@@ -1170,13 +1313,14 @@ def _normalize_extraction(raw: dict) -> dict:
     # locality
     loc = raw.get("locality", {})
     if isinstance(loc, dict):
-        conf = str(loc.get("confidence", "")).strip().lower()
+        raw_conf = loc.get("confidence")
+        conf = str(raw_conf).strip().lower()
         rm = loc.get("raw_mention")
-        rl = loc.get("resolved_locality") or loc.get("normalized")
+        rl = loc.get("resolved_locality")
         result["locality"] = {
             "raw_mention": str(rm).strip() if rm is not None else None,
             "resolved_locality": str(rl).strip() if rl is not None else None,
-            "confidence": conf if conf in _VALID_CONFIDENCE else "low",
+            "confidence": raw_conf if isinstance(raw_conf, (int, float)) else (conf if conf in _VALID_CONFIDENCE else "low"),
         }
     else:
         result["locality"] = {"raw_mention": None, "resolved_locality": None, "confidence": "low"}
@@ -1231,13 +1375,7 @@ def _normalize_extraction(raw: dict) -> dict:
     # furnishing_status — enum + aliases (LLM writes "semi-furnished",
     # "fully furnished", "bare" etc.)
     fs_raw = str(raw.get("furnishing_status", "")).strip().lower()
-    fs_raw = fs_raw.replace(" ", "_").replace("-", "_")
-    if fs_raw in _FURNISHING_ALIASES:
-        result["furnishing_status"] = _FURNISHING_ALIASES[fs_raw]
-    elif fs_raw and fs_raw != "null":
-        result["furnishing_status"] = fs_raw
-    else:
-        result["furnishing_status"] = None
+    result["furnishing_status"] = fs_raw if fs_raw in _VALID_FURNISHING_CANONICAL else None
 
     # amenities
     amenities = raw.get("amenities", [])
@@ -1247,8 +1385,26 @@ def _normalize_extraction(raw: dict) -> dict:
         result["amenities"] = []
 
     # possession_status
-    ps = raw.get("possession_status")
-    result["possession_status"] = str(ps).strip() if ps and str(ps).strip() else None
+    ps = str(raw.get("possession_status") or "").strip().lower()
+    result["possession_status"] = ps if ps in _VALID_POSSESSION else None
+
+    availability = str(raw.get("availability_status") or "").strip().lower()
+    result["availability_status"] = availability if availability in _VALID_AVAILABILITY else None
+
+    result["building_id"] = _coerce_int(raw.get("building_id"))
+    score = _coerce_float(raw.get("building_resolution_confidence"))
+    result["building_resolution_confidence"] = max(0.0, min(1.0, score or 0.0))
+    result["field_confidence"] = raw.get("field_confidence") if isinstance(raw.get("field_confidence"), dict) else {}
+    result["provenance"] = raw.get("provenance") if isinstance(raw.get("provenance"), dict) else {}
+    result["message_class"] = raw.get("message_class")
+    result["listing_count"] = _coerce_int(raw.get("listing_count"))
+    score = _coerce_float(raw.get("extraction_confidence_score"))
+    if score is None and result["field_confidence"]:
+        values = [_coerce_float(value) for value in result["field_confidence"].values()]
+        values = [value for value in values if value is not None]
+        score = sum(values) / len(values) if values else 0.0
+    result["extraction_confidence_score"] = max(0.0, min(1.0, score or 0.0))
+    result["confidence"] = result["extraction_confidence_score"]
 
     # title
     title = raw.get("title")
@@ -1311,6 +1467,31 @@ def _normalize_extraction(raw: dict) -> dict:
                 result[field] = value
 
     return result
+
+
+def _repair_locality_only_building(extraction: dict, locality_context: list[dict]) -> dict:
+    """Move an exact locality misclassified as a building into locality."""
+    building = str(extraction.get("building_name") or "").strip()
+    if not building or not locality_context:
+        return extraction
+    key = re.sub(r"[^a-z0-9]+", " ", building.casefold()).strip()
+    for item in locality_context:
+        candidates = [item.get("locality"), *(item.get("aliases") or [])]
+        if any(
+            key == re.sub(r"[^a-z0-9]+", " ", str(candidate).casefold()).strip()
+            for candidate in candidates
+            if candidate
+        ):
+            locality = extraction.get("locality")
+            if not isinstance(locality, dict):
+                locality = {"raw_mention": None, "resolved_locality": None, "confidence": "low"}
+            locality["raw_mention"] = locality.get("raw_mention") or building
+            locality["resolved_locality"] = locality.get("resolved_locality") or item.get("parent")
+            locality["confidence"] = locality.get("confidence") or "high"
+            extraction["locality"] = locality
+            extraction["building_name"] = None
+            break
+    return extraction
 
 
 def _source_grounded_price(extraction: dict, raw_text: str) -> dict:
@@ -2034,60 +2215,38 @@ def ai_extract(raw_text: str, ctx: dict | None = None, storage=None) -> dict:
         "document": None,
     }
 
-    # ── Image-only message? ──────────────────────────────────────
-    if ctx and _has_flyer_image(ctx):
-        result["extraction_source"] = "image_unprocessed"
-        result["needs_review"] = True
-        result["extraction"] = {
-            "listing_type": None,
-            "property_category": None,
-            "bhk": None,
-            "carpet_area_sqft": None,
-            "price": {"amount": None, "unit": None, "period": None, "raw_price_text": None},
-            "locality": {"raw_mention": None, "resolved_locality": None, "confidence": "low"},
-            "building_name": None,
-            "furnishing_status": None,
-            "amenities": [],
-            "possession_status": None,
-            "title": "Listing (image — needs review)",
-            "extraction_confidence": "low",
-        }
-        _logger.info("ai_extract: image-only message flagged unprocessed (%s)", time.time() - start)
-        return result
-
-    # ── Not enough text? ──────────────────────────────────────────
-    if not raw_text or len(raw_text.strip()) < 10:
+    # Empty messages with attachment/reply metadata still go through the AI
+    # contract; the model may classify them as irrelevant or review-needed.
+    if not raw_text and not (ctx or {}).get("attachments") and not (ctx or {}).get("reply_context"):
         result["extraction_source"] = "ai_unavailable"
         result["needs_review"] = True
         result["extraction"] = None
         _logger.info("ai_extract: text too short (%s)", time.time() - start)
         return result
 
-    document = _segment_document(raw_text)
-    result["document"] = document
-
-    classified_asset, classified_transaction, classified_requirement = _classify_message_flags(raw_text)
-    mixed_transaction = (
-        not classified_requirement
-        and bool(re.search(r"(?i)\b(?:rent|lease)\b", raw_text))
-        and bool(re.search(r"(?i)\b(?:sale|sell|outright|outrate)\b", raw_text))
-    )
-    focused_prompt = _get_extraction_prompt(
-        classified_asset,
-        classified_transaction,
-        classified_requirement,
-        mixed_transaction=mixed_transaction,
-    )
+    # Semantic work belongs to the model.  Keep the raw body byte-for-byte in
+    # the user message; reply and attachment metadata are separate context.
+    alias_context = _building_alias_context(raw_text, ctx, storage=storage)
+    locality_context = _locality_reference_context(storage)
+    raw_context = {
+        "message": raw_text,
+        "reply_context": (ctx or {}).get("reply_context") or {},
+        "attachments": (ctx or {}).get("attachments") or [],
+        "group_name": (ctx or {}).get("group_name") or "",
+        "tenant_id": (ctx or {}).get("tenant_id"),
+        "known_buildings": alias_context,
+        "known_localities": locality_context,
+    }
+    result["document"] = {"raw": True, "alias_context_count": len(alias_context)}
 
     # ── Build messages ────────────────────────────────────────────
     messages = [
-        {"role": "system", "content": focused_prompt},
+        {"role": "system", "content": _UNIFIED_EXTRACTION_PROMPT},
         {
             "role": "user",
             "content": (
-                "Extract structured listing data from this reconstructed WhatsApp document.\n"
-                "Use the block boundaries and document_type exactly as given.\n\n"
-                f"{json.dumps(document, ensure_ascii=False)}"
+                "Interpret this raw message and return the requested JSON.\n\n"
+                f"{json.dumps(raw_context, ensure_ascii=False)}"
             ),
         },
     ]
@@ -2138,15 +2297,32 @@ def ai_extract(raw_text: str, ctx: dict | None = None, storage=None) -> dict:
             _time.sleep(min(attempts * 1.0, 3))
             continue
 
-        candidates = raw_extraction if isinstance(raw_extraction, list) else [raw_extraction]
+        envelope = raw_extraction if isinstance(raw_extraction, dict) else {}
+        if isinstance(raw_extraction, dict) and isinstance(raw_extraction.get("items"), list) and not raw_extraction["items"]:
+            result["extraction_source"] = "ai"
+            result["provider_used"] = provider["name"]
+            result["message_class"] = raw_extraction.get("message_class")
+            return result
+        candidates = envelope.get("items") if isinstance(envelope.get("items"), list) else raw_extraction
+        candidates = candidates if isinstance(candidates, list) else [candidates]
         normalized_items: list[dict] = []
         for candidate in candidates:
             if not isinstance(candidate, dict):
                 continue
+            candidate = {
+                **candidate,
+                "message_class": envelope.get("message_class"),
+                "listing_count": envelope.get("listing_count"),
+            }
             normalized = _normalize_extraction(candidate)
-            normalized = _apply_deterministic_field_fallbacks(normalized, raw_text)
+            normalized = _repair_locality_only_building(normalized, locality_context)
+            normalized["building_context_allowed"] = bool(
+                normalized.get("building_id")
+                and any(item.get("building_id") == normalized.get("building_id") for item in alias_context)
+            )
+            # These functions validate source grounding only; they do not
+            # split, classify, or canonicalize semantic values.
             normalized = validate_source_semantics(normalized, raw_text)
-            normalized = _source_grounded_price(normalized, raw_text)
             if normalized.get("listing_type") is None:
                 _logger.warning("Provider %s: skipped an item without listing_type", provider["name"])
                 continue
@@ -2154,56 +2330,6 @@ def ai_extract(raw_text: str, ctx: dict | None = None, storage=None) -> dict:
             normalized["classified_asset_type"] = classified_asset
             normalized["classified_transaction_type"] = classified_transaction
             normalized["classified_is_requirement"] = classified_requirement
-
-            # Locality resolution against reference table
-            loc = normalized.get("locality", {})
-            if isinstance(loc, dict) and loc.get("raw_mention") and not loc.get("resolved_locality"):
-                resolved = resolve_locality(loc["raw_mention"], storage=storage)
-                if resolved["resolved_locality"]:
-                    loc["resolved_locality"] = resolved["resolved_locality"]
-                    loc["confidence"] = resolved["confidence"]
-                else:
-                    canonical = _canonical_locality_from_mention(loc["raw_mention"])
-                    if canonical:
-                        loc["resolved_locality"] = canonical
-                        loc["confidence"] = "high"
-
-            # ── Link-only / ultra-short message guard ────────────────
-            # When the source message is just a URL or under 30 chars,
-            # the LLM cannot have extracted any real property data.
-            # Null the locality and furnishing to prevent hallucinated
-            # values from leaking through. Keep building_name — the
-            # building-name cross-reference fallback below needs it to
-            # resolve the correct locality from the buildings table.
-            _msg_lower = raw_text.strip().lower()
-            _is_link_only = bool(re.match(r"^https?://\S+$", _msg_lower))
-            _is_ultra_short = len(raw_text.strip()) < 30
-            if _is_link_only or _is_ultra_short:
-                if isinstance(loc, dict):
-                    loc["raw_mention"] = None
-                    loc["resolved_locality"] = None
-                    loc["confidence"] = "low"
-                normalized["furnishing_status"] = None
-
-            # ── Building-name locality fallback ──────────────────────
-            # When the message didn't mention a locality but the LLM
-            # extracted a building name, look up the building in our
-            # database to get the correct locality. This prevents
-            # link-only messages (e.g. YouTube links to Kalpataru
-            # Vivante) from inheriting a wrong locality from the
-            # extraction hallucination.
-            if (
-                isinstance(loc, dict)
-                and not loc.get("resolved_locality")
-                and normalized.get("building_name")
-                and storage is not None
-            ):
-                bld_result = locality_from_building_name(
-                    normalized["building_name"], storage=storage
-                )
-                if bld_result.get("resolved_locality"):
-                    loc["resolved_locality"] = bld_result["resolved_locality"]
-                    loc["confidence"] = bld_result["confidence"]
 
             if not normalized.get("title"):
                 normalized["title"] = generate_title(normalized)

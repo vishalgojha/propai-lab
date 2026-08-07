@@ -234,6 +234,7 @@ _TYPED_COMMON_READ_COLUMNS = (
     "locality_confidence,landmark_name,street_name,broker_id,broker_name,"
     "broker_phone,group_name,summary_title,deal_tags,"
     "validation_flags,needs_review,extraction_confidence,corrected_fields,"
+    "extraction_confidence_score,"
     "correction_confidence,corrected_at,created_at,updated_at,legacy_source_id"
 )
 _TYPED_READ_COLUMNS_BY_TABLE = {
@@ -1200,11 +1201,70 @@ class SupabaseStorage(Storage):
 
     # ── Multi-Tenant: Organizations ────────────────────────────────
 
-    def create_organization(self, name: str, slug: str) -> dict | None:
-        res = self.client.table("organizations").insert({
-            "name": name, "slug": slug
-        }).execute()
+    def get_organization_by_owner_user_id(self, user_id: str) -> dict | None:
+        user_id = str(user_id or "").strip()
+        if not user_id:
+            return None
+        res = self.client.table("organizations").select("*").eq(
+            "owner_user_id", user_id
+        ).limit(1).execute()
         return res.data[0] if res.data else None
+
+    def get_organization_by_owner_phone(self, phone: str) -> dict | None:
+        phone = str(phone or "").strip()
+        if not phone:
+            return None
+        res = self.client.table("organizations").select("*").eq(
+            "owner_phone", phone
+        ).limit(1).execute()
+        return res.data[0] if res.data else None
+
+    def claim_organization_owner(
+        self, org_id: str, owner_user_id: str | None, owner_phone: str | None
+    ) -> dict | None:
+        payload = {
+            "owner_user_id": owner_user_id or None,
+            "owner_phone": owner_phone or None,
+        }
+        try:
+            res = self.client.table("organizations").update(payload).eq(
+                "id", org_id
+            ).is_("owner_user_id", "null").execute()
+            return res.data[0] if res.data else self.get_organization(org_id)
+        except Exception:
+            return None
+
+    def create_organization(
+        self,
+        name: str,
+        slug: str,
+        owner_user_id: str | None = None,
+        owner_phone: str | None = None,
+    ) -> dict | None:
+        payload = {
+            "name": name,
+            "slug": slug,
+            "owner_user_id": owner_user_id or None,
+            "owner_phone": owner_phone or None,
+        }
+        try:
+            res = self.client.table("organizations").insert(payload).execute()
+            return res.data[0] if res.data else None
+        except Exception:
+            # A concurrent retry may have won the owner uniqueness race.
+            # Return that row instead of creating a suffixed organization.
+            if owner_user_id:
+                existing = self.get_organization_by_owner_user_id(owner_user_id)
+                if existing:
+                    return existing
+            if owner_phone:
+                existing = self.get_organization_by_owner_phone(owner_phone)
+                if existing:
+                    return existing
+            # Do not return an unrelated organization merely because its slug
+            # collided. The caller will either retry with a new slug or report
+            # the provisioning failure.
+            return None
 
     def get_organization(self, org_id: str) -> dict | None:
         res = self.client.table("organizations").select("*").eq("id", org_id).limit(1).execute()
@@ -1224,9 +1284,9 @@ class SupabaseStorage(Storage):
         return bool(res.data)
 
     def add_organization_member(self, org_id: str, user_id: str, role_id: int | None = None) -> dict | None:
-        res = self.client.table("organization_members").insert({
+        res = self.client.table("organization_members").upsert({
             "organization_id": org_id, "user_id": user_id, "role_id": role_id
-        }).execute()
+        }, on_conflict="organization_id,user_id").execute()
         return res.data[0] if res.data else None
 
     def remove_organization_member(self, org_id: str, user_id: str) -> bool:
@@ -2363,6 +2423,7 @@ class SupabaseStorage(Storage):
         "broker_name", "broker_phone", "profile_name", "listing_index",
         "broker_rera_number",
         "forwarded", "confidence", "raw_payload", "created_at",
+        "extraction_confidence_score",
         "summary_title", "reparsed_at", "event_id", "tenant_id",
         "normalized_message",
         "asset_type", "property_type", "transaction_type",
@@ -2531,6 +2592,7 @@ class SupabaseStorage(Storage):
             "validation_flags": data.get("validation_flags") or [],
             "needs_review": bool(data.get("needs_review")),
             "extraction_confidence": "high" if float(data.get("confidence") or 0) >= .85 else ("medium" if float(data.get("confidence") or 0) >= .6 else "low"),
+            "extraction_confidence_score": max(0.0, min(1.0, float(data.get("extraction_confidence_score") or data.get("confidence") or 0.0))),
             "corrected_fields": data.get("corrected_fields") or [],
             "correction_confidence": data.get("correction_confidence"),
             "corrected_at": data.get("corrected_at"),
@@ -2812,6 +2874,8 @@ class SupabaseStorage(Storage):
             allowed = allowed_by_table[table]
         else:
             allowed = allowed_by_table[table]
+        allowed = set(allowed)
+        allowed.add("extraction_confidence_score")
         typed = {k: v for k, v in typed.items() if v is not None and k in (set(common) | allowed)}
         try:
             return self.save_typed_listing(table, typed, _already_filtered=True, _source_id=source_id)
@@ -3999,6 +4063,8 @@ class SupabaseStorage(Storage):
             "commercial_sale_listings", "commercial_rent_listings",
         ):
             allowed[listing_table].add("broker_rera_number")
+        for typed_table in allowed:
+            allowed[typed_table].add("extraction_confidence_score")
         typed = {k: v for k, v in typed.items() if v is not None and k in allowed}
         try:
             res = self.client.table(table).upsert(typed, on_conflict="source_fingerprint").execute()

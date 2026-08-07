@@ -893,7 +893,7 @@ async def ai_explain(observation_id: int, user: dict = Depends(require_user)):
         rules.append(f"micro_market='{parsed['micro_market']}': extracted from location")
 
     resolver = detail.get("resolver", {})
-    if resolver.get("method") == "resolved":
+    if resolver.get("building_id") and resolver.get("method") != "unresolved":
         rules.append(f"resolver={resolver['method']}: matched building #{resolver.get('building_id')} "
                       f"({resolver.get('building_name', 'unknown')}) with confidence {resolver.get('resolver_confidence', 0)}")
     elif resolver.get("failure_category"):

@@ -78,8 +78,11 @@ _VALID_INTENTS = {"SELL", "RENT", "BUY", "REQUIREMENT", "NO_ANCHOR", "DEMAND"}
 _VALID_PRICE_UNITS = {"abs", "Cr", "Lac", "K", None}
 _VALID_FURNISHINGS = {
     None, "", "unfurnished", "semi_furnished", "fully_furnished",
-    "furnished", "semi furnished", "fully furnished",
-    "bare shell", "warm shell", "cat a",
+    "bare_shell", "builder_finish", "not_specified",
+}
+_VALID_POSSESSION = {
+    None, "", "ready_to_move", "under_construction", "ready_possession",
+    "oc_received", "preleased", "not_specified",
 }
 _VALID_PROPERTY_CATEGORIES = {
     None, "", "APARTMENT", "VILLA", "PENTHOUSE", "STUDIO",
@@ -190,7 +193,7 @@ def validate_listing(parsed: dict[str, Any]) -> ValidationResult:
     bhk = parsed.get("bhk")
     bhk_num = _parse_bhk_number(bhk)
     if bhk_num is not None:
-        if bhk_num > 15:
+        if bhk_num > 10:
             result.flag(f"bhk_too_high:{bhk}")
         if bhk_num == 0 and bhk and "RK" not in bhk.upper():
             result.flag("bhk_zero_not_rk")
@@ -206,10 +209,10 @@ def validate_listing(parsed: dict[str, Any]) -> ValidationResult:
             area_val = float(area)
             if area_val <= 0:
                 result.flag("area_non_positive")
-            elif area_val < 50:
-                result.flag(f"area_suspiciously_small:{area_val}")
-            elif area_val > 50_000:
-                result.flag(f"area_suspiciously_large:{area_val}")
+            elif area_val < 100:
+                result.flag(f"area_out_of_range:{area_val}")
+            elif area_val > 100_000:
+                result.flag(f"area_out_of_range:{area_val}")
         except (TypeError, ValueError):
             result.flag("area_not_numeric")
 
@@ -222,6 +225,32 @@ def validate_listing(parsed: dict[str, Any]) -> ValidationResult:
     furnishing = parsed.get("furnishing")
     if furnishing and furnishing.strip().lower() not in _VALID_FURNISHINGS:
         result.flag(f"unrecognised_furnishing:{furnishing}")
+
+    possession = parsed.get("possession_status")
+    if possession and possession.strip().lower() not in _VALID_POSSESSION:
+        result.flag(f"unrecognised_possession:{possession}")
+
+    # Required semantic anchors. Requirements may use a budget rather than a
+    # listing price, but every persisted opportunity needs a transaction mode
+    # and either a building or locality anchor.
+    if intent not in {"NO_ANCHOR", ""}:
+        if not (parsed.get("building_name") or parsed.get("micro_market") or parsed.get("location_raw")):
+            result.flag("missing_building_or_locality")
+        if intent in {"SELL", "RENT", "LEASE"} and parsed.get("price") is None:
+            result.flag("missing_price")
+
+    # Cross-validate explicit total = rate * area. Keep the source values but
+    # quarantine the row for review when the relationship is materially off.
+    total = parsed.get("total_asking_price") or parsed.get("monthly_rent")
+    rate = parsed.get("price_per_sqft") or parsed.get("rent_per_sqft")
+    area_for_math = parsed.get("area_sqft") or parsed.get("carpet_area_sqft")
+    if total is not None and rate is not None and area_for_math:
+        try:
+            expected = float(rate) * float(area_for_math)
+            if expected > 0 and abs(float(total) - expected) / expected > 0.15:
+                result.flag("price_area_cross_validation_mismatch")
+        except (TypeError, ValueError, ZeroDivisionError):
+            result.flag("price_area_cross_validation_invalid")
 
     # ── Property category validation ─────────────────────────────────
     asset_type = parsed.get("asset_type")

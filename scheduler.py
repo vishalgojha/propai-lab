@@ -246,7 +246,7 @@ def process_record(record: SourceRecord, pipeline_version: str = PIPELINE_VERSIO
     return {
         "raw_id": raw_id,
         "parsed_id": parsed_id,
-        "resolved": resolver_result.get("method") == "resolved",
+        "resolved": bool(resolver_result.get("building_id")),
         "building_name": resolver_result.get("building_name"),
         "confidence": resolver_result.get("final_confidence"),
     }

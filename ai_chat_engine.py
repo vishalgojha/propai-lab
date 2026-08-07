@@ -334,7 +334,7 @@ def load_live_data(db_path):
             "total_properties_posted": parsed_cnt,
             "total_brokers": con.execute("SELECT COUNT(*) FROM brokers").fetchone()[0],
             "unique_properties": con.execute("SELECT COUNT(*) FROM listings_unified").fetchone()[0],
-            "building_matches_found": con.execute("SELECT COUNT(*) FROM resolver_decisions WHERE method='resolved'").fetchone()[0],
+            "building_matches_found": con.execute("SELECT COUNT(*) FROM resolver_decisions WHERE method IS NOT NULL AND method != 'unresolved' AND building_id IS NOT NULL").fetchone()[0],
         }]),
         "description": "Platform overview with total counts of messages, properties, brokers, and matched buildings",
     }
