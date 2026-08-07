@@ -1314,7 +1314,10 @@ async def confirm_browser_action(
             url = url_match.group(0).rstrip(".,!?;:)").strip()
             if not url.lower().startswith(("http://", "https://")):
                 url = f"https://{url}"
-            browser_session_id = f"chat-{session_id}"
+            # agent_browser_sessions.id is a UUID and agent_browser_steps
+            # references it directly. Keep the runtime session identifier
+            # UUID-shaped so the existing persistence contract remains valid.
+            browser_session_id = str(uuid.uuid4())
             browser_args = {"url": url, "browser_session_id": browser_session_id, "session_label": "Approved browser task"}
             opened = await asyncio.to_thread(
                 execute_tool,
