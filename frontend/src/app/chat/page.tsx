@@ -480,6 +480,7 @@ export default function ChatPage() {
   const [showFreshChatNotice, setShowFreshChatNotice] = useState(false);
   const [pendingTaskLabel, setPendingTaskLabel] = useState("Searching live listings…");
   const [confirmationState, setConfirmationState] = useState<Record<string, "pending" | "confirmed" | "error">>({});
+  const [actionError, setActionError] = useState("");
 
   const activeSessionStorageKey = user?.id ? `propai_active_chat_session:${user.id}` : "";
   const { messages, sendMessage, status, setMessages, error } = useChat({
@@ -497,13 +498,14 @@ export default function ChatPage() {
   const previousStatus = useRef(status);
 
   const confirmAgentAction = useCallback(async (token: string) => {
+    setActionError("");
     setConfirmationState((current) => ({ ...current, [token]: "pending" }));
     try {
       await api.confirmAgentAction(token);
       setConfirmationState((current) => ({ ...current, [token]: "confirmed" }));
     } catch (error) {
       setConfirmationState((current) => ({ ...current, [token]: "error" }));
-      setSessionError(error instanceof Error ? error.message : "Browser action failed.");
+      setActionError(error instanceof Error ? error.message : "Action failed.");
     }
   }, []);
 
@@ -521,6 +523,7 @@ export default function ChatPage() {
   }, [setMessages]);
 
   const handleBrowserAction = useCallback(async (token: string, accept: boolean) => {
+    setActionError("");
     setConfirmationState((current) => ({ ...current, [token]: "pending" }));
     try {
       const response = accept
@@ -530,7 +533,7 @@ export default function ChatPage() {
       setConfirmationState((current) => ({ ...current, [token]: "confirmed" }));
     } catch (error) {
       setConfirmationState((current) => ({ ...current, [token]: "error" }));
-      setSessionError(error instanceof Error ? error.message : "Browser action failed.");
+      setActionError(error instanceof Error ? error.message : "Browser action failed.");
     }
   }, [appendAssistantResponse]);
 
@@ -1071,6 +1074,11 @@ export default function ChatPage() {
         {sessionError && (
           <div className="mb-2 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300">
             Chat history could not be loaded: {sessionError}
+          </div>
+        )}
+        {actionError && (
+          <div className="mb-2 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300">
+            Browser action failed: {actionError}
           </div>
         )}
         {brokerActionMessage && (
