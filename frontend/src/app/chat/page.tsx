@@ -465,7 +465,7 @@ export default function ChatPage() {
   const [renameValue, setRenameValue] = useState("");
   const [contactingListingId, setContactingListingId] = useState<number | null>(null);
   const [showFreshChatNotice, setShowFreshChatNotice] = useState(false);
-  const [pendingTaskLabel, setPendingTaskLabel] = useState("Searching live listings…");
+  const [pendingTaskLabel, setPendingTaskLabel] = useState("Thinking…");
   const [confirmationState, setConfirmationState] = useState<Record<string, "pending" | "confirmed" | "error">>({});
   const [actionError, setActionError] = useState("");
 
@@ -698,7 +698,7 @@ export default function ChatPage() {
       void loadSessions();
       import("@/lib/sounds").then(({ playChatResponse }) => playChatResponse());
     }
-    if (status === "ready" || status === "error") setPendingTaskLabel("Searching live listings…");
+    if (status === "ready" || status === "error") setPendingTaskLabel("Thinking…");
     previousStatus.current = status;
   }, [loadSessions, status, user?.id]);
 
@@ -817,8 +817,10 @@ export default function ChatPage() {
     if (!input.trim() || status === "submitted") return;
     setSessionError("");
     const submittedText = input.trim();
-    const browserTask = /\b(?:browser|browse|click|navigate|scroll|go to|website|open\s+(?:https?:\/\/|www\.|[a-z0-9][a-z0-9.-]*\.[a-z]{2,})|check\s+(?:the\s+)?(?:ai\s+provider|provider|settings?)\s+page)\b/i.test(submittedText);
-    setPendingTaskLabel(browserTask ? "Using Agent Browser…" : "Searching live listings…");
+    const browserTask = /\b(?:browser|browse|click|navigate|scroll|go to|website|maha\s*rera|igrs|esearchigr|open\s+(?:https?:\/\/|www\.|[a-z0-9][a-z0-9.-]*\.[a-z]{2,})|check\s+(?:the\s+)?(?:ai\s+provider|provider|settings?)\s+page)\b/i.test(submittedText);
+    const listingTask = /\b(?:bhk|rent|buy|sale|lease|listing|listings|property|properties|flat|apartment|office|shop|commercial|inventory|locality|budget|sqft)\b/i.test(submittedText)
+      && /\b(?:find|search|show|look|need|want|any|available|give|suggest|match)\b/i.test(submittedText);
+    setPendingTaskLabel(browserTask ? "Using Agent Browser…" : listingTask ? "Searching live listings…" : "Thinking…");
     if (!sessionIdRef.current) {
       // Guard: only one createChatSession() call per burst.
       if (sessionCreationInFlightRef.current) {
