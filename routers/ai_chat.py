@@ -1524,7 +1524,7 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
                     model=provider["model"] or None, base_url=provider["base_url"] or None, max_tool_rounds=0,
                     prefer_supabase_agent=True,
                     browser_enabled=bool(getattr(workspace_ai_settings, "browser_enabled", False)),
-                    browser_provider=getattr(workspace_ai_settings, "browser_provider", "playwright"),
+                    browser_provider=getattr(workspace_ai_settings, "browser_provider", "agent-browser"),
                 ),
                 providers,
                 timeout=60,
@@ -1695,7 +1695,7 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
         if workspace_ai_settings:
             workspace_policy_lines.extend([
                 f"Workspace browser enabled: {bool(getattr(workspace_ai_settings, 'browser_enabled', False))}",
-                f"Workspace browser provider: {getattr(workspace_ai_settings, 'browser_provider', 'playwright')}",
+                f"Workspace browser provider: {getattr(workspace_ai_settings, 'browser_provider', 'agent-browser')}",
                 f"Max tool rounds: {int(getattr(workspace_ai_settings, 'max_tool_rounds', 8) or 8)}",
                 f"Max concurrent calls: {int(getattr(workspace_ai_settings, 'max_concurrent_calls', 8) or 8)}",
                 f"Allowed routes: {', '.join(getattr(workspace_ai_settings, 'allowed_routes', []) or [])}",
@@ -1718,7 +1718,7 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
             max_tool_rounds=max(1, min(max_tool_rounds, 16)),
             prefer_supabase_agent=True,
             browser_enabled=bool(getattr(workspace_ai_settings, "browser_enabled", False)),
-            browser_provider=getattr(workspace_ai_settings, "browser_provider", "playwright"),
+            browser_provider=getattr(workspace_ai_settings, "browser_provider", "agent-browser"),
             storage_client=storage.client,
             user_id=str(user.get("id") or ""),
             activity_sink=activity_sink,

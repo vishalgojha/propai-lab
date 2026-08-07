@@ -112,7 +112,7 @@ export default function LLMProvidersPage() {
         max_browser_sessions: Number(data?.max_browser_sessions ?? 1),
         max_tool_rounds: Number(data?.max_tool_rounds ?? 8),
         browser_enabled: Boolean(data?.browser_enabled),
-        browser_provider: String(data?.browser_provider || "browser-use"),
+        browser_provider: String(data?.browser_provider || "agent-browser"),
         allowed_routes: Array.isArray(data?.allowed_routes) ? data.allowed_routes : [],
         allowed_actions: Array.isArray(data?.allowed_actions) ? data.allowed_actions : [],
         notes: String(data?.notes || ""),
@@ -171,7 +171,7 @@ export default function LLMProvidersPage() {
         max_browser_sessions: Number(aiSettings.max_browser_sessions || 0),
         max_tool_rounds: Number(aiSettings.max_tool_rounds || 0),
         browser_enabled: Boolean(aiSettings.browser_enabled),
-        browser_provider: aiSettings.browser_provider || "browser-use",
+        browser_provider: aiSettings.browser_provider || "agent-browser",
         allowed_routes: aiSettings.allowed_routes,
         allowed_actions: aiSettings.allowed_actions,
         notes: aiSettings.notes,
@@ -504,13 +504,14 @@ export default function LLMProvidersPage() {
               <div className="grid gap-4 sm:grid-cols-2">
                 <label className="space-y-1">
                   <span className="text-xs font-medium text-gray-400">Browser provider</span>
-                  <input
-                    type="text"
+                  <select
                     className="w-full bg-[#161b22] border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500 font-mono"
-                    value={aiSettings.browser_provider}
+                    value={aiSettings.browser_provider || "agent-browser"}
                     onChange={(e) => setAiSettings({ ...aiSettings, browser_provider: e.target.value })}
-                    placeholder="browser-use"
-                  />
+                  >
+                    <option value="agent-browser">Agent Browser</option>
+                  </select>
+                  <span className="text-xs text-gray-500">Native CDP browser runtime for fast page checks and actions.</span>
                 </label>
                 <label className="space-y-1">
                   <span className="text-xs font-medium text-gray-400">Max tool rounds</span>
@@ -645,7 +646,7 @@ export default function LLMProvidersPage() {
                     <div className="flex items-start justify-between gap-3">
                       <div>
                         <div className="font-semibold text-white">{session.task_label || "Untitled task"}</div>
-                        <div className="text-gray-400 mt-1">{session.browser_provider || "browser-use"} · {session.status || "open"}</div>
+                        <div className="text-gray-400 mt-1">{session.browser_provider || "agent-browser"} · {session.status || "open"}</div>
                       </div>
                       <div className="text-right text-gray-500">
                         <div>{session.current_url || session.start_url || "—"}</div>

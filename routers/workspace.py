@@ -40,8 +40,8 @@ _probe_provider = None
 
 def _normalize_browser_provider_name(provider_name: str | None) -> str:
     normalized = str(provider_name or "").strip().lower()
-    if normalized in {"", "playwright", "browser-use-cli", "browser_use"}:
-        return "browser-use"
+    if normalized in {"", "browser-use", "browser-use-cli", "browser_use", "playwright", "agent-browser"}:
+        return "agent-browser"
     return normalized
 
 
@@ -470,7 +470,7 @@ class WorkspaceAISettingsBody(BaseModel):
     max_browser_sessions: int = 1
     max_tool_rounds: int = 8
     browser_enabled: bool = False
-    browser_provider: str = "browser-use"
+    browser_provider: str = "agent-browser"
     allowed_routes: list[str] = Field(default_factory=list)
     allowed_actions: list[str] = Field(default_factory=list)
     notes: str = ""
@@ -483,7 +483,7 @@ async def get_workspace_ai_settings(user: dict = Depends(require_user), tenant_i
     if not settings:
         settings = WorkspaceAISettings(
             tenant_id=tenant_id,
-            browser_provider="browser-use",
+            browser_provider="agent-browser",
             allowed_routes=["/chat", "/map", "/listings/*", "/brokers/*", "/admin/*"],
             allowed_actions=["open", "click", "fill", "select", "scroll"],
         )
@@ -510,7 +510,7 @@ async def save_workspace_ai_settings(
         max_browser_sessions=body.max_browser_sessions,
         max_tool_rounds=body.max_tool_rounds,
         browser_enabled=body.browser_enabled,
-        browser_provider=_normalize_browser_provider_name(body.browser_provider or "browser-use"),
+        browser_provider=_normalize_browser_provider_name(body.browser_provider or "agent-browser"),
         allowed_routes=body.allowed_routes,
         allowed_actions=body.allowed_actions,
         notes=body.notes,
@@ -518,21 +518,19 @@ async def save_workspace_ai_settings(
     try:
         settings_id = await asyncio.to_thread(storage.save_workspace_ai_settings, settings, tenant_id)
         saved = await asyncio.to_thread(storage.get_workspace_ai_settings, tenant_id)
-        return {"id": settings_id, "settings": asdict(saved) if saved else asdict(settings), "saved": True}
+        if saved is None:
+            raise RuntimeError("workspace_ai_settings row was not readable after save")
+        return {"id": settings_id, "settings": asdict(saved), "saved": True}
     except Exception as exc:
-        logging.warning(
-            "workspace_ai_settings save failed for tenant %s; returning in-memory defaults: %s",
-            tenant_id,
-            exc,
-        )
-        return {"id": 0, "settings": asdict(settings), "saved": False}
+        logging.exception("workspace_ai_settings save failed for tenant %s", tenant_id)
+        raise HTTPException(500, "Could not save workspace AI settings") from exc
 
 
 class BrowserSessionBody(BaseModel):
     session_id: str | None = None
     task_label: str = ""
     start_url: str = ""
-    browser_provider: str = "browser-use"
+    browser_provider: str = "agent-browser"
     context: dict = Field(default_factory=dict)
 
 
@@ -574,7 +572,7 @@ async def create_agent_browser_session(
         session_id=body.session_id,
         user_id=user_id,
         browser_provider=_normalize_browser_provider_name(
-            body.browser_provider or (settings.browser_provider if settings else "browser-use")
+            body.browser_provider or (settings.browser_provider if settings else "agent-browser")
         ),
         task_label=body.task_label,
         start_url=body.start_url,
