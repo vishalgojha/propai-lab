@@ -724,6 +724,30 @@ def resolve_parsed(parsed: dict, raw_text: str) -> dict:
     area = parsed.get("area") or parsed.get("micro_market") or ""
     developer = parsed.get("developer") or ""
     try:
+        # The production source of truth is Supabase.  The historical CSV
+        # registry below is retained only as a compatibility fallback for
+        # installations which have not applied the database migration yet.
+        db_name = parsed.get("building_name") or name
+        db_available, db_match = _resolve_building_from_database(db_name)
+        if db_available:
+            if db_match:
+                result["building_id"] = db_match["building_id"]
+                result["building_name"] = db_match["building_name"]
+                result["resolver_confidence"] = float(db_match["confidence"])
+                result["final_confidence"] = round(
+                    result["parser_confidence"] * 0.3
+                    + result["resolver_confidence"] * 0.7,
+                    2,
+                )
+                result["method"] = db_match["method"]
+                result["method_detail"] = db_match.get("method_detail")
+                result["candidates"] = db_match.get("candidates", [])
+                result["micro_market"] = db_match.get("micro_market") or result["micro_market"]
+            else:
+                result["failure_category"] = "no_candidates"
+                result["method_detail"] = "database_name_candidates_empty"
+            return result
+
         candidates = []
         seen_bids = set()
         landmark_name = parsed.get("landmark_name")
@@ -839,16 +863,46 @@ def resolve_parsed(parsed: dict, raw_text: str) -> dict:
             result["micro_market"] = winner.get("micro_market") or result.get("micro_market")
             result["resolver_confidence"] = max(c["confidence"] for c in candidates if c["building_id"] == bid) if bid else 0.0
             result["final_confidence"] = round(result["parser_confidence"] * 0.3 + result["resolver_confidence"] * 0.7, 2)
-            result["method"] = "resolved"; result["method_detail"] = method
+            result["method"] = method; result["method_detail"] = method
         else:
             result["resolver_confidence"] = 0.0
-            result["final_confidence"] = round(result["parser_confidence"] * 0.3, 2)
+            # Parser confidence says how well the message was parsed; it does
+            # not mean that a building was resolved.
+            result["final_confidence"] = 0.0
             if not result["failure_category"]:
                 result["failure_category"] = "no_candidates"; result["method_detail"] = "no_candidates_found"
         result["candidates"] = candidates
     except Exception as e:
         result["method"] = "error"; result["error"] = str(e); result["failure_category"] = "resolver_error"
     return result
+
+
+def _resolve_building_from_database(name: str) -> tuple[bool, dict | None]:
+    """Call the tenant-aware SQL resolver.
+
+    Returns ``(False, None)`` only when the migration/RPC is unavailable, so
+    old deployments can continue using the compatibility registry.  A valid
+    empty result is ``(True, None)`` and must not fall through to CSV IDs.
+    """
+    if not name or not str(name).strip():
+        return True, None
+    try:
+        from routers.common import storage, get_tenant_id
+
+        params = {"p_name": str(name).strip()}
+        tenant_id = get_tenant_id()
+        if tenant_id:
+            params["p_tenant_id"] = tenant_id
+        response = storage.client.rpc("resolve_building_name", params).execute()
+        payload = response.data
+        if isinstance(payload, list):
+            payload = payload[0] if payload else None
+        if not isinstance(payload, dict) or not payload.get("building_id"):
+            return True, None
+        return True, payload
+    except Exception as exc:
+        _logger.debug("Database building resolver unavailable: %s", exc)
+        return False, None
 
 def evaluate_parsed(raw_id: int, parsed: dict, expected: Optional[dict] = None):
     ev = Evaluation(raw_message_id=raw_id)
@@ -1480,6 +1534,8 @@ async def webhook(request: Request):
         "sender_phone": sender_phone, "group": group, "group_name": group_name, "msg_text": msg_text,
         "instance": instance, "is_dm": is_dm, "message_uid": message_uid, "message_id": message_id,
         "msg": msg, "tenant_id": resolved_tenant_id, "raw_payload": data,
+        "attachments": _whatsapp_attachment_metadata(msg, msg_data.get("media")),
+        "reply_context": msg.get("extendedTextMessage", {}).get("contextInfo", {}) or msg.get("imageMessage", {}).get("contextInfo", {}) or msg.get("videoMessage", {}).get("contextInfo", {}) or {},
         "source": "WHATSAPP", "is_group": not is_dm, "timestamp": message_timestamp,
         "synced_at": now, "event_id": message_id}
     if not _schedule_raw_extraction(raw_id, extraction_ctx):

@@ -19,7 +19,6 @@ from datetime import datetime, timedelta, timezone
 from threading import Lock
 
 from extraction import get_storage, process_raw_message
-from extraction_dedup import should_skip
 
 POLL_INTERVAL = int(os.getenv("EXTRACTION_WORKER_POLL_SECONDS", "5"))
 BATCH_SIZE = int(os.getenv("EXTRACTION_WORKER_BATCH_SIZE", "50"))
@@ -132,6 +131,8 @@ def context_from_raw(row) -> dict:
         "message_id": key.get("id") or "",
         "msg_text": row_value(row, "message") or "",
         "msg": msg,
+        "attachments": parse_json(row_value(row, "attachments"), []),
+        "reply_context": parse_json(row_value(row, "reply_context"), {}),
         "tenant_id": row_value(row, "tenant_id") or "",
         "parent_message_id": row_value(row, "parent_message_id"),
         "split_index": row_value(row, "split_index"),
@@ -257,16 +258,6 @@ def _process_lane(storage, rows, lane: str, slots: int, retry_counts: dict):
                 pass
             continue
 
-        reason = should_skip(row_value(row, "message"))
-        if reason:
-            try:
-                storage.mark_raw_processed(raw_id)
-                stats["skipped"] += 1
-                stats["skip_reasons"][reason] = stats["skip_reasons"].get(reason, 0) + 1
-            except Exception:
-                pass
-            continue
-
         extractable.append(row)
 
     if extractable and slots > 0:
@@ -303,9 +294,23 @@ def _process_lane(storage, rows, lane: str, slots: int, retry_counts: dict):
                 )
                 traceback.print_exc()
 
-        workers = max(1, min(slots, len(extractable)))
+        # Reply corrections are group-local state. Process each group's rows
+        # FIFO, while allowing different groups to run concurrently.
+        grouped: dict[str, list] = {}
+        for row in extractable:
+            group_key = str(row_value(row, "group_name") or "")
+            grouped.setdefault(group_key, []).append(row)
+        for group_rows in grouped.values():
+            group_rows.sort(key=lambda row: (
+                str(row_value(row, "timestamp") or ""),
+                int(row_value(row, "id") or 0),
+            ))
+
+        workers = max(1, min(slots, len(grouped)))
         with ThreadPoolExecutor(max_workers=workers) as pool:
-            for future in as_completed(pool.submit(_handle, row) for row in extractable):
+            futures = [pool.submit(lambda batch=batch: [_handle(row) for row in batch], batch)
+                       for batch in grouped.values()]
+            for future in as_completed(futures):
                 future.result()
 
     completed = stats["attempted"]

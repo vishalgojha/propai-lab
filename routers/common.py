@@ -194,6 +194,7 @@ async def get_current_user(
         "id": payload.get("sub"),
         "email": payload.get("email", ""),
         "phone": payload.get("phone", ""),
+        "user_metadata": payload.get("user_metadata") or {},
     }
 
 
@@ -231,14 +232,67 @@ def _resolve_user_organization_id(user: dict) -> str | None:
         or email.split("@")[0]
     )
     raw_name = workspace_name or email.split("@")[0]
+    display_name = raw_name or email.split("@")[0] or "My Workspace"
     slug = _re.sub(r"[^a-z0-9]+", "-", raw_name.lower()).strip("-") or "workspace"
     if len(slug) > 40:
         slug = slug[:40]
-    existing = storage.get_organization_by_slug(slug)
+    owner_user_id = str(user.get("id") or "").strip() or None
+    owner_phone = str(user.get("phone") or "").strip() or None
+
+    # Organization provisioning is retry-safe.  The old code deliberately
+    # randomized the slug whenever it found an existing slug, turning every
+    # auth refresh/retry into another organization.  Prefer the organization
+    # already owned by this auth user (or phone), then claim an empty legacy
+    # slug before attempting a new insert.
+    existing = None
+    if owner_user_id:
+        existing = storage.get_organization_by_owner_user_id(owner_user_id)
+    if not existing and owner_phone:
+        existing = storage.get_organization_by_owner_phone(owner_phone)
     if existing:
-        slug = f"{slug}-{uuid.uuid4().hex[:6]}"
-    display_name = raw_name or email.split("@")[0] or "My Workspace"
-    org = storage.create_organization(name=display_name, slug=slug)
+        tid = str(existing["id"])
+    else:
+        slug_org = storage.get_organization_by_slug(slug)
+        if slug_org:
+            members = storage.list_organization_members(str(slug_org["id"]))
+            if not members:
+                claimed = storage.claim_organization_owner(
+                    str(slug_org["id"]), owner_user_id, owner_phone
+                )
+                if claimed:
+                    tid = str(claimed["id"])
+                else:
+                    tid = ""
+            else:
+                # A populated slug belongs to another workspace. A different
+                # user may legitimately choose the same display name, so only
+                # this branch gets a suffix; retries for the same owner were
+                # handled above by owner_user_id/owner_phone.
+                slug = f"{slug}-{uuid.uuid4().hex[:6]}"
+                tid = ""
+        else:
+            tid = ""
+
+    if tid:
+        owner_role = storage.get_system_role("owner")
+        storage.add_organization_member(
+            tid, user["id"], owner_role.get("id") if owner_role else None
+        )
+        if not storage.get_team_member_by_email(email, org_id=tid):
+            storage.create_team_member(
+                name=display_name,
+                email=email,
+                organization_id=tid,
+                permission_keys=["view_inbox", "reply_whatsapp"],
+            )
+        return tid
+
+    org = storage.create_organization(
+        name=display_name,
+        slug=slug,
+        owner_user_id=owner_user_id,
+        owner_phone=owner_phone,
+    )
     if org:
         tid = org["id"]
         owner_role = storage.get_system_role("owner")
