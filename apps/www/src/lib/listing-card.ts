@@ -253,7 +253,7 @@ function buildTitle(row: ListingCardFields): string {
 
   const descriptor = [
     furnishing ? titleCase(furnishing) : "",
-    bhk || propertyType || (assetTypeLabel(row.asset_type, row.intent) === "Commercial" ? "Commercial Space" : "Property"),
+    bhk ? `${bhk} BHK` : propertyType || (assetTypeLabel(row.asset_type, row.intent) === "Commercial" ? "Commercial Space" : "Property"),
   ].filter(Boolean).join(" ");
   const place = building || locality || row.landmark_name?.trim() || null;
 
@@ -433,7 +433,10 @@ export function buildListingSlug(input: SlugInput): string | null {
   const id = String(input.id);
   const parts: string[] = [];
   const bhk = (input.bhk ?? "").trim();
-  if (bhk) parts.push(slugify(bhk));
+  if (bhk) {
+    const bhkNumber = bhk.match(/^(\d+(?:\.\d+)?)/)?.[1];
+    parts.push(bhkNumber ? `${slugify(bhkNumber)}-bhk` : slugify(bhk));
+  }
   // Include the building before locality so a listing URL identifies the
   // actual property, not just its neighbourhood.
   const raw = (input.building_name ?? "").trim();
