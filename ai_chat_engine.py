@@ -2596,6 +2596,7 @@ def execute_tool(
                 session_id,
                 {
                     "user_id": user_id,
+                    "session_id": str(args.get("chat_session_id") or "") or None,
                     "browser_provider": effective_provider,
                     "status": "open",
                     "task_label": str(args.get("session_label") or "").strip(),

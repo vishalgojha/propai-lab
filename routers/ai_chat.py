@@ -1314,6 +1314,82 @@ async def confirm_browser_action(
             re.IGNORECASE,
         )
         had_explicit_url = bool(url_match)
+
+        # Portal tasks use deterministic workflows. The model-driven browser
+        # loop is intentionally not used for regulated Maharashtra portals: a
+        # portal can change form labels, require CAPTCHA, or show paid/login
+        # gates, and we must surface those states instead of guessing.
+        portal_text = last_user.lower()
+        if "maharera" in portal_text or "maha rera" in portal_text:
+            from browser_workflows import run_maharera_project_status
+
+            project_match = re.search(
+                r"(?:status|progress|construction|project)\s+(?:for|of|about)\s+(.+?)(?:\s+(?:on|in)\s+maha\s*rera|$)",
+                last_user,
+                re.IGNORECASE,
+            )
+            project_name = (project_match.group(1) if project_match else "").strip(" .?!")
+            if not project_name:
+                project_name = re.sub(
+                    r".*?maha\s*rera(?:\s+(?:website|site))?\s*",
+                    "",
+                    last_user,
+                    flags=re.IGNORECASE,
+                ).strip(" .?!")
+            browser_session_id = str(uuid.uuid4())
+
+            def _portal_execute(name: str, args: dict[str, Any]) -> dict[str, Any]:
+                tool_args = dict(args)
+                tool_args["chat_session_id"] = session_id
+                return execute_tool(
+                    name,
+                    tool_args,
+                    {},
+                    tenant_id=tenant_id,
+                    storage_client=storage.client,
+                    user_id=str(user.get("id") or ""),
+                    browser_enabled=True,
+                    browser_provider="agent-browser",
+                )
+
+            workflow = await asyncio.to_thread(
+                run_maharera_project_status,
+                _portal_execute,
+                browser_session_id,
+                project_name,
+            )
+            activity = workflow.activity(browser_session_id, "maharera_project_status")
+            content = workflow.content
+            if workflow.source_url:
+                content += f"\nOfficial source: {workflow.source_url}"
+            await asyncio.to_thread(storage.add_chat_message, session_id, "assistant", content, tenant_id, [activity])
+            return _wrap_chat_response({"content": content, "blocks": [activity], "sources": [workflow.source_url], "trace": activity["trace"]}, True)
+
+        if any(term in portal_text for term in ("igr maharashtra", "igrs", "e-search igr", "esearchigr", "registered document", "index ii")):
+            from browser_workflows import run_igr_property_search
+
+            browser_session_id = str(uuid.uuid4())
+
+            def _igr_execute(name: str, args: dict[str, Any]) -> dict[str, Any]:
+                tool_args = dict(args)
+                tool_args["chat_session_id"] = session_id
+                return execute_tool(
+                    name,
+                    tool_args,
+                    {},
+                    tenant_id=tenant_id,
+                    storage_client=storage.client,
+                    user_id=str(user.get("id") or ""),
+                    browser_enabled=True,
+                    browser_provider="agent-browser",
+                )
+
+            workflow = await asyncio.to_thread(run_igr_property_search, _igr_execute, browser_session_id, {})
+            activity = workflow.activity(browser_session_id, "igr_maharashtra_property_search")
+            content = workflow.content + f"\nOfficial source: {workflow.source_url}"
+            await asyncio.to_thread(storage.add_chat_message, session_id, "assistant", content, tenant_id, [activity])
+            return _wrap_chat_response({"content": content, "blocks": [activity], "sources": [workflow.source_url], "trace": activity["trace"]}, True)
+
         if not url_match:
             lowered_user = last_user.lower()
             for alias, alias_url in _BROWSER_SITE_ALIASES.items():
@@ -1342,7 +1418,7 @@ async def confirm_browser_action(
             # references it directly. Keep the runtime session identifier
             # UUID-shaped so the existing persistence contract remains valid.
             browser_session_id = str(uuid.uuid4())
-            browser_args = {"url": url, "browser_session_id": browser_session_id, "session_label": "Approved browser task"}
+            browser_args = {"url": url, "browser_session_id": browser_session_id, "session_label": "Approved browser task", "chat_session_id": session_id}
             opened = await asyncio.to_thread(
                 execute_tool,
                 "browser_open",
