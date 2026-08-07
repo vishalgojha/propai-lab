@@ -1293,7 +1293,9 @@ def _log_browser_step(storage_client, tenant_id: str | None, session_id: str, st
         "url": url,
         "status": status,
         "metadata": metadata or {},
-        "screenshot_url": screenshot_url or None,
+        # The database column is NOT NULL; an absent screenshot is an empty
+        # string, not SQL NULL.
+        "screenshot_url": screenshot_url or "",
     }
     try:
         storage_client.table("agent_browser_steps").insert(payload).execute()
