@@ -20,7 +20,7 @@ import {
   ChevronDown,
   Tag,
 } from "lucide-react";
-import { getListingById, getBrokerAreas, getBuildingBrokers, getSimilarListingsForExpired } from "@/lib/localities";
+import { getListingById, getBrokerAreas, getBuildingBrokers, getSimilarListingsForDetail, getSimilarListingsForExpired } from "@/lib/localities";
 import { slugify } from "@/lib/supabase";
 import {
   toListingCardViewModel,
@@ -210,7 +210,7 @@ export default async function ListingPage({ params }: Params) {
     return (
       <div className="min-h-screen bg-black text-white">
         <SiteHeader />
-        <main className="mx-auto max-w-5xl px-4 py-8 lg:px-6 lg:py-12">
+        <main className="mx-auto max-w-7xl px-4 py-8 lg:px-6 lg:py-12">
           <div className="mb-6 flex flex-wrap items-center gap-1.5 text-xs text-zinc-500">
             <Link href="/search" className="hover:text-white transition-colors">
               Home
@@ -285,9 +285,10 @@ export default async function ListingPage({ params }: Params) {
   // Fetch broker's operating areas from their listing history
   // These are independent secondary panels. Fetch them together so the
   // sidebar does not wait for the related-search section (or vice versa).
-  const [brokerAreas, buildingBrokers, relatedSections] = await Promise.all([
+  const [brokerAreas, buildingBrokers, similarListings, relatedSections] = await Promise.all([
     getBrokerAreas(listing.broker_phone),
     getBuildingBrokers(listing.building_name, listing.micro_market),
+    getSimilarListingsForDetail(listing),
     generateListingRelated(listing).catch((err) => {
       console.error("generateListingRelated failed:", err);
       return [];
@@ -314,6 +315,9 @@ export default async function ListingPage({ params }: Params) {
     console.error("Invalid card view model:", card);
     notFound();
   }
+  const similarCards = similarListings
+    .map((row) => toListingCardViewModel(row, false))
+    .filter((similar) => similar.href && similar.title);
 
   const brokerInitials = (card.brokerName || "PR")
     .split(/\s+/)
@@ -365,7 +369,7 @@ export default async function ListingPage({ params }: Params) {
       <SiteHeader />
       <JsonLd data={listingSchema} />
       <JsonLd data={breadcrumbSchema} />
-      <main className="mx-auto max-w-5xl px-4 py-8 lg:px-6 lg:py-12">
+      <main className="mx-auto max-w-7xl px-4 py-8 lg:px-6 lg:py-12">
         <BackButton />
 
         <div className="mb-6 flex flex-wrap items-center gap-1.5 text-xs text-zinc-500">
@@ -387,7 +391,7 @@ export default async function ListingPage({ params }: Params) {
           <span className="text-zinc-400">{cleanBuildingName(listing.building_name) || card.title}</span>
         </div>
 
-        <div className="grid grid-cols-1 gap-7 lg:grid-cols-[1fr_300px]">
+        <div className="grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,1fr)_360px]">
           {/* Main column */}
           <div>
             {/* Header — no image hero. The page is text-first; photos are
@@ -579,6 +583,30 @@ export default async function ListingPage({ params }: Params) {
                 PropAI.
               </p>
             </div>
+
+            {similarCards.length > 0 && (
+              <section className="mt-5 rounded-2xl border border-white/10 bg-zinc-950/90 p-4" aria-label="Similar live listings">
+                <h2 className="mb-3 text-sm font-semibold text-white">Similar live listings</h2>
+                <div className="max-h-[620px] space-y-3 overflow-y-auto pr-1">
+                  {similarCards.map((similar) => (
+                    <Link
+                      key={similar.href}
+                      href={similar.href as string}
+                      className="block rounded-xl border border-white/10 bg-black/40 p-3 transition-colors hover:border-green-400/40"
+                    >
+                      <div className="text-sm font-semibold leading-snug text-white">{similar.title}</div>
+                      <div className="mt-1 text-base font-semibold text-green-300">{similar.priceLabel}</div>
+                      <div className="mt-1 text-xs text-zinc-400">
+                        {[similar.locality, similar.specRow, similar.freshnessLabel].filter(Boolean).join(" · ")}
+                      </div>
+                      {similar.brokerName && (
+                        <div className="mt-2 text-[11px] text-zinc-500">Listed by {similar.brokerName}</div>
+                      )}
+                    </Link>
+                  ))}
+                </div>
+              </section>
+            )}
           </aside>
         </div>
 

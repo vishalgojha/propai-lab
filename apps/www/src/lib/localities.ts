@@ -1212,3 +1212,50 @@ export async function getSimilarListingsForExpired(
     property_type: row.property_type,
   }));
 }
+
+export async function getSimilarListingsForDetail(opts: {
+  id: number;
+  building_name: string | null;
+  micro_market: string | null;
+  bhk: string | null;
+  intent: string | null;
+  furnishing: string | null;
+  price: number | null;
+  limit?: number;
+}): Promise<ListingCardFields[]> {
+  const db = getServerSupabase();
+  if (!db || !opts.micro_market) return [];
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - 90);
+  const { data, error } = await db
+    .from("listings_unified")
+    .select("id, bhk, price, price_unit, price_model, price_per_sqft, area_sqft, furnishing, intent, asset_type, property_type, micro_market, locality_raw, locality_resolved, building_name, landmark_name, location_label, floor_description, view, broker_name, broker_phone, last_seen, deal_tags, additional_charges")
+    .eq("micro_market", opts.micro_market)
+    .eq("intent", opts.intent)
+    .neq("id", opts.id)
+    .gte("last_seen", cutoff.toISOString())
+    .limit(120);
+  if (error || !data) return [];
+
+  const targetBuilding = (opts.building_name || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+  const targetBhk = (opts.bhk || "").toLowerCase().replace(/[^a-z0-9.]+/g, "");
+  const targetFurnishing = (opts.furnishing || "").toLowerCase();
+  const ranked = data.map((row) => {
+    const building = String(row.building_name || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+    const bhk = String(row.bhk || "").toLowerCase().replace(/[^a-z0-9.]+/g, "");
+    const furnishing = String(row.furnishing || "").toLowerCase();
+    let score = building && targetBuilding && (building === targetBuilding || building.startsWith(targetBuilding.slice(0, 10)) || targetBuilding.startsWith(building.slice(0, 10))) ? 100 : 0;
+    if (targetBhk && bhk === targetBhk) score += 45;
+    if (targetFurnishing && furnishing === targetFurnishing) score += 25;
+    if (opts.price && row.price) {
+      const delta = Math.abs(Number(row.price) - opts.price) / opts.price;
+      if (delta <= 0.2) score += 20;
+      else if (delta <= 0.4) score += 8;
+    }
+    return { row, score };
+  });
+  return ranked
+    .sort((a, b) => b.score - a.score || String(b.row.last_seen || "").localeCompare(String(a.row.last_seen || "")))
+    .slice(0, opts.limit ?? 6)
+    .map(({ row }) => row as ListingCardFields);
+}
