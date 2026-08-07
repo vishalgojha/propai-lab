@@ -1308,6 +1308,11 @@ export default function ChatPage() {
                               const token = String(block.confirmation_token || "");
                               const state = confirmationState[token];
                               const isBrowser = String(block.tool || "") === "browser" || String(block.mode || "") === "browser";
+                              // Approval is a one-time prompt. Once the
+                              // choice has completed, remove it from the
+                              // active conversation instead of leaving a
+                              // stale permission notification behind.
+                              if (state === "confirmed") return null;
                               return (
                                 <div key={`confirmation-${confirmationIndex}`} className="rounded-lg border border-white/20 bg-zinc-950 px-3 py-3 text-sm text-zinc-100 shadow-lg shadow-black/20">
                                   <div className="font-semibold">{block.title || "Confirmation required"}</div>
