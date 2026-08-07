@@ -112,7 +112,6 @@ export async function GET(
     micro_market: data.micro_market,
     building_name: data.building_name,
     property_type: data.property_type,
-    source_message: sourceMessage,
   });
   const canonicalPath = `/listings/${slug ?? "listing"}/${data.id}`;
 
