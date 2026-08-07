@@ -176,6 +176,29 @@ def _sanitize_parsed_value(value):
     return value
 
 
+def _infer_building_name_from_source(text: str, locality: str | None = None) -> str | None:
+    """Recover a clearly labelled building line when the model omits it.
+
+    Broker formats commonly put the BHK headline first and the building on the
+    next non-empty line. This is deliberately conservative: ad labels,
+    locality lines, prices and contact text are never promoted to buildings.
+    """
+    lines = [re.sub(r"[*_`~]", "", line).strip(" -:•") for line in str(text or "").splitlines()]
+    for index, line in enumerate(lines):
+        if not re.search(r"\b\d+(?:\.\d+)?\s*(?:bhk|rk)\b", line, re.IGNORECASE):
+            continue
+        for candidate in lines[index + 1:index + 5]:
+            if not candidate or len(candidate) > 70 or (locality and candidate.lower() == locality.lower()):
+                continue
+            if re.search(r"\b(?:prime location|location|rent|sale|lease|available|carpet|area|status|floor|parking|possession|inspection|photos?|contact|details|site visit|brokerage)\b", candidate, re.IGNORECASE):
+                continue
+            if re.search(r"(?:₹|\b\d{5,}\b|\b(?:sq\.?\s*ft|lakh|lakhs?|crore|cr|per\s+month)\b)", candidate, re.IGNORECASE):
+                continue
+            if re.search(r"[A-Za-z]", candidate):
+                return candidate.strip(" .,")
+    return None
+
+
 # ── Building name normalization against known buildings ────────────
 # The LLM often extracts ad text, locality names, or broker phrases as
 # building_name.  We fuzzy-match against the canonical building names
@@ -801,6 +824,9 @@ def _ai_extraction_to_parsed(ai_extraction: dict, raw_text: str, sender_name: st
         micro_market = None
         location_raw = None
 
+    source_for_inference = slice_text or raw_text
+    inferred_building = _infer_building_name_from_source(source_for_inference, micro_market)
+
     title = ai_extraction.get("title") or None
 
     # ── v2 schema fields — physical / deal attributes ──────────────
@@ -878,7 +904,7 @@ def _ai_extraction_to_parsed(ai_extraction: dict, raw_text: str, sender_name: st
         "furnishing_canonical": None,
 
         "location_raw": location_raw,
-        "building_name": ai_extraction.get("building_name") or None,
+        "building_name": ai_extraction.get("building_name") or inferred_building,
         "landmark_name": None,
         "street_name": None,
         "area": None,
@@ -1056,6 +1082,7 @@ def _ai_extraction_to_typed(
     resolved_locality = locality.get("resolved_locality") or flat.get("micro_market")
     source_text = (slice_text or raw_text or "").strip()
     fingerprint = hashlib.sha256(source_text.lower().encode("utf-8")).hexdigest()
+    building_name = ai.get("building_name") or flat.get("building_name") or _infer_building_name_from_source(source_text, resolved_locality)
     row = {
         "raw_message_id": raw_message_id,
         "tenant_id": tenant_id,
@@ -1063,7 +1090,7 @@ def _ai_extraction_to_typed(
         "asset_type": asset,
         "transaction_type": tx,
         "source_fingerprint": fingerprint,
-        "building_name": ai.get("building_name"),
+        "building_name": building_name,
         "locality_raw": raw_locality,
         "locality_resolved": resolved_locality,
         "micro_market": resolved_locality,
