@@ -596,13 +596,16 @@ export default async function ListingPage({ params }: Params) {
                 </div>
               )}
 
-              {buildingBrokers.length > 1 && (
+              {buildingBrokers.filter((broker) => broker.name.toLowerCase() !== (card.brokerName || "").toLowerCase()).length > 0 && (
                 <div className="mt-5">
                   <h3 className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500 mb-2">
                     Other brokers for this building
                   </h3>
                   <div className="space-y-1.5">
-                    {buildingBrokers.slice(0, 5).map((broker) => (
+                    {buildingBrokers
+                      .filter((broker) => broker.name.toLowerCase() !== (card.brokerName || "").toLowerCase())
+                      .slice(0, 5)
+                      .map((broker) => (
                       <div key={broker.name} className="flex items-center justify-between gap-3 text-xs text-zinc-400">
                         <span className="truncate">{broker.name}</span>
                         <span className="shrink-0 text-zinc-600">{broker.listingCount} listings</span>

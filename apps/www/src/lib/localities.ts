@@ -1122,9 +1122,11 @@ export type BuildingBroker = {
 };
 
 function displayableBrokerName(value: string | null): string | null {
-  const name = (value || "").replace(/[\*_`~]/g, "").replace(/\s+/g, " ").trim();
+  let name = (value || "").replace(/[\*_`~]/g, "").replace(/\s+/g, " ").trim();
+  const quoted = name.match(/["“”']([^"“”']{2,80})["“”']/);
+  if (quoted) name = quoted[1].trim();
   if (!name || /@s\.whatsapp\.net$|@lid$|@g\.us$/i.test(name) || /^\+?\d{7,}$/.test(name)) return null;
-  if (/^(call|contact|kindly|please|whatsapp|brokerage|available)$/i.test(name)) return null;
+  if (/^(call|contact|kindly|please|whatsapp|brokerage|available)$/i.test(name) || /^(kindly|please)\b/i.test(name)) return null;
   return name;
 }
 
@@ -1146,16 +1148,26 @@ export async function getBuildingBrokers(
   const prefix = `${words.slice(0, -1).join(" ")}${words.length > 1 ? " " : ""}${stem}`;
   let query = db
     .from("listings_unified")
-    .select("broker_name, building_name, micro_market")
+    .select("broker_id, broker_name, building_name, micro_market")
     .ilike("building_name", `${prefix}%`)
     .not("broker_name", "is", null)
     .limit(500);
   if (locality) query = query.eq("micro_market", locality);
   const { data, error } = await query;
   if (error || !data) return [];
+  const brokerIds = [...new Set(data.map((row) => row.broker_id).filter((id): id is number => typeof id === "number"))];
+  const canonicalById = new Map<number, string>();
+  if (brokerIds.length > 0) {
+    const { data: brokers } = await db.from("brokers").select("id, canonical_name").in("id", brokerIds);
+    for (const broker of brokers ?? []) {
+      const name = displayableBrokerName(broker.canonical_name);
+      if (name) canonicalById.set(broker.id, name);
+    }
+  }
   const counts = new Map<string, number>();
   for (const row of data) {
-    const name = displayableBrokerName(row.broker_name);
+    const name = (typeof row.broker_id === "number" ? canonicalById.get(row.broker_id) : null)
+      || displayableBrokerName(row.broker_name);
     if (!name) continue;
     counts.set(name, (counts.get(name) || 0) + 1);
   }
