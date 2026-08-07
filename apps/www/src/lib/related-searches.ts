@@ -446,7 +446,6 @@ export async function generateSearchRelated(
     buildTopBuildings(locality),
     buildNearbyLandmarks(locality),
     buildPropertyTypes(locality, parsed.asset),
-    buildTopBrokers(locality),
   ]);
 
   // Add computed sections (no DB calls)

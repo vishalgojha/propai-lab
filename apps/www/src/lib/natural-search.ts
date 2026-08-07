@@ -1,6 +1,7 @@
 import { getAllBuildings, getAllLocalities, isJunkBuildingName, type BuildingSummary, type LocalitySummary } from "./localities";
 import { canonicalLocality } from "./locality-canon";
 import { getServerSupabase, slugify } from "./supabase";
+import { dedupeRecentListings } from "./listing-card";
 import { extractLocalityWithAI } from "./locality-ai";
 
 export type ParsedNaturalSearch = {
@@ -787,7 +788,7 @@ async function browseByAsset(
     .order("last_seen", { ascending: false })
     .limit(limit);
   if (error) console.error("browseByAsset error:", error.message);
-  const rows = (data ?? []) as unknown as NaturalSearchRow[];
+  const rows = dedupeRecentListings((data ?? []) as unknown as NaturalSearchRow[]);
 
   const candidateBuildingNames = Array.from(new Set(
     rows
@@ -1149,7 +1150,7 @@ export async function searchNaturalLanguageListings(
     return Array.from(deduped.values());
   };
 
-  const rows = await fetchCandidateRows();
+  const rows = dedupeRecentListings(await fetchCandidateRows());
 
   // Match building names for candidate rows against known buildings
   const candidateBuildingNames = Array.from(new Set(
