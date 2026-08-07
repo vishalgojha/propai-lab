@@ -22,6 +22,12 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
+# Keep source-revision mistakes from becoming opaque runtime import errors.
+# `building_quality.py` is imported by storage/supabase.py and must be part of
+# the API build context (it was missing from an earlier Coolify build).
+RUN test -f /app/building_quality.py \
+    || (echo "BUILD FAILED: building_quality.py is missing from the API source revision" && exit 1)
+
 # Smoke-test: compile only API Python files so syntax errors crash the build,
 # not the production container.
 RUN python3 -m compileall -q routers/ storage/ agents/ knowledge/ \
