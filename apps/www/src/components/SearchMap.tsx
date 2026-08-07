@@ -37,7 +37,19 @@ export default function SearchMap({ results, apiKey }: Props) {
     googleMapsApiKey: apiKey || "",
   });
 
-  if (geocoded.length === 0) return null;
+  if (geocoded.length === 0) {
+    return (
+      <div className="flex w-full h-[360px] lg:h-[480px] flex-col items-center justify-center gap-3 rounded-2xl border border-white/10 bg-zinc-900/60 px-6 text-center">
+        <div className="text-2xl text-zinc-500">📍</div>
+        <p className="text-sm text-zinc-400">
+          No listings with coordinates yet. Showing {results.length} listings without map pins.
+        </p>
+        <p className="text-xs text-zinc-500">
+          Building geocoding is in progress — the map will populate as buildings are enriched.
+        </p>
+      </div>
+    );
+  }
 
   if (!apiKey || loadError) {
     return <MapError message={!apiKey ? "Google Maps API key not configured." : "Google Maps failed to load."} />;

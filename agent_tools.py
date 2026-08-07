@@ -264,14 +264,23 @@ def _listing_query(client: Any, args: dict, tenant_id: str | None) -> list[dict]
     price_alias = "monthly_rent" if listing_type == "rent" else "total_asking_price"
     unit_price_column = "rent_per_sqft" if listing_type == "rent" else "price_per_sqft"
     columns = (
-        "id,legacy_source_id,raw_message_id,building_name,micro_market,landmark_name,"
+        "id,legacy_source_id,raw_message_id,building_name,micro_market,locality_raw,locality_resolved,landmark_name,"
         "broker_id,broker_name,broker_phone,bhk,transaction_type,carpet_area_sqft,"
-        f"{price_column},{unit_price_column},created_at,needs_review"
+        f"{price_column},{unit_price_column},created_at,needs_review,extraction_confidence"
     )
     # Listings are marketplace supply and intentionally cross-tenant: a broker
     # may search inventory posted by any broker. Private objects (clients,
     # requirements, leads, and notes) remain tenant-scoped below.
-    query = client.table(table).select(columns).ilike("micro_market", f"%{locality}%")
+    locality_like = locality.replace("%", "").replace("_", "")
+    query = client.table(table).select(columns).or_(
+        ",".join(
+            f"{field}.ilike.%{locality_like}%"
+            for field in (
+                "micro_market", "locality_raw", "locality_resolved",
+                "building_name", "landmark_name",
+            )
+        )
+    )
     bhk = _number(args.get("bhk"))
     if bhk is not None:
         # BHK is a discrete configuration, not a text search. Searching for
@@ -288,7 +297,9 @@ def _listing_query(client: Any, args: dict, tenant_id: str | None) -> list[dict]
         query = query.gte(price_column, minimum)
     if maximum is not None:
         query = query.lte(price_column, maximum)
-    rows = query.eq("needs_review", False).order("created_at", desc=True).limit(50).execute().data or []
+    # Review-flagged inventory remains searchable; the flag is returned so the
+    # agent can qualify uncertain results instead of silently hiding them.
+    rows = query.order("created_at", desc=True).limit(50).execute().data or []
     broker_ids = {row.get("broker_id") for row in rows if row.get("broker_id") is not None}
     broker_profiles = {}
     if broker_ids:

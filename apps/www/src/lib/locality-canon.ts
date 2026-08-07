@@ -183,6 +183,13 @@ const STANDALONE_LOCALITIES: Record<string, string> = {
   worli: "Worli",
 };
 
+const KNOWN_LOCALITY_LABELS = Array.from(new Set([
+  ...Object.values(STANDALONE_LOCALITIES),
+  ...Object.values(REDIRECTS),
+  ...Object.values(IMPLIED_DIRECTION),
+  ...Array.from(GENERIC_PARENTS, (value) => value.replace(/\b\w/g, (letter) => letter.toUpperCase())),
+]));
+
 function normalise(raw: string): string {
   return (raw ?? "").trim().replace(/\s+/g, " ").toLowerCase();
 }
@@ -230,4 +237,16 @@ export function canonicalLocality(raw: string | null | undefined): CanonicalLoca
 /** Convenience: is this raw value hidden from public pages? */
 export function isHiddenLocality(raw: string | null | undefined): boolean {
   return !canonicalLocality(raw).public;
+}
+
+/** Extract the longest reviewed locality phrase embedded in free text. */
+export function extractLocalityFromText(raw: string | null | undefined): string | null {
+  const text = (raw ?? "").trim().replace(/\s+/g, " ");
+  if (!text) return null;
+  return KNOWN_LOCALITY_LABELS
+    .filter((label) => {
+      const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      return new RegExp(`(^|[^a-z])${escaped}(?=$|[^a-z])`, "i").test(text);
+    })
+    .sort((a, b) => b.length - a.length)[0] ?? null;
 }

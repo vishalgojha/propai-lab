@@ -24,6 +24,12 @@ Rules:
   listing headline, a location phrase, or a fragment like "+balcony" or a
   fragment starting with a symbol/dash. If you cannot identify a real building
   name, return null, not the closest-sounding phrase.
+- A locality/area/neighborhood such as Bandra West, Andheri East, Powai, or
+  Khar West belongs in locality_raw/locality_resolved, never building_name.
+  For example, "3 BHK in Bandra West" has building_name=null and locality_raw
+  set to "Bandra West". A named society followed by an area (for example,
+  "Rustomjee Seasons @ Bandra East") keeps the society as building_name and
+  the area as locality. Use the locality_reference gazetteer when available.
 - price and price_unit: preserve the unit used in RAW_TEXT, including valid Indian
   forms such as "Lakh", "Lakhs", "Lac", "Lacs", "Crore", "Crores", or "Cr".
   If RAW_TEXT gives a plain rupee figure (₹75,000), price_unit must be null.
