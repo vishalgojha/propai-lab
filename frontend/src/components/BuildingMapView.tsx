@@ -122,6 +122,27 @@ function finitePositive(value: unknown) {
   return Number.isFinite(number) && number > 0 ? number : undefined;
 }
 
+function formatConfiguration(value: unknown, fallback?: unknown) {
+  const text = String(value ?? "").trim();
+  const fallbackText = String(fallback ?? "").trim();
+  if (!text && !fallbackText) return "";
+  if (/^\d+(?:\.\d+)?$/.test(text)) {
+    if (/\b(?:bhk|rk|bed|bedroom)/i.test(fallbackText)) return fallbackText;
+    const number = Number(text);
+    return `${Number.isInteger(number) ? number : number} BHK`;
+  }
+  return text || fallbackText;
+}
+
+function formatDetailPrice(data: Record<string, any>) {
+  if (data.price_formatted) return String(data.price_formatted);
+  if (data.price_raw_text) return String(data.price_raw_text);
+  const amount = Number(data.monthly_rent ?? data.total_asking_price ?? data.price);
+  if (!Number.isFinite(amount) || amount <= 0) return "";
+  const formatted = `₹${amount.toLocaleString("en-IN")}`;
+  return String(data.intent || data.transaction_type).toUpperCase() === "RENT" ? `${formatted}/month` : formatted;
+}
+
 export function BuildingMapView() {
   const [buildings, setBuildings] = useState<Building[]>(() => marketSnapshotCache?.buildings ?? []);
   const [query, setQuery] = useState("");
@@ -548,12 +569,13 @@ function ListingDetailDrawer({
   onClose: () => void;
 }) {
   const data = { ...item, ...(detail || {}) };
+  const detailPrice = formatDetailPrice(data);
   const fields: Array<[string, unknown]> = [
-    ["Configuration", data.configuration_type || data.bhk],
+    ["Configuration", formatConfiguration(data.configuration_type, data.bhk)],
     ["Bathrooms", data.bathroom_count],
     ["Carpet area", data.carpet_area_sqft ? `${data.carpet_area_sqft} sqft` : null],
     ["Built-up area", data.built_up_area_sqft ? `${data.built_up_area_sqft} sqft` : null],
-    ["Price as posted", data.price_raw_text || data.price_formatted],
+    ["Price as posted", detailPrice],
     ["Price basis", data.price_basis],
     ["Floor", data.floor_label || data.floor_range || data.floor],
     ["Parking", data.parking_details || data.parking_type || (data.car_parking_count ? `${data.car_parking_count} car` : null)],
@@ -582,7 +604,7 @@ function ListingDetailDrawer({
         </div>
 
         <div className="mt-5 flex flex-wrap items-center gap-2">
-          {data.price_formatted && <span className="rounded-full bg-accent/15 px-3 py-1.5 text-sm font-semibold text-accent">{data.price_formatted}</span>}
+          {detailPrice && <span className="rounded-full bg-accent/15 px-3 py-1.5 text-sm font-semibold text-accent">{detailPrice}</span>}
           {data.intent && <span className="rounded-full border border-border px-3 py-1.5 text-xs font-semibold text-text-primary">{String(data.intent).toLowerCase()}</span>}
           {data.last_seen_text && <span className="text-xs text-text-muted">{data.last_seen_text}</span>}
         </div>
