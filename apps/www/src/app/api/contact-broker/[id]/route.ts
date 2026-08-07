@@ -22,6 +22,7 @@ function buildRecallMessage(
     micro_market?: string | null;
     building_name?: string | null;
     bhk?: string | null;
+    source_message?: string | null;
   },
   listingId: number,
   canonicalPath: string,
@@ -42,12 +43,15 @@ function buildRecallMessage(
   }
 
   const listingUrl = `https://www.propai.live${canonicalPath}`;
-  parts.push(`Hi, I came across ${subject} on PropAI — ${listingUrl} — and I'm interested.`);
-  // Do not put the full WhatsApp broadcast in a wa.me query string. Bulk
-  // posts can contain thousands of encoded characters and WhatsApp's second
-  // redirect may silently drop an oversized/emoji-heavy `text` parameter.
-  // The listing URL is the reliable source of context; keep the enquiry short.
-  parts.push("Could you please share availability, price details and photos?");
+  parts.push(`Hi, I came across this listing on PropAI — ${listingUrl} — and I'm interested.`);
+  // This route is for one listing, so preserve its normalized single-item
+  // source slice as the recall context. It contains the broker's actual facts
+  // (BHK, locality, rent, furnishing, etc.) instead of a lossy generic prompt.
+  // Bulk broadcasts are not passed here: parsed_output_unified is scoped by
+  // representative listing_index below.
+  const source = String(row.source_message || "").trim();
+  if (source) parts.push(`Listing details:\n${source}`);
+  parts.push("Please confirm availability and share any updated price or photos.");
   return parts.join(" ");
 }
 
@@ -71,7 +75,7 @@ export async function GET(
 
   const { data, error } = await db
     .from("listings_unified")
-    .select("id, bhk, micro_market, building_name, property_type, broker_phone, representative_raw_message_id, latest_raw_message_id")
+    .select("id, bhk, micro_market, building_name, property_type, broker_phone, representative_raw_message_id, representative_listing_index, latest_raw_message_id")
     .eq("id", listingId)
     .maybeSingle();
 
@@ -88,6 +92,18 @@ export async function GET(
     return NextResponse.json({ available: false, reason: "bad_phone" }, { status: 410 });
   }
 
+  let sourceMessage: string | null = null;
+  const sourceId = data.representative_raw_message_id ?? data.latest_raw_message_id;
+  if (sourceId != null) {
+    const { data: parsed } = await db
+      .from("parsed_output_unified")
+      .select("normalized_message")
+      .eq("raw_message_id", sourceId)
+      .eq("listing_index", data.representative_listing_index ?? 0)
+      .maybeSingle();
+    sourceMessage = parsed?.normalized_message ?? null;
+  }
+
   // Build the canonical public URL (with SEO slug) so the WhatsApp recall
   // message contains the same URL Google has indexed.
   const slug = buildListingSlug({
@@ -96,6 +112,7 @@ export async function GET(
     micro_market: data.micro_market,
     building_name: data.building_name,
     property_type: data.property_type,
+    source_message: sourceMessage,
   });
   const canonicalPath = `/listings/${slug ?? "listing"}/${data.id}`;
 
