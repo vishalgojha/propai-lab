@@ -1375,6 +1375,16 @@ def _normalize_extraction(raw: dict) -> dict:
     # furnishing_status — enum + aliases (LLM writes "semi-furnished",
     # "fully furnished", "bare" etc.)
     fs_raw = str(raw.get("furnishing_status", "")).strip().lower()
+    fs_raw = {
+        "ff": "fully_furnished",
+        "fully furnished": "fully_furnished",
+        "furnished": "fully_furnished",
+        "sf": "semi_furnished",
+        "semi furnished": "semi_furnished",
+        "pf": "semi_furnished",
+        "none": "unfurnished",
+        "unfurnished": "unfurnished",
+    }.get(fs_raw, fs_raw)
     result["furnishing_status"] = fs_raw if fs_raw in _VALID_FURNISHING_CANONICAL else None
 
     # amenities
@@ -1386,6 +1396,14 @@ def _normalize_extraction(raw: dict) -> dict:
 
     # possession_status
     ps = str(raw.get("possession_status") or "").strip().lower()
+    ps = {
+        "immediate": "ready_to_move",
+        "ready": "ready_to_move",
+        "ready to move": "ready_to_move",
+        "available": "ready_to_move",
+        "oc avlb": "oc_received",
+        "oc available": "oc_received",
+    }.get(ps, ps)
     result["possession_status"] = ps if ps in _VALID_POSSESSION else None
 
     availability = str(raw.get("availability_status") or "").strip().lower()
@@ -2259,6 +2277,7 @@ def ai_extract(raw_text: str, ctx: dict | None = None, storage=None) -> dict:
     if not isinstance(_src_id, int):
         _src_id = None
     _tid = ctx.get("tenant_id") if ctx else None
+    classified_asset, classified_transaction, classified_requirement = _classify_message_flags(raw_text)
 
     while attempts < max_attempts:
         provider = _next_provider()

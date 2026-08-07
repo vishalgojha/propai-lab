@@ -2338,12 +2338,12 @@ class SupabaseStorage(Storage):
         """Best-effort contact lookup; missing contact tables never break ingest."""
         candidates = [value for value in (jid, phone, _jid_phone(jid)) if value]
         for lookup in candidates:
-            for column in ("jid", "phone", "wa_jid"):
+            for column in ("their_jid", "our_jid", "redacted_phone"):
                 try:
                     result = self.client.table("whatsmeow_contacts").select("*").eq(column, lookup).limit(1).execute()
                     if result.data:
                         row = result.data[0]
-                        for key in ("push_name", "display_name", "name", "short_name"):
+                        for key in ("push_name", "full_name", "first_name", "business_name"):
                             name = _clean_person_name(row.get(key) or "")
                             if name:
                                 return name
@@ -2558,6 +2558,33 @@ class SupabaseStorage(Storage):
         # The typed tables deliberately retain the complete LLM payload while
         # promoting only fields that belong to the selected schema.
         locality_raw, locality_resolved = _locality_fields(data)
+        furnishing_value = data.get("furnishing_canonical") or data.get("furnishing")
+        furnishing_value = {
+            "ff": "fully_furnished",
+            "furnished": "fully_furnished",
+            "sf": "semi_furnished",
+            "pf": "semi_furnished",
+            "none": "unfurnished",
+        }.get(str(furnishing_value or "").strip().lower(), furnishing_value)
+        possession_value = data.get("possession_status")
+        possession_value = {
+            "immediate": "ready_to_move",
+            "ready": "ready_to_move",
+            "ready to move": "ready_to_move",
+            "oc avlb": "oc_received",
+            "oc available": "oc_received",
+        }.get(str(possession_value or "").strip().lower(), possession_value)
+        confidence_score = data.get("extraction_confidence_score")
+        try:
+            confidence_score = float(confidence_score) if confidence_score is not None else 0.0
+        except (TypeError, ValueError):
+            confidence_score = 0.0
+        if confidence_score <= 0:
+            confidence_score = {
+                "high": 0.9,
+                "medium": 0.7,
+                "low": 0.4,
+            }.get(str(ai.get("extraction_confidence") or "").lower(), confidence_score)
         broker_name = (
             self._resolve_whatsapp_display_name(
                 data.get("sender_jid") or "", data.get("broker_phone") or ""
@@ -2601,14 +2628,12 @@ class SupabaseStorage(Storage):
             "additional_charges": data.get("additional_charges") or [],
             "validation_flags": data.get("validation_flags") or [],
             "needs_review": bool(data.get("needs_review")),
-            "extraction_confidence": "high" if float(data.get("confidence") or 0) >= .85 else ("medium" if float(data.get("confidence") or 0) >= .6 else "low"),
-            "extraction_confidence_score": max(0.0, min(1.0, float(
-                data.get("extraction_confidence_score")
-                if data.get("extraction_confidence_score") is not None
-                else (data.get("confidence") if data.get("confidence") is not None else {
-                    "high": 0.9, "medium": 0.7, "low": 0.4
-                }.get(str(ai.get("extraction_confidence") or "").lower(), 0.0))
-            ))),
+            "extraction_confidence": (
+                str(data.get("extraction_confidence") or ai.get("extraction_confidence") or "").lower()
+                if str(data.get("extraction_confidence") or ai.get("extraction_confidence") or "").lower() in {"high", "medium", "low"}
+                else ("high" if confidence_score >= .85 else ("medium" if confidence_score >= .6 else "low"))
+            ),
+            "extraction_confidence_score": max(0.0, min(1.0, confidence_score)),
             "corrected_fields": data.get("corrected_fields") or [],
             "correction_confidence": data.get("correction_confidence"),
             "corrected_at": data.get("corrected_at"),
@@ -2624,9 +2649,9 @@ class SupabaseStorage(Storage):
             "parking_type": data.get("parking_type"),
             "floor_range": data.get("floor_range"),
             "configuration_type": data.get("configuration_type"),
-            "furnishing_status": data.get("furnishing_canonical") or data.get("furnishing"),
-            "fitout_status": data.get("fitout_status") or data.get("furnishing_canonical") or data.get("furnishing"),
-            "possession_status": data.get("possession_status"),
+            "furnishing_status": furnishing_value,
+            "fitout_status": data.get("fitout_status") or furnishing_value,
+            "possession_status": possession_value,
             "possession_date": data.get("possession_date"),
             "available_from": data.get("available_from"),
             "availability_date_raw": data.get("availability_date_raw"),
