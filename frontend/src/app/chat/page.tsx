@@ -528,8 +528,9 @@ export default function ChatPage() {
         : await api.declineBrowserAction(token);
       appendAssistantResponse(response);
       setConfirmationState((current) => ({ ...current, [token]: "confirmed" }));
-    } catch {
+    } catch (error) {
       setConfirmationState((current) => ({ ...current, [token]: "error" }));
+      setSessionError(error instanceof Error ? error.message : "Browser action failed.");
     }
   }, [appendAssistantResponse]);
 
