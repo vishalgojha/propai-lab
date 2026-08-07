@@ -26,7 +26,7 @@ import re
 import time
 from datetime import datetime, timezone
 from threading import Lock
-from typing import Optional
+from typing import Any, Optional
 
 from openai import OpenAI
 from llm import get_configured_providers
