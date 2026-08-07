@@ -773,7 +773,7 @@ const SENTENCE_PHRASES =
 // Real building names are short and appear at the start, before ad text.
 export function cleanBuildingName(raw: string | null): string | null {
   if (!raw) return null;
-  const name = raw.trim();
+  const name = raw.replace(/[*_`~]/g, "").replace(/\s{2,}/g, " ").trim();
   if (!name) return null;
 
   // Short names are likely already clean — use as-is.

@@ -213,6 +213,17 @@ function titleCase(value: string): string {
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
+// WhatsApp markdown is useful in the private source message, but its control
+// characters must never leak into public titles, labels, or broker names.
+export function cleanPublicText(value: string | null | undefined): string | null {
+  if (value == null) return null;
+  const cleaned = String(value)
+    .replace(/[*_`~]/g, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+  return cleaned || null;
+}
+
 function normalizePropertyType(value: string | null): string | null {
   const raw = (value || "").trim();
   if (!raw) return null;
@@ -239,12 +250,13 @@ function buildTitle(row: ListingCardFields): string {
   // a building name (or a noisy poster headline), which made equivalent cards
   // read as "Ten BKC", "3 BHK — BKC", and "Available Ten bkc 3bhk".  Build
   // one deterministic title from the structured fields for every card.
-  const furnishing = /^(none|null|unknown)$/i.test((row.furnishing || "").trim()) ? "" : (row.furnishing || "").trim();
+  const furnishingValue = cleanPublicText(row.furnishing);
+  const furnishing = furnishingValue && !/^(none|null|unknown)$/i.test(furnishingValue) ? furnishingValue : "";
   const bhk = formatBhkNumber(row.bhk);
   const propertyType = normalizePropertyType(row.property_type);
   // Extract first segment before comma — real building names are short and
   // appear at the start (e.g. "Wallfort Tower" from "Wallfort Tower, 2bhk...").
-  const rawBuilding = (row.building_name ?? "").trim();
+  const rawBuilding = cleanPublicText(row.building_name) ?? "";
   const building = rawBuilding
     ? (rawBuilding.includes(",") ? rawBuilding.split(",")[0].trim() : rawBuilding)
     : null;
@@ -256,7 +268,7 @@ function buildTitle(row: ListingCardFields): string {
     furnishing ? titleCase(furnishing) : "",
     bhk ? `${bhk} BHK` : propertyType || (assetTypeLabel(row.asset_type, row.intent) === "Commercial" ? "Commercial Space" : "Property"),
   ].filter(Boolean).join(" ");
-  const place = building || locality || row.landmark_name?.trim() || null;
+  const place = building || locality || cleanPublicText(row.landmark_name);
 
   if (place && transaction) return `${descriptor} ${transaction} at ${place}`;
   if (place) return `${descriptor} at ${place}`;
@@ -265,11 +277,11 @@ function buildTitle(row: ListingCardFields): string {
 }
 
 function listingLocality(row: ListingCardFields): string | null {
-  return row.micro_market?.trim()
-    || row.location_label?.trim()
-    || row.locality_raw?.trim()
-    || row.locality_resolved?.trim()
-    || extractLocalityFromText(row.building_name)
+  return cleanPublicText(row.micro_market)
+    || cleanPublicText(row.location_label)
+    || cleanPublicText(row.locality_raw)
+    || cleanPublicText(row.locality_resolved)
+    || cleanPublicText(extractLocalityFromText(row.building_name))
     || null;
 }
 
@@ -285,14 +297,17 @@ function buildSpecItems(row: ListingCardFields): ListingSpecItem[] {
   if (typeof row.area_sqft === "number" && row.area_sqft > 0) {
     items.push({ kind: "area", label: `${row.area_sqft.toLocaleString("en-IN")} sqft` });
   }
-  if (row.furnishing && row.furnishing.trim() && !/^(none|null|unknown)$/i.test(row.furnishing.trim())) {
-    items.push({ kind: "furnishing", label: titleCase(row.furnishing) });
+  const furnishing = cleanPublicText(row.furnishing);
+  if (furnishing && !/^(none|null|unknown)$/i.test(furnishing)) {
+    items.push({ kind: "furnishing", label: titleCase(furnishing) });
   }
-  if (row.floor_description && row.floor_description.trim()) {
-    items.push({ kind: "floor", label: row.floor_description.trim() });
+  const floor = cleanPublicText(row.floor_description);
+  if (floor) {
+    items.push({ kind: "floor", label: floor });
   }
-  if (row.view && row.view.trim()) {
-    items.push({ kind: "view", label: row.view.trim() });
+  const view = cleanPublicText(row.view);
+  if (view) {
+    items.push({ kind: "view", label: view });
   }
   return items;
 }
@@ -360,7 +375,7 @@ const EMOJI_RE =
   /[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2190}-\u{21FF}\u{2B00}-\u{2BFF}\u{FE00}-\u{FE0F}\u{1F1E6}-\u{1F1FF}\u{1F3FB}-\u{1F3FF}\u200d]/gu;
 export function stripEmoji(value: string | null): string | null {
   if (!value) return value;
-  return value.replace(EMOJI_RE, "").replace(/\s{2,}/g, " ").trim() || null;
+  return cleanPublicText(value.replace(EMOJI_RE, ""));
 }
 
 // Broker names are sometimes stored as raw phone numbers (e.g. "+91 9920993025"
