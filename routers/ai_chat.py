@@ -92,11 +92,21 @@ def _to_sse_chunks(response: dict) -> str:
             "data": {"steps": status_steps},
         })
 
+    # Emit activity first so the UI can show progress before the final answer.
+    for block in blocks:
+        block_type = block.get("type", "")
+        if block_type == "activity":
+            yield _sse_event({
+                "type": "data-activity",
+                "id": f"activity-{msg_id}",
+                "data": block,
+            })
+
     # text-delta from content string
     if content:
         yield _sse_event({"type": "text-delta", "delta": content, "id": msg_id})
 
-    # Emit each block as appropriate
+    # Emit each remaining block as appropriate
     for block in blocks:
         block_type = block.get("type", "")
         if block_type in {"listing_cards", "buyer_cards", "broker_cards", "matching_buyers"}:
@@ -141,6 +151,82 @@ def _wrap_chat_response(response: dict, is_inbox: bool = False):
         guarded["content"] = _guard_against_raw_markup(str(guarded.get("content") or "").strip())
         return guarded
     return _wrap_sse(response)
+
+
+def _coerce_activity_entries(entries: Any) -> list[dict[str, Any]]:
+    if not isinstance(entries, list):
+        return []
+    normalized: list[dict[str, Any]] = []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        item: dict[str, Any] = {}
+        for key in ("tool", "status", "summary", "provider", "url", "title", "detail", "browser_session_id"):
+            value = entry.get(key)
+            if value not in (None, ""):
+                item[key] = value
+        if item:
+            normalized.append(item)
+    return normalized
+
+
+def _build_activity_block(response: dict) -> dict | None:
+    status_steps = [str(step).strip() for step in (response.get("status_steps") or []) if str(step).strip()]
+    trace = response.get("trace") if isinstance(response.get("trace"), dict) else {}
+    trace_actions = _coerce_activity_entries(trace.get("actions"))
+    route = str(trace.get("route") or "").strip()
+    if not status_steps and not trace_actions and route not in {"supabase_agent", "browser_permission_prompt"}:
+        return None
+
+    title = "Agent activity"
+    if route == "browser_permission_prompt":
+        title = "Browser check"
+    elif route == "supabase_agent":
+        title = "Live agent work"
+
+    body = response.get("content") or ""
+    if route == "supabase_agent" and status_steps:
+        body = status_steps[0]
+    elif route == "browser_permission_prompt":
+        body = "Waiting for browser permission before continuing."
+    elif not body and status_steps:
+        body = status_steps[0]
+
+    block: dict[str, Any] = {
+        "type": "activity",
+        "title": title,
+        "body": str(body).strip(),
+    }
+    if status_steps:
+        block["steps"] = status_steps
+    if trace_actions:
+        block["events"] = trace_actions
+
+    trace_payload: dict[str, Any] = {}
+    if isinstance(trace.get("sources"), list) and trace.get("sources"):
+        trace_payload["sources"] = trace.get("sources")
+    if trace.get("last_updated"):
+        trace_payload["last_updated"] = trace.get("last_updated")
+    if isinstance(trace.get("notes"), list) and trace.get("notes"):
+        trace_payload["notes"] = trace.get("notes")
+    if trace_actions:
+        trace_payload["actions"] = trace_actions
+    def _latest_action_value(key: str) -> Any:
+        for action in reversed(trace_actions):
+            value = action.get(key)
+            if value not in (None, ""):
+                return value
+        return None
+
+    for key in ("route", "browser_session_id", "browser_provider", "browser_url", "browser_title"):
+        value = trace.get(key)
+        if value in (None, ""):
+            value = _latest_action_value(key)
+        if value not in (None, ""):
+            trace_payload[key] = value
+    if trace_payload:
+        block["trace"] = trace_payload
+    return block
 
 
 async def _market_search_with_summary(
@@ -369,6 +455,12 @@ def _session_response(session: dict) -> dict:
 def _annotate_chat_response(response: dict, source_mode: str) -> dict:
     annotated = dict(response or {})
     annotated["source_mode"] = source_mode
+    activity_block = _build_activity_block(annotated)
+    if activity_block:
+        blocks = list(annotated.get("blocks") or [])
+        if not any(isinstance(block, dict) and block.get("type") == "activity" for block in blocks):
+            blocks.insert(0, activity_block)
+        annotated["blocks"] = blocks
     return annotated
 
 
@@ -1616,6 +1708,7 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
             {"role": "user", "content": context},
         ]
         max_tool_rounds = int(getattr(workspace_ai_settings, "max_tool_rounds", 8) or 8) if workspace_ai_settings else 8
+        activity_sink: list[dict[str, Any]] = []
         reply = chat_engine.get_model_reply(
             msgs,
             active_sources,
@@ -1628,12 +1721,19 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
             browser_provider=getattr(workspace_ai_settings, "browser_provider", "playwright"),
             storage_client=storage.client,
             user_id=str(user.get("id") or ""),
+            activity_sink=activity_sink,
         )
         if isinstance(reply, dict):
-            return reply
-        if not (reply.content or "").strip():
-            raise RuntimeError("provider returned an empty response")
-        return chat_engine.normalize_workspace_response(reply.content or "", active_sources)
+            response = dict(reply)
+        else:
+            if not (reply.content or "").strip():
+                raise RuntimeError("provider returned an empty response")
+            response = chat_engine.normalize_workspace_response(reply.content or "", active_sources)
+        trace = dict(response.get("trace") or {}) if isinstance(response.get("trace"), dict) else {}
+        if activity_sink:
+            trace["actions"] = list(trace.get("actions") or []) + activity_sink
+            response["trace"] = trace
+        return response
 
     if last_user and not _ANALYTICS_ACTION_SIGNALS.search(last_user):
         try:

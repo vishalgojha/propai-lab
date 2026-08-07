@@ -722,6 +722,7 @@ WORKSPACE_BLOCK_TYPES = {
     "empty_state",
     "loading",
     "greeting",
+    "activity",
 }
 
 
@@ -3671,6 +3672,7 @@ def get_model_reply(
     tenant_id: str | None = None,
     storage_client=None,
     user_id: str | None = None,
+    activity_sink: list[dict[str, Any]] | None = None,
 ):
     client = get_client(api_key=api_key, base_url=base_url)
     tools = _build_tools(
@@ -3759,6 +3761,55 @@ def get_model_reply(
                 browser_provider=browser_provider,
             )
             _logger.info("AI agent tool result name=%s status=%s", fn_name, result.get("status") if isinstance(result, dict) else "ok")
+            if activity_sink is not None:
+                activity_entry: dict[str, Any] = {
+                    "tool": fn_name,
+                    "status": result.get("status") if isinstance(result, dict) else "ok",
+                    "summary": "",
+                }
+                if fn_name in READ_TOOL_NAMES:
+                    if fn_name == "search_listings" and isinstance(result, dict):
+                        count = len(result.get("results") or [])
+                        locality = str(fn_args.get("locality") or "").strip()
+                        listing_type = str(fn_args.get("listing_type") or "rent").strip().lower()
+                        bhk = fn_args.get("bhk")
+                        pieces = []
+                        if count:
+                            pieces.append(f"Found {count} matching listings")
+                        else:
+                            pieces.append("No matches found")
+                        if locality:
+                            pieces.append(f"in {locality}")
+                        if bhk not in (None, ""):
+                            pieces.append(f"for {bhk} BHK")
+                        if listing_type:
+                            pieces.append(listing_type)
+                        activity_entry["summary"] = " ".join(pieces).strip()
+                    elif fn_name == "match_client_to_listings" and isinstance(result, dict):
+                        count = len(result.get("matches") or [])
+                        activity_entry["summary"] = f"Matched client to {count} listings"
+                    elif fn_name == "get_client_requirements":
+                        activity_entry["summary"] = "Loaded client requirements"
+                    elif fn_name == "get_broker_profile":
+                        activity_entry["summary"] = "Loaded broker profile"
+                elif fn_name in BROWSER_TOOL_NAMES:
+                    command_name = str(result.get("tool") or fn_name).replace("browser_", "").replace("_", " ")
+                    activity_entry["summary"] = f"{command_name.capitalize()} browser session"
+                    if isinstance(result, dict):
+                        activity_entry["browser_session_id"] = result.get("browser_session_id")
+                        if result.get("provider"):
+                            activity_entry["provider"] = result.get("provider")
+                        if result.get("url"):
+                            activity_entry["url"] = result.get("url")
+                        if result.get("title"):
+                            activity_entry["title"] = result.get("title")
+                        if result.get("summary"):
+                            activity_entry["detail"] = result.get("summary")
+                elif fn_name in WRITE_TOOL_NAMES:
+                    activity_entry["summary"] = f"Prepared {fn_name.replace('_', ' ')}"
+                if not activity_entry.get("summary"):
+                    activity_entry["summary"] = f"Ran {fn_name.replace('_', ' ')}"
+                activity_sink.append(activity_entry)
             if isinstance(result, dict) and result.get("status") == "pending_confirmation":
                 return {
                     "content": result.get("message") or "Confirmation is required before changing workspace data.",
@@ -3793,6 +3844,7 @@ def get_model_reply(
             tenant_id=tenant_id,
             storage_client=storage_client,
             user_id=user_id,
+            activity_sink=activity_sink,
         )
 
     return msg
