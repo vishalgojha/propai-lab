@@ -57,6 +57,9 @@ function RawSourceMessage({
   // but preserve the text around them so the message is still readable.
   const stripped = message
     .replace(/https?:\/\/(?:www\.)?(?:youtube\.com|youtu\.be|instagram\.com|facebook\.com|fb\.com|twitter\.com|x\.com|t\.co|tiktok\.com|linkedin\.com)\/\S*/gi, "")
+    // Render the source as readable evidence, not as unprocessed WhatsApp
+    // markdown. The private recall/CTA still uses the original slice.
+    .replace(/[*_`~]/g, "")
     .replace(/\s{2,}/g, " ")
     .trim();
 

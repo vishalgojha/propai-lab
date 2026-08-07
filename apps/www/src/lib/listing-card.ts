@@ -31,6 +31,64 @@ export type ListingCardFields = {
   additional_charges?: AdditionalCharge[] | null;
 };
 
+type DedupableListing = Pick<
+  ListingCardFields,
+  | "id"
+  | "price"
+  | "price_unit"
+  | "property_type"
+  | "building_name"
+  | "micro_market"
+  | "locality_raw"
+  | "locality_resolved"
+  | "bhk"
+  | "intent"
+  | "area_sqft"
+  | "floor_description"
+  | "landmark_name"
+  | "broker_name"
+  | "broker_phone"
+  | "last_seen"
+>;
+
+function dedupPart(value: string | null | undefined): string {
+  return String(value ?? "").toLowerCase().replace(/[^a-z0-9]+/g, "").trim();
+}
+
+// A repeated WhatsApp observation is not new inventory. Keep the newest row
+// for the same broker/building/unit/configuration/intent within the 24-hour
+// ingestion window, while retaining different brokers and different units.
+// This is deliberately query-time safe: source rows remain available for audit.
+export function dedupeRecentListings<T extends DedupableListing>(rows: T[]): T[] {
+  const ordered = [...rows].sort((a, b) => {
+    const at = a.last_seen ? new Date(a.last_seen).getTime() : 0;
+    const bt = b.last_seen ? new Date(b.last_seen).getTime() : 0;
+    return bt - at || Number(b.id) - Number(a.id);
+  });
+  const kept: T[] = [];
+  const seen = new Map<string, number>();
+
+  for (const row of ordered) {
+    const broker = dedupPart(row.broker_phone) || dedupPart(row.broker_name) || "unknown-broker";
+    const place = dedupPart(row.building_name) || dedupPart(row.landmark_name) || dedupPart(row.micro_market) || "unknown-place";
+    const key = [
+      broker,
+      place,
+      dedupPart(row.micro_market || row.locality_resolved || row.locality_raw),
+      dedupPart(row.bhk),
+      dedupPart(row.intent),
+      row.area_sqft == null ? "" : String(Math.round(Number(row.area_sqft))),
+      dedupPart(row.floor_description),
+    ].join("|");
+    const time = row.last_seen ? new Date(row.last_seen).getTime() : 0;
+    const previous = seen.get(key);
+    if (previous != null && time > 0 && previous - time <= 24 * 60 * 60 * 1000) continue;
+    seen.set(key, time);
+    kept.push(row);
+  }
+  return kept;
+}
+
 export function formatBhkNumber(value: string | number | null | undefined): string {
   const raw = String(value ?? "").trim();
   if (!raw) return "";
@@ -69,7 +127,7 @@ export type ListingCardViewModel = {
   specRow: string;
   specItems: ListingSpecItem[];
   statusLabel: string;
-  statusTone: "available" | "unconfirmed";
+  statusTone: "listed" | "unconfirmed";
   updatedLabel: string;
   freshnessLabel: string;
   freshnessBadge: string | null;
@@ -583,8 +641,8 @@ export function toListingCardViewModel(
     priceLabel: formatCardPrice(row.price, row.price_unit, row.intent, row.price_model, row.price_per_sqft, row.area_sqft),
     specRow: buildSpecRow(specItems),
     specItems,
-    statusLabel: hasLocality ? "Available" : "Locality unconfirmed",
-    statusTone: hasLocality ? "available" : "unconfirmed",
+    statusLabel: hasLocality ? "Listed" : "Locality unconfirmed",
+    statusTone: hasLocality ? "listed" : "unconfirmed",
     updatedLabel: formatUpdated(row.last_seen),
     freshnessLabel: formatFreshness(row.last_seen),
     freshnessBadge: formatFreshnessBadge(row.last_seen),

@@ -2,7 +2,7 @@ import { getServerSupabase, slugify } from "./supabase";
 import { unstable_cache } from "next/cache";
 import { getTitlesForRawMessageIds } from "./listing-titles";
 import { canonicalLocality } from "./locality-canon";
-import { type ListingCardFields } from "./listing-card";
+import { dedupeRecentListings, type ListingCardFields } from "./listing-card";
 
 export type BuildingOnMap = {
   name: string;
@@ -1221,16 +1221,24 @@ export async function getSimilarListingsForExpired(
 
   const { data, error } = await query.order("last_seen", { ascending: false }).limit(limit);
   if (error || !data) return [];
-  return data.map((row) => ({
+  return dedupeRecentListings(data.map((row) => ({
     id: row.id,
     micro_market: row.micro_market,
     bhk: row.bhk,
     building_name: row.building_name,
     price: row.price,
     price_unit: row.price_unit,
+    intent: opts.intent,
     last_seen: row.last_seen,
     property_type: row.property_type,
-  }));
+    broker_name: null,
+    broker_phone: null,
+    area_sqft: null,
+    floor_description: null,
+    landmark_name: null,
+    locality_raw: null,
+    locality_resolved: null,
+  })));
 }
 
 export async function getSimilarListingsForDetail(opts: {
@@ -1260,7 +1268,7 @@ export async function getSimilarListingsForDetail(opts: {
   const targetBuilding = (opts.building_name || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
   const targetBhk = (opts.bhk || "").toLowerCase().replace(/[^a-z0-9.]+/g, "");
   const targetFurnishing = (opts.furnishing || "").toLowerCase();
-  const ranked = data.map((row) => {
+  const ranked = dedupeRecentListings(data as ListingCardFields[]).map((row) => {
     const building = String(row.building_name || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
     const bhk = String(row.bhk || "").toLowerCase().replace(/[^a-z0-9.]+/g, "");
     const furnishing = String(row.furnishing || "").toLowerCase();

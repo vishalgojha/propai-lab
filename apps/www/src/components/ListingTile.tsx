@@ -110,7 +110,7 @@ export default function ListingTile({
           )}
           <span
             className={`ml-auto inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium ${
-              card.statusTone === "available"
+              card.statusTone === "listed"
                 ? "border border-green-400/20 bg-green-400/10 text-green-300"
                 : "border border-amber-400/20 bg-amber-400/10 text-amber-200"
             }`}
