@@ -686,6 +686,7 @@ export type BuildingListing = {
   bhk: string | null;
   price: number | null;
   price_unit: string | null;
+  price_raw_text?: string | null;
   price_model?: string | null;
   price_per_sqft?: number | null;
   furnishing: string | null;
@@ -904,6 +905,7 @@ export async function getBuildingListings(name: string): Promise<BuildingListing
     bhk: string | null;
     price: number | null;
     price_unit: string | null;
+    price_raw_text: string | null;
     price_model: string | null;
     price_per_sqft: number | null;
     furnishing: string | null;
@@ -925,7 +927,7 @@ export async function getBuildingListings(name: string): Promise<BuildingListing
     const { data, error } = await db
       .from("listings_unified")
       .select(
-        "id, bhk, price, price_unit, price_model, price_per_sqft, furnishing, intent, asset_type, property_type, micro_market, view, floor_description, building_name, broker_name, broker_phone, last_seen, representative_raw_message_id, latest_raw_message_id",
+        "id, bhk, price, price_unit, price_raw_text, price_model, price_per_sqft, furnishing, intent, asset_type, property_type, micro_market, view, floor_description, building_name, broker_name, broker_phone, last_seen, representative_raw_message_id, latest_raw_message_id",
       )
       .eq("building_name", target)
       .gte("last_seen", thirtyDaysAgo)
@@ -951,6 +953,7 @@ export async function getBuildingListings(name: string): Promise<BuildingListing
     bhk: r.bhk,
     price: r.price,
     price_unit: r.price_unit,
+    price_raw_text: r.price_raw_text,
     price_model: r.price_model,
     price_per_sqft: r.price_per_sqft,
     furnishing: r.furnishing,
@@ -980,7 +983,7 @@ export async function getListingById(id: number): Promise<ListingDetail | null> 
   const { data, error } = await db
     .from("listings_unified")
     .select(
-      "id, bhk, price, price_unit, price_model, price_per_sqft, area_sqft, furnishing, intent, asset_type, property_type, location_label, landmark_name, micro_market, locality_raw, locality_resolved, view, floor_description, broker_name, broker_phone, last_seen, building_name, representative_raw_message_id, representative_listing_index, latest_raw_message_id, deal_tags, additional_charges",
+      "id, bhk, price, price_unit, price_raw_text, price_model, price_per_sqft, area_sqft, furnishing, intent, asset_type, property_type, location_label, landmark_name, micro_market, locality_raw, locality_resolved, view, floor_description, broker_name, broker_phone, last_seen, building_name, representative_raw_message_id, representative_listing_index, latest_raw_message_id, deal_tags, additional_charges",
     )
     .eq("id", id)
     .maybeSingle();
@@ -1020,6 +1023,7 @@ export async function getListingById(id: number): Promise<ListingDetail | null> 
     bhk: data.bhk,
     price: data.price,
     price_unit: data.price_unit,
+    price_raw_text: data.price_raw_text ?? null,
     price_model: data.price_model ?? null,
     price_per_sqft: data.price_per_sqft ?? null,
     area_sqft: data.area_sqft,
@@ -1257,7 +1261,7 @@ export async function getSimilarListingsForDetail(opts: {
   cutoff.setDate(cutoff.getDate() - 90);
   const { data, error } = await db
     .from("listings_unified")
-    .select("id, bhk, price, price_unit, price_model, price_per_sqft, area_sqft, furnishing, intent, asset_type, property_type, micro_market, locality_raw, locality_resolved, building_name, landmark_name, location_label, floor_description, view, broker_name, broker_phone, last_seen, deal_tags, additional_charges")
+    .select("id, bhk, price, price_unit, price_raw_text, price_model, price_per_sqft, area_sqft, furnishing, intent, asset_type, property_type, micro_market, locality_raw, locality_resolved, building_name, landmark_name, location_label, floor_description, view, broker_name, broker_phone, last_seen, deal_tags, additional_charges")
     .eq("micro_market", opts.micro_market)
     .eq("intent", opts.intent)
     .neq("id", opts.id)
