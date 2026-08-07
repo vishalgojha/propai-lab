@@ -497,15 +497,21 @@ export default async function ListingPage({ params }: Params) {
               </div>
             )}
 
-            {/* Raw source message — collapsible trust/debug section */}
-            {listing.rawMessage && (
-              <RawSourceMessage
-                message={listing.rawMessage.message}
-                sender={listing.rawMessage.sender}
-                groupName={listing.rawMessage.groupName}
-                timestamp={listing.rawMessage.timestamp}
-              />
-            )}
+            {/* Public copy is structured and indexable. Raw WhatsApp evidence
+                stays in internal review surfaces and must never reach public HTML. */}
+            <div className="mt-7">
+              <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-zinc-400">
+                About this listing
+              </h2>
+              <p className="text-sm leading-relaxed text-zinc-300">
+                {listingDescription({
+                  dealType,
+                  title: card.title,
+                  locality: card.locality,
+                  specRow: card.specRow,
+                })}
+              </p>
+            </div>
           </div>
 
           {/* Sidebar */}
