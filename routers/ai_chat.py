@@ -1359,6 +1359,7 @@ async def confirm_browser_action(
                 project_name,
             )
             activity = workflow.activity(browser_session_id, "maharera_project_status")
+            activity["trace"]["confirmation_token"] = req.confirmation_token
             content = workflow.content
             if workflow.source_url:
                 content += f"\nOfficial source: {workflow.source_url}"
@@ -1386,6 +1387,7 @@ async def confirm_browser_action(
 
             workflow = await asyncio.to_thread(run_igr_property_search, _igr_execute, browser_session_id, {})
             activity = workflow.activity(browser_session_id, "igr_maharashtra_property_search")
+            activity["trace"]["confirmation_token"] = req.confirmation_token
             content = workflow.content + f"\nOfficial source: {workflow.source_url}"
             await asyncio.to_thread(storage.add_chat_message, session_id, "assistant", content, tenant_id, [activity])
             return _wrap_chat_response({"content": content, "blocks": [activity], "sources": [workflow.source_url], "trace": activity["trace"]}, True)
@@ -1446,7 +1448,7 @@ async def confirm_browser_action(
             )
             title = str(state.get("title") or "").strip()
             current_url = str(state.get("url") or url).strip()
-            content = f"I opened {current_url}."
+            content = f"I opened {current_url} in PropAI’s browser. This checks the page on the server; it does not open a new tab in your computer’s browser."
             if title:
                 content += f"\nPage title: {title}"
             blocks = [{
@@ -1454,8 +1456,9 @@ async def confirm_browser_action(
                 "title": "Browser task complete",
                 "body": content,
                 "steps": [f"Opened {current_url}"] + ([f"Read page title: {title}"] if title else []),
-                "trace": {"route": "direct_browser_open", "browser_provider": "agent-browser", "browser_session_id": browser_session_id},
+                "trace": {"route": "direct_browser_open", "browser_provider": "agent-browser", "browser_session_id": browser_session_id, "source_url": current_url},
             }]
+            blocks[0]["trace"]["confirmation_token"] = req.confirmation_token
             await asyncio.to_thread(storage.add_chat_message, session_id, "assistant", content, tenant_id, blocks)
             return _wrap_chat_response({"content": content, "blocks": blocks, "sources": [], "trace": blocks[0]["trace"]}, True)
 
