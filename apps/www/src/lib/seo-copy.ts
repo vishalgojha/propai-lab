@@ -177,19 +177,81 @@ export function buildingDescription(opts: {
   return clip(parts.join(" "), 155);
 }
 
+export type ListingSourceFacts = {
+  bhk: string | null;
+  landmark: string | null;
+  view: string | null;
+  parking: string | null;
+  pets: boolean;
+  possession: string | null;
+};
+
+/** Extract only high-signal, allow-listed facts from the private source slice.
+ * The source text itself is never rendered; these facts are safe display copy.
+ */
+export function extractListingSourceFacts(
+  message: string | null | undefined,
+  building: string | null | undefined,
+  locality: string | null | undefined,
+): ListingSourceFacts {
+  const text = message || "";
+  const lower = text.toLowerCase();
+  const bhk = text.match(/\b(\d+(?:\.\d+)?)\s*bhk\b/i)?.[1] ?? null;
+  const view = text.match(/\b(partial\s+sea\s+view|sea\s+view|garden\s+view|city\s+view|pool\s+view)\b/i)?.[1] ?? null;
+  const parking = text.match(/\b(\d+)\s+car\s+parking\s+(?:available|provided|included)\b/i)?.[1]
+    ? `${text.match(/\b(\d+)\s+car\s+parking\s+(?:available|provided|included)\b/i)?.[1]} car parking`
+    : (/\bcar\s+parking\s+(?:available|provided|included)\b/i.test(text) ? "car parking" : null);
+  const possession = text.match(/\b(possession|available)\s+([\w\s]+?)(?=[.!\n]|$)/i)?.[0]?.trim() ?? null;
+
+  let landmark: string | null = text.match(/\b(?:near|opposite|opp\.?|next\s+to|behind)\s+([A-Za-z][A-Za-z .&'-]{2,45})/i)?.[1]?.trim() ?? null;
+  if (!landmark && building && locality) {
+    const lines = text.split(/\r?\n|,/).map((line) => line.replace(/[\*_]/g, "").trim()).filter(Boolean);
+    const buildingIndex = lines.findIndex((line) => line.toLowerCase().includes(building.toLowerCase()));
+    const localityIndex = lines.findIndex((line, index) => index > buildingIndex && line.toLowerCase().includes(locality.toLowerCase()));
+    if (buildingIndex >= 0 && localityIndex > buildingIndex) {
+      const candidate = lines.slice(buildingIndex + 1, localityIndex).find((line) =>
+        line.length >= 3 && line.length <= 50 && /[A-Za-z]/.test(line) &&
+        !/^(building|flat|floor|rent|sale|price|available|furnished|residential|commercial|open|pets|possession|video|brokerage|kindly|call|contact)/i.test(line) &&
+        !/\d{5,}|\b(?:bhk|parking|lakhs?|lakh|cr|sq\.?\s*ft)\b/i.test(line),
+      );
+      landmark = candidate || null;
+    }
+  }
+
+  return {
+    bhk,
+    landmark,
+    view,
+    parking,
+    pets: /\bpets?\s+(?:allowed|permitted|okay|ok)\b/i.test(lower),
+    possession,
+  };
+}
+
 export function listingDescription(opts: {
   dealType: "For rent" | "For sale";
   title: string;
   locality: string | null;
   specRow: string;
-}): string {
-  const { dealType, title, locality, specRow } = opts;
+  sourceMessage?: string | null;
+  building?: string | null;
+  landmark?: string | null;
+}, maxLength = 320): string {
+  const { dealType, title, locality, specRow, sourceMessage, building } = opts;
+  const facts = extractListingSourceFacts(sourceMessage, building, locality);
   const where = locality ? ` in ${locality}` : " in Mumbai";
   const parts: string[] = [];
-  parts.push(`${dealType} — ${title}${where}.`);
+  const factBhk = facts.bhk ? `${facts.bhk} BHK ` : "";
+  const landmark = opts.landmark || facts.landmark;
+  const place = landmark ? `${where}, near ${landmark}` : where;
+  parts.push(`${dealType} — ${factBhk}${title}${place}.`);
   if (specRow) parts.push(`${specRow}.`);
+  const extras = [facts.view, facts.parking, facts.pets ? "pets allowed" : null, facts.possession]
+    .filter(Boolean)
+    .join("; ");
+  if (extras) parts.push(`${extras.charAt(0).toUpperCase()}${extras.slice(1)}.`);
   parts.push("Listed via Mumbai's live WhatsApp broker network. Contact the broker directly, no lead forms.");
-  return clip(parts.join(" "), 155);
+  return clip(parts.join(" "), maxLength);
 }
 
 export function searchDescription(query: string): string {
