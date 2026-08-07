@@ -369,7 +369,7 @@ export default async function ListingPage({ params }: Params) {
       <SiteHeader />
       <JsonLd data={listingSchema} />
       <JsonLd data={breadcrumbSchema} />
-      <main className="mx-auto max-w-7xl px-4 py-8 lg:px-6 lg:py-12">
+      <main className="mx-auto max-w-[1600px] px-4 py-8 lg:px-8 lg:py-12">
         <BackButton />
 
         <div className="mb-6 flex flex-wrap items-center gap-1.5 text-xs text-zinc-500">
@@ -391,7 +391,7 @@ export default async function ListingPage({ params }: Params) {
           <span className="text-zinc-400">{cleanBuildingName(listing.building_name) || card.title}</span>
         </div>
 
-        <div className="grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,1fr)_360px]">
+        <div className="grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(620px,720px)]">
           {/* Main column */}
           <div>
             {/* Header — no image hero. The page is text-first; photos are
@@ -487,10 +487,31 @@ export default async function ListingPage({ params }: Params) {
                 })}
               </p>
             </div>
+
+            <div className="mt-6 text-xs text-zinc-600">
+              <p>
+                This listing is sourced from live broker activity in PropAI&apos;s WhatsApp network. Details
+                are parsed automatically and may change — confirm specifics with the broker before proceeding.
+              </p>
+              <p className="mt-1">
+                Last updated: {listing.last_seen ? (() => {
+                  const d = new Date(listing.last_seen);
+                  const ms = d.getTime();
+                  if (!Number.isFinite(ms)) return "recently";
+                  const diffMs = Date.now() - ms;
+                  const dayMs = 24 * 60 * 60 * 1000;
+                  if (diffMs < 0) return "just now";
+                  if (diffMs < dayMs) return "today";
+                  if (diffMs < 2 * dayMs) return "yesterday";
+                  if (diffMs < 7 * dayMs) return `${Math.floor(diffMs / dayMs)}d ago`;
+                  return d.toLocaleDateString("en-IN", { day: "numeric", month: "short" });
+                })() : "recently"}
+              </p>
+            </div>
           </div>
 
           {/* Sidebar */}
-          <aside className="relative">
+          <aside className="relative grid items-start gap-5 lg:grid-cols-[300px_minmax(0,1fr)]">
             <div className="sticky top-6 overflow-hidden rounded-2xl border border-white/10 bg-zinc-950/90 p-5">
               <button
                 className="absolute right-3 top-3 inline-flex h-6 w-6 items-center justify-center rounded-md text-zinc-500 transition-colors hover:border-white/20 hover:bg-white/5 hover:text-amber-400"
@@ -585,7 +606,7 @@ export default async function ListingPage({ params }: Params) {
             </div>
 
             {similarCards.length > 0 && (
-              <section className="mt-5 rounded-2xl border border-white/10 bg-zinc-950/90 p-4" aria-label="Similar live listings">
+              <section className="mt-5 rounded-2xl border border-white/10 bg-zinc-950/90 p-4 lg:mt-0" aria-label="Similar live listings">
                 <h2 className="mb-3 text-sm font-semibold text-white">Similar live listings</h2>
                 <div className="max-h-[620px] space-y-3 overflow-y-auto pr-1">
                   {similarCards.map((similar) => (
@@ -609,25 +630,6 @@ export default async function ListingPage({ params }: Params) {
             )}
           </aside>
         </div>
-
-        <p className="mt-6 text-xs text-zinc-600">
-          This listing is sourced from live broker activity in PropAI&apos;s WhatsApp network. Details
-          are parsed automatically and may change — confirm specifics with the broker before proceeding.
-        </p>
-        <p className="mt-1 text-xs text-zinc-600">
-          Last updated: {listing.last_seen ? (() => {
-            const d = new Date(listing.last_seen);
-            const ms = d.getTime();
-            if (!Number.isFinite(ms)) return "recently";
-            const diffMs = Date.now() - ms;
-            const dayMs = 24 * 60 * 60 * 1000;
-            if (diffMs < 0) return "just now";
-            if (diffMs < dayMs) return "today";
-            if (diffMs < 2 * dayMs) return "yesterday";
-            if (diffMs < 7 * dayMs) return `${Math.floor(diffMs / dayMs)}d ago`;
-            return d.toLocaleDateString("en-IN", { day: "numeric", month: "short" });
-          })() : "recently"}
-        </p>
 
         {/* Internal links: same locality views, same BHK, same building. */}
         {card.localitySlug && (
