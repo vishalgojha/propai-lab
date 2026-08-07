@@ -1291,7 +1291,7 @@ def _log_browser_step(storage_client, tenant_id: str | None, session_id: str, st
         "action": action,
         "target": target,
         "url": url,
-        "status": status,
+        "status": status if status in {"ok", "failed", "skipped"} else "failed",
         "metadata": metadata or {},
         # The database column is NOT NULL; an absent screenshot is an empty
         # string, not SQL NULL.

@@ -29,6 +29,7 @@ services:
       FRONTEND_URL: https://app.propai.live
       COMPANION_WEBHOOK_SECRET: ${COMPANION_WEBHOOK_SECRET:-}
       AGENT_BROWSER_ARGS: "--no-sandbox,--disable-dev-shm-usage"
+      AGENT_BROWSER_EXECUTABLE_PATH: /usr/bin/chromium
     volumes:
       - propai-data:/data
     expose:
