@@ -46,6 +46,8 @@ type ListingRow = {
   asset_type: string | null;
   property_type: string | null;
   micro_market: string | null;
+  locality_raw?: string | null;
+  locality_resolved?: string | null;
 };
 
 type BuildingRow = {
@@ -956,7 +958,7 @@ export async function getListingById(id: number): Promise<ListingDetail | null> 
   const { data, error } = await db
     .from("listings_unified")
     .select(
-      "id, bhk, price, price_unit, price_model, price_per_sqft, area_sqft, furnishing, intent, asset_type, property_type, location_label, landmark_name, micro_market, view, floor_description, broker_name, broker_phone, last_seen, building_name, representative_raw_message_id, representative_listing_index, latest_raw_message_id, deal_tags, additional_charges",
+      "id, bhk, price, price_unit, price_model, price_per_sqft, area_sqft, furnishing, intent, asset_type, property_type, location_label, landmark_name, micro_market, locality_raw, locality_resolved, view, floor_description, broker_name, broker_phone, last_seen, building_name, representative_raw_message_id, representative_listing_index, latest_raw_message_id, deal_tags, additional_charges",
     )
     .eq("id", id)
     .maybeSingle();
@@ -1023,6 +1025,8 @@ export async function getListingById(id: number): Promise<ListingDetail | null> 
     asset_type: data.asset_type,
     property_type: data.property_type,
     micro_market: data.micro_market,
+    locality_raw: data.locality_raw ?? null,
+    locality_resolved: data.locality_resolved ?? null,
     view: data.view,
     floor_description: data.floor_description,
     building_name: data.building_name,
