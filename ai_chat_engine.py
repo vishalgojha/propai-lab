@@ -79,6 +79,11 @@ _TOPIC_END_SIGNALS = re.compile(
     re.IGNORECASE,
 )
 
+_FRESH_CONTEXT_SIGNALS = re.compile(
+    r"\b(?:fresh|start over|reset|clear|forget previous|ignore previous|new search)\b",
+    re.IGNORECASE,
+)
+
 
 class ConversationMemory:
     def __init__(self, max_working_turns: int = 8, session_id: str | None = None):
@@ -155,6 +160,17 @@ class ConversationMemory:
     def add(self, role: str, content: str) -> None:
         self.working.append({"role": role, "content": content})
         self._dirty = True
+
+    def reset(self) -> None:
+        """Start a genuinely fresh topic without deleting the chat transcript."""
+        self.working = []
+        self.summaries = []
+        self.domain = {}
+        self._topic_start = 0
+        self._dirty = True
+
+    def requests_fresh_context(self, message: str) -> bool:
+        return bool(_FRESH_CONTEXT_SIGNALS.search(message or ""))
 
     def detect_topic_change(self, message: str) -> bool:
         if not self.working:
