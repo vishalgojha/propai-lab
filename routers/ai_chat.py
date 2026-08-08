@@ -1826,7 +1826,7 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
         }, _is_inbox)
 
     if last_user and _BROWSER_ACTION_SIGNALS.search(last_user) and browser_enabled and not str(req.browser_approval_token or "").strip():
-        prompt_text = "This looks like a browser task. Choose whether to use browser actions on this web page or keep it conversational."
+        prompt_text = "I can browse this website and follow the steps you requested. Start the browser task?"
         browser_token = make_browser_approval_token(session_id, tenant_id, str(user.get("id") or ""))
         target_match = re.search(r"(?:https?://|www\.)[^\s<>]+|\b[a-z0-9][a-z0-9.-]*\.(?:com|in|org|net)(?:/[^\s<>]*)?", last_user, re.IGNORECASE)
         target_url = ""
@@ -1836,8 +1836,8 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
                 target_url = f"https://{target_url}"
         _persist("assistant", prompt_text, blocks=[{
             "type": "confirmation",
-            "title": "Use browser actions?",
-            "body": "I can open internal or external web pages, click through them, or stay conversational and answer in text only.",
+            "title": "Ready to browse?",
+            "body": "I’ll open the site and follow your instructions. You can keep chatting instead if you prefer.",
             "tool": "browser",
             "mode": "browser",
             "confirmation_token": browser_token,
@@ -1847,8 +1847,8 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
             "content": prompt_text,
             "blocks": [{
                 "type": "confirmation",
-                "title": "Use browser actions?",
-                "body": "I can open internal or external web pages, click through them, or stay conversational and answer in text only.",
+                "title": "Ready to browse?",
+                "body": "I’ll open the site and follow your instructions. You can keep chatting instead if you prefer.",
                 "tool": "browser",
                 "mode": "browser",
                 "confirmation_token": browser_token,

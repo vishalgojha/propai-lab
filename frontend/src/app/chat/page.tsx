@@ -1257,7 +1257,11 @@ export default function ChatPage() {
                               const token = String(block.confirmation_token || "");
                               const state = completedConfirmationTokens.has(token) ? "confirmed" : confirmationState[token];
                               const isBrowser = String(block.tool || "") === "browser" || String(block.mode || "") === "browser";
-                              if (isBrowser && token !== latestBrowserConfirmationToken) return null;
+                              // If a restored message does not expose its
+                              // parts yet, do not hide the current approval
+                              // card. Missing buttons are worse than an old
+                              // prompt remaining visible briefly.
+                              if (isBrowser && latestBrowserConfirmationToken && token !== latestBrowserConfirmationToken) return null;
                               // Approval is a one-time prompt. Once the
                               // choice has completed, remove it from the
                               // active conversation instead of leaving a
