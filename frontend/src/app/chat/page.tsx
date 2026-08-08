@@ -512,13 +512,28 @@ export default function ChatPage() {
   const handleBrowserAction = useCallback(async (token: string, accept: boolean) => {
     setActionError("");
     setConfirmationState((current) => ({ ...current, [token]: "pending" }));
+    // Open the user-visible tab inside the click gesture so Firefox does not
+    // classify the later async navigation as a popup. The server-side Agent
+    // Browser still performs the inspection; this tab is the human handoff.
+    const userBrowserTab = accept ? window.open("about:blank", "_blank") : null;
     try {
       const response = accept
         ? await api.confirmBrowserAction(token)
         : await api.declineBrowserAction(token);
+      if (userBrowserTab && accept) {
+        const activity = (response.blocks || []).find((block: any) => block?.type === "activity");
+        const sourceUrl = String(activity?.trace?.source_url || "").trim();
+        if (sourceUrl) {
+          userBrowserTab.location.href = sourceUrl;
+          userBrowserTab.opener = null;
+        } else {
+          userBrowserTab.close();
+        }
+      }
       appendAssistantResponse(response);
       setConfirmationState((current) => ({ ...current, [token]: "confirmed" }));
     } catch (error) {
+      userBrowserTab?.close();
       setConfirmationState((current) => ({ ...current, [token]: "error" }));
       setActionError(error instanceof Error ? error.message : "Browser action failed.");
     }
