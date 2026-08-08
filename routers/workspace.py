@@ -485,7 +485,7 @@ async def get_workspace_ai_settings(user: dict = Depends(require_user), tenant_i
             tenant_id=tenant_id,
             browser_provider="agent-browser",
             allowed_routes=["*"],
-            allowed_actions=["open", "click", "fill", "select", "scroll"],
+            allowed_actions=["open", "click", "fill", "type", "select", "scroll", "screenshot", "close"],
         )
     payload = asdict(settings)
     payload["browser_provider"] = _normalize_browser_provider_name(payload.get("browser_provider"))
