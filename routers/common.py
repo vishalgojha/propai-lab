@@ -237,7 +237,12 @@ def _resolve_user_organization_id(user: dict) -> str | None:
     if len(slug) > 40:
         slug = slug[:40]
     owner_user_id = str(user.get("id") or "").strip() or None
-    owner_phone = str(user.get("phone") or "").strip() or None
+    # Email signup does not populate auth.users.phone. The signup form stores
+    # the broker's WhatsApp number in user metadata, which is the fallback
+    # used for workspace ownership and WhatsApp matching.
+    owner_phone = _normalize_real_phone(
+        (user.get("phone") or "") or metadata.get("phone") or ""
+    ) or None
 
     # Organization provisioning is retry-safe.  The old code deliberately
     # randomized the slug whenever it found an existing slug, turning every
