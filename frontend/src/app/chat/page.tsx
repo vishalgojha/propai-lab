@@ -458,6 +458,7 @@ export default function ChatPage() {
   const [brokerActionMessage, setBrokerActionMessage] = useState("");
   const [copiedTable, setCopiedTable] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const shouldAutoScrollRef = useRef(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const sessionIdRef = useRef("");
   const sessionCreationInFlightRef = useRef(false);
@@ -509,6 +510,7 @@ export default function ChatPage() {
   }, []);
 
   const appendAssistantResponse = useCallback((response: api.ChatResponse) => {
+    shouldAutoScrollRef.current = true;
     const id = globalThis.crypto?.randomUUID?.() || `browser-${Date.now()}`;
     setMessages((current) => [
       ...current,
@@ -649,6 +651,7 @@ export default function ChatPage() {
   const hydrationRequest = useRef(0);
   const loadSessionMessages = useCallback(async (id: string) => {
     const request = ++hydrationRequest.current;
+    shouldAutoScrollRef.current = false;
     setSessionLoading(true);
     setSessionError("");
     try {
@@ -714,7 +717,9 @@ export default function ChatPage() {
   }, [activeSessionStorageKey, sessionId]);
 
   useEffect(() => {
+    if (!shouldAutoScrollRef.current) return;
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (status === "ready" || status === "error") shouldAutoScrollRef.current = false;
   }, [messages, status]);
 
   // Refresh the sidebar after a response finishes so newly created chats
@@ -844,6 +849,7 @@ export default function ChatPage() {
     if (!input.trim() || status === "submitted") return;
     setSessionError("");
     const submittedText = input.trim();
+    shouldAutoScrollRef.current = true;
     const browserTask = /\b(?:browser|browse|click|navigate|scroll|go to|website|maha\s*rera|igrs|esearchigr|open\s+(?:https?:\/\/|www\.|[a-z0-9][a-z0-9.-]*\.[a-z]{2,})|check\s+(?:the\s+)?(?:ai\s+provider|provider|settings?)\s+page)\b/i.test(submittedText);
     const listingTask = /\b(?:bhk|rent|buy|sale|lease|listing|listings|property|properties|flat|apartment|office|shop|commercial|inventory|locality|budget|sqft)\b/i.test(submittedText)
       && /\b(?:find|search|show|look|need|want|any|available|give|suggest|match)\b/i.test(submittedText);
