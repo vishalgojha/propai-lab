@@ -1616,10 +1616,21 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
     if not ctx.get("skip_knowledge_record"):
         try:
             now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+            # Image/video/status-only WhatsApp events can legitimately have no
+            # text in raw_messages.message, but knowledge_records.raw_content
+            # is NOT NULL. Preserve the event envelope as evidence instead of
+            # attempting an empty insert.
+            knowledge_raw_content = str(msg_text or "").strip()
+            if not knowledge_raw_content:
+                knowledge_raw_content = json.dumps(
+                    msg or {"message_type": "non_text"},
+                    ensure_ascii=False,
+                    default=str,
+                )
             knowledge_record_id = storage.create_knowledge_record({
                 "source_type": kr_source_type,
                 "source_id": message_uid,
-                "raw_content": msg_text,
+                "raw_content": knowledge_raw_content,
                 "sender_jid": sender_jid,
                 "sender_name": sender_name,
                 "sender_phone": sender_phone,

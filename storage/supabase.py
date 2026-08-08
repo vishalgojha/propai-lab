@@ -1762,6 +1762,12 @@ class SupabaseStorage(Storage):
         "parent_message_id", "split_index",
         "created_at",
     }
+    RAW_MESSAGE_SELECT_COLUMNS = (
+        "id,group_name,sender,sender_jid,sender_phone,message,message_hash,message_type,"
+        "attachments,reply_context,timestamp,source,raw_payload,message_uid,is_group,"
+        "pipeline_version,synced_at,event_id,processed,processed_at,tenant_id,"
+        "parent_message_id,split_index,created_at"
+    )
 
     def save_raw_message(self, msg: RawMessage) -> int:
         data = {k: v for k, v in msg.__dict__.items()
@@ -1878,7 +1884,7 @@ class SupabaseStorage(Storage):
         return [dict_to_dataclass(RawMessage, d) for d in res.data]
 
     def get_unprocessed_raw_messages(self, limit: int = 100) -> list[RawMessage]:
-        res = self.client.table("raw_messages").select("*")\
+        res = self.client.table("raw_messages").select(self.RAW_MESSAGE_SELECT_COLUMNS)\
             .eq("processed", False)\
             .eq("is_group", True)\
             .eq("extraction_suppressed", False)\
@@ -1893,7 +1899,7 @@ class SupabaseStorage(Storage):
         filtering out old backlog rows, which could time out as a 500 response
         once the queue became large.
         """
-        query = self.client.table("raw_messages").select("*") \
+        query = self.client.table("raw_messages").select(self.RAW_MESSAGE_SELECT_COLUMNS) \
             .eq("processed", False) \
             .eq("is_group", True) \
             .gte("timestamp", cutoff) \
@@ -1911,7 +1917,7 @@ class SupabaseStorage(Storage):
         Legacy rows with a null timestamp are included in the backlog so they
         cannot be stranded by the two-lane cutoff.
         """
-        query = self.client.table("raw_messages").select("*") \
+        query = self.client.table("raw_messages").select(self.RAW_MESSAGE_SELECT_COLUMNS) \
             .eq("processed", False) \
             .eq("is_group", True) \
             .or_(f"timestamp.lt.{cutoff},timestamp.is.null") \
@@ -4884,7 +4890,9 @@ class SupabaseStorage(Storage):
         if tenant_id or self._tenant_id:
             payload["tenant_id"] = tenant_id or self._tenant_id
         try:
-            result = self.client.table("buildings").insert(payload).execute()
+            result = self.client.table("buildings").upsert(
+                payload, on_conflict="building_id"
+            ).execute()
             return result.data[0] if result.data else None
         except Exception:
             # A concurrent insert is a normal race; return the winner.
