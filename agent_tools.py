@@ -38,6 +38,7 @@ WRITE_TOOL_NAMES = frozenset({
     "create_client_property_candidate",
     "create_lead",
     "log_internal_note",
+    "save_my_deal",
 })
 
 
@@ -120,6 +121,25 @@ TOOL_DEFINITIONS = [
             "author_id": {"type": "string"},
         },
         ["entity_type", "entity_id", "note", "author_id"],
+    ),
+    _function(
+        "save_my_deal",
+        "Save a broker's own listing or requirement into the typed PropAI inventory after explicit user confirmation. The source_text must be the property/requirement text supplied by the broker so the CRM can show evidence.",
+        {
+            "source_text": {"type": "string", "description": "Original property or requirement text supplied by the broker"},
+            "message_type": {"type": "string", "enum": ["listing", "requirement"]},
+            "transaction_type": {"type": "string", "enum": ["rent", "sale"]},
+            "asset_type": {"type": "string", "enum": ["residential", "commercial"]},
+            "building_name": {"type": "string"},
+            "locality": {"type": "string"},
+            "bhk": {"type": "string"},
+            "price": {"type": "number"},
+            "price_unit": {"type": "string", "enum": ["abs", "per_sqft", "L", "Cr", "K"]},
+            "area_sqft": {"type": "number"},
+            "furnishing": {"type": "string"},
+            "summary_title": {"type": "string"},
+        },
+        ["source_text", "message_type", "transaction_type", "asset_type"],
     ),
 ]
 
@@ -531,6 +551,69 @@ def execute_tool(
             "tenant_id": tenant_id,
         }).execute().data or []
         return {"status": "ok", "tool": name, "note": inserted[0] if inserted else None}
+
+    if name == "save_my_deal":
+        # Reuse the canonical storage writer so this path has the same typed
+        # routing, price normalization, source fingerprint, and evidence
+        # contract as WhatsApp extraction.
+        from routers.common import storage
+        from storage.base import ParsedObservation, RawMessage
+        from datetime import datetime, timezone
+
+        connections = storage.list_org_whatsapp_connections(tenant_id)
+        phone = str((connections[0] if connections else {}).get("phone_number") or "")
+        source_text = str(args.get("source_text") or "").strip()
+        if not source_text:
+            return {"status": "error", "tool": name, "error": "source_text is required"}
+        now = datetime.now(timezone.utc).isoformat()
+        raw_id = storage.save_raw_message(RawMessage(
+            group_name="AI Chat",
+            sender="Workspace broker",
+            sender_phone=phone,
+            message=source_text,
+            message_type="text",
+            source="AI_CHAT",
+            raw_payload=json.dumps({"full_text": source_text, "source": "ai_chat"}),
+            is_group=False,
+            processed=True,
+            processed_at=now,
+            tenant_id=tenant_id,
+        ))
+        message_type = str(args.get("message_type") or "listing").lower()
+        transaction = str(args.get("transaction_type") or "rent").lower()
+        asset = str(args.get("asset_type") or "residential").lower()
+        parsed = ParsedObservation(
+            raw_message_id=raw_id,
+            message_type=message_type,
+            intent="BUY" if message_type == "requirement" else ("RENT" if transaction == "rent" else "SELL"),
+            transaction_type=transaction,
+            asset_type=asset,
+            building_name=str(args.get("building_name") or "").strip() or None,
+            micro_market=str(args.get("locality") or "").strip() or None,
+            location_raw=str(args.get("locality") or "").strip() or None,
+            bhk=str(args.get("bhk") or "").strip() or None,
+            price=args.get("price"),
+            price_unit=str(args.get("price_unit") or "abs"),
+            area_sqft=args.get("area_sqft"),
+            furnishing=str(args.get("furnishing") or "").strip() or None,
+            summary_title=str(args.get("summary_title") or "").strip() or None,
+            normalized_message=source_text,
+            raw_payload=json.dumps({"full_text": source_text, "source": "ai_chat"}),
+            broker_phone=phone or None,
+            broker_name="Workspace broker",
+            tenant_id=tenant_id,
+            extraction_confidence="medium",
+            extraction_confidence_score=0.7,
+        )
+        typed_id = storage.save_typed_observation(parsed)
+        return {
+            "status": "ok",
+            "tool": name,
+            "message_type": message_type,
+            "typed_id": typed_id,
+            "raw_message_id": raw_id,
+            "message": "Saved to My Deals with the supplied source text as evidence.",
+        }
 
     return {"status": "error", "error": "Unhandled agent tool"}
 

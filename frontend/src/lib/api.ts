@@ -1093,6 +1093,10 @@ export function getMyRequirements(limit = 200) {
   return fetchJSON<any[]>(`/my/requirements?limit=${limit}`);
 }
 
+export function getMyDeals(limit = 200) {
+  return fetchJSON<any[]>(`/my/deals?limit=${limit}`);
+}
+
 export function getDashboardSignals() {
   return fetchJSON<any>("/dashboard/signals");
 }

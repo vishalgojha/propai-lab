@@ -3550,6 +3550,80 @@ class SupabaseStorage(Storage):
         rows.sort(key=lambda row: (row.get("listing_index") or 0, str(row.get("created_at") or "")))
         return [dict_to_dataclass(ParsedObservation, self._typed_row_to_legacy({**row, "_typed_table": row.get("_typed_table")})) for row in rows]
 
+    def get_my_deals(self, limit: int = 200) -> list[dict]:
+        """Return this workspace phone's own inventory from the typed schemas.
+
+        A broker's CRM view is intentionally a presentation of the same
+        WhatsApp-derived listing/requirement records used by the marketplace;
+        it is not a second inventory store. Ownership is determined from the
+        connected WhatsApp numbers, with the typed broker phone as the normal
+        fast path and raw sender evidence as a fallback.
+        """
+        tenant_id = self._tenant_id
+        if not tenant_id:
+            return []
+        try:
+            connections = self.list_org_whatsapp_connections(tenant_id)
+        except Exception:
+            return []
+        owned_phones = {
+            re.sub(r"\D+", "", str(item.get("phone_number") or ""))[-10:]
+            for item in connections
+            if len(re.sub(r"\D+", "", str(item.get("phone_number") or ""))[-10:]) == 10
+        }
+        if not owned_phones:
+            return []
+
+        requested = max(1, min(int(limit or 200), 500))
+        typed_rows = self._fetch_typed_rows(
+            tenant_id=tenant_id,
+            limit_per_table=max(100, requested),
+        )
+        raw_ids = {
+            int(row.get("raw_message_id") or 0)
+            for row in typed_rows
+            if int(row.get("raw_message_id") or 0) > 0
+        }
+        raw_map: dict[int, dict] = {}
+        for start in range(0, len(raw_ids), 100):
+            batch = list(raw_ids)[start:start + 100]
+            try:
+                raw_rows = self.client.table("raw_messages").select(
+                    "id,message,sender,sender_phone,sender_jid,group_name,timestamp,is_group"
+                ).in_("id", batch).eq("tenant_id", tenant_id).execute().data or []
+                raw_map.update({int(row["id"]): row for row in raw_rows if row.get("id")})
+            except Exception:
+                continue
+
+        owned: list[dict] = []
+        seen: set[tuple[int, int, str]] = set()
+        for typed in typed_rows:
+            raw = raw_map.get(int(typed.get("raw_message_id") or 0), {})
+            candidate_phone = str(typed.get("broker_phone") or "")
+            if not re.sub(r"\D+", "", candidate_phone)[-10:] in owned_phones:
+                candidate_phone = str(raw.get("sender_phone") or raw.get("sender_jid") or "")
+            if re.sub(r"\D+", "", candidate_phone)[-10:] not in owned_phones:
+                continue
+            row = self._typed_row_to_legacy(typed)
+            row["crm_owner_phone"] = re.sub(r"\D+", "", candidate_phone)[-10:]
+            row["source_message"] = str(
+                raw.get("message") or typed.get("normalized_message") or ""
+            )
+            row["source_group"] = raw.get("group_name") or typed.get("group_name")
+            row["source_sender"] = raw.get("sender") or typed.get("broker_name")
+            row["source_timestamp"] = raw.get("timestamp") or typed.get("created_at")
+            key = (
+                int(typed.get("id") or 0),
+                int(typed.get("raw_message_id") or 0),
+                str(typed.get("_typed_table") or ""),
+            )
+            if key in seen:
+                continue
+            seen.add(key)
+            owned.append(row)
+        owned.sort(key=lambda row: str(row.get("created_at") or ""), reverse=True)
+        return owned[:requested]
+
     # ── Knowledge Records ────────────────────────────────────────────
 
     def create_knowledge_record(self, data: dict) -> int:

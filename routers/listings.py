@@ -223,6 +223,18 @@ async def get_parsed_sources(parsed_id: int, user: dict = Depends(require_user))
     return storage.get_parsed_sources(parsed_id)
 
 
+@router.get("/api/my/deals")
+async def get_my_deals(
+    limit: int = 200,
+    user: dict = Depends(require_user),
+    tenant_id: str | None = Depends(get_tenant_context),
+):
+    """Broker CRM view over this workspace's connected-number inventory."""
+    if not tenant_id:
+        raise HTTPException(403, "A workspace is required to view My Deals")
+    return await asyncio.to_thread(storage.get_my_deals, limit)
+
+
 @router.patch("/api/parsed/{parsed_id}")
 async def correct_parsed_observation(
     parsed_id: int,
